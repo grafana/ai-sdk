@@ -20,3 +20,8 @@
 
 - [x] 4.1 Run root/Gateway/client tests/races, Go 1.26, vet/lint, parity/frontend/command, docs/module/workspace and strict OpenSpec gates.
 - [x] 4.2 Commit and push the rewritten #370 with explicit lease, verify one PR-owned OpenSpec and preserve unrelated checksums; update draft PR without sync/archive or merge.
+
+## 5. Owner-requested error design cleanup
+
+- [x] 5.1 Lock down existing HTTP/SSE bytes, capability responses and HTTP-versus-stream classification boundaries before restructuring.
+- [x] 5.2 Separate classification, typed public definitions and transport encoding; preserve projected context/protection/ownership, validate and publish without sync/archive or merge.

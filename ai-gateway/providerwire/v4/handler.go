@@ -124,13 +124,13 @@ func validateLimits(limits Limits) error {
 	}
 	for name, frame := range map[string][]byte{
 		"empty stream start":        canonicalEmptyStartFrame,
-		"rate-limit stream error":   canonicalRateLimitStreamErrorFrame,
-		"overload stream error":     canonicalOverloadStreamErrorFrame,
-		"dependency stream error":   canonicalDependencyStreamErrorFrame,
-		"upstream stream error":     canonicalUpstreamStreamErrorFrame,
-		"internal stream error":     canonicalInternalStreamErrorFrame,
-		"timeout stream error":      canonicalTimeoutStreamErrorFrame,
-		"cancellation stream error": canonicalCancellationStreamErrorFrame,
+		"rate-limit stream error":   streamErrorFrameForSafeError(safeError{category: safeRateLimit}),
+		"overload stream error":     streamErrorFrameForSafeError(safeError{category: safeOverload}),
+		"dependency stream error":   streamErrorFrameForSafeError(safeError{category: safeFailedDependency}),
+		"upstream stream error":     streamErrorFrameForSafeError(safeError{category: safeUpstream}),
+		"internal stream error":     streamErrorFrameForSafeError(safeError{category: safeInternal}),
+		"timeout stream error":      streamErrorFrameForSafeError(safeError{category: safeTimeout}),
+		"cancellation stream error": streamErrorFrameForSafeError(safeError{category: safeCancellation}),
 	} {
 		if int64(len(frame)) > limits.StreamFrameBytes {
 			return fmt.Errorf("providerwire v4: stream frame bytes cannot contain canonical %s", name)
@@ -196,7 +196,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	resolved, err := h.selectModel(ctx, validated.modelID, options, gateway)
 	if err != nil {
-		h.writeSafeError(w, safeErrorFromResolution(err))
+		h.writeSafeError(w, safeErrorFromResolution(err), nil)
 		return
 	}
 	ctx, call := newInvocation(ctx, validated.modelID, resolved, r.Header, options, h.limits.UnaryResponseBytes)
@@ -207,11 +207,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.invokeModel(ctx, resolved.Model, options)
 	if err != nil {
-		h.writeSafeError(w, safeErrorFromProvider(err).withInvocation(call, err))
+		value := safeErrorFromProvider(err)
+		call.finish(err)
+		h.writeSafeError(w, value, call.metadata())
 		return
 	}
 	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: call.finish(nil)}) {
-		h.writeSafeError(w, (safeError{category: safeInternal}).withInvocation(call, nil))
+		call.finish(nil)
+		h.writeSafeError(w, safeError{category: safeInternal}, call.metadata())
 	}
 }
 
@@ -302,7 +305,7 @@ func (h *handler) writeFailure(w http.ResponseWriter, failure *requestFailure) {
 	if value.category == 0 {
 		value.category = safeInvalidRequest
 	}
-	h.writeSafeError(w, value)
+	h.writeSafeError(w, value, nil)
 }
 
 func invalidMappingFailure() *requestFailure {

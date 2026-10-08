@@ -1215,7 +1215,7 @@ func TestInvocation_CommittedErrorEnrichmentLimits(t *testing.T) {
 			requireStreamBodyMatchesSchema(t, response.Body.String())
 			frames := strings.Split(strings.TrimSuffix(response.Body.String(), "\n\n"), "\n\n")
 			require.Len(t, frames, 6)
-			var envelope safeErrorDocument
+			var envelope errorResponse
 			require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frames[1], "data: ")), &envelope))
 			assert.Equal(t, 503, envelope.Error.StatusCode)
 			assert.Equal(t, errorCode("overloaded"), envelope.Error.Code)
@@ -1263,13 +1263,13 @@ func TestInvocation_DirectInvalidStreamSetup(t *testing.T) {
 				requireStreamBodyMatchesSchema(t, response.Body.String())
 				frames := strings.Split(strings.TrimSuffix(response.Body.String(), "\n\n"), "\n\n")
 				require.Len(t, frames, 2)
-				var envelope safeErrorDocument
+				var envelope errorResponse
 				require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frames[1], "data: ")), &envelope))
 				require.NotNil(t, envelope.Error.Data)
 				metadata = envelope.Error.Data.Metadata
 			} else {
 				assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
-				var envelope safeErrorDocument
+				var envelope errorResponse
 				require.NoError(t, json.Unmarshal(response.Body.Bytes(), &envelope))
 				metadata = envelope.Metadata
 			}
