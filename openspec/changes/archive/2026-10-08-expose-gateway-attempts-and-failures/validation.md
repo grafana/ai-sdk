@@ -70,6 +70,16 @@ The pre-rewrite Gateway execution/ProviderWire race suites passed. Existing HTTP
 
 Full Gateway races/vet/lint (zero issues), Go 1.26.8 focused Gateway and standalone-client races/vet, frontend/schema/runtime integration, 74 authenticated command tests without skips, registered parity, docs/boundary/isolation/workspace/pins and strict OpenSpec pass. No provider fixtures, SDK contracts, wire shapes, dependency pins or go.work.sum changes were made. No fresh independent review or live-provider/private-service proof is claimed.
 
+## Request-selection restack
+
+The authorized stack is #367 → #368 → #373 → #370, with #369 owned separately. The foundation and activation were rebased onto repaired #368 at 1c2eae838c1db50d65a9c8a22c295a1828d24185. Saved pre-restack refs and parent boundaries preserve the original ranges; the second replay after the dependency repair is patch-equivalent for all five foundation and ten activation commits. The other owner's branches were not rewritten by this PR.
+
+CatalogSelector now copies private configured candidates and credential sources into Selection without expanding its public ID/Model contract. Request capture consumes that private context explicitly. Plain request selections start with a sealed collector and install no Gateway attempt observer; they omit both overviews and current native summaries while preserving independently registered SDK observers and opaque native metadata. Configured direct/fallback attribution remains enabled. Selection and invocation retain the same deadline. The existing BYOK validation categories were incorporated into the adapter's typed public definitions without changing their response contract.
+
+Focused race tests cover configured identity/source copying, private serialization boundaries, and plain-selector unary success/failure plus setup/committed errors. Full root/Gateway races and vet, Gateway lint, standalone Go 1.26.8 Grafana-client races/vet, standalone SDK integration-harness races, frontend/ProviderWire integration, 74 authenticated command tests without skips, parity, docs, module/license/isolation/workspace/pin checks and strict OpenSpec (96 items) pass. The isolated foundation also passes root/Gateway races and vet on Go 1.26.8.
+
+The first standalone-client run exposed an inherited test dependency on middleware/logger. The owning agent repaired #367/#368 by moving the real-client/logger composition witness into the existing SDK-only integration harness; this PR did not alter published manifests or bypass the failing check. The standalone check now passes on the repaired base. These restack checks do not constitute a fresh independent review or live-provider/private-service evidence.
+
 ## Limits and disposition
 
 No provider input fixture was added or changed; synthetic endpoints/UI scenarios are scoped behavior witnesses, not recorded inputs, live-provider acceptance or deployed/private-service parity. The independent reviews and the final unreviewed fix are bounded as described above. Native transport diagnostics #323, discovery #324, routing #316, BYOK #317, producer/core fixes #299 and broader client acceptance #375 remain separate.
