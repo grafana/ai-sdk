@@ -351,10 +351,11 @@ func (h *handler) writeUnarySuccess(w http.ResponseWriter, result *provider.Gene
 		mapped.Metadata = execution.Metadata(contexts[0].overview, mapped.Metadata, func(metadata provider.ProviderMetadata) bool {
 			candidate := *result
 			candidate.ProviderMetadata = metadata
-			projected, err := mapUnarySuccess(&candidate, h.limits.UnaryResponseBytes, contexts...)
-			if err != nil {
+			if !unarySuccessPreflight(&candidate, h.limits.UnaryResponseBytes) {
 				return false
 			}
+			projected := mapped
+			projected.Metadata = metadata
 			_, ok := encodeUnarySuccess(projected, h.limits.UnaryResponseBytes)
 			return ok
 		})

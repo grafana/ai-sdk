@@ -215,21 +215,50 @@ func TestInvocation_PrivateSourcesAndErrorLimit(t *testing.T) {
 }
 
 func TestInvocation_RequestCredentialEcho(t *testing.T) {
-	for _, request := range []string{
-		`{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"authorizationToken":"remote-credential"}]}}}`,
-		`{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"authorization":"remote-credential"}}]}`,
-		`{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"authorization":"Bearer remote-credential"}}}]}`,
+	for _, tc := range []struct {
+		name, request string
+		secrets       []string
+	}{
+		{"anthropic MCP", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"authorizationToken":"remote-credential"}]}}}`, []string{"remote-credential"}},
+		{"OpenAI MCP authorization", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"authorization":"remote-credential"}}]}`, []string{"remote-credential"}},
+		{"OpenAI MCP headers", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"authorization":"Bearer remote-credential"}}}]}`, []string{"remote-credential"}},
+		{"body header", `{"prompt":[],"headers":{"x-goog-api-key":"remote-credential"}}`, []string{"remote-credential"}},
+		{"Anthropic MCP query", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example/tools?api_key=remote-credential"}]}}}`, []string{"remote-credential"}},
+		{"OpenAI MCP query", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"serverUrl":"https://mcp.example/tools?api_key=remote-credential"}}]}`, []string{"remote-credential"}},
+		{"OpenAI MCP userinfo", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"serverUrl":"https://user:remote-credential@mcp.example/tools"}}]}`, []string{"remote-credential"}},
+		{"OpenAI API key header", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"openai-api-key":"remote-credential"}}}]}`, []string{"remote-credential"}},
+		{"Anthropic API key header", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"anthropic-api-key":"remote-credential"}}}]}`, []string{"remote-credential"}},
+		{"case distinct headers", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"Authorization":"Bearer first-secret","authorization":"Bearer second-secret"}}}]}`, []string{"first-secret", "second-secret"}},
+		{"nonstring sibling header", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"authorization":"Bearer remote-credential","x-note":7}}}]}`, []string{"remote-credential"}},
 	} {
-		t.Run(request, func(t *testing.T) {
-			first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-				return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "provider echoed remote-credential", StatusCode: 401})
-			}}
-			response := invocationHarness(t, testLimits(), first).serve(validRequest(request))
-			assert.Equal(t, 424, response.Code)
-			assert.NotContains(t, response.Body.String(), "remote-credential")
-			require.NotNil(t, readOverview(t, response.Body.Bytes()))
-			assert.Equal(t, 401, readOverview(t, response.Body.Bytes()).Attempts[0].Error.StatusCode)
-		})
+		for _, streaming := range []bool{false, true} {
+			t.Run(tc.name+"/"+map[bool]string{false: "unary", true: "committed"}[streaming], func(t *testing.T) {
+				native := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Data: json.RawMessage(`{"message":"provider echoed remote-credential first-secret","type":"second-secret"}`)})
+				first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, native }, stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartError, APICallError: native}, finishPart())}, nil
+				}}
+				request := validRequest(tc.request)
+				status := 424
+				if streaming {
+					request = streamRequest(tc.request)
+					status = 200
+				}
+				response := invocationHarness(t, testLimits(), first).serve(request)
+				assert.Equal(t, status, response.Code)
+				for _, secret := range tc.secrets {
+					assert.NotContains(t, response.Body.String(), secret)
+				}
+				if streaming {
+					assert.Contains(t, response.Body.String(), `"nativeError"`)
+					assert.Contains(t, response.Body.String(), `"statusCode":401`)
+					assert.Contains(t, response.Body.String(), `"type":"finish"`)
+				} else {
+					overview := readOverview(t, response.Body.Bytes())
+					require.NotNil(t, overview)
+					assert.Equal(t, 401, overview.Attempts[0].Error.StatusCode)
+				}
+			})
+		}
 	}
 }
 
@@ -265,11 +294,14 @@ func TestInvocation_CanceledLateDirectSetup(t *testing.T) {
 
 func TestInvocation_SharedModelIsolation(t *testing.T) {
 	first := &recordingModel{generate: func(_ context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "failed-" + options.Headers["request-id"]})
+	}}
+	second := &recordingModel{generate: func(_ context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 		result := validGenerateResult()
 		result.ProviderMetadata = provider.ProviderMetadata{"native": json.RawMessage(`{"id":"` + options.Headers["request-id"] + `"}`)}
 		return result, nil
 	}}
-	h := invocationHarness(t, testLimits(), first)
+	h := invocationHarness(t, testLimits(), first, second)
 	var group sync.WaitGroup
 	for i := range 24 {
 		group.Go(func() {
@@ -277,10 +309,16 @@ func TestInvocation_SharedModelIsolation(t *testing.T) {
 			request := validRequest(`{"prompt":[],"headers":{"request-id":"` + id + `"}}`)
 			response := h.serve(request)
 			require.Equal(t, 200, response.Code)
-			require.Len(t, readOverview(t, response.Body.Bytes()).Attempts, 1)
+			overview := readOverview(t, response.Body.Bytes())
+			require.NotNil(t, overview)
+			require.Len(t, overview.Attempts, 2)
+			assert.Equal(t, "failed-"+id, overview.Attempts[0].Error.Message)
+			assert.Equal(t, fallback.AttemptFailed, overview.Attempts[0].Outcome)
+			assert.Equal(t, fallback.AttemptSelected, overview.Attempts[1].Outcome)
 			assert.Contains(t, response.Body.String(), `"native":{"id":"`+id+`"}`)
 		})
 	}
 	group.Wait()
 	assert.Equal(t, 24, first.callCount())
+	assert.Equal(t, 24, second.callCount())
 }
