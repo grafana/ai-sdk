@@ -846,17 +846,18 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 		for _, attribution := range []string{"none", "selected", "malformed"} {
 			t.Run(map[bool]string{false: "HTTP", true: "SSE"}[streaming]+"/"+attribution, func(t *testing.T) {
 				h := invocationHarness(t, testLimits(), &recordingModel{})
-				_, call := newInvocation(t.Context(), "alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+				request := newExecutionRequest("alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+				capture := &attemptCapture{}
 				if attribution != "none" {
-					call.enter()
-					call.finish(nil)
-					if attribution == "malformed" {
-						call.overview.Attempts[0].Error = &execution.Failure{Code: json.RawMessage("invalid")}
-					}
+					capture.enter()
+				}
+				view := request.snapshot(capture, nil)
+				if attribution == "malformed" {
+					view.overview.Attempts[0].Error = &execution.Failure{Code: json.RawMessage("invalid")}
 				}
 				value := safeError{category: safeOverload}
-				current := call.current(provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "current failure"}))
-				metadata := call.metadata()
+				current := view.current(provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "current failure"}))
+				metadata := view.metadata()
 				encode := func(limit int64) []byte {
 					if streaming {
 						frame, ok := encodeStreamError(value, metadata, current, limit)
@@ -907,7 +908,7 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 						assert.Equal(t, original, body)
 					}
 				}
-				assert.Equal(t, metadata, call.metadata())
+				assert.Equal(t, metadata, view.metadata())
 			})
 		}
 	}
@@ -1304,11 +1305,11 @@ func TestInvocation_SharedModelIsolation(t *testing.T) {
 }
 
 func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
-	calls := make(chan *invocation, 1)
+	entered := make(chan struct{})
 	release := make(chan struct{})
 	observed := make(chan struct{})
-	first := &recordingModel{generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
-		calls <- invocationFromContext(ctx)
+	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		close(entered)
 		<-release
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "unowned late native failure", StatusCode: 401})
 	}}
@@ -1324,9 +1325,8 @@ func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
 	defer cancel()
 	responses := make(chan string, 1)
 	go func() { responses <- h.serve(validRequest(`{"prompt":[]}`).WithContext(ctx)).Body.String() }()
-	var call *invocation
 	select {
-	case call = <-calls:
+	case <-entered:
 	case <-time.After(time.Second):
 		require.FailNow(t, "candidate did not enter")
 	}
@@ -1343,11 +1343,6 @@ func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
 	case <-time.After(time.Second):
 		require.FailNow(t, "fallback observation did not arrive")
 	}
-	call.mu.Lock()
-	defer call.mu.Unlock()
-	assert.True(t, call.sealed)
-	assert.Empty(t, call.decisions)
-	assert.Nil(t, call.overview)
 	assert.Zero(t, second.callCount())
 }
 
@@ -1370,10 +1365,12 @@ func TestInvocation_RejectedUnaryOutcomeBeforePublication(t *testing.T) {
 	}
 	parent, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	ctx, call := newInvocation(parent, "alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+	request := newExecutionRequest("alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+	capture := &attemptCapture{}
+	ctx := fallback.WithAttemptObserver(parent, capture.observe)
 	results := make(chan error, 1)
 	go func() {
-		_, err := h.handler.invokeModel(ctx, h.resolver.resolved.Model, provider.CallOptions{})
+		_, err := h.handler.invokeModel(ctx, h.resolver.resolved.Model, provider.CallOptions{}, capture)
 		results <- err
 	}()
 	select {
@@ -1399,10 +1396,12 @@ func TestInvocation_RejectedUnaryOutcomeBeforePublication(t *testing.T) {
 	assert.Equal(t, fallback.AttemptCanceled, attempt.Outcome)
 	require.NotNil(t, attempt.SourceErr)
 	assert.Contains(t, attempt.SourceErr.Error(), "handler-rejected native failure")
-	assert.Nil(t, call.finish(err))
-	call.mu.Lock()
-	defer call.mu.Unlock()
-	assert.Empty(t, call.decisions)
+	view := request.snapshot(capture, err)
+	assert.Nil(t, view.overview)
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
+	assert.True(t, capture.sealed)
+	assert.Empty(t, capture.attempts)
 	assert.Zero(t, second.callCount())
 }
 
@@ -1415,30 +1414,141 @@ func TestInvocation_RejectRecordedFallbackOutcome(t *testing.T) {
 	}}
 	second := &recordingModel{}
 	h := invocationHarness(t, testLimits(), first, second)
-	ctx, call := newInvocation(parent, "alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+	request := newExecutionRequest("alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+	capture := &attemptCapture{}
+	ctx := fallback.WithAttemptObserver(parent, capture.observe)
 	_, err := h.resolver.resolved.Model.DoGenerate(ctx, provider.CallOptions{})
 	require.ErrorIs(t, err, context.Canceled)
-	require.Len(t, call.decisions, 1)
-	require.NotNil(t, call.decisions[0].SourceErr)
-	call.reject(ctx.Err())
-	assert.Nil(t, call.finish(ctx.Err()))
-	assert.Empty(t, call.decisions)
-	assert.True(t, call.sealed)
+	require.Len(t, capture.attempts, 1)
+	require.NotNil(t, capture.attempts[0].SourceErr)
+	capture.discard()
+	view := request.snapshot(capture, ctx.Err())
+	assert.Nil(t, view.overview)
+	assert.Empty(t, capture.attempts)
+	assert.True(t, capture.sealed)
 	assert.Zero(t, second.callCount())
 }
 
-func TestRequestProtectedSources_OrdinaryDestinations(t *testing.T) {
-	options := provider.CallOptions{
-		ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"url":"https://ordinary.example/tools?topic=ordinary"}]}`)}},
-		Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: "openai.mcp", Args: map[string]json.RawMessage{"serverUrl": json.RawMessage(`"https://ordinary.example/tools?topic=ordinary"`)}}},
+func TestExecutionRequest_Snapshot(t *testing.T) {
+	failure := errors.New("candidate failure")
+	for _, tc := range []struct {
+		name       string
+		candidates int
+		entered    bool
+		attempts   []fallback.Attempt
+		err        error
+		discard    bool
+		outcomes   []fallback.AttemptOutcome
+	}{
+		{name: "not entered", candidates: 1},
+		{name: "direct selected", candidates: 1, entered: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
+		{name: "direct failed", candidates: 1, entered: true, err: failure, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed}},
+		{name: "rejected direct canceled", candidates: 1, entered: true, err: context.Canceled, discard: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptCanceled}},
+		{name: "rejected before entry", candidates: 1, discard: true},
+		{name: "fallback selected", candidates: 2, entered: true, attempts: []fallback.Attempt{
+			{Index: 1, Outcome: fallback.AttemptFailed, SourceErr: failure, WillFallback: true},
+			{Index: 2, Outcome: fallback.AttemptSelected},
+		}, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
+		{name: "rejected fallback", candidates: 2, entered: true, attempts: []fallback.Attempt{
+			{Index: 1, Outcome: fallback.AttemptCanceled, SourceErr: failure},
+		}, err: context.Canceled, discard: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resolved := catalog.ResolvedModel{ID: "canonical", ProtectedSources: []string{"credential"}}
+			for i := range tc.candidates {
+				resolved.Candidates = append(resolved.Candidates, catalog.ConfiguredCandidate{Provider: "native", ModelID: fmt.Sprint(i)})
+			}
+			request := newExecutionRequest("alias", resolved, nil, provider.CallOptions{}, 4096)
+			resolved.Candidates[0].ModelID = "mutated"
+			resolved.ProtectedSources[0] = "changed"
+			capture := &attemptCapture{}
+			if tc.entered {
+				capture.enter()
+			}
+			for _, attempt := range tc.attempts {
+				capture.observe(t.Context(), attempt)
+			}
+			if tc.discard {
+				capture.discard()
+			}
+			view := request.snapshot(capture, tc.err)
+			if len(tc.outcomes) == 0 {
+				assert.Nil(t, view.overview)
+			} else {
+				require.NotNil(t, view.overview)
+				require.Len(t, view.overview.Attempts, len(tc.outcomes))
+				for i, outcome := range tc.outcomes {
+					assert.Equal(t, outcome, view.overview.Attempts[i].Outcome)
+					assert.Equal(t, fmt.Sprint(i), view.overview.Attempts[i].ModelID)
+				}
+			}
+			assert.Nil(t, view.current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "credential"})))
+			before, err := json.Marshal(view.overview)
+			require.NoError(t, err)
+			var late sync.WaitGroup
+			for range 8 {
+				late.Go(func() {
+					capture.enter()
+					capture.observe(t.Context(), fallback.Attempt{Index: 1, Outcome: fallback.AttemptFailed, SourceErr: errors.New("late failure")})
+				})
+			}
+			late.Wait()
+			after, err := json.Marshal(view.overview)
+			require.NoError(t, err)
+			assert.Equal(t, before, after)
+			entered, attempts := capture.seal()
+			assert.Equal(t, tc.entered, entered)
+			assert.Empty(t, attempts)
+			assert.True(t, capture.sealed)
+		})
 	}
-	assert.Empty(t, requestProtectedSources(options))
 }
 
-func TestRequestProtectedSources_AllHeaderValues(t *testing.T) {
-	options := provider.CallOptions{Headers: map[string]string{"x-goog-api-key": "body-secret"}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: "openai.mcp", Args: map[string]json.RawMessage{"headers": json.RawMessage(`{"Authorization":"Bearer first-secret","authorization":"Bearer second-secret","anthropic-api-key":"anthropic-secret","openai-api-key":"openai-secret","x-note":7}`)}}}}
-	sources := requestProtectedSources(options)
-	for _, source := range []string{"body-secret", "first-secret", "second-secret", "anthropic-secret", "openai-secret"} {
-		assert.Contains(t, sources, source)
+type projectionError struct {
+	inspect func()
+}
+
+func (err projectionError) Error() string {
+	err.inspect()
+	return "candidate failure"
+}
+
+func TestExecutionRequest_ProjectionAfterSeal(t *testing.T) {
+	for _, panics := range []bool{false, true} {
+		t.Run(fmt.Sprint(panics), func(t *testing.T) {
+			request := newExecutionRequest("alias", catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}, nil, provider.CallOptions{}, 4096)
+			capture := &attemptCapture{}
+			capture.enter()
+			inspected := make(chan struct{})
+			failure := projectionError{inspect: func() {
+				capture.observe(t.Context(), fallback.Attempt{Index: 2, Outcome: fallback.AttemptSelected})
+				close(inspected)
+				if panics {
+					panic("projection failed")
+				}
+			}}
+			views := make(chan executionView, 1)
+			go func() { views <- request.snapshot(capture, failure) }()
+			var view executionView
+			select {
+			case view = <-views:
+			case <-time.After(time.Second):
+				require.FailNow(t, "projection held the capture lock")
+			}
+			select {
+			case <-inspected:
+			default:
+				require.FailNow(t, "native error was not inspected")
+			}
+			if panics {
+				assert.Nil(t, view.overview)
+			} else {
+				require.NotNil(t, view.overview)
+				require.Len(t, view.overview.Attempts, 1)
+				assert.Equal(t, "candidate failure", view.overview.Attempts[0].Error.Message)
+			}
+			_, attempts := capture.seal()
+			assert.Empty(t, attempts)
+		})
 	}
 }
