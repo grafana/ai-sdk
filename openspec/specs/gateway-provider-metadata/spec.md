@@ -17,11 +17,11 @@ The Gateway SHALL preserve ordinary providerMetadata at every registered metadat
 - **THEN** its existing explicit unsupported-family behavior SHALL remain in force rather than admitting the content because a metadata codec exists
 
 ### Requirement: Two-client opaque metadata preservation without raw chunks
-Both the registered TypeScript client and independent Go client SHALL retain unknown/future namespace objects and nested JSON semantics without IncludeRawChunks. The service SHALL NOT rename namespaces, select keys by inventory, relocate metadata to another event, or expand unsupported output unions. Response-metadata, stream-start, error and raw SHALL NOT acquire an unregistered providerMetadata field.
+Both the registered TypeScript client and independent Go client SHALL retain unknown/future namespace objects and nested JSON semantics without IncludeRawChunks. Except for optional result/finish gateway.execution enrichment and fitting native gateway relocation at the runtime feature boundary, the service SHALL NOT rename namespaces, select keys by inventory, relocate metadata to another event, or expand unsupported output unions. Response-metadata, stream-start, error and raw SHALL NOT acquire an unregistered providerMetadata field.
 
 #### Scenario: Two-client opaque metadata preservation without raw chunks
 - **WHEN** an ordinary supported event includes an unknown object-valued namespace and no raw-chunk option
-- **THEN** both clients SHALL retain it at its original scope without renaming, inventory filtering or unsupported/unregistered event fields
+- **THEN** both clients SHALL retain it at its original scope without inventory filtering or unsupported/unregistered event fields; optional result/finish gateway.execution enrichment and fitting native gateway relocation SHALL remain separately governed
 
 ### Requirement: Object shape and metadata presence
 Metadata SHALL follow the registered Record<string, JSONObject> contract. Absent metadata SHALL remain absent and an explicitly supplied empty metadata object or namespace object SHALL remain present. Nested JSON null and empty scalar/collection values SHALL survive.
@@ -86,7 +86,7 @@ Complete standard-encoded unary bytes and SSE bytes including data prefix and su
 - **THEN** the document or event SHALL NOT be written, with SSE data prefix and suffix included in the final bound
 
 ### Requirement: Metadata adaptation preserves commitment and ownership
-Invalid or oversized unary metadata SHALL fail the whole response before HTTP 200 through the existing adaptation error. Invalid committed stream metadata SHALL prevent writing that event, cancel provider work, and use the existing bounded terminal error when the writer is usable. The service SHALL NOT silently omit metadata, return normalized-only success, read ahead for selection, restart fallback after a selected result/part, or introduce another cleanup owner.
+Invalid or oversized original unary metadata SHALL fail the whole response before HTTP 200 through the existing adaptation error. Invalid committed stream metadata SHALL prevent writing that event, cancel provider work, and use the existing bounded terminal error when the writer is usable. Optional Gateway overview enrichment that cannot fit SHALL preserve the original fitting response/event. Native namespace relocation SHALL NOT repair primary-invalid output. The service SHALL NOT silently omit native metadata, return normalized-only success, read ahead for selection, restart fallback after a selected result/part, or introduce another cleanup owner.
 
 #### Scenario: Selected result cannot replay after adaptation
 - **WHEN** a selected direct/fallback unary result or committed stream has invalid or oversized metadata
