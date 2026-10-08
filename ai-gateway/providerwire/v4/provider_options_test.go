@@ -54,7 +54,7 @@ func TestProviderOptions_MalformedNamespaceIsInvalidRequest(t *testing.T) {
 			mapped, failure := mapWireProviderOptions(map[string]json.RawMessage{"ns": json.RawMessage(raw)})
 			assert.Nil(t, mapped)
 			require.NotNil(t, failure)
-			assert.Empty(t, failure.safe.capability)
+			assert.Empty(t, failure.safe.reason)
 		})
 	}
 }
@@ -77,7 +77,7 @@ func TestCallHeaders_CaseInsensitiveDuplicateIsInvalid(t *testing.T) {
 	mapped, failure := mapWireHeaders(map[string]string{"X-Foo": "a", "x-foo": "b"})
 	assert.Nil(t, mapped)
 	require.NotNil(t, failure)
-	assert.Empty(t, failure.safe.capability)
+	assert.Empty(t, failure.safe.reason)
 }
 
 func TestCallHeaders_MappedAndCasePreserved(t *testing.T) {

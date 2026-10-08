@@ -47,17 +47,83 @@ type errorDefinition struct {
 }
 
 var publicErrors = [...]errorDefinition{
-	safeInvalidRequest:   {http.StatusBadRequest, "invalid request", errorInvalidRequest, codeInvalidRequest, false},
-	safeModelNotFound:    {http.StatusNotFound, "model not found", errorModelNotFound, codeModelNotFound, false},
-	safeRateLimit:        {http.StatusTooManyRequests, "rate limit exceeded", errorRateLimit, codeRateLimit, true},
-	safeOverload:         {http.StatusServiceUnavailable, "service overloaded", errorInternal, codeOverload, true},
-	safeFailedDependency: {http.StatusFailedDependency, "failed dependency", errorDependency, codeDependency, false},
-	safeUpstream:         {http.StatusBadGateway, "upstream failure", errorInternal, codeUpstream, true},
-	safeTimeout:          {http.StatusGatewayTimeout, "request timed out", errorInternal, codeTimeout, true},
-	safeCancellation:     {statusClientClosedRequest, "request canceled", errorInternal, codeCancellation, false},
-	safeInternal:         {http.StatusInternalServerError, "internal error", errorInternal, codeInternal, true},
-	safeAuthentication:   {http.StatusUnauthorized, "authentication failed", errorAuthentication, codeAuthentication, false},
-	safePermission:       {http.StatusForbidden, "forbidden", errorForbidden, codeForbidden, false},
+	safeInvalidRequest: {
+		status:    http.StatusBadRequest,
+		message:   "invalid request",
+		kind:      errorInvalidRequest,
+		code:      codeInvalidRequest,
+		retryable: false,
+	},
+	safeModelNotFound: {
+		status:    http.StatusNotFound,
+		message:   "model not found",
+		kind:      errorModelNotFound,
+		code:      codeModelNotFound,
+		retryable: false,
+	},
+	safeRateLimit: {
+		status:    http.StatusTooManyRequests,
+		message:   "rate limit exceeded",
+		kind:      errorRateLimit,
+		code:      codeRateLimit,
+		retryable: true,
+	},
+	safeOverload: {
+		status:    http.StatusServiceUnavailable,
+		message:   "service overloaded",
+		kind:      errorInternal,
+		code:      codeOverload,
+		retryable: true,
+	},
+	safeFailedDependency: {
+		status:    http.StatusFailedDependency,
+		message:   "failed dependency",
+		kind:      errorDependency,
+		code:      codeDependency,
+		retryable: false,
+	},
+	safeUpstream: {
+		status:    http.StatusBadGateway,
+		message:   "upstream failure",
+		kind:      errorInternal,
+		code:      codeUpstream,
+		retryable: true,
+	},
+	safeTimeout: {
+		status:    http.StatusGatewayTimeout,
+		message:   "request timed out",
+		kind:      errorInternal,
+		code:      codeTimeout,
+		retryable: true,
+	},
+	safeCancellation: {
+		status:    statusClientClosedRequest,
+		message:   "request canceled",
+		kind:      errorInternal,
+		code:      codeCancellation,
+		retryable: false,
+	},
+	safeInternal: {
+		status:    http.StatusInternalServerError,
+		message:   "internal error",
+		kind:      errorInternal,
+		code:      codeInternal,
+		retryable: true,
+	},
+	safeAuthentication: {
+		status:    http.StatusUnauthorized,
+		message:   "authentication failed",
+		kind:      errorAuthentication,
+		code:      codeAuthentication,
+		retryable: false,
+	},
+	safePermission: {
+		status:    http.StatusForbidden,
+		message:   "forbidden",
+		kind:      errorForbidden,
+		code:      codeForbidden,
+		retryable: false,
+	},
 }
 
 type errorResponse struct {
@@ -87,17 +153,15 @@ func definitionForError(value safeError) errorDefinition {
 	}
 	definition := publicErrors[value.category]
 	if value.category == safeInvalidRequest {
-		if message := unsupportedCapabilityMessage(value.capability); message != "" {
+		if message := requestFailureMessage(value.reason); message != "" {
 			definition.message = message
 		}
 	}
 	return definition
 }
 
-func unsupportedCapabilityMessage(capability unsupportedCapability) string {
-	switch capability {
-	case capabilityReasoningContent:
-		return "unsupported capability: reasoning-content"
+func requestFailureMessage(reason requestFailureReason) string {
+	switch reason {
 	case capabilityCustomContent:
 		return "unsupported capability: custom-content"
 	case capabilityTools:
@@ -110,9 +174,9 @@ func unsupportedCapabilityMessage(capability unsupportedCapability) string {
 		return "unsupported capability: raw-output"
 	case capabilityProviderOptions:
 		return "unsupported capability: provider-options"
-	case capabilityReservedProviderOptions:
+	case policyReservedProviderOptions:
 		return "reserved provider option namespace"
-	case capabilityProtectedCallHeader:
+	case policyProtectedCallHeader:
 		return "protected call header"
 	default:
 		return ""
