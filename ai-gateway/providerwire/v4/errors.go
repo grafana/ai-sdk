@@ -28,6 +28,7 @@ const (
 	safeInternal
 	safeAuthentication
 	safePermission
+	safeBYOKDiscovery
 )
 
 type safeError struct {
@@ -46,6 +47,8 @@ func safeErrorFromResolution(err error) (result safeError) {
 		return result
 	}
 	switch {
+	case errors.Is(err, ErrAccountAccess):
+		return safeError{category: safePermission}
 	case errors.Is(err, ErrInvalidBYOK):
 		return safeError{category: safeBYOKCredentials}
 	case errors.Is(err, ErrInvalidBYOKSelector):

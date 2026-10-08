@@ -24,29 +24,28 @@ func NewConfiguredSelector(resolver catalog.ModelResolver) providerv4.RequestSel
 }
 
 func NewBYOKSelector(client *http.Client, factory ModelFactory) providerv4.RequestSelector {
-	return func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (providerv4.Selection, error) {
+	return func(ctx context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (providerv4.Selection, error) {
 		if !hasAccountAccess(ctx, gatewayauth.RequestBYOK) {
 			return providerv4.Selection{}, providerv4.ErrAccountAccess
 		}
-		lower, err := byok.New(id, gateway, client)
+		request, err := byok.DecodeRequest(id, gateway, nil)
 		switch {
 		case errors.Is(err, byok.ErrInvalidSelector):
 			return providerv4.Selection{}, providerv4.ErrInvalidBYOKSelector
-		case errors.Is(err, byok.ErrUnsupportedControl):
-			return providerv4.Selection{}, providerv4.ErrUnsupportedGatewayControl
 		case errors.Is(err, byok.ErrInvalidRequest):
 			return providerv4.Selection{}, providerv4.ErrInvalidBYOK
 		case err != nil:
 			return providerv4.Selection{}, err
 		}
-		if lower.Provider() == "anthropic" {
-			lower = nativeOptionsModel{LanguageModel: lower, validate: validateAnthropicOptions}
+		lower, err := byok.New(request.Provider, request.Model, request.Accounts, client)
+		if err != nil {
+			return providerv4.Selection{}, err
 		}
 		model, err := factory(id, lower)
 		if err != nil {
 			return providerv4.Selection{}, err
 		}
-		return providerv4.Selection{ID: id, Model: model, Options: options}, nil
+		return providerv4.Selection{ID: id, Model: model}, nil
 	}
 }
 

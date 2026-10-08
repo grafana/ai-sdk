@@ -8,11 +8,12 @@ import (
 	"unicode/utf8"
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
-	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/byok"
 
 	logmiddleware "github.com/grafana/ai-sdk/middleware/logger"
 	"github.com/grafana/ai-sdk/provider"
 )
+
+const maxLoggedModelIDBytes = 2048
 
 var numericModelLogKeys = map[string]struct{}{
 	"ai_sdk.duration_ms":                        {},
@@ -120,7 +121,7 @@ func allowModelLogAttr(attr slog.Attr, access gatewayauth.AccountAccess) bool {
 				return false
 			}
 			value := attr.Value.String()
-			if value == "" || len(value) > byok.MaxSelectorBytes || !utf8.ValidString(value) {
+			if value == "" || len(value) > maxLoggedModelIDBytes || !utf8.ValidString(value) {
 				return false
 			}
 			for _, r := range value {
