@@ -17,7 +17,6 @@ const (
 	capabilityToolApprovals    unsupportedCapability = "tool-approvals"
 	capabilityStructuredOutput unsupportedCapability = "structured-output"
 	capabilityProviderOptions  unsupportedCapability = "provider-options"
-	capabilityRawOutput        unsupportedCapability = "raw-output"
 	// Policy refusals. These are not unsupported capabilities: the runtime maps
 	// provider options and call headers, and refuses only what the host owns.
 	capabilityReservedProviderOptions unsupportedCapability = "reserved-provider-options"
@@ -133,9 +132,7 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 		return provider.CallOptions{}, failure
 	}
 	options.ProviderOptions = rootOptions
-	if request.IncludeRawChunks {
-		return provider.CallOptions{}, unsupportedMappingFailure(capabilityRawOutput)
-	}
+	options.IncludeRawChunks = request.IncludeRawChunks
 	if request.Reasoning != nil {
 		reasoning, err := mapWireReasoning(*request.Reasoning)
 		if err != nil {

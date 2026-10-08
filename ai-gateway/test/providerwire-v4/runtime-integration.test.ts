@@ -602,6 +602,48 @@ describe("bounded provider raw usage through the real handler", () => {
   }
 });
 
+describe("explicit raw output through the real handler", () => {
+  const projectedEcho = { type: "response.created", response: { id: "resp_1", tools: [{ type: "mcp", server_label: "docs", headers: null, server_url: "https://mcp.example/mcp?region=eu" }] } };
+
+  for (const includeRawChunks of [undefined, false, true]) {
+    it(`streams raw parts to both clients only when requested (includeRawChunks: ${includeRawChunks})`, async () => {
+      const options: LanguageModelV4CallOptions = { prompt: [], ...(includeRawChunks === undefined ? {} : { includeRawChunks }) };
+      const ts = await collect((await model("raw").doStream(options)).stream);
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "raw", mode: "stream", options });
+      assert.equal(go.error, undefined);
+      const expectedTypes = includeRawChunks
+        ? ["stream-start", "raw", "text-start", "text-delta", "raw", "text-end", "finish"]
+        : ["stream-start", "text-start", "text-delta", "text-end", "finish"];
+      assert.deepEqual(ts.map(part => part.type), expectedTypes);
+      assert.deepEqual(go.parts.map((part: { type: string }) => part.type), expectedTypes);
+      const tsRaw = ts.flatMap(part => part.type === "raw" ? [part.rawValue] : []);
+      const goRaw = go.parts.flatMap((part: { type: string; rawValue?: unknown }) => part.type === "raw" ? [part.rawValue] : []);
+      assert.deepEqual(tsRaw, includeRawChunks ? [projectedEcho, { type: "message_stop" }] : []);
+      assert.deepEqual(goRaw, tsRaw);
+
+      const http = await fetch(`${baseURL}/providerwire-v4/language-model`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "ai-language-model-specification-version": "4", "ai-language-model-id": "raw", "ai-language-model-streaming": "true" },
+        body: JSON.stringify(options),
+      });
+      assert.equal(http.status, 200);
+      const text = await http.text();
+      assert.doesNotMatch(text, /private-/);
+      const frames = text.trim().split("\n\n").map(frame => JSON.parse(frame.slice("data: ".length)));
+      for (const frame of frames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
+      assert.equal(frames.filter(frame => frame.type === "raw").length, includeRawChunks ? 2 : 0);
+    });
+  }
+
+  it("accepts the flag on unary calls in both clients without raw output", async () => {
+    const ts = await model("raw").doGenerate({ prompt: [], includeRawChunks: true });
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "raw", mode: "generate", options: { prompt: [], includeRawChunks: true } });
+    assert.equal(go.error, undefined);
+    assert.deepEqual(ts.content, [{ type: "text", text: "hello" }]);
+    assert.deepEqual(go.result.content, ts.content);
+  });
+});
+
 describe("authentic metadata replay with unchanged direct expectations", () => {
   for (const fixture of [
     { id: "simple-text", family: "anthropic", path: "anthropic/recorded/simple-text" },

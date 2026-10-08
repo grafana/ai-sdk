@@ -46,6 +46,7 @@ type streamEvent struct {
 	providerExecuted bool
 	dynamic          *bool
 	preliminary      *bool
+	rawValue         json.RawMessage
 }
 
 type streamStartEvent struct {
@@ -65,6 +66,11 @@ type streamTextEvent struct {
 	Metadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
+type streamRawEvent struct {
+	Type     provider.StreamPartType `json:"type"`
+	RawValue json.RawMessage         `json:"rawValue"`
+}
+
 type streamFinishEvent struct {
 	Type         provider.StreamPartType   `json:"type"`
 	Usage        unaryUsage                `json:"usage"`
@@ -82,7 +88,7 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 			return nil, false
 		}
 	}
-	if !utf8.Valid(value.result) {
+	if !utf8.Valid(value.result) || !utf8.Valid(value.rawValue) {
 		return nil, false
 	}
 	for _, warning := range value.warnings {
@@ -137,6 +143,8 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 		payload, err = json.Marshal(streamToolCallEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Input: value.input, ProviderExecuted: value.providerExecuted, Dynamic: value.dynamic, Metadata: value.metadata})
 	case provider.PartToolResult:
 		payload, err = json.Marshal(streamToolResultEvent{Type: value.typeName, ToolCallID: value.id, ToolName: value.toolName, Result: value.result, IsError: value.isError, Dynamic: value.dynamic, Preliminary: value.preliminary, Metadata: value.metadata})
+	case provider.PartRaw:
+		payload, err = json.Marshal(streamRawEvent{Type: value.typeName, RawValue: value.rawValue})
 	case provider.PartFinish:
 		payload, err = json.Marshal(streamFinishEvent{
 			Type:         value.typeName,
@@ -237,6 +245,8 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 		fits = check(value.id, value.toolName, value.input)
 	case provider.PartToolResult:
 		fits = check(value.id, value.toolName) && int64(len(value.result)) <= remaining
+	case provider.PartRaw:
+		fits = len(value.rawValue) > 0 && int64(len(value.rawValue)) <= remaining
 	case provider.PartFinish:
 		fits = check(string(value.finishReason.Unified), value.finishReason.Raw) && validRawUsage(value.rawUsage, remaining)
 	default:
@@ -340,7 +350,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Cont
 	if !commitStreamResponse(w) {
 		return
 	}
-	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, history)
+	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, history, options.IncludeRawChunks)
 }
 
 func callStream(ctx context.Context, model provider.LanguageModel, options provider.CallOptions) (outcome streamOutcome) {
@@ -447,6 +457,9 @@ type streamState struct {
 	history          map[string]toolStreamState
 	reasoningIDs     map[string]struct{}
 	usedReasoningIDs map[string]struct{}
+	// includeRaw records that the caller requested raw stream parts. Raw parts
+	// are dropped otherwise, including any an adapter emits unrequested.
+	includeRaw bool
 }
 
 func newStreamState(limit int, history map[string]string) *streamState {
@@ -461,7 +474,7 @@ func newStreamState(limit int, history map[string]string) *streamState {
 	return state
 }
 
-func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, history map[string]string) {
+func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, history map[string]string, includeRaw bool) {
 	part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
 	if waitResult != streamWaitPart {
 		cancel()
@@ -498,6 +511,7 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 			return
 		}
 		state := newStreamState(h.limits.StreamParts, history)
+		state.includeRaw = includeRaw
 		result := h.processStreamPart(w, state, part)
 		if h.handleStreamPartResult(w, cancel, result) {
 			return
@@ -507,7 +521,9 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		return
 	}
 
-	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, newStreamState(h.limits.StreamParts, history))
+	state := newStreamState(h.limits.StreamParts, history)
+	state.includeRaw = includeRaw
+	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, state)
 }
 
 func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, state *streamState) {
@@ -700,6 +716,21 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			return streamPartWriterFailure
 		}
 		return streamPartFinished
+	case provider.PartRaw:
+		if !state.includeRaw {
+			return streamPartContinue
+		}
+		value, ok := projectRawValue(part.RawValue)
+		if !ok {
+			return streamPartContinue
+		}
+		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartRaw, rawValue: value}); result != streamWriteSuccess {
+			if result == streamWriteEncodingFailure {
+				return streamPartAdapterFailure
+			}
+			return streamPartWriterFailure
+		}
+		return streamPartContinue
 	case provider.PartStreamStart:
 		return streamPartAdapterFailure
 	default:

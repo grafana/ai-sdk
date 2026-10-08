@@ -50,8 +50,7 @@
                 "reserved provider option namespace",
                 "protected call header",
                 "protected provider option",
-                "unsupported capability: provider-options",
-                "unsupported capability: raw-output"
+                "unsupported capability: provider-options"
               ]
             },
             "type": { "const": "invalid_request_error" },

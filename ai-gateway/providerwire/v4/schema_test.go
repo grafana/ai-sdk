@@ -76,6 +76,9 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"text-end","id":"a"}`,
 		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{}},"finishReason":{"unified":"stop"}}`,
 		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{},"raw":{"native":{"tokens":[1,null,true]}}},"finishReason":{"unified":"stop"}}`,
+		`{"type":"raw","rawValue":{"type":"response.created","sequence_number":0}}`,
+		`{"type":"raw","rawValue":null}`,
+		`{"type":"raw","rawValue":["native",1]}`,
 	}
 	for _, frame := range [][]byte{
 		canonicalRateLimitStreamErrorFrame,
@@ -93,6 +96,8 @@ func TestStreamEventSchema(t *testing.T) {
 	}
 	invalid := []string{
 		`{"type":"stream-start"}`,
+		`{"type":"raw"}`,
+		`{"type":"raw","rawValue":{},"extra":true}`,
 		`{"type":"stream-start","warnings":[{"type":"other"}]}`,
 		`{"type":"response-metadata","modelId":null}`,
 		`{"type":"response-metadata","modelId":"public","provider":"private"}`,
@@ -104,7 +109,6 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"error","error":{"message":"private","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true}}`,
 		`{"type":"error","error":{"message":"internal error","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded","statusCode":429,"retryable":true}}`,
 		`{"type":"error","error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true,"details":"private"}}`,
-		`{"type":"raw","rawValue":{}}`,
 	}
 	for _, document := range invalid {
 		assert.Error(t, compiled.Validate(json.RawMessage(document)), document)
@@ -131,7 +135,6 @@ func TestErrorSchema(t *testing.T) {
 		unsupportedStructuredOutputError,
 		reservedProviderOptionsError,
 		protectedCallHeaderError,
-		unsupportedRawOutputError,
 	}
 	for _, document := range documents {
 		require.NoError(t, compiled.Validate(json.RawMessage(document)), string(document))
