@@ -68,10 +68,10 @@ metadata on unary results, stream finishes and failure carriers. It contains
 requested/canonical identity and ordered observed attempts, not a trace or
 completion/replay claim. Current committed error summaries remain event-local.
 
-Consumer output is independent of these logs, metrics and exporter settings:
-disabled observation, queue saturation and observer failures cannot suppress
-it. Consumer destinations must authorize their own capture; returning a safe
-summary is not permission to put it in centralized telemetry. See
+Execution metadata is added directly to responses, not reconstructed from
+Gateway logs. Disabling telemetry or dropping log records does not suppress it.
+If your application records this metadata, apply its own access and retention
+controls. See
 [consumer access and omission semantics](../../docs/providers/grafana-gateway.md#inspect-execution-overviews-and-failures).
 
 ## Prometheus

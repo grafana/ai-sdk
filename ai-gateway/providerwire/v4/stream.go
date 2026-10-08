@@ -701,21 +701,22 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			return streamPartAdapterFailure
 		}
 		event := streamEvent{typeName: provider.PartFinish, finishReason: *part.FinishReason, inputUsage: inputUsage, outputUsage: outputUsage, rawUsage: part.Usage.Raw, metadata: part.ProviderMetadata}
+		frame, ok := encodeStreamFrame(event, h.limits.StreamFrameBytes)
+		if !ok {
+			return streamPartAdapterFailure
+		}
 		if state.invocation != nil && state.invocation.overview != nil {
-			if _, ok := encodeStreamFrame(event, h.limits.StreamFrameBytes); !ok {
-				return streamPartAdapterFailure
-			}
-			event.metadata = execution.Metadata(state.invocation.overview, event.metadata, func(metadata provider.ProviderMetadata) bool {
+			execution.Metadata(state.invocation.overview, event.metadata, func(metadata provider.ProviderMetadata) bool {
 				candidate := event
 				candidate.metadata = metadata
-				_, ok := encodeStreamFrame(candidate, h.limits.StreamFrameBytes)
-				return ok
+				enriched, fits := encodeStreamFrame(candidate, h.limits.StreamFrameBytes)
+				if fits {
+					frame = enriched
+				}
+				return fits
 			})
 		}
-		if result := h.emitStreamEvent(w, event); result != streamWriteSuccess {
-			if result == streamWriteEncodingFailure {
-				return streamPartAdapterFailure
-			}
+		if !writeCompleteStreamFrame(w, frame) {
 			return streamPartWriterFailure
 		}
 		return streamPartFinished
@@ -766,7 +767,8 @@ func (h *handler) emitStreamEvent(w http.ResponseWriter, event streamEvent) stre
 func (h *handler) emitSafeStreamError(w http.ResponseWriter, value safeError) streamWriteResult {
 	frame := streamErrorFrameForSafeError(value)
 	if value.invocation != nil {
-		body := enrichErrorDocument(frame[len("data: "):len(frame)-len("\n\n")], true, value, h.limits.StreamFrameBytes-int64(len("data: \n\n")))
+		document := safeErrorDocument{body: frame[len("data: ") : len(frame)-len("\n\n")]}
+		body := document.encode(value, h.limits.StreamFrameBytes-int64(len("data: \n\n")))
 		frame = append(append([]byte("data: "), body...), '\n', '\n')
 	}
 	if int64(len(frame)) > h.limits.StreamFrameBytes {

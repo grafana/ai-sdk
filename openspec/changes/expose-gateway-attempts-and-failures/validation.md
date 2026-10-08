@@ -46,6 +46,12 @@ After the last fix, full Gateway races/vet/lint, Go 1.26.8 focused Gateway races
 
 All verified in-scope findings were fixed; no owner-level decision or known actionable finding remains. The final ownership fix has parent red/green/source verification but **has not received a fresh independent follow-up review**, because the round cap was reached. No clean or merge-ready verdict is claimed.
 
+## Owner-requested simplification
+
+Rechecked the implementation against the higher-level Gateway plan: this delivery remains configured-route attribution and protected failure delivery, not a tracing, routing/BYOK or native-transport framework. Optional encoding now belongs to the existing safeErrorDocument in errors.go; the separate invocation-error document/helper file is removed. Accepted error, unary and finish encodings are reused for writing rather than encoded again. The operator documentation now states the response-versus-telemetry distinction directly.
+
+HTTP/SSE regression cases cover selected, absent and malformed optional attribution, current-error-only delivery, exact fit/no room, unchanged classification/retry fields, original-byte fallback and input isolation. Full Gateway races/vet/lint, Go 1.26.8 focused Gateway races/vet and standalone client races/vet, frontend/schema/runtime and 74 authenticated command tests, registered parity, docs/license/isolation/workspace/pins and strict OpenSpec checks pass. No independent review beyond the previously recorded three-round loop is claimed; the unrelated go.work.sum patch remains untouched.
+
 ## Limits and disposition
 
 No provider input fixture was added or changed; synthetic endpoints/UI scenarios are scoped behavior witnesses, not recorded inputs, live-provider acceptance or deployed/private-service parity. The independent reviews and the final unreviewed fix are bounded as described above. Native transport diagnostics #323, discovery #324, routing #316, BYOK #317, producer/core fixes #299 and broader client acceptance #375 remain separate.
