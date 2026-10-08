@@ -165,7 +165,10 @@ issue rather than being maintained in both places.
 - Gateway is a Grafana extension with no private-service oracle. It deliberately
   uses strict response families and protected auth/protocol headers. The client retains bounded public error prose without upstream
   auth guidance or generation-ID suffixes; Go cancellation preserves context
-  identity. The [client contract](../../openspec/specs/grafana-gateway-client/spec.md)
+  identity. HTTP error envelopes and SSE error payloads use standard Go JSON
+  struct-member matching, including case-insensitive names, as an intentional
+  acceptance deviation for noncanonical input; retained HTTP bodies and opaque
+  SSE error data preserve their original bytes. The [client contract](../../openspec/specs/grafana-gateway-client/spec.md)
   defines the detailed boundary.
 
 ### Vertex JSON-schema output
