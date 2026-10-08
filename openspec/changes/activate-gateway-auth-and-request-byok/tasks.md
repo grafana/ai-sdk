@@ -15,6 +15,8 @@
 - [x] 3.1 Run Go/race, parity, command/integration, build/vet/lint, docs, module-policy and image gates on this branch.
 - [x] 3.2 Validate all three scoped changes, preserve the original split snapshot, and account for the rebase onto #326/#328 without reverting their contracts.
 
+- [x] 3.3 Restack activation after shared fallback capture/configured execution delivery, preserve catalog-owned attribution and add authenticated BYOK omission/credential-echo witnesses.
+
 ## 4. External activation gate
 
 - [ ] 4.1 In separately authorized deployment-tools work, assign an owner/link, validate rendered Services/NetworkPolicy and obtain deployed positive/negative isolation evidence before activation.

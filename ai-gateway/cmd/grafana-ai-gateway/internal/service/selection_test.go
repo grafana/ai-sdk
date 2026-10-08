@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/discovery"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,6 +108,66 @@ func TestAccountSelection_Isolation(t *testing.T) {
 			assert.Equal(t, int32(1), byokCalls.Load())
 			assert.Equal(t, int32(1), nativeCalls.Load())
 		})
+	}
+}
+
+func TestBYOKSelection_PublicAttributionOmitted(t *testing.T) {
+	const nativeMessage = "provider-echo dummy-first dummy-second request-org request-project"
+	for _, name := range []string{"anthropic", "openai"} {
+		for _, mode := range []string{"unary", "setup", "committed"} {
+			t.Run(name+"/"+mode, func(t *testing.T) {
+				var calls, observed atomic.Int32
+				client := &http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+					calls.Add(1)
+					status, contentType := http.StatusUnauthorized, "application/json"
+					body := fmt.Sprintf(`{"type":"error","error":{"type":"authentication_error","message":%q}}`, nativeMessage)
+					if mode == "committed" {
+						status, contentType = http.StatusOK, "text/event-stream"
+						if name == "anthropic" {
+							body = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"native-model\",\"content\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n" +
+								fmt.Sprintf("event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":%q}}\n\n", nativeMessage)
+						} else {
+							body = "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"model\":\"native-model\",\"output\":[]}}\n\n" +
+								"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"role\":\"assistant\",\"content\":[]}}\n\n" +
+								fmt.Sprintf("event: error\ndata: {\"type\":\"error\",\"code\":\"invalid_api_key\",\"message\":%q}\n\n", nativeMessage)
+						}
+					}
+					return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+				})}
+				factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
+				wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
+				require.NoError(t, err)
+				writer := providerv4.NewHostErrorWriter()
+				authenticator, headers := serviceModeAuthentication(gatewayauth.SourceCloudGateway)
+				handler := gatewayauth.Middleware(authenticator, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorAuthentication) }, func(context.Context, gatewayauth.Observation) {}, wire)
+				accountFields := ""
+				if name == "openai" {
+					accountFields = `,"organization":"request-org","project":"request-project"`
+				}
+				body := fmt.Sprintf(`{"prompt":[],"maxOutputTokens":32,"providerOptions":{"gateway":{"byok":{%q:[{"apiKey":"dummy-first"%s},{"apiKey":"dummy-second"}]}}}}`, name, accountFields)
+				ctx := fallback.WithAttemptObserver(t.Context(), func(context.Context, fallback.Attempt) { observed.Add(1) })
+				request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body)).WithContext(ctx)
+				request.Header = headers
+				request.Header.Set("Content-Type", "application/json")
+				request.Header.Set(providerv4.HeaderModelID, name+"/native-model")
+				request.Header.Set(providerv4.HeaderSpecificationVersion, "4")
+				request.Header.Set(providerv4.HeaderStreaming, strconv.FormatBool(mode != "unary"))
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, request)
+				if mode == "committed" {
+					assert.Equal(t, http.StatusOK, response.Code)
+					assert.Contains(t, response.Body.String(), `"type":"error"`)
+				} else {
+					assert.Equal(t, http.StatusFailedDependency, response.Code)
+					assert.JSONEq(t, `{"error":{"message":"failed dependency","type":"failed_dependency","param":null,"code":"failed_dependency"}}`, response.Body.String())
+				}
+				assert.Equal(t, int32(1), calls.Load())
+				assert.Equal(t, int32(1), observed.Load())
+				for _, private := range []string{"dummy-first", "dummy-second", "request-org", "request-project", "provider-echo", `"execution"`, `"nativeError"`} {
+					assert.NotContains(t, response.Body.String(), private)
+				}
+			})
+		}
 	}
 }
 

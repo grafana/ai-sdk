@@ -41,6 +41,8 @@ fields and unrelated namespaces SHALL NOT be rejected by blanket spelling rules.
 ### Requirement: BYOK credentials stay out of automatic server surfaces
 The host SHALL exclude the complete BYOK subtree and actual authentication credentials from server logs, metrics, Agent Observability/Sigil, response/error diagnostics, routing metadata and recorded provider fixtures. Native rejection echoes and authentication transport diagnostics SHALL not reflect selected credentials. Redaction SHALL be source-specific, not based on censoring key-looking application text. Supported provider/model identity, application content and native response values SHALL remain available under their existing contracts.
 
+Configured execution attribution SHALL remain independent of logical BYOK observation. Without catalog-owned attribution, the Gateway SHALL NOT collect request-local fallback errors or add public execution overviews/current native failure summaries. Independently registered SDK observers SHALL remain effective; original native metadata SHALL remain opaque and SHALL NOT establish configured provenance.
+
 Diagnostic messages SHALL use bounded approved capability names/schema paths and bounded indices/counts, never arbitrary rejected key names, values or serialized bodies. Detailed public attempt evidence SHALL remain owned by its separate contract; this capability SHALL NOT introduce a second metadata/error protocol.
 
 #### Scenario: Provider echoes the rejected key
