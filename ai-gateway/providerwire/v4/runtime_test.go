@@ -845,19 +845,16 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		for _, attribution := range []string{"none", "selected", "malformed"} {
 			t.Run(map[bool]string{false: "HTTP", true: "SSE"}[streaming]+"/"+attribution, func(t *testing.T) {
-				h := invocationHarness(t, testLimits(), &recordingModel{})
-				request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved), nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
-				capture := &attemptCapture{}
-				if attribution != "none" {
-					capture.enter()
+				var metadata provider.ProviderMetadata
+				switch attribution {
+				case "selected":
+					metadata = provider.ProviderMetadata{"gateway": json.RawMessage(`{"execution":{"requestedModelId":"alias","canonicalModelId":"model","attempts":[{"provider":"native","modelId":"model","outcome":"selected"}]}}`)}
+				case "malformed":
+					metadata = provider.ProviderMetadata{"gateway": json.RawMessage("invalid")}
 				}
-				view := request.snapshot(capture, nil)
-				if attribution == "malformed" {
-					view.overview.Attempts[0].Error = &execution.Failure{Code: json.RawMessage("invalid")}
-				}
+				before := append(json.RawMessage(nil), metadata["gateway"]...)
 				value := safeError{category: safeOverload}
-				current := view.current(provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "current failure"}))
-				metadata := view.metadata()
+				current := &execution.Failure{StatusCode: 503, Message: "current failure"}
 				encode := func(limit int64) []byte {
 					if streaming {
 						frame, ok := encodeStreamError(value, metadata, current, limit)
@@ -872,7 +869,7 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 				if streaming {
 					original = canonicalOverloadStreamErrorFrame
 				}
-				full := encode(h.handler.limits.UnaryResponseBytes)
+				full := encode(testLimits().UnaryResponseBytes)
 				for _, limit := range []int{len(full), max(len(original), len(full)-1), len(original)} {
 					body := encode(int64(limit))
 					assert.LessOrEqual(t, len(body), limit)
@@ -885,11 +882,9 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 						return response
 					}
 					decoded, baseline := decode(body), decode(original)
-					assert.Equal(t, baseline.Error.Message, decoded.Error.Message)
-					assert.Equal(t, baseline.Error.Type, decoded.Error.Type)
-					assert.Equal(t, baseline.Error.Code, decoded.Error.Code)
-					assert.Equal(t, baseline.Error.StatusCode, decoded.Error.StatusCode)
-					assert.Equal(t, baseline.Error.Retryable, decoded.Error.Retryable)
+					classified := decoded
+					classified.Metadata, classified.Error.Data = nil, nil
+					assert.Equal(t, baseline, classified)
 					if limit == len(full) {
 						assert.Equal(t, full, body)
 						if streaming {
@@ -908,7 +903,7 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 						assert.Equal(t, original, body)
 					}
 				}
-				assert.Equal(t, metadata, view.metadata())
+				assert.Equal(t, before, metadata["gateway"])
 			})
 		}
 	}

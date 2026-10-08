@@ -109,5 +109,5 @@ func (view executionView) current(err *provider.APICallError) *execution.Failure
 }
 
 func (view executionView) metadata() provider.ProviderMetadata {
-	return execution.Metadata(view.overview, nil, func(provider.ProviderMetadata) bool { return true })
+	return execution.Metadata(view.overview, nil)
 }
