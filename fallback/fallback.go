@@ -56,7 +56,10 @@ type Attempt struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
 	Err        error
-	Outcome    AttemptOutcome
+	// SourceErr is the owned setup, validation or first-part-wait error before
+	// decision-time cancellation substitution. It does not include stream error parts.
+	SourceErr error
+	Outcome   AttemptOutcome
 	// WillFallback records eligibility and a remaining candidate while the context
 	// is live at decision time. Later cancellation may prevent that invocation;
 	// subsequent attempt records establish which candidates were actually invoked.
@@ -114,8 +117,9 @@ func (m *Model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 		if err == nil && result == nil {
 			err = ErrInvalidResult
 		}
+		sourceErr := err
 		outcome, next, err := m.decision(ctx, i, err)
-		m.observeAttempt(ctx, i, c, startedAt, err, outcome, next)
+		m.observeAttempt(ctx, i, c, startedAt, err, sourceErr, outcome, next)
 		if err == nil {
 			return result, nil
 		}
@@ -152,20 +156,21 @@ func (m *Model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 				err = ctx.Err()
 			}
 		}
+		sourceErr := err
 		outcome, next, err := m.decision(ctx, i, err)
 		if err != nil {
 			cancel()
 			if result != nil && result.Stream != nil {
 				go drainStream(result.Stream)
 			}
-			m.observeAttempt(ctx, i, c, startedAt, err, outcome, next)
+			m.observeAttempt(ctx, i, c, startedAt, err, sourceErr, outcome, next)
 			failures = append(failures, failedAttempt{candidate: c, err: err})
 			if !next {
 				return nil, failedAttemptsError(failures)
 			}
 			continue
 		}
-		m.observeAttempt(ctx, i, c, startedAt, nil, outcome, false)
+		m.observeAttempt(ctx, i, c, startedAt, nil, sourceErr, outcome, false)
 		ch := make(chan provider.StreamPart, 64)
 		go func() {
 			defer close(ch)
@@ -270,21 +275,33 @@ type failedAttempt struct {
 	err       error
 }
 
-func (m *Model) observeAttempt(ctx context.Context, index int, candidate provider.LanguageModel, startedAt time.Time, err error, outcome AttemptOutcome, next bool) {
-	if m.observer == nil {
+func (m *Model) observeAttempt(ctx context.Context, index int, candidate provider.LanguageModel, startedAt time.Time, err, sourceErr error, outcome AttemptOutcome, next bool) {
+	requestObserver, _ := ctx.Value(attemptObserverKey{}).(AttemptObserver)
+	if requestObserver == nil && m.observer == nil {
 		return
 	}
 	defer func() { _ = recover() }()
-	m.observer(ctx, Attempt{
+	attempt := Attempt{
 		Index:        index + 1,
 		Provider:     candidate.Provider(),
 		ModelID:      candidate.ModelID(),
 		StartedAt:    startedAt,
 		FinishedAt:   time.Now(),
 		Err:          err,
+		SourceErr:    sourceErr,
 		Outcome:      outcome,
 		WillFallback: next,
-	})
+	}
+	notifyObserver(ctx, requestObserver, attempt)
+	notifyObserver(ctx, m.observer, attempt)
+}
+
+func notifyObserver(ctx context.Context, observer AttemptObserver, attempt Attempt) {
+	if observer == nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	observer(ctx, attempt)
 }
 
 func failedAttemptsError(failures []failedAttempt) error {
