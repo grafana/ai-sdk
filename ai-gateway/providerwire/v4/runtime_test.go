@@ -359,31 +359,40 @@ func TestRuntimeStandardJSONNormalization(t *testing.T) {
 	})
 }
 
-func TestRuntimeUnsupportedCapabilities(t *testing.T) {
+func TestRuntimeRequestRejections(t *testing.T) {
 	tests := []struct {
-		name       string
-		body       string
-		capability unsupportedCapability
+		name string
+		body string
+		want []byte
 	}{
-		{name: "custom", body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x"}]}]}`, capability: capabilityCustomContent},
-		{name: "tool approvals", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-approval-response","approvalId":"a","approved":false}]}]}`, capability: capabilityToolApprovals},
-		{name: "structured output", body: `{"prompt":[],"responseFormat":{"type":"json"}}`, capability: capabilityStructuredOutput},
-		{name: "reserved provider option namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, capability: capabilityReservedProviderOptions},
-		{name: "protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, capability: capabilityProtectedCallHeader},
-		{name: "protected call header, other case", body: `{"prompt":[],"headers":{"X-ACCESS-TOKEN":"caller"}}`, capability: capabilityProtectedCallHeader},
-		{name: "raw output", body: `{"prompt":[],"includeRawChunks":true}`, capability: capabilityRawOutput},
+		{name: "capability/custom content", body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x"}]}]}`, want: unsupportedCustomContentError},
+		{name: "capability/tool approval", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-approval-response","approvalId":"a","approved":false}]}]}`, want: unsupportedToolApprovalsError},
+		{name: "capability/denied tool output", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"execution-denied","reason":""}}]}]}`, want: unsupportedToolsError},
+		{name: "capability/custom tool output", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"custom"}]}}]}]}`, want: unsupportedToolsError},
+		{name: "capability/tool output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"text","value":"","providerOptions":{"p":{"value":true}}}}]}]}`, want: unsupportedProviderOptionsError},
+		{name: "capability/nested text output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"text","text":"","providerOptions":{"p":{"value":true}}}]}}]}]}`, want: unsupportedProviderOptionsError},
+		{name: "capability/structured output", body: `{"prompt":[],"responseFormat":{"type":"json"}}`, want: unsupportedStructuredOutputError},
+		{name: "capability/raw output", body: `{"prompt":[],"includeRawChunks":true}`, want: unsupportedRawOutputError},
+		{name: "policy/reserved provider namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, want: reservedProviderOptionsError},
+		{name: "policy/protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, want: protectedCallHeaderError},
+		{name: "policy/protected call header case", body: `{"prompt":[],"headers":{"X-ACCESS-TOKEN":"caller"}}`, want: protectedCallHeaderError},
 	}
+	requestSchema := compileWireSchema(t, requestSchemaJSON)
+	errorSchema := compileWireSchema(t, errorSchemaJSON)
 	for _, tc := range tests {
 		for _, streaming := range []string{"false", "true"} {
 			for _, choice := range []string{"", `"toolChoice":{"type":"auto"},`} {
 				t.Run(tc.name+"/"+streaming+"/"+choice, func(t *testing.T) {
+					body := "{" + choice + tc.body[1:]
+					require.NoError(t, requestSchema.Validate([]byte(body)))
 					harness := newRuntimeHarness(t, testLimits())
-					request := validRequest("{" + choice + tc.body[1:])
+					request := validRequest(body)
 					request.Header.Set(HeaderStreaming, streaming)
 					response := harness.serve(request)
 					assert.Equal(t, http.StatusBadRequest, response.Code)
-					assert.Contains(t, response.Header().Get("Content-Type"), "application/json")
-					assert.Equal(t, string(unsupportedCapabilityDocument(tc.capability)), response.Body.String())
+					assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
+					assert.Equal(t, string(tc.want), response.Body.String())
+					require.NoError(t, errorSchema.Validate(response.Body.Bytes()))
 					assert.Zero(t, harness.resolver.callCount())
 					assert.Zero(t, harness.model.callCount())
 				})
@@ -422,7 +431,6 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		file       string
 		index      int
 		status     int
-		capability unsupportedCapability
 		modelCalls int
 	}{
 		{file: "streaming.json", status: http.StatusOK, modelCalls: 1},
@@ -441,9 +449,6 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())
 			response := harness.serve(requestFromGolden(t, records[tc.index]))
 			assert.Equal(t, tc.status, response.Code)
-			if tc.capability != "" {
-				assert.Equal(t, string(unsupportedCapabilityDocument(tc.capability)), response.Body.String())
-			}
 			assert.Equal(t, tc.modelCalls, harness.model.callCount())
 		})
 	}
@@ -929,16 +934,15 @@ func TestPublicError_FixedBytes(t *testing.T) {
 		{"permission", safeError{category: safePermission}, 403, canonicalPermissionError, canonicalInternalStreamErrorFrame},
 		{"zero", safeError{}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
 		{"unknown", safeError{category: 255}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
-		{"reasoning", safeError{category: safeInvalidRequest, capability: capabilityReasoningContent}, 400, unsupportedReasoningContentError, canonicalInternalStreamErrorFrame},
-		{"custom", safeError{category: safeInvalidRequest, capability: capabilityCustomContent}, 400, unsupportedCustomContentError, canonicalInternalStreamErrorFrame},
-		{"tools", safeError{category: safeInvalidRequest, capability: capabilityTools}, 400, unsupportedToolsError, canonicalInternalStreamErrorFrame},
-		{"approval", safeError{category: safeInvalidRequest, capability: capabilityToolApprovals}, 400, unsupportedToolApprovalsError, canonicalInternalStreamErrorFrame},
-		{"output", safeError{category: safeInvalidRequest, capability: capabilityStructuredOutput}, 400, unsupportedStructuredOutputError, canonicalInternalStreamErrorFrame},
-		{"raw", safeError{category: safeInvalidRequest, capability: capabilityRawOutput}, 400, unsupportedRawOutputError, canonicalInternalStreamErrorFrame},
-		{"options", safeError{category: safeInvalidRequest, capability: capabilityProviderOptions}, 400, unsupportedProviderOptionsError, canonicalInternalStreamErrorFrame},
-		{"reserved", safeError{category: safeInvalidRequest, capability: capabilityReservedProviderOptions}, 400, reservedProviderOptionsError, canonicalInternalStreamErrorFrame},
-		{"header", safeError{category: safeInvalidRequest, capability: capabilityProtectedCallHeader}, 400, protectedCallHeaderError, canonicalInternalStreamErrorFrame},
-		{"unknown capability", safeError{category: safeInvalidRequest, capability: unsupportedCapability("unknown")}, 400, canonicalInvalidRequestError, canonicalInternalStreamErrorFrame},
+		{"custom", safeError{category: safeInvalidRequest, reason: capabilityCustomContent}, 400, unsupportedCustomContentError, canonicalInternalStreamErrorFrame},
+		{"tools", safeError{category: safeInvalidRequest, reason: capabilityTools}, 400, unsupportedToolsError, canonicalInternalStreamErrorFrame},
+		{"approval", safeError{category: safeInvalidRequest, reason: capabilityToolApprovals}, 400, unsupportedToolApprovalsError, canonicalInternalStreamErrorFrame},
+		{"output", safeError{category: safeInvalidRequest, reason: capabilityStructuredOutput}, 400, unsupportedStructuredOutputError, canonicalInternalStreamErrorFrame},
+		{"raw", safeError{category: safeInvalidRequest, reason: capabilityRawOutput}, 400, unsupportedRawOutputError, canonicalInternalStreamErrorFrame},
+		{"options", safeError{category: safeInvalidRequest, reason: capabilityProviderOptions}, 400, unsupportedProviderOptionsError, canonicalInternalStreamErrorFrame},
+		{"reserved", safeError{category: safeInvalidRequest, reason: policyReservedProviderOptions}, 400, reservedProviderOptionsError, canonicalInternalStreamErrorFrame},
+		{"header", safeError{category: safeInvalidRequest, reason: policyProtectedCallHeader}, 400, protectedCallHeaderError, canonicalInternalStreamErrorFrame},
+		{"unknown request reason", safeError{category: safeInvalidRequest, reason: requestFailureReason("unknown")}, 400, canonicalInvalidRequestError, canonicalInternalStreamErrorFrame},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newTestHandler(t, testLimits())
@@ -1019,7 +1023,7 @@ func TestSafeErrorReduction(t *testing.T) {
 			{value: safeError{category: safeTimeout}, status: http.StatusGatewayTimeout},
 			{value: safeError{category: safeCancellation}, status: 499},
 			{value: safeError{category: safeInternal}, status: http.StatusInternalServerError},
-			{value: safeError{category: safeInvalidRequest, capability: capabilityReasoningContent}, status: http.StatusBadRequest},
+			{value: safeError{category: safeInvalidRequest, reason: capabilityCustomContent}, status: http.StatusBadRequest},
 		} {
 			h := newTestHandler(t, testLimits())
 			response := httptest.NewRecorder()

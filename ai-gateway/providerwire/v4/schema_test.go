@@ -40,7 +40,6 @@ var (
 	canonicalCancellationError   = []byte(`{"error":{"message":"request canceled","type":"internal_server_error","param":null,"code":"canceled"}}`)
 	canonicalInternalError       = []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)
 
-	unsupportedReasoningContentError = []byte(`{"error":{"message":"unsupported capability: reasoning-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedCustomContentError    = []byte(`{"error":{"message":"unsupported capability: custom-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedToolsError            = []byte(`{"error":{"message":"unsupported capability: tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedToolApprovalsError    = []byte(`{"error":{"message":"unsupported capability: tool-approvals","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
@@ -61,20 +60,6 @@ var (
 	canonicalCancellationStreamErrorFrame = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"request canceled\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"canceled\",\"statusCode\":499,\"retryable\":false}}\n\n")
 	canonicalInternalStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"internal error\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"internal_error\",\"statusCode\":500,\"retryable\":true}}\n\n")
 )
-
-func unsupportedCapabilityDocument(capability unsupportedCapability) []byte {
-	return map[unsupportedCapability][]byte{
-		capabilityReasoningContent:        unsupportedReasoningContentError,
-		capabilityCustomContent:           unsupportedCustomContentError,
-		capabilityTools:                   unsupportedToolsError,
-		capabilityToolApprovals:           unsupportedToolApprovalsError,
-		capabilityStructuredOutput:        unsupportedStructuredOutputError,
-		capabilityRawOutput:               unsupportedRawOutputError,
-		capabilityProviderOptions:         unsupportedProviderOptionsError,
-		capabilityReservedProviderOptions: reservedProviderOptionsError,
-		capabilityProtectedCallHeader:     protectedCallHeaderError,
-	}[capability]
-}
 
 type wireSchemaValidator struct {
 	schema *jsonschema.Schema
@@ -180,7 +165,6 @@ func TestErrorSchema(t *testing.T) {
 		canonicalTimeoutError,
 		canonicalCancellationError,
 		canonicalInternalError,
-		unsupportedReasoningContentError,
 		unsupportedCustomContentError,
 		unsupportedToolsError,
 		unsupportedToolApprovalsError,
