@@ -302,3 +302,13 @@ The command suite passed 74 tests with no skips. Logs are under
 /tmp/byok-pr2-restack-range-diff.txt. The completed engine archive and registered
 upstream versions remain intact. PR #369's subsequent replay owns its obsolete
 selector API and service-composition migration; this slice remains catalog-only.
+
+## CI terminal-log synchronization
+
+CI run 37796054754 observed zero terminal log events after generation export in
+`TestFallbackAcceptance_MetadataFailureDoesNotReplay`. The test helper now waits
+up to its existing one-second bound for exactly one terminal log independently
+of export. Production behavior, observer ordering and wire contracts are unchanged.
+The target passed 900 race-enabled repetitions across CPU settings 1/2/8, all
+fallback acceptance tests passed ten race-enabled repetitions, and the full
+validation gates above passed again. Logs: `/tmp/byok-stack-pr2-ci-log-wait-20261008/`.
