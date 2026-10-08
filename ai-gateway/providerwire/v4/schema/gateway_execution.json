@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grafana.com/ai-sdk/providerwire/v4/gateway-execution.schema.json",
+  "title": "Optional Gateway execution overview namespace",
+  "description": "Documentation and contract-test schema, not runtime validation or routing/replay authority. Attempt order and invocation completeness are checked by the projector. Enrichment may be omitted under existing complete-envelope limits; a native gateway namespace then remains opaque and namespace presence alone does not establish provenance.",
+  "type": "object",
+  "required": ["execution"],
+  "properties": {
+    "execution": {
+      "type": "object",
+      "required": ["requestedModelId", "canonicalModelId", "attempts"],
+      "properties": {
+        "requestedModelId": { "type": "string", "minLength": 1 },
+        "canonicalModelId": { "type": "string", "minLength": 1 },
+        "attempts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/attempt" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "nativeMetadata": {
+      "description": "The complete original native gateway value, relocated without treating its fields as Gateway execution facts."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "attempt": {
+      "type": "object",
+      "required": ["provider", "modelId", "outcome"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "modelId": { "type": "string", "minLength": 1 },
+        "providerInstance": { "type": "string" },
+        "outcome": { "enum": ["failed", "selected", "canceled"] },
+        "error": { "$ref": "#/$defs/failure" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "outcome": { "const": "selected" } }, "required": ["outcome"] },
+          "then": { "properties": { "error": false } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "failure": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "code": { "oneOf": [{ "type": "string" }, { "type": "number" }] },
+        "statusCode": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

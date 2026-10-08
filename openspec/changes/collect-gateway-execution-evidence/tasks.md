@@ -1,17 +1,16 @@
-## 1. Isolate the internal foundation
+## 1. Shared SDK capture
 
-- [x] 1.1 Extract the unchanged request-local collector, wrappers, projection, retention and tests; leave production service/handler wiring absent.
-- [x] 1.2 Extract the namespace schema and strict schema tests (the original jsontext implementation required Gateway Go 1.27; task 3 removes that requirement).
+- [x] 1.1 Add request-scoped observation and original source errors without changing fallback policy, returned errors or cleanup.
+- [x] 1.2 Test independent observers/requests, cancellation, commitment, unowned late results and high-level SDK access; document synchronization and publication boundaries.
+- [x] 1.3 Validate root tests/races/vet/lint, Go 1.26, parity and module boundaries; consolidate the SDK scope into this single PR-owned OpenSpec change.
 
-## 2. Validate the foundation
+## 2. Compact Gateway projection
 
-- [x] 2.1 Run full Gateway tests, focused collector/handler/service races, Gateway vet/lint and schema TypeScript checks.
-- [x] 2.2 Run ProviderWire/parity, authenticated command, workspace/boundary and documentation checks, proving unchanged production output.
-- [x] 2.3 Record package/schema evidence limits, validate this OpenSpec change and commit only the foundation slice.
+- [x] 2.1 Replace the dormant collector/wrappers and diagnostic allocations with pure ordered-attempt projection and shallow protected summaries.
+- [x] 2.2 Add best-effort namespace enrichment using caller-owned complete-envelope limits, preserving original metadata on no-room collisions.
+- [x] 2.3 Replace the namespace schema and focused regressions; prove full arrays, no duplicated stream history, input isolation and exact envelope-limit behavior.
 
-## 3. Owner-approved simplification
+## 3. Validation and delivery
 
-- [x] 3.1 Replace token-level projection with standard Go JSON normalization and protected data transformation; update regressions for duplicate handling, normalized escapes and numeric precision.
-- [x] 3.2 Separate synchronized execution facts from metadata assembly; centralize allocation enforcement and remove repeated state encoding and retention rescans.
-- [x] 3.3 Remove jsontext and the Gateway-only toolchain increase; retain the schema as a contract-test artifact and document the superseding normalization decision.
-- [x] 3.4 Run package/race/lint, schema/parity, command, standalone Go 1.26 and boundary checks; document downstream API migration and push the reviewed PR update.
+- [x] 3.1 Run Gateway/root tests, races, Go 1.26, vet/lint, ProviderWire/parity, authenticated command and module/docs checks.
+- [x] 3.2 Update PARITY/validation and PR migration notes, validate the single OpenSpec change, commit/push without runtime activation or unrelated checksums.

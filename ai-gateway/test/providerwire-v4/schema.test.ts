@@ -59,45 +59,42 @@ for (const [name, validate, document] of [
 
 describe("Gateway execution metadata schema", () => {
   const namespace = {
-    routing: { originalModelId: "assistant", canonicalSlug: "grafana/assistant", finalProvider: "openai" },
-    evidence: {
+    execution: {
       requestedModelId: "assistant",
       canonicalModelId: "grafana/assistant",
-      selectedAttempt: 2,
       attempts: [
-        { index: 1, provider: "anthropic", modelId: "primary", selection: "failed", willFallback: true, nativeError: { statusCode: 429, isRetryable: true, details: { state: "available", value: null } } },
-        { index: 2, provider: "openai", modelId: "secondary", selection: "selected", completion: "completed" },
+        { provider: "anthropic", modelId: "primary", providerInstance: "account-a", outcome: "failed", error: { message: "overloaded", type: "capacity", code: "busy", statusCode: 503 } },
+        { provider: "openai", modelId: "secondary", outcome: "selected" },
       ],
     },
-    nativeMetadata: { empty: {}, null: null, privateNativeField: "opaque" },
+    nativeMetadata: { execution: { native: true }, empty: {}, null: null, privateNativeField: "opaque" },
   };
 
   for (const [name, value] of [
-    ["selected success", namespace],
-    ["attempt overflow", { ...namespace, evidence: { ...namespace.evidence, selectedAttempt: 17, attempts: { state: "over-limit", reason: "attemptCount", count: 17 } } }],
-    ["committed failure", { ...namespace, evidence: { ...namespace.evidence, gateway: { httpStatusCode: 200, classification: "failed_dependency", phase: "committed", isRetryable: false, replayRisk: "generationCompleted" } } }],
-    ["partial redaction", { ...namespace, evidence: { ...namespace.evidence, attempts: [{ index: 1, provider: "native", modelId: "model", selection: "failed", nativeError: { isRetryable: false, details: { state: "available", value: {}, redacted: true } } }] } }],
-    ...[
-      ["unavailable", "producerDoesNotExpose"],
-      ["redacted", "credentialSource"],
-      ["malformed", "invalidJSON"],
-      ["over-limit", "aggregateBytes"],
-    ].map(([state, reason]) => [state, { ...namespace, evidence: { ...namespace.evidence, attempts: [{ index: 1, provider: "native", modelId: "model", selection: "failed", nativeError: { isRetryable: false, details: { state, reason } } }] } }]),
+    ["selected candidate", namespace],
+    ["complete array beyond old cap", { ...namespace, execution: { ...namespace.execution, attempts: Array.from({ length: 32 }, (_, i) => ({ provider: "native", modelId: `model-${i}`, outcome: i === 31 ? "selected" : "failed" })) } }],
+    ["canceled native failure", { execution: { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "canceled", error: { statusCode: 503 } }] } }],
+    ["numeric code", { execution: { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed", error: { code: 42 } }] } }],
+    ["missing diagnostics", { execution: { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed" }] } }],
   ] as const) {
     it(`accepts ${name}`, () => {
       assert.equal(validateGatewayMetadata(value), true, formatValidationErrors(validateGatewayMetadata.errors));
     });
   }
 
-  for (const [name, evidence] of [
-    ["unrun configured candidates", { ...namespace.evidence, attempts: [{ index: 1, provider: "native", modelId: "model" }] }],
-    ["too many partial attempts", { ...namespace.evidence, attempts: Array.from({ length: 17 }, (_, i) => ({ index: i + 1, provider: "native", modelId: "model", selection: "failed" })) }],
-    ["wrong overflow reason", { ...namespace.evidence, attempts: { state: "over-limit", reason: "aggregateBytes", count: 17 } }],
-    ["invalid selection", { ...namespace.evidence, selectedAttempt: 0 }],
-    ["fabricated disposition", { ...namespace.evidence, attempts: [{ index: 1, provider: "native", modelId: "model", selection: "failed", nativeError: { isRetryable: false, details: { state: "available" } } }] }],
+  for (const [name, execution] of [
+    ["empty attempts", { ...namespace.execution, attempts: [] }],
+    ["missing outcome", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model" }] }],
+    ["unknown outcome", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "retried" }] }],
+    ["selected index", { ...namespace.execution, selectedAttempt: 2 }],
+    ["completion claim", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "selected", completion: "completed" }] }],
+    ["selected error history", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "selected", error: { message: "stream error" } }] }],
+    ["raw details", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed", error: { details: {} } }] }],
+    ["empty error", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed", error: {} }] }],
+    ["attempt disposition", { ...namespace.execution, attempts: { state: "over-limit", count: 17 } }],
   ] as const) {
     it(`rejects ${name}`, () => {
-      assert.equal(validateGatewayMetadata({ ...namespace, evidence }), false);
+      assert.equal(validateGatewayMetadata({ ...namespace, execution }), false);
     });
   }
 });
