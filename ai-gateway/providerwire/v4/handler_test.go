@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -318,6 +319,42 @@ func TestRequestSelection_CatalogIndependent(t *testing.T) {
 			assert.Contains(t, model.receivedOptions().ProviderOptions, "openai")
 			assert.NotContains(t, w.Body.String(), "dummy-key")
 		})
+	}
+}
+
+func TestRequestSelection_RequestByteLimit(t *testing.T) {
+	key := strings.Repeat("k", 70_000)
+	body := `{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"apiKey":"` + key + `"}]}}}}`
+	for _, streaming := range []bool{false, true} {
+		for _, delta := range []int{0, 1} {
+			t.Run(fmt.Sprintf("streaming=%t/bytes+%d", streaming, delta), func(t *testing.T) {
+				limits := testLimits()
+				limits.RequestBytes = int64(len(body))
+				model := &recordingModel{}
+				var selections atomic.Int32
+				h, err := New(Config{Limits: limits, Selector: func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (Selection, error) {
+					selections.Add(1)
+					assert.Contains(t, string(gateway), key)
+					return Selection{ID: id, Model: model}, nil
+				}})
+				require.NoError(t, err)
+				r := validRequest(body + strings.Repeat(" ", delta))
+				r.Header.Set(HeaderModelID, "openai/native-model")
+				r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				if delta == 0 {
+					assert.Equal(t, http.StatusOK, w.Code)
+					assert.Equal(t, int32(1), selections.Load())
+					assert.Equal(t, 1, model.callCount())
+				} else {
+					assert.Equal(t, http.StatusBadRequest, w.Code)
+					assert.Zero(t, selections.Load())
+					assert.Zero(t, model.callCount())
+				}
+				assert.NotContains(t, w.Body.String(), key)
+			})
+		}
 	}
 }
 

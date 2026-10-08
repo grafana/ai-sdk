@@ -199,7 +199,8 @@ a claim that the configured Gateway service accepts BYOK. Server capabilities
 and account authorization still decide which requests execute.
 
 For BYOK-capable hosts, account configuration belongs inside each
-`gateway.byok` entry, separate from ordinary inference options:
+`gateway.byok` entry, separate from ordinary inference options. The control name
+is exactly lowercase `byok`; case variants are not supported:
 
 ```ts
 providerOptions: {
@@ -219,9 +220,10 @@ providerOptions: {
 
 Omit `baseURL` to use the native provider endpoint. OpenAI organization/project
 default to unset; Anthropic entries accept only the key and optional base URL.
-Empty optional strings use these defaults; null and unknown account fields fail.
+Empty optional strings use these defaults. Use the account field names shown
+above; unknown fields fail. Null and duplicate members follow Go JSON decoding.
 Custom base URLs require an exact service approval for that provider, including
-path and port, and must use HTTPS without embedded credentials, query or fragment.
+path and port. The operator owns approved URL validation and destination policy.
 Approval never supplies credentials or changes the endpoint when it is omitted.
 Ask your operator which destinations are approved; clients cannot grant approval.
 

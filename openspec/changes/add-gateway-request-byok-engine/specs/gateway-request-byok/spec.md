@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Catalog-independent request destination
-When invoked by a host selector, the internal BYOK engine SHALL require a provider/model selector in the existing ai-language-model-id header. The selector SHALL be valid UTF-8, at most 2,048 bytes, have a supported case-sensitive provider prefix before the first slash and a nonempty native-model suffix without whitespace or control characters. The suffix SHALL be preserved, including additional slashes, as model data rather than a URL. Initial providers SHALL be anthropic and openai, using the native Messages and Responses adapters respectively.
+When invoked by a host selector, the internal BYOK engine SHALL require a provider/model selector in the existing ai-language-model-id header. The selector SHALL be valid UTF-8, have a supported case-sensitive provider prefix before the first slash and a nonempty native-model suffix. Existing HTTP header limits SHALL apply without an additional engine-specific byte ceiling. The suffix SHALL be preserved, including additional slashes, as model data rather than a URL. Initial providers SHALL be anthropic and openai, using the native Messages and Responses adapters respectively.
 
 The selector SHALL NOT resolve configured models, aliases, provider instances, endpoints, defaults or fallback routes. A separate service-owned destination approval map MAY authorize an explicitly submitted baseURL; it SHALL NOT supply a default endpoint or account. Advisory native model lists SHALL NOT act as a configured-catalog allowlist. Unknown native models SHALL be decided by the selected native provider without unsolicited inventory or validation calls.
 
@@ -14,13 +14,15 @@ The selector SHALL NOT resolve configured models, aliases, provider instances, e
 - **THEN** selection SHALL fail before I/O rather than expand a configured alias
 
 #### Scenario: Selector boundaries
-- **WHEN** a selector has an empty provider/model component, an unsupported provider, forbidden characters or exceeds the byte ceiling
+- **WHEN** a selector has an empty provider/model component, an unsupported provider or invalid UTF-8
 - **THEN** the request SHALL fail with a bounded capability/field diagnostic before provider construction
 
 ### Requirement: Vercel-shaped credential ingestion
-The host SHALL accept only call-level providerOptions.gateway.byok, shaped as a provider-name map of ordered nonempty credential-object arrays. Account objects SHALL require apiKey and MAY contain baseURL. OpenAI accounts MAY also contain organization and project; Anthropic accounts SHALL NOT accept OpenAI account fields. Unknown fields and null optional values SHALL fail. Omitted/empty baseURL SHALL select the native default; omitted/empty organization/project SHALL remain unset without ambient defaults. Multiple supported provider entries SHALL be accepted and validated, but only the header-selected provider's credentials SHALL be eligible. Empty/missing BYOK or missing credentials for that provider SHALL fail before provider I/O.
+The host SHALL accept only call-level providerOptions.gateway.byok, shaped as a provider-name map of ordered nonempty credential-object arrays. Account objects SHALL require apiKey and MAY contain baseURL. OpenAI accounts MAY also contain organization and project; nonempty organization/project SHALL be rejected for Anthropic accounts. Unknown fields SHALL fail through standard Go decoder validation. Optional null values SHALL follow ordinary Go string decoding. Omitted/empty baseURL SHALL select the native default; omitted/empty organization/project SHALL remain unset without ambient defaults. Multiple supported provider entries SHALL be accepted and validated, but only the header-selected provider's credentials SHALL be eligible. Empty/missing BYOK or missing credentials for that provider SHALL fail before provider I/O.
 
-The entire supplied BYOK map SHALL be validated before execution, including unused entries. Supported keys SHALL be exactly anthropic and openai. Each array SHALL contain at most 8 credentials; each decoded key SHALL be nonempty, at most 4,096 bytes and a valid credential header value without whitespace/control characters. The raw BYOK subtree SHALL be at most 65,536 bytes and remain within the existing complete request bound. Standard request JSON duplicate-member semantics SHALL remain unchanged. JSON-schema validation SHALL enforce exact field names and provider-specific account shape before ordinary typed decoding; raw duplicate members SHALL normalize before typed decoding so replaced malformed members do not introduce stricter struct-decoding behavior. Decoded baseURL SHALL be at most 2,048 bytes; organization/project SHALL be at most 256 bytes and valid nonempty header values when set.
+The entire supplied BYOK map SHALL be validated before execution, including unused entries. Supported provider-map keys SHALL be exactly anthropic and openai. Each array SHALL contain 1 to 8 accounts; each decoded key SHALL be nonempty. Decoding SHALL use a Gateway-control map containing provider-to-account maps with typed account structs and the standard Go JSON decoder with DisallowUnknownFields. The only accepted Gateway control SHALL be exactly lowercase byok, as emitted by the supported clients; BYOK and other case variants SHALL fail. Account fields SHALL use the canonical client names apiKey, baseURL, organization and project. No case-insensitive compatibility contract SHALL be introduced for account fields. Null strings SHALL retain their ordinary Go value, and duplicate members SHALL follow ordinary Go decoding. Malformed earlier duplicate members MAY fail typed decoding even when a later member is valid; no JSON normalization layer SHALL be introduced.
+
+The existing complete request bound SHALL govern BYOK input without separate subtree or per-field byte ceilings. Native HTTP transport SHALL enforce outgoing header validity; request decoding SHALL NOT implement an additional credential/account-header grammar. Existing protected call-header and native-option controls SHALL remain unchanged.
 
 #### Scenario: Native account defaults
 - **WHEN** an account omits optional configuration or supplies empty optional strings
@@ -38,11 +40,21 @@ The entire supplied BYOK map SHALL be validated before execution, including unus
 - **WHEN** the selected provider's credentials are valid but another supplied entry is malformed
 - **THEN** validation SHALL reject the request before any native call
 
-#### Scenario: Credential limits
-- **WHEN** array cardinality, key bytes or raw subtree bytes reaches its exact ceiling
+#### Scenario: Account count
+- **WHEN** a supplied provider array contains 1 to 8 accounts
 - **THEN** otherwise valid input SHALL be accepted
-- **WHEN** any ceiling is exceeded by one
+- **WHEN** a supplied array is empty or contains more than 8 accounts, including an unused provider
 - **THEN** the request SHALL fail before I/O without echoing the rejected value
+
+#### Scenario: Shared request bound
+- **WHEN** a BYOK request reaches the configured complete request byte limit
+- **THEN** otherwise valid input SHALL reach selection without a separate BYOK byte ceiling
+- **WHEN** that limit is exceeded by one byte
+- **THEN** the wire handler SHALL reject the request before selection
+
+#### Scenario: Native header validity
+- **WHEN** a decoded account contains an invalid outgoing HTTP header value
+- **THEN** the native HTTP transport SHALL refuse the attempt before sending the request, using existing fallback/error handling
 
 #### Scenario: Selected provider lacks credentials
 - **WHEN** the header selects OpenAI but only Anthropic credentials are supplied
@@ -55,12 +67,16 @@ Unknown credential fields/providers, modelMappings, Azure/Vertex/Bedrock/compati
 - **WHEN** a request supplies a known but unsupported credential family or modelMappings
 - **THEN** it SHALL receive a capability-specific rejection rather than silently ignore the form or use another account
 
+#### Scenario: Canonical credential control
+- **WHEN** a request supplies BYOK or another case variant, alone or alongside canonical byok
+- **THEN** decoding SHALL fail before execution rather than accept an undocumented alias outside the capture boundary
+
 #### Scenario: Routing controls accompany valid BYOK
 - **WHEN** valid credentials accompany an unsupported gateway.order or gateway.providerTimeouts control
 - **THEN** the request SHALL fail before I/O without suggesting that the control was applied
 
 ### Requirement: Service-approved account destinations
-A supplied nonempty baseURL SHALL be an absolute HTTPS URL with a host and without userinfo, query, forced query or fragment delimiter. It SHALL match the native provider default or an exact service-owned approval for that provider before construction. Approval SHALL NOT use host/path prefixes, wildcards or implicit port/trailing-slash normalization, supply account data or come from client controls. Approvals SHALL be independent of configured accounts/catalogs and SHALL NOT select an endpoint when the account omits it.
+A supplied nonempty baseURL SHALL match the native provider default or an exact service-owned approval for that provider before construction. Service composition SHALL validate approved destination syntax when loading its policy; the engine SHALL trust that host input rather than repeat URL grammar checks on every account. Approval SHALL NOT use host/path prefixes, wildcards or implicit port/trailing-slash normalization, supply account data or come from client controls. Approvals SHALL be independent of configured accounts/catalogs and SHALL NOT select an endpoint when the account omits it.
 
 This is explicit destination authorization, not proof of public-address enforcement, DNS pinning or deployed proxy/network isolation. Service owners SHALL approve only intended destinations and control their DNS/proxy/network boundary. Transport and redirects SHALL remain service-owned. Approval/configuration activation belongs to the subsequent service change; the engine SHALL NOT expose BYOK HTTP admission in this change.
 
@@ -68,8 +84,8 @@ This is explicit destination authorization, not proof of public-address enforcem
 - **WHEN** an account supplies a valid exact service-approved baseURL for its provider
 - **THEN** its native attempt SHALL use that endpoint with only its own key and account headers
 
-#### Scenario: Unapproved or malformed endpoint
-- **WHEN** any supplied account, including an unused provider, names an unapproved or malformed baseURL
+#### Scenario: Unapproved endpoint
+- **WHEN** any supplied account, including an unused provider, names an unapproved baseURL
 - **THEN** host selection SHALL fail before native I/O with a non-secret diagnostic
 - **AND** client-supplied approval controls SHALL NOT grant destination access
 

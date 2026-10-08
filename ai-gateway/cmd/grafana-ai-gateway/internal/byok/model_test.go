@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -231,6 +232,7 @@ func TestDecodeRequest_AccountPolicy(t *testing.T) {
 	}{
 		{name: "approved endpoint", selector: "openai/model", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]}}`, approvals: map[Provider][]string{OpenAI: {approved}}, allowed: true},
 		{name: "unapproved endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]}}`},
+		{name: "unapproved endpoint with secret", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://dummy-secret@approved.example/v1"}]}}`},
 		{name: "wrong provider approval", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]}}`, approvals: map[Provider][]string{Anthropic: {approved}}},
 		{name: "approval is not a request control", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]},"approvedBaseURLs":["https://approved.example/v1"]}`},
 		{name: "approval does not supply defaults", raw: `{"byok":{"openai":[{"apiKey":"key"}]}}`, approvals: map[Provider][]string{OpenAI: {approved}}, allowed: true},
@@ -238,15 +240,16 @@ func TestDecodeRequest_AccountPolicy(t *testing.T) {
 		{name: "native endpoint with changed path", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://api.openai.com/other"}]}}`},
 		{name: "native endpoint with added port", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://api.openai.com:443/v1"}]}}`},
 		{name: "approved prefix is not approved URL", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1/other"}]}}`, approvals: map[Provider][]string{OpenAI: {approved}}},
-		{name: "null endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":null}]}}`},
-		{name: "null organization", raw: `{"byok":{"openai":[{"apiKey":"key","organization":null}]}}`},
-		{name: "case variant endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","BaseURL":"https://approved.example/v1"}]}}`},
+		{name: "null endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":null}]}}`, allowed: true},
+		{name: "null organization", raw: `{"byok":{"openai":[{"apiKey":"key","organization":null}]}}`, allowed: true},
+		{name: "case variant endpoint still requires approval", raw: `{"byok":{"openai":[{"apiKey":"key","BaseURL":"https://approved.example/v1"}]}}`},
+		{name: "host owns endpoint syntax", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"http://approved.example/v1"}]}}`, approvals: map[Provider][]string{OpenAI: {"http://approved.example/v1"}}, allowed: true},
 		{name: "unknown field", raw: `{"byok":{"openai":[{"apiKey":"key","maxRetries":2}]}}`},
 		{name: "Anthropic account does not accept OpenAI fields", selector: "anthropic/model", raw: `{"byok":{"anthropic":[{"apiKey":"key","project":"proj"}]}}`},
-		{name: "organization whitespace", raw: `{"byok":{"openai":[{"apiKey":"key","organization":"org value"}]}}`},
-		{name: "project header injection", raw: `{"byok":{"openai":[{"apiKey":"key","project":"proj\r\nX-Test: value"}]}}`},
-		{name: "replaced endpoint type", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":42,"baseURL":"https://api.openai.com/v1"}]}}`, allowed: true},
-		{name: "replaced organization type", raw: `{"byok":{"openai":[{"apiKey":"key","organization":false,"organization":"org"}]}}`, allowed: true},
+		{name: "organization whitespace", raw: `{"byok":{"openai":[{"apiKey":"key","organization":"org value"}]}}`, allowed: true},
+		{name: "header validity belongs to transport", raw: `{"byok":{"openai":[{"apiKey":"key","project":"proj\r\nX-Test: value"}]}}`, allowed: true},
+		{name: "replaced endpoint type", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":42,"baseURL":"https://api.openai.com/v1"}]}}`},
+		{name: "replaced organization type", raw: `{"byok":{"openai":[{"apiKey":"key","organization":false,"organization":"org"}]}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			selector := tc.selector
@@ -263,43 +266,9 @@ func TestDecodeRequest_AccountPolicy(t *testing.T) {
 				require.ErrorIs(t, err, ErrInvalidRequest)
 				assert.Empty(t, got)
 				assert.NotContains(t, err.Error(), "approved.example")
+				assert.NotContains(t, err.Error(), "dummy-secret")
 			}
 		})
-	}
-	for _, endpoint := range []string{
-		"http://approved.example/v1", "https://", "/v1", "https://user:dummy-secret@approved.example/v1",
-		"https://approved.example/v1?token=dummy-secret", "https://approved.example/v1?",
-		"https://approved.example/v1#", "https://approved.example/v1#dummy-secret",
-		"https://approved.example/a b", "https://127.0.0.1/v1", "https://169.254.169.254",
-	} {
-		t.Run("endpoint/"+endpoint, func(t *testing.T) {
-			raw := fmt.Sprintf(`{"byok":{"openai":[{"apiKey":"key","baseURL":%q}]}}`, endpoint)
-			approval := map[Provider][]string{OpenAI: {endpoint}}
-			if strings.HasPrefix(endpoint, "https://127.") || strings.HasPrefix(endpoint, "https://169.") {
-				approval = nil
-			}
-			_, err := DecodeRequest("openai/model", json.RawMessage(raw), approval)
-			require.ErrorIs(t, err, ErrInvalidRequest)
-			assert.NotContains(t, err.Error(), "dummy-secret")
-		})
-	}
-	for _, field := range []string{"organization", "project", "baseURL"} {
-		limit := maxAccountIDBytes
-		if field == "baseURL" {
-			limit = maxBaseURLBytes
-		}
-		for _, delta := range []int{0, 1} {
-			t.Run(fmt.Sprintf("%s/bytes+%d", field, delta), func(t *testing.T) {
-				value := strings.Repeat("x", limit+delta)
-				if field == "baseURL" {
-					prefix := "https://approved.example/"
-					value = prefix + strings.Repeat("x", limit+delta-len(prefix))
-				}
-				raw := fmt.Sprintf(`{"byok":{"openai":[{"apiKey":"key",%q:%q}]}}`, field, value)
-				_, err := DecodeRequest("openai/model", json.RawMessage(raw), map[Provider][]string{OpenAI: {value}})
-				assert.Equal(t, delta != 0, err != nil)
-			})
-		}
 	}
 }
 
@@ -314,9 +283,11 @@ func TestDecodeRequest(t *testing.T) {
 		{"ordered", "openai/native/model", valid, OpenAI, "native/model", []string{"first", "second"}},
 		{"other selected", "anthropic/not-in-catalog", valid, Anthropic, "not-in-catalog", []string{"unused"}},
 		{"last member wins", "openai/model", `{"byok":{"openai":[{"apiKey":"discarded","apiKey":"last"}]}}`, OpenAI, "model", []string{"last"}},
-		{"replaced credential type", "openai/model", `{"byok":{"openai":[{"apiKey":42,"apiKey":"last"}]}}`, OpenAI, "model", []string{"last"}},
-		{"replaced provider entry", "openai/model", `{"byok":{"openai":false,"openai":[{"apiKey":"last"}]}}`, OpenAI, "model", []string{"last"}},
-		{"replaced BYOK subtree", "openai/model", `{"byok":false,"byok":{"openai":[{"apiKey":"last"}]}}`, OpenAI, "model", []string{"last"}},
+		{"null retains string", "openai/model", `{"byok":{"openai":[{"apiKey":"last","apiKey":null}]}}`, OpenAI, "model", []string{"last"}},
+		{"duplicate control replaces map", "anthropic/model", `{"byok":{"openai":[{"apiKey":"discarded"}]},"byok":{"anthropic":[{"apiKey":"last"}]}}`, Anthropic, "model", []string{"last"}},
+		{"key whitespace", "openai/model", `{"byok":{"openai":[{"apiKey":"key with spaces"}]}}`, OpenAI, "model", []string{"key with spaces"}},
+		{"key header validation is deferred", "openai/model", `{"byok":{"openai":[{"apiKey":"key\r\nX-Test: value"}]}}`, OpenAI, "model", []string{"key\r\nX-Test: value"}},
+		{"model is native data", "openai/a b", valid, OpenAI, "a b", []string{"first", "second"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := DecodeRequest(tc.selector, json.RawMessage(tc.controls), nil)
@@ -330,7 +301,7 @@ func TestDecodeRequest(t *testing.T) {
 			assert.Equal(t, tc.wantKeys, keys)
 		})
 	}
-	for _, selector := range []string{"", "alias", "/model", "openai/", "OpenAI/model", "bedrock/model", "openai/a b", "openai/a\t", "openai/a\u00a0", string([]byte{'o', '/', 255})} {
+	for _, selector := range []string{"", "alias", "/model", "openai/", "OpenAI/model", "bedrock/model", "openai/" + string([]byte{255})} {
 		t.Run("invalid selector/"+selector, func(t *testing.T) {
 			got, err := DecodeRequest(selector, json.RawMessage(valid), nil)
 			require.ErrorIs(t, err, ErrInvalidRequest)
@@ -339,19 +310,20 @@ func TestDecodeRequest(t *testing.T) {
 	}
 	for _, raw := range []string{
 		`null`, `{}`, `[]`, `{"byok":null}`, `{"byok":{}}`, `{"byok":[]}`,
+		`{"BYOK":{"openai":[{"apiKey":"dummy-secret"}]}}`,
+		`{"byok":{"openai":[{"apiKey":"valid"}]},"BYOK":{"openai":[{"apiKey":"dummy-secret"}]}}`,
+		`{"byok":{"openai":[{"apiKey":"discarded"}]},"byok":{"anthropic":[{"apiKey":"unused"}]}}`,
 		`{"byok":{"openai":null}}`, `{"byok":{"openai":[]}}`, `{"byok":{"openai":[null]}}`,
 		`{"byok":{"openai":[{}]}}`, `{"byok":{"openai":[{"apiKey":null}]}}`,
 		`{"byok":{"openai":[{"apiKey":12}]}}`, `{"byok":{"openai":[{"apiKey":""}]}}`,
-		`{"byok":{"openai":[{"apiKey":"dummy-secret marker"}]}}`,
-		`{"byok":{"openai":[{"apiKey":"dummy-secret\nmarker"}]}}`,
+		`{"byok":{"openai":[{"apiKey":42,"apiKey":"valid"}]}}`,
+		`{"byok":{"openai":false,"openai":[{"apiKey":"valid"}]}}`,
+		`{"byok":false,"byok":{"openai":[{"apiKey":"valid"}]}}`,
+		`{"byok":{"openai":[{"apiKey":"valid"}]}} {}`,
 		`{"byok":{"openai":[{"apiKey":"valid","dummy-secret-field":true}]}}`,
-		`{"byok":{"openai":[{"APIKey":"dummy-secret"}]}}`,
-		`{"byok":{"openai":[{"apiKey":"valid","APIKey":"dummy-secret"}]}}`,
-		`{"byok":{"openai":[{"apiKey":"valid","apiKey":null}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid","baseURL":"https://dummy-secret.invalid"}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid","headers":{"Authorization":"dummy-secret"}}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid"}],"OpenAI":[{"apiKey":"dummy-secret"}]}}`,
-		`{"BYOK":{"openai":[{"apiKey":"dummy-secret"}]}}`,
 		`{"byok":{"dummy-secret-provider":[{"apiKey":"valid"}]}}`,
 		`{"byok":{"anthropic":[{"apiKey":"valid"}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid"}],"anthropic":[{}]}}`,
@@ -368,7 +340,7 @@ func TestDecodeRequest(t *testing.T) {
 	}
 }
 
-func TestNew_ValidatedRequest(t *testing.T) {
+func TestNew_PlainAccounts(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		provider Provider
@@ -413,30 +385,75 @@ func TestNew_ValidatedRequest(t *testing.T) {
 	})
 }
 
-func TestDecodeRequest_Boundaries(t *testing.T) {
-	credential := `{"apiKey":"` + strings.Repeat("k", maxCredentialBytes) + `"}`
-	for _, delta := range []int{0, 1} {
-		t.Run("selector/"+strings.Repeat("+", delta), func(t *testing.T) {
-			selector := "openai/" + strings.Repeat("m", MaxSelectorBytes-len("openai/")+delta)
-			_, err := DecodeRequest(selector, json.RawMessage(`{"byok":{"openai":[`+credential+`]}}`), nil)
-			assert.Equal(t, delta != 0, err != nil)
-		})
-		t.Run("key/"+strings.Repeat("+", delta), func(t *testing.T) {
-			raw := `{"byok":{"openai":[{"apiKey":"` + strings.Repeat("k", maxCredentialBytes+delta) + `"}]}}`
-			_, err := DecodeRequest("openai/model", json.RawMessage(raw), nil)
-			assert.Equal(t, delta != 0, err != nil)
-		})
-		t.Run("count/"+strings.Repeat("+", delta), func(t *testing.T) {
-			entries := strings.TrimSuffix(strings.Repeat(credential+",", maxCredentials+delta), ",")
-			_, err := DecodeRequest("openai/model", json.RawMessage(`{"byok":{"openai":[`+entries+`]}}`), nil)
-			assert.Equal(t, delta != 0, err != nil)
-		})
-		t.Run("raw bytes/"+strings.Repeat("+", delta), func(t *testing.T) {
-			mapBody := `{"openai":[{"apiKey":"valid"}]}`
-			mapBody = mapBody[:len(mapBody)-1] + strings.Repeat(" ", maxBYOKBytes-len(mapBody)+delta) + "}"
-			_, err := DecodeRequest("openai/model", json.RawMessage(`{"byok":`+mapBody+`}`), nil)
-			assert.Equal(t, delta != 0, err != nil)
-		})
+func TestDecodeRequest_AccountCount(t *testing.T) {
+	for _, name := range []Provider{OpenAI, Anthropic} {
+		for _, count := range []int{0, maxCredentials, maxCredentials + 1} {
+			t.Run(fmt.Sprintf("%s/%d", name, count), func(t *testing.T) {
+				accounts := map[Provider][]nativemodel.Config{OpenAI: {{APIKey: "selected"}}}
+				accounts[name] = make([]nativemodel.Config, count)
+				for i := range accounts[name] {
+					accounts[name][i].APIKey = "key"
+				}
+				raw, err := json.Marshal(map[string]any{"byok": accounts})
+				require.NoError(t, err)
+				_, err = DecodeRequest("openai/model", raw, nil)
+				assert.Equal(t, count == 0 || count > maxCredentials, err != nil)
+			})
+		}
+	}
+}
+
+func TestDecodeRequest_NoSeparateByteLimits(t *testing.T) {
+	account := nativemodel.Config{
+		APIKey: strings.Repeat("k", 8192), BaseURL: "https://approved.example/" + strings.Repeat("p", 4096),
+		Organization: strings.Repeat("o", 1024), Project: strings.Repeat("p", 1024),
+	}
+	raw, err := json.Marshal(map[string]any{"byok": map[Provider][]nativemodel.Config{OpenAI: {account}}})
+	require.NoError(t, err)
+	raw = append(raw[:len(raw)-1], []byte(strings.Repeat(" ", 70_000)+"}")...)
+	modelID := strings.Repeat("m", 4096)
+	request, err := DecodeRequest("openai/"+modelID, raw, map[Provider][]string{OpenAI: {account.BaseURL}})
+	require.NoError(t, err)
+	assert.Equal(t, modelID, request.Model)
+	assert.Equal(t, []nativemodel.Config{account}, request.Accounts)
+}
+
+func TestNew_HTTPTransportRejectsInvalidHeaders(t *testing.T) {
+	for _, name := range []Provider{Anthropic, OpenAI} {
+		fields := []string{"apiKey"}
+		if name == OpenAI {
+			fields = append(fields, "organization", "project")
+		}
+		for _, field := range fields {
+			for _, streaming := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/streaming=%t", name, field, streaming), func(t *testing.T) {
+					var calls atomic.Int32
+					server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						calls.Add(1)
+						w.WriteHeader(http.StatusNoContent)
+					}))
+					defer server.Close()
+					account := map[string]string{"apiKey": "key", "baseURL": server.URL}
+					account[field] = "dummy-secret\r\nX-Test: value"
+					raw, err := json.Marshal(map[string]any{"byok": map[Provider][]map[string]string{name: {account}}})
+					require.NoError(t, err)
+					request, err := DecodeRequest(string(name)+"/model", raw, map[Provider][]string{name: {server.URL}})
+					require.NoError(t, err)
+					model, err := New(request.Provider, request.Model, request.Accounts, server.Client())
+					require.NoError(t, err)
+					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+					defer cancel()
+					options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}}
+					if streaming {
+						_, err = model.DoStream(ctx, options)
+					} else {
+						_, err = model.DoGenerate(ctx, options)
+					}
+					require.ErrorContains(t, err, "invalid header field value")
+					assert.Zero(t, calls.Load())
+				})
+			}
+		}
 	}
 }
 

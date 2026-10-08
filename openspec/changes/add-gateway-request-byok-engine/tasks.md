@@ -18,6 +18,12 @@
 
 ## 4. Account configuration review
 
-- [x] 4.1 Replace opaque request/custom credential decoding with schema validation and plain account configs.
+- [x] 4.1 Replace opaque request/custom credential decoding with plain account configs.
 - [x] 4.2 Support service-approved base URLs and OpenAI organization/project overrides while retaining service-owned transport and retries.
 - [x] 4.3 Add native/client boundary regressions, document the extension and run independent gates.
+
+## 5. Decoder simplification review
+
+- [x] 5.1 Replace account schema/normalization with struct decoding, account-count validation and exact endpoint approval.
+- [x] 5.2 Prove ordinary Go decoding, shared request limits and native HTTP header rejection; update the existing contract.
+- [x] 5.3 Rerun independent gates and push PR #368 without changing the other stack branches.

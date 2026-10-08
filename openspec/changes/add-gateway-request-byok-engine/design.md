@@ -23,11 +23,14 @@ service observers, process modes or listener exposure in this PR.
   the host selector; the catalog adapter still rejects them.
 - Start the execution budget before selection, not again at invocation or stream
   startup. Contain panics and bound handler latency even for late selection.
-- Validate the account map using the existing JSON-schema implementation, then
-  decode plain account configs. Remove the opaque request and custom credential
-  unmarshaler. Normalize duplicate members before typed decoding so exact field
-  names and last-member-wins semantics survive replaced malformed duplicates.
-  Keep byte/header checks and destination authorization as semantic validation.
+- Decode a Gateway-control map containing provider-to-account maps with typed
+  account structs, using the standard Go JSON decoder and DisallowUnknownFields.
+  Require the exact lowercase byok control used by both supported clients.
+  Use canonical account field names without casing aliases or compatibility
+  guarantees. Retain ordinary Go null/duplicate decoding; do not normalize JSON
+  or maintain an account schema/custom unmarshaler. Validate supported providers, one to eight
+  accounts per provider, nonempty keys and selected-provider availability.
+  OpenAI organization/project values remain provider-specific.
 - Share small native Anthropic/OpenAI constructors with configured execution.
   They receive explicit account/model/transport values and cannot access
   configuration, catalogs or secret resolution. BYOK construction receives the
@@ -37,9 +40,10 @@ service observers, process modes or listener exposure in this PR.
   omitted/empty organization/project stays unset, never inherited from ambient
   SDK state. These account settings are a Grafana service extension, not a claim
   of Vercel hosted-service support.
-- Custom baseURL must be an absolute HTTPS URL without embedded credentials,
-  query or fragment and match an exact service-approved URL for that provider.
-  Native defaults remain allowed. The approval map authorizes destinations only:
+- Custom baseURL must match an exact service-approved URL for that provider.
+  The service owns validation of approved URL syntax when loading its policy;
+  request decoding only checks membership. Native defaults remain allowed.
+  The approval map authorizes destinations only:
   it supplies no endpoint default, credentials, model mapping or fallback account.
   It is independent of configured catalogs/providers and cannot come from the
   request. No hostname-prefix, wildcard, path-prefix or implicit port matching.
@@ -50,8 +54,10 @@ service observers, process modes or listener exposure in this PR.
 - Shared transports remain credential-independent; disable redirects and native
   retries. Clients cannot override transport/TLS, retries, arbitrary account
   headers or execution deadlines. Validate unused accounts before execution.
-- Bound selectors/base URLs at 2,048 bytes, keys at 4,096 bytes, OpenAI account
-  IDs at 256 bytes, arrays at eight accounts and raw BYOK at 65,536 bytes.
+- Reuse the existing ProviderWire whole-request bound (1 MiB command default)
+  and HTTP server header limits; do not add BYOK-subtree, field or selector byte
+  ceilings. Native HTTP transport owns outgoing header validity. Only account
+  cardinality is bounded in the BYOK decoder.
 - Reuse `fallback.New` with its default decider, not an additional Gateway
   wrapper or a credential-specific retry algorithm. Preserve native content,
   options and continuation. Share the existing native-option validator/wrapper
