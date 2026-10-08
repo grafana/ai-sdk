@@ -271,6 +271,18 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-weather", ToolName: "weather", Input: `{"city":"Rio"}`},
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}},
 		)}, nil
+	case "raw":
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartStreamStart},
+			provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"type":"response.created","response":{"id":"resp_1","tools":[{"type":"mcp","server_label":"docs","headers":{"Authorization":"Bearer private-header"},"server_url":"https://user:private-pass@mcp.example/mcp?api_key=private-query&region=eu"}]}}`)},
+			provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartRaw},
+			provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage("{\"delta\":\"\xff\"}")},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "hello"},
+			provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"type":"message_stop"}`)},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}},
+		)}, nil
 	case "raw-usage", "raw-usage-empty":
 		raw := syntheticRawUsage
 		if m.kind == "raw-usage-empty" {
@@ -410,6 +422,8 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			call.Dynamic = &yes
 		}
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: ""}, call}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
+	case "raw":
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "hello"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "raw-usage", "raw-usage-empty":
 		raw := syntheticRawUsage
 		if m.kind == "raw-usage-empty" {
@@ -450,8 +464,8 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 27)
-	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "custom", "unsupported-functionality", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
+	entries := make([]catalog.StaticEntry, 0, 28)
+	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "custom", "unsupported-functionality", "success", "raw", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
