@@ -469,9 +469,10 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		}
 	}
 	// The JSON response tool forces tool use, so none sends only that tool.
+	// applyResponseFormat appends it last; a caller tool may share its name.
 	noneWithJSONTool := br.usesJsonResponseTool && opts.ToolChoice != nil && opts.ToolChoice.Type == provider.ToolChoiceNone
 	if noneWithJSONTool {
-		p.Tools = toolsNamed(p.Tools, jsonResponseToolName)
+		p.Tools = p.Tools[len(p.Tools)-1:]
 	}
 	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
 	if len(p.Tools) > 0 && !noneWithJSONTool {

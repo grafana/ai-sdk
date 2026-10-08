@@ -257,6 +257,53 @@ func TestWebTool_HTTPNumberProjection(t *testing.T) {
 	}
 }
 
+func TestToolChoiceNone_HTTPJSONFallbackDropsCallerToolNamedJSON(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			requests := make(chan map[string]json.RawMessage, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]json.RawMessage
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				requests <- body
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+			}))
+			defer server.Close()
+
+			model := New("test-key", "claude-3-haiku", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+			maxTokens := 1024
+			opts := provider.CallOptions{
+				MaxOutputTokens: &maxTokens,
+				Prompt:          []provider.Message{provider.UserText("hello")},
+				Tools: []provider.Tool{
+					{Type: provider.ToolTypeFunction, Name: "json", InputSchema: json.RawMessage(`{"type":"object","properties":{"caller":{"type":"string"}}}`)},
+				},
+				ToolChoice:     &provider.ToolChoice{Type: provider.ToolChoiceNone},
+				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`)},
+			}
+			var err error
+			if stream {
+				_, err = model.DoStream(context.Background(), opts)
+			} else {
+				_, err = model.DoGenerate(context.Background(), opts)
+			}
+			require.Error(t, err)
+
+			body := <-requests
+			want := `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"}}]`
+			if stream {
+				want = `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"},"eager_input_streaming":true}]`
+			}
+			assert.JSONEq(t, want, string(body["tools"]))
+			assert.JSONEq(t, `{"type":"any","disable_parallel_tool_use":true}`, string(body["tool_choice"]))
+		})
+	}
+}
+
 func TestWebTool_HTTPMixedRequest(t *testing.T) {
 	strict := true
 	for _, vertex := range []bool{false, true} {
@@ -3804,6 +3851,27 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 		require.Len(t, p.Tools, 1, "only the JSON response tool should be sent")
 		require.NotNil(t, p.Tools[0].OfTool)
 		assert.Equal(t, "json", p.Tools[0].OfTool.Name)
+	})
+
+	t.Run("ToolFallback_NoneDropsCallerToolNamedJSON", func(t *testing.T) {
+		opts := provider.CallOptions{
+			ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: testSchema},
+			Tools: []provider.Tool{
+				{Type: provider.ToolTypeFunction, Name: "json", InputSchema: json.RawMessage(`{"type":"object","properties":{"caller":{"type":"string"}}}`)},
+			},
+			ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone},
+		}
+
+		p, _, _, br, err := buildParams("claude-3-haiku", opts, false)
+		require.NoError(t, err)
+
+		assert.True(t, br.usesJsonResponseTool)
+		require.NotNil(t, p.ToolChoice.OfAny)
+		require.Len(t, p.Tools, 1)
+		encoded, err := json.Marshal(p.Tools[0])
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"description":"Respond with a JSON object."`)
+		assert.NotContains(t, string(encoded), "caller")
 	})
 
 	t.Run("SchemalessJSON_Warning", func(t *testing.T) {
