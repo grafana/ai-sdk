@@ -85,6 +85,16 @@ knownGaps:
       rejected) are implemented and included in the registered targets. Coverage
       remains focused unit tests plus manual live checks; no recorded fixture
       establishes these request boundaries. Tracked by grafana/ai-sdk#278.
+  - id: anthropic-tool-choice-none
+    surface: provider-anthropic
+    status: intentional-deviation
+    description: Upstream @ai-sdk/anthropic removes all tools for tool choice
+      none. Go keeps the tools and sends tool_choice none, which the Messages API
+      supports on the direct and Vertex endpoints, so the tool definitions stay
+      in the prompt cache prefix. Without tools, tool_choice is omitted as
+      upstream does. With the JSON response tool fallback, Go sends only the
+      JSON tool, where upstream also sends the caller's tools under a forced
+      choice. Covered by converter and HTTP request tests.
   - id: bedrock-sonnet-5-5-reasoning-none
     surface: provider-bedrock
     status: documented-deviation

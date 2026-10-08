@@ -391,7 +391,11 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	var forcedToolChoice *provider.ToolChoice
 	if opts.ToolChoice != nil {
 		if opts.ToolChoice.Type == provider.ToolChoiceNone {
-			p.Tools = nil
+			// Upstream drops tools for none; sending tool_choice none keeps
+			// tool definitions in the prompt cache prefix.
+			if len(p.Tools) > 0 {
+				p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfNone: &anthropic.BetaToolChoiceNoneParam{}}
+			}
 		} else if caps.rejectsForcedToolUse && (opts.ToolChoice.Type == provider.ToolChoiceRequired || opts.ToolChoice.Type == provider.ToolChoiceTool) {
 			forcedToolChoice = opts.ToolChoice
 			p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfAuto: &anthropic.BetaToolChoiceAutoParam{}}
@@ -467,8 +471,14 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(forcedToolChoice.ToolName))
 		}
 	}
+	// The JSON response tool forces tool use, so none sends only that tool.
+	// applyResponseFormat appends it last; a caller tool may share its name.
+	noneWithJSONTool := br.usesJsonResponseTool && opts.ToolChoice != nil && opts.ToolChoice.Type == provider.ToolChoiceNone
+	if noneWithJSONTool {
+		p.Tools = p.Tools[len(p.Tools)-1:]
+	}
 	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
-	if len(p.Tools) > 0 && (opts.ToolChoice == nil || opts.ToolChoice.Type != provider.ToolChoiceNone) {
+	if len(p.Tools) > 0 && !noneWithJSONTool {
 		br.requestOptions = append(br.requestOptions, webToolNumberOptions(opts.Tools, p.Tools)...)
 	}
 
@@ -2792,7 +2802,7 @@ func convertToolChoice(tc provider.ToolChoice, mapping toolNameMapping) anthropi
 }
 
 func applyDisableParallelToolUse(p *anthropic.BetaMessageNewParams, value *bool, hasTools bool) {
-	if value == nil {
+	if value == nil || p.ToolChoice.OfNone != nil {
 		return
 	}
 	if p.ToolChoice.OfAuto != nil {
