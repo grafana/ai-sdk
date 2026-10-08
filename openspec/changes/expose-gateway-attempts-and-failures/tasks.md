@@ -19,4 +19,4 @@
 ## 4. Validate and publish
 
 - [x] 4.1 Run root/Gateway/client tests/races, Go 1.26, vet/lint, parity/frontend/command, docs/module/workspace and strict OpenSpec gates.
-- [ ] 4.2 Commit and push the rewritten #370 with explicit lease, verify one PR-owned OpenSpec and preserve unrelated checksums; update draft PR without sync/archive or merge.
+- [x] 4.2 Commit and push the rewritten #370 with explicit lease, verify one PR-owned OpenSpec and preserve unrelated checksums; update draft PR without sync/archive or merge.
