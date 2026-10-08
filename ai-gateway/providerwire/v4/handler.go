@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 )
@@ -199,22 +200,24 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeErrorFromResolution(err), nil)
 		return
 	}
-	ctx, call := newInvocation(ctx, validated.modelID, resolved, r.Header, options, h.limits.UnaryResponseBytes)
-	defer func() { call.finish(ctx.Err()) }()
+	request := newExecutionRequest(validated.modelID, resolved, r.Header, options, h.limits.UnaryResponseBytes)
+	capture := &attemptCapture{}
+	ctx = fallback.WithAttemptObserver(ctx, capture.observe)
+	defer capture.discard()
 	if validated.mode == executionStreaming {
-		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history)
+		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history, request, capture)
 		return
 	}
-	result, err := h.invokeModel(ctx, resolved.Model, options)
+	result, err := h.invokeModel(ctx, resolved.Model, options, capture)
 	if err != nil {
 		value := safeErrorFromProvider(err)
-		call.finish(err)
-		h.writeSafeError(w, value, call.metadata())
+		view := request.snapshot(capture, err)
+		h.writeSafeError(w, value, view.metadata())
 		return
 	}
-	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: call.finish(nil)}) {
-		call.finish(nil)
-		h.writeSafeError(w, safeError{category: safeInternal}, call.metadata())
+	view := request.snapshot(capture, nil)
+	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: view.overview}) {
+		h.writeSafeError(w, safeError{category: safeInternal}, view.metadata())
 	}
 }
 
@@ -334,7 +337,7 @@ type modelOutcome struct {
 
 var errModelInternal = errors.New("providerwire v4: model internal failure")
 
-func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel, options provider.CallOptions) (*provider.GenerateResult, error) {
+func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel, options provider.CallOptions, capture *attemptCapture) (*provider.GenerateResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -353,12 +356,12 @@ func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel,
 			}
 			outcomes <- outcome
 		}()
-		invocationFromContext(ctx).enter()
+		capture.enter()
 		outcome.result, outcome.err = model.DoGenerate(modelContext, options)
 	}()
 
 	rejectOutcome := func(err error) (*provider.GenerateResult, error) {
-		invocationFromContext(ctx).reject(err)
+		capture.discard()
 		return nil, err
 	}
 	select {
