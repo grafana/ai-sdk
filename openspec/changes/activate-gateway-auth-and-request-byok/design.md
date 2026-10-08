@@ -55,9 +55,10 @@ routing. Do not absorb #318–#324/#280.
 Main's #326/#328 now preserve opaque options and mapped configured fallback
 capabilities. Keep those paths and their tests intact rather than reinstate field
 inventories or a text-only wrapper. BYOK Anthropic composition reuses the same
-consumption-backed native guard before credential attempts: MCP servers/history,
-container skills and provider-side fallback remain rejected, while harmless fields
-and ordinary namespaces remain available to the adapter. This guard has no catalog
+consumption-backed native guard before credential attempts: invalid consumed MCP
+configuration/history, container skills and provider-side fallback are rejected.
+Valid bounded MCP configuration/history, inert local markers, harmless fields and
+ordinary namespaces remain available to the adapter. This guard has no catalog
 or configured-account dependency.
 
 ## Risks / Trade-offs
@@ -79,6 +80,12 @@ handoff before activating an environment; an incomplete deployment must remain
 unavailable rather than restore Cloud access to configured accounts.
 
 ## Open Questions
+
+The service uses the reviewed engine decoder and explicit account constructors;
+OpenAI organization/project settings are preserved. It permits native default
+endpoints only and does not introduce custom destination-policy configuration.
+The structured logger keeps its existing 2,048-byte model-identity field bound
+locally; this is not an execution selector limit.
 
 The deployment delivery still needs an owner/link and actual isolation evidence.
 No repository-local test substitutes for that external gate.

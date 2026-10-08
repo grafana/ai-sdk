@@ -35,7 +35,7 @@ func (c *accountCatalogSpy) ListModels(context.Context) ([]catalog.ModelInfo, er
 }
 
 func TestAccountSelection_Isolation(t *testing.T) {
-	const body = `{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"apiKey":"dummy-request-key"}]}},"openai":{"store":false}}}`
+	const body = `{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"apiKey":"dummy-request-key","organization":"request-organization","project":"request-project"}]}},"openai":{"store":false}}}`
 	for _, streaming := range []bool{false, true} {
 		t.Run(strconv.FormatBool(streaming), func(t *testing.T) {
 			configuredModel := &observabilityTestModel{}
@@ -52,6 +52,8 @@ func TestAccountSelection_Isolation(t *testing.T) {
 				nativeCalls.Add(1)
 				assert.Equal(t, "api.openai.com", r.URL.Host)
 				assert.Equal(t, "Bearer dummy-request-key", r.Header.Get("Authorization"))
+				assert.Equal(t, "request-organization", r.Header.Get("OpenAI-Organization"))
+				assert.Equal(t, "request-project", r.Header.Get("OpenAI-Project"))
 				raw, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
 				assert.Contains(t, string(raw), `"store":false`)

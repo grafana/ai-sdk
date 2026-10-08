@@ -88,14 +88,17 @@ preserved within the Gateway's supported ProviderWire capabilities.
 
 ## Credential selection and limits
 
-Only API-key credentials for native Anthropic and OpenAI are supported. Arrays
-retain caller order. Every entry, including unused provider entries, is validated.
-Custom endpoints, organization/project overrides, alternate credential families
-and Gateway routing controls are rejected rather than silently ignored.
+Only API-key accounts for native Anthropic and OpenAI are supported. Arrays retain
+caller order and must contain one to eight accounts. Every entry, including unused
+provider entries, is validated. OpenAI accounts may include `organization` and
+`project`. Use the canonical field names `apiKey`, `baseURL`, `organization` and
+`project`, and lowercase `gateway.byok`.
 
-The server permits at most eight credentials per provider, 4,096 UTF-8 bytes per
-key, 65,536 raw JSON bytes for the BYOK map, and 2,048 UTF-8 bytes for the complete
-model selector. These are local resource controls, not Vercel hosted-service limits.
+Omit `baseURL` to use the native endpoint. The bundled service does not configure
+custom endpoint approvals, so other URLs are rejected. Alternate credential
+families and Gateway routing controls are unsupported. Request-body and HTTP
+header limits apply; there are no separate engine key, map or selector byte limits.
+The Go client independently bounds its model-selector header to 2,048 bytes.
 
 Ordered credentials use the existing Go fallback module's default policy, with
 native retries disabled. Classified retryable failures (such as eligible 429/5xx)
@@ -145,9 +148,8 @@ model = logmiddleware.Wrap(model, logmiddleware.Options{
 })
 ```
 
-Copy the tested [TypeScript capture helper](../../ai-gateway/examples/redact-byok.ts)
-for equivalent bounded, fail-closed request-body capture. It sanitizes a copy;
-it does not change the request sent to the provider. These protections are not
+For TypeScript, [sanitize a JSON copy before logging](../providers/grafana-gateway.md#keep-credentials-out-of-logs);
+never mutate or log the original request metadata. These protections are not
 substring scrubbers for arbitrary application text, custom metadata or opaque
 error messages. Keep custom capture destinations and access controls independent
 from the central Gateway's metadata-only observations.

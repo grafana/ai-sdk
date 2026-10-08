@@ -24,6 +24,8 @@ Configured canonical identity SHALL remain authoritative for configured resoluti
 - **WHEN** modelId contains valid native Unicode, spaces or punctuation outside public route syntax
 - **THEN** the native modelId SHALL remain unchanged within the complete-frame budget
 
+Each text-start, text-delta and text-end SHALL preserve supported opaque providerMetadata at its original event position under gateway-provider-metadata, including absent versus explicit empty presence. Content metadata SHALL NOT be moved into response-metadata.
+
 #### Scenario: Sequential text blocks are valid
 - **WHEN** a provider emits multiple non-overlapping text start/delta/end blocks with unique IDs
 - **THEN** all events SHALL be emitted in order and empty delta strings SHALL remain present
@@ -39,3 +41,7 @@ Configured canonical identity SHALL remain authoritative for configured resoluti
 #### Scenario: Metadata representation exceeds bounds
 - **WHEN** native identity contains invalid UTF-8, an invalid timestamp or yields an over-limit complete frame
 - **THEN** no metadata bytes SHALL be written and at most one safe terminal error SHALL be attempted
+
+#### Scenario: Text metadata changes at end
+- **WHEN** text-start supplies an object, text-delta omits metadata and text-end supplies an empty or replacement object
+- **THEN** those exact metadata positions and presence states SHALL reach both clients in order, with no deep merge or relocation
