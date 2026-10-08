@@ -286,3 +286,19 @@ and integrated main byte-for-byte; these are existing findings, not this archive
 Logs are /tmp/byok-engine-archive-{specs,tasks}.json and
 /tmp/byok-engine-archive-{baseline,docs}.log. Authentication/admission and
 service-policy activation remain separately owned by PR #369.
+
+## Current-main restack
+
+Rebased the runtime slice onto the reviewed client branch after its merge of
+origin/main ddaa841a. Range-diff retained all runtime/test changes; only inherited
+parity context and the user-guide conflict differed. The task-oriented guide now
+also explains main's bounded additive HTTP/SSE error data without restoring
+parser comparisons or weakening credential-header ownership.
+
+Every independent gate listed above passed again, including SDK/Gateway races,
+explicit registered-provider shape comparison and real-command/image checks.
+The command suite passed 74 tests with no skips. Logs are under
+/tmp/byok-stack-pr2-restack-20261008/; the range-diff is
+/tmp/byok-pr2-restack-range-diff.txt. The completed engine archive and registered
+upstream versions remain intact. PR #369's subsequent replay owns its obsolete
+selector API and service-composition migration; this slice remains catalog-only.
