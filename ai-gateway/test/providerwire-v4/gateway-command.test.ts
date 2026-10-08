@@ -466,10 +466,15 @@ async function assertNativeOptionClientResults(go: Awaited<ReturnType<typeof cap
     assert.deepEqual(go.result.content, result.content);
     assert.deepEqual(go.result.finishReason, result.finishReason);
     assert.deepEqual(go.result.usage, result.usage);
+    assert.deepEqual(go.result.providerMetadata, result.providerMetadata);
+    return result.providerMetadata;
   } else {
     assert.equal(go.canceled, false);
     const parts = await collectGatewayStream((await model.doStream(options)).stream);
     assert.deepEqual(assertNativeOptionStream(go.parts), assertNativeOptionStream(parts));
+    const finish = parts.at(-1) as Extract<LanguageModelV4StreamPart, { type: "finish" }>;
+    assert.deepEqual(go.parts.at(-1).providerMetadata, finish.providerMetadata);
+    return finish.providerMetadata;
   }
 }
 
@@ -530,13 +535,45 @@ models:
     const original = JSON.stringify(options);
     try {
       gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", config);
-      for (const winner of [0, 1, 2]) {
+      for (const winner of [0, 1, 2, 3]) {
         anthropic.failureStatus = winner > 0 ? 503 : undefined;
         openai.failWithSecret = winner > 1;
+        compatible.failWithSecret = winner > 2;
         for (const mode of ["generate", "stream"] as const) {
           const counts = [anthropic.requests.length, openai.requests.length, compatible.requests.length];
           const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "mapped", mode, options });
-          await assertNativeOptionClientResults(go, gateway.client()("mapped"), options, mode);
+          let metadata: any;
+          if (winner < 3) metadata = await assertNativeOptionClientResults(go, gateway.client()("mapped"), options, mode);
+          else {
+            let failure: any;
+            try {
+              const model = gateway.client()("mapped");
+              if (mode === "generate") await model.doGenerate(options);
+              else await collectGatewayStream((await model.doStream(options)).stream);
+            } catch (error) { failure = error; }
+            assert.equal(failure?.statusCode, 502);
+            assert.equal(go.error?.statusCode, 502);
+            assert.equal(go.error.isRetryable, failure.isRetryable);
+            metadata = failure.cause.data.providerMetadata;
+            assert.deepEqual(go.error.apiError.data.providerMetadata, metadata);
+          }
+          const execution = metadata.gateway.execution;
+          assert.deepEqual([execution.requestedModelId, execution.canonicalModelId], ["mapped", "mapped"]);
+          assert.deepEqual(execution.attempts.map((attempt: any) => [attempt.providerInstance, attempt.provider, attempt.modelId]), [
+            ["anthropic", "anthropic", "backend-private"],
+            ["openai", "openai", "backend-private"],
+            ["compatible", "compatible-backend", "backend-private"],
+          ].slice(0, Math.min(winner + 1, 3)));
+          assert.deepEqual(execution.attempts.map((attempt: any) => attempt.outcome), winner < 3 ? [...Array(winner).fill("failed"), "selected"] : Array(3).fill("failed"));
+          for (const [index, attempt] of execution.attempts.entries()) {
+            if (index === winner) assert.equal(attempt.error, undefined);
+            else {
+              assert.equal(attempt.error.statusCode, index === 0 ? 503 : 502);
+              assert.equal(attempt.error.type, index === 0 ? "api_error" : "server_error");
+              if (index !== 0) assert.equal(attempt.error.message, "provider-secret-response");
+            }
+          }
+          assertConsumerSecretsAbsent([go, metadata]);
           const candidates = [anthropic, openai, compatible];
           assert.deepEqual(candidates.map((candidate, index) => candidate.requests.length - counts[index]!), candidates.map((_, index) => index <= winner ? 2 : 0));
           for (const candidate of candidates.slice(0, winner + 1)) {
@@ -556,7 +593,7 @@ models:
             assert.equal(body.container, undefined);
             assert.equal(body.extension, undefined);
           }
-          if (winner === 2) {
+          if (winner >= 2) {
             const body = compatible.requests.at(-1)!.body;
             assert.equal(body.user, "camel");
             assert.deepEqual(body.extension, nested);

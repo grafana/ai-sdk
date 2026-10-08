@@ -34,9 +34,21 @@ Runtime commit 6399d319 was pushed to nrbrd/failure-visibility with an explicit 
 - Docs, module/license boundaries, SDK/Gateway isolation, source workspace, merged pins and published Grafana module gates.
 - Strict OpenSpec: 95 items, zero failures. Whitespace and unrelated go.work.sum checksum preservation checked.
 
+## Review-fix loop
+
+Three fresh review rounds covered correctness, maintainability and regression evidence; a forked oracle checked the approved design in round one. The oracle found no architectural drift; its heterogeneous delivery proof gap was closed without a product/API redesign. The workflow reached its three-round cap, not a clean final review.
+
+- Round one fixed accepted body credentials, explicit provider API-key headers, case-distinct MCP header values and valid mixed-type siblings. It removed repeated unary content mapping and strengthened actual late-callback, shared-fallback, heterogeneous both-client and frontend metadata/ordering proof.
+- Round two fixed known credential values in named MCP destination URLs, reusing the existing URL extractor. Six unary/committed regressions failed before the fix and passed after; ordinary URLs remain unprotected application data. Added exact-fit, one-byte-short and canonical-only committed-error bounds plus configured direct invalid/EOF setup proof.
+- Round three's simplicity and validation reviews found no actionable issues. Correctness found a pre-publication cancellation ownership race: the Gateway rejected a unary worker outcome but could publish its late native fallback SourceErr. Parent reproduced it, then sealed/discarded unverifiable history at the existing rejection boundary. Regression covers observations before and after rejection, preserves the SDK observer's native SourceErr, cancellation classification and zero secondary calls.
+
+After the last fix, full Gateway races/vet/lint, Go 1.26.8 focused Gateway races/vet and fallback races, schema/runtime/frontend and 74 authenticated command tests pass. Root/full Gateway/standalone client Go 1.26.8 checks and registered parity passed after the second batch; SDK/client/provider adapters and fixtures did not change in the last batch. Docs/boundary/workspace/pin/OpenSpec checks are recorded above.
+
+All verified in-scope findings were fixed; no owner-level decision or known actionable finding remains. The final ownership fix has parent red/green/source verification but **has not received a fresh independent follow-up review**, because the round cap was reached. No clean or merge-ready verdict is claimed.
+
 ## Limits and disposition
 
-No provider input fixture was added or changed; synthetic endpoints/UI scenarios are scoped behavior witnesses, not recorded inputs, live-provider acceptance or deployed/private-service parity. Publication does not claim fresh independent review. Native transport diagnostics #323, discovery #324, routing #316, BYOK #317, producer/core fixes #299 and broader client acceptance #375 remain separate.
+No provider input fixture was added or changed; synthetic endpoints/UI scenarios are scoped behavior witnesses, not recorded inputs, live-provider acceptance or deployed/private-service parity. The independent reviews and the final unreviewed fix are bounded as described above. Native transport diagnostics #323, discovery #324, routing #316, BYOK #317, producer/core fixes #299 and broader client acceptance #375 remain separate.
 
 Overview absence does not prove no attempts; native namespace presence does not establish Gateway provenance. Mixed/incomplete capture can be omitted, selection is commitment rather than completion, and caller retries/preselection fallback do not establish exactly-once generation or remote effects.
 

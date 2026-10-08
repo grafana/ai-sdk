@@ -16,8 +16,13 @@ describe("ordered provider error evidence at the frontend boundary", () => {
     expect(chunks.filter(chunk => chunk.type === "text-delta").map(chunk => chunk.delta).join("")).toBe("beforeafter");
     expect(chunks.at(-1)?.type).toBe("finish");
     const types = chunks.map(chunk => chunk.type);
-    expect(types.indexOf("text-delta")).toBeLessThan(types.indexOf("error"));
-    expect(types.indexOf("error")).toBeLessThan(types.indexOf("finish"));
+    const before = chunks.findIndex(chunk => chunk.type === "text-delta" && chunk.delta === "before");
+    const after = chunks.findIndex(chunk => chunk.type === "text-delta" && chunk.delta === "after");
+    expect(before).toBeGreaterThanOrEqual(0);
+    expect(after).toBeGreaterThanOrEqual(0);
+    expect(before).toBeLessThan(types.indexOf("error"));
+    expect(types.indexOf("error")).toBeLessThan(after);
+    expect(after).toBeLessThan(types.indexOf("finish"));
     expect(JSON.stringify(chunks)).not.toContain("private-native-message");
     expect(JSON.stringify(chunks)).not.toContain("gateway");
     let message: UIMessage | undefined;

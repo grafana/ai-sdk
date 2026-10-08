@@ -354,13 +354,17 @@ func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel,
 		outcome.result, outcome.err = model.DoGenerate(modelContext, options)
 	}()
 
+	rejectOutcome := func(err error) (*provider.GenerateResult, error) {
+		invocationFromContext(ctx).reject(err)
+		return nil, err
+	}
 	select {
 	case outcome := <-outcomes:
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return rejectOutcome(err)
 		}
 		return outcome.result, outcome.err
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return rejectOutcome(ctx.Err())
 	}
 }
