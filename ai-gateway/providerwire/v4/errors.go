@@ -31,8 +31,8 @@ const (
 )
 
 type safeError struct {
-	category   safeErrorCategory
-	capability unsupportedCapability
+	category safeErrorCategory
+	reason   requestFailureReason
 }
 
 func safeErrorFromResolution(err error) (result safeError) {

@@ -182,7 +182,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	gateway := wire.ProviderOptions["gateway"]
 	delete(wire.ProviderOptions, "gateway")
-	options, failure := mapRequest(wire, validated.mode)
+	options, failure := mapRequest(wire)
 	if failure != nil {
 		h.writeFailure(w, failure)
 		return
@@ -312,8 +312,8 @@ func invalidMappingFailure() *requestFailure {
 	return &requestFailure{safe: safeError{category: safeInvalidRequest}}
 }
 
-func unsupportedMappingFailure(capability unsupportedCapability) *requestFailure {
-	return &requestFailure{safe: safeError{category: safeInvalidRequest, capability: capability}}
+func rejectedMappingFailure(reason requestFailureReason) *requestFailure {
+	return &requestFailure{safe: safeError{category: safeInvalidRequest, reason: reason}}
 }
 
 var errRuntimeInternal = errors.New("providerwire v4: runtime internal failure")
