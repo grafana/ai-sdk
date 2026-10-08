@@ -91,6 +91,82 @@ pnpm exec tsx ../ui/generated-files/data-and-url/generate.mts
 cd .. && go test -run TestUIConformance_ReasoningFiles ./...
 ```
 
+## Gateway compatibility matrix (required for merging)
+
+The same provider fixtures also run through two clients against the production
+AI Gateway image:
+
+```text
+TypeScript ai + @ai-sdk/gateway -> gateway image -> provider replay
+Go aisdk + providers/grafana    -> gateway image -> provider replay
+```
+
+Both paths compare against the existing direct upstream goldens, including
+backend requests and applicable usage, object, and unary expectations. Tools and
+multi-step orchestration run in the calling SDK. Gateway runs never record inputs
+or update expectations. Provider-independent `ui/` mock-model cases remain in the
+direct suite, not the gateway matrix.
+
+Run on Linux with a local Docker daemon, Go, and the workspace Node dependencies:
+
+```bash
+mise run test-conformance-gateway-harness # deterministic harness tests, no Docker
+mise run test-conformance-gateway         # build current production image; all cases, both clients
+
+# Reuse an explicitly selected image and reproduce a subset:
+AI_GATEWAY_IMAGE=ai-gateway:local SCENARIO=anthropic/recorded/simple-text \
+  CLIENT=typescript mise run test-conformance-gateway
+```
+
+`CLIENT` accepts `typescript` or `go`; omit selectors for the full matrix.
+The runner uses a dedicated Docker internal network without published ports,
+local replay/JWKS listeners on the bridge, ephemeral signed test tokens, and dummy
+backend credentials. It does not contact live model APIs. Image builds and
+dependency installation still require registry access unless cached. Remote
+Docker daemons and Docker Desktop networking are not supported by this harness.
+
+Results are written to the ignored `test/conformance/gateway-results/` directory:
+
+- `summary.md`: per-provider/client totals, invocation counts, and evidence filenames.
+- `report.json`: every fixture/client row, scope, source/workspace and
+  image/dependency identity, stages, outcomes, and infrastructure errors.
+- `row-*.json`: configuration, client capture, backend requests, comparison diffs,
+  and bounded, credential-redacted gateway logs for an attempted row.
+
+A complete default run has two rows per discovered provider fixture. It does not
+skip unsupported capabilities, treat known failures as passes, or stop after the
+first incompatibility. An early rejection also reports missing expected backend
+requests. Rows blocked by startup are explicitly not client executions. Explicit
+provider-configuration rejections are `provider-setup` failures; opaque exits,
+OOMs, missing replay adapters, and infrastructure problems are `harness` failures.
+The current gateway sanitizes startup errors, so unsupported provider attempts
+can only be reported as unclassified startup failures with their configuration
+and Docker evidence—not verified provider rejection messages.
+
+The current image routes Anthropic, OpenAI Responses, and OpenAI-compatible
+backends; Bedrock configuration remains unsupported. Supported request and
+response families are narrower than the full fixture corpus. The matrix is an
+executable compatibility backlog: a red row blocks this PR until the underlying
+compatibility work lands. Intentional security/metadata policy differences remain
+visible and require a separate reviewed contract decision rather than broad
+normalization or new gateway-specific goldens.
+
+The harness builds the production Dockerfile with the repository-root context
+and the explicit `go.gateway.work` workspace, just like the production image
+build. Internal SDK/provider/middleware source comes from the checked-out
+revision rather than the older published versions in `ai-gateway/go.mod`;
+external dependencies remain pinned. Reports include the checkout workspace,
+image build mode, source revision and the image's actual module inventory.
+An explicitly supplied image may have a different revision; its labels and
+inventory remain visible in the report.
+
+CI runs direct and gateway conformance independently. The existing required
+`conformance-test` status aggregates both: it fails unless both jobs succeed,
+even if one was skipped or failed. The direct conformance job remains a separate
+publication/deployment prerequisite; the gateway job is not one. The required
+status blocks merging while the matrix is red. Existing direct parity commands
+remain unchanged.
+
 ## Structure
 
 ```text
