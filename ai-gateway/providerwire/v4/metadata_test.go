@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
@@ -409,4 +410,94 @@ func TestProviderMetadata_UTF8AndSurrogates(t *testing.T) {
 	require.True(t, ok)
 	assert.Contains(t, string(body), `\ud800`)
 	assert.Contains(t, string(body), `\ud83d\ude00`)
+}
+
+func readOverview(t *testing.T, body []byte) *execution.Overview {
+	t.Helper()
+	var value struct {
+		Metadata map[string]struct {
+			Overview *execution.Overview `json:"execution"`
+		} `json:"providerMetadata"`
+	}
+	require.NoError(t, json.Unmarshal(body, &value))
+	return value.Metadata["gateway"].Overview
+}
+
+func TestInvocation_OptionalLimitsAndNamespace(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unary", true: "finish"}[streaming], func(t *testing.T) {
+			native := provider.ProviderMetadata{"gateway": json.RawMessage(`{"opaque":"native namespace"}`)}
+			first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				result := validGenerateResult()
+				result.ProviderMetadata = native
+				return result, nil
+			}, stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				finish := finishPart()
+				finish.ProviderMetadata = native
+				return &provider.StreamResult{Stream: makeStream(finish)}, nil
+			}}
+			baseline := newRuntimeHarness(t, testLimits())
+			baseline.resolver.resolved.Model = first
+			request := func() *http.Request {
+				if streaming {
+					return streamRequest(`{"prompt":[]}`)
+				}
+				return validRequest(`{"prompt":[]}`)
+			}
+			original := baseline.serve(request()).Body.Bytes()
+			full := invocationHarness(t, testLimits(), first).serve(request()).Body.Bytes()
+			size := len(full)
+			if streaming {
+				frames := strings.Split(strings.TrimSuffix(string(full), "\n\n"), "\n\n")
+				size = len(frames[len(frames)-1]) + 2
+			}
+			for _, delta := range []int{0, -1} {
+				limits := testLimits()
+				if streaming {
+					limits.StreamFrameBytes = int64(size + delta)
+				} else {
+					limits.UnaryResponseBytes = int64(size + delta)
+				}
+				response := invocationHarness(t, limits, first).serve(request())
+				assert.Equal(t, 200, response.Code)
+				if delta == 0 {
+					assert.Equal(t, full, response.Body.Bytes())
+					assert.Contains(t, response.Body.String(), `"nativeMetadata":{"opaque":"native namespace"}`)
+				} else {
+					assert.Equal(t, original, response.Body.Bytes())
+				}
+			}
+			assert.JSONEq(t, `{"opaque":"native namespace"}`, string(native["gateway"]))
+		})
+	}
+	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		result := validGenerateResult()
+		result.ProviderMetadata = provider.ProviderMetadata{"gateway": json.RawMessage(`true`)}
+		return result, nil
+	}}
+	response := invocationHarness(t, testLimits(), first).serve(validRequest(`{"prompt":[]}`))
+	assert.Equal(t, 500, response.Code)
+	assert.NotContains(t, response.Body.String(), "nativeMetadata")
+}
+
+func TestInvocation_PrimaryEncodingFailure(t *testing.T) {
+	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		result := validGenerateResult()
+		result.Content = []provider.GenerateContentPart{{Type: provider.ContentText, Text: strings.Repeat("<", 80)}}
+		return result, nil
+	}}
+	limits := testLimits()
+	limits.UnaryResponseBytes = 400
+	response := invocationHarness(t, limits, first).serve(validRequest(`{"prompt":[]}`))
+	assert.Equal(t, 500, response.Code)
+	assert.NotContains(t, response.Body.String(), `"content"`)
+	finish := finishPart()
+	finish.FinishReason.Raw = strings.Repeat("<", 80)
+	first.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: makeStream(finish)}, nil
+	}
+	limits.StreamFrameBytes = 400
+	response = invocationHarness(t, limits, first).serve(streamRequest(`{"prompt":[]}`))
+	assert.Contains(t, response.Body.String(), `"code":"internal_error"`)
+	assert.NotContains(t, response.Body.String(), `"type":"finish"`)
 }
