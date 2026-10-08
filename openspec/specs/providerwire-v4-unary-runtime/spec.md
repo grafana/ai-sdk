@@ -169,7 +169,7 @@ Every runtime error response SHALL be selected from precomputed documents with f
 
 ### Requirement: Minimal unary success response
 
-A successful response SHALL contain ordered supported text, function-tool-call, source, reasoning and reasoning-file content, finishReason, usage and a warnings array. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Reasoning content metadata SHALL retain the existing bounded continuation projection in gateway-reasoning-content; source metadata SHALL retain the current projection described by gateway-sources pending its separately owned metadata implementation. This change SHALL NOT claim complete native metadata parity.
+A successful response SHALL contain ordered supported text, function-tool-call, source, reasoning and reasoning-file content, finishReason, usage and a warnings array. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Supported result/content providerMetadata SHALL retain opaque namespace objects and represented presence under gateway-provider-metadata.
 
 Warnings SHALL preserve the order and active fields of the registered unsupported, compatibility, deprecated and other variants. Required feature, setting and message fields SHALL be present even when empty. Unsupported/compatibility details SHALL preserve nonempty values; absent and empty Go details SHALL normalize to omission as an explicitly documented Go representation adaptation. Inactive fields SHALL be omitted. Nil warnings SHALL emit an empty array. Unknown warning types and invalid represented output SHALL fail safely before HTTP 200.
 
@@ -208,6 +208,9 @@ The registered Gateway client SHALL combine server warnings before its local war
 #### Scenario: Unary identity presence
 - **WHEN** provider Response is nil, present with zero-valued identity, or present with partial identity
 - **THEN** response SHALL respectively be absent, an empty object, or contain only the supplied representable fields without fabricated defaults
+#### Scenario: Ordinary metadata is not transport
+- **WHEN** a model result contains supported result/content providerMetadata alongside unrelated request or response transport fields
+- **THEN** the metadata SHALL survive in its registered scope without adding those transport fields or consulting operator capture flags
 
 #### Scenario: Provider raw usage is present or absent
 - **WHEN** provider usage contains a valid in-limit object including provider-native nested values, an empty object, or no Raw bytes
@@ -219,9 +222,11 @@ The registered Gateway client SHALL combine server warnings before its local war
 
 ### Requirement: Bounded preflight and standard success encoding
 
-Before output allocation, UTF-8 scanning or encoding, the handler SHALL reject content/warning cardinality or aggregate represented string and raw-usage bytes that cannot fit the configured unary budget using overflow-safe accounting. Accounting SHALL include native source ID/display, active warning fields, registered response identity and serialized timestamps alongside existing content/raw-finish/usage values. Warning cardinality SHALL use conservative minimum registered encoded sizes, including required empty values. Independent field/list checks SHALL NOT bypass the aggregate complete-response budget.
+Before output allocation, UTF-8 scanning or encoding, the handler SHALL reject content/warning/metadata cardinality or aggregate represented strings, original result/content metadata namespace key/value bytes and raw-usage bytes that cannot fit the configured unary budget using overflow-safe accounting. Accounting SHALL include native source ID/display, active warning fields, registered response identity and serialized timestamps alongside existing content/raw-finish/usage values. Warning cardinality SHALL use conservative minimum registered encoded sizes, including required empty values. Independent field/list checks SHALL NOT bypass the aggregate complete-response budget.
 
 The handler SHALL count raw-usage bytes before parsing/marshaling and reject raw usage longer than 1,048,576 bytes or the unary limit, including whitespace. After size preflight it SHALL validate original UTF-8 and any present raw as one JSON object. Standard encoding SHALL preserve valid raw JSON escapes, including lone and paired UTF-16 surrogates. The complete private DTO SHALL then encode through standard Go JSON and SHALL receive HTTP 200 only after the final bytes fit. Provider-domain JSON marshalers SHALL NOT control public output. Encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping; no value SHALL be truncated to fit.
+
+Metadata SHALL share the result/content budget under gateway-provider-metadata, accounting original namespace bytes including whitespace and cardinality before scanning or allocation. Namespace UTF-8/object shape SHALL be checked in preflight, and standard JSON encoding SHALL reject malformed namespace syntax before HTTP 200, without projection within those bounds.
 
 #### Scenario: Preflight rejects oversized provider values
 - **WHEN** content/warning count or aggregate represented bytes exceed the unary budget, or raw usage exceeds 1,048,576 bytes
@@ -252,6 +257,10 @@ The handler SHALL count raw-usage bytes before parsing/marshaling and reject raw
 #### Scenario: Raw usage exactly meets its input cap
 - **WHEN** raw usage bytes, including JSON whitespace, are at or one byte above the smaller of 1,048,576 bytes and the configured unary response limit
 - **THEN** only the at-limit value SHALL reach JSON validation, and success SHALL still require the final complete response to fit the unary limit
+
+#### Scenario: Combined metadata exceeds budget
+- **WHEN** individually small metadata objects across multiple content parts and the result collectively exceed the unary budget
+- **THEN** the complete result SHALL fail before JSON parsing or encoding rather than returning partial or metadata-free success
 
 ### Requirement: Compatibility evidence
 

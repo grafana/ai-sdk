@@ -55,8 +55,8 @@ func TestUIMessageChunk_ApprovalResponseMetadataPresence(t *testing.T) {
 	}
 }
 
-func TestReasoningChunkMetadataPresence(t *testing.T) {
-	for _, kind := range []ChunkType{ChunkReasoningStart, ChunkReasoningDelta, ChunkReasoningEnd, ChunkReasoningFile} {
+func TestUIMessageChunk_MetadataPresence(t *testing.T) {
+	for _, kind := range []ChunkType{ChunkTextStart, ChunkTextDelta, ChunkTextEnd, ChunkReasoningStart, ChunkReasoningDelta, ChunkReasoningEnd, ChunkReasoningFile, ChunkToolInputStart, ChunkToolInputAvailable, ChunkToolInputError, ChunkToolOutputAvailable, ChunkToolOutputError, ChunkSourceURL, ChunkSourceDocument} {
 		for _, meta := range []provider.ProviderMetadata{nil, {}} {
 			encoded, err := json.Marshal(UIMessageChunk{Type: kind, ID: "r", ProviderMetadata: meta})
 			require.NoError(t, err)

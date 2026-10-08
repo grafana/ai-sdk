@@ -14,6 +14,7 @@ import { generateText, isStepCount, jsonSchema, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 import packageManifest from "./package.json" with { type: "json" };
 import { fetchConfiguredModels } from "../../examples/configured-discovery";
+import { nativeMetadataReply } from "./native-metadata";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const COMMAND_DIR = resolve(AI_GATEWAY_ROOT, "cmd/grafana-ai-gateway");
@@ -44,6 +45,129 @@ before(() => {
 
 after(() => {
   rmSync(buildDirectory, { recursive: true, force: true });
+});
+
+describe("output-derived metadata continuation", () => {
+  for (const family of ["anthropic", "openai", "compatible"] as const) {
+    for (const fallback of [false, true]) {
+      for (const store of family === "openai" ? [false, true] : [false]) {
+        it(`${family} ${fallback ? "fallback" : "direct"} store=${store} preserves actual output in separate unary and streaming client paths`, async () => {
+          const anthropic = await FakeAnthropic.start();
+          const openai = await FakeOpenAI.start();
+          const compatible = await FakeCompatible.start();
+          const candidates = { anthropic, openai, compatible };
+          candidates[family].metadata = true;
+          const loser = family === "anthropic" ? "openai" : "anthropic";
+          if (fallback) {
+            if (loser === "anthropic") anthropic.failureStatus = 503;
+            else openai.failWithSecret = true;
+          }
+          const config = `providers:
+  anthropic:
+    type: anthropic
+    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY
+    baseURL: ${anthropic.url}
+  openai:
+    type: openai
+    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY
+    baseURL: ${openai.url}/v1
+  compatible:
+    type: openai-compatible
+    apiKeyEnv: GATEWAY_TEST_COMPATIBLE_KEY
+    baseURL: ${compatible.url}/v1
+    providerName: google
+models:
+  metadata:
+    name: Metadata
+    primary:
+      provider: ${fallback ? loser : family}
+      model: backend-private
+${fallback ? `    fallback:\n      - provider: ${family}\n        model: backend-private\n` : ""}`;
+          let gateway: GatewayProcess | undefined;
+          try {
+            gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", config);
+            const model = gateway.client()("metadata");
+            for (const path of ["ts-unary", "ts-stream", "go-unary", "go-stream"] as const) {
+              const before = Object.fromEntries(Object.entries(candidates).map(([key, fake]) => [key, fake.requests.length]));
+              let executions = 0;
+              if (path.startsWith("ts")) {
+                const options = { model, prompt: "metadata", maxOutputTokens: 64, providerOptions: { openai: { store } }, stopWhen: isStepCount(2), maxRetries: 0, tools: { weather: tool({ inputSchema: jsonSchema<{ city: string }>({ type: "object", properties: { city: { type: "string" } }, required: ["city"] }), execute: async ({ city }) => { assert.equal(city, "Rio"); executions++; return "sunny"; } }) } };
+                if (path === "ts-unary") await generateText(options);
+                else await streamText(options).consumeStream();
+              } else {
+                const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "metadata", mode: path === "go-unary" ? "metadata-unary-replay" : "metadata-stream-replay", options: { prompt: [{ role: "user", content: [{ type: "text", text: "metadata" }] }], maxOutputTokens: 64, providerOptions: { openai: { store } }, tools: [{ type: "function", name: "weather", inputSchema: { type: "object", properties: { city: { type: "string" } } } }] } });
+                assert.equal(go.error, undefined);
+                executions = go.executions;
+              }
+              assert.equal(executions, 1, path);
+              for (const [key, fake] of Object.entries(candidates)) {
+                const requests = fake.requests.slice(before[key]);
+                assert.equal(requests.length, key === family || (fallback && key === loser) ? 2 : 0, `${path}: ${key}`);
+                for (const request of requests) assert.equal(request.body.stream ?? false, path.endsWith("stream"), `${path}: native selector`);
+              }
+              const replay = candidates[family].requests.at(-1)!.body;
+              if (family === "anthropic") {
+                const blocks = (replay.messages as any[]).filter(message => message.role === "assistant").flatMap(message => message.content);
+                assert.deepEqual(blocks.find(block => block.type === "tool_use").caller, { type: "direct" });
+                assert.equal(blocks.find(block => block.type === "thinking").signature, "returned-signature");
+                assert.equal(blocks.find(block => block.type === "redacted_thinking").data, "returned-redacted");
+              } else if (family === "openai") {
+                const input = replay.input as any[];
+                if (store) {
+                  assert.ok(input.some(item => item.type === "item_reference" && item.id === "msg-metadata"));
+                  assert.ok(input.some(item => item.type === "item_reference" && item.id === "rs-metadata"));
+                } else {
+                  assert.equal(input.find(item => item.role === "assistant").phase, "commentary");
+                  assert.equal(input.find(item => item.type === "reasoning").encrypted_content, "returned-encrypted");
+                }
+              } else {
+                const call = (replay.messages as any[]).find(message => message.tool_calls)?.tool_calls[0];
+                assert.equal(call?.extra_content?.google?.thought_signature, "returned-thought-signature");
+              }
+            }
+            for (const fake of Object.values(candidates)) assert.deepEqual(fake.violations, []);
+          } finally {
+            await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => anthropic.stop(), () => openai.stop(), () => compatible.stop());
+          }
+        });
+      }
+    }
+  }
+});
+
+describe("metadata observation policies", () => {
+  it("keeps caller metadata and independent consumer observation unchanged with operator capture off or metadata-only", async () => {
+    const observer = await FakeAgentObservability.start();
+    const seen: unknown[] = [];
+    try {
+      for (const enabled of [false, true]) {
+        const args = enabled ? ["--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`, "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY", "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms"] : [];
+        const [fake, gateway] = await startGateway(args, { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+        fake.metadata = true;
+        try {
+          const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "metadata observation" }] }], maxOutputTokens: 64 };
+          const unary = await gateway.client()("assistant").doGenerate(options);
+          const stream = await collectGatewayStream((await gateway.client()("assistant").doStream(options)).stream);
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode: "metadata-observe", options });
+          assert.equal(go.error, undefined);
+          assert.deepEqual(go.observedUnary, [unary.providerMetadata ?? null, ...unary.content.map(part => part.providerMetadata ?? null)]);
+          assert.deepEqual(go.observedStream, go.returnedStream);
+          assert.deepEqual(go.returnedStream, stream.map(part => "providerMetadata" in part ? part.providerMetadata ?? null : null));
+          seen.push({ content: unary.content, metadata: unary.providerMetadata, stream, observedUnary: go.observedUnary, observedStream: go.observedStream });
+          const caller = JSON.stringify(seen.at(-1));
+          assert.ok(caller.includes("returned-signature"));
+          assert.ok(caller.includes("returned-redacted"));
+          for (const credential of [TEST_TOKEN, "integration-anthropic-key", "integration-agento11y-key"]) assert.ok(!caller.includes(credential));
+          assert.deepEqual(fake.violations, []);
+        } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+      }
+      assert.deepEqual(seen[0], seen[1]);
+      await observer.waitForGenerations(4);
+      const exported = JSON.stringify(observer.generations);
+      for (const value of ["returned-signature", "returned-redacted", "metadata observation", "integration-anthropic-key"]) assert.ok(!exported.includes(value));
+      assert.deepEqual(observer.violations, []);
+    } finally { await observer.stop(); }
+  });
 });
 
 describe("native option forwarding through the authenticated command", () => {
@@ -139,6 +263,89 @@ describe("native option forwarding through the authenticated command", () => {
     });
   }
 
+  for (const family of ["anthropic", "openai"] as const) {
+    for (const configuredFallback of [false, true]) {
+      it(`forwards ${family} hosted MCP settings and history with fallback=${configuredFallback}`, async () => {
+        const observer = await FakeAgentObservability.start();
+        let primary: FakeAnthropic | FakeOpenAI | undefined;
+        let secondary: FakeAnthropic | FakeOpenAI | undefined;
+        let gateway: GatewayProcess | undefined;
+        const serverURL = "https://mcp.example.test/tools";
+        const serverName = "private-mcp-server";
+        const remoteToken = "private-mcp-authorization";
+        const remoteHeader = "private-mcp-header";
+        try {
+          primary = family === "anthropic" ? await FakeAnthropic.start() : await FakeOpenAI.start();
+          if (configuredFallback) {
+            secondary = family === "anthropic" ? await FakeAnthropic.start() : await FakeOpenAI.start();
+            if (primary instanceof FakeAnthropic) primary.failureStatus = 503;
+            else primary.failWithSecret = true;
+          }
+          const config = family === "anthropic"
+            ? secondary ? anthropicFallbackConfig(primary.url, secondary.url) : anthropicConfig(primary.url)
+            : openAIConfig(primary.url, secondary?.url);
+          gateway = await GatewayProcess.start(binaryPath, "", [
+            "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
+            "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
+            "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
+          ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "access-token", config);
+          const prompt: LanguageModelV4CallOptions["prompt"] = [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }];
+          const options: LanguageModelV4CallOptions = family === "anthropic"
+            ? {
+              prompt: [...prompt, { role: "assistant", content: [
+                { type: "tool-call", toolCallId: "private-mcp-call", toolName: "lookup", input: {}, providerExecuted: true, providerOptions: { anthropic: { type: "mcp-tool-use", serverName } } },
+                { type: "tool-result", toolCallId: "private-mcp-call", toolName: "lookup", output: { type: "json", value: "private-mcp-result" } },
+              ] }],
+              providerOptions: { anthropic: { mcpServers: [{ type: "url", name: serverName, url: serverURL, authorizationToken: remoteToken, toolConfiguration: { enabled: true, allowedTools: ["lookup"] } }] } },
+            }
+            : {
+              prompt,
+              tools: [{ type: "provider", id: "openai.mcp", name: "remote", args: { serverLabel: serverName, serverUrl: serverURL, authorization: remoteToken, headers: { "X-MCP-Key": remoteHeader }, allowedTools: ["lookup"] } }],
+            };
+          const original = JSON.stringify(options);
+          const modelID = family === "anthropic" ? "assistant" : "openai";
+          const candidates = secondary ? [primary, secondary] : [primary];
+          for (const mode of ["generate", "stream"] as const) {
+            const before = candidates.map(candidate => candidate.requests.length);
+            const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID, mode, options });
+            await assertNativeOptionClientResults(go, gateway.client()(modelID), options, mode);
+            for (const [index, candidate] of candidates.entries()) {
+              const requests = candidate.requests.slice(before[index]);
+              assert.equal(requests.length, 2);
+              assert.deepEqual(requests[0]!.body, requests[1]!.body);
+              for (const { body, apiKey, headers } of requests) {
+                assert.equal(body.model, "backend-private");
+                assert.equal(body.stream ?? false, mode === "stream");
+                assert.equal(apiKey, family === "anthropic" ? "integration-anthropic-key" : "Bearer integration-openai-key");
+                assert.equal(headers["x-mcp-key"], undefined);
+                if (family === "anthropic") {
+                  assert.deepEqual(body.mcp_servers, [{ type: "url", name: serverName, url: serverURL, authorization_token: remoteToken, tool_configuration: { enabled: true, allowed_tools: ["lookup"] } }]);
+                  const assistant = (body.messages as Array<{ role: string; content: unknown[] }>).find(message => message.role === "assistant");
+                  assert.deepEqual(assistant?.content, [
+                    { type: "mcp_tool_use", id: "private-mcp-call", name: "lookup", input: {}, server_name: serverName },
+                    { type: "mcp_tool_result", tool_use_id: "private-mcp-call", content: "private-mcp-result", is_error: false },
+                  ]);
+                } else {
+                  assert.deepEqual(body.tools, [{ type: "mcp", server_label: serverName, server_url: serverURL, authorization: remoteToken, headers: { "X-MCP-Key": remoteHeader }, allowed_tools: ["lookup"], require_approval: "never" }]);
+                }
+              }
+              assert.deepEqual(candidate.violations, []);
+            }
+            assert.equal(JSON.stringify(options), original);
+          }
+          await observer.waitForGenerations(4);
+          const metrics = await gateway.metrics();
+          await gateway.stop();
+          const captured = JSON.stringify({ metrics, logs: gateway.stderr, generations: observer.generations });
+          for (const value of [serverURL, serverName, remoteToken, remoteHeader, "private-mcp-call", "private-mcp-result"]) assert.ok(!captured.includes(value));
+          assert.deepEqual(observer.violations, []);
+        } finally {
+          await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), ...(secondary ? [() => secondary!.stop()] : []), ...(primary ? [() => primary!.stop()] : []), () => observer.stop());
+        }
+      });
+    }
+  }
+
   it("preserves OpenAI-first and Azure-fallback item-reference semantics", async () => {
     const [fake, gateway] = await startOpenAIGateway();
     try {
@@ -191,10 +398,8 @@ describe("native option forwarding through the authenticated command", () => {
     const [fake, gateway] = await startGateway();
     try {
       const attempts: LanguageModelV4CallOptions[] = [
-        { prompt: [], providerOptions: { anthropic: { MCPServers: [{ type: "url", name: "server", url: "https://other.example" }] } } },
         { prompt: [], providerOptions: { anthropic: { container: { skills: [{ type: "anthropic", skillId: "skill" }] } } } },
         { prompt: [], providerOptions: { anthropic: { fallbacks: "default" } } },
-        { prompt: [{ role: "assistant", content: [{ type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerOptions: { anthropic: { Type: "mcp-tool-use", serverName: "server" } } }] }] },
       ];
       for (const mode of ["generate", "stream"] as const) {
         for (const options of attempts) {
@@ -486,6 +691,8 @@ describe("authenticated Anthropic Gateway command", () => {
       const result = { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: "private-call", toolName: "private-tool", output: { type: "text" as const, value: "private-result" } }] };
       const mappedRequests: LanguageModelV4CallOptions[] = [
         { prompt: [], tools: [{ type: "function", name: "private-tool", inputSchema: { type: "object" } }] },
+        { prompt: [], tools: [{ type: "provider", id: "anthropic.code_execution_20260120", name: "private-tool", args: {} }] },
+        { prompt: [], providerOptions: { anthropic: { mcpServers: [{ type: "url", name: "echo", url: "https://mcp.example.test", authorizationToken: "fallback-mcp-secret" }] } } },
         ...(["none", "required"] as const).map(type => ({ prompt: [], toolChoice: { type } })),
         { prompt: [], toolChoice: { type: "tool", toolName: "private-tool" } },
         { prompt: [call] },
@@ -733,6 +940,139 @@ describe("authenticated Anthropic Gateway command", () => {
     } finally {
       await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => observer.stop(), async () => { jwks.closeAllConnections(); await new Promise<void>(resolve => jwks.close(() => resolve())); });
     }
+  });
+
+  for (const mcpEnabled of [false, true]) it(`routes authenticated Anthropic provider tools ${mcpEnabled ? "with MCP" : "without MCP"} and continuation through both clients`, async () => {
+    const observer = await FakeAgentObservability.start();
+    let resources: [FakeAnthropic, GatewayProcess] | undefined;
+    try {
+      resources = await startGateway([
+        "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
+        "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
+        "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
+        "--agento11y.flush-timeout=2s",
+      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "claude-sonnet-4-6");
+      const [fake, gateway] = resources;
+      fake.providerTools = true;
+      const token = "mcp-private-token";
+      const url = "https://mcp.example.test/tools";
+      const providerOptions = mcpEnabled ? { anthropic: { mcpServers: [{ type: "url", name: "echo", url, authorizationToken: token, toolConfiguration: { enabled: false, allowedTools: [] } }] } } : undefined;
+      const tools = [{ type: "provider" as const, id: "anthropic.code_execution_20260120" as const, name: "python", args: {} }];
+      const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Use tools" }] }];
+      const client = gateway.client();
+      for (const mode of ["generate", "stream"] as const) {
+        for (const implementation of ["vercel", "go"] as const) {
+          const invoke = async (messages: LanguageModelV4CallOptions["prompt"]): Promise<any[]> => {
+            const options = { prompt: messages, tools, providerOptions: { anthropic: { disableParallelToolUse: true, ...(mcpEnabled ? providerOptions?.anthropic : {}) } } };
+            if (implementation === "go") {
+              const result = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
+              assert.equal(result.error, undefined);
+              return mode === "generate" ? result.result.content : result.parts;
+            }
+            return mode === "generate" ? (await client("assistant").doGenerate(options)).content : await collectGatewayStream((await client("assistant").doStream(options)).stream);
+          };
+          const first = await invoke(prompt);
+          const calls = first.filter(part => part.type === "tool-call");
+          const results = first.filter(part => part.type === "tool-result");
+          assert.deepEqual(calls.map(part => part.toolName), mcpEnabled ? ["python", "echo"] : ["python"]);
+          assert.deepEqual(results.map(part => part.toolName), mcpEnabled ? ["python", "echo"] : ["python"]);
+          assert.ok(calls.every(part => part.providerExecuted === true));
+          assert.deepEqual(calls[0].providerMetadata, { anthropic: { caller: { type: "direct" } } });
+          if (mcpEnabled) {
+            assert.equal(calls[1].dynamic, true);
+            assert.deepEqual(calls[1].providerMetadata, { anthropic: { type: "mcp-tool-use", serverName: "echo" } });
+            assert.deepEqual(results[1].providerMetadata, calls[1].providerMetadata);
+          }
+          const nativeRequest = fake.requests.at(-1)!;
+          const native = nativeRequest.body as any;
+          assert.equal(singleHeader(nativeRequest.headers["anthropic-beta"])?.includes("mcp-client-2025-04-04") ?? false, mcpEnabled);
+          assert.deepEqual(native.tools, [{ type: "code_execution_20260120", name: "code_execution" }]);
+          assert.equal(native.max_tokens, 128000);
+          assert.equal(native.tool_choice?.disable_parallel_tool_use, true);
+          assert.deepEqual(native.mcp_servers, mcpEnabled ? [{ type: "url", name: "echo", url, authorization_token: token, tool_configuration: { enabled: false, allowed_tools: [] } }] : undefined);
+          const history = calls.flatMap((call, index) => [
+            { type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerExecuted: true, ...(call.providerMetadata && { providerOptions: call.providerMetadata }) },
+            { type: "tool-result" as const, toolCallId: results[index].toolCallId, toolName: results[index].toolName, output: { type: "json" as const, value: results[index].result }, ...(results[index].providerMetadata && { providerOptions: results[index].providerMetadata }) },
+          ]);
+          const final = await invoke([...prompt, { role: "assistant", content: history }]);
+          assert.equal(final.filter(part => part.type === (mode === "generate" ? "text" : "text-delta")).map(part => part.text ?? part.delta).join(""), "Hosted tools finished.");
+          const continuation = fake.requests.at(-1)!.body as any;
+          assert.deepEqual(continuation.messages[1].content.map((part: any) => part.type), mcpEnabled ? ["server_tool_use", "code_execution_tool_result", "mcp_tool_use", "mcp_tool_result"] : ["server_tool_use", "code_execution_tool_result"]);
+          assert.equal(continuation.messages[1].content[0].name, "code_execution");
+          assert.deepEqual(continuation.messages[1].content[0].caller, { type: "direct" });
+          assert.equal(continuation.tool_choice?.disable_parallel_tool_use, true);
+          if (mcpEnabled) assert.equal(continuation.messages[1].content[2].server_name, "echo");
+          assert.ok(!JSON.stringify([first, final]).includes(token));
+          assert.ok(!JSON.stringify([first, final]).includes(url));
+        }
+      }
+      assert.equal(fake.requests.length, 8);
+      if (mcpEnabled) {
+        for (const invalidOptions of [
+          { prompt, tools, providerOptions: { anthropic: { mcpServers: [{ type: "url", name: "echo", url: "http://mcp.example.test", authorizationToken: "invalid-private-token" }] } }, maxOutputTokens: 64 },
+          { prompt: [...prompt, { role: "assistant" as const, content: [{ type: "tool-call" as const, toolCallId: "call-mcp", toolName: "echo", input: {}, providerExecuted: true, providerOptions: { anthropic: { type: "mcp-tool-use", serverName: "not-configured" } } }] }], tools, providerOptions, maxOutputTokens: 64 },
+        ]) {
+          for (const mode of ["generate", "stream"] as const) {
+            const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options: invalidOptions });
+            assert.equal(go.error?.statusCode, 400);
+            assert.equal(go.error?.code, "invalid_request");
+            assert.equal(go.parts, undefined);
+            await assert.rejects(async () => {
+              if (mode === "generate") await client("assistant").doGenerate(invalidOptions);
+              else await client("assistant").doStream(invalidOptions);
+            }, (error: any) => error.statusCode === 400 && error.message === "invalid request");
+            assert.equal(fake.requests.length, 8, "invalid MCP settings must fail before native invocation");
+          }
+        }
+      }
+      assert.deepEqual(fake.violations, []);
+      const expectedGenerations = mcpEnabled ? 16 : 8;
+      await observer.waitForGenerations(expectedGenerations);
+      assert.equal(observer.generations.length, expectedGenerations);
+      for (const generation of observer.generations) {
+        assert.deepEqual(generation.model, { provider: "grafana", name: "grafana/assistant" });
+      }
+      const metrics = await gateway.metrics();
+      await gateway.stop();
+      assertPrivateValuesAbsent([gateway.stderr, metrics, observer.generations], fake, [token, url, "call-code", "call-mcp", "python", "echo", "code_execution", "integration-agento11y-key"]);
+    } finally {
+      await settleCleanup(...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []), () => observer.stop());
+    }
+  });
+
+  it("preserves non-direct caller IDs through both clients and native continuation", async () => {
+    const [fake, gateway] = await startGateway([], {}, "claude-sonnet-4-6");
+    fake.providerToolCaller = true;
+    try {
+      const tools = [{ type: "function" as const, name: "execute", inputSchema: { type: "object" } }];
+      const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Use a tool" }] }];
+      for (const mode of ["generate", "stream"] as const) {
+        for (const implementation of ["vercel", "go"] as const) {
+          const invoke = async (messages: LanguageModelV4CallOptions["prompt"]): Promise<any[]> => {
+            const options = { prompt: messages, tools };
+            if (implementation === "go") {
+              const captured = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "assistant", mode, options });
+              assert.equal(captured.error, undefined);
+              return mode === "generate" ? captured.result.content : captured.parts;
+            }
+            return mode === "generate" ? (await gateway.client()("assistant").doGenerate(options)).content : await collectGatewayStream((await gateway.client()("assistant").doStream(options)).stream);
+          };
+          const first = await invoke(prompt);
+          const call = first.find(part => part.type === "tool-call");
+          assert.ok(call);
+          assert.deepEqual(call.providerMetadata, { anthropic: { caller: { type: "code_execution_20260120", toolId: "call-parent" } } });
+          const historyCall = { type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerOptions: call.providerMetadata };
+          const historyResult = { type: "tool-result" as const, toolCallId: call.toolCallId, toolName: call.toolName, output: { type: "text" as const, value: "done" } };
+          const final = await invoke([...prompt, { role: "assistant", content: [historyCall] }, { role: "tool", content: [historyResult] }]);
+          assert.equal(final.filter(part => part.type === (mode === "generate" ? "text" : "text-delta")).map(part => part.text ?? part.delta).join(""), "Hosted tools finished.");
+          const continuation = fake.requests.at(-1)!.body as any;
+          assert.deepEqual(continuation.messages[1].content[0].caller, { type: "code_execution_20260120", tool_id: "call-parent" });
+          assert.equal(continuation.messages[2].content[0].type, "tool_result");
+        }
+      }
+      assert.equal(fake.requests.length, 8);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
   for (const failExecution of [false, true]) {
@@ -1031,7 +1371,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const rawUnaryResponse = await rawProviderWireRequest(gateway.url, "unary");
       assert.equal(rawUnaryResponse.status, 200);
       const rawUnary = await rawUnaryResponse.json() as Record<string, unknown>;
-      assert.deepEqual(Object.keys(rawUnary).sort(), ["content", "finishReason", "response", "usage", "warnings"]);
+      assert.deepEqual(Object.keys(rawUnary).sort(), ["content", "finishReason", "providerMetadata", "response", "usage", "warnings"]);
       assert.deepEqual(rawUnary.response, { id: "msg_test", modelId: "backend-private" });
 
       assert.equal(fake.requests.length, 3);
@@ -1261,7 +1601,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const response = await rawProviderWireRequest(gateway.url, "outage-private-input");
       assert.equal(response.status, 200);
       const body = await response.json() as Record<string, unknown>;
-      assert.deepEqual(Object.keys(body).sort(), ["content", "finishReason", "response", "usage", "warnings"]);
+      assert.deepEqual(Object.keys(body).sort(), ["content", "finishReason", "providerMetadata", "response", "usage", "warnings"]);
       let metrics = "";
       await poll(async () => {
         metrics = await (await fetch(`${gateway.url}/metrics`)).text();
@@ -1936,6 +2276,91 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
       assert.deepEqual(fake.violations,[]);
     } finally { await gateway.stop(); await fake.stop(); }
   });
+
+  it("ignores foreign MCP settings without changing compatible inference or credentials", async () => {
+    const observer = await FakeAgentObservability.start();
+    let resources: [FakeCompatible, GatewayProcess] | undefined;
+    let mcpInvocations = 0;
+    const mcp = createServer((request, response) => {
+      mcpInvocations++;
+      request.resume();
+      response.writeHead(503);
+      response.end();
+    });
+    try {
+      await new Promise<void>(resolve => mcp.listen(0, "127.0.0.1", resolve));
+      const address = mcp.address();
+      assert.ok(address != null && typeof address !== "string");
+      const mcpURL = `http://127.0.0.1:${address.port}/mcp`;
+      const mcpToken = "compatible-foreign-mcp-token";
+      resources = await startCompatibleGateway([
+        "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
+        "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
+        "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
+        "--agento11y.flush-timeout=2s", "--agento11y.shutdown-timeout=2s",
+      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+      const [fake, gateway] = resources;
+      for (const mode of ["generate", "stream"] as const) {
+        for (const implementation of ["go", "vercel"] as const) {
+          const options: LanguageModelV4CallOptions = {
+            prompt: [{ role: "user", content: [{ type: "text", text: mode === "stream" ? "normal-stream" : "unary" }] }],
+            maxOutputTokens: 32,
+            providerOptions: { anthropic: { mcpServers: [{ type: "url", name: "foreign-mcp", url: mcpURL, authorizationToken: mcpToken }] } },
+          };
+          const before = fake.requests.length;
+          let publicResponse: unknown;
+          if (implementation === "go") {
+            const go = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "compatible", mode, options });
+            assert.equal(go.error, undefined);
+            if (mode === "generate") {
+              assert.deepEqual(go.result.content, [{ type: "text", text: "hello from fake compatible" }]);
+              publicResponse = { content: go.result.content, finishReason: go.result.finishReason, usage: go.result.usage, warnings: go.result.warnings, providerMetadata: go.result.providerMetadata, response: go.result.response };
+            } else {
+              assert.equal(go.canceled, false);
+              assertNativeOptionStream(go.parts);
+              assert.equal(go.parts.filter((part: any) => part.type === "text-delta").map((part: any) => part.delta).join(""), "hello from fake compatible stream");
+              publicResponse = go.parts;
+            }
+          } else if (mode === "generate") {
+            const result = await gateway.client()("compatible").doGenerate(options);
+            assert.deepEqual(result.content, [{ type: "text", text: "hello from fake compatible" }]);
+            publicResponse = { content: result.content, finishReason: result.finishReason, usage: result.usage, warnings: result.warnings, providerMetadata: result.providerMetadata, response: result.response };
+          } else {
+            const parts = await collectGatewayStream((await gateway.client()("compatible").doStream(options)).stream);
+            assertNativeOptionStream(parts);
+            assert.equal(parts.filter(part => part.type === "text-delta").map(part => part.delta).join(""), "hello from fake compatible stream");
+            publicResponse = parts;
+          }
+          assert.equal(fake.requests.length, before + 1, `${implementation} ${mode} invokes compatible inference once`);
+          const native = fake.requests.at(-1)!;
+          assert.equal(native.body.model, "backend-private");
+          assert.equal(native.body.stream ?? false, mode === "stream");
+          assert.equal(singleHeader(native.headers.authorization), "Bearer integration-compatible-key");
+          for (const value of [mcpURL, mcpToken, "foreign-mcp", "mcpServers", "mcp_servers", "authorizationToken"]) {
+            assert.ok(!JSON.stringify({ native, publicResponse }).includes(value));
+          }
+          assert.equal(mcpInvocations, 0);
+        }
+      }
+      await observer.waitForGenerations(4);
+      const metrics = await gateway.metrics();
+      await gateway.stop();
+      const captured = JSON.stringify({ metrics, logs: gateway.stderr, generations: observer.generations });
+      for (const value of [mcpURL, mcpToken, "foreign-mcp", "mcpServers", "mcp_servers", "authorizationToken"]) {
+        assert.ok(!captured.includes(value));
+      }
+      assert.equal(observer.generations.length, 4);
+      assert.deepEqual(observer.violations, []);
+      assert.deepEqual(fake.violations, []);
+      assert.equal(mcpInvocations, 0);
+    } finally {
+      await settleCleanup(
+        ...(resources ? [() => resources![1].stop(), () => resources![0].stop()] : []),
+        () => observer.stop(),
+        async () => { mcp.closeAllConnections(); await new Promise<void>((resolve, reject) => mcp.close(error => error ? reject(error) : resolve())); },
+      );
+    }
+  });
   it("discovers, invokes, and streams usage without exposing private configuration", async () => {
     const [fake, gateway] = await startCompatibleGateway();
     try {
@@ -2047,7 +2472,7 @@ describe("authenticated OpenAI Responses Gateway command", () => {
       const options={prompt:[{role:"user" as const,content:[{type:"text" as const,text:"sources"}]}],maxOutputTokens:32};
       const expected=[
         {type:"source",sourceType:"url",url:"https://public.example",title:"Public citation"},
-        {type:"source",sourceType:"document",mediaType:"application/octet-stream",title:"native-file-sk-application",filename:"native-file-sk-application",providerMetadata:{citation:{index:0}}},
+        {type:"source",sourceType:"document",mediaType:"application/octet-stream",title:"native-file-sk-application",filename:"native-file-sk-application",providerMetadata:{openai:{type:"file_path",fileId:"native-file-sk-application",index:0}}},
       ];
       const nativeSources = (parts: any[]) => parts.filter(part => part.type === "source").map(({ id, text, ...part }) => {
         assert.match(id, /^aitxt-[0-9a-f]{24}$/);
@@ -2098,7 +2523,7 @@ describe("authenticated OpenAI Responses Gateway command", () => {
         prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }],
         maxOutputTokens: 32,
       });
-      assert.deepEqual(result.content, [{ type: "text", text: "hello from fake openai" }]);
+      assert.deepEqual(result.content, [{ type: "text", text: "hello from fake openai", providerMetadata: { openai: { itemId: "msg_test" } } }]);
 
       const stream = await client("openai").doStream({
         prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }],
@@ -2356,10 +2781,10 @@ async function startGateway(extraArgs: string[] = [], extraEnv: Record<string, s
   }
 }
 
-async function startCompatibleGateway(): Promise<[FakeCompatible, GatewayProcess]> {
+async function startCompatibleGateway(extraArgs: string[] = [], extraEnv: Record<string, string> = {}): Promise<[FakeCompatible, GatewayProcess]> {
   const fake = await FakeCompatible.start();
   try {
-    return [fake, await GatewayProcess.start(binaryPath, "", [], {}, "access-token", compatibleConfig(fake.url))];
+    return [fake, await GatewayProcess.start(binaryPath, "", extraArgs, extraEnv, "access-token", compatibleConfig(fake.url))];
   } catch (error) {
     await settleCleanup(() => fake.stop());
     throw error;
@@ -2380,8 +2805,10 @@ function compatibleConfig(url: string): string {
   return `providers:\n  compatible-primary:\n    type: openai-compatible\n    apiKeyEnv: GATEWAY_TEST_COMPATIBLE_KEY\n    baseURL: ${url}/v1\n    providerName: compatible-backend\nmodels:\n  grafana/compatible:\n    name: Grafana Compatible\n    description: Integration model\n    primary:\n      provider: compatible-primary\n      model: backend-private\n    aliases:\n      - compatible\n`;
 }
 
-function openAIConfig(url: string): string {
-  return `providers:\n  openai-primary:\n    type: openai\n    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY\n    baseURL: ${url}/v1\nmodels:\n  grafana/openai:\n    name: Grafana OpenAI\n    description: Integration model\n    primary:\n      provider: openai-primary\n      model: backend-private\n    aliases:\n      - openai\n`;
+function openAIConfig(url: string, fallbackURL?: string): string {
+  const secondary = fallbackURL ? `  openai-secondary:\n    type: openai\n    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY\n    baseURL: ${fallbackURL}/v1\n` : "";
+  const fallback = fallbackURL ? `    fallback:\n      - provider: openai-secondary\n        model: backend-private\n` : "";
+  return `providers:\n  openai-primary:\n    type: openai\n    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY\n    baseURL: ${url}/v1\n${secondary}models:\n  grafana/openai:\n    name: Grafana OpenAI\n    description: Integration model\n    primary:\n      provider: openai-primary\n      model: backend-private\n${fallback}    aliases:\n      - openai\n`;
 }
 
 function anthropicConfig(url: string, backendModel = "backend-private"): string {
@@ -2572,6 +2999,7 @@ class GatewayProcess {
 type FakeRequest = { path: string; apiKey?: string; headers: IncomingMessage["headers"]; body: Record<string, unknown> };
 
 class FakeAnthropic {
+  metadata = false;
   readonly url: string;
   readonly requests: FakeRequest[] = [];
   readonly violations: string[] = [];
@@ -2580,6 +3008,8 @@ class FakeAnthropic {
   oversizedErrors = false;
   failureStatus?: number;
   functionTools = false;
+  providerTools = false;
+  providerToolCaller = false;
   backendModel = "backend-private";
   private readonly server: ReturnType<typeof createServer>;
 
@@ -2640,6 +3070,7 @@ class FakeAnthropic {
       response.end(JSON.stringify({ type: "error", error: { type: "api_error", message: "provider-secret-response integration-anthropic-key backend-private" }, request_id: "backend-private-request" }));
       return;
     }
+    if (this.metadata) { nativeMetadataReply("anthropic", body, response); return; }
     if (marker === "silent-unary-shutdown") {
       response.once("close", () => this.canceled.add(marker));
       return;
@@ -2658,6 +3089,40 @@ class FakeAnthropic {
     if (marker === "provider-error") {
       response.writeHead(502, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ error: { type: "api_error", message: "provider-secret-response" } }));
+      return;
+    }
+    if (this.providerTools || this.providerToolCaller) {
+      const messages = body.messages as Array<{ content: Array<{ type: string }> }>;
+      const continued = messages.some(message => message.content.some(part => part.type === "server_tool_use" || part.type === "tool_result"));
+      const blocks = continued
+        ? [{ type: "text", text: "Hosted tools finished." }]
+        : this.providerToolCaller
+          ? [{ type: "tool_use", id: "call-child", name: "execute", input: {}, caller: { type: "code_execution_20260120", tool_id: "call-parent" } }]
+          : [
+              { type: "server_tool_use", id: "call-code", name: "code_execution", input: { code: "1+1" }, caller: { type: "direct" } },
+              { type: "code_execution_tool_result", tool_use_id: "call-code", content: { type: "code_execution_result", stdout: "2", stderr: "", return_code: 0 } },
+              ...(body.mcp_servers ? [
+                { type: "mcp_tool_use", id: "call-mcp", name: "echo", server_name: "echo", input: { message: "hello" } },
+                { type: "mcp_tool_result", tool_use_id: "call-mcp", is_error: false, content: "done" },
+              ] : []),
+            ];
+      const stopReason = !continued && this.providerToolCaller ? "tool_use" : "end_turn";
+      if (body.stream !== true) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ id: "msg_provider_tools", type: "message", role: "assistant", model: "backend-private", content: blocks, stop_reason: stopReason, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 4 } }));
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      const event = (value: { type: string; [key: string]: unknown }) => response.write(`event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`);
+      event({ type: "message_start", message: { id: "msg_provider_tools", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } });
+      for (const [index, block] of blocks.entries()) {
+        event({ type: "content_block_start", index, content_block: continued ? { type: "text", text: "" } : block });
+        if (continued) event({ type: "content_block_delta", index, delta: { type: "text_delta", text: "Hosted tools finished." } });
+        event({ type: "content_block_stop", index });
+      }
+      event({ type: "message_delta", delta: { stop_reason: stopReason, stop_sequence: null }, usage: { output_tokens: 4 } });
+      event({ type: "message_stop" });
+      response.end();
       return;
     }
     if (this.functionTools) {
@@ -2711,6 +3176,7 @@ class FakeAnthropic {
 }
 
 class FakeCompatible {
+  metadata = false;
   readonly url: string;
   readonly requests: FakeRequest[] = [];
   readonly violations: string[] = [];
@@ -2776,6 +3242,7 @@ class FakeCompatible {
       response.end(JSON.stringify({ error: { type: "server_error", message: "provider-secret-response" } }));
       return;
     }
+    if (this.metadata) { nativeMetadataReply("compatible", body, response); return; }
     if (body.stream !== true) {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
@@ -2802,6 +3269,7 @@ class FakeCompatible {
 }
 
 class FakeOpenAI {
+  metadata = false;
   readonly url: string;
   readonly requests: FakeRequest[] = [];
   readonly violations: string[] = [];
@@ -2864,6 +3332,7 @@ class FakeOpenAI {
       response.end(JSON.stringify({ error: { type: "server_error", message: "provider-secret-response" } }));
       return;
     }
+    if (this.metadata) { nativeMetadataReply("openai", body, response); return; }
     const stream = body.stream === true;
     const text = stream ? "hello from fake openai stream" : "hello from fake openai";
     const annotations=this.sources ? [

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"time"
 )
@@ -97,10 +98,30 @@ type Tool struct {
 	ID   string                     `json:"id,omitempty"`
 	Args map[string]json.RawMessage `json:"args,omitempty"`
 
-	// ProviderOptions carries provider-specific options keyed by provider name.
-	// Both function tools and provider tools may carry options; producers MAY
-	// leave this nil for provider tools.
+	// ProviderOptions carries provider-specific function-tool options keyed by provider name.
+	// Provider tools use Args instead; ValidateTools rejects ProviderOptions on them.
 	ProviderOptions ProviderOptions `json:"providerOptions,omitempty"`
+}
+
+func ValidateTools(tools []Tool) error {
+	for index, tool := range tools {
+		switch tool.Type {
+		case ToolTypeProvider:
+			if tool.Description != "" || tool.InputSchema != nil || tool.InputExamples != nil || tool.Strict != nil || tool.ProviderOptions != nil {
+				return fmt.Errorf("provider: tool %d has function-only fields", index)
+			}
+			for key, value := range tool.Args {
+				if !json.Valid(value) {
+					return fmt.Errorf("provider: tool %d has invalid argument %q", index, key)
+				}
+			}
+		case ToolTypeFunction:
+			if tool.ID != "" || tool.Args != nil {
+				return fmt.Errorf("provider: tool %d has provider-only fields", index)
+			}
+		}
+	}
+	return nil
 }
 
 // InputExample wraps a tool input example.

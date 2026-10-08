@@ -61,7 +61,9 @@ action completes.
 
 Some providers also supply provider-executed tools such as web search or code
 execution. Those are configured through the provider package and run by the
-provider, not by your `Execute` function.
+provider, not by your `Execute` function. A provider-defined tool may also
+return a call for your application to execute. Check `ProviderExecuted` on each
+call to determine who owns execution.
 
 ## Route tools through callers
 

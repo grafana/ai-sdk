@@ -75,6 +75,27 @@ func TestProviderWireV4Scenario_StreamingUsesProductionRoute(t *testing.T) {
 	assert.NotContains(t, response.Body.String(), "private-provider")
 }
 
+func TestProviderWireV4Scenario_HostedMCPUsesConfiguredRoute(t *testing.T) {
+	scenario, err := newProviderWireV4Scenario()
+	require.NoError(t, err)
+	mux := http.NewServeMux()
+	scenario.register(mux)
+
+	response := httptest.NewRecorder()
+	request := providerWireV4Request(t, context.Background(), "hosted-deferred", `{"prompt":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"tools":[{"type":"provider","id":"anthropic.code_execution_20260120","name":"code","args":{}}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test","authorizationToken":"dummy"}]}}}`)
+	mux.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code, "%s; provider options: %#v", response.Body.String(), scenario.stats.options().ProviderOptions)
+	assert.Contains(t, response.Body.String(), `"type":"mcp-tool-use"`)
+	assert.NotContains(t, response.Body.String(), "dummy")
+
+	response = httptest.NewRecorder()
+	request = providerWireV4Request(t, context.Background(), "hosted-deferred", `{"prompt":[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}],"tools":[{"type":"provider","id":"anthropic.code_execution_20260120","name":"code","args":{}}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test","authorizationToken":"dummy"}]}}}`)
+	mux.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	assert.Contains(t, response.Body.String(), `"type":"tool-result"`)
+}
+
 func TestProviderWireV4Scenario_ObservesClientCancellation(t *testing.T) {
 	scenario, err := newProviderWireV4Scenario()
 	require.NoError(t, err)

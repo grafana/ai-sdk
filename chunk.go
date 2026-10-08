@@ -193,16 +193,16 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 
 	case ChunkReasoningStart:
 		m["id"] = c.ID
-		setPresentMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkReasoningDelta:
 		m["id"] = c.ID
 		m["delta"] = c.Delta
-		setPresentMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkReasoningEnd:
 		m["id"] = c.ID
-		setPresentMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkToolInputStart:
 		m["toolCallId"] = c.ToolCallID
@@ -210,7 +210,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
 		setPresentString(m, "title", c.Title, c.titlePresent)
-		setPresentMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 		setOptRaw(m, "toolMetadata", c.ToolMetadata)
 
 	case ChunkToolInputDelta:
@@ -224,7 +224,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
 		setPresentString(m, "title", c.Title, c.titlePresent)
-		setPresentMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 		setOptRaw(m, "toolMetadata", c.ToolMetadata)
 
 	case ChunkToolInputError:
@@ -235,7 +235,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
 		setPresentString(m, "title", c.Title, c.titlePresent)
-		setPresentMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 		setOptRaw(m, "toolMetadata", c.ToolMetadata)
 
 	case ChunkToolApprovalRequest:
@@ -251,7 +251,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		m["approved"] = c.Approved
 		setPresentString(m, "reason", c.Reason, c.reasonPresent)
 		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
-		setPresentMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkToolOutputDenied:
 		m["toolCallId"] = c.ToolCallID
@@ -262,7 +262,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
 		setPresentBool(m, "preliminary", c.Preliminary, c.preliminaryPresent)
-		setPresentMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 		setOptRaw(m, "toolMetadata", c.ToolMetadata)
 
 	case ChunkToolOutputError:
@@ -270,7 +270,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		m["errorText"] = c.ErrorText
 		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
-		setPresentMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 		setOptRaw(m, "toolMetadata", c.ToolMetadata)
 
 	case ChunkSourceURL:
@@ -293,7 +293,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 	case ChunkReasoningFile:
 		m["url"] = c.URL
 		m["mediaType"] = c.MediaType
-		setPresentMeta(m, c.ProviderMetadata)
+		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkError:
 		m["errorText"] = c.ErrorText
@@ -349,14 +349,6 @@ func setOptRaw(m map[string]any, key string, val json.RawMessage) {
 }
 
 func setOptMeta(m map[string]any, meta provider.ProviderMetadata) {
-	if len(meta) > 0 {
-		m["providerMetadata"] = meta
-	}
-}
-
-// An explicit empty metadata object replaces earlier metadata in
-// the pinned frontend assembler. Omission must not turn clearing into retain.
-func setPresentMeta(m map[string]any, meta provider.ProviderMetadata) {
 	if meta != nil {
 		m["providerMetadata"] = meta
 	}

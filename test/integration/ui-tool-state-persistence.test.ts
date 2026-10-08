@@ -321,6 +321,35 @@ describe("pinned UI tool state persistence", () => {
     expect(messages).toEqual(original);
   });
 
+  it.each([false, true])("keeps resumed call metadata out of result metadata (dynamic: %s)", async dynamic => {
+    for (const callProviderMetadata of [undefined, {}, { future: { nested: [null, false, {}] } }]) {
+      const initialMessage = stateMessage("approval-responded", dynamic, { callProviderMetadata });
+      const original = json(initialMessage);
+      const model = referenceToolStateModel();
+      const stream = await createAgentUIStream({ agent: new ToolLoopAgent({ model, tools: toolStateReferenceTools }), uiMessages: [initialMessage] });
+      const expectedChunks: UIMessageChunk[] = [];
+      const expected: UIMessage[] = [];
+      for await (const message of readUIMessageStream({
+        message: json(initialMessage),
+        stream: stream.pipeThrough(new TransformStream({ transform(chunk, controller) {
+          expectedChunks.push(json(chunk));
+          controller.enqueue(chunk);
+        } })),
+        terminateOnError: true,
+      })) expected.push(json(message));
+      const response = await fetchScenario("ui-tool-state-agent", { headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: [initialMessage] }) });
+      const go = await readToolStateStream(response, json(original));
+      const outputs = go.chunks.filter(chunk => chunk.type === "tool-output-available");
+      expect(outputs).toHaveLength(1);
+      expect(outputs[0]).not.toHaveProperty("providerMetadata");
+      expect(expectedChunks.find(chunk => chunk.type === "tool-output-available")).not.toHaveProperty("providerMetadata");
+      const goPart = go.snapshots.at(-1)!.parts[0];
+      expect(goPart).not.toHaveProperty("resultProviderMetadata");
+      expect(canonicalUI([{ parts: [goPart] }])).toEqual(canonicalUI([{ parts: [expected.at(-1)!.parts[0]] }]));
+      expect(initialMessage).toEqual(original);
+    }
+  });
+
   it.each([{ messages: null }, { messages: [] }])("rejects empty Agent history before provider invocation: $messages", async ({ messages }) => {
     const model = referenceToolStateModel();
     await expect(createAgentUIStream({ agent: new ToolLoopAgent({ model, tools: toolStateReferenceTools }), uiMessages: messages as unknown as UIMessage[] })).rejects.toThrow();
