@@ -24,6 +24,24 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return fn(r) }
 
+func newTestModel(t *testing.T, selector string, controls json.RawMessage, approvals map[Provider][]string, client *http.Client) provider.LanguageModel {
+	t.Helper()
+	request, err := DecodeRequest(selector, controls, approvals)
+	require.NoError(t, err)
+	model, err := New(request.Provider, request.Model, request.Accounts, client)
+	require.NoError(t, err)
+	return model
+}
+
+func invokeTestModel(ctx context.Context, model provider.LanguageModel, streaming bool, options provider.CallOptions) error {
+	if streaming {
+		_, err := model.DoStream(ctx, options)
+		return err
+	}
+	_, err := model.DoGenerate(ctx, options)
+	return err
+}
+
 func TestNew_RequestOnlyAccountsAndDefaultFallback(t *testing.T) {
 	for _, name := range []string{"OPENAI_API_KEY", "OPENAI_ADMIN_KEY", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID", "OPENAI_WEBHOOK_SECRET", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"} {
 		t.Setenv(name, "dummy-environment-secret")
@@ -88,10 +106,7 @@ func TestNew_RequestOnlyAccountsAndDefaultFallback(t *testing.T) {
 					other = OpenAI
 				}
 				controls := fmt.Sprintf(`{"byok":{"%s":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}],"%s":[{"apiKey":"unused-key"}]}}`, name, other)
-				request, err := DecodeRequest(string(name)+"/native-model", json.RawMessage(controls), nil)
-				require.NoError(t, err)
-				model, err := New(request.Provider, request.Model, request.Accounts, client)
-				require.NoError(t, err)
+				model := newTestModel(t, string(name)+"/native-model", json.RawMessage(controls), nil, client)
 				result, err := model.DoGenerate(context.Background(), provider.CallOptions{
 					Prompt: []provider.Message{provider.UserText("hello"), provider.AssistantText("previous reply"), provider.NewUserMessage(provider.TextPart("continue"), provider.FilePart("image/png", provider.DataContent{URL: "https://assets.invalid/example.png"}))},
 					Tools:  []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: json.RawMessage(`{"type":"object","properties":{}}`)}},
@@ -147,11 +162,7 @@ func TestNew_AccountConfigDefaults(t *testing.T) {
 				})}
 				model, err := New(request.Provider, request.Model, request.Accounts, client)
 				require.NoError(t, err)
-				if streaming {
-					_, err = model.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
-				} else {
-					_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
-				}
+				err = invokeTestModel(context.Background(), model, streaming, provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
 				require.Error(t, err)
 				assert.Equal(t, 1, calls)
 			})
@@ -210,11 +221,7 @@ func TestNew_ApprovedAccountOverrides(t *testing.T) {
 				model, err := New(request.Provider, request.Model, request.Accounts, client)
 				require.NoError(t, err)
 				options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("ordinary input")}}
-				if streaming {
-					_, err = model.DoStream(context.Background(), options)
-				} else {
-					_, err = model.DoGenerate(context.Background(), options)
-				}
+				err = invokeTestModel(context.Background(), model, streaming, options)
 				require.Error(t, err)
 				assert.Equal(t, 2, calls)
 				assert.Nil(t, client.CheckRedirect)
@@ -437,18 +444,11 @@ func TestNew_HTTPTransportRejectsInvalidHeaders(t *testing.T) {
 					account[field] = "dummy-secret\r\nX-Test: value"
 					raw, err := json.Marshal(map[string]any{"byok": map[Provider][]map[string]string{name: {account}}})
 					require.NoError(t, err)
-					request, err := DecodeRequest(string(name)+"/model", raw, map[Provider][]string{name: {server.URL}})
-					require.NoError(t, err)
-					model, err := New(request.Provider, request.Model, request.Accounts, server.Client())
-					require.NoError(t, err)
+					model := newTestModel(t, string(name)+"/model", raw, map[Provider][]string{name: {server.URL}}, server.Client())
 					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 					defer cancel()
 					options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}}
-					if streaming {
-						_, err = model.DoStream(ctx, options)
-					} else {
-						_, err = model.DoGenerate(ctx, options)
-					}
+					err = invokeTestModel(ctx, model, streaming, options)
 					require.ErrorContains(t, err, "invalid header field value")
 					assert.Zero(t, calls.Load())
 				})
@@ -483,10 +483,7 @@ func TestNew_OpenAIStreamPreflightAndCommitment(t *testing.T) {
 				}
 				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 			})}
-			request, err := DecodeRequest("openai/native-model", json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}`), nil)
-			require.NoError(t, err)
-			model, err := New(request.Provider, request.Model, request.Accounts, client)
-			require.NoError(t, err)
+			model := newTestModel(t, "openai/native-model", json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}`), nil, client)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			result, err := model.DoStream(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
@@ -585,10 +582,7 @@ func TestNew_DoesNotFollowNativeRedirects(t *testing.T) {
 					return &http.Response{StatusCode: 307, Header: http.Header{"Content-Type": {"application/json"}, "Location": {"https://redirect.invalid"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"redirect"}}`)), Request: r}, nil
 				})}
 				raw := fmt.Sprintf(`{"byok":{"%s":[{"apiKey":"dummy-first"%s},{"apiKey":"dummy-second"%s}]}}`, name, accountFields, accountFields)
-				request, err := DecodeRequest(string(name)+"/native-model", json.RawMessage(raw), approvals)
-				require.NoError(t, err)
-				model, err := New(request.Provider, request.Model, request.Accounts, client)
-				require.NoError(t, err)
+				model := newTestModel(t, string(name)+"/native-model", json.RawMessage(raw), approvals, client)
 				_, _ = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
 				assert.Equal(t, 1, calls)
 				assert.Nil(t, client.CheckRedirect)
@@ -631,10 +625,7 @@ func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
 					}
 					return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"authentication_error","message":"rejected"}}`)), Request: r}, nil
 				})}
-				request, err := DecodeRequest("anthropic/native-model", json.RawMessage(`{"byok":{"anthropic":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}`), nil)
-				require.NoError(t, err)
-				model, err := New(request.Provider, request.Model, request.Accounts, client)
-				require.NoError(t, err)
+				model := newTestModel(t, "anthropic/native-model", json.RawMessage(`{"byok":{"anthropic":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}`), nil, client)
 				opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}}
 				require.NoError(t, json.Unmarshal([]byte(tc.options), &opts.ProviderOptions))
 				if tc.mcpHistory {
@@ -643,11 +634,7 @@ func TestNew_AnthropicNativeOptionGuards(t *testing.T) {
 					part.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Raw: json.RawMessage(`{"type":"mcp-tool-use","serverName":"external"}`)}}
 					opts.Prompt = append(opts.Prompt, provider.NewAssistantMessage(part))
 				}
-				if streaming {
-					_, err = model.DoStream(context.Background(), opts)
-				} else {
-					_, err = model.DoGenerate(context.Background(), opts)
-				}
+				err := invokeTestModel(context.Background(), model, streaming, opts)
 				if tc.allowed {
 					require.Error(t, err)
 					assert.NotErrorIs(t, err, catalog.ErrUnsupportedRequest)
