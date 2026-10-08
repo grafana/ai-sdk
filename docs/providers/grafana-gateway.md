@@ -10,6 +10,44 @@ go get github.com/grafana/ai-sdk github.com/grafana/ai-sdk/providers/grafana
 
 Keep Gateway and model-provider credentials on your server, not in browser code.
 
+## Inspect execution overviews and failures
+
+Unary results and stream finish metadata may contain `gateway.execution`.
+It identifies the requested/canonical public model and ordered observed attempts,
+including configured provider instance, provider and native model, outcome,
+and optional protected failure summaries. Earlier eligible failures remain
+visible when a later candidate is selected. Selection commits a stream at its
+first accepted part; it does not mean completion or replay safety.
+
+Go applications can inspect result/finish `ProviderMetadata`, including through
+consumer middleware. TypeScript applications can inspect result or awaited
+stream `providerMetadata`. Each invocation has its own overview; application
+retries and tool continuations start new invocations.
+
+HTTP setup/unary errors carry optional top-level `providerMetadata` in the
+bounded error body. Go exposes it through `*provider.APICallError.Data`;
+the TypeScript Gateway error exposes the API cause's `data`.
+Committed stream errors carry `error.data.providerMetadata` and an optional
+current `error.data.nativeError` summary. Go exposes that payload through
+the part's `APICallError.Data`; TypeScript low-level parts expose `error.data`
+and high-level error parts wrap the Gateway error. Later content/finish parts
+remain ordered and readable. Current errors are not accumulated into finish
+metadata or used to restart fallback.
+
+These extensions are best-effort, independent of Gateway operator observation,
+and do not change public error classification or retryability. Complete
+response/frame bounds still apply; an overview can be omitted rather than
+invalidate fitting original output. Native `gateway` metadata moves under
+`gateway.nativeMetadata` only when enrichment fits. Otherwise it stays opaque,
+so namespace presence alone does not establish provenance, and an absent
+overview does not imply no provider attempts.
+
+Summaries exclude raw bodies, headers and arbitrary causes and protect actual
+credential/other-tenant echoes. Ordinary application error text remains useful
+and may be sensitive: independently authorize consumer logging. These fields
+are not automatically UI message metadata or display content; map only
+deliberately selected values for your frontend.
+
 ## Authenticate the client
 
 Ask your Gateway operator for the URL and credentials your application should

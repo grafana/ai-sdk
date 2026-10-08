@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -295,6 +296,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext, executionCo
 		return
 	}
 
+	call := invocationFromContext(executionContext)
 	modelContext, cancel := context.WithCancel(executionContext)
 	counter := newStreamPartCounter(h.limits.StreamParts)
 	outcomes := make(chan streamOutcome)
@@ -314,7 +316,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext, executionCo
 	case outcome = <-outcomes:
 	case <-modelContext.Done():
 		cancel()
-		h.writeSafeError(w, safeError{category: streamContextErrorCategory(requestContext)})
+		h.writeSafeError(w, (safeError{category: streamContextErrorCategory(requestContext)}).withInvocation(call, modelContext.Err()))
 		return
 	}
 
@@ -324,9 +326,9 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext, executionCo
 			h.startStreamDrain(outcome.result.Stream, counter)
 		}
 		if !isNilInterface(outcome.err) {
-			h.writeSafeError(w, safeErrorFromProvider(outcome.err))
+			h.writeSafeError(w, safeErrorFromProvider(outcome.err).withInvocation(call, outcome.err))
 		} else {
-			h.writeSafeError(w, safeError{category: safeInternal})
+			h.writeSafeError(w, (safeError{category: safeInternal}).withInvocation(call, errModelInternal))
 		}
 		return
 	}
@@ -352,6 +354,7 @@ func callStream(ctx context.Context, model provider.LanguageModel, options provi
 			outcome.err = errModelInternal
 		}
 	}()
+	invocationFromContext(ctx).enter()
 	outcome.result, outcome.err = model.DoStream(ctx, options)
 	return outcome
 }
@@ -439,6 +442,7 @@ const (
 )
 
 type streamState struct {
+	invocation       *invocation
 	metadataSeen     bool
 	textStarted      bool
 	activeID         string
@@ -462,22 +466,27 @@ func newStreamState(limit int, history map[string]string) *streamState {
 }
 
 func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, history map[string]string) {
+	call := invocationFromContext(modelContext)
 	part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
 	if waitResult != streamWaitPart {
+		call.finish(errorForStreamWait(waitResult))
 		cancel()
 		if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) != streamWriteSuccess {
 			return
 		}
-		h.writeStreamTerminalForWait(w, waitResult)
+		h.writeStreamTerminalForWait(w, waitResult, call)
 		return
 	}
 
+	call.finish(nil)
+	state := newStreamState(h.limits.StreamParts, history)
+	state.invocation = call
 	if part.Type == provider.PartStreamStart {
 		warnings, err := mapStreamWarnings(part.Warnings, h.limits.StreamFrameBytes)
 		if err != nil {
 			cancel()
 			if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) == streamWriteSuccess {
-				h.writeStreamTerminalError(w, safeError{category: safeInternal})
+				h.writeStreamTerminalError(w, (safeError{category: safeInternal}).withInvocation(call, nil))
 			}
 			return
 		}
@@ -487,7 +496,7 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		case streamWriteEncodingFailure:
 			cancel()
 			if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) == streamWriteSuccess {
-				h.writeStreamTerminalError(w, safeError{category: safeInternal})
+				h.writeStreamTerminalError(w, (safeError{category: safeInternal}).withInvocation(call, nil))
 			}
 			return
 		default:
@@ -497,9 +506,8 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) != streamWriteSuccess {
 			return
 		}
-		state := newStreamState(h.limits.StreamParts, history)
 		result := h.processStreamPart(w, state, part)
-		if h.handleStreamPartResult(w, cancel, result) {
+		if h.handleStreamPartResult(w, cancel, result, state.invocation) {
 			return
 		}
 		idleTimer.Reset(h.limits.StreamIdleDuration)
@@ -507,7 +515,7 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		return
 	}
 
-	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, newStreamState(h.limits.StreamParts, history))
+	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, state)
 }
 
 func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, state *streamState) {
@@ -515,24 +523,24 @@ func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, mode
 		part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
 		if waitResult != streamWaitPart {
 			cancel()
-			h.writeStreamTerminalForWait(w, waitResult)
+			h.writeStreamTerminalForWait(w, waitResult, state.invocation)
 			return
 		}
 		result := h.processStreamPart(w, state, part)
-		if h.handleStreamPartResult(w, cancel, result) {
+		if h.handleStreamPartResult(w, cancel, result, state.invocation) {
 			return
 		}
 		idleTimer.Reset(h.limits.StreamIdleDuration)
 	}
 }
 
-func (h *handler) handleStreamPartResult(w http.ResponseWriter, cancel context.CancelFunc, result streamPartResult) bool {
+func (h *handler) handleStreamPartResult(w http.ResponseWriter, cancel context.CancelFunc, result streamPartResult, call *invocation) bool {
 	switch result {
 	case streamPartContinue:
 		return false
 	case streamPartAdapterFailure:
 		cancel()
-		h.writeStreamTerminalError(w, safeError{category: safeInternal})
+		h.writeStreamTerminalError(w, (safeError{category: safeInternal}).withInvocation(call, nil))
 	}
 	return true
 }
@@ -660,7 +668,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		state.activeID = ""
 		return streamPartContinue
 	case provider.PartError:
-		if result := h.emitSafeStreamError(w, safeErrorFromStreamProvider(part.APICallError)); result != streamWriteSuccess {
+		if result := h.emitSafeStreamError(w, safeErrorFromStreamProvider(part.APICallError).withCurrentInvocation(state.invocation, part.APICallError)); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
 			}
@@ -693,6 +701,17 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			return streamPartAdapterFailure
 		}
 		event := streamEvent{typeName: provider.PartFinish, finishReason: *part.FinishReason, inputUsage: inputUsage, outputUsage: outputUsage, rawUsage: part.Usage.Raw, metadata: part.ProviderMetadata}
+		if state.invocation != nil && state.invocation.overview != nil {
+			if _, ok := encodeStreamFrame(event, h.limits.StreamFrameBytes); !ok {
+				return streamPartAdapterFailure
+			}
+			event.metadata = execution.Metadata(state.invocation.overview, event.metadata, func(metadata provider.ProviderMetadata) bool {
+				candidate := event
+				candidate.metadata = metadata
+				_, ok := encodeStreamFrame(candidate, h.limits.StreamFrameBytes)
+				return ok
+			})
+		}
 		if result := h.emitStreamEvent(w, event); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
@@ -746,6 +765,10 @@ func (h *handler) emitStreamEvent(w http.ResponseWriter, event streamEvent) stre
 
 func (h *handler) emitSafeStreamError(w http.ResponseWriter, value safeError) streamWriteResult {
 	frame := streamErrorFrameForSafeError(value)
+	if value.invocation != nil {
+		body := enrichErrorDocument(frame[len("data: "):len(frame)-len("\n\n")], true, value, h.limits.StreamFrameBytes-int64(len("data: \n\n")))
+		frame = append(append([]byte("data: "), body...), '\n', '\n')
+	}
 	if int64(len(frame)) > h.limits.StreamFrameBytes {
 		return streamWriteEncodingFailure
 	}
@@ -774,14 +797,14 @@ func streamErrorFrameForSafeError(value safeError) []byte {
 	}
 }
 
-func (h *handler) writeStreamTerminalForWait(w http.ResponseWriter, result streamWaitResult) {
+func (h *handler) writeStreamTerminalForWait(w http.ResponseWriter, result streamWaitResult, call *invocation) {
 	switch result {
 	case streamWaitCanceled:
-		h.writeStreamTerminalError(w, safeError{category: safeCancellation})
+		h.writeStreamTerminalError(w, (safeError{category: safeCancellation}).withInvocation(call, errorForStreamWait(result)))
 	case streamWaitTotalTimeout, streamWaitIdleTimeout:
-		h.writeStreamTerminalError(w, safeError{category: safeTimeout})
+		h.writeStreamTerminalError(w, (safeError{category: safeTimeout}).withInvocation(call, errorForStreamWait(result)))
 	default:
-		h.writeStreamTerminalError(w, safeError{category: safeInternal})
+		h.writeStreamTerminalError(w, (safeError{category: safeInternal}).withInvocation(call, nil))
 	}
 }
 

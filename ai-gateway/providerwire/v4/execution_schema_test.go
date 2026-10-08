@@ -1,8 +1,10 @@
 package v4
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
@@ -13,6 +15,44 @@ import (
 
 //go:embed schema/gateway_execution.json
 var executionSchemaJSON []byte
+
+func TestExecutionSchema_ProducedCarriers(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, failure := range []bool{false, true} {
+			t.Run(map[bool]string{false: "unary", true: "stream"}[streaming]+"/"+map[bool]string{false: "success", true: "error"}[failure], func(t *testing.T) {
+				nativeError := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "upstream busy"})
+				first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+					if failure {
+						return nil, nativeError
+					}
+					return validGenerateResult(), nil
+				}, stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					if failure {
+						return nil, nativeError
+					}
+					return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartError, APICallError: nativeError}, finishPart())}, nil
+				}}
+				h := invocationHarness(t, testLimits(), first)
+				request := validRequest(`{"prompt":[]}`)
+				if streaming {
+					request = streamRequest(`{"prompt":[]}`)
+				}
+				response := h.serve(request)
+				if failure {
+					require.NoError(t, compileWireSchema(t, errorSchemaJSON).Validate(response.Body.Bytes()))
+					return
+				}
+				if !streaming {
+					require.NoError(t, compileWireSchema(t, unarySuccessSchemaJSON).Validate(response.Body.Bytes()))
+					return
+				}
+				for _, frame := range strings.Split(strings.TrimSuffix(response.Body.String(), "\n\n"), "\n\n") {
+					require.NoError(t, compileWireSchema(t, streamEventSchemaJSON).Validate([]byte(strings.TrimPrefix(frame, "data: "))))
+				}
+			})
+		}
+	}
+}
 
 func TestExecutionSchema_ProducedNamespace(t *testing.T) {
 	compiled := compileWireSchema(t, executionSchemaJSON)

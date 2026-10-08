@@ -211,7 +211,7 @@ func TestStreamingRuntimeHappyPathPrivacyAndOrder(t *testing.T) {
 	expected := []string{
 		`{"type":"stream-start","warnings":[{"type":"other","message":"ordinary token-looking text backend=native-model"}]}`,
 		`{"type":"response-metadata","id":"response-id","modelId":"backend-private","timestamp":"2026-08-22T23:02:03.456Z"}`,
-		`{"type":"error","error":{"message":"rate limit exceeded","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded","statusCode":429,"retryable":true}}`,
+		`{"type":"error","error":{"message":"rate limit exceeded","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded","statusCode":429,"retryable":true,"data":{"nativeError":{"statusCode":429}}}}`,
 		`{"type":"text-start","id":"text-1","providerMetadata":{"private":{"secret":true}}}`,
 		`{"type":"text-delta","id":"text-1","delta":""}`,
 		`{"type":"error","error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true}}`,
@@ -489,22 +489,22 @@ func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {
 		}{
 			{
 				name:      "invalid http status is internal",
-				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 700, Message: "private", Cause: context.Canceled}),
+				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 700, Message: "ordinary native message", Cause: context.Canceled}),
 				wantError: `"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true}`,
 			},
 			{
 				name:      "no status timeout cause is timeout",
-				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{Message: "private", Cause: testNetError{timeout: true}}),
+				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{Message: "ordinary native message", Cause: testNetError{timeout: true}}),
 				wantError: `"error":{"message":"request timed out","type":"internal_server_error","param":null,"code":"timeout","statusCode":504,"retryable":true}`,
 			},
 			{
 				name:      "no status dns cause is upstream",
-				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{Message: "private", Cause: &net.DNSError{Name: "private.internal", Err: "no such host"}}),
+				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{Message: "ordinary native message", Cause: &net.DNSError{Name: "private.internal", Err: "no such host"}}),
 				wantError: `"error":{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":true}`,
 			},
 			{
 				name:      "valid http 200 error remains upstream",
-				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusOK, Message: "private", Cause: context.DeadlineExceeded}),
+				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusOK, Message: "ordinary native message", Cause: context.DeadlineExceeded}),
 				wantError: `"error":{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":true}`,
 			},
 		}
@@ -518,7 +518,8 @@ func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {
 					)}, nil
 				}
 				body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
-				assert.Contains(t, body, tc.wantError)
+				assert.Contains(t, body, strings.TrimSuffix(tc.wantError, "}"))
+				assert.Contains(t, body, `"nativeError":{"message":"ordinary native message"`)
 				assert.Equal(t, 1, strings.Count(body, `"type":"error"`))
 				assert.Contains(t, body, `"type":"finish"`)
 				assert.NotContains(t, body, "private")
