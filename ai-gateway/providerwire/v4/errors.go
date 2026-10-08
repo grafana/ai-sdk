@@ -29,8 +29,10 @@ const (
 )
 
 type safeError struct {
-	category   safeErrorCategory
-	capability unsupportedCapability
+	category    safeErrorCategory
+	capability  unsupportedCapability
+	invocation  *invocation
+	nativeError *provider.APICallError
 }
 
 type safeErrorDocument struct {
@@ -226,7 +228,9 @@ func safeErrorFromTransport(err error) (safeError, bool) {
 }
 
 func (h *handler) writeSafeError(w http.ResponseWriter, value safeError) {
-	writeSafeErrorDocument(w, documentForSafeError(value))
+	document := documentForSafeError(value)
+	document.body = enrichErrorDocument(document.body, false, value, min(h.limits.UnaryResponseBytes, maxErrorResponseBytes))
+	writeSafeErrorDocument(w, document)
 }
 
 func writeSafeErrorDocument(w http.ResponseWriter, document safeErrorDocument) {
