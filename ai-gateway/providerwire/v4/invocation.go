@@ -63,6 +63,20 @@ func (value *invocation) finish(err error) *execution.Overview {
 	}
 	value.mu.Lock()
 	defer value.mu.Unlock()
+	return value.finishLocked(err)
+}
+
+func (value *invocation) reject(err error) {
+	if value == nil {
+		return
+	}
+	value.mu.Lock()
+	defer value.mu.Unlock()
+	value.decisions = nil
+	value.finishLocked(err)
+}
+
+func (value *invocation) finishLocked(err error) *execution.Overview {
 	if value.sealed {
 		return value.overview
 	}
