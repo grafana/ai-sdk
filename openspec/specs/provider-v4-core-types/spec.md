@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change v4-reshape-core-types. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: V4 Usage type with nested token structs
 The `Usage` type SHALL have two nested struct fields `InputTokens` (type `InputTokenUsage`) and `OutputTokens` (type `OutputTokenUsage`), plus an optional `Raw` field (`json.RawMessage`). The `TotalTokens` top-level field SHALL NOT exist. The `InputTokenDetails` and `OutputTokenDetails` types SHALL NOT exist.
 
@@ -37,7 +39,7 @@ The `OutputTokenUsage` type SHALL have fields: `Total *int`, `Text *int`, `Reaso
 - **THEN** it SHALL have exactly three `*int` fields: `Total` (json:"total"), `Text` (json:"text"), `Reasoning` (json:"reasoning")
 
 ### Requirement: Usage aggregation sums nested totals
-The `aggregateUsage` function SHALL sum `InputTokens.Total` and `OutputTokens.Total` across steps. Detail fields (cache, text, reasoning) SHALL NOT be aggregated.
+The `aggregateUsage` function SHALL sum every `InputTokens` and `OutputTokens` field across steps. `InputTokens.Total` and `OutputTokens.Total` SHALL always be set, with an unreported total treated as zero. A breakdown field (`NoCache`, `CacheRead`, `CacheWrite`, `Text`, `Reasoning`) SHALL be nil when no step reported it. Upstream returns `undefined` for an unreported total; Go keeps totals non-nil.
 
 #### Scenario: Aggregate usage across multiple steps
 - **WHEN** two steps have `InputTokens.Total` of 100 and 200, and `OutputTokens.Total` of 50 and 75
@@ -46,6 +48,11 @@ The `aggregateUsage` function SHALL sum `InputTokens.Total` and `OutputTokens.To
 #### Scenario: Aggregate usage with nil totals
 - **WHEN** a step has nil `InputTokens.Total`
 - **THEN** it SHALL be treated as zero in the aggregation sum
+
+#### Scenario: Aggregate usage breakdowns
+- **WHEN** one step reports `CacheRead` of 800 and another reports `CacheRead` of 1000 and `CacheWrite` of 200
+- **THEN** the aggregated usage SHALL have `CacheRead` of 1800 and `CacheWrite` of 200
+- **AND** breakdown fields no step reported SHALL be nil
 
 ### Requirement: FinishReason as struct with Unified and Raw
 The `FinishReason` type SHALL be a struct with two fields: `Unified` (type `UnifiedFinishReason`) and `Raw` (type `string`). The `UnifiedFinishReason` type SHALL be a `string` type alias with constants: `stop`, `length`, `content-filter`, `tool-calls`, `error`, `other`.
@@ -192,4 +199,3 @@ Providers SHALL set the served provider identifier on the response metadata for 
 #### Scenario: Fallback forwards served provider without modification
 - **WHEN** a `fallback.Model` fails over to a non-primary candidate and that candidate serves the request
 - **THEN** the response/stream metadata SHALL carry the serving candidate's provider, because the fallback wrapper forwards the candidate's output verbatim
-
