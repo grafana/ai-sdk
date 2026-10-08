@@ -204,3 +204,25 @@ the upstream reference; no private-service decoding policy is inferred from it.
 Standard Go decoding is an intentional service adaptation, not a claim of Vercel
 hosted-service malformed-input semantics. No pins or provider recording inputs
 changed. PR #367 and PR #369 remain unchanged; this change remains active.
+
+## Client-guide usability review
+
+Rewrote docs/providers/grafana-gateway.md around authentication, model selection,
+generation, provider settings, tools, BYOK, credential-safe logging, fallback,
+continuation and error handling. Removed engine/PR-stage details, protocol
+encoding inventories and cross-language decoder comparisons. Retained the
+user-visible BYOK availability prerequisite, Gateway authentication, exact
+custom-endpoint approval and safe retry/fallback/logging guidance. Existing
+inbound headings for discovery, fallback and response values remain intact.
+
+All four Go snippets compile together against the public workspace SDK/client
+APIs. Both TypeScript snippets pass strict type checking with registered ai
+7.0.118 and @ai-sdk/gateway 4.0.96, including the existing configured-discovery
+helper. Prepared sources and the Go build are under
+/tmp/byok-doc-examples.Bewb9i/. These were compile checks without provider calls.
+
+mise run lint-docs passed structural/link and markdown checks;
+mise run validate-parity-baseline passed, including 109 tooling tests. Strict
+OpenSpec 1.14.0 validation passed for this existing change. No runtime code,
+module pins, provider recordings or other stack branches changed; earlier
+runtime validation remains the behavioral evidence.

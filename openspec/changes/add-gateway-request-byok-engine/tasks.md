@@ -27,3 +27,7 @@
 - [x] 5.1 Replace account schema/normalization with struct decoding, account-count validation and exact endpoint approval.
 - [x] 5.2 Prove ordinary Go decoding, shared request limits and native HTTP header rejection; update the existing contract.
 - [x] 5.3 Rerun independent gates and push PR #368 without changing the other stack branches.
+
+## 6. Client-guide usability review
+
+- [x] 6.1 Rewrite the Gateway guide around application tasks, retain availability/security guidance and validate its links and Go/pinned TypeScript examples.
