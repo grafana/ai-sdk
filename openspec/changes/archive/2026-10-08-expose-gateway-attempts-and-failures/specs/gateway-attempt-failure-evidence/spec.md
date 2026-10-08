@@ -16,6 +16,11 @@ The Gateway SHALL publish a compact overview for one finalized configured direct
 - **WHEN** concurrent requests share models or a provider returns after request finalization
 - **THEN** published attribution SHALL remain call-local and SHALL NOT be rewritten by the late callback or native result
 
+#### Scenario: Selection has no configured attribution
+- **WHEN** a request selector returns a model without catalog-owned configured attribution
+- **THEN** the Gateway SHALL omit both execution overviews and event-local native summaries without capturing request-local fallback errors or inferring provenance from model identity or native metadata
+- **AND** original opaque native metadata and existing classified error behavior SHALL remain unchanged
+
 ### Requirement: Independent fallback and direct observation
 
 Fallback capture SHALL use the shared request observer without changing its model observer, decider inputs, returned errors or first-part commitment. Disabled, panicking or saturated operator observation SHALL NOT suppress consumer attribution. Direct calls SHALL be observed at existing invocation/result/first-part ownership boundaries without one-candidate fallback, new readers or new cleanup owners. A first error part SHALL establish selection but not stream completion. Cancellation-owned setup SHALL NOT capture an unowned late native failure.

@@ -54,7 +54,7 @@ func safeErrorFromResolution(err error) (result safeError) {
 		return safeError{category: safeGatewayControl}
 	}
 	if errors.Is(err, ErrReservedProviderOptions) {
-		return safeError{category: safeInvalidRequest, capability: capabilityReservedProviderOptions}
+		return safeError{category: safeInvalidRequest, reason: policyReservedProviderOptions}
 	}
 	if errors.Is(err, catalog.ErrUnknownModel) {
 		return safeError{category: safeModelNotFound}
