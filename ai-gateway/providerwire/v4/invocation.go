@@ -109,10 +109,11 @@ func (value *invocation) current(err *provider.APICallError) *execution.Failure 
 	return execution.Summary(err, value.sources, value.sourceBytes)
 }
 
-func (value safeError) withCurrentInvocation(call *invocation, err *provider.APICallError) safeError {
-	value.invocation = call
-	value.nativeError = err
-	return value
+func (value *invocation) metadata() provider.ProviderMetadata {
+	if value == nil {
+		return nil
+	}
+	return execution.Metadata(value.overview, nil, func(provider.ProviderMetadata) bool { return true })
 }
 
 func errorForStreamWait(result streamWaitResult) error {
@@ -124,12 +125,4 @@ func errorForStreamWait(result streamWaitResult) error {
 	default:
 		return errModelInternal
 	}
-}
-
-func (value safeError) withInvocation(call *invocation, err error) safeError {
-	value.invocation = call
-	if call != nil {
-		call.finish(err)
-	}
-	return value
 }
