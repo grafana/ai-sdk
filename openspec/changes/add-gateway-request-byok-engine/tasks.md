@@ -31,3 +31,8 @@
 ## 6. Client-guide usability review
 
 - [x] 6.1 Rewrite the Gateway guide around application tasks, retain availability/security guidance and validate its links and Go/pinned TypeScript examples.
+
+## 7. Review/fix loop
+
+- [x] 7.1 Align fixed BYOK diagnostics with the plain-account contract and prove secret-safe unary/streaming errors.
+- [x] 7.2 Re-review the correction and confirm focused, parity and source-integration validation without changing the other stack branches.

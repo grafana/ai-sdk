@@ -322,6 +322,37 @@ func TestRequestSelection_CatalogIndependent(t *testing.T) {
 	}
 }
 
+func TestRequestSelection_ValidationErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		err     error
+		message string
+	}{
+		{name: "accounts", err: ErrInvalidBYOK, message: "providerOptions.gateway.byok requires supported provider arrays with valid accounts"},
+		{name: "selector", err: ErrInvalidBYOKSelector, message: "BYOK requires a supported provider/model selector"},
+		{name: "controls", err: ErrUnsupportedGatewayControl, message: "unsupported gateway control; only gateway.byok is supported"},
+	} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/streaming=%t", tc.name, streaming), func(t *testing.T) {
+				model := &recordingModel{}
+				h, err := New(Config{Limits: testLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
+					return Selection{ID: id, Model: model}, fmt.Errorf("private-key private-organization https://private.invalid: %w", tc.err)
+				}})
+				require.NoError(t, err)
+				r := validRequest(`{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"apiKey":"private-key"}]}}}}`)
+				r.Header.Set(HeaderModelID, "openai/native-model")
+				r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, r)
+				assert.Equal(t, http.StatusBadRequest, w.Code)
+				assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+				assert.JSONEq(t, fmt.Sprintf(`{"error":{"message":%q,"type":"invalid_request_error","param":null,"code":"invalid_request"}}`, tc.message), w.Body.String())
+				assert.Zero(t, model.callCount())
+			})
+		}
+	}
+}
+
 func TestRequestSelection_RequestByteLimit(t *testing.T) {
 	key := strings.Repeat("k", 70_000)
 	body := `{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"apiKey":"` + key + `"}]}}}}`

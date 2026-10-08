@@ -226,3 +226,38 @@ mise run validate-parity-baseline passed, including 109 tooling tests. Strict
 OpenSpec 1.14.0 validation passed for this existing change. No runtime code,
 module pins, provider recordings or other stack branches changed; earlier
 runtime validation remains the behavioral evidence.
+
+## Review/fix loop
+
+The initial oracle and independent correctness, simplicity and validation
+reviews found no execution, architecture or regression-evidence defects. The
+oracle identified stale fixed error wording describing key-only credentials
+and engine-specific selector bounds. Updated those two messages to describe
+valid accounts and supported provider/model selection without changing HTTP
+status, error type/code, envelope shape or selection behavior.
+
+A unary/streaming table for all three selection validation sentinels failed
+against the old account/selector messages before the correction. It now proves
+HTTP 400 JSON errors contain only the expected fixed document, exclude wrapped
+private key/account/destination diagnostics and never invoke the selected model.
+Fresh uncached race tests passed for ProviderWire, BYOK, nativeoptions and service.
+Full lint, parity-check and candidate-source integration passed; the command
+suite passed 74 tests with no skips. Vet, docs lint, strict OpenSpec 1.14.0
+validation and git diff --check also passed. Logs are under /tmp/byok-review-*, including
+diagnostics-red.log, diagnostics-race.log, loop-lint.log, loop-parity.log and
+loop-source-integration.log.
+
+The registered Gateway 4.0.96 error parser accepts arbitrary message strings
+and classifies these responses by the unchanged invalid_request_error type;
+no private-service message parity is claimed. No pins, provider recordings,
+authentication/admission, account policy or other stack branches changed.
+The existing OpenSpec change remains active for review.
+
+Two fresh follow-up reviewers inspected the correction and relevant execution,
+client-parser and documentation paths. Both found no further actionable issues.
+The parent confirmed their reports and final diff; the loop stopped after two
+rounds. No product/API/architecture decision or material design change required
+another oracle. Initial and follow-up reports are retained in the managed review
+outputs for workflows f1708fd5 and 2ad9c708. The first workflow's report-serialization
+failure was corrected through a same-protocol retry reusing completed reports;
+it did not change source or discard evidence. PR #367 and PR #369 remain unchanged.
