@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -834,6 +835,62 @@ type testAddr string
 
 func (a testAddr) Network() string { return "tcp" }
 func (a testAddr) String() string  { return string(a) }
+
+func TestSafeErrorDocument_OptionalEncoding(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, attribution := range []string{"none", "selected", "malformed"} {
+			t.Run(map[bool]string{false: "HTTP", true: "SSE"}[streaming]+"/"+attribution, func(t *testing.T) {
+				h := invocationHarness(t, testLimits(), &recordingModel{})
+				_, call := newInvocation(t.Context(), "alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+				if attribution != "none" {
+					call.enter()
+					call.finish(nil)
+					if attribution == "malformed" {
+						call.overview.Attempts[0].Error = &execution.Failure{Code: json.RawMessage("invalid")}
+					}
+				}
+				value := safeError{category: safeOverload, invocation: call, nativeError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "current failure"})}
+				document := documentForSafeError(value)
+				if streaming {
+					frame := streamErrorFrameForSafeError(value)
+					document.body = frame[len("data: ") : len(frame)-len("\n\n")]
+				}
+				original := append([]byte(nil), document.body...)
+				full := document.encode(value, h.handler.limits.UnaryResponseBytes)
+				for _, limit := range []int{len(full), max(len(original), len(full)-1), len(original)} {
+					body := document.encode(value, int64(limit))
+					assert.LessOrEqual(t, len(body), limit)
+					var decoded, baseline safeErrorDocument
+					require.NoError(t, json.Unmarshal(body, &decoded))
+					require.NoError(t, json.Unmarshal(original, &baseline))
+					assert.Equal(t, baseline.Error.Message, decoded.Error.Message)
+					assert.Equal(t, baseline.Error.Type, decoded.Error.Type)
+					assert.Equal(t, baseline.Error.Code, decoded.Error.Code)
+					assert.Equal(t, baseline.Error.StatusCode, decoded.Error.StatusCode)
+					assert.Equal(t, baseline.Error.Retryable, decoded.Error.Retryable)
+					if limit == len(full) {
+						assert.Equal(t, full, body)
+						if streaming {
+							require.NotNil(t, decoded.Error.Data)
+							assert.Equal(t, "current failure", decoded.Error.Data.NativeError.Message)
+							if attribution == "selected" {
+								assert.NotEmpty(t, decoded.Error.Data.Metadata)
+							}
+						} else if attribution == "selected" {
+							assert.NotEmpty(t, decoded.Metadata)
+						} else {
+							assert.Equal(t, original, body)
+						}
+					}
+					if limit == len(original) {
+						assert.Equal(t, original, body)
+					}
+				}
+				assert.Equal(t, original, document.body)
+			})
+		}
+	}
+}
 
 func TestSafeErrorReduction(t *testing.T) {
 	t.Run("fixed documents", func(t *testing.T) {
