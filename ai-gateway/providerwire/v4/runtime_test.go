@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -965,4 +966,307 @@ func TestProviderMetadata_SharedModelIsolation(t *testing.T) {
 	}
 	wg.Wait()
 	assert.Equal(t, requests, h.resolver.callCount())
+}
+
+func invocationHarness(t *testing.T, limits Limits, models ...*recordingModel) *runtimeHarness {
+	t.Helper()
+	h := newRuntimeHarness(t, limits)
+	candidates := make([]provider.LanguageModel, len(models))
+	for i, model := range models {
+		candidates[i] = model
+		h.resolver.resolved.Candidates = append(h.resolver.resolved.Candidates, catalog.ConfiguredCandidate{Provider: "native", ProviderInstance: "configured", ModelID: string(rune('A' + i))})
+	}
+	h.resolver.resolved.Model = candidates[0]
+	if len(candidates) > 1 {
+		ordered, err := fallback.New(candidates...)
+		require.NoError(t, err)
+		ordered.WithAttemptObserver(func(context.Context, fallback.Attempt) { panic("operator panic") })
+		h.resolver.resolved.Model = ordered
+	}
+	return h
+}
+
+func TestInvocation_Unary(t *testing.T) {
+	for _, tc := range []struct {
+		name                     string
+		primary, secondary       int
+		wantStatus, wantAttempts int
+	}{
+		{name: "direct", wantStatus: 200, wantAttempts: 1},
+		{name: "secondary", primary: 503, wantStatus: 200, wantAttempts: 2},
+		{name: "noneligible", primary: 401, wantStatus: 424, wantAttempts: 1},
+		{name: "exhausted", primary: 503, secondary: 400, wantStatus: 424, wantAttempts: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				if tc.primary != 0 {
+					return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "first failure", StatusCode: tc.primary})
+				}
+				return validGenerateResult(), nil
+			}}
+			models := []*recordingModel{first}
+			if tc.name != "direct" {
+				models = append(models, &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+					if tc.secondary != 0 {
+						return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "second failure", StatusCode: tc.secondary})
+					}
+					return validGenerateResult(), nil
+				}})
+			}
+			h := invocationHarness(t, testLimits(), models...)
+			response := h.serve(validRequest(`{"prompt":[]}`))
+			require.Equal(t, tc.wantStatus, response.Code)
+			overview := readOverview(t, response.Body.Bytes())
+			require.NotNil(t, overview)
+			require.Len(t, overview.Attempts, tc.wantAttempts)
+			assert.Equal(t, "A", overview.Attempts[0].ModelID)
+			if tc.primary != 0 {
+				require.NotNil(t, overview.Attempts[0].Error)
+				assert.Equal(t, "first failure", overview.Attempts[0].Error.Message)
+			}
+			assert.Equal(t, 1, first.callCount())
+			if len(models) == 2 {
+				assert.Equal(t, tc.wantAttempts-1, models[1].callCount())
+			}
+		})
+	}
+}
+
+func TestInvocation_PrivateSourcesAndErrorLimit(t *testing.T) {
+	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "native rejected actual-source", StatusCode: 401})
+	}}
+	h := invocationHarness(t, testLimits(), first)
+	h.resolver.resolved.ProtectedSources = []string{"actual-source"}
+	response := h.serve(validRequest(`{"prompt":[]}`))
+	assert.Equal(t, 424, response.Code)
+	assert.NotContains(t, response.Body.String(), "actual-source")
+	overview := readOverview(t, response.Body.Bytes())
+	require.NotNil(t, overview)
+	assert.Equal(t, 401, overview.Attempts[0].Error.StatusCode)
+	first.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: strings.Repeat("x", maxErrorResponseBytes), StatusCode: 401})
+	}
+	response = h.serve(validRequest(`{"prompt":[]}`))
+	assert.Equal(t, 424, response.Code)
+	assert.Equal(t, canonicalDependencyError, response.Body.Bytes())
+}
+
+func TestInvocation_RequestCredentialEcho(t *testing.T) {
+	for _, tc := range []struct {
+		name, request string
+		secrets       []string
+	}{
+		{"anthropic MCP", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"authorizationToken":"remote-credential"}]}}}`, []string{"remote-credential"}},
+		{"OpenAI MCP authorization", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"authorization":"remote-credential"}}]}`, []string{"remote-credential"}},
+		{"OpenAI MCP headers", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"authorization":"Bearer remote-credential"}}}]}`, []string{"remote-credential"}},
+		{"body header", `{"prompt":[],"headers":{"x-goog-api-key":"remote-credential"}}`, []string{"remote-credential"}},
+		{"Anthropic MCP query", `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example/tools?api_key=remote-credential"}]}}}`, []string{"remote-credential"}},
+		{"OpenAI MCP query", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"serverUrl":"https://mcp.example/tools?api_key=remote-credential"}}]}`, []string{"remote-credential"}},
+		{"OpenAI MCP userinfo", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"serverUrl":"https://user:remote-credential@mcp.example/tools"}}]}`, []string{"remote-credential"}},
+		{"OpenAI API key header", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"openai-api-key":"remote-credential"}}}]}`, []string{"remote-credential"}},
+		{"Anthropic API key header", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"anthropic-api-key":"remote-credential"}}}]}`, []string{"remote-credential"}},
+		{"case distinct headers", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"Authorization":"Bearer first-secret","authorization":"Bearer second-secret"}}}]}`, []string{"first-secret", "second-secret"}},
+		{"nonstring sibling header", `{"prompt":[],"tools":[{"type":"provider","id":"openai.mcp","name":"mcp","args":{"headers":{"authorization":"Bearer remote-credential","x-note":7}}}]}`, []string{"remote-credential"}},
+	} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(tc.name+"/"+map[bool]string{false: "unary", true: "committed"}[streaming], func(t *testing.T) {
+				native := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Data: json.RawMessage(`{"message":"provider echoed remote-credential first-secret","type":"second-secret"}`)})
+				first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, native }, stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartError, APICallError: native}, finishPart())}, nil
+				}}
+				request := validRequest(tc.request)
+				status := 424
+				if streaming {
+					request = streamRequest(tc.request)
+					status = 200
+				}
+				response := invocationHarness(t, testLimits(), first).serve(request)
+				assert.Equal(t, status, response.Code)
+				for _, secret := range tc.secrets {
+					assert.NotContains(t, response.Body.String(), secret)
+				}
+				if streaming {
+					assert.Contains(t, response.Body.String(), `"nativeError"`)
+					assert.Contains(t, response.Body.String(), `"statusCode":401`)
+					assert.Contains(t, response.Body.String(), `"type":"finish"`)
+				} else {
+					overview := readOverview(t, response.Body.Bytes())
+					require.NotNil(t, overview)
+					assert.Equal(t, 401, overview.Attempts[0].Error.StatusCode)
+				}
+			})
+		}
+	}
+}
+
+func TestInvocation_SharedModelIsolation(t *testing.T) {
+	first := &recordingModel{generate: func(_ context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "failed-" + options.Headers["request-id"]})
+	}}
+	second := &recordingModel{generate: func(_ context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+		result := validGenerateResult()
+		result.ProviderMetadata = provider.ProviderMetadata{"native": json.RawMessage(`{"id":"` + options.Headers["request-id"] + `"}`)}
+		return result, nil
+	}}
+	h := invocationHarness(t, testLimits(), first, second)
+	var group sync.WaitGroup
+	for i := range 24 {
+		group.Go(func() {
+			id := string(rune('A' + i))
+			request := validRequest(`{"prompt":[],"headers":{"request-id":"` + id + `"}}`)
+			response := h.serve(request)
+			require.Equal(t, 200, response.Code)
+			overview := readOverview(t, response.Body.Bytes())
+			require.NotNil(t, overview)
+			require.Len(t, overview.Attempts, 2)
+			assert.Equal(t, "failed-"+id, overview.Attempts[0].Error.Message)
+			assert.Equal(t, fallback.AttemptFailed, overview.Attempts[0].Outcome)
+			assert.Equal(t, fallback.AttemptSelected, overview.Attempts[1].Outcome)
+			assert.Contains(t, response.Body.String(), `"native":{"id":"`+id+`"}`)
+		})
+	}
+	group.Wait()
+	assert.Equal(t, 24, first.callCount())
+	assert.Equal(t, 24, second.callCount())
+}
+
+func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
+	calls := make(chan *invocation, 1)
+	release := make(chan struct{})
+	observed := make(chan struct{})
+	first := &recordingModel{generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+		calls <- invocationFromContext(ctx)
+		<-release
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "unowned late native failure", StatusCode: 401})
+	}}
+	second := &recordingModel{}
+	h := invocationHarness(t, testLimits(), first, second)
+	switch model := h.resolver.resolved.Model.(type) {
+	case *fallback.Model:
+		model.WithAttemptObserver(func(context.Context, fallback.Attempt) { close(observed) })
+	default:
+		require.FailNow(t, "expected configured fallback")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	responses := make(chan string, 1)
+	go func() { responses <- h.serve(validRequest(`{"prompt":[]}`).WithContext(ctx)).Body.String() }()
+	var call *invocation
+	select {
+	case call = <-calls:
+	case <-time.After(time.Second):
+		require.FailNow(t, "candidate did not enter")
+	}
+	cancel()
+	select {
+	case body := <-responses:
+		assert.NotContains(t, body, "unowned late native failure")
+	case <-time.After(time.Second):
+		require.FailNow(t, "cancellation did not return")
+	}
+	close(release)
+	select {
+	case <-observed:
+	case <-time.After(time.Second):
+		require.FailNow(t, "fallback observation did not arrive")
+	}
+	call.mu.Lock()
+	defer call.mu.Unlock()
+	assert.True(t, call.sealed)
+	assert.Empty(t, call.decisions)
+	assert.Nil(t, call.overview)
+	assert.Zero(t, second.callCount())
+}
+
+func TestInvocation_RejectedUnaryOutcomeBeforePublication(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	observations := make(chan fallback.Attempt, 1)
+	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		close(entered)
+		<-release
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Message: "handler-rejected native failure"})
+	}}
+	second := &recordingModel{}
+	h := invocationHarness(t, testLimits(), first, second)
+	switch model := h.resolver.resolved.Model.(type) {
+	case *fallback.Model:
+		model.WithAttemptObserver(func(_ context.Context, attempt fallback.Attempt) { observations <- attempt })
+	default:
+		require.FailNow(t, "expected configured fallback")
+	}
+	parent, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ctx, call := newInvocation(parent, "alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+	results := make(chan error, 1)
+	go func() {
+		_, err := h.handler.invokeModel(ctx, h.resolver.resolved.Model, provider.CallOptions{})
+		results <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		require.FailNow(t, "candidate did not enter")
+	}
+	cancel()
+	var err error
+	select {
+	case err = <-results:
+	case <-time.After(time.Second):
+		require.FailNow(t, "cancellation did not return")
+	}
+	require.ErrorIs(t, err, context.Canceled)
+	close(release)
+	var attempt fallback.Attempt
+	select {
+	case attempt = <-observations:
+	case <-time.After(time.Second):
+		require.FailNow(t, "fallback observation did not arrive")
+	}
+	assert.Equal(t, fallback.AttemptCanceled, attempt.Outcome)
+	require.NotNil(t, attempt.SourceErr)
+	assert.Contains(t, attempt.SourceErr.Error(), "handler-rejected native failure")
+	assert.Nil(t, call.finish(err))
+	call.mu.Lock()
+	defer call.mu.Unlock()
+	assert.Empty(t, call.decisions)
+	assert.Zero(t, second.callCount())
+}
+
+func TestInvocation_RejectRecordedFallbackOutcome(t *testing.T) {
+	parent, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		cancel()
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Message: "handler-rejected native failure"})
+	}}
+	second := &recordingModel{}
+	h := invocationHarness(t, testLimits(), first, second)
+	ctx, call := newInvocation(parent, "alias", h.resolver.resolved, nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+	_, err := h.resolver.resolved.Model.DoGenerate(ctx, provider.CallOptions{})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Len(t, call.decisions, 1)
+	require.NotNil(t, call.decisions[0].SourceErr)
+	call.reject(ctx.Err())
+	assert.Nil(t, call.finish(ctx.Err()))
+	assert.Empty(t, call.decisions)
+	assert.True(t, call.sealed)
+	assert.Zero(t, second.callCount())
+}
+
+func TestRequestProtectedSources_OrdinaryDestinations(t *testing.T) {
+	options := provider.CallOptions{
+		ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"url":"https://ordinary.example/tools?topic=ordinary"}]}`)}},
+		Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: "openai.mcp", Args: map[string]json.RawMessage{"serverUrl": json.RawMessage(`"https://ordinary.example/tools?topic=ordinary"`)}}},
+	}
+	assert.Empty(t, requestProtectedSources(options))
+}
+
+func TestRequestProtectedSources_AllHeaderValues(t *testing.T) {
+	options := provider.CallOptions{Headers: map[string]string{"x-goog-api-key": "body-secret"}, Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: "openai.mcp", Args: map[string]json.RawMessage{"headers": json.RawMessage(`{"Authorization":"Bearer first-secret","authorization":"Bearer second-secret","anthropic-api-key":"anthropic-secret","openai-api-key":"openai-secret","x-note":7}`)}}}}
+	sources := requestProtectedSources(options)
+	for _, source := range []string{"body-secret", "first-secret", "second-secret", "anthropic-secret", "openai-secret"} {
+		assert.Contains(t, sources, source)
+	}
 }
