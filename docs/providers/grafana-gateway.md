@@ -12,7 +12,9 @@ Keep Gateway and model-provider credentials on your server, not in browser code.
 
 ## Inspect execution overviews and failures
 
-Unary results and stream finish metadata may contain `gateway.execution`.
+Private configured-model results and stream finish metadata may contain
+`gateway.execution`. Cloud BYOK calls do not add execution overviews or native
+failure summaries; their request-scoped logging and metrics remain independent.
 It identifies the requested/canonical public model and ordered observed attempts,
 including configured provider instance, provider and native model, outcome,
 and optional native failure summaries. Earlier eligible failures remain

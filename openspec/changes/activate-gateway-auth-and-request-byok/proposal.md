@@ -32,8 +32,9 @@ None; the BYOK execution capability is introduced by the preceding engine change
 
 ## Impact
 
-Stack 3/3 for #317, depending on `add-gateway-request-byok-engine` and
-`protect-gateway-client-byok-capture`. Owns auth/config/process/service wiring,
+The service-activation slice for #317, depending on `add-gateway-request-byok-engine`
+and `protect-gateway-client-byok-capture`, now stacked after #373/#370's shared
+fallback capture and configured execution-overview delivery. Owns auth/config/process/service wiring,
 real-command tests, Docker/CI settings and operator/user guidance. Deployment-tools
 and backend-enterprise are not edited. No live environment activation is claimed.
 Extended credential/routing/evidence work remains separately owned.

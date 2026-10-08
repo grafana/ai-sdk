@@ -1815,12 +1815,15 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
         });
         assert.equal(go.error?.statusCode, 424);
         assert.equal(go.error?.category, "failed_dependency");
+        const expected = { error: { message: "failed dependency", type: "failed_dependency", param: null, code: "failed_dependency" } };
+        assert.deepEqual(go.error.apiError.data, expected);
         assertCloudPrivateValuesAbsent(JSON.stringify(go.error), ["request-only-key", "unused-second-key"]);
         const model = edge.client(EDGE_WRITE_KEY)(BYOK_MODEL);
         await assert.rejects(async () => mode === "generate" ? model.doGenerate(options) : model.doStream(options), (error: unknown) => {
-          const failure = error as { statusCode?: number; message: string };
+          const failure = error as { statusCode?: number; message: string; cause?: { data?: unknown } };
           assert.equal(failure.statusCode, 424);
-          assertCloudPrivateValuesAbsent(failure.message, ["request-only-key", "unused-second-key"]);
+          assert.deepEqual(failure.cause?.data, expected);
+          assertCloudPrivateValuesAbsent(JSON.stringify(failure.cause?.data), ["request-only-key", "unused-second-key"]);
           return true;
         });
       }

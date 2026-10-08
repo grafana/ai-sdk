@@ -1,6 +1,7 @@
 ## Context
 
-This is stack 3/3. Client capture and request-only engine contracts are owned by
+This is the service-activation slice, now last in the combined stack
+#367 → #368 → #373 → #370 → #369. Client capture and request-only engine contracts are owned by
 `protect-gateway-client-byok-capture` and `add-gateway-request-byok-engine`.
 The original combined proposal is preserved on `nrbrd/byok-before-stack`;
 the three scoped changes replace it, not three copies of the same umbrella plan.
@@ -60,6 +61,22 @@ configuration/history, container skills and provider-side fallback are rejected.
 Valid bounded MCP configuration/history, inert local markers, harmless fields and
 ordinary namespaces remain available to the adapter. This guard has no catalog
 or configured-account dependency.
+
+## Execution observation integration
+
+Configured selection delegates to `CatalogSelector` and preserves its private
+candidate/protection context. #373's shared SDK observer and #370's execution
+projection remain independent of logical operator logging, metrics and exports.
+Request-only selection supplies model/identity without configured attribution:
+the Gateway registers no request collector, adds no public execution overview or
+current native failure summary, and preserves an independently registered SDK
+observer. This is an explicit support boundary, not evidence that no attempts
+occurred; original native metadata stays opaque. BYOK public attribution remains
+separately scoped and would need request-account protection before activation.
+
+Account-access refusal and unsupported discovery reuse #370's typed fixed error
+definitions without restoring the former byte-document implementation or changing
+public status/type/code/message fields. No listener/route redesign is included.
 
 ## Risks / Trade-offs
 

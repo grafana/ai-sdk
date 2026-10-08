@@ -95,6 +95,8 @@ func TestBYOKObservability_LogicalExportAndCredentialPrivacy(t *testing.T) {
 				assert.Equal(t, requestID, testkit.StringValue(t, generation, "model", "name"))
 				exported, err := json.Marshal(generation)
 				require.NoError(t, err)
+				assert.NotContains(t, response.Body.String(), `"execution"`)
+				assert.NotContains(t, response.Body.String(), `"nativeError"`)
 				metrics := testMetrics(t, telemetry)
 				assert.Contains(t, metrics, `model="byok"`)
 				assert.NotContains(t, metrics, requestID)

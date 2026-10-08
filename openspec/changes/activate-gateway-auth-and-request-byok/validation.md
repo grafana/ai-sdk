@@ -98,3 +98,48 @@ No baseline pins or authentic provider inputs changed. Client/capture and engine
 archives remain intact. Task 4.1 still requires the external deployment owner,
 rendered policy and deployed isolation evidence. This run does not claim live
 provider acceptance, hosted Vercel semantics, GitHub CI or environment activation.
+
+## Combined execution stack integration
+
+The owner approved #367 → #368 → #373 → #370 → #369, coordinated with the
+execution-stack agent. `gh stack` v0.1.0 tracks branches per worktree. The peer
+validated/pushed #373 at `7c492dc9` and #370 at `ae617a13` on repaired #368
+`1c2eae83`. Native groups 371/376 were snapshotted and explicitly unstacked as
+metadata only; merged #372 remains merged. Four live PRs were regrouped as native
+stack 379 before adding this activation slice. No lower branch/status changed.
+
+Adopted the peer's verified tracking into this worktree, recording #369's exact
+old boundary `e5b33095` and backup `nrbrd/byok-before-execution-stack-20261008`.
+`gh stack rebase --upstack --no-trunk` replayed only the four activation commits.
+Conflict resolution retained both PARITY rows and reconciled account-access and
+unsupported-discovery errors into #370's typed fixed definitions. No obsolete
+engine ancestry, byte-document implementation or execution collector was restored.
+
+Configured selectors return `CatalogSelector`'s private attribution unchanged.
+Request-only selections remain catalog-independent and unmarked: they register
+no Gateway request collector and publish neither configured overviews nor current
+native summaries. Independently registered SDK observers remain effective, and
+one logical BYOK log/metric/export still surrounds ordered accounts. Original
+native output/metadata remains unchanged; public BYOK attribution stays out of scope.
+
+Six authenticated service cases cover Anthropic/OpenAI unary, stream setup and
+post-commit native failures echoing keys and account identifiers. They prove one
+attempt, inherited SDK observation, fixed precommit error bytes and no public
+execution/nativeError additions or echoed values. Successful/fallback logical
+observation cases also assert omission. A temporary mutation enabling current
+summaries without configured provenance failed both committed cases with exposed
+dummy values; restoration passes races. Mutation never remains in source.
+Both-client command rejection tests assert the exact plain error body, including
+retained Go/TypeScript error data rather than checking only outer messages.
+
+All full local gates passed on this combined head: source integration 44 runtime
+and 77 command tests with no skips, frontend integration, root/Gateway races,
+parity/provider-shape, build/vet/lint, docs, boundary/isolation/pins/workflows and
+image checks. Focused privacy races passed ten repetitions; no registered pins or
+provider input recordings changed. Strict activation validation and inherited
+scenario inventory checks retain the current #370 baseline, including typed host
+error encoding and configured optional attribution. Logs:
+`/tmp/byok-stack-pr3-execution-stack-20261008/`,
+`/tmp/byok-execution-stack-privacy-{mutation-red,race,final-green}.log`.
+Deployment task 4.1 remains externally gated; no listener redesign or live proof
+is included.
