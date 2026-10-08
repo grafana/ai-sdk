@@ -201,8 +201,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request := newExecutionRequest(validated.modelID, resolved, r.Header, options, h.limits.UnaryResponseBytes)
-	capture := &attemptCapture{}
-	ctx = fallback.WithAttemptObserver(ctx, capture.observe)
+	capture := &attemptCapture{sealed: resolved.configured == nil}
+	if resolved.configured != nil {
+		ctx = fallback.WithAttemptObserver(ctx, capture.observe)
+	}
 	defer capture.discard()
 	if validated.mode == executionStreaming {
 		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history, request, capture)

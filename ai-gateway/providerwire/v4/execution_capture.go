@@ -57,14 +57,17 @@ type executionRequest struct {
 	sourceBytes int64
 }
 
-func newExecutionRequest(requested string, resolved catalog.ResolvedModel, headers http.Header, options provider.CallOptions, sourceBytes int64) executionRequest {
-	sources := slices.Clone(resolved.ProtectedSources)
+func newExecutionRequest(requested string, selected Selection, headers http.Header, options provider.CallOptions, sourceBytes int64) executionRequest {
+	if selected.configured == nil {
+		return executionRequest{}
+	}
+	sources := slices.Clone(selected.configured.sources)
 	sources = append(sources, execution.HeaderSources(headers)...)
 	sources = append(sources, execution.RequestSources(options)...)
 	return executionRequest{
 		requested:   requested,
-		canonical:   resolved.ID,
-		candidates:  slices.Clone(resolved.Candidates),
+		canonical:   selected.ID,
+		candidates:  slices.Clone(selected.configured.candidates),
 		sources:     sources,
 		sourceBytes: sourceBytes,
 	}

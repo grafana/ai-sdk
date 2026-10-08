@@ -47,6 +47,24 @@ type errorDefinition struct {
 }
 
 var publicErrors = [...]errorDefinition{
+	safeBYOKCredentials: {
+		status:  http.StatusBadRequest,
+		message: "providerOptions.gateway.byok requires supported provider arrays with valid accounts",
+		kind:    errorInvalidRequest,
+		code:    codeInvalidRequest,
+	},
+	safeBYOKSelector: {
+		status:  http.StatusBadRequest,
+		message: "BYOK requires a supported provider/model selector",
+		kind:    errorInvalidRequest,
+		code:    codeInvalidRequest,
+	},
+	safeGatewayControl: {
+		status:  http.StatusBadRequest,
+		message: "unsupported gateway control; only gateway.byok is supported",
+		kind:    errorInvalidRequest,
+		code:    codeInvalidRequest,
+	},
 	safeInvalidRequest: {
 		status:    http.StatusBadRequest,
 		message:   "invalid request",
