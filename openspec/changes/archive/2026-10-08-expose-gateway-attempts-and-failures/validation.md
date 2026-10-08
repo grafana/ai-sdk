@@ -76,4 +76,4 @@ No provider input fixture was added or changed; synthetic endpoints/UI scenarios
 
 Overview absence does not prove no attempts; native namespace presence does not establish Gateway provenance. Mixed/incomplete capture can be omitted, selection is commitment rather than completion, and caller retries/preselection fallback do not establish exactly-once generation or remote effects.
 
-Sync/archive and merge remain pending separate approval.
+The owner authorized sync/archive on 2026-10-08. The six capability specs are synchronized, including reconciliation of legacy precomputed-only error wording and blanket error-detail suppression with the approved typed encoding/protected optional carriers. All 15 implementation tasks are complete; strict OpenSpec and documentation checks cover the synchronized archive. Merge remains pending separate approval.
