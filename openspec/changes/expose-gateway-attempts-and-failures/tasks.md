@@ -26,3 +26,4 @@
 - [x] 5.1 Lock down existing HTTP/SSE bytes, capability responses and HTTP-versus-stream classification boundaries before restructuring.
 - [x] 5.2 Separate classification, typed public definitions and transport encoding; preserve projected context/protection/ownership, validate and publish without sync/archive or merge.
 - [x] 5.3 Remove unreachable reasoning errors and obsolete tool-mode gating, clarify request refusal reasons and public definitions, and verify reachable capability/policy responses before publishing.
+- [x] 5.4 Rewrite request capture as explicit short-lived observation and finalized views; isolate credential extraction, preserve ownership/protection/wire behavior and validate before publishing.
