@@ -6,6 +6,10 @@ Runtime rewrite based on #373 at ea668bef, not the historical 4d0f9bfc collector
 
 Registered reference: ai 7.0.118, Gateway 4.0.96, Provider 4.0.18 and Provider Utils 5.0.49 at 5d12eaa6caa193d3901cbab98a734403eb6bf622. Matching upstream Gateway/model/error source informed carrier/access behavior. Shared capture and private Gateway overview serialization are Go adaptations, not a private-service parity claim.
 
+## Publication
+
+Runtime commit 6399d319 was pushed to nrbrd/failure-visibility with an explicit lease against historical 4d0f9bfc. Draft #370 remains based on #373; its description/title now reflect this rewrite, not the obsolete collector or historical equivalence. Exactly one active PR-owned OpenSpec change was verified. The unrelated four-line go.work.sum patch remains unchanged and uncommitted.
+
 ## Regression evidence
 
 - Catalog copies configured candidates and private sources on construction/resolution; credentials are excluded from discovery/serialized resolution.
