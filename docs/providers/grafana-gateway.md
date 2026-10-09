@@ -191,6 +191,21 @@ included in discovery; your deployment controls who may see the model list.
 To compose the client with other providers, register it as a `registry.Provider`;
 see [Fallback and registry](../guides/fallback-and-registry.md).
 
+## Request metadata and BYOK capture
+
+The client can serialize ordered `providerOptions.gateway.byok` credentials and
+native `provider/model` selectors without discovery. This is client support, not
+a claim that the configured Gateway service accepts BYOK. Server capabilities
+and account authorization still decide which requests execute.
+
+Returned caller-owned request metadata retains submitted keys. Opt-in Go logger
+capture applies its configured field redactor to structured copies, including
+`apiKey` and authentication headers. Use `DefaultRedactorWithExtraKeys` or
+`RedactorFunc` for additional sensitive fields. This does not redact the entire
+BYOK object, censor provider data or find secrets embedded in ordinary text.
+Direct application/TypeScript logging and other exporters need their own capture
+policy. Ordinary fields and `gateway.providerTimeouts.byok` remain unchanged.
+
 ## Configure fallback
 
 Configure a primary model and ordered backups under the same public model ID:
@@ -288,8 +303,9 @@ status-derived retryability. Error envelope and payload fields use standard Go
 JSON decoding, including case-insensitive field matching. Later valid stream
 parts remain consumable.
 
-Use call headers for application metadata. Credential-bearing call headers are
-rejected; configure authentication on the client instead. See the
+Use call headers for application metadata. All constructors and call options
+reject reserved authentication-header overrides; configure authentication on
+the client instead. See the
 [package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana)
 for configuration and result types.
 

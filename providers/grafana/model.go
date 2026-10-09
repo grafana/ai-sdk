@@ -18,7 +18,7 @@ func (m *model) doRequest(ctx context.Context, opts provider.CallOptions, stream
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	if err := m.provider.validateCloudCallHeaders(opts.Headers); err != nil {
+	if err := validateCallAuthenticationHeaders(opts.Headers); err != nil {
 		return nil, nil, err
 	}
 	body, err := encodeRequest(opts)

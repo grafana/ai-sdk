@@ -301,7 +301,7 @@ func generateResultAttrs(result *provider.GenerateResult, capture CaptureOptions
 		}
 	}
 	if result.Request != nil && capture.RequestBody && len(result.Request.Body) > 0 {
-		attrs = appendJSONAttr(attrs, "ai_sdk.request.body", result.Request.Body, capture)
+		attrs = appendRequestBodyAttr(attrs, result.Request.Body, capture)
 	}
 	if shouldCaptureGeneratedContent(capture) && len(result.Content) > 0 {
 		attrs = appendJSONAttr(attrs, "ai_sdk.response.content", sanitizeGenerateContent(result.Content, capture), capture)
@@ -449,7 +449,7 @@ func apiCallErrorAttrs(err *provider.APICallError, capture CaptureOptions) []slo
 		attrs = append(attrs, slog.String("ai_sdk.error.url", boundString(err.URL, capture.MaxStringLen)))
 	}
 	if capture.RequestBody && len(err.RequestBodyValues) > 0 {
-		attrs = appendJSONAttr(attrs, "ai_sdk.request.body", err.RequestBodyValues, capture)
+		attrs = appendRequestBodyAttr(attrs, err.RequestBodyValues, capture)
 	}
 	if capture.Headers && len(err.ResponseHeaders) > 0 {
 		attrs = append(attrs, slog.Any("ai_sdk.response.headers", cloneStringSliceMap(err.ResponseHeaders)))
@@ -516,31 +516,45 @@ func appendJSONAttr(attrs []slog.Attr, key string, value any, capture CaptureOpt
 	return append(attrs, attr)
 }
 
-func jsonAttr(key string, value any, capture CaptureOptions) (slog.Attr, bool) {
+func appendRequestBodyAttr(attrs []slog.Attr, body json.RawMessage, capture CaptureOptions) []slog.Attr {
+	const key = "ai_sdk.request.body"
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return append(attrs, slog.String("ai_sdk.serialization_error", key))
+	}
+	return append(attrs, jsonValueAttr(key, decoded, len(body), capture))
+}
+
+func jsonAttr(key string, value any, capture CaptureOptions) (attr slog.Attr, ok bool) {
+	defer func() {
+		if recover() != nil {
+			attr, ok = slog.Attr{}, false
+		}
+	}()
 	data, err := json.Marshal(value)
 	if err != nil {
 		return slog.Attr{}, false
 	}
-	if len(data) > capture.MaxJSONBytes {
-		return truncatedJSONAttr(key, data), true
-	}
 	var decoded any
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return slog.Attr{}, false
 	}
-	return slog.Any(key, decoded), true
+	return jsonValueAttr(key, decoded, len(data), capture), true
 }
 
-func truncatedJSONAttr(key string, data []byte) slog.Attr {
+func jsonValueAttr(key string, value any, size int, capture CaptureOptions) slog.Attr {
+	if size > capture.MaxJSONBytes {
+		return truncatedJSONAttr(key, value, size)
+	}
+	return slog.Any(key, value)
+}
+
+func truncatedJSONAttr(key string, value any, size int) slog.Attr {
 	attrs := []slog.Attr{
-		slog.Int("bytes", len(data)),
+		slog.Int("bytes", size),
 		slog.Bool("truncated", true),
 	}
-	var decoded any
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return slog.Attr{Key: key, Value: slog.GroupValue(attrs...)}
-	}
-	switch value := decoded.(type) {
+	switch value := value.(type) {
 	case map[string]any:
 		keys := make([]string, 0, len(value))
 		for k := range value {

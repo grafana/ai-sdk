@@ -107,8 +107,22 @@ Captured structured values pass through a redactor. The default redactor handles
 common secret-bearing keys, but it cannot infer secrets embedded in opaque text.
 Use structured values and extend the redactor with organization-specific keys.
 
-Do not treat redaction as permission to log everything. Avoid payload capture in
-the first place when the content is unnecessary.
+For BYOK request captures, the default policy matches fields such as `apiKey`;
+it does not replace the entire `gateway.byok` object. Noncredential fields,
+`providerTimeouts.byok` and provider messages remain available, even when their
+values resemble or echo credentials. Returned provider/caller data is not changed.
+
+Use the existing redactor extension for additional field policy:
+
+```go
+model = logger.Wrap(baseModel, logger.Options{
+	Logger:   log,
+	Redactor: logger.DefaultRedactorWithExtraKeys("x-team-credential"),
+})
+```
+
+Other exporters have independent capture policies. Do not treat redaction as
+permission to log everything; avoid unnecessary payload and opaque-message capture.
 
 ## Use per-part logging sparingly
 

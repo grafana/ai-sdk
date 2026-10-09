@@ -189,7 +189,7 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 		var headers map[string]string
 		require.NoError(t, json.Unmarshal(body["headers"], &headers))
 		assert.Equal(t, "call", headers["x-custom"])
-		assert.Equal(t, "evil-token", headers["X-Access-Token"])
+		assert.NotContains(t, headers, "X-Access-Token")
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Server", "actual")
 		w.Header().Add("X-Multi", "one")
@@ -201,7 +201,7 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 	m, err := p.LanguageModel("assistant")
 	require.NoError(t, err)
 	zero := 0
-	result, err := m.DoGenerate(WithUserIDToken(context.Background(), "user-token"), provider.CallOptions{Prompt: []provider.Message{}, MaxOutputTokens: &zero, Headers: map[string]string{"x-custom": "call", "X-Access-Token": "evil-token", "X-Grafana-Id": "evil-user", "ai-language-model-id": "evil-model", "accept": "evil-accept", "content-type": "evil-type", "ai-language-model-streaming": "true", "ai-language-model-specification-version": "3"}})
+	result, err := m.DoGenerate(WithUserIDToken(context.Background(), "user-token"), provider.CallOptions{Prompt: []provider.Message{}, MaxOutputTokens: &zero, Headers: map[string]string{"x-custom": "call", "ai-language-model-id": "evil-model", "accept": "evil-accept", "content-type": "evil-type", "ai-language-model-streaming": "true", "ai-language-model-specification-version": "3"}})
 	require.NoError(t, err)
 	require.Len(t, result.Content, 2)
 	assert.Equal(t, "hello", result.Content[0].Text)

@@ -1218,7 +1218,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const missing = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "missing", options: { prompt: [] } });
       assert.equal(missing.error.category, "model_not_found"); assert.equal(missing.error.statusCode, 404);
       const invalid = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", modelID: "assistant", options: { prompt: [], headers: { authorization: "Bearer caller-controlled" } } });
-      assert.equal(invalid.error.category, "invalid_request_error"); assert.equal(invalid.error.statusCode, 400);
+      assert.equal(invalid.error.message, "grafana: reserved authentication header"); assert.equal(invalid.error.statusCode, undefined);
       const unauthorized = await captureGoClient(goClientBinaryPath, { ...base, accessToken: "invalid-token", mode: "discovery" });
       assert.equal(unauthorized.error.category, "authentication_error"); assert.equal(unauthorized.error.statusCode, 401);
       assert.deepEqual(fake.violations, []); assert.equal(await gateway.ready(), true);
@@ -1753,8 +1753,7 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
           let text: string;
           if (client === "go") {
             const result = await captureGoClient(goStreamTextBinaryPath, {
-              baseURL: `${edge.url}/api/v1/aisdk`, accessToken: TEST_TOKEN,
-              headers: { Authorization: [`Bearer ${EDGE_WRITE_KEY}`] },
+              cloudCredentials: { StackID: 27038, CAPToken: "dummy-write-key", BaseURL: `${edge.url}/api/v1/aisdk` },
               mode: "stream-text", modelID: "assistant",
               options: { prompt: [{ role: "user", content: [{ type: "text", text: prompt }] }], maxOutputTokens },
             });

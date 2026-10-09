@@ -114,7 +114,7 @@ streamLoop:
 	attrs := append(l.terminalCommonAttrs(input.callID, "stream", input.model, summary.response), terminalAttrs(duration, outcome)...)
 	attrs = append(attrs, summary.Attrs(l.opts.capture)...)
 	if input.request != nil && l.opts.capture.RequestBody && len(input.request.Body) > 0 {
-		attrs = appendJSONAttr(attrs, "ai_sdk.request.body", input.request.Body, l.opts.capture)
+		attrs = appendRequestBodyAttr(attrs, input.request.Body, l.opts.capture)
 	}
 	if input.response != nil && l.opts.capture.Headers && len(input.response.Headers) > 0 {
 		attrs = append(attrs, slog.Any("ai_sdk.response.headers", cloneStringMap(input.response.Headers)))

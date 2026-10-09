@@ -135,6 +135,36 @@ By default the logger SHALL NOT log prompt/message content, generated or reasoni
 - **THEN** the default redactor SHALL NOT rely on brittle substring rewriting
 - **AND** it SHALL redact only fields represented as structured attrs or typed values
 
+### Requirement: BYOK capture protection
+Options.Redactor SHALL own field-aware redaction of structured capture copies. DefaultRedactor SHALL redact matching sensitive keys, including apiKey and authentication headers; RedactorFunc and DefaultRedactorWithExtraKeys MAY customize that policy. Capture SHALL NOT apply a BYOK-specific subtree rewrite or match credential values in unrelated fields.
+
+#### Scenario: Captured BYOK includes unfamiliar fields
+- **WHEN** structured BYOK capture contains apiKey plus unfamiliar noncredential fields
+- **THEN** the configured redactor SHALL redact matching credential fields and preserve the unfamiliar values and ordinary siblings
+
+#### Scenario: Actual unary and streaming request capture
+- **WHEN** logger middleware wraps a Grafana provider with request-body/provider-options capture enabled
+- **THEN** matching sensitive fields SHALL follow the configured redactor in unary, streaming and error-associated captures, including shape-only truncation
+- **AND** the provider SHALL still receive the original request credentials
+
+### Requirement: Request-body capture failures and limits
+Request-body capture SHALL accept JSON objects or null and omit malformed or opaque string/array bodies with a non-payload diagnostic. Capture SHALL NOT promise recursive interpretation of arbitrary Go values or nested byte slices. JSON limits SHALL bound emitted values, not assert a hard normalization allocation bound.
+
+#### Scenario: Sanitization cannot safely serialize
+- **WHEN** SDK capture encounters invalid JSON, a non-object request body or a failing/panicking JSON marshaler
+- **THEN** capture SHALL omit it without logging raw fallback bytes or failing the model call
+
+### Requirement: Capture ownership and ordinary Gateway values
+Capture and redaction SHALL preserve original parameters, results and request metadata. Ordinary gateway fields and gateway.providerTimeouts.byok SHALL retain their values. Redaction SHALL depend on configured field policy, not credential-value matching; provider output and key-looking application text SHALL remain unchanged.
+
+#### Scenario: Application content resembles credentials
+- **WHEN** an allowed prompt/output or ordinary metadata string resembles an API key or contains the text gateway.byok
+- **THEN** field-aware redaction SHALL NOT rewrite that application string
+
+#### Scenario: Ordinary gateway values survive
+- **WHEN** tool output contains a gateway string or provider options contain gateway.providerTimeouts.byok
+- **THEN** credential protection SHALL preserve those values rather than redact every gateway or byok key
+
 ### Requirement: Generate call logging
 
 `WrapGenerate` SHALL observe without mutating requests/results, build start attrs from `middleware.WrapGenerateParams` (call type, provider/model, safe request summary, opted-in captures), log `EventGenerateStart` before calling `p.DoGenerate(ctx)` exactly once, then log error or finish and return the original error/result unchanged. Serialization, capture, redaction, and logging failures SHALL NOT fail the call; serialization failures SHALL add `ai_sdk.serialization_error` when possible.
