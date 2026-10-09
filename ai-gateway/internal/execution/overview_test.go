@@ -30,7 +30,7 @@ func TestProject_OrderedAttempts(t *testing.T) {
 				{Provider: "secondary", ModelID: "configured-second", ProviderInstance: "account-b"},
 				{Provider: "unrun", ModelID: "never"},
 			}
-			got := Project("alias", "public", decisions, candidates, nil, 4096)
+			got := Project("alias", "public", decisions, candidates, 4096)
 			require.NotNil(t, got)
 			assert.Equal(t, "alias", got.RequestedModelID)
 			assert.Equal(t, "public", got.CanonicalModelID)
@@ -65,7 +65,7 @@ func TestProject_NoHistoryCap(t *testing.T) {
 		}
 		decisions = append(decisions, fallback.Attempt{Index: i + 1, Provider: "native", ModelID: fmt.Sprintf("model-%d", i), Outcome: outcome, WillFallback: i != 31})
 	}
-	got := Project("public", "public", decisions, nil, nil, 4096)
+	got := Project("public", "public", decisions, nil, 4096)
 	require.NotNil(t, got)
 	require.Len(t, got.Attempts, 32)
 	assert.Equal(t, fallback.AttemptSelected, got.Attempts[31].Outcome)
@@ -88,13 +88,13 @@ func TestProject_InvalidObservationOmitted(t *testing.T) {
 			for i := range tc.decisions {
 				tc.decisions[i].Provider, tc.decisions[i].ModelID = "native", "model"
 			}
-			assert.Nil(t, Project("public", "public", tc.decisions, nil, nil, 4096))
+			assert.Nil(t, Project("public", "public", tc.decisions, nil, 4096))
 		})
 	}
 }
 
 func TestProject_SelectedErrorPartsNotDuplicated(t *testing.T) {
-	got := Project("public", "public", []fallback.Attempt{{Index: 1, Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected}}, nil, nil, 4096)
+	got := Project("public", "public", []fallback.Attempt{{Index: 1, Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected}}, nil, 4096)
 	require.NotNil(t, got)
 	require.Len(t, got.Attempts, 1)
 	assert.Nil(t, got.Attempts[0].Error)

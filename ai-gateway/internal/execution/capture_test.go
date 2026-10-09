@@ -39,7 +39,7 @@ func TestProject_SharedFallbackCapture(t *testing.T) {
 				received = append(received, part)
 			}
 			assert.Equal(t, parts, received)
-			overview := Project("alias", "public", decisions, nil, nil, 4096)
+			overview := Project("alias", "public", decisions, nil, 4096)
 			require.NotNil(t, overview)
 			require.Len(t, overview.Attempts, 2)
 			require.NotNil(t, overview.Attempts[0].Error)

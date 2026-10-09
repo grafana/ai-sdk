@@ -24,7 +24,7 @@ type Attempt struct {
 	Error            *Failure                `json:"error,omitempty"`
 }
 
-// Failure contains only optional, protected candidate-local error fields.
+// Failure contains optional candidate-local native error fields.
 type Failure struct {
 	Message    string          `json:"message,omitempty"`
 	Type       string          `json:"type,omitempty"`
@@ -36,7 +36,7 @@ type Failure struct {
 // Configured descriptors supply identity when present. sourceBytes is the
 // caller's existing source/read bound, not a separate diagnostic allocation.
 // Mixed or unfinished observation is omitted rather than treated as complete.
-func Project(requested, canonical string, decisions []fallback.Attempt, candidates []catalog.ConfiguredCandidate, protectedSources []string, sourceBytes int64) *Overview {
+func Project(requested, canonical string, decisions []fallback.Attempt, candidates []catalog.ConfiguredCandidate, sourceBytes int64) *Overview {
 	if requested == "" || canonical == "" || !utf8.ValidString(requested) || !utf8.ValidString(canonical) || len(decisions) == 0 {
 		return nil
 	}
@@ -69,7 +69,7 @@ func Project(requested, canonical string, decisions []fallback.Attempt, candidat
 			return nil
 		}
 		if decision.Outcome != fallback.AttemptSelected {
-			attempt.Error = summarize(decision.SourceErr, protectedSources, sourceBytes)
+			attempt.Error = summarize(decision.SourceErr, sourceBytes)
 		}
 		overview.Attempts = append(overview.Attempts, attempt)
 	}
