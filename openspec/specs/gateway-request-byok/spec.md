@@ -41,23 +41,33 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **THEN** The host SHALL accept only call-level providerOptions.gateway.byok, shaped as a provider-name map of ordered nonempty credential-object arrays.
 - **AND** Account objects SHALL require apiKey and MAY contain baseURL.
 - **AND** OpenAI accounts MAY also contain organization and project; nonempty organization/project SHALL be rejected for Anthropic accounts.
-- **AND** Unknown fields SHALL fail through standard Go decoder validation.
+- **AND** Unrelated additive account fields SHALL be ignored by ordinary Go decoding without applying them to native construction.
 - **AND** Optional null values SHALL follow ordinary Go string decoding.
 - **AND** Omitted/empty baseURL SHALL select the native default; omitted/empty organization/project SHALL remain unset without ambient defaults.
 - **AND** Multiple supported provider entries SHALL be accepted and validated, but only the header-selected provider's credentials SHALL be eligible.
 - **AND** Empty/missing BYOK or missing credentials for that provider SHALL fail before provider I/O.
 - **AND** The entire supplied BYOK map SHALL be validated before execution, including unused entries.
 - **AND** Supported provider-map keys SHALL be exactly anthropic and openai.
-- **AND** Each array SHALL contain 1 to 8 accounts; each decoded key SHALL be nonempty.
-- **AND** Decoding SHALL use a Gateway-control map containing provider-to-account maps with typed account structs and the standard Go JSON decoder with DisallowUnknownFields.
+- **AND** Each decoded key SHALL be nonempty. The existing eight-account bound SHALL remain temporarily as execution policy, not JSON grammar; #394/#317 own its later disposition.
+- **AND** Decoding SHALL use provider-to-account maps and ordinary typed Go decoding without blanket unknown-field rejection.
 - **AND** The only accepted Gateway control SHALL be exactly lowercase byok, as emitted by the supported clients; BYOK and other case variants SHALL fail.
 - **AND** Account fields SHALL use the canonical client names apiKey, baseURL, organization and project.
-- **AND** No case-insensitive compatibility contract SHALL be introduced for account fields.
+- **AND** Account struct fields SHALL retain standard Go case-insensitive matching; namespace/map keys and discriminator values SHALL NOT be normalized.
 - **AND** Null strings SHALL retain their ordinary Go value, and duplicate members SHALL follow ordinary Go decoding.
 - **AND** Malformed earlier duplicate members MAY fail typed decoding even when a later member is valid; no JSON normalization layer SHALL be introduced.
 - **AND** The existing complete request bound SHALL govern BYOK input without separate subtree or per-field byte ceilings.
 - **AND** Native HTTP transport SHALL enforce outgoing header validity; request decoding SHALL NOT implement an additional credential/account-header grammar.
 - **AND** Existing protected call-header and native-option controls SHALL remain unchanged.
+
+#### Scenario: Ordinary account decoding accepts additive fields
+- **WHEN** known account fields use ordinary struct-field casing alongside unrelated additive fields
+- **THEN** known values SHALL decode normally, additive data SHALL not select credentials/models/transports, and duplicate/null behavior SHALL remain ordinary Go semantics
+
+#### Scenario: Mapping control is inactive or meaningful
+- **WHEN** modelMappings is absent, null or an empty list
+- **THEN** native construction SHALL use the explicitly selected model
+- **WHEN** a nonempty or malformed mapping control is supplied
+- **THEN** decoding SHALL reject the unsupported capability before I/O without inspecting nested mapping entries or exposing rejected values
 
 #### Scenario: Native account defaults
 - **WHEN** an account omits optional configuration or supplies empty optional strings
@@ -100,7 +110,7 @@ Unsupported credentials, mappings and controls SHALL fail with non-secret diagno
 
 #### Scenario: Unsupported-control policy
 - **WHEN** BYOK input contains provider, mapping or routing controls
-- **THEN** Unknown credential fields/providers, modelMappings, Azure/Vertex/Bedrock/compatible credential families and unsupported Gateway controls SHALL fail with actionable non-secret diagnostics before provider I/O. models/order/only and providerTimeouts.byok SHALL remain explicitly unsupported until their separate routing delivery.
+- **THEN** Unsupported provider selection, meaningful modelMappings, Azure/Vertex/Bedrock/compatible credential families and requested unsupported Gateway controls SHALL fail before provider I/O with actionable diagnostics. Unrelated additive account fields SHALL NOT cause failure. models/order/only and providerTimeouts.byok remain unsupported pending separate routing delivery.
 - **AND** Nested gateway namespaces SHALL NOT be interpreted as credential controls.
 - **AND** Native options or body headers SHALL NOT override credential source, destination or the selected model.
 

@@ -33,15 +33,19 @@ type Request struct {
 	Accounts []nativemodel.Config
 }
 
+type requestAccount struct {
+	nativemodel.Config
+	ModelMappings []json.RawMessage `json:"modelMappings"`
+}
+
 func DecodeRequest(selector string, gateway json.RawMessage, approvedBaseURLs map[Provider][]string) (Request, error) {
 	name, model, ok := strings.Cut(selector, "/")
 	selected := Provider(name)
 	if !ok || model == "" || !utf8.ValidString(selector) || (selected != Anthropic && selected != OpenAI) {
 		return Request{}, ErrInvalidSelector
 	}
-	var controls map[string]map[Provider][]nativemodel.Config
+	var controls map[string]map[Provider][]requestAccount
 	decoder := json.NewDecoder(bytes.NewReader(gateway))
-	decoder.DisallowUnknownFields()
 	if decoder.Decode(&controls) != nil || decoder.Decode(&struct{}{}) != io.EOF {
 		return Request{}, fmt.Errorf("%w: gateway.byok has unsupported or invalid fields", ErrInvalidRequest)
 	}
@@ -63,6 +67,9 @@ func DecodeRequest(selector string, gateway json.RawMessage, approvedBaseURLs ma
 			return Request{}, fmt.Errorf("%w: gateway.byok requires 1 to %d accounts per provider", ErrInvalidRequest, maxCredentials)
 		}
 		for _, account := range accounts {
+			if len(account.ModelMappings) != 0 {
+				return Request{}, fmt.Errorf("%w: modelMappings is not supported", ErrInvalidRequest)
+			}
 			if account.APIKey == "" {
 				return Request{}, fmt.Errorf("%w: apiKey is required", ErrInvalidRequest)
 			}
@@ -77,5 +84,9 @@ func DecodeRequest(selector string, gateway json.RawMessage, approvedBaseURLs ma
 	if len(accountsByProvider[selected]) == 0 {
 		return Request{}, fmt.Errorf("%w: gateway.byok requires accounts for selected provider", ErrInvalidRequest)
 	}
-	return Request{Provider: selected, Model: model, Accounts: accountsByProvider[selected]}, nil
+	accounts := make([]nativemodel.Config, len(accountsByProvider[selected]))
+	for i, account := range accountsByProvider[selected] {
+		accounts[i] = account.Config
+	}
+	return Request{Provider: selected, Model: model, Accounts: accounts}, nil
 }

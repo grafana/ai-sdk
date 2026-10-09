@@ -1,3 +1,16 @@
+## Approved ordinary-decoding revision
+
+Updated #317 supersedes the strict account-field policy below. Ordinary Go
+struct decoding accepts standard casing, duplicates/nulls and additive fields.
+Namespace/provider-map keys and discriminator values remain exact; required keys,
+provider/account availability and exact destination authorization remain semantic
+execution checks. A wire-local modelMappings list marks a requested unsupported
+capability: absent/null/empty is inactive, nonempty or malformed is rejected
+without inspecting entries. Native Config and constructors stay plain. The
+existing eight-account behavior is temporarily retained as execution policy,
+with #394/#317 owning its disposition. Current specs/tests reflect this revision;
+earlier versioned evidence is historical, not reinstated strictness.
+
 ## Context
 
 Stack 2/3 depends on `protect-gateway-client-byok-capture`. The registered

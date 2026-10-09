@@ -180,3 +180,22 @@ readonly Go 1.26.8 Grafana races and 50 fallback metadata-failure race repetitio
 passed; 74 command cases ran without skips. Logs:
 `/tmp/byok-stack-pr2-latest-main-20261009/`. Main's Azure/security changes and
 registered baseline remain intact; generated workspace checksum churn is excluded.
+
+## Approved account decoding revision
+
+Removed DisallowUnknownFields and used a minimal wire-only account wrapper to
+identify meaningful unsupported modelMappings; native Config/construction remain
+unchanged. Additive/inactive-mapping cases failed before the change. Green tests
+retain case-sensitive namespace/provider/discriminator keys, standard account
+field matching/duplicates, nil/empty mappings, unsupported/malformed mapping
+errors and unchanged explicit native keys/endpoints/headers. Ignored retry/header
+fields never alter native construction. The existing eight-account behavior is
+retained as temporary execution policy, not a decoder grammar. Ten engine and
+SDK capture race repetitions passed. Full gates and current strict specs passed
+under exact `eb77f09e`/Gateway4.0.103; 74 command cases ran without skips. One
+unchanged React metadata-history test initially missed an asynchronous snapshot;
+three isolated runs and the full rerun passed, with no UI source changes. Logs:
+`/tmp/byok-stack-pr2-approved-audit-20261009/`, `/tmp/byok-audit-pr368-gates.log`,
+`/tmp/byok-audit-pr368-gates-rerun.log` and `/tmp/byok-audit-react-metadata-{1,2,3}.log`.
+Native/content/fallback/isolation/redirect/late-owner behavior, registered pins and
+provider input recordings are unchanged.

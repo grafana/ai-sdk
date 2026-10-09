@@ -61,9 +61,10 @@ gap and avoid substituting another version silently.
 
 ### Canonical Request Casing
 
-Match request casing emitted by the supported clients. Do not turn parser or
-response-decoding permissiveness into request API policy. Case-insensitive
-matching requires a protocol rule (e.g. HTTP header names) or explicit approval.
+Emit canonical client field names. Use ordinary Go JSON decoding, including
+standard duplicate members, struct-field matching and additive fields. Do not
+normalize namespace/map keys or discriminator values without a protocol rule or
+explicit approval; HTTP header names remain case-insensitive.
 
 ### Parity Governance
 

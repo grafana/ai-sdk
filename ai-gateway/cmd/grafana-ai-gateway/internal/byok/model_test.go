@@ -141,6 +141,8 @@ func TestNew_AccountConfigDefaults(t *testing.T) {
 			{name: "explicit native endpoint", account: `{"apiKey":"dummy-key","baseURL":"https://api.openai.com/v1"}`},
 			{name: "OpenAI account fields", account: `{"apiKey":"dummy-key","organization":"org-customer","project":"proj-customer"}`, organization: "org-customer", project: "proj-customer"},
 			{name: "empty optional fields", account: `{"apiKey":"dummy-key","baseURL":"","organization":"","project":""}`},
+			{name: "ignored additive fields", account: `{"apiKey":"dummy-key","headers":{"Authorization":"ignored-account-value"},"base_url":"https://ignored.invalid","maxRetries":100}`},
+			{name: "standard field matching", account: `{"APIKEY":"dummy-key","BaseURL":"https://api.openai.com/v1","Organization":"org-customer","Project":"proj-customer"}`, organization: "org-customer", project: "proj-customer"},
 		} {
 			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
 				request, err := DecodeRequest("openai/native-model", json.RawMessage(`{"byok":{"openai":[`+tc.account+`]}}`), nil)
@@ -155,6 +157,8 @@ func TestNew_AccountConfigDefaults(t *testing.T) {
 					body, err := io.ReadAll(r.Body)
 					require.NoError(t, err)
 					assert.Contains(t, string(body), `"model":"native-model"`)
+					assert.NotContains(t, string(body), "ignored-account-value")
+					assert.NotContains(t, string(body), "ignored.invalid")
 					for _, field := range []string{"apiKey", "baseURL", "organization", "project", "dummy-key"} {
 						assert.NotContains(t, string(body), field)
 					}
@@ -251,7 +255,15 @@ func TestDecodeRequest_AccountPolicy(t *testing.T) {
 		{name: "null organization", raw: `{"byok":{"openai":[{"apiKey":"key","organization":null}]}}`, allowed: true},
 		{name: "case variant endpoint still requires approval", raw: `{"byok":{"openai":[{"apiKey":"key","BaseURL":"https://approved.example/v1"}]}}`},
 		{name: "host owns endpoint syntax", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"http://approved.example/v1"}]}}`, approvals: map[Provider][]string{OpenAI: {"http://approved.example/v1"}}, allowed: true},
-		{name: "unknown field", raw: `{"byok":{"openai":[{"apiKey":"key","maxRetries":2}]}}`},
+		{name: "additive account field", raw: `{"byok":{"openai":[{"apiKey":"key","maxRetries":2}]}}`, allowed: true},
+		{name: "inactive null mappings", raw: `{"byok":{"openai":[{"apiKey":"key","modelMappings":null}]}}`, allowed: true},
+		{name: "inactive empty mappings", raw: `{"byok":{"openai":[{"apiKey":"key","modelMappings":[]}]}}`, allowed: true},
+		{name: "meaningful unsupported mappings", raw: `{"byok":{"openai":[{"apiKey":"key","modelMappings":[{"gatewayModelSlug":"openai/model","customModelId":"mapped"}]}]}}`},
+		{name: "malformed mappings", raw: `{"byok":{"openai":[{"apiKey":"key","modelMappings":42}]}}`},
+		{name: "mapping casing follows struct decoding", raw: `{"byok":{"openai":[{"apiKey":"key","ModelMappings":[{}]}]}}`},
+		{name: "last mapping member wins", raw: `{"byok":{"openai":[{"apiKey":"key","modelMappings":[{}],"modelMappings":[]}]}}`, allowed: true},
+		{name: "malformed earlier mapping member", raw: `{"byok":{"openai":[{"apiKey":"key","modelMappings":42,"modelMappings":[]}]}}`},
+		{name: "unused meaningful mapping", raw: `{"byok":{"openai":[{"apiKey":"key"}],"anthropic":[{"apiKey":"unused","modelMappings":[{}]}]}}`},
 		{name: "Anthropic account does not accept OpenAI fields", selector: "anthropic/model", raw: `{"byok":{"anthropic":[{"apiKey":"key","project":"proj"}]}}`},
 		{name: "organization whitespace", raw: `{"byok":{"openai":[{"apiKey":"key","organization":"org value"}]}}`, allowed: true},
 		{name: "header validity belongs to transport", raw: `{"byok":{"openai":[{"apiKey":"key","project":"proj\r\nX-Test: value"}]}}`, allowed: true},
@@ -274,6 +286,9 @@ func TestDecodeRequest_AccountPolicy(t *testing.T) {
 				assert.Empty(t, got)
 				assert.NotContains(t, err.Error(), "approved.example")
 				assert.NotContains(t, err.Error(), "dummy-secret")
+				if tc.name == "meaningful unsupported mappings" {
+					assert.Contains(t, err.Error(), "modelMappings is not supported")
+				}
 			}
 		})
 	}
@@ -295,6 +310,8 @@ func TestDecodeRequest(t *testing.T) {
 		{"key whitespace", "openai/model", `{"byok":{"openai":[{"apiKey":"key with spaces"}]}}`, OpenAI, "model", []string{"key with spaces"}},
 		{"key header validation is deferred", "openai/model", `{"byok":{"openai":[{"apiKey":"key\r\nX-Test: value"}]}}`, OpenAI, "model", []string{"key\r\nX-Test: value"}},
 		{"model is native data", "openai/a b", valid, OpenAI, "a b", []string{"first", "second"}},
+		{"standard account field matching", "openai/model", `{"byok":{"openai":[{"APIKEY":"matched","BaseURL":"https://api.openai.com/v1","Organization":"org","Project":"project"}]}}`, OpenAI, "model", []string{"matched"}},
+		{"unrelated additive account fields", "openai/model", `{"byok":{"openai":[{"apiKey":"valid","dummy-secret-field":true,"headers":{"Authorization":"dummy-secret"},"future":{"nested":[null,false,42]}}]}}`, OpenAI, "model", []string{"valid"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := DecodeRequest(tc.selector, json.RawMessage(tc.controls), nil)
@@ -327,9 +344,7 @@ func TestDecodeRequest(t *testing.T) {
 		`{"byok":{"openai":false,"openai":[{"apiKey":"valid"}]}}`,
 		`{"byok":false,"byok":{"openai":[{"apiKey":"valid"}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid"}]}} {}`,
-		`{"byok":{"openai":[{"apiKey":"valid","dummy-secret-field":true}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid","baseURL":"https://dummy-secret.invalid"}]}}`,
-		`{"byok":{"openai":[{"apiKey":"valid","headers":{"Authorization":"dummy-secret"}}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid"}],"OpenAI":[{"apiKey":"dummy-secret"}]}}`,
 		`{"byok":{"dummy-secret-provider":[{"apiKey":"valid"}]}}`,
 		`{"byok":{"anthropic":[{"apiKey":"valid"}]}}`,
