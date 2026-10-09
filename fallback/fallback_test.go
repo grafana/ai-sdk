@@ -201,7 +201,7 @@ func TestDoGenerate(t *testing.T) {
 		_, err := m.DoGenerate(context.Background(), provider.CallOptions{})
 		require.NoError(t, err)
 		require.Len(t, attempts, 2)
-		assert.Equal(t, Attempt{Index: 1, Provider: "bedrock", ModelID: "bedrock-model", StartedAt: attempts[0].StartedAt, FinishedAt: attempts[0].FinishedAt, Err: primaryErr, Outcome: AttemptFailed, WillFallback: true}, attempts[0])
+		assert.Equal(t, Attempt{Index: 1, Provider: "bedrock", ModelID: "bedrock-model", StartedAt: attempts[0].StartedAt, FinishedAt: attempts[0].FinishedAt, Err: primaryErr, SourceErr: primaryErr, Outcome: AttemptFailed, WillFallback: true}, attempts[0])
 		assert.Equal(t, Attempt{Index: 2, Provider: "vertex", ModelID: "vertex-model", StartedAt: attempts[1].StartedAt, FinishedAt: attempts[1].FinishedAt, Outcome: AttemptSelected}, attempts[1])
 		assert.False(t, attempts[0].FinishedAt.Before(attempts[0].StartedAt))
 		assert.False(t, attempts[1].FinishedAt.Before(attempts[1].StartedAt))
