@@ -315,7 +315,7 @@ Every runtime error response SHALL retain fixed classified status, message, type
 
 #### Scenario: Provider API failure
 - **WHEN** `DoGenerate` returns an API, transport, timeout, cancellation, or arbitrary internal error
-- **THEN** the handler SHALL retain the corresponding fixed safe fields without serializing arbitrary causes; optional protected execution attribution SHALL follow gateway-attempt-failure-evidence
+- **THEN** the handler SHALL retain the corresponding fixed safe fields without serializing arbitrary causes; optional execution attribution SHALL follow gateway-attempt-failure-evidence
 
 #### Scenario: Unknown model
 - **WHEN** catalog resolution reports an unknown public model
@@ -327,11 +327,11 @@ Every runtime error response SHALL retain fixed classified status, message, type
 
 ### Requirement: Runtime error detail exclusions
 
-Arbitrary provider, transport, resolver and panic causes, raw bodies/headers and credentials SHALL NOT be serialized. Optional protected candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, within complete-response limits; they SHALL NOT change classification or retryability.
+Arbitrary cause trees and raw bodies/headers SHALL NOT be serialized by failure projection. Optional native candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, within existing complete-response limits; they SHALL NOT change classification or retryability. Provider-originated scalar echoes SHALL NOT be credential-filtered.
 
 #### Scenario: Runtime error detail exclusions
 - **WHEN** a resolver or provider failure carries URL, credentials and metadata
-- **THEN** arbitrary causes, raw bodies/headers and credentials SHALL NOT be serialized; only governed protected candidate-local summaries and configured identity MAY accompany the fixed safe fields
+- **THEN** arbitrary cause trees and raw bodies/headers SHALL NOT be serialized; governed native candidate-local summaries SHALL retain provider-originated scalar echoes while the base fields remain fixed
 
 ### Requirement: Minimal unary success response
 
@@ -544,7 +544,7 @@ The handler SHALL use synchronized request-local observation to optionally enric
 
 #### Scenario: Optional unary execution overview policy
 - **WHEN** the runtime encodes the corresponding response or stream event
-- **THEN** Original primary validation and existing complete-response limits SHALL apply before accepting enrichment. Optional encoding/fit failure SHALL preserve the original document and classification; original adaptation failures SHALL NOT replay generation. Protected route sources SHALL remain private, and configured direct calls SHALL retain their existing invocation/cancellation ownership.
+- **THEN** Original primary validation and existing complete-response limits SHALL apply before accepting enrichment. Optional encoding/fit failure SHALL preserve the original document and classification; original adaptation failures SHALL NOT replay generation. Configured candidate identity SHALL remain separate from native-summary eligibility; filtering-only credential sources SHALL NOT be collected. Configured direct calls SHALL retain their existing invocation/cancellation ownership.
 
 #### Scenario: Valid result with no enrichment room
 - **WHEN** a native result fits but adding or relocating the overview exceeds the existing response bound

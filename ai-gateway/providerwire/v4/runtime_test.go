@@ -1200,15 +1200,14 @@ func TestInvocation_Unary(t *testing.T) {
 	}
 }
 
-func TestInvocation_PrivateSourcesAndErrorLimit(t *testing.T) {
+func TestInvocation_NativeEchoAndErrorLimit(t *testing.T) {
 	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "native rejected actual-source", StatusCode: 401})
 	}}
 	h := invocationHarness(t, testLimits(), first)
-	h.resolver.resolved.ProtectedSources = []string{"actual-source"}
 	response := h.serve(validRequest(`{"prompt":[]}`))
 	assert.Equal(t, 424, response.Code)
-	assert.NotContains(t, response.Body.String(), "actual-source")
+	assert.Contains(t, response.Body.String(), "native rejected actual-source")
 	overview := readOverview(t, response.Body.Bytes())
 	require.NotNil(t, overview)
 	assert.Equal(t, 401, overview.Attempts[0].Error.StatusCode)
@@ -1252,7 +1251,7 @@ func TestInvocation_RequestCredentialEcho(t *testing.T) {
 				response := invocationHarness(t, testLimits(), first).serve(request)
 				assert.Equal(t, status, response.Code)
 				for _, secret := range tc.secrets {
-					assert.NotContains(t, response.Body.String(), secret)
+					assert.Contains(t, response.Body.String(), secret)
 				}
 				if streaming {
 					assert.Contains(t, response.Body.String(), `"nativeError"`)
@@ -1360,7 +1359,7 @@ func TestInvocation_RejectedUnaryOutcomeBeforePublication(t *testing.T) {
 	}
 	parent, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved), nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved), h.handler.limits.UnaryResponseBytes)
 	capture := &attemptCapture{}
 	ctx := fallback.WithAttemptObserver(parent, capture.observe)
 	results := make(chan error, 1)
@@ -1409,7 +1408,7 @@ func TestInvocation_RejectRecordedFallbackOutcome(t *testing.T) {
 	}}
 	second := &recordingModel{}
 	h := invocationHarness(t, testLimits(), first, second)
-	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved), nil, provider.CallOptions{}, h.handler.limits.UnaryResponseBytes)
+	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved), h.handler.limits.UnaryResponseBytes)
 	capture := &attemptCapture{}
 	ctx := fallback.WithAttemptObserver(parent, capture.observe)
 	_, err := h.resolver.resolved.Model.DoGenerate(ctx, provider.CallOptions{})
@@ -1433,25 +1432,19 @@ func selectConfiguredModel(t *testing.T, resolved catalog.ResolvedModel) Selecti
 
 func TestRequestSelection_ConfiguredExecution(t *testing.T) {
 	resolved := catalog.ResolvedModel{
-		ID:               "canonical",
-		Model:            &recordingModel{},
-		Candidates:       []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "backend", ProviderInstance: "configured"}},
-		ProtectedSources: []string{"configured-secret"},
+		ID:         "canonical",
+		Model:      &recordingModel{},
+		Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "backend", ProviderInstance: "configured"}},
 	}
 	selected := selectConfiguredModel(t, resolved)
 	resolved.Candidates[0].ModelID = "mutated"
-	resolved.ProtectedSources[0] = "mutated"
-	request := newExecutionRequest("alias", selected, nil, provider.CallOptions{}, 4096)
+	request := newExecutionRequest("alias", selected, 4096)
 	selected.configured.candidates[0].ModelID = "mutated-again"
-	selected.configured.sources[0] = "mutated-again"
 	assert.Equal(t, "canonical", request.canonical)
 	assert.Equal(t, "backend", request.candidates[0].ModelID)
-	assert.Equal(t, []string{"configured-secret"}, request.sources)
 	encoded, err := json.Marshal(selected)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), "configured")
-	assert.NotContains(t, string(encoded), "secret")
-	assert.NotContains(t, fmt.Sprintf("%+v", selected), "configured-secret")
 	capture := &attemptCapture{}
 	capture.enter()
 	view := request.snapshot(capture, nil)
@@ -1459,10 +1452,10 @@ func TestRequestSelection_ConfiguredExecution(t *testing.T) {
 	assert.Equal(t, "alias", view.overview.RequestedModelID)
 	assert.Equal(t, "canonical", view.overview.CanonicalModelID)
 	assert.Equal(t, "configured", view.overview.Attempts[0].ProviderInstance)
-	assert.Nil(t, view.current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "configured-secret"})))
+	assert.Equal(t, &execution.Failure{Message: "configured-secret"}, view.current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "configured-secret"})))
 }
 
-func TestRequestSelection_UnconfiguredExecutionOmitted(t *testing.T) {
+func TestRequestSelection_UnconfiguredNativeSummary(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		streaming bool
@@ -1512,9 +1505,13 @@ func TestRequestSelection_UnconfiguredExecutionOmitted(t *testing.T) {
 			h.ServeHTTP(response, request)
 			assert.Equal(t, 1, observed)
 			assert.Equal(t, 1, model.callCount())
-			assert.NotContains(t, response.Body.String(), "unconfigured-native-detail")
+			if tc.streaming && !tc.failSetup {
+				assert.Contains(t, response.Body.String(), `"nativeError":{"message":"unconfigured-native-detail","statusCode":503}`)
+			} else {
+				assert.NotContains(t, response.Body.String(), "unconfigured-native-detail")
+				assert.NotContains(t, response.Body.String(), "nativeError")
+			}
 			assert.NotContains(t, response.Body.String(), "execution")
-			assert.NotContains(t, response.Body.String(), "nativeError")
 			assert.NotContains(t, response.Body.String(), "nativeMetadata")
 			if tc.failSetup {
 				assert.Equal(t, http.StatusServiceUnavailable, response.Code)
@@ -1555,13 +1552,12 @@ func TestExecutionRequest_Snapshot(t *testing.T) {
 		}, err: context.Canceled, discard: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resolved := catalog.ResolvedModel{ID: "canonical", ProtectedSources: []string{"credential"}}
+			resolved := catalog.ResolvedModel{ID: "canonical"}
 			for i := range tc.candidates {
 				resolved.Candidates = append(resolved.Candidates, catalog.ConfiguredCandidate{Provider: "native", ModelID: fmt.Sprint(i)})
 			}
-			request := newExecutionRequest("alias", selectConfiguredModel(t, resolved), nil, provider.CallOptions{}, 4096)
+			request := newExecutionRequest("alias", selectConfiguredModel(t, resolved), 4096)
 			resolved.Candidates[0].ModelID = "mutated"
-			resolved.ProtectedSources[0] = "changed"
 			capture := &attemptCapture{}
 			if tc.entered {
 				capture.enter()
@@ -1583,7 +1579,7 @@ func TestExecutionRequest_Snapshot(t *testing.T) {
 					assert.Equal(t, fmt.Sprint(i), view.overview.Attempts[i].ModelID)
 				}
 			}
-			assert.Nil(t, view.current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "credential"})))
+			assert.Equal(t, &execution.Failure{Message: "credential"}, view.current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "credential"})))
 			before, err := json.Marshal(view.overview)
 			require.NoError(t, err)
 			var late sync.WaitGroup
@@ -1617,7 +1613,7 @@ func (err projectionError) Error() string {
 func TestExecutionRequest_ProjectionAfterSeal(t *testing.T) {
 	for _, panics := range []bool{false, true} {
 		t.Run(fmt.Sprint(panics), func(t *testing.T) {
-			request := newExecutionRequest("alias", selectConfiguredModel(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}), nil, provider.CallOptions{}, 4096)
+			request := newExecutionRequest("alias", selectConfiguredModel(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}), 4096)
 			capture := &attemptCapture{}
 			capture.enter()
 			inspected := make(chan struct{})

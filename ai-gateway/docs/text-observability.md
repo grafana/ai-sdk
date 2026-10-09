@@ -66,7 +66,9 @@ before treating the logs as a complete account of provider attempts.
 Configured direct and fallback routes return best-effort `gateway.execution`
 metadata on unary results, stream finishes and failure carriers. It contains
 requested/canonical identity and ordered observed attempts, not a trace or
-completion/replay claim. Current committed error summaries remain event-local.
+completion/replay claim. Current committed error summaries remain event-local
+and do not require configured catalog attribution. Provider-originated values
+may echo credentials; logger field policy does not filter returned summaries.
 
 Execution metadata is added directly to responses, not reconstructed from
 Gateway logs. Disabling telemetry or dropping log records does not suppress it.

@@ -3,7 +3,6 @@ package v4
 import (
 	"context"
 	"errors"
-	"net/http"
 	"slices"
 	"sync"
 
@@ -53,29 +52,22 @@ type executionRequest struct {
 	requested   string
 	canonical   string
 	candidates  []catalog.ConfiguredCandidate
-	sources     []string
 	sourceBytes int64
 }
 
-func newExecutionRequest(requested string, selected Selection, headers http.Header, options provider.CallOptions, sourceBytes int64) executionRequest {
-	if selected.configured == nil {
-		return executionRequest{}
+func newExecutionRequest(requested string, selected Selection, sourceBytes int64) executionRequest {
+	request := executionRequest{sourceBytes: sourceBytes}
+	if selected.configured != nil {
+		request.requested = requested
+		request.canonical = selected.ID
+		request.candidates = slices.Clone(selected.configured.candidates)
 	}
-	sources := slices.Clone(selected.configured.sources)
-	sources = append(sources, execution.HeaderSources(headers)...)
-	sources = append(sources, execution.RequestSources(options)...)
-	return executionRequest{
-		requested:   requested,
-		canonical:   selected.ID,
-		candidates:  slices.Clone(selected.configured.candidates),
-		sources:     sources,
-		sourceBytes: sourceBytes,
-	}
+	return request
 }
 
 func (request executionRequest) snapshot(capture *attemptCapture, err error) (view executionView) {
 	entered, attempts := capture.seal()
-	view = executionView{sources: request.sources, sourceBytes: request.sourceBytes}
+	view = executionView{sourceBytes: request.sourceBytes}
 	defer func() {
 		if recover() != nil {
 			view.overview = nil
@@ -91,13 +83,12 @@ func (request executionRequest) snapshot(capture *attemptCapture, err error) (vi
 		}
 		attempts = []fallback.Attempt{{Index: 1, Outcome: outcome, SourceErr: err}}
 	}
-	view.overview = execution.Project(request.requested, request.canonical, attempts, request.candidates, request.sources, request.sourceBytes)
+	view.overview = execution.Project(request.requested, request.canonical, attempts, request.candidates, request.sourceBytes)
 	return view
 }
 
 type executionView struct {
 	overview    *execution.Overview
-	sources     []string
 	sourceBytes int64
 }
 
@@ -105,7 +96,7 @@ func (view executionView) current(err *provider.APICallError) *execution.Failure
 	if err == nil || view.sourceBytes == 0 {
 		return nil
 	}
-	return execution.Summary(err, view.sources, view.sourceBytes)
+	return execution.Summary(err, view.sourceBytes)
 }
 
 func (view executionView) metadata() provider.ProviderMetadata {

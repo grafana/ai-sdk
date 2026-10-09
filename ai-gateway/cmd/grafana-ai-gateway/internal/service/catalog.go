@@ -42,7 +42,6 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 		descriptors := append([]config.Primary{configured.Primary}, configured.Fallback...)
 		candidates := make([]provider.LanguageModel, 0, len(descriptors))
 		configuredCandidates := make([]catalog.ConfiguredCandidate, 0, len(descriptors))
-		protectedSources := make([]string, 0, len(descriptors))
 		for _, descriptor := range descriptors {
 			providerConfig, ok := providers[descriptor.Provider]
 			if !ok {
@@ -51,7 +50,6 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			if providerConfig.APIKey == "" {
 				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 			}
-			protectedSources = append(protectedSources, providerConfig.APIKey)
 			var candidate provider.LanguageModel
 			var validateOptions func(provider.CallOptions) error
 			switch providerConfig.Type {
@@ -122,8 +120,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				Aliases:     append([]string(nil), configured.Aliases...),
 				Candidates:  configuredCandidates,
 			},
-			Model:            model,
-			ProtectedSources: protectedSources,
+			Model: model,
 		})
 	}
 	return catalog.NewStatic(entries)

@@ -570,10 +570,10 @@ models:
             else {
               assert.equal(attempt.error.statusCode, index === 0 ? 503 : 502);
               assert.equal(attempt.error.type, index === 0 ? "api_error" : "server_error");
-              if (index !== 0) assert.equal(attempt.error.message, "provider-secret-response");
+              assert.equal(attempt.error.message, index === 0 ? "provider-secret-response integration-anthropic-key backend-private" : "provider-secret-response");
             }
           }
-          assertConsumerSecretsAbsent([go, metadata]);
+          if (winner === 0) assertConsumerSecretsAbsent([go, metadata]);
           const candidates = [anthropic, openai, compatible];
           assert.deepEqual(candidates.map((candidate, index) => candidate.requests.length - counts[index]!), candidates.map((_, index) => index <= winner ? 2 : 0));
           for (const candidate of candidates.slice(0, winner + 1)) {
@@ -851,8 +851,11 @@ describe("authenticated Anthropic Gateway command", () => {
           assert.deepEqual(goMetadata.gateway.execution, tsMetadata.gateway.execution);
           assert.equal(tsMetadata.gateway.execution.attempts.length, row.count + 1);
           assert.deepEqual(tsMetadata.gateway.execution.attempts.map((attempt: any) => attempt.outcome), row.status === undefined ? [...(row.count ? ["failed"] : []), "selected"] : Array(row.count + 1).fill("failed"));
-          if (row.primary) assert.equal(tsMetadata.gateway.execution.attempts[0].error.statusCode, row.primary);
-          assertConsumerSecretsAbsent([result, failure, go], [token]);
+          if (row.primary) {
+            assert.equal(tsMetadata.gateway.execution.attempts[0].error.statusCode, row.primary);
+            assert.equal(tsMetadata.gateway.execution.attempts[0].error.message, "provider-secret-response integration-anthropic-key backend-private");
+            assert.ok(!JSON.stringify([result, failure, go]).includes(token));
+          } else assertConsumerSecretsAbsent([result, failure, go], [token]);
           assertDiscoverySecretsAbsent([discovery, models], primary, [secondary.url, token]);
         }
       }
@@ -1200,7 +1203,10 @@ describe("authenticated Anthropic Gateway command", () => {
           } catch (error) { ts = error; }
           assert.ok(ts);
           assert.deepEqual({ status: go.error.statusCode, category: go.error.category, retryable: go.error.isRetryable }, { status: ts.statusCode, category: ts.type, retryable: ts.isRetryable });
-          assertConsumerSecretsAbsent([go, ts]);
+          const overview = ts.cause.data.providerMetadata.gateway.execution;
+          assert.deepEqual(go.error.apiError.data.providerMetadata.gateway.execution, overview);
+          assert.deepEqual(overview.attempts[0].error, { message: "provider-secret-response integration-anthropic-key backend-private", type: "api_error", statusCode: row.upstream });
+          for (const token of [TEST_TOKEN, TEST_USER_TOKEN]) assert.ok(!JSON.stringify([go, ts]).includes(token));
         }
       }
       assert.equal(fake.requests.length, rows.length * 4, "neither client nor service should retry model calls");

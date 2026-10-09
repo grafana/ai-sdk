@@ -26,14 +26,14 @@ func (*orderedErrorEvidenceModel) DoStream(context.Context, provider.CallOptions
 	data, err := json.Marshal(struct {
 		Metadata    provider.ProviderMetadata `json:"providerMetadata"`
 		NativeError map[string]string         `json:"nativeError"`
-	}{metadata, map[string]string{"message": "private-native-message"}})
+	}{metadata, map[string]string{"message": "private-native-message dummy-provider-credential"}})
 	if err != nil {
 		return nil, err
 	}
 	parts := []provider.StreamPart{
 		{Type: provider.PartTextStart, ID: "text"},
 		{Type: provider.PartTextDelta, ID: "text", Delta: "before"},
-		{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "private-native-message", Data: data})},
+		{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "private-native-message dummy-provider-credential", Data: data})},
 		{Type: provider.PartTextDelta, ID: "text", Delta: "after"},
 		{Type: provider.PartTextEnd, ID: "text"},
 		{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}, ProviderMetadata: metadata},

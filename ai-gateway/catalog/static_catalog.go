@@ -22,7 +22,7 @@ func NewStatic(entries []StaticEntry) (Catalog, error) {
 			return nil, fmt.Errorf("catalog: model %q is nil", entry.Info.ID)
 		}
 		infos[i] = entry.Info
-		models[entry.Info.ID] = ResolvedModel{ID: entry.Info.ID, Model: entry.Model, Candidates: append([]ConfiguredCandidate(nil), entry.Info.Candidates...), ProtectedSources: append([]string(nil), entry.ProtectedSources...)}
+		models[entry.Info.ID] = ResolvedModel{ID: entry.Info.ID, Model: entry.Model, Candidates: append([]ConfiguredCandidate(nil), entry.Info.Candidates...)}
 	}
 
 	namespace, err := newModelNamespace(infos)
@@ -43,7 +43,6 @@ func (c *staticCatalog) ResolveModel(_ context.Context, modelID string) (Resolve
 	}
 	resolved := c.models[canonicalID]
 	resolved.Candidates = append([]ConfiguredCandidate(nil), resolved.Candidates...)
-	resolved.ProtectedSources = append([]string(nil), resolved.ProtectedSources...)
 	return resolved, nil
 }
 

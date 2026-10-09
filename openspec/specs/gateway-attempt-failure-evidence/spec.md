@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define request-local Gateway execution attribution and protected failure delivery through existing client-visible responses, independently of operator capture.
+Define request-local Gateway execution attribution and native failure delivery through existing client-visible responses, independently of operator capture.
 
 ## Requirements
 
@@ -12,11 +12,11 @@ The Gateway SHALL publish a compact overview for one finalized configured direct
 
 #### Scenario: Request-local actual execution projection policy
 - **WHEN** a configured invocation is observed and its result or failure is delivered
-- **THEN** It SHALL use requested/canonical route identity once, ordered observed configured destinations and selected/failed/canceled outcomes with optional protected failure summaries. Shared models SHALL NOT retain request execution state. Incomplete/mixed histories SHALL omit the optional overview rather than invent invocations. Configured credentials and protected sources SHALL remain private, isolated and absent from discovery/output.
+- **THEN** It SHALL use requested/canonical route identity once, ordered observed configured destinations and selected/failed/canceled outcomes with optional native failure summaries. Shared models SHALL NOT retain request execution state. Incomplete/mixed histories SHALL omit the optional overview rather than invent invocations. Projection SHALL NOT collect credentials or suppress provider-originated scalar echoes. Account authorization, request isolation and credential exclusion from configured discovery SHALL remain intact.
 
 #### Scenario: Primary failure followed by secondary selection
 - **WHEN** a configured primary fails and a secondary is actually selected
-- **THEN** the overview SHALL report those two destinations in order with the primary's own safe failure and no selected index or completion claim
+- **THEN** the overview SHALL report those two destinations in order with the primary's own native failure and no selected index or completion claim
 
 #### Scenario: Cancellation prevents advancement
 - **WHEN** cancellation prevents another candidate from being invoked
@@ -28,8 +28,9 @@ The Gateway SHALL publish a compact overview for one finalized configured direct
 
 #### Scenario: Selection has no configured attribution
 - **WHEN** a request selector returns a model without catalog-owned configured attribution
-- **THEN** the Gateway SHALL omit both execution overviews and event-local native summaries without capturing request-local fallback errors or inferring provenance from model identity or native metadata
-- **AND** original opaque native metadata and existing classified error behavior SHALL remain unchanged
+- **THEN** the Gateway SHALL omit configured execution overviews without inventing configured identity or capturing a second history solely for diagnostics
+- **AND** available event-local native summaries SHALL remain eligible independently of catalog provenance; original opaque native metadata, independent SDK observers and classified error behavior SHALL remain unchanged
+- **AND** missing request-account attempt or unary/setup summary observation SHALL be treated as a capability gap, not confidentiality or a permanent output prohibition
 
 ### Requirement: Independent fallback and direct observation
 
@@ -53,7 +54,7 @@ Unary result/stream finish SHALL optionally carry providerMetadata.gateway.execu
 
 #### Scenario: Best-effort delivery and event-local current errors policy
 - **WHEN** a configured invocation is observed and its result or failure is delivered
-- **THEN** Unary/setup failures SHALL optionally add top-level providerMetadata; committed errors SHALL optionally add error.data.providerMetadata and a protected current nativeError summary. Existing mapped message/type/code/status/retry fields SHALL preserve classification and retry behavior. Post-selection native failures SHALL remain ordered event-local data and SHALL NOT be retained in finish history. No raw diagnostic tree, endpoint, new event, accessor or public error type SHALL be added.
+- **THEN** Unary/setup failures SHALL optionally add top-level providerMetadata; committed errors SHALL optionally add error.data.providerMetadata and a current nativeError summary. Existing mapped message/type/code/status/retry fields SHALL preserve classification and retry behavior. Post-selection native failures SHALL remain ordered event-local data and SHALL NOT be retained in finish history. No raw diagnostic tree, separate endpoint field, new event, accessor or public error type SHALL be added. Existing source/read and envelope fit limits SHALL remain coherent until the coordinated shared transport policy replaces them.
 
 #### Scenario: Leading and later stream errors
 - **WHEN** a selected provider emits multiple errors followed by valid content and finish
@@ -62,6 +63,10 @@ Unary result/stream finish SHALL optionally carry providerMetadata.gateway.execu
 #### Scenario: Success overview does not fit
 - **WHEN** a valid primary unary result or finish fits but enriched output does not
 - **THEN** the original response SHALL remain successful with native metadata unchanged, including an opaque native gateway namespace when relocation cannot fit
+
+#### Scenario: Provider-originated credential echo
+- **WHEN** a native message, type or code echoes a caller-supplied or service-owned credential
+- **THEN** returned summaries SHALL preserve that value without a credential inventory or value-based suppression, independently of operator logger field policy
 
 #### Scenario: Failure enrichment does not fit
 - **WHEN** the original classified failure fits but optional overview/current summary does not

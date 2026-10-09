@@ -794,6 +794,22 @@ describe("real ProviderWire V4 streaming runtime", () => {
     assert.deepEqual(observed.metadata, finish.providerMetadata);
   });
 
+  it("delivers native summaries without configured attribution through both clients", async () => {
+    const parts = await collect((await model("unconfigured-errors").doStream({ prompt: [] })).stream);
+    for (const part of parts) assert.ok(validateStreamEvent(part), JSON.stringify(validateStreamEvent.errors));
+    assert.deepEqual(parts.map(part => part.type), ["stream-start", "error", "text-start", "error", "text-delta", "text-end", "finish"]);
+    const data = parts.filter(part => part.type === "error").map(part => (part.error as any).data);
+    assert.deepEqual(data, [
+      { nativeError: { message: "private overload", statusCode: 503 } },
+      { nativeError: { message: "private dependency", statusCode: 401 } },
+    ]);
+    assert.equal((parts.at(-1) as any).providerMetadata, undefined);
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "test", modelID: "unconfigured-errors", mode: "stream", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    assert.deepEqual(go.parts.filter((part: any) => part.type === "error").map((part: any) => part.error.data), data);
+    assert.equal(JSON.stringify(go.parts).includes('"execution"'), false);
+  });
+
   it("preserves ordered provider errors and emits terminal timeout", async () => {
     const withErrors = await model("stream-errors").doStream({ prompt: [] });
     const errorParts = await collect(withErrors.stream);
