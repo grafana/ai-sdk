@@ -199,3 +199,15 @@ Providers SHALL set the served provider identifier on the response metadata for 
 #### Scenario: Fallback forwards served provider without modification
 - **WHEN** a `fallback.Model` fails over to a non-primary candidate and that candidate serves the request
 - **THEN** the response/stream metadata SHALL carry the serving candidate's provider, because the fallback wrapper forwards the candidate's output verbatim
+
+### Requirement: Stream part JSON follows the V4 shape
+
+Serializing a stream part SHALL emit `warnings` on `stream-start`, as an empty array when there are none, and SHALL encode a response timestamp as UTC with milliseconds, like JavaScript's `Date#toISOString`.
+
+#### Scenario: Stream start without warnings
+- **WHEN** a `stream-start` part with no warnings is serialized
+- **THEN** the JSON SHALL be `{"type":"stream-start","warnings":[]}`
+
+#### Scenario: Response timestamp
+- **WHEN** a `response-metadata` part with a non-UTC timestamp is serialized
+- **THEN** the JSON `timestamp` SHALL be the same instant in UTC with exactly three fractional digits and a `Z` suffix
