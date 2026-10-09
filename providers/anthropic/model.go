@@ -247,7 +247,7 @@ func consumeStreamParts(ctx context.Context, items <-chan messageStreamItem, buf
 		}
 		if item.err != nil {
 			ch <- provider.StreamPart{Type: provider.PartError, APICallError: wrapAsAPICallError(item.err, "", nil)}
-			return false
+			return item.errorFrame
 		}
 		if item.event == nil {
 			return true

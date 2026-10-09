@@ -39,6 +39,7 @@ type streamAdapter struct {
 	usage                  anthropicUsage
 	metadataFields         map[string]json.RawMessage
 	safeguardResults       json.RawMessage
+	finishReason           provider.FinishReason
 	messageOpen            bool
 	activeMessageID        string
 	invalidMessageSequence bool
@@ -83,6 +84,9 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		a.metadataFields = messageMetadataFields(msg.RawJSON())
 		delete(a.metadataFields, "safeguard_results")
 		a.safeguardResults = nil
+		if msg.StopReason != "" {
+			a.finishReason = a.mapStopReason(msg.StopReason)
+		}
 		usage := convertAnthropicUsage(a.usage)
 		ch <- provider.StreamPart{
 			Type:            provider.PartResponseMeta,
@@ -475,15 +479,23 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			return fmt.Errorf("decoding safeguard delta: %w", err)
 		}
 		if value := envelope.Delta["safeguard_results"]; len(value) > 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			if _, err := mapSafeguardResults(value); err != nil {
+				return err
+			}
 			a.safeguardResults = value
 		}
 		if len(a.safeguardResults) > 0 {
 			a.metadataFields["safeguard_results"] = a.safeguardResults
 		}
+		a.finishReason = a.mapStopReason(e.Delta.StopReason)
+
+	case anthropic.BetaRawMessageStopEvent:
+		a.messageOpen = false
+		a.activeMessageID = ""
 		usage := convertAnthropicUsage(a.usage)
-		fr := mapFinishReason(e.Delta.StopReason)
-		if a.isJsonResponseFromTool && e.Delta.StopReason == anthropic.BetaStopReasonToolUse {
-			fr = provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(e.Delta.StopReason)}
+		fr := a.finishReason
+		if fr.Unified == "" {
+			fr = mapFinishReason("")
 		}
 		providerMetadata, err := buildAnthropicProviderMetadata(a.metadataFields, a.usage.raw)
 		if err != nil {
@@ -495,12 +507,15 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			Usage:            &usage,
 			ProviderMetadata: providerMetadata,
 		}
-
-	case anthropic.BetaRawMessageStopEvent:
-		a.messageOpen = false
-		a.activeMessageID = ""
 	}
 	return nil
+}
+
+func (a *streamAdapter) mapStopReason(reason anthropic.BetaStopReason) provider.FinishReason {
+	if a.isJsonResponseFromTool && reason == anthropic.BetaStopReasonToolUse {
+		return provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(reason)}
+	}
+	return mapFinishReason(reason)
 }
 
 func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolResultBlock, ch chan<- provider.StreamPart) error {

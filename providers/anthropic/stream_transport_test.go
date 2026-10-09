@@ -156,7 +156,7 @@ func TestDoStream_RawTransportEvents(t *testing.T) {
 				var latestRaw json.RawMessage
 				for part := range result.Stream {
 					if includeRaw && tc.name == "normal" && part.Type != provider.PartRaw {
-						if want := map[provider.StreamPartType]string{provider.PartResponseMeta: transportEvents[0], provider.PartTextStart: transportEvents[1], provider.PartTextDelta: transportEvents[2], provider.PartTextEnd: transportEvents[3], provider.PartFinish: transportEvents[4]}[part.Type]; want != "" {
+						if want := map[provider.StreamPartType]string{provider.PartResponseMeta: transportEvents[0], provider.PartTextStart: transportEvents[1], provider.PartTextDelta: transportEvents[2], provider.PartTextEnd: transportEvents[3], provider.PartFinish: transportEvents[5]}[part.Type]; want != "" {
 							assert.JSONEq(t, want, string(latestRaw))
 						}
 					}

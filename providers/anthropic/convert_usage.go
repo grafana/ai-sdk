@@ -29,10 +29,11 @@ type anthropicUsage struct {
 func (a *streamAdapter) resetUsage(usage anthropic.BetaUsage) error {
 	a.usage = anthropicUsage{
 		inputTokens:              usage.InputTokens,
-		outputTokens:             usage.OutputTokens,
+		outputTokens:             a.usage.outputTokens,
 		cacheCreationInputTokens: usage.CacheCreationInputTokens,
 		cacheReadInputTokens:     usage.CacheReadInputTokens,
-		reasoningTokens:          thinkingTokenCount(usage.OutputTokensDetails),
+		reasoningTokens:          a.usage.reasoningTokens,
+		iterations:               a.usage.iterations,
 	}
 	return a.mergeRawUsage(usage.RawJSON())
 }
