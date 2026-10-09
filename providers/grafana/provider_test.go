@@ -413,3 +413,23 @@ func TestLanguageModel_RequestSelectorBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestNewWithAccessToken_OpaqueStaticCredential(t *testing.T) {
+	const key = "opaque._~+/-key=="
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		assert.Equal(t, key, r.Header.Get("X-Access-Token"))
+		assert.Empty(t, r.Header.Get("Authorization"))
+		assert.Empty(t, r.Header.Get("X-Scope-OrgID"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, discoveryFixture)
+	}))
+	defer server.Close()
+	client, err := NewWithAccessToken(AccessTokenConfig{AccessToken: key, BaseURL: server.URL})
+	require.NoError(t, err)
+	models, err := client.ListModels(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, models, 2)
+	assert.Equal(t, 1, calls)
+}

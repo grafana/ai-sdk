@@ -238,7 +238,7 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			settings := valid
 			tc.mutate(&settings)
-			require.Error(t, settings.Validate())
+			require.Error(t, validateLegacyRuntime(settings))
 		})
 	}
 }
@@ -445,7 +445,10 @@ func TestParseSettings_IsolatedListeners(t *testing.T) {
 		{name: "write includes JWT", args: []string{"--server.write-timeout=159s"}, wantErr: "write timeout"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := ParseSettings(tc.args, mapLookup(baseSettingsEnvironment()))
+			settings, err := ParseSettings(tc.args, mapLookup(baseSettingsEnvironment()))
+			if err == nil {
+				err = validateLegacyRuntime(settings)
+			}
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 			} else {
@@ -459,7 +462,10 @@ func TestParseSettings_IsolatedListeners(t *testing.T) {
 			unsafeAuthEnvironment(environment)
 			_, err := ParseSettings([]string{"--auth.unsafe"}, mapLookup(environment))
 			require.NoError(t, err)
-			_, err = ParseSettings([]string{"--auth.unsafe", "--server." + flag + "-listen-address=:9090"}, mapLookup(environment))
+			settings, err := ParseSettings([]string{"--auth.unsafe", "--server." + flag + "-listen-address=:9090"}, mapLookup(environment))
+			if err == nil {
+				err = validateLegacyRuntime(settings)
+			}
 			require.ErrorContains(t, err, "loopback")
 		})
 	}
@@ -488,4 +494,12 @@ func mapLookup(values map[string]string) LookupEnv {
 		value, ok := values[name]
 		return value, ok
 	}
+}
+
+func validateLegacyRuntime(settings Settings) error {
+	auth, err := ResolveAuthConfig(settings, File{})
+	if err != nil {
+		return err
+	}
+	return settings.ValidateRuntime(auth, true)
 }

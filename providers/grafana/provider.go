@@ -55,7 +55,7 @@ type CloudCredentialsConfig struct {
 	Limits     *Limits
 }
 
-// AccessTokenConfig configures a caller-managed, short-lived access token.
+// AccessTokenConfig configures a caller-managed access token or self-hosted static key.
 type AccessTokenConfig struct {
 	AccessToken string
 	BaseURL     string
