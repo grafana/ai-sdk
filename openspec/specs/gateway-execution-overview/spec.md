@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the dormant Gateway-owned compact execution projector, protected failure summaries and best-effort metadata placement under existing protocol limits.
+Define the dormant Gateway-owned compact execution projector, native failure summaries and best-effort metadata placement under existing protocol limits.
 
 ## Requirements
 
@@ -26,25 +26,25 @@ The Gateway SHALL provide a pure projector for one invocation's ordered observed
 - **WHEN** fallback accepts an error part as the first stream part
 - **THEN** the overview SHALL report selection without a completion claim or a duplicated stream-error history
 
-### Requirement: Small protected failure summaries
+### Requirement: Small native failure summaries
 
-Candidate-local projection SHALL retain available safe message, type, string-or-number code and native status.
+Candidate-local projection SHALL retain available native message, type, string-or-number code and native status.
 
-#### Scenario: Small protected failure summaries policy
+#### Scenario: Small native failure summaries policy
 - **WHEN** a candidate-local native failure is summarized
-- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Actual protected sources and known credential/other-tenant scalar fields SHALL protect summary echoes; ordinary endpoints, identifiers and token-looking application strings SHALL remain available. Inputs SHALL remain unchanged. Malformed, unavailable or oversized diagnostics under the integrator's existing source/read limit SHALL degrade optional fields without creating an error or a new quota.
+- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Projection SHALL NOT collect credential sources or suppress field values by blacklists, substring matching or escaped-value matching. Provider-originated echoes SHALL remain available independently of logger field policy. Inputs SHALL remain unchanged. Malformed, unavailable or oversized diagnostics under the integrator's existing source/read limit SHALL degrade optional fields without creating an error or a new quota.
 
 #### Scenario: Original native failure survives cancellation
 - **WHEN** a canceled decision retains a candidate-native SourceErr
-- **THEN** projection SHALL use that source for its safe summary while retaining canceled outcome without altering the returned context error
+- **THEN** projection SHALL use that source for its native summary while retaining canceled outcome without altering the returned context error
 
 #### Scenario: Useful native message has an endpoint and cause
 - **WHEN** an API error contains a safe native message plus URL/cause information
 - **THEN** the message SHALL remain available without serializing the URL/cause or suppressing it merely because those fields exist
 
-#### Scenario: Protected scalar appears in a summary
-- **WHEN** native message, type or code echoes an actual credential or other-tenant scalar
-- **THEN** only affected summary fields SHALL be omitted and the original source SHALL remain unchanged
+#### Scenario: Provider echoes a credential in a summary
+- **WHEN** a provider-originated message, type or code contains a caller-supplied or service-owned credential value
+- **THEN** the summary SHALL retain that value without collecting credentials or mutating the source; account authorization and request isolation SHALL remain unchanged
 
 #### Scenario: Numeric code exceeds float precision
 - **WHEN** a native error supplies a large numeric code
@@ -56,7 +56,7 @@ Metadata enrichment SHALL place the overview under gateway.execution and, when f
 
 #### Scenario: Best-effort metadata placement under existing envelope limits policy
 - **WHEN** an integrator attempts optional metadata enrichment
-- **THEN** Other namespaces SHALL remain opaque. The caller SHALL use the existing complete-response or complete-frame limit, not an overview allocation. Encoding/fit failure SHALL return the original provider metadata without truncation or a new error. When native relocation alone cannot fit, the primary response SHALL be preserved and the native namespace SHALL remain opaque. Namespace presence alone SHALL NOT establish Gateway provenance, routing authority or absence of attempts. Primary protocol encoding failures SHALL retain existing behavior.
+- **THEN** Other namespaces SHALL remain opaque. The caller SHALL retain coherent existing source/read and complete-response or complete-frame limits, not an overview allocation, until the coordinated shared transport policy replaces them. Encoding/fit failure SHALL return the original provider metadata without truncation or a new error. When native relocation alone cannot fit, the primary response SHALL be preserved and the native namespace SHALL remain opaque. Namespace presence alone SHALL NOT establish Gateway provenance, routing authority or absence of attempts. Primary protocol encoding failures SHALL retain existing behavior.
 
 #### Scenario: Native namespace collides and enrichment fits
 - **WHEN** native metadata already has a gateway value and the enriched complete envelope fits

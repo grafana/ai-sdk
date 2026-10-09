@@ -131,9 +131,10 @@ an accumulator if calls sharing that context can run concurrently.
 Request observation includes repeated SDK steps, retries and nested fallback
 calls using that context. Candidate indices restart per fallback invocation;
 this hook does not automatically group a trace or add provider metadata.
-Native source errors are in-process diagnostics: project only the fields your
-application can safely publish rather than serializing whole errors, request
-bodies or credentials.
+Native source errors are in-process diagnostics and may contain credential
+echoes. Choose the fields your application publishes rather than serializing
+whole error trees. Observation and logger field policies do not rewrite values
+returned to the caller.
 
 For streaming, the finish timestamp is the selection decision time, not the
 end of the selected stream. Post-selection error events remain stream data.
