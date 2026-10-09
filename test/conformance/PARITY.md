@@ -158,8 +158,8 @@ issue rather than being maintained in both places.
 - Anthropic streams emit one finish per `message_stop`, as upstream, and none for a
   message without `message_stop`. Finish reason and output usage are stream-level
   as upstream, so a message without a delta reuses the previous values. Provider
-  metadata and the safeguard verdict reset for each message, where upstream carries
-  them across messages. Error frames are reported and reading continues, as
+  metadata and the safeguard verdict are stream-level as upstream, so a verdict can
+  appear on a later message's finish. Error frames are reported and reading continues, as
   upstream, and carry upstream's message, status and retryability per error type.
 - Anthropic uses explicit credentials/options rather than ambient SDK defaults.
   With no tools, required/named choices are retained. The full error envelope and

@@ -21,6 +21,7 @@ The conformance suite could not catch either: it compares only UI chunks from `s
   - Bedrock: raw chunks are wrapped under their event or exception type with the AWS padding field dropped, and `tool-input-start` no longer carries a duplicate `toolCallId`.
   - OpenAI: tool-call input strings are not HTML-escaped and follow upstream field order (apply-patch, local shell); the streaming finish reports the response ID from `response.created`.
   - OpenAI-compatible: `tool-input-*` parts carry `id` only (and the tool name on start), not duplicate `toolCallId`/`toolName`.
+- Make provider metadata and the safeguard verdict stream-level, as upstream: a verdict or stop sequence from one message can appear on a later message's finish. This replaces the `anthropic-safeguards` requirement to reset the verdict per message.
 - Remove the remaining normalizations where Go can match upstream:
   - `stream-start` always serializes `warnings`, and response timestamps serialize as UTC with milliseconds.
   - Anthropic error frames carry upstream's message, status code and retryability per error type, for first-chunk and mid-stream errors.

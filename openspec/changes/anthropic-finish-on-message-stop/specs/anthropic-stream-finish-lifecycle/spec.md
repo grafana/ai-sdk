@@ -98,3 +98,19 @@ The raw usage retained in finish usage and provider metadata SHALL keep, for eac
 #### Scenario: Nested cache creation breakdown
 - **WHEN** a usage iteration contains a nested `cache_creation` object
 - **THEN** the retained raw usage iteration SHALL NOT contain it
+
+### Requirement: Provider metadata is stream-level
+
+Finish provider metadata SHALL be built from state that lives for the whole stream, as upstream does. A `message_delta` replaces the stop sequence, stop details and container, and replaces context management and the safeguard verdict only when it supplies them. `message_start` contributes only a non-null container.
+
+#### Scenario: Delta that omits the verdict and stop sequence
+- **WHEN** a second message's delta has `stop_sequence: null` and `safeguard_results: null` after a first message that had a stop sequence and a verdict
+- **THEN** the second finish SHALL have no stop sequence and SHALL carry the first message's verdict
+
+#### Scenario: Message without a delta
+- **WHEN** a message has no `message_delta` after a message that did
+- **THEN** its finish SHALL repeat the previous stop sequence, verdict and context management
+
+#### Scenario: Container on message start
+- **WHEN** `message_start` carries a container and no delta replaces it
+- **THEN** the finish SHALL report that container
