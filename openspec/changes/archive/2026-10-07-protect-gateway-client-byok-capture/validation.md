@@ -43,6 +43,19 @@ Strict OpenSpec validation passed with exact CLI version 1.14.0. The completed
 change was synchronized into the client and logger main specs and archived on
 2026-10-07 after review approval.
 
+## Main integration
+
+Merged origin/main at `8d36b82d`, retaining opaque metadata, provider-tool and
+native MCP support alongside client authentication/capture protections. Conflicts
+in the client spec and parity map retain both sets of requirements and evidence.
+
+All build, test, vet/lint, parity, integration, race, boundary, workflow, pin,
+provider-shape and image gates listed above passed again; the command suite
+passed 74 tests. The merged client spec passed strict OpenSpec 1.14.0 validation.
+Whole-repository strict spec validation reported two pre-existing placeholder
+Purpose sections in gateway-reasoning-content and provider-v4-core-types; both
+files match origin/main and were not changed as part of this merge.
+
 No module pins, upstream baseline or authentic provider fixture inputs changed.
 Local fake services and image tests do not establish live native acceptance,
 Vercel hosted-service behavior or deployed Cloud/network authorization.
@@ -82,3 +95,11 @@ public-proxy cache. The local-only harness passed ten readonly race repetitions,
 and workspace Grafana/logger/harness races and all full gates above passed.
 Logs: `/tmp/pr367-{grafana-standalone-green,grafana-go126-standalone,grafana-published-module,capture-local-module,capture-workspace}.log`
 and `/tmp/byok-stack-pr1-test-module-repair-20261008/`.
+
+## Latest-main rebase
+
+Rebased onto `origin/main` at `79be97b0`, preserving main's Azure provider and
+security updates, client safety, additive error/opaque metadata and archive proof.
+Full gates above and standalone readonly Go 1.26.8 Grafana races passed;
+74 command cases ran without skips. Logs: `/tmp/byok-stack-pr1-latest-main-20261009/`.
+Registered upstream pins and authentic provider inputs remain unchanged.
