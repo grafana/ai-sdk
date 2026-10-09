@@ -3,7 +3,6 @@
 package conformance
 
 import (
-	"bufio"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -41,18 +40,12 @@ func TestAnthropicSyntheticUnary(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &cases))
 	require.NotEmpty(t, cases)
 
-	file, err := os.Open(filepath.Join(anthropicUnaryDir, "expected-results.jsonl"))
+	records, err := readJSONL[syntheticUnaryExpectation](filepath.Join(anthropicUnaryDir, "expected-results.jsonl"))
 	require.NoError(t, err)
-	defer func() { _ = file.Close() }()
 	expectations := map[string]syntheticUnaryExpectation{}
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 1<<20), 64<<20)
-	for scanner.Scan() {
-		var expectation syntheticUnaryExpectation
-		require.NoError(t, json.Unmarshal(scanner.Bytes(), &expectation))
-		expectations[expectation.Name] = expectation
+	for _, record := range records {
+		expectations[record.Name] = record
 	}
-	require.NoError(t, scanner.Err())
 	require.Len(t, expectations, len(cases), "expected-results.jsonl must cover every case; regenerate with mise run generate-conformance")
 
 	for _, tc := range cases {

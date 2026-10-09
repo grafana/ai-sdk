@@ -162,14 +162,14 @@ func normalizeProviderPart(providerName string, part map[string]any) map[string]
 	return part
 }
 
-func loadExpectedProviderParts(path string) ([]providerPartsCall, error) {
+func readJSONL[T any](path string) ([]T, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = file.Close() }()
 
-	var calls []providerPartsCall
+	var records []T
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 1<<20), 64<<20)
 	for scanner.Scan() {
@@ -177,15 +177,27 @@ func loadExpectedProviderParts(path string) ([]providerPartsCall, error) {
 		if len(line) == 0 {
 			continue
 		}
-		var call struct {
-			Parts providerPartsCall `json:"parts"`
+		var record T
+		if err := json.Unmarshal(line, &record); err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", filepath.Base(path), err)
 		}
-		if err := json.Unmarshal(line, &call); err != nil {
-			return nil, fmt.Errorf("parsing provider parts call: %w", err)
-		}
-		calls = append(calls, call.Parts)
+		records = append(records, record)
 	}
-	return calls, scanner.Err()
+	return records, scanner.Err()
+}
+
+func loadExpectedProviderParts(path string) ([]providerPartsCall, error) {
+	records, err := readJSONL[struct {
+		Parts providerPartsCall `json:"parts"`
+	}](path)
+	if err != nil {
+		return nil, err
+	}
+	calls := make([]providerPartsCall, len(records))
+	for i, record := range records {
+		calls[i] = record.Parts
+	}
+	return calls, nil
 }
 
 func providerPartsMismatch(expected, actual []providerPartsCall) string {

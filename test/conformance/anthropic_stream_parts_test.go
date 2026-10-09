@@ -3,7 +3,6 @@
 package conformance
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -43,18 +42,12 @@ func loadSyntheticStreamCases(t *testing.T) ([]syntheticStreamCase, map[string]s
 	var cases []syntheticStreamCase
 	require.NoError(t, json.Unmarshal(data, &cases))
 
-	file, err := os.Open(filepath.Join(anthropicStreamPartsDir, "expected-parts.jsonl"))
+	records, err := readJSONL[syntheticStreamExpectation](filepath.Join(anthropicStreamPartsDir, "expected-parts.jsonl"))
 	require.NoError(t, err)
-	defer func() { _ = file.Close() }()
 	expectations := map[string]syntheticStreamExpectation{}
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 1<<20), 64<<20)
-	for scanner.Scan() {
-		var expectation syntheticStreamExpectation
-		require.NoError(t, json.Unmarshal(scanner.Bytes(), &expectation))
-		expectations[expectation.Name] = expectation
+	for _, record := range records {
+		expectations[record.Name] = record
 	}
-	require.NoError(t, scanner.Err())
 	return cases, expectations
 }
 

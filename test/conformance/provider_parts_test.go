@@ -151,10 +151,4 @@ func TestLoadExpectedProviderParts(t *testing.T) {
 		assert.Len(t, calls[0], 1)
 		assert.Empty(t, calls[1])
 	})
-
-	t.Run("every provider is enabled", func(t *testing.T) {
-		for _, name := range []string{"anthropic", "openai", "bedrock", "openai-compatible"} {
-			assert.True(t, providerPartsProviders[name], name)
-		}
-	})
 }

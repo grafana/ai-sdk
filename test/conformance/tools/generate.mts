@@ -579,17 +579,20 @@ async function main() {
   const scenarioFilter = scenarioIdx !== -1 ? process.argv[scenarioIdx + 1] : null;
 
   let cases = discoverTestCases();
-  const includeSyntheticParts = !scenarioFilter || "anthropic-stream-parts".includes(scenarioFilter) || "anthropic-unary".includes(scenarioFilter);
+  const matchesFilter = (generator: string) => !scenarioFilter || generator.includes(scenarioFilter);
+  const includeStreamParts = matchesFilter("anthropic-stream-parts");
+  const includeUnary = matchesFilter("anthropic-unary");
+  const includeSynthetic = includeStreamParts || includeUnary;
 
   if (scenarioFilter) {
     cases = cases.filter((tc) => tc.name.includes(scenarioFilter));
-    if (cases.length === 0 && !includeSyntheticParts) {
+    if (cases.length === 0 && !includeSynthetic) {
       console.error(`No test cases matching: ${scenarioFilter}`);
       process.exit(1);
     }
   }
 
-  if (cases.length === 0 && !includeSyntheticParts) {
+  if (cases.length === 0 && !includeSynthetic) {
     console.log("No test cases found.");
     return;
   }
@@ -607,14 +610,12 @@ async function main() {
     }
   }
 
-  if (includeSyntheticParts) {
-    try {
-      await generateAnthropicStreamParts();
-      await generateAnthropicUnary();
-    } catch (err) {
-      console.error(`  ERROR: ${err}`);
-      errors++;
-    }
+  try {
+    if (includeStreamParts) await generateAnthropicStreamParts();
+    if (includeUnary) await generateAnthropicUnary();
+  } catch (err) {
+    console.error(`  ERROR: ${err}`);
+    errors++;
   }
 
   if (errors > 0) {
