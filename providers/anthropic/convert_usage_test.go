@@ -281,3 +281,25 @@ func TestConvertResponse_Usage(t *testing.T) {
 	assert.Equal(t, 14, *result.Usage.OutputTokens.Total)
 	assert.JSONEq(t, msg.Usage.RawJSON(), string(result.Usage.Raw))
 }
+
+func TestFilterUsageIterations(t *testing.T) {
+	t.Run("keeps the fields the upstream schema declares", func(t *testing.T) {
+		filtered, err := filterUsageIterations(json.RawMessage(`[{"type":"message","model":"m","input_tokens":1,"output_tokens":2,"cache_creation_input_tokens":3,"cache_read_input_tokens":4,"cache_creation":{"ephemeral_5m_input_tokens":0},"future":true}]`))
+		require.NoError(t, err)
+		assert.JSONEq(t, `[{"type":"message","model":"m","input_tokens":1,"output_tokens":2,"cache_creation_input_tokens":3,"cache_read_input_tokens":4}]`, string(filtered))
+	})
+
+	t.Run("null passes through", func(t *testing.T) {
+		filtered, err := filterUsageIterations(json.RawMessage(`null`))
+		require.NoError(t, err)
+		assert.Equal(t, "null", string(filtered))
+	})
+
+	t.Run("merged raw usage is filtered", func(t *testing.T) {
+		adapter := &streamAdapter{}
+		var delta anthropic.BetaMessageDeltaUsage
+		require.NoError(t, json.Unmarshal([]byte(`{"output_tokens":5,"iterations":[{"type":"message","input_tokens":1,"output_tokens":5,"cache_creation":{"ephemeral_1h_input_tokens":0}}]}`), &delta))
+		require.NoError(t, adapter.updateUsage(delta))
+		assert.JSONEq(t, `{"output_tokens":5,"iterations":[{"type":"message","input_tokens":1,"output_tokens":5}]}`, string(adapter.usage.raw))
+	})
+}

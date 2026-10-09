@@ -22,15 +22,24 @@ type streamErrorCase struct {
 	name          string
 	errorType     string
 	initialStatus int
-	initialRetry  bool
-	streamRetry   bool
+	streamStatus  int
+	retry         bool
 }
 
+// The classification mirrors upstream's getAnthropicStreamErrorMetadata. An
+// unclassified type fails a call with a server error but keeps no status on a
+// mid-stream error part.
 var streamErrorCases = []streamErrorCase{
-	{name: "overloaded", errorType: "overloaded_error", initialStatus: 529, initialRetry: true, streamRetry: true},
-	{name: "api", errorType: "api_error", initialStatus: 500, initialRetry: true, streamRetry: true},
-	{name: "rate limit", errorType: "rate_limit_error", initialStatus: 500},
-	{name: "invalid request", errorType: "invalid_request_error", initialStatus: 500},
+	{name: "overloaded", errorType: "overloaded_error", initialStatus: 529, streamStatus: 529, retry: true},
+	{name: "api", errorType: "api_error", initialStatus: 500, streamStatus: 500, retry: true},
+	{name: "rate limit", errorType: "rate_limit_error", initialStatus: 429, streamStatus: 429, retry: true},
+	{name: "request too large", errorType: "request_too_large", initialStatus: 413, streamStatus: 413},
+	{name: "authentication", errorType: "authentication_error", initialStatus: 401, streamStatus: 401},
+	{name: "permission", errorType: "permission_error", initialStatus: 403, streamStatus: 403},
+	{name: "not found", errorType: "not_found_error", initialStatus: 404, streamStatus: 404},
+	{name: "billing", errorType: "billing_error", initialStatus: 400, streamStatus: 400},
+	{name: "invalid request", errorType: "invalid_request_error", initialStatus: 400, streamStatus: 400},
+	{name: "unclassified", errorType: "future_error", initialStatus: 500},
 }
 
 func TestSafeguardsTransportFailure(t *testing.T) {
@@ -117,7 +126,7 @@ func TestDoStream_InitialSSEError(t *testing.T) {
 			assert.Nil(t, result)
 			apiErr := requireAPICallError(t, err, tc.errorType)
 			assert.Equal(t, tc.initialStatus, apiErr.StatusCode)
-			assert.Equal(t, tc.initialRetry, apiErr.IsRetryable)
+			assert.Equal(t, tc.retry, apiErr.IsRetryable)
 			assert.Equal(t, "failed", apiErr.Message)
 			assert.JSONEq(t, fmt.Sprintf(`{"type":%q,"message":"failed"}`, tc.errorType), apiErr.ResponseBody)
 			assert.Contains(t, apiErr.URL, "/v1/messages")
@@ -135,7 +144,7 @@ func TestDoStream_RawInitialError(t *testing.T) {
 			assert.Nil(t, result)
 			apiErr := requireAPICallError(t, err, tc.errorType)
 			assert.Equal(t, tc.initialStatus, apiErr.StatusCode)
-			assert.Equal(t, tc.initialRetry, apiErr.IsRetryable)
+			assert.Equal(t, tc.retry, apiErr.IsRetryable)
 		})
 	}
 }
@@ -174,8 +183,9 @@ func TestDoStream_PostOutputSSEError(t *testing.T) {
 			assert.Equal(t, "Hello", text)
 			require.NotNil(t, apiErr)
 			apiErr = requireAPICallError(t, apiErr, tc.errorType)
-			assert.Equal(t, http.StatusOK, apiErr.StatusCode)
-			assert.Equal(t, tc.streamRetry, apiErr.IsRetryable)
+			assert.Equal(t, tc.streamStatus, apiErr.StatusCode)
+			assert.Equal(t, tc.retry, apiErr.IsRetryable)
+			assert.Equal(t, "failed", apiErr.Message)
 		})
 	}
 }

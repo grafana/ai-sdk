@@ -218,6 +218,13 @@ func consumeStream(ctx context.Context, items <-chan messageStreamItem, buffered
 	}
 }
 
+func streamItemError(item messageStreamItem) *provider.APICallError {
+	if item.errorFrame {
+		return wrapStreamErrorFrame(item.err)
+	}
+	return wrapAsAPICallError(item.err, "", nil)
+}
+
 func drainProviderStreamParts(parts <-chan provider.StreamPart) {
 	go func() {
 		for range parts {
@@ -246,7 +253,7 @@ func consumeStreamParts(ctx context.Context, items <-chan messageStreamItem, buf
 			ch <- provider.StreamPart{Type: provider.PartRaw, RawValue: item.rawValue}
 		}
 		if item.err != nil {
-			ch <- provider.StreamPart{Type: provider.PartError, APICallError: wrapAsAPICallError(item.err, "", nil)}
+			ch <- provider.StreamPart{Type: provider.PartError, APICallError: streamItemError(item)}
 			return item.errorFrame
 		}
 		if item.event == nil {
