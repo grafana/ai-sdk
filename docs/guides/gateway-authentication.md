@@ -51,7 +51,8 @@ Provide the generated value as `AI_GATEWAY_KEY` to both the Gateway and your
 application. Provide `ANTHROPIC_API_KEY` only to the Gateway. Load these values
 from your secret manager at runtime; keep them out of YAML, images and source
 control. Static keys do not expire automatically, even if you use a JWT as the
-key value.
+key value. The Gateway treats the entire value as a secret; it does not verify
+JWT signatures or claims in static-key mode.
 
 This configuration can run in production without a token issuer or Agent
 Observability export. If you enable Cloud access or choose JWT authentication,
@@ -154,7 +155,8 @@ authentication in production. Cloud access is enabled by default; set
 
 Create a CAP token with `ai-gateway:write` for your target stack, and obtain
 the Cloud Gateway URL. You also need an Anthropic or OpenAI API key. Keep both
-tokens on your application server.
+tokens on your application server. Use HTTPS for Cloud Gateway connections and
+rotate both CAP tokens and provider keys through their respective services.
 
 Choose a model ID such as `anthropic/claude-sonnet-4-6` or
 `openai/<native-model>`. OpenAI requests use the Responses API. Cloud BYOK does
