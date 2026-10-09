@@ -191,12 +191,21 @@ Duplicate/late starts SHALL remain invalid.
 - **THEN** it SHALL remain invalid without producing another public start
 
 ### Requirement: Native response metadata and text block state
+Streaming SHALL preserve represented native identity and sequential text-block state, validate required/optional fields before output and retain terminal/commitment authority. Route identity SHALL not fabricate native fields or alter independent configured/BYOK observation.
 
-After public start and within the provider-part limit, the state machine SHALL accept at most one response-metadata part before payload output, sequential text blocks, independent tool events under gateway-streaming-function-tools, supported reasoning/sources under their capabilities, non-terminal provider errors and exactly one finish. Response metadata SHALL copy representable native ResponseID, ModelID and Timestamp at registered id, modelId and timestamp fields.
+#### Scenario: Native response metadata and text block state policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** After public start and within the provider-part limit, the state machine SHALL accept at most one response-metadata part before payload output, sequential text blocks, independent tool events under gateway-streaming-function-tools, supported reasoning/sources under their capabilities, non-terminal provider errors and exactly one finish. Response metadata SHALL copy representable native ResponseID, ModelID and Timestamp at registered id, modelId and timestamp fields. Nonempty native strings SHALL remain unchanged; optional empty Go strings and zero timestamps SHALL be omitted as documented unrepresentable-presence adaptations. A nonzero timestamp SHALL encode a validated UTC RFC3339Nano instant. A provider metadata part with no identity SHALL contain only its type. The runtime SHALL NOT synthesize missing metadata or substitute requested/canonical route identity. Provider identity, headers and opaque metadata remain outside this scoped identity change.
+- **AND** Configured canonical identity SHALL remain authoritative for configured resolution and operator logical metrics, separately from returned identity. BYOK selection and observation SHALL instead follow the request-scoped identity and bounded-cardinality rules in gateway-text-observability, without catalog lookup or response-derived logical identity. Each text-start ID SHALL remain nonempty, valid UTF-8 and globally unique within its stream, opening the only active text block. Deltas/ends SHALL use its active ID and required empty deltas SHALL survive. Provider errors SHALL not change text/metadata state. Existing reasoning/source/tool first-output placement rules SHALL remain effective. New native identity strings and timestamp bytes SHALL participate in preflight and complete-frame bounds before any write.
 
 #### Scenario: Native metadata precedes output
-- **WHEN** a provider emits native response identity different from requested alias and canonical route before payload output
+- **WHEN** a configured provider emits native response identity different from requested alias and canonical route before payload output
 - **THEN** the event SHALL preserve the native values without changing route resolution or canonical operator metrics
+
+#### Scenario: BYOK native identity differs from request identity
+- **WHEN** a BYOK provider emits native response identity different from the requested provider/model
+- **THEN** the event SHALL preserve representable native values while logical observation retains its request-scoped identity and fixed model metric class
+- **AND** neither identity SHALL trigger catalog lookup
 
 #### Scenario: Metadata has partial or no native identity
 - **WHEN** the provider emits partial identity or an identity-free metadata part

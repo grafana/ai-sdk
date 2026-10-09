@@ -1,11 +1,13 @@
 ## MODIFIED Requirements
 
 ### Requirement: Context-aware Grafana authentication
-Every Gateway request SHALL authenticate using only the flow selected at construction against the corresponding public Cloud or private JWT endpoint; the client SHALL NOT detect token types, fall back between flows, or retry with another credential after rejection.
+Each request SHALL use only its constructor-selected flow, without credential fallback. Cloud credentials SHALL use one outer stack/CAP bearer header; JWT flows SHALL use the context-aware token source and optional bound acting-user header. Preparation failure/cancellation SHALL occur before Gateway I/O.
 
-The Cloud-credential flow SHALL send exactly one outer `Authorization: Bearer <stack-id>:<CAP-token>` header with the stack ID formatted as decimal digits. It SHALL NOT perform token exchange, construct an authlib exchanger, send `X-Access-Token` or `X-Grafana-Id`, or emit trusted stack/policy assertions. Constructor-supplied credentials SHALL NOT be inserted into ProviderWire request bodies or client-generated diagnostics. A nonempty context-carried acting-user token SHALL cause an error before Gateway network I/O for this flow.
-
-The token-exchange and pre-minted access-token flows SHALL obtain one access token using the constructor's context-aware token source and place it in `X-Access-Token`. For these JWT flows, `WithUserIDToken` SHALL attach an optional acting-user token to a context and the client SHALL place a non-empty attached token in `X-Grafana-Id`. The Go token source SHALL remain authoritative; unrelated caller-supplied Authorization SHALL NOT replace it. The client MUST NOT mint tokens locally or implement an additional CAP-token cache. Authentication failures and cancellation SHALL occur before Gateway network I/O when detected during request preparation.
+#### Scenario: Context-aware Grafana authentication policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** Every Gateway request SHALL authenticate using only the flow selected at construction against the corresponding public Cloud or private JWT endpoint; the client SHALL NOT detect token types, fall back between flows, or retry with another credential after rejection.
+- **AND** The Cloud-credential flow SHALL send exactly one outer `Authorization: Bearer <stack-id>:<CAP-token>` header with the stack ID formatted as decimal digits. It SHALL NOT perform token exchange, construct an authlib exchanger, send `X-Access-Token` or `X-Grafana-Id`, or emit trusted stack/policy assertions. Constructor-supplied credentials SHALL NOT be inserted into ProviderWire request bodies or client-generated diagnostics. A nonempty context-carried acting-user token SHALL cause an error before Gateway network I/O for this flow.
+- **AND** The token-exchange and pre-minted access-token flows SHALL obtain one access token using the constructor's context-aware token source and place it in `X-Access-Token`. For these JWT flows, `WithUserIDToken` SHALL attach an optional acting-user token to a context and the client SHALL place a non-empty attached token in `X-Grafana-Id`. The Go token source SHALL remain authoritative; unrelated caller-supplied Authorization SHALL NOT replace it. The client MUST NOT mint tokens locally or implement an additional CAP-token cache. Authentication failures and cancellation SHALL occur before Gateway network I/O when detected during request preparation.
 
 #### Scenario: CAP authenticates every supported operation
 - **WHEN** `ListModels`, `DoGenerate` or `DoStream` is invoked with Cloud credentials
@@ -45,7 +47,11 @@ The token-exchange and pre-minted access-token flows SHALL obtain one access tok
 - **THEN** the client SHALL not follow it or send credentials to the redirect target
 
 ### Requirement: Cloud credential client evidence
-Automated tests SHALL compare the Go Cloud flow with the exact registered Vercel client configured with apiKey "<stack-id>:<CAP-token>". Both SHALL issue catalog-independent BYOK unary/streaming requests through a deterministic dummy authenticating edge and one unified command also serving private JWT requests. Successful configured discovery SHALL use private JWT access; Cloud discovery SHALL prove authenticated unsupported-operation handling. Dummy edges SHALL NOT be described as production CAP verification.
+Go and registered Vercel clients SHALL prove equivalent Cloud/BYOK requests through a dummy authenticating edge and a unified command concurrently serving private JWT requests. Configured discovery SHALL be private; Cloud discovery SHALL prove authenticated unsupported handling, without claiming real CAP authorization.
+
+#### Scenario: Cloud credential client evidence policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** Automated tests SHALL compare the Go Cloud flow with the exact registered Vercel client configured with apiKey "<stack-id>:<CAP-token>". Both SHALL issue catalog-independent BYOK unary/streaming requests through a deterministic dummy authenticating edge and one unified command also serving private JWT requests. Successful configured discovery SHALL use private JWT access; Cloud discovery SHALL prove authenticated unsupported-operation handling. Dummy edges SHALL NOT be described as production CAP verification.
 
 #### Scenario: Both clients use the Cloud edge contract
 - **WHEN** Go and pinned Vercel send equivalent supported BYOK calls
@@ -64,7 +70,7 @@ Automated tests SHALL compare the Go Cloud flow with the exact registered Vercel
 #### Scenario: Privacy and isolation remain intact
 - **WHEN** request emission and capture are inspected
 - **THEN** Gateway authentication credentials SHALL be absent from request bodies, provider requests and automatic server capture
-- **AND** local BYOK request metadata SHALL retain its submitted subtree while credential-aware consumer capture excludes it
+- **AND** local BYOK request metadata SHALL retain its submitted subtree while consumer logger capture applies configured sensitive-field redaction without censoring ordinary fields or returned provider data
 - **AND** synthetic edge/provider evidence SHALL not establish live policy or network isolation
 
 #### Scenario: Evidence is described accurately
@@ -88,7 +94,7 @@ The shared user-facing guide under docs SHALL explain the public Cloud/BYOK endp
 #### Scenario: User provisions least privilege
 - **WHEN** guidance describes token/key handling and telemetry
 - **THEN** it SHALL require appropriate trusted execution, HTTPS or the documented protected internal transport, least privilege and rotation
-- **AND** it SHALL explain that caller-owned request metadata contains BYOK and demonstrate structural capture redaction
+- **AND** it SHALL explain that caller-owned request metadata contains BYOK and demonstrate configured field-aware capture redaction
 
 #### Scenario: Guide remains external-facing
 - **WHEN** the shared guide describes client setup
@@ -99,9 +105,12 @@ The shared user-facing guide under docs SHALL explain the public Cloud/BYOK endp
 - **THEN** Go examples SHALL build, TypeScript examples SHALL typecheck against the registered baseline, demonstrated behavior SHALL have deterministic tests and documentation navigation SHALL remain valid
 
 ### Requirement: Authenticated public discovery
-`Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the configured discovery limit, and return public ID, name, optional description and the specification version/provider/model-ID triple, plus optional typed `ModelInfo.Gateway *ConfiguredRoute`. `ConfiguredRoute` SHALL expose `Aliases`, `Primary` and ordered `Fallbacks`; each `ConfiguredCandidate` SHALL expose `ProviderInstance`, `Provider` and `ProviderModelID`. This SHALL remain the existing discovery method, without a second client or AGPL module dependency.
+ListModels SHALL read authenticated bounded /config into public typed rows and optional configured-route facts using ordinary Go decoding. It SHALL preserve order, ignore additive fields and avoid server-policy revalidation or inferred configuration. Cloud/BYOK discovery SHALL report its fixed unsupported-operation error.
 
-The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the existing configurable document-byte limit and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency. Standard Go JSON behavior SHALL apply, including case-insensitive field matching, zero/nil values for missing/null fields and U+FFFD normalization of escaped lone UTF-16 surrogates. A missing/null models collection, malformed JSON, byte overflow or type-decoding error SHALL invalidate the complete result. It SHALL preserve response order and configured alias/fallback order exactly as served, without expanding aliases into extra rows. Missing/null gateway SHALL remain nil. Unknown additive members SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
+#### Scenario: Authenticated public discovery policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** `Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the configured discovery limit, and return public ID, name, optional description and the specification version/provider/model-ID triple, plus optional typed `ModelInfo.Gateway *ConfiguredRoute`. `ConfiguredRoute` SHALL expose `Aliases`, `Primary` and ordered `Fallbacks`; each `ConfiguredCandidate` SHALL expose `ProviderInstance`, `Provider` and `ProviderModelID`. This SHALL remain the existing discovery method, without a second client or AGPL module dependency.
+- **AND** The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the existing configurable document-byte limit and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency. Standard Go JSON behavior SHALL apply, including case-insensitive field matching, zero/nil values for missing/null fields and U+FFFD normalization of escaped lone UTF-16 surrogates. A missing/null models collection, malformed JSON, byte overflow or type-decoding error SHALL invalidate the complete result. It SHALL preserve response order and configured alias/fallback order exactly as served, without expanding aliases into extra rows. Missing/null gateway SHALL remain nil. Unknown additive members SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
 
 #### Scenario: Configured models and aliases are discovered
 - **WHEN** the authenticated service returns canonical model rows with configured route facts
@@ -129,3 +138,4 @@ The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after
 - **WHEN** ListModels authenticates through the public Cloud/BYOK endpoint
 - **THEN** it SHALL surface the bounded invalid-request error stating discovery is unsupported for BYOK
 - **AND** it SHALL NOT return an empty catalog, try the private endpoint or use discovery as a prerequisite for inference
+
