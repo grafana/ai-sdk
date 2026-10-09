@@ -1,13 +1,12 @@
 package v4
 
 import (
+	"bytes"
 	"encoding/json"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/provider"
 )
-
-const maxSourceMetadataBytes = 8192
 
 type urlSource struct {
 	Type             provider.GenerateContentType `json:"type"`
@@ -15,7 +14,7 @@ type urlSource struct {
 	ID               string                       `json:"id"`
 	URL              string                       `json:"url"`
 	Title            string                       `json:"title,omitempty"`
-	ProviderMetadata provider.ProviderMetadata    `json:"providerMetadata,omitempty"`
+	ProviderMetadata provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
 }
 
 type documentSource struct {
@@ -25,7 +24,7 @@ type documentSource struct {
 	MediaType        string                       `json:"mediaType"`
 	Title            string                       `json:"title"`
 	Filename         string                       `json:"filename,omitempty"`
-	ProviderMetadata provider.ProviderMetadata    `json:"providerMetadata,omitempty"`
+	ProviderMetadata provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
 }
 
 func unarySource(part provider.GenerateContentPart) provider.SourceInfo {
@@ -43,14 +42,24 @@ func sourcePreflight(source provider.SourceInfo, limit int64) bool {
 		}
 		limit -= int64(len(value))
 	}
-	for _, namespace := range []string{"anthropic", "openai", "azure"} {
-		raw := source.ProviderMetadata[namespace]
-		if len(raw) > maxSourceMetadataBytes || int64(len(raw)) > limit {
+	if int64(len(source.ProviderMetadata)) > limit {
+		return false
+	}
+	limit -= int64(len(source.ProviderMetadata))
+	for key, raw := range source.ProviderMetadata {
+		for _, size := range []int{len(key), len(raw)} {
+			if int64(size) > limit {
+				return false
+			}
+			limit -= int64(size)
+		}
+	}
+	for key, raw := range source.ProviderMetadata {
+		if !utf8.ValidString(key) || !utf8.Valid(raw) || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
 			return false
 		}
-		limit -= int64(len(raw))
 	}
-	return limit >= 0
+	return true
 }
 
 func mapSource(source provider.SourceInfo, limit int64) (any, error) {
@@ -65,42 +74,15 @@ func mapSource(source provider.SourceInfo, limit int64) (any, error) {
 	if source.SourceType != provider.SourceTypeURL && source.SourceType != provider.SourceTypeDocument {
 		return nil, errInvalidUnarySuccess
 	}
-	metadata := publicSourceMetadata(source.ProviderMetadata)
 	var mapped any
 	if source.SourceType == provider.SourceTypeURL {
-		mapped = urlSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, ProviderMetadata: metadata}
+		mapped = urlSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, ProviderMetadata: source.ProviderMetadata}
 	} else {
-		mapped = documentSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, MediaType: source.MediaType, Title: source.Title, Filename: source.Filename, ProviderMetadata: metadata}
+		mapped = documentSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, MediaType: source.MediaType, Title: source.Title, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata}
 	}
 	encoded, err := json.Marshal(mapped)
 	if err != nil || int64(len(encoded)) > limit {
 		return nil, errInvalidUnarySuccess
 	}
 	return mapped, nil
-}
-
-func publicSourceMetadata(metadata provider.ProviderMetadata) provider.ProviderMetadata {
-	approved := make(map[string]int64)
-	for _, namespace := range []string{"anthropic", "openai", "azure"} {
-		var fields map[string]json.RawMessage
-		raw := metadata[namespace]
-		if !utf8.Valid(raw) || json.Unmarshal(raw, &fields) != nil {
-			continue
-		}
-		keys := []string{"startPageNumber", "endPageNumber", "startCharIndex", "endCharIndex"}
-		if namespace == "openai" || namespace == "azure" {
-			keys = []string{"index"}
-		}
-		for _, key := range keys {
-			var n int64
-			if raw, ok := fields[key]; ok && string(raw) != "null" && json.Unmarshal(raw, &n) == nil && n >= 0 && n <= 1000000000 {
-				approved[key] = n
-			}
-		}
-	}
-	if len(approved) == 0 {
-		return nil
-	}
-	raw, _ := json.Marshal(approved)
-	return provider.ProviderMetadata{"citation": raw}
 }

@@ -62,7 +62,6 @@ var (
 	// because both are caller-controlled.
 	reservedProviderOptionsError = []byte(`{"error":{"message":"reserved provider option namespace","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	protectedCallHeaderError     = []byte(`{"error":{"message":"protected call header","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	protectedProviderOptionError = []byte(`{"error":{"message":"protected provider option","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 )
 
 func documentForSafeError(value safeError) safeErrorDocument {
@@ -108,8 +107,6 @@ func unsupportedCapabilityDocument(capability unsupportedCapability) []byte {
 		return reservedProviderOptionsError
 	case capabilityProtectedCallHeader:
 		return protectedCallHeaderError
-	case capabilityProtectedProviderOption:
-		return protectedProviderOptionError
 	case capabilityRawOutput:
 		return unsupportedRawOutputError
 	case capabilityProviderOptions:

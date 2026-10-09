@@ -11,11 +11,13 @@ import {
   GatewayInvalidRequestError,
   GatewayModelNotFoundError,
 } from "@ai-sdk/gateway";
-import type { LanguageModelV4StreamPart, LanguageModelV4CallOptions } from "@ai-sdk/provider";
+import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
+import { fileInputGoldenCase } from "./request-cases";
 import { validateStreamEvent, validateUnarySuccess } from "./schema";
-import { generateText, jsonSchema, stepCountIs, streamText, tool, wrapLanguageModel } from "ai";
+import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
 import packageManifest from "./package.json" with { type: "json" };
+import { buildTools, loadConfig, mockId, normalizeRequestSnapshot, writeRequestSnapshots } from "../../../test/conformance/tools/common.mts";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = resolve(TEST_DIR, "testserver");
@@ -100,21 +102,12 @@ function model(modelID: string) {
   })(modelID);
 }
 
-// Host composition for the strict service: ai.generateText adds an SDK
-// user-agent to provider call options. That identifies this HTTP client, not a
-// native-provider forwarding request. Move precisely that SDK-owned value to
-// the outer transport; arbitrary call/body headers remain unsupported (WP21).
-function reasoningHostModel() {
-  const settings = { apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } };
-  return wrapLanguageModel({ model: createGateway(settings)("reasoning"), middleware: {
-    specificationVersion: "v4",
-    wrapGenerate: async ({ params }) => {
-      const { headers, ...options } = params;
-      assert.deepEqual(Object.keys(headers ?? {}), ["user-agent"]);
-      assert.equal(headers!["user-agent"]!.split(/\s/, 1)[0], `ai/${packageManifest.dependencies.ai}`);
-      return createGateway({ ...settings, headers: { ...settings.headers, "user-agent": headers!["user-agent"]! } })("reasoning").doGenerate(options);
-    },
-  } });
+function reasoningModel() {
+  return createGateway({
+    apiKey: "test",
+    baseURL: `${baseURL}/function-tools`,
+    headers: { "x-access-token": "function-test-token" },
+  })("reasoning");
 }
 
 type RuntimeStats = {
@@ -143,6 +136,149 @@ async function collect(stream: ReadableStream<LanguageModelV4StreamPart>): Promi
 
 before(async () => { baseURL = await startServer(); goClientBinary = buildGoClientCapture(temporaryDirectory); });
 after(async () => { await stopServer(); });
+
+describe("opaque native options through the production handler", () => {
+  it("preserves omitted output-token limits in direct and fallback calls from both clients", async () => {
+    const prompt: LanguageModelV4CallOptions["prompt"] = [{ role: "user", content: [{ type: "text", text: "hello" }] }];
+    for (const modelID of ["success", "mapped-fallback"]) {
+      const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })(modelID);
+      for (const mode of ["generate", "stream"] as const) {
+        for (const language of ["typescript", "go"] as const) {
+          if (language === "go") {
+            const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID, mode, options: { prompt } });
+            assert.equal(result.error, undefined);
+            if (mode === "generate") assert.equal(result.result.finishReason.unified, "stop");
+            else {
+              assert.equal(result.parts.at(-1).type, "finish");
+              assert.equal(result.parts.filter((part: { type: string }) => part.type === "finish").length, 1);
+              assert.ok(result.parts.every((part: { type: string }) => part.type !== "error"));
+            }
+          } else if (mode === "generate") {
+            assert.equal((await client.doGenerate({ prompt })).finishReason.unified, "stop");
+          } else {
+            const parts = await collect((await client.doStream({ prompt })).stream);
+            assert.equal(parts.at(-1)?.type, "finish");
+            assert.equal(parts.filter(part => part.type === "finish").length, 1);
+            assert.ok(parts.every(part => part.type !== "error"));
+          }
+          const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+          assert.equal(Object.hasOwn(captured, "maxOutputTokens"), false, `${modelID}/${language}/${mode}`);
+          assert.deepEqual(captured.prompt, prompt);
+        }
+      }
+      const unary = await generateText({ model: client, prompt: "hello", maxRetries: 0 });
+      assert.equal(unary.text, "hello from Go");
+      assert.equal(unary.finishReason, "stop");
+      const unaryOptions = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+      assert.equal(Object.hasOwn(unaryOptions, "maxOutputTokens"), false);
+      assert.equal(unaryOptions.headers["user-agent"].split(/\s/, 1)[0], `ai/${packageManifest.dependencies.ai}`);
+      const streaming = streamText({ model: client, prompt: "hello", maxRetries: 0 });
+      assert.equal(await streaming.text, "hello from Go stream");
+      assert.equal(await streaming.finishReason, "stop");
+      const streamOptions = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+      assert.equal(Object.hasOwn(streamOptions, "maxOutputTokens"), false);
+    }
+  });
+
+  it("preserves registered file arms and presence through direct and fallback mapping in both clients", async () => {
+    for (const request of await fileInputGoldenCase.capture()) {
+      const mode = request.streaming ? "stream" : "generate";
+      const options = request.body as LanguageModelV4CallOptions;
+      let direct: unknown;
+      for (const modelID of ["success", "mapped-fallback"]) {
+        for (const language of ["typescript", "go"]) {
+          if (language === "go") {
+            const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID, mode, options });
+            assert.equal(result.error, undefined);
+            assert.ok(!(result.parts ?? []).some((part: { type: string }) => part.type === "error"));
+          } else {
+            const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })(modelID);
+            if (mode === "generate") await client.doGenerate(options);
+            else assert.ok(!(await collect((await client.doStream(options)).stream)).some(part => part.type === "error"));
+          }
+          const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+          if (direct === undefined) direct = captured;
+          else assert.deepEqual(captured, direct, `${modelID}/${language}/${mode}`);
+          const files = captured.prompt[0].content;
+          assert.deepEqual(files.map((part: any) => part.data.type), ["data", "data", "url", "reference", "text"]);
+          assert.deepEqual(files.map((part: any) => part.filename), ["bytes.bin", "", undefined, undefined, ""]);
+          assert.equal(files[1].data.data, "");
+          assert.equal(files[4].data.text, "");
+          const results = captured.prompt[2].content[0].output.value;
+          assert.deepEqual(results.map((part: any) => part.data.type), ["data", "data", "url", "reference", "text"]);
+          assert.deepEqual(results.map((part: any) => part.filename), ["result.bin", "", undefined, undefined, ""]);
+        }
+      }
+    }
+  });
+
+  it("preserves every supported scope in both independent clients and modes", async () => {
+    const providerOptionsFor = (scope: string) => ({ futureNamespace: { scope, model: "ordinary", type: "ordinary", nested: { null: null, false: false, zero: 0, empty: "", array: [], object: {} } }, empty: {}, FutureNamespace: { case: true } });
+    const scoped = {
+      call: providerOptionsFor("call"), functionTool: providerOptionsFor("function-tool"),
+      system: providerOptionsFor("system"), user: providerOptionsFor("user"),
+      text: providerOptionsFor("text"), file: providerOptionsFor("file"),
+      reasoning: providerOptionsFor("reasoning"), toolCall: providerOptionsFor("tool-call"),
+      toolResult: providerOptionsFor("tool-result"), resultFile: providerOptionsFor("result-file"),
+    };
+    const options: LanguageModelV4CallOptions = {
+      providerOptions: scoped.call,
+      tools: [{ type: "function", name: "lookup", inputSchema: {}, providerOptions: scoped.functionTool }, { type: "function", name: "optionless", inputSchema: {} }],
+      prompt: [
+        { role: "system", content: "system", providerOptions: scoped.system },
+        { role: "user", providerOptions: scoped.user, content: [
+          { type: "text", text: "hi", providerOptions: scoped.text },
+          { type: "file", mediaType: "application/pdf", data: { type: "data", data: "" }, providerOptions: scoped.file },
+          { type: "text", text: "optionless" },
+        ] },
+        { role: "assistant", content: [
+          { type: "reasoning", text: "thought", providerOptions: scoped.reasoning },
+          { type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerOptions: scoped.toolCall },
+        ] },
+        { role: "tool", content: [{ type: "tool-result", toolCallId: "call", toolName: "lookup", providerOptions: scoped.toolResult, output: { type: "content", value: [
+          { type: "file", mediaType: "application/pdf", data: { type: "data", data: "" }, providerOptions: scoped.resultFile },
+          { type: "file", mediaType: "application/pdf", data: { type: "data", data: "" } },
+        ] } }] },
+      ],
+    };
+    const original = JSON.stringify(options);
+    for (const modelID of ["success", "mapped-fallback"]) {
+      const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })(modelID);
+      for (const mode of ["generate", "stream"] as const) {
+        for (const language of ["typescript", "go"] as const) {
+          if (language === "go") {
+            const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID, mode, options });
+            assert.equal(result.error, undefined);
+            if (mode === "stream") {
+              assert.equal(result.canceled, false);
+              assert.equal(result.parts.filter((part: { type: string }) => part.type === "finish").length, 1);
+              assert.equal(result.parts.at(-1).type, "finish");
+              assert.ok(result.parts.every((part: { type: string }) => part.type !== "error"));
+            }
+          } else if (mode === "generate") await client.doGenerate(options);
+          else {
+            const parts = await collect((await client.doStream(options)).stream);
+            assert.equal(parts.filter(part => part.type === "finish").length, 1);
+            assert.equal(parts.at(-1)?.type, "finish");
+            assert.ok(parts.every(part => part.type !== "error"));
+          }
+          const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+          assert.deepEqual({
+            call: captured.providerOptions, functionTool: captured.tools[0].providerOptions,
+            system: captured.prompt[0].providerOptions, user: captured.prompt[1].providerOptions,
+            text: captured.prompt[1].content[0].providerOptions, file: captured.prompt[1].content[1].providerOptions,
+            reasoning: captured.prompt[2].content[0].providerOptions, toolCall: captured.prompt[2].content[1].providerOptions,
+            toolResult: captured.prompt[3].content[0].providerOptions, resultFile: captured.prompt[3].content[0].output.value[0].providerOptions,
+          }, scoped, `${modelID}/${language}/${mode}`);
+          assert.equal(captured.tools[1].providerOptions, undefined);
+          assert.equal(captured.prompt[1].content[2].providerOptions, undefined);
+          assert.equal(captured.prompt[3].content[0].output.value[1].providerOptions, undefined);
+        }
+        assert.equal(JSON.stringify(options), original);
+      }
+    }
+  });
+});
 
 describe("reasoning continuation through the authenticated real handler", () => {
   it("admits pinned-client reasoning history and matches independent file data/URL/usage in both modes", async () => {
@@ -186,8 +322,11 @@ describe("reasoning continuation through the authenticated real handler", () => 
 
   it("accepts paid unary reasoning with default retries and one provider invocation", async () => {
     const before = await stats();
-    const result = await generateText({ model: reasoningHostModel(), prompt: "think" });
+    const result = await generateText({ model: reasoningModel(), prompt: "think" });
     assert.equal((await stats()).successCalls - before.successCalls, 1);
+    const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+    assert.equal(Object.hasOwn(captured, "maxOutputTokens"), false);
+    assert.equal(captured.headers["user-agent"].split(/\s/, 1)[0], `ai/${packageManifest.dependencies.ai}`);
     assert.equal(result.reasoning.length, 1);
     assert.deepEqual(result.reasoning[0].providerMetadata, { anthropic: { signature: "end-signature" } });
   });
@@ -202,7 +341,7 @@ describe("reasoning continuation through the authenticated real handler", () => 
       { openai: { itemId: "final", reasoningEncryptedContent: "opaque" } },
       { anthropic: { signature: "end-signature" } },
     ]);
-    await generateText({ model: reasoningHostModel(), messages: response.messages });
+    await generateText({ model: reasoningModel(), messages: response.messages });
     const options = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
     const parts = options.prompt[0].content.filter((part: any) => part.type === "reasoning");
     assert.deepEqual(parts.map((part: any) => part.providerOptions), reasoning.map(part => part.providerMetadata));
@@ -220,8 +359,8 @@ describe("sources through the authenticated handler", () => {
     const options = {prompt:[]};
     const expected = [
       {type:"source",sourceType:"url",id:"backend-secret",url:"https://example.com",title:"URL"},
-      {type:"source",sourceType:"document",id:"backend-secret",mediaType:"text/plain",title:"",providerMetadata:{citation:{startPageNumber:1,endPageNumber:2}}},
-      {type:"source",sourceType:"document",id:"file-native",mediaType:"application/octet-stream",title:"file-private",filename:"file-private",providerMetadata:{citation:{index:0}}},
+      {type:"source",sourceType:"document",id:"backend-secret",mediaType:"text/plain",title:"",providerMetadata:{anthropic:{startPageNumber:1,endPageNumber:2,citedText:"private"}}},
+      {type:"source",sourceType:"document",id:"file-native",mediaType:"application/octet-stream",title:"file-private",filename:"file-private",providerMetadata:{openai:{type:"file_path",fileId:"file-private",index:0}}},
     ];
     assert.deepEqual((await client.doGenerate(options)).content, expected);
     assert.deepEqual((await collect((await client.doStream(options)).stream)).filter(p=>p.type==="source"),expected);
@@ -299,7 +438,7 @@ describe("unary function tools through the authenticated real handler", () => {
     assert.ok(call && call.type === "tool-call");
     const value = execute(JSON.parse(call.input));
     const continuation = [...prompt,
-      { role: "assistant" as const, content: [{ type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input) }] },
+      { role: "assistant" as const, content: [{ type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerOptions: call.providerMetadata }] },
       { role: "tool" as const, content: [{ type: "tool-result" as const, toolCallId: call.toolCallId, toolName: call.toolName, output: { type: "text" as const, value } }] }];
     const final = await gateway("unary-tools").doGenerate({ prompt: continuation, tools });
     assert.deepEqual(final.content, [{ type: "text", text: "It is sunny." }]);
@@ -309,13 +448,13 @@ describe("unary function tools through the authenticated real handler", () => {
     const goFirst = await captureGoClient(goClientBinary, { ...config, options: { prompt, tools } });
     assert.equal(goFirst.error, undefined);
     const goCall = goFirst.result.content.find((part: any) => part.type === "tool-call");
-    assert.deepEqual(goCall, { type: "tool-call", toolCallId: call.toolCallId, toolName: call.toolName, input: call.input });
+    assert.deepEqual(goCall, call);
     assert.deepEqual(goFirst.result.finishReason, first.finishReason);
     assert.deepEqual(goFirst.result.usage, first.usage);
     assert.equal(first.finishReason.unified, "tool-calls");
     const goValue = execute(JSON.parse(goCall.input));
     const goFinal = await captureGoClient(goClientBinary, { ...config, options: { prompt: [...prompt,
-      { role: "assistant", content: [{ type: "tool-call", toolCallId: goCall.toolCallId, toolName: goCall.toolName, input: JSON.parse(goCall.input) }] },
+      { role: "assistant", content: [{ type: "tool-call", toolCallId: goCall.toolCallId, toolName: goCall.toolName, input: JSON.parse(goCall.input), providerOptions: goCall.providerMetadata }] },
       { role: "tool", content: [{ type: "tool-result", toolCallId: goCall.toolCallId, toolName: goCall.toolName, output: { type: "text", value: goValue } }] }], tools } });
     assert.equal(goFinal.error, undefined);
     assert.deepEqual(goFinal.result.content, final.content);
@@ -325,25 +464,17 @@ describe("unary function tools through the authenticated real handler", () => {
     assert.equal(executions, 2);
   });
 
-  it("rejects enabled execution markers before either client can execute", async () => {
+  it("preserves enabled execution and dynamic markers in both clients", async () => {
     for (const modelID of ["unary-tools-provider-executed", "unary-tools-dynamic"]) {
-      let executions = 0;
       const gateway = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } });
-      await assert.rejects(async () => {
-        const result = await gateway(modelID).doGenerate({ prompt, tools });
-        for (const part of result.content) if (part.type === "tool-call") executions++;
-      }, (error: any) => {
-        assert.equal(error.statusCode, 500);
-        assert.equal(error.type, "internal_server_error");
-        assert.equal(error.message, "internal error");
-        assert.equal(error.isRetryable, true);
-        return true;
-      });
+      const ts = await gateway(modelID).doGenerate({ prompt, tools });
       const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID, mode: "generate", options: { prompt, tools } });
-      assert.ok(go.error);
-      assert.deepEqual({ status: go.error.statusCode, category: go.error.category, code: go.error.code, retryable: go.error.isRetryable }, { status: 500, category: "internal_server_error", code: "internal_error", retryable: true });
-      assert.equal(go.result, undefined);
-      assert.equal(executions, 0);
+      assert.equal(go.error, undefined);
+      const call = ts.content.find(part => part.type === "tool-call");
+      assert.ok(call && call.type === "tool-call");
+      assert.deepEqual(go.result.content.map((part: any) => part.type === "text" ? { ...part, text: part.text ?? "" } : part), ts.content);
+      assert.equal(call.providerExecuted === true, modelID === "unary-tools-provider-executed");
+      assert.equal(call.dynamic === true, modelID === "unary-tools-dynamic");
     }
   });
 });
@@ -471,6 +602,50 @@ describe("bounded provider raw usage through the real handler", () => {
   }
 });
 
+describe("authentic metadata replay with unchanged direct expectations", () => {
+  for (const fixture of [
+    { id: "simple-text", family: "anthropic", path: "anthropic/recorded/simple-text" },
+    { id: "tool-call", family: "anthropic", path: "anthropic/recorded/tool-call" },
+    { id: "thinking-tool-signature-roundtrip", family: "anthropic", path: "anthropic/recorded/thinking-tool-signature-roundtrip" },
+    { id: "openai-reasoning-text", family: "openai", path: "openai/recorded/reasoning-text" },
+  ]) {
+    it(`replays ${fixture.path} through both clients without rewriting inputs or expectations`, async () => {
+      const dir = resolve(TEST_DIR, `../../../test/conformance/${fixture.path}`);
+      const cfg = loadConfig(dir);
+      const lines = (name: string) => readFileSync(join(dir, name), "utf8").trim().split("\n").map(line => JSON.parse(line));
+      const expectedChunks = lines("expected.jsonl");
+      const expectedRequests = lines("expected-requests.jsonl");
+      const captured = async () => await (await fetch(`${baseURL}/recorded-usage/${fixture.id}/requests`)).json() as { count: number; requests: Array<{ method: string; url: string; headers: Record<string, string[]>; body: string }> };
+      const before = (await captured()).count;
+      const result = streamText({ model: createGateway({ apiKey: "runtime-test-key", baseURL: `${baseURL}/recorded-usage` })(fixture.id), prompt: cfg.prompt!, ...(cfg.system ? { instructions: cfg.system } : {}), tools: buildTools(cfg.tools, cfg.providerTools), providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"], stopWhen: stepCountIs(cfg.stopWhenStepCount ?? 1), maxRetries: 0, _internal: { generateId: mockId("id") } });
+      const actualChunks = [];
+      for await (const chunk of result.toUIMessageStream()) actualChunks.push(JSON.parse(JSON.stringify(chunk)));
+      assert.deepEqual(actualChunks, expectedChunks);
+      const definitions = Object.entries(cfg.tools ?? {}).map(([name, definition]) => ({ type: "function", name, description: definition.description, inputSchema: definition.inputSchema, ...(definition.strict != null ? { strict: definition.strict } : {}), ...(definition.providerOptions ? { providerOptions: definition.providerOptions } : {}) }));
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/recorded-usage`, accessToken: "runtime-test-key", modelID: fixture.id, mode: "recorded-ui", instructions: cfg.system ?? "", steps: cfg.stopWhenStepCount ?? 1, toolResults: Object.fromEntries(Object.entries(cfg.tools ?? {}).map(([name, definition]) => [name, definition.mockResults ?? []])), options: { prompt: [{ role: "user", content: [{ type: "text", text: cfg.prompt }] }], providerOptions: cfg.providerOptions, tools: definitions } });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(go.chunks, expectedChunks);
+      const requests = (await captured()).requests.slice(before);
+      assert.equal(requests.length, expectedRequests.length * 2);
+      const normalized = requests.map(request => normalizeRequestSnapshot(fixture.family, request, request.body));
+      const snapshotDir = mkdtempSync(join(tmpdir(), "gateway-metadata-replay-"));
+      try {
+        const expected = readFileSync(join(dir, "expected-requests.jsonl"), "utf8");
+        for (const [client, snapshots] of [
+          ["typescript", normalized.slice(0, expectedRequests.length)],
+          ["go", normalized.slice(expectedRequests.length)],
+        ] as const) {
+          const path = join(snapshotDir, `${client}.jsonl`);
+          writeRequestSnapshots(path, snapshots);
+          assert.equal(readFileSync(path, "utf8"), expected, `${client} native request snapshots`);
+        }
+      } finally {
+        rmSync(snapshotDir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 describe("unchanged recorded Anthropic usage through the real Gateway streaming handler", () => {
   for (const name of ["usage-compaction-advisor", "usage-fallback"]) {
     it(`preserves ${name} per-step usage for both clients`, async () => {
@@ -498,6 +673,56 @@ describe("unchanged recorded Anthropic usage through the real Gateway streaming 
       assert.equal(go.error, undefined);
       assert.deepEqual(go.parts.filter((part: { type: string }) => part.type === "finish").map((part: { usage: unknown }) => part.usage), expected);
       assert.equal(await readCount(), countBefore + 2);
+    });
+  }
+});
+
+describe("provider-executed tools through the real handler", () => {
+  for (const streaming of [false, true]) for (const isError of [false, true]) for (const mcp of [false, true]) {
+    it(`${streaming ? "stream" : "unary"} deferred ${isError ? "error" : "success"} ${mcp ? "MCP" : "provider"} result completes with both clients`, async () => {
+      const modelID = isError ? "hosted-deferred-error" : "hosted-deferred";
+      const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/providerwire-v4` })(modelID);
+      const settings = { tools: [{ type: "provider" as const, id: "anthropic.code_execution_20260120" as const, name: "code", args: {} }], providerOptions: { anthropic: { disableParallelToolUse: false, ...(mcp ? { mcpServers: [{ type: "url", name: "echo", url: "https://mcp.example.test", authorizationToken: "dummy" }] } : {}) } } };
+      const expectedMetadata = { anthropic: mcp ? { type: "mcp-tool-use", serverName: "echo", private: "hidden" } : { caller: { type: "direct" }, private: "hidden" } };
+      const firstPrompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "hello" }] }];
+      const before = await stats();
+      for (const transport of ["vercel", "go"] as const) {
+        const request = async (history: LanguageModelV4CallOptions["prompt"]) => {
+          const options = { ...settings, prompt: history };
+          if (transport === "vercel") {
+            if (streaming) return await collect((await client.doStream(options)).stream);
+            return (await client.doGenerate(options)).content;
+          }
+          const result = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "token", modelID, mode: streaming ? "stream" : "generate", options });
+          assert.equal(result.error, undefined);
+          return streaming ? result.parts : result.result.content;
+        };
+        const first = await request(firstPrompt);
+        const call = first.find((part: any) => part.type === "tool-call");
+        assert.ok(call);
+        assert.equal(call.providerExecuted, true);
+        assert.equal(call.dynamic, true);
+        assert.deepEqual(call.providerMetadata, expectedMetadata);
+        assert.equal(first.filter((part: any) => part.type === "tool-result").length, 0);
+        const historyCall = { type: "tool-call" as const, toolCallId: call.toolCallId, toolName: call.toolName, input: JSON.parse(call.input), providerExecuted: true, providerOptions: call.providerMetadata };
+        const second = await request([...firstPrompt, { role: "assistant", content: [historyCall] }]);
+        const result = second.find((part: any) => part.type === "tool-result");
+        assert.ok(result);
+        assert.equal(result.isError ?? false, isError);
+        assert.deepEqual(result.result, { result: "done" });
+        assert.deepEqual(result.providerMetadata, expectedMetadata);
+        assert.equal(second.filter((part: any) => part.type === "tool-call").length, 0);
+        const historyResult = { type: "tool-result" as const, toolCallId: result.toolCallId, toolName: result.toolName, output: { type: (isError ? "error-json" : "json") as "error-json" | "json", value: result.result }, providerOptions: result.providerMetadata };
+        const final = await request([...firstPrompt, { role: "assistant", content: [historyCall, historyResult] }]);
+        assert.equal(final.filter((part: any) => part.type === "text" || part.type === "text-delta").map((part: any) => part.text ?? part.delta).join(""), "finished");
+        for (const parts of [first, second, final]) {
+          assert.ok(!JSON.stringify(parts).includes("private-token"));
+          if (parts !== final) assert.ok(JSON.stringify(parts).includes("hidden"));
+        }
+      }
+      const after = await stats();
+      assert.equal(after.successCalls - before.successCalls, 6);
+      assert.equal(after.streamCalls - before.streamCalls, streaming ? 6 : 0);
     });
   }
 });

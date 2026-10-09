@@ -201,6 +201,9 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid file input: %w", err)
 	}
+	if err := provider.ValidateTools(opts.Tools); err != nil {
+		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, err
+	}
 	var warnings []provider.Warning
 	if err := rejectRawSafeguardNulls(opts.ProviderOptions); err != nil {
 		return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, fmt.Errorf("anthropic: invalid provider options: %w", err)
@@ -388,7 +391,11 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	var forcedToolChoice *provider.ToolChoice
 	if opts.ToolChoice != nil {
 		if opts.ToolChoice.Type == provider.ToolChoiceNone {
-			p.Tools = nil
+			// Upstream drops tools for none; sending tool_choice none keeps
+			// tool definitions in the prompt cache prefix.
+			if len(p.Tools) > 0 {
+				p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfNone: &anthropic.BetaToolChoiceNoneParam{}}
+			}
 		} else if caps.rejectsForcedToolUse && (opts.ToolChoice.Type == provider.ToolChoiceRequired || opts.ToolChoice.Type == provider.ToolChoiceTool) {
 			forcedToolChoice = opts.ToolChoice
 			p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfAuto: &anthropic.BetaToolChoiceAutoParam{}}
@@ -464,8 +471,14 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(forcedToolChoice.ToolName))
 		}
 	}
+	// The JSON response tool forces tool use, so none sends only that tool.
+	// applyResponseFormat appends it last; a caller tool may share its name.
+	noneWithJSONTool := br.usesJsonResponseTool && opts.ToolChoice != nil && opts.ToolChoice.Type == provider.ToolChoiceNone
+	if noneWithJSONTool {
+		p.Tools = p.Tools[len(p.Tools)-1:]
+	}
 	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
-	if len(p.Tools) > 0 && (opts.ToolChoice == nil || opts.ToolChoice.Type != provider.ToolChoiceNone) {
+	if len(p.Tools) > 0 && !noneWithJSONTool {
 		br.requestOptions = append(br.requestOptions, webToolNumberOptions(opts.Tools, p.Tools)...)
 	}
 
@@ -1115,7 +1128,7 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 			}
 		case provider.ContentPartTypeToolCall:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			if isMCPToolUse(p.ProviderOptions) {
+			if p.ProviderExecuted && isMCPToolUse(p.ProviderOptions) {
 				serverName, ok := extractMCPServerName(p.ProviderOptions)
 				if !ok {
 					*warnings = append(*warnings, provider.Warning{
@@ -2778,7 +2791,7 @@ func convertToolChoice(tc provider.ToolChoice, mapping toolNameMapping) anthropi
 }
 
 func applyDisableParallelToolUse(p *anthropic.BetaMessageNewParams, value *bool, hasTools bool) {
-	if value == nil {
+	if value == nil || p.ToolChoice.OfNone != nil {
 		return
 	}
 	if p.ToolChoice.OfAuto != nil {
@@ -2949,14 +2962,15 @@ func applyProviderOptions(p *anthropic.BetaMessageNewParams, ao AnthropicOptions
 				Name: s.Name,
 				URL:  s.URL,
 			}
-			if s.AuthorizationToken != "" {
-				srv.AuthorizationToken = anthropic.String(s.AuthorizationToken)
+			if s.AuthorizationToken != nil {
+				srv.AuthorizationToken = anthropic.String(*s.AuthorizationToken)
 			}
 			if s.ToolConfiguration != nil {
-				srv.ToolConfiguration = anthropic.BetaRequestMCPServerToolConfigurationParam{
-					Enabled:      anthropic.Bool(s.ToolConfiguration.Enabled),
-					AllowedTools: s.ToolConfiguration.AllowedTools,
+				config := anthropic.BetaRequestMCPServerToolConfigurationParam{AllowedTools: s.ToolConfiguration.AllowedTools}
+				if s.ToolConfiguration.Enabled != nil {
+					config.Enabled = anthropic.Bool(*s.ToolConfiguration.Enabled)
 				}
+				srv.ToolConfiguration = config
 			}
 			servers[i] = srv
 		}

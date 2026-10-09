@@ -55,7 +55,7 @@ const (
 type TextPart struct {
 	Text             string                    `json:"text"`
 	State            string                    `json:"state,omitempty"`
-	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
 // PartType implements Part.
@@ -66,7 +66,7 @@ type ReasoningPart struct {
 	ID               string                    `json:"id,omitempty"`
 	Text             string                    `json:"text"`
 	State            string                    `json:"state,omitempty"`
-	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
 // PartType implements Part.
@@ -122,8 +122,8 @@ type ToolInvocationPart struct {
 	Preliminary            *bool                      `json:"preliminary,omitempty"`
 	ProviderExecuted       bool                       `json:"providerExecuted,omitempty"`
 	Approval               *ToolApproval              `json:"approval,omitempty"`
-	CallProviderMetadata   provider.ProviderMetadata  `json:"callProviderMetadata,omitempty"`
-	ResultProviderMetadata provider.ProviderMetadata  `json:"resultProviderMetadata,omitempty"`
+	CallProviderMetadata   provider.ProviderMetadata  `json:"callProviderMetadata,omitzero"`
+	ResultProviderMetadata provider.ProviderMetadata  `json:"resultProviderMetadata,omitzero"`
 }
 
 // PartType implements Part.
@@ -145,8 +145,8 @@ type DynamicToolUIPart struct {
 	Preliminary            *bool                      `json:"preliminary,omitempty"`
 	ProviderExecuted       bool                       `json:"providerExecuted,omitempty"`
 	Approval               *ToolApproval              `json:"approval,omitempty"`
-	CallProviderMetadata   provider.ProviderMetadata  `json:"callProviderMetadata,omitempty"`
-	ResultProviderMetadata provider.ProviderMetadata  `json:"resultProviderMetadata,omitempty"`
+	CallProviderMetadata   provider.ProviderMetadata  `json:"callProviderMetadata,omitzero"`
+	ResultProviderMetadata provider.ProviderMetadata  `json:"resultProviderMetadata,omitzero"`
 }
 
 // PartType implements Part.
@@ -160,7 +160,7 @@ type FilePart struct {
 	URL               string                    `json:"url"`
 	Filename          *string                   `json:"filename,omitempty"`
 	ProviderReference map[string]string         `json:"providerReference,omitempty"`
-	ProviderMetadata  provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	ProviderMetadata  provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
 func (p FilePart) MarshalJSON() ([]byte, error) {
@@ -199,7 +199,7 @@ func inputFilenameValue(value *string) string {
 type ReasoningFilePart struct {
 	MediaType        string                    `json:"mediaType"`
 	URL              string                    `json:"url"`
-	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
 // PartType implements Part.
@@ -210,7 +210,7 @@ type SourceURLPart struct {
 	SourceID         string                    `json:"sourceId"`
 	URL              string                    `json:"url"`
 	Title            string                    `json:"title,omitempty"`
-	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
 // PartType implements Part.
@@ -222,7 +222,7 @@ type SourceDocumentPart struct {
 	MediaType        string                    `json:"mediaType"`
 	Title            string                    `json:"title,omitempty"`
 	Filename         string                    `json:"filename,omitempty"`
-	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
+	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
 // PartType implements Part.

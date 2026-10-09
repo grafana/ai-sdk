@@ -22,7 +22,6 @@ const (
 	// provider options and call headers, and refuses only what the host owns.
 	capabilityReservedProviderOptions unsupportedCapability = "reserved-provider-options"
 	capabilityProtectedCallHeader     unsupportedCapability = "protected-call-header"
-	capabilityProtectedProviderOption unsupportedCapability = "protected-provider-option"
 )
 
 type wireRequest struct {
@@ -147,6 +146,48 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 	return options, nil
 }
 
+type historicalToolCall struct {
+	name             string
+	providerExecuted bool
+	completed        bool
+}
+
+func unresolvedProviderCalls(prompt []provider.Message) (map[string]string, *requestFailure) {
+	calls := make(map[string]historicalToolCall)
+	orphanResults := make(map[string]struct{})
+	for _, message := range prompt {
+		for _, part := range message.Content {
+			switch part.Type {
+			case provider.ContentPartTypeToolCall:
+				if _, exists := calls[part.ToolCallID]; exists {
+					return nil, invalidMappingFailure()
+				}
+				if _, exists := orphanResults[part.ToolCallID]; exists {
+					return nil, invalidMappingFailure()
+				}
+				calls[part.ToolCallID] = historicalToolCall{name: part.ToolName, providerExecuted: part.ProviderExecuted}
+			case provider.ContentPartTypeToolResult:
+				if call, exists := calls[part.ToolCallID]; exists {
+					if call.name != part.ToolName || call.completed {
+						return nil, invalidMappingFailure()
+					}
+					call.completed = true
+					calls[part.ToolCallID] = call
+				} else {
+					orphanResults[part.ToolCallID] = struct{}{}
+				}
+			}
+		}
+	}
+	pending := make(map[string]string)
+	for id, call := range calls {
+		if call.providerExecuted && !call.completed {
+			pending[id] = call.name
+		}
+	}
+	return pending, nil
+}
+
 func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *requestFailure) {
 	messageOptions, failure := mapWireProviderOptions(message.ProviderOptions)
 	if failure != nil {
@@ -237,33 +278,33 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 	case provider.ContentPartTypeCustom:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityCustomContent)
 	case provider.ContentPartTypeToolCall:
-		if !toolsEnabled || part.ProviderExecuted {
+		if !toolsEnabled {
 			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
 		}
 		if role != provider.RoleAssistant {
 			return provider.ContentPart{}, invalidMappingFailure()
 		}
-		partOptions, failure := mapWireProviderOptions(part.ProviderOptions)
+		options, failure := mapWireProviderOptions(part.ProviderOptions)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
 		call := provider.ToolCallPart(part.ToolCallID, part.ToolName, part.Input)
-		call.ProviderOptions = partOptions
+		call.ProviderExecuted, call.ProviderOptions = part.ProviderExecuted, options
 		return call, nil
 	case provider.ContentPartTypeToolResult:
-		if !toolsEnabled || role != provider.RoleTool {
+		if !toolsEnabled || role != provider.RoleTool && role != provider.RoleAssistant {
 			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
 		}
 		output, failure := mapToolOutput(part.Output)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
-		partOptions, failure := mapWireProviderOptions(part.ProviderOptions)
+		options, failure := mapWireProviderOptions(part.ProviderOptions)
 		if failure != nil {
 			return provider.ContentPart{}, failure
 		}
 		result := provider.ToolResultPart(part.ToolCallID, part.ToolName, output)
-		result.ProviderOptions = partOptions
+		result.ProviderOptions = options
 		return result, nil
 	case provider.ContentPartTypeToolApprovalResponse, provider.ContentPartTypeToolApprovalRequest:
 		return provider.ContentPart{}, unsupportedMappingFailure(capabilityToolApprovals)
@@ -349,10 +390,7 @@ func mapWireProviderOptions(options map[string]json.RawMessage) (provider.Provid
 	// Reserved namespaces are found in their own pass, so a request carrying both
 	// a reserved namespace and a malformed one always reports the same refusal
 	// rather than whichever the map yielded first. Namespace names are compared
-	// exactly, because provider-option namespaces are case-significant. Between a
-	// malformed namespace and a protected field the refusal is whichever the map
-	// yields first, which the request schema keeps unreachable over HTTP by
-	// requiring every namespace to be an object.
+	// exactly, because provider-option namespaces are case-significant.
 	for _, namespace := range []string{ReservedProviderOptionNamespace, "gateway", "grafana-ai-sdk"} {
 		if _, reserved := options[namespace]; reserved {
 			return nil, unsupportedMappingFailure(capabilityReservedProviderOptions)
@@ -360,72 +398,12 @@ func mapWireProviderOptions(options map[string]json.RawMessage) (provider.Provid
 	}
 	mapped := make(provider.ProviderOptions, len(options))
 	for namespace, raw := range options {
-		fields, ok := jsonObject(raw)
-		if !ok {
+		if _, ok := jsonObject(raw); !ok {
 			return nil, invalidMappingFailure()
-		}
-		for field := range fields {
-			if _, protected := protectedProviderOptionFields[normalizeProviderOptionField(field)]; protected {
-				return nil, unsupportedMappingFailure(capabilityProtectedProviderOption)
-			}
 		}
 		mapped[namespace] = provider.RawProviderOption{Key: namespace, Raw: raw}
 	}
 	return mapped, nil
-}
-
-// protectedProviderOptionFields name decisions this runtime has already made,
-// so a caller may not make them again through a provider namespace. Providers
-// merge unknown option fields into the request body, which is how a field here
-// would otherwise reach a backend: model, fallbacks and the prompt fields
-// would redirect the call the catalog resolved and telemetry reports, the tool
-// fields (including the legacy functions pair) would run tools this runtime
-// never mapped on the host's credentials, the response format fields would
-// restate the structured output this runtime refuses at the wire level, and
-// the stream fields would answer in a transport the runtime is not reading.
-//
-// Entries are normalized by normalizeProviderOptionField, because providers do
-// not read field names exactly: providers/anthropic decodes with encoding/json,
-// which matches names case-insensitively, so MCPServers reaches mcp_servers.
-//
-// After resolution the catalog's ProviderOptionPolicy narrows options further,
-// to the resolved backend's namespaces and, where it lists them, its fields.
-//
-// ponytail: this list still carries openai-compatible, whose policy forwards
-// every field because passing endpoint-specific fields through is that
-// provider's purpose. Whether the Gateway restricts them is open on #115.
-var protectedProviderOptionFields = map[string]struct{}{
-	"model":          {},
-	"fallbacks":      {},
-	"messages":       {},
-	"prompt":         {},
-	"tools":          {},
-	"toolchoice":     {},
-	"functions":      {},
-	"functioncall":   {},
-	"mcpservers":     {},
-	"container":      {},
-	"responseformat": {},
-	"stream":         {},
-	"streamoptions":  {},
-	// Message and part providers spread option fields over the entry they build
-	// (upstream does the same), so these would restructure a mapped message:
-	// a tool role or tool calls would restore tools, and a part type or media
-	// field would restore the files the wire refuses.
-	"role":       {},
-	"content":    {},
-	"toolcalls":  {},
-	"toolcallid": {},
-	"type":       {},
-	"imageurl":   {},
-	"inputaudio": {},
-	"file":       {},
-}
-
-// normalizeProviderOptionField folds the spellings a provider may read for one
-// field (case, snake_case, kebab-case) to a single key.
-func normalizeProviderOptionField(field string) string {
-	return strings.NewReplacer("_", "", "-", "").Replace(strings.ToLower(field))
 }
 
 // jsonObject decodes raw as a JSON object and reports whether it is one. A JSON
@@ -438,9 +416,7 @@ func jsonObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
 	return object, true
 }
 
-// providerOptionsEmpty reports whether every namespace is an empty object. Tool
-// definitions and tool outputs still refuse non-empty options, which this
-// change does not extend; call, message and part options are mapped instead.
+// providerOptionsEmpty reports whether every namespace is an empty object.
 func providerOptionsEmpty(options map[string]json.RawMessage) bool {
 	for _, raw := range options {
 		var namespace map[string]json.RawMessage

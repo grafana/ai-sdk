@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -129,16 +130,10 @@ type runtimeHarness struct {
 	model    *recordingModel
 }
 
-// harnessOptionPolicy forwards the namespaces these tests send, so tests about
-// mapping are not also tests about the policy. Policy tests set their own.
-var harnessOptionPolicy = catalog.ProviderOptionPolicy{
-	Namespaces: []string{"call", "message", "part", "ns", "example", "p", "provider", "Grafana", "anthropic", "openaiCompatible"},
-}
-
 func newRuntimeHarness(t *testing.T, limits Limits) *runtimeHarness {
 	t.Helper()
 	model := &recordingModel{}
-	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model, ProviderOptions: harnessOptionPolicy}}
+	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model}}
 	created, err := New(Config{Resolver: resolver, Limits: limits})
 	require.NoError(t, err)
 	return &runtimeHarness{handler: created.(*handler), resolver: resolver, model: model}
@@ -210,15 +205,13 @@ func TestRuntimeToolChoice(t *testing.T) {
 			}
 		}
 		for _, tc := range []struct {
-			name          string
-			fields        string
-			schemaInvalid bool
+			name   string
+			fields string
 		}{
-			{name: "provider", fields: `"toolChoice":{"type":"auto"},"tools":[{"type":"provider","id":"p.f","name":"f","args":{}}]`},
-			{name: "null", fields: `"toolChoice":null`, schemaInvalid: true},
-			{name: "unknown", fields: `"toolChoice":{"type":"future"}`, schemaInvalid: true},
-			{name: "string", fields: `"toolChoice":"auto"`, schemaInvalid: true},
-			{name: "extra", fields: `"toolChoice":{"type":"auto","toolName":"f"}`, schemaInvalid: true},
+			{name: "null", fields: `"toolChoice":null`},
+			{name: "unknown", fields: `"toolChoice":{"type":"future"}`},
+			{name: "string", fields: `"toolChoice":"auto"`},
+			{name: "extra", fields: `"toolChoice":{"type":"auto","toolName":"f"}`},
 		} {
 			t.Run(streaming+"/"+tc.name, func(t *testing.T) {
 				harness := newRuntimeHarness(t, testLimits())
@@ -227,11 +220,7 @@ func TestRuntimeToolChoice(t *testing.T) {
 				response := harness.serve(request)
 				assert.Equal(t, http.StatusBadRequest, response.Code)
 				assert.Contains(t, response.Header().Get("Content-Type"), "application/json")
-				if tc.schemaInvalid {
-					assert.Equal(t, string(canonicalInvalidRequestError), response.Body.String())
-				} else {
-					assert.Equal(t, string(unsupportedCapabilityDocument(capabilityTools)), response.Body.String())
-				}
+				assert.Equal(t, string(canonicalInvalidRequestError), response.Body.String())
 				assert.Zero(t, harness.resolver.callCount())
 				assert.Zero(t, harness.model.callCount())
 			})
@@ -375,14 +364,9 @@ func TestRuntimeUnsupportedCapabilities(t *testing.T) {
 		capability unsupportedCapability
 	}{
 		{name: "custom", body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x"}]}]}`, capability: capabilityCustomContent},
-		{name: "provider tools", body: `{"prompt":[],"tools":[{"type":"provider","id":"provider.f","name":"f","args":{}}]}`, capability: capabilityTools},
-		{name: "provider executed tool call", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"c","toolName":"f","input":{},"providerExecuted":true}]}]}`, capability: capabilityTools},
 		{name: "tool approvals", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-approval-response","approvalId":"a","approved":false}]}]}`, capability: capabilityToolApprovals},
 		{name: "structured output", body: `{"prompt":[],"responseFormat":{"type":"json"}}`, capability: capabilityStructuredOutput},
 		{name: "reserved provider option namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, capability: capabilityReservedProviderOptions},
-		{name: "protected provider option, model", body: `{"prompt":[],"providerOptions":{"openaiCompatible":{"model":"someone-elses-model"}}}`, capability: capabilityProtectedProviderOption},
-		{name: "protected provider option, prompt", body: `{"prompt":[],"providerOptions":{"openaiCompatible":{"messages":[{"role":"user","content":"rewritten"}]}}}`, capability: capabilityProtectedProviderOption},
-		{name: "protected provider option, server-side tools", body: `{"prompt":[],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","url":"https://caller.example/mcp","name":"caller"}]}}}`, capability: capabilityProtectedProviderOption},
 		{name: "protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, capability: capabilityProtectedCallHeader},
 		{name: "protected call header, other case", body: `{"prompt":[],"headers":{"X-ACCESS-TOKEN":"caller"}}`, capability: capabilityProtectedCallHeader},
 		{name: "raw output", body: `{"prompt":[],"includeRawChunks":true}`, capability: capabilityRawOutput},
@@ -446,6 +430,8 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		{file: "headers.json", status: http.StatusOK, modelCalls: 1},
 		{file: "headers.json", index: 1, status: http.StatusOK, modelCalls: 1},
 		{file: "comprehensive-unions.json", status: http.StatusBadRequest},
+		{file: "provider-tools.json", status: http.StatusOK, modelCalls: 1},
+		{file: "provider-tools.json", index: 1, status: http.StatusOK, modelCalls: 1},
 	}
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("%s/%d", tc.file, tc.index), func(t *testing.T) {
@@ -626,6 +612,53 @@ func TestRuntimeFileGoldenReplay(t *testing.T) {
 			assertFilenamePresence(t, output.Content[1].Filename, "", true)
 			assertFilenamePresence(t, output.Content[2].Filename, "", false)
 			assertFilenamePresence(t, output.Content[4].Filename, "", true)
+		})
+	}
+}
+
+func TestRuntimeProviderToolDefinitions(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			body := `{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{}},{"type":"provider","id":"anthropic.code_execution_20260120","name":"code","args":{}},{"type":"provider","id":"provider.search","name":"search","args":{"limit":0,"nested":{"value":null}}}],"providerOptions":{"anthropic":{"thinking":{"type":"enabled"}}}}`
+			request := validRequest(body)
+			if streaming {
+				request.Header.Set(HeaderStreaming, "true")
+			}
+			response := harness.serve(request)
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			assert.Equal(t, 1, harness.model.callCount())
+			opts := harness.model.receivedOptions()
+			require.Len(t, opts.Tools, 3)
+			assert.Equal(t, provider.ToolTypeFunction, opts.Tools[0].Type)
+			assert.Equal(t, provider.ToolTypeProvider, opts.Tools[1].Type)
+			assert.Equal(t, "anthropic.code_execution_20260120", opts.Tools[1].ID)
+			assert.NotNil(t, opts.Tools[1].Args)
+			assert.JSONEq(t, `0`, string(opts.Tools[2].Args["limit"]))
+			assert.JSONEq(t, `{"value":null}`, string(opts.Tools[2].Args["nested"]))
+			root, ok := opts.ProviderOptions["anthropic"].(provider.RawProviderOption)
+			require.True(t, ok)
+			assert.JSONEq(t, `{"thinking":{"type":"enabled"}}`, string(root.Raw))
+			assert.NotContains(t, response.Body.String(), "private-token")
+		})
+	}
+	for _, tc := range []struct{ name, body string }{
+		{"missing args", `{"prompt":[],"tools":[{"type":"provider","id":"provider.search","name":"search"}]}`},
+		{"null args", `{"prompt":[],"tools":[{"type":"provider","id":"provider.search","name":"search","args":null}]}`},
+		{"function-only field", `{"prompt":[],"tools":[{"type":"provider","id":"provider.search","name":"search","args":{},"strict":false}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, streaming := range []bool{false, true} {
+				harness := newRuntimeHarness(t, testLimits())
+				request := validRequest(tc.body)
+				if streaming {
+					request.Header.Set(HeaderStreaming, "true")
+				}
+				response := harness.serve(request)
+				assert.Equal(t, http.StatusBadRequest, response.Code)
+				assert.Zero(t, harness.model.callCount())
+				assert.NotContains(t, response.Body.String(), "secret")
+			}
 		})
 	}
 }
@@ -865,4 +898,71 @@ func TestSafeErrorReduction(t *testing.T) {
 		assert.Equal(t, string(canonicalUpstreamError), response.Body.String())
 		assert.NotContains(t, response.Body.String(), "secret")
 	})
+}
+
+func TestProviderMetadata_RuntimeFailureAndFinishAuthority(t *testing.T) {
+	for _, metadata := range []provider.ProviderMetadata{{"future": json.RawMessage(`null`)}, {"future": json.RawMessage(`{"incomplete":`)}, {"future": json.RawMessage(strings.Repeat(" ", 1<<20) + `{}`)}} {
+		h := newRuntimeHarness(t, testLimits())
+		h.model.generate = func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+			result := validGenerateResult()
+			result.ProviderMetadata = metadata
+			return result, nil
+		}
+		response := h.serve(validRequest(`{"prompt":[]}`))
+		assert.Equal(t, http.StatusInternalServerError, response.Code)
+		assert.NotContains(t, response.Body.String(), "future")
+		h.model.stream = func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartTextStart, ID: "text", ProviderMetadata: metadata}, finishPart())}, nil
+		}
+		response = h.serve(streamRequest(`{"prompt":[]}`))
+		assert.NotContains(t, response.Body.String(), `"type":"text-start"`)
+		assert.Equal(t, 1, strings.Count(response.Body.String(), `"type":"error"`))
+		assert.NotContains(t, response.Body.String(), "future")
+	}
+	h := newRuntimeHarness(t, testLimits())
+	finish := finishPart()
+	finish.ProviderMetadata = provider.ProviderMetadata{"future": json.RawMessage(`{"final":true}`)}
+	h.model.stream = func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: makeStream(finish, provider.StreamPart{Type: provider.PartTextStart, ID: "late", ProviderMetadata: provider.ProviderMetadata{"future": json.RawMessage(`null`)}})}, nil
+	}
+	body := h.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+	assert.Contains(t, body, `"future":{"final":true}`)
+	assert.NotContains(t, body, `"type":"error"`)
+	assert.NotContains(t, body, "late")
+}
+
+func TestProviderMetadata_SharedModelIsolation(t *testing.T) {
+	h := newRuntimeHarness(t, testLimits())
+	h.model.generate = func(_ context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+		marker := options.Prompt[0].Content[0].Text
+		raw, err := json.Marshal(map[string]any{"tenantMarker": marker, "routing": "ignored", "apiKey": "sk-application-data"})
+		if err != nil {
+			return nil, err
+		}
+		result := validGenerateResult()
+		result.ProviderMetadata = provider.ProviderMetadata{"future": raw}
+		result.Content[0].ProviderMetadata = result.ProviderMetadata
+		return result, nil
+	}
+	var wg sync.WaitGroup
+	const requests = 20
+	for i := range requests {
+		wg.Go(func() {
+			marker := fmt.Sprintf("tenant-%d", i)
+			w := httptest.NewRecorder()
+			h.handler.ServeHTTP(w, validRequest(`{"prompt":[{"role":"user","content":[{"type":"text","text":"`+marker+`"}]}]}`))
+			assert.Equal(t, 200, w.Code)
+			var decoded struct {
+				Metadata provider.ProviderMetadata `json:"providerMetadata"`
+			}
+			if assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &decoded)) {
+				raw := string(decoded.Metadata["future"])
+				assert.Contains(t, raw, `"tenantMarker":"`+marker+`"`)
+				assert.Contains(t, raw, `"routing":"ignored"`)
+				assert.Contains(t, raw, "sk-application-data")
+			}
+		})
+	}
+	wg.Wait()
+	assert.Equal(t, requests, h.resolver.callCount())
 }

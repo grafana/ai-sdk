@@ -80,7 +80,7 @@ The handler SHALL map body-carried call headers to provider call headers, preser
 
 ### Requirement: Unsupported capability families
 
-Schema-valid custom content, provider tools and tool approvals, structured output, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers. Function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools and gateway-streaming-function-tools subsets, including the ordinary file-result extension. Function-tool and ordinary file-entry provider options SHALL be supported within those subsets; deferred output-level and non-file nested result options SHALL remain unsupported. Assistant reasoning text and reasoning-file history SHALL execute within gateway-reasoning-content, using the same protected-field and selected-backend provider-option policy. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
+Schema-valid custom content, provider tools and tool approvals, structured output, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers. Function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools and gateway-streaming-function-tools subsets, including the ordinary file-result extension. Function-tool and ordinary file-entry provider options SHALL be supported within those subsets; deferred output-level and non-file nested result options SHALL remain unsupported. Assistant reasoning text and reasoning-file history SHALL execute within gateway-reasoning-content, preserving scoped options under gateway-native-provider-options rather than selected-backend filtering. The runtime SHALL not define client-visible precedence among multiple simultaneously activated unsupported families.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family
@@ -100,23 +100,26 @@ Schema-valid custom content, provider tools and tool approvals, structured outpu
 
 ### Requirement: Reserved provider options and protected call headers
 
-The runtime SHALL reserve the `grafana`, `gateway`, and `grafana-ai-sdk` provider-option namespaces for the host. A request carrying any of them SHALL be rejected with a stable invalid-request document before resolution or model invocation, rather than silently stripped, so nothing it carries reaches a backend and the caller learns the option was refused.
+The runtime SHALL reserve the `grafana`, `gateway`, and `grafana-ai-sdk` provider-option namespaces for the host. A request carrying any of them SHALL be rejected with a stable invalid-request document before resolution or model invocation unless an owning host feature explicitly consumes it. Such controls SHALL never reach native adapters as provider options. This change SHALL NOT implement routing, BYOK or new operator controls. Unknown ordinary namespaces and fields SHALL NOT be treated as host controls merely because they are unlisted.
 
-The runtime SHALL refuse body-carried call headers whose name matches a credential-bearing header, compared without case sensitivity, covering at least `authorization`, `proxy-authorization`, `x-access-token`, `x-grafana-id`, `x-api-key`, `api-key`, `openai-api-key` and `anthropic-api-key`. The openai and openai-compatible providers apply call headers after setting their own authorization header, so an accepted credential-bearing header would choose the credential presented to those backends. The refused set SHALL cover every header name the inbound authenticated edge refuses in outer headers, which a test SHALL assert by driving the edge with a valid stack assertion and each candidate name, with an accepted ordinary header as a negative control, and requiring the body mapper to refuse every name the edge refused.
+The runtime SHALL refuse body-carried call headers whose name matches a credential-bearing header, compared without case sensitivity, covering at least `authorization`, `proxy-authorization`, `x-access-token`, `x-grafana-id`, `x-api-key`, `api-key`, `openai-api-key` and `anthropic-api-key`. The openai and openai-compatible providers apply call headers after setting their own authorization header, so an accepted credential-bearing header would choose the credential presented to those backends. The refused set SHALL cover every header name the inbound authenticated edge refuses in outer headers, which a test SHALL assert by driving the edge with a valid stack assertion and each candidate name, with an accepted ordinary header as a negative control, and requiring the body mapper to refuse every name the edge refused. Outer authentication SHALL remain independent from body-carried provider call headers; unrelated outer HTTP headers SHALL NOT be forwarded automatically.
 
-The runtime SHALL refuse a provider-option namespace carrying a field that names a decision the runtime has already made, covering at least `model`, `fallbacks`, `messages`, `prompt`, `tools`, `toolChoice`, `functions`, `function_call`, `mcpServers`, `container`, `responseFormat`, `stream`, `streamOptions`, and the message and part fields `role`, `content`, `tool_calls`, `tool_call_id`, `type`, `image_url`, `input_audio` and `file`, which providers spread over the entry they build and which could otherwise bypass the registered tool or file mapping. A `content` field SHALL be refused because it carries parts of any type underneath the field checks, which is how it bypasses the registered part mapping. Field names SHALL be compared after folding case and removing `_` and `-`, because a provider may read a field under another spelling: `providers/anthropic` decodes options with `encoding/json`, which matches names case-insensitively, so `MCPServers` and `mcp_servers` reach the same field. The set SHALL cover every capability the runtime refuses at the wire level, so a refused capability cannot be restated as a provider option. Providers merge unknown option fields into the request body, so an accepted model, fallbacks or prompt field would redirect the call away from the resolved catalog model that telemetry reports, an accepted tool field, including the legacy `functions` pair, would run tools the runtime never mapped on the host's credentials, an accepted response-format field would restate the structured output the runtime refuses at the wire level, and an accepted stream field would answer in a transport the runtime is not reading.
+Provider-option protections SHALL follow gateway-native-provider-options: actual native consumption and precedence at the consuming namespace and scope SHALL justify any check preventing credential/account/destination, model/prompt, role/union, tool-ownership or transport/execution bypass. A blanket case/underscore/hyphen-folded field list SHALL NOT reject ordinary fields that cannot cause the bypass. Native-specific checks SHALL fail before external provider I/O; schema, reserved-host and protected-body-header refusals SHALL retain their pre-resolution processing order.
 
 These refusals SHALL use fixed documents that never echo the offending namespace, field name, header name or value.
 
 #### Scenario: Reserved namespace
-- **WHEN** a request carries the `grafana`, `gateway`, or `grafana-ai-sdk` provider-option namespace
+- **WHEN** a request carries the `grafana`, `gateway`, or `grafana-ai-sdk` provider-option namespace without an owning feature consuming it
 - **THEN** the response SHALL be a stable invalid-request document naming neither the namespace contents nor the caller's values
 - **AND** no model SHALL be resolved or invoked
 
 #### Scenario: Protected provider option
-- **WHEN** a request carries a provider-option field naming the model, the prompt, or server-side tools
-- **THEN** the response SHALL be a stable invalid-request document
-- **AND** no model SHALL be resolved or invoked
+- **WHEN** an option can cause a concrete native model/prompt, credential/account/destination, role/union, tool-ownership or transport/execution bypass
+- **THEN** the request SHALL fail with a stable invalid-request document before external provider I/O unless native precedence already prevents the override
+
+#### Scenario: Harmless field with the same spelling
+- **WHEN** an ordinary option field has a spelling used by a protected field but its namespace and scope cannot cause the native bypass
+- **THEN** it SHALL remain intact for native interpretation rather than be refused under a universal blacklist
 
 #### Scenario: Protected call header
 - **WHEN** a request carries a credential-bearing body header in any letter case
@@ -130,30 +133,7 @@ These refusals SHALL use fixed documents that never echo the offending namespace
 
 #### Scenario: Reserved namespace in a different case
 - **WHEN** a request carries a provider-option namespace such as `Grafana`
-- **THEN** it SHALL be mapped like any other namespace, because namespace names are compared exactly
-
-### Requirement: Selected-backend provider options
-
-After resolution, the handler SHALL forward only the provider options the resolved backend reads, at call, message, content-part, function-tool and nested tool-result file-entry level, as described by the resolved model's `catalog.ProviderOptionPolicy`. A namespace outside the policy's namespaces SHALL NOT reach the model, and SHALL NOT fail the request, because an option for another backend is one every provider ignores. Where the policy lists fields for a namespace, other top-level fields SHALL be removed, compared after folding case and removing `_` and `-`; a namespace with nothing removed SHALL keep its bytes exactly. The zero-value policy SHALL forward no provider options.
-
-The command SHALL set a policy for every provider type it constructs, and a model whose fallback candidates resolve to different policies SHALL forward no caller provider options, because no single policy is safe for every attempt. For `anthropic`, the policy SHALL forward the `anthropic` namespace restricted to the fields `providers/anthropic` reads, excluding the fields the runtime refuses, and a test SHALL fail when the provider's typed option structs gain a field that is neither forwarded nor refused. For `openai`, the policy SHALL forward the `openai` namespace and its `azure` parity fallback, restricted to the fields `providers/openai` reads at call and part level. For `openai-compatible`, the policy SHALL forward the namespaces the provider reads for its configured provider name, without restricting fields, and a test SHALL check those namespaces against the provider itself.
-
-#### Scenario: Options for another backend
-- **WHEN** a request to an openai-compatible model carries `anthropic` and `openai` provider options alongside its own namespace
-- **THEN** the model SHALL receive only its own namespace, byte for byte
-- **AND** the response SHALL succeed
-
-#### Scenario: Unclassified Anthropic field
-- **WHEN** a request to an Anthropic model carries an `anthropic` field the policy does not list
-- **THEN** that field SHALL be removed before the model runs, and the listed fields SHALL keep their values
-
-#### Scenario: Unclassified backend
-- **WHEN** a resolved model carries the zero-value policy
-- **THEN** it SHALL receive no caller provider options
-
-#### Scenario: File and function-tool options follow the backend policy
-- **WHEN** file-entry or function-tool options contain selected-backend fields alongside an unrelated namespace or unclassified fields
-- **THEN** only the selected backend's permitted fields SHALL reach the model in those scopes
+- **THEN** it SHALL be mapped like any other ordinary namespace, because namespace names are compared exactly
 
 ### Requirement: Resolution and bounded model invocation
 
@@ -189,7 +169,7 @@ Every runtime error response SHALL be selected from precomputed documents with f
 
 ### Requirement: Minimal unary success response
 
-A successful response SHALL contain ordered supported text, function-tool-call, source, reasoning and reasoning-file content, finishReason, usage and a warnings array. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Reasoning content metadata SHALL retain the existing bounded continuation projection in gateway-reasoning-content; source metadata SHALL retain the current projection described by gateway-sources pending its separately owned metadata implementation. This change SHALL NOT claim complete native metadata parity.
+A successful response SHALL contain ordered supported text, function-tool-call, source, reasoning and reasoning-file content, finishReason, usage and a warnings array. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Supported result/content providerMetadata SHALL retain opaque namespace objects and represented presence under gateway-provider-metadata.
 
 Warnings SHALL preserve the order and active fields of the registered unsupported, compatibility, deprecated and other variants. Required feature, setting and message fields SHALL be present even when empty. Unsupported/compatibility details SHALL preserve nonempty values; absent and empty Go details SHALL normalize to omission as an explicitly documented Go representation adaptation. Inactive fields SHALL be omitted. Nil warnings SHALL emit an empty array. Unknown warning types and invalid represented output SHALL fail safely before HTTP 200.
 
@@ -228,6 +208,9 @@ The registered Gateway client SHALL combine server warnings before its local war
 #### Scenario: Unary identity presence
 - **WHEN** provider Response is nil, present with zero-valued identity, or present with partial identity
 - **THEN** response SHALL respectively be absent, an empty object, or contain only the supplied representable fields without fabricated defaults
+#### Scenario: Ordinary metadata is not transport
+- **WHEN** a model result contains supported result/content providerMetadata alongside unrelated request or response transport fields
+- **THEN** the metadata SHALL survive in its registered scope without adding those transport fields or consulting operator capture flags
 
 #### Scenario: Provider raw usage is present or absent
 - **WHEN** provider usage contains a valid in-limit object including provider-native nested values, an empty object, or no Raw bytes
@@ -239,9 +222,11 @@ The registered Gateway client SHALL combine server warnings before its local war
 
 ### Requirement: Bounded preflight and standard success encoding
 
-Before output allocation, UTF-8 scanning or encoding, the handler SHALL reject content/warning cardinality or aggregate represented string and raw-usage bytes that cannot fit the configured unary budget using overflow-safe accounting. Accounting SHALL include native source ID/display, active warning fields, registered response identity and serialized timestamps alongside existing content/raw-finish/usage values. Warning cardinality SHALL use conservative minimum registered encoded sizes, including required empty values. Independent field/list checks SHALL NOT bypass the aggregate complete-response budget.
+Before output allocation, UTF-8 scanning or encoding, the handler SHALL reject content/warning/metadata cardinality or aggregate represented strings, original result/content metadata namespace key/value bytes and raw-usage bytes that cannot fit the configured unary budget using overflow-safe accounting. Accounting SHALL include native source ID/display, active warning fields, registered response identity and serialized timestamps alongside existing content/raw-finish/usage values. Warning cardinality SHALL use conservative minimum registered encoded sizes, including required empty values. Independent field/list checks SHALL NOT bypass the aggregate complete-response budget.
 
 The handler SHALL count raw-usage bytes before parsing/marshaling and reject raw usage longer than 1,048,576 bytes or the unary limit, including whitespace. After size preflight it SHALL validate original UTF-8 and any present raw as one JSON object. Standard encoding SHALL preserve valid raw JSON escapes, including lone and paired UTF-16 surrogates. The complete private DTO SHALL then encode through standard Go JSON and SHALL receive HTTP 200 only after the final bytes fit. Provider-domain JSON marshalers SHALL NOT control public output. Encoding MAY allocate a bounded constant multiple of the configured limit for worst-case escaping; no value SHALL be truncated to fit.
+
+Metadata SHALL share the result/content budget under gateway-provider-metadata, accounting original namespace bytes including whitespace and cardinality before scanning or allocation. Namespace UTF-8/object shape SHALL be checked in preflight, and standard JSON encoding SHALL reject malformed namespace syntax before HTTP 200, without projection within those bounds.
 
 #### Scenario: Preflight rejects oversized provider values
 - **WHEN** content/warning count or aggregate represented bytes exceed the unary budget, or raw usage exceeds 1,048,576 bytes
@@ -272,6 +257,10 @@ The handler SHALL count raw-usage bytes before parsing/marshaling and reject raw
 #### Scenario: Raw usage exactly meets its input cap
 - **WHEN** raw usage bytes, including JSON whitespace, are at or one byte above the smaller of 1,048,576 bytes and the configured unary response limit
 - **THEN** only the at-limit value SHALL reach JSON validation, and success SHALL still require the final complete response to fit the unary limit
+
+#### Scenario: Combined metadata exceeds budget
+- **WHEN** individually small metadata objects across multiple content parts and the result collectively exceed the unary budget
+- **THEN** the complete result SHALL fail before JSON parsing or encoding rather than returning partial or metadata-free success
 
 ### Requirement: Compatibility evidence
 

@@ -199,7 +199,7 @@ func TestWebTool_HTTPNumberProjection(t *testing.T) {
 		{"older fractional fetch", "anthropic.web_fetch_20250910", `{"maxContentTokens":3.5}`, "", "", `[{"type":"web_fetch_20250910","name":"web_fetch","max_content_tokens":3.5}]`, false},
 		{"large content tokens", "anthropic.web_fetch_20260318", `{"maxContentTokens":100000000000000000000}`, "", "", `[{"type":"web_fetch_20260318","name":"web_fetch","max_content_tokens":100000000000000000000}]`, false},
 		{"zero uses", "anthropic.web_search_20260318", `{"maxUses":0}`, "", "", `[{"type":"web_search_20260318","name":"web_search","max_uses":0}]`, false},
-		{"none removes web tool", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", "", `[]`, false},
+		{"none keeps web tool", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", "", `[{"type":"web_fetch_20260318","name":"web_fetch","max_uses":1.5}]`, false},
 		{"none followed by JSON fallback", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", `{"type":"object"}`, `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"}}]`, false},
 	}
 	for _, tc := range cases {
@@ -244,14 +244,62 @@ func TestWebTool_HTTPNumberProjection(t *testing.T) {
 				}
 				body := <-requests
 				if tc.choice == "none" && tc.schema == "" {
-					assert.NotContains(t, body, "tools")
-				} else if tc.schema != "" && stream {
+					assert.JSONEq(t, `{"type":"none"}`, string(body["tool_choice"]))
+				}
+				if tc.schema != "" && stream {
 					assert.JSONEq(t, `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"},"eager_input_streaming":true}]`, string(body["tools"]))
 				} else {
 					assert.JSONEq(t, tc.wantTools, string(body["tools"]))
 				}
 				server.Close()
 			}
+		})
+	}
+}
+
+func TestToolChoiceNone_HTTPJSONFallbackDropsCallerToolNamedJSON(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			requests := make(chan map[string]json.RawMessage, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]json.RawMessage
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				requests <- body
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+			}))
+			defer server.Close()
+
+			model := New("test-key", "claude-3-haiku", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+			maxTokens := 1024
+			opts := provider.CallOptions{
+				MaxOutputTokens: &maxTokens,
+				Prompt:          []provider.Message{provider.UserText("hello")},
+				Tools: []provider.Tool{
+					{Type: provider.ToolTypeFunction, Name: "json", InputSchema: json.RawMessage(`{"type":"object","properties":{"caller":{"type":"string"}}}`)},
+				},
+				ToolChoice:     &provider.ToolChoice{Type: provider.ToolChoiceNone},
+				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`)},
+			}
+			var err error
+			if stream {
+				_, err = model.DoStream(context.Background(), opts)
+			} else {
+				_, err = model.DoGenerate(context.Background(), opts)
+			}
+			require.Error(t, err)
+
+			body := <-requests
+			want := `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"}}]`
+			if stream {
+				want = `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"},"eager_input_streaming":true}]`
+			}
+			assert.JSONEq(t, want, string(body["tools"]))
+			assert.JSONEq(t, `{"type":"any","disable_parallel_tool_use":true}`, string(body["tool_choice"]))
 		})
 	}
 }
@@ -330,7 +378,7 @@ func TestBuildParams_MixedFunctionAndWebTools(t *testing.T) {
 		InputExamples:   []provider.InputExample{{Input: json.RawMessage(`{"query":"Go"}`)}},
 		ProviderOptions: provider.BuildProviderOptions(AnthropicToolOptions{DeferLoading: &deferLoading}),
 	}
-	server := provider.Tool{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20260318", Name: "fetch_latest", Args: map[string]json.RawMessage{"useCache": json.RawMessage(`false`)}, Strict: &strict, InputExamples: function.InputExamples, ProviderOptions: function.ProviderOptions}
+	server := provider.Tool{Type: provider.ToolTypeProvider, ID: "anthropic.web_fetch_20260318", Name: "fetch_latest", Args: map[string]json.RawMessage{"useCache": json.RawMessage(`false`)}}
 	for _, tc := range []struct {
 		name, modelID string
 		caps          providerCapabilities
@@ -1492,27 +1540,45 @@ func TestBuildParams_ToolChoice(t *testing.T) {
 	}
 }
 
-func TestBuildParams_ToolChoiceNoneDropsTools(t *testing.T) {
-	opts := provider.CallOptions{
-		Tools: []provider.Tool{
-			{
-				Type:        provider.ToolTypeFunction,
-				Name:        "search",
-				Description: "Search the web",
-				InputSchema: json.RawMessage(`{"type":"object"}`),
-			},
-		},
-		ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone},
+func TestBuildParams_ToolChoiceNoneKeepsTools(t *testing.T) {
+	disableParallelToolUse := true
+	tests := []struct {
+		name string
+		caps providerCapabilities
+		opts AnthropicOptions
+	}{
+		{name: "direct", caps: directProviderCapabilities},
+		{name: "vertex", caps: vertexProviderCapabilities},
+		{name: "disable parallel tool use", caps: directProviderCapabilities, opts: AnthropicOptions{DisableParallelToolUse: &disableParallelToolUse}},
 	}
 
-	p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
-	require.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := provider.CallOptions{
+				Tools: []provider.Tool{
+					{
+						Type:        provider.ToolTypeFunction,
+						Name:        "search",
+						Description: "Search the web",
+						InputSchema: json.RawMessage(`{"type":"object"}`),
+					},
+				},
+				ToolChoice:      &provider.ToolChoice{Type: provider.ToolChoiceNone},
+				ProviderOptions: provider.BuildProviderOptions(tc.opts),
+			}
 
-	assert.Empty(t, p.Tools)
-	assert.Nil(t, p.ToolChoice.OfNone)
-	assert.Nil(t, p.ToolChoice.OfAuto)
-	assert.Nil(t, p.ToolChoice.OfAny)
-	assert.Nil(t, p.ToolChoice.OfTool)
+			p, _, _, _, err := buildParamsWithCapabilities("claude-sonnet-4-6", opts, false, tc.caps)
+			require.NoError(t, err)
+
+			require.Len(t, p.Tools, 1)
+			require.NotNil(t, p.Tools[0].OfTool)
+			assert.Equal(t, "search", p.Tools[0].OfTool.Name)
+			assert.NotNil(t, p.ToolChoice.OfNone)
+			assert.Nil(t, p.ToolChoice.OfAuto)
+			assert.Nil(t, p.ToolChoice.OfAny)
+			assert.Nil(t, p.ToolChoice.OfTool)
+		})
+	}
 }
 
 func TestBuildParams_StrictFunctionTool(t *testing.T) {
@@ -2870,6 +2936,45 @@ func TestConvertTools_FunctionToolProducesOfTool(t *testing.T) {
 }
 
 func TestBuildParams_ProviderOptions_MCPServers(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		server string
+		want   string
+	}{
+		{name: "minimal", server: `{"type":"url","name":"echo","url":"https://mcp.example.com"}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com"}`},
+		{name: "allowed tools only", server: `{"type":"url","name":"echo","url":"https://mcp.example.com","toolConfiguration":{"allowedTools":[]}}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com","tool_configuration":{"allowed_tools":[]}}`},
+		{name: "explicit disabled", server: `{"type":"url","name":"echo","url":"https://mcp.example.com","toolConfiguration":{"enabled":false}}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com","tool_configuration":{"enabled":false}}`},
+		{name: "explicit empty token", server: `{"type":"url","name":"echo","url":"https://mcp.example.com","authorizationToken":""}`, want: `{"type":"url","name":"echo","url":"https://mcp.example.com","authorization_token":""}`},
+	} {
+		t.Run(tc.name+" native request", func(t *testing.T) {
+			options := provider.CallOptions{ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[` + tc.server + `]}`)}}}
+			params, _, _, _, err := buildParams("claude-sonnet-4-6", options, false)
+			require.NoError(t, err)
+			encoded, err := json.Marshal(params)
+			require.NoError(t, err)
+			var request map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(encoded, &request))
+			assert.JSONEq(t, `[`+tc.want+`]`, string(request["mcp_servers"]))
+		})
+	}
+
+	t.Run("code execution and MCP together", func(t *testing.T) {
+		options := provider.CallOptions{
+			Prompt:          []provider.Message{provider.UserText("Use tools")},
+			Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.code_execution_20260120", Name: "python", Args: map[string]json.RawMessage{}}},
+			ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"mcp-private-token","toolConfiguration":{"enabled":false,"allowedTools":[]}}]}`)}},
+		}
+		params, _, warnings, _, err := buildParams("claude-sonnet-4-6", options, false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		encoded, err := json.Marshal(params)
+		require.NoError(t, err)
+		var body map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(encoded, &body))
+		assert.JSONEq(t, `[{"type":"code_execution_20260120","name":"code_execution"}]`, string(body["tools"]))
+		assert.JSONEq(t, `[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorization_token":"mcp-private-token","tool_configuration":{"enabled":false,"allowed_tools":[]}}]`, string(body["mcp_servers"]))
+	})
+
 	t.Run("single_server_all_fields", func(t *testing.T) {
 		opts := provider.CallOptions{
 			ProviderOptions: provider.ProviderOptions{
@@ -2978,6 +3083,28 @@ func TestBuildParams_ProviderOptions_MCPServers(t *testing.T) {
 	})
 }
 
+func TestBuildParams_MCPMarkerRequiresProviderOwnership(t *testing.T) {
+	for _, owned := range []bool{false, true} {
+		t.Run(map[bool]string{false: "local", true: "provider"}[owned], func(t *testing.T) {
+			call := provider.ToolCallPart("call", "echo", json.RawMessage(`{}`))
+			call.ProviderExecuted = owned
+			call.ProviderOptions = makeProviderOpts(`{"type":"mcp-tool-use","serverName":"echo"}`)
+			params, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{provider.NewAssistantMessage(call)}}, false)
+			require.NoError(t, err)
+			require.Len(t, params.Messages, 1)
+			require.Len(t, params.Messages[0].Content, 1)
+			block := params.Messages[0].Content[0]
+			if owned {
+				require.NotNil(t, block.OfMCPToolUse)
+				assert.Equal(t, "echo", block.OfMCPToolUse.ServerName)
+			} else {
+				require.NotNil(t, block.OfToolUse)
+				assert.Nil(t, block.OfMCPToolUse)
+			}
+		})
+	}
+}
+
 func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 	t.Run("mcp_tool_call_in_assistant_message", func(t *testing.T) {
 		mcpOpts := makeProviderOpts(`{"type": "mcp-tool-use", "serverName": "my-server"}`)
@@ -2985,10 +3112,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_search",
-						Input:           json.RawMessage(`{"q":"hello"}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_search",
+						Input:            json.RawMessage(`{"q":"hello"}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 			},
@@ -3013,10 +3141,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_search",
-						Input:           json.RawMessage(`{"q":"hello"}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_search",
+						Input:            json.RawMessage(`{"q":"hello"}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 			},
@@ -3036,10 +3165,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_search",
-						Input:           json.RawMessage(`{"q":"hello"}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_search",
+						Input:            json.RawMessage(`{"q":"hello"}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 				provider.NewToolMessage(provider.ToolResultPart("tc_1", "remote_search", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"result data"`)})),
@@ -3056,6 +3186,33 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 		require.NotNil(t, block.OfMCPToolResult, "expected OfMCPToolResult block")
 		assert.Nil(t, block.OfToolResult, "should NOT emit OfToolResult for MCP")
 		assert.Equal(t, "tc_1", block.OfMCPToolResult.ToolUseID)
+	})
+
+	t.Run("assistant inline MCP continuation with configured server", func(t *testing.T) {
+		mcpOpts := makeProviderOpts(`{"type":"mcp-tool-use","serverName":"echo"}`)
+		call := provider.ContentPart{
+			Type: provider.ContentPartTypeToolCall, ToolCallID: "tc_1", ToolName: "echo",
+			Input: json.RawMessage(`{"message":"hello"}`), ProviderExecuted: true,
+			ProviderOptions: mcpOpts,
+		}
+		result := provider.ToolResultPart("tc_1", "echo", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"hello"`)})
+		result.ProviderOptions = mcpOpts
+		for _, stream := range []bool{false, true} {
+			p, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+				Prompt:          []provider.Message{provider.NewAssistantMessage(call, result)},
+				ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test/tools","authorizationToken":"dummy"}]}`)}},
+			}, stream)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+			require.Len(t, p.MCPServers, 1)
+			assert.Equal(t, "echo", p.MCPServers[0].Name)
+			assert.Equal(t, "https://mcp.example.test/tools", p.MCPServers[0].URL)
+			assert.Equal(t, "dummy", p.MCPServers[0].AuthorizationToken.Value)
+			require.Len(t, p.Messages, 1)
+			require.Len(t, p.Messages[0].Content, 2)
+			assert.Equal(t, "echo", p.Messages[0].Content[0].OfMCPToolUse.ServerName)
+			assert.Equal(t, "tc_1", p.Messages[0].Content[1].OfMCPToolResult.ToolUseID)
+		}
 	})
 
 	t.Run("regular_tools_unaffected", func(t *testing.T) {
@@ -3087,10 +3244,11 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 				provider.NewAssistantMessage(
 					provider.ToolCallPart("call_1", "local_search", json.RawMessage(`{}`)),
 					provider.ContentPart{Type: provider.ContentPartTypeToolCall,
-						ToolCallID:      "tc_1",
-						ToolName:        "remote_tool",
-						Input:           json.RawMessage(`{}`),
-						ProviderOptions: mcpOpts,
+						ToolCallID:       "tc_1",
+						ToolName:         "remote_tool",
+						Input:            json.RawMessage(`{}`),
+						ProviderOptions:  mcpOpts,
+						ProviderExecuted: true,
 					},
 				),
 				provider.NewToolMessage(
@@ -3771,6 +3929,9 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 				Type:   provider.ResponseFormatJSON,
 				Schema: testSchema,
 			},
+			Tools: []provider.Tool{
+				{Type: provider.ToolTypeFunction, Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)},
+			},
 			ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone},
 		}
 
@@ -3779,6 +3940,30 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 
 		assert.True(t, br.usesJsonResponseTool)
 		require.NotNil(t, p.ToolChoice.OfAny, "none should be overridden to required")
+		require.Len(t, p.Tools, 1, "only the JSON response tool should be sent")
+		require.NotNil(t, p.Tools[0].OfTool)
+		assert.Equal(t, "json", p.Tools[0].OfTool.Name)
+	})
+
+	t.Run("ToolFallback_NoneDropsCallerToolNamedJSON", func(t *testing.T) {
+		opts := provider.CallOptions{
+			ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: testSchema},
+			Tools: []provider.Tool{
+				{Type: provider.ToolTypeFunction, Name: "json", InputSchema: json.RawMessage(`{"type":"object","properties":{"caller":{"type":"string"}}}`)},
+			},
+			ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone},
+		}
+
+		p, _, _, br, err := buildParams("claude-3-haiku", opts, false)
+		require.NoError(t, err)
+
+		assert.True(t, br.usesJsonResponseTool)
+		require.NotNil(t, p.ToolChoice.OfAny)
+		require.Len(t, p.Tools, 1)
+		encoded, err := json.Marshal(p.Tools[0])
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"description":"Respond with a JSON object."`)
+		assert.NotContains(t, string(encoded), "caller")
 	})
 
 	t.Run("SchemalessJSON_Warning", func(t *testing.T) {
@@ -5623,11 +5808,12 @@ func TestBuildParams_MCPToolResultInUserMessage(t *testing.T) {
 	opts := provider.CallOptions{
 		Prompt: []provider.Message{
 			provider.NewAssistantMessage(provider.ContentPart{
-				Type:            provider.ContentPartTypeToolCall,
-				ToolCallID:      "mcp-1",
-				ToolName:        "echo",
-				Input:           json.RawMessage(`{}`),
-				ProviderOptions: mcpOpts,
+				Type:             provider.ContentPartTypeToolCall,
+				ToolCallID:       "mcp-1",
+				ToolName:         "echo",
+				Input:            json.RawMessage(`{}`),
+				ProviderOptions:  mcpOpts,
+				ProviderExecuted: true,
 			}),
 			provider.NewUserMessage(
 				provider.ToolResultPart("mcp-1", "echo", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"out"`)}),
@@ -5864,8 +6050,7 @@ func TestConvertResponse_CodeExecutionDynamic(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, result.Content, 1)
 		part := result.Content[0]
-		require.NotNil(t, part.Dynamic, "Dynamic must be set when markCodeExecutionDynamic=true")
-		assert.True(t, *part.Dynamic)
+		assert.Equal(t, boolPtr(true), part.Dynamic)
 		assert.True(t, part.ProviderExecuted)
 	})
 
@@ -5887,8 +6072,7 @@ func TestConvertResponse_CodeExecutionDynamic(t *testing.T) {
 		result, err := convertResponse(bash, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", true)
 		require.NoError(t, err)
 		require.Len(t, result.Content, 1)
-		require.NotNil(t, result.Content[0].Dynamic)
-		assert.True(t, *result.Content[0].Dynamic)
+		assert.Equal(t, boolPtr(true), result.Content[0].Dynamic)
 	})
 
 	t.Run("does not mark non-code_execution server tool", func(t *testing.T) {

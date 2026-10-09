@@ -27,6 +27,9 @@ func decodeSource(data []byte) (*provider.SourceInfo, error) {
 	if _, present := fields["providerMetadata"]; present && value.ProviderMetadata == nil {
 		return nil, errors.New("grafana: invalid source metadata")
 	}
+	if err := validateMetadataNamespaces(value.ProviderMetadata); err != nil {
+		return nil, err
+	}
 	source := &provider.SourceInfo{SourceType: value.SourceType, ID: *value.ID, ProviderMetadata: value.ProviderMetadata}
 	switch value.SourceType {
 	case provider.SourceTypeURL:
@@ -53,12 +56,6 @@ func decodeSource(data []byte) (*provider.SourceInfo, error) {
 		}
 	default:
 		return nil, errors.New("grafana: unsupported source type")
-	}
-	for _, raw := range value.ProviderMetadata {
-		var namespace map[string]json.RawMessage
-		if json.Unmarshal(raw, &namespace) != nil || namespace == nil {
-			return nil, errors.New("grafana: invalid source metadata")
-		}
 	}
 	return source, nil
 }
