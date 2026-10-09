@@ -21,6 +21,7 @@ import {
   type LanguageModelUsage,
 } from "ai";
 import { generateAnthropicStreamParts } from "./anthropic-stream-parts.mts";
+import { generateAnthropicUnary } from "./anthropic-unary.mts";
 import {
   PROVIDER_PARTS_FILE,
   PROVIDER_PARTS_PROVIDERS,
@@ -578,7 +579,7 @@ async function main() {
   const scenarioFilter = scenarioIdx !== -1 ? process.argv[scenarioIdx + 1] : null;
 
   let cases = discoverTestCases();
-  const includeSyntheticParts = !scenarioFilter || "anthropic-stream-parts".includes(scenarioFilter);
+  const includeSyntheticParts = !scenarioFilter || "anthropic-stream-parts".includes(scenarioFilter) || "anthropic-unary".includes(scenarioFilter);
 
   if (scenarioFilter) {
     cases = cases.filter((tc) => tc.name.includes(scenarioFilter));
@@ -609,6 +610,7 @@ async function main() {
   if (includeSyntheticParts) {
     try {
       await generateAnthropicStreamParts();
+      await generateAnthropicUnary();
     } catch (err) {
       console.error(`  ERROR: ${err}`);
       errors++;

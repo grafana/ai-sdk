@@ -115,6 +115,7 @@ test/conformance/
     cases.json
     expected-requests.jsonl
   testdata/anthropic-stream-parts/  # synthetic Anthropic stream inputs + upstream-generated parts
+  testdata/anthropic-unary/         # synthetic Anthropic responses + upstream-generated results
   ui/                            # provider-independent core UI goldens
     <test-name>/
       input.jsonl                # LanguageModelV4 stream parts
@@ -188,11 +189,16 @@ skipped silently. The list is empty today.
 `testdata/anthropic-stream-parts/` holds provider streams that no recorded or upstream
 fixture contains: several deltas in one message, messages without a delta, consecutive
 messages, end of stream after a delta, error frames in different positions and
-overlapping messages. Every input in `cases.json` is synthetic and says so; none is
+overlapping messages, metadata carried across messages and input transformations. Every input in `cases.json` is synthetic and says so; none is
 evidence of what the live API sends and none belongs under `recorded/` or `upstream/`.
 `expected-parts.jsonl` is produced by running the registered upstream `doStream`, so the
 upstream package is the oracle, and it regenerates on a baseline upgrade. The Go test is
 `TestAnthropicSyntheticStreamParts`.
+
+`testdata/anthropic-unary/` does the same for non-streaming calls. Each synthetic response
+is sent through the upstream `doGenerate`, and the Go `DoGenerate` result (content, finish
+reason, usage, provider metadata, warnings) must equal it, or both must fail the call. The
+Go test is `TestAnthropicSyntheticUnary`.
 
 ### Upstream
 
