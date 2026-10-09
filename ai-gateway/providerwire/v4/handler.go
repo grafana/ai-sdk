@@ -200,7 +200,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeErrorFromResolution(err), nil)
 		return
 	}
-	request := newExecutionRequest(validated.modelID, resolved, r.Header, options, h.limits.UnaryResponseBytes)
+	request := newExecutionRequest(validated.modelID, resolved, h.limits.UnaryResponseBytes)
 	capture := &attemptCapture{sealed: resolved.configured == nil}
 	if resolved.configured != nil {
 		ctx = fallback.WithAttemptObserver(ctx, capture.observe)

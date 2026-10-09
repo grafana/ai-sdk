@@ -86,7 +86,7 @@ Authenticated configured discovery SHALL expose authorized candidate count/order
 
 #### Scenario: Fallback chain is exhausted
 - **WHEN** every candidate fails before commitment
-- **THEN** the existing safe fixed public error mapping SHALL continue to apply to the aggregate error without this discovery feature changing classification; runtime enrichment MAY add separately governed protected candidate-local summaries
+- **THEN** the existing safe fixed public error mapping SHALL continue to apply to the aggregate error without this discovery feature changing classification; runtime enrichment MAY add separately governed native candidate-local summaries
 
 #### Scenario: Discovery lists fallback route
 - **WHEN** authorized authenticated discovery lists a route backed by multiple configured candidates
@@ -108,11 +108,11 @@ Successful ProviderWire JSON/SSE and client-visible normal output SHALL preserve
 - **THEN** normal output SHALL retain supported native warning/source/response identity while routing and operator metrics remain canonical
 
 ### Requirement: Normal fallback output excludes runtime evidence and topology
-Runtime output MAY add the separately governed optional compact gateway.execution overview of actual observed destinations/outcomes/failures. It SHALL NOT emit unrun configured destinations or synthesize credentials; configured discovery remains separately owned. Configured credentials and another tenant's state SHALL remain protected.
+Runtime output MAY add the separately governed optional compact gateway.execution overview of actual observed destinations/outcomes/failures. It SHALL NOT emit unrun configured destinations or synthesize credentials; configured discovery remains separately owned. Account authorization and request isolation SHALL remain effective; native scalar echoes SHALL NOT be value-filtered.
 
 #### Scenario: Normal fallback output excludes runtime evidence and topology
 - **WHEN** a selected candidate completes successfully for an authorized caller
-- **THEN** ordinary native output SHALL remain opaque; optional gateway.execution SHALL describe only actually observed destinations under its separate contract, and configured credentials and another tenant state SHALL remain protected
+- **THEN** ordinary native output SHALL remain opaque; optional gateway.execution SHALL describe only actually observed destinations under its separate contract, with account authorization and request isolation unchanged and provider-originated credential echoes preserved
 
 ### Requirement: Deterministic fallback and privacy evidence
 Both registered TypeScript and independent Go clients SHALL exercise direct and configured-fallback unary and streaming requests for representative supported function definitions/history/choices, file arms/presence, reasoning and headers/options. Fake native requests SHALL prove candidate-specific option consumption without cross-provider translation or route-wide intersections.

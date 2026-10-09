@@ -18,7 +18,6 @@ type Selection struct {
 
 type selectionExecution struct {
 	candidates []catalog.ConfiguredCandidate
-	sources    []string
 }
 
 type RequestSelector func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error)
@@ -47,7 +46,6 @@ func CatalogSelector(resolver catalog.ModelResolver) RequestSelector {
 			Model: resolved.Model,
 			configured: &selectionExecution{
 				candidates: slices.Clone(resolved.Candidates),
-				sources:    slices.Clone(resolved.ProtectedSources),
 			},
 		}, nil
 	}

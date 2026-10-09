@@ -412,8 +412,14 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	if err != nil {
 		return nil, err
 	}
+	configured := providerwirev4.CatalogSelector(resolver)
 	runtime, err := providerwirev4.New(providerwirev4.Config{
-		Selector: providerwirev4.CatalogSelector(resolver),
+		Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (providerwirev4.Selection, error) {
+			if id == "unconfigured-errors" {
+				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-errors", stats: stats}}, nil
+			}
+			return configured(ctx, id, options, gateway)
+		},
 		Limits: providerwirev4.Limits{
 			RequestBytes:        1 << 20,
 			UnaryResponseBytes:  1 << 20,

@@ -333,7 +333,7 @@ Each pre-finish provider `PartError` SHALL be independently reduced through the 
 
 #### Scenario: Ordered non-terminal provider errors policy
 - **WHEN** the runtime encodes the corresponding response or stream event
-- **THEN** Optional `error.data` MAY carry protected current-error and execution summaries under gateway-attempt-failure-evidence. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid.
+- **THEN** Optional `error.data` MAY carry native current-error and execution summaries under gateway-attempt-failure-evidence. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid.
 
 #### Scenario: Provider error is followed by content
 - **WHEN** a provider emits an error before or within a text block and later emits otherwise valid content and finish
@@ -345,7 +345,7 @@ Each pre-finish provider `PartError` SHALL be independently reduced through the 
 
 #### Scenario: Provider error contains hostile detail
 - **WHEN** a provider error contains credentials, URLs, bodies, headers, data, causes, backend identity, or arbitrary messages
-- **THEN** its base public fields SHALL retain the approved category message, while optional error data SHALL contain only the governed protected summary/overview rather than a native error dump
+- **THEN** its base public fields SHALL retain the approved category message, while optional error data SHALL contain only the governed native summary/overview rather than a native error dump
 
 #### Scenario: Provider error status is malformed
 - **WHEN** an `APICallError` carries a non-zero status outside the valid HTTP range 100 through 599
@@ -359,11 +359,11 @@ Each pre-finish provider `PartError` SHALL be independently reduced through the 
 
 ### Requirement: Provider error canonical fallback and privacy exclusions
 
-Nil, malformed, or unclassifiable provider error values SHALL reduce to the canonical internal safe error part. Arbitrary native bodies, headers, causes and metadata SHALL NOT enter the public error event. Protected message/type/code/status summaries and observed configured identity MAY appear only through the governed optional error data; actual credentials and other tenants' state SHALL remain protected.
+Nil, malformed, or unclassifiable provider error values SHALL reduce to the canonical internal safe error part. Arbitrary native bodies, headers, causes and metadata SHALL NOT enter the public error event. Native message/type/code/status summaries and observed configured identity MAY appear through governed optional error data. Provider-originated scalar echoes SHALL NOT be credential-filtered; account authorization and request isolation SHALL remain intact.
 
 #### Scenario: Provider error canonical fallback and privacy exclusions
 - **WHEN** a provider PartError is nil or carries arbitrary backend details
-- **THEN** nil/unclassifiable values SHALL reduce to the internal safe error; only governed protected current-error and execution summaries MAY accompany the base fields, with no arbitrary native transport data
+- **THEN** nil/unclassifiable values SHALL reduce to the internal safe error; only governed native current-error and execution summaries MAY accompany the base fields, with no arbitrary native transport data
 
 ### Requirement: Synthetic terminal adapter errors
 
@@ -562,7 +562,7 @@ Streaming SHALL use the existing reader/commitment/drain ownership to optionally
 
 #### Scenario: Optional streaming execution overview and current failures policy
 - **WHEN** the runtime encodes the corresponding response or stream event
-- **THEN** First-part selection SHALL NOT claim completion. Current protected native summaries SHALL remain event-local; finish SHALL NOT duplicate them. Existing complete-frame limits, original metadata preflight, error ordering, active-block state, authoritative finish and writer failure behavior SHALL remain unchanged. Optional enrichment failure SHALL preserve the original fitting frame, including native namespaces that cannot be relocated.
+- **THEN** First-part selection SHALL NOT claim completion. Current native summaries SHALL remain event-local and eligible without catalog provenance; finish SHALL NOT duplicate them. Existing complete-frame limits, original metadata preflight, error ordering, active-block state, authoritative finish and writer failure behavior SHALL remain unchanged. Optional enrichment failure SHALL preserve the original fitting frame, including native namespaces that cannot be relocated.
 
 #### Scenario: Selected leading error followed by content
 - **WHEN** the first provider part is an error followed by valid text and finish
