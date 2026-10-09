@@ -8,7 +8,11 @@ Define reusable request-scoped fallback decision observation, candidate-local so
 
 ### Requirement: Request-scoped fallback observation
 
-The SDK SHALL allow a caller to register an attempt observer in its context without mutating a shared fallback model. The nearest registration SHALL replace an inherited request observer, including allowing a nil callback to disable it. Independent request contexts SHALL NOT share callback registrations. Callbacks SHALL remain synchronous and SHALL be documented to return promptly. Candidate indices SHALL retain their existing invocation-local meaning; registration SHALL NOT introduce automatic trace grouping or metadata serialization.
+The SDK SHALL allow a caller to register an attempt observer in its context without mutating a shared fallback model.
+
+#### Scenario: Request-scoped fallback observation policy
+- **WHEN** a caller registers request-scoped fallback observation
+- **THEN** The nearest registration SHALL replace an inherited request observer, including allowing a nil callback to disable it. Independent request contexts SHALL NOT share callback registrations. Callbacks SHALL remain synchronous and SHALL be documented to return promptly. Candidate indices SHALL retain their existing invocation-local meaning; registration SHALL NOT introduce automatic trace grouping or metadata serialization.
 
 #### Scenario: Shared model with independent requests
 - **WHEN** concurrent callers use one fallback model with different request-scoped observers
