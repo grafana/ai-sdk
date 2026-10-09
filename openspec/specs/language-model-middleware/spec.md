@@ -5,17 +5,8 @@ Define language-model middleware composition, parameter transformation, generate
 ## Requirements
 
 ### Requirement: Middleware struct with optional hooks
-The `Middleware` type SHALL be a struct with optional function fields for each interception point. A nil function field means the hook is not active -- the call passes through unmodified.
 
-The hooks SHALL be:
-- `TransformParams`: modifies `provider.CallOptions` before they reach the model
-- `WrapGenerate`: intercepts `DoGenerate` calls
-- `WrapStream`: intercepts `DoStream` calls
-
-Metadata overrides SHALL be:
-- `OverrideProvider`: overrides the `Provider()` string on the wrapped model
-- `OverrideModelID`: overrides the `ModelID()` string on the wrapped model
-- `OverrideSupportedURLs`: overrides the `SupportedURLs()` return value on the wrapped model
+`Middleware` SHALL be a struct with optional function fields. Nil hooks SHALL pass calls through unmodified. Hooks SHALL be `TransformParams` (modifies `provider.CallOptions` before the model), `WrapGenerate` (intercepts `DoGenerate`), and `WrapStream` (intercepts `DoStream`). Metadata hooks SHALL be `OverrideProvider`, `OverrideModelID`, and `OverrideSupportedURLs`, overriding the wrapped model's `Provider()` string, `ModelID()` string, and `SupportedURLs()` return value respectively.
 
 #### Scenario: Middleware with only TransformParams set
 - **WHEN** a `Middleware` is created with only `TransformParams` set (all other fields nil)
@@ -118,9 +109,8 @@ If `TransformParams`, `WrapGenerate`, or `WrapStream` returns an error, the wrap
 - **THEN** `DoGenerate` SHALL return that error to the caller
 
 ### Requirement: Normalized streaming usage aggregation
-Middleware that summarizes provider streams SHALL use one shared normalized usage aggregation behavior. Every stream part with non-nil `Usage` SHALL be observed regardless of its part type.
 
-Each normalized cumulative counter SHALL retain the greatest value observed independently: input total, input without cache, cache-read input, cache-write input, output total, output text, and output reasoning. A missing or lower later value SHALL NOT replace an earlier value. Because raw provider usage has no provider-independent merge operation, the aggregate SHALL retain the most recently observed non-empty `Usage.Raw` payload; an omitted raw payload SHALL NOT clear it.
+Stream-summary middleware SHALL share normalized usage aggregation and observe every part with non-nil `Usage`, regardless of type. Each cumulative counter SHALL independently retain its greatest value: input total, input without cache, cache-read input, cache-write input, output total, output text, output reasoning. Missing or lower later values SHALL NOT replace earlier ones. `Usage.Raw` SHALL retain the latest non-empty payload; omission SHALL NOT clear it (no provider-independent raw merge).
 
 #### Scenario: Split usage across stream parts
 - **WHEN** an early stream part reports input and cache counters
@@ -138,13 +128,8 @@ Each normalized cumulative counter SHALL retain the greatest value observed inde
 - **AND** a later omitted raw payload SHALL NOT clear it
 
 ### Requirement: Stream transformation utility
-A `TransformStream` utility function SHALL be provided for middleware authors. It SHALL accept a `context.Context`, a `*provider.StreamResult`, a transform function, and an optional flush function, returning a new `*provider.StreamResult` with the stream channel transformed.
 
-The transform function SHALL receive each `provider.StreamPart` and an `emit` callback to produce zero, one, or many output parts per input part. This supports stateful buffering across chunks.
-
-The flush function (nil-safe) SHALL be called when the input stream closes, allowing transforms to emit any buffered data.
-
-The transform goroutine SHALL respect context cancellation.
+`TransformStream` SHALL accept `context.Context`, `*provider.StreamResult`, a transform, and optional flush, returning a new `*provider.StreamResult` with a transformed channel. The transform SHALL receive each `provider.StreamPart` and an `emit` callback producing zero, one, or many parts per input, supporting stateful buffering. The nil-safe flush SHALL run on input closure to emit buffered data. The transform goroutine SHALL respect cancellation.
 
 #### Scenario: One-to-one stream transformation
 - **WHEN** `TransformStream` is called with a transform that modifies each part

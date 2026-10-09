@@ -6,14 +6,7 @@ Support document-type sources in stream events alongside existing URL sources, m
 
 ### Requirement: SourceInfo document variant
 
-The `SourceInfo` struct SHALL support a `sourceType: "document"` variant alongside the existing `"url"` variant. The document variant uses the following fields:
-- `SourceType` -- `"document"` (required)
-- `ID` -- source identifier (required)
-- `MediaType` -- IANA media type of the document, e.g. `"application/pdf"` (required for document)
-- `Title` -- document title (required for document)
-- `Filename` -- optional filename
-
-The existing fields `URL` and `ProviderMetadata` remain available for both variants.
+`SourceInfo` SHALL support `sourceType: "document"` alongside "url". Document fields SHALL be required `SourceType` ("document"), `ID` (source identifier), `MediaType` (IANA type, e.g. "application/pdf") and `Title` (document title), plus optional `Filename`. Existing `URL` and `ProviderMetadata` SHALL remain available for both variants.
 
 #### Scenario: Document source construction
 - **WHEN** a `SourceInfo` is constructed with `SourceType: "document"`, `ID: "doc_1"`, `MediaType: "application/pdf"`, `Title: "Research Paper"`, and `Filename: "paper.pdf"`

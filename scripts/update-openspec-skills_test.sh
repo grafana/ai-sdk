@@ -9,15 +9,21 @@ mkdir -p "$fixture_dir/scripts"
 cp "$repo_root/scripts/update-openspec-skills.sh" "$fixture_dir/scripts/"
 cp -R "$repo_root/.agents" "$repo_root/.claude" "$repo_root/openspec" "$fixture_dir/"
 export MISE_CONFIG_FILE="$repo_root/mise.toml"
+export CODEX_HOME="$test_dir/codex"
+mkdir -p "$CODEX_HOME/prompts"
+for workflow in apply archive explore propose sync verify; do
+  printf 'Preserve custom %s prompt.\n' "$workflow" > "$CODEX_HOME/prompts/opsx-$workflow.md"
+done
 cd "$fixture_dir"
 
 snapshot() {
   python3 - <<'PY'
 from hashlib import sha256
 from pathlib import Path
+import os
 
 result = sha256()
-for root_name in (".agents/skills", ".claude/skills"):
+for root_name in (".agents/skills", ".claude/skills", os.environ["CODEX_HOME"]):
     root = Path(root_name)
     for path in sorted(root.rglob("*")):
         relative = path.as_posix().encode()
@@ -31,6 +37,7 @@ PY
 
 assert_layout() {
   [[ ! -e .pi ]]
+  [[ ! -e .codex ]]
   [[ ! -e .agents/.openspec-update.lock ]]
   shopt -s nullglob
   local leftovers=(.agents/.skills-update.*)
@@ -82,7 +89,7 @@ SH
   fi
   after=$(snapshot)
   if [[ "$before" != "$after" ]]; then
-    echo "$mode changed the skill tree despite rollback" >&2
+    echo "$mode changed the skill tree or global prompts despite rollback" >&2
     exit 1
   fi
   assert_layout
@@ -90,6 +97,30 @@ SH
 }
 
 real_mv=$(command -v mv)
+real_mise=$(command -v mise)
+
+validation_wrapper="$test_dir/validation-wrapper"
+mkdir -p "$validation_wrapper"
+cat > "$validation_wrapper/mise" <<'SH'
+#!/usr/bin/env bash
+if [[ "$*" == 'exec npm:@fission-ai/openspec -- openspec validate --all --strict' ]]; then
+  exit 42
+fi
+exec "$REAL_MISE" "$@"
+SH
+chmod +x "$validation_wrapper/mise"
+before=$(snapshot)
+set +e
+PATH="$validation_wrapper:$PATH" REAL_MISE="$real_mise" OPENSPEC_SKIP_UPGRADE=1 \
+  bash scripts/update-openspec-skills.sh > "$test_dir/validation.log" 2>&1
+validation_status=$?
+set -e
+if ((validation_status != 42)) || [[ "$before" != "$(snapshot)" ]]; then
+  cat "$test_dir/validation.log" >&2
+  echo "failed validation did not preserve the skill tree and global prompts" >&2
+  exit 1
+fi
+assert_layout
 
 before=$(snapshot)
 mkdir .agents/.openspec-update.lock

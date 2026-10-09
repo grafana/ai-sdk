@@ -8,7 +8,7 @@ Define the represented UI tool and approval fields, optional presence, JSON vali
 
 ### Requirement: Supported tool fields survive UI JSON persistence
 
-The root package SHALL preserve the seven represented static/dynamic tool states through UIMessage JSON with title, toolMetadata, Input, RawInput, Output, errorText, preliminary, approvals and call/result provider metadata. `Title` SHALL be `*string`, `Preliminary` SHALL be `*bool`, `ToolMetadata` SHALL be `map[string]json.RawMessage`, and `RawInput` SHALL be `json.RawMessage` on both tool structs. `ErrorText` SHALL migrate to `*string`. Nil optional fields SHALL be absent; explicitly empty strings, false preliminary, empty metadata objects and raw JSON null SHALL remain present. Required state fields SHALL NOT be inferred from nonzero string values. Existing persisted ProviderExecuted, IsAutomatic and Signature scalar serialization normalization SHALL remain unchanged and SHALL NOT be described as lossless optional presence. It SHALL NOT permit sticky-true reader semantics: decoded providerExecuted false SHALL clear a prior true value as specified by reader transitions.
+UI JSON SHALL retain seven static/dynamic states with title, toolMetadata, Input/RawInput/Output, errorText, preliminary, approvals and call/result metadata. Both structs SHALL use Title *string, Preliminary *bool, ToolMetadata map[string]json.RawMessage and RawInput json.RawMessage; ErrorText SHALL migrate to *string. Nil optionals SHALL omit; explicit empty strings/objects, false preliminary and raw null SHALL remain. Required fields SHALL NOT be inferred from nonzero strings.
 
 #### Scenario: Every supported static and dynamic state round-trips
 - **WHEN** valid static and dynamic parts in input-streaming, input-available, approval-requested, approval-responded, output-available, output-error and output-denied states are encoded and decoded as UI messages
@@ -29,6 +29,14 @@ The root package SHALL preserve the seven represented static/dynamic tool states
 - **WHEN** a persisted tool contains an explicitly empty callProviderMetadata or resultProviderMetadata object
 - **THEN** UI JSON SHALL preserve that object's presence instead of omitting it
 - **AND** model conversion SHALL select metadata using presence before provider-domain serialization normalization
+
+### Requirement: Persisted scalar normalization does not imply sticky execution
+
+Existing persisted ProviderExecuted, IsAutomatic and Signature scalar normalization SHALL remain unchanged, not be described as lossless optional presence and SHALL NOT permit sticky-true reader semantics. Decoded providerExecuted false SHALL clear prior true according to reader transitions.
+
+#### Scenario: Decoded false overrides persisted true
+- **WHEN** a persisted true provider execution value receives decoded false
+- **THEN** reader transitions SHALL clear true despite bounded scalar persistence normalization.
 
 ### Requirement: Invalid optional field types do not disappear during decoding
 
@@ -59,7 +67,7 @@ Typed tool/approval JSON decoding SHALL reject explicit null and wrong JSON type
 
 ### Requirement: Tool chunk presence transfers to persisted parts
 
-The existing chunk JSON codec SHALL preserve decoded optional tool title, approval reason, preliminary and providerExecuted presence through decode/re-encode and reader transfer, without changing their public scalar types. Decoded providerExecuted false SHALL remain distinguishable from an absent field for reader updates. Direct Go scalar zero-value construction SHALL keep its existing omission behavior for optional fields. The chunk SHALL expose `ApprovalDescriptor json.RawMessage` on the registered `approvalDescriptor` wire field; an approval-request's registered `reason` SHALL map to persisted RequestReason. No requestReason chunk field SHALL be introduced. Required empty errorText SHALL remain valid by discriminator. SSE framing and unrelated chunk fields SHALL remain unchanged.
+Chunk JSON SHALL retain decoded optional title, approval reason, preliminary and providerExecuted presence through re-encode/reader transfer without changing public scalar types. Decoded providerExecuted false SHALL differ from absence. Direct Go scalar zero construction SHALL keep existing optional omission. Required empty errorText SHALL remain valid by discriminator; SSE framing/unrelated fields SHALL remain unchanged.
 
 #### Scenario: Decoded explicit presence survives assembly
 - **WHEN** valid tool chunks decoded from JSON include empty title/reason or preliminary false
@@ -80,3 +88,11 @@ The existing chunk JSON codec SHALL preserve decoded optional tool title, approv
 - **WHEN** a directly constructed Go chunk has optional scalar title/reason empty or preliminary/providerExecuted false without decoded presence
 - **THEN** the codec SHALL retain existing zero-value omission behavior
 - **AND** documentation and differential expectations SHALL identify this construction boundary rather than claim full optional-presence producer parity
+
+### Requirement: Approval request chunks retain registered descriptor and reason names
+
+Chunks SHALL expose ApprovalDescriptor json.RawMessage as approvalDescriptor. Registered approval-request reason SHALL map to persisted RequestReason. No requestReason chunk field SHALL be introduced.
+
+#### Scenario: Request descriptor and reason retain wire names
+- **WHEN** an approval request contains approvalDescriptor and reason
+- **THEN** schema-parsed chunks SHALL retain those fields and readers SHALL store Descriptor/RequestReason without introducing requestReason on the wire.

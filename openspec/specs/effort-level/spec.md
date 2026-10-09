@@ -34,20 +34,8 @@ The `effort` option SHALL be independent of the `thinking` configuration. Caller
 - **THEN** the request SHALL contain both the thinking config and `output_config.effort` set to `"high"`
 
 ### Requirement: Model capability detection
-The `providers/anthropic` module SHALL provide a `getModelCapabilities(modelID string)` function that returns `maxOutputTokens int`, `supportsAdaptiveThinking bool`, and `isKnownModel bool` based on substring matching of the model ID. The capabilities SHALL be:
 
-| Model ID contains | maxOutputTokens | supportsAdaptiveThinking | isKnownModel |
-|---|---|---|---|
-| `claude-opus-4-7` | 128000 | true | true |
-| `claude-sonnet-4-6` or `claude-opus-4-6` | 128000 | true | true |
-| `claude-sonnet-4-5`, `claude-opus-4-5`, or `claude-haiku-4-5` | 64000 | false | true |
-| `claude-opus-4-1` | 32000 | false | true |
-| Other `claude-sonnet-4-` | 64000 | false | true |
-| Other `claude-opus-4-` | 32000 | false | true |
-| `claude-3-haiku` | 4096 | false | true |
-| Unknown | 4096 | false | false |
-
-The matching order SHALL be specific-first (e.g., `claude-sonnet-4-6` checked before `claude-sonnet-4-`).
+The `providers/anthropic` module SHALL provide `getModelCapabilities(modelID string)` returning `maxOutputTokens int`, `supportsAdaptiveThinking bool`, and `isKnownModel bool` by substring matching. Checks SHALL be specific-first, e.g. Sonnet 4.6 before `claude-sonnet-4-`.
 
 #### Scenario: Sonnet 4-6 capabilities
 - **WHEN** `getModelCapabilities("claude-sonnet-4-6-20260101")` is called
@@ -65,18 +53,49 @@ The matching order SHALL be specific-first (e.g., `claude-sonnet-4-6` checked be
 - **WHEN** `getModelCapabilities("some-future-model")` is called
 - **THEN** it SHALL return `maxOutputTokens: 4096`, `supportsAdaptiveThinking: false`, `isKnownModel: false`
 
+#### Scenario: Opus 4.7 effort capability
+
+- **WHEN** the ID contains `claude-opus-4-7`
+- **THEN** `maxOutputTokens`, `supportsAdaptiveThinking`, and `isKnownModel` SHALL be 128000, true, true respectively
+
+#### Scenario: Claude 4.6 effort capability
+
+- **WHEN** the ID contains `claude-sonnet-4-6` or `claude-opus-4-6`
+- **THEN** `maxOutputTokens`, `supportsAdaptiveThinking`, and `isKnownModel` SHALL be 128000, true, true respectively
+
+#### Scenario: Claude 4.5 effort capability
+
+- **WHEN** the ID contains `claude-sonnet-4-5`, `claude-opus-4-5`, or `claude-haiku-4-5`
+- **THEN** `maxOutputTokens`, `supportsAdaptiveThinking`, and `isKnownModel` SHALL be 64000, false, true respectively
+
+#### Scenario: Opus 4.1 effort capability
+
+- **WHEN** the ID contains `claude-opus-4-1`
+- **THEN** `maxOutputTokens`, `supportsAdaptiveThinking`, and `isKnownModel` SHALL be 32000, false, true respectively
+
+#### Scenario: Other Sonnet 4 effort capability
+
+- **WHEN** the ID matches other `claude-sonnet-4-`
+- **THEN** `maxOutputTokens`, `supportsAdaptiveThinking`, and `isKnownModel` SHALL be 64000, false, true respectively
+
+#### Scenario: Other Opus 4 effort capability
+
+- **WHEN** the ID matches other `claude-opus-4-`
+- **THEN** `maxOutputTokens`, `supportsAdaptiveThinking`, and `isKnownModel` SHALL be 32000, false, true respectively
+
+#### Scenario: Haiku 3 effort capability
+
+- **WHEN** the ID contains `claude-3-haiku`
+- **THEN** `maxOutputTokens`, `supportsAdaptiveThinking`, and `isKnownModel` SHALL be 4096, false, true respectively
+
+#### Scenario: Unknown effort capability
+
+- **WHEN** the ID matches none of these families
+- **THEN** `maxOutputTokens`, `supportsAdaptiveThinking`, and `isKnownModel` SHALL be 4096, false, false respectively
+
 ### Requirement: Reasoning resolution for adaptive-capable models
-When `CallOptions.Reasoning` is a non-zero operational level other than `ReasoningNone` and the model supports adaptive thinking, the Anthropic provider SHALL set `thinking: adaptive` and map the reasoning level to an effort value:
 
-| CallOptions.Reasoning | Anthropic effort |
-|---|---|
-| `"minimal"` | `"low"` (with compatibility warning) |
-| `"low"` | `"low"` |
-| `"medium"` | `"medium"` |
-| `"high"` | `"high"` |
-| `"xhigh"` | `"max"` (with compatibility warning), or `"xhigh"` for models that support xhigh effort |
-
-The provider SHALL emit a `compatibility` warning when the mapped effort value differs from the reasoning level name (i.e., `minimal` -> `low` and `xhigh` -> `max`). No compatibility warning SHALL be emitted when `xhigh` maps directly to `xhigh`.
+For non-zero operational `CallOptions.Reasoning` other than `ReasoningNone` on adaptive-capable models, the provider SHALL set adaptive thinking and effort: minimal/low→low, medium→medium, high→high, xhigh→xhigh if supported else max. A changed name (minimal→low, xhigh→max) SHALL emit a compatibility warning; direct xhigh SHALL NOT warn.
 
 #### Scenario: Reasoning high on adaptive model
 - **WHEN** `CallOptions.Reasoning` is `"high"` and the model is `claude-sonnet-4-6`
@@ -99,17 +118,8 @@ The provider SHALL emit a `compatibility` warning when the mapped effort value d
 - **AND** a `compatibility` warning SHALL be emitted
 
 ### Requirement: Reasoning resolution for budget-based models
-When `CallOptions.Reasoning` is a non-zero operational level other than `ReasoningNone` and the model does NOT support adaptive thinking, the Anthropic provider SHALL set `thinking: enabled` with a computed `budgetTokens` value. The budget SHALL be calculated as `clamp(round(maxOutputTokens * percentage), 1024, maxOutputTokens)` where the percentages are:
 
-| CallOptions.Reasoning | Percentage |
-|---|---|
-| `"minimal"` | 2% |
-| `"low"` | 10% |
-| `"medium"` | 30% |
-| `"high"` | 60% |
-| `"xhigh"` | 90% |
-
-No `output_config.effort` SHALL be set for budget-based models.
+For non-zero operational `CallOptions.Reasoning` other than `ReasoningNone` on non-adaptive models, the provider SHALL set enabled thinking with `budgetTokens = clamp(round(maxOutputTokens * percentage), 1024, maxOutputTokens)`. Percentages SHALL be minimal 2%, low 10%, medium 30%, high 60%, xhigh 90%. No `output_config.effort` SHALL be set.
 
 #### Scenario: Reasoning medium on Sonnet 4-5
 - **WHEN** `CallOptions.Reasoning` is `"medium"` and the model is `claude-sonnet-4-5` (maxOutputTokens 64000)
@@ -159,7 +169,8 @@ When `CallOptions.Reasoning` is the zero-valued `ReasoningProviderDefault`, the 
 - **THEN** those provider options SHALL retain their existing behavior
 
 ### Requirement: Provider options take precedence over CallOptions.Reasoning
-The provider option `effort` SHALL gate the reasoning mapping entirely: when `ProviderOptions["anthropic"]["effort"]` is set, no part of the reasoning mapping SHALL be applied. The provider option `thinking` SHALL only gate the thinking portion of the mapping: when `ProviderOptions["anthropic"]["thinking"]` is set without `effort`, the provider-supplied thinking config SHALL be preserved AND the effort SHALL still be derived from the top-level `CallOptions.Reasoning`. When `ProviderOptions["anthropic"]["thinking"]` is set to `{"type":"disabled"}`, the derived effort SHALL NOT be applied (mirrors upstream `anthropic-language-model.ts:406-411`). This mirrors upstream's gating logic where `anthropicOptions?.effort == null` is the sole condition for invoking the reasoning resolver, while the derived `thinking` field is only assigned when `anthropicOptions.thinking == null`.
+
+Set `ProviderOptions["anthropic"].effort` SHALL skip all reasoning mapping. Thinking without effort SHALL preserve provider thinking but still derive root effort, except `thinking:{type:"disabled"}` SHALL block derived effort. As in upstream `anthropic-language-model.ts:406-411`, `anthropicOptions?.effort == null` alone gates the resolver; derived thinking SHALL be assigned only when `anthropicOptions.thinking == null`.
 
 #### Scenario: Provider thinking only (effort unset) still derives effort
 - **WHEN** `CallOptions.Reasoning` is `"high"` and `ProviderOptions["anthropic"]` contains `{"thinking":{"type":"enabled","budgetTokens":5000}}`
@@ -247,13 +258,8 @@ The Anthropic provider SHALL accept a `taskBudget` field in `AnthropicOptions` c
 - **AND** the request SHALL NOT contain `output_config.task_budget`
 
 ### Requirement: Task budget validation
-The Anthropic provider SHALL validate `taskBudget` against the upstream Zod schema constraints before sending the request:
 
-- `type`: when non-empty, SHALL equal `"tokens"`. An empty `type` SHALL be treated as `"tokens"` (Go zero-value convention).
-- `total`: SHALL be at least `20000`.
-- `remaining`: when present, SHALL be `>= 0`.
-
-When any constraint is violated, the provider SHALL emit a single `other` warning with feature `taskBudget` describing the violation and SHALL NOT include `output_config.task_budget` or the `task-budgets-2026-03-13` beta in the request.
+Before sending, `taskBudget` SHALL meet upstream Zod constraints: non-empty type equals `tokens` (empty defaults to tokens by Go zero-value convention), total >=20000, present remaining >=0. Any violation SHALL emit one `other` warning with feature `taskBudget` describing it and SHALL omit `output_config.task_budget` and `task-budgets-2026-03-13` beta.
 
 #### Scenario: Unsupported task budget type
 - **WHEN** caller sets `ProviderOptions["anthropic"]` with `{"taskBudget":{"type":"requests","total":50000}}`

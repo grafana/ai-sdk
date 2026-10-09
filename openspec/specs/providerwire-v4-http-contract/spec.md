@@ -23,8 +23,6 @@ The repository SHALL provide a private `ai-gateway/test/providerwire-v4` TypeScr
 
 The ProviderWire V4 production schema and contract workspace SHALL live under `ai-gateway/`. That directory SHALL be the separate Go module `github.com/grafana/ai-sdk/ai-gateway` and SHALL be licensed under AGPL-3.0-only. Reusable SDK files outside `ai-gateway/` SHALL remain under the root Apache-2.0 license.
 
-The dependency boundary SHALL be one-way: Gateway code MAY import explicitly pinned SDK modules, but no Go source or module outside `ai-gateway/` SHALL import, require, or replace the Gateway module. The Gateway module SHALL remain absent from the root `go.work` and root module graph, and the root SDK SHALL build and test with `GOWORK=off`. A separately named, explicitly selected integration workspace MAY include Gateway and local SDK source for candidate-source testing and Gateway container production builds at the selected checkout revision; its existence SHALL NOT change the root workspace, permit a reverse SDK-to-Gateway dependency, or replace standalone validation for independently consumable SDK/provider/middleware Go-module publication. Gateway's supported release artifact SHALL be its container image, not a standalone Go-module package; its internal module boundary and declared pins SHALL remain subject to existing ancestry and license policy.
-
 #### Scenario: Gateway artifacts use the Gateway module
 - **WHEN** the ProviderWire V4 schema and contract workspace are inspected
 - **THEN** they SHALL reside under `ai-gateway/`
@@ -48,11 +46,33 @@ The dependency boundary SHALL be one-way: Gateway code MAY import explicitly pin
 - **THEN** the tag SHALL select the source revision for the same workspace-based container recipe
 - **AND** discoverability by Go tooling SHALL NOT imply a supported standalone Gateway `go install ...@version` or external implementation-package import contract
 
+### Requirement: One-way Gateway module dependencies
+
+The dependency boundary SHALL be one-way: Gateway code MAY import explicitly pinned SDK modules, but no Go source or module outside `ai-gateway/` SHALL import, require, or replace the Gateway module. The Gateway module SHALL remain absent from the root `go.work` and root module graph, and the root SDK SHALL build and test with `GOWORK=off`.
+
+#### Scenario: One-way Gateway module dependencies
+- **WHEN** standalone root SDK verification runs with GOWORK=off
+- **THEN** Gateway SHALL remain outside root workspace/module graph and no external source/module SHALL import, require or replace it
+
+### Requirement: Explicit candidate-source integration workspace boundary
+
+A separately named, explicitly selected integration workspace MAY include Gateway and local SDK source for candidate-source testing and Gateway container production builds at the selected checkout revision; its existence SHALL NOT change the root workspace, permit a reverse SDK-to-Gateway dependency, or replace standalone validation for independently consumable SDK/provider/middleware Go-module publication.
+
+#### Scenario: Explicit candidate-source integration workspace boundary
+- **WHEN** a Gateway container build selects the separate integration workspace
+- **THEN** local SDK source MAY be selected without root-workspace changes, reverse dependencies or replacing standalone SDK/provider/middleware publication validation
+
+### Requirement: Gateway image release and pin policy
+
+Gateway's supported release artifact SHALL be its container image, not a standalone Go-module package; its internal module boundary and declared pins SHALL remain subject to existing ancestry and license policy.
+
+#### Scenario: Gateway image release and pin policy
+- **WHEN** an ai-gateway version tag selects a release artifact
+- **THEN** the supported artifact SHALL remain the container image, with internal module pins subject to ancestry/license policy rather than standalone module support
+
 ### Requirement: Complete production request schema
 
 The repository SHALL provide `ai-gateway/providerwire/v4/schema/request.json` as a hand-authored draft 2020-12 JSON Schema for the complete JSON serialization projection of `Omit<LanguageModelV4CallOptions, "abortSignal">` at the registered baseline. The schema SHALL describe all registered request capabilities whether or not the first Go runtime supports them, SHALL require the root object and `prompt`, and SHALL close finite protocol-owned objects and tagged unions.
-
-The schema SHALL model role-specific message content, file-data arms, function and provider tools, tool choice, tool-result output arms, approval responses, response format, provider options, body-carried headers, reasoning, raw-chunk selection, and scalar generation settings. `maxOutputTokens`, `topK`, and `seed` SHALL be integers; continuous sampling and penalty settings SHALL be numbers. Schema-valued payloads SHALL remain opaque JSON Schema objects. Each provider-options namespace SHALL be a JSON object whose nested JSON remains opaque. A provider-reference map SHALL contain provider-name string values and SHALL forbid the reserved `type` property. Provider-tool `id` and custom-part `kind` SHALL match the registered `${string}.${string}` shape by containing at least one period.
 
 #### Scenario: Every registered request branch is schema-valid
 - **WHEN** a schema case supplies each registered role, content discriminator, file-data arm, tool kind, tool choice, tool-result output arm, approval arm, response format, scalar setting, header map, or provider-options shape with valid required members
@@ -101,9 +121,25 @@ The schema SHALL model role-specific message content, file-data arms, function a
 - **WHEN** a raw request body contains an `abortSignal` member
 - **THEN** validation SHALL fail because the registered Gateway client removes that member before serialization
 
+### Requirement: Request schema capability and numeric categories
+
+The schema SHALL model role-specific message content, file-data arms, function and provider tools, tool choice, tool-result output arms, approval responses, response format, provider options, body-carried headers, reasoning, raw-chunk selection, and scalar generation settings. `maxOutputTokens`, `topK`, and `seed` SHALL be integers; continuous sampling and penalty settings SHALL be numbers. Schema-valued payloads SHALL remain opaque JSON Schema objects.
+
+#### Scenario: Request schema capability and numeric categories
+- **WHEN** a request supplies approvals, tool results, headers and generation controls
+- **THEN** the schema SHALL model those registered arms, require integer token/topK/seed controls and number continuous controls, leaving schema payloads opaque
+
+### Requirement: Opaque provider options references and dotted identifiers
+
+Each provider-options namespace SHALL be a JSON object whose nested JSON remains opaque. A provider-reference map SHALL contain provider-name string values and SHALL forbid the reserved `type` property. Provider-tool `id` and custom-part `kind` SHALL match the registered `${string}.${string}` shape by containing at least one period.
+
+#### Scenario: Opaque provider options references and dotted identifiers
+- **WHEN** a request includes a provider reference map, opaque options and a dotted provider-tool id
+- **THEN** options SHALL remain namespace objects, reference values SHALL be strings excluding type, and registered dotted identifiers SHALL validate
+
 ### Requirement: Exhaustive finite TypeScript surface coverage
 
-The contract workspace SHALL contain compile-time exhaustive maps or switches for every finite request and response surface used by the ProviderWire V4 language-model contract. Coverage SHALL include request keys excluding `abortSignal`, prompt roles, role-specific request content discriminators, file-data arms, function/provider tool kinds, tool-choice kinds, tool-result output arms, approval-response arms, unary generated-content types, the nested URL/document `sourceType` discriminator, stream-part discriminators, warning variants, and finish-reason values. The coverage source SHALL NOT generate the production schema or a runtime support classifier.
+The contract workspace SHALL contain compile-time exhaustive maps or switches for every finite request and response surface used by the ProviderWire V4 language-model contract.
 
 #### Scenario: Registered request key changes
 - **WHEN** a baseline package adds or removes a key from `Omit<LanguageModelV4CallOptions, "abortSignal">`
@@ -117,6 +153,14 @@ The contract workspace SHALL contain compile-time exhaustive maps or switches fo
 - **WHEN** compile-time coverage includes a registered capability not implemented by the current Go runtime
 - **THEN** the coverage SHALL describe contract completeness only
 - **AND** it SHALL NOT mark that capability as executable
+
+### Requirement: Exhaustive request response and nested union witnesses
+
+Coverage SHALL include request keys excluding `abortSignal`, prompt roles, role-specific request content discriminators, file-data arms, function/provider tool kinds, tool-choice kinds, tool-result output arms, approval-response arms, unary generated-content types, the nested URL/document `sourceType` discriminator, stream-part discriminators, warning variants, and finish-reason values. The coverage source SHALL NOT generate the production schema or a runtime support classifier.
+
+#### Scenario: Exhaustive request response and nested union witnesses
+- **WHEN** the registered sourceType or warning union gains a discriminator
+- **THEN** compile-time coverage SHALL require review across all listed finite surfaces without generating schema or runtime support classifiers
 
 ### Requirement: Real Gateway HTTP request capture
 
@@ -160,7 +204,7 @@ The workspace SHALL capture semantic HTTP requests by invoking the registered `c
 
 ### Requirement: Compact semantic request goldens
 
-The repository SHALL commit compact semantic request goldens emitted by the real registered client. The golden families SHALL cover unary scalar and presence semantics; comprehensive roles, content, files, tools, results, approvals, response format, and provider-option unions; streaming envelope and mode; body-header duplication, ordinary outer-header precedence, and a case-variant protocol-header collision; and an ordered multi-call sequence only when it proves behavior not represented by individual calls. Every committed golden request body SHALL validate against the production request schema.
+The repository SHALL commit compact semantic request goldens emitted by the real registered client.
 
 #### Scenario: Scalar and presence golden is checked
 - **WHEN** the unary scalar golden is regenerated in memory
@@ -178,6 +222,22 @@ The repository SHALL commit compact semantic request goldens emitted by the real
 #### Scenario: Request sequence order is checked
 - **WHEN** a committed case contains multiple client calls
 - **THEN** regenerated captures SHALL match the committed request count and order exactly
+
+### Requirement: Semantic golden family coverage
+
+The golden families SHALL cover unary scalar and presence semantics; comprehensive roles, content, files, tools, results, approvals, response format, and provider-option unions; streaming envelope and mode; body-header duplication, ordinary outer-header precedence, and a case-variant protocol-header collision; and an ordered multi-call sequence only when it proves behavior not represented by individual calls.
+
+#### Scenario: Semantic golden family coverage
+- **WHEN** real-client captures include streaming and case-variant header-collision requests
+- **THEN** goldens SHALL cover the listed scalar, union and header families, with ordered multi-call cases only for additional behavior
+
+### Requirement: Committed golden schema validity
+
+Every committed golden request body SHALL validate against the production request schema.
+
+#### Scenario: Committed golden schema validity
+- **WHEN** any committed semantic request golden is verified
+- **THEN** its body SHALL validate against the production request schema
 
 ### Requirement: Schema and golden drift verification
 
@@ -198,9 +258,7 @@ Normal contract verification SHALL compile the production schema, run focused po
 
 ### Requirement: Focused unary client-consumption evidence
 
-The workspace SHALL exercise unary success through the exact registered client with an injected response. Probes SHALL assert representative supported content, finishReason, usage and Gateway response headers; SHALL prove replacement of server request/response with client-owned Gateway-hop information; and SHALL prove combination, not replacement, of server warnings followed by local warnings. At the currently registered Gateway version local warnings are empty; evidence SHALL exercise that actual behavior without inventing a local-warning-producing API.
-
-Server native response id/modelId/timestamp SHALL remain in the raw response body even though they do not survive as typed response identity. Warning variants/active fields/order and required empty strings SHALL be asserted independently of raw/schema checks that govern strict server output. Client raw-body access SHALL NOT by itself be described as middleware capture or complete native diagnostic access.
+The workspace SHALL exercise unary success through the exact registered client with an injected response. Probes SHALL assert representative supported content, finishReason, usage and Gateway response headers; SHALL prove replacement of server request/response with client-owned Gateway-hop information; and SHALL prove combination, not replacement, of server warnings followed by local warnings.
 
 #### Scenario: Unary result is consumed
 - **WHEN** the injected fetch returns a valid representative JSON generate result
@@ -211,6 +269,22 @@ Server native response id/modelId/timestamp SHALL remain in the raw response bod
 - **THEN** typed request SHALL contain the submitted args and typed response SHALL contain Gateway HTTP headers/raw response data rather than native typed identity
 - **AND** the raw response data SHALL retain server response identity
 - **AND** resolved warnings SHALL preserve the server sequence before the registered local warning sequence, which is currently empty
+
+### Requirement: Pinned unary warnings and raw native identity evidence
+
+At the currently registered Gateway version local warnings are empty; evidence SHALL exercise that actual behavior without inventing a local-warning-producing API. Server native response id/modelId/timestamp SHALL remain in the raw response body even though they do not survive as typed response identity. Warning variants/active fields/order and required empty strings SHALL be asserted independently of raw/schema checks that govern strict server output.
+
+#### Scenario: Pinned unary warnings and raw native identity evidence
+- **WHEN** the registered client consumes ordered warnings and native response identity
+- **THEN** tests SHALL assert currently empty local warnings, native identity in raw body rather than typed fields, and active warning fields independently of strict raw/schema checks
+
+### Requirement: Raw unary body access evidence limit
+
+Client raw-body access SHALL NOT by itself be described as middleware capture or complete native diagnostic access.
+
+#### Scenario: Raw unary body access evidence limit
+- **WHEN** a probe can access the client's raw response body
+- **THEN** access alone SHALL NOT establish middleware capture or complete native diagnostics
 
 ### Requirement: Focused streaming client-consumption evidence
 
@@ -265,7 +339,7 @@ The repository SHALL provide a focused explicit command that regenerates committ
 
 ### Requirement: Contract evidence boundary
 
-The exact registered public `@ai-sdk/gateway` client SHALL be authoritative for its observable request emission and response consumption. The ProviderWire V4 workspace SHALL describe one strict HTTP dialect compatible with that client and SHALL NOT claim compatibility with every request accepted by Vercel's private Gateway service. Private protocol DTOs and test-time schemas SHALL own server-side shapes the client does not observe, while raw HTTP, privacy, and bounds tests SHALL own unobserved server safety properties.
+The exact registered public `@ai-sdk/gateway` client SHALL be authoritative for its observable request emission and response consumption. The ProviderWire V4 workspace SHALL describe one strict HTTP dialect compatible with that client and SHALL NOT claim compatibility with every request accepted by Vercel's private Gateway service.
 
 #### Scenario: Observable client behavior is authoritative
 - **WHEN** request emission or response consumption is observable through the registered client
@@ -296,3 +370,11 @@ The exact registered public `@ai-sdk/gateway` client SHALL be authoritative for 
 - **WHEN** the strict streaming text runtime is complete
 - **THEN** reasoning, tools, approvals, files, sources, custom content, raw output, and every other later stream family SHALL remain explicit unsupported capabilities or safe terminal adapter failures according to their request or response boundary
 - **AND** the repository SHALL NOT claim complete LanguageModelV4 stream execution coverage
+
+### Requirement: Independent unobserved server shape and safety authority
+
+Private protocol DTOs and test-time schemas SHALL own server-side shapes the client does not observe, while raw HTTP, privacy, and bounds tests SHALL own unobserved server safety properties.
+
+#### Scenario: Independent unobserved server shape and safety authority
+- **WHEN** the pinned client masks a native response field or accepts malformed output permissively
+- **THEN** private DTOs/test schemas SHALL own unobserved shape and raw HTTP/privacy/bounds tests SHALL own server safety

@@ -5,10 +5,10 @@
 Define privacy-safe, bounded-cardinality, once-per-logical-call observability for Gateway text generation across logs, Prometheus metrics, and Agent Observability.
 
 ## Requirements
-### Requirement: One startup-composed logical middleware chain
-The Gateway SHALL wrap each configured canonical catalog entry's logical text model exactly once at startup with approved context enrichment, Agent Observability recording, structured logging, Prometheus model metrics, canonical public identity, and then the inner model in that request order. In WP8 the inner model SHALL be the direct provider; WP9 MAY replace it with fallback beneath the unchanged logical wrapper and SHALL NOT wrap physical candidates with WP8 observers. Response observation SHALL occur in reverse order. Alias and canonical resolution SHALL return the same composed model instance, and one invocation SHALL traverse each logical observer exactly once.
 
-The chain SHALL be shared service behavior below public API adapters. It SHALL NOT be constructed in ProviderWire request handling and SHALL NOT change ProviderWire validation, public bytes, error mapping, commitment, stream ordering, timeout, or cancellation precedence.
+### Requirement: One startup-composed logical middleware chain
+
+The Gateway SHALL wrap each configured canonical catalog entry's logical text model exactly once at startup with approved context enrichment, Agent Observability recording, structured logging, Prometheus model metrics, canonical public identity, and then the inner model in that request order. In WP8 the inner model SHALL be the direct provider; WP9 MAY replace it with fallback beneath the unchanged logical wrapper and SHALL NOT wrap physical candidates with WP8 observers.
 
 #### Scenario: Alias uses one canonical chain
 - **WHEN** an authenticated text request resolves an alias for a configured canonical model
@@ -20,10 +20,17 @@ The chain SHALL be shared service behavior below public API adapters. It SHALL N
 - **THEN** both calls SHALL invoke the direct model once with semantically identical call options
 - **AND** SHALL produce the same ProviderWire status, response events, event order, and clean-EOF behavior
 
-### Requirement: Canonical public identity on every logical surface
-Logical model telemetry SHALL identify provider as `grafana` and model as the canonical public catalog ID from startup composition. Requested aliases, provider instance names, provider types, backend model IDs, provider response IDs, response-derived model identity, and routing topology SHALL NOT appear in logical logs, Prometheus labels, Agent Observability model fields, or Agent Observability metadata.
+### Requirement: Shared logical chain traversal and adapter isolation
 
-Provider response metadata SHALL remain unmodified for the protocol adapter and later private physical-attempt observation. Logical observation SHALL ignore that metadata rather than rewriting the provider result or stream part.
+Response observation SHALL occur in reverse order. Alias and canonical resolution SHALL return the same composed model instance, and one invocation SHALL traverse each logical observer exactly once. The chain SHALL be shared service behavior below public API adapters. It SHALL NOT be constructed in ProviderWire request handling and SHALL NOT change ProviderWire validation, public bytes, error mapping, commitment, stream ordering, timeout, or cancellation precedence.
+
+#### Scenario: Shared logical chain traversal and adapter isolation
+- **WHEN** alias and canonical calls traverse the startup chain
+- **THEN** each SHALL use the same composed instance and reverse response-observation order without constructing observers in ProviderWire or changing public protocol behavior
+
+### Requirement: Canonical public identity on every logical surface
+
+Logical model telemetry SHALL identify provider as `grafana` and model as the canonical public catalog ID from startup composition. Requested aliases, provider instance names, provider types, backend model IDs, provider response IDs, response-derived model identity, and routing topology SHALL NOT appear in logical logs, Prometheus labels, Agent Observability model fields, or Agent Observability metadata.
 
 #### Scenario: Backend response identity differs
 - **WHEN** canonical model `grafana/assistant` receives a result or stream metadata naming provider `anthropic`, a backend model ID, and a provider response ID
@@ -36,12 +43,17 @@ Provider response metadata SHALL remain unmodified for the protocol adapter and 
 - **THEN** no logical model telemetry SHALL use `assistant` as its model identity
 - **AND** logical model telemetry SHALL use `grafana/assistant`
 
+### Requirement: Unmodified native response metadata for adapters
+
+Provider response metadata SHALL remain unmodified for the protocol adapter and later private physical-attempt observation. Logical observation SHALL ignore that metadata rather than rewriting the provider result or stream part.
+
+#### Scenario: Unmodified native response metadata for adapters
+- **WHEN** a provider result contains backend response metadata
+- **THEN** logical observers SHALL ignore it and forward it unchanged for protocol and private physical-attempt observation
+
 ### Requirement: Trusted bounded request observation context
+
 The Gateway SHALL create one private immutable observation view per accepted HTTP request. It SHALL contain only a bounded Gateway-generated opaque request correlation ID, normalized verified caller service and namespace from the authenticated caller context, and validated static region and application values when configured. Empty optional values SHALL be omitted.
-
-The Gateway SHALL NOT enumerate arbitrary context values or derive these fields from unverified request headers, raw or parsed tokens, full auth claims, acting-user email, permissions, groups, prompts, tool data, provider options, provider metadata, or request/response bodies. The observation view SHALL NOT mutate provider call headers or provider options.
-
-Correlation SHALL remain server-owned observation metadata. Neither Gateway client SHALL send or receive a new correlation field or header under this capability.
 
 #### Scenario: Authenticated request is enriched
 - **WHEN** authentication stores a normalized caller and static region/application are configured
@@ -61,10 +73,25 @@ Correlation SHALL remain server-owned observation metadata. Neither Gateway clie
 - **WHEN** the registered Vercel client or WP7 Go client performs a text call
 - **THEN** no new request field, request header, response field, or response header SHALL be required or returned for observability correlation
 
-### Requirement: Privacy-safe structured model logs
-The Gateway SHALL emit fixed structured start and one terminal record for unary and streaming text using the reusable logger middleware. It SHALL keep all capture flags and per-stream-part logging disabled and SHALL apply a Gateway-owned attribute allowlist followed by default secret-key redaction.
+### Requirement: Trusted context input exclusions and provider isolation
 
-Allowed logical values SHALL be limited to fixed event/schema names, a bounded generated call/correlation ID, call type, canonical public identity, closed outcome and error classifications, normalized status/retryability, duration, usage counters, unified finish reason, warning type/count, bounded stream part type/count, time to first output, and the trusted observation context. Logs SHALL omit prompt/output/reasoning text, tools, files, raw parts, request/response bodies, headers, provider options/metadata, raw finish reasons, arbitrary warning feature/message/detail strings, arbitrary error text, provider response metadata, credentials, backend identity, and topology.
+The Gateway SHALL NOT enumerate arbitrary context values or derive observation-view fields from unverified request headers, raw or parsed tokens, full auth claims, acting-user email, permissions, groups, prompts, tool data, provider options, provider metadata, or request/response bodies. The observation view SHALL NOT mutate provider call headers or provider options. Correlation SHALL remain server-owned observation metadata.
+
+#### Scenario: Trusted context input exclusions and provider isolation
+- **WHEN** an authenticated request includes arbitrary headers, claims and provider options
+- **THEN** those values SHALL NOT extend the observation view or mutate provider headers/options, and correlation SHALL remain server-owned
+
+### Requirement: No client correlation protocol extension
+
+Neither Gateway client SHALL send or receive a new correlation field or header under this capability.
+
+#### Scenario: No client correlation protocol extension
+- **WHEN** either Gateway client performs a model call
+- **THEN** no new correlation field or header SHALL be sent or received
+
+### Requirement: Privacy-safe structured model logs
+
+The Gateway SHALL emit fixed structured start and one terminal record for unary and streaming text using the reusable logger middleware. It SHALL keep all capture flags and per-stream-part logging disabled and SHALL apply a Gateway-owned attribute allowlist followed by default secret-key redaction.
 
 #### Scenario: Unary provider failure contains secrets
 - **WHEN** a unary provider error contains a credential, provider URL, backend model ID, response body, and arbitrary message
@@ -76,10 +103,25 @@ Allowed logical values SHALL be limited to fixed event/schema names, a bounded g
 - **THEN** logical logs SHALL include only approved lifecycle summaries and counters
 - **AND** no per-part log or payload/provider detail SHALL be emitted
 
-### Requirement: Bounded-cardinality logical model metrics
-The Gateway SHALL register the reusable Prometheus model middleware exactly once against the existing service-owned registry and expose its collectors on the existing unauthenticated `/metrics` route. Model metrics SHALL use requested identity mode.
+### Requirement: Structured logical log value allowlist
 
-Labels SHALL be limited to operation, canonical configured public model identity, closed status and error classes, normalized status code (`100`–`599`, `none`, or `other`), unified finish reason, token type, and closed stream-part type. Caller, namespace, correlation ID, alias, region, application, provider instance, backend model, response ID, arbitrary error, and arbitrary stream values SHALL NOT be metric labels. Duplicate registration SHALL fail startup before readiness.
+Allowed logical values SHALL be limited to fixed event/schema names, a bounded generated call/correlation ID, call type, canonical public identity, closed outcome and error classifications, normalized status/retryability, duration, usage counters, unified finish reason, warning type/count, bounded stream part type/count, time to first output, and the trusted observation context.
+
+#### Scenario: Structured logical log value allowlist
+- **WHEN** a streaming terminal record includes usage and time to first output
+- **THEN** only the approved fixed, bounded and normalized logical values SHALL be emitted
+
+### Requirement: Structured logical log payload exclusions
+
+Logs SHALL omit prompt/output/reasoning text, tools, files, raw parts, request/response bodies, headers, provider options/metadata, raw finish reasons, arbitrary warning feature/message/detail strings, arbitrary error text, provider response metadata, credentials, backend identity, and topology.
+
+#### Scenario: Structured logical log payload exclusions
+- **WHEN** a result includes reasoning, files, warning details and native response metadata
+- **THEN** logs SHALL omit those payloads and arbitrary provider values
+
+### Requirement: Bounded-cardinality logical model metrics
+
+The Gateway SHALL register the reusable Prometheus model middleware exactly once against the existing service-owned registry and expose its collectors on the existing unauthenticated `/metrics` route. Model metrics SHALL use requested identity mode. Labels SHALL be limited to operation, canonical configured public model identity, closed status and error classes, normalized status code (`100`–`599`, `none`, or `other`), unified finish reason, token type, and closed stream-part type.
 
 #### Scenario: Unary and streaming text are scraped
 - **WHEN** authenticated unary and streaming calls complete and `/metrics` is scraped
@@ -90,12 +132,17 @@ Labels SHALL be limited to operation, canonical configured public model identity
 - **WHEN** model collectors cannot be registered exactly once in the service registry
 - **THEN** startup SHALL fail before listener binding and readiness
 
+### Requirement: Metric privacy and duplicate-registration refusal
+
+Caller, namespace, correlation ID, alias, region, application, provider instance, backend model, response ID, arbitrary error, and arbitrary stream values SHALL NOT be metric labels. Duplicate registration SHALL fail startup before readiness.
+
+#### Scenario: Metric privacy and duplicate-registration refusal
+- **WHEN** a caller supplies an alias and correlation ID and collectors are registered twice
+- **THEN** neither value SHALL become a label and the registration collision SHALL fail startup before readiness
+
 ### Requirement: Metadata-only Agent Observability recording
+
 When Agent Observability export is enabled, the Gateway SHALL use one process-wide client configured for metadata-only content capture, recording middleware only, requested canonical identity, and an allowlisted context provider. Hooks, experimental SDK features, and request-controlled capture changes SHALL remain disabled.
-
-Each authenticated unary or streaming text call SHALL produce one generation containing canonical public model identity, generation mode, approved trusted metadata, normalized usage marked as cache-inclusive without adding cache buckets again, unified finish reason, timing including streaming first output when available, and a closed error classification when applicable. It SHALL omit input/output content, system prompts, detailed errors, response/provider IDs, backend identity, provider options/metadata, raw artifacts, credentials, and topology.
-
-The Agent Observability client MAY add only its fixed SDK provenance/content-capture metadata markers and a mirrored closed error category after the Gateway filter. These fixed client-owned fields SHALL NOT carry request input, provider detail, exporter configuration, or arbitrary error text.
 
 #### Scenario: Successful text generation is recorded
 - **WHEN** an authenticated unary or streaming text call succeeds with Agent Observability enabled
@@ -112,10 +159,25 @@ The Agent Observability client MAY add only its fixed SDK provenance/content-cap
 - **THEN** logging and Prometheus observation SHALL continue
 - **AND** the model call SHALL not start an Agent Observability generation
 
-### Requirement: Strict bounded Agent Observability exporter configuration
-Gateway-owned settings SHALL explicitly select and validate Agent Observability enablement, protocol, endpoint, transport security, authentication secret reference, finite batch and queue sizes, finite payload bytes, finite retry/backoff behavior, a positive per-attempt HTTP/gRPC export timeout, and finite flush/shutdown durations before client construction. The export-attempt timeout SHALL default to 10 seconds and SHALL be no greater than 5 minutes, independently of flush/shutdown deadlines. Ambient SDK timeout, retry, queue, and experimental-feature environment settings SHALL be rejected under their supported current and legacy spellings before client construction or secret resolution, without exposing their values in diagnostics. Literal credentials SHALL not be representable in a YAML file or command argument. Production SHALL reject cleartext export and missing required credentials.
+### Requirement: One normalized Agent Observability generation
 
-The exporter SHALL be asynchronous and fail open for model traffic. Queue saturation, serialization failure, transport failure, and rejected exports SHALL produce only bounded counters and fixed diagnostic classes; they SHALL NOT expose credentials, endpoints, payloads, generation content, or raw exporter errors. The process SHALL flush and shut down the client after request serving stops using an independent bounded context.
+Each authenticated unary or streaming text call SHALL produce one generation containing canonical public model identity, generation mode, approved trusted metadata, normalized usage marked as cache-inclusive without adding cache buckets again, unified finish reason, timing including streaming first output when available, and a closed error classification when applicable.
+
+#### Scenario: One normalized Agent Observability generation
+- **WHEN** an authenticated stream reports cache-inclusive usage and first output
+- **THEN** one generation SHALL retain normalized usage without double-counting cache buckets, approved metadata and timing
+
+### Requirement: Agent Observability payload exclusions and fixed client markers
+
+Each generation SHALL omit input/output content, system prompts, detailed errors, response/provider IDs, backend identity, provider options/metadata, raw artifacts, credentials, and topology. The Agent Observability client MAY add only its fixed SDK provenance/content-capture metadata markers and a mirrored closed error category after the Gateway filter. These fixed client-owned fields SHALL NOT carry request input, provider detail, exporter configuration, or arbitrary error text.
+
+#### Scenario: Agent Observability payload exclusions and fixed client markers
+- **WHEN** an exported generation has provider details and client provenance markers available
+- **THEN** provider details SHALL be omitted and only the fixed client markers and closed error category SHALL be permitted after filtering
+
+### Requirement: Strict bounded Agent Observability exporter configuration
+
+Gateway-owned settings SHALL explicitly select and validate Agent Observability enablement, protocol, endpoint, transport security, authentication secret reference, finite batch and queue sizes, finite payload bytes, finite retry/backoff behavior, a positive per-attempt HTTP/gRPC export timeout, and finite flush/shutdown durations before client construction. The export-attempt timeout SHALL default to 10 seconds and SHALL be no greater than 5 minutes, independently of flush/shutdown deadlines.
 
 #### Scenario: Exporter configuration is unsafe
 - **WHEN** production configuration enables an insecure endpoint, names an unset secret, or provides a non-positive resource bound
@@ -133,10 +195,25 @@ The exporter SHALL be asynchronous and fail open for model traffic. Queue satura
 - **AND** the process SHALL boundedly wait for already-started recorders before flushing, while refusing new recorder acquisition after close begins
 - **AND** export flush and client shutdown SHALL finish or be abandoned within the configured independent deadline
 
-### Requirement: Logical text lifecycle semantics
-Unary observation SHALL start immediately before the shared model invocation and finalize once after its result or pre-result error. Streaming observation SHALL start immediately before stream setup and finalize once after normal channel close, provider error observation, premature close, downstream cancellation, or timeout as represented at the model boundary. When upstream closure and downstream context cancellation are both observable at finalization, cancellation or timeout SHALL take precedence consistently across every logical observer. Every observer SHALL pass through the original result, error, request metadata, response headers, and stream parts without mutation.
+### Requirement: Exporter ambient-setting and credential restrictions
 
-Usage SHALL be recorded from the unary result or independently aggregated across every usage-bearing stream part using the established strongest-value semantics. Streaming time to first output SHALL start at the model call and stop at the first payload-bearing shared stream part. A provider error part SHALL be observed as an error without being made terminal by middleware; later parts and finish SHALL remain ordered and visible to ProviderWire.
+Ambient SDK timeout, retry, queue, and experimental-feature environment settings SHALL be rejected under their supported current and legacy spellings before client construction or secret resolution, without exposing their values in diagnostics. Literal credentials SHALL not be representable in a YAML file or command argument. Production SHALL reject cleartext export and missing required credentials. The exporter SHALL be asynchronous and fail open for model traffic.
+
+#### Scenario: Exporter ambient-setting and credential restrictions
+- **WHEN** a supported legacy SDK retry environment variable is set
+- **THEN** startup SHALL reject it before client construction or secret resolution without exposing its value
+
+### Requirement: Bounded exporter failure and shutdown reporting
+
+Queue saturation, serialization failure, transport failure, and rejected exports SHALL produce only bounded counters and fixed diagnostic classes; they SHALL NOT expose credentials, endpoints, payloads, generation content, or raw exporter errors. The process SHALL flush and shut down the client after request serving stops using an independent bounded context.
+
+#### Scenario: Bounded exporter failure and shutdown reporting
+- **WHEN** export delivery fails while records are queued at shutdown
+- **THEN** only fixed diagnostics and bounded counters SHALL be emitted, and flush/shutdown SHALL use an independent bounded context after serving stops
+
+### Requirement: Logical text lifecycle semantics
+
+Unary observation SHALL start immediately before the shared model invocation and finalize once after its result or pre-result error. Streaming observation SHALL start immediately before stream setup and finalize once after normal channel close, provider error observation, premature close, downstream cancellation, or timeout as represented at the model boundary.
 
 #### Scenario: Stream error precedes later finish
 - **WHEN** a stream emits usage, a provider error part, later text, and finish before closing
@@ -148,10 +225,25 @@ Usage SHALL be recorded from the unary result or independently aggregated across
 - **WHEN** different stream parts report independently stronger usage counters
 - **THEN** the terminal logical log, metrics, and Agent Observability generation SHALL preserve the strongest normalized counters
 
-### Requirement: Bounded stream observation cleanup
-Every logical stream observer SHALL own only the tee channel it introduces. On downstream cancellation it SHALL stop blocking on output, close its output exactly once, finalize its logical observation exactly once, and drain only its immediate upstream until channel close or an absolute configured deadline. A continuously ready or non-cooperative upstream SHALL not retain a Gateway-owned observer or drain goroutine beyond that deadline.
+### Requirement: Logical finalization precedence and strongest usage
 
-The Gateway SHALL configure every observer with a finite drain duration no greater than the validated ProviderWire stream-drain duration. ProviderWire SHALL remain owner of protocol termination and its immediate input; observer cleanup SHALL not write protocol events or extend handler latency.
+When upstream closure and downstream context cancellation are both observable at finalization, cancellation or timeout SHALL take precedence consistently across every logical observer. Every observer SHALL pass through the original result, error, request metadata, response headers, and stream parts without mutation. Usage SHALL be recorded from the unary result or independently aggregated across every usage-bearing stream part using the established strongest-value semantics.
+
+#### Scenario: Logical finalization precedence and strongest usage
+- **WHEN** upstream closes while downstream cancellation is observable and several parts report stronger usage
+- **THEN** all observers SHALL select cancellation consistently, preserve strongest counters and pass original boundary values unchanged
+
+### Requirement: First-output timing and non-terminal error observation
+
+Streaming time to first output SHALL start at the model call and stop at the first payload-bearing shared stream part. A provider error part SHALL be observed as an error without being made terminal by middleware; later parts and finish SHALL remain ordered and visible to ProviderWire.
+
+#### Scenario: First-output timing and non-terminal error observation
+- **WHEN** a provider error precedes payload text and finish
+- **THEN** the error SHALL be observed without ending forwarding, and first-output timing SHALL stop at the first payload-bearing shared part
+
+### Requirement: Bounded stream observation cleanup
+
+Every logical stream observer SHALL own only the tee channel it introduces. On downstream cancellation it SHALL stop blocking on output, close its output exactly once, finalize its logical observation exactly once, and drain only its immediate upstream until channel close or an absolute configured deadline. A continuously ready or non-cooperative upstream SHALL not retain a Gateway-owned observer or drain goroutine beyond that deadline.
 
 #### Scenario: Silent stream is canceled
 - **WHEN** a committed stream is canceled while an observer tee is waiting
@@ -163,10 +255,17 @@ The Gateway SHALL configure every observer with a finite drain duration no great
 - **THEN** each observer SHALL stop draining at its absolute deadline even if receives remain continuously ready
 - **AND** the HTTP handler SHALL not wait for observer drain completion
 
-### Requirement: Work-package boundaries remain explicit
-This capability SHALL end at one logical text-call observation. Work package 9 SHALL place fallback below this chain and SHALL exclusively own candidate attempt hooks, private provider/backend identity, retry decisions, winner selection, and physical outcomes. WP8 SHALL NOT wrap candidates individually or define physical attempt records.
+### Requirement: Observer drain configuration and protocol ownership
 
-Work package 6 SHALL own image/capacity integration, work package 7 the Go client, work package 10 production activation and smoke, work package 27 per-request Agent Observability controls, and each later content capability its own new observation mapping. Unsupported future content SHALL not be inferred from raw provider values in this change.
+The Gateway SHALL configure every observer with a finite drain duration no greater than the validated ProviderWire stream-drain duration. ProviderWire SHALL remain owner of protocol termination and its immediate input; observer cleanup SHALL not write protocol events or extend handler latency.
+
+#### Scenario: Observer drain configuration and protocol ownership
+- **WHEN** a downstream consumer cancels a committed stream
+- **THEN** observer drains SHALL be finite and no longer than ProviderWire's drain duration, without writing protocol events or extending handler latency
+
+### Requirement: Work-package boundaries remain explicit
+
+This capability SHALL end at one logical text-call observation. Work package 9 SHALL place fallback below this chain and SHALL exclusively own candidate attempt hooks, private provider/backend identity, retry decisions, winner selection, and physical outcomes. WP8 SHALL NOT wrap candidates individually or define physical attempt records.
 
 #### Scenario: Fallback is added later
 - **WHEN** work package 9 composes ordered fallback beneath the WP8 logical chain
@@ -178,13 +277,17 @@ Work package 6 SHALL own image/capacity integration, work package 7 the Go clien
 - **THEN** WP8 SHALL not inspect raw input or provider data to synthesize telemetry for that family
 - **AND** its owning capability package SHALL add explicit normalized observation later
 
+### Requirement: Adjacent capability ownership and future telemetry boundaries
+
+Work package 6 SHALL own image/capacity integration, work package 7 the Go client, work package 10 production activation and smoke, work package 27 per-request Agent Observability controls, and each later content capability its own new observation mapping. Unsupported future content SHALL not be inferred from raw provider values in this change.
+
+#### Scenario: Adjacent capability ownership and future telemetry boundaries
+- **WHEN** a future content family reaches its owning work package
+- **THEN** its explicit mapping SHALL be owned there rather than inferred from raw provider values by WP8
+
 ### Requirement: Operator capture is independent from returned native values
 
-Gateway metadata-only logger, Prometheus, enrichment and Agent Observability observations SHALL retain their existing payload exclusions and canonical logical model identity when native warning/source/response identity values become caller-visible. Arbitrary warning strings, source ID/URL/title/filename and response ID/modelId SHALL NOT become operator attributes, metric labels or metadata-only exported payloads. The observer chain SHALL pass original results/parts unchanged to protocol encoding; operator capture restrictions SHALL NOT censor returned values. Known credentials and another tenant's state SHALL remain protected independently of ordinary application scalar/display values.
-
-Consumer applications SHALL be able to configure existing reusable middleware independently around providers/grafana without enabling server capture. Tests SHALL use middleware.WrapLanguageModel with Middleware.WrapGenerate to inspect actual unary warnings/content/Response.Body and WrapStream to observe forwarded PartStreamStart/PartSource/PartResponseMeta through a context-aware test tee. These hooks SHALL receive contracted values without mutating output; hook access SHALL NOT be equated with automatic built-in capture/export.
-
-A separately configured consumer logger.Middleware with CaptureOptions.ResponseBody and a consumer-owned slog destination SHALL prove actual opt-in logging of the bounded Gateway unary body, including native nested identity/warnings/sources within its configured capture budget. Raw-body accessibility alone SHALL NOT be called capture proof. Tests/docs SHALL distinguish that logged Gateway body from native transport diagnostics and from typed native Response identity overwritten by both clients. This capability SHALL NOT add middleware/API surface, universal stream-warning/source export, an unsupported Agent Observability source recording representation or a diagnostic carrier.
+Gateway metadata-only logger, Prometheus, enrichment and Agent Observability observations SHALL retain their existing payload exclusions and canonical logical model identity when native warning/source/response identity values become caller-visible. Arbitrary warning strings, source ID/URL/title/filename and response ID/modelId SHALL NOT become operator attributes, metric labels or metadata-only exported payloads.
 
 #### Scenario: Native identity differs from canonical route
 - **WHEN** an alias resolves a canonical route whose provider supplies a different native response ID/modelId
@@ -202,3 +305,35 @@ A separately configured consumer logger.Middleware with CaptureOptions.ResponseB
 - **AND** tests SHALL prove typed unary identity remains replaced while native identity is present in the Gateway response body
 - **AND** neither observation location SHALL mutate responses to satisfy the other's capture settings
 - **AND** hook access SHALL NOT imply automatic source/warning capture by every built-in middleware
+
+### Requirement: Returned-value preservation and independent consumer observation
+
+The observer chain SHALL pass original results/parts unchanged to protocol encoding; operator capture restrictions SHALL NOT censor returned values. Known credentials and another tenant's state SHALL remain protected independently of ordinary application scalar/display values. Consumer applications SHALL be able to configure existing reusable middleware independently around providers/grafana without enabling server capture.
+
+#### Scenario: Returned-value preservation and independent consumer observation
+- **WHEN** consumer middleware surrounds providers/grafana while server capture is metadata-only
+- **THEN** returned values SHALL remain unchanged, consumer configuration SHALL remain independent and credentials/cross-tenant state SHALL stay protected
+
+### Requirement: Consumer hook evidence for native values
+
+Tests SHALL use middleware.WrapLanguageModel with Middleware.WrapGenerate to inspect actual unary warnings/content/Response.Body and WrapStream to observe forwarded PartStreamStart/PartSource/PartResponseMeta through a context-aware test tee. These hooks SHALL receive contracted values without mutating output; hook access SHALL NOT be equated with automatic built-in capture/export.
+
+#### Scenario: Consumer hook evidence for native values
+- **WHEN** WrapGenerate and a context-aware WrapStream tee inspect native warnings, sources and response metadata
+- **THEN** the hooks SHALL receive contracted fields without mutation and SHALL NOT be treated as automatic built-in capture/export
+
+### Requirement: Opt-in consumer response-body capture proof
+
+A separately configured consumer logger.Middleware with CaptureOptions.ResponseBody and a consumer-owned slog destination SHALL prove actual opt-in logging of the bounded Gateway unary body, including native nested identity/warnings/sources within its configured capture budget. Raw-body accessibility alone SHALL NOT be called capture proof. Tests/docs SHALL distinguish that logged Gateway body from native transport diagnostics and from typed native Response identity overwritten by both clients.
+
+#### Scenario: Opt-in consumer response-body capture proof
+- **WHEN** a consumer logger enables CaptureOptions.ResponseBody with its own slog destination
+- **THEN** tests SHALL assert actual bounded Gateway-body logging, distinguishing raw-body access, native diagnostics and overwritten typed identity
+
+### Requirement: Native-value observation surface boundary
+
+This capability SHALL NOT add middleware/API surface, universal stream-warning/source export, an unsupported Agent Observability source recording representation or a diagnostic carrier.
+
+#### Scenario: Native-value observation surface boundary
+- **WHEN** native source values are returned to a consumer wrapper
+- **THEN** this capability SHALL NOT introduce middleware APIs, universal built-in source/warning export, an unsupported Agent Observability source representation or diagnostic carrier

@@ -6,14 +6,7 @@ Define Anthropic tool-level provider options, eager input-streaming defaults, in
 
 ### Requirement: Anthropic tool-level provider options extraction
 
-The Anthropic provider's `convertTools()` function SHALL extract Anthropic-specific options from `tool.ProviderOptions["anthropic"]` for function tools (tools with empty or `"function"` type). The provider SHALL use `provider.ResolveOption[AnthropicToolOptions]` to handle both typed options (direct `AnthropicToolOptions` values) and round-tripped raw options (`RawProviderOption` from previous SSE responses, unmarshaled via JSON). The `AnthropicToolOptions` struct contains fields:
-- `deferLoading` (bool, optional) -- controls whether the tool is deferred for dynamic discovery via `tool_search`
-- `allowedCallers` (string array, optional) -- restricts which server tools can invoke this tool
-- `eagerInputStreaming` (bool, optional) -- enables streaming tool input before completion. When unset, the resulting `BetaToolParam.EagerInputStreaming` is determined by the model-level default (see "Default `eager_input_streaming` on streaming requests"). When set to `false`, the field SHALL be omitted from the wire payload (matching upstream `...(eagerInputStreaming ? { eager_input_streaming: true } : {})`); only a truthy resolved value emits `eager_input_streaming: true`.
-
-If the `"anthropic"` key is absent, the options SHALL be treated as empty. If the value is a `RawProviderOption` with malformed JSON, the options SHALL be treated as empty (no error produced).
-
-`AnthropicToolOptions.AllowedCallers` SHALL use presence-preserving JSON semantics: nil SHALL be omitted, while an explicitly empty non-nil slice SHALL serialize as `"allowedCallers": []`. This distinction SHALL survive a `ProviderOptions` JSON round trip and `ResolveOption[AnthropicToolOptions]`.
+`convertTools()` SHALL use `provider.ResolveOption[AnthropicToolOptions]` on function tools (empty/function type) at tool.ProviderOptions["anthropic"], accepting direct typed values and JSON-unmarshaled round-tripped RawProviderOption from prior SSE responses. Absent keys or malformed raw JSON SHALL mean empty options without error.
 
 #### Scenario: Tool with deferLoading enabled
 
@@ -76,9 +69,7 @@ The Anthropic provider's `AnthropicOptions` (read from `CallOptions.ProviderOpti
 
 ### Requirement: Default `eager_input_streaming` on streaming requests
 
-When the provider is invoked via `DoStream` and the resolved `ToolStreaming` flag is `true`, the Anthropic provider SHALL emit `eager_input_streaming: true` on every function tool in the request that does NOT explicitly set `AnthropicToolOptions.EagerInputStreaming`, including the synthetic JSON fallback tool used for structured-output models that lack native structured-output support. When the request is invoked via `DoGenerate`, or when the resolved `ToolStreaming` flag is `false`, the provider SHALL NOT default `eager_input_streaming` on function tools. Per-tool explicit `EagerInputStreaming` values resolve as follows, matching upstream `...(eagerInputStreaming ? { eager_input_streaming: true } : {})`:
-- An explicit `true` SHALL emit `eager_input_streaming: true` (overriding a model-level `false`).
-- An explicit `false` SHALL OMIT the `eager_input_streaming` field entirely (overriding a model-level `true`); the field SHALL NOT be sent as `eager_input_streaming: false`.
+DoStream with resolved ToolStreaming:true SHALL default eager_input_streaming:true on every function tool without explicit EagerInputStreaming, including synthetic JSON fallback for models without native output. DoGenerate or ToolStreaming:false SHALL NOT default it. Unset per-tool BetaToolParam.EagerInputStreaming SHALL follow that model-level default.
 
 #### Scenario: Streaming with default ToolStreaming and tool without explicit eagerInputStreaming
 
@@ -160,11 +151,7 @@ The `convertTools()` function SHALL NOT extract `AnthropicToolOptions` or `Input
 
 ### Requirement: Beta header auto-detection
 
-The `convertTools()` function SHALL return a list of required beta header strings alongside the converted tools and warnings. The following auto-detection rules SHALL apply:
-- When any function tool has an explicitly empty `InputExamples` slice or at least one input example that converts successfully, add `"advanced-tool-use-2025-11-20"`
-- When any function tool has non-nil `AllowedCallers` (from `AnthropicToolOptions`), add `"advanced-tool-use-2025-11-20"`
-
-The caller SHALL merge auto-detected betas with any explicit betas from `AnthropicOptions.Betas` and apply them as the `anthropic-beta` request header, deduplicating entries.
+convertTools SHALL return required betas with tools/warnings. Any function tool with explicitly empty InputExamples or a successfully converted example, or with non-nil AllowedCallers, SHALL select advanced-tool-use-2025-11-20. The caller SHALL merge/deduplicate these with AnthropicOptions.Betas in the anthropic-beta header.
 
 #### Scenario: Beta auto-detection for inputExamples
 
@@ -204,3 +191,30 @@ When `ToolChoice` is `none` and the request has tools, `buildParams` SHALL keep 
 
 - **WHEN** a request has no tools and `ToolChoice` is `none`
 - **THEN** `tool_choice` SHALL be omitted
+
+### Requirement: Anthropic tool discovery and caller options
+
+AnthropicToolOptions SHALL contain optional deferLoading bool (dynamic tool_search discovery), allowedCallers string array (which server tools can invoke it), and eagerInputStreaming bool (input streaming before completion).
+
+#### Scenario: Anthropic tool discovery and caller options
+
+- **WHEN** a function tool configures deferLoading:true, allowedCallers:["direct"] and eagerInputStreaming:true
+- **THEN** BetaToolParam SHALL contain DeferLoading:true, AllowedCallers:["direct"] and EagerInputStreaming:true
+
+### Requirement: Anthropic allowed-callers presence preservation
+
+AnthropicToolOptions.AllowedCallers nil SHALL be omitted; explicit empty non-nil slices SHALL serialize as "allowedCallers":[] and remain distinct through ProviderOptions JSON round trip and ResolveOption[AnthropicToolOptions].
+
+#### Scenario: Anthropic allowed-callers presence preservation
+
+- **WHEN** typed options have an empty non-nil AllowedCallers slice
+- **THEN** JSON round trip SHALL retain the empty slice and native allowed_callers:[] rather than omit it
+
+### Requirement: Anthropic explicit eager-input truthiness
+
+Explicit EagerInputStreaming:true SHALL emit eager_input_streaming:true even with model default false. Explicit false SHALL override model default true and omit the wire field, never emit eager_input_streaming:false. Only truthy resolved values SHALL emit true, matching upstream `...(eagerInputStreaming ? { eager_input_streaming: true } : {})`.
+
+#### Scenario: Anthropic explicit eager-input truthiness
+
+- **WHEN** per-tool eagerInputStreaming:false is set on a default-enabled stream
+- **THEN** the native field SHALL be omitted, while explicit true with a disabled model default SHALL emit true

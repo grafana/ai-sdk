@@ -10,7 +10,7 @@ node = "24"
 pnpm = "12.8.2"
 python = "3.14.8"
 golangci-lint = "2.14.0"
-"npm:@fission-ai/openspec" = "1"
+"npm:@fission-ai/openspec" = "1.14.1"
 "npm:markdownlint-cli2" = "0.23.3"
 
 [deps.test]

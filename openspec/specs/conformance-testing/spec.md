@@ -4,6 +4,7 @@
 
 Define provider conformance fixture formats, provider-independent core UI lifecycle goldens, replay/generation tooling, and exact UI message chunk comparison behavior for validating Go SDK behavior against upstream TypeScript SDK output.
 ## Requirements
+
 ### Requirement: Fixture format
 The system SHALL use `.chunks.txt` files as provider response fixtures, where each file contains one JSON object per line representing a single provider streaming event. The fixture files SHALL NOT contain SSE framing (`data:`, `event:`, blank lines) -- framing SHALL be added by the replay server at serve time. The same fixture format SHALL be used for both upstream and recorded fixtures.
 
@@ -20,7 +21,8 @@ The system SHALL use `.chunks.txt` files as provider response fixtures, where ea
 - **THEN** each non-empty line parses as a valid JSON object representing a provider streaming event (e.g., Anthropic's `message_start`, `content_block_delta`, etc.)
 
 ### Requirement: Fixture categories
-The system SHALL support two categories of fixtures organized under each provider directory: `upstream/` for fixtures copied from the Vercel AI SDK, and `recorded/` for locally controlled fixtures captured from real provider APIs or deterministically derived from captured provider payloads to reproduce transport failures that cannot be recorded reliably. Derived fixtures SHALL preserve valid provider event shapes and SHALL document their synthetic condition through the test case name and configuration. Both categories SHALL use the same fixture format and `config.yaml` schema. The `record.mts` tool SHALL only operate on `recorded/` fixtures. The `generate.mts` tool SHALL operate on both categories.
+
+The system SHALL support provider `upstream/` fixtures copied from Vercel AI SDK and locally controlled `recorded/` fixtures captured from real APIs or deterministically derived from captured payloads for transport failures that cannot be recorded reliably. Both SHALL share fixture format and `config.yaml` schema. `record.mts` SHALL operate only on `recorded/`; `generate.mts` SHALL operate on both.
 
 #### Scenario: Upstream fixture
 - **WHEN** a fixture is copied from the Vercel AI SDK
@@ -43,12 +45,31 @@ The system SHALL support two categories of fixtures organized under each provide
 - **WHEN** upstream fixtures exist for a provider
 - **THEN** `<provider>/upstream/INDEX.yaml` SHALL map each known upstream fixture name to its local test case directory (if imported) or `null` (if not yet imported), providing a single view of import coverage
 
+### Requirement: Derived transport-failure provenance
+
+Derived transport-failure fixtures SHALL preserve valid provider event shapes and SHALL document their synthetic condition through the test case name and configuration.
+
+#### Scenario: Derived transport-failure provenance
+- **WHEN** a captured payload is minimally derived to reproduce a transport failure
+- **THEN** its event shapes SHALL remain valid and its name and configuration SHALL document the synthetic condition
+
 ### Requirement: Test case configuration
-Each provider-backed test case directory SHALL contain a `config.yaml` file that declares the replay configuration. The YAML SHALL specify: `model` (string), and optionally: `system`, `prompt` (string, for recording and documentation), `messages` (ordered role/content entries), persisted `uiMessages`, `allowSystemInMessages`, `stopWhenStepCount` (integer, default 1), `providerOptions` (nested map), `tools` (map of tool name to tool definition with `description`, `inputSchema` JSON schema, `mockResults` list, optional declarative `modelOutput`, and optional approval configuration), `providerTools`, `responseFormat`, `assertOutputValue`, approval-resumption setup for scenarios that replay a second approval call, and `expectStreamError` (boolean, default false). Configured message content SHALL support scalar text or ordered `text`, `reasoning`, `file`, `tool-call`, and `tool-result` parts with part `providerOptions`. A configured file part SHALL carry `mediaType`, an optional `filename`, and either base64 `data` or a provider `reference` map. Tool-call/result entries SHALL support tool ids, names, inputs or structured outputs, provider-executed state where applicable, and per-part provider options. The provider SHALL be inferred from the parent directory structure, not from the YAML. When `providerOptions` is specified in YAML, the Go test SHALL marshal each provider namespace value to JSON and wrap it as `provider.RawProviderOption` for use with the typed provider options field on `StreamText`.
 
-The `messages` configuration SHALL be supported equivalently by the Go runner and TypeScript tools. It SHALL represent system, user, assistant, and tool roles and allow provider request snapshots to exercise continuation conversion without relying on an additional live or replayed model step.
+Each provider-backed test case SHALL contain `config.yaml` declaring replay configuration with required string `model`. Provider SHALL be inferred from parent directories, not YAML. Go SHALL marshal each YAML provider namespace value to JSON and wrap it as `provider.RawProviderOption` for typed `StreamText` options. Go and TypeScript SHALL support equivalent ordered `messages` for system, user, assistant and tool roles, enabling continuation snapshots without another model step.
 
-Tool approval configuration in conformance YAML SHALL be supported by both the Go runner and the TypeScript tools so recorded fixtures can exercise upstream-equivalent approval behavior. The approval configuration SHALL allow a tool to always require approval. Approval-resumption setup SHALL allow the test case to seed the conversation with an assistant tool call plus approval request and a tool approval response so approved and denied second-call fixtures can be replayed without manual code changes.
+#### Scenario: Replay configuration keys and defaults
+- **WHEN** the replay configuration schema is inspected
+- **THEN** it SHALL require `model` (string) and optionally support:
+- `system`
+- `prompt` (string, for recording and documentation)
+- `messages` (ordered role/content entries) and persisted `uiMessages`
+- `allowSystemInMessages`
+- `stopWhenStepCount` (integer, default 1)
+- `providerOptions` (nested map)
+- `tools` (map of tool name to definition with `description`, `inputSchema` JSON schema, `mockResults` list, optional declarative `modelOutput`, and optional approval configuration)
+- `providerTools`, `responseFormat`, `assertOutputValue`
+- approval-resumption setup for scenarios replaying a second approval call
+- `expectStreamError` (boolean, default false)
 
 #### Scenario: Minimal config
 - **WHEN** a config specifies only `model`
@@ -100,6 +121,22 @@ Tool approval configuration in conformance YAML SHALL be supported by both the G
 - **THEN** the Go runner SHALL compare `expected-object.json` directly with `StreamTextResult.OutputValue()`
 - **AND** it SHALL NOT reconstruct a missing output value from text chunks
 
+### Requirement: Configured message content shapes
+
+Configured message content SHALL support scalar text or ordered `text`, `reasoning`, `file`, `tool-call` and `tool-result` parts with part `providerOptions`. File parts SHALL carry `mediaType`, optional `filename`, and base64 `data` or a provider `reference` map. Tool-call/result entries SHALL support tool ids, names, inputs or structured outputs, provider-executed state where applicable and per-part provider options.
+
+#### Scenario: Configured message content shapes
+- **WHEN** a configured assistant message contains ordered tool-call and tool-result parts
+- **THEN** both loaders SHALL preserve ids, names, inputs/structured outputs, applicable provider-executed state and per-part provider options
+
+### Requirement: Configured tool approval resumption
+
+Both Go and TypeScript SHALL support conformance YAML tool approval for upstream-equivalent recorded flows, including tools always requiring approval. Approval-resumption setup SHALL allow seeding an assistant tool call plus approval request and a tool approval response, allowing approved and denied second-call fixtures to replay without manual code changes.
+
+#### Scenario: Configured tool approval resumption
+- **WHEN** a second-call fixture seeds a denied tool approval response
+- **THEN** both paths SHALL seed the assistant call/request and tool response and replay the denied flow without manual code changes
+
 ### Requirement: Expected output format
 Each test case directory SHALL contain an `expected.jsonl` file with the expected UIMessageChunk sequence. The file SHALL contain one JSON object per line, each representing a single UIMessageChunk as produced by the upstream TypeScript SDK's `toUIMessageStream()`. For multi-step test cases, the file SHALL contain the full chunk sequence across all steps in a single file.
 
@@ -127,7 +164,8 @@ A conformance test case MAY contain `expected-object.json` with the complete str
 - **THEN** the Go runner MAY reconstruct the actual comparison value from emitted text-delta chunks
 
 ### Requirement: Expected request input format
-Each provider-backed conformance test case SHALL contain an `expected-requests.jsonl` file that captures the upstream TypeScript provider request inputs for that test case. The file SHALL contain one JSON object per provider API request, in request order. Each request snapshot SHALL include the HTTP method, normalized escaped request target in the existing `path` field, normalized behavior-affecting headers, and decoded JSON request body. The request target SHALL include a nonempty URL query in addition to the escaped pathname.
+
+Each provider-backed case SHALL contain `expected-requests.jsonl` capturing upstream TypeScript provider inputs: one JSON object per provider API request in request order. Each snapshot SHALL include HTTP method, normalized escaped target in `path`, normalized behavior-affecting headers and decoded JSON body. The target SHALL include any nonempty URL query with the escaped pathname.
 
 #### Scenario: Single request fixture
 - **WHEN** a test case performs one provider API request
@@ -145,7 +183,8 @@ Each provider-backed conformance test case SHALL contain an `expected-requests.j
 - **AND** `path` contains the escaped pathname followed by the nonempty query, if present, without scheme, authority or fragment
 
 ### Requirement: TypeScript recording tool
-The system SHALL provide a TypeScript script (`test/conformance/tools/record.mts`) that captures new conformance fixtures from real provider APIs. The script SHALL only operate on `recorded/` directories. It SHALL read `config.yaml`, set up a recording proxy between the upstream TypeScript SDK and the real provider API, run `streamText` with the configuration, and save both the raw provider responses (as `input-N.chunks.txt`) and the UIMessageChunk output (as `expected.jsonl`) to the test case directory.
+
+The system SHALL provide `test/conformance/tools/record.mts` to capture real API fixtures only in `recorded/`. It SHALL read `config.yaml`, proxy between upstream TypeScript SDK and the real API, run configured `streamText`, and save raw responses as `input-N.chunks.txt` and UIMessageChunk output as `expected.jsonl` in the case directory.
 
 #### Scenario: Recording a single-step test case
 - **WHEN** the recording tool runs a config with `maxSteps: 1`
@@ -191,7 +230,8 @@ The TypeScript conformance generation and recording tools SHALL capture provider
 - **AND** committed request snapshots do not contain API keys, bearer tokens, or other secret header values
 
 ### Requirement: Go replay server
-The system SHALL provide a replay server (`test/conformance/runner.go`) that uses `httptest.Server` to serve fixture files as SSE responses. The server SHALL read `input.chunks.txt` or `input-N.chunks.txt` files, wrap each line with SSE framing (`event: <type>\ndata: <json>\n\n`), and serve with `Content-Type: text/event-stream`. The event type is extracted from the JSON `type` field of each fixture line. Both the Go and TypeScript replay servers SHALL use the same SSE format, matching what the real Anthropic API sends. For multi-step test cases, the server SHALL be stateful, serving `input-1.chunks.txt` for the first request, `input-2.chunks.txt` for the second, and so on. The server SHALL return an HTTP error if fixtures are exhausted.
+
+The system SHALL provide `test/conformance/runner.go` using `httptest.Server` to serve `input.chunks.txt` or `input-N.chunks.txt` as SSE with `Content-Type: text/event-stream`. Each line SHALL use framing `event: <type>\ndata: <json>\n\n`, taking event type from its JSON `type`. Go and TypeScript replay SHALL use the same SSE format as real Anthropic.
 
 #### Scenario: Single-step replay
 - **WHEN** the replay server receives a request for a single-step test case
@@ -209,8 +249,21 @@ The system SHALL provide a replay server (`test/conformance/runner.go`) that use
 - **WHEN** the replay server receives more requests than available fixture files
 - **THEN** it returns an HTTP error
 
+### Requirement: Replay request sequencing
+
+For multi-step cases, the replay server SHALL be stateful: serve `input-1.chunks.txt` for the first request, `input-2.chunks.txt` for the second, and so on. It SHALL return an HTTP error when fixtures are exhausted.
+
+#### Scenario: Replay request sequencing
+- **WHEN** a third request arrives when a case contains only two numbered input files
+- **THEN** the server SHALL return an HTTP error after serving those files in request order
+
 ### Requirement: Go conformance test runner
-The system SHALL provide per-provider Go test files (e.g., `test/conformance/anthropic/conformance_test.go`) that auto-discover test case directories under both `upstream/` and `recorded/` within their provider directory. For each test case: parse `config.yaml`, infer the provider from the directory structure, start the replay server with the fixture files, instantiate the Go provider pointing at the replay server, configure tools with mock execute functions (if defined), run `StreamText` -> `ToUIMessageStream` with a deterministic ID generator, collect the UIMessageChunk sequence, and compare it against `expected.jsonl`. Shared test infrastructure (replay, comparison, helpers) SHALL live in `test/conformance/runner.go`.
+
+The system SHALL provide per-provider Go tests (e.g. `test/conformance/anthropic/conformance_test.go`) auto-discovering cases in provider `upstream/` and `recorded/`. Each SHALL compare deterministic Go `StreamText` -> `ToUIMessageStream` output with `expected.jsonl`. Shared replay, comparison and helpers SHALL live in `test/conformance/runner.go`.
+
+#### Scenario: Discovered provider case execution
+- **WHEN** a provider test discovers a test case directory
+- **THEN** it SHALL parse `config.yaml`, infer provider from directories, start fixture replay, instantiate the provider pointing at replay, configure mock execute functions for defined tools, run `StreamText` -> `ToUIMessageStream` with a deterministic ID generator, collect chunks and compare them with `expected.jsonl`
 
 #### Scenario: Conformance test passes for matching output
 - **WHEN** the Go pipeline produces a UIMessageChunk sequence identical to `expected.jsonl`
@@ -315,13 +368,8 @@ Provider-specific request value normalization SHALL be narrow and documented. Fo
 - **THEN** the request input assertion passes
 
 ### Requirement: ID comparison strategy
-The system SHALL use exact comparison for all IDs in the UIMessageChunk stream. Content block IDs (from the provider, e.g. stringified block index) and tool call IDs (from the API response) are deterministic for a given fixture. Message-level IDs SHALL be controlled via deterministic generators configured identically in both the TypeScript tools and Go tests.
 
-Chunk sequences SHALL be compared positionally, with one exception. The comparator SHALL sort each maximal run of adjacent `tool-output-available` and `tool-output-error` chunks by `toolCallId`, in both the expected and the actual sequence, before comparing, because locally-executed tools in a step emit in completion order. An output whose `toolCallId` also has a `tool-input-error` chunk in the sequence belongs to a rejected call, is emitted while the model stream is read, SHALL be excluded from such a run, and SHALL end one.
-
-A chunk carrying `providerExecuted: true` SHALL be excluded from such a run and SHALL end one: provider-executed outputs are recorded in the order the provider sent them and SHALL stay exactly ordered.
-
-A run SHALL NOT extend across a chunk of any other type, so ordering relative to every other chunk, and across step boundaries, stays exact.
+The system SHALL compare UIMessageChunk IDs exactly. Provider content block IDs (e.g. stringified block index) and API tool call IDs are deterministic for a fixture. Message IDs SHALL use deterministic generators configured identically in Go and TypeScript. Sequences SHALL compare positionally except adjacent locally-executed tool output runs, whose completion order is normalized.
 
 #### Scenario: Exact comparison with deterministic IDs
 - **WHEN** both SDKs process the same fixture with deterministic message ID generators
@@ -347,6 +395,22 @@ A run SHALL NOT extend across a chunk of any other type, so ordering relative to
 
 - **WHEN** a rejected call's `tool-output-error` chunk is adjacent to an executed tool's output chunk and the two are swapped relative to the fixture
 - **THEN** the comparison fails
+
+### Requirement: Local tool output run normalization
+
+In expected and actual sequences, the comparator SHALL sort each maximal adjacent run of `tool-output-available` and `tool-output-error` chunks by `toolCallId` before comparison, because local tools emit in completion order. A run SHALL NOT cross any other chunk type or step boundary; order relative to all other chunks SHALL stay exact.
+
+#### Scenario: Local tool output run normalization
+- **WHEN** adjacent local success and error outputs arrive in opposite completion order
+- **THEN** the comparator SHALL sort the maximal run by `toolCallId` in both sequences without crossing other chunk types or step boundaries
+
+### Requirement: Rejected and provider-executed output ordering
+
+An output whose `toolCallId` has a `tool-input-error` in the sequence is a rejected call emitted during model-stream reading; it SHALL be excluded from and end local-output runs. A chunk with `providerExecuted: true` SHALL also be excluded from and end runs: provider-executed outputs SHALL retain exact recorded provider order.
+
+#### Scenario: Rejected and provider-executed output ordering
+- **WHEN** a provider-executed output separates two local outputs
+- **THEN** it SHALL end the normalization run and stay exactly ordered; the local outputs SHALL NOT be regrouped across it
 
 ### Requirement: Recorded tool approval conformance fixtures
 
@@ -561,7 +625,7 @@ The conformance suite SHALL be treated as both an upstream parity checker and an
 
 ### Requirement: Provider-independent core UI conformance
 
-The conformance suite SHALL support deterministic provider-independent cases for core orchestration and UI lifecycle behavior that cannot be represented reliably by timed provider replay. These cases SHALL live under `test/conformance/ui/<capability>/<scenario>/`, SHALL contain an `expected.jsonl` traced to the registered upstream baseline, and SHALL run the actual Go `StreamText` to `ToUIMessageStream` path with a controlled mock language model. They SHALL NOT require `config.yaml`, provider input chunks, or `expected-requests.jsonl`, and provider fixture discovery and inventory SHALL exclude them.
+The suite SHALL support deterministic provider-independent core orchestration/UI lifecycle cases unsuitable for timed provider replay, under `test/conformance/ui/<capability>/<scenario>/`. Each SHALL contain `expected.jsonl` traced to the registered baseline and run actual Go `StreamText` -> `ToUIMessageStream` with a controlled mock model. They SHALL NOT require `config.yaml`, provider chunks or `expected-requests.jsonl`; provider discovery/inventory SHALL exclude them.
 
 #### Scenario: Generated-file UI chunk parity
 
@@ -593,14 +657,8 @@ The conformance suite SHALL support deterministic provider-independent cases for
 - **THEN** provider-independent core UI cases without `config.yaml` SHALL NOT be treated as incomplete provider fixtures
 
 ### Requirement: OpenAI conformance provider directory
-The conformance suite SHALL include an OpenAI provider directory at
-`test/conformance/openai/` containing `upstream/` and `recorded/` subdirectories
-and a `conformance_test.go` (gated by the `conformance` build tag) that
-auto-discovers test case directories and runs each through the shared runner. The
-test SHALL instantiate the OpenAI Responses provider pointing at the replay
-server via a base-URL request option and a deterministic ID generator, then
-compare the produced UIMessageChunk sequence against `expected.jsonl` and the
-captured requests against `expected-requests.jsonl`.
+
+The suite SHALL include `test/conformance/openai/` with `upstream/`, `recorded/` and conformance-build-tagged `conformance_test.go` auto-discovering cases through the shared runner. Tests SHALL instantiate OpenAI Responses pointed at replay via a base-URL request option with a deterministic ID generator, compare UIMessageChunk output with `expected.jsonl` and captured requests with `expected-requests.jsonl`.
 
 #### Scenario: OpenAI case auto-discovery
 - **WHEN** a new test case directory is added under `test/conformance/openai/upstream/` or `test/conformance/openai/recorded/`
@@ -659,13 +717,8 @@ for OpenAI fixtures from committed inputs without API keys.
 - **THEN** the tool reports the missing key and does not record
 
 ### Requirement: OpenAI conformance fixture coverage
-The conformance suite SHALL include OpenAI fixtures covering at minimum: simple
-text generation, function tool calling, reasoning with summaries, structured
-(JSON schema) output, a provider-executed built-in tool (e.g. web search) with
-source citations, conversation continuation via `previous_response_id`, and
-provider-tool continuation request taxonomy for shell, local-shell, tool-search,
-apply-patch, and custom tools. Upstream fixtures SHALL be tracked in an
-`upstream/INDEX.yaml` mapping upstream Vercel fixture names to local directories.
+
+OpenAI fixtures SHALL cover at least simple text, function calls, reasoning summaries, JSON-schema output, provider-executed built-ins (e.g. web search) with citations, `previous_response_id` continuation, and provider-tool continuation taxonomy for shell, local-shell, tool-search, apply-patch and custom tools. `upstream/INDEX.yaml` SHALL map upstream Vercel fixture names to local directories.
 
 #### Scenario: Text generation fixture
 - **WHEN** `mise run test-conformance` runs the OpenAI simple-text fixture
@@ -740,7 +793,8 @@ The conformance harness SHALL support parity-sensitive `streamText`, `convertToM
 - **THEN** the Go and TypeScript conformance paths expose equivalent `ToModelOutput` behavior for persisted successful tool results
 
 ### Requirement: Escaped request target normalization
-TypeScript and Go request capture SHALL normalize serialized HTTP request URLs to the escaped pathname plus the nonempty query. They SHALL omit scheme, authority and fragment, SHALL use `/` for an empty pathname, and SHALL omit an empty query marker. They SHALL preserve query parameter order, repeated keys and values, percent escaping, literal plus signs, key-only parameters and empty values without decoding, re-encoding, sorting or collapsing query pairs. Existing queryless escaped paths SHALL remain unchanged.
+
+TypeScript and Go capture SHALL use escaped pathname plus nonempty query, omitting scheme, authority, fragment and empty query marker; empty pathname SHALL become `/`. They SHALL preserve query order, repeated keys/values, percent escaping, literal plus, key-only parameters and empty values without decoding, re-encoding, sorting or collapsing pairs. Queryless escaped paths SHALL remain unchanged.
 
 #### Scenario: Behavior-affecting query and repeated values
 - **WHEN** either implementation captures `/v1/messages?api-version=2024-10-21&feature=a&feature=b`
@@ -780,7 +834,8 @@ TypeScript and Go request capture SHALL normalize serialized HTTP request URLs t
 - **THEN** `path` is `/v1/messages`, without the fragment's apparent query
 
 ### Requirement: Cross-language request target regression evidence
-The conformance harness SHALL maintain shared synthetic request cases and a committed TypeScript-generated `expected-requests.jsonl` under `test/conformance/testdata/request-snapshots/`, outside provider `recorded/` and `upstream/` inputs. At least one request snapshot SHALL contain a nonsecret behavior-affecting API-version query and ordered repeated values. TypeScript tests SHALL assert independently declared target values and verify the committed expectation is current without rewriting it during normal tests. Go tests SHALL load the same expectation through the production loader, capture corresponding requests through the production snapshot function, and exercise the production comparator for matching and mismatching queries. This evidence SHALL be identified as harness-only sensitivity testing, not recorded provider behavior or new provider support.
+
+The harness SHALL maintain shared synthetic request cases and committed TypeScript-generated `expected-requests.jsonl` in `test/conformance/testdata/request-snapshots/`, outside provider inputs. At least one snapshot SHALL include nonsecret behavior-affecting API-version query and ordered repeated values. Evidence SHALL be identified as harness-only sensitivity testing, not recorded provider behavior or new provider support.
 
 #### Scenario: Matching cross-language snapshot
 - **WHEN** Go captures the requests represented by the shared synthetic cases
@@ -801,9 +856,29 @@ The conformance harness SHALL maintain shared synthetic request cases and a comm
 - **THEN** the registered conformance tools' request snapshot normalizer and JSONL writer produce the expectations from controlled nonsecret cases
 - **AND** no provider response inputs, upstream pins or fixture provenance are modified
 
+### Requirement: TypeScript request-target regression checks
+
+TypeScript tests SHALL assert independently declared target values and verify committed expectations are current without rewriting them during normal tests.
+
+#### Scenario: TypeScript request-target regression checks
+- **WHEN** recomputed shared-case request snapshots differ from committed JSONL
+- **THEN** the TypeScript test SHALL fail without rewriting the expectation
+
+### Requirement: Go production request-target regression checks
+
+Go tests SHALL load shared TypeScript expectations through the production loader, capture corresponding requests through the production snapshot function and exercise the production comparator for matching and mismatching queries.
+
+#### Scenario: Go production request-target regression checks
+- **WHEN** a Go test changes only API version in a captured shared request
+- **THEN** the production loader, capture and comparator path SHALL reject the mismatch against the TypeScript expectation
+
 ### Requirement: Fixture configuration rejects unknown keys
 
-The TypeScript generation and recording tools and the Go replay loader SHALL reject a `config.yaml` key that no config type declares, at the top level and in every structured nested value, including map-valued entries such as `tools.<name>` and `providerTools.<name>`, message entries and their content parts, model-output content items, approvals, stream options, the tool choice and the response format. The error SHALL name the key and where it appears, and SHALL stop generation, recording or replay before any snapshot is produced or consumed. Payload values, including provider options, JSON schemas, tool inputs and outputs, provider tool arguments, headers and UI message parts, SHALL accept any keys. The two loaders SHALL accept the same keys, enforced by a shared fixture that lists every key at every level and that both loaders must accept.
+TypeScript generation/recording and Go replay SHALL reject keys undeclared by any config type at top level and every structured nested value. Errors SHALL name the key and location and stop generation, recording or replay before snapshots are produced or consumed. Payloads SHALL remain open. A shared fixture listing every key at every level SHALL be accepted by both loaders to enforce key alignment.
+
+#### Scenario: Nested configuration key boundaries
+- **WHEN** unknown keys occur in structured config values or arbitrary payload maps
+- **THEN** unknown-key rejection SHALL cover `tools.<name>`, `providerTools.<name>`, message entries/content parts, model-output items, approvals, stream options, tool choice and response format. Payload keys SHALL remain arbitrary in provider options, JSON schemas, tool inputs/outputs, provider tool arguments, headers and UI message parts
 
 #### Scenario: Misspelled top-level key
 

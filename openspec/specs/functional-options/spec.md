@@ -70,9 +70,8 @@ The library SHALL provide option functions for all model tuning parameters: `Wit
 - **THEN** the temperature field in `CallOptions` remains nil (provider uses its default)
 
 ### Requirement: Tool options
-The library SHALL provide `WithTools(ToolSet)`, `WithToolChoice(provider.ToolChoice)`, `WithActiveTools(...string)`, and `WithStopWhen(...StopCondition)` as shared options.
 
-Before each provider invocation, shared text orchestration SHALL resolve tool choice independently of the effective tools list. A non-nil `PrepareStepResult.ToolChoice` SHALL override the configured choice for that step. Otherwise the configured choice SHALL apply. If neither supplies a choice, `CallOptions.ToolChoice` SHALL contain `provider.ToolChoice{Type: provider.ToolChoiceAuto}`, including when tools are absent, empty, or filtered to empty. Explicit auto, none, required, and named choices SHALL be preserved without replacement or tool-count-based omission. A step override SHALL NOT mutate the configured choice or leak into later steps. These rules SHALL apply to `StreamText`, `GenerateText`, `ToolLoopAgent.Stream`, and `ToolLoopAgent.Generate` through their shared orchestration path.
+The library SHALL provide shared `WithTools(ToolSet)`, `WithToolChoice(provider.ToolChoice)`, `WithActiveTools(...string)` and `WithStopWhen(...StopCondition)` options. Before each provider invocation, shared orchestration SHALL resolve tool choice independently of effective tools. Non-nil `PrepareStepResult.ToolChoice` overrides configuration for that step; otherwise configuration applies, then default auto.
 
 #### Scenario: WithTools configures available tools
 - **WHEN** `WithTools` is passed with a `ToolSet`
@@ -117,13 +116,25 @@ Before each provider invocation, shared text orchestration SHALL resolve tool ch
 - **THEN** its shared provider streaming call SHALL contain the same automatic choice as `StreamText`
 - **AND** configured, Agent per-call, and step-specific explicit choices SHALL retain their existing precedence
 
+### Requirement: Tool choice presence and step isolation
+
+Absent configured and step choices SHALL produce `provider.ToolChoice{Type: provider.ToolChoiceAuto}` in `CallOptions.ToolChoice`, even with absent, empty or filtered-empty tools. Explicit auto, none, required and named choices SHALL survive without replacement or tool-count omission. Step overrides SHALL NOT mutate configured choice or leak to later steps.
+
+#### Scenario: Tool choice presence and step isolation
+- **WHEN** a named configured choice has no effective tools
+- **THEN** the provider call SHALL preserve the named choice rather than omit or replace it
+
+### Requirement: Shared text tool-choice resolution
+
+Tool-choice resolution rules SHALL apply through shared orchestration to `StreamText`, `GenerateText`, `ToolLoopAgent.Stream` and `ToolLoopAgent.Generate`.
+
+#### Scenario: Shared text tool-choice resolution
+- **WHEN** `ToolLoopAgent.Generate` prepares a step with no configured or overridden choice
+- **THEN** its shared provider call SHALL use automatic choice, including with no tools
+
 ### Requirement: Completed responses satisfy the effective tool choice
 
-Shared text orchestration SHALL validate a completed model response against the effective per-step tool choice resolved for that provider invocation, including `PrepareStepResult.ToolChoice` precedence and later-step reset to configured choice or default auto. This validation SHALL apply to `StreamText`, `GenerateText`, `ToolLoopAgent.Stream`, and `ToolLoopAgent.Generate` without changing option or result signatures.
-
-For required choice, a response SHALL satisfy the choice if it contains at least one parsed tool call. For named choice, a response SHALL satisfy the choice if at least one parsed tool call has the selected name. Invalid and provider-executed parsed calls SHALL count toward this presence test while retaining their existing validity and execution semantics. Named choice SHALL NOT prohibit additional calls when a selected call is present. Auto and none SHALL retain their existing response behavior. Text resembling a tool call SHALL NOT count as a parsed call.
-
-A completed response that fails this predicate SHALL be a terminal semantic failure. Enforcement SHALL occur before new local approval or execution processing for that step. It SHALL NOT depend on effective tool count, local executability, provider request rewriting, or continuation eligibility. Incomplete/canceled model calls and existing provider error paths SHALL retain their existing behavior rather than acquiring a missing-required-call error.
+Shared text orchestration SHALL validate completed responses against effective per-step choice, including `PrepareStepResult.ToolChoice` precedence and later reset to configured choice/default auto. This SHALL apply to `StreamText`, `GenerateText`, `ToolLoopAgent.Stream` and `ToolLoopAgent.Generate` without option/result signature changes. Unsatisfied completed responses SHALL be terminal semantic failures before new local approval or execution processing.
 
 #### Scenario: Required choice with no parsed call
 - **WHEN** a model call completes with required choice and reasoning/text but no parsed tool call
@@ -166,6 +177,22 @@ A completed response that fails this predicate SHALL be a terminal semantic fail
 - **WHEN** a completed response uses auto or none choice
 - **THEN** this validation SHALL not introduce a missing-call error or a new prohibition on returned calls
 
+### Requirement: Required and named choice satisfaction
+
+Required choice SHALL need at least one parsed tool call; named choice SHALL need a parsed call with the selected name. Invalid and provider-executed parsed calls SHALL count while retaining validity/execution semantics. Named choice SHALL NOT prohibit additional calls if a selected call exists. Auto/none SHALL retain existing response behavior. Tool-call-like text SHALL NOT count.
+
+#### Scenario: Required and named choice satisfaction
+- **WHEN** a completed named response has the selected parsed call and an unrelated parsed call
+- **THEN** presence SHALL satisfy choice without rejecting the unrelated call solely for its name
+
+### Requirement: Tool choice enforcement boundaries
+
+Enforcement SHALL NOT depend on effective tool count, local executability, provider request rewriting or continuation eligibility. Incomplete/canceled calls and existing provider errors SHALL retain their behavior rather than acquire a missing-required-call error.
+
+#### Scenario: Tool choice enforcement boundaries
+- **WHEN** a required-choice model call is canceled before completion
+- **THEN** it SHALL retain cancellation behavior and SHALL NOT gain a missing-required-call error
+
 ### Requirement: Provider integration options
 The library SHALL provide `WithProviderOptions(opts ...provider.ProviderOption)`, `WithHeaders(map[string]string)`, and `WithResponseFormat(provider.ResponseFormat)` as shared options. `WithProviderOptions` accepts variadic typed provider option values and builds the options map internally using each value's `ProviderKey()`.
 
@@ -200,7 +227,8 @@ The library SHALL provide `OnStart`, `OnStepStart`, `OnStepFinish`, `OnError`, `
 - **THEN** raw provider chunks are included in the stream
 
 ### Requirement: PrepareStep and Output options
-`WithPrepareStep(PrepareStepFunc)` and `WithOutput(Output)` SHALL be shared options. Each `PrepareStepFunc` invocation SHALL receive a zero-based step number equal to the number of completed steps. Before each provider call, `PrepareStepState` SHALL expose the current provider messages in `Messages`, the original converted input messages in `InitialMessages`, and the ordered response messages accumulated before the current step in `ResponseMessages`. `InitialMessages` SHALL exclude configured system messages and approval-generated tool results. `ResponseMessages` SHALL include approval-generated tool results from the initial input followed by each completed step's response messages. A non-nil `PrepareStepResult.Messages` override SHALL become the current message base for that step and later steps, while later response messages continue to accumulate independently.
+
+`WithPrepareStep(PrepareStepFunc)` and `WithOutput(Output)` SHALL be shared options. Each preparation SHALL receive a zero-based step number equal to completed steps. Before each call, `Messages` SHALL expose current provider messages, `InitialMessages` original converted inputs, and `ResponseMessages` ordered accumulated responses. Non-nil result `Messages` overrides SHALL become the current base for that and later steps while responses accumulate independently.
 
 #### Scenario: WithPrepareStep enables per-step configuration
 - **WHEN** `WithPrepareStep(fn)` is passed
@@ -239,6 +267,14 @@ The library SHALL provide `OnStart`, `OnStepStart`, `OnStepFinish`, `OnError`, `
 #### Scenario: WithOutput sets structured output
 - **WHEN** `WithOutput(out)` is passed
 - **THEN** the output's response format overrides any explicit response format, and output processing is applied to results
+
+### Requirement: PrepareStep initial and response history boundaries
+
+`PrepareStepState.InitialMessages` SHALL exclude configured system messages and approval-generated tool results. `ResponseMessages` SHALL include initial approval-generated tool results followed by each completed step's response messages in order.
+
+#### Scenario: PrepareStep initial and response history boundaries
+- **WHEN** approval generates a tool result before the first provider call
+- **THEN** initial messages SHALL exclude the generated result and configured system messages; response history SHALL start with the generated result before later step responses
 
 ### Requirement: Output package accepts functional options
 `output.GenerateObject` SHALL have the signature `func GenerateObject[T any](ctx context.Context, model provider.LanguageModel, out aisdk.Output, opts ...aisdk.GenerateOption) (*ObjectResult[T], error)`. `output.StreamObject` SHALL have the signature `func StreamObject[T any](ctx context.Context, model provider.LanguageModel, out aisdk.Output, opts ...aisdk.StreamOption) *StreamObjectResult[T]`.
