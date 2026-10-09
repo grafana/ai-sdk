@@ -24,9 +24,9 @@ func TestParseSettings_Defaults(t *testing.T) {
 		ConfigFile:               "/tmp/models.yaml",
 		ConfigMaxBytes:           1_048_576,
 		DeploymentMode:           DeploymentProduction,
-		PrivateListenAddress:     ":8080",
-		CloudListenAddress:       ":8081",
-		OperationalListenAddress: ":8082",
+		PrivateListenAddress:     ":8082",
+		CloudListenAddress:       ":8080",
+		OperationalListenAddress: ":8081",
 		ReadHeaderTimeout:        5 * time.Second,
 		ReadTimeout:              30 * time.Second,
 		WriteTimeout:             165 * time.Second,
@@ -433,7 +433,7 @@ func TestParseSettings_IsolatedListeners(t *testing.T) {
 		{name: "three listeners"},
 		{name: "missing operational", args: []string{"--server.operational-listen-address="}, wantErr: "TCP"},
 		{name: "missing cloud", args: []string{"--server.cloud-listen-address="}, wantErr: "TCP"},
-		{name: "shared port", args: []string{"--server.cloud-listen-address=:8080"}, wantErr: "differ"},
+		{name: "shared port", args: []string{"--server.private-listen-address=:8080"}, wantErr: "differ"},
 		{name: "invalid cloud address", args: []string{"--server.cloud-listen-address=bad"}, wantErr: "TCP"},
 		{name: "legacy mode", args: []string{"--auth.mode=cloud-gateway"}, wantErr: "unknown long flag"},
 		{name: "legacy listener", args: []string{"--server.listen-address=:8080"}, wantErr: "unknown long flag"},
@@ -478,9 +478,9 @@ func baseSettingsEnvironment() map[string]string {
 func unsafeAuthEnvironment(environment map[string]string) {
 	environment["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development"
 	environment["GRAFANA_AI_GATEWAY_AUTH_JWKS_URL"] = ""
-	environment["GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS"] = "127.0.0.1:8080"
-	environment["GRAFANA_AI_GATEWAY_SERVER_CLOUD_LISTEN_ADDRESS"] = "127.0.0.1:8081"
-	environment["GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS"] = "127.0.0.1:8082"
+	environment["GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS"] = "127.0.0.1:8082"
+	environment["GRAFANA_AI_GATEWAY_SERVER_CLOUD_LISTEN_ADDRESS"] = "127.0.0.1:8080"
+	environment["GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS"] = "127.0.0.1:8081"
 }
 
 func mapLookup(values map[string]string) LookupEnv {

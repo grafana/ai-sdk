@@ -29,8 +29,7 @@ jobs:
       # The token is brokered by Vault against this workflow's OIDC identity, so
       # no app private key lives in this repository. The broker binds issuance to
       # this file's path, the main branch, and the push event; moving or renaming
-      # this workflow requires updating the config in deployment_tools at
-      # terraform/repositories/ai-sdk/github-app-configs/config.yaml.
+      # this workflow requires coordinating an update to the external broker configuration.
       - name: Mint release app token
         id: app-token
         uses: grafana/shared-workflows/actions/create-github-app-token@5bbb526b1728ca57fbe1750c4c27ab6ab06171c2 # create-github-app-token/v1.0
