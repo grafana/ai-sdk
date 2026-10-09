@@ -1,3 +1,15 @@
+## Approved field-policy revision
+
+The updated #317/#123 audit contract supersedes the original subtree-censorship
+policy recorded below. Current captures reuse Options.Redactor, RedactorFunc and
+DefaultRedactorWithExtraKeys on existing structured copies. Matching credential
+fields are redacted; unfamiliar noncredential values, timeout settings and
+provider echoes in ordinary text are not censored. No BYOK walker or new path API
+is introduced, and caller/provider data remains unchanged. Exporters keep their
+own capture boundaries. Current main specs and tests reflect this revised policy;
+the original versioned evidence below is historical. The registered reference is
+Gateway 4.0.103 / ai 7.0.127 / Provider 4.0.21 at `eb77f09e`.
+
 ## Context
 
 Stack 1/3 of #317 separates Apache client/capture changes from Gateway execution.

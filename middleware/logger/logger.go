@@ -539,14 +539,10 @@ func jsonAttr(key string, value any, capture CaptureOptions) (attr slog.Attr, ok
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return slog.Attr{}, false
 	}
-	if _, ok := value.(provider.ProviderOptions); ok {
-		redactBYOKOptions(decoded)
-	}
 	return jsonValueAttr(key, decoded, len(data), capture), true
 }
 
 func jsonValueAttr(key string, value any, size int, capture CaptureOptions) slog.Attr {
-	redactNestedBYOKOptions(value)
 	if size > capture.MaxJSONBytes {
 		return truncatedJSONAttr(key, value, size)
 	}

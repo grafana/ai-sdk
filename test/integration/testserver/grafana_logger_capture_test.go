@@ -65,11 +65,12 @@ func TestModel_BYOKLoggerCapture(t *testing.T) {
 						assert.Contains(t, string(result.Request.Body), "dummy-unfamiliar")
 					}
 				}
-				for _, key := range []string{"dummy-first", "dummy-second", "dummy-unfamiliar", "dummy-cap"} {
+				for _, key := range []string{"dummy-first", "dummy-second", "dummy-cap"} {
 					assert.NotContains(t, logs.String(), key)
 				}
 				if limit > 1 {
 					assert.Contains(t, logs.String(), "ordinary")
+					assert.Contains(t, logs.String(), "dummy-unfamiliar")
 					assert.Contains(t, logs.String(), "[REDACTED]")
 				}
 			})

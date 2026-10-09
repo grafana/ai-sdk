@@ -136,15 +136,15 @@ By default the logger SHALL NOT log prompt/message content, generated or reasoni
 - **AND** it SHALL redact only fields represented as structured attrs or typed values
 
 ### Requirement: BYOK capture protection
-Default SDK capture SHALL redact the complete providerOptions.gateway.byok subtree and gateway.byok in typed captures, including nested message/tool options, ordered accounts and JSON request bodies attached to errors. Sanitization SHALL occur on a decoded copy before sink emission or custom redactors.
+Options.Redactor SHALL own field-aware redaction of structured capture copies. DefaultRedactor SHALL redact matching sensitive keys, including apiKey and authentication headers; RedactorFunc and DefaultRedactorWithExtraKeys MAY customize that policy. Capture SHALL NOT apply a BYOK-specific subtree rewrite or match credential values in unrelated fields.
 
 #### Scenario: Captured BYOK includes unfamiliar fields
-- **WHEN** provider-options or request-body capture encounters a gateway.byok subtree containing dummy credentials under known or unfamiliar nested keys
-- **THEN** default capture SHALL redact the complete subtree while retaining ordinary sibling options
+- **WHEN** structured BYOK capture contains apiKey plus unfamiliar noncredential fields
+- **THEN** the configured redactor SHALL redact matching credential fields and preserve the unfamiliar values and ordinary siblings
 
 #### Scenario: Actual unary and streaming request capture
 - **WHEN** logger middleware wraps a Grafana provider with request-body/provider-options capture enabled
-- **THEN** captured unary, streaming and error-associated request records SHALL contain no BYOK dummy markers even at truncation boundaries
+- **THEN** matching sensitive fields SHALL follow the configured redactor in unary, streaming and error-associated captures, including shape-only truncation
 - **AND** the provider SHALL still receive the original request credentials
 
 ### Requirement: Request-body capture failures and limits
@@ -155,11 +155,11 @@ Request-body capture SHALL accept JSON objects or null and omit malformed or opa
 - **THEN** capture SHALL omit it without logging raw fallback bytes or failing the model call
 
 ### Requirement: Capture ownership and ordinary Gateway values
-Sanitization SHALL preserve original parameters, results and request metadata. Ordinary gateway fields and gateway.providerTimeouts.byok SHALL retain their values; credential protection SHALL NOT censor key-looking application content.
+Capture and redaction SHALL preserve original parameters, results and request metadata. Ordinary gateway fields and gateway.providerTimeouts.byok SHALL retain their values. Redaction SHALL depend on configured field policy, not credential-value matching; provider output and key-looking application text SHALL remain unchanged.
 
 #### Scenario: Application content resembles credentials
 - **WHEN** an allowed prompt/output or ordinary metadata string resembles an API key or contains the text gateway.byok
-- **THEN** subtree protection SHALL NOT rewrite that application string
+- **THEN** field-aware redaction SHALL NOT rewrite that application string
 
 #### Scenario: Ordinary gateway values survive
 - **WHEN** tool output contains a gateway string or provider options contain gateway.providerTimeouts.byok

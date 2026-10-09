@@ -103,3 +103,18 @@ security updates, client safety, additive error/opaque metadata and archive proo
 Full gates above and standalone readonly Go 1.26.8 Grafana races passed;
 74 command cases ran without skips. Logs: `/tmp/byok-stack-pr1-latest-main-20261009/`.
 Registered upstream pins and authentic provider inputs remain unchanged.
+
+## Approved reusable logger policy
+
+The owner-approved audit changes field policy, not caller output: removed the
+BYOK-specific walker and reused the existing logger redactor after generic capture
+normalization. Tests for preserved unfamiliar values/custom identity policies
+failed before removal. Default and extra-key policies now protect matching fields
+while ordinary text/timeout controls survive. Caller objects and transport bodies
+remain unchanged; Agent Observability request-metadata exclusions are verified
+independently. Focused logger/client/exporter races and ten local SDK-harness
+capture repetitions passed. Full gates passed under exact `eb77f09e`/Gateway4.0.103,
+including 74 command tests without skips, module/image checks and current strict
+spec validation. Logs: `/tmp/byok-stack-pr1-approved-audit-20261009/` and
+`/tmp/byok-audit-logger-{red,green,client-harness}.log`. No protocol bytes,
+authentication/header ownership, provider inputs or published module manifests changed.

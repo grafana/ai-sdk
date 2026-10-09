@@ -199,11 +199,12 @@ a claim that the configured Gateway service accepts BYOK. Server capabilities
 and account authorization still decide which requests execute.
 
 Returned caller-owned request metadata retains submitted keys. Opt-in Go logger
-capture redacts the credential subtree in typed provider options and JSON request
-bodies, including error-associated bodies, without changing the original data.
-Direct application logging, including TypeScript logging, remains your
-responsibility: omit credentials from a copy before sending it to logs or telemetry.
-Ordinary options such as `gateway.providerTimeouts.byok` are not credentials.
+capture applies its configured field redactor to structured copies, including
+`apiKey` and authentication headers. Use `DefaultRedactorWithExtraKeys` or
+`RedactorFunc` for additional sensitive fields. This does not redact the entire
+BYOK object, censor provider data or find secrets embedded in ordinary text.
+Direct application/TypeScript logging and other exporters need their own capture
+policy. Ordinary fields and `gateway.providerTimeouts.byok` remain unchanged.
 
 ## Configure fallback
 

@@ -779,7 +779,7 @@ Both Go and exact-pinned Vercel requests SHALL emit the standard BYOK subtree in
 
 #### Scenario: Actual consumer capture
 - **WHEN** Go logging enables provider-options and request-body capture for both unary and streaming BYOK calls
-- **THEN** its real capture sink SHALL contain no dummy BYOK markers while retaining allowed non-secret request content
+- **THEN** its configured redactor SHALL protect matching credential fields while retaining noncredential request content and leaving caller/provider data unchanged
 
 #### Scenario: Stock Vercel request metadata
 - **WHEN** the registered Vercel client returns request.body after BYOK submission
@@ -787,7 +787,7 @@ Both Go and exact-pinned Vercel requests SHALL emit the standard BYOK subtree in
 - **AND** guidance SHALL identify direct logging of that metadata as caller-owned credential exposure, without changing the HTTP request or caller result
 
 ### Requirement: Credential-aware client capture boundaries
-Default Go logger capture SHALL structurally protect credentials in supported SDK capture representations. Direct application logging, including TypeScript logging, SHALL remain caller-owned; guidance SHALL warn against logging credential-bearing metadata and recommend omitting credentials from a copy. This change SHALL NOT provide a TypeScript redaction helper.
+Go logger capture SHALL apply its existing Redactor policy to matching sensitive fields in supported structured SDK captures. Direct application logging, including TypeScript logging, SHALL remain caller-owned; guidance SHALL warn against logging credential-bearing metadata and recommend omitting credentials from a copy. This change SHALL NOT provide a TypeScript redaction helper.
 
 #### Scenario: Capture evidence respects supported APIs
 - **WHEN** enrichment and Agent Observability capture paths are inspected and tested with dummy markers

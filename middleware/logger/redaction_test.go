@@ -63,6 +63,16 @@ func TestDefaultRedactorWithExtraKeys_RedactsAdditionalPatterns(t *testing.T) {
 	assertAttr(t, handler.Records()[0].AttrsMap(), "x-internal-signature", redactedValue)
 }
 
+func TestDefaultRedactor_FieldPolicyPreservesEchoes(t *testing.T) {
+	original := map[string]any{"apiKey": "dummy-value", "message": "dummy-value", "providerTimeouts": map[string]any{"byok": map[string]any{"openai": 5000}}}
+	attrs := DefaultRedactor().RedactAttrs(context.Background(), EventGenerateError, []slog.Attr{slog.Any("payload", original)})
+	got := attrs[0].Value.Any().(map[string]any)
+	assert.Equal(t, redactedValue, got["apiKey"])
+	assert.Equal(t, "dummy-value", got["message"])
+	assert.Equal(t, original["providerTimeouts"], got["providerTimeouts"])
+	assert.Equal(t, "dummy-value", original["apiKey"])
+}
+
 func TestDefaultRedactor_DoesNotRewriteOpaqueStrings(t *testing.T) {
 	attrs := []slog.Attr{slog.String("payload", `{"authorization":"secret"}`)}
 	redacted := DefaultRedactor().RedactAttrs(context.Background(), EventGenerateStart, attrs)
@@ -100,8 +110,8 @@ func recordsJSONForAttrs(t *testing.T, attrs []slog.Attr) string {
 	return handler.JSON(t)
 }
 
-func TestJSONAttr_BYOKSanitization(t *testing.T) {
-	const rawOptions = `{"byok":{"openai":[{"unfamiliar":{"nested":"dummy-credential"}}]},"ordinary":true,"providerTimeouts":{"byok":{"openai":5000}}}`
+func TestJSONAttr_CredentialFieldRedaction(t *testing.T) {
+	const rawOptions = `{"byok":{"openai":[{"apiKey":"dummy-credential","unfamiliar":{"nested":"visible-value"}}]},"ordinary":true,"providerTimeouts":{"byok":{"openai":5000}}}`
 	options := provider.ProviderOptions{"gateway": provider.RawProviderOption{Raw: json.RawMessage(rawOptions)}}
 	for _, tc := range []struct {
 		name  string
@@ -111,8 +121,8 @@ func TestJSONAttr_BYOKSanitization(t *testing.T) {
 		{"raw body", json.RawMessage(`{"providerOptions":{"gateway":` + rawOptions + `},"prompt":"application gateway.byok dummy-application"}`)},
 		{"message options", []provider.Message{{Role: provider.RoleUser, ProviderOptions: options}}},
 		{"tool options", []provider.Tool{{ProviderOptions: options}}},
-		{"opaque options", json.RawMessage(`{"providerOptions":"dummy-credential","ordinary":true}`)},
-		{"malformed gateway", json.RawMessage(`{"providerOptions":{"gateway":["dummy-credential"]},"ordinary":true}`)},
+		{"opaque options", json.RawMessage(`{"providerOptions":"application-value","ordinary":true}`)},
+		{"malformed gateway", json.RawMessage(`{"providerOptions":{"gateway":["application-value"]},"ordinary":true}`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before, err := json.Marshal(tc.value)
@@ -120,12 +130,18 @@ func TestJSONAttr_BYOKSanitization(t *testing.T) {
 			for _, limit := range []int{1, 8192} {
 				attr, ok := jsonAttr("capture", tc.value, CaptureOptions{MaxJSONBytes: limit})
 				require.True(t, ok)
-				data := recordsJSONForAttrs(t, []slog.Attr{attr})
+				data := recordsJSONForAttrs(t, DefaultRedactor().RedactAttrs(context.Background(), EventGenerateStart, []slog.Attr{attr}))
 				assert.NotContains(t, data, "dummy-credential")
 				if limit > 1 {
 					assert.Contains(t, data, "ordinary")
 					assert.NotContains(t, data, `"Raw"`)
-					assert.Contains(t, data, redactedValue)
+					if tc.name == "opaque options" || tc.name == "malformed gateway" {
+						assert.Contains(t, data, "application-value")
+					} else {
+						assert.Contains(t, data, redactedValue)
+						assert.Contains(t, data, "visible-value")
+						assert.Contains(t, data, `"openai":5000`)
+					}
 					if tc.name == "raw body" {
 						assert.Contains(t, data, "application gateway.byok dummy-application")
 					}
@@ -152,33 +168,42 @@ func TestCapture_BYOKPreservesOrdinaryData(t *testing.T) {
 	assert.Contains(t, data, `"byok":{"openai":5000}`)
 }
 
-func TestMiddleware_BYOKErrorBodyCapture(t *testing.T) {
-	body := json.RawMessage(`{"providerOptions":{"gateway":{"byok":{"openai":[{"future":"dummy-error-key"}]},"ordinary":true}}}`)
+func TestMiddleware_ErrorBodyFieldPolicy(t *testing.T) {
+	body := json.RawMessage(`{"providerOptions":{"gateway":{"byok":{"openai":[{"apiKey":"dummy-error-key","future":"dummy-future"}]},"ordinary":true}}}`)
 	before := string(body)
 	for _, mode := range []string{"generate", "stream"} {
-		t.Run(mode, func(t *testing.T) {
-			handler := newTestHandler()
-			failure := provider.NewAPICallError(provider.APICallErrorOptions{Message: "safe failure", StatusCode: 400, RequestBodyValues: body})
-			model := Wrap(&mockModel{
-				generateFunc: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, failure },
-				streamFunc:   func(context.Context, provider.CallOptions) (*provider.StreamResult, error) { return nil, failure },
-			}, Options{
-				Logger: slog.New(handler), Capture: CaptureOptions{RequestBody: true, MaxJSONBytes: 8192},
-				Redactor: RedactorFunc(func(_ context.Context, _ EventKind, attrs []slog.Attr) []slog.Attr { return attrs }),
+		for _, tc := range []struct {
+			name, key, future string
+			redactor          Redactor
+		}{
+			{"default", redactedValue, "dummy-future", DefaultRedactor()},
+			{"extra field", redactedValue, redactedValue, DefaultRedactorWithExtraKeys("future")},
+			{"caller policy", "dummy-error-key", "dummy-future", RedactorFunc(func(_ context.Context, _ EventKind, attrs []slog.Attr) []slog.Attr { return attrs })},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				handler := newTestHandler()
+				failure := provider.NewAPICallError(provider.APICallErrorOptions{Message: "safe failure", StatusCode: 400, RequestBodyValues: body})
+				model := Wrap(&mockModel{
+					generateFunc: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, failure },
+					streamFunc:   func(context.Context, provider.CallOptions) (*provider.StreamResult, error) { return nil, failure },
+				}, Options{
+					Logger: slog.New(handler), Capture: CaptureOptions{RequestBody: true, MaxJSONBytes: 8192},
+					Redactor: tc.redactor,
+				})
+				var err error
+				if mode == "stream" {
+					_, err = model.DoStream(context.Background(), provider.CallOptions{})
+				} else {
+					_, err = model.DoGenerate(context.Background(), provider.CallOptions{})
+				}
+				require.ErrorIs(t, err, failure)
+				captured := handler.JSON(t)
+				assert.Contains(t, captured, `"apiKey":"`+tc.key+`"`)
+				assert.Contains(t, captured, `"future":"`+tc.future+`"`)
+				assert.Contains(t, captured, "ordinary")
+				assert.Equal(t, json.RawMessage(before), failure.RequestBodyValues)
 			})
-			var err error
-			if mode == "stream" {
-				_, err = model.DoStream(context.Background(), provider.CallOptions{})
-			} else {
-				_, err = model.DoGenerate(context.Background(), provider.CallOptions{})
-			}
-			require.ErrorIs(t, err, failure)
-			captured := handler.JSON(t)
-			assert.Contains(t, captured, "[REDACTED]")
-			assert.Contains(t, captured, "ordinary")
-			assert.NotContains(t, captured, "dummy-error-key")
-			assert.Equal(t, json.RawMessage(before), failure.RequestBodyValues)
-		})
+		}
 	}
 }
 
