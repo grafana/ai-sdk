@@ -16,7 +16,7 @@ The Anthropic stream adapter SHALL emit exactly one `PartFinish` for each `messa
 #### Scenario: Message without a delta
 - **WHEN** a message has `message_start` with prepopulated tool calls and no `message_delta`, followed by `message_stop`
 - **THEN** the stream SHALL contain one `PartFinish` for that message
-- **AND** its finish reason SHALL be the latest non-null `stop_reason` seen on `message_start` or `message_delta` in the stream, or `other` with an empty raw value when none was seen
+- **AND** its finish reason SHALL come from the latest `message_delta` (a null `stop_reason` there maps to `other` with an empty raw value) or from a non-null `message_start.stop_reason`, whichever came last, or `other` with an empty raw value when none was seen
 
 #### Scenario: Usage on a message without a delta
 - **WHEN** a message without a `message_delta` follows a message that had one
@@ -52,7 +52,7 @@ The adapter SHALL NOT synthesize a `PartFinish` for a message that has not recei
 
 ### Requirement: Error frames do not end the stream
 
-An Anthropic `error` frame received after the first frame SHALL produce an error part and the adapter SHALL keep reading. Transport and event-decoding failures SHALL remain terminal. An `error` as the first frame SHALL fail the call before a stream is returned.
+An Anthropic `error` frame received after the first frame SHALL produce an error part and the adapter SHALL keep reading. An `error` frame whose body cannot be decoded SHALL still produce an error part and reading SHALL continue. Transport failures and failures to decode any other event SHALL remain terminal. An `error` as the first frame SHALL fail the call before a stream is returned.
 
 #### Scenario: Error between delta and stop
 - **WHEN** an `error` frame follows a `message_delta` and `message_stop` follows the error
@@ -67,8 +67,12 @@ An Anthropic `error` frame received after the first frame SHALL produce an error
 - **THEN** the call SHALL fail with an API call error and SHALL NOT return a stream
 
 #### Scenario: Transport failure stays terminal
-- **WHEN** the connection fails or a frame cannot be decoded
+- **WHEN** the connection fails or a non-error event cannot be decoded
 - **THEN** the stream SHALL emit an error part and stop consuming
+
+#### Scenario: Undecodable error frame
+- **WHEN** an `error` frame body cannot be decoded
+- **THEN** the stream SHALL contain an error part and continue reading
 
 ### Requirement: Error frames follow upstream's classification
 
@@ -101,7 +105,7 @@ The raw usage retained in finish usage and provider metadata SHALL keep, for eac
 
 ### Requirement: Provider metadata is stream-level
 
-Finish provider metadata SHALL be built from state that lives for the whole stream, as upstream does. A `message_delta` replaces the stop sequence, stop details and container, and replaces context management and the safeguard verdict only when it supplies them. `message_start` contributes only a non-null container.
+Finish provider metadata SHALL be built from state that lives for the whole stream, as upstream does. A `message_delta` replaces the stop sequence, stop details and container, and replaces context management and the safeguard verdict only when it supplies a non-null value. Usage iterations reported in the metadata follow the same stream-level state that the token totals use, while raw usage restarts at each `message_start`. `message_start` contributes only a non-null container.
 
 #### Scenario: Delta that omits the verdict and stop sequence
 - **WHEN** a second message's delta has `stop_sequence: null` and `safeguard_results: null` after a first message that had a stop sequence and a verdict
@@ -109,8 +113,17 @@ Finish provider metadata SHALL be built from state that lives for the whole stre
 
 #### Scenario: Message without a delta
 - **WHEN** a message has no `message_delta` after a message that did
-- **THEN** its finish SHALL repeat the previous stop sequence, verdict and context management
+- **THEN** its finish SHALL repeat the previous stop sequence, verdict, context management and iterations
 
 #### Scenario: Container on message start
 - **WHEN** `message_start` carries a container and no delta replaces it
 - **THEN** the finish SHALL report that container
+
+#### Scenario: Null context management on a delta
+- **WHEN** a later `message_delta` has `context_management: null`
+- **THEN** the finish SHALL keep the earlier context management
+
+#### Scenario: Iterations on a later message
+- **WHEN** a second message's delta reports no `iterations` after a first message's delta did
+- **THEN** the second finish SHALL repeat the first message's iterations in provider metadata and in the token totals
+- **AND** its raw `usage` metadata SHALL contain only the second message's usage

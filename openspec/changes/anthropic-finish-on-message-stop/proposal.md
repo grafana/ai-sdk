@@ -50,5 +50,5 @@ The conformance suite could not catch either: it compares only UI chunks from `s
 - `providers/bedrock/convert_stream.go`, `providers/openai/stream_adapter.go`, `convert_response.go`, `sdk_helpers.go`, `providers/openai-compatible/stream.go` (shape fixes surfaced by the golden).
 - `test/conformance`: `tools/generate.mts`, `runner.go`, a new `expected-provider-parts.jsonl` in every streaming case directory of the four providers (inputs untouched), new `testdata/anthropic-stream-parts/`, new `ui/` error-then-finish fixture, `PARITY.md`.
 - Tests that feed a delta without `message_stop` in `providers/anthropic` and `providers/azure` need a stop appended.
-- `aisdk.StreamText`: unchanged for complete streams; a stream truncated after `message_delta` takes the partial/no-output path; error followed by finish depends on the core UI golden.
+- `aisdk.StreamText`: unchanged for complete streams; a stream truncated after `message_delta` takes the partial/no-output path; an error followed by a finish matches upstream `streamText` (core UI fixture `ui/error-then-finish`).
 - AI Gateway Anthropic streaming: finish frames carry final metadata and follow the raw `message_stop`; frame shape unchanged.

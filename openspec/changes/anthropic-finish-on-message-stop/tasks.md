@@ -56,6 +56,12 @@
 - [x] 8.2 Add synthetic streaming cases and a synthetic unary harness whose expectations come from the pinned upstream; verify they fail without the change and pass with it
 - [x] 8.3 Add the `anthropic-input-transformations` spec and document the coverage in `PARITY.md` and the conformance README; verify `openspec validate --strict` and `mise run validate-parity-baseline`
 
+## 9. Review round 1 fixes
+
+- [x] 9.1 Carry usage iterations in provider metadata like the token totals, and keep context management on a null delta; verify with synthetic oracle cases that fail without the fix
+- [x] 9.2 Add synthetic error-classification cases for rate limit, invalid request and unclassified types
+- [x] 9.3 Document that malformed streaming metadata ends the stream (accepted deviation), fix spec wording for undecodable error frames and finish reason, and share the conformance JSONL reader and replay server
+
 ## Workflow follow-up
 
 - Open a draft PR titled `fix(anthropic): emit finish once on message_stop`, linking #377 and noting overlap with #201 and #393.

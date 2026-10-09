@@ -46,4 +46,5 @@ A stream SHALL report input transformations from `message_start.message.input_tr
 
 #### Scenario: Malformed value
 - **WHEN** `message_start` or `message_delta` carries a malformed `input_transformations`
-- **THEN** the stream SHALL emit an error part at that event and SHALL NOT report the value
+- **THEN** the stream SHALL emit an error part at that event, SHALL stop consuming, and SHALL NOT report the value
+- **AND** this is an accepted deviation: upstream drops the invalid chunk with an error part and keeps reading
