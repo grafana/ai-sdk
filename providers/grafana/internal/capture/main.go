@@ -113,6 +113,10 @@ func main() {
 		}
 		return
 	}
+	if input.Mode == "execution-observe" || input.Mode == "execution-generate" {
+		captureExecutionObservation(ctx, model, input.Options, input.Mode == "execution-generate")
+		return
+	}
 	if input.Mode == "metadata-observe" {
 		if err := captureMetadataObservation(ctx, model, input.Options); err != nil {
 			emitError(err)

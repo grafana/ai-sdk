@@ -47,7 +47,8 @@ available, candidate index, configured provider and backend model, timing,
 outcome, and whether fallback was planned. These records are separate from the
 logical generation observation and exclude payloads, credentials, headers,
 endpoint URLs, and raw errors. Restrict access because they reveal provider
-configuration that is not exposed to callers.
+configuration. Callers may independently receive compact execution overviews;
+operator timing, correlation and fallback-intent records are not consumer output.
 
 Verify your runtime's stderr transport before relying on these diagnostics.
 Supported destinations are Linux sockets and pipes, plus sockets already
@@ -59,6 +60,21 @@ Attempt logging uses a 256-record queue, a 100 ms write deadline, a 4096-byte
 record limit, and a one-second shutdown budget. Queue saturation or write failures
 can drop records; monitor `grafana_ai_gateway_physical_attempt_dropped_total`
 before treating the logs as a complete account of provider attempts.
+
+## Caller execution overviews
+
+Configured direct and fallback routes return best-effort `gateway.execution`
+metadata on unary results, stream finishes and failure carriers. It contains
+requested/canonical identity and ordered observed attempts, not a trace or
+completion/replay claim. Current committed error summaries remain event-local
+and do not require configured catalog attribution. Provider-originated values
+may echo credentials; logger field policy does not filter returned summaries.
+
+Execution metadata is added directly to responses, not reconstructed from
+Gateway logs. Disabling telemetry or dropping log records does not suppress it.
+If your application records this metadata, apply its own access and retention
+controls. See
+[consumer access and omission semantics](../../docs/providers/grafana-gateway.md#inspect-execution-overviews-and-failures).
 
 ## Prometheus
 

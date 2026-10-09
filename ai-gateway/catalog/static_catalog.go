@@ -3,13 +3,11 @@ package catalog
 import (
 	"context"
 	"fmt"
-
-	"github.com/grafana/ai-sdk/provider"
 )
 
 type staticCatalog struct {
 	namespace modelNamespace
-	models    map[string]provider.LanguageModel
+	models    map[string]ResolvedModel
 }
 
 // NewStatic creates an immutable catalog from fully constructed models.
@@ -17,14 +15,14 @@ type staticCatalog struct {
 // models before returning a catalog.
 func NewStatic(entries []StaticEntry) (Catalog, error) {
 	infos := make([]ModelInfo, len(entries))
-	models := make(map[string]provider.LanguageModel, len(entries))
+	models := make(map[string]ResolvedModel, len(entries))
 
 	for i, entry := range entries {
 		if isNilInterface(entry.Model) {
 			return nil, fmt.Errorf("catalog: model %q is nil", entry.Info.ID)
 		}
 		infos[i] = entry.Info
-		models[entry.Info.ID] = entry.Model
+		models[entry.Info.ID] = ResolvedModel{ID: entry.Info.ID, Model: entry.Model, Candidates: append([]ConfiguredCandidate(nil), entry.Info.Candidates...)}
 	}
 
 	namespace, err := newModelNamespace(infos)
@@ -43,7 +41,9 @@ func (c *staticCatalog) ResolveModel(_ context.Context, modelID string) (Resolve
 	if !exists {
 		return ResolvedModel{}, &UnknownModelError{ModelID: modelID}
 	}
-	return ResolvedModel{ID: canonicalID, Model: c.models[canonicalID]}, nil
+	resolved := c.models[canonicalID]
+	resolved.Candidates = append([]ConfiguredCandidate(nil), resolved.Candidates...)
+	return resolved, nil
 }
 
 func (c *staticCatalog) ListModels(_ context.Context) ([]ModelInfo, error) {

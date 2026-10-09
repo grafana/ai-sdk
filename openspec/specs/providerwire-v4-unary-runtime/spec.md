@@ -307,11 +307,15 @@ A child goroutine with panic recovery and buffered completion SHALL bound handle
 
 ### Requirement: Fixed privacy-safe errors
 
-Every runtime error response SHALL be selected from precomputed documents with fixed status, message, type, code, and `param: null`. Invalid request, model-not-found, rate-limit, overload, failed-dependency, upstream, timeout, cancellation, and internal categories SHALL use Gateway-recognized error types and status-derived retryability. Unknown or invalid internal categories SHALL fall back to the fixed internal-error document.
+Every runtime error response SHALL retain fixed classified status, message, type, code, and `param: null` fields from protocol-owned definitions.
+
+#### Scenario: Fixed privacy-safe errors policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** Typed standard JSON encoding SHALL preserve the canonical base response bytes. Invalid request, model-not-found, rate-limit, overload, failed-dependency, upstream, timeout, cancellation, and internal categories SHALL use Gateway-recognized error types and status-derived retryability. Unknown or invalid internal categories SHALL fall back to the fixed internal-error document.
 
 #### Scenario: Provider API failure
 - **WHEN** `DoGenerate` returns an API, transport, timeout, cancellation, or arbitrary internal error
-- **THEN** the handler SHALL reduce it to the corresponding fixed safe document without serializing the cause
+- **THEN** the handler SHALL retain the corresponding fixed safe fields without serializing arbitrary causes; optional execution attribution SHALL follow gateway-attempt-failure-evidence
 
 #### Scenario: Unknown model
 - **WHEN** catalog resolution reports an unknown public model
@@ -323,11 +327,11 @@ Every runtime error response SHALL be selected from precomputed documents with f
 
 ### Requirement: Runtime error detail exclusions
 
-Provider, transport, resolver, panic, body, URL, header, credential, backend identity, and metadata details SHALL never be serialized.
+Arbitrary cause trees and raw bodies/headers SHALL NOT be serialized by failure projection. Optional native candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, within existing complete-response limits; they SHALL NOT change classification or retryability. Provider-originated scalar echoes SHALL NOT be credential-filtered.
 
 #### Scenario: Runtime error detail exclusions
 - **WHEN** a resolver or provider failure carries URL, credentials and metadata
-- **THEN** none of those details SHALL be serialized into the fixed safe response
+- **THEN** arbitrary cause trees and raw bodies/headers SHALL NOT be serialized; governed native candidate-local summaries SHALL retain provider-originated scalar echoes while the base fields remain fixed
 
 ### Requirement: Minimal unary success response
 
@@ -520,11 +524,11 @@ The `ai-gateway/providerwire/v4` package SHALL expose a narrow host-composition 
 
 ### Requirement: Closed host error categories and fixed document reuse
 
-Callers SHALL select only an exported closed authentication, permission, or internal category; they SHALL NOT supply public messages, causes, arbitrary status codes, error types, error codes, retryability, or byte limits. The writer SHALL reuse package-owned fixed ProviderWire documents directly. It SHALL perform no runtime schema compilation or validation and no dynamic JSON encoding.
+Callers SHALL select only an exported closed authentication, permission, or internal category; they SHALL NOT supply public messages, causes, arbitrary status codes, error types, error codes, retryability, or byte limits. The writer SHALL use the same protocol-owned public error definitions and typed HTTP encoder as the language-model handler, without optional execution metadata. It SHALL perform no runtime schema compilation or validation; encoding SHALL use only fixed package-owned values.
 
 #### Scenario: Closed host error categories and fixed document reuse
 - **WHEN** host middleware selects authentication rather than providing its own error message
-- **THEN** the writer SHALL directly reuse fixed documents without accepting caller-controlled fields, compiling schemas or dynamically encoding JSON
+- **THEN** the writer SHALL encode the shared fixed public definitions without accepting caller-controlled fields, compiling schemas or attaching optional execution metadata
 
 ### Requirement: Host error status bytes and private API boundary
 
@@ -533,3 +537,19 @@ Authentication SHALL emit the package's exact fixed 401 document, permission SHA
 #### Scenario: Host error status bytes and private API boundary
 - **WHEN** host middleware selects permission, internal or an invalid category
 - **THEN** permission SHALL use the exact fixed 403 and internal/invalid the exact fixed 500, with no exposed DTOs or weakened handler failure bytes
+
+### Requirement: Optional unary execution overview
+
+The handler SHALL use synchronized request-local observation to optionally enrich a valid unary result or classified invocation failure with a compact execution overview.
+
+#### Scenario: Optional unary execution overview policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** Original primary validation and existing complete-response limits SHALL apply before accepting enrichment. Optional encoding/fit failure SHALL preserve the original document and classification; original adaptation failures SHALL NOT replay generation. Configured candidate identity SHALL remain separate from native-summary eligibility; filtering-only credential sources SHALL NOT be collected. Configured direct calls SHALL retain their existing invocation/cancellation ownership.
+
+#### Scenario: Valid result with no enrichment room
+- **WHEN** a native result fits but adding or relocating the overview exceeds the existing response bound
+- **THEN** the original successful result SHALL be written without metadata loss or a diagnostic-induced failure
+
+#### Scenario: Owned cancellation and late native result
+- **WHEN** cancellation wins invocation ownership before a late native result
+- **THEN** the existing context error SHALL be returned and published attribution SHALL NOT capture the unowned late native failure

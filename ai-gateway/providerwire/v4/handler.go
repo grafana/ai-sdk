@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 )
@@ -124,13 +125,13 @@ func validateLimits(limits Limits) error {
 	}
 	for name, frame := range map[string][]byte{
 		"empty stream start":        canonicalEmptyStartFrame,
-		"rate-limit stream error":   canonicalRateLimitStreamErrorFrame,
-		"overload stream error":     canonicalOverloadStreamErrorFrame,
-		"dependency stream error":   canonicalDependencyStreamErrorFrame,
-		"upstream stream error":     canonicalUpstreamStreamErrorFrame,
-		"internal stream error":     canonicalInternalStreamErrorFrame,
-		"timeout stream error":      canonicalTimeoutStreamErrorFrame,
-		"cancellation stream error": canonicalCancellationStreamErrorFrame,
+		"rate-limit stream error":   streamErrorFrameForSafeError(safeError{category: safeRateLimit}),
+		"overload stream error":     streamErrorFrameForSafeError(safeError{category: safeOverload}),
+		"dependency stream error":   streamErrorFrameForSafeError(safeError{category: safeFailedDependency}),
+		"upstream stream error":     streamErrorFrameForSafeError(safeError{category: safeUpstream}),
+		"internal stream error":     streamErrorFrameForSafeError(safeError{category: safeInternal}),
+		"timeout stream error":      streamErrorFrameForSafeError(safeError{category: safeTimeout}),
+		"cancellation stream error": streamErrorFrameForSafeError(safeError{category: safeCancellation}),
 	} {
 		if int64(len(frame)) > limits.StreamFrameBytes {
 			return fmt.Errorf("providerwire v4: stream frame bytes cannot contain canonical %s", name)
@@ -182,7 +183,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	gateway := wire.ProviderOptions["gateway"]
 	delete(wire.ProviderOptions, "gateway")
-	options, failure := mapRequest(wire, validated.mode)
+	options, failure := mapRequest(wire)
 	if failure != nil {
 		h.writeFailure(w, failure)
 		return
@@ -196,20 +197,29 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	resolved, err := h.selectModel(ctx, validated.modelID, options, gateway)
 	if err != nil {
-		h.writeSafeError(w, safeErrorFromResolution(err))
+		h.writeSafeError(w, safeErrorFromResolution(err), nil)
 		return
 	}
+	request := newExecutionRequest(validated.modelID, resolved, h.limits.UnaryResponseBytes)
+	capture := &attemptCapture{sealed: resolved.configured == nil}
+	if resolved.configured != nil {
+		ctx = fallback.WithAttemptObserver(ctx, capture.observe)
+	}
+	defer capture.discard()
 	if validated.mode == executionStreaming {
-		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history)
+		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history, request, capture)
 		return
 	}
-	result, err := h.invokeModel(ctx, resolved.Model, options)
+	result, err := h.invokeModel(ctx, resolved.Model, options, capture)
 	if err != nil {
-		h.writeSafeError(w, safeErrorFromProvider(err))
+		value := safeErrorFromProvider(err)
+		view := request.snapshot(capture, err)
+		h.writeSafeError(w, value, view.metadata())
 		return
 	}
-	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history}) {
-		h.writeSafeError(w, safeError{category: safeInternal})
+	view := request.snapshot(capture, nil)
+	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: view.overview}) {
+		h.writeSafeError(w, safeError{category: safeInternal}, view.metadata())
 	}
 }
 
@@ -300,15 +310,15 @@ func (h *handler) writeFailure(w http.ResponseWriter, failure *requestFailure) {
 	if value.category == 0 {
 		value.category = safeInvalidRequest
 	}
-	h.writeSafeError(w, value)
+	h.writeSafeError(w, value, nil)
 }
 
 func invalidMappingFailure() *requestFailure {
 	return &requestFailure{safe: safeError{category: safeInvalidRequest}}
 }
 
-func unsupportedMappingFailure(capability unsupportedCapability) *requestFailure {
-	return &requestFailure{safe: safeError{category: safeInvalidRequest, capability: capability}}
+func rejectedMappingFailure(reason requestFailureReason) *requestFailure {
+	return &requestFailure{safe: safeError{category: safeInvalidRequest, reason: reason}}
 }
 
 var errRuntimeInternal = errors.New("providerwire v4: runtime internal failure")
@@ -329,7 +339,7 @@ type modelOutcome struct {
 
 var errModelInternal = errors.New("providerwire v4: model internal failure")
 
-func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel, options provider.CallOptions) (*provider.GenerateResult, error) {
+func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel, options provider.CallOptions, capture *attemptCapture) (*provider.GenerateResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -348,16 +358,21 @@ func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel,
 			}
 			outcomes <- outcome
 		}()
+		capture.enter()
 		outcome.result, outcome.err = model.DoGenerate(modelContext, options)
 	}()
 
+	rejectOutcome := func(err error) (*provider.GenerateResult, error) {
+		capture.discard()
+		return nil, err
+	}
 	select {
 	case outcome := <-outcomes:
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return rejectOutcome(err)
 		}
 		return outcome.result, outcome.err
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return rejectOutcome(ctx.Err())
 	}
 }

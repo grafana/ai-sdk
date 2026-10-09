@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"sync"
@@ -322,4 +323,27 @@ func TestCatalog_ConcurrentListing(t *testing.T) {
 			wg.Wait()
 		})
 	}
+}
+
+func TestStaticCatalog_InvocationContext(t *testing.T) {
+	candidates := []ConfiguredCandidate{{Provider: "anthropic", ProviderInstance: "primary", ModelID: "backend"}}
+	entries := []StaticEntry{{Info: ModelInfo{ID: "public", Aliases: []string{"alias"}, Candidates: candidates}, Model: &catalogTestModel{providerName: "anthropic", modelID: "backend"}}}
+	created, err := NewStatic(entries)
+	require.NoError(t, err)
+	candidates[0].ModelID = "mutated"
+	resolved, err := created.ResolveModel(context.Background(), "alias")
+	require.NoError(t, err)
+	assert.Equal(t, []ConfiguredCandidate{{Provider: "anthropic", ProviderInstance: "primary", ModelID: "backend"}}, resolved.Candidates)
+	encoded, err := json.Marshal(resolved)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), "backend")
+	listed, err := created.ListModels(context.Background())
+	require.NoError(t, err)
+	encoded, err = json.Marshal(listed)
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), "backend")
+	resolved.Candidates[0].ModelID = "local"
+	again, err := created.ResolveModel(context.Background(), "public")
+	require.NoError(t, err)
+	assert.Equal(t, "backend", again.Candidates[0].ModelID)
 }

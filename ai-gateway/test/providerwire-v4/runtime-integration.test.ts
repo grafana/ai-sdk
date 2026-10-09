@@ -15,7 +15,7 @@ import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 import { fileInputGoldenCase } from "./request-cases";
 import { validateStreamEvent, validateUnarySuccess } from "./schema";
-import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
+import { generateText, jsonSchema, stepCountIs, streamText, tool, wrapLanguageModel } from "ai";
 import packageManifest from "./package.json" with { type: "json" };
 import { buildTools, loadConfig, mockId, normalizeRequestSnapshot, writeRequestSnapshots } from "../../../test/conformance/tools/common.mts";
 
@@ -111,6 +111,7 @@ function reasoningModel() {
 }
 
 type RuntimeStats = {
+  executionFailures: number;
   successCalls: number;
   streamCalls: number;
   blockingCalls: number;
@@ -758,6 +759,57 @@ describe("real ProviderWire V4 streaming runtime", () => {
     }
   });
 
+  it("delivers compact execution and event-local summaries through both clients and consumer middleware", async () => {
+    const parts = await collect((await model("execution-errors").doStream({ prompt: [] })).stream);
+    assert.deepEqual(parts.map(part => part.type), ["stream-start", "error", "text-start", "error", "text-delta", "text-end", "finish"]);
+    for (const part of parts) assert.ok(validateStreamEvent(part), JSON.stringify(validateStreamEvent.errors));
+    const current = parts.filter(part => part.type === "error").map(part => (part.error as any).data);
+    assert.deepEqual(current.map(data => data.nativeError.statusCode), [503, 401]);
+    const finish = parts.at(-1) as any;
+    assert.deepEqual(finish.providerMetadata.gateway.execution.attempts, [{ provider: "test", providerInstance: "configured", modelId: "errors", outcome: "selected" }]);
+    assert.equal(JSON.stringify(finish).includes("nativeError"), false);
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "test", modelID: "execution-errors", mode: "stream", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    assert.deepEqual(go.parts.filter((part: any) => part.type === "error").map((part: any) => part.error.data), current);
+    const middlewareErrors: unknown[] = [];
+    const wrapped = wrapLanguageModel({ model: model("execution-errors"), middleware: { specificationVersion: "v4", wrapStream: async ({ doStream }) => {
+      const result = await doStream();
+      return { ...result, stream: result.stream.pipeThrough(new TransformStream({ transform(part, controller) {
+        if (part.type === "error") middlewareErrors.push((part.error as any).data);
+        controller.enqueue(part);
+      } })) };
+    } } });
+    const high = streamText({ model: wrapped, prompt: "hi", maxRetries: 0, onError() {} });
+    const normalized: unknown[] = [];
+    for await (const part of high.fullStream) if (part.type === "error") normalized.push((part.error as any).data.data);
+    assert.deepEqual(normalized, current);
+    assert.deepEqual(middlewareErrors, current);
+    assert.equal(await high.text, "after errors");
+    assert.deepEqual(await high.providerMetadata, finish.providerMetadata);
+    const observed = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "test", modelID: "execution-errors", mode: "execution-observe", options: { prompt: [] } });
+    assert.equal(observed.error, undefined);
+    assert.deepEqual(observed.observed, current);
+    assert.deepEqual(observed.normalized, current);
+    assert.equal(observed.text, "after errors");
+    assert.deepEqual(observed.metadata, finish.providerMetadata);
+  });
+
+  it("delivers native summaries without configured attribution through both clients", async () => {
+    const parts = await collect((await model("unconfigured-errors").doStream({ prompt: [] })).stream);
+    for (const part of parts) assert.ok(validateStreamEvent(part), JSON.stringify(validateStreamEvent.errors));
+    assert.deepEqual(parts.map(part => part.type), ["stream-start", "error", "text-start", "error", "text-delta", "text-end", "finish"]);
+    const data = parts.filter(part => part.type === "error").map(part => (part.error as any).data);
+    assert.deepEqual(data, [
+      { nativeError: { message: "private overload", statusCode: 503 } },
+      { nativeError: { message: "private dependency", statusCode: 401 } },
+    ]);
+    assert.equal((parts.at(-1) as any).providerMetadata, undefined);
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "test", modelID: "unconfigured-errors", mode: "stream", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    assert.deepEqual(go.parts.filter((part: any) => part.type === "error").map((part: any) => part.error.data), data);
+    assert.equal(JSON.stringify(go.parts).includes('"execution"'), false);
+  });
+
   it("preserves ordered provider errors and emits terminal timeout", async () => {
     const withErrors = await model("stream-errors").doStream({ prompt: [] });
     const errorParts = await collect(withErrors.stream);
@@ -803,6 +855,28 @@ describe("real ProviderWire V4 streaming runtime", () => {
 });
 
 describe("real ProviderWire V4 unary runtime", () => {
+  it("retains failed attempts and selected metadata through both generation APIs and middleware", async () => {
+    const before = await stats();
+    const observed: unknown[] = [];
+    const wrapped = wrapLanguageModel({ model: model("execution-fallback"), middleware: { specificationVersion: "v4", wrapGenerate: async ({ doGenerate }) => {
+      const result = await doGenerate();
+      observed.push(result.providerMetadata);
+      return result;
+    } } });
+    const ts = await generateText({ model: wrapped, prompt: "hi", maxRetries: 0 });
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "token", modelID: "execution-fallback", mode: "execution-generate", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    const metadata = ts.providerMetadata as any;
+    assert.deepEqual(go.metadata.gateway.execution, metadata.gateway.execution);
+    assert.deepEqual(observed, [ts.providerMetadata]);
+    assert.deepEqual(metadata.gateway.execution.attempts.map((attempt: any) => attempt.outcome), ["failed", "selected"]);
+    assert.equal(metadata.gateway.execution.attempts[0].error.statusCode, 503);
+    const after = await stats();
+    assert.equal(after.executionFailures - before.executionFailures, 2);
+    assert.equal(after.successCalls - before.successCalls, 2);
+    assert.equal(after.streamCalls - before.streamCalls, 2);
+  });
+
   it("consumes the minimal production response", async () => {
     const result = await model("success").doGenerate({
       prompt: [{ role: "system", content: "hello" }],

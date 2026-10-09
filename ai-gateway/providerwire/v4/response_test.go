@@ -140,7 +140,7 @@ func TestUnarySuccessBoundaries(t *testing.T) {
 			h := newTestHandler(t, limits)
 			recorder := httptest.NewRecorder()
 			if !h.writeUnarySuccess(recorder, result) {
-				h.writeSafeError(recorder, safeError{category: safeInternal})
+				h.writeSafeError(recorder, safeError{category: safeInternal}, nil)
 			}
 			assert.Equal(t, tc.status, recorder.Code)
 			assert.LessOrEqual(t, recorder.Body.Len(), max(int(tc.limit), len(canonicalInternalError)))

@@ -227,7 +227,15 @@
             "param": { "type": "null" },
             "code": { "enum": ["invalid_request", "authentication_error", "forbidden", "model_not_found", "rate_limit_exceeded", "overloaded", "failed_dependency", "upstream_error", "timeout", "canceled", "internal_error"] },
             "statusCode": { "type": "integer", "minimum": 100, "maximum": 599 },
-            "retryable": { "type": "boolean" }
+            "retryable": { "type": "boolean" },
+            "data": {
+              "type": "object",
+              "properties": {
+                "providerMetadata": {"type":"object","additionalProperties":{"type":"object"}},
+                "nativeError": {"type":"object","properties":{"message":{"type":"string"},"type":{"type":"string"},"code":{"oneOf":[{"type":"string"},{"type":"number"}]},"statusCode":{"type":"integer"}},"additionalProperties":false}
+              },
+              "additionalProperties": false
+            }
           },
           "allOf": [
             { "if": { "properties": { "code": { "const": "invalid_request" } } }, "then": { "properties": { "message": { "const": "invalid request" }, "type": { "const": "invalid_request_error" }, "statusCode": { "const": 400 }, "retryable": { "const": false } } } },

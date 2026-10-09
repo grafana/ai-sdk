@@ -26,106 +26,13 @@ const (
 	safeTimeout
 	safeCancellation
 	safeInternal
+	safeAuthentication
+	safePermission
 )
 
 type safeError struct {
-	category   safeErrorCategory
-	capability unsupportedCapability
-}
-
-type safeErrorDocument struct {
-	status int
-	body   []byte
-}
-
-var (
-	byokCredentialsError         = []byte(`{"error":{"message":"providerOptions.gateway.byok requires supported provider arrays with valid accounts","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	byokSelectorError            = []byte(`{"error":{"message":"BYOK requires a supported provider/model selector","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	gatewayControlError          = []byte(`{"error":{"message":"unsupported gateway control; only gateway.byok is supported","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	canonicalInvalidRequestError = []byte(`{"error":{"message":"invalid request","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	canonicalAuthenticationError = []byte(`{"error":{"message":"authentication failed","type":"authentication_error","param":null,"code":"authentication_error"}}`)
-	canonicalPermissionError     = []byte(`{"error":{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden"}}`)
-	canonicalModelNotFoundError  = []byte(`{"error":{"message":"model not found","type":"model_not_found","param":null,"code":"model_not_found"}}`)
-	canonicalRateLimitError      = []byte(`{"error":{"message":"rate limit exceeded","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded"}}`)
-	canonicalOverloadError       = []byte(`{"error":{"message":"service overloaded","type":"internal_server_error","param":null,"code":"overloaded"}}`)
-	canonicalDependencyError     = []byte(`{"error":{"message":"failed dependency","type":"failed_dependency","param":null,"code":"failed_dependency"}}`)
-	canonicalUpstreamError       = []byte(`{"error":{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error"}}`)
-	canonicalTimeoutError        = []byte(`{"error":{"message":"request timed out","type":"internal_server_error","param":null,"code":"timeout"}}`)
-	canonicalCancellationError   = []byte(`{"error":{"message":"request canceled","type":"internal_server_error","param":null,"code":"canceled"}}`)
-	canonicalInternalError       = []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)
-
-	unsupportedReasoningContentError = []byte(`{"error":{"message":"unsupported capability: reasoning-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedCustomContentError    = []byte(`{"error":{"message":"unsupported capability: custom-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedToolsError            = []byte(`{"error":{"message":"unsupported capability: tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedToolApprovalsError    = []byte(`{"error":{"message":"unsupported capability: tool-approvals","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedStructuredOutputError = []byte(`{"error":{"message":"unsupported capability: structured-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedRawOutputError        = []byte(`{"error":{"message":"unsupported capability: raw-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	// Function-tool definitions and tool outputs still refuse provider options;
-	// call, message and part options are mapped.
-	unsupportedProviderOptionsError = []byte(`{"error":{"message":"unsupported capability: provider-options","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-
-	// Policy rejections. The messages never name the offending key or header,
-	// because both are caller-controlled.
-	reservedProviderOptionsError = []byte(`{"error":{"message":"reserved provider option namespace","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	protectedCallHeaderError     = []byte(`{"error":{"message":"protected call header","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-)
-
-func documentForSafeError(value safeError) safeErrorDocument {
-	switch value.category {
-	case safeBYOKCredentials:
-		return safeErrorDocument{status: http.StatusBadRequest, body: byokCredentialsError}
-	case safeBYOKSelector:
-		return safeErrorDocument{status: http.StatusBadRequest, body: byokSelectorError}
-	case safeGatewayControl:
-		return safeErrorDocument{status: http.StatusBadRequest, body: gatewayControlError}
-	case safeInvalidRequest:
-		body := unsupportedCapabilityDocument(value.capability)
-		if body == nil {
-			body = canonicalInvalidRequestError
-		}
-		return safeErrorDocument{status: http.StatusBadRequest, body: body}
-	case safeModelNotFound:
-		return safeErrorDocument{status: http.StatusNotFound, body: canonicalModelNotFoundError}
-	case safeRateLimit:
-		return safeErrorDocument{status: http.StatusTooManyRequests, body: canonicalRateLimitError}
-	case safeOverload:
-		return safeErrorDocument{status: http.StatusServiceUnavailable, body: canonicalOverloadError}
-	case safeFailedDependency:
-		return safeErrorDocument{status: http.StatusFailedDependency, body: canonicalDependencyError}
-	case safeUpstream:
-		return safeErrorDocument{status: http.StatusBadGateway, body: canonicalUpstreamError}
-	case safeTimeout:
-		return safeErrorDocument{status: http.StatusGatewayTimeout, body: canonicalTimeoutError}
-	case safeCancellation:
-		return safeErrorDocument{status: 499, body: canonicalCancellationError}
-	default:
-		return safeErrorDocument{status: http.StatusInternalServerError, body: canonicalInternalError}
-	}
-}
-
-func unsupportedCapabilityDocument(capability unsupportedCapability) []byte {
-	switch capability {
-	case capabilityReasoningContent:
-		return unsupportedReasoningContentError
-	case capabilityCustomContent:
-		return unsupportedCustomContentError
-	case capabilityTools:
-		return unsupportedToolsError
-	case capabilityToolApprovals:
-		return unsupportedToolApprovalsError
-	case capabilityStructuredOutput:
-		return unsupportedStructuredOutputError
-	case capabilityReservedProviderOptions:
-		return reservedProviderOptionsError
-	case capabilityProtectedCallHeader:
-		return protectedCallHeaderError
-	case capabilityRawOutput:
-		return unsupportedRawOutputError
-	case capabilityProviderOptions:
-		return unsupportedProviderOptionsError
-	default:
-		return nil
-	}
+	category safeErrorCategory
+	reason   requestFailureReason
 }
 
 func safeErrorFromResolution(err error) (result safeError) {
@@ -147,7 +54,7 @@ func safeErrorFromResolution(err error) (result safeError) {
 		return safeError{category: safeGatewayControl}
 	}
 	if errors.Is(err, ErrReservedProviderOptions) {
-		return safeError{category: safeInvalidRequest, capability: capabilityReservedProviderOptions}
+		return safeError{category: safeInvalidRequest, reason: policyReservedProviderOptions}
 	}
 	if errors.Is(err, catalog.ErrUnknownModel) {
 		return safeError{category: safeModelNotFound}
@@ -190,19 +97,8 @@ func safeErrorFromProvider(err error) (result safeError) {
 		return safeError{category: safeUpstream}
 	}
 
-	var urlError *url.Error
-	if errors.As(err, &urlError) {
-		if urlError.Timeout() {
-			return safeError{category: safeTimeout}
-		}
-		return safeError{category: safeUpstream}
-	}
-	var netError net.Error
-	if errors.As(err, &netError) {
-		if netError.Timeout() {
-			return safeError{category: safeTimeout}
-		}
-		return safeError{category: safeUpstream}
+	if transportError, ok := safeErrorFromTransport(err); ok {
+		return transportError
 	}
 	return safeError{category: safeInternal}
 }
@@ -223,14 +119,4 @@ func safeErrorFromTransport(err error) (safeError, bool) {
 		return safeError{category: safeUpstream}, true
 	}
 	return safeError{}, false
-}
-
-func (h *handler) writeSafeError(w http.ResponseWriter, value safeError) {
-	writeSafeErrorDocument(w, documentForSafeError(value))
-}
-
-func writeSafeErrorDocument(w http.ResponseWriter, document safeErrorDocument) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(document.status)
-	_, _ = w.Write(document.body)
 }

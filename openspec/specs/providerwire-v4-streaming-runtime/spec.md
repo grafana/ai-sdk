@@ -329,7 +329,11 @@ The handler SHALL only write a finish after the entire `data: <json>\n\n` frame 
 
 ### Requirement: Ordered non-terminal provider errors
 
-Each pre-finish provider `PartError` SHALL be independently reduced through the closed safe-error classification and emitted in place as `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid.
+Each pre-finish provider `PartError` SHALL be independently reduced through the closed safe-error classification and emitted in place with base fields `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`.
+
+#### Scenario: Ordered non-terminal provider errors policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** Optional `error.data` MAY carry native current-error and execution summaries under gateway-attempt-failure-evidence. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid.
 
 #### Scenario: Provider error is followed by content
 - **WHEN** a provider emits an error before or within a text block and later emits otherwise valid content and finish
@@ -341,7 +345,7 @@ Each pre-finish provider `PartError` SHALL be independently reduced through the 
 
 #### Scenario: Provider error contains hostile detail
 - **WHEN** a provider error contains credentials, URLs, bodies, headers, data, causes, backend identity, or arbitrary messages
-- **THEN** its public event SHALL contain only the closed safe fields and approved category message
+- **THEN** its base public fields SHALL retain the approved category message, while optional error data SHALL contain only the governed native summary/overview rather than a native error dump
 
 #### Scenario: Provider error status is malformed
 - **WHEN** an `APICallError` carries a non-zero status outside the valid HTTP range 100 through 599
@@ -355,11 +359,11 @@ Each pre-finish provider `PartError` SHALL be independently reduced through the 
 
 ### Requirement: Provider error canonical fallback and privacy exclusions
 
-Nil, malformed, or unclassifiable provider error values SHALL reduce to the canonical internal safe error part. No provider message, URL, body, header, data, cause, provider identity, backend model ID, or arbitrary metadata SHALL enter the public event.
+Nil, malformed, or unclassifiable provider error values SHALL reduce to the canonical internal safe error part. Arbitrary native bodies, headers, causes and metadata SHALL NOT enter the public error event. Native message/type/code/status summaries and observed configured identity MAY appear through governed optional error data. Provider-originated scalar echoes SHALL NOT be credential-filtered; account authorization and request isolation SHALL remain intact.
 
 #### Scenario: Provider error canonical fallback and privacy exclusions
 - **WHEN** a provider PartError is nil or carries arbitrary backend details
-- **THEN** nil/unclassifiable values SHALL reduce to the internal safe error and no provider-originated message, transport data or identity SHALL enter the event
+- **THEN** nil/unclassifiable values SHALL reduce to the internal safe error; only governed native current-error and execution summaries MAY accompany the base fields, with no arbitrary native transport data
 
 ### Requirement: Synthetic terminal adapter errors
 
@@ -423,7 +427,11 @@ Every public event SHALL contain only its registered outer fields, with supporte
 
 ### Requirement: Complete SSE writes fixed terminal frames and writer failure
 
-Encoding work and temporary memory SHALL remain bounded by a constant multiple of the configured frame limit, and the complete frame SHALL fit that limit before any of its bytes are written. Synthetic terminal errors SHALL use fixed complete frames. The server SHALL never emit SSE `event:` fields or `[DONE]`. A write error, short write, writer panic, or supported flush failure SHALL cancel provider work and end immediately without another write.
+Encoding work and temporary memory SHALL remain bounded by a constant multiple of the configured frame limit, and the complete frame SHALL fit that limit before any of its bytes are written.
+
+#### Scenario: Complete SSE writes fixed terminal frames and writer failure policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** Synthetic terminal errors SHALL retain their fixed base fields; optional execution attribution SHALL follow gateway-attempt-failure-evidence and preserve the canonical base frame when enrichment cannot fit. The server SHALL never emit SSE `event:` fields or `[DONE]`. A write error, short write, writer panic, or supported flush failure SHALL cancel provider work and end immediately without another write.
 
 #### Scenario: Complete SSE writes fixed terminal frames and writer failure
 - **WHEN** a full-frame write is short or flushing panics
@@ -547,3 +555,19 @@ Native warning/source/identity changes SHALL preserve existing stream-start norm
 #### Scenario: Cancellation or writer failure occurs
 - **WHEN** processing native-value events is canceled or a full-frame write/flush fails
 - **THEN** existing cancellation and single-owner bounded cleanup SHALL apply with no second write after writer failure or authoritative terminal output
+
+### Requirement: Optional streaming execution overview and current failures
+
+Streaming SHALL use the existing reader/commitment/drain ownership to optionally enrich finish metadata and classified error payloads.
+
+#### Scenario: Optional streaming execution overview and current failures policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** First-part selection SHALL NOT claim completion. Current native summaries SHALL remain event-local and eligible without catalog provenance; finish SHALL NOT duplicate them. Existing complete-frame limits, original metadata preflight, error ordering, active-block state, authoritative finish and writer failure behavior SHALL remain unchanged. Optional enrichment failure SHALL preserve the original fitting frame, including native namespaces that cannot be relocated.
+
+#### Scenario: Selected leading error followed by content
+- **WHEN** the first provider part is an error followed by valid text and finish
+- **THEN** no later candidate SHALL run, both clients SHALL consume all parts in order and finish SHALL contain only the optional compact execution overview rather than stream-error history
+
+#### Scenario: Finish fits only without overview
+- **WHEN** original finish encoding fits but enriched finish does not
+- **THEN** the original finish SHALL remain authoritative without a new terminal error or read-ahead
