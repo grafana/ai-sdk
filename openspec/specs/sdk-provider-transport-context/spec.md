@@ -149,14 +149,14 @@ The adapters SHALL retain existing SDK client construction, configured transport
 - **WHEN** two calls on the same model execute concurrently with distinct requests and responses
 - **THEN** each result and raw stream retains only its own exchange metadata
 
-### Requirement: Gateway privacy remains independent
+### Requirement: Gateway privacy is independent of native transport observability
 
-Native transport observability SHALL NOT enable Gateway raw-output requests or add private backend request bodies, response bodies, headers, or unknown metadata to Gateway normalization. Existing public response projection and protected-header enforcement SHALL remain unchanged.
+Native transport observability SHALL NOT enable Gateway raw output or add private backend request bodies, response bodies, headers, or unknown metadata to Gateway normalization. Existing public response projection and protected-header enforcement SHALL remain unchanged.
 
 #### Scenario: Enriched native result passes through Gateway
 - **WHEN** Gateway serves a provider result containing native transport metadata
 - **THEN** its public unary or streaming output omits the private native request/response bodies and headers
 
-#### Scenario: Gateway raw request remains unsupported
-- **WHEN** an authenticated Gateway request enables IncludeRawChunks
-- **THEN** the current unsupported-capability response occurs before backend invocation
+#### Scenario: Gateway raw output is caller-requested
+- **WHEN** an authenticated Gateway request omits IncludeRawChunks or sets it false
+- **THEN** the selected adapter receives false and the Gateway stream contains no raw events, whatever native transport observability the adapter records

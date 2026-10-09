@@ -19,6 +19,7 @@
     { "$ref": "#/$defs/toolCall" },
     { "$ref": "#/$defs/toolResult" },
     { "$ref": "#/$defs/finish" },
+    { "$ref": "#/$defs/raw" },
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
@@ -210,6 +211,15 @@
           "additionalProperties": false
         },
         "finishReason": { "$ref": "#/$defs/finishReason" }
+      },
+      "additionalProperties": false
+    },
+    "raw": {
+      "type": "object",
+      "required": ["type", "rawValue"],
+      "properties": {
+        "type": { "const": "raw" },
+        "rawValue": {}
       },
       "additionalProperties": false
     },

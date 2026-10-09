@@ -294,5 +294,6 @@ The exact registered public `@ai-sdk/gateway` client SHALL be authoritative for 
 
 #### Scenario: Later stream families remain deferred
 - **WHEN** the strict streaming text runtime is complete
-- **THEN** reasoning, tools, approvals, files, sources, custom content, raw output, and every other later stream family SHALL remain explicit unsupported capabilities or safe terminal adapter failures according to their request or response boundary
+- **THEN** reasoning, tools, approvals, files, sources, custom content, and every other later stream family SHALL remain explicit unsupported capabilities or safe terminal adapter failures according to their request or response boundary
+- **AND** requested raw output SHALL follow gateway-raw-output
 - **AND** the repository SHALL NOT claim complete LanguageModelV4 stream execution coverage
