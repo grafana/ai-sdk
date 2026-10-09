@@ -852,3 +852,57 @@ func TestConvertResponse_JsonResponseTool(t *testing.T) {
 		assert.Equal(t, provider.FinishReasonToolCalls, result.FinishReason.Unified, "finish reason should remain tool_calls without flag")
 	})
 }
+
+const (
+	droppedBlock = `{"type":"thinking_block_dropped","path":"messages[1].content[0]","reason":"prefix_mismatch"}`
+	droppedWant  = `[{"type":"thinking_block_dropped","path":"messages[1].content[0]","reason":"prefix_mismatch"}]`
+)
+
+func anthropicMetadata(t *testing.T, metadata provider.ProviderMetadata) map[string]json.RawMessage {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(metadata["anthropic"], &fields))
+	return fields
+}
+
+func TestConvertResponse_InputTransformations(t *testing.T) {
+	response := func(field string) string {
+		return `{"id":"msg_1","type":"message","role":"assistant","model":"claude-fable-5-1","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}` + field + `}`
+	}
+
+	for _, tc := range []struct {
+		name    string
+		field   string
+		want    string
+		wantKey bool
+	}{
+		{name: "present", field: `,"input_transformations":[` + droppedBlock + `]`, want: droppedWant, wantKey: true},
+		{name: "unknown fields are dropped", field: `,"input_transformations":[{"type":"t","path":"p","reason":"r","extra":{"a":1}}]`, want: `[{"type":"t","path":"p","reason":"r"}]`, wantKey: true},
+		{name: "empty array is kept", field: `,"input_transformations":[]`, want: `[]`, wantKey: true},
+		{name: "null is omitted", field: `,"input_transformations":null`},
+		{name: "absent is omitted"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := convertResponse(unmarshalMessage(t, response(tc.field)), toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+			require.NoError(t, err)
+			fields := anthropicMetadata(t, result.ProviderMetadata)
+			if !tc.wantKey {
+				assert.NotContains(t, fields, "inputTransformations")
+				return
+			}
+			assert.JSONEq(t, tc.want, string(fields["inputTransformations"]))
+		})
+	}
+
+	for _, malformed := range []string{
+		`,"input_transformations":[{"type":"t","path":"p"}]`,
+		`,"input_transformations":[{"type":1,"path":"p","reason":"r"}]`,
+		`,"input_transformations":{"type":"t"}`,
+	} {
+		t.Run("malformed "+malformed, func(t *testing.T) {
+			result, err := convertResponse(unmarshalMessage(t, response(malformed)), toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+			require.Error(t, err)
+			assert.Nil(t, result)
+		})
+	}
+}

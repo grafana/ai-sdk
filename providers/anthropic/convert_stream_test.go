@@ -1952,3 +1952,80 @@ func TestStreamAdapter_MarkCodeExecutionDynamic(t *testing.T) {
 		assert.Nil(t, call.Dynamic)
 	})
 }
+
+func TestStreamAdapter_InputTransformations(t *testing.T) {
+	start := func(id, extra string) string {
+		return `{"type":"message_start","message":{"id":"` + id + `","type":"message","role":"assistant","model":"claude-fable-5-1","content":[],"usage":{"input_tokens":1,"output_tokens":0}` + extra + `}}`
+	}
+	delta := func(extra string) string {
+		return `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}` + extra + `}`
+	}
+	const stop = `{"type":"message_stop"}`
+
+	finishFields := func(t *testing.T, events ...string) []map[string]json.RawMessage {
+		t.Helper()
+		var parsed []anthropic.BetaRawMessageStreamEventUnion
+		for _, raw := range events {
+			parsed = append(parsed, unmarshalEvent(t, raw))
+		}
+		var out []map[string]json.RawMessage
+		for _, part := range collectParts(parsed) {
+			if part.Type == provider.PartFinish {
+				out = append(out, anthropicMetadata(t, part.ProviderMetadata))
+			}
+		}
+		return out
+	}
+	transformations := `,"input_transformations":[` + droppedBlock + `]`
+
+	t.Run("from message start", func(t *testing.T) {
+		finishes := finishFields(t, start("msg_1", transformations), delta(""), stop)
+		require.Len(t, finishes, 1)
+		assert.JSONEq(t, droppedWant, string(finishes[0]["inputTransformations"]))
+	})
+
+	t.Run("a delta replaces them", func(t *testing.T) {
+		finishes := finishFields(t, start("msg_1", transformations), delta(`,"input_transformations":[{"type":"t","path":"p","reason":"r"}]`), stop)
+		require.Len(t, finishes, 1)
+		assert.JSONEq(t, `[{"type":"t","path":"p","reason":"r"}]`, string(finishes[0]["inputTransformations"]))
+	})
+
+	t.Run("a null or absent delta field keeps them", func(t *testing.T) {
+		for _, field := range []string{``, `,"input_transformations":null`} {
+			finishes := finishFields(t, start("msg_1", transformations), delta(field), stop)
+			require.Len(t, finishes, 1)
+			assert.JSONEq(t, droppedWant, string(finishes[0]["inputTransformations"]))
+		}
+	})
+
+	t.Run("they carry into the next message", func(t *testing.T) {
+		finishes := finishFields(t, start("msg_1", ""), delta(transformations), stop, start("msg_2", ""), delta(""), stop)
+		require.Len(t, finishes, 2)
+		assert.JSONEq(t, droppedWant, string(finishes[0]["inputTransformations"]))
+		assert.JSONEq(t, droppedWant, string(finishes[1]["inputTransformations"]))
+	})
+
+	t.Run("omitted when never supplied", func(t *testing.T) {
+		finishes := finishFields(t, start("msg_1", ""), delta(""), stop)
+		require.Len(t, finishes, 1)
+		assert.NotContains(t, finishes[0], "inputTransformations")
+	})
+
+	t.Run("malformed values fail at the event", func(t *testing.T) {
+		for _, events := range [][]string{
+			{start("msg_1", `,"input_transformations":[{"type":"t","path":"p"}]`)},
+			{start("msg_1", ""), delta(`,"input_transformations":[{"type":"t"}]`)},
+		} {
+			adapter := &streamAdapter{blocks: map[int64]*blockState{}, serverToolCalls: map[string]string{}, mcpToolCalls: map[string]mcpToolCallInfo{}, generateID: defaultGenerateID}
+			parts := make(chan provider.StreamPart, 16)
+			var failed error
+			for _, raw := range events {
+				if err := adapter.handleEvent(unmarshalEvent(t, raw), parts); err != nil {
+					failed = err
+				}
+			}
+			require.Error(t, failed)
+			assert.Contains(t, failed.Error(), "input_transformations")
+		}
+	})
+}
