@@ -156,3 +156,21 @@ including older archive prose; requirement/scenario/task inventories are intact.
 Full local gates passed again; logs are `/tmp/byok-stack-pr3-migration-defaults-20261009/`
 and `/tmp/byok-default-ports-{red,green}.log`. No baseline pins or provider inputs
 changed. The separately owned deployment validation remains incomplete.
+
+## Frozen baseline restack
+
+The owner froze main `28e08a45` after intervening security, OpenSpec and parity
+updates. This slice now follows #370 `b8b4accb`, replayed from exact old parent
+`c635c3b9`; runtime commits remain patch-equivalent. Scoped spec reconciliation
+retains current main/upper-layer scenarios and all original policy clauses under
+pinned OpenSpec 1.14.1. All 99 current spec/change items pass strict validation.
+The inherited closed-host category rule explicitly includes BYOK discovery.
+
+Current proof uses ai 7.0.127, Gateway 4.0.103, Anthropic 4.0.71, OpenAI 4.0.83
+and Provider 4.0.21 at `eb77f09e`; older versioned reports are historical. Matching
+source/tests and fixture provenance were checked against that exact reference.
+Full gates, ten privacy race repetitions and registered shape comparison pass;
+logs: `/tmp/byok-stack-pr3-frozen28-20261009/`. Existing native fallback/UI changes
+and authentic inputs are unchanged from frozen main. No later main updates are
+chased, no private infrastructure references are published, and deployment task
+4.1 remains incomplete.

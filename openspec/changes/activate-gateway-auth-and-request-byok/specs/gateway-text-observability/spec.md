@@ -101,9 +101,17 @@ A separately configured consumer logger.Middleware with CaptureOptions.ResponseB
 ## ADDED Requirements
 
 ### Requirement: Request-scoped BYOK logical observation
-BYOK SHALL compose one logical observer chain after host credential extraction and outside all credential attempts. It SHALL not reuse catalog/account-bound observers or retain request-scoped observers in global caches. Bounded structured logs/traces/Agent Observability records SHALL identify the requested provider/model without catalog lookup; configured calls SHALL retain canonical catalog identity. Operator capture SHALL remain metadata-only and exclude BYOK, authentication material and unrestricted native diagnostic payloads.
+BYOK SHALL receive one request-local logical observer outside ordered attempts, with requested identity and trusted context. Credentials SHALL be excluded, model metrics SHALL use a fixed bucket and native response identity SHALL remain unchanged without model-ID caches.
 
-Authentication provenance and account-access policy SHALL be observed per request, not copied from a startup auth mode. Wildcard namespaces SHALL remain service-level context unless verified acting-user binding supplies a concrete namespace. Neither namespace nor customer identity SHALL become metric labels.
+#### Scenario: Logical BYOK observation policy
+- **WHEN** a BYOK logical model is wrapped and invoked
+- **THEN** BYOK SHALL compose one logical observer chain after host credential extraction and outside all credential attempts.
+- **AND** It SHALL not reuse catalog/account-bound observers or retain request-scoped observers in global caches.
+- **AND** Bounded structured logs/traces/Agent Observability records SHALL identify the requested provider/model without catalog lookup; configured calls SHALL retain canonical catalog identity.
+- **AND** Operator capture SHALL remain metadata-only and exclude BYOK, authentication material and unrestricted native diagnostic payloads.
+- **AND** Authentication provenance and account-access policy SHALL be observed per request, not copied from a startup auth mode.
+- **AND** Wildcard namespaces SHALL remain service-level context unless verified acting-user binding supplies a concrete namespace.
+- **AND** Neither namespace nor customer identity SHALL become metric labels.
 
 #### Scenario: BYOK logical call uses two credentials
 - **WHEN** the first credential candidate fails with a default-decider-eligible error and the second succeeds
