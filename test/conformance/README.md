@@ -184,16 +184,27 @@ A case that differs from upstream for a reason outside the change under test goe
 `providerPartsAllowlist` with its tracking issue, so it stays visible and is never
 skipped silently. The list is empty today.
 
-### Synthetic stream parts
+### Synthetic provider cases
 
-`testdata/anthropic-stream-parts/` holds provider streams that no recorded or upstream
-fixture contains: several deltas in one message, messages without a delta, consecutive
-messages, end of stream after a delta, error frames in different positions and
-overlapping messages, metadata carried across messages and input transformations. Every input in `cases.json` is synthetic and says so; none is
-evidence of what the live API sends and none belongs under `recorded/` or `upstream/`.
-`expected-parts.jsonl` is produced by running the registered upstream `doStream`, so the
-upstream package is the oracle, and it regenerates on a baseline upgrade. The Go test is
-`TestAnthropicSyntheticStreamParts`.
+Recorded and upstream fixtures only contain what a real API happened to send, and the
+upstream package only tests what its authors thought of. Several adapter paths are
+therefore invisible to them: messages that carry metadata into the next one, deltas
+with null fields, error frames between a delta and a stop, a body that ends without
+`message_stop`, and `input_transformations`. Unit tests could cover them, but with
+expectations written by hand, which encode what we believe upstream does. Synthetic
+cases remove that belief: we invent the input, and the registered upstream package
+produces the expected output.
+
+What they prove: for that input, Go emits exactly what upstream emits. What they do not
+prove: that the live API sends that input, or that upstream's behavior on it is
+intended. A case therefore never belongs under `recorded/` or `upstream/`, says
+SYNTHETIC in its description, and is not evidence of API behavior. Where Go differs from
+upstream by design, the case is left out of the golden set and the difference is
+recorded in `PARITY.md`.
+
+`testdata/anthropic-stream-parts/` holds the streaming inputs. `expected-parts.jsonl` is
+produced by running the registered upstream `doStream`, and it regenerates on a baseline
+upgrade. The Go test is `TestAnthropicSyntheticStreamParts`.
 
 `testdata/anthropic-unary/` does the same for non-streaming calls. Each synthetic response
 is sent through the upstream `doGenerate`, and the Go `DoGenerate` result (content, finish

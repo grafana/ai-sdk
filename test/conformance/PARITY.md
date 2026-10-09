@@ -155,16 +155,9 @@ issue rather than being maintained in both places.
   ToUIMessageStream supplies a default ID generator with original messages and
   avoids an unused generation on continuation. Timeout warnings are returned on
   successful results rather than logged globally before invocation.
-- Anthropic streams emit one finish per `message_stop`, as upstream, and none for a
-  message without `message_stop`. Finish reason and output usage are stream-level
-  as upstream, so a message without a delta reuses the previous values. Provider
-  metadata and the safeguard verdict are stream-level as upstream, so a verdict can
-  appear on a later message's finish. Error frames are reported and reading continues, as
-  upstream, and carry upstream's message, status and retryability per error type.
-  Malformed `safeguard_results` and `input_transformations` are the exception: they
-  end the Go stream at the offending event, where upstream reports the invalid chunk
-  and keeps reading. Go unit tests cover this; no golden can, because it differs by
-  design.
+- Malformed Anthropic `safeguard_results` and `input_transformations` end the Go stream
+  at the offending event, where upstream reports the invalid chunk and keeps reading.
+  Go unit tests cover this; no golden can, because the two differ by design.
 - Anthropic uses explicit credentials/options rather than ambient SDK defaults.
   With no tools, required/named choices are retained. The full error envelope and
   inner response error are retained separately from the classified message.
