@@ -1,5 +1,13 @@
 ## REMOVED Requirements
 
+### Requirement: Server-owned Cloud provider credentials
+**Reason**: Cloud inference now requires request-only BYOK; server-owned accounts are restricted to authorized private access.
+**Migration**: Supply native request accounts for Cloud inference and use private configured access for catalogs. Native OpenAI/Anthropic HTTP endpoints remain unsupported.
+
+### Requirement: Independent bounded provider dependency construction
+**Reason**: The unified construction contract replaces the former Cloud configured-client authority.
+**Migration**: Keep configured construction private and request-only accounts isolated over credential-independent bounded transports.
+
 ### Requirement: Independent dependency construction
 **Reason**: The mode-specific construction contract is replaced by simultaneous private JWT and Cloud construction; Cloud no longer removes the process's JWT dependency.
 **Migration**: Use the unified dependency construction requirement, configure JWT trust and isolate BYOK factories from configured accounts.
@@ -120,9 +128,12 @@ All dependencies SHALL be constructed and all three listeners bound before readi
 ## MODIFIED Requirements
 
 ### Requirement: Trusted proxy contract
-The operator guide SHALL document the required X-Scope-OrgID assertion and proxy-only access to the Cloud application listener. The proxy MUST authenticate and authorize Cloud requests, enforce existing route scopes, replace client-supplied stack assertions and remove client authentication credentials. The application SHALL NOT verify CAP tokens or repeat CAP access-policy checks.
+Cloud ingress SHALL require a trusted authenticating edge that replaces stack assertions, removes caller credentials and enforces route scopes. The Cloud listener SHALL grant only request-BYOK access; private authorized access SHALL own configured accounts. Native OpenAI/Anthropic HTTP endpoints SHALL remain unsupported.
 
-The Cloud listener MUST grant only request-BYOK access. Configured provider accounts SHALL be available only through configured-access authorization on the private path. Native OpenAI/Anthropic HTTP endpoints SHALL remain unsupported; both paths use ProviderWire.
+#### Scenario: Trusted proxy contract policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** The operator guide SHALL document the required X-Scope-OrgID assertion and proxy-only access to the Cloud application listener. The proxy MUST authenticate and authorize Cloud requests, enforce existing route scopes, replace client-supplied stack assertions and remove client authentication credentials. The application SHALL NOT verify CAP tokens or repeat CAP access-policy checks.
+- **AND** The Cloud listener MUST grant only request-BYOK access. Configured provider accounts SHALL be available only through configured-access authorization on the private path. Native OpenAI/Anthropic HTTP endpoints SHALL remain unsupported; both paths use ProviderWire.
 
 #### Scenario: Public Cloud inference
 - **WHEN** the authenticating proxy authorizes a model request
@@ -134,9 +145,12 @@ The Cloud listener MUST grant only request-BYOK access. Configured provider acco
 - **AND** it SHALL NOT claim header validation alone proves network isolation
 
 ### Requirement: Distinct trusted Cloud identity
-Cloud activation MUST require deployment-verified proxy-only API ingress. The application SHALL validate exactly one X-Scope-OrgID value containing positive decimal digits fitting int64, derive its namespace through the pinned CloudNamespaceFormatter and retain typed authentication provenance. It SHALL reject missing, empty, duplicate, case-colliding, comma-coalesced, control-character and invalid-whitespace assertions.
+Cloud activation SHALL require externally verified proxy-only ingress. The listener SHALL validate one positive-int64 stack assertion, reject surviving authentication credentials before body reads and derive typed BYOK provenance without trusting policy headers or manufacturing service/acting-user identity.
 
-The Cloud listener SHALL reject surviving Authorization, X-Access-Token and X-Grafana-Id before body reads. It SHALL ignore X-Cloud-Org-ID and X-Access-Policy-ID rather than retaining or trusting them, and SHALL NOT manufacture a service identity or acting user. It SHALL NOT inspect cluster policies or issue authentication requests.
+#### Scenario: Distinct trusted Cloud identity policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** Cloud activation MUST require deployment-verified proxy-only API ingress. The application SHALL validate exactly one X-Scope-OrgID value containing positive decimal digits fitting int64, derive its namespace through the pinned CloudNamespaceFormatter and retain typed authentication provenance. It SHALL reject missing, empty, duplicate, case-colliding, comma-coalesced, control-character and invalid-whitespace assertions.
+- **AND** The Cloud listener SHALL reject surviving Authorization, X-Access-Token and X-Grafana-Id before body reads. It SHALL ignore X-Cloud-Org-ID and X-Access-Policy-ID rather than retaining or trusting them, and SHALL NOT manufacture a service identity or acting user. It SHALL NOT inspect cluster policies or issue authentication requests.
 
 #### Scenario: Stack-only identity
 - **WHEN** a proxy-only request supplies a valid stack assertion without surviving credentials
@@ -164,11 +178,13 @@ The Cloud listener SHALL reject surviving Authorization, X-Access-Token and X-Gr
 - **AND** deployment evidence SHALL separately prove that internal client workloads cannot reach the Cloud application port
 
 ### Requirement: Client composition and credential privacy
-Tests SHALL run the real unified command with both listeners, independent Go clients and the exact registered Vercel client. A test-only Cloud edge SHALL use dummy credentials and predetermined scope/stack outcomes, replace assertions and strip credentials. It SHALL NOT claim production CAP verification. Private tests SHALL exercise both access-token header forms and concrete/wildcard namespaces.
+Real-command tests SHALL exercise both authenticated populations with independent Go and registered Vercel clients. Dummy-edge evidence SHALL remain separate from production authorization/isolation proof. Selected provider authentication, default token limits, unmodified SDK headers/choice, metadata-only capture and streaming cancellation SHALL remain independently tested.
 
-Configured discovery SHALL succeed only on configured access; authenticated Cloud discovery SHALL return the explicit BYOK unsupported-operation response. Both populations SHALL support represented unary and streaming calls with explicit or omitted output-token limits; omitted limits SHALL use native defaults. High-level Go StreamText and registered TypeScript generateText/streamText SHALL preserve SDK-generated automatic choice and ordinary body headers, including User-Agent, without rewriting SDK bodies. Tests SHALL separate Gateway-authentication failures from provider-credential failures.
-
-Automatic server diagnostics SHALL exclude credentials and customer-ID metric labels. Authentication observations SHALL use bounded entry-point/source/outcome values per request, never a process-wide mode override. Streaming middleware SHALL preserve Unwrap and cancellation. Consumer request metadata exposure and structural capture protection SHALL follow grafana-gateway-client and structured-logging-middleware.
+#### Scenario: Client composition and credential privacy policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** Tests SHALL run the real unified command with both listeners, independent Go clients and the exact registered Vercel client. A test-only Cloud edge SHALL use dummy credentials and predetermined scope/stack outcomes, replace assertions and strip credentials. It SHALL NOT claim production CAP verification. Private tests SHALL exercise both access-token header forms and concrete/wildcard namespaces.
+- **AND** Configured discovery SHALL succeed only on configured access; authenticated Cloud discovery SHALL return the explicit BYOK unsupported-operation response. Both populations SHALL support represented unary and streaming calls with explicit or omitted output-token limits; omitted limits SHALL use native defaults. High-level Go StreamText and registered TypeScript generateText/streamText SHALL preserve SDK-generated automatic choice and ordinary body headers, including User-Agent, without rewriting SDK bodies. Tests SHALL separate Gateway-authentication failures from provider-credential failures.
+- **AND** Automatic server diagnostics SHALL exclude credentials and customer-ID metric labels. Authentication observations SHALL use bounded entry-point/source/outcome values per request, never a process-wide mode override. Streaming middleware SHALL preserve Unwrap and cancellation. Consumer request metadata exposure and structural capture protection SHALL follow grafana-gateway-client and structured-logging-middleware.
 
 #### Scenario: Client-to-edge outcomes
 - **WHEN** Go and pinned Vercel issue supported private/configured and Cloud/BYOK unary and streaming calls
@@ -205,3 +221,18 @@ Automatic server diagnostics SHALL exclude credentials and customer-ID metric la
 #### Scenario: Compatibility claims match test evidence
 - **WHEN** support is documented
 - **THEN** exact-client, fake-provider and test-edge evidence SHALL be distinguished from live provider acceptance, CAP enforcement and deployed NetworkPolicy proof
+
+### Requirement: Authentication-mode write timeout accounting
+The minimum API write timeout SHALL use overflow-checked duration addition. Cloud listener accounting SHALL exclude JWKS latency; private JWT listener accounting SHALL include it.
+
+#### Scenario: Authentication-mode write timeout accounting
+- **WHEN** the configured write timeout sum overflows or excludes the private-listener JWKS term
+- **THEN** startup SHALL reject invalid accounting; valid Cloud-listener accounting SHALL exclude JWKS latency
+
+### Requirement: Shared listener readiness and shutdown
+The process SHALL construct dependencies and bind every configured listener before readiness. Shutdown MUST withdraw readiness before canceling requests. All three servers SHALL share one shutdown deadline, with forced closure on expiry and all serving goroutines reaped. Cancel-first shutdown SHALL remain unchanged.
+
+#### Scenario: Shared listener readiness and shutdown
+- **WHEN** shutdown begins with active requests on all three listeners
+- **THEN** readiness SHALL be withdrawn before cancellation and all three servers SHALL close and reap serving goroutines under one deadline
+

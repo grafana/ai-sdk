@@ -6,6 +6,37 @@ Define privacy-safe, bounded-cardinality, once-per-logical-call observability fo
 
 ## Requirements
 
+### Requirement: Request-scoped BYOK logical observation
+BYOK SHALL receive one request-local logical observer outside ordered attempts, with requested identity and trusted context. Configured sensitive fields SHALL follow operator capture policy, model metrics SHALL use a fixed bucket and native response identity SHALL remain unchanged without model-ID caches.
+
+#### Scenario: Logical BYOK observation policy
+- **WHEN** a BYOK logical model is wrapped and invoked
+- **THEN** BYOK SHALL compose one logical observer chain after host credential extraction and outside all credential attempts.
+- **AND** It SHALL not reuse catalog/account-bound observers or retain request-scoped observers in global caches.
+- **AND** Bounded structured logs/traces/Agent Observability records SHALL identify the requested provider/model without catalog lookup; configured calls SHALL retain canonical catalog identity.
+- **AND** Operator capture SHALL remain metadata-only and exclude BYOK, authentication material and unrestricted native diagnostic payloads.
+- **AND** Authentication provenance and account-access policy SHALL be observed per request, not copied from a startup auth mode.
+- **AND** Wildcard namespaces SHALL remain service-level context unless verified acting-user binding supplies a concrete namespace.
+- **AND** Neither namespace nor customer identity SHALL become metric labels.
+
+#### Scenario: BYOK logical call uses two credentials
+- **WHEN** the first credential candidate fails with a default-decider-eligible error and the second succeeds
+- **THEN** the request SHALL produce one logical call observation with safe credential-attempt observations, not two logical generations
+- **AND** no key-bearing options or request metadata SHALL reach generic middleware
+
+#### Scenario: Both account policies run concurrently
+- **WHEN** configured and BYOK requests share process-wide telemetry/export infrastructure
+- **THEN** each SHALL retain its own verified provenance, account policy and appropriate logical identity without cross-request state
+
+#### Scenario: Credential markers at automatic sinks
+- **WHEN** real logger, enrichment, metrics and Agent Observability/export sinks capture a BYOK success, rejection, cancellation or late-result cleanup
+- **THEN** configured sensitive fields SHALL follow logger policy and metadata-only exporters SHALL retain their exclusions while timing, usage and outcome facts remain available
+- **AND** independent caller-visible native diagnostics SHALL preserve available producer echoes
+
+#### Scenario: Results are not operator capture policy
+- **WHEN** a BYOK provider returns supported native content, warnings, identity or continuation metadata
+- **THEN** the observer chain SHALL preserve them for protocol encoding independently of operator capture exclusions
+
 ### Requirement: One startup-composed logical middleware chain
 
 The Gateway SHALL wrap each configured canonical catalog entry's logical text model exactly once at startup with approved context enrichment, Agent Observability recording, structured logging, Prometheus model metrics, canonical public identity, and then the inner model in that request order. In WP8 the inner model SHALL be the direct provider; WP9 MAY replace it with fallback beneath the unchanged logical wrapper and SHALL NOT wrap physical candidates with WP8 observers.
@@ -29,8 +60,12 @@ Response observation SHALL occur in reverse order. Alias and canonical resolutio
 - **THEN** each SHALL use the same composed instance and reverse response-observation order without constructing observers in ProviderWire or changing public protocol behavior
 
 ### Requirement: Canonical public identity on every logical surface
+Configured logical observations SHALL retain canonical public catalog identity. BYOK logical logs/exports SHALL retain requested provider/model identity, while metrics SHALL use a fixed BYOK bucket. Native response identity, aliases, configured provider instances and routing details SHALL not substitute for logical identity.
 
-Logical model telemetry SHALL identify provider as `grafana` and model as the canonical public catalog ID from startup composition. Requested aliases, provider instance names, provider types, backend model IDs, provider response IDs, response-derived model identity, and routing topology SHALL NOT appear in logical logs, Prometheus labels, Agent Observability model fields, or Agent Observability metadata.
+#### Scenario: Canonical public identity on every logical surface policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** Configured-account logical model telemetry SHALL identify provider as `grafana` and model as the canonical public catalog ID from startup composition. Requested aliases, provider instance names, provider types, backend model IDs, provider response IDs, response-derived model identity, and routing topology SHALL NOT appear in logical logs, Prometheus labels, Agent Observability model fields, or Agent Observability metadata.
+- **AND** Provider response metadata SHALL remain unmodified for the protocol adapter and later private physical-attempt observation. Logical observation SHALL ignore that metadata rather than rewriting the provider result or stream part.
 
 #### Scenario: Backend response identity differs
 - **WHEN** canonical model `grafana/assistant` receives a result or stream metadata naming provider `anthropic`, a backend model ID, and a provider response ID
@@ -90,8 +125,12 @@ Neither Gateway client SHALL send or receive a new correlation field or header u
 - **THEN** no new correlation field or header SHALL be sent or received
 
 ### Requirement: Privacy-safe structured model logs
+Logical logs SHALL retain only fixed/bounded lifecycle facts, normalized usage/classification and access-policy-appropriate identity. They SHALL exclude raw request/provider payloads and arbitrary diagnostic text; operator policy SHALL not censor returned provider data.
 
-The Gateway SHALL emit fixed structured start and one terminal record for unary and streaming text using the reusable logger middleware. It SHALL keep all capture flags and per-stream-part logging disabled and SHALL apply a Gateway-owned attribute allowlist followed by default secret-key redaction.
+#### Scenario: Privacy-safe structured model logs policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** The Gateway SHALL emit fixed structured start and one terminal record for unary and streaming text using the reusable logger middleware. It SHALL keep all capture flags and per-stream-part logging disabled and SHALL apply a Gateway-owned attribute allowlist followed by default secret-key redaction.
+- **AND** Allowed logical values SHALL be limited to fixed event/schema names, a bounded generated call/correlation ID, call type, access-policy-appropriate logical identity, closed outcome and error classifications, normalized status/retryability, duration, usage counters, unified finish reason, warning type/count, bounded stream part type/count, time to first output, and the trusted observation context. Logs SHALL omit prompt/output/reasoning text, tools, files, raw parts, request/response bodies, headers, provider options/metadata, raw finish reasons, arbitrary warning feature/message/detail strings, arbitrary error text, provider response metadata, credentials, configured-account backend details, response-derived identity, and topology. Bounded BYOK requested provider/model identity SHALL be permitted under the request-scoped observation requirement.
 
 #### Scenario: Unary provider failure contains secrets
 - **WHEN** a unary provider error contains a credential, provider URL, backend model ID, response body, and arbitrary message
@@ -105,7 +144,7 @@ The Gateway SHALL emit fixed structured start and one terminal record for unary 
 
 ### Requirement: Structured logical log value allowlist
 
-Allowed logical values SHALL be limited to fixed event/schema names, a bounded generated call/correlation ID, call type, canonical public identity, closed outcome and error classifications, normalized status/retryability, duration, usage counters, unified finish reason, warning type/count, bounded stream part type/count, time to first output, and the trusted observation context.
+Allowed logical values SHALL be limited to fixed event/schema names, a bounded generated call/correlation ID, call type, access-policy-appropriate logical identity, closed outcome and error classifications, normalized status/retryability, duration, usage counters, unified finish reason, warning type/count, bounded stream part type/count, time to first output, and the trusted observation context.
 
 #### Scenario: Structured logical log value allowlist
 - **WHEN** a streaming terminal record includes usage and time to first output
@@ -120,8 +159,12 @@ Logs SHALL omit prompt/output/reasoning text, tools, files, raw parts, request/r
 - **THEN** logs SHALL omit those payloads and arbitrary provider values
 
 ### Requirement: Bounded-cardinality logical model metrics
+One shared service registry SHALL expose reusable model metrics. Configured metrics SHALL use canonical public identity; BYOK metrics SHALL use a fixed model class without requested-model caches. Caller/customer/response/topology values SHALL not become labels; registration collisions SHALL fail startup.
 
-The Gateway SHALL register the reusable Prometheus model middleware exactly once against the existing service-owned registry and expose its collectors on the existing unauthenticated `/metrics` route. Model metrics SHALL use requested identity mode. Labels SHALL be limited to operation, canonical configured public model identity, closed status and error classes, normalized status code (`100`–`599`, `none`, or `other`), unified finish reason, token type, and closed stream-part type.
+#### Scenario: Bounded-cardinality logical model metrics policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** The Gateway SHALL register the reusable Prometheus model middleware exactly once against the existing service-owned registry and expose its collectors on the existing unauthenticated `/metrics` route. Model metrics SHALL use requested identity mode.
+- **AND** For configured-account calls, labels SHALL be limited to operation, canonical configured public model identity, closed status and error classes, normalized status code (`100`–`599`, `none`, or `other`), unified finish reason, token type, and closed stream-part type. Caller, namespace, correlation ID, alias, region, application, provider instance, backend model, response ID, arbitrary error, and arbitrary stream values SHALL NOT be metric labels. Duplicate registration SHALL fail startup before readiness.
 
 #### Scenario: Unary and streaming text are scraped
 - **WHEN** authenticated unary and streaming calls complete and `/metrics` is scraped
@@ -132,6 +175,12 @@ The Gateway SHALL register the reusable Prometheus model middleware exactly once
 - **WHEN** model collectors cannot be registered exactly once in the service registry
 - **THEN** startup SHALL fail before listener binding and readiness
 
+BYOK requests SHALL use a fixed BYOK model class and, if exposed, only bounded supported-provider/access-policy labels. Caller-selected native model IDs SHALL NOT become Prometheus labels or allocate per-model observer/metric caches. These BYOK rules SHALL NOT consult the configured catalog.
+
+#### Scenario: Many BYOK model selectors
+- **WHEN** requests use many distinct native model names for one supported BYOK provider
+- **THEN** the model metric series count SHALL remain bounded independently of those names
+
 ### Requirement: Metric privacy and duplicate-registration refusal
 
 Caller, namespace, correlation ID, alias, region, application, provider instance, backend model, response ID, arbitrary error, and arbitrary stream values SHALL NOT be metric labels. Duplicate registration SHALL fail startup before readiness.
@@ -141,13 +190,18 @@ Caller, namespace, correlation ID, alias, region, application, provider instance
 - **THEN** neither value SHALL become a label and the registration collision SHALL fail startup before readiness
 
 ### Requirement: Metadata-only Agent Observability recording
+One process-wide metadata-only exporter SHALL produce one logical generation per call with approved context, normalized cache-inclusive usage, timing, finish and closed classification. Configured calls SHALL retain canonical identity and BYOK calls requested identity; raw payloads, native identity and arbitrary diagnostics SHALL remain excluded.
 
-When Agent Observability export is enabled, the Gateway SHALL use one process-wide client configured for metadata-only content capture, recording middleware only, requested canonical identity, and an allowlisted context provider. Hooks, experimental SDK features, and request-controlled capture changes SHALL remain disabled.
+#### Scenario: Metadata-only Agent Observability recording policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** When Agent Observability export is enabled, the Gateway SHALL use one process-wide client configured for metadata-only content capture, recording middleware only, requested logical identity, and an allowlisted context provider. Hooks, experimental SDK features, and request-controlled capture changes SHALL remain disabled.
+- **AND** Each authenticated unary or streaming text call SHALL produce one generation containing its access-policy-appropriate logical model identity, generation mode, approved trusted metadata, normalized usage marked as cache-inclusive without adding cache buckets again, unified finish reason, timing including streaming first output when available, and a closed error classification when applicable. It SHALL omit input/output content, system prompts, detailed errors, response/provider IDs, configured-account backend details, provider options/metadata, raw artifacts, credentials, and topology. BYOK requested provider/model identity SHALL remain an allowed bounded logical identity, never a metric label.
+- **AND** The Agent Observability client MAY add only its fixed SDK provenance/content-capture metadata markers and a mirrored closed error category after the Gateway filter. These fixed client-owned fields SHALL NOT carry request input, provider detail, exporter configuration, or arbitrary error text.
 
 #### Scenario: Successful text generation is recorded
 - **WHEN** an authenticated unary or streaming text call succeeds with Agent Observability enabled
-- **THEN** exactly one metadata-only generation SHALL be finalized with canonical public identity, approved context, usage, finish, and timing
-- **AND** its exported record and span SHALL contain no text payload or backend identity
+- **THEN** exactly one metadata-only generation SHALL be finalized with access-policy-appropriate logical identity, approved context, usage, finish, and timing
+- **AND** its exported record and span SHALL contain no text payload or configured-account backend details
 
 #### Scenario: Provider error is recorded safely
 - **WHEN** a provider call or stream part carries an error containing private provider details
@@ -161,7 +215,7 @@ When Agent Observability export is enabled, the Gateway SHALL use one process-wi
 
 ### Requirement: One normalized Agent Observability generation
 
-Each authenticated unary or streaming text call SHALL produce one generation containing canonical public model identity, generation mode, approved trusted metadata, normalized usage marked as cache-inclusive without adding cache buckets again, unified finish reason, timing including streaming first output when available, and a closed error classification when applicable.
+Each authenticated unary or streaming text call SHALL produce one generation containing access-policy-appropriate logical model identity, generation mode, approved trusted metadata, normalized usage marked as cache-inclusive without adding cache buckets again, unified finish reason, timing including streaming first output when available, and a closed error classification when applicable.
 
 #### Scenario: One normalized Agent Observability generation
 - **WHEN** an authenticated stream reports cache-inclusive usage and first output
@@ -286,8 +340,13 @@ Work package 6 SHALL own image/capacity integration, work package 7 the Go clien
 - **THEN** its explicit mapping SHALL be owned there rather than inferred from raw provider values by WP8
 
 ### Requirement: Operator capture is independent from returned native values
+Server observations SHALL retain metadata-only exclusions without modifying caller-visible native data. Consumers SHALL configure independent middleware/capture and prove actual opt-in Gateway-body logging separately from hook access, typed identity replacement and unsupported native transport carriers.
 
-Gateway metadata-only logger, Prometheus, enrichment and Agent Observability observations SHALL retain their existing payload exclusions and canonical logical model identity when native warning/source/response identity values become caller-visible. Arbitrary warning strings, source ID/URL/title/filename and response ID/modelId SHALL NOT become operator attributes, metric labels or metadata-only exported payloads.
+#### Scenario: Operator capture is independent from returned native values policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** Gateway metadata-only logger, Prometheus, enrichment and Agent Observability observations SHALL retain their existing payload exclusions and access-policy-appropriate logical model identity when native warning/source/response identity values become caller-visible. Arbitrary warning strings, source ID/URL/title/filename and response ID/modelId SHALL NOT become operator attributes, metric labels or metadata-only exported payloads. The observer chain SHALL pass original results/parts unchanged to protocol encoding; operator capture restrictions SHALL NOT censor returned values. Account authorization and request isolation SHALL prevent attaching another request's state. Logger field policy and exporter exclusions SHALL apply only to observations, never rewrite returned provider values.
+- **AND** Consumer applications SHALL be able to configure existing reusable middleware independently around providers/grafana without enabling server capture. Tests SHALL use middleware.WrapLanguageModel with Middleware.WrapGenerate to inspect actual unary warnings/content/Response.Body and WrapStream to observe forwarded PartStreamStart/PartSource/PartResponseMeta through a context-aware test tee. These hooks SHALL receive contracted values without mutating output; hook access SHALL NOT be equated with automatic built-in capture/export.
+- **AND** A separately configured consumer logger.Middleware with CaptureOptions.ResponseBody and a consumer-owned slog destination SHALL prove actual opt-in logging of the bounded Gateway unary body, including native nested identity/warnings/sources within its configured capture budget. Raw-body accessibility alone SHALL NOT be called capture proof. Tests/docs SHALL distinguish that logged Gateway body from native transport diagnostics and from typed native Response identity overwritten by both clients. This capability SHALL NOT add middleware/API surface, universal stream-warning/source export, an unsupported Agent Observability source recording representation or a diagnostic carrier.
 
 #### Scenario: Native identity differs from canonical route
 - **WHEN** an alias resolves a canonical route whose provider supplies a different native response ID/modelId

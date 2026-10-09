@@ -6,47 +6,124 @@ Accept trusted reverse-proxy identity in the Gateway application without changin
 
 ## Requirements
 
+### Requirement: Unified dependency construction
+The command SHALL construct JWT/configured-account and request-only dependencies together. Configured secrets/catalogs SHALL remain inaccessible to BYOK, transports SHALL remain credential-independent and timeout validation SHALL cover each path safely.
+
+#### Scenario: Unified construction policy
+- **WHEN** the Gateway constructs both authenticated account populations
+- **THEN** The unified command SHALL construct explicit regional JWT verification and configured-account dependencies alongside credential-independent BYOK adapter factories.
+- **AND** JWT trust SHALL be configured even when Cloud requests are being served.
+- **AND** Client construction SHALL preserve bounded JWKS retrieval, endpoint validation, redirect refusal, model response bounds and timeouts.
+- **AND** Configured secret resolution and catalog construction SHALL have no dependency path into the BYOK selector.
+- **AND** Shared transports SHALL carry no mutable account headers or SDK-environment credential defaults.
+- **AND** Listener timeout validation SHALL use overflow-safe accounting for the work each path performs, including JWT verification on the private path.
+
+#### Scenario: Concurrent authentication dependencies
+- **WHEN** the unified command starts
+- **THEN** the private listener SHALL have JWT verification while Cloud requests SHALL not perform a JWT lookup
+
+#### Scenario: BYOK isolation from configured state
+- **WHEN** configured providers contain distinctive keys and endpoint overrides
+- **THEN** BYOK selection SHALL have no access to them and SHALL use only explicit request credentials and supported native destinations
+
+#### Scenario: Invalid trust or timeout configuration
+- **WHEN** configured JWT trust, transport bounds or listener timeout arithmetic is invalid
+- **THEN** startup SHALL fail before readiness
+
+### Requirement: Simultaneous isolated authentication entry points
+Private JWT, trusted Cloud and operational listeners SHALL coexist with isolated routes and no authentication fallback. Defaults SHALL keep Cloud on 8080, operations on 8081 and private JWT on 8082; private admission SHALL verify credentials before body reads.
+
+#### Scenario: Listener and private admission policy
+- **WHEN** the process binds listeners and admits private API requests
+- **THEN** One Gateway process SHALL expose a private JWT API listener, a trusted-Cloud API listener and an operational listener.
+- **AND** Defaults SHALL retain the Cloud API on port 8080 and operations on port 8081, with private JWT access on port 8082.
+- **AND** Operators MAY configure distinct alternative addresses.
+- **AND** API listeners SHALL serve the existing exact ProviderWire paths with method and encoded-path checks.
+- **AND** Operational routes SHALL exist only on the operational listener.
+- **AND** The command SHALL remove exclusive startup authentication modes and SHALL NOT fall back between authenticators.
+- **AND** The private listener SHALL accept exactly one access-token credential, through X-Access-Token or Authorization Bearer, and SHALL reject both together, duplicate/case-colliding/coalesced credentials and supplied Cloud identity assertions.
+- **AND** It SHALL verify access-token type, signature, expiry, audience ai-sdk and supported namespace before protected body reads.
+- **AND** No service-identity allowlist or mandatory serviceIdentity claim SHALL apply; verified service/subject attributes SHALL be retained when available without inventing an identity.
+- **AND** Optional X-Grafana-Id SHALL verify and bind to the access-token namespace; an ID token alone SHALL NOT authenticate.
+
+#### Scenario: Both client populations use one process
+- **WHEN** valid private JWT and trusted Cloud requests arrive concurrently
+- **THEN** both SHALL authenticate on their respective listeners without changing process configuration or each other's principal
+
+#### Scenario: Existing Cloud and operational ports remain stable
+- **WHEN** the command uses default listener settings
+- **THEN** the Cloud and operational endpoints SHALL remain on ports 8080 and 8081, while private JWT requests use the separate port 8082
+
+#### Scenario: Internal callers use different JWT header forms
+- **WHEN** Go sends X-Access-Token or pinned Vercel sends the same valid access token as an Authorization bearer credential to the private listener
+- **THEN** each SHALL receive configured-account access without a Cloud token or stack assertion
+
+#### Scenario: Wrong or ambiguous credentials
+- **WHEN** a private request supplies both access-token headers, duplicated credentials, an ID token alone, an invalid access JWT or Cloud identity assertions
+- **THEN** it SHALL fail before body reads, discovery, selection or provider work
+- **AND** it SHALL NOT try Cloud authentication
+
+### Requirement: Request-level account access and namespace context
+Verified authentication SHALL determine immutable configured/BYOK access. Request keys/parameters SHALL NOT change policy or tenant identity; concrete/wildcard namespaces and verified acting users SHALL follow the account-bound namespace contract.
+
+#### Scenario: Authenticated account and namespace policy
+- **WHEN** the host derives request policy and tenant context
+- **THEN** The host SHALL derive an immutable account-access policy from verified authentication provenance.
+- **AND** Private JWTs SHALL grant configured-account access; trusted Cloud requests SHALL grant request-BYOK access.
+- **AND** Neither request parameters, the namespace's customer identity nor supplied provider keys SHALL change this policy.
+- **AND** Catalog code SHALL depend on configured-access authorization rather than a hard-coded JWT mechanism.
+- **AND** JWT namespaces SHALL accept concrete stacks-<positive-int64> values and wildcard *.
+- **AND** A wildcard SHALL remain service-level context unless a verified acting-user token supplies a concrete namespace within its authority.
+- **AND** Untrusted headers SHALL NOT select a wildcard caller's stack.
+- **AND** Unsupported or malformed namespaces SHALL fail before protected work.
+
+#### Scenario: Internal service acts for a customer
+- **WHEN** a valid ai-sdk access JWT names stacks-123
+- **THEN** the caller SHALL retain configured-account access and stack-123 tenant attribution
+
+#### Scenario: Wildcard service request
+- **WHEN** a valid access JWT names * without an acting-user token
+- **THEN** the request SHALL have configured-account access and service-level context without an invented stack
+
+#### Scenario: Acting user narrows wildcard context
+- **WHEN** a wildcard access JWT accompanies a valid concrete-stack ID token
+- **THEN** authlib namespace binding SHALL establish that acting-user context without granting a different account-access policy
+
+#### Scenario: Request attempts account-mode selection
+- **WHEN** any request parameter claims configured access for a Cloud caller
+- **THEN** the claim SHALL NOT influence authorization or make configured accounts available
+
+### Requirement: Coordinated multi-listener lifecycle
+All dependencies SHALL be constructed and all three listeners bound before readiness. Partial bind or unexpected serving failure SHALL close all listeners and withdraw readiness. Shutdown SHALL withdraw readiness before canceling active calls and SHALL use one shared deadline for all listeners and bounded cleanup. No legacy combined listener or unsafe production verifier SHALL be supported; any explicit development-only unsafe verification SHALL require loopback listeners.
+
+#### Scenario: Third listener fails to bind
+- **WHEN** two listeners bind and the third fails
+- **THEN** both earlier listeners SHALL close and readiness SHALL never become true
+
+#### Scenario: Shutdown with both populations active
+- **WHEN** shutdown occurs with private and Cloud streams active
+- **THEN** readiness SHALL be withdrawn, both requests canceled and all serving loops reaped under the shared deadline
+
+#### Scenario: Cross-listener routes
+- **WHEN** an API request reaches the operational listener or a health/metrics request reaches either API listener
+- **THEN** it SHALL NOT reach the other listener's handler
+
 ### Requirement: Trusted proxy contract
-The Gateway-owned guide SHALL document the required `X-Scope-OrgID` header and proxy-only API access prerequisite. The proxy MUST authenticate and authorize requests and remove client credentials. It MUST replace client-supplied `X-Scope-OrgID` with the authenticated stack ID before forwarding. The application SHALL NOT verify proxy credentials or repeat access-policy checks.
+Cloud ingress SHALL require a trusted authenticating edge that replaces stack assertions, removes caller credentials and enforces route scopes. The Cloud listener SHALL grant only request-BYOK access; private authorized access SHALL own configured accounts. Native OpenAI/Anthropic HTTP endpoints SHALL remain unsupported.
+
+#### Scenario: Trusted proxy contract policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** The operator guide SHALL document the required X-Scope-OrgID assertion and proxy-only access to the Cloud application listener. The proxy MUST authenticate and authorize Cloud requests, enforce existing route scopes, replace client-supplied stack assertions and remove client authentication credentials. The application SHALL NOT verify CAP tokens or repeat CAP access-policy checks.
+- **AND** The Cloud listener MUST grant only request-BYOK access. Configured provider accounts SHALL be available only through configured-access authorization on the private path. Native OpenAI/Anthropic HTTP endpoints SHALL remain unsupported; both paths use ProviderWire.
+
+#### Scenario: Public Cloud inference
+- **WHEN** the authenticating proxy authorizes a model request
+- **THEN** the application SHALL receive only trusted identity and request content, and SHALL require request-scoped provider credentials
 
 #### Scenario: Documentation scope
-
-- **WHEN** the guide describes Cloud authentication
-- **THEN** it documents application settings, the required stack header, isolation, and client limitations
-- **AND** it does not describe private proxy configuration, deployment endpoints, rollout procedures, or future credential designs
-
-### Requirement: Server-owned Cloud provider credentials
-Provider credentials SHALL remain server-owned application configuration. Request-scoped BYOK and native OpenAI/Anthropic endpoints remain unsupported.
-
-#### Scenario: Server-owned Cloud provider credentials
-- **WHEN** a Cloud caller sends BYOK or targets a native OpenAI/Anthropic endpoint
-- **THEN** provider credentials SHALL remain application-owned and those request paths SHALL remain unsupported
-
-### Requirement: Startup-selected authentication
-The application MUST select one Gateway-owned `RequestAuthenticator` at startup through `--auth.mode` or `GRAFANA_AI_GATEWAY_AUTH_MODE`. Supported values SHALL be `access-token` and `cloud-gateway`, with `access-token` as the default. Unknown modes SHALL fail startup. The application MUST preserve internal authentication and never fall back between trust models.
-
-#### Scenario: Existing internal caller
-
-- **WHEN** an internal caller supplies a valid `X-Access-Token` with accompanying `Authorization`
-- **THEN** the protected handler runs with the existing JWT caller identity
-- **AND** the accompanying header does not change authentication
-- **AND** audience, namespace, signature, service identity, and optional `X-Grafana-Id` acting-user verification retain their existing behavior
-
-#### Scenario: Invalid internal token with Cloud assertions
-
-- **WHEN** a caller submits an invalid access token and valid-looking Cloud assertions to internal mode
-- **THEN** the application returns the fixed ProviderWire authentication error
-- **AND** it does not call the protected handler or try Cloud authentication
-
-#### Scenario: Authorization alone in internal mode
-
-- **WHEN** an internal-mode request supplies `Authorization` without `X-Access-Token`
-- **THEN** application authentication fails without reading the protected body or invoking discovery, model resolution, or provider work
-
-#### Scenario: Unknown mode
-
-- **WHEN** startup receives an authentication mode other than `access-token` or `cloud-gateway`
-- **THEN** startup fails before readiness
+- **WHEN** operator guidance describes the deployment
+- **THEN** it SHALL distinguish proxy-only Cloud ingress, private authenticated ingress and operational ingress
+- **AND** it SHALL NOT claim header validation alone proves network isolation
 
 ### Requirement: Header-only authentication boundary
 The authentication boundary SHALL accept context and headers independently of body decoding. Authentication failure formatting SHALL be injected at the middleware boundary. Current ProviderWire routes SHALL retain the fixed `HostErrorWriter` authentication document.
@@ -56,44 +133,37 @@ The authentication boundary SHALL accept context and headers independently of bo
 - **THEN** middleware SHALL use the fixed HostErrorWriter authentication document without reading the protected body
 
 ### Requirement: Distinct trusted Cloud identity
-Cloud-mode activation MUST wait for deployment-verified proxy-only API ingress. Header syntax alone does not establish the sender's identity. The application MUST NOT inspect cluster policies to establish this deployment prerequisite.
+Cloud activation SHALL require externally verified proxy-only ingress. The listener SHALL validate one positive-int64 stack assertion, reject surviving authentication credentials before body reads and derive typed BYOK provenance without trusting policy headers or manufacturing service/acting-user identity.
 
-#### Scenario: Deployment prerequisite remains external
-
-- **WHEN** local application tests accept syntactically valid trusted assertions
-- **THEN** those results do not authorize deployment activation
-- **AND** deployment owners must separately verify proxy-only API ingress and approve its trust model
-- **AND** the application does not query cluster policies
+#### Scenario: Distinct trusted Cloud identity policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** Cloud activation MUST require deployment-verified proxy-only API ingress. The application SHALL validate exactly one X-Scope-OrgID value containing positive decimal digits fitting int64, derive its namespace through the pinned CloudNamespaceFormatter and retain typed authentication provenance. It SHALL reject missing, empty, duplicate, case-colliding, comma-coalesced, control-character and invalid-whitespace assertions.
+- **AND** The Cloud listener SHALL reject surviving Authorization, X-Access-Token and X-Grafana-Id before body reads. It SHALL ignore X-Cloud-Org-ID and X-Access-Policy-ID rather than retaining or trusting them, and SHALL NOT manufacture a service identity or acting user. It SHALL NOT inspect cluster policies or issue authentication requests.
 
 #### Scenario: Stack-only identity
-
-- **WHEN** the application receives a valid `X-Scope-OrgID` with no policy headers or client credential
-- **THEN** it derives `Namespace` through `types.CloudNamespaceFormatter`
-- **AND** it retains the typed `Source` and private `stackID`
-- **AND** it does not manufacture a service identity or acting user
-- **AND** it makes no outgoing authentication request
-
-#### Scenario: Ignored policy headers
-
-- **WHEN** a request has a valid stack assertion, no client credential, and any values for `X-Cloud-Org-ID` or `X-Access-Policy-ID`
-- **THEN** the application ignores those headers, including empty, duplicate, or malformed values
-- **AND** it accepts the request without retaining either header in `Caller`
+- **WHEN** a proxy-only request supplies a valid stack assertion without surviving credentials
+- **THEN** it SHALL establish BYOK access and the corresponding stack namespace without a manufactured service identity
 
 #### Scenario: Invalid post-edge stack assertion
-
-- **WHEN** a controlled fixture injects a missing, empty, duplicated, case-colliding, comma-coalesced, control-character, or invalid-whitespace `X-Scope-OrgID` assertion after shim header replacement
-- **THEN** application authentication fails before protected body reads, discovery, model resolution, or provider work
+- **WHEN** a Cloud request has a missing, empty, duplicated, coalesced or malformed stack assertion
+- **THEN** it SHALL fail before protected body reads or provider work without trying JWT authentication
 
 #### Scenario: Invalid numeric identity
-
-- **WHEN** a stack assertion contains zero, a sign, nondigits, or a value exceeding `int64`
-- **THEN** application authentication fails with the fixed ProviderWire authentication error
+- **WHEN** a Cloud stack assertion is zero, negative, nondecimal or outside positive int64
+- **THEN** it SHALL fail before protected work without coercing or truncating the identity
 
 #### Scenario: Incorrect edge credential handoff
+- **WHEN** a Cloud request retains Authorization, X-Access-Token or X-Grafana-Id
+- **THEN** it SHALL fail before protected body reads or provider work without trying JWT authentication
 
-- **WHEN** the Cloud ProviderWire entry point receives surviving `Authorization`, `X-Access-Token`, or `X-Grafana-Id`
-- **THEN** it returns the fixed authentication error before reading the body or calling a protected handler
-- **AND** that restriction remains specific to Cloud mode and the ProviderWire adapter
+#### Scenario: Ignored policy headers
+- **WHEN** valid trusted stack identity accompanies arbitrary policy organization or policy identifier headers
+- **THEN** the application SHALL ignore those headers without using them for account selection
+
+#### Scenario: Deployment prerequisite remains external
+- **WHEN** deterministic tests accept a syntactically valid assertion
+- **THEN** the result SHALL NOT be described as deployed sender authentication
+- **AND** deployment evidence SHALL separately prove that internal client workloads cannot reach the Cloud application port
 
 ### Requirement: Cloud stack assertion validation
 Cloud mode MUST validate `X-Scope-OrgID` without verifying CAP tokens or checking CAP scopes. It MUST require exactly one value containing positive decimal digits fitting `int64`. Validation SHALL reuse `exactlyOneHeader` and reject missing, empty, duplicated, case-colliding, comma-coalesced, control-character, and invalid-whitespace `X-Scope-OrgID` assertions. The application SHALL NOT normalize malformed assertions into valid credentials.
@@ -109,100 +179,12 @@ The application MUST ignore `X-Cloud-Org-ID` and `X-Access-Policy-ID`; neither h
 - **WHEN** a valid stack assertion arrives with malformed policy headers
 - **THEN** Caller SHALL retain the typed Source, private stackID and formatted Namespace, without policy, service or acting-user identities
 
-### Requirement: Independent dependency construction
-Cloud mode MUST operate without JWKS endpoint validation, client construction, verifier construction, or retrieval. It SHALL reject unsafe JWT verification and nonempty JWKS URLs. JWKS-specific limit validation SHALL apply only to the JWT path.
-
-#### Scenario: Cloud startup without JWKS
-
-- **WHEN** the command starts with valid Cloud-mode configuration and no JWKS URL
-- **THEN** it constructs no JWKS client or verifier and performs no JWKS request
-- **AND** JWKS latency does not contribute to the API timeout requirement
-- **AND** unused JWKS-specific limits do not prevent Cloud construction
-
-#### Scenario: Contradictory authentication configuration
-
-- **WHEN** Cloud mode is configured with unsafe JWT verification or a nonempty JWKS URL
-- **THEN** startup fails before readiness
-
-#### Scenario: Mode-specific timeout minimum
-
-- **WHEN** the configured write timeout is validated
-- **THEN** Cloud mode requires at least read timeout plus model duration plus response grace
-- **AND** internal mode retains its additional JWKS timeout term
-- **AND** insufficient or overflowing duration sums fail startup
-
-#### Scenario: Provider configuration remains authoritative
-
-- **WHEN** an authenticated request supplies incoming provider credentials or request-controlled routing options
-- **THEN** the application does not use them as provider configuration
-- **AND** unsupported ProviderWire options retain their existing rejection behavior
-- **AND** any provider request uses only the configured provider credential and reviewed endpoint
-
-### Requirement: Independent bounded provider dependency construction
-JWKS and Anthropic client construction SHALL be independent. Constructed clients MUST retain existing transport bounds, redirect rejection, endpoint validation, timeouts, and response-size protections. `ResolveProviderSecrets`, `BuildCatalog`, and provider configuration SHALL remain server-owned. Requests SHALL NOT control provider keys, URLs, backend model configuration, or shared-client mutation.
-
-#### Scenario: Independent bounded provider dependency construction
-- **WHEN** Cloud startup constructs its configured Anthropic client and an authenticated request supplies a different endpoint or key
-- **THEN** the bounded configured client SHALL remain authoritative without request-controlled mutation
-
 ### Requirement: Authentication-mode write timeout accounting
-The minimum API write timeout SHALL use overflow-checked duration addition. Cloud mode SHALL exclude JWKS latency; internal mode SHALL preserve existing timeout accounting.
+The minimum API write timeout SHALL use overflow-checked duration addition. Cloud listener accounting SHALL exclude JWKS latency; private JWT listener accounting SHALL include it.
 
 #### Scenario: Authentication-mode write timeout accounting
-- **WHEN** the configured write timeout sum overflows or excludes the internal-mode JWKS term
-- **THEN** startup SHALL reject invalid accounting; valid Cloud accounting SHALL exclude JWKS latency
-
-### Requirement: Listener compatibility and coordinated lifecycle
-The application MUST support optional `--server.operational-listen-address` and `GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS`. Cloud mode MUST require separate API and operational listeners. Default internal-mode listener behavior MUST remain unchanged. Unsafe development authentication MUST require development mode and loopback addresses for every configured listener.
-
-#### Scenario: Separate dispatch
-
-- **WHEN** a client calls operational routes on the API listener or API routes on the operational listener
-- **THEN** neither request reaches the handler for the other listener
-
-#### Scenario: Exact routing remains enforced
-
-- **WHEN** a request uses the wrong method or an encoded variant of a configured route
-- **THEN** the selected dispatcher retains existing method checks and encoded-path rejection
-
-#### Scenario: Legacy internal listener
-
-- **WHEN** the command starts in internal mode without an operational address
-- **THEN** the existing combined listener serves both route groups
-
-#### Scenario: Explicit internal split
-
-- **WHEN** internal mode configures an operational address
-- **THEN** API and operational routes use separate listeners
-
-#### Scenario: Cloud requires an operational listener
-
-- **WHEN** Cloud mode omits an operational address
-- **THEN** startup fails before readiness
-
-#### Scenario: Unsafe authentication on a non-loopback listener
-
-- **WHEN** unsafe development authentication configures any listener on a non-loopback address
-- **THEN** startup fails before readiness
-
-#### Scenario: Partial bind failure
-
-- **WHEN** the first listener binds and the second listener fails to bind
-- **THEN** the process closes the first listener and returns the bind failure
-- **AND** readiness never becomes true
-
-#### Scenario: Listener failure
-
-- **WHEN** either configured listener fails to bind or its serving loop fails unexpectedly
-- **THEN** the process withdraws readiness, closes both listeners, and returns the failure
-- **AND** no serving goroutine survives the shared shutdown deadline
-
-#### Scenario: Shutdown cancels active streams
-
-- **WHEN** the process shuts down with an active model stream
-- **THEN** it withdraws readiness before canceling requests and provider work
-- **AND** it shuts down both servers under one deadline rather than granting separate full timeouts
-- **AND** longer deployment termination grace does not imply drain-before-cancel behavior
+- **WHEN** the configured write timeout sum overflows or excludes the private-listener JWKS term
+- **THEN** startup SHALL reject invalid accounting; valid Cloud-listener accounting SHALL exclude JWKS latency
 
 ### Requirement: Separate API and operational dispatch
 The API dispatcher SHALL serve only `GET /api/v1/aisdk/config` and `POST /api/v1/aisdk/language-model`. The operational dispatcher SHALL serve only `GET /live`, `GET /ready`, and `GET /metrics`. Dispatch SHALL preserve method checks and encoded-path rejection.
@@ -212,77 +194,56 @@ The API dispatcher SHALL serve only `GET /api/v1/aisdk/config` and `POST /api/v1
 - **THEN** neither dispatcher SHALL invoke the other route group, and encoded paths and wrong methods SHALL retain their rejection
 
 ### Requirement: Shared listener readiness and shutdown
-The process SHALL construct dependencies and bind every configured listener before readiness. Shutdown MUST withdraw readiness before canceling requests. Both servers SHALL share one shutdown deadline, with forced closure on expiry and both serving goroutines reaped. Cancel-first shutdown SHALL remain unchanged.
+The process SHALL construct dependencies and bind every configured listener before readiness. Shutdown MUST withdraw readiness before canceling requests. All three servers SHALL share one shutdown deadline, with forced closure on expiry and all serving goroutines reaped. Cancel-first shutdown SHALL remain unchanged.
 
 #### Scenario: Shared listener readiness and shutdown
-- **WHEN** shutdown begins with active requests on both configured listeners
-- **THEN** readiness SHALL be withdrawn before cancellation and both servers SHALL close and reap serving goroutines under one deadline
+- **WHEN** shutdown begins with active requests on all three listeners
+- **THEN** readiness SHALL be withdrawn before cancellation and all three servers SHALL close and reap serving goroutines under one deadline
 
 ### Requirement: Client composition and credential privacy
-The registered low-level Gateway client MUST work through a test-only edge shim with the real command. The shim MUST use fixed dummy credentials and scope outcomes, not production CAP verification or policy evaluation. It SHALL strip Cloud and internal credentials, replace `X-Scope-OrgID` with its stack assertion, and strip other client identity headers. It SHALL forward the unchanged path.
+Real-command tests SHALL exercise both authenticated populations with independent Go and registered Vercel clients. Dummy-edge evidence SHALL remain separate from production authorization/isolation proof. Selected provider authentication, default token limits, unmodified SDK headers/choice, metadata-only capture and streaming cancellation SHALL remain independently tested.
+
+#### Scenario: Client composition and credential privacy policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** Tests SHALL run the real unified command with both listeners, independent Go clients and the exact registered Vercel client. A test-only Cloud edge SHALL use dummy credentials and predetermined scope/stack outcomes, replace assertions and strip credentials. It SHALL NOT claim production CAP verification. Private tests SHALL exercise both access-token header forms and concrete/wildcard namespaces.
+- **AND** Configured discovery SHALL succeed only on configured access; authenticated Cloud discovery SHALL return the explicit BYOK unsupported-operation response. Both populations SHALL support represented unary and streaming calls with explicit or omitted output-token limits; omitted limits SHALL use native defaults. High-level Go StreamText and registered TypeScript generateText/streamText SHALL preserve SDK-generated automatic choice and ordinary body headers, including User-Agent, without rewriting SDK bodies. Tests SHALL separate Gateway-authentication failures from provider-credential failures.
+- **AND** Automatic server diagnostics SHALL exclude credentials and customer-ID metric labels. Authentication observations SHALL use bounded entry-point/source/outcome values per request, never a process-wide mode override. Streaming middleware SHALL preserve Unwrap and cancellation. Consumer request metadata exposure and structural capture protection SHALL follow grafana-gateway-client and structured-logging-middleware.
 
 #### Scenario: Client-to-edge outcomes
-
-- **WHEN** the registered low-level client sends discovery or model requests through the shim using the cases below
-- **THEN** the fixture observes the corresponding result
-
-| Case | Expected result |
-| --- | --- |
-| Valid dummy credentials and read scope | Discovery returns the configured public catalog without a token exchange. |
-| Valid dummy credentials and write scope | Unary generation and streaming return the fake provider's expected results using an explicit output-token limit or provider/model defaults. |
-| Invalid dummy credentials | The shim rejects the request; application and provider call counts remain zero. |
-| Read-only inference or write-only discovery | The shim rejects the configured scope denial; application and provider call counts remain zero. |
-| Spoofed client assertions with valid dummy credentials | The application receives the shim's stack assertion; the shim strips other client identity headers. |
-
-#### Scenario: Outbound authentication
-
-- **WHEN** an authorized client sends dummy credentials, incoming provider keys, and spoofed identity assertions through the local edge shim
-- **THEN** fake Anthropic receives only the configured provider credential
-- **AND** it receives no CAP credential, internal JWT, incoming provider key, or forwarded identity assertion
-
-#### Scenario: Application authentication diagnostics
-
-- **WHEN** application middleware rejects an assertion or internal token and the fixture captures the response, logs, and metrics
-- **THEN** the response uses the fixed ProviderWire authentication document
-- **AND** those outputs contain no test credential or customer identity value
-- **AND** authentication observations use only fixed source and outcome values
-
-#### Scenario: Edge denials are separate evidence
-
-- **WHEN** the shim denies dummy credentials or a configured scope outcome
-- **THEN** the fixture does not treat that response as an application authentication error
-- **AND** the result does not establish a deployed proxy's credential verification or access-policy enforcement
-
-#### Scenario: Streaming through authentication and telemetry
-
-- **WHEN** the registered client streams through the shim and the real command
-- **THEN** incremental server-sent events flush through the authentication and telemetry composition
-- **AND** client cancellation cancels provider work
-- **AND** the response wrapper preserves `Unwrap`
-
-#### Scenario: Compatibility claims match test evidence
-
-- **WHEN** command coverage is recorded after implementation
-- **THEN** the parity map identifies the registered baseline, low-level calls with explicit and omitted output-token limits, and the proven high-level text-only unary and streaming cases
-- **AND** it records unwrapped TypeScript `generateText` User-Agent forwarding and provider/model default output-token behavior as supported paths
-- **AND** it SHALL distinguish newly proved configured-fallback coverage for mapped local-function tools/history/choices, files and reasoning from still-missing provider-executed/MCP codecs and actual Cloud/BYOK support, rather than list all effectful fallback as remaining work
-- **AND** configured-route and dummy-edge evidence SHALL NOT establish production CAP verification, deployed access-policy enforcement, request-scoped BYOK or account-mode support beyond the tested boundary
-- **AND** fake-provider fixtures are not presented as recorded provider conformance evidence
+- **WHEN** Go and pinned Vercel issue supported private/configured and Cloud/BYOK unary and streaming calls
+- **THEN** fake native providers SHALL observe the appropriate account source, matching content/options and no Gateway authentication credentials
 
 #### Scenario: High-level text-only streaming through the edge
-
-- **WHEN** Go `StreamText` and registered TypeScript `streamText` send equivalent text prompts through the shim and real command with no tools or explicit choice
-- **THEN** each observed inbound model request SHALL contain automatic tool choice without request rewriting
-- **AND** each call SHALL reach the fake provider and return the expected text
-- **AND** the existing authentication, credential stripping, identity, and telemetry privacy guarantees SHALL remain intact
+- **WHEN** Go StreamText or registered TypeScript generateText/streamText sends a supported text call with an explicit or omitted token limit
+- **THEN** both entry points SHALL preserve SDK-prepared headers and automatic choice while native defaults apply only to omitted limits
 
 #### Scenario: High-level text-only unary generation through the edge
+- **WHEN** registered TypeScript generateText sends an explicit or omitted output-token limit
+- **THEN** both entry points SHALL preserve its automatic choice and SDK-prepared headers, applying native defaults only to omitted limits
 
-- **WHEN** registered TypeScript `generateText` sends a text prompt through the shim and real command with an explicit or omitted output-token limit
-- **THEN** the observed inbound model request SHALL preserve its SDK-generated automatic tool choice and User-Agent body header without request rewriting
-- **AND** the fake provider SHALL receive that User-Agent and the explicit limit or its model default
-- **AND** the call SHALL return the expected text with one provider invocation
-- **AND** the existing authentication, credential stripping, identity, and telemetry privacy guarantees SHALL remain intact
+#### Scenario: Outbound authentication
+- **WHEN** either population reaches a native provider
+- **THEN** only the selected configured or BYOK account SHALL authenticate that request, without Gateway credentials or trusted Cloud assertions
+
+#### Scenario: Application authentication diagnostics
+- **WHEN** the application rejects JWT credentials or a Cloud assertion
+- **THEN** it SHALL emit fixed credential-free diagnostics and bounded authentication metrics without customer-ID labels
+
+#### Scenario: Edge denials are separate evidence
+- **WHEN** the test edge rejects a credential or inference scope
+- **THEN** no application handler or native provider work SHALL occur
+
+#### Scenario: Discovery populations differ
+- **WHEN** authenticated clients request discovery on each entry point
+- **THEN** private clients SHALL receive configured discovery and Cloud clients SHALL receive the fixed unsupported-operation response without catalog access
+
+#### Scenario: Streaming through authentication and telemetry
+- **WHEN** either population streams through real authentication and telemetry
+- **THEN** events SHALL flush incrementally, cancellation SHALL reach the provider and dummy credential markers SHALL be absent from captured server sinks
+
+#### Scenario: Compatibility claims match test evidence
+- **WHEN** support is documented
+- **THEN** exact-client, fake-provider and test-edge evidence SHALL be distinguished from live provider acceptance, CAP enforcement and deployed NetworkPolicy proof
 
 ### Requirement: Cloud low-level output-token defaults
 Low-level `doGenerate` and `doStream` calls SHALL support both explicit `maxOutputTokens` and an omitted limit, using provider/model defaults when omitted.

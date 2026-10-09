@@ -62,7 +62,7 @@ All three changes also pass strict validation with exact OpenSpec 1.14.0 after
 preserving inherited scenario identities, explicitly replacing the obsolete
 mode-specific dependency requirement and expressing authenticated-service BYOK
 requirements as additions rather than modifications of an unsynchronized spec.
-The workflow's archive-before-merge gate remains pending while changes are active.
+The earlier workflow archive-before-merge gate was pending while this change was active; the owner-requested archive below supersedes that status.
 
 ## Current main restack validation
 
@@ -204,3 +204,24 @@ records an exact follow-up acceptance item for existing SDK observation and hone
 request identity. Fuller bodies/headers remain #323 only if its carrier is needed.
 No native fields are invented from configured secrets or another request. Registered
 pins/provider inputs, authentication/listener defaults and external task4.1 are unchanged.
+
+## Review cleanup and owner-requested archive
+
+The image readiness smoke now uses fail-closed JWT configuration with a reserved
+unreachable JWKS URL; fetching is lazy and the operational endpoint is public.
+The exact network-none/IPv6-disabled Docker step proves ready200 and unauthenticated
+private discovery401 without unsafe authentication. Structural CI tests guard it.
+BYOK option/observation tests move unchanged into existing native/observation files.
+The public test key moves unchanged into the existing TS proxy helper with an inline
+TruffleHog ignore tag; the certificate retains standard PEM with a test-only preamble.
+Full command78/0skips verifies both native TLS adapters. TruffleHog3.99.2 offline
+PrivateKey scanning finds none normally and exactly one with ignore tags disabled.
+
+Short tests, auth/config/process/service races, vet/lint, workflow tests and docs
+pass. Nine capability deltas are synced with untouched unrelated requirements and
+Purpose sections. Long pre-cleanup statements are retained as policy scenarios,
+with concise equivalent descriptions, and stale split Cloud/capture clauses follow
+the approved account/capture contract. The owner explicitly requests archive with
+external task4.1 unchecked. No activation/network proof, merge or task completion
+is inferred. All-strict98/98 main specs pass after archive; #317 observation delivery
+and deployment handoff remain pending. Logs: `/tmp/byok-review-*`.
