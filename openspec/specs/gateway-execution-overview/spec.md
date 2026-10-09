@@ -8,7 +8,11 @@ Define the dormant Gateway-owned compact execution projector, protected failure 
 
 ### Requirement: Compact observed execution overview
 
-The Gateway SHALL provide a pure projector for one invocation's ordered observed fallback decisions. It SHALL include requested/canonical route identity once and each observed candidate's provider/backend model, optional configured instance, outcome and optional failure summary. It SHALL NOT emit unrun configured candidates, a selected index, timestamps, completion/replay claims, fallback-intent flags, raw diagnostic trees or disposition taxonomies. Only the last attempt SHALL be eligible for selected or canceled outcome. Selected SHALL mean accepted unary result or first stream part, not successful completion. Invalid, incomplete or mixed invocation observation SHALL omit the optional overview rather than invent attribution.
+The Gateway SHALL provide a pure projector for one invocation's ordered observed fallback decisions.
+
+#### Scenario: Compact observed execution overview policy
+- **WHEN** an invocation is projected into an optional execution overview
+- **THEN** It SHALL include requested/canonical route identity once and each observed candidate's provider/backend model, optional configured instance, outcome and optional failure summary. It SHALL NOT emit unrun configured candidates, a selected index, timestamps, completion/replay claims, fallback-intent flags, raw diagnostic trees or disposition taxonomies. Only the last attempt SHALL be eligible for selected or canceled outcome. Selected SHALL mean accepted unary result or first stream part, not successful completion. Invalid, incomplete or mixed invocation observation SHALL omit the optional overview rather than invent attribution.
 
 #### Scenario: Earlier candidate fails and later candidate is selected
 - **WHEN** one invocation reports a failed primary followed by a selected secondary
@@ -24,7 +28,11 @@ The Gateway SHALL provide a pure projector for one invocation's ordered observed
 
 ### Requirement: Small protected failure summaries
 
-Candidate-local projection SHALL retain available safe message, type, string-or-number code and native status. It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Actual protected sources and known credential/other-tenant scalar fields SHALL protect summary echoes; ordinary endpoints, identifiers and token-looking application strings SHALL remain available. Inputs SHALL remain unchanged. Malformed, unavailable or oversized diagnostics under the integrator's existing source/read limit SHALL degrade optional fields without creating an error or a new quota.
+Candidate-local projection SHALL retain available safe message, type, string-or-number code and native status.
+
+#### Scenario: Small protected failure summaries policy
+- **WHEN** a candidate-local native failure is summarized
+- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Actual protected sources and known credential/other-tenant scalar fields SHALL protect summary echoes; ordinary endpoints, identifiers and token-looking application strings SHALL remain available. Inputs SHALL remain unchanged. Malformed, unavailable or oversized diagnostics under the integrator's existing source/read limit SHALL degrade optional fields without creating an error or a new quota.
 
 #### Scenario: Original native failure survives cancellation
 - **WHEN** a canceled decision retains a candidate-native SourceErr
@@ -44,7 +52,11 @@ Candidate-local projection SHALL retain available safe message, type, string-or-
 
 ### Requirement: Best-effort metadata placement under existing envelope limits
 
-Metadata enrichment SHALL place the overview under gateway.execution and, when fitting, relocate the original native gateway value under gateway.nativeMetadata without merging it into trusted facts. Other namespaces SHALL remain opaque. The caller SHALL use the existing complete-response or complete-frame limit, not an overview allocation. Encoding/fit failure SHALL return the original provider metadata without truncation or a new error. When native relocation alone cannot fit, the primary response SHALL be preserved and the native namespace SHALL remain opaque. Namespace presence alone SHALL NOT establish Gateway provenance, routing authority or absence of attempts. Primary protocol encoding failures SHALL retain existing behavior.
+Metadata enrichment SHALL place the overview under gateway.execution and, when fitting, relocate the original native gateway value under gateway.nativeMetadata without merging it into trusted facts.
+
+#### Scenario: Best-effort metadata placement under existing envelope limits policy
+- **WHEN** an integrator attempts optional metadata enrichment
+- **THEN** Other namespaces SHALL remain opaque. The caller SHALL use the existing complete-response or complete-frame limit, not an overview allocation. Encoding/fit failure SHALL return the original provider metadata without truncation or a new error. When native relocation alone cannot fit, the primary response SHALL be preserved and the native namespace SHALL remain opaque. Namespace presence alone SHALL NOT establish Gateway provenance, routing authority or absence of attempts. Primary protocol encoding failures SHALL retain existing behavior.
 
 #### Scenario: Native namespace collides and enrichment fits
 - **WHEN** native metadata already has a gateway value and the enriched complete envelope fits
