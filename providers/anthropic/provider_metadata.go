@@ -35,6 +35,14 @@ func buildAnthropicProviderMetadata(fields map[string]json.RawMessage, usageRaw 
 		metadata["safeguardResults"] = results
 	}
 
+	if value := fields["input_transformations"]; !isJSONNullOrAbsent(value) {
+		transformations, err := mapInputTransformations(value)
+		if err != nil {
+			return nil, err
+		}
+		metadata["inputTransformations"] = transformations
+	}
+
 	raw, err := json.Marshal(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling Anthropic provider metadata: %w", err)
@@ -110,6 +118,38 @@ func mapSafeguardResults(raw json.RawMessage) ([]safeguardResult, error) {
 	return results, nil
 }
 
+type inputTransformation struct {
+	Type   string `json:"type"`
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+// mapInputTransformations projects the input blocks Anthropic transformed
+// before inference. Like upstream's schema it requires string type, path and
+// reason and drops any other field.
+func mapInputTransformations(raw json.RawMessage) ([]inputTransformation, error) {
+	var entries []struct {
+		Type   *string `json:"type"`
+		Path   *string `json:"path"`
+		Reason *string `json:"reason"`
+	}
+	if err := json.Unmarshal(raw, &entries); err != nil || entries == nil {
+		return nil, fmt.Errorf("anthropic: invalid input_transformations array")
+	}
+	transformations := make([]inputTransformation, 0, len(entries))
+	for i, entry := range entries {
+		if entry.Type == nil || entry.Path == nil || entry.Reason == nil {
+			return nil, fmt.Errorf("anthropic: invalid input_transformations[%d]", i)
+		}
+		transformations = append(transformations, inputTransformation{Type: *entry.Type, Path: *entry.Path, Reason: *entry.Reason})
+	}
+	return transformations, nil
+}
+
+func isJSONNullOrAbsent(raw json.RawMessage) bool {
+	return len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
 func messageMetadataFields(raw string) map[string]json.RawMessage {
 	var message map[string]json.RawMessage
 	_ = json.Unmarshal([]byte(raw), &message)
@@ -136,6 +176,9 @@ func mergeMessageDeltaMetadata(fields map[string]json.RawMessage, raw string) ma
 	}
 	if value, ok := event["context_management"]; ok {
 		fields["context_management"] = value
+	}
+	if value := event["input_transformations"]; !isJSONNullOrAbsent(value) {
+		fields["input_transformations"] = value
 	}
 	return fields
 }

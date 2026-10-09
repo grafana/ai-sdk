@@ -80,7 +80,9 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.resetUsage(msg.Usage); err != nil {
 			return err
 		}
-		a.carryMessageStartMetadata(msg.RawJSON())
+		if err := a.carryMessageStartMetadata(msg.RawJSON()); err != nil {
+			return err
+		}
 		if msg.StopReason != "" {
 			a.finishReason = a.mapStopReason(msg.StopReason)
 		}
@@ -468,13 +470,19 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.updateUsage(e.Usage); err != nil {
 			return err
 		}
-		a.metadataFields = mergeMessageDeltaMetadata(a.metadataFields, e.RawJSON())
 		var envelope struct {
-			Delta map[string]json.RawMessage `json:"delta"`
+			Delta                map[string]json.RawMessage `json:"delta"`
+			InputTransformations json.RawMessage            `json:"input_transformations"`
 		}
 		if err := json.Unmarshal([]byte(e.RawJSON()), &envelope); err != nil {
 			return fmt.Errorf("decoding safeguard delta: %w", err)
 		}
+		if !isJSONNullOrAbsent(envelope.InputTransformations) {
+			if _, err := mapInputTransformations(envelope.InputTransformations); err != nil {
+				return err
+			}
+		}
+		a.metadataFields = mergeMessageDeltaMetadata(a.metadataFields, e.RawJSON())
 		if value := envelope.Delta["safeguard_results"]; len(value) > 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			if _, err := mapSafeguardResults(value); err != nil {
 				return err
@@ -506,16 +514,24 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 }
 
 // carryMessageStartMetadata applies what upstream reads from message_start
-// into metadata that lives for the whole stream: only a non-null container.
-// Everything else, including a verdict, stays until a later delta replaces it.
-func (a *streamAdapter) carryMessageStartMetadata(raw string) {
+// into metadata that lives for the whole stream: a non-null container and
+// non-null input transformations. Everything else, including a verdict, stays
+// until a later delta replaces it.
+func (a *streamAdapter) carryMessageStartMetadata(raw string) error {
 	if a.metadataFields == nil {
 		a.metadataFields = map[string]json.RawMessage{}
 	}
-	container := messageMetadataFields(raw)["container"]
-	if len(container) > 0 && !bytes.Equal(bytes.TrimSpace(container), []byte("null")) {
+	fields := messageMetadataFields(raw)
+	if container := fields["container"]; !isJSONNullOrAbsent(container) {
 		a.metadataFields["container"] = container
 	}
+	if transformations := fields["input_transformations"]; !isJSONNullOrAbsent(transformations) {
+		if _, err := mapInputTransformations(transformations); err != nil {
+			return err
+		}
+		a.metadataFields["input_transformations"] = transformations
+	}
+	return nil
 }
 
 func (a *streamAdapter) mapStopReason(reason anthropic.BetaStopReason) provider.FinishReason {
