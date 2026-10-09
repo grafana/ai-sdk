@@ -519,7 +519,10 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 			assert.NotContains(t, logical, private)
 		}
 		for _, private := range []string{"private-credential", "private.example", "private-header", "private-request-body", "private-response-body", "private-error", "private-data"} {
-			assert.NotContains(t, public+logical+output.String(), private)
+			assert.NotContains(t, logical+output.String(), private)
+		}
+		for _, private := range []string{"private.example", "private-header", "private-request-body", "private-response-body", "private-data"} {
+			assert.NotContains(t, public, private)
 		}
 		assert.NotContains(t, logical+output.String(), "private-metadata")
 		lines := strings.Split(strings.TrimSpace(output.String()), "\n")

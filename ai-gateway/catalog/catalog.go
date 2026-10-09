@@ -34,8 +34,6 @@ type ResolvedModel struct {
 	Model provider.LanguageModel
 	// Candidates contains copied configured destinations for this invocation.
 	Candidates []ConfiguredCandidate `json:"-"`
-	// ProtectedSources contains private credential values excluded from output.
-	ProtectedSources []string `json:"-"`
 }
 
 // ModelCapability identifies behavior guaranteed by a public model route.
@@ -70,8 +68,6 @@ type StaticEntry struct {
 	Info ModelInfo
 	// Model is the fully constructed model returned during resolution.
 	Model provider.LanguageModel
-	// ProtectedSources contains actual private values used to protect summaries.
-	ProtectedSources []string `json:"-"`
 }
 
 // RegistryRoute maps one public model entry to an opaque provider model ID.

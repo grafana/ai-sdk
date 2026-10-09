@@ -24,6 +24,7 @@ describe("ordered provider error evidence at the frontend boundary", () => {
     expect(types.indexOf("error")).toBeLessThan(after);
     expect(after).toBeLessThan(types.indexOf("finish"));
     expect(JSON.stringify(chunks)).not.toContain("private-native-message");
+    expect(JSON.stringify(chunks)).not.toContain("dummy-provider-credential");
     expect(JSON.stringify(chunks)).not.toContain("gateway");
     let message: UIMessage | undefined;
     for await (const next of readUIMessageStream({

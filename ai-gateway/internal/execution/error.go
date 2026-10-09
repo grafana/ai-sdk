@@ -122,5 +122,3 @@ func boundedText(value string, sourceBytes int64) string {
 	}
 	return value
 }
-
-
