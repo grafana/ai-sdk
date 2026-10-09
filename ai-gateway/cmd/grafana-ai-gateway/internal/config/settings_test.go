@@ -21,17 +21,19 @@ func TestParseSettings_Defaults(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	assert.Equal(t, Settings{
-		ConfigFile:        "/tmp/models.yaml",
-		ConfigMaxBytes:    1_048_576,
-		DeploymentMode:    DeploymentProduction,
-		ListenAddress:     ":8080",
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      165 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		MaxHeaderBytes:    65_536,
-		ResponseGrace:     5 * time.Second,
-		ShutdownTimeout:   15 * time.Second,
+		ConfigFile:               "/tmp/models.yaml",
+		ConfigMaxBytes:           1_048_576,
+		DeploymentMode:           DeploymentProduction,
+		PrivateListenAddress:     ":8082",
+		CloudListenAddress:       ":8080",
+		OperationalListenAddress: ":8081",
+		ReadHeaderTimeout:        5 * time.Second,
+		ReadTimeout:              30 * time.Second,
+		WriteTimeout:             165 * time.Second,
+		IdleTimeout:              120 * time.Second,
+		MaxHeaderBytes:           65_536,
+		ResponseGrace:            5 * time.Second,
+		ShutdownTimeout:          15 * time.Second,
 		AgentObservability: AgentObservabilitySettings{
 			Enabled:         true,
 			Protocol:        AgentObservabilityGRPC,
@@ -49,7 +51,6 @@ func TestParseSettings_Defaults(t *testing.T) {
 			FlushTimeout:    5 * time.Second,
 			ShutdownTimeout: 5 * time.Second,
 		},
-		AuthMode:                       AuthModeAccessToken,
 		AuthUnsafe:                     false,
 		JWKSURL:                        "https://auth.example/jwks",
 		Audiences:                      []string{"ai-sdk"},
@@ -83,7 +84,8 @@ func TestParseSettings_ExactFlagAndEnvironmentBindings(t *testing.T) {
 		{flag: "config.file", env: "GRAFANA_AI_GATEWAY_CONFIG_FILE", value: "/other/models.yaml", check: func(t *testing.T, s Settings) { assert.Equal(t, "/other/models.yaml", s.ConfigFile) }},
 		{flag: "config.max-bytes", env: "GRAFANA_AI_GATEWAY_CONFIG_MAX_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.ConfigMaxBytes) }},
 		{flag: "deployment.mode", env: "GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE", value: "development", check: func(t *testing.T, s Settings) { assert.Equal(t, DeploymentDevelopment, s.DeploymentMode) }},
-		{flag: "server.listen-address", env: "GRAFANA_AI_GATEWAY_SERVER_LISTEN_ADDRESS", value: "127.0.0.1:9000", check: func(t *testing.T, s Settings) { assert.Equal(t, "127.0.0.1:9000", s.ListenAddress) }},
+		{flag: "server.private-listen-address", env: "GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS", value: "127.0.0.1:9000", check: func(t *testing.T, s Settings) { assert.Equal(t, "127.0.0.1:9000", s.PrivateListenAddress) }},
+		{flag: "server.cloud-listen-address", env: "GRAFANA_AI_GATEWAY_SERVER_CLOUD_LISTEN_ADDRESS", value: "127.0.0.1:9002", check: func(t *testing.T, s Settings) { assert.Equal(t, "127.0.0.1:9002", s.CloudListenAddress) }},
 		{flag: "server.operational-listen-address", env: "GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS", value: "127.0.0.1:9001", check: func(t *testing.T, s Settings) { assert.Equal(t, "127.0.0.1:9001", s.OperationalListenAddress) }},
 		{flag: "server.read-header-timeout", env: "GRAFANA_AI_GATEWAY_SERVER_READ_HEADER_TIMEOUT", value: "4s", check: func(t *testing.T, s Settings) { assert.Equal(t, 4*time.Second, s.ReadHeaderTimeout) }},
 		{flag: "server.read-timeout", env: "GRAFANA_AI_GATEWAY_SERVER_READ_TIMEOUT", value: "20s", check: func(t *testing.T, s Settings) { assert.Equal(t, 20*time.Second, s.ReadTimeout) }},
@@ -113,13 +115,9 @@ func TestParseSettings_ExactFlagAndEnvironmentBindings(t *testing.T) {
 		{flag: "agento11y.flush-interval", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL", value: "2s", check: func(t *testing.T, s Settings) { assert.Equal(t, 2*time.Second, s.AgentObservability.FlushInterval) }},
 		{flag: "agento11y.flush-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT", value: "7s", check: func(t *testing.T, s Settings) { assert.Equal(t, 7*time.Second, s.AgentObservability.FlushTimeout) }},
 		{flag: "agento11y.shutdown-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT", value: "8s", check: func(t *testing.T, s Settings) { assert.Equal(t, 8*time.Second, s.AgentObservability.ShutdownTimeout) }},
-		{flag: "auth.mode", env: "GRAFANA_AI_GATEWAY_AUTH_MODE", value: "cloud-gateway", prepare: func(environment map[string]string) {
-			delete(environment, "GRAFANA_AI_GATEWAY_AUTH_JWKS_URL")
-			environment["GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS"] = ":8081"
-		}, check: func(t *testing.T, s Settings) { assert.Equal(t, AuthModeCloudGateway, s.AuthMode) }},
 		{flag: "auth.unsafe", env: "GRAFANA_AI_GATEWAY_AUTH_UNSAFE", value: "true", prepare: unsafeAuthEnvironment, check: func(t *testing.T, s Settings) { assert.True(t, s.AuthUnsafe) }},
 		{flag: "auth.jwks-url", env: "GRAFANA_AI_GATEWAY_AUTH_JWKS_URL", value: "https://other.example/jwks", check: func(t *testing.T, s Settings) { assert.Equal(t, "https://other.example/jwks", s.JWKSURL) }},
-		{flag: "auth.audiences", env: "GRAFANA_AI_GATEWAY_AUTH_AUDIENCES", value: "one,two", check: func(t *testing.T, s Settings) { assert.Equal(t, []string{"one", "two"}, s.Audiences) }},
+		{flag: "auth.audiences", env: "GRAFANA_AI_GATEWAY_AUTH_AUDIENCES", value: "ai-sdk", check: func(t *testing.T, s Settings) { assert.Equal(t, []string{"ai-sdk"}, s.Audiences) }},
 		{flag: "auth.jwks-timeout", env: "GRAFANA_AI_GATEWAY_AUTH_JWKS_TIMEOUT", value: "4s", check: func(t *testing.T, s Settings) { assert.Equal(t, 4*time.Second, s.JWKSRequestTimeout) }},
 		{flag: "auth.jwks-response-bytes", env: "GRAFANA_AI_GATEWAY_AUTH_JWKS_RESPONSE_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.JWKSResponseBytes) }},
 		{flag: "auth.jwks-max-keys", env: "GRAFANA_AI_GATEWAY_AUTH_JWKS_MAX_KEYS", value: "64", check: func(t *testing.T, s Settings) { assert.Equal(t, 64, s.JWKSMaxKeys) }},
@@ -187,27 +185,27 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		{name: "integer zero", mutate: func(s *Settings) { s.JWKSMaxKeys = 0 }},
 		{name: "integer limit+1 overflow", mutate: func(s *Settings) { s.ProviderWire.StreamParts = math.MaxInt }},
 		{name: "header parser slop overflow", mutate: func(s *Settings) { s.MaxHeaderBytes = math.MaxInt }},
-		{name: "listen address missing port", mutate: func(s *Settings) { s.ListenAddress = "127.0.0.1" }},
-		{name: "listen address nonnumeric port", mutate: func(s *Settings) { s.ListenAddress = "127.0.0.1:http" }},
-		{name: "listen address invalid host", mutate: func(s *Settings) { s.ListenAddress = "bad host:8080" }},
+		{name: "listen address missing port", mutate: func(s *Settings) { s.PrivateListenAddress = "127.0.0.1" }},
+		{name: "listen address nonnumeric port", mutate: func(s *Settings) { s.PrivateListenAddress = "127.0.0.1:http" }},
+		{name: "listen address invalid host", mutate: func(s *Settings) { s.PrivateListenAddress = "bad host:8080" }},
 		{name: "duration zero", mutate: func(s *Settings) { s.ShutdownTimeout = 0 }},
 		{name: "unsafe production", mutate: func(s *Settings) { s.AuthUnsafe = true; s.JWKSURL = "" }},
 		{name: "unsafe with jwks", mutate: func(s *Settings) {
 			s.DeploymentMode = DeploymentDevelopment
 			s.AuthUnsafe = true
-			s.ListenAddress = "127.0.0.1:8080"
+			s.PrivateListenAddress = "127.0.0.1:8080"
 		}},
 		{name: "unsafe wildcard listener", mutate: func(s *Settings) {
 			s.DeploymentMode = DeploymentDevelopment
 			s.AuthUnsafe = true
 			s.JWKSURL = ""
-			s.ListenAddress = ":8080"
+			s.PrivateListenAddress = ":8080"
 		}},
 		{name: "unsafe non-loopback listener", mutate: func(s *Settings) {
 			s.DeploymentMode = DeploymentDevelopment
 			s.AuthUnsafe = true
 			s.JWKSURL = ""
-			s.ListenAddress = "192.0.2.1:8080"
+			s.PrivateListenAddress = "192.0.2.1:8080"
 		}},
 		{name: "safe without jwks", mutate: func(s *Settings) { s.JWKSURL = "" }},
 		{name: "observation region whitespace", mutate: func(s *Settings) { s.ObservationRegion = " bad" }},
@@ -240,7 +238,7 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			settings := valid
 			tc.mutate(&settings)
-			require.Error(t, settings.Validate())
+			require.Error(t, validateLegacyRuntime(settings))
 		})
 	}
 }
@@ -426,42 +424,31 @@ func TestAgentObservabilitySettings_RejectsNewSDKEnvironmentKeys(t *testing.T) {
 	}
 }
 
-func TestParseSettings_AuthModes(t *testing.T) {
+func TestParseSettings_IsolatedListeners(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		args    []string
 		wantErr string
 	}{
-		{name: "cloud defaults", args: []string{"--auth.mode=cloud-gateway"}},
-		{name: "cloud missing operational listener", args: []string{"--auth.mode=cloud-gateway", "--server.operational-listen-address="}, wantErr: "operational"},
-		{name: "cloud same address", args: []string{"--auth.mode=cloud-gateway", "--server.operational-listen-address=:8080"}, wantErr: "different"},
-		{name: "invalid operational address", args: []string{"--auth.mode=cloud-gateway", "--server.operational-listen-address=bad"}, wantErr: "TCP"},
-		{name: "unsafe operational wildcard", args: []string{"--auth.unsafe", "--deployment.mode=development", "--server.listen-address=127.0.0.1:8080", "--server.operational-listen-address=:8081"}, wantErr: "loopback"},
-		{name: "unsafe split loopback", args: []string{"--auth.unsafe", "--deployment.mode=development", "--server.listen-address=127.0.0.1:8080"}},
-		{name: "internal split", args: []string{"--auth.jwks-url=https://auth.example/jwks"}},
-		{name: "unknown", args: []string{"--auth.mode=other"}, wantErr: "auth mode"},
-		{name: "empty", args: []string{"--auth.mode="}, wantErr: "auth mode"},
-		{name: "access token needs jwks", args: []string{"--auth.mode=access-token"}, wantErr: "jwks URL is required"},
-		{name: "cloud unsafe", args: []string{"--auth.mode=cloud-gateway", "--auth.unsafe", "--deployment.mode=development", "--server.listen-address=127.0.0.1:8080"}, wantErr: "unsafe"},
-		{name: "cloud jwks", args: []string{"--auth.mode=cloud-gateway", "--auth.jwks-url=https://auth.example/jwks"}, wantErr: "jwks"},
-		{name: "cloud ignored limits", args: []string{"--auth.mode=cloud-gateway", "--auth.jwks-timeout=-1s", "--auth.jwks-response-bytes=0", "--auth.jwks-max-keys=0", "--auth.jwks-refresh-interval=0s", "--auth.jwks-max-age=-1s"}},
-		{name: "cloud ignored overflow", args: []string{"--auth.mode=cloud-gateway", "--auth.jwks-timeout=2562047h47m16.854775807s", "--auth.jwks-response-bytes=9223372036854775807"}},
-		{name: "cloud ignored age relationship", args: []string{"--auth.mode=cloud-gateway", "--auth.jwks-refresh-interval=20m", "--auth.jwks-max-age=1m"}},
-		{name: "cloud write boundary", args: []string{"--auth.mode=cloud-gateway", "--server.write-timeout=155s"}},
-		{name: "cloud write too short", args: []string{"--auth.mode=cloud-gateway", "--server.write-timeout=154s"}, wantErr: "write timeout"},
-		{name: "cloud invalid common limit", args: []string{"--auth.mode=cloud-gateway", "--anthropic.response-bytes=0"}, wantErr: "anthropic response bytes"},
-		{name: "cloud empty audience", args: []string{"--auth.mode=cloud-gateway", "--auth.audiences="}},
-		{name: "cloud duplicate audience", args: []string{"--auth.mode=cloud-gateway", "--auth.audiences=one,one"}},
-		{name: "unsafe retains audience validation", args: []string{"--auth.unsafe", "--deployment.mode=development", "--server.listen-address=127.0.0.1:8080", "--auth.audiences="}, wantErr: "auth audiences"},
+		{name: "three listeners"},
+		{name: "missing operational", args: []string{"--server.operational-listen-address="}, wantErr: "TCP"},
+		{name: "missing cloud", args: []string{"--server.cloud-listen-address="}, wantErr: "TCP"},
+		{name: "shared port", args: []string{"--server.private-listen-address=:8080"}, wantErr: "differ"},
+		{name: "invalid cloud address", args: []string{"--server.cloud-listen-address=bad"}, wantErr: "TCP"},
+		{name: "legacy mode", args: []string{"--auth.mode=cloud-gateway"}, wantErr: "unknown long flag"},
+		{name: "legacy listener", args: []string{"--server.listen-address=:8080"}, wantErr: "unknown long flag"},
+		{name: "missing JWT trust", args: []string{"--auth.jwks-url="}, wantErr: "jwks URL is required"},
+		{name: "wrong audience", args: []string{"--auth.audiences=other"}, wantErr: "audience must be ai-sdk"},
+		{name: "extra audience", args: []string{"--auth.audiences=ai-sdk,other"}, wantErr: "audience must be ai-sdk"},
+		{name: "JWKS limits apply", args: []string{"--auth.jwks-timeout=-1s"}, wantErr: "positive"},
+		{name: "write boundary", args: []string{"--server.write-timeout=160s"}},
+		{name: "write includes JWT", args: []string{"--server.write-timeout=159s"}, wantErr: "write timeout"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := ParseSettings(tc.args, mapLookup(map[string]string{
-				"GRAFANA_AI_GATEWAY_CONFIG_FILE":                       "/tmp/models.yaml",
-				"GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS": "127.0.0.1:8081",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":                 "true",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":                "collector.example:4317",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV":         "AGENTO11Y_SECRET",
-			}))
+			settings, err := ParseSettings(tc.args, mapLookup(baseSettingsEnvironment()))
+			if err == nil {
+				err = validateLegacyRuntime(settings)
+			}
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 			} else {
@@ -469,14 +456,19 @@ func TestParseSettings_AuthModes(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestParseSettings_AuthModeFlagOverridesEnvironment(t *testing.T) {
-	environment := baseSettingsEnvironment()
-	environment["GRAFANA_AI_GATEWAY_AUTH_MODE"] = "cloud-gateway"
-	settings, err := ParseSettings([]string{"--auth.mode=access-token"}, mapLookup(environment))
-	require.NoError(t, err)
-	assert.Equal(t, AuthModeAccessToken, settings.AuthMode)
+	for _, flag := range []string{"private", "cloud", "operational"} {
+		t.Run("unsafe/"+flag, func(t *testing.T) {
+			environment := baseSettingsEnvironment()
+			unsafeAuthEnvironment(environment)
+			_, err := ParseSettings([]string{"--auth.unsafe"}, mapLookup(environment))
+			require.NoError(t, err)
+			settings, err := ParseSettings([]string{"--auth.unsafe", "--server." + flag + "-listen-address=:9090"}, mapLookup(environment))
+			if err == nil {
+				err = validateLegacyRuntime(settings)
+			}
+			require.ErrorContains(t, err, "loopback")
+		})
+	}
 }
 
 func baseSettingsEnvironment() map[string]string {
@@ -492,7 +484,9 @@ func baseSettingsEnvironment() map[string]string {
 func unsafeAuthEnvironment(environment map[string]string) {
 	environment["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development"
 	environment["GRAFANA_AI_GATEWAY_AUTH_JWKS_URL"] = ""
-	environment["GRAFANA_AI_GATEWAY_SERVER_LISTEN_ADDRESS"] = "127.0.0.1:8080"
+	environment["GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS"] = "127.0.0.1:8082"
+	environment["GRAFANA_AI_GATEWAY_SERVER_CLOUD_LISTEN_ADDRESS"] = "127.0.0.1:8080"
+	environment["GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS"] = "127.0.0.1:8081"
 }
 
 func mapLookup(values map[string]string) LookupEnv {
@@ -500,4 +494,12 @@ func mapLookup(values map[string]string) LookupEnv {
 		value, ok := values[name]
 		return value, ok
 	}
+}
+
+func validateLegacyRuntime(settings Settings) error {
+	auth, err := ResolveAuthConfig(settings, File{})
+	if err != nil {
+		return err
+	}
+	return settings.ValidateRuntime(auth, true)
 }

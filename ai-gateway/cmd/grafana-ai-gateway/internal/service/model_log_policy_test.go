@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	logmiddleware "github.com/grafana/ai-sdk/middleware/logger"
 	"github.com/stretchr/testify/assert"
 )
@@ -39,7 +40,7 @@ func TestAllowModelLogAttrs_ClosedPolicy(t *testing.T) {
 		slog.String("region", "us-central1"),
 		slog.String("application", "ai-gateway"),
 	}
-	assert.Equal(t, allowed, allowModelLogAttrs(allowed))
+	assert.Equal(t, allowed, allowModelLogAttrs(allowed, gatewayauth.ConfiguredAccounts))
 }
 
 func TestAllowModelLogAttrs_DropsProviderAndFutureValues(t *testing.T) {
@@ -63,7 +64,7 @@ func TestAllowModelLogAttrs_DropsProviderAndFutureValues(t *testing.T) {
 		slog.String("ai_sdk.error.type.go", "private.Error"),
 		slog.Group("nested", slog.String("correlation_id", "smuggled")),
 	}
-	assert.Empty(t, allowModelLogAttrs(attrs))
+	assert.Empty(t, allowModelLogAttrs(attrs, gatewayauth.ConfiguredAccounts))
 }
 
 func TestAllowModelLogAttrs_DropsInvalidValuesUnderAllowedKeys(t *testing.T) {
@@ -84,17 +85,17 @@ func TestAllowModelLogAttrs_DropsInvalidValuesUnderAllowedKeys(t *testing.T) {
 		slog.String("caller_service", "line\nbreak"),
 		slog.Any("ai_sdk.warnings.types", []string{"unsupported", "provider-private"}),
 	}
-	assert.Empty(t, allowModelLogAttrs(attrs))
+	assert.Empty(t, allowModelLogAttrs(attrs, gatewayauth.ConfiguredAccounts))
 }
 
 func TestClosedModelLogRedactor_DelegatePanicFailsClosed(t *testing.T) {
 	redactor := closedModelLogRedactor(logmiddleware.RedactorFunc(func(context.Context, logmiddleware.EventKind, []slog.Attr) []slog.Attr {
 		panic("private-redactor-panic")
-	}))
+	}), gatewayauth.ConfiguredAccounts)
 	attrs := redactor.RedactAttrs(context.Background(), logmiddleware.EventGenerateError, []slog.Attr{
 		slog.String("ai_sdk.event", "aisdk.model.generate.error"),
 		slog.String("ai_sdk.error.message", "private-error"),
 	})
 	assert.Empty(t, attrs)
-	assert.Empty(t, closedModelLogRedactor(nil).RedactAttrs(context.Background(), logmiddleware.EventGenerateError, nil))
+	assert.Empty(t, closedModelLogRedactor(nil, gatewayauth.ConfiguredAccounts).RedactAttrs(context.Background(), logmiddleware.EventGenerateError, nil))
 }

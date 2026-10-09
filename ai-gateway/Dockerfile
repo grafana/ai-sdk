@@ -69,6 +69,6 @@ COPY --from=build /out/licenses /usr/share/licenses/grafana-ai-gateway
 
 USER 10001:10001
 
-EXPOSE 8080
+EXPOSE 8080 8081 8082
 
 ENTRYPOINT ["/usr/local/bin/grafana-ai-gateway"]

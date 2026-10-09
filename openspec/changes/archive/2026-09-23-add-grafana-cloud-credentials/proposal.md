@@ -25,7 +25,7 @@ None; this extends the existing public client capability.
 - Code: `providers/grafana`, its internal capture executable, ProviderWire differential/command tests, and repository-owned constructor call sites.
 - Documentation: a shared guide under `docs/`, its index/navigation, the provider guide, package reference and existing Gateway Cloud authentication guide. Keep API signatures in godoc and server operational requirements in the server guide. Update parity coverage only where stable evidence or support boundaries change.
 - Upstream reference: `@ai-sdk/gateway@4.0.87`, `ai@7.0.107`, commit `08ae5ad05bc12496dd1ffcf64e34419e0831300d`, as registered in `test/conformance/upstream.yaml`. No baseline upgrade or Vercel upstream change.
-- External rollout: `deployment_tools` must provision correctly scoped policies and configure consumers; consumer repositories must adopt the new API or renamed exchange API. Those changes are separate owner-approved work, not edits in this proposal's implementation scope.
+- External rollout: deployment owners must provision correctly scoped policies and configure consumers; consumer repositories must adopt the new API or renamed exchange API. Those changes are separate owner-approved work, not edits in this proposal's implementation scope.
 
 ## Non-goals
 

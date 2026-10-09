@@ -112,13 +112,19 @@ it("builds a local SDK/provider change into the Gateway image with honest source
     await once(portReservation, "listening");
     const gatewayPort = (portReservation.address() as { port: number }).port;
     portReservation.close();
+    const token = [
+      Buffer.from(JSON.stringify({ alg: "ES256", typ: "at+jwt" })).toString("base64url"),
+      Buffer.from(JSON.stringify({ sub: "access-policy:fixture", aud: ["ai-sdk"], exp: Math.floor(Date.now() / 1000) + 300, namespace: "stacks-1" })).toString("base64url"),
+      Buffer.alloc(64).toString("base64url"),
+    ].join(".");
     const run = spawn("docker", [
       "run", "--rm", "--name", containerName, "--network", "host",
       "--mount", `type=bind,source=${config},target=/etc/gateway/models.yaml,readonly`,
       "-e", "TEST_API_KEY=fixture", image,
-      "--deployment.mode=development", "--auth.mode=cloud-gateway",
+      "--deployment.mode=development", "--auth.unsafe",
       "--config.file=/etc/gateway/models.yaml",
-      `--server.listen-address=127.0.0.1:${gatewayPort}`,
+      `--server.private-listen-address=127.0.0.1:${gatewayPort}`,
+      "--server.cloud-listen-address=127.0.0.1:0",
       "--server.operational-listen-address=127.0.0.1:0",
     ], { stdio: ["ignore", "pipe", "pipe"] });
     run.stdout.on("data", (chunk) => { logs += chunk; });
@@ -128,7 +134,7 @@ it("builds a local SDK/provider change into the Gateway image with honest source
     for (let attempt = 0; attempt < 60; attempt++) {
       if (processExited) break;
       try {
-        ready = (await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/aisdk/config`, { headers: { "x-scope-orgid": "1" } })).ok;
+        ready = (await fetch(`http://127.0.0.1:${gatewayPort}/api/v1/aisdk/config`, { headers: { Authorization: `Bearer ${token}` } })).ok;
       } catch {}
       if (ready) break;
       await new Promise((done) => setTimeout(done, 250));
@@ -141,13 +147,56 @@ it("builds a local SDK/provider change into the Gateway image with honest source
         "ai-language-model-specification-version": "4",
         "ai-language-model-id": "public/model",
         "ai-language-model-streaming": "false",
-        "x-scope-orgid": "1",
+        authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ prompt: [{ role: "user", content: [{ type: "text", text: "hello" }] }] }),
     });
     assert.equal(result.status, 200, `${await result.text()}\n${logs}`);
     assert.equal(observedPath, "/v1/chat/completions");
     assert.equal(observedAgent, marker);
+
+    docker(["rm", "-f", containerName]);
+    const standaloneConfig = join(temp, "standalone.yaml");
+    writeFileSync(standaloneConfig, `providers:
+  native:
+    type: anthropic
+    apiKeyEnv: TEST_API_KEY
+models:
+  public/model:
+    name: Standalone
+    primary:
+      provider: native
+      model: claude-sonnet-4-6
+auth:
+  type: static-key
+  staticKey:
+    identities:
+      deployment:
+        keyEnv: GATEWAY_KEY
+server:
+  cloud:
+    enabled: false
+`);
+    docker(["run", "-d", "--rm", "--name", containerName,
+      "--mount", `type=bind,source=${standaloneConfig},target=/etc/gateway/models.yaml,readonly`,
+      "-e", "TEST_API_KEY=synthetic-provider-key", "-e", "GATEWAY_KEY=image._~+/-key==",
+      "-p", "127.0.0.1::8082", image, "--config.file=/etc/gateway/models.yaml"]);
+    const published = docker(["port", containerName, "8082/tcp"]).trim();
+    let standaloneReady = false;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      try {
+        standaloneReady = (await fetch(`http://${published}/api/v1/aisdk/config`, { headers: { Authorization: "Bearer image._~+/-key==" } })).ok;
+      } catch {}
+      if (standaloneReady) break;
+      await new Promise(done => setTimeout(done, 250));
+    }
+    assert.ok(standaloneReady, docker(["logs", containerName]));
+    for (const headers of [new Headers(), new Headers({ Authorization: "Bearer wrong" })]) {
+      assert.equal((await fetch(`http://${published}/api/v1/aisdk/config`, { headers })).status, 401);
+    }
+    docker(["exec", containerName, "/bin/bash", "-c", "if (echo > /dev/tcp/127.0.0.1/8080) 2>/dev/null; then exit 1; fi"]);
+    assert.ok(!docker(["logs", containerName]).includes("image._~+/-key=="));
+
   } finally {
     backend.close();
     spawnSync("docker", ["rm", "-f", containerName], { stdio: "ignore" });

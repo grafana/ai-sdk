@@ -42,14 +42,26 @@ models:
     name: Grafana Assistant
     primary:
       provider: anthropic-primary
-      model: claude-sonnet-example
+      model: claude-sonnet-4-6
+auth:
+  type: static-key
+  staticKey:
+    identities:
+      deployment:
+        keyEnv: AI_GATEWAY_KEY
+server:
+  cloud:
+    enabled: false
 ```
 
 The command fails during startup if `ANTHROPIC_API_KEY` is unset or empty. Pass
 the secret at runtime. Do not add it with a Docker build argument or image
 environment instruction.
 
-This example uses production authentication defaults:
+Generate a gateway credential with `openssl rand -hex 32` and inject it as
+`AI_GATEWAY_KEY` through your secret manager. It is distinct from the provider key.
+This example uses production static-key authentication with Cloud ingress disabled;
+Agent Observability may remain disabled in this combination:
 
 ```bash
 docker run --rm \
@@ -59,9 +71,9 @@ docker run --rm \
   --stop-timeout 20 \
   --mount type=bind,source="$PWD/models.yaml",target=/etc/grafana-ai-gateway/models.yaml,readonly \
   --env GRAFANA_AI_GATEWAY_CONFIG_FILE=/etc/grafana-ai-gateway/models.yaml \
-  --env GRAFANA_AI_GATEWAY_AUTH_JWKS_URL=https://identity.example.com/.well-known/jwks.json \
+  --env AI_GATEWAY_KEY \
   --env ANTHROPIC_API_KEY \
-  --publish 8080:8080 \
+  --publish 127.0.0.1:8082:8082 \
   ai-gateway:local
 ```
 
@@ -71,28 +83,34 @@ by that identity.
 Gateway process settings use the `GRAFANA_AI_GATEWAY_*` environment prefix.
 Run the command with `--help` for the matching flags, defaults, and limits. The
 container does not change the command's production defaults. This example
-uses the default JWT-verifying mode; it is not the public Cloud deployment.
+publishes only the authenticated private API on the host's loopback interface; it does not
+bind the disabled Cloud listener or publish the operational listener. Terminate TLS
+at a trusted ingress and protect its connection to this private API.
 For client credentials and endpoint selection, see [Authenticate to Grafana AI
-Gateway](gateway-authentication.md). For the trusted-proxy server mode, see the
+Gateway](gateway-authentication.md). For listener isolation and the trusted-proxy boundary, see the
 [Cloud authentication contract](../../ai-gateway/docs/cloud-authentication.md).
 
 ## Use production endpoints
 
-Production mode requires HTTPS for the JSON Web Key Set (JWKS) URL and every
+Production mode requires HTTPS for the selected JWT provider’s JWKS URL and every
 custom provider base URL. Gateway startup rejects URLs with user information,
 a query string, or a fragment. Configure the final endpoint because the
 Gateway does not follow outbound redirects.
 
-By default, the command listens on port 8080. The model discovery and
-language-model routes require Gateway authentication. These operational routes
-do not require authentication:
+By default, trusted-Cloud BYOK requests use port 8080, operational traffic uses
+port 8081, and authenticated private requests use port 8082. API routes require their
+listener's authentication policy. Only port 8081 serves these unauthenticated
+operational routes:
 
 - `GET /live`
 - `GET /ready`
 - `GET /metrics`
 
-Place the listener behind a trusted network boundary or apply network policy if
-those routes must not be public.
+Keep authenticated private access private, permit only the authenticating Cloud edge on
+port 8080, and restrict port 8081 to monitoring and probes. Do not activate the
+Cloud path before deployed network-isolation checks pass. Configured model
+secrets in this example are available only through the private API; Cloud callers
+supply request-only provider credentials.
 
 The command's default graceful shutdown timeout is 15 seconds. Set the
 container stop timeout to more than 15 seconds so the process can finish before

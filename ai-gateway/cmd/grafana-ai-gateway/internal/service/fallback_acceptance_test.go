@@ -453,7 +453,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	sink := newPhysicalAttemptSink(&output, telemetry, 8, time.Second, time.Second)
 	t.Cleanup(sink.Close)

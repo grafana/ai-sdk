@@ -47,6 +47,12 @@ type errorDefinition struct {
 }
 
 var publicErrors = [...]errorDefinition{
+	safeBYOKDiscovery: {
+		status:  http.StatusBadRequest,
+		message: "catalog discovery is unsupported for BYOK",
+		kind:    errorInvalidRequest,
+		code:    codeInvalidRequest,
+	},
 	safeBYOKCredentials: {
 		status:  http.StatusBadRequest,
 		message: "providerOptions.gateway.byok requires supported provider arrays with valid accounts",

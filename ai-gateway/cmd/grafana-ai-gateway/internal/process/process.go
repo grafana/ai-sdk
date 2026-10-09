@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
-	"github.com/grafana/authlib/authn"
 )
 
 const listenerStartupTimeout = 5 * time.Second
@@ -39,17 +38,23 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	if err := settings.AgentObservability.ValidateAmbientEnvironment(lookupEnv); err != nil {
 		return err
 	}
-	jwksURL := ""
-	if settings.AuthMode == config.AuthModeAccessToken && !settings.AuthUnsafe {
-		parsed, err := outbound.ValidateEndpoint(settings.JWKSURL, settings.DeploymentMode)
-		if err != nil {
-			return fmt.Errorf("gateway process: validating JWKS endpoint: %w", err)
-		}
-		jwksURL = parsed.String()
-	}
 	file, err := config.LoadFile(settings.ConfigFile, settings.ConfigMaxBytes)
 	if err != nil {
 		return err
+	}
+	effective, err := config.ResolveAuthConfig(settings, file)
+	if err != nil {
+		return err
+	}
+	if err := settings.ValidateRuntime(effective, file.CloudEnabled()); err != nil {
+		return err
+	}
+	if effective.Type == config.AuthJWT {
+		parsed, err := outbound.ValidateEndpoint(effective.JWKSURL, settings.DeploymentMode)
+		if err != nil {
+			return fmt.Errorf("gateway process: validating JWKS endpoint: %w", err)
+		}
+		effective.JWKSURL = parsed.String()
 	}
 	for name, provider := range file.Providers {
 		if provider.BaseURL == "" {
@@ -73,36 +78,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 
 	processContext, cancelProcess := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelProcess()
-	var authenticator gatewayauth.RequestAuthenticator
-	switch settings.AuthMode {
-	case config.AuthModeCloudGateway:
-		authenticator = gatewayauth.NewCloudProviderWireAuthenticator()
-	case config.AuthModeAccessToken:
-		var verifier authn.Authenticator
-		if settings.AuthUnsafe {
-			verifier, err = gatewayauth.NewUnsafeAuthenticator(settings.Audiences, func(message string) {
-				logger.Warn(message)
-			})
-		} else {
-			jwksClient, clientErr := outbound.NewJWKSClient(settings.JWKSRequestTimeout, settings.JWKSResponseBytes)
-			if clientErr != nil {
-				return clientErr
-			}
-			var keys *gatewayauth.JWKS
-			keys, err = gatewayauth.NewJWKS(processContext, jwksClient, time.Now, gatewayauth.JWKSConfig{
-				URL:             jwksURL,
-				RequestTimeout:  settings.JWKSRequestTimeout,
-				MaxKeys:         settings.JWKSMaxKeys,
-				RefreshInterval: settings.JWKSRefreshInterval,
-				MaxAge:          settings.JWKSMaxAge,
-			})
-			if err != nil {
-				return err
-			}
-			verifier, err = gatewayauth.NewAuthenticator(keys, settings.Audiences)
-		}
-		authenticator = gatewayauth.NewAccessTokenAuthenticator(verifier)
-	}
+	authenticator, authSource, err := buildAuthenticator(processContext, settings, effective, lookupEnv, logger)
 	if err != nil {
 		return err
 	}
@@ -117,7 +93,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	if err != nil {
 		return err
 	}
-	modelFactory, err := service.NewModelObservabilityFactory(telemetry, logger, agentRuntime, settings.ProviderWire.StreamDrainDuration)
+	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(telemetry, logger, agentRuntime, settings.ProviderWire.StreamDrainDuration)
 	if err != nil {
 		agentRuntime.Close()
 		return err
@@ -130,8 +106,8 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		return err
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
-	discoveryHandler := discovery.New(modelCatalog, errorWriter)
-	languageHandler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(modelCatalog), Limits: settings.ProviderWire})
+	discoveryHandler := service.ConfiguredDiscovery(discovery.New(modelCatalog, errorWriter), errorWriter)
+	languageHandler, err := providerv4.New(providerv4.Config{Selector: service.NewConfiguredSelector(modelCatalog), Limits: settings.ProviderWire})
 	if err != nil {
 		agentRuntime.Close()
 		return err
@@ -141,22 +117,33 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		Readiness:     readiness,
 		Telemetry:     telemetry,
 		Authenticator: authenticator,
-		AuthSource:    gatewayauth.Source(settings.AuthMode),
+		AuthSource:    authSource,
 		ErrorWriter:   errorWriter,
 		Discovery:     discoveryHandler,
 		LanguageModel: languageHandler,
 	}
-	var handlers []http.Handler
-	addresses := []string{settings.ListenAddress}
-	if settings.OperationalListenAddress != "" {
-		handlers = []http.Handler{service.NewAPIRouter(deps), service.NewOperationalRouter(deps)}
-		addresses = append(addresses, settings.OperationalListenAddress)
-	} else {
-		handlers = []http.Handler{service.NewRouter(deps)}
+	type binding struct {
+		address string
+		handler http.Handler
 	}
+	bindings := []binding{{settings.PrivateListenAddress, service.NewAPIRouter(deps)}}
+	if file.CloudEnabled() {
+		byokHandler, err := providerv4.New(providerv4.Config{Selector: service.NewBYOKSelector(anthropicClient, byokFactory), Limits: settings.ProviderWire})
+		if err != nil {
+			agentRuntime.Close()
+			return err
+		}
+		cloudDeps := deps
+		cloudDeps.Authenticator = gatewayauth.NewCloudProviderWireAuthenticator()
+		cloudDeps.AuthSource = gatewayauth.SourceCloudGateway
+		cloudDeps.Discovery = service.BYOKDiscovery(errorWriter)
+		cloudDeps.LanguageModel = byokHandler
+		bindings = append(bindings, binding{settings.CloudListenAddress, service.NewAPIRouter(cloudDeps)})
+	}
+	bindings = append(bindings, binding{settings.OperationalListenAddress, service.NewOperationalRouter(deps)})
 	var servers []boundServer
-	for i, address := range addresses {
-		listener, err := listen("tcp", address)
+	for _, binding := range bindings {
+		listener, err := listen("tcp", binding.address)
 		if err != nil {
 			for _, binding := range servers {
 				_ = binding.listener.Close()
@@ -168,7 +155,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		servers = append(servers, boundServer{
 			listener: listener,
 			server: &http.Server{
-				Handler:           handlers[i],
+				Handler:           binding.handler,
 				ReadHeaderTimeout: settings.ReadHeaderTimeout,
 				ReadTimeout:       settings.ReadTimeout,
 				WriteTimeout:      settings.WriteTimeout,
