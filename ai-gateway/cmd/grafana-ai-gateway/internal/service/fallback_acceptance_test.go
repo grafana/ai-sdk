@@ -497,13 +497,17 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 		assert.Equal(t, "public", testkit.StringValue(t, generation, "model", "name"))
 		assert.Equal(t, "fallback-correlation", testkit.StringValue(t, generation, "metadata", "gateway.correlation_id"))
 		assert.Equal(t, 1, countModelLogEvent(t, logs.String(), "aisdk.model."+mode+".start"))
-		terminal := 0
-		for _, event := range []string{"finish", "error", "cancelled"} {
-			terminal += countModelLogEvent(t, logs.String(), "aisdk.model."+mode+"."+event)
-		}
-		assert.Equal(t, 1, terminal)
-		metrics := testMetrics(t, telemetry)
-		assert.Equal(t, 1, strings.Count(metrics, "aisdk_model_requests_total{"))
+		var metrics string
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			terminal := 0
+			logSnapshot := logs.String()
+			for _, event := range []string{"finish", "error", "cancelled"} {
+				terminal += countModelLogEvent(t, logSnapshot, "aisdk.model."+mode+"."+event)
+			}
+			assert.Equal(collect, 1, terminal)
+			metrics = testMetrics(t, telemetry)
+			assert.Equal(collect, 1, strings.Count(metrics, "aisdk_model_requests_total{"))
+		}, time.Second, time.Millisecond, "cancellation completes each observability stream independently")
 		logical := string(encoded) + logs.String() + metrics
 		for _, private := range []string{"private-prompt", "private-output", "public-answer", "primary-instance", "secondary-instance", "backend-primary", "backend-secondary", "native_usage_marker"} {
 			assert.NotContains(t, logical, private)
