@@ -17,6 +17,8 @@
 
 - [x] 3.3 Restack activation after shared fallback capture/configured execution delivery, preserve catalog-owned attribution and add authenticated BYOK omission/credential-echo witnesses.
 
+- [x] 3.4 Integrate the approved ordinary-decoding/field-redaction/native-summary audit, preserve producer echoes on existing SSE carriers and record the separate #317 observation gap.
+
 ## 4. External activation gate
 
 - [ ] 4.1 In separately authorized same-cluster deployment work, validate private Service/JWKS configuration and rendered network policy, migrate the designated internal consumer and obtain positive/negative isolation evidence before activation.

@@ -89,10 +89,14 @@ preserved within the Gateway's supported ProviderWire capabilities.
 ## Credential selection and limits
 
 Only API-key accounts for native Anthropic and OpenAI are supported. Arrays retain
-caller order and must contain one to eight accounts. Every entry, including unused
-provider entries, is validated. OpenAI accounts may include `organization` and
-`project`. Use the canonical field names `apiKey`, `baseURL`, `organization` and
-`project`, and lowercase `gateway.byok`.
+caller order. The existing eight-account behavior is retained temporarily as
+execution policy. Required keys, provider selection and destinations are checked,
+including supplied unused entries. OpenAI accounts may include `organization` and
+`project`. Emit canonical field names `apiKey`, `baseURL`, `organization` and
+`project`; account structs use ordinary Go field matching and additive fields are
+ignored without applying them. Namespace/provider-map keys and discriminator
+values are not normalized; use lowercase `gateway.byok`. Meaningful modelMappings
+are unsupported, while absent/null/empty lists are inactive.
 
 Omit `baseURL` to use the native endpoint. The bundled service does not configure
 custom endpoint approvals, so other URLs are rejected. Alternate credential
@@ -138,8 +142,9 @@ BYOK controls and use configured model IDs or aliases.
 ## Capture safely
 
 Returned Go and Vercel request metadata is caller-owned and still contains the
-submitted BYOK credentials. Never log `request.body` directly. Default Go logger
-capture structurally redacts the entire BYOK subtree, including unfamiliar fields:
+submitted BYOK credentials. Never log `request.body` directly. Go logger capture
+uses its configured Redactor for matching sensitive fields such as apiKey and
+authentication headers, not a whole-BYOK-object rewrite:
 
 ```go
 model = logmiddleware.Wrap(model, logmiddleware.Options{
@@ -148,11 +153,20 @@ model = logmiddleware.Wrap(model, logmiddleware.Options{
 })
 ```
 
-For TypeScript, [sanitize a JSON copy before logging](../providers/grafana-gateway.md#keep-credentials-out-of-logs);
-never mutate or log the original request metadata. These protections are not
+Use DefaultRedactorWithExtraKeys or RedactorFunc for additional field policy.
+Ordinary text and unfamiliar noncredential fields are not censored, even when
+provider messages echo a key. TypeScript/application logs and other exporters
+need independent capture controls; never mutate or log original metadata directly. These protections are not
 substring scrubbers for arbitrary application text, custom metadata or opaque
 error messages. Keep custom capture destinations and access controls independent
 from the central Gateway's metadata-only observations.
+
+Committed SSE errors may include available native message/type/code/status in
+error.data.nativeError without changing Gateway classification or retryability.
+That data can contain provider-originated credential echoes. BYOK currently lacks
+Gateway attempt overviews and native summaries on unary/setup failures; treat
+missing data as unavailable observation, not a guarantee that no work occurred.
+Keep returned diagnostics out of logs unless your capture policy permits them.
 
 Use HTTPS and server-side secret storage; rotate both CAP and provider credentials.
 Deployment activation additionally requires the operator's

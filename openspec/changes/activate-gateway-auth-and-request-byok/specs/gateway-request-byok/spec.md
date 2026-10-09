@@ -48,24 +48,26 @@ Request-only invocation SHALL retain shared consumption-backed guards before att
 - **WHEN** an Anthropic BYOK request supplies valid bounded MCP servers and corresponding provider-executed history
 - **THEN** the native adapter SHALL receive the MCP configuration and history without consulting configured accounts
 
-### Requirement: BYOK credentials stay out of automatic server surfaces
-Automatic server surfaces SHALL exclude actual credentials and the complete BYOK subtree without censoring ordinary content/native identity. Catalog-independent selection SHALL add no Gateway execution collection or summaries while preserving independent SDK observation.
+### Requirement: BYOK capture policy is independent of returned data
+Host account authorization, explicit credential sources and request isolation SHALL remain intact. Logger field redaction and other exporter capture SHALL be independent of returned provider data, including producer credential echoes. Native summaries SHALL not require catalog provenance; missing request-account observation SHALL remain an explicit capability gap.
 
 #### Scenario: BYOK privacy and attribution policy
 - **WHEN** the host processes request-only credentials and observes execution
-- **THEN** The host SHALL exclude the complete BYOK subtree and actual authentication credentials from server logs, metrics, Agent Observability/Sigil, response/error diagnostics, routing metadata and recorded provider fixtures.
-- **AND** Native rejection echoes and authentication transport diagnostics SHALL not reflect selected credentials.
-- **AND** Redaction SHALL be source-specific, not based on censoring key-looking application text.
+- **THEN** Host controls SHALL be consumed for account selection rather than forwarded wholesale to native inference.
+- **AND** Logging SHALL use configured field-aware redaction; other exporters SHALL own their capture policies, and metric labels SHALL NOT contain credential payloads.
+- **AND** Returned provider data SHALL not be rewritten or matched against credential inventories, including producer-originated caller/service credential echoes.
+- **AND** The host SHALL NOT synthesize diagnostics from an internal credential store or another request's state.
 - **AND** Supported provider/model identity, application content and native response values SHALL remain available under their existing contracts.
 - **AND** Configured execution attribution SHALL remain independent of logical BYOK observation.
-- **AND** Without catalog-owned attribution, the Gateway SHALL NOT collect request-local fallback errors or add public execution overviews/current native failure summaries.
+- **AND** Event-local native SSE summaries SHALL remain eligible without catalog-owned attribution. BYOK unary/setup summaries and attempt overviews are currently unavailable; #317 owns reusing existing SDK observation with honest request identity, not a new collector.
 - **AND** Independently registered SDK observers SHALL remain effective; original native metadata SHALL remain opaque and SHALL NOT establish configured provenance.
 - **AND** Diagnostic messages SHALL use bounded approved capability names/schema paths and bounded indices/counts, never arbitrary rejected key names, values or serialized bodies.
 - **AND** Detailed public attempt evidence SHALL remain owned by its separate contract; this capability SHALL NOT introduce a second metadata/error protocol.
 
 #### Scenario: Provider echoes the rejected key
 - **WHEN** a fake provider rejection includes the selected dummy API key in authentication-related error material
-- **THEN** automatic server capture and returned diagnostics SHALL omit that credential while preserving safe status/provider/attempt facts
+- **THEN** available native summaries SHALL retain that echo without changing Gateway classification or account isolation
+- **AND** logger sensitive-field policy and metadata-only exporter exclusions SHALL be tested independently from caller output
 
 #### Scenario: Ordinary application text resembles a key
 - **WHEN** supported prompt/output text contains a key-looking string unrelated to authentication material

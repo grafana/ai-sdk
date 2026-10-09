@@ -102,7 +102,7 @@ func TestBYOKObservability_LogicalExportAndCredentialPrivacy(t *testing.T) {
 				assert.NotContains(t, metrics, requestID)
 				assert.Contains(t, logs.String(), requestID)
 				for _, secret := range []string{"dummy-first", "dummy-second"} {
-					assert.NotContains(t, response.Body.String()+logs.String()+metrics+string(exported), secret)
+					assert.NotContains(t, logs.String()+metrics+string(exported), secret)
 				}
 				for _, private := range []string{"backend-private", "application-content", "application-output"} {
 					assert.NotContains(t, logs.String()+metrics+string(exported), private)

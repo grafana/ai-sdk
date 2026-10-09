@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,7 +38,7 @@ func (c *accountCatalogSpy) ListModels(context.Context) ([]catalog.ModelInfo, er
 }
 
 func TestAccountSelection_Isolation(t *testing.T) {
-	const body = `{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"apiKey":"dummy-request-key","organization":"request-organization","project":"request-project"}]}},"openai":{"store":false}}}`
+	const body = `{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"APIKEY":"dummy-request-key","Organization":"request-organization","Project":"request-project","ModelMappings":[],"headers":{"Authorization":"untrusted-key"},"maxRetries":100,"future":true}]}},"openai":{"store":false}}}`
 	for _, streaming := range []bool{false, true} {
 		t.Run(strconv.FormatBool(streaming), func(t *testing.T) {
 			configuredModel := &observabilityTestModel{}
@@ -61,6 +62,7 @@ func TestAccountSelection_Isolation(t *testing.T) {
 				assert.Contains(t, string(raw), `"store":false`)
 				assert.NotContains(t, string(raw), "dummy-request-key")
 				assert.NotContains(t, string(raw), "byok")
+				assert.NotContains(t, string(raw), "untrusted-key")
 				return &http.Response{StatusCode: 401, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"dummy-request-key","type":"authentication_error"}}`)), Request: r}, nil
 			})}
 			writer := providerv4.NewHostErrorWriter()
@@ -111,7 +113,7 @@ func TestAccountSelection_Isolation(t *testing.T) {
 	}
 }
 
-func TestBYOKSelection_PublicAttributionOmitted(t *testing.T) {
+func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 	const nativeMessage = "provider-echo dummy-first dummy-second request-org request-project"
 	for _, name := range []string{"anthropic", "openai"} {
 		for _, mode := range []string{"unary", "setup", "committed"} {
@@ -156,16 +158,40 @@ func TestBYOKSelection_PublicAttributionOmitted(t *testing.T) {
 				handler.ServeHTTP(response, request)
 				if mode == "committed" {
 					assert.Equal(t, http.StatusOK, response.Code)
-					assert.Contains(t, response.Body.String(), `"type":"error"`)
+					var nativeErrors []json.RawMessage
+					for _, frame := range strings.Split(strings.TrimSpace(response.Body.String()), "\n\n") {
+						var event struct {
+							Error struct {
+								StatusCode int
+								Data       struct {
+									NativeError json.RawMessage
+								}
+							}
+						}
+						require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &event))
+						if len(event.Error.Data.NativeError) != 0 {
+							nativeErrors = append(nativeErrors, event.Error.Data.NativeError)
+							if name == "anthropic" {
+								assert.Equal(t, http.StatusBadGateway, event.Error.StatusCode)
+							} else {
+								assert.Equal(t, http.StatusFailedDependency, event.Error.StatusCode)
+							}
+						}
+					}
+					require.Len(t, nativeErrors, 1)
+					if name == "anthropic" {
+						assert.JSONEq(t, fmt.Sprintf(`{"message":%q,"type":"api_error","statusCode":200}`, nativeMessage), string(nativeErrors[0]))
+					} else {
+						assert.JSONEq(t, fmt.Sprintf(`{"message":%q,"type":"error","code":"invalid_api_key","statusCode":400}`, nativeMessage), string(nativeErrors[0]))
+					}
 				} else {
 					assert.Equal(t, http.StatusFailedDependency, response.Code)
 					assert.JSONEq(t, `{"error":{"message":"failed dependency","type":"failed_dependency","param":null,"code":"failed_dependency"}}`, response.Body.String())
 				}
 				assert.Equal(t, int32(1), calls.Load())
 				assert.Equal(t, int32(1), observed.Load())
-				for _, private := range []string{"dummy-first", "dummy-second", "request-org", "request-project", "provider-echo", `"execution"`, `"nativeError"`} {
-					assert.NotContains(t, response.Body.String(), private)
-				}
+				assert.NotContains(t, response.Body.String(), `"execution"`)
+				assert.NotContains(t, response.Body.String(), `"providerInstance"`)
 			})
 		}
 	}
