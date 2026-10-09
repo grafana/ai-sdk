@@ -400,7 +400,7 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		return nil, err
 	}
 	runtime, err := providerwirev4.New(providerwirev4.Config{
-		Resolver: resolver,
+		Selector: providerwirev4.CatalogSelector(resolver),
 		Limits: providerwirev4.Limits{
 			RequestBytes:        1 << 20,
 			UnaryResponseBytes:  1 << 20,

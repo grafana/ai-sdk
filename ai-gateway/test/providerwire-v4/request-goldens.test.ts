@@ -275,8 +275,13 @@ describe("registered Gateway BYOK projection", () => {
         providerOptions: {
           gateway: {
             byok: {
-              anthropic: [{ apiKey: "dummy-anthropic" }],
-              openai: [{ apiKey: "dummy-openai-first" }, { apiKey: "dummy-openai-second" }],
+              anthropic: [{ apiKey: "dummy-anthropic", baseURL: "https://approved.example/anthropic" }],
+              openai: [{
+                apiKey: "dummy-openai-first",
+                baseURL: "https://approved.example/v1",
+                organization: "org-customer",
+                project: "proj-customer",
+              }, { apiKey: "dummy-openai-second" }],
             },
           },
           openai: { store: false },

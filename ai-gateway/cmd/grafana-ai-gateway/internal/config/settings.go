@@ -310,7 +310,7 @@ func (settings Settings) Validate() error {
 	if settings.ProviderWire.StreamIdleDuration > settings.ProviderWire.ModelDuration {
 		return fmt.Errorf("config: providerwire stream idle duration must not exceed model duration")
 	}
-	if _, err := providerv4.New(providerv4.Config{Resolver: limitValidationResolver{}, Limits: settings.ProviderWire}); err != nil {
+	if _, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(limitValidationResolver{}), Limits: settings.ProviderWire}); err != nil {
 		return fmt.Errorf("config: providerwire limits: %w", err)
 	}
 	minimum, err := checkedDurationSum(settings.ReadTimeout, jwksLatency, settings.ProviderWire.ModelDuration, settings.ResponseGrace)

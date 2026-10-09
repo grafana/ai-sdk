@@ -19,14 +19,14 @@ import (
 )
 
 func TestModel_BYOKLoggerCapture(t *testing.T) {
-	const rawOptions = `{"byok":{"openai":[{"apiKey":"dummy-first","future":{"unfamiliar":"dummy-unfamiliar"}},{"apiKey":"dummy-second"}]},"ordinary":true}`
+	const rawOptions = `{"byok":{"openai":[{"apiKey":"dummy-first","baseURL":"https://dummy-endpoint.example/v1","organization":"dummy-organization","project":"dummy-project","future":{"unfamiliar":"dummy-unfamiliar"}},{"apiKey":"dummy-second"}]},"ordinary":true}`
 	for _, operation := range []string{"generate", "stream", "error"} {
 		for _, limit := range []int{1, 8192} {
 			t.Run(operation+"/"+strconv.Itoa(limit), func(t *testing.T) {
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					body, err := io.ReadAll(r.Body)
 					require.NoError(t, err)
-					for _, key := range []string{"dummy-first", "dummy-second", "dummy-unfamiliar"} {
+					for _, key := range []string{"dummy-first", "dummy-second", "dummy-unfamiliar", "dummy-endpoint", "dummy-organization", "dummy-project"} {
 						assert.Contains(t, string(body), key)
 					}
 					switch operation {
@@ -70,7 +70,9 @@ func TestModel_BYOKLoggerCapture(t *testing.T) {
 				}
 				if limit > 1 {
 					assert.Contains(t, logs.String(), "ordinary")
-					assert.Contains(t, logs.String(), "dummy-unfamiliar")
+					for _, value := range []string{"dummy-unfamiliar", "dummy-endpoint", "dummy-organization", "dummy-project"} {
+						assert.Contains(t, logs.String(), value)
+					}
 					assert.Contains(t, logs.String(), "[REDACTED]")
 				}
 			})

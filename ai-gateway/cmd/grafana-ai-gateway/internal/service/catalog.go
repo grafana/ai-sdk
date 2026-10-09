@@ -5,23 +5,17 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
-	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
-	openaiprovider "github.com/grafana/ai-sdk/providers/openai"
 	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
-	openaisdk "github.com/openai/openai-go/v3"
-	openaioption "github.com/openai/openai-go/v3/option"
-	"github.com/openai/openai-go/v3/responses"
 )
 
-const defaultOpenAIBaseURL = "https://api.openai.com/v1"
-
-type modelConstructor func(apiKey, modelID string, options ...anthropicprovider.Option) provider.LanguageModel
+type modelConstructor func(config nativemodel.Config, modelID string, client *http.Client) provider.LanguageModel
 
 // ModelFactory composes one canonical logical model around its unchanged lower
 // model. WP8 observers use this seam; WP9 may replace the lower model with a
@@ -30,7 +24,7 @@ type ModelFactory func(canonicalID string, lower provider.LanguageModel) (provid
 
 // BuildCatalog constructs every configured model exactly once.
 func BuildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, factory ModelFactory, physical ...*PhysicalAttemptSink) (catalog.Catalog, error) {
-	return buildCatalog(file, providers, client, anthropicprovider.New, factory, physical...)
+	return buildCatalog(file, providers, client, nativemodel.NewAnthropic, factory, physical...)
 }
 
 func buildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, construct modelConstructor, factory ModelFactory, physical ...*PhysicalAttemptSink) (catalog.Catalog, error) {
@@ -60,12 +54,8 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			var validateOptions func(provider.CallOptions) error
 			switch providerConfig.Type {
 			case "anthropic":
-				requestOptions := []option.RequestOption{option.WithHTTPClient(client), option.WithMaxRetries(0)}
-				if providerConfig.BaseURL != "" {
-					requestOptions = append(requestOptions, option.WithBaseURL(providerConfig.BaseURL))
-				}
-				candidate = construct(providerConfig.APIKey, descriptor.Model, anthropicprovider.WithRequestOptions(requestOptions...))
-				validateOptions = validateAnthropicOptions
+				candidate = construct(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
+				validateOptions = nativeoptions.Anthropic
 			case "openai-compatible":
 				if providerConfig.BaseURL == "" {
 					return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
@@ -80,21 +70,10 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				)
 				providerName := candidate.Provider()
 				validateOptions = func(options provider.CallOptions) error {
-					return validateCompatibleOptions(options, providerName)
+					return nativeoptions.Compatible(options, providerName)
 				}
 			case "openai":
-				baseURL := providerConfig.BaseURL
-				if baseURL == "" {
-					baseURL = defaultOpenAIBaseURL
-				}
-				// Assembling the client directly keeps ambient OPENAI_* environment defaults out of the request.
-				responsesService := responses.NewResponseService(
-					openaioption.WithAPIKey(providerConfig.APIKey),
-					openaioption.WithBaseURL(baseURL),
-					openaioption.WithHTTPClient(client),
-					openaioption.WithMaxRetries(0),
-				)
-				candidate = openaiprovider.NewResponsesWithClient(openaisdk.Client{Responses: responsesService}, descriptor.Model)
+				candidate = nativemodel.NewOpenAI(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
 			default:
 				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 			}
@@ -102,7 +81,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				return nil, fmt.Errorf("gateway service: constructing model %q returned nil", id)
 			}
 			if validateOptions != nil {
-				candidate = nativeOptionsModel{LanguageModel: candidate, validate: validateOptions}
+				candidate = nativeoptions.Model{LanguageModel: candidate, Validate: validateOptions}
 			}
 			providerName := providerConfig.Type
 			if providerConfig.Type == "openai-compatible" && providerConfig.ProviderName != "" {

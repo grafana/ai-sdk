@@ -59,6 +59,13 @@ gap and avoid substituting another version silently.
   behavioral alignment. Check for drift in wire format, API surface, error
   handling, and edge cases.
 
+### Canonical Request Casing
+
+Emit canonical client field names. Use ordinary Go JSON decoding, including
+standard duplicate members, struct-field matching and additive fields. Do not
+normalize namespace/map keys or discriminator values without a protocol rule or
+explicit approval; HTTP header names remain case-insensitive.
+
 ### Parity Governance
 
 The registered upstream baseline lives in `test/conformance/upstream.yaml`; the
