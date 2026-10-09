@@ -255,6 +255,8 @@ func (writer *responseWriter) Unwrap() http.ResponseWriter {
 
 func authenticationSourceClass(source gatewayauth.Source) string {
 	switch source {
+	case gatewayauth.SourceStaticKey:
+		return string(gatewayauth.SourceStaticKey)
 	case gatewayauth.SourceAccessToken:
 		return "access-token"
 	case gatewayauth.SourceCloudGateway:

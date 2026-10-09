@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
-	"github.com/grafana/authlib/authn"
 )
 
 const listenerStartupTimeout = 5 * time.Second
@@ -39,17 +38,23 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	if err := settings.AgentObservability.ValidateAmbientEnvironment(lookupEnv); err != nil {
 		return err
 	}
-	jwksURL := ""
-	if !settings.AuthUnsafe {
-		parsed, err := outbound.ValidateEndpoint(settings.JWKSURL, settings.DeploymentMode)
-		if err != nil {
-			return fmt.Errorf("gateway process: validating JWKS endpoint: %w", err)
-		}
-		jwksURL = parsed.String()
-	}
 	file, err := config.LoadFile(settings.ConfigFile, settings.ConfigMaxBytes)
 	if err != nil {
 		return err
+	}
+	effective, err := config.ResolveAuthConfig(settings, file)
+	if err != nil {
+		return err
+	}
+	if err := settings.ValidateRuntime(effective, file.CloudEnabled()); err != nil {
+		return err
+	}
+	if effective.Type == config.AuthJWT {
+		parsed, err := outbound.ValidateEndpoint(effective.JWKSURL, settings.DeploymentMode)
+		if err != nil {
+			return fmt.Errorf("gateway process: validating JWKS endpoint: %w", err)
+		}
+		effective.JWKSURL = parsed.String()
 	}
 	for name, provider := range file.Providers {
 		if provider.BaseURL == "" {
@@ -73,28 +78,10 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 
 	processContext, cancelProcess := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancelProcess()
-	var verifier authn.Authenticator
-	if settings.AuthUnsafe {
-		verifier, err = gatewayauth.NewUnsafeAuthenticator(settings.Audiences, func(message string) { logger.Warn(message) })
-	} else {
-		jwksClient, clientErr := outbound.NewJWKSClient(settings.JWKSRequestTimeout, settings.JWKSResponseBytes)
-		if clientErr != nil {
-			return clientErr
-		}
-		var keys *gatewayauth.JWKS
-		keys, err = gatewayauth.NewJWKS(processContext, jwksClient, time.Now, gatewayauth.JWKSConfig{
-			URL: jwksURL, RequestTimeout: settings.JWKSRequestTimeout, MaxKeys: settings.JWKSMaxKeys,
-			RefreshInterval: settings.JWKSRefreshInterval, MaxAge: settings.JWKSMaxAge,
-		})
-		if err != nil {
-			return err
-		}
-		verifier, err = gatewayauth.NewAuthenticator(keys, settings.Audiences)
-	}
+	authenticator, authSource, err := buildAuthenticator(processContext, settings, effective, lookupEnv, logger)
 	if err != nil {
 		return err
 	}
-	authenticator := gatewayauth.NewAccessTokenAuthenticator(verifier)
 	telemetry, err := service.NewTelemetry(logger, service.TelemetryOptions{
 		Region:      settings.ObservationRegion,
 		Application: settings.ObservationApplication,
@@ -125,31 +112,38 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		agentRuntime.Close()
 		return err
 	}
-	byokHandler, err := providerv4.New(providerv4.Config{Selector: service.NewBYOKSelector(anthropicClient, byokFactory), Limits: settings.ProviderWire})
-	if err != nil {
-		agentRuntime.Close()
-		return err
-	}
 	readiness := &service.Readiness{}
 	deps := service.RouterDependencies{
 		Readiness:     readiness,
 		Telemetry:     telemetry,
 		Authenticator: authenticator,
-		AuthSource:    gatewayauth.SourceAccessToken,
+		AuthSource:    authSource,
 		ErrorWriter:   errorWriter,
 		Discovery:     discoveryHandler,
 		LanguageModel: languageHandler,
 	}
-	cloudDeps := deps
-	cloudDeps.Authenticator = gatewayauth.NewCloudProviderWireAuthenticator()
-	cloudDeps.AuthSource = gatewayauth.SourceCloudGateway
-	cloudDeps.Discovery = service.BYOKDiscovery(errorWriter)
-	cloudDeps.LanguageModel = byokHandler
-	handlers := []http.Handler{service.NewAPIRouter(deps), service.NewAPIRouter(cloudDeps), service.NewOperationalRouter(deps)}
-	addresses := []string{settings.PrivateListenAddress, settings.CloudListenAddress, settings.OperationalListenAddress}
+	type binding struct {
+		address string
+		handler http.Handler
+	}
+	bindings := []binding{{settings.PrivateListenAddress, service.NewAPIRouter(deps)}}
+	if file.CloudEnabled() {
+		byokHandler, err := providerv4.New(providerv4.Config{Selector: service.NewBYOKSelector(anthropicClient, byokFactory), Limits: settings.ProviderWire})
+		if err != nil {
+			agentRuntime.Close()
+			return err
+		}
+		cloudDeps := deps
+		cloudDeps.Authenticator = gatewayauth.NewCloudProviderWireAuthenticator()
+		cloudDeps.AuthSource = gatewayauth.SourceCloudGateway
+		cloudDeps.Discovery = service.BYOKDiscovery(errorWriter)
+		cloudDeps.LanguageModel = byokHandler
+		bindings = append(bindings, binding{settings.CloudListenAddress, service.NewAPIRouter(cloudDeps)})
+	}
+	bindings = append(bindings, binding{settings.OperationalListenAddress, service.NewOperationalRouter(deps)})
 	var servers []boundServer
-	for i, address := range addresses {
-		listener, err := listen("tcp", address)
+	for _, binding := range bindings {
+		listener, err := listen("tcp", binding.address)
 		if err != nil {
 			for _, binding := range servers {
 				_ = binding.listener.Close()
@@ -161,7 +155,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		servers = append(servers, boundServer{
 			listener: listener,
 			server: &http.Server{
-				Handler:           handlers[i],
+				Handler:           binding.handler,
 				ReadHeaderTimeout: settings.ReadHeaderTimeout,
 				ReadTimeout:       settings.ReadTimeout,
 				WriteTimeout:      settings.WriteTimeout,

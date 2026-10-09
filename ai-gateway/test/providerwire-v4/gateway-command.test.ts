@@ -51,6 +51,53 @@ after(() => {
   rmSync(buildDirectory, { recursive: true, force: true });
 });
 
+describe("self-hosted static-key command", () => {
+  it("serves both clients with opaque credentials and replaces keys only on restart", async () => {
+    const fake = await FakeAnthropic.start();
+    const originalKey = "opaque._~+/-SECRET_SENTINEL==";
+    const replacementKey = "replacement._~+/-SECRET_SENTINEL==";
+    const config = anthropicConfig(fake.url) + `\nauth:\n  type: static-key\n  staticKey:\n    identities:\n      deployment:\n        keyEnv: GATEWAY_STATIC_KEY\nserver:\n  cloud:\n    enabled: false\n`;
+    let gateway: GatewayProcess | undefined;
+    const start = (key: string) => GatewayProcess.start(binaryPath, fake.url, [], { GATEWAY_STATIC_KEY: key }, "access-token", config, undefined, "backend-private", { legacyUnsafe: false, deploymentMode: "development" });
+    try {
+      gateway = await start(originalKey);
+      const base = { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: originalKey, modelID: "assistant" };
+      const client = gateway.client(originalKey);
+      assert.equal((await captureGoClient(goClientBinaryPath, { ...base, mode: "discovery" })).error, undefined);
+      assert.ok((await client.getAvailableModels()).models.length > 0);
+      for (const mode of ["generate", "stream"] as const) {
+        const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], maxOutputTokens: 64 };
+        const go = await captureGoClient(goClientBinaryPath, { ...base, mode, options });
+        await assertNativeOptionClientResults(go, client("assistant"), options, mode);
+      }
+      const before = fake.requests.length;
+      for (const key of ["wrong", replacementKey]) {
+        const denied = await captureGoClient(goClientBinaryPath, { ...base, accessToken: key, mode: "generate", options: { prompt: [] } });
+        assert.equal(denied.error?.statusCode, 401);
+        assert.ok(denied.error?.apiError?.data, "retain additive Gateway error data");
+        await assert.rejects(gateway.client(key).getAvailableModels());
+      }
+      assert.equal(fake.requests.length, before);
+      const byok = await client("assistant").doGenerate({ prompt: [], providerOptions: BYOK_OPTIONS }).then(() => null, error => error);
+      assert.ok(byok);
+      assert.equal(fake.requests.length, before);
+      await assert.rejects(fetch(`${gateway.cloudURL}/api/v1/aisdk/config`, { signal: AbortSignal.timeout(1000) }));
+      const metrics = await gateway.metrics();
+      assert.ok(metrics.includes('source="static-key"'));
+      assert.ok(!metrics.includes("SECRET_SENTINEL"));
+      assert.ok(!gateway.stderr.includes("SECRET_SENTINEL"));
+      assert.ok(!JSON.stringify(fake.requests).includes("SECRET_SENTINEL"));
+      assert.deepEqual(fake.violations, []);
+      await gateway.stop();
+      gateway = await start(replacementKey);
+      const restartedBase = { ...base, baseURL: `${gateway.url}/api/v1/aisdk` };
+      assert.equal((await captureGoClient(goClientBinaryPath, { ...restartedBase, mode: "discovery" })).error?.statusCode, 401);
+      assert.equal((await captureGoClient(goClientBinaryPath, { ...restartedBase, accessToken: replacementKey, mode: "discovery" })).error, undefined);
+      assert.ok((await gateway.client(replacementKey).getAvailableModels()).models.length > 0);
+    } finally { await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop()); }
+  });
+});
+
 describe("output-derived metadata continuation", () => {
   for (const family of ["anthropic", "openai", "compatible"] as const) {
     for (const fallback of [false, true]) {
@@ -726,7 +773,8 @@ describe("authenticated Anthropic Gateway command", () => {
     const secondary = await FakeAnthropic.start();
     let gateway: GatewayProcess | undefined;
     try {
-      gateway = await GatewayProcess.start(binaryPath, primary.url, [`--auth.jwks-url=http://127.0.0.1:${address.port}/jwks`], {}, "access-token", undefined, secondary.url);
+      const yaml = anthropicFallbackConfig(primary.url, secondary.url, "backend-private") + `\nauth:\n  type: jwt\n  jwt:\n    jwksURL: http://127.0.0.1:${address.port}/jwks\n`;
+      gateway = await GatewayProcess.start(binaryPath, primary.url, [], {}, "access-token", yaml, undefined, "backend-private", { legacyUnsafe: false });
       const base = { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: token, modelID: "assistant" };
       const discovery = await captureGoClient(goClientBinaryPath, { ...base, mode: "discovery" });
       assert.equal(discovery.error, undefined);
@@ -3133,7 +3181,7 @@ class GatewayProcess {
     });
   }
 
-  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}, mode: "access-token" | "cloud-gateway" = "access-token", configYAML?: string, fallbackURL?: string, backendModel = "backend-private"): Promise<GatewayProcess> {
+  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}, mode: "access-token" | "cloud-gateway" = "access-token", configYAML?: string, fallbackURL?: string, backendModel = "backend-private", options: { legacyUnsafe?: boolean; deploymentMode?: "development" | "production" } = {}): Promise<GatewayProcess> {
     const directory = mkdtempSync(join(tmpdir(), "grafana-ai-gateway-process-"));
     this.lastFailedDirectory = undefined;
     let gateway: GatewayProcess | undefined;
@@ -3151,8 +3199,8 @@ class GatewayProcess {
       const operationalURL = `http://127.0.0.1:${operationalPort}`;
       const args = [
         `--config.file=${configPath}`,
-        "--deployment.mode=development",
-        ...(extraArgs.some(arg => arg.startsWith("--auth.jwks-url=")) ? [] : ["--auth.unsafe"]),
+        `--deployment.mode=${options.deploymentMode ?? "development"}`,
+        ...(options.legacyUnsafe === false || extraArgs.some(arg => arg.startsWith("--auth.jwks-url=")) ? [] : ["--auth.unsafe"]),
         `--server.cloud-listen-address=127.0.0.1:${cloudPort}`,
         `--server.operational-listen-address=127.0.0.1:${operationalPort}`,
         `--server.private-listen-address=127.0.0.1:${port}`,

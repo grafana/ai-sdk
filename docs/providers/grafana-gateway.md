@@ -80,8 +80,10 @@ if err != nil {
 }
 ```
 
-For the private configured-account URL, use `NewWithTokenExchange` or
-`NewWithAccessToken`. See [Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
+For a self-hosted static-key URL, use `NewWithAccessToken` with the operator's
+opaque key from your server environment. No Cloud stack, CAP, JWT parsing or
+exchange is needed. The same client supports discovery, unary and streaming.
+For a private JWT URL, use `NewWithTokenExchange` or `NewWithAccessToken`. See [Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
 for credential setup and Go/Vercel examples. Use HTTPS and configure
 credentials through the client rather than adding authentication headers to
 individual calls.
@@ -160,7 +162,7 @@ const { models } = await fetchConfiguredModels({
 const aliases = models[0]?.gateway?.aliases;
 ```
 
-A private access JWT may alternatively use bearer `Authorization`; never send
+A static key or private access JWT may alternatively use bearer `Authorization`; never send
 both access headers. Use the same private Gateway URL and credentials as your
 client; see the [authentication guide](../guides/gateway-authentication.md).
 This helper does not support Cloud/BYOK discovery.
