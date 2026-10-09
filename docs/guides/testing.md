@@ -100,6 +100,16 @@ Never let a unit test call a destructive production tool target.
 Avoid snapshotting entire responses when a smaller semantic assertion will be
 more stable. Use conformance fixtures when exact wire bytes are the contract.
 
+## OpenAI Chat Completions adapter compatibility
+
+`mise run test-openai-chat-completions-adapter` owns the AGPL adapter DTO/runtime tests, TypeScript
+typecheck, and exact official OpenAI SDK command suites. Tests start the real
+Gateway executable with local fake upstreams and JWKS; they need no live provider
+credentials. `test-ai-gateway` includes adapter Go tests, and `test-integration`
+includes the adapter task. Run the adapter Go packages under `-race` separately.
+The [support matrix](../../ai-gateway/docs/openai-chat-completions-adapter.md) separates
+adapter compatibility from ProviderWire parity and explains per-request limits.
+
 ---
 
 ← [Middleware](../middleware/overview.md) · [Docs index](../README.md) · [Structured logging →](../middleware/structured-logging.md)
