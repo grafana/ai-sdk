@@ -83,7 +83,7 @@ func (m *recordingModel) recordedCalls() [][]provider.StreamPart {
 	return calls
 }
 
-func normalizeProviderCalls(t *testing.T, calls [][]provider.StreamPart) []providerPartsCall {
+func normalizeProviderCalls(t *testing.T, providerName string, calls [][]provider.StreamPart) []providerPartsCall {
 	t.Helper()
 	normalized := make([]providerPartsCall, len(calls))
 	for i, call := range calls {
@@ -93,7 +93,7 @@ func normalizeProviderCalls(t *testing.T, calls [][]provider.StreamPart) []provi
 			require.NoError(t, err, "marshaling provider part")
 			var generic map[string]any
 			require.NoError(t, json.Unmarshal(data, &generic), "parsing provider part")
-			parts = append(parts, normalizeProviderPart(generic))
+			parts = append(parts, normalizeProviderPart(providerName, generic))
 		}
 		normalized[i] = normalizeGeneratedIDs(parts)
 	}
@@ -127,54 +127,39 @@ func normalizeGeneratedIDs(parts providerPartsCall) providerPartsCall {
 	return parts
 }
 
-func normalizeProviderPart(part map[string]any) map[string]any {
-	delete(part, "timestamp")
+// volatileTimestampProviders derive response-metadata timestamps from the HTTP
+// Date header, which differs on every replay.
+var volatileTimestampProviders = map[string]bool{"bedrock": true}
+
+func normalizeProviderPart(providerName string, part map[string]any) map[string]any {
 	switch part["type"] {
-	case string(provider.PartStreamStart):
-		warnings := part["warnings"]
-		if warnings == nil {
-			warnings = []any{}
-		}
-		return map[string]any{"type": part["type"], "warnings": warnings}
 	case string(provider.PartResponseMeta):
 		normalized := map[string]any{"type": part["type"]}
-		for _, key := range []string{"id", "modelId"} {
+		keys := []string{"id", "modelId"}
+		if !volatileTimestampProviders[providerName] {
+			keys = append(keys, "timestamp")
+		}
+		for _, key := range keys {
 			if value, ok := part[key]; ok {
 				normalized[key] = value
 			}
 		}
 		return normalized
 	case string(provider.PartError):
-		return map[string]any{"type": part["type"]}
+		normalized := map[string]any{"type": part["type"]}
+		if errValue, _ := part["error"].(map[string]any); errValue != nil {
+			if status, _ := errValue["statusCode"].(float64); status > 0 {
+				retryable, _ := errValue["isRetryable"].(bool)
+				normalized["error"] = map[string]any{"message": errValue["message"], "statusCode": status, "isRetryable": retryable}
+			}
+		}
+		return normalized
 	case string(provider.PartToolResult):
 		if isError, _ := part["isError"].(bool); !isError {
 			part["isError"] = false
 		}
-	case string(provider.PartFinish):
-		dropIterationCacheCreation(part)
 	}
 	return part
-}
-
-// dropIterationCacheCreation removes the nested cache_creation object from raw
-// usage iterations. The upstream schema strips it; Go passes raw usage through
-// verbatim, a documented superset (see PARITY.md).
-func dropIterationCacheCreation(finish map[string]any) {
-	usage, _ := finish["usage"].(map[string]any)
-	dropIterationCacheCreationFromUsage(usage["raw"])
-	metadata, _ := finish["providerMetadata"].(map[string]any)
-	anthropic, _ := metadata["anthropic"].(map[string]any)
-	dropIterationCacheCreationFromUsage(anthropic["usage"])
-}
-
-func dropIterationCacheCreationFromUsage(usage any) {
-	fields, _ := usage.(map[string]any)
-	iterations, _ := fields["iterations"].([]any)
-	for _, iteration := range iterations {
-		if entry, ok := iteration.(map[string]any); ok {
-			delete(entry, "cache_creation")
-		}
-	}
 }
 
 func loadExpectedProviderParts(path string) ([]providerPartsCall, error) {
@@ -241,7 +226,7 @@ func assertProviderParts(t *testing.T, tc TestCase, recorder *recordingModel) {
 		}
 		expected, err := loadExpectedProviderParts(filepath.Join(tc.Dir, providerPartsFile))
 		require.NoError(t, err, "loading %s", providerPartsFile)
-		actual := normalizeProviderCalls(t, recorder.recordedCalls())
+		actual := normalizeProviderCalls(t, tc.Provider, recorder.recordedCalls())
 		if mismatch := providerPartsMismatch(expected, actual); mismatch != "" {
 			require.Fail(t, "provider parts differ from upstream", mismatch)
 		}

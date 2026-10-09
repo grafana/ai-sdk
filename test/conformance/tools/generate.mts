@@ -548,7 +548,7 @@ async function generateExpected(tc: TestCase): Promise<void> {
     writeFileSync(outputPath, jsonl);
     writeRequestSnapshots(join(tc.dir, "expected-requests.jsonl"), requests);
     if (providerParts) {
-      writeProviderParts(join(tc.dir, PROVIDER_PARTS_FILE), providerParts.recorder.calls);
+      writeProviderParts(join(tc.dir, PROVIDER_PARTS_FILE), providerParts.recorder.calls, tc.provider);
     }
     if (usagePromise) {
       writeFileSync(usagePath, JSON.stringify(await usagePromise, null, 2) + "\n");

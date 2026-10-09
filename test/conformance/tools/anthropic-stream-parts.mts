@@ -42,7 +42,7 @@ async function generateCase(tc: SyntheticCase): Promise<Record<string, unknown>>
       });
       const parts: Record<string, unknown>[] = [];
       for await (const part of result.stream as any) parts.push(part);
-      return { name: tc.name, parts: normalizeCall(parts) };
+      return { name: tc.name, parts: normalizeCall(parts, "anthropic") };
     } catch {
       return { name: tc.name, callError: true };
     }

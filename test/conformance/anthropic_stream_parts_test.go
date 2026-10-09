@@ -105,7 +105,7 @@ func TestAnthropicSyntheticStreamParts(t *testing.T) {
 			for part := range result.Stream {
 				parts = append(parts, part)
 			}
-			actual := normalizeProviderCalls(t, [][]provider.StreamPart{parts})
+			actual := normalizeProviderCalls(t, "anthropic", [][]provider.StreamPart{parts})
 			if mismatch := providerPartsMismatch([]providerPartsCall{expectation.Parts}, actual); mismatch != "" {
 				require.Fail(t, "provider parts differ from upstream", mismatch)
 			}

@@ -67,25 +67,39 @@ func TestRecordingModel_RecordsEveryCallWithRawChunks(t *testing.T) {
 }
 
 func TestNormalizeProviderCalls(t *testing.T) {
+	stamp := time.Date(2026, 7, 31, 17, 49, 43, 0, time.UTC)
 	calls := [][]provider.StreamPart{{
 		{Type: provider.PartStreamStart},
-		{Type: provider.PartResponseMeta, ResponseID: "msg_1", ModelID: "model", Provider: "anthropic", Timestamp: time.Now(), ResponseHeaders: map[string]string{"a": "b"}, Usage: &provider.Usage{}},
+		{Type: provider.PartResponseMeta, ResponseID: "msg_1", ModelID: "model", Provider: "anthropic", Timestamp: stamp, ResponseHeaders: map[string]string{"a": "b"}, Usage: &provider.Usage{}},
 		{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "random-a", URL: "https://a.example"}},
 		{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "random-b", URL: "https://b.example"}},
-		{Type: provider.PartToolResult, ToolCallID: "toolu_1"},
-		{Type: provider.PartError, APICallError: &provider.APICallError{Message: "boom", IsRetryable: true, StatusCode: 529, URL: "http://x"}},
+		{Type: provider.PartToolCall, ToolCallID: "generated", ToolName: "mcp.lookup"},
+		{Type: provider.PartToolApprovalRequest, ToolCallID: "generated", ApprovalID: "approval"},
+		{Type: provider.PartToolCall, ToolCallID: "provided", ToolName: "lookup"},
+		{Type: provider.PartToolResult, ToolCallID: "provided"},
+		{Type: provider.PartError, APICallError: &provider.APICallError{Message: "Overloaded", IsRetryable: true, StatusCode: 529, URL: "http://x"}},
+		{Type: provider.PartError, APICallError: &provider.APICallError{Message: "go style", URL: "http://x"}},
 	}}
 
-	normalized := normalizeProviderCalls(t, calls)
+	normalized := normalizeProviderCalls(t, "anthropic", calls)
 
 	require.Len(t, normalized, 1)
 	parts := normalized[0]
 	assert.Equal(t, map[string]any{"type": "stream-start", "warnings": []any{}}, parts[0])
-	assert.Equal(t, map[string]any{"type": "response-metadata", "id": "msg_1", "modelId": "model"}, parts[1])
+	assert.Equal(t, map[string]any{"type": "response-metadata", "id": "msg_1", "modelId": "model", "timestamp": "2026-07-31T17:49:43.000Z"}, parts[1])
 	assert.Equal(t, "src-0", parts[2]["id"])
 	assert.Equal(t, "src-1", parts[3]["id"])
-	assert.Equal(t, false, parts[4]["isError"])
-	assert.Equal(t, map[string]any{"type": "error"}, parts[5])
+	assert.Equal(t, "mcp-0", parts[4]["toolCallId"])
+	assert.Equal(t, "mcp-0", parts[5]["toolCallId"])
+	assert.Equal(t, "provided", parts[6]["toolCallId"])
+	assert.Equal(t, false, parts[7]["isError"])
+	assert.Equal(t, map[string]any{"type": "error", "error": map[string]any{"message": "Overloaded", "statusCode": float64(529), "isRetryable": true}}, parts[8])
+	assert.Equal(t, map[string]any{"type": "error"}, parts[9], "errors without a status are compared by position only")
+
+	t.Run("volatile timestamps are dropped for Bedrock", func(t *testing.T) {
+		bedrock := normalizeProviderCalls(t, "bedrock", calls[:1])
+		assert.Equal(t, map[string]any{"type": "response-metadata", "id": "msg_1", "modelId": "model"}, bedrock[0][1])
+	})
 }
 
 func TestProviderPartsMismatch(t *testing.T) {
@@ -143,23 +157,4 @@ func TestLoadExpectedProviderParts(t *testing.T) {
 			assert.True(t, providerPartsProviders[name], name)
 		}
 	})
-}
-
-func TestNormalizeProviderPart_FinishIterationCacheCreation(t *testing.T) {
-	finish := map[string]any{
-		"type": "finish",
-		"usage": map[string]any{"raw": map[string]any{"iterations": []any{
-			map[string]any{"type": "message", "input_tokens": 1.0, "cache_creation": map[string]any{"ephemeral_5m_input_tokens": 0.0}},
-		}}},
-		"providerMetadata": map[string]any{"anthropic": map[string]any{"usage": map[string]any{"iterations": []any{
-			map[string]any{"type": "message", "cache_creation": map[string]any{}},
-		}}}},
-	}
-
-	normalized := normalizeProviderPart(finish)
-
-	rawIteration := normalized["usage"].(map[string]any)["raw"].(map[string]any)["iterations"].([]any)[0].(map[string]any)
-	assert.Equal(t, map[string]any{"type": "message", "input_tokens": 1.0}, rawIteration)
-	metaIteration := normalized["providerMetadata"].(map[string]any)["anthropic"].(map[string]any)["usage"].(map[string]any)["iterations"].([]any)[0].(map[string]any)
-	assert.Equal(t, map[string]any{"type": "message"}, metaIteration)
 }

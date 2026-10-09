@@ -31,28 +31,42 @@ export function recordProviderParts<T extends object>(model: T): { model: T; rec
   return { model: wrapped, recorder };
 }
 
-export function normalizeProviderPart(part: Part): Part {
-  const { timestamp: _timestamp, ...rest } = part;
-  switch (rest.type) {
-    case "stream-start":
-      return { type: "stream-start", warnings: rest.warnings ?? [] };
-    case "response-metadata":
+const VOLATILE_TIMESTAMP_PROVIDERS = new Set(["bedrock"]);
+
+export function normalizeProviderPart(part: Part, providerName: string): Part {
+  const plain = JSON.parse(JSON.stringify(part));
+  switch (plain.type) {
+    case "response-metadata": {
+      const { id, modelId, timestamp } = plain;
       return {
         type: "response-metadata",
-        ...(rest.id != null ? { id: rest.id } : {}),
-        ...(rest.modelId != null ? { modelId: rest.modelId } : {}),
+        ...(id != null ? { id } : {}),
+        ...(modelId != null ? { modelId } : {}),
+        ...(timestamp != null && !VOLATILE_TIMESTAMP_PROVIDERS.has(providerName) ? { timestamp } : {}),
       };
-    case "error":
-      return { type: "error" };
+    }
+    case "error": {
+      const error = part.error as any;
+      return typeof error?.statusCode === "number"
+        ? {
+            type: "error",
+            error: {
+              message: String(error.message),
+              statusCode: error.statusCode,
+              isRetryable: error.isRetryable === true,
+            },
+          }
+        : { type: "error" };
+    }
     case "tool-result":
-      return { ...JSON.parse(JSON.stringify(rest)), isError: rest.isError === true };
+      return { ...plain, isError: plain.isError === true };
     default:
-      return JSON.parse(JSON.stringify(rest));
+      return plain;
   }
 }
 
-export function normalizeCall(parts: Part[]): Part[] {
-  const normalized = parts.map(normalizeProviderPart);
+export function normalizeCall(parts: Part[], providerName: string): Part[] {
+  const normalized = parts.map(part => normalizeProviderPart(part, providerName));
   const generatedToolCallIds = new Map<string, string>();
   for (const part of normalized) {
     if (
@@ -73,10 +87,10 @@ export function normalizeCall(parts: Part[]): Part[] {
   });
 }
 
-export function serializeProviderParts(calls: Part[][]): string {
-  return calls.map(parts => JSON.stringify({ parts: normalizeCall(parts) })).join("\n") + "\n";
+export function serializeProviderParts(calls: Part[][], providerName: string): string {
+  return calls.map(parts => JSON.stringify({ parts: normalizeCall(parts, providerName) })).join("\n") + "\n";
 }
 
-export function writeProviderParts(path: string, calls: Part[][]): void {
-  writeFileSync(path, serializeProviderParts(calls));
+export function writeProviderParts(path: string, calls: Part[][], providerName: string): void {
+  writeFileSync(path, serializeProviderParts(calls, providerName));
 }
