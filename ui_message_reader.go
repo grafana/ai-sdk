@@ -71,7 +71,7 @@ type uiMessageReaderState struct {
 	fallbackGenerated    bool
 }
 
-func newUIMessageReaderState(cfg uiMessageReaderConfig) *uiMessageReaderState {
+func newUIMessageReaderState(cfg uiMessageReaderConfig) (*uiMessageReaderState, error) {
 	state := &uiMessageReaderState{
 		message: UIMessage{
 			Role:  RoleAssistant,
@@ -89,7 +89,45 @@ func newUIMessageReaderState(cfg uiMessageReaderConfig) *uiMessageReaderState {
 			state.message = cloneUIMessage(*cfg.initialMessage)
 		}
 	}
+	lastStepStart := -1
 	for i, part := range state.message.Parts {
+		if _, ok := part.(StepStartPart); ok {
+			lastStepStart = i
+		}
+	}
+	for i, part := range state.message.Parts {
+		if i > lastStepStart {
+			var fields toolPartFields
+			dynamic := false
+			switch p := part.(type) {
+			case ToolInvocationPart:
+				fields = toolPartFields(p)
+			case DynamicToolUIPart:
+				fields = toolPartFields(p)
+				dynamic = true
+			}
+			if fields.State == ToolStateInputStreaming {
+				var raw string
+				if fields.RawInput != nil {
+					var text *string
+					if err := json.Unmarshal(fields.RawInput, &text); err != nil || text == nil {
+						return nil, fmt.Errorf("aisdk: tool call %q has non-string streaming raw input", fields.ToolCallID)
+					}
+					raw = *text
+				}
+				toolMetadata, err := json.Marshal(fields.ToolMetadata)
+				if err != nil {
+					return nil, fmt.Errorf("aisdk: restoring tool metadata: %w", err)
+				}
+				if fields.ToolMetadata == nil {
+					toolMetadata = nil
+				}
+				state.partialToolCalls[fields.ToolCallID] = &partialToolCallState{
+					text: raw, toolName: fields.ToolName, dynamic: dynamic,
+					title: fields.Title, toolMetadata: toolMetadata,
+				}
+			}
+		}
 		if data, ok := part.(DataPart); ok && data.ID != "" {
 			key := data.DataName + "\x00" + data.ID
 			if _, exists := state.dataPartIndex[key]; !exists {
@@ -97,7 +135,7 @@ func newUIMessageReaderState(cfg uiMessageReaderConfig) *uiMessageReaderState {
 			}
 		}
 	}
-	return state
+	return state, nil
 }
 
 func (s *uiMessageReaderState) ensureID() {
@@ -281,7 +319,16 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 			next.Title = *partial.title
 			next.titlePresent = true
 		}
-		return true, s.upsertToolPart(next, partial.dynamic, ToolStateInputStreaming)
+		if err := s.upsertToolPart(next, partial.dynamic, ToolStateInputStreaming); err != nil {
+			return false, err
+		}
+		idx, _ := s.findCurrentStepToolPart(chunk.ToolCallID)
+		raw, err := json.Marshal(partial.text)
+		if err != nil {
+			return false, fmt.Errorf("aisdk: marshaling partial tool input: %w", err)
+		}
+		s.updateToolAt(idx, func(tp *toolPartFields) { tp.RawInput = raw })
+		return true, nil
 
 	case ChunkToolInputAvailable:
 		return true, s.upsertToolPart(chunk, chunk.Dynamic != nil && *chunk.Dynamic, ToolStateInputAvailable)
@@ -342,6 +389,12 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		return true, nil
 
 	case ChunkToolOutputAvailable:
+		var toolMetadata map[string]json.RawMessage
+		if chunk.ToolMetadata != nil {
+			if err := json.Unmarshal(chunk.ToolMetadata, &toolMetadata); err != nil {
+				return false, fmt.Errorf("aisdk: parsing tool metadata: %w", err)
+			}
+		}
 		idx, ok := s.findToolPart(chunk.ToolCallID)
 		if !ok {
 			return false, fmt.Errorf("aisdk: received tool-output-available for missing tool call %q", chunk.ToolCallID)
@@ -354,8 +407,9 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 			if chunk.Preliminary || chunk.preliminaryPresent {
 				tp.Preliminary = new(chunk.Preliminary)
 			}
-			if !isDynamicToolPart(s.message.Parts[idx]) {
-				tp.RawInput = nil
+			tp.RawInput = nil
+			if toolMetadata != nil {
+				tp.ToolMetadata = toolMetadata
 			}
 			if chunk.ProviderExecuted || chunk.providerExecutedPresent {
 				tp.ProviderExecuted = chunk.ProviderExecuted
@@ -367,6 +421,12 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		return true, nil
 
 	case ChunkToolOutputError:
+		var toolMetadata map[string]json.RawMessage
+		if chunk.ToolMetadata != nil {
+			if err := json.Unmarshal(chunk.ToolMetadata, &toolMetadata); err != nil {
+				return false, fmt.Errorf("aisdk: parsing tool metadata: %w", err)
+			}
+		}
 		idx, ok := s.findToolPart(chunk.ToolCallID)
 		if !ok {
 			return false, fmt.Errorf("aisdk: received tool-output-error for missing tool call %q", chunk.ToolCallID)
@@ -376,6 +436,12 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 			tp.Output = nil
 			tp.Preliminary = nil
 			tp.ErrorText = new(chunk.ErrorText)
+			if isDynamicToolPart(s.message.Parts[idx]) {
+				tp.RawInput = nil
+			}
+			if toolMetadata != nil {
+				tp.ToolMetadata = toolMetadata
+			}
 			if chunk.ProviderExecuted || chunk.providerExecutedPresent {
 				tp.ProviderExecuted = chunk.ProviderExecuted
 			}
@@ -502,15 +568,9 @@ func (s *uiMessageReaderState) upsertToolPart(chunk UIMessageChunk, dynamic bool
 		tp.Output = nil
 		tp.ErrorText = nil
 		tp.Preliminary = nil
-		if !dynamic {
-			tp.RawInput = nil
-		}
+		tp.RawInput = nil
 		if state == ToolStateOutputError {
 			tp.ErrorText = new(chunk.ErrorText)
-			if !dynamic {
-				tp.RawInput = tp.Input
-				tp.Input = nil
-			}
 		} else if title := chunkToolTitle(chunk); title != nil {
 			tp.Title = title
 		}

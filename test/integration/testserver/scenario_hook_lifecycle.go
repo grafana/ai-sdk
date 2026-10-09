@@ -99,6 +99,15 @@ func handleChatData(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type hookHeaderFlushingWriter struct{ http.ResponseWriter }
+
+func (w hookHeaderFlushingWriter) WriteHeader(status int) {
+	w.ResponseWriter.WriteHeader(status)
+	flushHookResponse(w.ResponseWriter)
+}
+
+func (w hookHeaderFlushingWriter) Flush() { flushHookResponse(w.ResponseWriter) }
+
 func handleHookReconnect(w http.ResponseWriter, r *http.Request) {
 	if r.PathValue("id") != "chat-interop" {
 		http.NotFound(w, r)
@@ -106,7 +115,24 @@ func handleHookReconnect(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.PathValue("name") {
 	case "reconnect-stream":
-		if err := writeHookUIChunks(w, hookTextChunks("assistant-reconnected", "Reconnected response")...); err != nil && r.Context().Err() == nil {
+		stream := make(chan aisdk.UIMessageChunk, 1)
+		go func() {
+			defer close(stream)
+			if !waitForContext(r.Context(), controlledStreamStartDelay) {
+				return
+			}
+			for _, chunk := range hookTextChunks("assistant-reconnected", "Reconnected response") {
+				if chunk.Type == aisdk.ChunkTextEnd && !waitForContext(r.Context(), controlledStreamStartDelay) {
+					return
+				}
+				select {
+				case stream <- chunk:
+				case <-r.Context().Done():
+					return
+				}
+			}
+		}()
+		if err := aisdk.PipeUIMessageStreamToResponse(hookHeaderFlushingWriter{w}, stream); err != nil && r.Context().Err() == nil {
 			log.Printf("chat reconnect stream: %v", err)
 		}
 	case "reconnect-empty":

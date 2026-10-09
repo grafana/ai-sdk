@@ -1197,6 +1197,17 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 			// prompt format only accepts approval responses for provider-executed tools.
 			continue
 		case provider.ContentPartTypeCustom:
+			if p.Kind == anthropicFallbackKind {
+				fallback, valid := convertFallbackContent(p.ProviderOptions)
+				if !valid {
+					*warnings = append(*warnings, provider.Warning{
+						Type: provider.WarnOther, Message: "anthropic fallback metadata must include from.model and to.model",
+					})
+					continue
+				}
+				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{OfFallback: fallback})
+				continue
+			}
 			*warnings = append(*warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "customContent",
