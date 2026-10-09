@@ -218,11 +218,12 @@ func assembleResponseMessage(messageID string, chunks []UIMessageChunk) (UIMessa
 
 func assembleResponseMessageWithInitial(messageID string, chunks []UIMessageChunk, initial *UIMessage) (UIMessage, error) {
 	cfg := uiMessageReaderConfig{generateID: func() string { return messageID }}
-	state := newUIMessageReaderState(cfg)
 	if initial != nil && initial.Role == RoleAssistant {
-		state.message = cloneUIMessage(*initial)
-	} else {
-		state.message.ID = messageID
+		cfg.initialMessage = initial
+	}
+	state, err := newUIMessageReaderState(cfg)
+	if err != nil {
+		return UIMessage{}, err
 	}
 	if state.message.ID == "" {
 		state.message.ID = messageID

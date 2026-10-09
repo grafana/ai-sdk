@@ -41,6 +41,12 @@ func unmarshalToolPart(data []byte) (toolPartJSON, error) {
 	if err := json.Unmarshal(data, &p); err != nil {
 		return p, err
 	}
+	if p.State == ToolStateInputStreaming && p.RawInput != nil {
+		var raw *string
+		if err := json.Unmarshal(p.RawInput, &raw); err != nil || raw == nil {
+			return p, fmt.Errorf("aisdk: streaming raw input must be a JSON string")
+		}
+	}
 	for _, metadata := range []provider.ProviderMetadata{p.CallProviderMetadata, p.ResultProviderMetadata} {
 		if err := validateProviderMetadata(metadata); err != nil {
 			return p, err

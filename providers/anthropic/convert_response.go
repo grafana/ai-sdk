@@ -21,6 +21,14 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			return nil, err
 		}
 		switch block.Type {
+		case "fallback":
+			metadata, err := marshalFallbackMetadata(block.AsFallback())
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, provider.GenerateContentPart{
+				Type: provider.ContentCustom, Kind: anthropicFallbackKind, ProviderMetadata: metadata,
+			})
 		case "text":
 			if !usesJsonResponseTool {
 				var webSearchCitations []json.RawMessage
