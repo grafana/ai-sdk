@@ -2,15 +2,15 @@
 
 ## Branch and dependency
 
-Implemented on `jeff/self-hosted-gateway-auth`, based on draft #369 at `323b6524f1c02cf2f4cf0a91b61e409a3741c88f` (`nrbrd/byok`, base `nrbrd/failure-visibility`). Restacked from `55a80621b3c27d966e1bb8b86cb6b67a65cad844` after the dependency moved; earlier-base results were superseded by the checks below. Import and documentation conflicts preserved upstream attribution tests and new listener defaults (private 8082, Cloud 8080, operational 8081).
+Implemented on `jeff/self-hosted-gateway-auth`, now based on open, ready-for-review #369 at `ea5bfa03bf062ebf344d63d5f769b52d6750d85a` (`nrbrd/byok`, base `nrbrd/failure-visibility`). Restacked from `323b6524f1c02cf2f4cf0a91b61e409a3741c88f`; the earlier `55a80621` base is also superseded. The single test conflict preserves both the dependency's ordinary account-decoding assertions and JWT/static-key policy isolation. Upstream native diagnostic echoes, field-based logging policy and listener defaults remain intact (private 8082, Cloud 8080, operational 8081).
 
-#367 remained open at `f45a83be727999cceb2524dfc331f8c0f5a98c90`; #368 remained open at `fca4aeb33a4cc9a6787972a90aaaaca20dbf9c0a`. #248 remains a separate draft startup/router overlap, not a prerequisite. The inherited active `activate-gateway-auth-and-request-byok` change is unchanged. Its deployment gate and eventual spec composition remain owned by the dependency; archiving this standalone capability does not satisfy that gate or establish Cloud deployment readiness.
+#367 is merged; #368 remains open at `d17f449d5671c347594c90def582c9707c9eb5b8`. #248 remains separate open work (now the bounded OpenAI Chat Completions adapter), not a prerequisite. The dependency has archived `activate-gateway-auth-and-request-byok` with external deployment task 4.1 explicitly unchecked. Its nine synced specs and archive are inherited unchanged; this feature does not establish Cloud deployment readiness.
 
 The exact registered upstream source `eb77f09e3c06c28e860d92e0de941b143c2eecec` was checked out and its Gateway 4.0.103 source/tests inspected. Explicit `createGateway({apiKey})` still sends Bearer credentials. No upstream pins, generated versions or changelogs were changed.
 
 ## Passing local checks
 
-On the final dependency base, broad checks completed before the final scalar-tag fix; affected config/process race tests, full source integration, lint and docs checks were rerun afterward:
+The original implementation passed the following checks on dependency base `323b6524`; subsequent restack validation is recorded separately below:
 
 - `mise run check` (format, vet, lint, docs, candidate SDK/provider tests including Grafana client tests, and boundary).
 - `mise run build`, `mise run test-ai-gateway`, `mise run test-integration`.
@@ -36,10 +36,24 @@ The independent reviewer rechecked fixes and the restacked dependency compositio
 
 ## Remaining acceptance gap
 
-`mise run test-ai-gateway-image-source` reported one explicit skip: Linux Docker is required. The existing source-image test now includes production static-key discovery, unauthorized requests and Cloud-port closure inside the container network, using native production endpoints and disabled export. Neither that production image bootstrap nor existing image source/license packaging assertions were executed locally. Linux Docker CI acceptance remains outstanding. No external CI, deployment, merge, push, release or comments were performed.
+`mise run test-ai-gateway-image-source` reported one explicit skip: Linux Docker is required. The existing source-image test now includes production static-key discovery, unauthorized requests and Cloud-port closure inside the container network, using native production endpoints and disabled export. Neither that production image bootstrap nor existing image source/license packaging assertions were executed locally. Linux Docker CI acceptance remains outstanding. These local checks do not establish external CI or deployment acceptance.
 
 ## Temporary-buffer cleanup follow-up
 
 Both static-key hashing paths now validate before copying into a bounded 4096-byte owned buffer and explicitly clear populated bytes after hashing. Environment values and HTTP headers remain unchanged; this makes no compiler/runtime/hash-internal memory-erasure claim. Focused tests verify zeroed buffer contents, exact digests, invalid/oversized keys, real environment preservation and both header forms. Candidate auth/process/service race tests, source integration (78 command tests), repository lint and docs checks passed after the follow-up, using the previously documented test-only TLS override. Upstream client wire behavior and keyEnv provisioning remain unchanged.
 
 Pinned Go 1.27.1 darwin/arm64 test-binary disassembly shows `digestAndClear` calling SHA-256 and its deferred cleanup calling `runtime.memclrNoHeapPointers`; this confirms emitted cleanup in that local build, not a cross-toolchain secure-erasure guarantee.
+
+## Dependency and cleanup reviews before draft publication
+
+Fresh read-only review of #369 at `ea5bfa03` found no concrete code findings in auth/account boundaries, listener lifecycle, BYOK construction and independent observation policies. This was source review against the dependency diff and exact pinned upstream, not new execution of its standalone branch or deployment validation. Its current GitHub checks pass; image jobs are conditionally skipped.
+
+The independent auth reviewer also reviewed the application-owned buffer cleanup and reran focused auth/process tests, finding no actionable issues. Environment-backed provisioning and HTTP headers are preserved; only temporary owned copies are cleared. No GitHub review comments were posted.
+
+## Final restack validation
+
+On dependency `ea5bfa03`, `mise run check`, `mise run build`, `mise run parity-check`, full candidate Gateway internal race tests and `mise run test-ai-gateway-source-integration` pass (47 runtime integration tests and 79 command tests, zero skips). Workflow/release checks, Gateway workspace/boundary, merged pins, module-policy and SDK-without-Gateway isolation checks pass. Strict OpenSpec validation passes all 99 specs, with no active changes.
+
+The first frontend integration run passed 139/140 tests; `useChat delivers updated metadata and transient data without retaining it` observed the updated message but its React history probe had not recorded the updated metadata. A separate full rerun passed all 140/140 without source changes. This non-reproducing test failure is recorded rather than silently treated as first-run success. The macOS/toolchain accommodations listed above remain test-only.
+
+The restacked image-source check again explicitly skipped its one test because this host is not Linux with Docker. Production container bootstrap and packaging acceptance remain unexecuted here.
