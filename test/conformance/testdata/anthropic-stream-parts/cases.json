@@ -1,0 +1,730 @@
+[
+  {
+    "name": "multiple-deltas-one-message",
+    "description": "SYNTHETIC: One message with three message_delta events before message_stop.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "Hello"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": null,
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 1
+        }
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 3
+        }
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 5
+        }
+      },
+      {
+        "type": "message_stop"
+      }
+    ]
+  },
+  {
+    "name": "safeguard-verdict-across-deltas",
+    "description": "SYNTHETIC: Safeguard verdict arrives on the middle of three deltas.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "Hello"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": null,
+          "stop_sequence": null,
+          "safeguard_results": null
+        },
+        "usage": {
+          "output_tokens": 1
+        }
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "safeguard_results": [
+            {
+              "type": "dangerous_tool_use",
+              "status": {
+                "type": "available",
+                "tool_uses": {
+                  "toolu_01": {
+                    "type": "evaluated",
+                    "outcome": "flagged",
+                    "explanation": "[Data Exfiltration]"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "usage": {
+          "output_tokens": 3
+        }
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null,
+          "safeguard_results": null
+        },
+        "usage": {
+          "output_tokens": 5
+        }
+      },
+      {
+        "type": "message_stop"
+      }
+    ]
+  },
+  {
+    "name": "message-without-delta",
+    "description": "SYNTHETIC: A message with prepopulated tool use and message_stop, but no message_delta.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_01",
+              "name": "lookup",
+              "input": {
+                "q": "x"
+              }
+            }
+          ],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "message_stop"
+      }
+    ]
+  },
+  {
+    "name": "text-without-delta",
+    "description": "SYNTHETIC: A message with text content and message_stop, but no message_delta.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "Hello"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_stop"
+      }
+    ]
+  },
+  {
+    "name": "consecutive-messages",
+    "description": "SYNTHETIC: Two complete messages in one response body.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "One"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "tool_use",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 3
+        }
+      },
+      {
+        "type": "message_stop"
+      },
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_2",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "Two"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 4
+        }
+      },
+      {
+        "type": "message_stop"
+      }
+    ]
+  },
+  {
+    "name": "delta-less-message-after-delta-message",
+    "description": "SYNTHETIC: The second message has no delta and inherits the stream-level finish reason.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_01",
+              "name": "lookup",
+              "input": {
+                "q": "x"
+              }
+            }
+          ],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "tool_use",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 3
+        }
+      },
+      {
+        "type": "message_stop"
+      },
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_2",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_01",
+              "name": "lookup",
+              "input": {
+                "q": "x"
+              }
+            }
+          ],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "message_stop"
+      }
+    ]
+  },
+  {
+    "name": "end-of-stream-after-delta",
+    "description": "SYNTHETIC: The body ends after message_delta without message_stop.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "Hello"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 5
+        }
+      }
+    ]
+  },
+  {
+    "name": "error-between-delta-and-stop",
+    "description": "SYNTHETIC: An error frame between message_delta and message_stop, followed by message_stop.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "Hello"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 5
+        }
+      },
+      {
+        "type": "error",
+        "error": {
+          "type": "overloaded_error",
+          "message": "Overloaded"
+        }
+      },
+      {
+        "type": "message_stop"
+      }
+    ]
+  },
+  {
+    "name": "error-without-stop",
+    "description": "SYNTHETIC: An error frame after message_delta, then the body ends.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "Hello"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 5
+        }
+      },
+      {
+        "type": "error",
+        "error": {
+          "type": "overloaded_error",
+          "message": "Overloaded"
+        }
+      }
+    ]
+  },
+  {
+    "name": "error-before-delta",
+    "description": "SYNTHETIC: An error frame after content, without delta or stop.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "Hello"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "error",
+        "error": {
+          "type": "overloaded_error",
+          "message": "Overloaded"
+        }
+      }
+    ]
+  },
+  {
+    "name": "error-as-first-frame",
+    "description": "SYNTHETIC: The first frame of the response is an error frame.",
+    "events": [
+      {
+        "type": "error",
+        "error": {
+          "type": "overloaded_error",
+          "message": "Overloaded"
+        }
+      }
+    ]
+  },
+  {
+    "name": "overlapping-message-start",
+    "description": "SYNTHETIC: A different message starts while the first is still open.",
+    "events": [
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_1",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "content_block_start",
+        "index": 0,
+        "content_block": {
+          "type": "text",
+          "text": ""
+        }
+      },
+      {
+        "type": "content_block_delta",
+        "index": 0,
+        "delta": {
+          "type": "text_delta",
+          "text": "Hello"
+        }
+      },
+      {
+        "type": "content_block_stop",
+        "index": 0
+      },
+      {
+        "type": "message_start",
+        "message": {
+          "id": "msg_2",
+          "type": "message",
+          "role": "assistant",
+          "model": "claude-sonnet-4-5",
+          "content": [],
+          "stop_reason": null,
+          "stop_sequence": null,
+          "usage": {
+            "input_tokens": 10,
+            "output_tokens": 1
+          }
+        }
+      },
+      {
+        "type": "message_delta",
+        "delta": {
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "usage": {
+          "output_tokens": 5
+        }
+      },
+      {
+        "type": "message_stop"
+      }
+    ]
+  }
+]

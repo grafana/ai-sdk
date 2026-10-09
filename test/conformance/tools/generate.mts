@@ -20,6 +20,13 @@ import {
   stepCountIs,
   type LanguageModelUsage,
 } from "ai";
+import { generateAnthropicStreamParts } from "./anthropic-stream-parts.mts";
+import {
+  PROVIDER_PARTS_FILE,
+  PROVIDER_PARTS_PROVIDERS,
+  recordProviderParts,
+  writeProviderParts,
+} from "./provider-parts.mts";
 import {
   type RequestSnapshot,
   type TestCase,
@@ -494,7 +501,11 @@ async function generateExpected(tc: TestCase): Promise<void> {
     // the @ai-sdk/{anthropic,amazon-bedrock} subdependencies and the root
     // @ai-sdk/provider used by `ai`. The runtime contract is the same; only
     // the TS path differs between hoisted package copies.
-    const model = createModel(tc.provider, cfg.model, port) as any;
+    const baseModel = createModel(tc.provider, cfg.model, port) as any;
+    const providerParts = PROVIDER_PARTS_PROVIDERS.has(tc.provider)
+      ? recordProviderParts(baseModel)
+      : undefined;
+    const model = providerParts?.model ?? baseModel;
     const tools = buildTools(cfg.tools, cfg.providerTools);
     const stopWhenStepCount = cfg.stopWhenStepCount ?? 1;
     const prompt = cfg.prompt ?? "test";
@@ -536,6 +547,9 @@ async function generateExpected(tc: TestCase): Promise<void> {
     const outputPath = join(tc.dir, "expected.jsonl");
     writeFileSync(outputPath, jsonl);
     writeRequestSnapshots(join(tc.dir, "expected-requests.jsonl"), requests);
+    if (providerParts) {
+      writeProviderParts(join(tc.dir, PROVIDER_PARTS_FILE), providerParts.recorder.calls);
+    }
     if (usagePromise) {
       writeFileSync(usagePath, JSON.stringify(await usagePromise, null, 2) + "\n");
     }
@@ -564,16 +578,17 @@ async function main() {
   const scenarioFilter = scenarioIdx !== -1 ? process.argv[scenarioIdx + 1] : null;
 
   let cases = discoverTestCases();
+  const includeSyntheticParts = !scenarioFilter || "anthropic-stream-parts".includes(scenarioFilter);
 
   if (scenarioFilter) {
     cases = cases.filter((tc) => tc.name.includes(scenarioFilter));
-    if (cases.length === 0) {
+    if (cases.length === 0 && !includeSyntheticParts) {
       console.error(`No test cases matching: ${scenarioFilter}`);
       process.exit(1);
     }
   }
 
-  if (cases.length === 0) {
+  if (cases.length === 0 && !includeSyntheticParts) {
     console.log("No test cases found.");
     return;
   }
@@ -585,6 +600,15 @@ async function main() {
     console.log(`Generating: ${tc.name}`);
     try {
       await generateExpected(tc);
+    } catch (err) {
+      console.error(`  ERROR: ${err}`);
+      errors++;
+    }
+  }
+
+  if (includeSyntheticParts) {
+    try {
+      await generateAnthropicStreamParts();
     } catch (err) {
       console.error(`  ERROR: ${err}`);
       errors++;
