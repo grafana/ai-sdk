@@ -80,7 +80,7 @@ func TestStreamAdapter_SafeguardResults(t *testing.T) {
 		{name: "start alone is ignored", startExtra: `,"safeguard_results":` + verdict, deltas: []string{"", "null"}, wantFinishes: []string{""}},
 		{name: "last non-null", deltas: []string{"null", verdict, "null"}, wantFinishes: []string{wantVerdict}},
 		{name: "empty replaces verdict", deltas: []string{verdict, "[]"}, wantFinishes: []string{"[]"}},
-		{name: "reset on next message", deltas: []string{verdict}, nextMessage: true, wantFinishes: []string{wantVerdict, ""}},
+		{name: "verdict carries to the next message", deltas: []string{verdict}, nextMessage: true, wantFinishes: []string{wantVerdict, wantVerdict}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			events := []anthropic.BetaRawMessageStreamEventUnion{unmarshalEvent(t, start("msg_1", tc.startExtra))}
@@ -212,6 +212,65 @@ func TestStreamAdapter_FinishLifecycle(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStreamAdapter_MetadataIsStreamLevel(t *testing.T) {
+	start := func(id, extra string) string {
+		return `{"type":"message_start","message":{"id":"` + id + `","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"usage":{"input_tokens":1,"output_tokens":0}` + extra + `}}`
+	}
+	const (
+		verdict = `[{"type":"dangerous_tool_use","status":{"type":"available"}}]`
+		stop    = `{"type":"message_stop"}`
+		first   = `{"type":"message_delta","delta":{"stop_reason":"stop_sequence","stop_sequence":"END","safeguard_results":` + verdict + `},"context_management":{"applied_edits":[]},"usage":{"output_tokens":3}}`
+		second  = `{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"safeguard_results":null},"usage":{"output_tokens":4}}`
+	)
+
+	finishMetadata := func(t *testing.T, events ...string) []map[string]json.RawMessage {
+		t.Helper()
+		var parsed []anthropic.BetaRawMessageStreamEventUnion
+		for _, raw := range events {
+			parsed = append(parsed, unmarshalEvent(t, raw))
+		}
+		var out []map[string]json.RawMessage
+		for _, part := range collectParts(parsed) {
+			if part.Type != provider.PartFinish {
+				continue
+			}
+			var metadata map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(part.ProviderMetadata["anthropic"], &metadata))
+			out = append(out, metadata)
+		}
+		return out
+	}
+
+	t.Run("a message with a delta that omits them keeps the verdict and context management but not the stop sequence", func(t *testing.T) {
+		finishes := finishMetadata(t, start("msg_1", ""), first, stop, start("msg_2", ""), second, stop)
+		require.Len(t, finishes, 2)
+		assert.JSONEq(t, verdict, string(finishes[1]["safeguardResults"]))
+		assert.JSONEq(t, `null`, string(finishes[1]["stopSequence"]))
+		assert.NotEqual(t, `null`, string(finishes[1]["contextManagement"]))
+	})
+
+	t.Run("a message without a delta repeats the previous metadata", func(t *testing.T) {
+		finishes := finishMetadata(t, start("msg_1", ""), first, stop, start("msg_2", ""), stop)
+		require.Len(t, finishes, 2)
+		assert.JSONEq(t, verdict, string(finishes[1]["safeguardResults"]))
+		assert.JSONEq(t, `"END"`, string(finishes[1]["stopSequence"]))
+	})
+
+	t.Run("a later verdict replaces the carried one", func(t *testing.T) {
+		replacement := `{"type":"message_delta","delta":{"stop_reason":"end_turn","safeguard_results":[]},"usage":{"output_tokens":4}}`
+		finishes := finishMetadata(t, start("msg_1", ""), first, stop, start("msg_2", ""), replacement, stop)
+		require.Len(t, finishes, 2)
+		assert.JSONEq(t, `[]`, string(finishes[1]["safeguardResults"]))
+	})
+
+	t.Run("a container on message start is kept until a delta replaces it", func(t *testing.T) {
+		container := `,"container":{"id":"container_1","expires_at":"2026-08-03T15:00:00Z"}`
+		finishes := finishMetadata(t, start("msg_1", container), stop)
+		require.Len(t, finishes, 1)
+		assert.Contains(t, string(finishes[0]["container"]), "container_1")
+	})
 }
 
 func TestSafeguardsStreamTextProviderMetadata(t *testing.T) {

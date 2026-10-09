@@ -38,7 +38,6 @@ type streamAdapter struct {
 	isJsonResponseFromTool bool
 	usage                  anthropicUsage
 	metadataFields         map[string]json.RawMessage
-	safeguardResults       json.RawMessage
 	finishReason           provider.FinishReason
 	messageOpen            bool
 	activeMessageID        string
@@ -81,9 +80,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.resetUsage(msg.Usage); err != nil {
 			return err
 		}
-		a.metadataFields = messageMetadataFields(msg.RawJSON())
-		delete(a.metadataFields, "safeguard_results")
-		a.safeguardResults = nil
+		a.carryMessageStartMetadata(msg.RawJSON())
 		if msg.StopReason != "" {
 			a.finishReason = a.mapStopReason(msg.StopReason)
 		}
@@ -482,10 +479,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			if _, err := mapSafeguardResults(value); err != nil {
 				return err
 			}
-			a.safeguardResults = value
-		}
-		if len(a.safeguardResults) > 0 {
-			a.metadataFields["safeguard_results"] = a.safeguardResults
+			a.metadataFields["safeguard_results"] = value
 		}
 		a.finishReason = a.mapStopReason(e.Delta.StopReason)
 
@@ -509,6 +503,19 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		}
 	}
 	return nil
+}
+
+// carryMessageStartMetadata applies what upstream reads from message_start
+// into metadata that lives for the whole stream: only a non-null container.
+// Everything else, including a verdict, stays until a later delta replaces it.
+func (a *streamAdapter) carryMessageStartMetadata(raw string) {
+	if a.metadataFields == nil {
+		a.metadataFields = map[string]json.RawMessage{}
+	}
+	container := messageMetadataFields(raw)["container"]
+	if len(container) > 0 && !bytes.Equal(bytes.TrimSpace(container), []byte("null")) {
+		a.metadataFields["container"] = container
+	}
 }
 
 func (a *streamAdapter) mapStopReason(reason anthropic.BetaStopReason) provider.FinishReason {
