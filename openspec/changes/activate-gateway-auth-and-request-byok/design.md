@@ -13,10 +13,9 @@ The upstream reference remains Gateway 4.0.96 / ai 7.0.118 / Provider 4.0.18 at
 `5d12eaa6caa193d3901cbab98a734403eb6bf622`. Client projection is not an oracle
 for Vercel service authentication, retry policy or deployed Grafana isolation.
 
-The original research inspected deployment-tools `5e3acd0dc1b7aa32cc5391131e50d3e59aa7c2ea`,
-backend-enterprise `4d042d837c312b80f78e341558dc0f7b38059ef4`, auth token/exchange
-documentation and the pinned consuming authlib verifier. These are repository
-observations, not live Kubernetes evidence.
+The design references token/exchange documentation, the pinned authlib verifier
+and the existing edge/deployment contract. Repository observations do not establish
+live Kubernetes behavior.
 
 ## Goals / Non-Goals
 
@@ -28,7 +27,9 @@ routing. Do not absorb #318–#324/#280.
 
 ## Decisions
 
-- Bind private JWT, proxy-only Cloud and operational listeners before readiness.
+- Keep Cloud on port 8080 and operations on 8081; add private JWT on 8082 by
+  default. This preserves existing Cloud/operational wiring. Bind all listeners
+  before readiness.
   Replace auth.mode and the combined listener; partial startup closes all binds.
   Shutdown withdraws readiness and cancels both populations under one deadline.
 - Use authlib signature/type/expiry/audience verification against explicit regional
@@ -80,7 +81,7 @@ public status/type/code/message fields. No listener/route redesign is included.
 
 ## Risks / Trade-offs
 
-- A reachable trusted-header port can be spoofed: deployment-tools must deny
+- A reachable trusted-header port can be spoofed: deployment policy must deny
   direct Cloud-port access by internal JWT workloads and all non-edge callers.
 - Any trusted ai-sdk JWT grants configured access: provisioning that audience is
   an authorization decision; private networking does not replace verification.
@@ -92,7 +93,7 @@ public status/type/code/message fields. No listener/route redesign is included.
 ## Migration Plan
 
 No active-consumer compatibility layer is required. Update application flags,
-Docker/CI probes and docs together. Deliver the separate Services/JWKS/NetworkPolicy
+Docker/CI probes and docs together. Deliver the separate same-cluster Services/JWKS/NetworkPolicy
 handoff before activating an environment; an incomplete deployment must remain
 unavailable rather than restore Cloud access to configured accounts.
 

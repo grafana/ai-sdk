@@ -33,13 +33,17 @@ Configured secret resolution and catalog construction SHALL have no dependency p
 
 
 ### Requirement: Simultaneous isolated authentication entry points
-One Gateway process SHALL expose a private JWT API listener, a trusted-Cloud API listener and an operational listener. API listeners SHALL serve the existing exact ProviderWire paths with method and encoded-path checks. Operational routes SHALL exist only on the operational listener. The command SHALL remove exclusive startup authentication modes and SHALL NOT fall back between authenticators.
+One Gateway process SHALL expose a private JWT API listener, a trusted-Cloud API listener and an operational listener. Defaults SHALL retain the Cloud API on port 8080 and operations on port 8081, with private JWT access on port 8082. Operators MAY configure distinct alternative addresses. API listeners SHALL serve the existing exact ProviderWire paths with method and encoded-path checks. Operational routes SHALL exist only on the operational listener. The command SHALL remove exclusive startup authentication modes and SHALL NOT fall back between authenticators.
 
 The private listener SHALL accept exactly one access-token credential, through X-Access-Token or Authorization Bearer, and SHALL reject both together, duplicate/case-colliding/coalesced credentials and supplied Cloud identity assertions. It SHALL verify access-token type, signature, expiry, audience ai-sdk and supported namespace before protected body reads. No service-identity allowlist or mandatory serviceIdentity claim SHALL apply; verified service/subject attributes SHALL be retained when available without inventing an identity. Optional X-Grafana-Id SHALL verify and bind to the access-token namespace; an ID token alone SHALL NOT authenticate.
 
 #### Scenario: Both client populations use one process
 - **WHEN** valid private JWT and trusted Cloud requests arrive concurrently
 - **THEN** both SHALL authenticate on their respective listeners without changing process configuration or each other's principal
+
+#### Scenario: Existing Cloud and operational ports remain stable
+- **WHEN** the command uses default listener settings
+- **THEN** the Cloud and operational endpoints SHALL remain on ports 8080 and 8081, while private JWT requests use the separate port 8082
 
 #### Scenario: Internal callers use different JWT header forms
 - **WHEN** Go sends X-Access-Token or pinned Vercel sends the same valid access token as an Authorization bearer credential to the private listener

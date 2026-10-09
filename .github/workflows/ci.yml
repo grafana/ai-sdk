@@ -274,12 +274,12 @@ jobs:
             --env GRAFANA_AI_GATEWAY_CONFIG_FILE=/etc/gateway/models.yaml \
             --env ANTHROPIC_API_KEY=smoke-test-not-a-secret \
             ai-gateway:ci --deployment.mode=development --auth.unsafe \
-            --server.private-listen-address=127.0.0.1:8080 \
-            --server.cloud-listen-address=127.0.0.1:8081 \
-            --server.operational-listen-address=127.0.0.1:8082)
+            --server.private-listen-address=127.0.0.1:8082 \
+            --server.cloud-listen-address=127.0.0.1:8080 \
+            --server.operational-listen-address=127.0.0.1:8081)
           for ((attempt = 0; attempt < 30; attempt++)); do
             if docker exec "$container" timeout 2 bash -c '
-              exec 3<>/dev/tcp/127.0.0.1/8082
+              exec 3<>/dev/tcp/127.0.0.1/8081
               printf "GET /ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3
               read -r status <&3
               [[ "$status" == *" 200 "* ]]

@@ -19,4 +19,4 @@
 
 ## 4. External activation gate
 
-- [ ] 4.1 In separately authorized deployment-tools work, assign an owner/link, validate rendered Services/NetworkPolicy and obtain deployed positive/negative isolation evidence before activation.
+- [ ] 4.1 In separately authorized same-cluster deployment work, validate private Service/JWKS configuration and rendered network policy, migrate the designated internal consumer and obtain positive/negative isolation evidence before activation.

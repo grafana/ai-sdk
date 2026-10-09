@@ -8,9 +8,9 @@ For client setup and BYOK semantics, use the central
 
 | Listener | Default | Policy and routes |
 | --- | --- | --- |
-| `server.private-listen-address` | `:8080` | Verified JWT; configured discovery and inference |
-| `server.cloud-listen-address` | `:8081` | Trusted edge assertions; request-only BYOK inference, unsupported discovery |
-| `server.operational-listen-address` | `:8082` | Unauthenticated `/live`, `/ready`, `/metrics` |
+| `server.private-listen-address` | `:8082` | Verified JWT; configured discovery and inference |
+| `server.cloud-listen-address` | `:8080` | Trusted edge assertions; request-only BYOK inference, unsupported discovery |
+| `server.operational-listen-address` | `:8081` | Unauthenticated `/live`, `/ready`, `/metrics` |
 
 The corresponding environment variables use the
 `GRAFANA_AI_GATEWAY_SERVER_*_LISTEN_ADDRESS` prefix. There is no process-wide
@@ -27,8 +27,7 @@ for every listener; it is not a deployment authentication mechanism.
 ## Cloud trust boundary
 
 The existing authenticating edge remains responsible for CAP credentials,
-`ai-gateway:read`/`ai-gateway:write` scope, realm/stack and IP validation. No
-backend-enterprise JWT ingress or token-verification change is required.
+`ai-gateway:read`/`ai-gateway:write` scope, realm/stack and IP validation. The public edge does not need JWT ingress or a new token-verification mechanism.
 
 The edge must replace client-supplied `X-Scope-OrgID` with exactly one authenticated
 positive decimal stack ID fitting `int64`. The application rejects missing,
@@ -58,7 +57,7 @@ already created. Shutdown cancels active calls from both populations before all
 servers stop under one shared shutdown deadline; provider/export cleanup retains
 its bounded budgets. Set the deployment termination grace period accordingly.
 
-The separately authorized deployment-tools delivery must provide rendered Services,
+The separately authorized deployment must provide rendered Services,
 private-only routing, regional JWKS and configured-secret references, and NetworkPolicy
 for all three ports. Before activation, retain deployed positive and negative
 connectivity evidence: authorized private JWT access, edge-only Cloud access,

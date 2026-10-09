@@ -143,3 +143,16 @@ error encoding and configured optional attribution. Logs:
 `/tmp/byok-execution-stack-privacy-{mutation-red,race,final-green}.log`.
 Deployment task 4.1 remains externally gated; no listener redesign or live proof
 is included.
+
+## Migration-friendly listener defaults
+
+Owner-approved defaults retain Cloud on 8080 and operations on 8081, adding
+private JWT on 8082. Defaults and collision tests failed before the change, then
+config/process races passed. Container examples, operational smoke probes and
+public deployment guidance now agree. Same-cluster access and only the designated
+consumer migration are required; no external infrastructure files changed.
+Private infrastructure references were removed from current public content,
+including older archive prose; requirement/scenario/task inventories are intact.
+Full local gates passed again; logs are `/tmp/byok-stack-pr3-migration-defaults-20261009/`
+and `/tmp/byok-default-ports-{red,green}.log`. No baseline pins or provider inputs
+changed. The separately owned deployment validation remains incomplete.

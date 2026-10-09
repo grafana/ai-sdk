@@ -61,7 +61,7 @@ docker run --rm \
   --env GRAFANA_AI_GATEWAY_CONFIG_FILE=/etc/grafana-ai-gateway/models.yaml \
   --env GRAFANA_AI_GATEWAY_AUTH_JWKS_URL=https://identity.example.com/.well-known/jwks.json \
   --env ANTHROPIC_API_KEY \
-  --publish 127.0.0.1:8080:8080 \
+  --publish 127.0.0.1:8082:8082 \
   ai-gateway:local
 ```
 
@@ -84,9 +84,9 @@ custom provider base URL. Gateway startup rejects URLs with user information,
 a query string, or a fragment. Configure the final endpoint because the
 Gateway does not follow outbound redirects.
 
-By default, private JWT requests use port 8080, trusted-Cloud BYOK requests use
-port 8081, and operational traffic uses port 8082. API routes require their
-listener's authentication policy. Only port 8082 serves these unauthenticated
+By default, trusted-Cloud BYOK requests use port 8080, operational traffic uses
+port 8081, and private JWT requests use port 8082. API routes require their
+listener's authentication policy. Only port 8081 serves these unauthenticated
 operational routes:
 
 - `GET /live`
@@ -94,7 +94,7 @@ operational routes:
 - `GET /metrics`
 
 Keep private JWT access private, permit only the authenticating Cloud edge on
-port 8081, and restrict port 8082 to monitoring and probes. Do not activate the
+port 8080, and restrict port 8081 to monitoring and probes. Do not activate the
 Cloud path before deployed network-isolation checks pass. Configured model
 secrets in this example are available only through the private API; Cloud callers
 supply request-only provider credentials.

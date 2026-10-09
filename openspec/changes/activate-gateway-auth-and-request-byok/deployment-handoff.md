@@ -1,32 +1,34 @@
-# Deployment-tools handoff
+# Deployment handoff
 
-Status: prepared in this repository only. No deployment-tools or backend-enterprise
-files have been changed. No environment activation or deployed isolation proof is
+Status: prepared in this repository only. No external infrastructure or edge
+implementation files have been changed. No environment activation or deployed isolation proof is
 claimed. Task 4.1 remains separately authorized work and needs a delivery owner/link.
 
 ## Required delivery
 
-- Replace the old mode/listener settings with private API `:8080`, Cloud API `:8081`
-  and operational `:8082` addresses, or explicit deployment-chosen equivalents.
+- Replace the old mode/listener settings with Cloud API `:8080`, operational `:8081`
+  and private JWT API `:8082` addresses, or explicit deployment-chosen equivalents.
   Use the command's `GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS`,
   `GRAFANA_AI_GATEWAY_SERVER_CLOUD_LISTEN_ADDRESS` and
   `GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS` settings.
-- Provide separate Service ports/endpoints for approved internal JWT clients,
-  the existing authenticating Cloud edge, and probes/monitoring. Names remain a
-  deployment-tools decision; none are assumed to exist.
+- Preserve existing Cloud and operational Service/probe wiring. Add a private
+  ClusterIP Service reachable through same-cluster DNS by the designated internal
+  consumer. Service names are operator-chosen; no cross-cluster connectivity is
+  required. Migrate that consumer's URL and any required private egress permission.
 - Configure regional `GRAFANA_AI_GATEWAY_AUTH_JWKS_URL` trust and audience `ai-sdk`.
   Keep the configured model file and its provider-secret environment references
   available for private configured-account calls only. Never enable unsafe JWT
   verification in an environment.
 - Keep JWT ingress private. Do not add a public JWT route, k6-specific allowlist,
   backend-enterprise JWT verifier, or alternate authentication fallback.
-- Preserve backend-enterprise's existing Cloud CAP scope/realm/stack/IP checks,
+- Preserve the existing edge's Cloud CAP scope/realm/stack/IP checks,
   replacement of `X-Scope-OrgID`, and removal of `Authorization`, `X-Access-Token`
   and `X-Grafana-Id` before the Cloud application listener.
 - Restrict Cloud application ingress to the authenticating edge's workload identity
   and namespace. Explicitly deny direct access by internal JWT workloads. A
   shared namespace allow rule must not accidentally authorize the Cloud port.
-- Restrict private API ingress to approved internal clients, and operational ingress
+- Add only the designated same-cluster consumer's private API ingress and matching
+  egress permissions. Restrict operational ingress
   to monitoring/probes. Health and metrics targets move to the operational port.
 - Preserve bounded egress for configured providers, fixed native Anthropic/OpenAI
   HTTPS endpoints, regional JWKS, and configured observability export. Increasing
