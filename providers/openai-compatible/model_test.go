@@ -1374,6 +1374,18 @@ func TestDoStreamToolCallDeltas(t *testing.T) {
 	requireContainsPart(t, parts, provider.PartToolInputEnd)
 	requireContainsPart(t, parts, provider.PartToolCall)
 
+	for _, part := range parts {
+		switch part.Type {
+		case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd:
+			require.Equal(t, "call_1", part.ID)
+			require.Empty(t, part.ToolCallID, "tool input parts are identified by id only")
+		}
+		if part.Type == provider.PartToolInputDelta || part.Type == provider.PartToolInputEnd {
+			require.Empty(t, part.ToolName, "only tool-input-start carries the tool name")
+		}
+	}
+	require.Equal(t, "weather", findPart(parts, provider.PartToolInputStart).ToolName)
+
 	toolCall := findPart(parts, provider.PartToolCall)
 	require.Equal(t, "call_1", toolCall.ToolCallID)
 	require.Equal(t, "weather", toolCall.ToolName)

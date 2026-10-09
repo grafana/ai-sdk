@@ -194,6 +194,9 @@ type StreamPart struct {
 	ProviderMetadata ProviderMetadata `json:"providerMetadata,omitempty"`
 }
 
+// streamTimestampLayout matches JavaScript's Date#toISOString.
+const streamTimestampLayout = "2006-01-02T15:04:05.000Z"
+
 // MarshalJSON emits the upstream Vercel AI SDK LanguageModelV4 stream-part
 // JSON shape. In addition to mapping the "id" field (ResponseID for
 // response-metadata parts, ID for all others), it reconciles divergent parts.
@@ -206,7 +209,8 @@ type StreamPart struct {
 //   - tool-result: suppresses the Go-only `providerExecuted` field
 //   - source:                nested `source` -> flat `sourceType`/`id`/`url`/`title`/`mediaType`/`filename`
 //   - error:                 `apiCallError` -> `error`
-//   - all types:             zero-value `timestamp` is suppressed
+//   - stream-start:          always emits `warnings`, empty when there are none
+//   - all types:             zero-value `timestamp` is suppressed; others are UTC with milliseconds
 //
 // Every other type flows through unchanged via the base alias marshal, so a new
 // struct field with a plain json tag Just Works for non-transformed types. A
@@ -238,12 +242,23 @@ func (p StreamPart) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	// Suppress zero-value timestamps that leak from the flat struct.
+	// Suppress zero-value timestamps that leak from the flat struct and encode
+	// the rest as JavaScript's Date#toISOString does (UTC, milliseconds).
 	if p.Timestamp.IsZero() {
 		delete(m, "timestamp")
+	} else {
+		timestamp, terr := json.Marshal(p.Timestamp.UTC().Format(streamTimestampLayout))
+		if terr != nil {
+			return nil, terr
+		}
+		m["timestamp"] = timestamp
 	}
 
 	switch p.Type {
+	case PartStreamStart:
+		if len(p.Warnings) == 0 {
+			m["warnings"] = json.RawMessage("[]")
+		}
 	case PartTextDelta, PartReasoningDelta, PartToolInputDelta:
 		delta, derr := json.Marshal(p.Delta)
 		if derr != nil {

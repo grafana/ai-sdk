@@ -1,0 +1,8 @@
+{"type":"start","messageId":"message-1"}
+{"type":"start-step"}
+{"type":"text-start","id":"text-1"}
+{"type":"text-delta","id":"text-1","delta":"Hello"}
+{"type":"text-end","id":"text-1"}
+{"type":"error","errorText":"provider error"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

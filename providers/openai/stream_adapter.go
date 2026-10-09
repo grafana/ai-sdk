@@ -420,7 +420,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 
 	case responses.ResponseOutputItemProgram:
 		name := a.br.toolNameMapping.toCustomToolName("programmatic_tool_calling")
-		input, _ := json.Marshal(map[string]any{"code": v.Code, "fingerprint": v.Fingerprint})
+		input, _ := marshalToolInput(map[string]any{"code": v.Code, "fingerprint": v.Fingerprint})
 		ch <- provider.StreamPart{
 			Type:             provider.PartToolCall,
 			ToolCallID:       v.CallID,
@@ -483,7 +483,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 		a.hasFunctionCall = true
 		ongoing := a.ongoingToolCalls[e.OutputIndex]
 		delete(a.ongoingToolCalls, e.OutputIndex)
-		input, _ := json.Marshal(v.Input)
+		input, _ := marshalToolInput(v.Input)
 		ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: v.CallID}
 		ch <- provider.StreamPart{
 			Type:             provider.PartToolCall,
@@ -554,7 +554,7 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: toolCallID, ToolName: name}
 			ch <- provider.StreamPart{Type: provider.PartToolInputEnd, ID: toolCallID}
 		}
-		input, _ := json.Marshal(toolSearchStreamInput(v.Arguments, v.Execution == "server", toolCallID))
+		input, _ := marshalToolInput(toolSearchStreamInput(v.Arguments, v.Execution == "server", toolCallID))
 		part := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: toolCallID, ToolName: name, Input: string(input), ProviderMetadata: itemIDMeta(a.providerOptionsName, v.ID)}
 		if v.Execution == "server" {
 			part.ProviderExecuted = true
@@ -663,7 +663,7 @@ func (a *streamAdapter) emitCodeInterpreterToolCall(tc *ongoingToolCall, code st
 		tc.codeInputDone = true
 	}
 	if !tc.toolCallEmitted {
-		input, _ := json.Marshal(map[string]any{"code": code, "containerId": tc.containerID})
+		input, _ := marshalToolInput(map[string]any{"code": code, "containerId": tc.containerID})
 		ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: tc.toolCallID, ToolName: tc.toolName, Input: string(input), ProviderExecuted: true}
 		tc.toolCallEmitted = true
 	}
@@ -838,6 +838,11 @@ func (a *streamAdapter) flush(ch chan<- provider.StreamPart) {
 	resp := a.finishResponse
 	if resp == nil {
 		resp = &responses.Response{ID: a.responseID}
+	}
+	if a.responseID != "" && resp.ID != a.responseID {
+		created := *resp
+		created.ID = a.responseID
+		resp = &created
 	}
 	usage := convertResponseUsage(resp.Usage)
 	ch <- provider.StreamPart{

@@ -1,7 +1,9 @@
 ## Purpose
 
 Define the AWS Bedrock provider module, its `provider.LanguageModel` implementation driving the Bedrock Converse API, request/response conversion, authentication, streaming, error semantics, and registry integration.
+
 ## Requirements
+
 ### Requirement: Module location and naming
 
 The Bedrock provider SHALL be implemented as a separate Go module located at `providers/bedrock/` with module path `github.com/grafana/ai-sdk/providers/bedrock`. It MUST NOT be a subpackage of the root `aisdk` module and MUST NOT depend on `providers/anthropic`.
@@ -869,3 +871,23 @@ As a Go extension, `reasoningConfig.type` SHALL accept `between_tools`, sent as 
 
 - **WHEN** Sonnet 5.5 requests between-tools thinking with display, budget, sampling, and effort `xhigh` or `max`
 - **THEN** thinking SHALL contain only its type, sampling SHALL be removed, and effort SHALL be capped to high with the specified warning
+
+### Requirement: Bedrock raw stream chunks mirror upstream
+
+When raw chunks are requested, each event-stream frame SHALL produce a raw part whose value is the frame's JSON payload without the AWS padding field `p`, wrapped under its event type, or under its exception type for exception frames. Payloads that are not JSON objects, or frames with no type, SHALL be forwarded unchanged.
+
+#### Scenario: Event frame
+- **WHEN** a `messageStop` event frame with payload `{"stopReason":"end_turn","p":"abc"}` is decoded with raw chunks requested
+- **THEN** the raw value SHALL be `{"messageStop":{"stopReason":"end_turn"}}`
+
+#### Scenario: Exception frame
+- **WHEN** a `throttlingException` exception frame with payload `{"message":"rate limited"}` is decoded with raw chunks requested
+- **THEN** the raw value SHALL be `{"throttlingException":{"message":"rate limited"}}`
+
+### Requirement: Bedrock tool input parts are identified by id
+
+`tool-input-start` SHALL carry the tool call `id` and the tool name, and SHALL NOT carry a separate tool call ID field.
+
+#### Scenario: Tool use block
+- **WHEN** a Converse tool-use block starts
+- **THEN** the `tool-input-start` part SHALL carry `id` and `toolName` only

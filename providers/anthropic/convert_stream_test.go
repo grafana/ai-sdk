@@ -3,6 +3,7 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -75,19 +76,20 @@ func TestStreamAdapter_SafeguardResults(t *testing.T) {
 		nextMessage  bool
 		wantFinishes []string
 	}{
-		{name: "no verdict", deltas: []string{"", "null"}, wantFinishes: []string{"", ""}},
-		{name: "start alone is ignored", startExtra: `,"safeguard_results":` + verdict, deltas: []string{"", "null"}, wantFinishes: []string{"", ""}},
-		{name: "last non-null", deltas: []string{"null", verdict, "null"}, wantFinishes: []string{"", wantVerdict, wantVerdict}},
-		{name: "empty replaces verdict", deltas: []string{verdict, "[]"}, wantFinishes: []string{wantVerdict, "[]"}},
-		{name: "reset on next message", deltas: []string{verdict}, nextMessage: true, wantFinishes: []string{wantVerdict, ""}},
+		{name: "no verdict", deltas: []string{"", "null"}, wantFinishes: []string{""}},
+		{name: "start alone is ignored", startExtra: `,"safeguard_results":` + verdict, deltas: []string{"", "null"}, wantFinishes: []string{""}},
+		{name: "last non-null", deltas: []string{"null", verdict, "null"}, wantFinishes: []string{wantVerdict}},
+		{name: "empty replaces verdict", deltas: []string{verdict, "[]"}, wantFinishes: []string{"[]"}},
+		{name: "verdict carries to the next message", deltas: []string{verdict}, nextMessage: true, wantFinishes: []string{wantVerdict, wantVerdict}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			events := []anthropic.BetaRawMessageStreamEventUnion{unmarshalEvent(t, start("msg_1", tc.startExtra))}
 			for _, raw := range tc.deltas {
 				events = append(events, unmarshalEvent(t, delta(raw)))
 			}
+			events = append(events, unmarshalEvent(t, `{"type":"message_stop"}`))
 			if tc.nextMessage {
-				events = append(events, unmarshalEvent(t, `{"type":"message_stop"}`), unmarshalEvent(t, start("msg_2", "")), unmarshalEvent(t, delta("")))
+				events = append(events, unmarshalEvent(t, start("msg_2", "")), unmarshalEvent(t, delta("")), unmarshalEvent(t, `{"type":"message_stop"}`))
 			}
 			var finishes []provider.StreamPart
 			for _, part := range collectParts(events) {
@@ -107,6 +109,168 @@ func TestStreamAdapter_SafeguardResults(t *testing.T) {
 			}
 		})
 	}
+}
+
+func derefInt(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func TestStreamAdapter_FinishLifecycle(t *testing.T) {
+	start := func(id, stopReason, content string) string {
+		return `{"type":"message_start","message":{"id":"` + id + `","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[` + content + `],"stop_reason":` + stopReason + `,"usage":{"input_tokens":3,"output_tokens":0}}}`
+	}
+	delta := func(stopReason string, outputTokens int) string {
+		return fmt.Sprintf(`{"type":"message_delta","delta":{"stop_reason":%s},"usage":{"output_tokens":%d}}`, stopReason, outputTokens)
+	}
+	const (
+		stop    = `{"type":"message_stop"}`
+		tool    = `{"type":"tool_use","id":"toolu_01","name":"lookup","input":{"q":"x"}}`
+		endTurn = `"end_turn"`
+		toolUse = `"tool_use"`
+	)
+
+	type finishSummary struct {
+		unified provider.UnifiedFinishReason
+		raw     string
+		output  int
+	}
+	for _, tc := range []struct {
+		name       string
+		events     []string
+		wantErr    bool
+		wantFinish []finishSummary
+		wantOrder  []provider.StreamPartType
+	}{
+		{
+			name:       "several deltas produce one finish after the stop",
+			events:     []string{start("msg_1", "null", ""), delta("null", 1), delta(endTurn, 3), delta(endTurn, 5), stop},
+			wantFinish: []finishSummary{{provider.FinishReasonStop, "end_turn", 5}},
+			wantOrder:  []provider.StreamPartType{provider.PartResponseMeta, provider.PartFinish},
+		},
+		{
+			name:       "message without a delta still finishes",
+			events:     []string{start("msg_1", "null", tool), stop},
+			wantFinish: []finishSummary{{provider.FinishReasonOther, "", 0}},
+		},
+		{
+			name:       "stop reason on message start is kept",
+			events:     []string{start("msg_1", toolUse, ""), stop},
+			wantFinish: []finishSummary{{provider.FinishReasonToolCalls, "tool_use", 0}},
+		},
+		{
+			name:       "consecutive messages finish once each",
+			events:     []string{start("msg_1", "null", ""), delta(toolUse, 3), stop, start("msg_2", "null", ""), delta(endTurn, 4), stop},
+			wantFinish: []finishSummary{{provider.FinishReasonToolCalls, "tool_use", 3}, {provider.FinishReasonStop, "end_turn", 4}},
+		},
+		{
+			name:       "delta-less message after a delta message reuses the stream finish reason and output tokens",
+			events:     []string{start("msg_1", "null", tool), delta(toolUse, 3), stop, start("msg_2", "null", tool), stop},
+			wantFinish: []finishSummary{{provider.FinishReasonToolCalls, "tool_use", 3}, {provider.FinishReasonToolCalls, "tool_use", 3}},
+		},
+		{
+			name:   "delta without a stop produces no finish",
+			events: []string{start("msg_1", "null", ""), delta(endTurn, 5)},
+		},
+		{
+			name:    "overlapping message start produces no finish",
+			events:  []string{start("msg_1", "null", ""), start("msg_2", "null", ""), delta(endTurn, 5), stop},
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter := &streamAdapter{blocks: make(map[int64]*blockState), serverToolCalls: make(map[string]string), mcpToolCalls: make(map[string]mcpToolCallInfo), generateID: defaultGenerateID}
+			ch := make(chan provider.StreamPart, 100)
+			var gotErr error
+			for _, raw := range tc.events {
+				if err := adapter.handleEvent(unmarshalEvent(t, raw), ch); err != nil {
+					gotErr = err
+				}
+			}
+			close(ch)
+
+			var finishes []finishSummary
+			var order []provider.StreamPartType
+			for part := range ch {
+				if part.Type != provider.PartFinish {
+					order = append(order, part.Type)
+					continue
+				}
+				order = append(order, part.Type)
+				finishes = append(finishes, finishSummary{part.FinishReason.Unified, part.FinishReason.Raw, derefInt(part.Usage.OutputTokens.Total)})
+			}
+			if tc.wantErr {
+				require.Error(t, gotErr)
+			} else {
+				require.NoError(t, gotErr)
+			}
+			assert.Equal(t, tc.wantFinish, finishes)
+			if tc.wantOrder != nil {
+				assert.Equal(t, tc.wantOrder, order[len(order)-len(tc.wantOrder):])
+			}
+		})
+	}
+}
+
+func TestStreamAdapter_MetadataIsStreamLevel(t *testing.T) {
+	start := func(id, extra string) string {
+		return `{"type":"message_start","message":{"id":"` + id + `","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[],"usage":{"input_tokens":1,"output_tokens":0}` + extra + `}}`
+	}
+	const (
+		verdict = `[{"type":"dangerous_tool_use","status":{"type":"available"}}]`
+		stop    = `{"type":"message_stop"}`
+		first   = `{"type":"message_delta","delta":{"stop_reason":"stop_sequence","stop_sequence":"END","safeguard_results":` + verdict + `},"context_management":{"applied_edits":[]},"usage":{"output_tokens":3}}`
+		second  = `{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"safeguard_results":null},"usage":{"output_tokens":4}}`
+	)
+
+	finishMetadata := func(t *testing.T, events ...string) []map[string]json.RawMessage {
+		t.Helper()
+		var parsed []anthropic.BetaRawMessageStreamEventUnion
+		for _, raw := range events {
+			parsed = append(parsed, unmarshalEvent(t, raw))
+		}
+		var out []map[string]json.RawMessage
+		for _, part := range collectParts(parsed) {
+			if part.Type != provider.PartFinish {
+				continue
+			}
+			var metadata map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(part.ProviderMetadata["anthropic"], &metadata))
+			out = append(out, metadata)
+		}
+		return out
+	}
+
+	t.Run("a message with a delta that omits them keeps the verdict and context management but not the stop sequence", func(t *testing.T) {
+		finishes := finishMetadata(t, start("msg_1", ""), first, stop, start("msg_2", ""), second, stop)
+		require.Len(t, finishes, 2)
+		assert.JSONEq(t, verdict, string(finishes[1]["safeguardResults"]))
+		assert.JSONEq(t, `null`, string(finishes[1]["stopSequence"]))
+		assert.NotEqual(t, `null`, string(finishes[1]["contextManagement"]))
+	})
+
+	t.Run("a message without a delta repeats the previous metadata", func(t *testing.T) {
+		finishes := finishMetadata(t, start("msg_1", ""), first, stop, start("msg_2", ""), stop)
+		require.Len(t, finishes, 2)
+		assert.JSONEq(t, verdict, string(finishes[1]["safeguardResults"]))
+		assert.JSONEq(t, `"END"`, string(finishes[1]["stopSequence"]))
+	})
+
+	t.Run("a later verdict replaces the carried one", func(t *testing.T) {
+		replacement := `{"type":"message_delta","delta":{"stop_reason":"end_turn","safeguard_results":[]},"usage":{"output_tokens":4}}`
+		finishes := finishMetadata(t, start("msg_1", ""), first, stop, start("msg_2", ""), replacement, stop)
+		require.Len(t, finishes, 2)
+		assert.JSONEq(t, `[]`, string(finishes[1]["safeguardResults"]))
+	})
+
+	t.Run("a container on message start is kept until a delta replaces it", func(t *testing.T) {
+		container := `,"container":{"id":"container_1","expires_at":"2026-08-03T15:00:00Z"}`
+		finishes := finishMetadata(t, start("msg_1", container), stop)
+		require.Len(t, finishes, 1)
+		assert.Contains(t, string(finishes[0]["container"]), "container_1")
+	})
 }
 
 func TestSafeguardsStreamTextProviderMetadata(t *testing.T) {
@@ -153,6 +317,7 @@ func TestStreamAdapter_FallbackProviderMetadata(t *testing.T) {
 	events := []anthropic.BetaRawMessageStreamEventUnion{
 		unmarshalEvent(t, `{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5","content":[],"stop_reason":null,"stop_sequence":null,"stop_details":null,"container":{"id":"container-1","expires_at":"2026-08-03T15:00:00Z"},"context_management":null,"usage":{"input_tokens":12,"output_tokens":0}}}`),
 		unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null},"usage":{"input_tokens":12,"output_tokens":5,"iterations":[{"type":"message","input_tokens":12,"output_tokens":0},{"type":"fallback_message","model":"claude-opus-4-8","input_tokens":12,"output_tokens":5}]}}`),
+		unmarshalEvent(t, `{"type":"message_stop"}`),
 	}
 
 	parts := collectParts(events)
@@ -313,6 +478,7 @@ func TestStreamAdapter_MessageEvents(t *testing.T) {
 			t.Run(string(tt.reason), func(t *testing.T) {
 				events := []anthropic.BetaRawMessageStreamEventUnion{
 					unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"`+string(tt.reason)+`"},"usage":{"input_tokens":10,"output_tokens":50}}`),
+					unmarshalEvent(t, `{"type":"message_stop"}`),
 				}
 
 				parts := collectParts(events)
@@ -398,6 +564,7 @@ func TestStreamAdapter_CacheMetrics(t *testing.T) {
 	t.Run("message_delta_with_cache", func(t *testing.T) {
 		events := []anthropic.BetaRawMessageStreamEventUnion{
 			unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":75}}`),
+			unmarshalEvent(t, `{"type":"message_stop"}`),
 		}
 
 		parts := collectParts(events)
@@ -413,6 +580,7 @@ func TestStreamAdapter_CacheMetrics(t *testing.T) {
 	t.Run("message_delta_no_cache", func(t *testing.T) {
 		events := []anthropic.BetaRawMessageStreamEventUnion{
 			unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":10,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}`),
+			unmarshalEvent(t, `{"type":"message_stop"}`),
 		}
 
 		parts := collectParts(events)
@@ -1018,6 +1186,7 @@ func TestStreamAdapter_MixedToolUseAndServerToolUse(t *testing.T) {
 		unmarshalEvent(t, `{"type":"content_block_stop","index":3}`),
 
 		unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":100}}`),
+		unmarshalEvent(t, `{"type":"message_stop"}`),
 	}
 
 	parts := collectParts(events)
@@ -1206,6 +1375,7 @@ func TestStreamAdapter_JsonResponseTool(t *testing.T) {
 			unmarshalEvent(t, `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}`),
 			unmarshalEvent(t, `{"type":"content_block_stop","index":0}`),
 			unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":50}}`),
+			unmarshalEvent(t, `{"type":"message_stop"}`),
 		}
 
 		parts := collectPartsWithJsonResponseTool(events)
@@ -1224,6 +1394,7 @@ func TestStreamAdapter_JsonResponseTool(t *testing.T) {
 	t.Run("non_tool_use_finish_reason_preserved", func(t *testing.T) {
 		events := []anthropic.BetaRawMessageStreamEventUnion{
 			unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":10,"output_tokens":50}}`),
+			unmarshalEvent(t, `{"type":"message_stop"}`),
 		}
 
 		parts := collectPartsWithJsonResponseTool(events)
@@ -1272,6 +1443,7 @@ func TestStreamAdapter_JsonResponseTool(t *testing.T) {
 			unmarshalEvent(t, `{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"result\":42}"}}`),
 			unmarshalEvent(t, `{"type":"content_block_stop","index":1}`),
 			unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":50}}`),
+			unmarshalEvent(t, `{"type":"message_stop"}`),
 		}
 
 		parts := collectPartsWithJsonResponseTool(events)
@@ -1296,6 +1468,7 @@ func TestStreamAdapter_JsonResponseTool(t *testing.T) {
 			unmarshalEvent(t, `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}`),
 			unmarshalEvent(t, `{"type":"content_block_stop","index":0}`),
 			unmarshalEvent(t, `{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":50}}`),
+			unmarshalEvent(t, `{"type":"message_stop"}`),
 		}
 
 		parts := collectPartsWithJsonResponseTool(events)
@@ -1777,5 +1950,82 @@ func TestStreamAdapter_MarkCodeExecutionDynamic(t *testing.T) {
 		call := findFirst(parts, provider.PartToolCall)
 		require.NotNil(t, call)
 		assert.Nil(t, call.Dynamic)
+	})
+}
+
+func TestStreamAdapter_InputTransformations(t *testing.T) {
+	start := func(id, extra string) string {
+		return `{"type":"message_start","message":{"id":"` + id + `","type":"message","role":"assistant","model":"claude-fable-5-1","content":[],"usage":{"input_tokens":1,"output_tokens":0}` + extra + `}}`
+	}
+	delta := func(extra string) string {
+		return `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}` + extra + `}`
+	}
+	const stop = `{"type":"message_stop"}`
+
+	finishFields := func(t *testing.T, events ...string) []map[string]json.RawMessage {
+		t.Helper()
+		var parsed []anthropic.BetaRawMessageStreamEventUnion
+		for _, raw := range events {
+			parsed = append(parsed, unmarshalEvent(t, raw))
+		}
+		var out []map[string]json.RawMessage
+		for _, part := range collectParts(parsed) {
+			if part.Type == provider.PartFinish {
+				out = append(out, anthropicMetadata(t, part.ProviderMetadata))
+			}
+		}
+		return out
+	}
+	transformations := `,"input_transformations":[` + droppedBlock + `]`
+
+	t.Run("from message start", func(t *testing.T) {
+		finishes := finishFields(t, start("msg_1", transformations), delta(""), stop)
+		require.Len(t, finishes, 1)
+		assert.JSONEq(t, droppedWant, string(finishes[0]["inputTransformations"]))
+	})
+
+	t.Run("a delta replaces them", func(t *testing.T) {
+		finishes := finishFields(t, start("msg_1", transformations), delta(`,"input_transformations":[{"type":"t","path":"p","reason":"r"}]`), stop)
+		require.Len(t, finishes, 1)
+		assert.JSONEq(t, `[{"type":"t","path":"p","reason":"r"}]`, string(finishes[0]["inputTransformations"]))
+	})
+
+	t.Run("a null or absent delta field keeps them", func(t *testing.T) {
+		for _, field := range []string{``, `,"input_transformations":null`} {
+			finishes := finishFields(t, start("msg_1", transformations), delta(field), stop)
+			require.Len(t, finishes, 1)
+			assert.JSONEq(t, droppedWant, string(finishes[0]["inputTransformations"]))
+		}
+	})
+
+	t.Run("they carry into the next message", func(t *testing.T) {
+		finishes := finishFields(t, start("msg_1", ""), delta(transformations), stop, start("msg_2", ""), delta(""), stop)
+		require.Len(t, finishes, 2)
+		assert.JSONEq(t, droppedWant, string(finishes[0]["inputTransformations"]))
+		assert.JSONEq(t, droppedWant, string(finishes[1]["inputTransformations"]))
+	})
+
+	t.Run("omitted when never supplied", func(t *testing.T) {
+		finishes := finishFields(t, start("msg_1", ""), delta(""), stop)
+		require.Len(t, finishes, 1)
+		assert.NotContains(t, finishes[0], "inputTransformations")
+	})
+
+	t.Run("malformed values fail at the event", func(t *testing.T) {
+		for _, events := range [][]string{
+			{start("msg_1", `,"input_transformations":[{"type":"t","path":"p"}]`)},
+			{start("msg_1", ""), delta(`,"input_transformations":[{"type":"t"}]`)},
+		} {
+			adapter := &streamAdapter{blocks: map[int64]*blockState{}, serverToolCalls: map[string]string{}, mcpToolCalls: map[string]mcpToolCallInfo{}, generateID: defaultGenerateID}
+			parts := make(chan provider.StreamPart, 16)
+			var failed error
+			for _, raw := range events {
+				if err := adapter.handleEvent(unmarshalEvent(t, raw), parts); err != nil {
+					failed = err
+				}
+			}
+			require.Error(t, failed)
+			assert.Contains(t, failed.Error(), "input_transformations")
+		}
 	})
 }

@@ -2497,7 +2497,7 @@ describe("authenticated OpenAI Responses Gateway command", () => {
       const goStream=await captureGoClient(goClientBinaryPath,{...config,mode:"stream"});
       assert.equal(goStream.error,undefined);
       assert.deepEqual(nativeSources(goStream.parts),expected);
-      assert.deepEqual(goStream.parts.find((part:any)=>part.type==="response-metadata"), { type: "response-metadata", id: "resp_test", modelId: "backend-private", timestamp: "1970-01-01T00:00:01Z" });
+      assert.deepEqual(goStream.parts.find((part:any)=>part.type==="response-metadata"), { type: "response-metadata", id: "resp_test", modelId: "backend-private", timestamp: "1970-01-01T00:00:01.000Z" });
       const metrics=await (await fetch(`${gateway.url}/metrics`)).text();
       for (const privateValue of ["native-file-sk-application","Public citation","https://public.example", "backend-private", "resp_test"]) {
         assert.ok(!gateway.stderr.includes(privateValue));
