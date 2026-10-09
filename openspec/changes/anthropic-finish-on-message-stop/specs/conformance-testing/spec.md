@@ -14,7 +14,11 @@ Every streaming case of an enabled provider SHALL contain `expected-provider-par
 
 #### Scenario: Narrow normalization
 - **WHEN** Go and upstream parts are compared
-- **THEN** only timestamps, generated source IDs and generated MCP tool-call IDs, Go-only response-metadata fields, absent versus false `isError`, error part content, and nested `cache_creation` in raw usage iterations SHALL be normalized, and error parts SHALL still be compared by presence and position
+- **THEN** only these SHALL be normalized: generated source and MCP tool-call IDs; the Go-only `provider`, `responseHeaders` and `usage` fields on `response-metadata`; the response timestamp for providers that derive it from the HTTP `Date` header; absent versus false `isError`; and the content of errors that carry no provider status
+
+#### Scenario: Provider errors are compared in full
+- **WHEN** an error part carries a status code
+- **THEN** its message, status code and retryability SHALL be compared with upstream's
 
 #### Scenario: Every enabled provider is green
 - **WHEN** the conformance suite runs

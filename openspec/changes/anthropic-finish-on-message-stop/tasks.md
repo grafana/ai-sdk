@@ -36,6 +36,14 @@
 - [x] 5.5 Update `README.md` and `PARITY.md` for all providers and verify `mise run validate-parity-baseline` and `mise run parity-coverage`
 - [x] 5.6 Verify `mise run check` and `mise run parity-check` are green with the allowlist empty
 
+## 6. Full parity
+
+- [x] 6.1 Measure each normalization by removing it and listing the differences it hid; verify against all four providers
+- [x] 6.2 Serialize `stream-start` warnings and millisecond UTC timestamps in `StreamPart.MarshalJSON`; verify with `provider` unit tests
+- [x] 6.3 Filter Anthropic raw usage iterations to the declared fields; verify with unit tests and the four affected conformance cases
+- [x] 6.4 Classify Anthropic error frames with upstream's table for first-chunk and mid-stream errors and update the pinned error tests; verify with `go test ./...` in `providers/anthropic` and the synthetic error cases
+- [x] 6.5 Narrow the harness normalization to the inherent differences, regenerate goldens deterministically, and update README, PARITY.md and specs; verify `mise run check` and `mise run parity-check`
+
 ## Workflow follow-up
 
 - Open a draft PR titled `fix(anthropic): emit finish once on message_stop`, linking #377 and noting overlap with #201 and #393.

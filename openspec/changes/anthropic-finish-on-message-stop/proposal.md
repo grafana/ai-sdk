@@ -21,6 +21,10 @@ The conformance suite could not catch either: it compares only UI chunks from `s
   - Bedrock: raw chunks are wrapped under their event or exception type with the AWS padding field dropped, and `tool-input-start` no longer carries a duplicate `toolCallId`.
   - OpenAI: tool-call input strings are not HTML-escaped and follow upstream field order (apply-patch, local shell); the streaming finish reports the response ID from `response.created`.
   - OpenAI-compatible: `tool-input-*` parts carry `id` only (and the tool name on start), not duplicate `toolCallId`/`toolName`.
+- Remove the remaining normalizations where Go can match upstream:
+  - `stream-start` always serializes `warnings`, and response timestamps serialize as UTC with milliseconds.
+  - Anthropic error frames carry upstream's message, status code and retryability per error type, for first-chunk and mid-stream errors.
+  - Anthropic raw usage iterations keep only the fields upstream's schema declares.
 - Out of scope: Gateway first-finish terminal rule for sequential messages (#393).
 
 ## Capabilities
@@ -31,13 +35,15 @@ The conformance suite could not catch either: it compares only UI chunks from `s
 ### Modified Capabilities
 - `anthropic-safeguards`: the streaming verdict requirement refers to "the last PartFinish" and the timing-boundary requirement says finish timing is unchanged; both must follow the single-finish-on-stop contract.
 - `conformance-testing`: adds provider-parts goldens and the synthetic stream-part case category.
+- `provider-v4-core-types`: stream part JSON follows the V4 shape for `stream-start` warnings and timestamps.
 - `bedrock-provider`: raw chunks mirror upstream's envelope; tool-input parts are identified by id.
 - `openai-responses-provider`: tool-call input serialization and the finish response ID match upstream.
 - `openai-compatible-stream-metadata`: tool-input parts are identified by id.
 
 ## Impact
 
-- `providers/anthropic/convert_stream.go`, `convert_usage.go` (finish lifecycle, stream-level usage) and `stream_transport.go`, `model.go` (error frames become non-terminal).
+- `providers/anthropic/convert_stream.go`, `convert_usage.go` (finish lifecycle, stream-level usage, iteration filter), `stream_transport.go`, `model.go` (error frames become non-terminal) and `wrap_api_error.go` (upstream's error classification).
+- `provider/stream_part.go` (V4 `stream-start` and timestamp JSON).
 - `providers/bedrock/convert_stream.go`, `providers/openai/stream_adapter.go`, `convert_response.go`, `sdk_helpers.go`, `providers/openai-compatible/stream.go` (shape fixes surfaced by the golden).
 - `test/conformance`: `tools/generate.mts`, `runner.go`, a new `expected-provider-parts.jsonl` in every streaming case directory of the four providers (inputs untouched), new `testdata/anthropic-stream-parts/`, new `ui/` error-then-finish fixture, `PARITY.md`.
 - Tests that feed a delta without `message_stop` in `providers/anthropic` and `providers/azure` need a stop appended.

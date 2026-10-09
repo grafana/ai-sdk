@@ -69,3 +69,32 @@ An Anthropic `error` frame received after the first frame SHALL produce an error
 #### Scenario: Transport failure stays terminal
 - **WHEN** the connection fails or a frame cannot be decoded
 - **THEN** the stream SHALL emit an error part and stop consuming
+
+### Requirement: Error frames follow upstream's classification
+
+An Anthropic `error` frame SHALL produce an error part, or fail the call when it is the first frame, carrying the inner error message and the status code and retryability upstream assigns to its error type.
+
+#### Scenario: Classified error types
+- **WHEN** an error frame has type `api_error`, `overloaded_error`, `rate_limit_error`, `request_too_large`, `authentication_error`, `permission_error`, `not_found_error`, `billing_error` or `invalid_request_error`
+- **THEN** the status SHALL be 500, 529, 429, 413, 401, 403, 404, 400 or 400 respectively
+- **AND** only `api_error`, `overloaded_error` and `rate_limit_error` SHALL be retryable
+
+#### Scenario: Rate limit error part
+- **WHEN** an `error` frame of type `rate_limit_error` arrives after the stream started
+- **THEN** the error part SHALL have status 429, SHALL be retryable, and SHALL carry the inner message
+
+#### Scenario: Unclassified first frame
+- **WHEN** the first frame is an `error` of an unclassified type
+- **THEN** the call SHALL fail with status 500 and SHALL NOT be retryable
+
+#### Scenario: Unclassified error part
+- **WHEN** an error frame of an unclassified type arrives after the stream started
+- **THEN** the error part SHALL have no status and SHALL NOT be retryable
+
+### Requirement: Raw usage iterations keep declared fields
+
+The raw usage retained in finish usage and provider metadata SHALL keep, for each iteration, only `type`, `model`, `input_tokens`, `output_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens`, as upstream's response schema does.
+
+#### Scenario: Nested cache creation breakdown
+- **WHEN** a usage iteration contains a nested `cache_creation` object
+- **THEN** the retained raw usage iteration SHALL NOT contain it
