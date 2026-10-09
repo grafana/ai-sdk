@@ -185,3 +185,22 @@ func TestSourceInfo_DocumentVariant(t *testing.T) {
 		assert.Equal(t, "Page Title", p.Source.Title)
 	})
 }
+
+func TestStreamPart_MarshalJSONV4Shape(t *testing.T) {
+	t.Run("stream-start always carries warnings", func(t *testing.T) {
+		data, err := json.Marshal(StreamPart{Type: PartStreamStart})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"type":"stream-start","warnings":[]}`, string(data))
+	})
+
+	t.Run("timestamps are UTC with milliseconds", func(t *testing.T) {
+		location := time.FixedZone("offset", 2*60*60)
+		data, err := json.Marshal(StreamPart{Type: PartResponseMeta, ResponseID: "r", Timestamp: time.Date(2026, 7, 31, 19, 49, 43, 120_000_000, location)})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"type":"response-metadata","id":"r","timestamp":"2026-07-31T17:49:43.120Z"}`, string(data))
+
+		var decoded StreamPart
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		assert.True(t, decoded.Timestamp.Equal(time.Date(2026, 7, 31, 17, 49, 43, 120_000_000, time.UTC)))
+	})
+}
