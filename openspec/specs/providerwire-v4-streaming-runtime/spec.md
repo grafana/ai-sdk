@@ -17,9 +17,17 @@ The strict ProviderWire V4 handler SHALL require positive limits for provider st
 - **THEN** construction SHALL fail before the handler serves a request
 
 ### Requirement: Shared strict streaming request pipeline
-The handler SHALL accept `ai-language-model-streaming` only when its single exact value is `true` or `false`. It SHALL route `false` to the existing unary path and `true` to the streaming path only after the same bounded body read, standard Go JSON and complete request-schema validation, supported request mapping and exactly one authenticated host selection. Selection SHALL return a non-nil V4 model and a non-empty valid-UTF-8 logical identity appropriate to its account-access policy. Configured access SHALL resolve the catalog exactly once and retain canonical identity; BYOK SHALL select from request data with zero catalog calls and use the request-scoped observation contract.
+Unary and streaming SHALL share bounded validation/mapping and one authenticated host selection. Supported streaming SHALL invoke DoStream once, never DoGenerate, without repeated selection or catalog access for BYOK; failures before invocation SHALL remain safe non-2xx JSON.
 
-A supported streaming request SHALL invoke the selected logical model's `DoStream` exactly once and SHALL NOT invoke `DoGenerate`. The selected logical model MAY own bounded credential attempts under gateway-request-byok; these SHALL NOT cause repeated host selection or bypass existing logical SSE commitment and single-owner cleanup. Any failure before stream invocation SHALL select a bounded privacy-safe non-2xx JSON document and SHALL produce no SSE commitment.
+#### Scenario: Streaming request pipeline policy
+- **WHEN** a validated request selects unary or streaming execution
+- **THEN** The handler SHALL accept `ai-language-model-streaming` only when its single exact value is `true` or `false`.
+- **AND** It SHALL route `false` to the existing unary path and `true` to the streaming path only after the same bounded body read, standard Go JSON and complete request-schema validation, supported request mapping and exactly one authenticated host selection.
+- **AND** Selection SHALL return a non-nil V4 model and a non-empty valid-UTF-8 logical identity appropriate to its account-access policy.
+- **AND** Configured access SHALL resolve the catalog exactly once and retain canonical identity; BYOK SHALL select from request data with zero catalog calls and use the request-scoped observation contract.
+- **AND** A supported streaming request SHALL invoke the selected logical model's `DoStream` exactly once and SHALL NOT invoke `DoGenerate`.
+- **AND** The selected logical model MAY own bounded credential attempts under gateway-request-byok; these SHALL NOT cause repeated host selection or bypass existing logical SSE commitment and single-owner cleanup.
+- **AND** Any failure before stream invocation SHALL select a bounded privacy-safe non-2xx JSON document and SHALL produce no SSE commitment.
 
 #### Scenario: Supported streaming envelope executes once
 - **WHEN** a valid configured-access request uses streaming value `true` and passes mapping and selection
@@ -422,9 +430,19 @@ Encoding work and temporary memory SHALL remain bounded by a constant multiple o
 - **THEN** provider work SHALL be canceled with no subsequent write, while complete-frame/memory bounds and prohibition of event fields/DONE SHALL remain effective
 
 ### Requirement: Cancellation and timeouts
-The configured total timeout SHALL begin immediately before authenticated host selection, after bounded protocol input validation, and cover selection/construction, logical `DoStream` setup, all credential attempts and stream consumption. An earlier request-context deadline SHALL remain effective. Logical invocation, credential attempts and stream establishment SHALL NOT reset or extend the shared deadline. Selection cancellation and late-result cleanup SHALL follow the shared bounded invocation contract.
+The total deadline SHALL cover selection, setup, attempts and streaming without resets. Idle timeout SHALL follow represented provider parts; cancellation and timeout SHALL retain terminal authority, bounded cleanup and writer-failure behavior.
 
-After stream commitment, the configured idle timeout SHALL restart after each accepted provider part is successfully represented, including a consumed start and a written provider error. Request cancellation, total timeout, or idle timeout SHALL cancel selection/provider work before the corresponding safe terminal response or event is written. A valid finish written before another terminal outcome SHALL remain authoritative. When provider output, cancellation, and timeout become ready concurrently before terminal output, any applicable safe bounded outcome MAY win; the protocol does not define scheduler-level precedence. Writer failure SHALL terminate immediately without another write.
+#### Scenario: Streaming deadline and terminal policy
+- **WHEN** selection or streaming encounters cancellation, timeout or competing terminal conditions
+- **THEN** The configured total timeout SHALL begin immediately before authenticated host selection, after bounded protocol input validation, and cover selection/construction, logical `DoStream` setup, all credential attempts and stream consumption.
+- **AND** An earlier request-context deadline SHALL remain effective.
+- **AND** Logical invocation, credential attempts and stream establishment SHALL NOT reset or extend the shared deadline.
+- **AND** Selection cancellation and late-result cleanup SHALL follow the shared bounded invocation contract.
+- **AND** After stream commitment, the configured idle timeout SHALL restart after each accepted provider part is successfully represented, including a consumed start and a written provider error.
+- **AND** Request cancellation, total timeout, or idle timeout SHALL cancel selection/provider work before the corresponding safe terminal response or event is written.
+- **AND** A valid finish written before another terminal outcome SHALL remain authoritative.
+- **AND** When provider output, cancellation, and timeout become ready concurrently before terminal output, any applicable safe bounded outcome MAY win; the protocol does not define scheduler-level precedence.
+- **AND** Writer failure SHALL terminate immediately without another write.
 
 #### Scenario: Terminal conditions race
 - **WHEN** provider output, request cancellation, or a configured timeout become ready concurrently before terminal output

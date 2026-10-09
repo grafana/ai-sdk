@@ -171,14 +171,24 @@ Assistant reasoning text and reasoning-file history SHALL execute within gateway
 - **THEN** reasoning options SHALL survive without selected-backend filtering and no client-visible precedence SHALL be defined among simultaneously unsupported families
 
 ### Requirement: Reserved provider options and protected call headers
+Host namespaces SHALL remain reserved and be consumed only by their owning selector. Protected call headers and native-consumption controls SHALL prevent account/model/transport bypass before I/O without blanket filtering or value-echoing refusals.
 
-The runtime SHALL reserve the `grafana`, `gateway`, and `grafana-ai-sdk` provider-option namespaces for the host. A request carrying any of them SHALL be rejected with a stable invalid-request document before resolution or model invocation unless an owning host feature explicitly consumes it. Such controls SHALL never reach native adapters as provider options. Call-level gateway controls SHALL be consumed by the host selector before native middleware; the catalog selector SHALL reject them, while request-only selection SHALL follow gateway-request-byok. Nested host namespaces and unsupported controls SHALL remain rejected before provider I/O. Unknown ordinary namespaces and fields SHALL NOT be treated as host controls merely because they are unlisted.
-
-The runtime SHALL refuse body-carried call headers whose name matches a credential-bearing header, compared without case sensitivity, covering at least `authorization`, `proxy-authorization`, `x-access-token`, `x-grafana-id`, `x-api-key`, `api-key`, `openai-api-key` and `anthropic-api-key`. The openai and openai-compatible providers apply call headers after setting their own authorization header, so an accepted credential-bearing header would choose the credential presented to those backends. The refused set SHALL cover every header name the inbound authenticated edge refuses in outer headers, which a test SHALL assert by driving the edge with a valid stack assertion and each candidate name, with an accepted ordinary header as a negative control, and requiring the body mapper to refuse every name the edge refused. Outer authentication SHALL remain independent from body-carried provider call headers; unrelated outer HTTP headers SHALL NOT be forwarded automatically.
-
-Provider-option protections SHALL follow gateway-native-provider-options: actual native consumption and precedence at the consuming namespace and scope SHALL justify any check preventing credential/account/destination, model/prompt, role/union, tool-ownership or transport/execution bypass. A blanket case/underscore/hyphen-folded field list SHALL NOT reject ordinary fields that cannot cause the bypass. Native-specific checks SHALL fail before external provider I/O; schema, reserved-host and protected-body-header refusals SHALL retain their pre-resolution processing order.
-
-These refusals SHALL use fixed documents that never echo the offending namespace, field name, header name or value.
+#### Scenario: Host-control and header processing policy
+- **WHEN** the handler maps host controls, native options and call headers
+- **THEN** The runtime SHALL reserve the `grafana`, `gateway`, and `grafana-ai-sdk` provider-option namespaces for the host.
+- **AND** A request carrying any of them SHALL be rejected with a stable invalid-request document before resolution or model invocation unless an owning host feature explicitly consumes it.
+- **AND** Such controls SHALL never reach native adapters as provider options.
+- **AND** Call-level gateway controls SHALL be consumed by the host selector before native middleware; the catalog selector SHALL reject them, while request-only selection SHALL follow gateway-request-byok.
+- **AND** Nested host namespaces and unsupported controls SHALL remain rejected before provider I/O.
+- **AND** Unknown ordinary namespaces and fields SHALL NOT be treated as host controls merely because they are unlisted.
+- **AND** The runtime SHALL refuse body-carried call headers whose name matches a credential-bearing header, compared without case sensitivity, covering at least `authorization`, `proxy-authorization`, `x-access-token`, `x-grafana-id`, `x-api-key`, `api-key`, `openai-api-key` and `anthropic-api-key`.
+- **AND** The openai and openai-compatible providers apply call headers after setting their own authorization header, so an accepted credential-bearing header would choose the credential presented to those backends.
+- **AND** The refused set SHALL cover every header name the inbound authenticated edge refuses in outer headers, which a test SHALL assert by driving the edge with a valid stack assertion and each candidate name, with an accepted ordinary header as a negative control, and requiring the body mapper to refuse every name the edge refused.
+- **AND** Outer authentication SHALL remain independent from body-carried provider call headers; unrelated outer HTTP headers SHALL NOT be forwarded automatically.
+- **AND** Provider-option protections SHALL follow gateway-native-provider-options: actual native consumption and precedence at the consuming namespace and scope SHALL justify any check preventing credential/account/destination, model/prompt, role/union, tool-ownership or transport/execution bypass.
+- **AND** A blanket case/underscore/hyphen-folded field list SHALL NOT reject ordinary fields that cannot cause the bypass.
+- **AND** Native-specific checks SHALL fail before external provider I/O; schema, reserved-host and protected-body-header refusals SHALL retain their pre-resolution processing order.
+- **AND** These refusals SHALL use fixed documents that never echo the offending namespace, field name, header name or value.
 
 #### Scenario: Reserved namespace
 - **WHEN** a request carries the `grafana`, `gateway`, or `grafana-ai-sdk` provider-option namespace without an owning feature consuming it
@@ -248,9 +258,20 @@ Native-specific checks SHALL fail before external provider I/O; schema, reserved
 - **THEN** host/schema/header refusals SHALL remain pre-resolution, native-specific checks SHALL precede external I/O and fixed documents SHALL echo no offending names or values
 
 ### Requirement: Resolution and bounded model invocation
-For a supported request, the handler SHALL select execution once under authenticated request policy and invoke the resulting logical model once. Configured selection SHALL resolve the exact catalog ID/alias; BYOK selection SHALL use only request provider/model/credentials. Selection SHALL return a nonempty valid-UTF-8 logical identity and a non-nil V4 model. Logical identity SHALL NOT substitute for native response identity, including when a native modelId equals it.
+The handler SHALL select and invoke one logical model under authenticated request policy. Configured access SHALL resolve its catalog once; BYOK SHALL use request accounts without a catalog. Both SHALL retain logical identity and one bounded selection/execution deadline.
 
-One request execution deadline SHALL begin immediately before host selection, after bounded protocol input validation, and SHALL cover selection/construction, logical invocation and all underlying credential attempts; streaming consumption SHALL use the same deadline. Selection, invocation and attempt boundaries SHALL NOT reset or extend it. An earlier request-context deadline SHALL remain effective. Selection and invocation SHALL retain context cancellation, panic containment, buffered completion and bounded handler latency when work ignores cancellation. Late selection completion SHALL NOT invoke a model and SHALL retain bounded request-owned cleanup. A permanently blocked selection or native function may retain its worker; no exactly-once or guaranteed-zeroization claim SHALL be made.
+#### Scenario: Selection and shared execution policy
+- **WHEN** a supported request enters host selection and invocation
+- **THEN** For a supported request, the handler SHALL select execution once under authenticated request policy and invoke the resulting logical model once.
+- **AND** Configured selection SHALL resolve the exact catalog ID/alias; BYOK selection SHALL use only request provider/model/credentials.
+- **AND** Selection SHALL return a nonempty valid-UTF-8 logical identity and a non-nil V4 model.
+- **AND** Logical identity SHALL NOT substitute for native response identity, including when a native modelId equals it.
+- **AND** One request execution deadline SHALL begin immediately before host selection, after bounded protocol input validation, and SHALL cover selection/construction, logical invocation and all underlying credential attempts; streaming consumption SHALL use the same deadline.
+- **AND** Selection, invocation and attempt boundaries SHALL NOT reset or extend it.
+- **AND** An earlier request-context deadline SHALL remain effective.
+- **AND** Selection and invocation SHALL retain context cancellation, panic containment, buffered completion and bounded handler latency when work ignores cancellation.
+- **AND** Late selection completion SHALL NOT invoke a model and SHALL retain bounded request-owned cleanup.
+- **AND** A permanently blocked selection or native function may retain its worker; no exactly-once or guaranteed-zeroization claim SHALL be made.
 
 #### Scenario: Supported execution
 - **WHEN** configured selection returns a valid model
