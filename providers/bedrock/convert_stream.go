@@ -169,7 +169,7 @@ func (c *streamConsumer) handleFrame(hdr frameHeader, payload []byte) error {
 	if c.includeRaw {
 		if !sendStreamPart(context.Background(), c.out, provider.StreamPart{
 			Type:     provider.PartRaw,
-			RawValue: json.RawMessage(append([]byte(nil), payload...)),
+			RawValue: rawFrameValue(hdr, payload),
 		}) {
 			return nil
 		}
@@ -219,11 +219,35 @@ func (c *streamConsumer) handleFrame(hdr frameHeader, payload []byte) error {
 		if !c.includeRaw {
 			_ = sendStreamPart(context.Background(), c.out, provider.StreamPart{
 				Type:     provider.PartRaw,
-				RawValue: json.RawMessage(append([]byte(nil), payload...)),
+				RawValue: rawFrameValue(hdr, payload),
 			})
 		}
 		return nil
 	}
+}
+
+// rawFrameValue mirrors upstream's raw chunk for an event-stream frame: the
+// payload without AWS's padding field, wrapped under its event or exception
+// type. Payloads that are not JSON objects are forwarded unchanged.
+func rawFrameValue(hdr frameHeader, payload []byte) json.RawMessage {
+	payloadType := hdr.EventType
+	if hdr.MessageType == "exception" {
+		payloadType = hdr.ExceptionType
+	}
+	var fields map[string]json.RawMessage
+	if payloadType == "" || json.Unmarshal(payload, &fields) != nil || fields == nil {
+		return json.RawMessage(append([]byte(nil), payload...))
+	}
+	delete(fields, "p")
+	inner, err := json.Marshal(fields)
+	if err != nil {
+		return json.RawMessage(append([]byte(nil), payload...))
+	}
+	wrapped, err := json.Marshal(map[string]json.RawMessage{payloadType: inner})
+	if err != nil {
+		return json.RawMessage(append([]byte(nil), payload...))
+	}
+	return wrapped
 }
 
 func (c *streamConsumer) handleMessageStart(_ []byte) error {
@@ -250,10 +274,9 @@ func (c *streamConsumer) handleContentBlockStart(payload []byte) error {
 		}
 		if !isJSON {
 			_ = sendStreamPart(context.Background(), c.out, provider.StreamPart{
-				Type:       provider.PartToolInputStart,
-				ID:         toolCallID,
-				ToolName:   tu.Name,
-				ToolCallID: toolCallID,
+				Type:     provider.PartToolInputStart,
+				ID:       toolCallID,
+				ToolName: tu.Name,
 			})
 		}
 		return nil
