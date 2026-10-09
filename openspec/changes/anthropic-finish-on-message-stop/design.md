@@ -52,6 +52,8 @@ Existing conformance replays only `streamText` -> UI chunks, request snapshots a
 
 15. **No finish without `message_stop`.** EOF after `message_delta` yields no finish; `StreamText` takes its partial/no-output path, same as upstream's incomplete-stream handling.
 
+16. **Input transformations share one mapping for unary and streaming.** Both paths build metadata from the same field map, so the mapping validates and projects `input_transformations` once (string `type`, `path`, `reason`, other fields dropped, empty array kept, null omitted). Streaming captures the value from `message_start.message` and from the top level of `message_delta` and treats it as stream-level, like upstream. Malformed values fail at the event that carries them, as safeguards do. No fixture exercises the field (upstream only tests its absence), so evidence is unit tests plus synthetic cases whose expectations come from upstream `doGenerate` and `doStream`; a synthetic unary harness is added for that. The request option that makes Anthropic transform inputs (`thinking.blockBinding`) is not part of this change.
+
 ## Risks / Trade-offs
 
 - [Truncated streams were "completed" in `StreamText`] -> now partial/no-output, intentional and covered by tests.

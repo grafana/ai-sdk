@@ -26,11 +26,13 @@ The conformance suite could not catch either: it compares only UI chunks from `s
   - `stream-start` always serializes `warnings`, and response timestamps serialize as UTC with milliseconds.
   - Anthropic error frames carry upstream's message, status code and retryability per error type, for first-chunk and mid-stream errors.
   - Anthropic raw usage iterations keep only the fields upstream's schema declares.
-- Out of scope: Gateway first-finish terminal rule for sequential messages (#393).
+- Report `inputTransformations` (dropped or rewritten input blocks) in Anthropic provider metadata for unary and streaming calls, as upstream does. Go previously had no counterpart. Cover it with unit tests and with synthetic unary and streaming cases whose expectations come from the pinned upstream.
+- Out of scope: Gateway first-finish terminal rule for sequential messages (#393, updated separately), and the `thinking.blockBinding` request option that causes transformations.
 
 ## Capabilities
 
 ### New Capabilities
+- `anthropic-input-transformations`: reporting of input transformations in unary and streaming provider metadata.
 - `anthropic-stream-finish-lifecycle`: when and how often the Anthropic stream adapter emits `PartFinish`, ordering relative to raw parts, behavior for incomplete streams, and handling of `error` frames.
 
 ### Modified Capabilities
