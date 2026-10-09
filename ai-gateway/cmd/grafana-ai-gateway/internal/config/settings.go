@@ -179,24 +179,6 @@ func (settings Settings) Validate() error {
 	if err := settings.AgentObservability.validate(settings.DeploymentMode); err != nil {
 		return err
 	}
-	if len(settings.Audiences) != 1 || settings.Audiences[0] != "ai-sdk" {
-		return fmt.Errorf("config: audience must be ai-sdk")
-	}
-	listenHosts := make([]string, 0, 3)
-	addresses := []string{settings.PrivateListenAddress, settings.CloudListenAddress, settings.OperationalListenAddress}
-	seenAddresses := make(map[string]bool)
-	for _, address := range addresses {
-		host, err := validateListenAddress(address)
-		if err != nil {
-			return err
-		}
-		_, port, _ := net.SplitHostPort(address)
-		if seenAddresses[address] && port != "0" {
-			return fmt.Errorf("config: private, Cloud and operational listen addresses must differ")
-		}
-		seenAddresses[address] = true
-		listenHosts = append(listenHosts, host)
-	}
 	byteLimits := []struct {
 		name  string
 		value int64
@@ -257,22 +239,6 @@ func (settings Settings) Validate() error {
 	if settings.AnthropicResponseBytes >= 32<<20 {
 		return fmt.Errorf("config: anthropic response bytes must be below the SDK scanner limit")
 	}
-	if settings.JWKSResponseBytes <= 0 {
-		return fmt.Errorf("config: jwks response bytes must be positive")
-	}
-	if settings.JWKSResponseBytes == math.MaxInt64 {
-		return fmt.Errorf("config: jwks response bytes cannot safely use limit+1")
-	}
-	if settings.JWKSMaxKeys <= 0 {
-		return fmt.Errorf("config: jwks maximum keys must be positive")
-	}
-	if settings.JWKSRequestTimeout <= 0 || settings.JWKSRefreshInterval <= 0 || settings.JWKSMaxAge <= 0 {
-		return fmt.Errorf("config: jwks request timeout, refresh interval, and maximum age must each be positive")
-	}
-	if settings.JWKSMaxAge < settings.JWKSRefreshInterval {
-		return fmt.Errorf("config: jwks maximum age must be at least refresh interval")
-	}
-	jwksLatency := settings.JWKSRequestTimeout
 	if settings.AnthropicResponseHeaderTimeout > settings.ProviderWire.ModelDuration {
 		return fmt.Errorf("config: anthropic response-header timeout must not exceed model duration")
 	}
@@ -282,6 +248,71 @@ func (settings Settings) Validate() error {
 	if _, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(limitValidationResolver{}), Limits: settings.ProviderWire}); err != nil {
 		return fmt.Errorf("config: providerwire limits: %w", err)
 	}
+	minimum, err := checkedDurationSum(settings.ReadTimeout, settings.ProviderWire.ModelDuration, settings.ResponseGrace)
+	if err != nil {
+		return err
+	}
+	if settings.WriteTimeout < minimum {
+		return fmt.Errorf("config: write timeout must be at least %s", minimum)
+	}
+	return nil
+}
+
+// ValidateRuntime validates selected authentication and active listeners before secrets or I/O.
+func (settings Settings) ValidateRuntime(auth EffectiveAuth, cloudEnabled bool) error {
+	if err := settings.Validate(); err != nil {
+		return err
+	}
+	if settings.DeploymentMode == DeploymentProduction && !settings.AgentObservability.Enabled && (auth.Type != AuthStaticKey || cloudEnabled) {
+		return fmt.Errorf("config: agent observability must be enabled in production")
+	}
+	if auth.Type != AuthStaticKey && (len(settings.Audiences) != 1 || settings.Audiences[0] != "ai-sdk") {
+		return fmt.Errorf("config: audience must be ai-sdk")
+	}
+	listenHosts := make([]string, 0, 3)
+	addresses := []string{settings.PrivateListenAddress, settings.OperationalListenAddress}
+	if cloudEnabled {
+		addresses = append(addresses, settings.CloudListenAddress)
+	}
+	seenAddresses := make(map[string]bool)
+	for _, address := range addresses {
+		host, err := validateListenAddress(address)
+		if err != nil {
+			return err
+		}
+		_, port, _ := net.SplitHostPort(address)
+		if seenAddresses[address] && port != "0" {
+			return fmt.Errorf("config: private, Cloud and operational listen addresses must differ")
+		}
+		seenAddresses[address] = true
+		listenHosts = append(listenHosts, host)
+	}
+
+	var jwksLatency time.Duration
+	if auth.Type == AuthJWT {
+		if settings.JWKSResponseBytes <= 0 {
+			return fmt.Errorf("config: jwks response bytes must be positive")
+		}
+		if settings.JWKSResponseBytes == math.MaxInt64 {
+			return fmt.Errorf("config: jwks response bytes cannot safely use limit+1")
+		}
+		if settings.JWKSMaxKeys <= 0 {
+			return fmt.Errorf("config: jwks maximum keys must be positive")
+		}
+		if settings.JWKSRequestTimeout <= 0 || settings.JWKSRefreshInterval <= 0 || settings.JWKSMaxAge <= 0 {
+			return fmt.Errorf("config: jwks request timeout, refresh interval, and maximum age must each be positive")
+		}
+		if settings.JWKSMaxAge < settings.JWKSRefreshInterval {
+			return fmt.Errorf("config: jwks maximum age must be at least refresh interval")
+		}
+
+		if auth.JWKSURL == "" {
+			return fmt.Errorf("config: jwks URL is required for safe authentication")
+		}
+		jwksLatency = settings.JWKSRequestTimeout
+	} else if auth.Type != AuthUnsafe && auth.Type != AuthStaticKey {
+		return fmt.Errorf("config: unsupported authentication type")
+	}
 	minimum, err := checkedDurationSum(settings.ReadTimeout, jwksLatency, settings.ProviderWire.ModelDuration, settings.ResponseGrace)
 	if err != nil {
 		return err
@@ -289,20 +320,15 @@ func (settings Settings) Validate() error {
 	if settings.WriteTimeout < minimum {
 		return fmt.Errorf("config: write timeout must be at least %s", minimum)
 	}
-	if settings.AuthUnsafe {
+	if auth.Type == AuthUnsafe {
 		if settings.DeploymentMode != DeploymentDevelopment {
 			return fmt.Errorf("config: unsafe authentication requires development mode")
-		}
-		if settings.JWKSURL != "" {
-			return fmt.Errorf("config: unsafe authentication requires an empty jwks URL")
 		}
 		for _, host := range listenHosts {
 			if err := validateUnsafeListenHost(host); err != nil {
 				return err
 			}
 		}
-	} else if settings.JWKSURL == "" {
-		return fmt.Errorf("config: jwks URL is required for safe authentication")
 	}
 	return nil
 }
@@ -333,9 +359,6 @@ var ambientAgentObservabilityEnvironment = []string{
 
 func (settings AgentObservabilitySettings) validate(mode DeploymentMode) error {
 	if !settings.Enabled {
-		if mode == DeploymentProduction {
-			return fmt.Errorf("config: agent observability must be enabled in production")
-		}
 		return nil
 	}
 	if settings.Protocol != AgentObservabilityGRPC && settings.Protocol != AgentObservabilityHTTP {

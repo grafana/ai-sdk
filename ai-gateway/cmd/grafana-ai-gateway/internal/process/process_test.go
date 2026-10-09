@@ -65,6 +65,7 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 		{name: "JWT trust required", args: []string{"--auth.jwks-url="}, message: "jwks"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			path := writeProcessConfig(t, "https://api.anthropic.com")
 			secretCalls := 0
 			listenCalls := 0
 			err := Run(
@@ -75,7 +76,7 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 						secretCalls++
 					}
 					values := map[string]string{
-						"GRAFANA_AI_GATEWAY_CONFIG_FILE":               "/nonexistent/private.yaml",
+						"GRAFANA_AI_GATEWAY_CONFIG_FILE":               path,
 						"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL":             "https://auth.example/jwks",
 						"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
 						"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.example:4317",
@@ -128,6 +129,7 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 	})
 
 	t.Run("invalid production listen address", func(t *testing.T) {
+		path := writeProcessConfig(t, "https://api.anthropic.com")
 		secretCalls := 0
 		listenCalls := 0
 		err := Run(
@@ -138,7 +140,7 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 					secretCalls++
 				}
 				values := map[string]string{
-					"GRAFANA_AI_GATEWAY_CONFIG_FILE":               "/nonexistent/private.yaml",
+					"GRAFANA_AI_GATEWAY_CONFIG_FILE":               path,
 					"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL":             "https://auth.example/jwks",
 					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
 					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.example:4317",
@@ -156,7 +158,8 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 		assert.Zero(t, listenCalls)
 	})
 
-	t.Run("invalid production jwks before yaml", func(t *testing.T) {
+	t.Run("invalid production jwks before secrets", func(t *testing.T) {
+		path := writeProcessConfig(t, "https://api.anthropic.com")
 		secretCalls := 0
 		listenCalls := 0
 		err := Run(
@@ -167,7 +170,7 @@ func TestRun_ValidatesScalarsAndEndpointsBeforeSecretsOrListener(t *testing.T) {
 					secretCalls++
 				}
 				values := map[string]string{
-					"GRAFANA_AI_GATEWAY_CONFIG_FILE":               "/nonexistent/private.yaml",
+					"GRAFANA_AI_GATEWAY_CONFIG_FILE":               path,
 					"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL":             "http://auth.example/jwks",
 					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
 					"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.example:4317",
