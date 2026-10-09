@@ -8,7 +8,11 @@ Define the provider-level tool type system using a flat discriminated `Tool` str
 
 ### Requirement: Tool is a flat discriminated struct
 
-The `provider` package SHALL define `Tool` as a single flat struct discriminated by a typed `Type` field, mirroring how `provider.StreamPart` and `provider.ContentPart` are modeled:
+The provider package SHALL define `Tool` as one flat struct discriminated by typed `Type`, like `provider.StreamPart` and `provider.ContentPart`. Type SHALL be `ToolTypeFunction` or `ToolTypeProvider`. The previous sealed interface, `tool()` marker and concrete `FunctionTool`/`ProviderTool` SHALL be removed.
+
+#### Scenario: Tool field schema
+- **WHEN** public `Tool` fields and JSON tags are inspected
+- **THEN** they SHALL be:
 
 ```go
 type Tool struct {
@@ -23,8 +27,6 @@ type Tool struct {
     ProviderOptions ProviderOptions            `json:"providerOptions,omitempty"`
 }
 ```
-
-The `Type` field SHALL be either `ToolTypeFunction` or `ToolTypeProvider`. The previous sealed `Tool` interface, the `tool()` marker method, and the concrete `FunctionTool` and `ProviderTool` types SHALL be removed.
 
 #### Scenario: Tool is a struct
 - **WHEN** the `provider.Tool` type is inspected
@@ -88,7 +90,7 @@ The `FunctionTool` struct SHALL no longer exist as a distinct type. Function-typ
 
 ### Requirement: ProviderTool struct
 
-The `ProviderTool` struct SHALL no longer exist as a distinct type. Provider-typed tools MUST be constructed as `Tool{Type: ToolTypeProvider, Name: ..., ID: ..., Args: ...}`. Function-only fields Description, InputSchema, InputExamples, Strict and ProviderOptions SHALL remain unset on this variant. The flat struct SHALL retain ProviderOptions for function tools only; direct entry points SHALL reject representably populated incompatible fields before backend I/O. Private wire validation SHALL also reject explicitly empty forbidden members that the Go flat struct cannot distinguish from absence. The registered HTTP projection SHALL require a JSON object for provider args, including `{}`. For direct Go calls, a nil `Args` map SHALL normalize to `{}` at request conversion; this is a Go adaptation to the default empty args supplied by registered upstream provider-tool factories, not a relaxation of HTTP validation. Non-nil argument maps SHALL contain valid JSON values.
+Distinct `ProviderTool` SHALL no longer exist. Provider tools MUST use `Tool{Type: ToolTypeProvider, Name: ..., ID: ..., Args: ...}`; Description, InputSchema, InputExamples, Strict and ProviderOptions SHALL remain unset. Flat-struct ProviderOptions SHALL be function-only. Direct entry points SHALL reject representably populated incompatible fields before backend I/O; private wire validation SHALL also reject explicitly empty forbidden members indistinguishable from absence in Go.
 
 #### Scenario: Provider tool with ID and Args
 - **WHEN** a provider-typed `Tool` is constructed with `Type: ToolTypeProvider`, `Name: "web_search"`, `ID: "anthropic.web_search_20250305"`, and `Args` containing `"maxUses"`
@@ -114,6 +116,14 @@ The `ProviderTool` struct SHALL no longer exist as a distinct type. Provider-typ
 - **WHEN** a non-nil Go `Args` map contains empty or invalid `json.RawMessage` values
 - **THEN** direct validation SHALL reject the tool before native I/O
 
+### Requirement: Provider tool argument object boundary
+
+Registered HTTP projection SHALL require a JSON object for provider args, including `{}`. Direct Go nil `Args` SHALL normalize to `{}` in request conversion: a Go adaptation to upstream factory default empty args, not relaxed HTTP validation. Non-nil maps SHALL contain valid JSON values.
+
+#### Scenario: Provider tool argument object boundary
+- **WHEN** a direct Go provider tool omits Args but an HTTP tool omits args
+- **THEN** Go SHALL normalize nil to `{}` while HTTP SHALL still require an object; invalid non-nil JSON map values SHALL be rejected
+
 ### Requirement: InputExample wrapper type
 
 The `provider` package SHALL continue to define an `InputExample` struct with a single field `Input json.RawMessage` (`json:"input"`). The unified `Tool.InputExamples` (formerly `FunctionTool.InputExamples`) MUST use `[]InputExample`.
@@ -124,11 +134,7 @@ The `provider` package SHALL continue to define an `InputExample` struct with a 
 
 ### Requirement: Orchestration layer tool conversion
 
-The `toolSetToProviderTools` function SHALL convert `aisdk.Tool` entries into the unified flat `provider.Tool` struct as follows:
-
-- Tools with Type `""`, `"function"`, or `"dynamic"` SHALL produce `provider.Tool{Type: provider.ToolTypeFunction, ...}` carrying Name, Description, InputSchema, InputExamples, Strict, and ProviderOptions.
-- Tools with Type `"provider"` SHALL produce `provider.Tool{Type: provider.ToolTypeProvider, ...}` carrying Name, ID, and Args.
-- Tools with unrecognized types SHALL produce a warning and be skipped.
+`toolSetToProviderTools` SHALL convert aisdk tools to flat provider tools: types "", "function" or "dynamic" -> `provider.ToolTypeFunction` carrying Name, Description, InputSchema, InputExamples, Strict and ProviderOptions; "provider" -> `provider.ToolTypeProvider` carrying Name, ID and Args. Unrecognized types SHALL warn and be skipped.
 
 #### Scenario: Function tool conversion
 - **WHEN** `toolSetToProviderTools` receives a tool with Type `""` and Name `"get_weather"`

@@ -5,23 +5,8 @@ Define Anthropic model capability lookup and the model-aware validation, default
 ## Requirements
 
 ### Requirement: Model capabilities lookup
-The system SHALL provide an unexported `getModelCapabilities` function accepting a model ID string and returning metadata including `maxOutputTokens`, `supportsAdaptiveThinking`, `supportsStructuredOutput`, `rejectsSamplingParams`, `supportsXHighEffort`, `rejectsThinkingDisabledAboveHighEffort`, `rejectsThinkingDisabled`, `rejectsForcedToolUse`, `supportsBetweenToolsThinking` and `isKnownModel`. More-specific family checks SHALL precede generic Claude 4 base-family checks. Matching metadata SHALL NOT rewrite the request model ID.
 
-The function SHALL classify the registered baseline families, plus `claude-sonnet-5-5` ported from `@ai-sdk/anthropic` 4.0.67 ahead of that baseline, as follows:
-- IDs containing `claude-sonnet-5-5`: 128000 max output, adaptive and structured output, sampling rejected, xhigh effort supported, disabled thinking rejected above high effort, disabled and budget thinking rejected, forced tool use rejected, `between_tools` thinking supported, known. This row SHALL precede the `claude-sonnet-5` row.
-- IDs containing `claude-opus-5`: 128000 max output, adaptive and structured output, sampling rejected, xhigh effort supported, disabled thinking rejected above high effort, known.
-- IDs containing `claude-opus-4-8`, `claude-opus-4-7`, `claude-fable-5`, or `claude-sonnet-5`: 128000 max output, adaptive and structured output, sampling rejected, xhigh effort supported, known.
-- IDs containing `claude-sonnet-4-6` or `claude-opus-4-6`: 128000 max output, adaptive and structured output, known; sampling not rejected.
-- IDs containing `claude-sonnet-4-5`, `claude-opus-4-5`, or `claude-haiku-4-5`: 64000 max output, structured output, known; no adaptive thinking or sampling rejection.
-- IDs containing `claude-opus-4-1`: 32000 max output, structured output, known; no adaptive thinking or sampling rejection.
-- Other IDs matching `claude-sonnet-4` followed immediately by `-` or `@`: 64000 max output, known; no adaptive thinking, structured output or sampling rejection.
-- Other IDs matching `claude-opus-4` followed immediately by `-` or `@`: 32000 max output, known; no adaptive thinking, structured output or sampling rejection.
-- IDs containing `claude-3-haiku`: 4096 max output, known; no adaptive thinking, structured output or sampling rejection.
-- Legacy Claude 2/3/instant families: 4096 max output and not known.
-- Other IDs containing `claude-`: 128000 max output, adaptive and structured output, sampling rejected, xhigh effort supported, disabled thinking rejected above high effort, not known.
-- All other IDs: 4096 max output and not known.
-
-Boolean capabilities not explicitly enabled in a row SHALL be false. Bare `claude-sonnet-4` and `claude-opus-4` do not have the `-` or `@` boundary and SHALL remain in the unknown-Claude branch.
+The system SHALL provide unexported `getModelCapabilities(modelID string)` returning model metadata without rewriting the request ID. Specific family checks SHALL precede generic Claude 4 checks, and Sonnet 5.5 SHALL precede Sonnet 5. Classification SHALL use registered baseline families plus Sonnet 5.5 ported ahead from `@ai-sdk/anthropic` 4.0.67. Boolean capabilities not explicitly enabled in a classification SHALL be false; bare Sonnet/Opus 4 SHALL remain unknown-Claude.
 
 #### Scenario: Known model claude-opus-4-7
 - **WHEN** `getModelCapabilities` is called with model ID `claude-opus-4-7`
@@ -75,6 +60,66 @@ Boolean capabilities not explicitly enabled in a row SHALL be false. Bare `claud
 - **WHEN** `getModelCapabilities` is called with model ID `some-future-model`
 - **THEN** it SHALL return maxOutputTokens=4096, supportsAdaptiveThinking=false, supportsStructuredOutput=false, isKnownModel=false
 
+#### Scenario: Sonnet 5.5 capability classification
+
+- **WHEN** an ID contains `claude-sonnet-5-5`
+- **THEN** metadata SHALL report 128000 max output, adaptive and structured output, sampling rejected, xhigh effort supported, disabled thinking rejected above high effort, disabled and budget thinking rejected, forced tool use rejected, `between_tools` thinking supported, known; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Opus 5 capability classification
+
+- **WHEN** an ID contains `claude-opus-5`
+- **THEN** metadata SHALL report 128000 max output, adaptive and structured output, sampling rejected, xhigh effort supported, disabled thinking rejected above high effort, known; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Newest Claude capability classification
+
+- **WHEN** an ID contains `claude-opus-4-8`, `claude-opus-4-7`, `claude-fable-5`, or `claude-sonnet-5` but does not match Sonnet 5.5
+- **THEN** metadata SHALL report 128000 max output, adaptive and structured output, sampling rejected, xhigh effort supported, known; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Claude 4.6 capability classification
+
+- **WHEN** an ID contains `claude-sonnet-4-6` or `claude-opus-4-6`
+- **THEN** metadata SHALL report 128000 max output, adaptive and structured output, known; sampling not rejected; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Claude 4.5 capability classification
+
+- **WHEN** an ID contains `claude-sonnet-4-5`, `claude-opus-4-5`, or `claude-haiku-4-5`
+- **THEN** metadata SHALL report 64000 max output, structured output, known; no adaptive thinking or sampling rejection; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Opus 4.1 capability classification
+
+- **WHEN** an ID contains `claude-opus-4-1`
+- **THEN** metadata SHALL report 32000 max output, structured output, known; no adaptive thinking or sampling rejection; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Base Sonnet 4 capability classification
+
+- **WHEN** an ID matches `claude-sonnet-4` immediately followed by `-` or `@` and no more-specific family
+- **THEN** metadata SHALL report 64000 max output, known; no adaptive thinking, structured output or sampling rejection; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Base Opus 4 capability classification
+
+- **WHEN** an ID matches `claude-opus-4` immediately followed by `-` or `@` and no more-specific family
+- **THEN** metadata SHALL report 32000 max output, known; no adaptive thinking, structured output or sampling rejection; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Haiku 3 capability classification
+
+- **WHEN** an ID contains `claude-3-haiku`
+- **THEN** metadata SHALL report 4096 max output, known; no adaptive thinking, structured output or sampling rejection; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Legacy Claude capability classification
+
+- **WHEN** an ID belongs to legacy Claude 2/3/instant families and no more-specific family
+- **THEN** metadata SHALL report 4096 max output and not known; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Unknown Claude capability classification
+
+- **WHEN** an ID contains `claude-` but matches no known or legacy family, including bare `claude-sonnet-4` and `claude-opus-4`
+- **THEN** metadata SHALL report 128000 max output, adaptive and structured output, sampling rejected, xhigh effort supported, disabled thinking rejected above high effort, not known; boolean capabilities not enabled here SHALL be false
+
+#### Scenario: Non-Claude capability classification
+
+- **WHEN** an ID matches none of the Claude classifications
+- **THEN** metadata SHALL report 4096 max output and not known; boolean capabilities not enabled here SHALL be false
+
 ### Requirement: Sampling parameter rejection for unsupported models
 When model capabilities indicate `rejectsSamplingParams=true`, `buildParams` SHALL clear `Temperature`, `TopP`, and `TopK` from the Anthropic request and emit unsupported warnings for each cleared field.
 
@@ -121,13 +166,8 @@ When thinking is enabled with type `adaptive`, no budget adjustment SHALL be mad
 - **THEN** `MaxTokens` SHALL remain 64000
 
 ### Requirement: Max tokens clamping for known models
-When the final `MaxTokens` (after thinking budget adjustment) exceeds the model's `maxOutputTokens` for a known model, `buildParams` SHALL clamp `MaxTokens` to `maxOutputTokens`.
 
-If the user explicitly set `MaxOutputTokens` (not nil), a warning SHALL be emitted with type `unsupported`, feature `maxOutputTokens`, and details describing the clamping.
-
-If the user did not set `MaxOutputTokens` (nil), clamping SHALL occur silently without a warning.
-
-For unknown models (isKnownModel=false), no clamping SHALL occur.
+When final `MaxTokens` after thinking-budget adjustment exceeds a known model's `maxOutputTokens`, `buildParams` SHALL clamp to that maximum. If `MaxOutputTokens` is non-nil, clamping SHALL emit an `unsupported` warning for `maxOutputTokens` describing the clamp; nil SHALL clamp silently. Unknown models (`isKnownModel=false`) SHALL NOT clamp.
 
 #### Scenario: Clamping with user-provided max tokens and thinking budget
 - **WHEN** model is `claude-sonnet-4-5` (max 64000), user sets `MaxOutputTokens=60000`, and thinking budget is 10000
@@ -165,7 +205,8 @@ For both direct and Vertex request paths, the Anthropic provider SHALL use class
 - **THEN** the request SHALL keep its existing unknown-model default max tokens and compatibility warning; it SHALL not be classified as a known dated Claude 4 model
 
 ### Requirement: Thinking normalization for models that reject disabled thinking
-For a model with `rejectsThinkingDisabled`, the Anthropic provider SHALL rewrite an explicit provider-option thinking setting that the API would reject, and SHALL emit an `unsupported` warning with feature `providerOptions.anthropic.thinking` for each rewrite, as `@ai-sdk/anthropic` 4.0.67 does. Type `disabled` SHALL become `between_tools` when the model supports it, and SHALL otherwise be removed. Budget-based type `enabled` SHALL become `adaptive` without a budget. These rewrites SHALL run before the existing disabled-above-high effort cap and before the `between_tools` effort limit. The warning details SHALL name the model ID.
+
+For `rejectsThinkingDisabled` models, explicit thinking `disabled` SHALL become `between_tools` if supported, else be removed; budget-based `enabled` SHALL become budgetless `adaptive`. As in `@ai-sdk/anthropic` 4.0.67, each rewrite SHALL warn `unsupported` with feature `providerOptions.anthropic.thinking` and model ID in details, before disabled-above-high and between-tools effort caps.
 
 #### Scenario: Explicit disabled thinking on Sonnet 5.5
 - **WHEN** `claude-sonnet-5-5` is called with `thinking: {type: "disabled"}`
@@ -202,7 +243,8 @@ For a model with `rejectsThinkingDisabled`, the Anthropic provider SHALL rewrite
 - **THEN** the request SHALL omit `temperature` and emit an unsupported `temperature` warning
 
 ### Requirement: Forced tool choice fallback
-For a model with `rejectsForcedToolUse`, when no JSON response tool is used, the Anthropic provider SHALL send a `required` tool choice as `auto`, and a named tool choice as `auto` with only the named tool, as upstream `prepareTools` in `@ai-sdk/anthropic` 4.0.67 does. Each fallback SHALL emit an `unsupported` warning with feature `toolChoice` that tells the caller to instruct the model in the prompt and to verify the tool call. The named tool SHALL be matched after tool-name mapping, so a provider tool the caller renamed is kept. When the JSON response tool is used, it SHALL replace the caller's tool choice as the `anthropic-structured-output` capability specifies, and the caller's choice SHALL NOT filter tools or add its own warning.
+
+For `rejectsForcedToolUse` models without a JSON response tool, required choice SHALL become auto; named choice SHALL become auto with only that tool, matched after name mapping to keep renamed provider tools. As in `@ai-sdk/anthropic` 4.0.67 `prepareTools`, each fallback SHALL warn unsupported `toolChoice`, telling callers to instruct the model in the prompt and verify the call.
 
 #### Scenario: Required tool choice on Sonnet 5.5
 - **WHEN** `claude-sonnet-5-5` is called with two function tools and tool choice `required`
@@ -222,3 +264,21 @@ For a model with `rejectsForcedToolUse`, when no JSON response tool is used, the
 #### Scenario: Sonnet 5 keeps forced tool use
 - **WHEN** `claude-sonnet-5` is called with tool choice `required`
 - **THEN** the request SHALL contain `tool_choice: {type: "any"}`
+
+### Requirement: Anthropic capability metadata fields
+
+Capability metadata SHALL include `maxOutputTokens`, `supportsAdaptiveThinking`, `supportsStructuredOutput`, `rejectsSamplingParams`, `supportsXHighEffort`, `rejectsThinkingDisabledAboveHighEffort`, `rejectsThinkingDisabled`, `rejectsForcedToolUse`, `supportsBetweenToolsThinking` and `isKnownModel`.
+
+#### Scenario: Anthropic capability metadata fields
+
+- **WHEN** capabilities are looked up for `claude-sonnet-5-5` and `some-future-model`
+- **THEN** each result SHALL report every listed field; Sonnet 5.5 SHALL enable its classified boolean capabilities, while the non-Claude unknown model SHALL report all booleans false and maxOutputTokens=4096
+
+### Requirement: Anthropic JSON response tool replaces caller choice
+
+With a JSON response tool, that tool SHALL replace caller choice as specified by `anthropic-structured-output`; caller choice SHALL NOT filter tools or add its own warning.
+
+#### Scenario: Anthropic JSON response tool replaces caller choice
+
+- **WHEN** Sonnet 5.5 uses a JSON fallback tool with several caller tools and a named choice
+- **THEN** all tools SHALL survive and only the fallback-required choice SHALL produce the unsupported toolChoice warning

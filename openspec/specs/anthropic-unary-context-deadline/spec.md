@@ -7,7 +7,8 @@ Define how caller context deadlines bound direct Anthropic unary calls with larg
 ## Requirements
 
 ### Requirement: Bounded unary Anthropic calls use the request context deadline
-For direct Anthropic `DoGenerate`, a future caller-supplied context deadline SHALL become a default SDK request timeout before the native non-streaming token-estimate check. The context SHALL continue to bound the call; the provider SHALL not silently reduce `max_tokens` or reject an otherwise valid large-default-token request solely because the SDK lacks a request timeout. Explicit caller-configured SDK request timeouts SHALL retain precedence over the context-derived default. Without a deadline or explicit timeout, the existing SDK guard SHALL remain in effect. Streaming behavior SHALL be unchanged.
+
+Before Anthropic `DoGenerate`'s native token-estimate guard, a future caller context deadline SHALL supply the default SDK timeout unless one is explicit. The context SHALL still bound the call. The provider SHALL NOT reduce `max_tokens` or reject valid large-default-token calls solely for a missing SDK timeout. Without a deadline or explicit timeout, the SDK guard SHALL remain. Streaming SHALL be unchanged.
 
 #### Scenario: Deadline permits large default token budget
 - **WHEN** a unary call for a model whose default `max_tokens` exceeds the SDK's non-streaming threshold has a future request context deadline and no explicit request timeout

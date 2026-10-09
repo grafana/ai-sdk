@@ -4,8 +4,7 @@
 Define bounded native Gateway source projection, independent client decoding, and separate lifecycle and metadata-only observation contracts for URL and document citations.
 ## Requirements
 ### Requirement: Registered source output
-
-The Gateway SHALL emit atomic flat source parts in unary content and streams. URL sources SHALL contain type, sourceType, id and url; nonempty title MAY be included. Document sources SHALL contain type, sourceType, id, mediaType and title even when title is empty; nonempty filename MAY be included. Optional empty URL titles and document filenames SHALL be omitted as the documented Go absent/empty normalization. Nonempty unary Title SHALL take precedence over legacy Text; empty Title SHALL fall back to Text because the string API cannot distinguish absence and explicit empty Title. Native title/filename values SHALL remain unchanged, including file_path display. Unknown discriminators, nil stream sources and invalid represented UTF-8 SHALL fail through the existing safe error. Inactive fields SHALL NOT be serialized. URLs SHALL NOT be fetched or canonicalized.
+The Gateway SHALL emit atomic flat source parts in unary content and streams. URL sources SHALL contain type, sourceType, id and url; nonempty title MAY be included. Document sources SHALL contain type, sourceType, id, mediaType and title even when title is empty; nonempty filename MAY be included. Optional empty URL titles and document filenames SHALL be omitted as the documented Go absent/empty normalization.
 
 #### Scenario: Title compatibility
 - **WHEN** a unary document contains Title "current" and Text "legacy"
@@ -22,11 +21,22 @@ The Gateway SHALL emit atomic flat source parts in unary content and streams. UR
 - **THEN** both display values SHALL survive without Document substitution or filename removal
 - **AND** native source identity SHALL remain the adapter-provided ID, not be derived from file metadata
 
+### Requirement: Native source display and unary legacy title precedence
+Nonempty unary Title SHALL take precedence over legacy Text; empty Title SHALL fall back to Text because the string API cannot distinguish absence and explicit empty Title. Native title/filename values SHALL remain unchanged, including file_path display.
+
+#### Scenario: Native source display and unary legacy title precedence
+- **WHEN** a unary source supplies both Title and legacy Text, or native file_path display
+- **THEN** nonempty Title SHALL win, empty Title SHALL fall back to Text and native title/filename values SHALL remain unchanged
+
+### Requirement: Source validation and inactive-field boundaries
+Unknown discriminators, nil stream sources and invalid represented UTF-8 SHALL fail through the existing safe error. Inactive fields SHALL NOT be serialized. URLs SHALL NOT be fetched or canonicalized.
+
+#### Scenario: Source validation and inactive-field boundaries
+- **WHEN** a stream source is nil, has an unknown discriminator or contains invalid represented UTF-8
+- **THEN** the existing safe error SHALL apply without inactive-field serialization, URL fetching or canonicalization
+
 ### Requirement: Bounded response-local source identity
-
 The Gateway SHALL preserve each native source ID exactly in its response rather than assigning a sequential, hashed or generated replacement. Source ID SHALL be a required valid-UTF-8 string, including an empty value permitted by the registered contract. Repeated IDs and equal IDs across URL/document variants SHALL remain unchanged and SHALL NOT cause deduplication or collision repair. Identity-map state and its 1024-byte key cap SHALL be removed; source identity is not public route identity.
-
-Unary preflight SHALL bound aggregate source strings and all original metadata namespace key/value bytes with other represented values by UnaryResponseBytes; content/metadata cardinality SHALL bound mapping work. Streaming SHALL use StreamParts and complete-frame bounds, including source strings, current metadata and SSE framing. Size preflight SHALL precede UTF-8 scanning and encoding; exact final-byte checks SHALL prevent partial output. No source-specific ID cap SHALL reject a value that otherwise fits these containing-document bounds.
 
 #### Scenario: Repeated source
 - **WHEN** the same URL ID appears twice and a document has the same ID
@@ -40,11 +50,22 @@ Unary preflight SHALL bound aggregate source strings and all original metadata n
 - **WHEN** raw strings exceed aggregate preflight, UTF-8 is invalid or escaping makes the complete response/frame one byte too large
 - **THEN** the existing bounded unary or streaming safe error path SHALL apply without partial source output
 
+### Requirement: Aggregate source envelope and mapping-work bounds
+Unary preflight SHALL bound aggregate source strings and all original metadata namespace key/value bytes with other represented values by UnaryResponseBytes; content/metadata cardinality SHALL bound mapping work. Streaming SHALL use StreamParts and complete-frame bounds, including source strings, current metadata and SSE framing. Size preflight SHALL precede UTF-8 scanning and encoding; exact final-byte checks SHALL prevent partial output.
+
+#### Scenario: Aggregate source envelope and mapping-work bounds
+- **WHEN** source strings/metadata fit independently but together exceed a unary preflight or complete SSE frame bound
+- **THEN** aggregate size/cardinality SHALL bound mapping before UTF-8/encoding and complete final-byte checks SHALL prevent partial output
+
+### Requirement: No standalone source ID byte cap
+No source-specific ID cap SHALL reject a value that otherwise fits these containing-document bounds.
+
+#### Scenario: No standalone source ID byte cap
+- **WHEN** a valid source ID exceeds 1024 bytes but fits all containing-document bounds
+- **THEN** it SHALL remain accepted without a source-specific identity cap
+
 ### Requirement: Opaque public source metadata
-
-Source providerMetadata SHALL preserve all supplied native object-valued namespaces and nested JSON under gateway-provider-metadata, with no synthetic citation namespace, numeric-only projection, recognized-namespace byte cap or key inventory. Absence SHALL remain absent and an explicit empty object SHALL remain present. All original namespace bytes including whitespace, namespace key bytes and cardinality SHALL participate in aggregate unary or complete-frame preflight before validation and encoding. Malformed JSON, invalid UTF-8, null/non-object namespaces or excess budget SHALL fail the response/event explicitly rather than selectively omitting fields. Useful native IDs, cited text and unknown fields inside ordinary provider metadata SHALL NOT be discarded merely because operator capture excludes them. Concrete credential and tenant-source protections SHALL remain independent from ordinary metadata transport.
-
-Recognized file_path metadata SHALL NOT alter native source identity, title or filename.
+Source providerMetadata SHALL preserve all supplied native object-valued namespaces and nested JSON under gateway-provider-metadata, with no synthetic citation namespace, numeric-only projection, recognized-namespace byte cap or key inventory. Absence SHALL remain absent and an explicit empty object SHALL remain present.
 
 #### Scenario: Native file path
 - **WHEN** file_path supplies native source ID, title, filename and index
@@ -54,11 +75,22 @@ Recognized file_path metadata SHALL NOT alter native source identity, title or f
 - **WHEN** a source has a previously unknown namespace with malformed or non-object JSON
 - **THEN** the unary response SHALL fail before HTTP success or the committed stream SHALL reject the event through its existing terminal adaptation path, without numeric-only or metadata-free success
 
+### Requirement: Original source metadata preflight and explicit failure
+All original namespace bytes including whitespace, namespace key bytes and cardinality SHALL participate in aggregate unary or complete-frame preflight before validation and encoding. Malformed JSON, invalid UTF-8, null/non-object namespaces or excess budget SHALL fail the response/event explicitly rather than selectively omitting fields.
+
+#### Scenario: Original source metadata preflight and explicit failure
+- **WHEN** whitespace-heavy source metadata exceeds aggregate preflight or has a malformed/non-object namespace
+- **THEN** original key/value bytes and cardinality SHALL count before validation/encoding, and the response/event SHALL fail rather than omit fields
+
+### Requirement: Source metadata display and protection separation
+Useful native IDs, cited text and unknown fields inside ordinary provider metadata SHALL NOT be discarded merely because operator capture excludes them. Concrete credential and tenant-source protections SHALL remain independent from ordinary metadata transport. Recognized file_path metadata SHALL NOT alter native source identity, title or filename.
+
+#### Scenario: Source metadata display and protection separation
+- **WHEN** file_path metadata carries native IDs/cited text/unknown fields while operator capture excludes payloads
+- **THEN** ordinary metadata SHALL survive without changing identity/title/filename or discarding fields, with concrete credential/tenant-source protections remaining independent
+
 ### Requirement: Atomic source lifecycle and observation
-
 Sources SHALL preserve relative output order and SHALL NOT close active text or tool blocks. Accepted sources SHALL mark output as started, disallow subsequent response metadata and reset idle activity through the existing loop. Provider error parts SHALL remain non-terminal; authoritative finish SHALL suppress later sources. Sources SHALL commit fallback candidates without replay. Existing cancellation, frame bounds, timeouts, part limits and cleanup ownership SHALL remain effective.
-
-Reusable logging, Prometheus and Agent Observability SHALL treat source as payload-bearing first output and pass it through unchanged. Gateway metadata-only telemetry SHALL omit source IDs, URLs, titles, filenames and metadata. Agent Observability SHALL NOT manufacture an unsupported source recording representation.
 
 #### Scenario: Source interleaving
 - **WHEN** a source appears between text-start and text-end
@@ -69,9 +101,15 @@ Reusable logging, Prometheus and Agent Observability SHALL treat source as paylo
 - **WHEN** a source is the only payload before finish
 - **THEN** reusable observers SHALL record first-output timing without recording its content in metadata-only output
 
-### Requirement: Independent consumption and evidence
+### Requirement: Source observers preserve payload without unsupported recordings
+Reusable logging, Prometheus and Agent Observability SHALL treat source as payload-bearing first output and pass it through unchanged. Gateway metadata-only telemetry SHALL omit source IDs, URLs, titles, filenames and metadata. Agent Observability SHALL NOT manufacture an unsupported source recording representation.
 
-The Apache Go client SHALL decode both registered variants without Gateway implementation imports, preserve native ID/display/order and current object-valued metadata, require document title presence while accepting an empty title, and normalize optional strings. Its bounded HTTP/SSE consumption SHALL apply. Exact-pinned Vercel/Go differential tests SHALL exercise unary/stream sources through the handler and authenticated command. Raw schemas SHALL independently verify supported fields, required empties, inactive-field absence and containing-document bounds because TS parses permissively. Provider-independent schema-parsed UI tests SHALL prove native source assembly, repeated/equal-cross-variant IDs and display values with WithUIMessageStreamSources(true). Any response identity in assembled message metadata SHALL be copied explicitly by a test-only WithUIMessageStreamMessageMetadata callback from supplied StreamFinishStep.Response values; it SHALL NOT be represented as automatic UI identity/warning projection or proof of Gateway absent-value semantics. Synthetic transports SHALL NOT be presented as provider recordings. Published dependency, candidate-workspace and image evidence SHALL be reported separately.
+#### Scenario: Source observers preserve payload without unsupported recordings
+- **WHEN** a source is the first and only payload before finish
+- **THEN** reusable logging/Prometheus/Agent Observability SHALL pass it unchanged and mark first output, while Gateway metadata-only output omits source payloads and no unsupported recording representation is manufactured
+
+### Requirement: Independent consumption and evidence
+The Apache Go client SHALL decode both registered variants without Gateway implementation imports, preserve native ID/display/order and current object-valued metadata, require document title presence while accepting an empty title, and normalize optional strings. Its bounded HTTP/SSE consumption SHALL apply. Exact-pinned Vercel/Go differential tests SHALL exercise unary/stream sources through the handler and authenticated command.
 
 #### Scenario: Both clients
 - **WHEN** both clients consume bounded URL/document output
@@ -81,3 +119,24 @@ The Apache Go client SHALL decode both registered variants without Gateway imple
 #### Scenario: Frontend assembly
 - **WHEN** schema-parsed UI chunks contain repeated native IDs, equal IDs across source variants and native file-path display
 - **THEN** assembled message parts SHALL preserve order, sourceId and display without deduplication or renaming
+
+### Requirement: Independent strict source schema and UI evidence
+Raw schemas SHALL independently verify supported fields, required empties, inactive-field absence and containing-document bounds because TS parses permissively. Provider-independent schema-parsed UI tests SHALL prove native source assembly, repeated/equal-cross-variant IDs and display values with WithUIMessageStreamSources(true).
+
+#### Scenario: Independent strict source schema and UI evidence
+- **WHEN** source wire output contains required empty document titles and corresponding UI chunks contain repeated equal IDs across URL/document variants
+- **THEN** raw schemas SHALL independently verify fields/bounds and schema-parsed provider-independent UI tests with WithUIMessageStreamSources(true) SHALL prove native assembly/order/display
+
+### Requirement: Test-only explicit UI response identity projection
+Any response identity in assembled message metadata SHALL be copied explicitly by a test-only WithUIMessageStreamMessageMetadata callback from supplied StreamFinishStep.Response values; it SHALL NOT be represented as automatic UI identity/warning projection or proof of Gateway absent-value semantics.
+
+#### Scenario: Test-only explicit UI response identity projection
+- **WHEN** an assembled UI message includes supplied StreamFinishStep.Response identity
+- **THEN** a test-only WithUIMessageStreamMessageMetadata callback SHALL explicitly copy it without claiming automatic identity/warning projection or Gateway absent-value semantics
+
+### Requirement: Source transport provenance and delivery evidence separation
+Synthetic transports SHALL NOT be presented as provider recordings. Published dependency, candidate-workspace and image evidence SHALL be reported separately.
+
+#### Scenario: Source transport provenance and delivery evidence separation
+- **WHEN** source acceptance uses a synthetic transport and candidate workspace build
+- **THEN** the report SHALL NOT label the transport as a recording and SHALL separate published-dependency, candidate-workspace and image evidence

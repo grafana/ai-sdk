@@ -65,6 +65,8 @@ Your Google Cloud organization must allow the `structured_outputs` feature in
 The explicit `StructuredOutputJSONTool` mode remains available for models that
 support forced tool choice.
 
+For Claude on Microsoft Azure, use the [Azure provider](azure.md).
+
 ## Enable reasoning deliberately
 
 ```go

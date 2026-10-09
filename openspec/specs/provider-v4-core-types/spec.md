@@ -1,7 +1,7 @@
 # provider-v4-core-types Specification
 
 ## Purpose
-TBD - created by archiving change v4-reshape-core-types. Update Purpose after archive.
+Define the core Go provider types for the registered LanguageModelV4 contract, including token usage, finish reasons, warnings, and stream metadata.
 
 ## Requirements
 

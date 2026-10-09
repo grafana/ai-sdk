@@ -7,7 +7,7 @@ Define authenticated, bounded discovery of explicitly configured route candidate
 ## Requirements
 
 ### Requirement: Explicit configured route projection
-Authenticated `GET /api/v1/aisdk/config` SHALL return one row per visible canonical model, in ascending canonical-ID order, retaining its public `id` and `specification.modelId`, specification version `v4`, provider `grafana` and existing name/description. Each command-configured row SHALL include `gateway: {aliases, primary: {providerInstance, provider, providerModelId}, fallbacks: [{providerInstance, provider, providerModelId}]}`. Alias and fallback order SHALL preserve configuration; empty aliases and fallbacks SHALL be `[]`. Aliases SHALL remain callable without appearing as separate rows. `providerModelId` SHALL identify the configured native invocation model, never a public selection ID or response identity. Ordinary catalog entries without candidate metadata SHALL omit the extension rather than infer it.
+Authenticated `GET /api/v1/aisdk/config` SHALL return one row per visible canonical model, in ascending canonical-ID order, retaining its public `id` and `specification.modelId`, specification version `v4`, provider `grafana` and existing name/description. Each command-configured row SHALL include `gateway: {aliases, primary: {providerInstance, provider, providerModelId}, fallbacks: [{providerInstance, provider, providerModelId}]}`.
 
 #### Scenario: Alias and mixed-provider candidates are inspected
 - **WHEN** an authorized caller discovers an alias for a route with an Anthropic primary and an OpenAI fallback
@@ -23,8 +23,22 @@ Authenticated `GET /api/v1/aisdk/config` SHALL return one row per visible canoni
 - **WHEN** raw HTTP, Go discovery or the TS helper inspects configured candidates
 - **THEN** no provider generation, streaming, inventory enumeration or credential-check inference SHALL run
 
+### Requirement: Configured alias and fallback presence
+Alias and fallback order SHALL preserve configuration; empty aliases and fallbacks SHALL be `[]`. Aliases SHALL remain callable without appearing as separate rows.
+
+#### Scenario: Configured alias and fallback presence
+- **WHEN** a direct configured route has no aliases or fallbacks
+- **THEN** discovery SHALL encode both as [] while any configured alias remains callable but not a separate row
+
+### Requirement: Configured invocation identity and absent candidate facts
+`providerModelId` SHALL identify the configured native invocation model, never a public selection ID or response identity. Ordinary catalog entries without candidate metadata SHALL omit the extension rather than infer it.
+
+#### Scenario: Configured invocation identity and absent candidate facts
+- **WHEN** an ordinary catalog entry supplies no candidate metadata and another route reports a different native response model
+- **THEN** the ordinary entry SHALL omit gateway and the configured route SHALL retain its configured invocation model ID
+
 ### Requirement: Account-authorized projection excludes credential sources
-Discovery SHALL authenticate before listing and SHALL pass the request context to the existing model lister. It SHALL project only entries and candidate facts visible at the same account/route boundary as resolution, without supplementing a scoped list from global configuration. The explicit projection SHALL exclude API keys, environment/secret credential references, signing/workload credential material, caller-auth headers and unrelated account/provider state. Authorized route, candidate, provider-instance, provider and model identifiers SHALL NOT be categorically concealed. This feature SHALL NOT introduce account provisioning or a new policy engine.
+Discovery SHALL authenticate before listing and SHALL pass the request context to the existing model lister. It SHALL project only entries and candidate facts visible at the same account/route boundary as resolution, without supplementing a scoped list from global configuration. The explicit projection SHALL exclude API keys, environment/secret credential references, signing/workload credential material, caller-auth headers and unrelated account/provider state.
 
 #### Scenario: Scoped host listing matches resolution
 - **WHEN** a host decorator restricts a request to one route and its configured candidates
@@ -40,12 +54,15 @@ Discovery SHALL authenticate before listing and SHALL pass the request context t
 - **WHEN** the existing authentication layer rejects a discovery request
 - **THEN** no catalog listing or provider work SHALL occur and the existing bounded authentication response SHALL apply
 
+### Requirement: Authorized discovery identities and policy scope
+Authorized route, candidate, provider-instance, provider and model identifiers SHALL NOT be categorically concealed. This feature SHALL NOT introduce account provisioning or a new policy engine.
+
+#### Scenario: Authorized discovery identities and policy scope
+- **WHEN** an authorized route uses a key-looking provider-instance or model identifier
+- **THEN** discovery SHALL retain that identifier without introducing account provisioning or a new policy engine
+
 ### Requirement: Atomic discovery resource and consistency limits
-Configuration loading SHALL validate route semantics before readiness: at most 1,024 callable public IDs including aliases, 16 candidates per route, 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. The existing 1–128 ASCII public-ID grammar SHALL remain unchanged. Required identities and names SHALL be nonblank; strings SHALL be valid UTF-8; optional description SHALL preserve existing empty/absent semantics. Duplicate IDs/aliases/candidate tuples, canonical/alias collisions and unknown provider references SHALL fail startup. Candidate tuple uniqueness SHALL use provider-instance plus model ID; distinct instances of the same provider/model SHALL remain valid.
-
-The discovery handler SHALL project the complete visible configured catalog without revalidating route semantics or imposing a discovery response-byte cap. Hosts supplying custom listers SHALL own catalog validity before serving. The response SHALL retain closed credential-safe fields and consistent canonical public specifications by construction. No path SHALL truncate strings or collections.
-
-Consumers SHALL decode typed metadata without duplicating server ID, nonblank-string, cardinality, uniqueness or route-consistency policy. They SHALL independently bound raw UTF-8 JSON reads before decoding: Go defaults to a configurable 4,194,304 bytes (4 MiB); the TS helper defaults to and supports at most 4,194,304 bytes (4 MiB), allowing smaller positive safe-integer maxBytes values. Byte overflow, malformed JSON and type-decoding errors SHALL return no partial catalog. Standard JSON string and duplicate-member semantics SHALL apply: Go normalizes escaped lone UTF-16 surrogates to U+FFFD, while TS retains the decoded UTF-16 value. Lossless cross-client identity agreement SHALL NOT be claimed for such escapes.
+Configuration loading SHALL validate route semantics before readiness: at most 1,024 callable public IDs including aliases, 16 candidates per route, 128 aliases per route and 2,048 UTF-8 bytes per identity/display string. The existing 1–128 ASCII public-ID grammar SHALL remain unchanged. Required identities and names SHALL be nonblank; strings SHALL be valid UTF-8; optional description SHALL preserve existing empty/absent semantics.
 
 #### Scenario: Server policy dimensions reach their boundaries
 - **WHEN** a configured catalog reaches an exact public-ID, candidate, alias or string ceiling
@@ -76,10 +93,36 @@ Consumers SHALL decode typed metadata without duplicating server ID, nonblank-st
 - **WHEN** a bounded document contains valid initial rows followed by a field that cannot decode into its declared type
 - **THEN** configured access SHALL fail atomically without exposing the initial rows
 
-### Requirement: Bounded TS companion access on the existing route
-The repository SHALL provide a documented, typechecked and deterministically tested copyable `fetchConfiguredModels({baseURL, headers, fetch, signal, maxBytes})` consumer helper retaining typed configured-route facts from the existing authenticated `/config` document. It SHALL NOT be a new published TS package or endpoint. The helper SHALL preserve an HTTP(S) API-prefix base URL, reject URL credentials/query/fragment, use explicit selected JWT or CAP outer headers, issue one GET, refuse redirects, honor abort, check success and JSON media type, bound reads incrementally and validate the entire raw UTF-8 JSON document and recognized model/extension fields before return. It SHALL ignore unrelated unknown additive fields rather than expose arbitrary configuration. It SHALL release/cancel reader resources on success or failure and SHALL NOT embed auth headers or arbitrary response bodies in errors, cache catalogs, switch credentials or invoke inference.
+### Requirement: Configured candidate and public namespace uniqueness
+Duplicate IDs/aliases/candidate tuples, canonical/alias collisions and unknown provider references SHALL fail startup. Candidate tuple uniqueness SHALL use provider-instance plus model ID; distinct instances of the same provider/model SHALL remain valid.
 
-Stock exact-pinned `getAvailableModels()` SHALL remain tested as compatible normalized discovery listing canonical rows and stripping the extension, including aliases and provider choices. It SHALL NOT be presented as an access path for these facts; known alias IDs SHALL remain callable. The helper SHALL accept ordinary rows with absent/null gateway; a non-null extension with a JSON shape or field type incompatible with ConfiguredRoute SHALL fail the complete document. It SHALL NOT check route semantics.
+#### Scenario: Configured candidate and public namespace uniqueness
+- **WHEN** two route candidates use the same model ID on distinct instances of the same provider
+- **THEN** startup SHALL allow those candidates but reject a repeated provider-instance/model tuple or a public namespace collision
+
+### Requirement: Complete server discovery projection without byte cap
+The discovery handler SHALL project the complete visible configured catalog without revalidating route semantics or imposing a discovery response-byte cap. Hosts supplying custom listers SHALL own catalog validity before serving. The response SHALL retain closed credential-safe fields and consistent canonical public specifications by construction. No path SHALL truncate strings or collections.
+
+#### Scenario: Complete server discovery projection without byte cap
+- **WHEN** a valid visible configured catalog encodes above the former 1 MiB budget
+- **THEN** the handler SHALL return all rows and complete strings without revalidation or truncation; custom lister validity SHALL remain host-owned
+
+### Requirement: Independent bounded typed discovery decoding
+Consumers SHALL decode typed metadata without duplicating server ID, nonblank-string, cardinality, uniqueness or route-consistency policy. They SHALL independently bound raw UTF-8 JSON reads before decoding: Go defaults to a configurable 4,194,304 bytes (4 MiB); the TS helper defaults to and supports at most 4,194,304 bytes (4 MiB), allowing smaller positive safe-integer maxBytes values. Byte overflow, malformed JSON and type-decoding errors SHALL return no partial catalog.
+
+#### Scenario: Independent bounded typed discovery decoding
+- **WHEN** a Go or TS configured document exceeds its selected byte bound or contains a late type error
+- **THEN** the consumer SHALL return no catalog without duplicating startup route policy
+
+### Requirement: Standard discovery JSON string semantics
+Standard JSON string and duplicate-member semantics SHALL apply: Go normalizes escaped lone UTF-16 surrogates to U+FFFD, while TS retains the decoded UTF-16 value. Lossless cross-client identity agreement SHALL NOT be claimed for such escapes.
+
+#### Scenario: Standard discovery JSON string semantics
+- **WHEN** a bounded discovery document contains an escaped lone UTF-16 surrogate and a duplicate JSON member
+- **THEN** standard decoder semantics SHALL apply, with Go U+FFFD normalization and TS UTF-16 retention rather than a lossless identity claim
+
+### Requirement: Bounded TS companion access on the existing route
+The repository SHALL provide a documented, typechecked and deterministically tested copyable `fetchConfiguredModels({baseURL, headers, fetch, signal, maxBytes})` consumer helper retaining typed configured-route facts from the existing authenticated `/config` document. It SHALL NOT be a new published TS package or endpoint.
 
 #### Scenario: Both TS discovery surfaces are demonstrated
 - **WHEN** the registered Gateway client and shipped helper read the same configured response
@@ -94,10 +137,36 @@ Stock exact-pinned `getAvailableModels()` SHALL remain tested as compatible norm
 - **WHEN** discovery redirects to another endpoint
 - **THEN** the helper SHALL refuse the redirect without sending credentials to the redirect target
 
-### Requirement: Independent evidence and honest support guidance
-This feature SHALL ship startup route-policy tests, server complete-projection tests and independent Go/TS malformed/type-error/oversized/boundary tests, immutable catalog tests, raw HTTP/schema tests and exact-pinned client/real-command discovery tests. Successful and denied discovery tests SHALL assert zero native inference requests. The TS example SHALL be registered in the existing ProviderWire workspace's typecheck/test commands, and Go client tests SHALL remain independent of AGPL implementation imports.
+### Requirement: TS discovery URL and bounded transport validation
+The helper SHALL preserve an HTTP(S) API-prefix base URL, reject URL credentials/query/fragment, use explicit selected JWT or CAP outer headers, issue one GET, refuse redirects, honor abort, check success and JSON media type, bound reads incrementally and validate the entire raw UTF-8 JSON document and recognized model/extension fields before return. It SHALL ignore unrelated unknown additive fields rather than expose arbitrary configuration.
 
-Guidance SHALL distinguish configured candidates from actual attempts/response identity, stock TS normalized discovery from helper access, and current startup-configured/internal-account visibility from future request-scoped Cloud/BYOK construction. Scoped fakes and dummy Cloud edges SHALL NOT be presented as deployed customer isolation or live CAP authorization proof. Operator telemetry configuration SHALL remain independent of developer discovery; no discovery feature SHALL enable payload capture or new topology labels. Applicable catalog/discovery/client specs, docs/navigation, parity and module checks SHALL ship with the feature.
+#### Scenario: TS discovery URL and bounded transport validation
+- **WHEN** the helper receives an API-prefix URL and a response with unknown additive fields
+- **THEN** it SHALL issue one authenticated nonredirecting GET, validate recognized fields and raw UTF-8 within the byte bound, and ignore unrelated additive fields
+
+### Requirement: TS discovery reader cleanup and safe errors
+The TS helper SHALL release/cancel reader resources on success or failure and SHALL NOT embed auth headers or arbitrary response bodies in errors, cache catalogs, switch credentials or invoke inference.
+
+#### Scenario: TS discovery reader cleanup and safe errors
+- **WHEN** a discovery body read aborts or fails midway
+- **THEN** the helper SHALL release/cancel the reader and return a safe error without body/auth leakage, caching, credential switching or inference
+
+### Requirement: Stock TS normalized discovery support boundary
+Stock exact-pinned `getAvailableModels()` SHALL remain tested as compatible normalized discovery listing canonical rows and stripping the extension, including aliases and provider choices. It SHALL NOT be presented as an access path for these facts; known alias IDs SHALL remain callable.
+
+#### Scenario: Stock TS normalized discovery support boundary
+- **WHEN** stock getAvailableModels reads configured aliases and provider choices
+- **THEN** it SHALL strip the gateway extension while known aliases remain callable; guidance SHALL NOT claim stock access to configured facts
+
+### Requirement: TS configured extension type checking
+The helper SHALL accept ordinary rows with absent/null gateway; a non-null extension with a JSON shape or field type incompatible with ConfiguredRoute SHALL fail the complete document. It SHALL NOT check route semantics.
+
+#### Scenario: TS configured extension type checking
+- **WHEN** one row has null gateway and another has a non-null extension with an invalid field type
+- **THEN** null gateway SHALL be accepted but the incompatible extension SHALL fail the complete document without route-semantic checks
+
+### Requirement: Independent evidence and honest support guidance
+This feature SHALL ship startup route-policy tests, server complete-projection tests and independent Go/TS malformed/type-error/oversized/boundary tests, immutable catalog tests, raw HTTP/schema tests and exact-pinned client/real-command discovery tests. Successful and denied discovery tests SHALL assert zero native inference requests.
 
 #### Scenario: Command proves access without generation
 - **WHEN** raw HTTP, pinned TS normalized discovery, the TS helper and Go ListModels exercise configured direct and fallback aliases against the real test command
@@ -106,3 +175,24 @@ Guidance SHALL distinguish configured candidates from actual attempts/response i
 #### Scenario: Current Cloud fixture is documented
 - **WHEN** deterministic Cloud-auth command tests use the current static configured catalog
 - **THEN** evidence SHALL identify that fixture's actual boundary without claiming customer account construction, internal-key exclusion for future BYOK or deployed cross-tenant isolation
+
+### Requirement: Discovery test registration and module-independent delivery
+The TS example SHALL be registered in the existing ProviderWire workspace's typecheck/test commands, and Go client tests SHALL remain independent of AGPL implementation imports. Applicable catalog/discovery/client specs, docs/navigation, parity and module checks SHALL ship with the feature.
+
+#### Scenario: Discovery test registration and module-independent delivery
+- **WHEN** the configured discovery feature is validated from the ProviderWire workspace
+- **THEN** the TS example SHALL participate in typecheck/tests, Go tests SHALL avoid AGPL imports, and applicable specs/docs/parity/module checks SHALL ship
+
+### Requirement: Discovery support and production evidence boundaries
+Guidance SHALL distinguish configured candidates from actual attempts/response identity, stock TS normalized discovery from helper access, and current startup-configured/internal-account visibility from future request-scoped Cloud/BYOK construction. Scoped fakes and dummy Cloud edges SHALL NOT be presented as deployed customer isolation or live CAP authorization proof.
+
+#### Scenario: Discovery support and production evidence boundaries
+- **WHEN** guidance describes static configured discovery exercised through a dummy Cloud edge
+- **THEN** it SHALL distinguish helper access, configured possibilities and current visibility from runtime attempts, future BYOK and deployed isolation/CAP proof
+
+### Requirement: Discovery remains independent from operator capture
+Operator telemetry configuration SHALL remain independent of developer discovery; no discovery feature SHALL enable payload capture or new topology labels.
+
+#### Scenario: Discovery remains independent from operator capture
+- **WHEN** a developer reads configured candidates with operator payload capture disabled
+- **THEN** discovery SHALL remain available without enabling capture or new topology labels

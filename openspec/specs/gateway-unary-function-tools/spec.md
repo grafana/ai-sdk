@@ -23,7 +23,8 @@ Unary mapping SHALL support function names, object schemas, examples, optional d
 - **THEN** validation SHALL fail before resolution and invocation
 
 ### Requirement: Unary function history and selected results
-The mapper SHALL support assistant tool calls and tool-role results with text, json, error-text, error-json or text/file content output. It SHALL also support provider-executed assistant calls and registered assistant-side basic tool results under gateway-provider-tools. It SHALL preserve required empty text, empty content arrays, selected JSON null, and file-data selection and filename presence as defined by gateway-file-inputs. Registered file-content provider options SHALL be supported at the file-entry scope. It SHALL reject inactive fields and leave approvals, execution-denied, custom content, and non-empty output-level or non-file nested result options unsupported. Tool-call/result part provider options SHALL follow gateway-provider-tools continuation rules.
+
+The mapper SHALL support assistant tool calls and tool-role results with text, json, error-text, error-json or text/file content output. It SHALL also support provider-executed assistant calls and registered assistant-side basic tool results under gateway-provider-tools. It SHALL preserve required empty text, empty content arrays, selected JSON null, and file-data selection and filename presence as defined by gateway-file-inputs.
 
 #### Scenario: Empty selected result
 - **WHEN** continuation includes a text result with empty value or a JSON result with null
@@ -41,8 +42,17 @@ The mapper SHALL support assistant tool calls and tool-role results with text, j
 - **WHEN** continuation contains a provider-executed call and matching basic result inline in assistant content
 - **THEN** the mapper SHALL preserve their order and ownership without converting the result into a client-owned tool message
 
+### Requirement: Unary result option scopes and deferred families
+
+Registered file-content provider options SHALL be supported at the file-entry scope. The mapper SHALL reject inactive fields and leave approvals, execution-denied, custom content, and non-empty output-level or non-file nested result options unsupported. Tool-call/result part provider options SHALL follow gateway-provider-tools continuation rules.
+
+#### Scenario: Unary result option scopes and deferred families
+- **WHEN** tool-role file content carries file-entry options and output-level options
+- **THEN** file-entry options SHALL be supported while non-empty output-level options SHALL remain unsupported before invocation
+
 ### Requirement: Bounded private unary tool calls
-Unary output SHALL preserve ordered text, client-executed and provider-executed calls, and provider tool results using explicit private DTOs. Calls SHALL retain toolCallId, toolName, string input and enabled providerExecuted/dynamic markers. Results SHALL retain toolCallId, toolName, non-null JSON result, error status and registered dynamic/preliminary markers. Results SHALL correlate with current-response calls or eligible unresolved provider calls in supplied history under gateway-provider-tools; a repeated call in the current response SHALL NOT be required. A complete provider-owned call SHALL be allowed to return without a result. Omitted and false markers SHALL retain disabled/final semantics without discarding presence on registered arms. The encoder SHALL NOT strip an enabled execution marker and forward the call as client-executed. Tool metadata SHALL retain opaque namespace objects and omitted/empty presence under gateway-provider-metadata. This SHALL NOT promote provider metadata into routing authority or replace catalog identity. All added strings, result/metadata bytes and cardinality SHALL participate in preflight and final encoding bounds; unsupported or invalid output SHALL fail before HTTP 200.
+
+Unary output SHALL preserve ordered text, client-executed and provider-executed calls, and provider tool results using explicit private DTOs. Calls SHALL retain toolCallId, toolName, string input and enabled providerExecuted/dynamic markers. Results SHALL retain toolCallId, toolName, non-null JSON result, error status and registered dynamic/preliminary markers.
 
 #### Scenario: Enabled execution marker cannot become a client call
 - **WHEN** a supported provider unary result contains a tool call with providerExecuted true or dynamic true, including alongside valid text
@@ -77,8 +87,25 @@ Unary output SHALL preserve ordered text, client-executed and provider-executed 
 - **WHEN** a unary result contains supported calls plus a deferred output family
 - **THEN** the complete response SHALL fail safely before HTTP 200 without partial success
 
+### Requirement: Unary call ownership and deferred result correlation
+
+Results SHALL correlate with current-response calls or eligible unresolved provider calls in supplied history under gateway-provider-tools; a repeated call in the current response SHALL NOT be required. A complete provider-owned call SHALL be allowed to return without a result. Omitted and false markers SHALL retain disabled/final semantics without discarding presence on registered arms. The encoder SHALL NOT strip an enabled execution marker and forward the call as client-executed.
+
+#### Scenario: Unary call ownership and deferred result correlation
+- **WHEN** history contains an unresolved provider-owned call and output supplies only its result
+- **THEN** correlation SHALL accept the historical match without repeated call and SHALL preserve disabled/final marker semantics
+
+### Requirement: Unary tool metadata identity and output bounds
+
+Tool metadata SHALL retain opaque namespace objects and omitted/empty presence under gateway-provider-metadata. This SHALL NOT promote provider metadata into routing authority or replace catalog identity. All added strings, result/metadata bytes and cardinality SHALL participate in preflight and final encoding bounds; unsupported or invalid output SHALL fail before HTTP 200.
+
+#### Scenario: Unary tool metadata identity and output bounds
+- **WHEN** a supported call contains an unknown metadata object and oversized input
+- **THEN** metadata SHALL remain opaque without routing authority, and the oversized complete response SHALL fail before HTTP 200
+
 ### Requirement: Unary function tools remain direct and stateless
-The Gateway SHALL NOT execute application functions or persist tool-loop state. Direct and configured-fallback routes SHALL accept the existing supported unary function definitions, choices and history/results through the same strict mapper. Configured candidates SHALL receive the same mapped request without tool/choice/history-specific admission guards, namespace translation or candidate intersections. A successful unary result SHALL select the candidate; later response adaptation failure SHALL NOT restart fallback. Eligible pre-success failures, noneligible errors and cancellation SHALL follow the reusable fallback contract. Unsupported codecs and concrete protocol/credential/account/execution bypass protections SHALL remain effective. Streaming function support SHALL follow gateway-streaming-function-tools rather than a unary-only restriction.
+
+The Gateway SHALL NOT execute application functions or persist tool-loop state. Direct and configured-fallback routes SHALL accept the existing supported unary function definitions, choices and history/results through the same strict mapper. Configured candidates SHALL receive the same mapped request without tool/choice/history-specific admission guards, namespace translation or candidate intersections.
 
 #### Scenario: Two-call unary continuation
 - **WHEN** an application executes a returned tool locally and sends the call plus result in a second unary request through a direct or configured-fallback route
@@ -101,6 +128,14 @@ The Gateway SHALL NOT execute application functions or persist tool-loop state. 
 - **WHEN** a candidate returns a successful unary function call and the strict response encoder rejects an accompanying unsupported output or exceeds its response budget
 - **THEN** the existing safe response failure SHALL apply without invoking a later candidate or executing a consumer function in the Gateway
 
+### Requirement: Unary fallback success boundary and protected capabilities
+
+A successful unary result SHALL select the candidate; later response adaptation failure SHALL NOT restart fallback. Eligible pre-success failures, noneligible errors and cancellation SHALL follow the reusable fallback contract. Unsupported codecs and concrete protocol/credential/account/execution bypass protections SHALL remain effective. Streaming function support SHALL follow gateway-streaming-function-tools rather than a unary-only restriction.
+
+#### Scenario: Unary fallback success boundary and protected capabilities
+- **WHEN** a candidate returns a successful tool call whose later adaptation fails
+- **THEN** fallback SHALL NOT restart, while reusable pre-success eligibility/cancellation and bypass protections SHALL remain effective
+
 ### Requirement: Unary tools extend logical observation without content capture
 Supported unary tool calls SHALL use the single WP8 logical chain and finalize one generation per HTTP invocation with canonical identity, approved context, usage, normalized finish, timing and safe error state. Gateway metadata-only exports, logs and metrics SHALL omit tool definitions, names, IDs, schemas, inputs/results, options, private backend identity and raw errors. Reusable observation mapping SHALL remain provider-domain based.
 
@@ -109,8 +144,17 @@ Supported unary tool calls SHALL use the single WP8 logical chain and finalize o
 - **THEN** two canonical logical generations SHALL finish and exported records/logs/metrics SHALL contain none of those markers
 
 ### Requirement: Unary client and provider acceptance evidence
-Exact registered Vercel and independent Go clients SHALL complete authenticated unary function round trips through direct and configured-fallback production routes. Native request tests SHALL verify schemas, examples, strict presence, all supported choices, supported continuation and candidate-specific scoped native options. Tests SHALL prove configured order, unchanged failure eligibility and cancellation, consumer-owned execution and one logical observation per request. Apache modules SHALL remain independent of the Gateway module, and fixture provenance SHALL be preserved. Synthetic request evidence SHALL NOT claim live backend acceptance, full output-derived continuation or exactly-once provider execution.
+
+Exact registered Vercel and independent Go clients SHALL complete authenticated unary function round trips through direct and configured-fallback production routes. Native request tests SHALL verify schemas, examples, strict presence, all supported choices, supported continuation and candidate-specific scoped native options. Tests SHALL prove configured order, unchanged failure eligibility and cancellation, consumer-owned execution and one logical observation per request.
 
 #### Scenario: Capability verification
 - **WHEN** unary function verification runs
 - **THEN** both-client direct/fallback HTTP semantics, native request assertions, unsupported family rejection, privacy and response bounds SHALL pass without claiming invented provider payloads as recorded evidence
+
+### Requirement: Unary tool evidence provenance and module independence
+
+Apache modules SHALL remain independent of the Gateway module, and fixture provenance SHALL be preserved. Synthetic request evidence SHALL NOT claim live backend acceptance, full output-derived continuation or exactly-once provider execution.
+
+#### Scenario: Unary tool evidence provenance and module independence
+- **WHEN** synthetic native request assertions pass
+- **THEN** they SHALL NOT claim live acceptance, complete output-derived continuation or exactly-once execution, and Apache module independence and fixture provenance SHALL remain intact

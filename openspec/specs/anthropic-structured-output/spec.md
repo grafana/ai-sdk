@@ -45,7 +45,7 @@ When `CallOptions.ResponseFormat` has `Type: "json"` and a non-nil `Schema`, and
 
 ### Requirement: Tool choice override in fallback mode
 
-When the tool-based fallback is active, `buildParams` SHALL override `ToolChoice` to `required` (OfAny) with `DisableParallelToolUse` set to `true`, regardless of the caller's original `ToolChoice` setting. On a model that rejects forced tool use, the override SHALL instead be `auto` (OfAuto) with `DisableParallelToolUse` set to `true`, with one unsupported `toolChoice` warning for `required`, as `@ai-sdk/anthropic` 4.0.67 does. Apart from `none`, which sends only the `json` tool, the caller's tool choice SHALL NOT filter tools or add a warning of its own.
+JSON-tool fallback SHALL override caller choice to required (OfAny) with `DisableParallelToolUse:true`. Models rejecting forced tools SHALL instead use auto (OfAuto), parallel-disabled, with one unsupported `toolChoice` warning for required, as in `@ai-sdk/anthropic` 4.0.67. Caller none SHALL send only json; other caller choices SHALL neither filter tools nor add warnings.
 
 #### Scenario: Tool choice forced to required
 
@@ -70,11 +70,7 @@ When the tool-based fallback is active, `buildParams` SHALL override `ToolChoice
 
 ### Requirement: Provider transport capability gating
 
-The direct Anthropic provider SHALL enable native structured output and strict function tools. The Vertex provider SHALL enable native structured output and keep strict function tools disabled. Each provider capability SHALL be combined with the selected model's structured-output capability, so a feature is effective only when both the provider transport and model support it.
-
-When the transport supports direct beta features, effective native structured-output support is enabled, and the caller supplies any function tool, `buildParams` SHALL automatically add the `structured-outputs-2025-11-13` beta unless the JSON response-tool fallback is active. This automatic beta SHALL be independent of whether the function tool's `Strict` value is absent, `false`, or `true`. Provider-defined tools alone SHALL NOT trigger it. Explicit caller-supplied betas SHALL remain unaffected.
-
-When effective strict-tool support is enabled, an explicit `Strict` value SHALL be sent unchanged. When it is disabled, explicit `true` and `false` values SHALL both be omitted and SHALL produce an unsupported warning for feature `strict`; an absent value SHALL be omitted without a warning.
+Direct Anthropic SHALL enable native structured output and strict function tools. Vertex SHALL enable native output but disable strict tools. Each capability SHALL combine with the model structured-output capability and be effective only if both transport and model support it.
 
 #### Scenario: Direct function tools preserve strict and add the beta
 
@@ -180,40 +176,7 @@ When `CallOptions.ResponseFormat` has `Type: "text"`, `buildParams` SHALL not mo
 
 ### Requirement: Native structured-output schema sanitization
 
-On the native structured-output path, `applyResponseFormat` SHALL write a sanitized copy of `ResponseFormat.Schema` to `OutputConfig.Format`, MUST NOT mutate the caller's original schema, and SHALL NOT apply sanitization on the tool-based JSON fallback path.
-
-The sanitizer SHALL strip the following JSON Schema validation keywords from
-every schema node and append them as a human-readable summary to the node's
-`description`:
-
-- `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`
-- `minLength`, `maxLength`, `pattern`
-- `minItems`, `maxItems`, `uniqueItems`
-- `minProperties`, `maxProperties`
-- `not`
-
-Boolean constraint values equal to `false` SHALL NOT be reported in the
-appendix. Constraint names SHALL be rendered as space-separated lowercase
-words (e.g., `minLength` -> `min length`, `exclusiveMinimum` -> `exclusive
-minimum`). String constraint values SHALL be rendered verbatim; all other
-values SHALL be rendered as their JSON encoding. Appendix entries SHALL be
-joined with `"; "` and terminated with `"."`. When a node already has a
-`description`, the appendix SHALL be appended after a newline.
-
-The sanitizer SHALL preserve `$schema`, `$id`, `title`, `description`,
-`default`, `const`, `enum`, `type`, and `required` keywords.
-
-The sanitizer SHALL recurse into composition (`anyOf`, `oneOf`, `allOf`),
-`items`, `properties`, `definitions`, and `$defs`. `oneOf` SHALL be rewritten
-as `anyOf` on the output. A node containing `$ref` SHALL short-circuit and
-emit only `{ "$ref": <value> }`, dropping all sibling keywords. Object nodes
-(those with `type: "object"` or a non-nil `properties`) SHALL have
-`additionalProperties: false` set on the output regardless of the input.
-
-The sanitizer SHALL retain `format` values from the supported set
-(`date-time`, `time`, `date`, `duration`, `email`, `hostname`, `uri`, `ipv4`,
-`ipv6`, `uuid`) and SHALL drop other `format` values, appending them to
-`description` as `format: <value>`.
+Native `applyResponseFormat` SHALL write a sanitized copy of `ResponseFormat.Schema` to `OutputConfig.Format`, MUST NOT mutate caller schema, and SHALL NOT sanitize JSON-tool fallback. The sanitizer SHALL preserve `$schema`, `$id`, `title`, `description`, `default`, `const`, `enum`, `type`, and `required`.
 
 #### Scenario: Numeric constraints stripped and summarized
 
@@ -300,3 +263,57 @@ When `structuredOutputMode` is `jsonTool` and the model rejects forced tool use 
 #### Scenario: jsonTool mode without native transport support
 - **WHEN** a provider transport without native structured output calls `claude-sonnet-5-5` with a JSON schema response
 - **THEN** the tool-based fallback SHALL be used with an `auto` tool choice
+
+### Requirement: Anthropic automatic structured-output beta gating
+
+With direct beta support, effective native output and any function tool, `buildParams` SHALL add `structured-outputs-2025-11-13` unless JSON response-tool fallback is active, independently of absent/false/true Strict. Provider-defined tools alone SHALL NOT trigger it. Explicit caller betas SHALL remain unaffected.
+
+#### Scenario: Anthropic automatic structured-output beta gating
+
+- **WHEN** a direct native-capable request has a function tool with absent strict and no JSON fallback
+- **THEN** the beta SHALL be added; switching to fallback or provider-defined-only tools SHALL suppress only automatic inclusion
+
+### Requirement: Anthropic strict-tool presence by effective capability
+
+With effective strict support, explicit Strict SHALL be sent unchanged. Without support, explicit true/false SHALL be omitted with unsupported warning feature `strict`; absent Strict SHALL be omitted without warning.
+
+#### Scenario: Anthropic strict-tool presence by effective capability
+
+- **WHEN** Vertex receives a function tool first with absent Strict and then with false or true
+- **THEN** strict SHALL remain omitted; only the explicit boolean settings SHALL emit strict warnings
+
+### Requirement: Anthropic stripped schema constraints
+
+At every schema node, the sanitizer SHALL strip and summarize in description: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `minItems`, `maxItems`, `uniqueItems`, `minProperties`, `maxProperties`, and `not`.
+
+#### Scenario: Anthropic stripped schema constraints
+
+- **WHEN** a native property schema is `{type:"number",minimum:1,maximum:10,multipleOf:0.5}`
+- **THEN** those three constraint keywords SHALL be removed and its description SHALL be `"minimum: 1; maximum: 10; multiple of: 0.5."`
+
+### Requirement: Anthropic constraint appendix rendering
+
+False boolean constraint values SHALL NOT be reported. Names SHALL be space-separated lowercase words (minLength→min length, exclusiveMinimum→exclusive minimum); strings SHALL be verbatim and other values JSON-encoded. Entries SHALL join with "; " and end with "."; an existing description SHALL precede the appendix with a newline.
+
+#### Scenario: Anthropic constraint appendix rendering
+
+- **WHEN** a node is `{type:"array",description:"Tags",minItems:2,uniqueItems:false}`
+- **THEN** its sanitized description SHALL be `"Tags\nmin items: 2."`, with minItems and uniqueItems removed and no appendix entry for the false boolean
+
+### Requirement: Anthropic recursive schema transformation
+
+The sanitizer SHALL recurse into anyOf/oneOf/allOf, items, properties, definitions and $defs; oneOf SHALL become anyOf. A $ref node SHALL short-circuit to only {"$ref":<value>}, dropping siblings. Object nodes (type object or non-nil properties) SHALL receive additionalProperties:false regardless of input.
+
+#### Scenario: Anthropic recursive schema transformation
+
+- **WHEN** a native object property contains `{oneOf:[{type:"string"},{$ref:"#/$defs/Foo",title:"Drop me"}]}`
+- **THEN** the property SHALL use anyOf, its reference branch SHALL contain only `$ref:"#/$defs/Foo"`, and the containing object SHALL have additionalProperties:false
+
+### Requirement: Anthropic supported schema formats
+
+The sanitizer SHALL retain formats `date-time`, `time`, `date`, `duration`, `email`, `hostname`, `uri`, `ipv4`, `ipv6`, and `uuid`; other formats SHALL be dropped and appended to description as `format: <value>`.
+
+#### Scenario: Anthropic supported schema formats
+
+- **WHEN** native string nodes use `email` and `regex` formats
+- **THEN** email SHALL remain a format; regex SHALL be removed and reported in description

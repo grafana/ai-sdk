@@ -29,7 +29,7 @@ The root package SHALL expose an Agent abstraction for reusable LLM agents. An A
 
 ### Requirement: ToolLoopAgent construction
 
-The root package SHALL provide a ToolLoopAgent constructor that accepts a required `provider.LanguageModel` plus reusable settings through idiomatic Go functional options. Construction SHALL NOT call the provider. The constructor SHALL support reusable settings for ID, instructions or system messages, tools, tool choice, active tools, stop conditions, tool approval, prepare-step, output, provider options, request headers, retry/model parameters, timeouts, Agent runtime context, and lifecycle callbacks when the corresponding behavior exists in the lower-level Go primitives or the Agent wrapper.
+The root package SHALL provide a ToolLoopAgent constructor accepting a required `provider.LanguageModel` and reusable settings through idiomatic Go functional options. Construction SHALL NOT call the provider.
 
 #### Scenario: Construction does not call provider
 - **WHEN** a ToolLoopAgent is constructed with a model whose provider methods would fail if called
@@ -44,6 +44,14 @@ The root package SHALL provide a ToolLoopAgent constructor that accepts a requir
 - **WHEN** a ToolLoopAgent is constructed with tools and a tool approval policy
 - **AND** the caller invokes the Agent generate method with a user prompt or messages
 - **THEN** the generated result SHALL use the same tool approval behavior as `GenerateText` configured with those options directly
+
+### Requirement: Reusable Agent setting coverage
+
+Reusable settings SHALL support ID, instructions or system messages, tools, tool choice, active tools, stop conditions, tool approval, prepare-step, output, provider options, request headers, retry/model parameters, timeouts, Agent runtime context, and lifecycle callbacks when corresponding behavior exists in the lower-level Go primitives or Agent wrapper.
+
+#### Scenario: Lower-level settings are reusable
+- **WHEN** an Agent configured with supported retry/model parameters, timeouts and lifecycle callbacks receives two calls without overrides
+- **THEN** both calls SHALL use those reusable settings.
 
 ### Requirement: Agent call option merge
 
@@ -90,7 +98,7 @@ ToolLoopAgent SHALL apply `StepCountIs(20)` as its default stop condition when n
 
 ### Requirement: ToolLoopAgent delegation to existing orchestration
 
-ToolLoopAgent generate and stream methods SHALL delegate to the existing `GenerateText` and `StreamText` orchestration paths. Agent calls SHALL inherit existing behavior for model message conversion, system message prepending, prepare-step overrides, retries, timeouts, local tool execution, concurrent tool execution, provider-executed tools, external tools, structured output, stop conditions, pending approval termination, approval response resumption, warnings, stream errors, abort handling, and result accessors.
+ToolLoopAgent generate and stream methods SHALL delegate to existing `GenerateText` and `StreamText`. Calls SHALL inherit their model message conversion, system prepending, prepare-step overrides, retries, timeouts, local/concurrent/provider-executed/external tools, structured output, stop conditions, pending approval termination, approval resumption, warnings, stream errors, abort handling and result accessors.
 
 #### Scenario: Pending approval stops Agent stream
 - **WHEN** an Agent stream call produces a local tool call that requires user approval
@@ -130,7 +138,7 @@ ToolLoopAgent SHALL merge reusable lifecycle callbacks with per-call lifecycle c
 
 ### Requirement: Agent runtime context composition
 
-ToolLoopAgent SHALL support a reusable Agent runtime context value and per-call Agent runtime context override. Runtime context support SHALL be implemented in the Agent wrapper by composing with the existing `PrepareStepResult.Context` and `ToolExecutionOptions.Context` paths; this change SHALL NOT require a lower-level `StreamText` runtime-context option. The resolved Agent runtime context SHALL be reusable context first, overridden by per-call context only when per-call context is supplied. The Agent wrapper SHALL run any user `PrepareStep`, preserve its errors and non-context overrides unchanged, and let a non-nil `PrepareStepResult.Context` override the resolved Agent runtime context for that step. A nil `PrepareStepResult.Context` SHALL NOT clear the resolved Agent runtime context.
+ToolLoopAgent SHALL support reusable Agent runtime context overridden by per-call context only when supplied. The wrapper SHALL compose existing `PrepareStepResult.Context` and `ToolExecutionOptions.Context` paths without requiring a lower-level `StreamText` runtime-context option. Non-nil prepare-step context SHALL override resolved context for that step; nil SHALL NOT clear it.
 
 #### Scenario: Reusable runtime context reaches tool execution
 - **WHEN** a ToolLoopAgent is configured with a reusable runtime context value
@@ -153,6 +161,14 @@ ToolLoopAgent SHALL support a reusable Agent runtime context value and per-call 
 - **THEN** tools executed in that step SHALL still receive context `A`
 - **AND** the other prepare-step overrides SHALL be preserved
 
+### Requirement: Agent prepare-step override preservation
+
+The Agent wrapper SHALL run any user `PrepareStep` and preserve its errors and non-context overrides unchanged.
+
+#### Scenario: Prepare-step failure is preserved
+- **WHEN** an Agent's user PrepareStep returns an error for a step with resolved runtime context
+- **THEN** the wrapper SHALL preserve that error unchanged rather than mask it while applying context composition.
+
 ### Requirement: Agent provider call-header metadata
 
 ToolLoopAgent SHALL add the upstream Agent marker `ai-sdk-agent/tool-loop` to `provider.CallOptions.Headers` before delegating to the provider. The marker SHALL be appended to any caller-supplied `User-Agent` header value and SHALL NOT discard unrelated caller-supplied headers. This requirement applies to the root provider-call boundary only; it SHALL NOT require provider implementation changes and SHALL NOT claim that every provider's actual outgoing network request includes the marker.
@@ -173,9 +189,7 @@ ToolLoopAgent SHALL add the upstream Agent marker `ai-sdk-agent/tool-loop` to `p
 
 ### Requirement: Agent UI stream helper
 
-The root package SHALL provide an Agent UI stream helper equivalent in intent to upstream `createAgentUIStream`. The helper SHALL accept an Agent and UI message history, validate and normalize the represented UI history against the registered Agent-specific validation behavior on an isolated clone, convert that normalized history to model messages through the existing conversion path, call the Agent stream method, and return a `UIMessageChunk` stream produced by `StreamTextResult.ToUIMessageStream` with the normalized messages preserved as original messages in `UIMessageStreamOptions`.
-
-The helper SHALL reject invalid tool history before starting a provider stream when represented by the current Go UI model: static `ToolInvocationPart` tool names that are empty or absent from the Agent tool set in nonterminal states, unknown tool invocation states, and final-state tool parts with missing `ToolCallID`, tool name, or state-required fields. A static `ToolInvocationPart` or `DynamicToolUIPart` in a final state (`output-available`, `output-error`, `output-denied`, or `approval-responded`) SHALL be treated as representing the tool call itself when those required fields are present. The helper SHALL NOT require a separate prior input part, approval-request part, or prior `ToolCallID` reference for those current lifecycle parts. If a future UI model introduces separate result or approval-response parts that do not themselves represent the tool call, only those separate parts SHALL require cross-reference validation against a prior represented tool call or approval request with the same ID and tool name. Missing terminal static tools in output-available, output-error or output-denied states SHALL normalize to DynamicToolUIPart with all represented fields preserved, matching validateUIMessagesForAgent. Caller history SHALL NOT be mutated. The normalized slice SHALL be used consistently for conversion and original-message response assembly. Schema and state constraints below SHALL run before Agent.Stream, and failures SHALL NOT invoke a provider. Optional application metadata/data schemas, unrepresented provider-tool schemas and existing provider-domain optional-empty serialization SHALL remain explicit support/evidence boundaries, not claims of exhaustive validation parity.
+The root package SHALL provide an Agent UI stream helper equivalent in intent to upstream `createAgentUIStream`, accepting an Agent and UI history. It SHALL validate and normalize UI history against registered Agent-specific behavior on an isolated clone, convert it through the existing model-message path, call Agent.Stream, and return `StreamTextResult.ToUIMessageStream` chunks with normalized history as original messages in `UIMessageStreamOptions`.
 
 #### Scenario: UI messages are converted before Agent stream
 - **WHEN** the Agent UI stream helper receives valid UI messages
@@ -210,9 +224,41 @@ The helper SHALL reject invalid tool history before starting a provider stream w
 - **WHEN** the Agent UI stream helper is called with UI message history
 - **THEN** the resulting UI stream SHALL use its isolated validated/normalized history as original messages for message ID and response assembly behavior in the same manner as `ToUIMessageStream`
 
+### Requirement: Agent tool identity validation
+
+Before streaming, the helper SHALL reject unknown tool states, final-state parts missing ToolCallID, tool name or state-required fields, and static ToolInvocationPart names empty or absent from Agent tools in nonterminal states. State and schema checks SHALL run before Agent.Stream; failures SHALL NOT invoke a provider.
+
+#### Scenario: Invalid nonterminal identity blocks invocation
+- **WHEN** a nonterminal static tool has an empty name or an unknown state
+- **THEN** the helper SHALL reject it before Agent.Stream or provider invocation.
+
+### Requirement: Agent whole lifecycle parts are self-contained
+
+Static ToolInvocationPart and DynamicToolUIPart in output-available, output-error, output-denied or approval-responded SHALL represent the call itself when required fields are present. They SHALL NOT require a separate prior input, approval-request or ToolCallID reference. Only future separate result/approval-response parts not representing a call SHALL require prior represented call/request cross-references with the same ID and tool name.
+
+#### Scenario: Whole dynamic final state needs no prior part
+- **WHEN** a valid dynamic approval-responded part has no prior input or approval-request part
+- **THEN** it SHALL be accepted as a represented call without a separate cross-reference.
+
+### Requirement: Agent normalized history ownership
+
+Missing terminal static tools in output-available, output-error or output-denied SHALL normalize to DynamicToolUIPart with all represented fields preserved, matching validateUIMessagesForAgent. Caller history SHALL NOT be mutated. Conversion and original-message response assembly SHALL consistently use the normalized slice.
+
+#### Scenario: Removed tool history uses an isolated representation
+- **WHEN** terminal static history names a removed tool
+- **THEN** normalization SHALL preserve represented fields in a dynamic clone used for conversion and response assembly without mutating caller history.
+
+### Requirement: Agent UI validation support boundaries
+
+Optional application metadata/data schemas, unrepresented provider-tool schemas and existing provider-domain optional-empty serialization SHALL remain explicit support/evidence boundaries, not claims of exhaustive validation parity.
+
+#### Scenario: Represented validation is not exhaustive schema parity
+- **WHEN** acceptance evidence covers history with application data and provider tools lacking represented schemas
+- **THEN** it SHALL distinguish application metadata/data schemas, unrepresented provider-tool schemas and provider-domain optional-empty serialization from exhaustive validation parity.
+
 ### Requirement: Persisted tool state constraints are validated before Agent invocation
 
-The Agent UI helper SHALL reject nil/empty histories and validate represented role/part structure and tool-state required/forbidden fields before invoking Agent.Stream. On its isolated normalized clone for both tool kinds, it SHALL remove RawInput outside output-error, Preliminary outside output-available and ResultProviderMetadata outside output-available/output-error, matching pinned field projection without changing caller history, skipping represented JSON validation or weakening output/error/approval prohibitions. Available input, approval states, output-available and output-denied SHALL require Input; streaming/error input SHALL be optional. Output SHALL be required only on output-available; errorText SHALL be required only on output-error and SHALL accept a present empty string. Approval SHALL be forbidden on input-streaming/input-available, required with ID and absent Approved/decision Reason on approval-requested, required with Approved on approval-responded, required with Approved false on output-denied, and if present SHALL have Approved true on output-available/output-error. Unknown states, missing state-required fields, forbidden output/error/approval fields, unsupported parts and invalid represented JSON SHALL fail with message/part context. Existing nonempty tool identity checks SHALL remain. Whole lifecycle parts SHALL NOT require separate preceding input/approval-request parts. No general exported validator or application metadata/data schema API SHALL be introduced.
+The Agent UI helper SHALL reject nil/empty histories and validate represented role/part structure and tool-state required/forbidden fields before Agent.Stream. Unknown states, missing required fields, forbidden output/error/approval fields, unsupported parts and invalid represented JSON SHALL fail with message/part context. Nonempty tool identity checks SHALL remain. Whole lifecycle parts SHALL NOT require separate preceding input/approval-request parts.
 
 #### Scenario: Invalid state combinations never reach a provider
 - **WHEN** persisted messages contain unknown states, missing required fields or contradictory output/error/approval combinations
@@ -244,9 +290,41 @@ The Agent UI helper SHALL reject nil/empty histories and validate represented ro
 - **THEN** validation SHALL fail before Agent/provider invocation
 - **AND** otherwise valid approval ID and Approved false SHALL pass state checks
 
+### Requirement: Agent state-inapplicable field projection
+
+On its isolated normalized clone for both tool kinds, the helper SHALL remove RawInput outside output-error, Preliminary outside output-available and ResultProviderMetadata outside output-available/output-error. This SHALL match pinned projection without changing caller history, skipping represented JSON validation or weakening output/error/approval prohibitions.
+
+#### Scenario: Projection does not bypass JSON checks
+- **WHEN** a history part has state-inapplicable fields and invalid represented JSON
+- **THEN** projection SHALL NOT bypass JSON validation or weaken state prohibitions; caller history SHALL remain unchanged.
+
+### Requirement: Agent input output and error field gates
+
+Input SHALL be required for input-available, approval states, output-available and output-denied, and optional for input-streaming/output-error. Output SHALL be required only for output-available; errorText SHALL be required only for output-error and SHALL accept a present empty string.
+
+#### Scenario: Available state requires input and output
+- **WHEN** an output-available part lacks Input or Output
+- **THEN** the helper SHALL reject it before Agent.Stream, while streaming/error input remains optional.
+
+### Requirement: Agent approval state gates
+
+Approval SHALL be forbidden on input-streaming/input-available; required with ID and absent Approved/decision Reason on approval-requested; required with Approved on approval-responded; required with Approved false on output-denied; and if present SHALL have Approved true on output-available/output-error.
+
+#### Scenario: Request and completed approval combinations are checked
+- **WHEN** an approval-requested part supplies Approved or decision Reason, or an output-available/error part supplies Approved false
+- **THEN** validation SHALL fail before Agent.Stream.
+
+### Requirement: Agent validation API remains bounded
+
+Agent history validation SHALL NOT introduce a general exported validator or application metadata/data schema API.
+
+#### Scenario: History validation stays within the helper
+- **WHEN** the root public API inventory is checked after adding Agent UI history validation
+- **THEN** it SHALL contain no new general exported validator or application metadata/data schema API.
+
 ### Requirement: Static tool schemas use pinned Agent normalization gates
 
-The Agent UI helper SHALL reuse configured static Tool.InputSchema/OutputSchema with the registered validateUIMessagesForAgent gates. Input-available, approval-requested/responded and output-denied SHALL validate input. Input-streaming SHALL skip input-schema checks. Output-error with present input invalid under the current schema SHALL normalize to dynamic instead of reject; absent input and legacy raw input SHALL remain loadable. Output-available SHALL validate input, normalize incompatible empty-object input to dynamic, reject incompatible nonempty input, and validate configured output schema before normalization. Missing terminal static tools SHALL normalize to dynamic; missing nonterminal static tools SHALL fail. Dynamic parts SHALL receive state/shape checks but not configured tool schemas. Provider-defined Go tools without a represented schema SHALL NOT acquire invented schemas. Normalization SHALL preserve tool identity, title and state-applicable metadata, raw input, preliminary, outputs and approval data on a deep clone.
+The helper SHALL reuse configured static Tool.InputSchema/OutputSchema with registered validateUIMessagesForAgent gates. Input-available, approval-requested/responded and output-denied SHALL validate input; input-streaming SHALL skip input-schema checks. Dynamic parts SHALL receive state/shape checks but not configured schemas. Provider-defined Go tools without a represented schema SHALL NOT acquire invented schemas.
 
 #### Scenario: Completed obsolete tool history stays loadable
 - **WHEN** a terminal static tool part refers to a tool no longer configured on the Agent
@@ -273,6 +351,22 @@ The Agent UI helper SHALL reuse configured static Tool.InputSchema/OutputSchema 
 - **WHEN** an input-available or approval/denied static input fails its schema, or output-available output fails its configured output schema
 - **THEN** the helper SHALL return an indexed validation error
 - **AND** neither Agent.Stream nor the provider SHALL be invoked
+
+### Requirement: Agent terminal schema normalization
+
+For static tool parts, output-error with present schema-invalid input SHALL normalize to dynamic, not reject; absent input and legacy raw input SHALL remain loadable. Output-available SHALL validate input, normalize incompatible empty-object input to dynamic, reject incompatible nonempty input, and validate configured output schema before normalization. Missing terminal static tools SHALL normalize to dynamic; missing nonterminal static tools SHALL fail.
+
+#### Scenario: Absent failed input stays loadable
+- **WHEN** an output-error part has absent input or legacy raw input
+- **THEN** it SHALL remain loadable without requiring invented input.
+
+### Requirement: Agent schema normalization retains applicable values
+
+Schema normalization SHALL preserve tool identity, title and state-applicable metadata, raw input, preliminary, outputs and approval data on a deep clone.
+
+#### Scenario: Normalization retains presentation and lifecycle values
+- **WHEN** a terminal static part is normalized to dynamic
+- **THEN** identity, title and all state-applicable metadata, raw input, preliminary, output and approval values SHALL survive on an isolated deep clone.
 
 ### Requirement: Agent HTTP response helper
 

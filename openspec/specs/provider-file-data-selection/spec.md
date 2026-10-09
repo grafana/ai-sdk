@@ -19,7 +19,8 @@ The provider package SHALL expose constructors for bytes, base64, URL, provider-
 - **THEN** the selected arm and semantic payload SHALL remain identical, with bytes serialized as standard base64
 
 ### Requirement: Ambiguous file data fails closed
-Shared validation SHALL reject unselected data, conflicting arms, conflicting bytes/base64 representations, and malformed provider-reference values. References SHALL be objects of string values without the reserved `type` member; empty objects SHALL remain structurally valid. Explicit selection plus its own payload SHALL count as one arm. Marshaling and native conversion SHALL not silently choose a populated field over a conflicting selected arm. SDK tagged decoding SHALL reject members from other arms, including empty/null values and legacy payload aliases, before discarding them; this focused check SHALL not require importing Gateway schemas. Existing supported unambiguous legacy forms SHALL remain decodable.
+
+Shared validation SHALL reject unselected data, conflicting arms or bytes/base64 forms and malformed references. References SHALL be string-value objects without reserved `type`; empty objects SHALL remain structurally valid. Explicit selection plus its payload SHALL count as one arm. Marshaling/native conversion SHALL NOT choose a populated field over conflicting selection. Supported unambiguous legacy forms SHALL remain decodable.
 
 #### Scenario: Selected empty text conflicts with a URL
 - **WHEN** a caller selects empty text and then adds a URL payload
@@ -41,8 +42,17 @@ Shared validation SHALL reject unselected data, conflicting arms, conflicting by
 - **WHEN** a structurally valid reference lacks an identifier required by the selected native provider
 - **THEN** the converter SHALL apply the pinned provider's missing-reference behavior rather than reinterpret it as another file arm
 
+### Requirement: Tagged file decoding retains conflict detection
+
+SDK tagged decoding SHALL reject other-arm members, including empty/null values and legacy payload aliases, before discarding them. This focused check SHALL NOT require Gateway schemas.
+
+#### Scenario: Tagged file decoding retains conflict detection
+- **WHEN** a tagged text payload also contains an empty URL member
+- **THEN** SDK decoding SHALL reject the conflict before discarding it, without importing Gateway schemas
+
 ### Requirement: Native file conversion respects selected input semantics
-Anthropic including shared Vertex conversion, Bedrock, OpenAI Responses, and OpenAI-compatible providers SHALL inspect selection rather than payload non-emptiness. They SHALL retain pinned provider-specific role, media, URL, reference, option, warning, and error semantics. Required empty text/data SHALL not be dropped or changed to another arm. Filename defaults SHALL distinguish absence from explicit empty wherever the pinned provider uses nullish defaulting; provider-specific empty-name normalization SHALL remain intact. Invalid direct-call structures SHALL fail before external provider I/O. Unsupported-content behavior SHALL match pinned upstream or an explicitly documented existing deviation.
+
+Anthropic/shared Vertex, Bedrock, OpenAI Responses and OpenAI-compatible SHALL inspect selection, not non-emptiness; retain pinned role, media, URL, reference, option, warning and error semantics; and not drop/change required empty text/data to another arm. Invalid direct-call structures SHALL fail before external I/O. Unsupported content SHALL match pinned upstream or a documented existing deviation.
 
 #### Scenario: Empty inline text document
 - **WHEN** an Anthropic or Bedrock request uses an explicitly selected empty text file supported by that converter
@@ -60,3 +70,11 @@ Anthropic including shared Vertex conversion, Bedrock, OpenAI Responses, and Ope
 #### Scenario: Media restrictions remain provider-specific
 - **WHEN** a request uses full, bare top-level, or wildcard media types, a restricted URL scheme, or an unsupported text/reference arm
 - **THEN** the selected provider SHALL apply its registered conversion or unsupported-content behavior without a new Gateway-wide MIME allowlist or implicit URL fetch
+
+### Requirement: Native file filename defaults
+
+Filename defaults SHALL distinguish absence from explicit empty wherever pinned providers use nullish defaulting; provider-specific empty-name normalization SHALL remain intact.
+
+#### Scenario: Native file filename defaults
+- **WHEN** a provider using nullish filename defaults receives an explicitly empty name
+- **THEN** it SHALL preserve explicit empty rather than apply an absent-name default, while retaining provider-specific empty-name normalization

@@ -7,27 +7,7 @@ Define the public `ToResponseMessages` helper that converts collected response c
 ## Requirements
 ### Requirement: Public ToResponseMessages helper
 
-The `aisdk` package SHALL export a `ToResponseMessages` function with the
-signature:
-
-```go
-func ToResponseMessages(parts []provider.ContentPart) []provider.Message
-```
-
-The function SHALL convert a slice of collected response content parts into
-the assistant + tool messages that should be fed into the next provider
-call. It SHALL mirror the behavior of upstream
-`packages/ai/src/generate-text/to-response-messages.ts`. The function SHALL
-NOT return an error: the conversion is pure (no I/O), and tool-output
-normalization is the caller's responsibility — `*provider.ToolResultOutput`
-values on `tool-result` parts are passed through unchanged. The Go port
-runs `Tool.ToModelOutput` eagerly during tool execution and stores the
-result on `ToolResult.ModelOutput`, so by the time content reaches this
-helper the per-tool conversion is already done. (This intentionally
-diverges from upstream's `toResponseMessages({content, tools})` signature,
-which performs the same conversion lazily inside the helper.) Public
-callers constructing parts from raw tool output can call
-`Tool.ToModelOutput` directly before passing parts to this helper.
+aisdk SHALL export `func ToResponseMessages(parts []provider.ContentPart) []provider.Message`, converting collected response parts to next-call assistant/tool messages, mirroring packages/ai/src/generate-text/to-response-messages.ts. Conversion SHALL be pure, perform no I/O and return no error. Tool-output normalization SHALL be caller-owned; *provider.ToolResultOutput on tool-result parts SHALL pass through unchanged.
 
 #### Scenario: Empty input produces empty result
 
@@ -47,16 +27,17 @@ callers constructing parts from raw tool output can call
   is the empty string
 - **THEN** that part SHALL be omitted from the assistant message
 
+### Requirement: Tool output normalization precedes response-message conversion
+
+The Go port SHALL eagerly run Tool.ToModelOutput during execution and store ToolResult.ModelOutput before the helper. This SHALL remain the intentional adaptation of upstream toResponseMessages({content, tools}), which converts lazily in the helper. Public callers constructing raw-output parts MAY call Tool.ToModelOutput directly first.
+
+#### Scenario: Public caller normalizes raw output explicitly
+- **WHEN** a caller constructs content from raw tool output requiring conversion
+- **THEN** it MAY call Tool.ToModelOutput before ToResponseMessages, which SHALL pass the resulting ToolResultOutput through unchanged.
+
 ### Requirement: Reasoning parts carry ProviderOptions to the next call
 
-The function SHALL convert each `ContentPartTypeReasoning` entry into an
-assistant `reasoning` `ContentPart`, copying its `ProviderOptions` (so
-provider-specific signatures such as Anthropic's extended-thinking
-`signature` survive). The function SHALL convert each
-`ContentPartTypeReasoningFile` entry into an assistant `reasoning-file`
-`ContentPart` preserving `Data`, `MediaType`, and `ProviderOptions`. The
-function SHALL preserve the relative order of reasoning parts and other
-parts as given in the input.
+Each ContentPartTypeReasoning SHALL become assistant reasoning with copied ProviderOptions, preserving provider signatures such as Anthropic extended-thinking signature. ContentPartTypeReasoningFile SHALL become assistant reasoning-file retaining Data, MediaType and ProviderOptions. Relative order of reasoning and other input parts SHALL remain unchanged.
 
 #### Scenario: Reasoning with provider signature is preserved
 
@@ -174,13 +155,7 @@ are present.
 
 ### Requirement: Tool approval response routing
 
-The function SHALL place each `ContentPartTypeToolApprovalResponse` entry in
-the tool message in the same order it appears. When a `tool-approval-response`
-has `Approved == false`, the function SHALL also append a synthetic
-`tool-result` part to the tool message whose `Output.Type` is
-`ToolOutputExecutionDenied` and whose `Reason` matches the approval
-response's `Reason`. Provider-executed approval responses SHALL be routed to
-the tool message but no synthetic tool-result is added when `Approved == true`.
+ContentPartTypeToolApprovalResponse SHALL enter the tool message in input order. Approved false SHALL also append synthetic tool-result with Output.Type ToolOutputExecutionDenied and matching response Reason. Provider-executed responses SHALL enter the tool message but SHALL NOT add a synthetic result for Approved true.
 
 #### Scenario: Denied approval adds an execution-denied tool result
 
@@ -221,15 +196,7 @@ entry to an assistant `custom` `ContentPart` preserving `Kind` and
 
 ### Requirement: ToResponseMessages output is exposed on per-step Response
 
-The `aisdk.ResponseMetadata` struct SHALL define a `Messages
-[]provider.Message` field tagged `json:"-"`. After every step in
-`StreamText` completes, the orchestration layer SHALL populate
-`step.Response.Messages` with the slice returned by `ToResponseMessages`
-applied to that step's content (using the same content the step contributes
-to the next-call message list). The `Messages` field SHALL hold the
-last-step messages on `result.Response()` and the per-step messages on
-`result.Steps()[i].Response`. The field SHALL NOT be serialized as part of
-any wire format.
+aisdk.ResponseMetadata SHALL define Messages []provider.Message tagged json:"-". After every completed StreamText step, step.Response.Messages SHALL hold ToResponseMessages output for the same step content contributed to next-call messages. result.Response() SHALL hold last-step messages; result.Steps()[i].Response SHALL hold per-step messages. Messages SHALL NOT enter any wire format.
 
 #### Scenario: Last step's response.messages is populated
 
@@ -250,16 +217,7 @@ any wire format.
 
 ### Requirement: Stream-order content forwarded to ToResponseMessages
 
-The orchestration layer SHALL pass parts to `ToResponseMessages` in the
-order: reasoning blocks (from `step.Reasoning`), then a single text part
-(from `step.Text`, omitted if empty), then for each tool call in
-`step.ToolCalls` the call followed immediately by its matching
-provider-executed `tool-result` (if any), then any remaining
-non-provider-executed tool results from `step.ToolResults`. This order
-SHALL preserve provider expectations such as Anthropic's requirement that
-reasoning blocks precede the text or tool-use they support, and that a
-provider-executed tool-result must appear immediately after its
-originating tool-call within the same assistant message.
+Orchestration SHALL pass step.Reasoning blocks, a single step.Text part only if nonempty, each step.ToolCalls call immediately followed by matching provider-executed result if any, then remaining non-provider-executed step.ToolResults. This SHALL preserve Anthropic expectations: reasoning precedes supported text/tool-use, and provider results immediately follow originating calls within the same assistant message.
 
 #### Scenario: Reasoning precedes tool calls
 
