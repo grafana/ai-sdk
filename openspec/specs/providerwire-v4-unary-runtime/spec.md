@@ -307,7 +307,11 @@ A child goroutine with panic recovery and buffered completion SHALL bound handle
 
 ### Requirement: Fixed privacy-safe errors
 
-Every runtime error response SHALL retain fixed classified status, message, type, code, and `param: null` fields from protocol-owned definitions. Typed standard JSON encoding SHALL preserve the canonical base response bytes. Invalid request, model-not-found, rate-limit, overload, failed-dependency, upstream, timeout, cancellation, and internal categories SHALL use Gateway-recognized error types and status-derived retryability. Unknown or invalid internal categories SHALL fall back to the fixed internal-error document.
+Every runtime error response SHALL retain fixed classified status, message, type, code, and `param: null` fields from protocol-owned definitions.
+
+#### Scenario: Fixed privacy-safe errors policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** Typed standard JSON encoding SHALL preserve the canonical base response bytes. Invalid request, model-not-found, rate-limit, overload, failed-dependency, upstream, timeout, cancellation, and internal categories SHALL use Gateway-recognized error types and status-derived retryability. Unknown or invalid internal categories SHALL fall back to the fixed internal-error document.
 
 #### Scenario: Provider API failure
 - **WHEN** `DoGenerate` returns an API, transport, timeout, cancellation, or arbitrary internal error
@@ -536,7 +540,11 @@ Authentication SHALL emit the package's exact fixed 401 document, permission SHA
 
 ### Requirement: Optional unary execution overview
 
-The handler SHALL use synchronized request-local observation to optionally enrich a valid unary result or classified invocation failure with a compact execution overview. Original primary validation and existing complete-response limits SHALL apply before accepting enrichment. Optional encoding/fit failure SHALL preserve the original document and classification; original adaptation failures SHALL NOT replay generation. Protected route sources SHALL remain private, and configured direct calls SHALL retain their existing invocation/cancellation ownership.
+The handler SHALL use synchronized request-local observation to optionally enrich a valid unary result or classified invocation failure with a compact execution overview.
+
+#### Scenario: Optional unary execution overview policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** Original primary validation and existing complete-response limits SHALL apply before accepting enrichment. Optional encoding/fit failure SHALL preserve the original document and classification; original adaptation failures SHALL NOT replay generation. Protected route sources SHALL remain private, and configured direct calls SHALL retain their existing invocation/cancellation ownership.
 
 #### Scenario: Valid result with no enrichment room
 - **WHEN** a native result fits but adding or relocating the overview exceeds the existing response bound

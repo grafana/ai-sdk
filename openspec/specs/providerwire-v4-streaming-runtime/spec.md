@@ -329,7 +329,11 @@ The handler SHALL only write a finish after the entire `data: <json>\n\n` frame 
 
 ### Requirement: Ordered non-terminal provider errors
 
-Each pre-finish provider `PartError` SHALL be independently reduced through the closed safe-error classification and emitted in place with base fields `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`. Optional `error.data` MAY carry protected current-error and execution summaries under gateway-attempt-failure-evidence. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid.
+Each pre-finish provider `PartError` SHALL be independently reduced through the closed safe-error classification and emitted in place with base fields `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`.
+
+#### Scenario: Ordered non-terminal provider errors policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** Optional `error.data` MAY carry protected current-error and execution summaries under gateway-attempt-failure-evidence. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid.
 
 #### Scenario: Provider error is followed by content
 - **WHEN** a provider emits an error before or within a text block and later emits otherwise valid content and finish
@@ -423,7 +427,11 @@ Every public event SHALL contain only its registered outer fields, with supporte
 
 ### Requirement: Complete SSE writes fixed terminal frames and writer failure
 
-Encoding work and temporary memory SHALL remain bounded by a constant multiple of the configured frame limit, and the complete frame SHALL fit that limit before any of its bytes are written. Synthetic terminal errors SHALL retain their fixed base fields; optional execution attribution SHALL follow gateway-attempt-failure-evidence and preserve the canonical base frame when enrichment cannot fit. The server SHALL never emit SSE `event:` fields or `[DONE]`. A write error, short write, writer panic, or supported flush failure SHALL cancel provider work and end immediately without another write.
+Encoding work and temporary memory SHALL remain bounded by a constant multiple of the configured frame limit, and the complete frame SHALL fit that limit before any of its bytes are written.
+
+#### Scenario: Complete SSE writes fixed terminal frames and writer failure policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** Synthetic terminal errors SHALL retain their fixed base fields; optional execution attribution SHALL follow gateway-attempt-failure-evidence and preserve the canonical base frame when enrichment cannot fit. The server SHALL never emit SSE `event:` fields or `[DONE]`. A write error, short write, writer panic, or supported flush failure SHALL cancel provider work and end immediately without another write.
 
 #### Scenario: Complete SSE writes fixed terminal frames and writer failure
 - **WHEN** a full-frame write is short or flushing panics
@@ -550,7 +558,11 @@ Native warning/source/identity changes SHALL preserve existing stream-start norm
 
 ### Requirement: Optional streaming execution overview and current failures
 
-Streaming SHALL use the existing reader/commitment/drain ownership to optionally enrich finish metadata and classified error payloads. First-part selection SHALL NOT claim completion. Current protected native summaries SHALL remain event-local; finish SHALL NOT duplicate them. Existing complete-frame limits, original metadata preflight, error ordering, active-block state, authoritative finish and writer failure behavior SHALL remain unchanged. Optional enrichment failure SHALL preserve the original fitting frame, including native namespaces that cannot be relocated.
+Streaming SHALL use the existing reader/commitment/drain ownership to optionally enrich finish metadata and classified error payloads.
+
+#### Scenario: Optional streaming execution overview and current failures policy
+- **WHEN** the runtime encodes the corresponding response or stream event
+- **THEN** First-part selection SHALL NOT claim completion. Current protected native summaries SHALL remain event-local; finish SHALL NOT duplicate them. Existing complete-frame limits, original metadata preflight, error ordering, active-block state, authoritative finish and writer failure behavior SHALL remain unchanged. Optional enrichment failure SHALL preserve the original fitting frame, including native namespaces that cannot be relocated.
 
 #### Scenario: Selected leading error followed by content
 - **WHEN** the first provider part is an error followed by valid text and finish

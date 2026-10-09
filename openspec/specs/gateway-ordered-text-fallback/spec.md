@@ -324,7 +324,12 @@ An authenticated registered Gateway client SHALL complete supported unary/stream
 - **THEN** clients SHALL consume native warning/identity values through the unchanged normalized-start/content/finish/clean-EOF lifecycle
 
 ### Requirement: Anthropic text output preservation without eligibility expansion
-Successful output SHALL preserve supported native warnings, source ID/display and registered native response identity without normalizing them to canonical route identity. Fallback SHALL occur only before unary success or the first provider stream part; behavior after selection SHALL retain the existing strict adapter lifecycle. Preserving these response values SHALL NOT expand fallback eligibility or routing. Separately governed optional execution overviews SHALL NOT change invocation/lifecycle policy.
+
+Successful output SHALL preserve supported native warnings, source ID/display and registered native response identity without normalizing them to canonical route identity.
+
+#### Scenario: Anthropic text output preservation without eligibility expansion policy
+- **WHEN** authenticated text execution returns native values
+- **THEN** Fallback SHALL occur only before unary success or the first provider stream part; behavior after selection SHALL retain the existing strict adapter lifecycle. Preserving these response values SHALL NOT expand fallback eligibility or routing. Separately governed optional execution overviews SHALL NOT change invocation/lifecycle policy.
 
 #### Scenario: Anthropic text output preservation without eligibility expansion
 - **WHEN** a selected text stream returns native warnings and identity before a later provider failure
