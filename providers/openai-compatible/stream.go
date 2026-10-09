@@ -21,9 +21,12 @@ type streamState struct {
 	metadataKey     string
 	includeRaw      bool
 
-	textActive       bool
-	reasoningActive  bool
-	finishReason     provider.FinishReason
+	textActive      bool
+	reasoningActive bool
+	finishReason    provider.FinishReason
+	// finishReasonSet records that the stream reported a finish reason or that
+	// an error already decided it. A stream that ends with neither was cut short.
+	finishReasonSet  bool
 	usage            *provider.Usage
 	rawUsage         *openAIUsage
 	toolCalls        []*streamToolCall
@@ -191,6 +194,7 @@ func streamError(data []byte) (json.RawMessage, string, bool, error) {
 func (s *streamState) handleChoice(choice chatChoice) bool {
 	if choice.FinishReason != nil {
 		s.finishReason = mapFinishReason(choice.FinishReason)
+		s.finishReasonSet = true
 	}
 
 	delta := choice.Delta
@@ -416,6 +420,16 @@ func (s *streamState) flush() {
 		}
 	}
 
+	// A stream that closes without a finish reason, through EOF, [DONE] or a
+	// body that was never SSE, ended early. Reporting it as a normal finish
+	// would hand the caller truncated output as success, so it ends as an
+	// error, as the registered @ai-sdk/openai-compatible flush does.
+	if !s.finishReasonSet {
+		s.emitRecoverableError(provider.NewAPICallError(provider.APICallErrorOptions{
+			Message: "openai: response stream ended without a finish reason",
+			URL:     s.endpoint,
+		}))
+	}
 	if s.errorEmitted {
 		s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	}
@@ -459,6 +473,7 @@ func (s *streamState) finishToolCall(tc *streamToolCall) bool {
 
 func (s *streamState) emitProviderError(err *provider.APICallError) {
 	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
+	s.finishReasonSet = true
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:         provider.PartError,
 		APICallError: err,
@@ -472,6 +487,7 @@ func (s *streamState) emitError(err *provider.APICallError) {
 
 func (s *streamState) emitRecoverableError(err *provider.APICallError) {
 	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
+	s.finishReasonSet = true
 	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
 		Type:         provider.PartError,
 		APICallError: err,
