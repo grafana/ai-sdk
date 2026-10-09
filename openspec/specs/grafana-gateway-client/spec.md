@@ -758,11 +758,12 @@ Invalid metadata SHALL use the bounded terminal non-retryable protocol-error pat
 - **THEN** the client SHALL emit a bounded non-retryable terminal error without reflecting the value or delivering invalid finish, leaving lifecycle and raw filtering unchanged
 
 ### Requirement: BYOK request projection without catalog coupling
-The Go client SHALL emit representable provider/model IDs and providerOptions.gateway.byok using the same outer model header and JSON provider-options namespace as the registered Vercel client. It SHALL preserve multiple-provider maps and ordered credential arrays for unary and streaming calls without client-side catalog lookup, automatic discovery, endpoint changes or native account selection. Gateway host controls SHALL remain ordinary representable client options, with service-owned capability validation.
+The Go client SHALL emit representable provider/model IDs and providerOptions.gateway.byok using the same outer model header and JSON provider-options namespace as the registered Vercel client. It SHALL preserve multiple-provider maps and ordered credential arrays for unary and streaming calls without client-side catalog lookup, automatic discovery, endpoint changes or native account selection.
 
 #### Scenario: Ordered credentials are serialized
 - **WHEN** CallOptions contains multiple provider entries and ordered credentials
 - **THEN** unary and streaming request captures SHALL match equivalent pinned-client semantic bodies and preserve credential order
+- **AND** Gateway host controls SHALL remain ordinary representable client options, with service-owned capability validation
 
 #### Scenario: BYOK model is not configured
 - **WHEN** a caller constructs a model for a valid provider/model string absent from configured discovery
@@ -776,8 +777,6 @@ The Go client SHALL emit representable provider/model IDs and providerOptions.ga
 ### Requirement: Caller-owned request metadata and capture guidance
 Both Go and exact-pinned Vercel requests SHALL emit the standard BYOK subtree in unary and streaming bodies. Their returned caller-owned request metadata SHALL retain the submitted arguments under the existing client contract; the server SHALL NOT claim it can sanitize those local objects. Guidance SHALL separate credential-aware automatic capture from direct application inspection.
 
-Default Go logger capture SHALL structurally protect credentials in supported SDK capture representations. Direct application logging, including TypeScript logging, SHALL remain caller-owned; guidance SHALL warn against logging credential-bearing metadata and recommend omitting credentials from a copy. This change SHALL NOT provide a TypeScript redaction helper. Enrichment and Agent Observability capture paths SHALL be inspected and tested with dummy markers without enabling unsupported capture APIs or removing ordinary application content.
-
 #### Scenario: Actual consumer capture
 - **WHEN** Go logging enables provider-options and request-body capture for both unary and streaming BYOK calls
 - **THEN** its real capture sink SHALL contain no dummy BYOK markers while retaining allowed non-secret request content
@@ -786,6 +785,13 @@ Default Go logger capture SHALL structurally protect credentials in supported SD
 - **WHEN** the registered Vercel client returns request.body after BYOK submission
 - **THEN** evidence SHALL show the local BYOK subtree is present
 - **AND** guidance SHALL identify direct logging of that metadata as caller-owned credential exposure, without changing the HTTP request or caller result
+
+### Requirement: Credential-aware client capture boundaries
+Default Go logger capture SHALL structurally protect credentials in supported SDK capture representations. Direct application logging, including TypeScript logging, SHALL remain caller-owned; guidance SHALL warn against logging credential-bearing metadata and recommend omitting credentials from a copy. This change SHALL NOT provide a TypeScript redaction helper.
+
+#### Scenario: Capture evidence respects supported APIs
+- **WHEN** enrichment and Agent Observability capture paths are inspected and tested with dummy markers
+- **THEN** evidence SHALL NOT enable unsupported capture APIs or remove ordinary application content
 
 ### Requirement: Transport-safe model selectors
 Model construction SHALL accept nonempty valid UTF-8 selectors up to 2,048 bytes
