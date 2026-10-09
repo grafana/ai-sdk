@@ -230,6 +230,24 @@ func TestStream_FinishCarriesResponseMetadata(t *testing.T) {
 	assert.Equal(t, "all_turns", meta["reasoningContext"])
 }
 
+func TestStream_FinishUsesResponseIDFromResponseCreated(t *testing.T) {
+	parts := collectParts(t,
+		`{"type":"response.created","sequence_number":1,"response":{"id":"resp_created","created_at":1,"model":"gpt-5.6","object":"response","status":"in_progress","output":[]}}`,
+		`{"type":"response.completed","sequence_number":2,"response":{"id":"resp_completed","created_at":1,"model":"gpt-5.6","object":"response","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+	)
+
+	var finish provider.StreamPart
+	for _, part := range parts {
+		if part.Type == provider.PartFinish {
+			finish = part
+		}
+	}
+	require.Equal(t, provider.PartFinish, finish.Type)
+	var meta map[string]any
+	require.NoError(t, json.Unmarshal(finish.ProviderMetadata["openai"], &meta))
+	assert.Equal(t, "resp_created", meta["responseId"])
+}
+
 func TestStream_TextEndCarriesAnnotations(t *testing.T) {
 	parts := collectParts(t,
 		`{"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"in_progress","content":[]}}`,
