@@ -2,7 +2,7 @@
 
 ## Context
 
-See proposal.md. `streamAdapter.handleEvent` (`providers/anthropic/convert_stream.go`) sends `PartFinish` inside the `message_delta` case and only clears `messageOpen` on `message_stop`. Upstream (`anthropic-language-model.ts` at `5d12eaa6`) mutates stream-level `finishReason`, usage and metadata state on `message_start`/`message_delta` and enqueues the only `finish` in `message_stop`; its transform has no `flush`. For `error` chunks it enqueues the error and keeps reading; an error as the first chunk is converted to a thrown `APICallError`. Upstream `streamText` marks the step terminal on `error`, sets finish reason `error`, and a later `model-call-end` overwrites the step finish reason.
+See proposal.md. `streamAdapter.handleEvent` (`providers/anthropic/convert_stream.go`) sends `PartFinish` inside the `message_delta` case and only clears `messageOpen` on `message_stop`. Upstream (`anthropic-language-model.ts` at `eb77f09e`, unchanged from `5d12eaa6` for this behavior as the regenerated goldens show) mutates stream-level `finishReason`, usage and metadata state on `message_start`/`message_delta` and enqueues the only `finish` in `message_stop`; its transform has no `flush`. For `error` chunks it enqueues the error and keeps reading; an error as the first chunk is converted to a thrown `APICallError`. Upstream `streamText` marks the step terminal on `error`, sets finish reason `error`, and a later `model-call-end` overwrites the step finish reason.
 
 In Go, `pumpMessageStream` converts an `error` frame into a terminal `item.err`, and `consumeStreamParts` returns on any item error. `StreamText` sets `terminated` and `providerFailed` on `PartError` and keeps looping until the stream closes; `completed` is set by a later `PartFinish`.
 

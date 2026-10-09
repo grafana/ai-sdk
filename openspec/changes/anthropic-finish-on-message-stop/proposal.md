@@ -2,7 +2,7 @@
 
 ## Why
 
-Issue #377: the Anthropic adapter emits a `PartFinish` on every `message_delta`, while the registered upstream (`@ai-sdk/anthropic` 4.0.65, `5d12eaa6`) emits exactly one `finish` per message, when it handles `message_stop`. Direct `DoStream` callers and the AI Gateway, which treats the first finish as terminal, can see an early finish that lacks the final `safeguardResults`, and raw `message_stop` arrives after `finish`. Issue #201 adds the opposite case: the imported `programmatic-tool-calling` fixture has 15 `message_stop` events but only 2 `message_delta` events, so Go emits 2 finishes where upstream emits 15.
+Issue #377: the Anthropic adapter emits a `PartFinish` on every `message_delta`, while the registered upstream (`@ai-sdk/anthropic` 4.0.71, `eb77f09e`; the issue was filed against 4.0.65, `5d12eaa6`) emits exactly one `finish` per message, when it handles `message_stop`. Direct `DoStream` callers and the AI Gateway, which treats the first finish as terminal, can see an early finish that lacks the final `safeguardResults`, and raw `message_stop` arrives after `finish`. Issue #201 adds the opposite case: the imported `programmatic-tool-calling` fixture has 15 `message_stop` events but only 2 `message_delta` events, so Go emits 2 finishes where upstream emits 15.
 
 The conformance suite could not catch either: it compares only UI chunks from `streamText`, so provider-part timing and count are invisible. This change therefore adds upstream-generated provider-part evidence for every provider with conformance fixtures, investigates every difference it surfaces, and fixes them until the suite is green.
 
