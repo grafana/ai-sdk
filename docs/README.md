@@ -72,6 +72,7 @@ Start with [Choose a provider](providers/overview.md), then follow the setup for
 the service your application calls:
 
 - [Anthropic](providers/anthropic.md) for Claude through Anthropic or Vertex AI.
+- [Microsoft Azure](providers/azure.md)
 - [Amazon Bedrock](providers/bedrock.md) for Bedrock Converse and Mantle Responses.
 - [OpenAI](providers/openai.md) for the Responses API.
 - [OpenAI-compatible APIs](providers/openai-compatible.md) for local or hosted
