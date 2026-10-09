@@ -9,8 +9,9 @@ Archive/sync the changes in stack order. This change adds authenticated-service
 requirements alongside the preceding change's engine requirements; it does not
 modify a requirement that has not yet been synchronized into the main specs.
 
-The upstream reference remains Gateway 4.0.96 / ai 7.0.118 / Provider 4.0.18 at
-`5d12eaa6caa193d3901cbab98a734403eb6bf622`. Client projection is not an oracle
+The frozen restack reference is Gateway 4.0.103 / ai 7.0.127 / Provider 4.0.21 at
+`eb77f09e3c06c28e860d92e0de941b143c2eecec`. Main target `28e08a45` supplies that
+baseline and native/UI continuation changes; earlier versioned evidence is historical. Client projection is not an oracle
 for Vercel service authentication, retry policy or deployed Grafana isolation.
 
 The design references token/exchange documentation, the pinned authlib verifier

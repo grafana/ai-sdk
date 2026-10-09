@@ -15,9 +15,16 @@
 ## ADDED Requirements
 
 ### Requirement: Unified dependency construction
-The unified command SHALL construct explicit regional JWT verification and configured-account dependencies alongside credential-independent BYOK adapter factories. JWT trust SHALL be configured even when Cloud requests are being served. Client construction SHALL preserve bounded JWKS retrieval, endpoint validation, redirect refusal, model response bounds and timeouts.
+The command SHALL construct JWT/configured-account and request-only dependencies together. Configured secrets/catalogs SHALL remain inaccessible to BYOK, transports SHALL remain credential-independent and timeout validation SHALL cover each path safely.
 
-Configured secret resolution and catalog construction SHALL have no dependency path into the BYOK selector. Shared transports SHALL carry no mutable account headers or SDK-environment credential defaults. Listener timeout validation SHALL use overflow-safe accounting for the work each path performs, including JWT verification on the private path.
+#### Scenario: Unified construction policy
+- **WHEN** the Gateway constructs both authenticated account populations
+- **THEN** The unified command SHALL construct explicit regional JWT verification and configured-account dependencies alongside credential-independent BYOK adapter factories.
+- **AND** JWT trust SHALL be configured even when Cloud requests are being served.
+- **AND** Client construction SHALL preserve bounded JWKS retrieval, endpoint validation, redirect refusal, model response bounds and timeouts.
+- **AND** Configured secret resolution and catalog construction SHALL have no dependency path into the BYOK selector.
+- **AND** Shared transports SHALL carry no mutable account headers or SDK-environment credential defaults.
+- **AND** Listener timeout validation SHALL use overflow-safe accounting for the work each path performs, including JWT verification on the private path.
 
 #### Scenario: Concurrent authentication dependencies
 - **WHEN** the unified command starts
@@ -33,9 +40,20 @@ Configured secret resolution and catalog construction SHALL have no dependency p
 
 
 ### Requirement: Simultaneous isolated authentication entry points
-One Gateway process SHALL expose a private JWT API listener, a trusted-Cloud API listener and an operational listener. Defaults SHALL retain the Cloud API on port 8080 and operations on port 8081, with private JWT access on port 8082. Operators MAY configure distinct alternative addresses. API listeners SHALL serve the existing exact ProviderWire paths with method and encoded-path checks. Operational routes SHALL exist only on the operational listener. The command SHALL remove exclusive startup authentication modes and SHALL NOT fall back between authenticators.
+Private JWT, trusted Cloud and operational listeners SHALL coexist with isolated routes and no authentication fallback. Defaults SHALL keep Cloud on 8080, operations on 8081 and private JWT on 8082; private admission SHALL verify credentials before body reads.
 
-The private listener SHALL accept exactly one access-token credential, through X-Access-Token or Authorization Bearer, and SHALL reject both together, duplicate/case-colliding/coalesced credentials and supplied Cloud identity assertions. It SHALL verify access-token type, signature, expiry, audience ai-sdk and supported namespace before protected body reads. No service-identity allowlist or mandatory serviceIdentity claim SHALL apply; verified service/subject attributes SHALL be retained when available without inventing an identity. Optional X-Grafana-Id SHALL verify and bind to the access-token namespace; an ID token alone SHALL NOT authenticate.
+#### Scenario: Listener and private admission policy
+- **WHEN** the process binds listeners and admits private API requests
+- **THEN** One Gateway process SHALL expose a private JWT API listener, a trusted-Cloud API listener and an operational listener.
+- **AND** Defaults SHALL retain the Cloud API on port 8080 and operations on port 8081, with private JWT access on port 8082.
+- **AND** Operators MAY configure distinct alternative addresses.
+- **AND** API listeners SHALL serve the existing exact ProviderWire paths with method and encoded-path checks.
+- **AND** Operational routes SHALL exist only on the operational listener.
+- **AND** The command SHALL remove exclusive startup authentication modes and SHALL NOT fall back between authenticators.
+- **AND** The private listener SHALL accept exactly one access-token credential, through X-Access-Token or Authorization Bearer, and SHALL reject both together, duplicate/case-colliding/coalesced credentials and supplied Cloud identity assertions.
+- **AND** It SHALL verify access-token type, signature, expiry, audience ai-sdk and supported namespace before protected body reads.
+- **AND** No service-identity allowlist or mandatory serviceIdentity claim SHALL apply; verified service/subject attributes SHALL be retained when available without inventing an identity.
+- **AND** Optional X-Grafana-Id SHALL verify and bind to the access-token namespace; an ID token alone SHALL NOT authenticate.
 
 #### Scenario: Both client populations use one process
 - **WHEN** valid private JWT and trusted Cloud requests arrive concurrently
@@ -55,9 +73,18 @@ The private listener SHALL accept exactly one access-token credential, through X
 - **AND** it SHALL NOT try Cloud authentication
 
 ### Requirement: Request-level account access and namespace context
-The host SHALL derive an immutable account-access policy from verified authentication provenance. Private JWTs SHALL grant configured-account access; trusted Cloud requests SHALL grant request-BYOK access. Neither request parameters, the namespace's customer identity nor supplied provider keys SHALL change this policy. Catalog code SHALL depend on configured-access authorization rather than a hard-coded JWT mechanism.
+Verified authentication SHALL determine immutable configured/BYOK access. Request keys/parameters SHALL NOT change policy or tenant identity; concrete/wildcard namespaces and verified acting users SHALL follow the account-bound namespace contract.
 
-JWT namespaces SHALL accept concrete stacks-<positive-int64> values and wildcard *. A wildcard SHALL remain service-level context unless a verified acting-user token supplies a concrete namespace within its authority. Untrusted headers SHALL NOT select a wildcard caller's stack. Unsupported or malformed namespaces SHALL fail before protected work.
+#### Scenario: Authenticated account and namespace policy
+- **WHEN** the host derives request policy and tenant context
+- **THEN** The host SHALL derive an immutable account-access policy from verified authentication provenance.
+- **AND** Private JWTs SHALL grant configured-account access; trusted Cloud requests SHALL grant request-BYOK access.
+- **AND** Neither request parameters, the namespace's customer identity nor supplied provider keys SHALL change this policy.
+- **AND** Catalog code SHALL depend on configured-access authorization rather than a hard-coded JWT mechanism.
+- **AND** JWT namespaces SHALL accept concrete stacks-<positive-int64> values and wildcard *.
+- **AND** A wildcard SHALL remain service-level context unless a verified acting-user token supplies a concrete namespace within its authority.
+- **AND** Untrusted headers SHALL NOT select a wildcard caller's stack.
+- **AND** Unsupported or malformed namespaces SHALL fail before protected work.
 
 #### Scenario: Internal service acts for a customer
 - **WHEN** a valid ai-sdk access JWT names stacks-123
