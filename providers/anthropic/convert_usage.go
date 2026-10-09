@@ -23,6 +23,7 @@ type anthropicUsage struct {
 	cacheReadInputTokens     int64
 	reasoningTokens          *int64
 	iterations               anthropic.BetaIterationsUsage
+	iterationsRaw            json.RawMessage
 	raw                      json.RawMessage
 }
 
@@ -34,6 +35,7 @@ func (a *streamAdapter) resetUsage(usage anthropic.BetaUsage) error {
 		cacheReadInputTokens:     usage.CacheReadInputTokens,
 		reasoningTokens:          a.usage.reasoningTokens,
 		iterations:               a.usage.iterations,
+		iterationsRaw:            a.usage.iterationsRaw,
 	}
 	return a.mergeRawUsage(usage.RawJSON())
 }
@@ -55,7 +57,13 @@ func (a *streamAdapter) updateUsage(usage anthropic.BetaMessageDeltaUsage) error
 	if usage.JSON.Iterations.Valid() {
 		a.usage.iterations = usage.Iterations
 	}
-	return a.mergeRawUsage(usage.RawJSON())
+	if err := a.mergeRawUsage(usage.RawJSON()); err != nil {
+		return err
+	}
+	if usage.JSON.Iterations.Valid() {
+		a.usage.iterationsRaw = usageIterationsField(a.usage.raw)
+	}
+	return nil
 }
 
 func (a *streamAdapter) mergeRawUsage(raw string) error {

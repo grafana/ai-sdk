@@ -505,7 +505,7 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if fr.Unified == "" {
 			fr = mapFinishReason("")
 		}
-		providerMetadata, err := buildAnthropicProviderMetadata(a.metadataFields, a.usage.raw)
+		providerMetadata, err := buildAnthropicProviderMetadata(a.metadataFields, a.usage.raw, a.usage.iterationsRaw)
 		if err != nil {
 			return err
 		}

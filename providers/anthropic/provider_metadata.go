@@ -8,19 +8,18 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-func buildAnthropicProviderMetadata(fields map[string]json.RawMessage, usageRaw json.RawMessage) (provider.ProviderMetadata, error) {
+func buildAnthropicProviderMetadata(fields map[string]json.RawMessage, usageRaw, iterationsRaw json.RawMessage) (provider.ProviderMetadata, error) {
 	var usage any = map[string]any{}
 	if len(usageRaw) > 0 {
 		if err := json.Unmarshal(usageRaw, &usage); err != nil {
 			return nil, fmt.Errorf("unmarshaling usage metadata: %w", err)
 		}
 	}
-	usageObject, _ := usage.(map[string]any)
 
 	metadata := map[string]any{
 		"usage":             usage,
 		"stopSequence":      rawJSONValue(fields["stop_sequence"]),
-		"iterations":        mapUsageIterations(usageObject["iterations"]),
+		"iterations":        mapUsageIterations(rawJSONValue(iterationsRaw)),
 		"container":         mapContainerMetadata(rawJSONValue(fields["container"])),
 		"contextManagement": mapContextManagementMetadata(rawJSONValue(fields["context_management"])),
 	}
@@ -150,6 +149,14 @@ func isJSONNullOrAbsent(raw json.RawMessage) bool {
 	return len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
 
+func usageIterationsField(usageRaw json.RawMessage) json.RawMessage {
+	var usage map[string]json.RawMessage
+	if json.Unmarshal(usageRaw, &usage) != nil {
+		return nil
+	}
+	return usage["iterations"]
+}
+
 func messageMetadataFields(raw string) map[string]json.RawMessage {
 	var message map[string]json.RawMessage
 	_ = json.Unmarshal([]byte(raw), &message)
@@ -174,7 +181,7 @@ func mergeMessageDeltaMetadata(fields map[string]json.RawMessage, raw string) ma
 			fields[key] = value
 		}
 	}
-	if value, ok := event["context_management"]; ok {
+	if value := event["context_management"]; !isJSONNullOrAbsent(value) {
 		fields["context_management"] = value
 	}
 	if value := event["input_transformations"]; !isJSONNullOrAbsent(value) {

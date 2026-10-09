@@ -31,13 +31,6 @@ func wrapAPIError(err error, url string, body any) error {
 		responseHeaders = apiErr.Response.Header
 	}
 
-	var isRetryable *bool
-	if apiErr.StatusCode == http.StatusOK {
-		if metadata, known := streamErrorMetadata(apiErr.Type()); known {
-			isRetryable = &metadata.retryable
-		}
-	}
-
 	wrapped := provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:           apiErr.Error(),
 		URL:               url,
@@ -45,16 +38,12 @@ func wrapAPIError(err error, url string, body any) error {
 		StatusCode:        apiErr.StatusCode,
 		ResponseHeaders:   responseHeaders,
 		ResponseBody:      apiErr.RawJSON(),
-		IsRetryable:       isRetryable,
 		Cause:             err,
 	})
 	wrapped.Data = structuredErrorData(apiErr.RawJSON())
 	return wrapped
 }
 
-// streamErrorFrameStatus is the status given to an error frame whose type
-// upstream does not classify. A first-chunk error becomes a failed call and
-// defaults to a server error; a mid-stream error part keeps no status.
 const (
 	initialStreamErrorDefaultStatus = http.StatusInternalServerError
 	midStreamErrorDefaultStatus     = 0
@@ -92,26 +81,22 @@ func streamErrorMetadata(errorType shared.ErrorType) (errorMetadata, bool) {
 }
 
 func wrapInitialStreamError(err error, body any) error {
-	return wrapErrorFrame(wrapAPIError(err, "", body), err, initialStreamErrorDefaultStatus)
-}
-
-// wrapStreamErrorFrame wraps an error frame received after the stream started.
-func wrapStreamErrorFrame(err error) *provider.APICallError {
-	wrapped := wrapAsAPICallError(err, "", nil)
-	if framed, ok := wrapErrorFrame(wrapped, err, midStreamErrorDefaultStatus).(*provider.APICallError); ok {
-		return framed
-	}
-	return wrapped
-}
-
-// wrapErrorFrame gives an Anthropic error frame upstream's classification: the
-// inner error message, and the status code and retryability of its type.
-func wrapErrorFrame(wrapped error, err error, defaultStatus int) error {
+	wrapped := wrapAPIError(err, "", body)
 	var callErr *provider.APICallError
 	if !errors.As(wrapped, &callErr) {
 		return wrapped
 	}
+	return wrapErrorFrame(callErr, err, initialStreamErrorDefaultStatus)
+}
 
+// wrapStreamErrorFrame wraps an error frame received after the stream started.
+func wrapStreamErrorFrame(err error) *provider.APICallError {
+	return wrapErrorFrame(wrapAsAPICallError(err, "", nil), err, midStreamErrorDefaultStatus)
+}
+
+// wrapErrorFrame gives an Anthropic error frame upstream's classification: the
+// inner error message, and the status code and retryability of its type.
+func wrapErrorFrame(callErr *provider.APICallError, err error, defaultStatus int) *provider.APICallError {
 	var anthropicErr *sdk.Error
 	if !errors.As(err, &anthropicErr) || anthropicErr.StatusCode != http.StatusOK {
 		return callErr

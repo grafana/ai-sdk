@@ -121,7 +121,8 @@ func TestConvertResponse_FallbackProviderMetadata(t *testing.T) {
 func TestBuildAnthropicProviderMetadata_PreservesEmptyStrings(t *testing.T) {
 	metadata, err := buildAnthropicProviderMetadata(map[string]json.RawMessage{
 		"stop_details": json.RawMessage(`{"type":"refusal","category":"","explanation":"","recommended_model":""}`),
-	}, json.RawMessage(`{"input_tokens":1,"output_tokens":0,"iterations":[{"type":"fallback_message","model":"","input_tokens":1,"output_tokens":0}]}`))
+	}, json.RawMessage(`{"input_tokens":1,"output_tokens":0,"iterations":[{"type":"fallback_message","model":"","input_tokens":1,"output_tokens":0}]}`),
+		json.RawMessage(`[{"type":"fallback_message","model":"","input_tokens":1,"output_tokens":0}]`))
 	require.NoError(t, err)
 	assert.JSONEq(t, `{
 		"usage":{"input_tokens":1,"output_tokens":0,"iterations":[{"type":"fallback_message","model":"","input_tokens":1,"output_tokens":0}]},
