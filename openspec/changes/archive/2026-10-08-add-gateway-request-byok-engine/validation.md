@@ -170,3 +170,13 @@ assertion verbatim/in order; ten BYOK race repetitions and uncached short tests
 passed. Full gates and strict checks of the three synchronized specs passed;
 archive task/evidence inventories and scoped validity are preserved. Logs:
 `/tmp/byok-stack-pr2-simplification-20261008/` and `/tmp/pr368-simplification-*`.
+
+## Latest-main rebase
+
+Rebased onto the client slice on `origin/main` at `79be97b0`. Runtime range-diff
+retains all behavior; main's stronger fallback-test wait for both terminal logging
+and metrics replaces the earlier log-only wait. Full gates above, standalone
+readonly Go 1.26.8 Grafana races and 50 fallback metadata-failure race repetitions
+passed; 74 command cases ran without skips. Logs:
+`/tmp/byok-stack-pr2-latest-main-20261009/`. Main's Azure/security changes and
+registered baseline remain intact; generated workspace checksum churn is excluded.
