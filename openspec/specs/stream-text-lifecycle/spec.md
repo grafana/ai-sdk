@@ -6,7 +6,7 @@ Define `StreamText` step completion, premature provider-stream closure, partial-
 ## Requirements
 ### Requirement: Provider stream terminal recognition
 
-`StreamText` SHALL distinguish provider terminal parts from model output and administrative parts. A provider finish part SHALL complete the model call; a response satisfying applicable semantic validation SHALL complete the step normally, while an effective required/named tool-choice violation SHALL use completed semantic-failure finalization. A provider error part SHALL be terminal for premature-closure detection and SHALL retain its existing error handling. Closing the provider channel without either terminal part SHALL be treated as an incomplete stream.
+StreamText SHALL distinguish terminal parts from model/admin output. Finish SHALL complete the model call: semantically valid responses SHALL complete normally; effective required/named tool-choice violations SHALL use completed semantic-failure finalization. Provider error SHALL be terminal for premature-closure detection with existing handling. Closure without finish/error SHALL be incomplete.
 
 #### Scenario: Provider finish completes a step
 
@@ -26,9 +26,7 @@ Define `StreamText` step completion, premature provider-stream closure, partial-
 
 ### Requirement: Empty incomplete stream fails
 
-When a provider channel closes without a terminal part and without producing any model output part, `StreamText` SHALL set a result error wrapping `ErrNoOutputGenerated`. The error SHALL state that the model stream ended without a finish chunk. Administrative stream-start, response-metadata, and raw parts SHALL NOT count as model output.
-
-The incomplete step SHALL NOT be recorded, `OnStepFinish` SHALL NOT be called for it, `OnFinish` SHALL NOT be called for the failed invocation, and the full stream SHALL emit an error part without a synthetic successful stream-finish part.
+Closure without terminal or model output SHALL set a result error wrapping ErrNoOutputGenerated, stating the model stream ended without a finish chunk. Stream-start/response-metadata/raw parts SHALL NOT count as model output. The step SHALL NOT be recorded; OnStepFinish/OnFinish SHALL NOT run for the incomplete step/failed invocation. Full stream SHALL emit error without synthetic successful finish.
 
 #### Scenario: Initial step closes without output
 
@@ -49,9 +47,7 @@ The incomplete step SHALL NOT be recorded, `OnStepFinish` SHALL NOT be called fo
 
 ### Requirement: Partial incomplete stream is retained
 
-When a provider channel closes without a terminal part after producing a model output part, `StreamText` SHALL retain the partial step instead of reporting `ErrNoOutputGenerated`. The step finish reason SHALL be `other`, normal step finalization and `OnStepFinish` SHALL run, and the stream SHALL emit `finish-step`. Continuation SHALL require every client tool call to have a result or denial. Incomplete steps SHALL NOT dispatch executable tools. If the invocation does not continue, it SHALL emit a stream finish whose reason is `other`.
-
-Model output classification SHALL follow the registered upstream baseline so output-bearing parts are distinguished from administrative, raw, finish, and error parts.
+Closure without terminal after model output SHALL retain a partial step, not ErrNoOutputGenerated. Finish reason SHALL be other; normal finalization/OnStepFinish SHALL run and emit finish-step. Continuation SHALL require results/denials for every client call. Incomplete steps SHALL NOT dispatch tools; if not continued, stream finish SHALL use other.
 
 #### Scenario: Text output precedes premature closure
 
@@ -74,6 +70,14 @@ Model output classification SHALL follow the registered upstream baseline so out
 - **THEN** the partial step is recorded with finish reason `other`
 - **AND** `StreamText` does not execute the tools or start a continuation step
 
+### Requirement: Incomplete output classification follows the baseline
+
+Model output classification SHALL follow the registered upstream baseline, distinguishing output-bearing parts from administrative, raw, finish and error parts.
+
+#### Scenario: Administrative-only incomplete stream has no model output
+- **WHEN** a stream contains only stream-start, response-metadata or raw parts before premature closure
+- **THEN** those parts SHALL NOT turn the empty incomplete stream into a retained partial-output step.
+
 ### Requirement: Cancellation is not partial completion
 
 Context cancellation while reading a provider stream SHALL use abort behavior rather than incomplete-stream finalization. Output received before cancellation SHALL NOT cause the canceled step to execute pending tools, emit `finish-step`, or be recorded unless the provider step had already completed under the existing cancellation rules.
@@ -88,7 +92,7 @@ Context cancellation while reading a provider stream SHALL use abort behavior ra
 
 ### Requirement: Step content preserves provider order
 
-`StreamText` SHALL construct `StepResult.Content` and response-message content from the provider's recorded content sequence. Text, reasoning, sources, regular files, provider tool calls, provider tool results, and provider approval requests SHALL retain their relative provider order and provider metadata. Tool approvals and results created locally after provider streaming SHALL be appended exactly once. Manually constructed step state without recorded provider content SHALL use deterministic grouped fallback behavior.
+StreamText SHALL build StepResult.Content and response content from recorded provider sequence. Text/reasoning/sources/regular files/tool calls/tool results/approval requests SHALL retain relative provider order and metadata. Locally created post-stream approvals/results SHALL append exactly once. Manually constructed state without recorded content SHALL use deterministic grouped fallback.
 
 #### Scenario: Provider content is interleaved
 
@@ -114,8 +118,7 @@ Context cancellation while reading a provider stream SHALL use abort behavior ra
 
 ### Requirement: Tool execution requires an allowed finish
 
-Local executable tools SHALL be dispatched only after a step finishes with `stop`
-or `tool-calls` and does not violate its effective required/named tool choice. Tool-call visibility SHALL be retained for other finish reasons. Approval processing SHALL be retained for other finish reasons except completed tool-choice violations, which SHALL bypass all new local approval and execution processing. Automatic continuation SHALL require each client tool call to have a matching result or denial, not merely an executable callback, and SHALL never occur after a tool-choice violation.
+Local executable tools SHALL dispatch only after stop/tool-calls without effective required/named choice violation. Other finish reasons SHALL retain call visibility and approval processing, except completed choice violations SHALL bypass all new local approval/execution. Continuation SHALL require matching result/denial for every client call, not merely a callback, and SHALL never follow a choice violation.
 
 #### Scenario: Recovered calls follow a malformed provider event
 - **WHEN** malformed provider data and otherwise valid tool calls result in an error finish without a completed tool-choice violation
@@ -140,11 +143,7 @@ or `tool-calls` and does not violate its effective required/named tool choice. T
 
 ### Requirement: Completed tool-choice failures retain model-call data
 
-On a completed tool-choice violation, shared orchestration SHALL preserve the received usage, raw finish reason, response metadata, provider metadata, warnings and original content. It SHALL replace the step's unified finish reason with `error`, build the normal completed content/response-message projection, emit `finish-step` and record the failed completed step before terminal invocation finalization. Last-step/response/provider-metadata accessors SHALL reflect that failed completed call. Prior completed steps SHALL remain recorded, and total usage SHALL include them and the failed completed call.
-
-The failure SHALL be surfaced exactly once as a tool-choice `StreamError`, stored result error and `OnError` notification. Existing `OnStepFinish` and `OnFinish` callbacks SHALL run once for the completed failed step and invocation respectively with retained data. The final stream finish SHALL have unified reason `error` and retained aggregate usage, not an empty successful finish. The invocation SHALL not retry or continue after this semantic failure, regardless of stop conditions or client/provider call resolution.
-
-`GenerateText` and `ToolLoopAgent.Generate` SHALL retain their existing `nil, error` return contract. Their existing completion callbacks SHALL expose the retained completed-call data; no partial-result or new error API SHALL be required. `ToolLoopAgent.Stream` SHALL retain the same streaming result behavior as `StreamText`.
+Completed choice violations SHALL retain usage, raw finish, response/provider metadata, warnings and original content, set unified step finish to error, build normal content/response projections, emit finish-step and record the failed completed step before terminal finalization. Last-step/response/provider-metadata accessors SHALL reflect it. Prior steps SHALL remain recorded; total usage SHALL include all completed calls.
 
 #### Scenario: Required no-call failure retains completed data
 - **WHEN** a required-choice call finishes with text/reasoning, usage, raw finish and response/provider metadata but no parsed tool call
@@ -174,6 +173,22 @@ The failure SHALL be surfaced exactly once as a tool-choice `StreamError`, store
 - **THEN** existing empty/partial/error/abort behavior SHALL remain unchanged
 - **AND** no missing-required-call semantic error SHALL replace that outcome
 
+### Requirement: Completed choice failure notifications and termination
+
+Choice failure SHALL surface exactly once as tool-choice StreamError, stored result error and OnError. OnStepFinish/OnFinish SHALL run once for the failed completed step/invocation with retained data. Final finish SHALL use unified error and retained aggregate usage, not empty success. No retry/continuation SHALL follow regardless of stop conditions or client/provider call resolution.
+
+#### Scenario: Semantic failure has one notification per surface
+- **WHEN** a completed choice failure reaches invocation finalization
+- **THEN** StreamError, result error and OnError SHALL each expose it once, with one completion callback per step/invocation and error finish with total usage.
+
+### Requirement: Generated choice failures retain existing error APIs
+
+GenerateText and ToolLoopAgent.Generate SHALL retain nil, error returns; existing completion callbacks SHALL expose retained completed-call data. No partial-result or new error API SHALL be required. ToolLoopAgent.Stream SHALL retain StreamText streaming-result behavior.
+
+#### Scenario: Generate choice failure remains nil result and error
+- **WHEN** a generated Agent call completes with a choice violation
+- **THEN** it SHALL return nil, error while existing completion callbacks retain completed-call data without a new partial-result API.
+
 ### Requirement: Stream-wide text and reasoning identifiers
 StreamText SHALL preserve the first occurrence of each provider text/reasoning
 identifier and reserve a unique replacement for later collisions across steps.
@@ -193,7 +208,7 @@ receive deterministic numeric suffixes without repeatedly invoking the generator
 
 ### Requirement: Cancellation releases an unread stream
 
-A consumer that stops reading `FullStream` SHALL NOT keep a canceled run alive. While a part fits in the stream buffer it SHALL be delivered, including parts produced after cancellation, so a reading consumer still receives the `abort` part that ends a canceled stream. When the buffer is full and the run's context is canceled, whether by the caller or by a configured total, step, first-chunk or chunk timeout, the part SHALL be dropped so the run goroutine returns, `FullStream` closes, and `Wait` and the blocking accessors return.
+Stopping FullStream reads SHALL NOT keep a canceled run alive. Parts fitting the buffer SHALL be delivered even after cancellation, including abort for reading consumers. When full and context canceled by caller or total/step/first-chunk/chunk timeout, a part SHALL be dropped so the run goroutine returns, FullStream closes, and Wait/blocking accessors return.
 
 #### Scenario: Abandoned stream finishes after cancellation
 

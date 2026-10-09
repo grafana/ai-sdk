@@ -5,8 +5,10 @@
 Define repository standards for declaring, checking, upgrading, and reviewing
 parity with the upstream Vercel AI SDK baseline.
 ## Requirements
+
 ### Requirement: Upstream parity baseline manifest
-The repository SHALL define a checked-in upstream parity baseline manifest that records the verified upstream AI SDK target for parity-sensitive work. The manifest SHALL include the upstream repository URL, the coherent TypeScript package versions used by all parity consumers and reference tooling, the verification status, the verification commands, and known intentional deviations or accepted gaps. Directly consumed packages and transitive packages used as authoritative parity references SHALL be registered so compatibility and upgrade workflows can enforce one coherent package set. A pinned-version transition SHALL retain its selected target record with the change, including exact per-package source commits rather than assuming every package shares the manifest's upstream commit.
+
+The repository SHALL check in a manifest recording the verified AI SDK parity target: upstream repository URL, coherent TypeScript versions for all parity consumers/reference tooling, verification status/commands and known intentional deviations or accepted gaps. Direct consumers and transitive authoritative reference packages SHALL be registered to enforce coherence.
 
 #### Scenario: Contributor finds the verified upstream target
 - **WHEN** a contributor needs to know which upstream AI SDK version this repository is verified against
@@ -21,8 +23,17 @@ The repository SHALL define a checked-in upstream parity baseline manifest that 
 - **THEN** the retained target record identifies each exact source commit
 - **AND** semantic review uses the matching package source and tests
 
+### Requirement: Transition target source provenance
+
+Pinned-version transitions SHALL retain their selected target record with the change, including exact per-package source commits rather than assuming every package shares the manifest upstream commit.
+
+#### Scenario: Transition target source provenance
+- **WHEN** a coherent target includes packages published from different commits
+- **THEN** the retained record SHALL identify exact per-package commits for matching implementation/test review
+
 ### Requirement: Parity coverage map
-The repository SHALL maintain a stable parity coverage map that classifies compatibility surfaces by verification status, layer, confidence source, durable support boundary, and accepted deviation. The coverage map SHALL cover at minimum core orchestration and UI chunk behavior, provider contract compatibility, provider implementation behavior, frontend interop, and conformance harness capabilities. Each surface SHALL be classified as automated, manual, documented deviation, mixed coverage, or gap. The coverage map SHALL NOT serve as a version-upgrade ledger or actionable-work queue: it SHALL NOT contain dated target assessments, catalogs of `upstream-sync` issues, or copies of issue behavior, impact, scope, dependencies, acceptance criteria, or state.
+
+The repository SHALL maintain a stable coverage map classifying surfaces by status, layer, confidence source, durable support boundary and accepted deviation. It SHALL cover at minimum core orchestration/UI chunks, provider contract, provider implementation, frontend interop and conformance harness. Status SHALL be automated, manual, documented deviation, mixed coverage or gap.
 
 #### Scenario: Reviewer evaluates compatibility coverage
 - **WHEN** a reviewer inspects a change touching a parity-sensitive surface
@@ -45,6 +56,14 @@ The repository SHALL maintain a stable parity coverage map that classifies compa
 - **THEN** the issue SHALL remain authoritative for the behavior, evidence, impact, scope, dependencies and acceptance criteria
 - **AND** the coverage map SHALL change only if the surface's coverage classification, confidence source, supported boundary or accepted deviation changed
 
+### Requirement: Coverage map is not an upgrade ledger
+
+The coverage map SHALL NOT serve as a version-upgrade ledger or actionable-work queue. It SHALL NOT contain dated target assessments, catalogs of `upstream-sync` issues or copies of issue behavior, impact, scope, dependencies, acceptance criteria or state.
+
+#### Scenario: Coverage map is not an upgrade ledger
+- **WHEN** an upgrade registers deferred actionable parity work
+- **THEN** the map SHALL retain stable coverage information without copying issue details, state or dated target assessments
+
 ### Requirement: Parity check command
 The repository SHALL provide a standard parity check command that validates the upstream parity baseline and runs the relevant automated compatibility checks. The command SHALL validate manifest consistency with every parity TypeScript consumer dependency pin, typecheck conformance tooling, and run conformance tests or a documented stable conformance subset.
 
@@ -61,7 +80,8 @@ The repository SHALL provide a standard parity check command that validates the 
 - **THEN** the upgrade workflow rejects that candidate instead of selecting incompatible parity reference stacks
 
 ### Requirement: Parity upgrade workflow
-The repository SHALL distinguish pinned-version upgrades from parity matching. A pinned-version upgrade SHALL update a fixed coherent reference, run verification, comprehensively assess the current Go implementation against the target and register remaining differences. It SHALL produce an independently green PR containing pins, lockfile, expectations, reviewed evidence and necessary compatibility corrections. Subsequent parity matching SHALL process registered behavioral work packages independently. The pinned reference SHALL NOT be presented as exhaustive feature parity. Selection SHALL default to the newest coherent stable package set on npm latest lines satisfying the repository minimum release age at selection time. New releases SHALL NOT automatically change the selected target; changing it or choosing an intermediate checkpoint SHALL require an explicit decision and reassessment.
+
+The repository SHALL distinguish pinned-version upgrades from independent parity matching. Upgrades SHALL update a fixed coherent reference, verify it, comprehensively assess current Go against target and register remaining differences. Each SHALL produce an independently green PR with pins, lockfile, expectations, reviewed evidence and necessary compatibility corrections. Subsequent matching SHALL process registered behavioral packages independently; pins SHALL NOT imply exhaustive parity.
 
 #### Scenario: Upstream baseline is upgraded
 - **WHEN** an assessed and approved baseline transition is implemented
@@ -83,6 +103,14 @@ The repository SHALL distinguish pinned-version upgrades from parity matching. A
 - **THEN** the workflow SHALL assess current Go behavior against the selected target across declared supported surfaces, including older gaps beyond the release delta
 - **AND** it SHALL register remaining parity work separately from completion of the pinned-version upgrade
 
+### Requirement: Mature coherent upgrade selection
+
+Selection SHALL default to newest coherent stable packages on npm latest lines satisfying repository minimum release age at selection. New releases SHALL NOT automatically change selected target; changing it or choosing an intermediate checkpoint SHALL require explicit decision and reassessment.
+
+#### Scenario: Mature coherent upgrade selection
+- **WHEN** new eligible packages appear during a frozen upgrade
+- **THEN** selection SHALL remain unchanged absent explicit decision and reassessment
+
 ### Requirement: Agent parity guidance
 Repository agent guidance SHALL define parity-sensitive work and the required review posture for that work. The guidance SHALL require upstream source or test comparison during planning for parity-sensitive changes, conformance fixture consideration for wire or provider-boundary behavior, and explicit classification of differences as parity-preserving Go adaptation, intentional deviation, or bug.
 
@@ -103,7 +131,8 @@ Repository agent guidance SHALL define parity-sensitive work and the required re
 - **THEN** the agent guidance recommends recording or importing upstream behavior alongside the implementation so conformance acts as the regression contract
 
 ### Requirement: Parity workflow skills
-The repository SHALL provide decision-led skills for pinned-version upgrade assessment and independent parity-work review, supported by a tooling/evidence reference. Assessment SHALL compare exact target implementation/tests with the current Go implementation across declared supported surfaces; changelogs, the release delta and existing fixtures SHALL guide but not bound it. It SHALL distinguish upgrade blockers, nonblocking implementation differences, matching behavior, new capabilities, adaptations, intentional deviations, unsupported families and unresolved questions. Implementation status and evidence coverage SHALL be recorded separately. Remaining work SHALL be defined by upstream contract, Go difference, outcome, dependencies and acceptance evidence without requiring a prewritten plan or persistent active change. Review SHALL check assessment completeness for a pinned-version upgrade and full behavioral acceptance for a parity package. Generic agent setup, scheduling and permissions SHALL remain outside the parity skills.
+
+The repository SHALL provide decision-led skills for pinned-version assessment and independent parity-work review with a tooling/evidence reference. Assessment SHALL compare exact target implementation/tests against current Go across declared supported surfaces; changelogs, release delta and fixtures SHALL guide but not bound assessment. Generic agent setup, scheduling and permissions SHALL remain outside these skills.
 
 #### Scenario: Agent performs scoped parity review
 - **WHEN** reviewing normal development
@@ -128,6 +157,22 @@ The repository SHALL provide decision-led skills for pinned-version upgrade asse
 - **WHEN** a check covers fixture provenance, selected discriminators or only specific scenarios
 - **THEN** the reference SHALL state that limitation
 - **AND** passing the check SHALL NOT be presented as exhaustive behavioral parity
+
+### Requirement: Parity assessment classification and evidence
+
+Assessment SHALL distinguish upgrade blockers, nonblocking implementation differences, matching behavior, new capabilities, adaptations, intentional deviations, unsupported families and unresolved questions. Implementation status and evidence coverage SHALL be recorded separately.
+
+#### Scenario: Parity assessment classification and evidence
+- **WHEN** assessment finds implemented behavior lacking regression evidence
+- **THEN** implementation status and missing evidence SHALL be recorded separately within the appropriate classified disposition
+
+### Requirement: Parity skill work outcomes and review gates
+
+Remaining work SHALL be defined by upstream contract, Go difference, outcome, dependencies and acceptance evidence without requiring a prewritten plan or persistent active change. Review SHALL check assessment completeness for pinned-version upgrades and full behavioral acceptance for parity packages.
+
+#### Scenario: Parity skill work outcomes and review gates
+- **WHEN** a parity package is reviewed without a persistent active change
+- **THEN** review SHALL check its upstream contract, Go difference, outcome, dependencies and full behavioral acceptance evidence rather than require a prewritten plan
 
 ### Requirement: Baseline validation covers all parity TypeScript consumers
 The repository SHALL validate that every retained test package consuming `ai` or `@ai-sdk/*` packages uses versions compatible with the registered upstream parity baseline.
@@ -198,7 +243,8 @@ Frontend capability statuses in `test/conformance/PARITY.md` SHALL reflect the b
 - **AND** its notes distinguish conformance stream ordering from React hook state transitions
 
 ### Requirement: Independent parity work packages
-Parity work packages SHALL represent behavioral outcomes rather than PRs and SHALL be processed independently from the pinned-version upgrade that registered them. Required-check failures and target-induced incompatibilities that prevent supported integrations from working SHALL be resolved before the upgrade lands or SHALL block it, even when existing fixtures miss them. Other differences, including existing implementation gaps and new capabilities, SHALL receive explicit registered work or adaptation/exclusion dispositions without requiring full parity before updating the reference. Unresolved upgrade-blocking risks SHALL NOT be silently deferred.
+
+Parity work packages SHALL represent behavioral outcomes, not PRs, processed independently of their registering upgrade. Required-check failures and target-induced incompatibilities preventing supported integrations SHALL be corrected before landing or block the upgrade, even if fixtures miss them. Unresolved upgrade-blocking risks SHALL NOT be silently deferred.
 
 #### Scenario: Pinned-version upgrade has a compatibility blocker
 - **WHEN** the target fails required checks or introduces an incompatibility that prevents a supported integration from working
@@ -220,8 +266,17 @@ Parity work packages SHALL represent behavioral outcomes rather than PRs and SHA
 - **THEN** upstream references SHALL move as the selected coherent set with canonical expectations and verification
 - **AND** Go consumer requirements SHALL change according to required published APIs/behavior, not automatically because the upstream baseline changed
 
+### Requirement: Nonblocking difference dispositions
+
+Other differences, including existing implementation gaps and new capabilities, SHALL receive explicit registered work or adaptation/exclusion dispositions without requiring full parity before updating the reference.
+
+#### Scenario: Nonblocking difference dispositions
+- **WHEN** assessment finds an older nonblocking implementation gap
+- **THEN** the upgrade SHALL register work or explicit adaptation/exclusion disposition without claiming full parity
+
 ### Requirement: Parity difference registration
-The pinned-version upgrade SHALL account for all assessed differences through upgrade corrections, `upstream-sync` issues or explicit adaptation/exclusion dispositions. One issue SHALL represent a coherent actionable remaining work package, not each upstream commit or assertion, and SHALL be the authoritative durable record of its behavior, exact upstream reference, current Go difference and impact, intended outcome, design decisions, dependencies and acceptance tests. Registration SHALL search by provider/capability/behavior across labeled and unlabeled issues and inspect open and closed candidate matches, including scope, acceptance criteria and resolution. Covered open work SHALL be reused; ambiguous overlap or rejected work SHALL NOT automatically produce a duplicate or reopened issue. The upgrade PR SHALL identify the target, included corrections, validation and a compact exact list of created or reused issues. Repository coverage records SHALL NOT mirror actionable issue content or issue state, and SHALL change only for a durable coverage, evidence, support-boundary or accepted-deviation change. Registration SHALL NOT imply approval of a new API or acceptance of a permanent deviation.
+
+Pinned-version upgrades SHALL account for all assessed differences via corrections, `upstream-sync` issues or explicit adaptation/exclusion dispositions. One issue SHALL represent a coherent actionable remaining package, not per commit/assertion, and be the authoritative durable record of behavior, exact upstream reference, current Go difference/impact, intended outcome, design decisions, dependencies and acceptance tests. Registration SHALL NOT approve a new API or accept a permanent deviation.
 
 #### Scenario: Upgrade assessment records older gaps
 - **WHEN** current Go behavior differs from the target even though the relevant upstream code did not change during the selected release range
@@ -249,8 +304,25 @@ The pinned-version upgrade SHALL account for all assessed differences through up
 - **AND** it SHALL flag ambiguous overlaps rather than automatically recreate, reopen or rewrite the issue
 - **AND** a distinct proven regression SHALL explain and link its relationship to prior work
 
+### Requirement: Parity registration duplicate search
+
+Registration SHALL search provider/capability/behavior across labeled and unlabeled issues and inspect open and closed matches, including scope, acceptance criteria and resolution. Covered open work SHALL be reused; ambiguous overlap or rejected work SHALL NOT automatically produce a duplicate or reopened issue.
+
+#### Scenario: Parity registration duplicate search
+- **WHEN** a closed issue partly overlaps an assessed behavior
+- **THEN** registration SHALL inspect resolution and scope, flag ambiguity and avoid automatic duplicates or reopening
+
+### Requirement: Upgrade PR owns run-specific registration
+
+The upgrade PR SHALL identify target, included corrections, validation and a compact exact list of created/reused issues. Repository coverage records SHALL NOT mirror actionable issue content/state and SHALL change only for durable coverage, evidence, support-boundary or accepted-deviation changes.
+
+#### Scenario: Upgrade PR owns run-specific registration
+- **WHEN** an upgrade reuses outstanding issues without changing durable coverage
+- **THEN** the PR SHALL list them exactly and identify target/corrections/validation while coverage records remain free of mirrored issue content or state
+
 ### Requirement: Parity issue labels
-Every newly created or reused parity work-package issue SHALL carry `upstream-sync`, verified after creation or reuse. Missing required labeling SHALL leave registration incomplete. Optional labels SHALL come from the existing repository inventory and describe the actual work: bug for incorrect existing behavior, enhancement for capabilities/coverage improvements, documentation for documentation-only work, and question for concrete unresolved investigations. Registration SHALL preserve existing labels and SHALL NOT invent labels, infer assignees or automatically apply triage, release, automerge, severity or unrelated workflow labels. Security findings SHALL follow the repository's private reporting policy rather than ordinary public issue registration.
+
+Every new/reused parity issue SHALL carry `upstream-sync`, verified after creation/reuse; missing labeling SHALL leave registration incomplete. Optional labels SHALL use existing inventory: bug for incorrect existing behavior, enhancement for capabilities/coverage improvements, documentation for docs-only, question for concrete unresolved investigations. Existing labels SHALL be preserved.
 
 #### Scenario: New parity work is registered
 - **WHEN** an actionable work package has no covering issue after duplicate checks
@@ -260,6 +332,14 @@ Every newly created or reused parity work-package issue SHALL carry `upstream-sy
 #### Scenario: Required label cannot be applied
 - **WHEN** upstream-sync is unavailable or the label operation fails
 - **THEN** registration SHALL report the blocker rather than silently publish the work as fully registered
+
+### Requirement: Parity registration metadata and security limits
+
+Registration SHALL NOT invent labels, infer assignees or automatically apply triage, release, automerge, severity or unrelated workflow labels. Security findings SHALL follow repository private reporting policy instead of ordinary public issue registration.
+
+#### Scenario: Parity registration metadata and security limits
+- **WHEN** assessment identifies a security finding
+- **THEN** it SHALL follow private reporting rather than public issue registration; registration SHALL NOT infer assignees or add invented or unrelated workflow labels
 
 ### Requirement: Frozen target selection and application
 Selection SHALL write a new versioned target record without modifying the registered baseline or parity consumers. The record SHALL identify its source baseline, selection time, maturity policy, exact package versions, publication times and upstream source commits. Application SHALL require an explicit target, validate exact-version evidence and every affected manifest before writing, and SHALL NOT reselect latest. Selection SHALL refuse to overwrite an existing record.
@@ -293,7 +373,8 @@ Applying an unverified target SHALL clear the previous verification date and SHA
 - **THEN** baseline validation SHALL report incomplete verification
 
 ### Requirement: Publication-aware independent mergeability
-Upgrade plans SHALL account for published Go module dependencies before implementation. Coordinated producer and consumer changes MAY land in a single independently green candidate-source PR when required source parity/interop checks exercise the changed implementations together and internal published pins remain real, downloadable, replacement-free and merged into canonical main. An upgrade PR SHALL NOT rely on a later unmerged source change to pass its required checks. Source integration SHALL NOT count as independently consumable Go-module release evidence: before manually publishing a selected SDK/provider/middleware module, maintainers SHALL validate its standalone public-proxy, readonly, workspace-off build and tests. Gateway is a container-only supported release component: image publication and deployment SHALL require successful same-revision workspace-source multiarchitecture image validation and native smoke, not Gateway standalone module readiness against older published pins. The enclosing parity work package SHALL additionally satisfy its full behavioral acceptance contract.
+
+Upgrade plans SHALL account for published Go dependencies before implementation. Coordinated producer/consumer changes MAY share an independently green candidate-source PR when required source parity/interop tests exercise them together and internal pins stay real, downloadable, replacement-free and merged in canonical main. Required checks SHALL NOT rely on later unmerged source. The enclosing parity package SHALL still satisfy full behavioral acceptance.
 
 #### Scenario: Workspace masks an unpublished dependency
 - **WHEN** a coordinated source PR passes only with candidate workspace copies of producer and consumer changes while existing published pins are older but merged
@@ -309,8 +390,25 @@ Upgrade plans SHALL account for published Go module dependencies before implemen
 - **THEN** it MAY publish only after source, ancestry, boundary, image and smoke checks for that revision succeed
 - **AND** its success SHALL NOT authorize any SDK/provider/middleware module tag without independent standalone verification
 
+### Requirement: Source integration is not Go module release evidence
+
+Source integration SHALL NOT count as independently consumable Go-module release evidence. Before manually publishing a selected SDK/provider/middleware module, maintainers SHALL validate standalone public-proxy, readonly, workspace-off build and tests.
+
+#### Scenario: Source integration is not Go module release evidence
+- **WHEN** integrated candidate source passes but the selected middleware module fails standalone
+- **THEN** source success SHALL NOT authorize its module publication
+
+### Requirement: Gateway container release evidence
+
+Gateway SHALL be a container-only supported release component. Image publication/deployment SHALL require successful same-revision workspace-source multiarchitecture image validation and native smoke, not standalone Gateway readiness against older published pins.
+
+#### Scenario: Gateway container release evidence
+- **WHEN** Gateway passes same-revision workspace-source multiarchitecture validation and native smoke but fails against older pins
+- **THEN** standalone failure SHALL NOT alone prevent its container publication/deployment under the required same-revision gates
+
 ### Requirement: Scheduled pinned-version upgrade and assessment
-The configured daily parity automation SHALL execute the repository's pinned-version upgrade and comprehensive assessment workflow, not only discover releases. Its authorization SHALL include necessary compatibility corrections, registration of actionable follow-up issues, signed commits, branch push and creation of a draft upgrade PR. It SHALL NOT automatically implement nonblocking parity packages, approve unresolved material API/scope decisions, merge a PR, mutate a shared upstream checkout or replace another upgrade's fixed target. Local memory SHALL be advisory rather than source or approval authority. The automation SHALL keep run-specific assessment and issue links in the upgrade PR and SHALL NOT create a dated assessment section or issue catalog in the parity coverage map.
+
+Configured daily automation SHALL execute pinned-version upgrade and comprehensive assessment, not just discovery. Authorization SHALL include needed compatibility corrections, actionable follow-up issue registration, signed commits, branch push and draft upgrade PR creation. Local memory SHALL be advisory, not source or approval authority. Run-specific assessment/issue links SHALL live in the PR, not dated coverage-map sections or issue catalogs.
 
 #### Scenario: A newer target is available
 - **WHEN** no existing pinned-version upgrade PR is active and tooling selects a newer eligible coherent set
@@ -334,9 +432,17 @@ The configured daily parity automation SHALL execute the repository's pinned-ver
 - **WHEN** tooling is unavailable or completion requires an unavailable published dependency or unresolved material decision
 - **THEN** the automation SHALL preserve and report the blocker without weakening checks or claiming success
 
+### Requirement: Scheduled automation authorization boundaries
+
+Automation SHALL NOT automatically implement nonblocking parity packages, approve unresolved material API/scope decisions, merge PRs, mutate shared upstream checkouts or replace another upgrade's fixed target.
+
+#### Scenario: Scheduled automation authorization boundaries
+- **WHEN** automation encounters unresolved material API decisions during an upgrade
+- **THEN** it SHALL preserve/report the blocker rather than approve it or automatically implement nonblocking packages, merge, mutate shared upstream source or replace another fixed target
+
 ### Requirement: ProviderWire V4 contract is a registered parity consumer
 
-The repository SHALL register `ai-gateway/test/providerwire-v4` as a parity TypeScript consumer governed by `test/conformance/upstream.yaml`. Baseline validation SHALL compare every `ai` and `@ai-sdk/*` dependency in that workspace with the manifest. The standard parity check SHALL run the workspace's non-mutating compile-time surface, production-schema, semantic-golden, and registered-client consumption checks. The parity coverage map SHALL classify this evidence separately from provider conformance, frontend hook state-machine coverage, and future Go ProviderWire runtime coverage.
+The repository SHALL register `ai-gateway/test/providerwire-v4` as a parity TypeScript consumer under `test/conformance/upstream.yaml`. Baseline validation SHALL compare every workspace `ai`/`@ai-sdk/*` dependency with the manifest. Standard parity check SHALL run its non-mutating compile-time surface, production-schema, semantic-golden and registered-client consumption checks.
 
 #### Scenario: ProviderWire workspace matches the baseline
 - **WHEN** `ai-gateway/test/providerwire-v4/package.json` pins the registered AI SDK package versions
@@ -364,3 +470,11 @@ The repository SHALL register `ai-gateway/test/providerwire-v4` as a parity Type
 - **WHEN** ProviderWire V4 contract coverage is added or changed
 - **THEN** `test/conformance/PARITY.md` SHALL identify the registered-client HTTP projection and consumption behavior that is automated
 - **AND** it SHALL state that strict Go request replay, server response correctness, runtime lifecycle, privacy, and resource bounds are not established by this contract workspace
+
+### Requirement: ProviderWire contract evidence classification
+
+The parity coverage map SHALL classify ProviderWire contract evidence separately from provider conformance, frontend hook state-machine and future Go ProviderWire runtime coverage.
+
+#### Scenario: ProviderWire contract evidence classification
+- **WHEN** ProviderWire workspace contract checks pass
+- **THEN** coverage SHALL identify contract evidence separately, not infer provider conformance, hook state-machine or Go runtime coverage

@@ -8,9 +8,7 @@ Record the retirement boundary for the former tolerant remote `provider.Language
 
 ### Requirement: Legacy tolerant ProviderWire surface is absent
 
-The repository SHALL NOT publish, build, test, document as available, or claim compatibility for the tolerant legacy unversioned `gateway/providerwire` server or the retired tolerant `providers/grafana` implementation. It SHALL NOT provide compatibility aliases, forwarding shims, copied legacy codecs, or a legacy transport mode at another import path. The `providers/grafana` import path MAY be published only as an independently implemented strict ProviderWire V4 client whose request codecs, response codecs, error decoders, and SSE readers remain private. Provider-domain JSON marshal and unmarshal behavior SHALL remain unchanged as local representation behavior, but provider structs and marshalers SHALL NOT define ProviderWire HTTP bytes, validation, or compatibility.
-
-Any reusable strict server protocol introduced after retirement SHALL live under an explicit versioned namespace such as `ai-gateway/providerwire/v4`. Versioned server artifacts and a strict client under `providers/grafana` SHALL use independent protocol DTOs or schemas, SHALL NOT import or restore legacy codecs, and SHALL NOT weaken the retirement of the exact unversioned server package or tolerant transport behavior.
+The repository SHALL NOT publish, build, test, document as available, or claim compatibility for the tolerant legacy unversioned `gateway/providerwire` server or the retired tolerant `providers/grafana` implementation. It SHALL NOT provide compatibility aliases, forwarding shims, copied legacy codecs, or a legacy transport mode at another import path.
 
 #### Scenario: Legacy production packages remain removed
 - **WHEN** the repository's tracked Go packages and modules are inspected
@@ -43,3 +41,19 @@ Any reusable strict server protocol introduced after retirement SHALL live under
 #### Scenario: Transport-independent capabilities remain
 - **WHEN** the repository is built and tested after strict V4 contract artifacts are added
 - **THEN** provider-domain packages, concrete provider implementations, `ai-gateway/catalog`, fallback, registry, middleware, UI-message SSE, retained TypeScript integration tests, and their applicable tests SHALL remain available
+
+### Requirement: Independent strict client and local provider JSON boundary
+
+The `providers/grafana` import path MAY be published only as an independently implemented strict ProviderWire V4 client whose request codecs, response codecs, error decoders, and SSE readers remain private. Provider-domain JSON marshal and unmarshal behavior SHALL remain unchanged as local representation behavior, but provider structs and marshalers SHALL NOT define ProviderWire HTTP bytes, validation, or compatibility.
+
+#### Scenario: Independent strict client and local provider JSON boundary
+- **WHEN** provider-domain values are marshaled alongside a current grafana client build
+- **THEN** local JSON SHALL remain unchanged without defining HTTP bytes, and the client SHALL use only independent private strict V4 codecs
+
+### Requirement: Versioned independent server protocol boundary
+
+Any reusable strict server protocol introduced after retirement SHALL live under an explicit versioned namespace such as `ai-gateway/providerwire/v4`. Versioned server artifacts and a strict client under `providers/grafana` SHALL use independent protocol DTOs or schemas, SHALL NOT import or restore legacy codecs, and SHALL NOT weaken the retirement of the exact unversioned server package or tolerant transport behavior.
+
+#### Scenario: Versioned independent server protocol boundary
+- **WHEN** strict server artifacts are introduced after retirement
+- **THEN** they SHALL live under an explicit versioned namespace with independent DTOs/schemas and SHALL NOT restore legacy codecs or tolerant behavior

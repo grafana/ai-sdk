@@ -21,27 +21,7 @@ The production package SHALL depend on the ai-sdk root module and the Go standar
 
 ### Requirement: Public enrichment middleware API
 
-The `middleware/enrichment` package SHALL export a provider-agnostic API for collecting enrichment values and applying them to provider call options. The public API SHALL follow the concrete-options style used by the structured logger middleware proposal rather than exposing a generic source/sink pipeline.
-
-Functions SHALL include `Middleware(Options) middleware.Middleware` and `Wrap(provider.LanguageModel, Options) provider.LanguageModel`. The initial API SHALL NOT export `Stack`, `Source`, `SourceFunc`, `Sink`, `Static`, `FromContext`, `HeaderSink`, or `ProviderOptionsSink`.
-
-Types SHALL include:
-
-- `Cardinality` as a named string enum with typed constants `CardinalityLow`, `CardinalityBounded`, and `CardinalityHigh`.
-- `Value` with fields `Key string`, `Value string`, `Sensitive bool`, and `Cardinality Cardinality`.
-- `ValueOption` plus helpers `Sensitive() ValueOption` and `WithCardinality(Cardinality) ValueOption` for `WithValue` metadata.
-- `CallInput` with fields `Type middleware.CallType`, `Params provider.CallOptions`, and `Model provider.LanguageModel`.
-- `DynamicValuesFunc func(context.Context, CallInput) ([]Value, error)`.
-- `FilterOptions` with fields for include/exclude filtering, sensitive redaction, high-cardinality dropping, and value length limits.
-- `HeaderOptions` with fields `Map map[string]string`, `Prefix string`, `Conflict ConflictPolicy`, and `AdditionalProtected []string`.
-- `ProviderOptionsConfig` with fields `ProviderKey string`, `ObjectKey string`, `Map map[string]string`, and `Conflict ConflictPolicy`.
-- `Redactor` interface with `RedactValue(context.Context, Value) (Value, bool)`.
-- `RedactorFunc` adapter type.
-- `DefaultRedactor() Redactor`.
-- `ConflictPolicy` as a named string enum with typed constants `ConflictCallerWins`, `ConflictEnrichmentWins`, and `ConflictError`.
-- `Options` with fields `Values []Value`, `ContextValues bool`, `DynamicValues DynamicValuesFunc`, `Headers HeaderOptions`, `ProviderOptions ProviderOptionsConfig`, `Filter FilterOptions`, `Redactor Redactor`, and `OnError func(context.Context, error) error`.
-
-Context helpers SHALL use unexported context key types and defensive copies. The package SHALL export `WithValue(ctx context.Context, key, value string, opts ...ValueOption) context.Context`, `WithValues(ctx context.Context, values ...Value) context.Context`, and `ValuesFromContext(ctx context.Context) []Value`.
+`middleware/enrichment` SHALL export a provider-agnostic concrete-options API, following the structured logger middleware proposal rather than a generic source/sink pipeline: `Middleware(Options) middleware.Middleware` and `Wrap(provider.LanguageModel, Options) provider.LanguageModel`. The initial API SHALL NOT export `Stack`, `Source`, `SourceFunc`, `Sink`, `Static`, `FromContext`, `HeaderSink`, or `ProviderOptionsSink`.
 
 #### Scenario: Middleware returns TransformParams middleware
 
@@ -84,13 +64,7 @@ The enrichment package SHALL provide only explicit value inputs through `Options
 
 ### Requirement: Default-deny filtering and value normalization
 
-The enrichment middleware SHALL normalize collected values before any output is applied, then derive a per-output filtered value slice. A value SHALL be eligible for an output only when its key is explicitly included by `Options.Filter.Include` or selected by that same output's mapping. A value selected only by one output mapping SHALL NOT be emitted to any other output. `Options.Filter.Exclude` SHALL take precedence over both global include and output-specific mappings for every output.
-
-Filtering SHALL be shallow and string-only. Invalid or empty keys SHALL be dropped. Values SHALL be subject to a documented non-zero default maximum length unless `Options.Filter.MaxValueLength` overrides it. Length enforcement SHALL run after redaction; over-limit values SHALL be dropped without output emission.
-
-Sensitive values SHALL NOT be emitted in raw form by default. If `Options.Filter.RedactSensitive` is false, sensitive values SHALL be dropped. If `Options.Filter.RedactSensitive` is true, sensitive values SHALL be emitted only after redaction. If `Options.Redactor` is nil, the middleware SHALL use `DefaultRedactor()`. A redactor SHALL be able to transform a value, mark it sensitive, or drop it by returning `false`. `DefaultRedactor()` SHALL mark known secret-looking key names as sensitive and otherwise leave values unchanged.
-
-High-cardinality values SHALL be allowed for header/provider-option outputs by default. If `Options.Filter.DropHighCardinality` is true, values with `CardinalityHigh` SHALL be dropped.
+The middleware SHALL normalize values before output and derive a filtered slice per output. Eligibility SHALL require `Options.Filter.Include` or that output's mapping; selection by one output alone SHALL NOT authorize another. `Options.Filter.Exclude` SHALL override global include and every output mapping. Filtering SHALL be shallow and string-only; invalid or empty keys SHALL be dropped.
 
 #### Scenario: Values are denied by default
 
@@ -132,9 +106,7 @@ High-cardinality values SHALL be allowed for header/provider-option outputs by d
 
 ### Requirement: TransformParams enrichment behavior
 
-`Middleware(Options)` SHALL enrich both generate and stream calls by transforming `provider.CallOptions` before they reach the inner model. The transformation SHALL copy `Headers` and `ProviderOptions` maps before mutating them. It SHALL NOT mutate `Prompt`, messages, tools, tool arguments, provider metadata, response metadata, stream parts, or UI/SSE chunks.
-
-If dynamic value collection or header/provider-options output application returns an error, the middleware SHALL fail the model call by default. If `Options.OnError` is set, the middleware SHALL call it with the context and error; a non-nil returned error SHALL fail the call with that error, and a nil returned error SHALL allow the call to proceed with the last successfully built call options.
+`Middleware(Options)` SHALL enrich generate and stream `provider.CallOptions` before the inner model. It SHALL copy `Headers` and `ProviderOptions` maps before mutation and SHALL NOT mutate `Prompt`, messages, tools, tool arguments, provider metadata, response metadata, stream parts, or UI/SSE chunks.
 
 #### Scenario: Generate params are enriched
 
@@ -164,17 +136,7 @@ If dynamic value collection or header/provider-options output application return
 
 ### Requirement: Header output merge semantics
 
-The package SHALL provide header enrichment through `Options.Headers`. `HeaderOptions` SHALL support explicit `Map map[string]string` mode from enrichment key to HTTP header name, optional `Prefix string` mode, `Conflict ConflictPolicy`, and additional protected header names. Header output SHALL be disabled when both `Map` and `Prefix` are empty.
-
-Header merge SHALL start from existing caller headers. Header conflict detection SHALL be case-insensitive using canonical HTTP header names. The default conflict policy SHALL be `ConflictCallerWins`.
-
-For conflicts:
-
-- `ConflictCallerWins` SHALL preserve the existing caller header.
-- `ConflictEnrichmentWins` SHALL overwrite the existing caller header unless the target header is protected.
-- `ConflictError` SHALL return an error.
-
-Protected auth and transport headers SHALL NOT be written or overwritten by enrichment by default, regardless of conflict policy. If enrichment targets a protected header and no caller value exists, the header output SHALL still omit that enrichment header. The protected set SHALL include common auth and provider transport headers such as `Authorization`, `Proxy-Authorization`, `X-Access-Token`, `X-Grafana-Id`, `Content-Type`, and provider API-key or protocol headers. Callers SHALL be able to add deployment-specific protected header names, but the initial API SHALL NOT provide an opt-in to write built-in protected header names.
+`Options.Headers` SHALL support enrichment-key-to-header `Map`, optional `Prefix`, `Conflict`, and additional protected names; empty Map and Prefix SHALL disable output. Merge SHALL start from caller headers and detect conflicts case-insensitively via canonical HTTP names. Default `ConflictCallerWins` SHALL preserve caller headers; `ConflictEnrichmentWins` SHALL overwrite only unprotected headers; `ConflictError` SHALL return an error.
 
 #### Scenario: Caller wins by default
 
@@ -208,11 +170,7 @@ Protected auth and transport headers SHALL NOT be written or overwritten by enri
 
 ### Requirement: Provider options output merge semantics
 
-The package SHALL provide provider-options enrichment through `Options.ProviderOptions`. `ProviderOptionsConfig` SHALL include `ProviderKey string`, `ObjectKey string`, `Map map[string]string`, and `Conflict ConflictPolicy`. Provider-options output SHALL be disabled when `ProviderKey` is empty.
-
-The output SHALL write string enrichment values into `provider.CallOptions.ProviderOptions` under `ProviderKey`. Values selected by `ProviderOptionsConfig.Map` SHALL write to the corresponding JSON field names. Globally included values not present in the map SHALL write under their original keys. Values selected solely by the header mapping SHALL NOT be emitted into provider options. If `ObjectKey` is non-empty, the output SHALL write values into a nested object named by `ObjectKey`; otherwise it SHALL write values into the top-level provider option object.
-
-The output SHALL preserve unrelated existing fields. When the provider key exists, it SHALL marshal the existing typed or raw provider option to JSON, require object-shaped JSON for merging, and store the merged result as `provider.RawProviderOption{Key: ProviderKey, Raw: mergedJSON}`. Field conflicts SHALL obey `ConflictPolicy`, with `ConflictCallerWins` as the default.
+`Options.ProviderOptions` SHALL set `ProviderKey`, `ObjectKey`, `Map`, and `Conflict`; empty `ProviderKey` SHALL disable output. String values SHALL be written into `provider.CallOptions.ProviderOptions` under `ProviderKey`: mapped keys use mapped JSON names, globally included unmapped keys use their original keys, and header-only selections SHALL NOT be emitted. Non-empty `ObjectKey` SHALL select a nested object named by `ObjectKey`; empty SHALL select the top-level provider option object.
 
 #### Scenario: Absent provider key creates raw option
 
@@ -245,9 +203,7 @@ The output SHALL preserve unrelated existing fields. When the provider key exist
 
 ### Requirement: Validation and documentation for safe use
 
-The implementation SHALL include unit tests for value collection, context defensive copies, default-deny filtering, per-output selection isolation, sensitive redaction/drop behavior, cardinality filtering, over-limit value dropping, generate and stream transformation, header conflict policies, protected headers including absent protected targets, provider-options creation and merge behavior, unrelated-field preservation, registry composition, and middleware ordering examples.
-
-The package godoc SHALL document that enrichment is opt-in, default-deny, string-only, and provider-agnostic. It SHALL warn against propagating secrets, API tokens, auth claims without explicit filtering, prompts, tool arguments, raw user input, and high-cardinality metric labels. It SHALL state that the module does not emit telemetry and does not change provider/UI representation behavior unless callers explicitly attach it to a model.
+The implementation SHALL test safe value collection, filtering, transformation, output merging, and composition. Package godoc SHALL describe enrichment as opt-in, default-deny, string-only, and provider-agnostic, emitting no telemetry and changing no provider/UI representation behavior unless explicitly attached to a model.
 
 #### Scenario: Unit tests cover generate and stream calls
 
@@ -264,11 +220,19 @@ The package godoc SHALL document that enrichment is opt-in, default-deny, string
 - **WHEN** this module remains opt-in without wrapping any model by default
 - **THEN** existing provider and UI/SSE conformance fixtures SHALL remain unchanged
 
+#### Scenario: Unit tests exercise filtering and output boundaries
+- **WHEN** the enrichment module test suite runs
+- **THEN** it SHALL cover value collection, context defensive copies, default-deny filtering, per-output selection isolation, sensitive redaction/drop behavior, cardinality filtering, and over-limit value dropping
+- **AND** it SHALL cover generate and stream transformation, header conflict policies, protected headers including absent targets, provider-options creation and merge, unrelated-field preservation, registry composition, and middleware ordering examples
+
+#### Scenario: Godoc states propagation and telemetry boundaries
+- **WHEN** a consumer reads package godoc
+- **THEN** it SHALL warn against propagating secrets, API tokens, auth claims without explicit filtering, prompts, tool arguments, raw user input, and high-cardinality metric labels
+- **AND** it SHALL state that the module emits no telemetry and changes no provider/UI representation behavior unless explicitly attached to a model
+
 ### Requirement: Composition with registry and Agent Observability
 
-The enrichment module SHALL require no registry changes. It SHALL be usable with `registry.WithLanguageModelMiddleware` because registry already accepts `middleware.Middleware` values.
-
-The enrichment module SHALL document middleware ordering with Agent Observability. When enrichment appears before `agentobservability.Stack(...)` in the middleware slice, Agent Observability hooks and recording SHALL observe enriched `CallOptions`; when enrichment appears after Agent Observability, enrichment SHALL be transport-only from Agent Observability's perspective.
+Enrichment SHALL require no registry changes and SHALL work with `registry.WithLanguageModelMiddleware`, which already accepts `middleware.Middleware`. Docs SHALL explain ordering: before `agentobservability.Stack(...)`, hooks and recording observe enriched `CallOptions`; after Agent Observability, enrichment is transport-only from Agent Observability's perspective.
 
 #### Scenario: Registry applies enrichment to resolved model
 
@@ -284,3 +248,101 @@ The enrichment module SHALL document middleware ordering with Agent Observabilit
 
 - **WHEN** a model is wrapped with Agent Observability middleware before enrichment middleware
 - **THEN** Agent Observability middleware SHALL observe the original call options and the inner provider SHALL observe enriched call options
+
+### Requirement: Enrichment value and call types
+
+The enrichment API SHALL expose typed value metadata and request-aware dynamic collection.
+
+#### Scenario: Configure typed enrichment values
+- **WHEN** a caller constructs enrichment values and metadata options
+- **THEN** the package SHALL expose `Cardinality` as a named string enum with typed constants `CardinalityLow`, `CardinalityBounded`, and `CardinalityHigh`
+- **AND** `Value` SHALL have fields `Key string`, `Value string`, `Sensitive bool`, and `Cardinality Cardinality`
+- **AND** it SHALL expose `ValueOption`, `Sensitive() ValueOption`, and `WithCardinality(Cardinality) ValueOption` for `WithValue` metadata
+
+#### Scenario: Configure dynamic request collection
+- **WHEN** a caller supplies a dynamic collector
+- **THEN** the API SHALL expose `DynamicValuesFunc func(context.Context, CallInput) ([]Value, error)`
+- **AND** `CallInput` SHALL have fields `Type middleware.CallType`, `Params provider.CallOptions`, and `Model provider.LanguageModel`
+
+### Requirement: Enrichment configuration types
+
+The enrichment API SHALL expose concrete options for selection, redaction, outputs, and error handling.
+
+#### Scenario: Configure filtering and outputs
+- **WHEN** a caller constructs enrichment output and filter configuration
+- **THEN** `FilterOptions` SHALL have fields for include/exclude filtering, sensitive redaction, high-cardinality dropping, and value length limits
+- **AND** `HeaderOptions` SHALL have fields `Map map[string]string`, `Prefix string`, `Conflict ConflictPolicy`, and `AdditionalProtected []string`
+- **AND** `ProviderOptionsConfig` SHALL have fields `ProviderKey string`, `ObjectKey string`, `Map map[string]string`, and `Conflict ConflictPolicy`
+- **AND** `ConflictPolicy` SHALL be a named string enum with typed constants `ConflictCallerWins`, `ConflictEnrichmentWins`, and `ConflictError`
+
+#### Scenario: Configure middleware options and redactor
+- **WHEN** a caller constructs `Options` for enrichment middleware
+- **THEN** `Options` SHALL have fields `Values []Value`, `ContextValues bool`, `DynamicValues DynamicValuesFunc`, `Headers HeaderOptions`, `ProviderOptions ProviderOptionsConfig`, `Filter FilterOptions`, `Redactor Redactor`, and `OnError func(context.Context, error) error`
+- **AND** the package SHALL expose a `Redactor` interface with `RedactValue(context.Context, Value) (Value, bool)`, a `RedactorFunc` adapter, and `DefaultRedactor() Redactor`
+
+### Requirement: Enrichment context helper API
+
+Context helpers SHALL use unexported context key types and defensive copies.
+
+#### Scenario: Store and retrieve explicit context values
+- **WHEN** a caller stores enrichment values in a context and retrieves them
+- **THEN** the package SHALL expose `WithValue(ctx context.Context, key, value string, opts ...ValueOption) context.Context`, `WithValues(ctx context.Context, values ...Value) context.Context`, and `ValuesFromContext(ctx context.Context) []Value`
+- **AND** storage and retrieval SHALL use defensive copies and unexported context key types
+
+### Requirement: Enrichment sensitive value redaction
+
+Sensitive values SHALL NOT be emitted raw by default. `RedactSensitive=false` SHALL drop sensitive values; true SHALL allow them only after redaction. A nil `Options.Redactor` SHALL use `DefaultRedactor()`. Redactors SHALL be able to transform, mark sensitive, or drop values by returning false. The default redactor SHALL mark known secret-looking keys sensitive and otherwise leave values unchanged.
+
+#### Scenario: Redact an included sensitive value
+- **WHEN** an included value is sensitive and `Options.Filter.RedactSensitive` is true
+- **THEN** it SHALL be eligible for emission only after redaction
+
+#### Scenario: Default redactor detects secret keys
+- **WHEN** `Options.Redactor` is nil and collection includes secret-looking and ordinary keys
+- **THEN** `DefaultRedactor()` SHALL mark known secret-looking keys sensitive and otherwise leave values unchanged
+
+### Requirement: Enrichment value length and cardinality limits
+
+Values SHALL have a documented non-zero default maximum length unless `Options.Filter.MaxValueLength` overrides it. Length enforcement SHALL run after redaction; over-limit values SHALL be dropped without emission. High-cardinality values SHALL be allowed for header/provider-option outputs by default; `DropHighCardinality=true` SHALL drop `CardinalityHigh` values.
+
+#### Scenario: Redaction precedes length enforcement
+- **WHEN** redaction changes an included value's length
+- **THEN** the configured or documented non-zero default maximum length SHALL be checked after redaction
+- **AND** an over-limit value SHALL be dropped without output emission
+
+#### Scenario: High cardinality is allowed by default
+- **WHEN** an eligible value has `CardinalityHigh` and `DropHighCardinality` is false
+- **THEN** header/provider-option outputs SHALL allow that value
+
+### Requirement: Enrichment error handling
+
+Dynamic collection or header/provider-options output errors SHALL fail the model call by default. When set, `Options.OnError` SHALL receive the context and error; a non-nil returned error SHALL fail the call with that error, and nil SHALL proceed with the last successfully built call options.
+
+#### Scenario: Error handler permits a call
+- **WHEN** dynamic collection or output application returns an error and `Options.OnError` returns nil
+- **THEN** the call SHALL proceed with the last successfully built call options
+
+#### Scenario: Error handler replaces a failure
+- **WHEN** dynamic collection or output application returns an error and `Options.OnError` returns a non-nil error
+- **THEN** the call SHALL fail with that returned error
+
+### Requirement: Protected enrichment headers
+
+Protected auth/transport headers SHALL NOT be written or overwritten by default regardless of conflict policy, even when absent. Callers SHALL be able to add protected names, but the initial API SHALL NOT allow writing built-in protected names.
+
+#### Scenario: Built-in and deployment-specific headers are protected
+- **WHEN** enrichment targets auth or transport headers
+- **THEN** the protected set SHALL include common auth and provider transport headers such as `Authorization`, `Proxy-Authorization`, `X-Access-Token`, `X-Grafana-Id`, `Content-Type`, and provider API-key or protocol headers
+- **AND** caller-added deployment-specific protected header names SHALL also be protected
+- **AND** enrichment SHALL omit absent protected targets and SHALL NOT overwrite existing protected values regardless of conflict policy
+
+### Requirement: Existing provider option preservation
+
+Provider-option output SHALL preserve unrelated fields. Existing typed or raw options SHALL be marshaled to JSON and require object-shaped JSON for merging; merged data SHALL be stored as `provider.RawProviderOption{Key: ProviderKey, Raw: mergedJSON}`. Field conflicts SHALL follow `ConflictPolicy`, defaulting to `ConflictCallerWins`.
+
+#### Scenario: Merge a conflicting provider option field
+- **WHEN** enrichment and an existing object option supply the same field
+- **THEN** `ConflictCallerWins` SHALL preserve the caller field by default
+- **AND** `ConflictEnrichmentWins` SHALL replace it with the enrichment value
+- **AND** `ConflictError` SHALL return an error
+- **AND** unrelated existing fields SHALL remain unchanged

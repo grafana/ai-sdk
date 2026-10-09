@@ -8,7 +8,11 @@ Define structured API-call errors that support retry decisions, in-process cause
 
 ### Requirement: APICallError is JSON-serializable losslessly
 
-`APICallError` SHALL declare every JSON-serialized field as exported with a JSON tag. The unexported `cause error` field MAY remain for in-process `Unwrap()` support but MUST NOT participate in JSON serialization. The set of exported fields SHALL be:
+`APICallError` SHALL declare every JSON-serialized field as exported with a JSON tag. The unexported `cause error` field MAY remain for in-process `Unwrap()` support but MUST NOT participate in JSON serialization. `RequestBodyValues` SHALL use `json.RawMessage`, not `any`, for round-trip fidelity. `IsRetryable` SHALL indicate eligibility for a fresh call, not safe established-stream replay.
+
+#### Scenario: Serialized API error field schema
+- **WHEN** the exported JSON field schema of `APICallError` is inspected
+- **THEN** the exported fields and tags SHALL be:
 
 - `Message string` -- `json:"message"`
 - `StatusCode int` -- `json:"statusCode"`
@@ -117,36 +121,7 @@ establish that no output or effects escaped the failed attempt.
 
 ### Requirement: Anthropic provider wraps API errors
 
-The anthropic provider SHALL wrap errors from `anthropic-sdk-go` into
-`*provider.APICallError` for all API call failures. The original SDK error SHALL
-be preserved as the in-process cause (accessible via `Unwrap`). The `StatusCode`
-SHALL be extracted from the `anthropic.Error` type. The wrapped error MUST
-round-trip losslessly through JSON for every exported field; only the `cause`
-chain is process-local. Stream-error events encountered after provider output begins MUST emit the
-wrapped error via `StreamPart.APICallError` (not the removed `Error error`
-field). An error received as the first SSE event MUST be returned synchronously
-from `DoStream` as `*provider.APICallError`.
-
-Additionally, the anthropic provider SHALL preserve the provider's structured
-error payload by populating `APICallError.Data` with the parsed error envelope
-(at minimum the provider error `type` and `message`), mirroring upstream's
-`createJsonErrorResponseHandler` which stores the parsed error in
-`APICallError.data`. Gateway error-category normalization SHALL remain outside
-this provider. The provider MAY classify retry eligibility from the structured
-Anthropic error type when an HTTP 200 streaming response does not carry a useful
-failure status. Ordinary non-200 API responses SHALL continue to use status-code
-retryability inference. When the error body cannot be parsed, `Data` MAY be empty
-and the raw body SHALL remain in `ResponseBody`.
-
-Before returning a successful stream, the provider SHALL inspect the first
-semantic Anthropic SSE event. If that event is an error, `DoStream` SHALL return a
-synchronous `*provider.APICallError` instead of exposing an established stream.
-An initial `overloaded_error` SHALL be normalized to status 529 and an initial
-error of any other type SHALL be normalized to status 500. HTTP 200 SSE
-`api_error` and `overloaded_error` failures SHALL be retryable;
-`rate_limit_error` and non-transient failures SHALL NOT become retryable solely
-from their streamed error type. Errors encountered after a non-error event SHALL
-remain `PartError` stream parts.
+The anthropic provider SHALL wrap all `anthropic-sdk-go` API call failures into `*provider.APICallError`, preserving the original SDK error as the in-process `Unwrap` cause and extracting status from `anthropic.Error`. Every exported field MUST round-trip losslessly through JSON; only the cause chain is process-local. Post-output stream errors MUST use `StreamPart.APICallError`, not the removed `Error error` field.
 
 #### Scenario: DoGenerate wraps API error
 - **WHEN** `DoGenerate` receives a 429 error from the Anthropic API
@@ -200,22 +175,33 @@ remain `PartError` stream parts.
 - **AND** the original error SHALL remain available as the in-process cause
 - **AND** the error SHALL default to non-retryable when no status or provider classification establishes retry eligibility
 
+### Requirement: Anthropic structured error payload
+
+The anthropic provider SHALL populate `APICallError.Data` with the parsed error envelope, at minimum provider error `type` and `message`, mirroring upstream `createJsonErrorResponseHandler` and `APICallError.data`. Gateway error-category normalization SHALL remain outside this provider. If parsing fails, `Data` MAY be empty and the raw body SHALL remain in `ResponseBody`.
+
+#### Scenario: Anthropic structured error payload
+- **WHEN** an Anthropic API error body cannot be parsed
+- **THEN** `Data` MAY be empty but `ResponseBody` SHALL retain the raw body
+
+### Requirement: Anthropic initial semantic event errors
+
+Before returning a successful stream, the provider SHALL inspect the first semantic Anthropic SSE event. An initial error MUST return synchronously from `DoStream` as `*provider.APICallError`, not expose an established stream. Initial `overloaded_error` SHALL normalize to status 529; any other initial error SHALL normalize to 500. Errors after a non-error event SHALL remain `PartError` stream parts.
+
+#### Scenario: Anthropic initial semantic event errors
+- **WHEN** the first semantic SSE event is an error rather than model output
+- **THEN** `DoStream` SHALL return a synchronous `*provider.APICallError`, with status 529 for `overloaded_error` and 500 otherwise
+
+### Requirement: Anthropic streamed error retry classification
+
+The provider MAY classify retry eligibility from structured Anthropic error type when HTTP 200 streaming lacks a useful failure status. HTTP 200 SSE `api_error` and `overloaded_error` SHALL be retryable; `rate_limit_error` and non-transient failures SHALL NOT become retryable solely from streamed type. Ordinary non-200 API responses SHALL continue status-code retryability inference.
+
+#### Scenario: Anthropic streamed error retry classification
+- **WHEN** an established HTTP 200 stream emits `api_error` after a non-error event
+- **THEN** the `PartError` SHALL carry a retryable API-call error without changing the established-stream contract
+
 ### Requirement: Fallback decider uses structured error inspection
 
-The fallback decider SHALL use `errors.As` to extract `*provider.APICallError`
-and inspect `IsRetryable` to determine whether to try the next candidate model.
-Unknown errors (not `APICallError`) SHALL default to trying the next candidate.
-An `APICallError` reconstructed through provider-domain JSON serialization (with
-`cause == nil`) MUST be fully usable by the decider because `IsRetryable` is
-preserved as a first-class JSON field. This provider-domain JSON invariant SHALL
-NOT define an HTTP transport contract.
-
-Additionally, the decider SHALL NOT fail over when the error represents a
-context-window/context-length failure, because the next candidate would fail
-identically. Detection SHALL be a localized predicate inside the decider:
-`*provider.APICallError` with `StatusCode == 400` and a context-length signal
-read from `Data`/`Message`. This heuristic SHALL be confined to the decider and
-SHALL NOT introduce a public context-window error category (upstream has none).
+The fallback decider SHALL use `errors.As` to extract `*provider.APICallError` and inspect `IsRetryable` to decide whether to try the next model. Unknown errors SHALL default to trying the next candidate. JSON-reconstructed errors with nil cause MUST remain fully usable because `IsRetryable` is a first-class JSON field. This provider-domain invariant SHALL NOT define an HTTP transport contract.
 
 #### Scenario: Retryable API error triggers fallback
 - **WHEN** the current model returns a `*provider.APICallError` with `IsRetryable` true, whether constructed directly or reconstructed through provider-domain JSON
@@ -237,3 +223,11 @@ SHALL NOT introduce a public context-window error category (upstream has none).
 #### Scenario: Context-window error stops fallback
 - **WHEN** the current model returns a `*provider.APICallError` with `StatusCode` 400 whose `Data`/`Message` indicates a context-length/context-window failure
 - **THEN** the decider SHALL return `false`
+
+### Requirement: Fallback context-length exception
+
+The decider SHALL NOT fail over on context-window/context-length failures because the next candidate would fail identically. Detection SHALL be a localized decider predicate: `*provider.APICallError` with `StatusCode == 400` and a context-length signal in `Data`/`Message`. This heuristic SHALL NOT introduce a public context-window error category; upstream has none.
+
+#### Scenario: Fallback context-length exception
+- **WHEN** a status-400 API-call error signals context length in `Data` or `Message`
+- **THEN** the localized decider predicate SHALL stop fallback without adding a public error category

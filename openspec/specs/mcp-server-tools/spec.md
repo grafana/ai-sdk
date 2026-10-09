@@ -6,7 +6,7 @@ Define Anthropic MCP server configuration, streamed and non-streamed MCP tool be
 
 ### Requirement: MCP server configuration via provider options
 
-The Anthropic provider SHALL support configuring MCP servers via the `MCPServers` field in `AnthropicOptions`. Each entry SHALL have `Name` and `URL` strings, optional presence-aware `AuthorizationToken *string`, and optional `ToolConfiguration` with presence-aware `Enabled *bool` and `AllowedTools` string slice. Absent token SHALL differ from explicitly empty token; absent enabled SHALL differ from explicit false. A non-nil empty `AllowedTools` slice SHALL remain an explicitly empty array. The configuration SHALL map to `BetaMessageNewParams.MCPServers` in `applyProviderOptions()` without emitting absent members. This API change replaces the previous string/bool fields; callers constructing the Go structs SHALL use pointers for explicit values. The existing beta selection behavior SHALL remain unchanged.
+AnthropicOptions.MCPServers SHALL configure entries with Name/URL strings, optional AuthorizationToken *string and optional ToolConfiguration with Enabled *bool and AllowedTools string slice. applyProviderOptions SHALL map them to BetaMessageNewParams.MCPServers, omit absent members and retain existing beta selection. Pointers for explicit values SHALL replace the previous string/bool fields in caller Go structs.
 
 #### Scenario: Single MCP server with all fields
 - **WHEN** `AnthropicOptions` contains one `MCPServer` with `Name: "my-server"`, `URL: "https://mcp.example.com"`, `AuthorizationToken` pointing to `"token123"`, and `ToolConfiguration` with `Enabled` pointing to true and `AllowedTools: ["tool_a", "tool_b"]`
@@ -52,7 +52,7 @@ The Anthropic provider SHALL automatically inject the `mcp-client-2025-04-04` be
 
 ### Requirement: mcp_tool_use streaming
 
-The Anthropic stream adapter SHALL handle `mcp_tool_use` content blocks at `content_block_start` by emitting a `PartToolCall` directly with `ProviderExecuted: true`, `Dynamic: true`, the tool call ID, name, serialized input, and `ProviderMetadata` containing `{"anthropic": {"type": "mcp-tool-use", "serverName": "<server_name>"}}`. The block SHALL NOT be registered in `blockState` and no `PartToolInputStart`/delta/end events SHALL be emitted. The tool call SHALL be tracked in the `mcpToolCalls` map.
+At content_block_start, mcp_tool_use SHALL emit PartToolCall directly with ProviderExecuted:true, Dynamic:true, call ID/name/serialized input and metadata {"anthropic":{"type":"mcp-tool-use","serverName":"<server_name>"}}. It SHALL be tracked in mcpToolCalls, NOT blockState; no PartToolInputStart/delta/end SHALL be emitted.
 
 #### Scenario: MCP tool use in streaming response
 
@@ -68,7 +68,7 @@ The Anthropic stream adapter SHALL handle `mcp_tool_use` content blocks at `cont
 
 ### Requirement: mcp_tool_result streaming
 
-The Anthropic stream adapter SHALL handle `mcp_tool_result` content blocks at `content_block_start` by emitting a `PartToolResult` with `Dynamic: true`, the tool call ID from `tool_use_id`, the `toolName` and `providerMetadata` looked up from the `mcpToolCalls` map, the `isError` flag, and the content as raw JSON preserved from the API response. The content MUST be stored using the raw JSON bytes from the SDK's `RawJSON()` method, not by re-marshaling the SDK's union struct. The block SHALL NOT be registered in `blockState`.
+At content_block_start, mcp_tool_result SHALL emit PartToolResult with Dynamic:true, ToolCallID from tool_use_id, toolName/providerMetadata from mcpToolCalls, isError, and exact API content JSON bytes from SDK RawJSON(), NOT re-marshaled union structs. The block SHALL NOT enter blockState.
 
 #### Scenario: MCP tool result in streaming response
 
@@ -153,3 +153,12 @@ The Anthropic request builder SHALL convert MCP tool calls and results back to t
 
 - **WHEN** `convertToolContent()` encounters a `ToolResultContentPart` whose `ToolCallID` is NOT in the `mcpToolUseIDs` set
 - **THEN** it emits a regular `BetaToolResultBlockParam` as before (existing behavior unchanged)
+
+### Requirement: Anthropic MCP option presence distinctions
+
+Absent authorization token SHALL differ from explicit empty string; absent enabled SHALL differ from explicit false. Non-nil empty AllowedTools SHALL remain an explicitly empty array.
+
+#### Scenario: Anthropic MCP option presence distinctions
+
+- **WHEN** MCP configuration supplies token pointer to "", enabled pointer to false and non-nil empty AllowedTools
+- **THEN** native configuration SHALL emit the empty token, false enabled and [] allowed tools, unlike absent members

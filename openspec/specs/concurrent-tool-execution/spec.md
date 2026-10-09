@@ -6,9 +6,7 @@ Concurrent execution of multiple tool calls within a single step, matching upstr
 
 ### Requirement: Concurrent tool execution within a step
 
-When a model returns multiple tool calls in a single step, `executeTools()` SHALL execute all eligible tool calls concurrently using goroutines. Each tool call SHALL run in its own goroutine. The function SHALL wait for all goroutines to complete before returning.
-
-Eligible tool calls are those where `ProviderExecuted` is false AND the tool exists in the effective step execution tool set with either a non-nil `Execute` function or a configured streaming execution function. The existing allowed-finish and approval gates SHALL continue to apply.
+For multiple calls in one step, `executeTools()` SHALL run each eligible call in its own goroutine and wait for all to complete. Eligibility SHALL require ProviderExecuted false and a tool in the effective execution set with non-nil Execute or configured streaming execution. Existing allowed-finish and approval gates SHALL continue to apply.
 
 #### Scenario: Multiple tool calls execute concurrently
 
@@ -72,7 +70,7 @@ The parent context passed to `executeTools()` SHALL be propagated to each tool g
 
 ### Requirement: Stream event emission from concurrent goroutines
 
-Each tool goroutine SHALL report its completion to the goroutine that started the tools, and that goroutine SHALL emit the tool's `StreamToolResult` or `StreamToolError` event via `r.emit()` as the report arrives. Events SHALL be emitted in completion order (non-deterministic), not in the original tool call order, for both a model step's tool calls and tools resumed after approval. Tool goroutines SHALL NOT call `r.emit()` or `OnChunk` themselves, so `OnChunk` is never invoked concurrently. This matches upstream behavior where each tool's result is enqueued as its promise resolves.
+Each tool goroutine SHALL report completion to the goroutine that started the tools, which SHALL emit StreamToolResult/StreamToolError via r.emit() as reports arrive. Model-step and approval-resumed events SHALL use non-deterministic completion order, not call order, matching upstream enqueue-on-promise-resolution. Tool goroutines SHALL NOT call r.emit() or OnChunk; OnChunk SHALL never be invoked concurrently.
 
 #### Scenario: Events arrive in completion order
 
@@ -97,7 +95,7 @@ Each tool goroutine SHALL report its completion to the goroutine that started th
 
 ### Requirement: Tool results preserve call order
 
-The `step.ToolResults` slice SHALL contain results in the same order as the original `step.ToolCalls` entries, regardless of completion order and of how each result arose: provider-executed, rejected as invalid, denied by an approval policy, or executed. This ensures deterministic message construction for subsequent steps. Upstream lists `step.toolResults` in arrival order; Go keeps call order, and `test/conformance/upstream.yaml` records the difference. A result for a call that is not in the step SHALL keep its relative position ahead of the step's own results, and results for the same call SHALL keep their order.
+step.ToolResults SHALL follow original step.ToolCalls order regardless of completion or provider-executed, invalid, denied or executed origin, for deterministic next-step messages. Upstream uses arrival order; Go call order is recorded in test/conformance/upstream.yaml. Results for calls outside the step SHALL retain relative position ahead of step results; results for the same call SHALL retain their order.
 
 #### Scenario: Results ordered by call position
 

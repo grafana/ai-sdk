@@ -136,7 +136,7 @@ The reader split SHALL NOT change `UIMessageChunk` JSON serialization, SSE event
 
 ### Requirement: Reader tool updates preserve pinned lifecycle semantics
 
-Both readers SHALL carry title/tool metadata across partial input updates, preserve supplied empty values, and follow the registered static/dynamic updater field-clearing rules for output, error, preliminary and raw input. Static tool-input-error SHALL store rejected input in RawInput with Input omitted; dynamic tool-input-error SHALL store it in Input. Preliminary and final outputs SHALL replace one matching tool part. Approval responses SHALL merge supported prior approval data. Static/dynamic tool updaters and approval responses SHALL apply supplied providerExecuted values, including decoded false clearing prior true, while an absent field SHALL inherit the prior value. Existing step-local identity matching, partial JSON repair and split progressive/blocking error contracts SHALL remain in force.
+Both readers SHALL carry title/tool metadata across partial input, retain supplied empties and follow registered static/dynamic clearing of output/error/preliminary/raw input. Static tool-input-error SHALL store rejected input in RawInput with Input omitted; dynamic tool-input-error SHALL store rejected input in Input. Preliminary/final outputs SHALL replace one matching part; approval responses SHALL merge supported prior approval data.
 
 #### Scenario: Static and dynamic input errors retain different input arms
 - **WHEN** otherwise equivalent tool-input-error chunks target static and dynamic tools
@@ -164,9 +164,17 @@ Both readers SHALL carry title/tool metadata across partial input updates, prese
 - **THEN** supplied providerExecuted false SHALL clear that prior true value, while an omitted providerExecuted SHALL retain it
 - **AND** subsequent model conversion SHALL place the applicable output in the local tool-role message after false, versus provider-inline after inherited true
 
+### Requirement: Reader provider execution updates distinguish false from absence
+
+Static/dynamic updaters and approval responses SHALL apply supplied providerExecuted, including decoded false clearing true; absence SHALL inherit. Existing step-local identity, partial JSON repair and split progressive/blocking error contracts SHALL remain in force.
+
+#### Scenario: False replacement changes execution ownership
+- **WHEN** a prior provider-executed tool receives supplied false or omitted providerExecuted
+- **THEN** false SHALL clear prior true while omission inherits it, retaining step-local identity matching and the existing reader error contracts.
+
 ### Requirement: Readers resume from an isolated initial assistant message
 
-The root package SHALL add `WithUIMessageReaderInitialMessage(message UIMessage) UIMessageReaderOption`. It SHALL clone the supplied message when the option is built and clone it for each reader invocation. Readers SHALL seed contents only from assistant messages; a supplied non-assistant message SHALL initialize an empty assistant with that supplied ID while ignoring its parts/metadata. Initial IDs and assistant tool/data identities SHALL be retained unless later chunks replace them according to the pinned rules. Active text, reasoning and partial-input maps SHALL start empty; initial persisted state SHALL NOT make an unstarted delta sequence valid. No initial progressive snapshot SHALL be emitted merely because an initial message was supplied. Generated-ID fallback SHALL apply only when the supplied ID is absent; without an initial message existing generated-ID and empty-stream behavior SHALL remain unchanged.
+The root SHALL add WithUIMessageReaderInitialMessage(message UIMessage) UIMessageReaderOption, cloning at option creation and per reader invocation. Only assistant contents SHALL seed; non-assistant messages SHALL seed empty assistants with supplied ID, ignoring parts/metadata. Initial IDs and assistant tool/data identities SHALL remain unless chunks replace them by pinned rules.
 
 #### Scenario: Persisted tool output resumes without duplicates
 - **WHEN** an initial assistant message contains a persisted tool call and the stream supplies an output or approval continuation for it
@@ -200,6 +208,14 @@ The root package SHALL add `WithUIMessageReaderInitialMessage(message UIMessage)
 - **WHEN** an initial assistant contains an identified data part and receives a replacement data chunk for that ID
 - **THEN** the existing data part SHALL be updated according to the target matching rules
 - **AND** a later start chunk with a new messageId SHALL replace the initial message ID without mutating the caller's message
+
+### Requirement: Resumed persisted state does not establish active starts
+
+Active text/reasoning/partial-input maps SHALL start empty; persisted state SHALL NOT validate unstarted deltas. Supplying an initial message SHALL NOT emit an initial progressive snapshot. Generated-ID fallback SHALL apply only if supplied ID is absent. Without initial messages, existing generated-ID and empty-stream behavior SHALL remain unchanged.
+
+#### Scenario: Seeded text still needs an active start
+- **WHEN** a reader seeded with persisted text receives a delta without a start
+- **THEN** existing malformed-transition behavior SHALL apply; neither seeding nor channel close SHALL synthesize a progressive snapshot.
 
 ### Requirement: Pinned clients prove persistence and hook resume
 

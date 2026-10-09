@@ -50,12 +50,7 @@ The `provider` package SHALL define a `RawProviderOption` struct with fields `Ke
 
 ### Requirement: Lossless JSON round-trip via RawProviderOption
 
-The `ProviderOptions` named type SHALL implement `MarshalJSON` and `UnmarshalJSON` such that:
-
-- **Marshal**: each entry is serialized by calling `json.Marshal` on the concrete `ProviderOption` value. Typed providers (e.g., `AnthropicOptions`) serialize their concrete struct; `RawProviderOption` writes its `Raw` bytes directly. The resulting JSON is `{key1: <value1JSON>, key2: <value2JSON>, ...}`.
-- **Unmarshal**: the wire JSON is decoded as `map[string]json.RawMessage`. Each entry is wrapped as `RawProviderOption{Key: k, Raw: v}` regardless of the original concrete type that produced it. Consumers reach typed values via the existing `ResolveOption[T]` helper.
-
-This intentional asymmetry -- typed values out, `RawProviderOption` values back -- is the existing pattern; this requirement just extends it to apply at every wire boundary uniformly.
+`ProviderOptions` SHALL implement lossless `MarshalJSON`/`UnmarshalJSON` uniformly at every wire boundary. Marshaling SHALL call `json.Marshal` on concrete values: typed options serialize their structs, `RawProviderOption` writes `Raw` bytes directly, yielding `{key: <valueJSON>, ...}`. Unmarshaling SHALL decode `map[string]json.RawMessage`, wrapping every entry as `RawProviderOption{Key: k, Raw: v}` regardless of original type. `ResolveOption[T]` SHALL recover typed views.
 
 #### Scenario: Typed option marshals to its concrete JSON
 - **WHEN** `ProviderOptions{"anthropic": AnthropicOptions{...}}` is marshaled to JSON
@@ -95,7 +90,7 @@ The `provider` package SHALL define a `BuildProviderOptions(opts ...ProviderOpti
 
 ### Requirement: ResolveOption generic helper
 
-The `provider` package SHALL define a generic function `ResolveOption[T any](opts ProviderOptions, key string) (T, bool, error)` that resolves a typed provider option from the map. The function SHALL handle four cases: key not present returns zero value, false, nil; value is type `T` returns the value via direct type assertion, true, nil; value is `RawProviderOption` returns the result of `json.Unmarshal` into `T`, true, error-or-nil; value is an unexpected type returns zero value, true, and an error.
+The provider package SHALL define `ResolveOption[T any](opts ProviderOptions, key string) (T, bool, error)`: absent key returns zero/false/nil; value of `T` returns direct assertion/true/nil; `RawProviderOption` returns `json.Unmarshal` into `T`/true/error-or-nil; unexpected type returns zero/true/error.
 
 #### Scenario: Typed option resolved directly
 - **WHEN** `ResolveOption[AnthropicOptions]` is called with a map containing a fresh `AnthropicOptions` value at key `"anthropic"`
@@ -119,7 +114,7 @@ The `provider` package SHALL define a generic function `ResolveOption[T any](opt
 
 ### Requirement: ProviderOptions field type across all structs
 
-Every `ProviderOptions` field in the `provider` and `aisdk` packages SHALL use type `provider.ProviderOptions` (the named alias of `map[string]provider.ProviderOption`). This MUST include the unified `Message`, the unified `ContentPart`, the unified `Tool`, plus `CallOptions`, `ToolResultOutput`, `ToolResultContentValue`, `StreamTextParams`, `PrepareStepResult`, `SystemModelMessage`, and `aisdk.Tool`. The previous list referenced now-removed concrete types (`SystemMessage`, `UserMessage`, `AssistantMessage`, `ToolMessage`, all `*ContentPart` variants, `FunctionTool`); these are superseded by the unified flat structs introduced in `provider-v4-content-model` and `v4-tool-type-split`.
+Every `ProviderOptions` field in provider/aisdk SHALL use named `provider.ProviderOptions` (`map[string]provider.ProviderOption`), including unified `Message`, `ContentPart`, `Tool`, `CallOptions`, `ToolResultOutput`, `ToolResultContentValue`, `StreamTextParams`, `PrepareStepResult`, `SystemModelMessage` and `aisdk.Tool`. Unified structs supersede removed message/content variants and `FunctionTool` from the previous list under provider-v4-content-model and v4-tool-type-split.
 
 #### Scenario: Unified Message uses ProviderOptions alias
 - **WHEN** the `provider.Message` struct is inspected
@@ -139,18 +134,11 @@ Every `ProviderOptions` field in the `provider` and `aisdk` packages SHALL use t
 
 ### Requirement: ProviderOptions JSON tags everywhere
 
-Every `ProviderOptions` field across the provider package and the root `aisdk` package SHALL be tagged `json:"providerOptions,omitempty"` (replacing the previous `json:"-"`). Affected fields include but are not limited to:
+Every `ProviderOptions` field in provider and root aisdk SHALL use `json:"providerOptions,omitempty"`, replacing `json:"-"`.
 
-- `provider.CallOptions.ProviderOptions`
-- `provider.Message.ProviderOptions`
-- `provider.ContentPart.ProviderOptions`
-- `provider.Tool.ProviderOptions`
-- `provider.ToolResultOutput.ProviderOptions`
-- `provider.ToolResultContentValue.ProviderOptions`
-- `aisdk.StreamTextParams.ProviderOptions`
-- `aisdk.PrepareStepResult.ProviderOptions`
-- `aisdk.SystemModelMessage.ProviderOptions`
-- `aisdk.Tool.ProviderOptions`
+#### Scenario: ProviderOptions tag coverage
+- **WHEN** JSON tags are inspected on known provider-options-bearing fields
+- **THEN** the tag requirement SHALL include, without being limited to, `provider.CallOptions.ProviderOptions`, `provider.Message.ProviderOptions`, `provider.ContentPart.ProviderOptions`, `provider.Tool.ProviderOptions`, `provider.ToolResultOutput.ProviderOptions`, `provider.ToolResultContentValue.ProviderOptions`, `aisdk.StreamTextParams.ProviderOptions`, `aisdk.PrepareStepResult.ProviderOptions`, `aisdk.SystemModelMessage.ProviderOptions` and `aisdk.Tool.ProviderOptions`
 
 #### Scenario: No json:"-" on ProviderOptions
 - **WHEN** the codebase is searched for ``json:"-"`` on `ProviderOptions` fields

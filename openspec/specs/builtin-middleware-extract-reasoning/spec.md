@@ -27,9 +27,8 @@ Configuration options:
 - **AND** the remaining text sections SHALL be joined with the separator
 
 ### Requirement: Extract reasoning from streaming output
-`ExtractReasoning` SHALL transform streaming text deltas, emitting reasoning-start/delta/end events for tagged sections and text deltas for non-tagged content.
 
-The stream transform SHALL handle partial tags across chunk boundaries (buffering until a complete tag open/close is confirmed or ruled out). For interleaved text blocks with distinct provider IDs, it SHALL retain each block's own delayed text start until that block emits visible text or ends, SHALL associate every emitted text delta and text end with the correct text start and ID, and SHALL assign a distinct reasoning ID to each reasoning segment across the stream (including segments in different text blocks).
+`ExtractReasoning` SHALL emit reasoning-start/delta/end events for tagged streaming text and text deltas for non-tagged content. It SHALL buffer partial tags across chunks until a complete open/close tag is confirmed or ruled out. Interleaved provider text blocks SHALL retain their own delayed starts and correct text delta/end IDs. Each reasoning segment SHALL have a distinct reasoning ID across the stream, including segments in different blocks.
 
 #### Scenario: Streaming reasoning extraction
 - **WHEN** streaming text deltas contain `<think>` and `</think>` boundaries

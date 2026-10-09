@@ -6,14 +6,8 @@ Provide an authenticated Amazon Bedrock Mantle Responses model that preserves Op
 ## Requirements
 
 ### Requirement: Mantle Responses construction and identity
-The system SHALL expose an error-returning constructor for a Bedrock Mantle
-Responses language model. The constructor SHALL accept a context, model ID,
-Mantle client configuration, and transport request options. The returned model
-SHALL implement the V4 language-model contract, preserve the model ID verbatim,
-and report `bedrock-mantle.responses` as its provider identity. Construction
-SHALL reject invalid or ambiguous authentication and routing values supplied
-through Mantle configuration. Attempts to override protected authentication or
-routing through generic request options SHALL fail before network transport.
+
+The system SHALL expose an error-returning Mantle Responses constructor accepting context, model ID, Mantle client configuration and transport request options. The model SHALL implement V4, preserve the model ID verbatim and report `bedrock-mantle.responses`. Construction SHALL reject invalid/ambiguous configured authentication or routing. Generic request options overriding protected authentication/routing SHALL fail before transport.
 
 #### Scenario: Construct a Luna Responses model
 - **WHEN** a caller constructs a Responses model for `openai.gpt-5.6-luna` with valid Mantle configuration
@@ -32,16 +26,8 @@ routing through generic request options SHALL fail before network transport.
 - **THEN** the first model call returns a routing error without reaching network transport
 
 ### Requirement: OpenAI-compatible Mantle routing
-The provider SHALL send Responses requests to the AWS OpenAI-compatible Mantle
-surface. Generic models SHALL use the regional
-`https://bedrock-mantle.<region>.api.aws/v1` base, while models with documented
-route exceptions SHALL use the required model-specific base. The provider SHALL
-maintain exact exceptions for every currently documented `/openai/v1` model ID
-rather than inferring support from an unrelated model family. Inference requests
-SHALL use `/responses` beneath the selected base. A valid custom base URL SHALL
-be preserved. Explicit AWS region and profile values SHALL be trimmed before
-endpoint resolution. The request body SHALL carry the caller's model ID
-verbatim and SHALL NOT use Bedrock Converse request paths or shapes.
+
+Mantle SHALL use regional `https://bedrock-mantle.<region>.api.aws/v1` for generic models and exact documented model-specific `/openai/v1` exceptions, not unrelated-family inference. Requests SHALL use `/responses` beneath the selected base, preserve valid custom bases and carry the model ID verbatim, never Converse paths/shapes. Explicit region/profile SHALL be trimmed before endpoint resolution.
 
 #### Scenario: Default generic regional route
 - **WHEN** `openai.gpt-oss-20b` configured for `us-east-1` sends a Responses request without a custom base URL
@@ -60,15 +46,8 @@ verbatim and SHALL NOT use Bedrock Converse request paths or shapes.
 - **THEN** its Responses request uses `/responses` beneath that exact base
 
 ### Requirement: Mantle authentication policy
-The provider SHALL support both Bedrock bearer credentials and AWS SigV4. An
-explicit bearer credential or bearer token provider SHALL select bearer mode.
-Explicit AWS credentials SHALL select SigV4 mode. When neither mode is explicit,
-a non-empty `AWS_BEARER_TOKEN_BEDROCK` SHALL select bearer mode; otherwise the
-standard AWS credential chain SHALL be used. Bearer values SHALL be trimmed and
-empty values SHALL NOT become authorization headers. SigV4 requests SHALL be
-signed for service `bedrock-mantle`, the resolved region, and the final request
-body on every attempt. Authenticated clients SHALL reject redirects that could
-bypass authentication finalization.
+
+Explicit bearer credential/token provider SHALL select bearer mode; explicit AWS credentials SHALL select SigV4. Without either, non-empty `AWS_BEARER_TOKEN_BEDROCK` SHALL select bearer, else the standard AWS chain. Bearer values SHALL be trimmed; empty values SHALL NOT become headers. Each SigV4 attempt SHALL sign the final body for `bedrock-mantle` and resolved region. Authenticated clients SHALL reject redirects bypassing authentication finalization.
 
 #### Scenario: Bearer rollback mode
 - **WHEN** a non-empty bearer credential is configured
@@ -84,26 +63,8 @@ bypass authentication finalization.
 - **THEN** the request is authenticated again using current credentials and its final replayed body
 
 ### Requirement: Responses delegation and continuation metadata
-The provider SHALL preserve the OpenAI Responses request, response, streaming,
-tool, and continuation semantics supplied by the shared OpenAI model adapter.
-Model and response attribution SHALL use `bedrock-mantle.responses`, while
-provider options and response metadata SHALL remain under the resolved `openai`
-or `azure` namespace. Per-call headers SHALL reach the final authenticated
-request.
 
-For unary and streaming calls through `mantle.NewResponses`, reconstructed
-assistant text SHALL use an easy-input message with `role: "assistant"` and
-string `content`, including explicitly empty text. Without an active
-conversation, reconstruction SHALL apply when `store` is false or the assistant
-text has no stored item ID. It SHALL preserve supplied phase metadata and omit
-stale item IDs, without emitting an incomplete output message containing an
-`output_text` content array. When storage is enabled and a stored assistant
-item ID is present without an active conversation, the provider SHALL retain
-item-reference continuation instead of resending the text. With an active
-conversation, assistant text with an existing item ID SHALL be skipped to avoid
-duplicating an item already in the conversation context. These behaviors SHALL
-work with the Bedrock module's published dependencies without workspace
-substitutions or production replacement directives.
+Mantle SHALL preserve shared OpenAI adapter request, response, stream, tool and continuation semantics. Model/response attribution SHALL be `bedrock-mantle.responses`; options/metadata SHALL remain under resolved `openai`/`azure`. Per-call headers SHALL reach the final authenticated request.
 
 #### Scenario: Stored response continuation
 - **WHEN** a Mantle response emits an OpenAI-namespaced assistant item ID that is included in a later prompt with storage enabled and no active conversation
@@ -143,14 +104,8 @@ substitutions or production replacement directives.
 - **AND** storage-enabled assistant items with IDs still use item references
 
 ### Requirement: Mantle web-search source include compatibility
-Mantle Responses SHALL configure the shared OpenAI Responses model so that
-`web_search_call.action.sources` is not automatically included for a supplied
-web-search tool in either unary or streaming calls. This provider-owned
-restriction SHALL NOT remove the web tool, change response attribution, block
-other automatic include kinds, or silently remove an explicit caller `include`
-entry. Candidate-source checks SHALL exercise this behavior with the shared
-OpenAI implementation in the SDK workspace while Bedrock's declared OpenAI
-module version remains pinned to a revision already merged on canonical main.
+
+Mantle SHALL disable automatic `web_search_call.action.sources` inclusion for web tools in unary/streaming shared OpenAI calls. This restriction SHALL NOT remove tools, change attribution, block unrelated automatic includes or remove explicit caller includes.
 
 #### Scenario: Unary request accepted by strict compatibility endpoint
 - **WHEN** a Mantle Responses model makes a `DoGenerate` call with a web-search tool to a synthetic endpoint rejecting `web_search_call.action.sources`
@@ -183,3 +138,39 @@ continue to identify Mantle Chat, including safeguard models, as unsupported.
 - **WHEN** a reviewer inspects the parity records after this change
 - **THEN** Responses is classified by its focused routing and authentication evidence
 - **AND** the upstream Mantle Chat/default provider surface remains an explicit gap
+
+### Requirement: Mantle reconstructed assistant encoding
+
+For unary/stream calls through `mantle.NewResponses` without active conversation, assistant text SHALL reconstruct when `store:false` or no stored item ID: easy-input `role:"assistant"`, string `content` including empty text, preserved phase, no stale ID or incomplete `output_text` content array.
+
+#### Scenario: Mantle reconstructed assistant encoding
+
+- **WHEN** store is false and assistant text has an old item ID, phase and explicitly empty content
+- **THEN** the assistant input SHALL retain phase and `content:""`, omitting the old ID and output-message array
+
+### Requirement: Mantle stored assistant and conversation reuse
+
+Without active conversation, storage-enabled assistant text with a stored item ID SHALL retain item-reference continuation rather than resend text. With active conversation, assistant text with an existing item ID SHALL be skipped to avoid context duplication.
+
+#### Scenario: Mantle stored assistant and conversation reuse
+
+- **WHEN** an assistant item with an ID is continued once with storage enabled and once with an active conversation
+- **THEN** the former SHALL emit an item reference; the latter SHALL omit the assistant item
+
+### Requirement: Mantle published continuation boundary
+
+Unary/streaming assistant reconstruction and stored continuation SHALL work with the Bedrock module's published dependencies, without workspace substitutions or production replacement directives.
+
+#### Scenario: Mantle published continuation boundary
+
+- **WHEN** a standalone consumer uses published declared dependencies with GOWORK=off
+- **THEN** reconstruction SHALL use string-content encoding and stored assistant IDs SHALL still produce item references without dependency replacements
+
+### Requirement: Mantle candidate-source web-include evidence
+
+Candidate-source checks SHALL exercise web-source automatic-include suppression with shared OpenAI implementation in the SDK workspace while Bedrock's declared OpenAI dependency remains pinned to a revision already merged on canonical main.
+
+#### Scenario: Mantle candidate-source web-include evidence
+
+- **WHEN** workspace checks use candidate OpenAI source alongside the older merged declared module revision
+- **THEN** Mantle unary and stream web-tool requests SHALL omit automatic web sources without changing the declared dependency pin

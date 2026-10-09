@@ -6,11 +6,7 @@ Provide an opt-in provider-layer structured logging middleware for language mode
 ## Requirements
 ### Requirement: Nested logger middleware module
 
-The repository SHALL provide a nested Go module at `middleware/logger` with module path `github.com/grafana/ai-sdk/middleware/logger`.
-
-The module SHALL depend on the root `github.com/grafana/ai-sdk` module and the Go standard library. It SHALL NOT introduce dependencies on OpenTelemetry SDKs, Agent Observability, gRPC, vendor SDKs, provider modules, or other third-party logging libraries.
-
-The root `github.com/grafana/ai-sdk` module SHALL NOT import `middleware/logger`, so consumers who import only the root module do not gain logger-specific dependencies or public API.
+The repository SHALL provide `middleware/logger`, a nested Go module at `github.com/grafana/ai-sdk/middleware/logger`, depending only on root ai-sdk and the standard library, not OpenTelemetry SDKs, Agent Observability, gRPC, vendor SDKs, provider modules, or third-party logging libraries. Root ai-sdk SHALL NOT import it; root-only consumers SHALL gain no logger-specific dependencies or public API.
 
 #### Scenario: Root consumers do not import logger
 
@@ -25,29 +21,7 @@ The root `github.com/grafana/ai-sdk` module SHALL NOT import `middleware/logger`
 
 ### Requirement: Public logger API
 
-The `middleware/logger` package SHALL expose a middleware constructor and direct wrapping helper:
-
-- `Middleware(opts Options) middleware.Middleware`
-- `Wrap(base provider.LanguageModel, opts Options) provider.LanguageModel`
-
-The `Options` type SHALL include:
-
-- `Logger *slog.Logger`
-- `Level slog.Leveler`
-- `ErrorLevel slog.Leveler`
-- `PartLevel slog.Leveler`
-- `Attrs []slog.Attr`
-- `DynamicAttrs func(ctx context.Context) []slog.Attr`
-- `Capture CaptureOptions`
-- `Redactor Redactor`
-- `LogStreamParts bool`
-- `Clock func() time.Time`
-
-The `CaptureOptions` type SHALL include explicit opt-in controls for `Inputs`, `Outputs`, `Reasoning`, `ToolInputs`, `ToolOutputs`, `Files`, `RawChunks`, `Headers`, `ProviderOptions`, `RequestBody`, `ResponseBody`, `ProviderMetadata`, and `ErrorMessages`, plus bounded payload controls `MaxStringLen` and `MaxJSONBytes`.
-
-The package SHALL expose a `Redactor` interface, a `RedactorFunc` adapter, `DefaultRedactor() Redactor`, and `DefaultRedactorWithExtraKeys(keys ...string) Redactor`.
-
-`Options.Logger == nil` SHALL default to `slog.Default()`. `Options.Level == nil` SHALL default to `slog.LevelInfo`. `Options.ErrorLevel == nil` SHALL default to `slog.LevelError`. `Options.PartLevel == nil` SHALL default to `slog.LevelDebug`. `Options.Redactor == nil` SHALL default to `DefaultRedactor()`. `Options.Clock == nil` SHALL default to `time.Now`.
+`middleware/logger` SHALL expose `Middleware(opts Options) middleware.Middleware` and `Wrap(base provider.LanguageModel, opts Options) provider.LanguageModel`. It SHALL expose a `Redactor` interface, `RedactorFunc` adapter, `DefaultRedactor() Redactor`, and `DefaultRedactorWithExtraKeys(keys ...string) Redactor`.
 
 #### Scenario: Middleware returns a language model middleware
 
@@ -69,22 +43,7 @@ The package SHALL expose a `Redactor` interface, a `RedactorFunc` adapter, `Defa
 
 ### Requirement: Stable event names and attributes
 
-The package SHALL define `EventKind` as a typed string and SHALL expose these event constants:
-
-- `EventGenerateStart = "aisdk.model.generate.start"`
-- `EventGenerateFinish = "aisdk.model.generate.finish"`
-- `EventGenerateError = "aisdk.model.generate.error"`
-- `EventStreamStart = "aisdk.model.stream.start"`
-- `EventStreamFinish = "aisdk.model.stream.finish"`
-- `EventStreamError = "aisdk.model.stream.error"`
-- `EventStreamCancelled = "aisdk.model.stream.cancelled"`
-- `EventStreamPart = "aisdk.model.stream.part"`
-
-Every log record SHALL use the event string as the `slog` message and SHALL include `ai_sdk.event` with the same value and `ai_sdk.event.schema` with the current schema version.
-
-Common records SHALL include stable `ai_sdk.*` attributes for call ID, call type, provider, model, outcome on terminal records, and caller-provided static/dynamic attrs. Records SHALL include `gen_ai.*` aliases for common GenAI provider/model/usage fields where available. Terminal records SHALL include duration in milliseconds with fractional precision, duration in nanoseconds, and success/failure. Success records SHALL include available finish reason, token usage including cache/text/reasoning subfields when available, warning count/types, and response metadata. Stream terminal records SHALL include total part count, per-type counts, and time to first content when content is observed.
-
-The logger SHALL use documented stable keys for optional captured payloads and SHALL add new keys only additively in future changes.
+`EventKind` SHALL be a typed string with stable lifecycle and part constants. Every record SHALL use its event string as the `slog` message and `ai_sdk.event`, plus `ai_sdk.event.schema` with the current schema version. Optional captured payloads SHALL use documented stable keys; future keys SHALL be additive only.
 
 #### Scenario: Generate start record has stable identity attrs
 
@@ -107,13 +66,14 @@ The logger SHALL use documented stable keys for optional captured payloads and S
 - **WHEN** `Options.Attrs` and `Options.DynamicAttrs` both return attributes for a request
 - **THEN** those attributes SHALL be included on every record for that request after the logger's stable attributes are built and before redaction runs
 
+#### Scenario: Lifecycle event constants select stable messages
+- **WHEN** a caller selects a generate, stream, or part event kind
+- **THEN** the package SHALL expose `EventGenerateStart = "aisdk.model.generate.start"`, `EventGenerateFinish = "aisdk.model.generate.finish"`, and `EventGenerateError = "aisdk.model.generate.error"`
+- **AND** it SHALL expose `EventStreamStart = "aisdk.model.stream.start"`, `EventStreamFinish = "aisdk.model.stream.finish"`, `EventStreamError = "aisdk.model.stream.error"`, `EventStreamCancelled = "aisdk.model.stream.cancelled"`, and `EventStreamPart = "aisdk.model.stream.part"`
+
 ### Requirement: Privacy-first capture policy
 
-By default, the logger SHALL NOT log prompt/message content, generated text, reasoning text, tool inputs, tool outputs, file data, raw chunks, request bodies, response bodies, headers, provider options, provider metadata, or opaque error messages.
-
-By default, the logger MAY log safe scalar summaries and counts, including provider/model identity, transport identity when a routed backend differs, duration, outcome, success/failure, max output tokens, temperature, top-p, top-k, seed, reasoning effort value, stop sequence count, tool count, response format type, usage totals/subfields, finish reason, warning count/types, response metadata, stream part counts, and stream time to first content.
-
-Sensitive fields SHALL only become eligible for logging when the corresponding `CaptureOptions` flag is enabled. Captured string and JSON payload attributes SHALL be bounded by `MaxStringLen`, `MaxJSONBytes`, or documented finite package defaults when those fields are zero.
+By default the logger SHALL NOT log prompt/message content, generated or reasoning text, tool inputs/outputs, file data, raw chunks, request/response bodies, headers, provider options/metadata, or opaque error messages. Sensitive fields SHALL become eligible only via their `CaptureOptions` flags. Captured strings/JSON SHALL be bounded by `MaxStringLen`, `MaxJSONBytes`, or documented finite defaults when zero.
 
 #### Scenario: Default logging omits sensitive request fields
 
@@ -147,15 +107,13 @@ Sensitive fields SHALL only become eligible for logging when the corresponding `
 - **THEN** the logged attribute value SHALL be summarized to stay within the configured or default bound
 - **AND** the model call SHALL continue unchanged
 
+#### Scenario: Safe scalar summaries remain eligible by default
+- **WHEN** capture flags are not enabled
+- **THEN** the logger MAY log safe summaries/counts: provider/model identity, transport identity when a routed backend differs, duration, outcome, success/failure, max output tokens, temperature, top-p, top-k, seed, reasoning effort value, stop sequence count, tool count, response format type, usage totals/subfields, finish reason, warning count/types, response metadata, stream part counts, and stream time to first content
+
 ### Requirement: Default redaction
 
-`DefaultRedactor()` SHALL redact known secret-bearing keys even when capture options make their parent object eligible for logging.
-
-The default redactor SHALL perform case-insensitive key matching for at least these patterns: `authorization`, `x-api-key`, `api-key`, `apikey`, `token`, `access_token`, `refresh_token`, `id_token`, `password`, `secret`, `credential`, `cookie`, and `set-cookie`.
-
-The default redactor SHALL recurse through maps, slices, slog groups, and JSON-compatible values where feasible. If a captured attr is already an opaque string, the default redactor SHALL NOT rely on brittle substring rewriting; it SHALL redact only fields represented as structured attrs or typed values.
-
-A custom `Redactor` SHALL receive the request context, event kind, and selected attrs immediately before logging. `DefaultRedactorWithExtraKeys` SHALL preserve default behavior while adding caller-supplied secret key patterns.
+`DefaultRedactor()` SHALL redact known secret-bearing keys even in capture-eligible objects. It SHALL recurse through maps, slices, slog groups, and JSON-compatible values where feasible. Custom redactors SHALL receive context, event kind, and selected attrs immediately before logging. `DefaultRedactorWithExtraKeys` SHALL preserve defaults while adding caller secret-key patterns.
 
 #### Scenario: Secret header is redacted after capture
 
@@ -168,19 +126,18 @@ A custom `Redactor` SHALL receive the request context, event kind, and selected 
 - **WHEN** `Options.Redactor` removes an attr from the provided attr slice
 - **THEN** the removed attr SHALL NOT be emitted in the log record
 
+#### Scenario: Default secret patterns match case-insensitively
+- **WHEN** a capture-eligible structured value contains secret-bearing keys
+- **THEN** default redaction SHALL match case-insensitively at least `authorization`, `x-api-key`, `api-key`, `apikey`, `token`, `access_token`, `refresh_token`, `id_token`, `password`, `secret`, `credential`, `cookie`, and `set-cookie`
+
+#### Scenario: Opaque captured strings do not invite substring rewriting
+- **WHEN** a captured attr is already an opaque string
+- **THEN** the default redactor SHALL NOT rely on brittle substring rewriting
+- **AND** it SHALL redact only fields represented as structured attrs or typed values
+
 ### Requirement: Generate call logging
 
-The middleware SHALL implement `WrapGenerate` by observing the call without mutating the request or response.
-
-For each generate call, the middleware SHALL:
-
-1. Build start attributes from `middleware.WrapGenerateParams`, including call type, provider, model, safe request summary, and any opted-in captured request fields.
-2. Log `EventGenerateStart` before invoking the inner call.
-3. Invoke `p.DoGenerate(ctx)` exactly once.
-4. On returned error, log `EventGenerateError` with duration, `ai_sdk.outcome="error"`, `ai_sdk.success=false`, stable error classification, Go error type, API-call status/retryability when available, and a bounded opaque message only when `Capture.ErrorMessages` is true; then return the original error unchanged.
-5. On success, log `EventGenerateFinish` with duration, `ai_sdk.outcome="success"`, `ai_sdk.success=true`, finish reason, usage, warning count/types, response metadata, and opted-in captured response fields; then return the original `*provider.GenerateResult` unchanged.
-
-Serialization, capture, redaction, or logging failures SHALL NOT fail the model call. Best-effort serialization failures SHALL be represented as `ai_sdk.serialization_error` attrs when possible.
+`WrapGenerate` SHALL observe without mutating requests/results, build start attrs from `middleware.WrapGenerateParams` (call type, provider/model, safe request summary, opted-in captures), log `EventGenerateStart` before calling `p.DoGenerate(ctx)` exactly once, then log error or finish and return the original error/result unchanged. Serialization, capture, redaction, and logging failures SHALL NOT fail the call; serialization failures SHALL add `ai_sdk.serialization_error` when possible.
 
 #### Scenario: Generate success logs start and finish
 
@@ -199,23 +156,20 @@ Serialization, capture, redaction, or logging failures SHALL NOT fail the model 
 - **WHEN** the logger captures or summarizes request fields for a generate call
 - **THEN** the `provider.CallOptions` passed to the inner model SHALL be equal to the options provided to the wrapped model after any outer middleware transformations
 
+#### Scenario: Generate error record includes bounded diagnostics
+- **WHEN** `p.DoGenerate(ctx)` returns an error
+- **THEN** `EventGenerateError` SHALL include duration, `ai_sdk.outcome="error"`, `ai_sdk.success=false`, stable error classification, Go error type, and available API-call status/retryability
+- **AND** a bounded opaque message SHALL be included only when `Capture.ErrorMessages` is true
+- **AND** the original error SHALL be returned unchanged
+
+#### Scenario: Generate finish record includes response summary and captures
+- **WHEN** `p.DoGenerate(ctx)` succeeds
+- **THEN** `EventGenerateFinish` SHALL include duration, `ai_sdk.outcome="success"`, `ai_sdk.success=true`, finish reason, usage, warning count/types, response metadata, and opted-in captured response fields
+- **AND** the original `*provider.GenerateResult` SHALL be returned unchanged
+
 ### Requirement: Stream call logging
 
-The middleware SHALL implement `WrapStream` by observing and teeing streams without mutating stream parts.
-
-For each stream call, the middleware SHALL:
-
-1. Log `EventStreamStart` before invoking the inner stream call.
-2. Invoke `p.DoStream(ctx)` exactly once.
-3. If opening the stream returns an error, log `EventStreamError` with duration and sanitized error details, then return the original error unchanged.
-4. If opening succeeds, return a new `*provider.StreamResult` that preserves the upstream `Request` and `Response` fields and exposes a tee stream channel.
-5. Forward every upstream `provider.StreamPart` to the downstream consumer unchanged and in order.
-6. Observe stream parts to accumulate counts, time to first content, response metadata from `provider.PartResponseMeta`, normalized usage from every usage-bearing part using the shared streaming aggregation behavior, finish reason/provider metadata from `provider.PartFinish`, and the first `provider.PartError`.
-7. Log `EventStreamPart` records only when `Options.LogStreamParts` is true, using `Options.PartLevel` except for error parts.
-8. Log exactly one terminal event when upstream closes: `EventStreamFinish` for successful completion, `EventStreamError` when a part error or deadline timeout is observed, or `EventStreamCancelled` when cancellation is observed.
-9. Close the returned stream channel exactly once.
-
-The tee channel SHALL use a bounded buffer of 64 entries unless a future measured change updates this requirement.
+`WrapStream` SHALL log `EventStreamStart` before invoking `p.DoStream(ctx)` exactly once. Opening errors SHALL log `EventStreamError` with duration and sanitized details and return the original error. Success SHALL return a new `*provider.StreamResult` preserving upstream `Request`/`Response`, with a tee forwarding every part unchanged in order. The channel SHALL close exactly once and use a bounded 64-entry buffer unless a future measured change updates this requirement.
 
 #### Scenario: Stream usage preserves strongest values
 
@@ -258,6 +212,19 @@ The tee channel SHALL use a bounded buffer of 64 entries unless a future measure
 - **WHEN** `Options.LogStreamParts` is true
 - **THEN** the logger MAY emit one `EventStreamPart` record per observed stream part subject to capture and redaction policy
 
+#### Scenario: Stream observations feed terminal summaries
+- **WHEN** the tee observes stream parts
+- **THEN** it SHALL accumulate counts, time to first content, response metadata from `provider.PartResponseMeta`, normalized usage from every usage-bearing part using shared aggregation, finish reason/provider metadata from `provider.PartFinish`, and the first `provider.PartError`
+
+#### Scenario: Per-part level applies except to errors
+- **WHEN** `Options.LogStreamParts` is true
+- **THEN** `EventStreamPart` records SHALL use `Options.PartLevel` except for error parts
+- **AND** part records SHALL be logged only when `Options.LogStreamParts` is true
+
+#### Scenario: Upstream close selects one terminal event
+- **WHEN** the upstream stream closes
+- **THEN** exactly one terminal event SHALL be logged: `EventStreamFinish` for success, `EventStreamError` for a part error or deadline timeout, or `EventStreamCancelled` for cancellation
+
 ### Requirement: Provider behavior remains unchanged
 
 The logger middleware SHALL NOT mutate `provider.CallOptions`, SHALL NOT force `IncludeRawChunks`, SHALL NOT mutate `provider.GenerateResult`, and SHALL NOT mutate any `provider.StreamPart`.
@@ -277,16 +244,7 @@ The middleware SHALL preserve the upstream `StreamResult.Request` and `StreamRes
 
 ### Requirement: Composition and documentation
 
-The logger middleware SHALL compose as an ordinary `middleware.Middleware` with `middleware.Wrap`, `middleware.WrapLanguageModel`, `registry.WithLanguageModelMiddleware`, fallback models, and `middleware/agentobservability`.
-
-The package documentation and user-facing docs SHALL explain:
-
-- how to wrap a single model;
-- how to attach the logger through `registry.WithLanguageModelMiddleware`;
-- privacy defaults and capture/redaction controls;
-- that root `GenerateText` currently appears to provider middleware as stream calls because it uses `StreamText` internally;
-- that middleware ordering controls whether logs are outside or inside Agent Observability hooks/recording;
-- that this package is a lightweight provider-layer logger, not the full upstream telemetry integration system.
+Logger SHALL compose as ordinary `middleware.Middleware` with `middleware.Wrap`, `middleware.WrapLanguageModel`, `registry.WithLanguageModelMiddleware`, fallback models, and `middleware/agentobservability`. Package and user docs SHALL explain single-model and registry wrapping, privacy/capture/redaction, Agent Observability ordering, the `GenerateText` stream-call boundary, and the lightweight provider-layer rather than full upstream telemetry scope.
 
 #### Scenario: Registry applies logger middleware
 
@@ -305,6 +263,12 @@ The package documentation and user-facing docs SHALL explain:
 - **WHEN** users read the logger package or guide documentation
 - **THEN** the documentation SHALL state that the logger observes provider calls only
 - **AND** it SHALL NOT claim to replace operation-level telemetry, tracing integration registries, or tool execution telemetry
+
+#### Scenario: Documentation explains provider-call and ordering boundaries
+- **WHEN** users read package documentation or user-facing docs
+- **THEN** they SHALL explain that root `GenerateText` currently appears as stream calls to provider middleware because it uses `StreamText` internally
+- **AND** middleware order SHALL be documented as controlling whether logs are outside or inside Agent Observability hooks/recording
+- **AND** docs SHALL identify the package as a lightweight provider-layer logger, not the full upstream telemetry integration system
 
 ### Requirement: Selectable requested model identity
 Structured logging options SHALL provide a named identity-source setting. Its zero value SHALL preserve the current response-preferred behavior. Requested identity mode SHALL use the wrapped model provider and model ID for start and terminal records, SHALL NOT replace them from unary or streaming response metadata, and SHALL omit response/transport identity fields including provider response IDs. It SHALL observe and return all response metadata unchanged.
@@ -326,3 +290,29 @@ Structured logging options SHALL provide an optional positive stream-drain durat
 - **WHEN** downstream cancellation occurs and the immediate upstream never closes or remains continuously ready
 - **THEN** the logger-owned drain goroutine SHALL exit no later than the configured absolute deadline
 - **AND** terminal logging and downstream channel closure SHALL occur exactly once without waiting for the drain
+
+### Requirement: Logger options and capture controls
+
+Logger options SHALL configure logging, levels, request attributes, capture, redaction, per-part logging, and time. Capture SHALL be explicit opt-in with bounded payload controls.
+
+#### Scenario: Configure logger lifecycle options
+- **WHEN** a caller constructs `Options`
+- **THEN** it SHALL include `Logger *slog.Logger`, `Level slog.Leveler`, `ErrorLevel slog.Leveler`, `PartLevel slog.Leveler`, `Attrs []slog.Attr`, `DynamicAttrs func(ctx context.Context) []slog.Attr`, `Capture CaptureOptions`, `Redactor Redactor`, `LogStreamParts bool`, and `Clock func() time.Time`
+
+#### Scenario: Configure capture categories and bounds
+- **WHEN** a caller constructs `CaptureOptions`
+- **THEN** explicit opt-in controls SHALL include `Inputs`, `Outputs`, `Reasoning`, `ToolInputs`, `ToolOutputs`, `Files`, `RawChunks`, `Headers`, `ProviderOptions`, `RequestBody`, `ResponseBody`, `ProviderMetadata`, and `ErrorMessages`
+- **AND** bounded payload controls SHALL include `MaxStringLen` and `MaxJSONBytes`
+
+#### Scenario: Nil options select standard defaults
+- **WHEN** logger, level, redactor, or clock options are nil
+- **THEN** nil `Logger` SHALL use `slog.Default()`, nil `Level` SHALL use `slog.LevelInfo`, nil `ErrorLevel` SHALL use `slog.LevelError`, and nil `PartLevel` SHALL use `slog.LevelDebug`
+- **AND** nil `Redactor` SHALL use `DefaultRedactor()` and nil `Clock` SHALL use `time.Now`
+
+### Requirement: Logger common and terminal summaries
+
+Common records SHALL include stable `ai_sdk.*` call ID/type, provider/model, terminal outcome, and caller static/dynamic attrs, plus available `gen_ai.*` aliases for common GenAI provider/model/usage fields. Terminal records SHALL include fractional-millisecond duration, nanosecond duration, and success/failure. Stream terminal records SHALL include total and per-type part counts and time to first content when observed.
+
+#### Scenario: Successful terminal summaries include available fields
+- **WHEN** a model call completes successfully
+- **THEN** the terminal record SHALL include available finish reason, token usage with available cache/text/reasoning subfields, warning count/types, and response metadata

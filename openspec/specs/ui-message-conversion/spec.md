@@ -50,7 +50,8 @@ The root package SHALL define `FilePart.ProviderReference` as an optional `map[s
 - **AND** a data URL SHALL remain URL data rather than being normalized to base64 data
 
 ### Requirement: Ordinary UI file inputs preserve filename presence
-The root package SHALL represent ordinary UI `FilePart.Filename` as `*string`, where nil is absent and a pointer to an empty string is explicitly present empty. UI JSON round-trip, `ConvertToModelMessages`, provider-domain file content, and Go Gateway request projection SHALL preserve absent, empty, and non-empty filenames for user and assistant file parts. Provider-reference precedence, media type, and provider metadata association SHALL remain unchanged. UI `SourceDocumentPart` and generated/source-only descriptive filenames SHALL retain existing normalization. This requirement SHALL NOT add filenames to generated file SSE chunks or enable generated-media output through the Gateway.
+
+Ordinary UI FilePart.Filename SHALL be *string: nil absent, pointer to empty explicitly present empty. UI JSON round-trip, ConvertToModelMessages, provider-domain files and Go Gateway projection SHALL retain absent/empty/nonempty filenames for user/assistant files. Provider-reference precedence, media type and provider metadata association SHALL remain unchanged.
 
 #### Scenario: Filename presence survives the UI input path
 - **WHEN** otherwise equivalent user or assistant UI file JSON contains an absent, empty, or non-empty filename
@@ -66,9 +67,17 @@ The root package SHALL represent ordinary UI `FilePart.Filename` as `*string`, w
 - **THEN** filename presence SHALL agree in both roles through the resulting model/client request, not merely in an intermediate Go struct
 - **AND** any SSE consumed by the scenario SHALL use the registered chunk schema without adding an unregistered filename field to file chunks
 
+### Requirement: Descriptive and generated filename boundaries remain unchanged
+
+UI SourceDocumentPart and generated/source-only descriptive filenames SHALL retain existing normalization. Filename presence work SHALL NOT add filenames to generated file SSE chunks or enable generated-media Gateway output.
+
+#### Scenario: Source filenames retain normalization
+- **WHEN** source-document or generated/source-only descriptive filenames are serialized
+- **THEN** existing normalization SHALL remain; generated file SSE chunks SHALL NOT gain filenames and Gateway generated-media output SHALL NOT be enabled.
+
 ### Requirement: Tool conversion respects incomplete and preliminary states
 
-ConvertToModelMessages SHALL omit input-streaming tool parts by default and with WithIgnoreIncompleteToolCalls, without emitting calls, approvals or results for them. WithIgnoreIncompleteToolCalls SHALL retain only approval-responded, output-error, output-denied and output-available with preliminary not true. A filtered tool part SHALL NOT invoke ToModelOutput. Without that option, preliminary available outputs SHALL convert like other available outputs. Both static and dynamic parts SHALL follow the same filtering rules; existing step-block ordering SHALL remain intact.
+ConvertToModelMessages SHALL omit input-streaming parts by default and with WithIgnoreIncompleteToolCalls, emitting no calls/approvals/results. That option SHALL retain only approval-responded, output-error, output-denied and output-available with preliminary not true. Filtered parts SHALL NOT invoke ToModelOutput. Without the option, preliminary outputs SHALL convert like available outputs. Static/dynamic filtering and existing step-block order SHALL remain identical.
 
 #### Scenario: Input streaming is excluded without an option
 - **WHEN** static/dynamic input-streaming parts occur among assistant text and completed calls
@@ -83,7 +92,7 @@ ConvertToModelMessages SHALL omit input-streaming tool parts by default and with
 
 ### Requirement: Tool conversion preserves pinned input and metadata selection
 
-For output-error calls, conversion SHALL use non-null Input, otherwise RawInput, otherwise absent input. JSON null SHALL follow target nullish fallback. Call metadata SHALL use callProviderMetadata, falling back to resultProviderMetadata only for output-error. Provider-executed inline results SHALL use resultProviderMetadata with callProviderMetadata fallback only when result metadata is absent; a present empty object SHALL suppress fallback. Local tool-role results SHALL use callProviderMetadata. Existing provider-domain codecs' omission of empty provider-options maps and optional empty approval reason strings SHALL be an explicitly enumerated representation boundary, not generalized empty-value normalization or full model-JSON parity.
+Output-error calls SHALL use non-null Input, then RawInput, then absent input; JSON null SHALL follow target nullish fallback. Call metadata SHALL use callProviderMetadata, with resultProviderMetadata fallback only on output-error. Inline provider results SHALL use resultProviderMetadata, falling back to call metadata only if result metadata is absent; present empty SHALL suppress fallback. Local tool-role results SHALL use call metadata.
 
 #### Scenario: Legacy failed input falls back with nullish semantics
 - **WHEN** an output-error part has RawInput and absent or null Input
@@ -105,9 +114,17 @@ For output-error calls, conversion SHALL use non-null Input, otherwise RawInput,
 - **THEN** conversion SHALL select the empty result metadata and SHALL NOT expose the populated call metadata on the result
 - **AND** differential expectations SHALL account only for the existing provider codec's optional empty-map representation
 
+### Requirement: Provider codec empty normalization is an enumerated boundary
+
+Existing provider-domain omission of empty provider-options maps and optional empty approval reason strings SHALL be an explicitly enumerated representation boundary, not general empty-value normalization or full model-JSON parity.
+
+#### Scenario: Empty selected metadata does not justify general normalization
+- **WHEN** differential evidence encounters an explicitly empty selected metadata object or optional empty approval reason
+- **THEN** it SHALL account only for the existing enumerated codec boundary, not claim general empty normalization or full model-JSON parity.
+
 ### Requirement: Denial and output projection retain distinct target semantics
 
-A local output-denied tool SHALL produce an error-text result using its approval reason when present, including an empty string, or exactly `Tool call execution denied.` when absent. Negative approval-responded SHALL retain the separate synthetic execution-denied result path, including provider-executed cases. Successful available outputs SHALL retain configured ToModelOutput and its errors; output-error SHALL produce local error-text or provider error-json without invoking that callback. Filtered or denied parts SHALL NOT invoke it. Custom content, provider-reference files, filename presence, tool approval placement and normal string/JSON output conversion SHALL remain unchanged. Approval RequestReason SHALL project to the provider approval-request reason using the existing provider representation.
+Local output-denied SHALL emit error-text using present approval reason (even empty), otherwise exactly `Tool call execution denied.` Negative approval-responded SHALL retain separate synthetic execution-denied path, including provider-executed calls. Successful outputs SHALL retain ToModelOutput and its errors; output-error SHALL emit local error-text/provider error-json without it. Filtered/denied parts SHALL NOT invoke it.
 
 #### Scenario: Denied reason distinguishes absent and empty
 - **WHEN** output-denied parts have absent, empty and nonempty approval reasons
@@ -129,9 +146,17 @@ A local output-denied tool SHALL produce an error-text result using its approval
 - **THEN** the callback SHALL receive the tool call ID, original Input and Output
 - **AND** returned model output SHALL preserve its placement and callback errors SHALL abort conversion
 
+### Requirement: Tool projection retains custom content and approval placement
+
+Custom content, provider-reference files, filename presence, approval placement and normal string/JSON output conversion SHALL remain unchanged. Approval RequestReason SHALL project to provider approval-request reason through existing provider representation.
+
+#### Scenario: Request reason projects separately from decision reason
+- **WHEN** history contains a tool approval request with RequestReason and a separate completed tool returning custom content or a provider-reference file
+- **THEN** RequestReason SHALL become provider request reason while existing content, filenames and approval placement remain unchanged.
+
 ### Requirement: Provider prompts coalesce consecutive tool messages
 
-Provider prompt preparation SHALL coalesce consecutive tool-role messages after approval bookkeeping removal, preserving content order. Before appending the next message, the preceding message's provider options SHALL be deeply merged into its last content part, with part options taking precedence. The combined message SHALL retain the final message's provider options. Empty tool messages SHALL participate before final removal. Caller history SHALL NOT be mutated, and direct ConvertToModelMessages grouping SHALL remain unchanged.
+Prompt preparation SHALL coalesce consecutive tool-role messages after approval bookkeeping removal, keeping content order. Before next append, preceding message options SHALL deep-merge into its last part, with part options winning. Combined message SHALL retain final message options. Empty tool messages SHALL participate before removal. Caller history SHALL NOT mutate; direct ConvertToModelMessages grouping SHALL stay unchanged.
 
 #### Scenario: Resumed approval results share a tool message
 - **WHEN** approval resumption appends results immediately after an existing tool message
@@ -140,7 +165,7 @@ Provider prompt preparation SHALL coalesce consecutive tool-role messages after 
 
 ### Requirement: Data parts support opt-in text or file conversion
 
-The root package SHALL expose `WithConvertDataPart(fn func(DataPart) (*provider.ContentPart, error)) ConvertOption`. Conversion SHALL invoke a non-nil callback on user and assistant data parts in part order, retaining assistant step boundaries. Each assistant block SHALL complete assistant/data processing before projecting local tool results; provider-executed outputs SHALL remain inline. Nil callbacks/results SHALL skip data parts. Only text and file content discriminators SHALL be accepted; all other returned kinds and callback errors SHALL yield contextual conversion errors. Returned text/file content SHALL be preserved directly. System parts SHALL NOT invoke the hook. Existing Agent helper options SHALL NOT gain an implicit data converter.
+The root SHALL expose WithConvertDataPart(fn func(DataPart) (*provider.ContentPart, error)) ConvertOption. Non-nil callbacks SHALL run on user/assistant data in part order with assistant step boundaries. Nil callbacks/results SHALL skip data. Only text/file discriminators SHALL be accepted and preserved directly; other kinds/errors SHALL yield contextual conversion errors. System data SHALL NOT invoke the hook; Agent helpers SHALL NOT gain implicit converters.
 
 #### Scenario: User and assistant data preserve converter order
 - **WHEN** user/assistant messages interleave ordinary parts, data parts and assistant step starts
@@ -170,8 +195,17 @@ The root package SHALL expose `WithConvertDataPart(fn func(DataPart) (*provider.
 - **THEN** the converter SHALL NOT run for those system data parts
 - **AND** existing system text/provider-option handling SHALL remain unchanged
 
+### Requirement: Data and tool output processing retain step-local order
+
+Each assistant block SHALL complete assistant/data processing before projecting local tool results. Provider-executed outputs SHALL remain inline.
+
+#### Scenario: Data errors precede local result projection
+- **WHEN** a block contains a local available output then data whose converter errors
+- **THEN** data conversion SHALL fail before the local output callback, while provider-executed output callbacks remain inline.
+
 ### Requirement: Supported continuation metadata presence survives UI conversion
-For the affected currently supported text/reasoning, tool-call/basic-result, reasoning-file and source paths, root UI chunk serialization, assembled UI parts and UI message JSON round-trip SHALL preserve represented providerMetadata, callProviderMetadata and resultProviderMetadata presence independently: nil SHALL omit and a non-nil empty object SHALL serialize as an empty object. Namespace objects and nested JSON SHALL remain opaque. Latest non-nullish object assembly SHALL replace rather than recursively merge. ConvertToModelMessages SHALL retain represented continuation metadata as scoped providerOptions on applicable content; source metadata SHALL remain response-only under existing conversion behavior. Changes SHALL be limited to demonstrated metadata serialization/assembly/conversion gaps and SHALL NOT add metadata to pinned UI chunk variants that do not represent it.
+
+Supported text/reasoning, tool-call/basic-result, reasoning-file and source paths SHALL preserve represented providerMetadata/callProviderMetadata/resultProviderMetadata presence independently through root chunk serialization, assembled parts and UI JSON: nil omits, non-nil empty serializes {}. Namespaces/nested JSON SHALL stay opaque. Latest non-nullish object assembly SHALL replace, not recursively merge.
 
 #### Scenario: Empty text metadata clears frontend state
 - **WHEN** schema-parsed text chunks first carry metadata and a later registered chunk supplies an explicit empty metadata object
@@ -185,3 +219,11 @@ For the affected currently supported text/reasoning, tool-call/basic-result, rea
 #### Scenario: Cross-language proof precedes the core fix
 - **WHEN** a demonstrated metadata presence/assembly gap changes frontend-visible wire behavior
 - **THEN** a deterministic Go scenario and matching Vitest test SHALL consume SSE through parseJsonEventStream and uiMessageChunkSchema, assert chunk fields and assembled messages, and compare applicable converted model history
+
+### Requirement: Continuation metadata projection stays within represented scopes
+
+ConvertToModelMessages SHALL retain represented continuation metadata as scoped providerOptions on applicable content; source metadata SHALL remain response-only. Changes SHALL be limited to demonstrated serialization/assembly/conversion gaps and SHALL NOT add metadata to pinned chunk variants lacking it.
+
+#### Scenario: Source metadata remains response-only
+- **WHEN** supported source chunks carry explicit empty or populated metadata
+- **THEN** UI assembly/persistence SHALL preserve its presence without converting source metadata into provider prompt content or adding fields to unsupported chunk variants.

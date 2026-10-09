@@ -4,6 +4,7 @@
 
 Define the single Apache-licensed Go client for authenticated, bounded, strict ProviderWire V4 discovery and text calls through Grafana AI Gateway.
 ## Requirements
+
 ### Requirement: Single Apache-licensed public Gateway client
 The repository SHALL expose `github.com/grafana/ai-sdk/providers/grafana` as a separate Apache-2.0 Go module. It SHALL be the only public Go ProviderWire client, SHALL implement `registry.Provider` and return `provider.LanguageModel` values, and MUST NOT import or require `github.com/grafana/ai-sdk/ai-gateway`. Request codecs, response codecs, error decoders, and SSE readers SHALL remain private implementation details; no legacy wire codec or compatibility mode SHALL be restored.
 
@@ -20,9 +21,8 @@ The repository SHALL expose `github.com/grafana/ai-sdk/providers/grafana` as a s
 - **THEN** no low-level ProviderWire transport, legacy mode, server DTO, or server validator SHALL be public
 
 ### Requirement: Validated provider construction
-The client SHALL support direct Cloud Access Policy authentication, CAP-to-access-token exchange, and caller-managed short-lived access tokens through distinct typed constructors. `NewWithCloudCredentials` SHALL accept `CloudCredentialsConfig` containing `StackID int64` and `CAPToken`; `NewWithTokenExchange` SHALL accept `TokenExchangeConfig`; `NewWithAccessToken` SHALL retain `AccessTokenConfig`. The public API SHALL remove `NewWithCloudAuth` and `CloudAuthConfig` without compatibility aliases.
 
-Each constructor SHALL require a valid HTTP(S) ProviderWire API-prefix base URL, SHALL reject user info, query, and fragment components, and SHALL accept optional configured outer headers, HTTP client, and positive client-processing limits. Direct Cloud credentials SHALL require a positive stack ID and a nonempty, valid-UTF-8 CAP token without whitespace or control characters, without parsing the opaque token or requiring a token prefix. Token exchange SHALL require CAP token, token-exchange URL, and namespace and SHALL default an omitted audience to `ai-sdk`; direct access-token authentication SHALL require a non-empty access token. Construction SHALL not discover credentials or endpoints from ambient environment variables. Constructors SHALL preserve immutable client/header configuration and refusal to follow redirects.
+The client SHALL support direct Cloud Access Policy authentication, CAP-to-access-token exchange, and caller-managed short-lived access tokens through distinct typed constructors. `NewWithCloudCredentials` SHALL accept `CloudCredentialsConfig` containing `StackID int64` and `CAPToken`; `NewWithTokenExchange` SHALL accept `TokenExchangeConfig`; `NewWithAccessToken` SHALL retain `AccessTokenConfig`. The public API SHALL remove `NewWithCloudAuth` and `CloudAuthConfig` without compatibility aliases.
 
 #### Scenario: Cloud credential provider is constructed
 - **WHEN** valid stack ID, CAP token and base URL are supplied to `NewWithCloudCredentials`
@@ -45,12 +45,25 @@ Each constructor SHALL require a valid HTTP(S) ProviderWire API-prefix base URL,
 - **THEN** they SHALL use `NewWithTokenExchange` and `TokenExchangeConfig`, with no old-name aliases
 - **AND** exchange caching, audience defaults, cancellation and sanitized failures SHALL retain their existing behavior
 
+### Requirement: Gateway constructor URL and Cloud credential validation
+
+Each constructor SHALL require a valid HTTP(S) ProviderWire API-prefix base URL, SHALL reject user info, query, and fragment components, and SHALL accept optional configured outer headers, HTTP client, and positive client-processing limits. Direct Cloud credentials SHALL require a positive stack ID and a nonempty, valid-UTF-8 CAP token without whitespace or control characters, without parsing the opaque token or requiring a token prefix.
+
+#### Scenario: Gateway constructor URL and Cloud credential validation
+- **WHEN** Cloud construction receives user info in its base URL or whitespace in CAPToken
+- **THEN** construction SHALL fail before authentication or Gateway I/O without parsing the opaque token or discovering defaults from environment
+
+### Requirement: Exchange and token constructor defaults and immutability
+
+Token exchange SHALL require CAP token, token-exchange URL, and namespace and SHALL default an omitted audience to `ai-sdk`; direct access-token authentication SHALL require a non-empty access token. Construction SHALL not discover credentials or endpoints from ambient environment variables. Constructors SHALL preserve immutable client/header configuration and refusal to follow redirects.
+
+#### Scenario: Exchange and token constructor defaults and immutability
+- **WHEN** token-exchange construction omits audience and later caller code mutates its header map
+- **THEN** audience SHALL default to ai-sdk and client/header configuration SHALL remain immutable with redirects refused
+
 ### Requirement: Context-aware Grafana authentication
-Every Gateway request SHALL authenticate using only the flow selected at construction; the client SHALL NOT detect token types, fall back between flows, or retry with another credential after rejection.
 
-The Cloud-credential flow SHALL send exactly one outer `Authorization: Bearer <stack-id>:<CAP-token>` header with the stack ID formatted as decimal digits. It SHALL NOT perform token exchange, construct an authlib exchanger, send `X-Access-Token` or `X-Grafana-Id`, or emit trusted stack/policy assertions. Constructor-supplied credentials SHALL NOT be inserted into ProviderWire request bodies or client-generated diagnostics. A nonempty context-carried acting-user token SHALL cause an error before Gateway network I/O for this flow.
-
-The token-exchange and pre-minted access-token flows SHALL obtain one access token using the constructor's context-aware token source and place it in `X-Access-Token`. For these JWT flows, `WithUserIDToken` SHALL attach an optional acting-user token to a context and the client SHALL place a non-empty attached token in `X-Grafana-Id`. Authorization alone SHALL NOT replace JWT authentication for those flows. The client MUST NOT mint tokens locally or implement an additional CAP-token cache. Authentication failures and cancellation SHALL occur before Gateway network I/O when detected during request preparation.
+Every Gateway request SHALL authenticate using only the flow selected at construction; the client SHALL NOT detect token types, fall back between flows, or retry with another credential after rejection. The Cloud-credential flow SHALL send exactly one outer `Authorization: Bearer <stack-id>:<CAP-token>` header with the stack ID formatted as decimal digits.
 
 #### Scenario: CAP authenticates every supported operation
 - **WHEN** `ListModels`, `DoGenerate` or `DoStream` is invoked with Cloud credentials
@@ -89,10 +102,33 @@ The token-exchange and pre-minted access-token flows SHALL obtain one access tok
 - **WHEN** the endpoint responds with a redirect
 - **THEN** the client SHALL not follow it or send credentials to the redirect target
 
-### Requirement: Exact ProviderWire routes and protected headers
-The configured base URL SHALL be treated as the ProviderWire API prefix and the client SHALL append exactly `/config` for discovery and `/language-model` for calls without discarding an existing path prefix. Every model call SHALL use `POST`, JSON content type, the requested model ID, specification version `4`, exact streaming value `true` or `false`, and the matching JSON or SSE accept type. Configured headers SHALL be applied before call-level headers, followed by client-owned content negotiation, selected authentication, acting-user, and protocol headers so client-owned values each have one effective value and cannot be overridden. Accepted call-level headers SHALL also remain in the JSON request body.
+### Requirement: Cloud authentication isolation and acting-user refusal
 
-For the Cloud-credential flow, `Authorization`, `X-Access-Token`, `X-Grafana-Id`, `X-Scope-OrgID`, `X-Cloud-Org-ID`, and `X-Access-Policy-ID` SHALL be reserved case-insensitively. Supplying any reserved name in configured headers SHALL fail construction. Supplying any reserved name in call-level headers SHALL fail before request serialization and network I/O, including when its value is empty. JWT flows SHALL retain existing header ownership behavior.
+The Cloud-credential flow SHALL NOT perform token exchange, construct an authlib exchanger, send `X-Access-Token` or `X-Grafana-Id`, or emit trusted stack/policy assertions. Constructor-supplied credentials SHALL NOT be inserted into ProviderWire request bodies or client-generated diagnostics. A nonempty context-carried acting-user token SHALL cause an error before Gateway network I/O for the Cloud-credential flow.
+
+#### Scenario: Cloud authentication isolation and acting-user refusal
+- **WHEN** a Cloud call carries a nonempty context acting-user token
+- **THEN** it SHALL fail before Gateway I/O rather than exchanging tokens, emitting JWT/assertion headers or leaking constructor credentials into body/diagnostics
+
+### Requirement: Context-aware JWT headers and token ownership
+
+The token-exchange and pre-minted access-token flows SHALL obtain one access token using the constructor's context-aware token source and place it in `X-Access-Token`. For these JWT flows, `WithUserIDToken` SHALL attach an optional acting-user token to a context and the client SHALL place a non-empty attached token in `X-Grafana-Id`. Authorization alone SHALL NOT replace JWT authentication for those flows. The client MUST NOT mint tokens locally or implement an additional CAP-token cache.
+
+#### Scenario: Context-aware JWT headers and token ownership
+- **WHEN** a token-exchange call supplies a nonempty WithUserIDToken token
+- **THEN** the request SHALL use X-Access-Token and X-Grafana-Id without substituting Authorization, local minting or a second CAP cache
+
+### Requirement: Authentication preparation failure boundary
+
+Authentication failures and cancellation SHALL occur before Gateway network I/O when detected during request preparation.
+
+#### Scenario: Authentication preparation failure boundary
+- **WHEN** authentication preparation observes cancellation or a token-source failure
+- **THEN** the Gateway request SHALL NOT be issued
+
+### Requirement: Exact ProviderWire routes and protected headers
+
+The configured base URL SHALL be treated as the ProviderWire API prefix and the client SHALL append exactly `/config` for discovery and `/language-model` for calls without discarding an existing path prefix. Every model call SHALL use `POST`, JSON content type, the requested model ID, specification version `4`, exact streaming value `true` or `false`, and the matching JSON or SSE accept type.
 
 #### Scenario: Unary request is emitted
 - **WHEN** `DoGenerate` is invoked for model `assistant`
@@ -118,8 +154,25 @@ For the Cloud-credential flow, `Authorization`, `X-Access-Token`, `X-Grafana-Id`
 - **WHEN** `CallOptions.Headers` contains a representable header entry accepted by the selected authentication flow
 - **THEN** it SHALL participate in outer-header composition and remain present in the serialized `headers` body member for the server to accept or reject
 
+### Requirement: Client header precedence and Cloud reserved names
+
+Configured headers SHALL be applied before call-level headers, followed by client-owned content negotiation, selected authentication, acting-user, and protocol headers so client-owned values each have one effective value and cannot be overridden. Accepted call-level headers SHALL also remain in the JSON request body. For the Cloud-credential flow, `Authorization`, `X-Access-Token`, `X-Grafana-Id`, `X-Scope-OrgID`, `X-Cloud-Org-ID`, and `X-Access-Policy-ID` SHALL be reserved case-insensitively.
+
+#### Scenario: Client header precedence and Cloud reserved names
+- **WHEN** configured and call headers collide with client-owned protocol values
+- **THEN** client-owned values SHALL have one effective value, accepted call headers SHALL remain in the body and Cloud credential/identity names SHALL remain reserved case-insensitively
+
+### Requirement: Cloud reserved-header refusal timing
+
+Supplying any Cloud reserved header name in configured headers SHALL fail construction. Supplying any Cloud reserved header name in call-level headers SHALL fail before request serialization and network I/O, including when its value is empty. JWT flows SHALL retain existing header ownership behavior.
+
+#### Scenario: Cloud reserved-header refusal timing
+- **WHEN** a call-level Authorization header has an empty value
+- **THEN** the Cloud flow SHALL fail before serialization/network I/O, while configured reserved names SHALL fail construction and JWT ownership SHALL remain unchanged
+
 ### Requirement: Cloud credential client evidence
-Automated tests SHALL compare the Go Cloud-credential flow with the exact registered Vercel Gateway client configured with `apiKey: "<stack-id>:<CAP-token>"`. They SHALL exercise discovery, unary generation and streaming through a deterministic test-only authenticating edge and the existing Cloud-mode Gateway command. The edge SHALL use dummy credentials and predetermined scope/stack outcomes, not claim to implement production CAP validation. Existing JWT and exchange evidence SHALL remain passing under the renamed API.
+
+Automated tests SHALL compare the Go Cloud-credential flow with the exact registered Vercel Gateway client configured with `apiKey: "<stack-id>:<CAP-token>"`. They SHALL exercise discovery, unary generation and streaming through a deterministic test-only authenticating edge and the existing Cloud-mode Gateway command. The edge SHALL use dummy credentials and predetermined scope/stack outcomes, not claim to implement production CAP validation.
 
 #### Scenario: Both clients use the Cloud edge contract
 - **WHEN** Go and pinned Vercel clients perform equivalent supported calls with the same dummy stack/CAP credential
@@ -140,8 +193,17 @@ Automated tests SHALL compare the Go Cloud-credential flow with the exact regist
 - **WHEN** test results or support status are documented
 - **THEN** local edge-shim evidence SHALL be distinguished from live CAP validation, policy revocation/expiry and deployment network-isolation evidence
 
+### Requirement: Renamed JWT and exchange regression evidence
+
+Existing JWT and exchange evidence SHALL remain passing under the renamed API.
+
+#### Scenario: Renamed JWT and exchange regression evidence
+- **WHEN** JWT and token-exchange tests run using the renamed API
+- **THEN** their existing evidence SHALL remain passing
+
 ### Requirement: Shared Go and Vercel authentication guidance
-User-facing guidance SHALL explain how Go and server-side Vercel clients authenticate to Grafana AI Gateway, using one shared guide under `docs/` linked from the documentation index and existing client/server entry points. The guide SHALL distinguish application-user login, Gateway credentials and server-owned model-provider credentials. It SHALL cover URL and credential selection, least-privilege CAP scopes and stack access, HTTPS, secure storage and rotation without exposing internal proxy names, backend listener configuration or test-harness details. Exhaustive Go API reference SHALL remain in godoc.
+
+User-facing guidance SHALL explain how Go and server-side Vercel clients authenticate to Grafana AI Gateway, using one shared guide under `docs/` linked from the documentation index and existing client/server entry points. The guide SHALL distinguish application-user login, Gateway credentials and server-owned model-provider credentials.
 
 #### Scenario: User chooses a Cloud client
 - **WHEN** a Go or Vercel user follows the public Cloud setup
@@ -168,8 +230,17 @@ User-facing guidance SHALL explain how Go and server-side Vercel clients authent
 - **THEN** their configurations and demonstrated operations SHALL be compiled or typechecked and exercised by deterministic tests using the registered package versions
 - **AND** documentation links/navigation SHALL pass the repository docs checks
 
+### Requirement: Public authentication guide security and reference boundaries
+
+The shared guide SHALL cover URL and credential selection, least-privilege CAP scopes and stack access, HTTPS, secure storage and rotation without exposing internal proxy names, backend listener configuration or test-harness details. Exhaustive Go API reference SHALL remain in godoc.
+
+#### Scenario: Public authentication guide security and reference boundaries
+- **WHEN** a user reads Cloud credential provisioning instructions
+- **THEN** the guide SHALL cover least privilege, HTTPS, storage and rotation without internal proxy/listener/harness details, leaving exhaustive API reference in godoc
+
 ### Requirement: Explicit request projection and presence
-The client SHALL explicitly map the complete current `provider.CallOptions` shape into the registered LanguageModelV4 Gateway request projection without importing server DTOs or calling server validators. It SHALL preserve every representable absent, explicit zero, explicit false, empty string, empty array, empty object, nested null, selected empty union arm, URL string, and supported binary-to-base64 distinction. It SHALL omit the Go zero value `ReasoningProviderDefault` and encode every non-zero registered reasoning value. It SHALL reject invalid UTF-8, non-finite numeric values, invalid raw JSON, unknown discriminators, conflicting selected arms, and any other value without an unambiguous registered representation before authentication or network I/O. Ordinary prompt and tool-result file projection SHALL support data, URL, reference, and text arms, preserving selected empties and absent/empty/non-empty filenames. Message and file-part options SHALL retain their registered scopes. Reasoning files SHALL retain their narrower data/URL-only projection without implying server runtime support.
+
+The client SHALL explicitly map the complete current `provider.CallOptions` shape into the registered LanguageModelV4 Gateway request projection without importing server DTOs or calling server validators. It SHALL preserve every representable absent, explicit zero, explicit false, empty string, empty array, empty object, nested null, selected empty union arm, URL string, and supported binary-to-base64 distinction.
 
 #### Scenario: Presence-sensitive text request is encoded
 - **WHEN** a text/scalar call contains explicit zero, false, empty collections, empty strings, and opaque nested JSON
@@ -192,14 +263,25 @@ The client SHALL explicitly map the complete current `provider.CallOptions` shap
 - **WHEN** a reasoning file selects reference or text, or supplies an inactive filename
 - **THEN** client encoding SHALL fail before authentication or network I/O
 
+### Requirement: Client reasoning and invalid input projection
+
+The client SHALL omit the Go zero value `ReasoningProviderDefault` and encode every non-zero registered reasoning value. The client SHALL reject invalid UTF-8, non-finite numeric values, invalid raw JSON, unknown discriminators, conflicting selected arms, and any other value without an unambiguous registered representation before authentication or network I/O.
+
+#### Scenario: Client reasoning and invalid input projection
+- **WHEN** a call supplies ReasoningProviderDefault or non-finite scalar input
+- **THEN** the default SHALL be omitted and invalid input SHALL fail before authentication/network I/O without silent reinterpretation
+
+### Requirement: Ordinary and reasoning file projection scopes
+
+Ordinary prompt and tool-result file projection SHALL support data, URL, reference, and text arms, preserving selected empties and absent/empty/non-empty filenames. Message and file-part options SHALL retain their registered scopes. Reasoning files SHALL retain their narrower data/URL-only projection without implying server runtime support.
+
+#### Scenario: Ordinary and reasoning file projection scopes
+- **WHEN** a prompt file selects empty reference data and a reasoning file selects URL data
+- **THEN** the ordinary selected empty and filename presence SHALL survive, while reasoning files SHALL remain data/URL-only without claiming server execution support
+
 ### Requirement: Bounded normalized unary consumption
-For text/reasoning blocks and tool input/call/result variants, the client SHALL decode only fields consumed by the selected variant and SHALL ignore unrelated variant fields rather than enforce the server's strict output union. Ordinary typed decoding SHALL reject unrepresentable consumed values. Optional null tool flags SHALL normalize to Go absence/zero; explicit false Dynamic and Preliminary values SHALL retain pointer presence. Required payload checks, opaque metadata structure and transport resource bounds SHALL remain unchanged.
 
-For successful unary responses, the client SHALL require JSON media type, read within its unary limit, accept one complete valid document and map its supported registered content, including provider calls and results, finishReason, usage, warnings and ordinary result/content providerMetadata into provider.GenerateResult. It SHALL reject malformed required fields, unknown content/finish/warning discriminators, invalid usage, trailing JSON and oversized input. Supported source and reasoning families SHALL remain governed by their capabilities.
-
-The client SHALL replace server request/response: Request.Body SHALL be the locally encoded request; Response.Headers/Body SHALL be the bounded Gateway HTTP response. Native response id/modelId/timestamp SHALL remain available inside that raw body but SHALL NOT populate typed Response identity, matching the registered TS client's replacement. No native diagnostic access carrier SHALL be introduced by this behavior.
-
-Warnings SHALL preserve active registered fields, required empty strings, order and multiplicity, defaulting to a non-nil empty slice when absent/null. Unary/stream decoding SHALL share warning validation. Optional absent/empty details SHALL decode to the same empty Go string as a documented representation adaptation. Ordinary providerMetadata SHALL be independently decoded as opaque object-valued namespaces under gateway-provider-metadata, without Gateway imports, inventories or IncludeRawChunks gating. Present null, scalar, array, malformed or invalid-UTF-8 metadata SHALL fail explicitly under the bounded protocol-error path.
+For text/reasoning blocks and tool input/call/result variants, the client SHALL decode only fields consumed by the selected variant and SHALL ignore unrelated variant fields rather than enforce the server's strict output union. Ordinary typed decoding SHALL reject unrepresentable consumed values. Optional null tool flags SHALL normalize to Go absence/zero; explicit false Dynamic and Preliminary values SHALL retain pointer presence.
 
 #### Scenario: Minimal unary success is consumed
 - **WHEN** the server returns valid ordered text content, registered finish reason, and valid usage
@@ -238,8 +320,41 @@ Warnings SHALL preserve active registered fields, required empty strings, order 
 - **WHEN** call/result flags are omitted, null, false or true
 - **THEN** null SHALL normalize to absence/zero, false SHALL retain Dynamic/Preliminary pointer presence and true SHALL remain enabled
 
+### Requirement: Bounded unary document and required payload consumption
+
+Required payload checks, opaque metadata structure and transport resource bounds SHALL remain unchanged. For successful unary responses, the client SHALL require JSON media type, read within its unary limit, accept one complete valid document and map its supported registered content, including provider calls and results, finishReason, usage, warnings and ordinary result/content providerMetadata into provider.GenerateResult.
+
+#### Scenario: Bounded unary document and required payload consumption
+- **WHEN** a successful response has valid ordered content and ordinary metadata at the configured byte limit
+- **THEN** the client SHALL consume one complete JSON document into GenerateResult with required payload, metadata and transport bounds intact
+
+### Requirement: Unary malformed input and Gateway-hop transport replacement
+
+The client SHALL reject malformed required fields, unknown content/finish/warning discriminators, invalid usage, trailing JSON and oversized input. Supported source and reasoning families SHALL remain governed by their capabilities. The client SHALL replace server request/response: Request.Body SHALL be the locally encoded request; Response.Headers/Body SHALL be the bounded Gateway HTTP response.
+
+#### Scenario: Unary malformed input and Gateway-hop transport replacement
+- **WHEN** a valid response has server transport fields and an invalid response has trailing JSON
+- **THEN** the valid result SHALL replace request/response with local request and bounded Gateway response, and invalid input SHALL fail atomically
+
+### Requirement: Unary native identity and shared warning consumption
+
+Native response id/modelId/timestamp SHALL remain available inside that raw body but SHALL NOT populate typed Response identity, matching the registered TS client's replacement. No native diagnostic access carrier SHALL be introduced by this behavior. Warnings SHALL preserve active registered fields, required empty strings, order and multiplicity, defaulting to a non-nil empty slice when absent/null. Unary/stream decoding SHALL share warning validation.
+
+#### Scenario: Unary native identity and shared warning consumption
+- **WHEN** a response contains native identity and ordered warnings with required empty fields
+- **THEN** raw body SHALL retain identity without typed identity or a diagnostic carrier, and shared warning validation SHALL retain active fields and default absent/null warnings to an empty slice
+
+### Requirement: Unary warning details and opaque metadata validation
+
+Optional absent/empty details SHALL decode to the same empty Go string as a documented representation adaptation. Ordinary providerMetadata SHALL be independently decoded as opaque object-valued namespaces under gateway-provider-metadata, without Gateway imports, inventories or IncludeRawChunks gating. Present null, scalar, array, malformed or invalid-UTF-8 metadata SHALL fail explicitly under the bounded protocol-error path.
+
+#### Scenario: Unary warning details and opaque metadata validation
+- **WHEN** result metadata contains an unknown namespace object and empty warning details
+- **THEN** the object SHALL survive independently of raw filtering and details SHALL normalize to empty Go string; null/scalar/array/malformed metadata SHALL fail through bounded protocol errors
+
 ### Requirement: Successful unary transport read failures retain retryability
-When a successful HTTP 200 `DoGenerate` response body fails to read because of transport I/O after headers, the Grafana client SHALL return a retryable `*provider.APICallError` with HTTP status 200, a bounded locally worded primary message, and a discoverable underlying read cause, without returning a partial result or making another model request. Wrong media type, malformed JSON, malformed consumed fields, and unary byte-limit violations SHALL remain non-retryable protocol failures. Context cancellation or deadline expiry SHALL remain discoverable with `errors.Is` and SHALL NOT be classified as a retryable transport failure. Non-2xx Gateway error responses and discovery retain their existing classification; this requirement does not add any new public service-error category.
+
+When a successful HTTP 200 `DoGenerate` response body fails to read because of transport I/O after headers, the Grafana client SHALL return a retryable `*provider.APICallError` with HTTP status 200, a bounded locally worded primary message, and a discoverable underlying read cause, without returning a partial result or making another model request. Wrong media type, malformed JSON, malformed consumed fields, and unary byte-limit violations SHALL remain non-retryable protocol failures.
 
 #### Scenario: HTTP 200 response body is interrupted after headers
 - **WHEN** the real HTTP handler sends JSON headers and a partial, below-limit body with a declared longer `Content-Length`, then closes the connection before the body completes
@@ -257,8 +372,17 @@ When a successful HTTP 200 `DoGenerate` response body fails to read because of t
 - **WHEN** an established `DoStream` response delivers one or more parts and then its transport fails
 - **THEN** the client SHALL NOT issue another HTTP request or replay any previously delivered part
 
+### Requirement: Unary read cancellation and existing classification boundaries
+
+Context cancellation or deadline expiry SHALL remain discoverable with `errors.Is` and SHALL NOT be classified as a retryable transport failure. Non-2xx Gateway error responses and discovery retain their existing classification; this requirement does not add any new public service-error category.
+
+#### Scenario: Unary read cancellation and existing classification boundaries
+- **WHEN** context cancellation interrupts a successful response read
+- **THEN** errors.Is SHALL retain context identity without retryable transport classification or a new public service-error category
+
 ### Requirement: Incremental bounded SSE consumption
-A successful streaming setup SHALL require SSE media type and return a `StreamResult` whose request body and response headers are client-owned. One goroutine SHALL own the body, parse incrementally under configured cumulative-byte, complete-event-byte, and event-count limits, send mapped parts with context-aware backpressure, close the body, and close the output channel exactly once. It SHALL not buffer the full response or an unbounded line/event. The mapper SHALL accept supported text, function-tool and provider-tool calls/results, safe error parts and bounded raw parts needed for registered filtering behavior. Supported execution/dynamic/preliminary markers and opaque tool metadata SHALL be preserved under gateway-provider-metadata. Input-start dynamic SHALL retain absent, explicit false and true independently through decoding; it SHALL NOT be eagerly defaulted. A deferred result SHALL NOT require a repeated call in the same response. Every unsupported, malformed or oversized event SHALL emit at most one terminal non-retryable protocol PartError and close. Server lifecycle validation SHALL NOT be imported into the client as a new independent protocol dialect.
+
+A successful streaming setup SHALL require SSE media type and return a `StreamResult` whose request body and response headers are client-owned. One goroutine SHALL own the body, parse incrementally under configured cumulative-byte, complete-event-byte, and event-count limits, send mapped parts with context-aware backpressure, close the body, and close the output channel exactly once. It SHALL not buffer the full response or an unbounded line/event.
 
 #### Scenario: Text stream completes
 - **WHEN** the server emits valid start, metadata, sequential text parts, safe errors, and finish frames
@@ -288,10 +412,25 @@ A successful streaming setup SHALL require SSE media type and return a `StreamRe
 - **WHEN** the current request carries an unresolved provider-owned call in history and the response contains only its result and finish
 - **THEN** the client SHALL deliver the success or error result without demanding a repeated call or adding a result-level providerExecuted wire member
 
-### Requirement: Registered stream normalization
-The client SHALL ignore an SSE data payload exactly equal to `[DONE]`, SHALL treat transport clean EOF as clean completion with or without a preceding finish, SHALL filter `raw` parts unless `IncludeRawChunks` is true, SHALL convert valid response-metadata timestamps into `time.Time`, and SHALL preserve response order. Context cancellation SHALL end the stream without manufacturing a provider error. A finish received before EOF SHALL be delivered before channel closure; the client SHALL not create a synthetic finish or require the server to emit `[DONE]`.
+### Requirement: Supported SSE tool payload and marker preservation
 
-Native response-metadata id/modelId/timestamp SHALL be optional. Supplied identity strings SHALL be preserved without public route syntax checks, trimming, canonical replacement or fabricated defaults. Absent and explicitly empty optional wire strings SHALL decode to empty Go strings; absent timestamp SHALL decode to zero time. Bounded original-document UTF-8/type validation and valid RFC3339Nano timestamp parsing SHALL remain effective. Present null/wrong-type identity fields or invalid timestamps SHALL fail through the bounded protocol-error path. Native provider identity, native diagnostic bodies/headers and opaque metadata are not added by this identity mapper.
+The mapper SHALL accept supported text, function-tool and provider-tool calls/results, safe error parts and bounded raw parts needed for registered filtering behavior. Supported execution/dynamic/preliminary markers and opaque tool metadata SHALL be preserved under gateway-provider-metadata. Input-start dynamic SHALL retain absent, explicit false and true independently through decoding; it SHALL NOT be eagerly defaulted. A deferred result SHALL NOT require a repeated call in the same response.
+
+#### Scenario: Supported SSE tool payload and marker preservation
+- **WHEN** input-start contains dynamic false and a deferred provider result arrives without a repeated call
+- **THEN** the client SHALL preserve explicit false presence, supported ownership/preview markers and opaque metadata without requiring repeated calls
+
+### Requirement: SSE protocol failure without server lifecycle dialect
+
+Every unsupported, malformed or oversized event SHALL emit at most one terminal non-retryable protocol PartError and close. Server lifecycle validation SHALL NOT be imported into the client as a new independent protocol dialect.
+
+#### Scenario: SSE protocol failure without server lifecycle dialect
+- **WHEN** an event has an unknown discriminator or exceeds its configured event limit
+- **THEN** the client SHALL emit at most one terminal non-retryable protocol PartError and close without importing server lifecycle validation
+
+### Requirement: Registered stream normalization
+
+The client SHALL ignore an SSE data payload exactly equal to `[DONE]`, SHALL treat transport clean EOF as clean completion with or without a preceding finish, SHALL filter `raw` parts unless `IncludeRawChunks` is true, SHALL convert valid response-metadata timestamps into `time.Time`, and SHALL preserve response order. Context cancellation SHALL end the stream without manufacturing a provider error.
 
 #### Scenario: Native stream identity is not a public route
 - **WHEN** native id/modelId contain valid Unicode or punctuation outside route-ID syntax
@@ -325,8 +464,25 @@ Native response-metadata id/modelId/timestamp SHALL be optional. Supplied identi
 - **WHEN** a valid stream or `[DONE]` is followed by transport EOF before any finish
 - **THEN** the client SHALL close cleanly to match the registered client's observable EOF behavior
 
+### Requirement: Client stream finish and optional native identity normalization
+
+A finish received before EOF SHALL be delivered before channel closure; the client SHALL not create a synthetic finish or require the server to emit `[DONE]`. Native response-metadata id/modelId/timestamp SHALL be optional. Supplied identity strings SHALL be preserved without public route syntax checks, trimming, canonical replacement or fabricated defaults. Absent and explicitly empty optional wire strings SHALL decode to empty Go strings; absent timestamp SHALL decode to zero time.
+
+#### Scenario: Client stream finish and optional native identity normalization
+- **WHEN** finish follows partial native metadata with an explicit empty modelId
+- **THEN** finish SHALL be delivered before closure and optional identity SHALL normalize to Go zero values without fabricated defaults or route checks
+
+### Requirement: Stream identity document validation boundary
+
+Bounded original-document UTF-8/type validation and valid RFC3339Nano timestamp parsing SHALL remain effective. Present null/wrong-type identity fields or invalid timestamps SHALL fail through the bounded protocol-error path. Native provider identity, native diagnostic bodies/headers and opaque metadata are not added by this identity mapper.
+
+#### Scenario: Stream identity document validation boundary
+- **WHEN** response-metadata supplies null modelId or an invalid timestamp
+- **THEN** the bounded protocol-error path SHALL reject it without adding provider identity, native diagnostic transport or opaque metadata through the identity mapper
+
 ### Requirement: Optional bounded provider raw usage consumption
-On a successful unary result and a streaming finish, the Grafana client SHALL preserve a supplied `usage.raw` as a `provider.Usage.Raw` JSON object, including nested provider-native fields and `{}`; absent raw SHALL remain absent. The client SHALL reject present null, scalar, array, malformed or incomplete JSON, and a retained raw object larger than 1,048,576 bytes. This raw-object limit applies to the retained representation after JSON decoding/compaction removes insignificant whitespace around and inside the value; the original complete unary response or event SHALL remain bounded by its configured `UnaryBytes` or `StreamEventBytes`. The client SHALL validate those original bounded documents for UTF-8 and JSON syntax before Go decoding can normalize invalid bytes. Valid JSON with lone or paired escaped surrogates SHALL be accepted, with raw-object escapes preserved in `provider.Usage.Raw`. The existing cumulative-stream and event-count limits SHALL still apply, and intermediate `decodeFields`/usage-map copies SHALL remain bounded by the full-response or event limits. The client SHALL continue to validate known normalized token counts and filter unrelated unknown usage and unrepresented transport fields without filtering ordinary registered providerMetadata; distinct `type: "raw"` stream-part filtering SHALL remain governed by `IncludeRawChunks` and SHALL NOT filter `usage.raw`.
+
+On a successful unary result and a streaming finish, the Grafana client SHALL preserve a supplied `usage.raw` as a `provider.Usage.Raw` JSON object, including nested provider-native fields and `{}`; absent raw SHALL remain absent. The client SHALL reject present null, scalar, array, malformed or incomplete JSON, and a retained raw object larger than 1,048,576 bytes.
 
 #### Scenario: Unary and finish have present or absent raw
 - **WHEN** a bounded valid unary result or finish contains nested raw usage, `{}`, or no raw member
@@ -350,8 +506,33 @@ On a successful unary result and a streaming finish, the Grafana client SHALL pr
 - **WHEN** a finish includes `usage.raw` and `IncludeRawChunks` is false
 - **THEN** the finish SHALL retain its raw usage even when independent `type: "raw"` stream parts are filtered
 
+### Requirement: Retained raw-object and original-document limits
+
+The 1,048,576-byte raw-object limit applies to the retained representation after JSON decoding/compaction removes insignificant whitespace around and inside the value; the original complete unary response or event SHALL remain bounded by its configured `UnaryBytes` or `StreamEventBytes`. The client SHALL validate those original bounded documents for UTF-8 and JSON syntax before Go decoding can normalize invalid bytes.
+
+#### Scenario: Retained raw-object and original-document limits
+- **WHEN** usage.raw contains substantial JSON whitespace in an otherwise bounded document
+- **THEN** the 1,048,576-byte raw cap SHALL apply after compaction, while original response/event bounds and pre-decode UTF-8/syntax validation SHALL still apply
+
+### Requirement: Raw usage escape preservation and bounded intermediates
+
+Valid JSON with lone or paired escaped surrogates SHALL be accepted, with raw-object escapes preserved in `provider.Usage.Raw`. The existing cumulative-stream and event-count limits SHALL still apply, and intermediate `decodeFields`/usage-map copies SHALL remain bounded by the full-response or event limits.
+
+#### Scenario: Raw usage escape preservation and bounded intermediates
+- **WHEN** usage.raw contains a lone escaped UTF-16 surrogate in a valid object
+- **THEN** the escape SHALL be accepted and retained with cumulative/event-count bounds and bounded intermediate usage copies
+
+### Requirement: Raw usage independence from raw stream filtering
+
+The client SHALL continue to validate known normalized token counts and filter unrelated unknown usage and unrepresented transport fields without filtering ordinary registered providerMetadata; distinct `type: "raw"` stream-part filtering SHALL remain governed by `IncludeRawChunks` and SHALL NOT filter `usage.raw`.
+
+#### Scenario: Raw usage independence from raw stream filtering
+- **WHEN** IncludeRawChunks is false and finish carries normalized counts plus usage.raw
+- **THEN** normalized counts SHALL still be validated and usage.raw and registered metadata SHALL survive independently of raw-part filtering
+
 ### Requirement: Closed Gateway error classification
-Every non-2xx model or discovery response SHALL be read within the configured error-body limit and mapped only from the registered public error envelope into the closed categories authentication, forbidden, invalid request, model not found, rate limit, failed dependency, and internal server. The resulting `GatewayError` SHALL expose category, public code, public message, HTTP status, and status-derived retryability and SHALL unwrap to a bounded `*provider.APICallError`. For a valid registered envelope it SHALL retain the complete bounded JSON document in that cause's Data and ResponseBody, including additive providerMetadata.gateway.evidence, rather than reconstructing only the registered error fields. Decoding SHALL remain independent of Gateway imports and SHALL NOT introduce a new public error API or interpret every opaque evidence member. Unknown or malformed error bodies, wrong media types, and transport failures SHALL use local bounded error text rather than copying arbitrary response bytes into the primary message. Context cancellation and deadlines SHALL remain discoverable with `errors.Is`. HTTP error envelopes and committed error payloads SHALL use standard Go JSON struct-member matching, including case-insensitive matches and standard duplicate-member processing, rather than a custom exact-name filter. Opaque raw data SHALL remain unmodified by that typed decoding.
+
+Every non-2xx model or discovery response SHALL be read within the configured error-body limit and mapped only from the registered public error envelope into the closed categories authentication, forbidden, invalid request, model not found, rate limit, failed dependency, and internal server. The resulting `GatewayError` SHALL expose category, public code, public message, HTTP status, and status-derived retryability and SHALL unwrap to a bounded `*provider.APICallError`.
 
 #### Scenario: Registered error is returned
 - **WHEN** the server returns one of the registered error type/status/code documents
@@ -384,10 +565,33 @@ Every non-2xx model or discovery response SHALL be read within the configured er
 - **WHEN** a consumer wrapper reads an attributed PartError followed by valid text and finish
 - **THEN** it SHALL observe the retained data and original event order without enabling operator capture or changing core result/error policy
 
-### Requirement: Authenticated public discovery
-`Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the configured discovery limit, and return public ID, name, optional description and the specification version/provider/model-ID triple, plus optional typed `ModelInfo.Gateway *ConfiguredRoute`. `ConfiguredRoute` SHALL expose `Aliases`, `Primary` and ordered `Fallbacks`; each `ConfiguredCandidate` SHALL expose `ProviderInstance`, `Provider` and `ProviderModelID`. This SHALL remain the existing discovery method, without a second client or AGPL module dependency.
+### Requirement: Complete bounded error envelope retention
 
-The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the existing configurable document-byte limit and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency. Standard Go JSON behavior SHALL apply, including case-insensitive field matching, zero/nil values for missing/null fields and U+FFFD normalization of escaped lone UTF-16 surrogates. A missing/null models collection, malformed JSON, byte overflow or type-decoding error SHALL invalidate the complete result. It SHALL preserve response order and configured alias/fallback order exactly as served, without expanding aliases into extra rows. Missing/null gateway SHALL remain nil. Unknown additive members SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
+For a valid registered envelope the client SHALL retain the complete bounded JSON document in the APICallError cause's Data and ResponseBody, including additive providerMetadata.gateway.evidence, rather than reconstructing only the registered error fields. Decoding SHALL remain independent of Gateway imports and SHALL NOT introduce a new public error API or interpret every opaque evidence member.
+
+#### Scenario: Complete bounded error envelope retention
+- **WHEN** a valid error envelope contains additive providerMetadata.gateway.evidence
+- **THEN** the API-call cause SHALL retain the entire bounded document as Data and ResponseBody without importing Gateway or adding an evidence interpretation API
+
+### Requirement: Error fallback messages and standard Go member matching
+
+Unknown or malformed error bodies, wrong media types, and transport failures SHALL use local bounded error text rather than copying arbitrary response bytes into the primary message. Context cancellation and deadlines SHALL remain discoverable with `errors.Is`. HTTP error envelopes and committed error payloads SHALL use standard Go JSON struct-member matching, including case-insensitive matches and standard duplicate-member processing, rather than a custom exact-name filter.
+
+#### Scenario: Error fallback messages and standard Go member matching
+- **WHEN** a valid envelope uses case-variant members and a malformed envelope contains arbitrary response bytes
+- **THEN** valid typed decoding SHALL follow standard Go matching/duplicate processing, while malformed input SHALL use bounded local primary text and preserve context error identity
+
+### Requirement: Opaque error bytes remain unmodified
+
+Opaque raw data SHALL remain unmodified by that typed decoding.
+
+#### Scenario: Opaque error bytes remain unmodified
+- **WHEN** typed error decoding accepts case-variant JSON member names
+- **THEN** retained opaque data SHALL preserve the original bytes
+
+### Requirement: Authenticated public discovery
+
+`Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the configured discovery limit, and return public ID, name, optional description and the specification version/provider/model-ID triple, plus optional typed `ModelInfo.Gateway *ConfiguredRoute`. `ConfiguredRoute` SHALL expose `Aliases`, `Primary` and ordered `Fallbacks`; each `ConfiguredCandidate` SHALL expose `ProviderInstance`, `Provider` and `ProviderModelID`.
 
 #### Scenario: Configured models and aliases are discovered
 - **WHEN** the authenticated service returns canonical model rows with configured route facts
@@ -411,8 +615,33 @@ The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after
 - **WHEN** an authorized Go caller reads ListModels rows and inspects Gateway.Primary and Gateway.Fallbacks
 - **THEN** configured order and provider-instance/provider/model facts SHALL be available without any model or inventory request
 
+### Requirement: Independent ordinary typed discovery decoding
+
+ListModels SHALL remain the existing discovery method, without a second client or AGPL module dependency. The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the existing configurable document-byte limit and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency.
+
+#### Scenario: Independent ordinary typed discovery decoding
+- **WHEN** discovery rows contain server-owned IDs outside the public grammar
+- **THEN** bounded valid JSON SHALL decode into ModelInfo without a second client, AGPL dependency or client-side server-policy revalidation
+
+### Requirement: Discovery normalization atomicity and served order
+
+Standard Go JSON behavior SHALL apply, including case-insensitive field matching, zero/nil values for missing/null fields and U+FFFD normalization of escaped lone UTF-16 surrogates. A missing/null models collection, malformed JSON, byte overflow or type-decoding error SHALL invalidate the complete result. It SHALL preserve response order and configured alias/fallback order exactly as served, without expanding aliases into extra rows. Missing/null gateway SHALL remain nil.
+
+#### Scenario: Discovery normalization atomicity and served order
+- **WHEN** a valid discovery document uses case-variant fields, null optional gateway and ordered fallbacks
+- **THEN** standard Go normalization SHALL apply and served order SHALL survive without alias expansion; missing/null models or a decoding error SHALL invalidate the whole result
+
+### Requirement: Discovery additive data and configured-fact provenance
+
+Unknown additive members SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
+
+#### Scenario: Discovery additive data and configured-fact provenance
+- **WHEN** a row has unknown members and no gateway extension
+- **THEN** unknown members SHALL be ignored and topology SHALL NOT be inferred or expose credentials/arbitrary configuration
+
 ### Requirement: No implicit client retry or backend selection
-The Grafana client SHALL issue at most one Gateway model request per `DoGenerate` or `DoStream` invocation after token acquisition. It SHALL preserve retryability for existing SDK retry/fallback orchestration but MUST NOT select physical providers, traverse Gateway candidates, retry through the retired endpoint, or retry after any response or stream event. Discovery SHALL retain authorized configured facts only through the approved optional gateway field; inspecting them SHALL NOT implement backend selection. This discovery exception SHALL NOT change runtime public result/error projection, which remains governed by its separate contracts. Native source and streaming response identity SHALL be retained under their runtime contracts without enabling client backend selection.
+
+The Grafana client SHALL issue at most one Gateway model request per `DoGenerate` or `DoStream` invocation after token acquisition. It SHALL preserve retryability for existing SDK retry/fallback orchestration but MUST NOT select physical providers, traverse Gateway candidates, retry through the retired endpoint, or retry after any response or stream event.
 
 #### Scenario: Retryable setup error occurs
 - **WHEN** the Gateway returns a retryable non-2xx response
@@ -426,12 +655,17 @@ The Grafana client SHALL issue at most one Gateway model request per `DoGenerate
 - **WHEN** ListModels exposes more than one configured candidate
 - **THEN** the client SHALL not contact, select or probe any of them
 
+### Requirement: Configured discovery is not runtime backend selection
+
+Discovery SHALL retain authorized configured facts only through the approved optional gateway field; inspecting them SHALL NOT implement backend selection. This discovery exception SHALL NOT change runtime public result/error projection, which remains governed by its separate contracts. Native source and streaming response identity SHALL be retained under their runtime contracts without enabling client backend selection.
+
+#### Scenario: Configured discovery is not runtime backend selection
+- **WHEN** a caller inspects authorized primary and fallback facts
+- **THEN** inspection SHALL NOT select candidates, alter runtime projections or infer backend selection from retained source/stream identity
+
 ### Requirement: Exact-pinned differential and black-box evidence
-Tests SHALL compare Go and the exact Gateway version registered in test/conformance/upstream.yaml for semantic method/path/headers/body, supported result normalization, errors/retryability, cancellation, discovery, DONE, raw filtering, timestamp conversion and EOF. Native-value cases SHALL cover all warning variants/order/required empties, URL/document IDs/display/order and optional native stream identity. Unary tests SHALL prove warning preservation, raw native response identity and typed transport replacement rather than comparing only permissively parsed success. Raw HTTP/schema assertions SHALL independently establish strict server correctness.
 
-A baseline change SHALL update pins/lockfiles/captures/classification/client behavior coherently. Hostile fake-server tests SHALL prove bounded reads and cleanup independently of Gateway implementation. Authenticated black-box command tests SHALL run over HTTP without Apache production imports of Gateway code. Synthetic responses SHALL NOT establish live provider or private Vercel-service parity, and authentic provider fixture inputs SHALL NOT be rewritten.
-
-Configured-discovery tests SHALL additionally prove Go typed retention and the approved TS helper against the same command, while explicitly preserving stock normalized TS extension loss. Configured facts SHALL be available without inference and without credentials or unrelated account state; this SHALL NOT imply new runtime response/error identity retention.
+Tests SHALL compare Go and the exact Gateway version registered in test/conformance/upstream.yaml for semantic method/path/headers/body, supported result normalization, errors/retryability, cancellation, discovery, DONE, raw filtering, timestamp conversion and EOF. Native-value cases SHALL cover all warning variants/order/required empties, URL/document IDs/display/order and optional native stream identity.
 
 #### Scenario: Equivalent text calls are compared
 - **WHEN** the differential suite issues representable unary and streaming text/scalar calls through both clients
@@ -455,9 +689,33 @@ Configured-discovery tests SHALL additionally prove Go typed retention and the a
 - **WHEN** Go ListModels, pinned TS getAvailableModels and the shipped TS helper inspect canonical model rows with configured alias metadata
 - **THEN** normalized public fields SHALL remain compatible, Go and the helper SHALL retain matching configured facts, stock TS SHALL still strip the extension and provider inference counts SHALL remain zero
 
+### Requirement: Unary raw authority baseline coherence and hostile client bounds
+
+Unary tests SHALL prove warning preservation, raw native response identity and typed transport replacement rather than comparing only permissively parsed success. Raw HTTP/schema assertions SHALL independently establish strict server correctness. A baseline change SHALL update pins/lockfiles/captures/classification/client behavior coherently. Hostile fake-server tests SHALL prove bounded reads and cleanup independently of Gateway implementation.
+
+#### Scenario: Unary raw authority baseline coherence and hostile client bounds
+- **WHEN** the pinned client permissively accepts output and a fake endpoint exceeds limits
+- **THEN** raw/schema checks SHALL remain independent authority, hostile tests SHALL prove bounded cleanup and baseline changes SHALL update all associated evidence coherently
+
+### Requirement: Authenticated client evidence provenance and discovery comparison
+
+Authenticated black-box command tests SHALL run over HTTP without Apache production imports of Gateway code. Synthetic responses SHALL NOT establish live provider or private Vercel-service parity, and authentic provider fixture inputs SHALL NOT be rewritten. Configured-discovery tests SHALL additionally prove Go typed retention and the approved TS helper against the same command, while explicitly preserving stock normalized TS extension loss.
+
+#### Scenario: Authenticated client evidence provenance and discovery comparison
+- **WHEN** Go and the approved TS helper inspect configured discovery through the command
+- **THEN** both SHALL retain matching configured facts while stock normalized TS loses the extension, with no Apache production Gateway import or synthetic live-parity claim
+
+### Requirement: Configured discovery privacy and inference boundary
+
+Configured facts SHALL be available without inference and without credentials or unrelated account state; this SHALL NOT imply new runtime response/error identity retention.
+
+#### Scenario: Configured discovery privacy and inference boundary
+- **WHEN** an authorized discovery test returns configured candidates without model calls
+- **THEN** facts SHALL be available without inference, credentials or unrelated account state and SHALL NOT imply runtime response/error identity retention
+
 ### Requirement: Source response consumption
 
-The independent Go client SHALL decode URL/document sources in unary/stream responses without Gateway imports. Required document title and source ID SHALL accept empty strings but reject missing/wrong-type required fields. Optional URL title/document filename absence and empty string SHALL normalize to empty Go strings. Native IDs, display, order and currently supplied object-valued metadata SHALL survive without rewriting, deduplication or variant-specific collision repair. Unknown source discriminators and malformed metadata SHALL use the existing bounded protocol-error path. Unary Title SHALL be populated and Text retained for legacy consumers. Metadata preservation in this decoder SHALL NOT imply that the server's outstanding metadata projection gap is solved.
+The independent Go client SHALL decode URL/document sources in unary/stream responses without Gateway imports. Required document title and source ID SHALL accept empty strings but reject missing/wrong-type required fields. Optional URL title/document filename absence and empty string SHALL normalize to empty Go strings. Native IDs, display, order and currently supplied object-valued metadata SHALL survive without rewriting, deduplication or variant-specific collision repair.
 
 #### Scenario: URL and document consumption
 - **WHEN** bounded readers receive both registered variants
@@ -467,8 +725,18 @@ The independent Go client SHALL decode URL/document sources in unary/stream resp
 #### Scenario: Equal and repeated source IDs
 - **WHEN** repeated URL sources and a document share a native ID
 - **THEN** all SHALL retain the supplied ID and relative order without deduplication
+
+### Requirement: Source decoder errors legacy fields and evidence limits
+
+Unknown source discriminators and malformed metadata SHALL use the existing bounded protocol-error path. Unary Title SHALL be populated and Text retained for legacy consumers. Metadata preservation in this decoder SHALL NOT imply that the server's outstanding metadata projection gap is solved.
+
+#### Scenario: Source decoder errors legacy fields and evidence limits
+- **WHEN** a unary source has valid display fields and a later source has an unknown discriminator
+- **THEN** the valid source SHALL populate Title and legacy Text, and the invalid source SHALL use bounded protocol failure without claiming the server metadata gap is solved
+
 ### Requirement: Independent opaque stream metadata consumption
-The Grafana client SHALL independently decode providerMetadata on supported text/reasoning start/delta/end, reasoning-file, source, tool-input start/delta/end, function call, basic result and finish parts. It SHALL preserve namespace objects, nested values, original event order and absent versus empty presence without IncludeRawChunks. Original accepted events, retained copies and metadata cardinality SHALL remain bounded by the existing event, cumulative byte and count limits. Invalid metadata SHALL use the bounded terminal non-retryable protocol-error path without reflecting the value or delivering the invalid part. Gateway lifecycle and raw filtering SHALL remain unchanged.
+
+The Grafana client SHALL independently decode providerMetadata on supported text/reasoning start/delta/end, reasoning-file, source, tool-input start/delta/end, function call, basic result and finish parts. It SHALL preserve namespace objects, nested values, original event order and absent versus empty presence without IncludeRawChunks. Original accepted events, retained copies and metadata cardinality SHALL remain bounded by the existing event, cumulative byte and count limits.
 
 #### Scenario: Unknown namespace survives all supported placements
 - **WHEN** valid events carry future object-valued namespaces with nested null/false/zero/empty values and explicit empty metadata at supported positions
@@ -477,3 +745,11 @@ The Grafana client SHALL independently decode providerMetadata on supported text
 #### Scenario: Malformed metadata on finish
 - **WHEN** a bounded finish contains a null namespace or malformed metadata shape
 - **THEN** the client SHALL emit at most one bounded protocol PartError and close without delivering the invalid finish or metadata-free success
+
+### Requirement: Malformed stream metadata terminal behavior
+
+Invalid metadata SHALL use the bounded terminal non-retryable protocol-error path without reflecting the value or delivering the invalid part. Gateway lifecycle and raw filtering SHALL remain unchanged.
+
+#### Scenario: Malformed stream metadata terminal behavior
+- **WHEN** finish contains a null metadata namespace
+- **THEN** the client SHALL emit a bounded non-retryable terminal error without reflecting the value or delivering invalid finish, leaving lifecycle and raw filtering unchanged
