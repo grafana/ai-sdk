@@ -75,7 +75,7 @@ The Agent Observability client MAY add only its fixed SDK provenance/content-cap
 
 ### Requirement: Operator capture is independent from returned native values
 
-Gateway metadata-only logger, Prometheus, enrichment and Agent Observability observations SHALL retain their existing payload exclusions and access-policy-appropriate logical model identity when native warning/source/response identity values become caller-visible. Arbitrary warning strings, source ID/URL/title/filename and response ID/modelId SHALL NOT become operator attributes, metric labels or metadata-only exported payloads. The observer chain SHALL pass original results/parts unchanged to protocol encoding; operator capture restrictions SHALL NOT censor returned values. Known credentials and another tenant's state SHALL remain protected independently of ordinary application scalar/display values.
+Gateway metadata-only logger, Prometheus, enrichment and Agent Observability observations SHALL retain their existing payload exclusions and access-policy-appropriate logical model identity when native warning/source/response identity values become caller-visible. Arbitrary warning strings, source ID/URL/title/filename and response ID/modelId SHALL NOT become operator attributes, metric labels or metadata-only exported payloads. The observer chain SHALL pass original results/parts unchanged to protocol encoding; operator capture restrictions SHALL NOT censor returned values. Account authorization and request isolation SHALL prevent attaching another request's state. Logger field policy and exporter exclusions SHALL apply only to observations, never rewrite returned provider values.
 
 Consumer applications SHALL be able to configure existing reusable middleware independently around providers/grafana without enabling server capture. Tests SHALL use middleware.WrapLanguageModel with Middleware.WrapGenerate to inspect actual unary warnings/content/Response.Body and WrapStream to observe forwarded PartStreamStart/PartSource/PartResponseMeta through a context-aware test tee. These hooks SHALL receive contracted values without mutating output; hook access SHALL NOT be equated with automatic built-in capture/export.
 
@@ -101,7 +101,7 @@ A separately configured consumer logger.Middleware with CaptureOptions.ResponseB
 ## ADDED Requirements
 
 ### Requirement: Request-scoped BYOK logical observation
-BYOK SHALL receive one request-local logical observer outside ordered attempts, with requested identity and trusted context. Credentials SHALL be excluded, model metrics SHALL use a fixed bucket and native response identity SHALL remain unchanged without model-ID caches.
+BYOK SHALL receive one request-local logical observer outside ordered attempts, with requested identity and trusted context. Configured sensitive fields SHALL follow operator capture policy, model metrics SHALL use a fixed bucket and native response identity SHALL remain unchanged without model-ID caches.
 
 #### Scenario: Logical BYOK observation policy
 - **WHEN** a BYOK logical model is wrapped and invoked
@@ -124,7 +124,8 @@ BYOK SHALL receive one request-local logical observer outside ordered attempts, 
 
 #### Scenario: Credential markers at automatic sinks
 - **WHEN** real logger, enrichment, metrics and Agent Observability/export sinks capture a BYOK success, rejection, cancellation or late-result cleanup
-- **THEN** no dummy credentials SHALL appear and applicable non-secret timing, usage, provider and outcome facts SHALL remain available
+- **THEN** configured sensitive fields SHALL follow logger policy and metadata-only exporters SHALL retain their exclusions while timing, usage and outcome facts remain available
+- **AND** independent caller-visible native diagnostics SHALL preserve available producer echoes
 
 #### Scenario: Results are not operator capture policy
 - **WHEN** a BYOK provider returns supported native content, warnings, identity or continuation metadata

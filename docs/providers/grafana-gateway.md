@@ -13,8 +13,10 @@ Keep Gateway and model-provider credentials on your server, not in browser code.
 ## Inspect execution overviews and failures
 
 Private configured-model results and stream finish metadata may contain
-`gateway.execution`. Cloud BYOK calls do not add execution overviews or native
-failure summaries; their request-scoped logging and metrics remain independent.
+`gateway.execution`. Cloud BYOK calls can return available event-local SSE
+native failure summaries without configured catalog context. They do not yet
+return Gateway attempt overviews or unary/setup native summaries; absence is a
+capability gap, not a confidentiality rule or evidence that no attempts occurred.
 It identifies the requested/canonical public model and ordered observed attempts,
 including configured provider instance, provider and native model, outcome,
 and optional native failure summaries. Earlier eligible failures remain

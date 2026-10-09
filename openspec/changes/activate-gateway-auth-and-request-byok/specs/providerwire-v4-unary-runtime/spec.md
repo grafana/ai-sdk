@@ -13,11 +13,11 @@ Every runtime error response SHALL retain fixed classified status, message, type
 - **AND** Typed standard JSON encoding SHALL preserve the canonical base response bytes.
 - **AND** Invalid request, model-not-found, rate-limit, overload, failed-dependency, upstream, timeout, cancellation, and internal categories SHALL use Gateway-recognized error types and status-derived retryability.
 - **AND** Unknown or invalid internal categories SHALL fall back to the fixed internal-error document.
-- **AND** Arbitrary provider, transport, resolver and panic causes, raw bodies/headers and credentials SHALL NOT be serialized.
-- **AND** Optional protected candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, within complete-response limits; they SHALL NOT change classification or retryability.
+- **AND** Arbitrary aggregate/configuration/cause trees and raw bodies/headers SHALL NOT be attached as diagnostic shortcuts. Available native scalar summaries SHALL not suppress producer credential echoes.
+- **AND** Optional native candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, within complete-response limits; they SHALL NOT change classification or retryability.
 - **AND** Host-owned BYOK validation and unsupported-operation failures SHALL use fixed approved messages without copying rejected values or private diagnostics.
 - **AND** Stopped or exhausted credential fallback SHALL retain existing fallback error propagation and safe runtime classification rather than use a blanket exhaustion status.
-- **AND** Request-only selection SHALL NOT activate configured public execution overviews or native failure summaries.
+- **AND** Request-only selections SHALL remain eligible for available event-local SSE native summaries. Their current missing unary/setup summary and overview capabilities SHALL be tracked under #317, not treated as a confidentiality policy.
 
 #### Scenario: Actionable credential shape failure
 - **WHEN** a credential entry is missing apiKey or a supplied provider array exceeds the account count
@@ -29,7 +29,7 @@ Every runtime error response SHALL retain fixed classified status, message, type
 
 #### Scenario: Provider API failure
 - **WHEN** `DoGenerate` returns an API, transport, timeout, cancellation, or arbitrary internal error
-- **THEN** the handler SHALL retain the corresponding fixed safe fields without serializing arbitrary causes; optional protected configured execution attribution SHALL follow gateway-attempt-failure-evidence
+- **THEN** the handler SHALL retain the corresponding fixed safe fields without serializing arbitrary causes; optional native configured execution attribution SHALL follow gateway-attempt-failure-evidence
 
 #### Scenario: Unknown model
 - **WHEN** configured catalog resolution reports an unknown public model
@@ -41,7 +41,8 @@ Every runtime error response SHALL retain fixed classified status, message, type
 
 #### Scenario: BYOK provider echoes request accounts
 - **WHEN** authenticated request-only selection receives a native failure containing request-account keys or identifiers before or after stream commitment
-- **THEN** fixed classified error fields SHALL remain unchanged and the Gateway SHALL omit execution overviews and current native failure summaries without exposing the echoed values
+- **THEN** fixed classified error fields SHALL remain unchanged, and existing SSE native summaries SHALL preserve echoed values independently of catalog attribution
+- **AND** absent BYOK unary/setup summaries and attempt overviews SHALL reflect today's missing capability, not a permanent output-suppression rule
 
 ### Requirement: Host-safe ProviderWire error writer
 The ProviderWire package SHALL expose a non-fallible, unconfigured host error writer for fixed authentication, permission, internal and unsupported-BYOK-discovery failures. Caller messages, causes or arbitrary fields SHALL NOT cross that API.

@@ -1803,6 +1803,34 @@ describe("authenticated Anthropic Gateway command", () => {
 });
 
 describe("Trusted-proxy composition (dummy credentials, not production authentication)", () => {
+  it("preserves Cloud provider echoes in SSE native summaries without inventing account attribution", async () => {
+    const [native, gateway, edge] = await startCloudGateway();
+    native.streamErrorWithEcho = true;
+    try {
+      const options = { ...cloudCall("normal-stream"), providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }, { apiKey: "unused-second-key" }] } } } };
+      const expected = { message: "provider-echo request-only-key backend-private", type: "api_error", statusCode: 200 };
+      const ts = await collectStream((await edge.client(EDGE_WRITE_KEY)(BYOK_MODEL).doStream(options)).stream);
+      const go = await captureGoClient(goClientBinaryPath, { mode: "stream", modelID: BYOK_MODEL, options, cloudCredentials: { StackID: 27038, CAPToken: "dummy-write-key", BaseURL: `${edge.url}/api/v1/aisdk` } });
+      assert.equal(go.error, undefined);
+      for (const parts of [ts, go.parts]) {
+        const errors = parts.filter((part: { type: string; error?: { data?: { nativeError?: unknown } } }) => part.type === "error" && part.error?.data?.nativeError !== undefined);
+        assert.equal(errors.length, 1);
+        assert.deepEqual(errors[0].error.data, { nativeError: expected });
+        assert.equal(errors[0].error.statusCode, 502);
+        assert.equal(errors[0].error.retryable ?? errors[0].error.isRetryable, true);
+        assert.ok(parts.every((part: { type: string }) => part.type !== "finish"));
+        assert.equal(parts.at(-1).type, "error");
+        assert.ok(!JSON.stringify(parts).includes('"execution"'));
+        assert.ok(!JSON.stringify(parts).includes('"providerInstance"'));
+      }
+      assert.equal(native.requests.length, 2);
+      assert.ok(native.requests.every(request => request.apiKey === "request-only-key"));
+      const metrics = await gateway.metrics();
+      await gateway.stop();
+      assertCloudPrivateValuesAbsent(gateway.stderr + metrics, ["request-only-key", "unused-second-key", "provider-echo"]);
+      assert.deepEqual(native.violations, []);
+    } finally { await settleCleanup(() => edge.stop(), () => gateway.stop(), () => native.stop()); }
+  });
   it("distinguishes native credential rejection from Gateway authentication without rotating keys or echoing them", async () => {
     const [native, gateway, edge] = await startCloudGateway();
     native.failureStatus = 401;
@@ -3238,6 +3266,7 @@ class FakeAnthropic {
   redirectTo?: string;
   oversizedErrors = false;
   failureStatus?: number;
+  streamErrorWithEcho = false;
   functionTools = false;
   providerTools = false;
   providerToolCaller = false;
@@ -3394,6 +3423,7 @@ class FakeAnthropic {
 
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     response.write(`event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_test", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } })}\n\n`);
+    if (this.streamErrorWithEcho) response.write(`event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "api_error", message: `provider-echo ${this.apiKey} backend-private` } })}\n\n`);
     if (marker === "normal-stream") {
       response.write(`event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`);
       response.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hello from fake Anthropic stream" } })}\n\n`);

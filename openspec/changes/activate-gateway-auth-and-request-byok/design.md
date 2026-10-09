@@ -66,15 +66,18 @@ or configured-account dependency.
 
 ## Execution observation integration
 
-Configured selection delegates to `CatalogSelector` and preserves its private
-candidate/protection context. #373's shared SDK observer and #370's execution
-projection remain independent of logical operator logging, metrics and exports.
-Request-only selection supplies model/identity without configured attribution:
-the Gateway registers no request collector, adds no public execution overview or
-current native failure summary, and preserves an independently registered SDK
-observer. This is an explicit support boundary, not evidence that no attempts
-occurred; original native metadata stays opaque. BYOK public attribution remains
-separately scoped and would need request-account protection before activation.
+Configured selection delegates to `CatalogSelector` and preserves copied actual
+candidate descriptors, without credential-source inventories or value suppression.
+#373's SDK observer and #370's projection remain independent of operator capture.
+Native event-local SSE summaries apply to request-only selections without catalog
+context and preserve producer echoes. BYOK has no Gateway attempt overview and
+no unary/setup native summary today: this is a missing capability under #317,
+not a confidentiality rule or permanent prohibition. Additional observation must
+reuse the existing SDK seam and honest request identity, without a second collector
+or fabricated configured/account IDs. Full native bodies/headers remain #323.
+Logger field policy and exporter capture apply independently to observations;
+returned provider data is not censored. Existing read/envelope/fit paths remain
+coherent pending #394, with validation/client/other JSON work kept separately scoped.
 
 Account-access refusal and unsupported discovery reuse #370's typed fixed error
 definitions without restoring the former byte-document implementation or changing
@@ -97,6 +100,17 @@ No active-consumer compatibility layer is required. Update application flags,
 Docker/CI probes and docs together. Deliver the separate same-cluster Services/JWKS/NetworkPolicy
 handoff before activating an environment; an incomplete deployment must remain
 unavailable rather than restore Cloud access to configured accounts.
+
+## Deferred BYOK observation acceptance
+
+Under #317, reuse SDK request-attempt observation to expose actual BYOK
+provider/model/outcomes and candidate-local failures for direct, eligible fallback,
+noneligible and exhausted calls, including unary/setup failures and stream finish.
+Use honest request identity without fabricated catalog/account-instance IDs,
+additional collectors/readers or replay. Verify both clients, cancellation/late
+ownership and account isolation; unavailable/mixed observations must remain honest.
+Current missing unary/setup summaries and overviews are capability gaps, not
+confidentiality policy. #323 is involved only if fuller native transport is needed.
 
 ## Open Questions
 

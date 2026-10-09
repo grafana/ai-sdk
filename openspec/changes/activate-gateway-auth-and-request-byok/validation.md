@@ -174,3 +174,33 @@ logs: `/tmp/byok-stack-pr3-frozen28-20261009/`. Existing native fallback/UI chan
 and authentic inputs are unchanged from frozen main. No later main updates are
 chased, no private infrastructure references are published, and deployment task
 4.1 remains incomplete.
+
+## Approved native-data and observation revision
+
+Updated #317/#322 supersede the earlier response credential-absence assertions.
+Replayed activation onto #370 `d94ea3e8` after lower ordinary account decoding
+and reusable logger field policy. No credential-source inventory, value suppression
+or catalog provenance gate is restored. Existing generic event-local SSE summaries
+preserve actual native message/type/code/status and producer credential echoes;
+classification, retries, account isolation and observer ownership are unchanged.
+
+The old committed-error absence tests fail against the revised parent. Updated
+native Anthropic/OpenAI cases and both-client Cloud command tests assert exact
+summary values, one account invocation and no fabricated configured identities.
+Operator-only metadata/log/metric exclusions and logger field redaction are checked
+separately from returned data. The new command fixture initially assumed finish
+after native error; actual SDK stream termination was retained and tested instead,
+without fabricating successful finish or changing replay/cleanup behavior.
+
+Ten focused privacy/identity races, full local gates, source44/command78 without
+skips and current OpenSpec1.14.1 all-strict99/99 pass. Existing complete-envelope,
+read and fit behavior remains coherent pending #394; client/schema/other JSON/raw
+work is not absorbed. Logs: `/tmp/byok-stack-pr3-approved-audit-20261009/` and
+`/tmp/byok-audit-tail-{old-assertions-red,native-summary-green,command,command-green}.log`.
+
+BYOK has no current attempt overview or unary/setup native summary carrier. This
+is missing observation under #317, not a permanent suppression rule. The design
+records an exact follow-up acceptance item for existing SDK observation and honest
+request identity. Fuller bodies/headers remain #323 only if its carrier is needed.
+No native fields are invented from configured secrets or another request. Registered
+pins/provider inputs, authentication/listener defaults and external task4.1 are unchanged.
