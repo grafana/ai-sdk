@@ -589,7 +589,7 @@ The provider SHALL classify OpenAI IDs by anchored `openai.` with optional regio
 
 ### Requirement: Converse option merge preserves cache and beta precedence
 
-Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks. Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
+Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks only when the source message emits native content. A marker SHALL NOT survive solely because another source in the same merged block emits content. Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
 
 #### Scenario: Cache point remains at selected message boundary
 
@@ -869,3 +869,32 @@ As a Go extension, `reasoningConfig.type` SHALL accept `between_tools`, sent as 
 
 - **WHEN** Sonnet 5.5 requests between-tools thinking with display, budget, sampling, and effort `xhigh` or `max`
 - **THEN** thinking SHALL contain only its type, sampling SHALL be removed, and effort SHALL be capped to high with the specified warning
+### Requirement: Filter inactive tool history before Converse message grouping
+
+The provider SHALL prepare the effective tools before converting the prompt.
+When no tools remain active, it SHALL remove tool-call and tool-result parts from
+non-system source messages, discard messages made empty by that filtering, and
+then group the remaining messages. It SHALL emit the existing `toolContent`
+warning once when tool content is removed and SHALL NOT mutate the caller's
+prompt. A synthetic JSON response tool counts as active; native JSON output
+without active tools does not.
+
+#### Scenario: Final response after a disabled tool loop
+
+- **WHEN** tool calls and a cached tool-result message occur between user messages and no prepared tools remain active
+- **THEN** the request SHALL combine the surviving adjacent user messages
+- **AND** the cache point owned by the removed tool-result message SHALL be omitted
+- **AND** cache points on surviving source content SHALL preserve their placement and TTL
+
+#### Scenario: Content is ignored during conversion
+
+- **WHEN** an assistant source contains only unsigned reasoning or approval bookkeeping, or a user/tool source contains only approval bookkeeping
+- **THEN** that source SHALL contribute neither native content nor a cache point
+- **AND** an unsupported system-only source SHALL likewise contribute no cache point while retaining its unsupported-content warning
+
+#### Scenario: Preserve conversion boundaries
+
+- **WHEN** inactive tool filtering removes the last part or message of the prompt
+- **THEN** assistant prefill trimming SHALL use the resulting source positions
+- **AND** other ignored content SHALL retain the existing source-position trimming rules
+- **AND** provider options on a wholly removed tool message SHALL NOT be parsed, while retained messages SHALL retain existing option validation

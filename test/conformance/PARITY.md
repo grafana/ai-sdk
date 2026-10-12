@@ -174,6 +174,16 @@ issue rather than being maintained in both places.
   provider finish, preserving Go's incomplete-stream distinction; that is not a
   claim of complete upstream EOF parity.
 - Bedrock warns and omits unsupported tool-result file URLs instead of failing.
+  Cache points are retained only when their source message emits native content,
+  including user/tool approval-only messages and system messages with only
+  unsupported parts. This deliberately goes beyond the registered upstream's
+  assistant cache-only suppression and prevents orphaned markers from borrowing
+  content from another source in a merged block. Focused conversion and synthetic
+  Converse/ConverseStream HTTP tests cover tool filtering, ownership, TTL and
+  preserved warnings; they do not establish live cache acceptance. Tool filtering
+  happens before grouping with the prepared tool set, matching upstream. The
+  registered behavior of leaving adjacent user messages after an unsigned-only
+  assistant is omitted remains unchanged.
 - Gateway is a Grafana extension with no private-service oracle. It deliberately
   uses strict response families and protected auth/protocol headers. Go rejects
   reserved authentication-header overrides before I/O, unlike the pinned client's
