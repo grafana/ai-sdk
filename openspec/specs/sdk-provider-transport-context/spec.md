@@ -31,7 +31,7 @@ Anthropic SHALL combine configured, call-level, and feature-required beta header
 
 ### Requirement: Returned metadata represents the actual HTTP exchange
 
-For successful native Anthropic and OpenAI unary and streaming calls with outbound JSON, the adapters SHALL populate Request.Body with the final serialized outbound JSON after SDK options and transport body transformations. Unary results SHALL additionally contain the full response JSON in Response.Body and actual HTTP response headers in Response.Headers; stream results SHALL contain actual HTTP headers in StreamResult.Response.Headers. Response identity fields SHALL retain their existing mapping. Multi-valued headers SHALL be flattened using `", "` between values, matching the native HTTP adapters, and metadata SHALL be invocation-local. An explicitly configured non-JSON request body SHALL remain unchanged and SHALL NOT be stored as invalid JSON in Request.Body.
+For successful native Anthropic/OpenAI unary and stream calls with outbound JSON, Request.Body SHALL contain final serialized JSON after SDK options/transport transforms. Unary Response.Body SHALL retain full response JSON; unary Response.Headers and StreamResult.Response.Headers SHALL contain actual HTTP headers. Existing response identity mapping SHALL remain.
 
 #### Scenario: Body-changing SDK options are observable
 - **WHEN** a JSON request is modified by a configured SDK JSON option and sent through either adapter in either mode
@@ -52,6 +52,14 @@ For successful native Anthropic and OpenAI unary and streaming calls with outbou
 - **WHEN** an explicit SDK request-body override sends non-JSON bytes and the call succeeds
 - **THEN** the adapter leaves those outbound bytes unchanged and omits Request.Body rather than reporting invalid JSON
 
+### Requirement: Transport metadata presence and invocation isolation
+
+Headers SHALL flatten multiple values with ", ", matching native HTTP adapters. Metadata SHALL be invocation-local. Explicit non-JSON request overrides SHALL remain unchanged and SHALL NOT be stored as invalid JSON in Request.Body.
+
+#### Scenario: Multi-value headers belong to one exchange
+- **WHEN** concurrent successful calls receive distinct multi-valued HTTP headers
+- **THEN** each result SHALL contain only its own headers flattened with ", ", without cross-call mutation.
+
 ### Requirement: Native transport metadata reaches core results
 
 For completed steps served by either SDK-backed adapter, StreamText and the streaming-backed GenerateText and Agent entry points SHALL expose the step's request body and actual response headers through their existing step/result surfaces. The adapter SHALL enrich its existing response-metadata part with HTTP headers rather than emit a duplicate metadata part. Raw administrative parts SHALL NOT become model output, step content, or tool execution authority.
@@ -67,7 +75,7 @@ For completed steps served by either SDK-backed adapter, StreamText and the stre
 
 ### Requirement: Raw stream evidence is opt-in and ordered
 
-When IncludeRawChunks is true, both native adapters SHALL emit PartStreamStart first and a PartRaw before each consumed data event's normalized parts after successful preflight. Raw evidence SHALL preserve the original valid JSON, including unknown fields and post-preflight provider error envelopes. Anthropic ping and ignored JSON events SHALL remain raw-observable even when they have no normalized output. Comments, empty non-data frames, and `[DONE]` SHALL NOT produce raw parts. Omitted or false IncludeRawChunks SHALL produce no PartRaw, and selecting raw output SHALL NOT change normalized recovery, retry, finish, or initial-error behavior.
+With IncludeRawChunks true, both native adapters SHALL emit PartStreamStart first, then PartRaw before each consumed data event's normalized parts after successful preflight. Raw evidence SHALL retain original valid JSON, unknown fields and post-preflight error envelopes. Anthropic ping/ignored JSON events SHALL remain raw-observable without normalized output.
 
 #### Scenario: Normal events retain ordering
 - **WHEN** a successful stream includes buffered preflight events followed by text and finish events with IncludeRawChunks true
@@ -87,9 +95,17 @@ When IncludeRawChunks is true, both native adapters SHALL emit PartStreamStart f
 - **WHEN** a decoder delivers an ignored JSON event with fields outside the typed SDK union and raw output is enabled
 - **THEN** its original JSON appears in PartRaw even if no normalized content part is emitted
 
+### Requirement: Raw selection does not alter normalization or framing
+
+Comments, empty non-data frames and [DONE] SHALL NOT produce raw parts. Omitted/false IncludeRawChunks SHALL produce no PartRaw. Raw selection SHALL NOT change normalized recovery, retry, finish or initial-error behavior.
+
+#### Scenario: Done framing is not raw evidence
+- **WHEN** a successful raw-enabled stream ends with [DONE]
+- **THEN** no raw part SHALL be produced for that sentinel and normalized finish behavior SHALL remain unchanged.
+
 ### Requirement: Malformed and error frames preserve the raw-value boundary
 
-For a frame delivered after successful preflight, valid JSON SHALL remain valid RawValue even if typed decoding fails. Syntactically invalid JSON in events eligible for SDK typed decoding SHALL produce a PartRaw with nil RawValue when raw is enabled, followed by the normalized error; the adapter SHALL NOT put invalid bytes in json.RawMessage or substitute a JSON string. Valid JSON null SHALL remain distinguishable from missing RawValue. Error preflight SHALL retain its existing return-versus-stream behavior regardless of raw selection; no stream result SHALL be returned solely to expose raw evidence of an initial failure.
+After successful preflight, valid JSON SHALL remain valid RawValue even if typed decoding fails. Invalid JSON in events eligible for SDK typed decoding SHALL emit PartRaw with nil RawValue when raw is enabled, then normalized error; invalid bytes SHALL NOT enter json.RawMessage or be replaced with a JSON string. JSON null SHALL remain distinct from missing RawValue.
 
 #### Scenario: Valid JSON cannot decode into a typed event
 - **WHEN** a post-preflight frame is valid JSON but fails typed decoding with raw enabled
@@ -118,6 +134,14 @@ For a frame delivered after successful preflight, valid JSON SHALL remain valid 
 - **THEN** normalization ignores that event as the existing SDK does
 - **AND** raw selection exposes nil RawValue without introducing a normalized error
 
+### Requirement: Raw evidence does not change preflight failure handoff
+
+Error preflight SHALL retain existing return-versus-stream behavior regardless of raw selection. A stream result SHALL NOT be returned solely to expose raw evidence of initial failure.
+
+#### Scenario: Initial failure stays a setup error
+- **WHEN** preflight recognizes a provider failure with raw enabled
+- **THEN** DoStream SHALL return the existing error rather than hand off a stream solely for raw evidence.
+
 ### Requirement: Startup retention is bounded independently of raw selection
 
 Both native adapters SHALL limit startup processing to 64 data frames and 1 MiB of event data before stream handoff. Exceeding either budget SHALL return a non-retryable setup error without a stream result and cancel decoder ownership. The same policy SHALL apply with raw output enabled or disabled; neither truncation nor an earlier handoff SHALL substitute for overflow failure.
@@ -129,7 +153,7 @@ Both native adapters SHALL limit startup processing to 64 data frames and 1 MiB 
 
 ### Requirement: Transport capture preserves SDK ownership
 
-The adapters SHALL retain existing SDK client construction, configured transports, authentication, retries, and endpoint rewriting. Capture SHALL preserve request bytes and replayability and SHALL associate successful results with the successful/final attempt. Each acquired framing decoder SHALL be constructed and closed once. Streaming sends and cleanup SHALL observe cancellation without requiring a consumer to drain an indefinitely blocked channel. Capture failures SHALL propagate rather than silently report misleading metadata.
+Adapters SHALL retain SDK construction, configured transports, authentication, retries and endpoint rewriting. Capture SHALL preserve request bytes/replayability and associate successful results with the successful/final attempt. Each acquired framing decoder SHALL be constructed/closed once. Streaming sends/cleanup SHALL observe cancellation without indefinite consumer drain. Capture failures SHALL propagate, not silently report misleading metadata.
 
 #### Scenario: Retry returns the successful exchange
 - **WHEN** an SDK call retries a transient failure before receiving a successful response

@@ -21,7 +21,7 @@ Gateway intentionally rejects persistence even if an upstream account defaults
 to storing completions.
 
 Provider-domain conversion remains on the registered Vercel baseline in
-`test/conformance/upstream.yaml`: commit `5d12eaa6caa193d3901cbab98a734403eb6bf622`.
+`test/conformance/upstream.yaml`: commit `eb77f09e3c06c28e860d92e0de941b143c2eecec`.
 Gateway source tests and the container build use the explicit `go.gateway.work`
 workspace so the adapter runs with candidate SDK/provider source. Standalone
 module checks separately verify the immutable published dependency versions. Synthetic local upstreams in `test/openai-chat-completions-adapter` prove mappings and SDK

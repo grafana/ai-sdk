@@ -6,8 +6,8 @@
     "start": "tsx src/index.ts"
   },
   "devDependencies": {
-    "ai": "7.0.118",
-    "@ai-sdk/provider-utils": "5.0.49",
+    "ai": "7.0.127",
+    "@ai-sdk/provider-utils": "5.0.53",
     "typescript": "^7.0.0",
     "tsx": "^4.19.4"
   }

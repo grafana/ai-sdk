@@ -191,6 +191,21 @@ included in discovery; your deployment controls who may see the model list.
 To compose the client with other providers, register it as a `registry.Provider`;
 see [Fallback and registry](../guides/fallback-and-registry.md).
 
+## Request metadata and BYOK capture
+
+The client can serialize ordered `providerOptions.gateway.byok` credentials and
+native `provider/model` selectors without discovery. This is client support, not
+a claim that the configured Gateway service accepts BYOK. Server capabilities
+and account authorization still decide which requests execute.
+
+Returned caller-owned request metadata retains submitted keys. Opt-in Go logger
+capture applies its configured field redactor to structured copies, including
+`apiKey` and authentication headers. Use `DefaultRedactorWithExtraKeys` or
+`RedactorFunc` for additional sensitive fields. This does not redact the entire
+BYOK object, censor provider data or find secrets embedded in ordinary text.
+Direct application/TypeScript logging and other exporters need their own capture
+policy. Ordinary fields and `gateway.providerTimeouts.byok` remain unchanged.
+
 ## Configure fallback
 
 Configure a primary model and ordered backups under the same public model ID:
@@ -279,8 +294,18 @@ Warnings and public error messages remain server-provided text. Unknown private
 metadata is not promoted into model identity or Gateway error fields. A unary
 response's bounded raw HTTP body remains available in `Response.Body`.
 
-Use call headers for application metadata. Credential-bearing call headers are
-rejected; configure authentication on the client instead. See the
+For a valid HTTP error, `APICallError.Data` and `ResponseBody` retain the complete
+bounded response, including any additive diagnostics supplied by the server.
+For a committed SSE error, `APICallError.Data` retains exactly the supplied
+`error.data`; `ResponseBody` is empty because an SSE event is not an HTTP error
+response. These extensions remain opaque and do not change classification or
+status-derived retryability. Error envelope and payload fields use standard Go
+JSON decoding, including case-insensitive field matching. Later valid stream
+parts remain consumable.
+
+Use call headers for application metadata. All constructors and call options
+reject reserved authentication-header overrides; configure authentication on
+the client instead. See the
 [package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana)
 for configuration and result types.
 

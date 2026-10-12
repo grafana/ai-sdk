@@ -6,15 +6,7 @@ Support Anthropic complex server-executed tools (code execution, computer use, t
 
 ### Requirement: Code execution tool definitions
 
-The Anthropic provider SHALL support the following code execution provider-defined tool IDs in `convertProviderTool`:
-
-| Tool ID | API type | API name | Beta header |
-|---|---|---|---|
-| `anthropic.code_execution_20250522` | `code_execution_20250522` | `code_execution` | `code-execution-2025-05-22` |
-| `anthropic.code_execution_20250825` | `code_execution_20250825` | `code_execution` | `code-execution-2025-08-25` |
-| `anthropic.code_execution_20260120` | `code_execution_20260120` | `code_execution` | (none) |
-
-Each SHALL produce the corresponding Anthropic SDK tool type with `name` set to `"code_execution"` and return the beta header string (if any) for inclusion in the API request.
+convertProviderTool SHALL support anthropic.code_execution_20250522, anthropic.code_execution_20250825 and anthropic.code_execution_20260120, producing corresponding Anthropic SDK types with name code_execution. The first two SHALL return code-execution-2025-05-22 and code-execution-2025-08-25 betas for the request; 20260120 SHALL return none.
 
 #### Scenario: code_execution_20250522 tool definition
 
@@ -36,15 +28,7 @@ Each SHALL produce the corresponding Anthropic SDK tool type with `name` set to 
 
 ### Requirement: Computer use tool definitions
 
-The Anthropic provider SHALL support the following computer use provider-defined tool IDs in `convertProviderTool`:
-
-| Tool ID | API type | API name | Beta header | Args |
-|---|---|---|---|---|
-| `anthropic.computer_20241022` | `computer_20241022` | `computer` | `computer-use-2024-10-22` | `displayWidthPx`, `displayHeightPx`, `displayNumber` |
-| `anthropic.computer_20250124` | `computer_20250124` | `computer` | `computer-use-2025-01-24` | `displayWidthPx`, `displayHeightPx`, `displayNumber` |
-| `anthropic.computer_20251124` | `computer_20251124` | `computer` | `computer-use-2025-11-24` | `displayWidthPx`, `displayHeightPx`, `displayNumber`, `enableZoom` |
-
-Dimension args (`displayWidthPx`, `displayHeightPx`) SHALL be extracted from the tool's `Args` map as numeric values. `displayNumber` SHALL be extracted as a numeric value when present. The `20251124` version SHALL additionally extract `enableZoom` as a boolean and map it to `enable_zoom`.
+convertProviderTool SHALL support `anthropic.computer_20241022`, `anthropic.computer_20250124` and `anthropic.computer_20251124`, with matching dated API types and name computer. Their betas SHALL be computer-use-2024-10-22, computer-use-2025-01-24 and computer-use-2025-11-24 respectively. Numeric displayWidthPx/displayHeightPx and present numeric displayNumber SHALL be extracted from Args; only 20251124 SHALL map boolean enableZoom to enable_zoom.
 
 #### Scenario: computer_20241022 with display dimensions
 
@@ -66,16 +50,7 @@ Dimension args (`displayWidthPx`, `displayHeightPx`) SHALL be extracted from the
 
 ### Requirement: Text editor tool definitions
 
-The Anthropic provider SHALL support the following text editor provider-defined tool IDs in `convertProviderTool`:
-
-| Tool ID | API type | API name | Beta header | Args |
-|---|---|---|---|---|
-| `anthropic.text_editor_20241022` | `text_editor_20241022` | `str_replace_editor` | `computer-use-2024-10-22` | (none) |
-| `anthropic.text_editor_20250124` | `text_editor_20250124` | `str_replace_editor` | `computer-use-2025-01-24` | (none) |
-| `anthropic.text_editor_20250429` | `text_editor_20250429` | `str_replace_based_edit_tool` | `computer-use-2025-01-24` | (none) |
-| `anthropic.text_editor_20250728` | `text_editor_20250728` | `str_replace_based_edit_tool` | (none) | `maxCharacters` |
-
-Note the API name difference: `20241022` and `20250124` use `str_replace_editor`, while `20250429` and `20250728` use `str_replace_based_edit_tool`. The `20250728` version SHALL extract `maxCharacters` from `Args` as a numeric value and map it to `max_characters`.
+convertProviderTool SHALL support `anthropic.text_editor_20241022`, `anthropic.text_editor_20250124`, `anthropic.text_editor_20250429` and `anthropic.text_editor_20250728` with matching dated API types. The first two SHALL use str_replace_editor, later versions str_replace_based_edit_tool. Betas SHALL be computer-use-2024-10-22 for 20241022, computer-use-2025-01-24 for 20250124/20250429, none for 20250728. Earlier versions SHALL have no args.
 
 #### Scenario: text_editor_20241022 definition
 
@@ -94,6 +69,11 @@ Note the API name difference: `20241022` and `20250124` use `str_replace_editor`
 - **WHEN** `convertProviderTool` receives a provider tool with `ID: "anthropic.text_editor_20250728"` and `Args: {"maxCharacters": 50000}`
 - **THEN** it produces a tool with `type: "text_editor_20250728"`, `name: "str_replace_based_edit_tool"`, `max_characters: 50000`
 - **AND** returns no beta header
+
+#### Scenario: text_editor_20250124 definition
+
+- **WHEN** convertProviderTool receives ID anthropic.text_editor_20250124
+- **THEN** it SHALL emit type text_editor_20250124, name str_replace_editor and beta computer-use-2025-01-24 without args
 
 ### Requirement: Bash tool definitions
 
@@ -118,11 +98,7 @@ The Anthropic provider SHALL support the following bash provider-defined tool ID
 
 ### Requirement: Code execution delta rewriting in streaming
 
-When streaming responses for `server_tool_use` blocks with wire name `bash_code_execution` or `text_editor_code_execution`, the stream adapter SHALL rewrite the first non-empty `input_json_delta` to inject a `type` field. The rewriting SHALL replace the opening `{` of the first non-empty delta with `{"type": "<providerToolName>",` where `<providerToolName>` is the original wire name (`bash_code_execution` or `text_editor_code_execution`).
-
-The stream adapter SHALL track `firstDelta bool` and `providerToolName string` per content block in `blockState`. Empty deltas (zero length) SHALL be skipped for the purpose of identifying the "first" delta. After the first non-empty delta is rewritten, `firstDelta` SHALL be set to `false`.
-
-The tool name emitted to the orchestration layer SHALL map through `code_execution` (not the original wire name), matching the upstream behavior where `bash_code_execution` and `text_editor_code_execution` are sub-types of `code_execution`.
+For server_tool_use names bash_code_execution/text_editor_code_execution, the adapter SHALL replace the opening `{` of the first nonempty input_json_delta with `{"type": "<providerToolName>",` using the original wire name. blockState SHALL track firstDelta bool/providerToolName string per block, skip zero-length deltas to find the first, and set firstDelta=false after rewriting. Emitted names SHALL map through code_execution, not the subtype wire name, matching upstream.
 
 #### Scenario: First non-empty delta rewritten for bash_code_execution
 
@@ -153,9 +129,7 @@ The tool name emitted to the orchestration layer SHALL map through `code_executi
 
 ### Requirement: Programmatic tool call type injection
 
-When processing `server_tool_use` blocks with wire name `code_execution`, the Anthropic provider SHALL check the accumulated input JSON at `content_block_stop` (streaming) or the full input object (non-streaming). If the input has a `code` field but no `type` field, the provider SHALL inject `"type": "programmatic-tool-call"` into the input.
-
-This handles the programmatic tool calling pattern where the API sends `code_execution` tool calls with just `{code: "..."}` format, which need to be tagged with a type for downstream consumers.
+For server_tool_use wire name code_execution, the provider SHALL inspect accumulated JSON at streaming content_block_stop or the full unary input. If code exists but type does not, it SHALL inject "type":"programmatic-tool-call" so downstream consumers can identify API {code:...} calls.
 
 #### Scenario: Streaming programmatic tool call injection
 
@@ -199,9 +173,7 @@ When `convertResponse` encounters a `server_tool_use` block with wire name `bash
 
 ### Requirement: Dynamic flag for implicit code execution
 
-The Anthropic provider SHALL compute a `markCodeExecutionDynamic` boolean after tool preparation. The flag SHALL be `true` when the prepared tools contain a tool with type `web_fetch_20260209` or `web_search_20260209` AND no tool has name `code_execution`.
-
-When `markCodeExecutionDynamic` is `true`, all `server_tool_use` blocks with wire name `code_execution` SHALL have `Dynamic: true` set on the emitted tool call parts. This applies in both streaming (`PartToolInputStart` and `PartToolCall`) and non-streaming (`GenerateContentPart`) paths.
+After tool preparation, markCodeExecutionDynamic SHALL be true when tools contain type web_fetch_20260209 or web_search_20260209 and none has name code_execution. When true, server_tool_use wire name code_execution SHALL emit Dynamic:true in streaming PartToolInputStart/PartToolCall and unary GenerateContentPart.
 
 #### Scenario: Dynamic flag set when web_search_20260209 without code_execution
 
@@ -221,13 +193,7 @@ When `markCodeExecutionDynamic` is `true`, all `server_tool_use` blocks with wir
 
 ### Requirement: Code execution result block handling
 
-The Anthropic provider SHALL handle `code_execution_tool_result` content blocks in both streaming and non-streaming paths. These blocks have three subtypes identified by their inner type field:
-
-- `code_execution_result`: Contains `stdout`, `stderr`, `return_code`, and `content` fields
-- `encrypted_code_execution_result`: Contains `encrypted_stdout`, `encrypted_stderr`, `return_code`, and `content` fields
-- `code_execution_tool_result_error`: Contains `error_code` field
-
-Each SHALL emit a `PartToolResult` (streaming) or `GenerateContentPart` with `Type: "tool-result"` (non-streaming). The tool name SHALL be `mapping.toCustomToolName("code_execution")`. The tool call ID SHALL be resolved from the `serverToolCalls` tracking map using the result's `tool_use_id`.
+The provider SHALL handle code_execution_tool_result in stream/unary calls, emitting PartToolResult or GenerateContentPart Type tool-result. ToolName SHALL be mapping.toCustomToolName("code_execution"); ToolCallID SHALL resolve from serverToolCalls using tool_use_id. Subtypes SHALL preserve stdout/stderr/return_code/content for code_execution_result, encrypted_stdout/encrypted_stderr/return_code/content for encrypted_code_execution_result, and error_code for code_execution_tool_result_error.
 
 #### Scenario: Streaming code_execution_result with stdout
 
@@ -310,3 +276,12 @@ When a `message_start` event includes a non-empty `content` array containing `to
 
 - **WHEN** a `message_start` event arrives with a `tool_use` block that has `caller: {type: "code_execution_20250825", tool_id: "toolu_456"}`
 - **THEN** the `PartToolCall` includes `ProviderMetadata` with `{"anthropic": {"caller": {"type": "code_execution_20250825", "toolId": "toolu_456"}}}`
+
+### Requirement: Anthropic text-editor 20250728 character limit
+
+Only text_editor_20250728 SHALL extract `maxCharacters` from Args as a numeric value and map it to `max_characters`.
+
+#### Scenario: Anthropic text-editor 20250728 character limit
+
+- **WHEN** anthropic.text_editor_20250728 has maxCharacters:50000
+- **THEN** the native tool SHALL contain max_characters:50000, without a beta

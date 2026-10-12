@@ -263,6 +263,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		setOptBoolP(m, c.Dynamic)
 		setPresentBool(m, "preliminary", c.Preliminary, c.preliminaryPresent)
 		setOptMeta(m, c.ProviderMetadata)
+		setOptRaw(m, "toolMetadata", c.ToolMetadata)
 
 	case ChunkToolOutputError:
 		m["toolCallId"] = c.ToolCallID
@@ -270,6 +271,7 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)
 		setOptBoolP(m, c.Dynamic)
 		setOptMeta(m, c.ProviderMetadata)
+		setOptRaw(m, "toolMetadata", c.ToolMetadata)
 
 	case ChunkSourceURL:
 		m["sourceId"] = c.SourceID

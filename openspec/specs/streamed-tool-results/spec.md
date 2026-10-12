@@ -8,7 +8,7 @@ Define preliminary and final local tool outputs, their stream and UI delivery, a
 
 ### Requirement: Local tool execution can stream outputs
 
-A tool SHALL be able to opt into streamed execution instead of the existing single-result `Execute` function. Every value yielded by a streamed execution SHALL be emitted as a preliminary tool result, and after normal completion the last value SHALL be emitted again as its final tool result. A streamed execution yielding no values SHALL finish with an absent output, matching the upstream empty async iterable. A single-result execution SHALL continue to emit only its final result. Configuring both execution forms on one tool SHALL be rejected as ambiguous.
+Tools SHALL support opting into streamed execution instead of single-result Execute. Every yield SHALL emit preliminary result; on normal completion the last yield SHALL emit again as final. No yields SHALL produce final absent output, matching upstream empty async iterable. Single-result execution SHALL emit only final result. Both forms on one tool SHALL be rejected as ambiguous.
 
 #### Scenario: Multiple streamed values
 - **WHEN** a tool streams outputs A and B and completes successfully
@@ -24,7 +24,7 @@ A tool SHALL be able to opt into streamed execution instead of the existing sing
 
 ### Requirement: Preliminary outputs do not finalize a call
 
-Preliminary local results SHALL be observable in the full text stream and converted UI message stream with `Preliminary: true`. They SHALL NOT be stored among final `StepResult.ToolResults`, converted with `ToModelOutput`, appended to continuation prompts, used to satisfy completion checks, or treated as terminal tool execution callbacks. The final output (or final error) SHALL be the only terminal result for those purposes. `GenerateText` SHALL inherit final-result collection through `StreamText`.
+Preliminary local results SHALL appear in full/UI streams with Preliminary true, but SHALL NOT enter final StepResult.ToolResults, ToModelOutput, continuation prompts, completion checks or terminal execution callbacks. Only final output/error SHALL be terminal for those purposes. GenerateText SHALL inherit final-result collection through StreamText.
 
 #### Scenario: No premature continuation
 - **WHEN** a streaming tool yields a preliminary result and waits before completing

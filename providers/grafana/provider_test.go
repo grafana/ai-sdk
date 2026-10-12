@@ -92,7 +92,7 @@ func TestNewWithAccessToken_Validation(t *testing.T) {
 
 func TestProvider_ImmutableConfigurationAndRegistry(t *testing.T) {
 	limits := DefaultLimits()
-	headers := http.Header{"x-config": {"original"}, "x-access-token": {"fake"}, "X-Grafana-Id": {"fake-user"}}
+	headers := http.Header{"x-config": {"original"}}
 	var calls atomic.Int32
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		calls.Add(1)
@@ -332,4 +332,84 @@ func TestTokenExchange_FailureAndCancellation(t *testing.T) {
 		assert.ErrorIs(t, <-doneFirst, context.Canceled)
 		assert.Equal(t, int32(1), exchanges.Load())
 	})
+}
+
+func TestProvider_ReservedAuthenticationHeaders(t *testing.T) {
+	for _, flow := range []struct {
+		name string
+		new  func(http.Header) (*Provider, error)
+	}{
+		{"access", func(headers http.Header) (*Provider, error) {
+			return NewWithAccessToken(AccessTokenConfig{AccessToken: "dummy-access", BaseURL: "https://gateway.invalid", Headers: headers})
+		}},
+		{"exchange", func(headers http.Header) (*Provider, error) {
+			return NewWithTokenExchange(TokenExchangeConfig{CAPToken: "dummy-cap", Namespace: "stacks-1", TokenExchangeURL: "https://exchange.invalid", BaseURL: "https://gateway.invalid", Headers: headers})
+		}},
+		{"cloud", func(headers http.Header) (*Provider, error) {
+			return NewWithCloudCredentials(CloudCredentialsConfig{StackID: 1, CAPToken: "dummy-cap", BaseURL: "https://gateway.invalid", Headers: headers})
+		}},
+	} {
+		t.Run(flow.name, func(t *testing.T) {
+			p, err := flow.new(nil)
+			require.NoError(t, err)
+			calls := 0
+			p.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+				calls++
+				t.Error("reserved authentication header reached network")
+				return nil, context.Canceled
+			})
+			model, err := p.LanguageModel("openai/model")
+			require.NoError(t, err)
+			for _, name := range []string{"Authorization", "aUtHoRiZaTiOn", "X-Access-Token", "x-grafana-id", "X-Scope-OrgID", "X-Cloud-Org-ID", "X-Access-Policy-ID"} {
+				for _, value := range []string{"", "dummy-private-marker"} {
+					t.Run(name+"/"+value, func(t *testing.T) {
+						configured, err := flow.new(http.Header{name: {value}})
+						require.Error(t, err)
+						assert.Nil(t, configured)
+						assert.NotContains(t, err.Error(), "dummy-private-marker")
+						opts := provider.CallOptions{Headers: map[string]string{name: value}}
+						generated, err := model.DoGenerate(context.Background(), opts)
+						require.Error(t, err)
+						assert.Nil(t, generated)
+						assert.NotContains(t, err.Error(), "dummy-private-marker")
+						streamed, err := model.DoStream(context.Background(), opts)
+						require.Error(t, err)
+						assert.Nil(t, streamed)
+						assert.NotContains(t, err.Error(), "dummy-private-marker")
+					})
+				}
+			}
+			assert.Zero(t, calls)
+		})
+	}
+}
+
+func TestLanguageModel_RequestSelectorBounds(t *testing.T) {
+	client, err := NewWithCloudCredentials(CloudCredentialsConfig{StackID: 123, CAPToken: "dummy-cap", BaseURL: "https://gateway.invalid/api/v1/aisdk"})
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name, id string
+		valid    bool
+	}{
+		{"configured", "grafana/assistant", true},
+		{"native suffix", "openai/native@revision+suffix/part", true},
+		{"UTF8 suffix", "anthropic/モデル", true},
+		{"exact byte limit", "openai/" + strings.Repeat("x", 2048-len("openai/")), true},
+		{"over byte limit", "openai/" + strings.Repeat("x", 2049-len("openai/")), false},
+		{"empty", "", false},
+		{"whitespace", "openai/not valid", false},
+		{"control", "openai/not\nvalid", false},
+		{"invalid UTF8", string([]byte{255}), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			model, err := client.LanguageModel(tc.id)
+			if !tc.valid {
+				require.Error(t, err)
+				assert.Nil(t, model)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.id, model.ModelID())
+		})
+	}
 }

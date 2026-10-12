@@ -7,7 +7,7 @@ Expose bounded OpenAI Chat Completions over configured Gateway providers while p
 ## Requirements
 
 ### Requirement: Adapter route and authentication
-The Gateway SHALL own POST `/v1/chat/completions` with OpenAI JSON errors, strict one-token Bearer authentication in access-token mode, existing credential-stripped cloud authentication, canonical model resolution and one shared middleware stack. The adapter SHALL translate only between the public Chat Completions contract and the canonical provider domain; host composition SHALL apply native default translation at each candidate boundary, including configured compatible namespaces, without model allowlists.
+The Gateway SHALL own POST `/v1/chat/completions` with OpenAI JSON errors, strict single-token Bearer authentication or credential-stripped cloud authentication, canonical routing and shared middleware. The adapter SHALL translate Chat Completions to/from the provider domain. The host SHALL translate native defaults per candidate, including configured compatible namespaces, without model allowlists.
 
 #### Scenario: Conflicting adapter credentials
 - **WHEN** Authorization is accompanied by X-Access-Token, X-Grafana-Id or a proxy assertion in access-token mode
@@ -29,7 +29,7 @@ The adapter SHALL accept the documented text/function/schema/reasoning subset, r
 - **THEN** every attempted candidate receives its matching Chat storage/schema/parallel defaults without option intersection or request mutation.
 
 ### Requirement: Valid adapter results
-Unary and streaming outputs SHALL preserve available native response identity, one choice, validated finish reasons and truthful optional usage. Streams SHALL freeze identity at first emitted content, filling missing fields once. Native warnings SHALL remain successful diagnostics in the bounded optional grafana.warnings extension; later native identity SHALL use grafana.native_response without changing emitted identity. Unsupported content SHALL fail safely. Strict schema output SHALL be checked on successful stop, never on length/filter partial output.
+Outputs SHALL preserve available native identity, one choice, validated finish reasons and truthful optional usage. Streams SHALL freeze identity at first content, filling missing fields once. Native warnings SHALL remain successful bounded grafana.warnings diagnostics; late identity SHALL use grafana.native_response. Unsupported content SHALL fail safely. Strict schemas SHALL be checked on successful stop, not length/filter partial output.
 
 #### Scenario: Fragmented function call
 - **WHEN** a stream supplies function start, argument deltas, end and a matching final call

@@ -99,7 +99,7 @@ func TestValidateAgentUIMessages_StateProjection(t *testing.T) {
 				require.NoError(t, err)
 				var value struct{ Parts []map[string]json.RawMessage }
 				require.NoError(t, json.Unmarshal(encoded, &value))
-				assert.Equal(t, tc.state == "output-error", value.Parts[0]["rawInput"] != nil)
+				assert.Equal(t, tc.state == "output-error" || tc.state == "input-streaming", value.Parts[0]["rawInput"] != nil)
 				assert.Equal(t, tc.state == "output-available", value.Parts[0]["preliminary"] != nil)
 				assert.Equal(t, tc.state == "output-available" || tc.state == "output-error", value.Parts[0]["resultProviderMetadata"] != nil)
 				after, err := json.Marshal(message)
@@ -179,7 +179,7 @@ func TestCreateAgentUIStream_DynamicRawInputContinuation(t *testing.T) {
 	require.NoError(t, err)
 	part := normalized[0].Parts[0].(DynamicToolUIPart)
 	assert.Nil(t, part.RawInput)
-	assert.JSONEq(t, `"legacy"`, string(persisted.Parts[0].(DynamicToolUIPart).RawInput))
+	assert.Nil(t, persisted.Parts[0].(DynamicToolUIPart).RawInput)
 	*part.Title = "changed"
 	assert.Equal(t, "", *persisted.Parts[0].(DynamicToolUIPart).Title)
 	model := &mockModel{streamFunc: func(_ context.Context, options provider.CallOptions) (*provider.StreamResult, error) {

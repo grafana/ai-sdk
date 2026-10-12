@@ -78,7 +78,7 @@ it("useChat persists, remounts and resumes preliminary/approval tool state throu
   expect(toolParts.map(part => part.toolCallId)).toEqual(["pre", "legacy", "approve"]);
   expect(toolParts[0]).toMatchObject({ state: "output-available", output: "final", title: "", toolMetadata: {}, callProviderMetadata: { test: { phase: "call" } }, resultProviderMetadata: { test: { phase: "partial" } } });
   expect(toolParts[0].preliminary).not.toBe(true);
-  expect(toolParts[1]).toMatchObject({ rawInput: "legacy", errorText: "", resultProviderMetadata: { test: { phase: "error" } } });
+  expect(toolParts[1]).toMatchObject({ input: "legacy", errorText: "", resultProviderMetadata: { test: { phase: "error" } } });
   expect(toolParts[2]).toMatchObject({ state: "output-available", output: "approved", title: "approval", toolMetadata: { scope: "all" }, approval: { id: "approval", approved: true, descriptor: { scope: "all" }, requestReason: "", reason: "", signature: "sig", isAutomatic: true } });
   const resumed = json(persisted);
   const part = resumed.at(-1)!.parts.find(part => "toolCallId" in part && part.toolCallId === "approve") as Record<string, unknown>;

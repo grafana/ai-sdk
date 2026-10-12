@@ -203,7 +203,6 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		FinishReason     *wireFinish             `json:"finishReason"`
 		Usage            *wireUsage              `json:"usage"`
 		RawValue         json.RawMessage         `json:"rawValue"`
-		Error            json.RawMessage         `json:"error"`
 		ToolCallID       *string                 `json:"toolCallId"`
 		ToolName         *string                 `json:"toolName"`
 		Input            *string                 `json:"input"`
@@ -216,7 +215,11 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		Data             json.RawMessage         `json:"data"`
 		Metadata         json.RawMessage         `json:"providerMetadata"`
 	}
-	if decodeFields(data, &value, "type", "providerMetadata") != nil {
+	fields, err := decodeObject(data)
+	if err != nil {
+		return invalid()
+	}
+	if decodeSelectedFields(fields, &value, "type", "providerMetadata") != nil {
 		return invalid()
 	}
 	part := provider.StreamPart{Type: value.Type}
@@ -306,11 +309,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		}
 		part.Warnings = warnings
 	case provider.PartResponseMeta:
-		if decodeFields(data, &value, "id", "modelId", "timestamp") != nil {
-			return invalid()
-		}
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(data, &fields) != nil {
+		if decodeSelectedFields(fields, &value, "id", "modelId", "timestamp") != nil {
 			return invalid()
 		}
 		for _, name := range []string{"id", "modelId", "timestamp"} {
@@ -372,23 +371,11 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		}
 		part.RawValue = value.RawValue
 	case provider.PartError:
-		if decodeFields(data, &value, "error") != nil {
+		failure, err := decodeStreamError(data)
+		if err != nil {
 			return invalid()
 		}
-		var eventError struct {
-			wireError
-			StatusCode int   `json:"statusCode"`
-			Retryable  *bool `json:"retryable"`
-		}
-		if decodeFields(value.Error, &eventError, "message", "type", "code", "param", "statusCode", "retryable") != nil || eventError.Retryable == nil {
-			return invalid()
-		}
-		err := mapGatewayError(&eventError.wireError, eventError.StatusCode)
-		gateway, ok := err.(*GatewayError)
-		if !ok || gateway.IsRetryable != *eventError.Retryable {
-			return invalid()
-		}
-		part.APICallError = gateway.cause
+		part.APICallError = failure
 	default:
 		return invalid()
 	}

@@ -18,7 +18,8 @@ Direct native-provider entry points and the Go Gateway client SHALL reject repre
 - **THEN** conversion SHALL use empty-object semantics and the Go Gateway request SHALL contain `args: {}`
 
 ### Requirement: Independent bounded opaque client metadata
-The Go Gateway client SHALL decode tool metadata through its independent object-valued namespace decoder under gateway-provider-metadata without importing server DTOs. It SHALL preserve unknown namespaces, keys, nested values and omission versus explicit empty objects at supported tool-content and tool-event scopes. It SHALL reject malformed metadata structure under existing protocol bounds, without imposing semantic field inventories or projecting MCP/caller fields. Semantic ownership and correlation validation SHALL remain separate from opaque transport. Response-level identity SHALL remain client-owned. Returning provider metadata SHALL NOT authorize telemetry capture. Client decoding SHALL be independent of which capabilities the Gateway service currently accepts.
+
+The Go Gateway client SHALL decode tool metadata with its independent object-valued namespace decoder under gateway-provider-metadata, not server DTOs. At supported tool-content/event scopes it SHALL retain unknown namespaces/keys/nested values and omission versus empty objects. It SHALL reject malformed structure under existing protocol bounds, without semantic inventories or MCP/caller projection.
 
 #### Scenario: MCP metadata with extensions
 - **WHEN** a tool response contains Anthropic MCP type/serverName together with caller and unknown namespace or extension fields
@@ -32,9 +33,26 @@ The Go Gateway client SHALL decode tool metadata through its independent object-
 - **WHEN** a successful unary or SSE response contains only a supported tool result
 - **THEN** the client SHALL decode it without importing server correlation state
 
+### Requirement: Opaque client metadata conveys no authority
+
+Semantic ownership/correlation checks SHALL remain separate from opaque transport. Response identity SHALL remain client-owned. Returned provider metadata SHALL NOT authorize telemetry capture. Client decoding SHALL be independent of Gateway service capability acceptance.
+
+#### Scenario: Service support does not control opaque decoding
+- **WHEN** a response has valid opaque metadata for a capability not accepted by the service
+- **THEN** client decoding SHALL remain independent and SHALL NOT derive ownership, correlation or telemetry capture authority from it.
+
 ### Requirement: Client decoding does not activate Gateway capabilities
-Gateway capability support SHALL be determined by its request mapping and the selected native adapter, independently of client decoding. Foreign options and opaque returned metadata SHALL NOT independently activate MCP or become grounds for blanket rejection. Existing consumers SHALL compile against the updated SDK types in candidate-source checks without introducing a dependency from Apache modules to Gateway code. Declared internal module pins SHALL resolve to revisions already merged into canonical main; standalone builds SHALL be checked separately before module or image publication.
+
+Gateway support SHALL depend on request mapping and selected native adapter, not client decoding. Foreign options/opaque returned metadata SHALL NOT independently activate MCP or justify blanket rejection. Existing consumers SHALL compile against updated SDK types in candidate-source checks without Apache-module dependencies on Gateway code.
 
 #### Scenario: Existing service rejection is preserved
 - **WHEN** an unsupported request capability reaches the Gateway runtime
 - **THEN** the service SHALL safely reject the unsupported capability before invocation
+
+### Requirement: Internal pins and standalone publication checks
+
+Declared internal module pins SHALL resolve to revisions already merged into canonical main. Standalone builds SHALL be checked separately before module or image publication.
+
+#### Scenario: Publication uses merged pins and standalone checks
+- **WHEN** a module or image is prepared for publication
+- **THEN** internal pins SHALL reference canonical-main merged revisions and standalone builds SHALL be checked separately.

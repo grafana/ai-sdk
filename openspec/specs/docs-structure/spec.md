@@ -89,14 +89,7 @@ footers. Diagrams SHALL use mermaid (GitHub-rendered) or ASCII.
 
 ### Requirement: Runnable examples are external and linked
 
-Complete, runnable example programs SHALL live under a top-level `/examples` Go
-directory as self-contained modules. The collection SHALL be curated around
-recognizable application outcomes rather than providing one runnable directory
-for every individual API call. Each example SHALL compile via `go build`, SHALL
-provide deterministic credential-free behavioral tests, and those tests SHALL
-run in blocking CI. `docs/` pages MAY include short illustrative snippets but
-SHALL link to the full program in `/examples` for non-trivial end-to-end
-scenarios rather than embedding the complete program.
+Complete runnable programs SHALL live in top-level `/examples` as self-contained Go modules, curated by recognizable application outcome rather than every API call. Each SHALL compile via `go build` and provide deterministic credential-free behavioral tests run in blocking CI. `docs/` MAY include short snippets but SHALL link to full `/examples` programs for non-trivial end-to-end scenarios, not embed them.
 
 #### Scenario: Example programs are buildable
 
@@ -138,15 +131,7 @@ scenarios rather than embedding the complete program.
 
 ### Requirement: User-facing narrative is centralized in docs/
 
-User-facing narrative documentation SHALL be centralized under `docs/` rather
-than scattered across package-local READMEs. Module/package `README.md` files
-that document user-facing setup, usage, or behavior SHALL have their content
-folded into the appropriate `docs/` page and SHALL be removed. All `doc.go`
-files SHALL remain co-located with their code as the godoc API reference and
-SHALL NOT be moved. Contributor/tooling READMEs that are not user-facing (e.g.
-under `test/`) MAY remain co-located. Documentation for a removed package SHALL
-be deleted or replaced by an indexed retirement note rather than retained as
-current usage guidance.
+User-facing setup, usage and behavior SHALL live under `docs/`, not package-local READMEs: fold those READMEs into appropriate pages and remove them. `doc.go` SHALL stay co-located as godoc API reference and SHALL NOT move. Non-user-facing contributor/tooling READMEs (e.g. `test/`) MAY stay co-located. Removed-package docs SHALL be deleted or replaced by indexed retirement notes, not retained as current usage guidance.
 
 #### Scenario: User-facing package READMEs are centralized
 

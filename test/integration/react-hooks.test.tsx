@@ -698,6 +698,7 @@ describe("React hook interop", () => {
       expect(screen.getByTestId("chat-text").textContent).toBe(text);
       if (scenario === "reconnect-stream") {
         expect(readProbe<UIMessage[]>("chat-messages")).toHaveLength(2);
+        expectOrderedSubsequence(readProbe<ChatStatus[]>("chat-status-history"), ["submitted", "streaming", "ready"]);
       } else if (scenario === "reconnect-error") {
         expect(readProbe<string[]>("chat-error-calls")).toEqual(["intentional server error"]);
       }
@@ -706,7 +707,6 @@ describe("React hook interop", () => {
     expect(messages[0].id).toBe("user-seeded");
     if (scenario === "reconnect-stream") {
       expect(messages[1].id).toBe("assistant-reconnected");
-      expectOrderedSubsequence(readProbe<ChatStatus[]>("chat-status-history"), ["submitted", "streaming", "ready"]);
       expect(readProbe<unknown[]>("chat-finish-calls")).toEqual([
         { messageId: "assistant-reconnected", isAbort: false, isError: false, finishReason: "stop" },
       ]);

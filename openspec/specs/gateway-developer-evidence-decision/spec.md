@@ -7,8 +7,7 @@ Define the evidence, client-access proof and owner-approval gates for Gateway de
 ## Requirements
 
 ### Requirement: Registered baseline and design-only evidence
-
-The #321 delivery SHALL consist of a compact reviewed decision and deterministic access probes against the versions registered in `test/conformance/upstream.yaml`. It MUST distinguish pinned-client behavior, current Vercel service documentation, synthetic access witnesses and native producer availability. It MUST NOT modify production codecs, exported APIs, stream lifecycle, execution/retry policy, routing, BYOK or credential capture merely to make probes pass, and MUST NOT depend on stopped #303/#309 implementations.
+The #321 delivery SHALL consist of a compact reviewed decision and deterministic access probes against the versions registered in `test/conformance/upstream.yaml`. It MUST distinguish pinned-client behavior, current Vercel service documentation, synthetic access witnesses and native producer availability.
 
 #### Scenario: Baseline is confirmed
 - **WHEN** access probes are implemented or run
@@ -20,9 +19,15 @@ The #321 delivery SHALL consist of a compact reviewed decision and deterministic
 - **THEN** the probe SHALL record that limitation without changing production decoding
 - **AND** the decision SHALL classify it as an access/implementation gap or explicitly approved support boundary
 
-### Requirement: Actual client and normalization access matrix
+### Requirement: Production behavior is not changed by access probes
+The #321 delivery MUST NOT modify production codecs, exported APIs, stream lifecycle, execution/retry policy, routing, BYOK or credential capture merely to make probes pass, and MUST NOT depend on stopped #303/#309 implementations.
 
-Probes SHALL cover unary success, stream setup success/failure, stream success, committed errors followed by valid parts, direct failures, all-failed heterogeneous envelopes and discovery normalization through pinned TS and independent Go clients. They SHALL exercise relevant high-level entry points and consumer middleware with executable public access expressions, not only raw HTTP acceptance. Feasibility demonstrated by test-only access helpers MUST be labeled as a proposed extension, not stock-client support.
+#### Scenario: Production behavior is not changed by access probes
+- **WHEN** a test probe loses a proposed evidence field
+- **THEN** the probe SHALL report the loss without modifying production behavior or depending on stopped #303/#309 implementations
+
+### Requirement: Actual client and normalization access matrix
+Probes SHALL cover unary success, stream setup success/failure, stream success, committed errors followed by valid parts, direct failures, all-failed heterogeneous envelopes and discovery normalization through pinned TS and independent Go clients. They SHALL exercise relevant high-level entry points and consumer middleware with executable public access expressions, not only raw HTTP acceptance.
 
 #### Scenario: Unary transport is replaced
 - **WHEN** an injected unary result contains native request/response fields and distinct Gateway hop headers/body
@@ -43,9 +48,15 @@ Probes SHALL cover unary success, stream setup success/failure, stream success, 
 - **THEN** probes SHALL identify fields retained or discarded by stock normalized discovery
 - **AND** SHALL demonstrate or identify the minimal explicit authenticated non-inference access needed for discarded facts
 
-### Requirement: Concrete identity, schema and provenance decision
+### Requirement: Test-only access helpers are proposed extensions
+Feasibility demonstrated by test-only access helpers MUST be labeled as a proposed extension, not stock-client support.
 
-The final decision SHALL specify exact field placement, shapes, event placement, access expressions and replacement/merge behavior for selected/attempt/error evidence, native transport and configured discovery. It SHALL distinguish requested/canonical route, configured candidate, selected provider/model, native response identity, actual invocation, fall-through intent, selection, completion, native retry facts, fallback decisions and Gateway status/classification/client retryability. It SHALL define collision/provenance behavior between service-owned evidence and opaque native metadata, preserve useful authorized identities and unknown valid metadata, and source-link compatible documented Vercel routing semantics separately from pinned consumption proof.
+#### Scenario: Test-only access helpers are proposed extensions
+- **WHEN** an executable probe uses a test-only helper to retrieve fields discarded by stock decoding
+- **THEN** the result MUST be labeled proposed-extension feasibility rather than stock-client support
+
+### Requirement: Concrete identity, schema and provenance decision
+The final decision SHALL specify exact field placement, shapes, event placement, access expressions and replacement/merge behavior for selected/attempt/error evidence, native transport and configured discovery. It SHALL distinguish requested/canonical route, configured candidate, selected provider/model, native response identity, actual invocation, fall-through intent, selection, completion, native retry facts, fallback decisions and Gateway status/classification/client retryability.
 
 #### Scenario: A secondary candidate is selected
 - **WHEN** a synthetic scenario describes a failed primary and selected secondary with differing provider-reported response identity
@@ -62,9 +73,15 @@ The final decision SHALL specify exact field placement, shapes, event placement,
 - **THEN** the decision SHALL define an evidence-backed rule that prevents spoofed service attribution and silent native-value loss
 - **AND** native metadata SHALL NOT become trusted authorization or routing input
 
-### Requirement: Source-specific protection and bounded dispositions
+### Requirement: Service evidence collision and provenance rules
+The final decision SHALL define collision/provenance behavior between service-owned evidence and opaque native metadata, preserve useful authorized identities and unknown valid metadata, and source-link compatible documented Vercel routing semantics separately from pinned consumption proof.
 
-The decision SHALL enumerate actual credential-bearing sources/fields and justified numeric input, retention, encoded-byte and cardinality limits, including complete unary/error/SSE/discovery envelopes and encoding overhead. It SHALL define absence, valid empty values, unavailable, redacted, malformed and over-limit dispositions per evidence component. Missing producer information MUST NOT be invented. Optional evidence loss MUST be explicit and MUST NOT silently trim supported content or ordinary metadata, byte-truncate JSON, blanket-ban topology/transport or censor secret-looking application strings.
+#### Scenario: Service evidence collision and provenance rules
+- **WHEN** native metadata collides with a proposed service-owned evidence path
+- **THEN** the decision SHALL preserve authorized identities and unknown valid metadata under an evidence-backed collision rule and separate documented routing semantics from pinned access proof
+
+### Requirement: Source-specific protection and bounded dispositions
+The decision SHALL enumerate actual credential-bearing sources/fields and justified numeric input, retention, encoded-byte and cardinality limits, including complete unary/error/SSE/discovery envelopes and encoding overhead. It SHALL define absence, valid empty values, unavailable, redacted, malformed and over-limit dispositions per evidence component. Missing producer information MUST NOT be invented.
 
 #### Scenario: A producer lacks native headers
 - **WHEN** its current result/stream/error surface does not expose requested native header evidence
@@ -79,6 +96,13 @@ The decision SHALL enumerate actual credential-bearing sources/fields and justif
 - **WHEN** input or final encoded optional evidence would exceed the chosen numeric/count budget
 - **THEN** the decision SHALL specify bounded work and explicit unavailable/over-limit behavior without truncating JSON or displacing ordinary supported data
 - **AND** exact-boundary and over-boundary witnesses SHALL justify the disposition and required-envelope behavior
+
+### Requirement: Explicit optional evidence loss without content censorship
+Optional evidence loss MUST be explicit and MUST NOT silently trim supported content or ordinary metadata, byte-truncate JSON, blanket-ban topology/transport or censor secret-looking application strings.
+
+#### Scenario: Explicit optional evidence loss without content censorship
+- **WHEN** optional native evidence exceeds its allocated bound alongside ordinary supported metadata
+- **THEN** the disposition SHALL be explicit without truncating JSON, displacing supported content or censoring ordinary secret-looking values
 
 ### Requirement: Independent consumer and operator observation
 
@@ -95,8 +119,7 @@ Consumer access SHALL be proved through existing independently configured middle
 - **AND** SHALL NOT claim server-side redaction retroactively sanitizes the client's request object
 
 ### Requirement: Single seam ownership and explicit owner approval
-
-Before #321 is complete, the decision SHALL record an acyclic dependency map with one owner per metadata codec, candidate attribution/capture, error projection, native evidence projection, discovery/access and any approved shared client addition. It SHALL resolve conditional #280/#322 prerequisites for #323 and independent #324 prerequisites, while #316 reuses those delivered seams. The owner MUST explicitly approve the concrete decision, numeric bounds, dispositions and every public API/extension implication before downstream implementation; proposal generation or passing probes alone MUST NOT count as approval.
+Before #321 is complete, the decision SHALL record an acyclic dependency map with one owner per metadata codec, candidate attribution/capture, error projection, native evidence projection, discovery/access and any approved shared client addition. It SHALL resolve conditional #280/#322 prerequisites for #323 and independent #324 prerequisites, while #316 reuses those delivered seams.
 
 #### Scenario: A metadata carrier is selected
 - **WHEN** the approved contract carries attempt or native evidence through ordinary provider metadata
@@ -107,3 +130,10 @@ Before #321 is complete, the decision SHALL record an acyclic dependency map wit
 - **WHEN** probes and decision are prepared but the owner has not approved the concrete schema/access/API implications
 - **THEN** #321 SHALL remain pending approval and #322–#324 MUST NOT be represented as authorized for contract implementation
 - **AND** no sentinel/error-tree protocol, extra stream reader, new collector or error API change SHALL be inferred as approved
+
+### Requirement: Concrete downstream contract approval gate
+The owner MUST explicitly approve the concrete decision, numeric bounds, dispositions and every public API/extension implication before downstream implementation; proposal generation or passing probes alone MUST NOT count as approval.
+
+#### Scenario: Concrete downstream contract approval gate
+- **WHEN** probes pass but the owner has not approved numeric bounds, dispositions or API implications
+- **THEN** downstream contract implementation SHALL remain unapproved despite passing probes or proposal generation

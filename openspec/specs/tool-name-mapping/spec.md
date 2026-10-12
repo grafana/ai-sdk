@@ -118,9 +118,7 @@ The tool name mapping SHALL be built in `buildParams` alongside tool conversion,
 
 ### Requirement: Server tool call tracking for result correlation
 
-Both `convertResponse` and `streamAdapter` SHALL maintain a `serverToolCalls` map from `tool_use_id` to provider wire name. When a `server_tool_use` block is processed, the block's ID and wire name SHALL be recorded. When a result block arrives (e.g. `tool_search_tool_result`), the handler SHALL look up the originating wire name via `tool_use_id` to determine which name to pass to `toCustomToolName`.
-
-When the tracking map does not contain an entry for the `tool_use_id`, the handler SHALL fall back to checking which tool_search variant has a mapping entry and use that provider wire name.
+convertResponse and streamAdapter SHALL maintain serverToolCalls from tool_use_id to provider wire name, recording server_tool_use IDs/names. Result blocks SHALL look up originating name by tool_use_id for toCustomToolName. Missing tracking entries SHALL fall back to the tool_search variant with a mapping entry and use that provider wire name.
 
 #### Scenario: tool_search_tool_result resolves name via tracking map
 

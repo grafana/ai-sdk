@@ -101,7 +101,10 @@ func StreamUIMessage(stream <-chan UIMessageChunk, opts ...UIMessageReaderOption
 	cfg := buildUIMessageReaderConfig(opts)
 	go func() {
 		defer close(out)
-		state := newUIMessageReaderState(cfg)
+		state, err := newUIMessageReaderState(cfg)
+		if err != nil {
+			return
+		}
 		for chunk := range stream {
 			if chunk.Type == ChunkError {
 				continue
@@ -122,7 +125,10 @@ func StreamUIMessage(stream <-chan UIMessageChunk, opts ...UIMessageReaderOption
 // final assembled assistant message.
 func AssembleUIMessage(stream <-chan UIMessageChunk, opts ...UIMessageReaderOption) (UIMessage, error) {
 	cfg := buildUIMessageReaderConfig(opts)
-	state := newUIMessageReaderState(cfg)
+	state, err := newUIMessageReaderState(cfg)
+	if err != nil {
+		return UIMessage{}, err
+	}
 	var streamErr error
 	for chunk := range stream {
 		if chunk.Type == ChunkError {

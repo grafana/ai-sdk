@@ -94,11 +94,6 @@ func NewWithCloudCredentials(cfg CloudCredentialsConfig, opts ...Option) (*Provi
 	if !validCredential(cfg.CAPToken) {
 		return nil, errors.New("grafana: invalid CAP token")
 	}
-	for name := range cfg.Headers {
-		if cloudReservedHeader(name) {
-			return nil, errors.New("grafana: reserved cloud authentication header")
-		}
-	}
 	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, cfg.Limits, opts)
 	if err != nil {
 		return nil, err
@@ -107,7 +102,7 @@ func NewWithCloudCredentials(cfg CloudCredentialsConfig, opts ...Option) (*Provi
 	return p, nil
 }
 
-func cloudReservedHeader(name string) bool {
+func reservedAuthenticationHeader(name string) bool {
 	switch strings.ToLower(name) {
 	case "authorization", "x-access-token", "x-grafana-id", "x-scope-orgid", "x-cloud-org-id", "x-access-policy-id":
 		return true
@@ -115,12 +110,10 @@ func cloudReservedHeader(name string) bool {
 	return false
 }
 
-func (p *Provider) validateCloudCallHeaders(headers map[string]string) error {
-	if p.cloudBearer != "" {
-		for name := range headers {
-			if cloudReservedHeader(name) {
-				return errors.New("grafana: reserved cloud authentication header")
-			}
+func validateCallAuthenticationHeaders(headers map[string]string) error {
+	for name := range headers {
+		if reservedAuthenticationHeader(name) {
+			return errors.New("grafana: reserved authentication header")
 		}
 	}
 	return nil
@@ -205,6 +198,9 @@ func newProvider(rawURL string, client *http.Client, headers http.Header, limits
 	}
 	canonical := make(http.Header, len(headers))
 	for key, values := range headers {
+		if reservedAuthenticationHeader(key) {
+			return nil, errors.New("grafana: reserved authentication header")
+		}
 		if !validHeaderName(key) {
 			return nil, errors.New("grafana: invalid configured header name")
 		}
@@ -237,7 +233,7 @@ func validCredential(value string) bool {
 	return value != "" && utf8.ValidString(value) && strings.IndexFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) == -1
 }
 
-var publicModelID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
+const maxModelIDBytes = 2048
 
 func validHeaderName(value string) bool {
 	if value == "" {
@@ -277,7 +273,7 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 		return nil, err
 	}
 	for _, entries := range callHeaders {
-		if err := p.validateCloudCallHeaders(entries); err != nil {
+		if err := validateCallAuthenticationHeaders(entries); err != nil {
 			return nil, err
 		}
 	}
@@ -343,9 +339,9 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 	return req, nil
 }
 
-// LanguageModel returns a model retaining the requested public identifier.
+// LanguageModel returns a model retaining the requested identifier.
 func (p *Provider) LanguageModel(id string) (provider.LanguageModel, error) {
-	if !publicModelID.MatchString(id) {
+	if len(id) > maxModelIDBytes || !validCredential(id) {
 		return nil, errors.New("grafana: invalid model ID")
 	}
 	return &model{provider: p, id: id}, nil

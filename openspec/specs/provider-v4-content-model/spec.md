@@ -8,7 +8,11 @@ Define the provider V4 message, content-part, and related stream/generate conten
 
 ### Requirement: Message is a flat discriminated struct
 
-The `provider` package SHALL define `Message` as a single struct, not a sealed interface:
+The `provider` package SHALL define `Message` as a single struct, not a sealed interface. Typed `Role` SHALL discriminate system, user, assistant and tool messages. The previous sealed interface and concrete `SystemMessage`, `UserMessage`, `AssistantMessage` and `ToolMessage` SHALL be removed.
+
+#### Scenario: Message field schema
+- **WHEN** the public `Message` fields and JSON tags are inspected
+- **THEN** they SHALL be:
 
 ```go
 type Message struct {
@@ -17,8 +21,6 @@ type Message struct {
     ProviderOptions ProviderOptions `json:"providerOptions,omitempty"`
 }
 ```
-
-The `Role` field SHALL discriminate the message variant (`"system"`, `"user"`, `"assistant"`, `"tool"`). The previous `Message` sealed interface and the four concrete variants (`SystemMessage`, `UserMessage`, `AssistantMessage`, `ToolMessage`) SHALL be removed.
 
 #### Scenario: Message is a struct
 - **WHEN** the `provider.Message` type is inspected
@@ -54,7 +56,11 @@ The provider package SHALL preserve constructor helpers for ergonomics: `NewSyst
 
 ### Requirement: ContentPart is a flat discriminated struct
 
-The `provider` package SHALL define `ContentPart` as a single flat struct discriminated by a typed `Type` field, mirroring how `provider.StreamPart` is already modeled:
+The `provider` package SHALL define `ContentPart` as one flat struct discriminated by typed `Type`, as `provider.StreamPart` is modeled. The previous sealed `UserContentPart`, `AssistantContentPart` and `ToolMessageContentPart` interfaces and concrete content-part variants SHALL be removed.
+
+#### Scenario: ContentPart field schema
+- **WHEN** the flat `ContentPart` public fields and JSON tags are inspected
+- **THEN** they SHALL be:
 
 ```go
 type ContentPart struct {
@@ -76,9 +82,9 @@ type ContentPart struct {
 }
 ```
 
-The previous sealed interfaces `UserContentPart`, `AssistantContentPart`, `ToolMessageContentPart` SHALL be removed. The previous concrete types `TextContentPart`, `FileContentPart`, `ReasoningContentPart`, `ToolCallContentPart`, `ToolResultContentPart`, `CustomContentPart`, `ReasoningFileContentPart`, and `ToolApprovalResponseContentPart` SHALL be removed.
-
-For input files, nil `Filename` SHALL mean absent and a pointer to an empty string SHALL mean explicitly supplied empty. Source conversions using the shared flat struct SHALL retain existing absent/empty normalization; this field change SHALL NOT make `SourceInfo`, generated-output, stream, or UI `SourceDocumentPart` filenames presence-aware. Ordinary UI `FilePart` inputs SHALL instead preserve filename presence under the ui-message-conversion contract.
+#### Scenario: Removed ContentPart identifiers
+- **WHEN** provider package identifiers are inspected after flattening
+- **THEN** the previous concrete `TextContentPart`, `FileContentPart`, `ReasoningContentPart`, `ToolCallContentPart`, `ToolResultContentPart`, `CustomContentPart`, `ReasoningFileContentPart` and `ToolApprovalResponseContentPart` SHALL be removed
 
 #### Scenario: Removed types
 - **WHEN** the `provider` package is inspected
@@ -100,9 +106,21 @@ For input files, nil `Filename` SHALL mean absent and a pointer to an empty stri
 - **WHEN** source information with an absent or empty descriptive filename crosses the `ContentPart` boundary
 - **THEN** it SHALL retain the existing no-filename semantics without changing source or UI wire representations
 
+### Requirement: Input filename presence does not alter source output
+
+Input file nil `Filename` SHALL mean absent; pointer to empty SHALL mean supplied empty. Shared flat-struct source conversion SHALL retain absent/empty normalization. This SHALL NOT make `SourceInfo`, generated-output, stream or UI `SourceDocumentPart` filenames presence-aware. Ordinary UI `FilePart` inputs SHALL preserve filename presence under ui-message-conversion.
+
+#### Scenario: Input filename presence does not alter source output
+- **WHEN** source conversion and ordinary UI file conversion both cross the flat struct
+- **THEN** sources SHALL retain existing normalization while ordinary UI file inputs preserve filename presence
+
 ### Requirement: ContentPart constructor helpers
 
-The `provider` package SHALL provide per-variant constructor helpers that return a `ContentPart` with `Type` set to the matching `ContentPartType` constant and the relevant fields populated:
+The provider package SHALL provide per-variant helpers returning `ContentPart` with the matching typed discriminator and relevant fields populated. Helpers SHALL keep producer call sites readable; the flat struct SHALL remain usable as a literal.
+
+#### Scenario: ContentPart helper signatures
+- **WHEN** the provider constructor API is inspected
+- **THEN** it SHALL expose these helpers, each returning its matching variant:
 
 - `TextPart(text string) ContentPart`
 - `FilePart(mediaType string, data DataContent) ContentPart`
@@ -114,8 +132,6 @@ The `provider` package SHALL provide per-variant constructor helpers that return
 - `ToolApprovalRequestPart(approvalID, toolCallID string, isAutomatic bool) ContentPart`
 - `ToolApprovalResponsePart(approvalID string, approved bool, reason string) ContentPart`
 - `ProviderExecutedToolApprovalResponsePart(approvalID string, approved bool, reason string) ContentPart`
-
-These helpers exist to keep producer call sites readable; the underlying flat `ContentPart` struct remains usable as a literal where needed.
 
 #### Scenario: TextPart shape
 - **WHEN** `TextPart("hello")` is called
@@ -285,9 +301,7 @@ The provider package SHALL define `PartReasoningFile StreamPartType = "reasoning
 
 ### Requirement: StreamPart tool approval fields
 
-`StreamPart` SHALL include `ApprovalID string` for `PartToolApprovalRequest` parts. `PartToolApprovalRequest` SHALL carry the approval request ID and the tool call ID that needs approval, matching the current upstream V4 stream part. The provider package SHALL NOT define `PartToolApprovalResult`, because current upstream V4 does not define a `tool-approval-result` stream part.
-
-User decisions SHALL be represented as tool-message content parts with type `ContentPartTypeToolApprovalResponse`, not as provider stream parts.
+`StreamPart` SHALL include `ApprovalID string` for `PartToolApprovalRequest`, carrying approval request ID and the tool call ID needing approval, matching current upstream V4. The provider SHALL NOT define `PartToolApprovalResult` because upstream has no `tool-approval-result` stream part. User decisions SHALL use tool-message `ContentPartTypeToolApprovalResponse`, not stream parts.
 
 #### Scenario: Tool approval request in stream
 - **WHEN** a provider emits `StreamPart{Type: PartToolApprovalRequest, ApprovalID: "apr_123", ToolCallID: "call_456"}`
@@ -303,9 +317,7 @@ User decisions SHALL be represented as tool-message content parts with type `Con
 
 ### Requirement: Assistant approval request content part
 
-The `provider` package SHALL define `ContentPartTypeToolApprovalRequest = "tool-approval-request"` for assistant-role model messages. A tool approval request content part SHALL carry `ApprovalID`, `ToolCallID`, and optional automatic-approval metadata. It SHALL be valid in assistant-role messages so orchestration can persist approval requests across the stateless two-call flow.
-
-Provider prompt conversion SHALL use assistant approval request parts only for local correlation and missing-tool-result checks. Local approval request parts SHALL NOT be forwarded to provider APIs that do not accept them.
+The provider package SHALL define `ContentPartTypeToolApprovalRequest = "tool-approval-request"` valid in assistant-role messages for persistence across stateless two-call flows. It SHALL carry `ApprovalID`, `ToolCallID` and optional automatic-approval metadata. Prompt conversion SHALL use it only for local correlation/missing-result checks and SHALL NOT forward it to APIs that do not accept it.
 
 #### Scenario: Approval request content round-trips
 - **WHEN** a `ContentPart` with `Type: ContentPartTypeToolApprovalRequest`, approval ID, and tool call ID is JSON round-tripped

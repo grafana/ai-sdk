@@ -72,8 +72,14 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 	opt := buildConvertConfig(opts)
 
 	var result []provider.Message
+	lastUserMessageIndex := -1
+	for i, message := range messages {
+		if message.Role == RoleUser {
+			lastUserMessageIndex = i
+		}
+	}
 
-	for _, msg := range messages {
+	for messageIndex, msg := range messages {
 		switch msg.Role {
 		case RoleSystem:
 			text, opts := extractSystemContent(msg.Parts)
@@ -170,6 +176,9 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 			}
 
 			processToolPart := func(tp toolPartFields) error {
+				if tp.State == ToolStateApprovalRequested && messageIndex < lastUserMessageIndex {
+					return nil
+				}
 				if tp.State == ToolStateInputStreaming || (opt.ignoreIncompleteToolCalls && (!isCompleteToolCallState(tp.State) || (tp.State == ToolStateOutputAvailable && tp.Preliminary != nil && *tp.Preliminary))) {
 					return nil
 				}

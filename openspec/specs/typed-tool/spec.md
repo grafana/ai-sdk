@@ -6,21 +6,7 @@ Generic helper for type-safe tool definition with automatic JSON Schema derivati
 
 ### Requirement: TypedToolDef struct provides typed tool definition
 
-The system SHALL provide a generic struct `TypedToolDef[I, O any]` that defines a tool using Go types instead of raw JSON. The struct SHALL include:
-
-- `Name` (string): tool identifier
-- `Description` (string): tool description for the LLM
-- `Title` (string, optional): display title
-- `Execute` (func): typed execution function `func(ctx context.Context, input I, opts ToolExecutionOptions) (O, error)`
-- `OutputSchema` (schema.Schema, optional): explicit output schema override
-- `InputExamples` ([]I, optional): typed input examples
-- `Strict` (*bool, optional): strict mode flag; nil, true, and false remain distinct
-- `ProviderOptions` (map, optional): provider-specific options
-- `ValidateInput` (func, optional): typed input validation `func(input I) error`
-- `ToModelOutput` (func, optional): typed model output conversion `func(toolCallID string, input I, output O) (*provider.ToolResultOutput, error)`
-- `OnInputStart` (func, optional): callback when argument streaming starts `func(ToolExecutionOptions)`
-- `OnInputDelta` (func, optional): callback for argument streaming deltas `func(inputTextDelta string, opts ToolExecutionOptions)`
-- `OnInputAvailable` (func, optional): typed callback when full input is available `func(input I, err error, opts ToolExecutionOptions)`
+The system SHALL provide generic struct TypedToolDef[I, O any] for Go-typed rather than raw-JSON tools. It SHALL include Name (string identifier), Description (string LLM description), optional Title (string display title), Execute `func(ctx context.Context, input I, opts ToolExecutionOptions) (O, error)`, optional OutputSchema (schema.Schema override) and optional InputExamples ([]I).
 
 #### Scenario: Minimal typed tool definition
 - **WHEN** a user creates a `TypedToolDef` with only `Description` and `Execute` set
@@ -29,6 +15,22 @@ The system SHALL provide a generic struct `TypedToolDef[I, O any]` that defines 
 #### Scenario: Full typed tool definition
 - **WHEN** a user creates a `TypedToolDef` with all optional fields populated
 - **THEN** all fields are preserved through construction into the resulting `Tool`
+
+### Requirement: Typed tool validation and model output fields
+
+TypedToolDef SHALL include optional Strict (*bool; nil/true/false distinct), ProviderOptions (provider-specific map), ValidateInput `func(input I) error`, and ToModelOutput `func(toolCallID string, input I, output O) (*provider.ToolResultOutput, error)` for typed model conversion.
+
+#### Scenario: Typed validation and output callbacks are configurable
+- **WHEN** a definition supplies validation, model conversion, provider options and Strict false
+- **THEN** construction SHALL retain these optional fields with false distinct from absent strict mode.
+
+### Requirement: Typed tool streaming input callback fields
+
+TypedToolDef SHALL include optional OnInputStart `func(ToolExecutionOptions)` at argument-stream start; OnInputDelta `func(inputTextDelta string, opts ToolExecutionOptions)` for argument deltas; and OnInputAvailable `func(input I, err error, opts ToolExecutionOptions)` for typed full input.
+
+#### Scenario: Typed argument callbacks retain signatures
+- **WHEN** a definition supplies argument-start, delta and full-input callbacks
+- **THEN** they SHALL accept the specified execution options, with delta text for OnInputDelta and typed input/error for OnInputAvailable.
 
 ### Requirement: TypedTool function constructs Tool from typed definition
 

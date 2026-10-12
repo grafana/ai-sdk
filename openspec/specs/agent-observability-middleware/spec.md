@@ -8,13 +8,7 @@ the underlying agento11y SDK wire and telemetry contracts.
 ## Requirements
 ### Requirement: Nested Go module for the Agent Observability middleware
 
-`middleware/agentobservability/` SHALL be a separate Go module under the ai-sdk repository, declared with `module github.com/grafana/ai-sdk/middleware/agentobservability` and `replace github.com/grafana/ai-sdk => ../../`, mirroring the existing `providers/<name>/` nested-module convention.
-
-The module SHALL depend on `github.com/grafana/ai-sdk` (root) and `github.com/grafana/agento11y/go`. It SHALL NOT depend on `github.com/grafana/ai-sdk/providers/anthropic` or any other provider module.
-
-The root ai-sdk module SHALL NOT import any symbol from `middleware/agentobservability/`.
-
-`middleware/agentobservability/doc.go` SHALL document the public API surface and the convention that heavy middlewares with vendor SDK / gRPC / OTel dependencies live in nested modules under `middleware/`.
+`middleware/agentobservability/` SHALL be a separate Go module: `module github.com/grafana/ai-sdk/middleware/agentobservability`, `replace github.com/grafana/ai-sdk => ../../`, mirroring `providers/<name>/`. It SHALL depend on root ai-sdk and `github.com/grafana/agento11y/go`, not `providers/anthropic` or any other provider module. Root ai-sdk SHALL NOT import any symbol from it.
 
 #### Scenario: Root module does not pull agento11y
 
@@ -26,43 +20,13 @@ The root ai-sdk module SHALL NOT import any symbol from `middleware/agentobserva
 - **WHEN** running `cd middleware/agentobservability && go list -deps ./...`
 - **THEN** the output SHALL NOT contain `github.com/grafana/ai-sdk/providers/anthropic`
 
+#### Scenario: Nested middleware convention is documented
+- **WHEN** a consumer reads `middleware/agentobservability/doc.go`
+- **THEN** it SHALL document the public API surface and the convention that heavy middlewares with vendor SDK / gRPC / OTel dependencies live in nested modules under `middleware/`
+
 ### Requirement: Public API surface
 
-The `middleware/agentobservability` package SHALL export the following symbols. The names and shapes below are normative; renames during implementation require updating this spec.
-
-Types:
-- `WrapOptions` (struct): top-level options for `Wrap` / `Stack`.
-- `RecordingOptions` (struct): options for `RecordingMiddleware`.
-- `HooksOptions` (struct): options for `HooksMiddleware`, including `MaxLatency time.Duration` and an `Enabled func(ctx context.Context) bool` opt.
-- `ContextInfo` (struct) with fields `UserID string`, `Metadata map[string]any`, `Tags map[string]string`, `AgentName string`, `AgentVersion string`.
-- `ClientResolver` (type alias): `func(ctx context.Context) *agento11y.Client`.
-- `ContextProvider` (type alias): `func(ctx context.Context) ContextInfo`.
-- `StreamRecorder` (struct).
-- `HookDenialError` (struct) with fields `Reason string`, `RuleID string`, `Cause error`.
-
-Functions:
-- `RecordingMiddleware(opts RecordingOptions) middleware.Middleware`.
-- `HooksMiddleware(opts HooksOptions) middleware.Middleware`.
-- `Stack(opts WrapOptions) []middleware.Middleware`.
-- `Wrap(base provider.LanguageModel, opts WrapOptions) provider.LanguageModel`.
-- `MapGenerateResult(params provider.CallOptions, result *provider.GenerateResult, ctxInfo ContextInfo) agento11y.Generation`.
-- `BuildGenerationStart(ctx context.Context, providerName, modelID string, ctxInfo ContextInfo) agento11y.GenerationStart`.
-- `NewStreamRecorder(start agento11y.GenerationStart, params provider.CallOptions) *StreamRecorder`.
-- `(*StreamRecorder).Observe(part provider.StreamPart)`.
-- `(*StreamRecorder).FirstChunkAt() time.Time`.
-- `(*StreamRecorder).Generation() agento11y.Generation`.
-
-Context helpers:
-- `WithGenerationID(ctx context.Context, id string) context.Context`.
-- `GenerationIDFromContext(ctx context.Context) string`.
-- `NewGenerationID() string`.
-- `WithParentGenerationIDs(ctx context.Context, ids ...string) context.Context`.
-- `ParentGenerationIDsFromContext(ctx context.Context) []string`.
-- `WithLinkedGenerationID(ctx context.Context, id string) context.Context`.
-
-Sentinel errors:
-- `ErrHookDenied error`.
-- `ErrHookTransformFailed error`.
+`middleware/agentobservability` SHALL export recording, hooks, wrapping, mapping, stream recording, and context helper APIs. The specified names and shapes SHALL be normative; implementation renames require updating this spec. It SHALL export sentinel errors `ErrHookDenied error` and `ErrHookTransformFailed error`.
 
 #### Scenario: HookDenialError unwraps to sentinel
 
@@ -101,14 +65,7 @@ Recording SHALL always be present in the slice returned by `Stack`.
 
 ### Requirement: ClientResolver controls per-request activation
 
-`RecordingMiddleware` SHALL call `opts.ClientResolver(ctx)` once per request to
-obtain the `*agento11y.Client`. `HooksMiddleware` SHALL do the same after the
-request passes its `Enabled` gate; a disabled request SHALL not resolve a
-client. A `nil` return value SHALL cause the middleware to become a no-op for
-that request: the inner model is invoked unchanged, no Generation is started,
-and no `EvaluateHook` is called.
-
-If `opts.ClientResolver` is itself `nil`, the middleware SHALL behave as if every resolution returns `nil`.
+Recording SHALL call `opts.ClientResolver(ctx)` once per request. Hooks SHALL resolve once after its `Enabled` gate; disabled requests SHALL NOT resolve. A nil client SHALL make that middleware a no-op: invoke the inner model unchanged, start no Generation, and call no `EvaluateHook`. A nil resolver SHALL behave as if every resolution returns nil.
 
 #### Scenario: ClientResolver returns nil
 
@@ -124,15 +81,7 @@ If `opts.ClientResolver` is itself `nil`, the middleware SHALL behave as if ever
 
 ### Requirement: ContextProvider supplies request-scoped metadata
 
-`RecordingMiddleware` SHALL call `opts.ContextProvider(ctx)` once per request and use the returned `ContextInfo` to populate:
-- `agento11y.GenerationStart.UserID` (falls back to `agento11y.UserIDFromContext(ctx)` when `ContextInfo.UserID` is empty).
-- `agento11y.GenerationStart.Metadata` (used as caller metadata; reserved derivations from `ProviderOptions`, `params`, and usage override conflicting keys in the final generation).
-- `agento11y.GenerationStart.Tags` (merged on top of any tags carried via context).
-- `agento11y.GenerationStart.AgentName` / `AgentVersion` (override `agento11y.AgentNameFromContext` / `agento11y.AgentVersionFromContext` when set).
-
-A zero `ContextInfo` SHALL be tolerated; every field SHALL fall back to the appropriate `agento11y.*FromContext` helper or remain unset.
-
-If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most once per process and continue with all-`agento11y.*FromContext`-derived defaults.
+Recording SHALL call `opts.ContextProvider(ctx)` once per request to populate `GenerationStart`. Zero `ContextInfo` SHALL fall back to appropriate `agento11y.*FromContext` helpers or remain unset. A nil provider SHALL log a warning at most once per process and continue with all-`agento11y.*FromContext` defaults.
 
 #### Scenario: Zero ContextInfo falls back to context helpers
 
@@ -145,19 +94,16 @@ If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most o
 - **WHEN** `RecordingMiddleware` is invoked for the first time with `opts.ContextProvider == nil`
 - **THEN** a Warn-level log message SHALL be emitted exactly once for the lifetime of the process
 
+#### Scenario: ContextInfo overrides selected ambient fields
+- **WHEN** `ContextProvider` returns request-scoped `ContextInfo`
+- **THEN** `GenerationStart.UserID` SHALL use `ContextInfo.UserID`, falling back to `agento11y.UserIDFromContext(ctx)` when empty
+- **AND** `GenerationStart.Metadata` SHALL use caller metadata, with reserved derivations from `ProviderOptions`, `params`, and usage overriding conflicts in the final generation
+- **AND** `GenerationStart.Tags` SHALL merge `ContextInfo.Tags` on top of context tags
+- **AND** set `AgentName` / `AgentVersion` SHALL override `agento11y.AgentNameFromContext` / `agento11y.AgentVersionFromContext`
+
 ### Requirement: MapGenerateResult produces agento11y.Generation
 
-`MapGenerateResult(params, result, ctxInfo)` SHALL produce an `agento11y.Generation` whose:
-- `Input.Messages` is derived from `params.Prompt`, with `provider.Message{Role: RoleSystem}` entries folded into `Generation.SystemPrompt` (single concatenated string) rather than appearing as an agento11y.Message. Empty reasoning parts SHALL be omitted.
-- `Input.Tools` is derived from `params.Tools`. Function tools map directly; provider-defined tools (e.g. Anthropic `web_search`, `code_execution`) MAY map with their type preserved so Agent Observability can annotate them.
-- `Input.MaxTokens`, `Temperature`, `TopP`, `ToolChoice` are derived from the corresponding `provider.CallOptions` fields.
-- Anthropic thinking-budget metadata (`agento11y.gen_ai.request.thinking.budget_tokens`) is derived from `params.ProviderOptions["anthropic"]` via `json.RawMessage` decoding, not by importing `providers/anthropic`.
-- `Output` contains an assistant `agento11y.Message` for supported model content and additional tool-role messages for tool-result entries. Empty reasoning parts SHALL be omitted.
-- `Usage` maps from normalized `result.Usage` and SHALL set `InputSemantics` to `TokenInputSemanticsInclusive`. Input totals already include cache reads and writes; the mapper SHALL NOT add cache buckets again. Total tokens SHALL equal normalized input plus output tokens. The same contract SHALL apply to observed streamed usage, generation export, and client-owned token telemetry. Streams with no observed usage MAY leave the usage value and semantics marker unset.
-- `StopReason` is produced by `finishReasonToAgento11yStop(result.FinishReason)` and SHALL match the string values the legacy `internal/llm/claude/` path emitted (e.g. `"end_turn"`, `"max_tokens"`, `"tool_use"`, `"stop_sequence"`).
-- `Metadata` starts with caller metadata, then applies reserved request and usage derivations. Derived Anthropic thinking-budget and positive server-tool request counts SHALL override conflicting caller values, matching the pinned agento11y Anthropic helper.
-- Provider tool calls and results SHALL retain recoverable Anthropic discriminators, including MCP metadata and configured provider-tool aliases for web search, web fetch, code execution, and tool search. Irrecoverable provider subtypes MAY use the generic discriminator.
-- `Tags` is a merge of `ctxInfo.Tags` and any tags from context.
+`MapGenerateResult(params, result, ctxInfo)` SHALL produce `agento11y.Generation` with `Input.Messages` derived from `params.Prompt`. System messages SHALL fold into one concatenated `SystemPrompt`, not input messages. Empty input/output reasoning SHALL be omitted. Output SHALL contain an assistant message for supported model content and additional tool-role messages for tool-result entries.
 
 #### Scenario: System message folds into SystemPrompt
 
@@ -190,15 +136,30 @@ If `opts.ContextProvider` is `nil`, the middleware SHALL log a warning at most o
 - **AND** the ai-sdk form is passed through `MapGenerateResult`
 - **THEN** both resulting `agento11y.Generation` payloads SHALL produce byte-equal JSON modulo the fields `id`, `started_at`, `completed_at`, `trace_id`, `span_id`
 
+#### Scenario: Call settings and tools populate generation input
+- **WHEN** `MapGenerateResult` maps a generate result
+- **THEN** `Input.Tools` SHALL be derived from `params.Tools`; function tools SHALL map directly, and provider-defined tools (e.g. Anthropic `web_search`, `code_execution`) MAY map with their type preserved for Agent Observability annotation
+- **AND** `Input.MaxTokens`, `Temperature`, `TopP`, `ToolChoice` SHALL derive from the corresponding call-option fields
+- **AND** Anthropic thinking-budget metadata (`agento11y.gen_ai.request.thinking.budget_tokens`) SHALL derive from `params.ProviderOptions["anthropic"]` through `json.RawMessage` decoding without importing `providers/anthropic`
+
+#### Scenario: Finish reasons retain legacy stop strings
+- **WHEN** a generate result supplies a finish reason
+- **THEN** `StopReason` SHALL be produced by `finishReasonToAgento11yStop(result.FinishReason)` and match the legacy `internal/llm/claude/` strings (e.g. `"end_turn"`, `"max_tokens"`, `"tool_use"`, `"stop_sequence"`)
+
+#### Scenario: Caller metadata and tags are merged
+- **WHEN** `MapGenerateResult` maps a generate result
+- **THEN** `Metadata` SHALL start with caller metadata, then apply reserved request and usage derivations
+- **AND** derived Anthropic thinking-budget and positive server-tool request counts SHALL override conflicts, matching the pinned agento11y Anthropic helper
+- **AND** `Tags` SHALL merge `ctxInfo.Tags` and context tags
+
+#### Scenario: Provider tools preserve recoverable discriminators
+- **WHEN** provider tool calls and results are mapped
+- **THEN** they SHALL retain recoverable Anthropic discriminators, including MCP metadata and configured aliases for web search, web fetch, code execution, and tool search
+- **AND** irrecoverable provider subtypes MAY use the generic discriminator
+
 ### Requirement: Recording maps file parts to Agent Observability media
 
-Recording SHALL map supported `file` and `reasoning-file` content from prompts, generated results, and provider streams to `agento11y.PartKindMedia` parts without changing the model request, provider result, or provider/UI wire types. The recorded media metadata SHALL preserve whether the source was a `file` or `reasoning-file` part.
-
-Only image and video media SHALL be recorded. Byte and base64 payloads SHALL be converted to base64 data URLs. Valid data URLs and HTTP(S) URLs SHALL be retained verbatim; recording SHALL NOT fetch remote URLs. The mapper SHALL determine a concrete MIME type from the declared media type, data URL, filename, URL path, or sniffed inline bytes, in that order.
-
-The mapper SHALL skip data with multiple sources, provider references, inline text file data, malformed base64 or data URLs, URL credentials, non-HTTP(S) remote schemes, unsupported or ambiguous media, and conflicting concrete declared and data-URL MIME types. Percent-escaped data-URL payloads SHALL be decoded for validation without changing the retained URL. Base64 containing CR or LF SHALL be treated as malformed.
-
-Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so recording support does not widen the hook disclosure boundary. Metadata-only agento11y export SHALL omit media URLs.
+Recording SHALL map supported prompt, generated, and streamed `file` / `reasoning-file` content to `agento11y.PartKindMedia`, preserving the source kind without changing requests, results, or provider/UI wire types. Only image/video media SHALL be recorded. Hook preflight SHALL exclude file and reasoning-file media; metadata-only agento11y export SHALL omit media URLs.
 
 #### Scenario: Prompt and generated file parts become media
 
@@ -230,16 +191,7 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 
 ### Requirement: StreamRecorder accumulates streamed generation state
 
-`StreamRecorder` SHALL accumulate `agento11y.Generation.Output` from a sequence of `provider.StreamPart` values observed via `Observe`. It SHALL:
-- Append `PartTextDelta` payloads into the active assistant text part.
-- Append non-empty `PartReasoningDelta` payloads into the active assistant reasoning part. Signature-only reasoning blocks with no visible text SHALL NOT produce an Agent Observability thinking part.
-- Append `PartToolInputDelta` payloads into the active assistant tool-call part.
-- Map supported `PartFile` and `PartReasoningFile` events to media parts.
-- Record the first semantic model-output timestamp via `FirstChunkAt()`. Non-empty text, reasoning, and tool-input deltas, tool calls, and supported file events SHALL be payload-bearing; finish, error, tool-result, metadata, and empty-delta events SHALL NOT establish time to first token.
-- Coalesce preliminary tool-result updates by exact tool-call ID and tool name and include only completed tool results in the final generation output. Distinct completed results SHALL remain distinct even when an ID is reused.
-- Capture `FinishReason` from `PartFinish` and observe `Usage` from every usage-bearing stream part using the shared streaming aggregation behavior.
-
-`Generation()` SHALL return an `agento11y.Generation` whose `Output` contains an assistant message for accumulated model parts plus tool-role messages for completed tool results. Assistant text, reasoning, tool-call, and media parts SHALL retain the order in which their first provider events were observed.
+`StreamRecorder.Observe` SHALL accumulate `Generation.Output` from provider stream parts. `Generation()` SHALL contain an assistant message for accumulated model parts and tool-role messages for completed results. Assistant text, reasoning, tool-call, and media parts SHALL retain first-observed provider-event order. Finish reason SHALL come from `PartFinish`; every usage-bearing part SHALL use shared streaming aggregation.
 
 #### Scenario: Stream usage preserves strongest values
 
@@ -279,6 +231,18 @@ Hook preflight evaluation SHALL exclude `file` and `reasoning-file` media so rec
 - **WHEN** the recorder observes the stream and produces a generation
 - **THEN** the assistant output parts SHALL follow the order in which each part was first observed
 - **AND** the first supported file event SHALL set `FirstChunkAt()` when no earlier payload-bearing event was observed
+
+#### Scenario: Deltas and supported files accumulate into assistant parts
+- **WHEN** `Observe` receives text, reasoning, tool-input, and supported file events
+- **THEN** `PartTextDelta` SHALL append to the active assistant text part, non-empty `PartReasoningDelta` to reasoning, and `PartToolInputDelta` to the active tool-call part
+- **AND** signature-only reasoning without visible text SHALL NOT produce a thinking part
+- **AND** supported `PartFile` and `PartReasoningFile` SHALL map to media parts
+
+#### Scenario: Preliminary tool results coalesce without collapsing completed results
+- **WHEN** a stream emits tool results
+- **THEN** preliminary updates SHALL coalesce by exact tool-call ID and tool name
+- **AND** only completed tool results SHALL enter final output
+- **AND** distinct completed results SHALL remain distinct even when an ID is reused
 
 ### Requirement: Recording uses response model identity when available
 
@@ -339,19 +303,7 @@ When response metadata changes the canonical generation model identity from the 
 
 ### Requirement: RecordingMiddleware wraps generate and stream
 
-`RecordingMiddleware(opts)` SHALL return a `middleware.Middleware` whose `WrapGenerate` and `WrapStream` hooks:
-1. Resolve a client via `opts.ClientResolver`. If `nil`, pass through to the inner model unchanged.
-2. Build a `agento11y.GenerationStart` via `BuildGenerationStart(ctx, model.Provider(), model.ModelID(), opts.ContextProvider(ctx))`.
-3. Call `client.StartGeneration` (for `WrapGenerate`) or `client.StartStreamingGeneration` (for `WrapStream`).
-4. Invoke the inner model.
-5. On success:
-   - For generate: map the result with the original `GenerationStart` so requested-model fallback is available, then call `recorder.SetResult`.
-   - For stream: tee the result stream channel, feed each part to a `StreamRecorder`, and at end-of-stream call `recorder.SetResult(streamRecorder.Generation())`.
-6. On an error returned before a stream opens: call `recorder.SetCallError(err)`. When a stream emits `PartError`, call `recorder.SetCallError(err)` and also call `recorder.SetResult` with the partial generation, including aggregated usage observed before or on the error part.
-
-`RecordingMiddleware` SHALL NOT modify `params` and SHALL NOT modify the result.
-
-For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid blocking on consumer disconnect. Cancellation before observed upstream completion SHALL be recorded as the call error and SHALL take precedence over an earlier `PartError`. The middleware SHALL NOT start an unbounded detached drain when the provider ignores cancellation; provider stream producers are responsible for honoring the call context.
+`RecordingMiddleware(opts)` SHALL return `middleware.Middleware` with generate and stream hooks. A nil resolved client SHALL pass through unchanged. Active calls SHALL build `GenerationStart` using `BuildGenerationStart(ctx, model.Provider(), model.ModelID(), opts.ContextProvider(ctx))`, call `client.StartGeneration` or `client.StartStreamingGeneration` respectively, then invoke the inner model. Params and results SHALL NOT be modified.
 
 #### Scenario: Generate path records on success
 
@@ -390,17 +342,19 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 - **AND** the generation SHALL record the context cancellation as its call error
 - **AND** the middleware SHALL NOT start a detached goroutine that waits indefinitely for the upstream channel to close
 
+#### Scenario: Successful calls finalize the corresponding recorder
+- **WHEN** an active generate or stream call succeeds
+- **THEN** generate SHALL use `client.StartGeneration`, map the result with the original `GenerationStart` for requested-model fallback, and call `recorder.SetResult`
+- **AND** stream SHALL use `client.StartStreamingGeneration`, tee each result part into `StreamRecorder`, and call `recorder.SetResult(streamRecorder.Generation())` at end-of-stream
+
+#### Scenario: Opening errors and usage on error parts are recorded
+- **WHEN** a call returns an error before a stream opens or a stream emits `PartError`
+- **THEN** an opening error SHALL call `recorder.SetCallError(err)`
+- **AND** a `PartError` SHALL call `recorder.SetCallError(err)` and `recorder.SetResult` with partial generation and aggregated usage observed before or on the error part
+
 ### Requirement: HooksMiddleware enforces preflight policy
 
-`HooksMiddleware(opts)` SHALL return a `middleware.Middleware` whose `WrapGenerate` and `WrapStream` hooks:
-1. If `opts.Enabled` is non-nil and returns `false` for the request context, pass through to the inner model unchanged.
-2. Resolve a client via `opts.ClientResolver`. If `nil`, pass through unchanged.
-3. Build an `agento11y.HookEvaluateRequest` from `params` (phase = preflight), excluding `file` and `reasoning-file` media.
-4. Call `client.EvaluateHook(ctx, request)`. If `opts.MaxLatency > 0`, the call SHALL be bounded by `context.WithTimeout(ctx, opts.MaxLatency)`; otherwise the request context SHALL be inherited unchanged.
-5. Branch on the response after the pinned agento11y client's wire decoding and normalization. The client owns wire field names, protobuf/base64 payload decoding, role and part normalization, and conversation/trace correlation. The middleware SHALL validate the normalized response, not attempt to recover discarded wire information:
-   - **Deny**: return `&HookDenialError{Reason, RuleID, Cause: nil}` to the caller. The inner model SHALL NOT be invoked.
-   - **Allow**: invoke the inner model with `params` unchanged.
-   - **TransformedInput**: treat the transformed input as an authoritative replacement, rebuild `params.Prompt` and the retained subset of `params.Tools`, and invoke the inner model with the new params. If the normalized content cannot be reconstructed without loss or reintroducing omitted content, return `ErrHookTransformFailed` without invoking the model. Deny SHALL take precedence over a decoded transform.
+`HooksMiddleware(opts)` SHALL wrap generate and stream preflight policy. A false non-nil `Enabled` gate or nil resolved client SHALL pass through unchanged. It SHALL build a preflight `agento11y.HookEvaluateRequest` from params excluding file/reasoning-file media, then call `client.EvaluateHook`. Positive `MaxLatency` SHALL use `context.WithTimeout(ctx, opts.MaxLatency)`; otherwise inherit the request context unchanged.
 
 #### Scenario: Allow path passes through
 
@@ -426,20 +380,21 @@ For streams, the recording goroutine SHALL select on `ctx.Done()` to avoid block
 - **THEN** the hook call SHALL be cancelled via context deadline
 - **AND** the original request context SHALL NOT be cancelled (only the derived hook-bounded context)
 
+#### Scenario: Decisions apply after client wire normalization
+- **WHEN** the pinned client returns a decoded and normalized hook response
+- **THEN** middleware SHALL validate the normalized response, not recover discarded wire information
+- **AND** the client SHALL own wire field names, protobuf/base64 decoding, role/part normalization, and conversation/trace correlation
+- **AND** deny SHALL return `&HookDenialError{Reason, RuleID, Cause: nil}` without invoking the inner model, taking precedence over a decoded transform
+- **AND** allow SHALL invoke the inner model with params unchanged
+
+#### Scenario: Transformed input replaces prompt and retained tools
+- **WHEN** the normalized hook response contains `TransformedInput` and is not denied
+- **THEN** it SHALL authoritatively replace `params.Prompt` and rebuild the retained subset of `params.Tools` before invoking the model
+- **AND** content that cannot be reconstructed without loss or reintroducing omitted content SHALL return `ErrHookTransformFailed` without invoking the model
+
 ### Requirement: Normalized hook transforms are authoritative and reconstructable
 
-The middleware SHALL adopt the pinned agento11y client's normalized hook semantics. An empty wire `transformed_input` that the client normalizes to nil SHALL be treated as no transform. Unknown roles may become user roles, unsupported or empty parts may be dropped or normalized to text, JSON payloads may be recovered from base64 or strings, and part metadata may be discarded before middleware validation. The middleware SHALL NOT promise lossless validation of the original wire response.
-
-When `EvaluateHook` returns a non-nil normalized `TransformedInput`, `HooksMiddleware` SHALL treat it as an authoritative replacement rather than a partial patch:
-
-1. A non-empty `SystemPrompt` SHALL become one system message. An empty `SystemPrompt` SHALL carry no original system message forward.
-2. Every normalized transformed message SHALL be rebuilt in returned order. Roles, part kinds, empty payloads, and malformed tool payloads that remain invalid after client normalization SHALL fail with `ErrHookTransformFailed`.
-3. Omitted assistant parts SHALL remain omitted. The middleware SHALL NOT restore an entire original assistant message based only on visible text.
-4. An unchanged reasoning part MAY reuse the exact original part to preserve its provider signature. Matching SHALL use an unambiguous unused reasoning part with identical reasoning text; changed or ambiguous signed reasoning SHALL fail closed.
-5. Unchanged provider-executed tool calls and provider-specific tool results SHALL retain their provider fields only after an exact ID, name, payload, and provider discriminator match. A provider-specific part that cannot be matched exactly, including when the client discards its required discriminator, SHALL fail closed.
-6. Because hook evaluation intentionally excludes media, message-level provider options, text-part provider options, empty reasoning metadata, and other unsupported content, a transform of a prompt containing undisclosed content SHALL fail closed rather than silently dropping or restoring it.
-7. Returned tools SHALL be matched exactly to disclosed original tool definitions. Exact retained tools MAY be preserved or reordered and omitted tools SHALL be removed; new or modified tools that cannot be reconstructed losslessly SHALL fail closed. Removing tools SHALL also fail closed when it leaves a required or specifically named `ToolChoice` unsatisfied.
-8. A non-nil normalized transform without a usable prompt SHALL fail closed. A system-only replacement is valid.
+Middleware SHALL adopt the pinned client's normalized hook semantics and SHALL NOT promise lossless validation of original wire responses. A non-nil normalized `TransformedInput` SHALL be an authoritative replacement, not a patch. An empty wire transform normalized to nil SHALL mean no transform. Invalid reconstruction SHALL fail closed with `ErrHookTransformFailed`; a non-nil transform without a usable prompt SHALL fail closed, while a system-only replacement is valid.
 
 #### Scenario: Empty wire transform is a no-op
 
@@ -501,16 +456,35 @@ When `EvaluateHook` returns a non-nil normalized `TransformedInput`, `HooksMiddl
 - **THEN** the resulting prompt SHALL begin with a single system message whose text equals "internal-only assistant"
 - **AND** the original system messages SHALL NOT appear in the prompt
 
+#### Scenario: Client normalization may discard wire distinctions
+- **WHEN** the pinned client normalizes a wire transform before middleware validation
+- **THEN** unknown roles may become user roles, unsupported or empty parts may be dropped or normalized to text, JSON payloads may be recovered from base64 or strings, and part metadata may be discarded
+- **AND** middleware SHALL validate only the remaining normalized content
+
+#### Scenario: Non-empty transformed system prompt becomes one system message
+- **WHEN** a non-nil normalized transform has a non-empty `SystemPrompt`
+- **THEN** that `SystemPrompt` SHALL become one system message
+
+#### Scenario: Empty transformed system prompt removes original systems
+- **WHEN** a non-nil normalized transform has an empty `SystemPrompt`
+- **THEN** no original system message SHALL be carried forward
+
+#### Scenario: Invalid normalized prompt content is rejected
+- **WHEN** normalized transformed messages still contain invalid roles, part kinds, empty payloads, or malformed tool payloads after client normalization
+- **THEN** reconstruction SHALL fail with `ErrHookTransformFailed`
+
+#### Scenario: Valid transformed messages retain order and omissions
+- **WHEN** normalized transformed messages are valid for reconstruction
+- **THEN** every message SHALL be rebuilt in returned order
+- **AND** omitted assistant parts SHALL remain omitted without restoring an entire original assistant message based only on visible text
+
+#### Scenario: System-only replacement is usable
+- **WHEN** a non-nil normalized transform contains only a usable system prompt
+- **THEN** the replacement SHALL be valid
+
 ### Requirement: Generation-ID DAG context helpers
 
-The following context helpers SHALL be exposed from `middleware/agentobservability`:
-
-- `WithGenerationID(ctx, id)` / `GenerationIDFromContext(ctx)` — current generation ID for the call about to be made.
-- `WithParentGenerationIDs(ctx, ids...)` / `ParentGenerationIDsFromContext(ctx)` — upstream generations whose output this call depends on. Used by Agent Observability to build the parent → child DAG.
-- `WithLinkedGenerationID(ctx, id)` — sibling/peer link (e.g. an evaluation generation that complements a primary generation).
-- `NewGenerationID()` — generates a new opaque generation ID suitable for `WithGenerationID`.
-
-`RecordingMiddleware` SHALL read `GenerationIDFromContext(ctx)` and use it as `GenerationStart.ID` when non-empty. It SHALL read `ParentGenerationIDsFromContext(ctx)` and pass them through as `GenerationStart.ParentGenerationIDs`.
+The package SHALL expose context helpers for current generation, parent-generation DAG dependencies, sibling/peer links, and opaque new IDs. Recording SHALL use non-empty `GenerationIDFromContext(ctx)` as `GenerationStart.ID` and pass `ParentGenerationIDsFromContext(ctx)` through as `GenerationStart.ParentGenerationIDs`.
 
 #### Scenario: GenerationID flows into the recorder
 
@@ -524,24 +498,16 @@ The following context helpers SHALL be exposed from `middleware/agentobservabili
 - **WHEN** `RecordingMiddleware` invokes the inner model on that context
 - **THEN** the resulting `GenerationStart.ParentGenerationIDs` SHALL contain exactly `["p1", "p2"]` in that order
 
+#### Scenario: Set and retrieve generation relationships
+- **WHEN** a caller builds generation relationships in context
+- **THEN** the package SHALL expose `WithGenerationID(ctx context.Context, id string) context.Context` and `GenerationIDFromContext(ctx context.Context) string` for the current call's generation ID
+- **AND** it SHALL expose `WithParentGenerationIDs(ctx context.Context, ids ...string) context.Context` and `ParentGenerationIDsFromContext(ctx context.Context) []string` for upstream generations whose outputs the call depends on, forming the parent → child DAG
+- **AND** it SHALL expose `WithLinkedGenerationID(ctx context.Context, id string) context.Context` for sibling/peer links (e.g. an evaluation complementing a primary generation)
+- **AND** `NewGenerationID() string` SHALL generate an opaque ID suitable for `WithGenerationID`
+
 ### Requirement: OTel span shape
 
-The middleware SHALL emit exactly one OTel span of its own: the hooks preflight span. The canonical generation span (operation = `generateText` / `streamText`, with `gen_ai.*` semantic-convention attributes and `agento11y.generation.id`) is owned by the agento11y client via `StartGeneration` / `StartStreamingGeneration`; the middleware SHALL NOT wrap or duplicate it.
-
-Span name: `aisdk.hooks.preflight`. The span is opened by ai-sdk and its
-`aisdk.hooks.*` attribute keys are ai-sdk's own: the agento11y SDK neither
-produces nor reads them. The span also carries the `gen_ai.provider.name` and
-`gen_ai.request.model` semantic-convention attributes, which the agento11y SDK
-sets on its own generation span too.
-
-Span attribute keys:
-- `aisdk.hooks.result` (string: `"allow"`, `"deny"`, `"transform"`).
-- `aisdk.hooks.action` (string).
-- `aisdk.hooks.rule_id` (string, present only on deny).
-
-Every attribute the middleware sets on this span, other than `gen_ai.*` semantic-convention attributes, SHALL use the `aisdk.hooks.` prefix. The middleware SHALL NOT emit attributes under the agento11y client's `agento11y.*` namespace or under any former product-named namespace.
-
-Error states on the generation path SHALL reach the trace via `recorder.SetCallError(err)`, which agento11y stamps onto its own generation span as `error.type` and `error.category`. The middleware SHALL NOT emit its own error attributes for generation calls.
+Middleware SHALL emit exactly one span of its own: `aisdk.hooks.preflight`. The canonical `generateText` / `streamText` generation span with `gen_ai.*` and `agento11y.generation.id` SHALL remain owned by the client via `StartGeneration` / `StartStreamingGeneration`; middleware SHALL NOT wrap or duplicate it. Its own attributes SHALL use `aisdk.hooks.` except `gen_ai.*`, never `agento11y.*` or former product namespaces.
 
 #### Scenario: Allow decision sets aisdk.hooks.result
 
@@ -564,16 +530,20 @@ Error states on the generation path SHALL reach the trace via `recorder.SetCallE
 - **WHEN** the module's test suite runs
 - **THEN** at least one test SHALL assert the span name and all three decision attribute keys through an OpenTelemetry span recorder
 
+#### Scenario: Hook span carries owned decision and semantic attributes
+- **WHEN** ai-sdk opens `aisdk.hooks.preflight`
+- **THEN** it SHALL carry `gen_ai.provider.name` and `gen_ai.request.model`, also set by agento11y on its generation span
+- **AND** decision keys SHALL be `aisdk.hooks.result` (string: `"allow"`, `"deny"`, `"transform"`), `aisdk.hooks.action` (string), and `aisdk.hooks.rule_id` (string, present only on deny)
+- **AND** `aisdk.hooks.*` keys SHALL be ai-sdk-owned; agento11y neither produces nor reads them
+
+#### Scenario: Generation errors belong to the client span
+- **WHEN** generation calls encounter an error
+- **THEN** it SHALL reach the trace through `recorder.SetCallError(err)`, which agento11y stamps as `error.type` and `error.category` on its own span
+- **AND** middleware SHALL NOT emit its own generation-call error attributes
+
 ### Requirement: Conformance fixtures
 
-The module SHALL include a `testdata/` directory containing:
-- `generation/`: paired (ai-sdk-typed `CallOptions` + `GenerateResult`, expected `agento11y.Generation` JSON) triples sourced from `agento11y/go-providers/anthropic` conformance helpers.
-- `stream/`: captured chunk-stream fixtures (reused from `providers/anthropic/test/conformance/recorded/` where overlapping content allows).
-- `hooks/`: paired (input prompt, hook wire response, expected post-transform prompt) triples replayed through the real client HTTP decoder and middleware. Focused HTTP-boundary tests SHALL additionally cover wire tool schemas, base64 payloads, normalization, deny precedence, correlation, and media exclusion.
-
-A `mise run test-agent-observability-conformance` task SHALL run these tests in isolation. The conformance tests SHALL re-run on every PR that touches `middleware/agentobservability/` or bumps the `agento11y` dependency in `go.mod`.
-
-Fixture regeneration SHALL be controlled by the `AGENTO11Y_REGEN` environment variable and SHALL NOT consult any other name. Every skip message and assertion failure message that names the variable SHALL name `AGENTO11Y_REGEN`.
+The module SHALL include `testdata/generation/`, `stream/`, and `hooks/` conformance fixtures. `mise run test-agent-observability-conformance` SHALL run them in isolation. Tests SHALL re-run on every PR touching `middleware/agentobservability/` or bumping `agento11y` in `go.mod`. Regeneration SHALL use only `AGENTO11Y_REGEN`; every skip/assertion message naming that variable SHALL use `AGENTO11Y_REGEN`.
 
 #### Scenario: Generation conformance fixture
 
@@ -599,6 +569,16 @@ Fixture regeneration SHALL be controlled by the `AGENTO11Y_REGEN` environment va
 - **WHEN** the suite runs without `AGENTO11Y_REGEN`
 - **THEN** the fixture-writing tests SHALL skip with a message naming `AGENTO11Y_REGEN`
 
+#### Scenario: Generation and stream fixture provenance is retained
+- **WHEN** the module's `testdata/` fixture corpus is inspected
+- **THEN** `generation/` SHALL contain paired (ai-sdk-typed `CallOptions` + `GenerateResult`, expected `agento11y.Generation` JSON) triples sourced from `agento11y/go-providers/anthropic` conformance helpers
+- **AND** `stream/` SHALL contain captured chunk streams reused from `providers/anthropic/test/conformance/recorded/` where overlapping content allows
+
+#### Scenario: Hook fixtures exercise the real decoder boundary
+- **WHEN** hook conformance fixtures and focused HTTP-boundary tests run
+- **THEN** `hooks/` SHALL contain paired (input prompt, hook wire response, expected post-transform prompt) triples replayed through the real client HTTP decoder and middleware
+- **AND** focused HTTP-boundary tests SHALL additionally cover wire tool schemas, base64 payloads, normalization, deny precedence, correlation, and media exclusion
+
 ### Requirement: Selectable requested model identity
 Agent Observability recording options SHALL provide a named identity-source setting. Its zero value SHALL preserve the current response-preferred behavior. Requested identity mode SHALL keep `GenerationStart` wrapped-model identity as the final generation model, SHALL ignore unary and streaming response identity for recording, and SHALL omit response model, provider response ID, and transport identity metadata. It SHALL observe and return all provider results and stream parts unchanged.
 
@@ -621,7 +601,8 @@ Agent Observability recording options SHALL provide an optional positive stream-
 - **AND** generation finalization and downstream channel closure SHALL each occur exactly once without waiting for the drain
 
 ### Requirement: Consumer-owned final generation policy
-Agent Observability recording options SHALL provide an optional generation filter invoked once for every mapped unary or streaming generation, including a successful nil stream. The input SHALL include the mapped generation and the observed provider finish reason. A nil filter SHALL preserve existing mapping behavior. The filter SHALL NOT mutate provider call options, results, or stream parts. A filter panic SHALL be recovered, SHALL produce only a minimal generation seeded with requested model identity, and SHALL NOT change the model call result.
+
+Recording options SHALL offer an optional generation filter invoked once per mapped unary or streaming generation, including a successful nil stream, with the mapped generation and observed provider finish reason. Nil SHALL preserve mapping. The filter SHALL NOT mutate provider call options, results, or stream parts. A panic SHALL be recovered, produce only a minimal generation seeded with requested model identity, and leave the model call result unchanged.
 
 #### Scenario: Gateway filter drops mapper-only private metadata
 - **WHEN** a consumer filter receives a generation containing provider-option metadata, raw usage metadata, response identity, tags, or a provider-native finish reason
@@ -653,3 +634,119 @@ Agent Observability recording options SHALL provide an optional record-error han
 - **WHEN** a stream consumer stops reading and request cancellation ends its recorder asynchronously
 - **THEN** the completion handler SHALL run exactly once after the generation is finalized
 - **AND** a blocking completion or error handler SHALL NOT delay downstream EOF
+
+### Requirement: Agent Observability option and context types
+
+The package SHALL export concrete wrapping, recording, hooks, and context types.
+
+#### Scenario: Configure wrapping and hook evaluation
+- **WHEN** a caller configures `Wrap`, `Stack`, `RecordingMiddleware`, or `HooksMiddleware`
+- **THEN** exported types SHALL include `WrapOptions` (struct, top-level options for `Wrap` / `Stack`), `RecordingOptions` (struct, options for `RecordingMiddleware`), and `HooksOptions` (struct, options for `HooksMiddleware`, including `MaxLatency time.Duration` and an `Enabled func(ctx context.Context) bool` opt)
+
+#### Scenario: Supply request-scoped observability context
+- **WHEN** a caller supplies context metadata and client resolution
+- **THEN** `ContextInfo` SHALL be a struct with fields `UserID string`, `Metadata map[string]any`, `Tags map[string]string`, `AgentName string`, `AgentVersion string`
+- **AND** `ClientResolver` SHALL be a type alias for `func(ctx context.Context) *agento11y.Client`
+- **AND** `ContextProvider` SHALL be a type alias for `func(ctx context.Context) ContextInfo`
+
+#### Scenario: Inspect a hook denial
+- **WHEN** a caller inspects `HookDenialError`
+- **THEN** the package SHALL expose it as a struct with fields `Reason string`, `RuleID string`, `Cause error`
+
+### Requirement: Agent Observability constructor and mapper signatures
+
+The package SHALL export direct constructors, wrapping helpers, and generation mapping functions.
+
+#### Scenario: Construct and wrap middleware
+- **WHEN** a caller constructs Agent Observability middleware or wraps a model
+- **THEN** the package SHALL export `RecordingMiddleware(opts RecordingOptions) middleware.Middleware`, `HooksMiddleware(opts HooksOptions) middleware.Middleware`, `Stack(opts WrapOptions) []middleware.Middleware`, and `Wrap(base provider.LanguageModel, opts WrapOptions) provider.LanguageModel`
+
+#### Scenario: Map a generate result or start a generation
+- **WHEN** a caller maps a provider result or builds a generation start
+- **THEN** the package SHALL export `MapGenerateResult(params provider.CallOptions, result *provider.GenerateResult, ctxInfo ContextInfo) agento11y.Generation`
+- **AND** it SHALL export `BuildGenerationStart(ctx context.Context, providerName, modelID string, ctxInfo ContextInfo) agento11y.GenerationStart`
+
+### Requirement: Agent Observability stream recorder API
+
+The package SHALL export the `StreamRecorder` struct and its constructor and observation methods.
+
+#### Scenario: Observe a stream through the recorder API
+- **WHEN** a caller constructs and queries a `StreamRecorder`
+- **THEN** the package SHALL export `NewStreamRecorder(start agento11y.GenerationStart, params provider.CallOptions) *StreamRecorder`, `(*StreamRecorder).Observe(part provider.StreamPart)`, `(*StreamRecorder).FirstChunkAt() time.Time`, and `(*StreamRecorder).Generation() agento11y.Generation`
+
+### Requirement: Inclusive Agent Observability token usage
+
+`Usage` SHALL map normalized `result.Usage` and set `InputSemantics` to `TokenInputSemanticsInclusive`. Input totals already include cache reads/writes; cache buckets SHALL NOT be added again. Total tokens SHALL equal normalized input plus output. This SHALL apply to generate mapping, observed streamed usage, generation export, and client-owned token telemetry. Streams with no observed usage MAY leave usage and its semantics marker unset.
+
+#### Scenario: Cache tokens are not double counted
+- **WHEN** normalized usage reports input, cache-read, cache-write, and output tokens
+- **THEN** Agent Observability usage SHALL retain inclusive input semantics and total tokens SHALL equal input plus output without adding cache buckets again
+- **AND** generate mapping, streamed usage, export, and client-owned token telemetry SHALL use the same contract
+
+#### Scenario: Stream has no usage
+- **WHEN** no usage is observed in a stream
+- **THEN** its usage value and semantics marker MAY remain unset
+
+### Requirement: Recorded media data and MIME resolution
+
+Byte/base64 media SHALL become base64 data URLs. Valid data and HTTP(S) URLs SHALL remain verbatim; recording SHALL NOT fetch remote URLs. Concrete MIME resolution SHALL use declared media type, data URL, filename, URL path, then sniffed inline bytes, in that order. Percent-escaped data-URL payloads SHALL be decoded for validation without rewriting the URL; base64 with CR/LF SHALL be malformed.
+
+#### Scenario: Infer image MIME and retain a remote URL
+- **WHEN** a supported media file has no concrete declared type but its HTTP(S) URL path identifies its MIME type
+- **THEN** the mapper SHALL resolve MIME in the specified precedence order and retain the URL verbatim without fetching it
+
+#### Scenario: Reject line breaks in base64
+- **WHEN** inline base64 contains CR or LF
+- **THEN** the mapper SHALL treat it as malformed and skip the media
+
+### Requirement: Unsafe recorded media exclusion
+
+The mapper SHALL skip multiple data sources, provider references, inline text file data, malformed base64/data URLs, URL credentials, non-HTTP(S) remote schemes, unsupported/ambiguous media, and conflicting concrete declared/data-URL MIME types.
+
+#### Scenario: Ambiguous or unsafe data cannot become media
+- **WHEN** file data has multiple sources, a provider reference, inline text, malformed encoding, URL credentials, a non-HTTP(S) remote scheme, unsupported/ambiguous media, or conflicting concrete declared and data-URL MIME types
+- **THEN** the mapper SHALL add no media part for that data
+
+### Requirement: Agent Observability first semantic output timestamp
+
+`FirstChunkAt()` SHALL record the first semantic model output: non-empty text, reasoning, and tool-input deltas, tool calls, and supported file events. Finish, error, tool-result, metadata, and empty-delta events SHALL NOT establish time to first token.
+
+#### Scenario: Non-output events do not establish first token time
+- **WHEN** finish, error, tool-result, metadata, or empty-delta events precede the first non-empty text, reasoning, or tool-input delta, tool call, or supported file event
+- **THEN** `FirstChunkAt()` SHALL be established by that first payload-bearing event, not by the preceding events
+
+### Requirement: Recording cancellation precedence and producer ownership
+
+The recording goroutine SHALL select on `ctx.Done()` to avoid blocking on consumer disconnect. Cancellation before observed upstream completion SHALL be the call error, taking precedence over an earlier `PartError`. The middleware SHALL NOT start an unbounded detached drain if the provider ignores cancellation; provider producers SHALL be responsible for honoring the call context.
+
+#### Scenario: Cancellation supersedes an earlier stream error
+- **WHEN** a stream emits `PartError` and the context cancels before observed upstream completion
+- **THEN** recording SHALL use cancellation as the call error
+- **AND** the recording goroutine SHALL avoid blocked downstream sends without starting an unbounded detached drain
+
+### Requirement: Hook reasoning and provider-part preservation
+
+An unchanged reasoning part MAY reuse the exact original to preserve its provider signature only via an unambiguous unused part with identical text; changed or ambiguous signed reasoning SHALL fail closed. Unchanged provider-executed calls and provider-specific results SHALL retain provider fields only after exact ID, name, payload, and discriminator matching. Unmatchable provider-specific parts, including discarded required discriminators, SHALL fail closed.
+
+#### Scenario: Signed reasoning cannot be ambiguously restored
+- **WHEN** transformed signed reasoning is changed or has ambiguous identical-text matches
+- **THEN** reconstruction SHALL fail closed rather than reuse an original signature
+
+#### Scenario: Provider-specific parts require exact matches
+- **WHEN** transformed provider-executed tool calls or provider-specific results differ in ID, name, payload, or required provider discriminator
+- **THEN** reconstruction SHALL fail closed instead of retaining provider fields without an exact match
+
+### Requirement: Hook undisclosed content and tool reconstruction
+
+Transforms of prompts with undisclosed content SHALL fail closed rather than drop or restore it. Hook evaluation excludes media, message/text-part provider options, empty reasoning metadata, and other unsupported content. Returned tools SHALL match disclosed originals exactly; retained tools MAY be preserved/reordered and omitted tools SHALL be removed. New/modified tools not losslessly reconstructable or removal leaving required/named `ToolChoice` unsatisfied SHALL fail closed.
+
+#### Scenario: Undisclosed metadata prevents lossy transformation
+- **WHEN** the original prompt contains undisclosed message-level provider options, text-part provider options, empty reasoning metadata, media, or other unsupported content
+- **AND** the hook supplies a transform
+- **THEN** reconstruction SHALL fail closed rather than silently drop or restore that content
+
+#### Scenario: Tool definitions and choice remain reconstructable
+- **WHEN** returned tools are reconstructed
+- **THEN** exact disclosed originals MAY be retained or reordered, and omitted tools SHALL be removed
+- **AND** new or modified tools not reconstructable losslessly SHALL fail closed
+- **AND** removal that leaves required or specifically named `ToolChoice` unsatisfied SHALL fail closed

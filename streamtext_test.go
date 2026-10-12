@@ -2711,6 +2711,54 @@ func TestStreamTextTotalUsage(t *testing.T) {
 	assert.Equal(t, result.TotalUsage(), result.AggregateUsage())
 }
 
+func TestAggregateUsage_SumsEveryCounter(t *testing.T) {
+	step := func(u provider.Usage) StepResult { return StepResult{Usage: u} }
+	zeroTotals := provider.Usage{
+		InputTokens:  provider.InputTokenUsage{Total: intPtr(0)},
+		OutputTokens: provider.OutputTokenUsage{Total: intPtr(0)},
+	}
+
+	tests := []struct {
+		name  string
+		steps []StepResult
+		want  provider.Usage
+	}{
+		{
+			name: "no steps",
+			want: zeroTotals,
+		},
+		{
+			name:  "all steps unreported",
+			steps: []StepResult{step(provider.Usage{}), step(provider.Usage{})},
+			want:  zeroTotals,
+		},
+		{
+			name: "mixed nil and non-nil",
+			steps: []StepResult{
+				step(provider.Usage{
+					InputTokens:  provider.InputTokenUsage{Total: intPtr(10), NoCache: intPtr(4), CacheRead: intPtr(6)},
+					OutputTokens: provider.OutputTokenUsage{Total: intPtr(5), Text: intPtr(5)},
+				}),
+				step(provider.Usage{
+					InputTokens:  provider.InputTokenUsage{Total: intPtr(20), CacheRead: intPtr(12), CacheWrite: intPtr(8)},
+					OutputTokens: provider.OutputTokenUsage{Total: intPtr(7), Reasoning: intPtr(3)},
+				}),
+				step(provider.Usage{}),
+			},
+			want: provider.Usage{
+				InputTokens:  provider.InputTokenUsage{Total: intPtr(30), NoCache: intPtr(4), CacheRead: intPtr(18), CacheWrite: intPtr(8)},
+				OutputTokens: provider.OutputTokenUsage{Total: intPtr(12), Text: intPtr(5), Reasoning: intPtr(3)},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, aggregateUsage(tc.steps))
+		})
+	}
+}
+
 func TestStreamTextToUIMessageStreamReportsAssemblyError(t *testing.T) {
 	model := &mockModel{
 		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {

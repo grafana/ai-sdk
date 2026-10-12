@@ -6,7 +6,7 @@ Add preliminary tool result support, expand tool result content types, and verif
 
 ### Requirement: StreamPart Preliminary field
 
-The `StreamPart` struct SHALL have a presence-aware `Preliminary *bool` field. True SHALL indicate an intermediate tool result that will be replaced by a subsequent result, such as a preview. A final non-preliminary result SHALL follow a preliminary series. Absent and explicit false SHALL both indicate a final result while retaining their provider-domain presence. This field applies to `PartToolResult`. `GenerateContentPart.Preliminary` SHALL use the same boolean semantics for `ContentToolResult`.
+`StreamPart` SHALL have presence-aware `Preliminary *bool` for `PartToolResult`: true means an intermediate result to be replaced (e.g. preview), followed by a final non-preliminary result. Absent and explicit false SHALL both mean final while retaining provider-domain presence. `GenerateContentPart.Preliminary` SHALL use identical boolean semantics for `ContentToolResult`.
 
 #### Scenario: Preliminary tool result
 - **WHEN** a `StreamPart` of type `PartToolResult` has `Preliminary` set to true
@@ -18,7 +18,7 @@ The `StreamPart` struct SHALL have a presence-aware `Preliminary *bool` field. T
 
 ### Requirement: Provider-domain dynamic marker normalization
 
-`provider.GenerateContentPart.Dynamic` and `provider.StreamPart.Dynamic` SHALL retain `*bool` fields. On input-start, absence, false and true SHALL remain distinct through provider output and Go client decoding. In the text stream, explicit values SHALL take precedence; only absence SHALL infer dynamic classification from the application tool definition. UI conversion SHALL derive classification from the generation's original application tool types, independently of per-step execution registries and without storing a second UI classification on text events. A known dynamic application tool SHALL produce dynamic true, a known non-dynamic tool SHALL omit dynamic, and an unknown tool SHALL use the text-stream value. These are distinct behaviors in the registered upstream version. Absent and false call/result markers SHALL both mean disabled without requiring a provider-domain type migration. Function-tool Strict presence and unrelated core/UI APIs SHALL remain unchanged.
+`provider.GenerateContentPart.Dynamic` and `provider.StreamPart.Dynamic` SHALL remain `*bool`. Input-start absence/false/true SHALL stay distinct through provider output and Go client decoding. Text-stream explicit values SHALL take precedence; only absence SHALL infer from application tool definition. Absent/false call/result markers SHALL both mean disabled without provider-domain type migration. Function-tool Strict presence and unrelated core/UI APIs SHALL remain unchanged.
 
 #### Scenario: Equivalent unary disabled markers
 - **WHEN** unary provider output is decoded with absent and false dynamic markers
@@ -40,16 +40,17 @@ The `StreamPart` struct SHALL have a presence-aware `Preliminary *bool` field. T
 - **WHEN** an unknown tool's input-start carries explicit false or true
 - **THEN** its UI chunk SHALL preserve the explicit value
 
+### Requirement: UI dynamic classification from original application tools
+
+UI conversion SHALL derive dynamic classification from the generation's original application tool types, independently of per-step execution registries, without a second UI classification on text events. Known dynamic tools SHALL produce true; known non-dynamic tools SHALL omit dynamic; unknown tools SHALL use text-stream value. These distinct behaviors SHALL match the registered upstream version.
+
+#### Scenario: UI dynamic classification from original application tools
+- **WHEN** a per-step registry changes after a known dynamic application tool emits input-start
+- **THEN** UI classification SHALL still be true from the original application tool types, independently of the registry or explicit text-stream marker
+
 ### Requirement: ToolResultContentValue expanded types
 
-The `ToolResultContentValue` struct SHALL support the following `Type` values:
-- `"text"` -- text content
-- `"file"` -- file content with `Data *DataContent`, `MediaType`, and optional `Filename *string`
-- `"custom"` -- custom provider-specific content with `ProviderOptions` only
-
-File content SHALL require both `Data` and `MediaType` and use the LanguageModelV4 tagged `DataContent` union for inline data, URLs, provider references, and inline text. `MediaType` SHALL accept a full IANA media type, a top-level segment, or an equivalent `*`-subtype wildcard. Images SHALL use `"file"` with an image media type (e.g. `image/png`). File filenames SHALL preserve absence as nil and explicit empty as a pointer to an empty string through JSON and provider conversion. Data selection SHALL survive an empty selected payload.
-
-The legacy `"file-data"`, `"file-url"`, and `"file-reference"` wire discriminators SHALL remain accepted during decoding and SHALL normalize to `"file"`. Marshaling SHALL emit the canonical `"file"` discriminator and tagged data union.
+`ToolResultContentValue.Type` SHALL support "text", "file" and "custom". Files SHALL require `Data *DataContent` and `MediaType`, with optional `Filename *string`; data SHALL use V4 tagged inline data, URL, reference and inline-text arms. Custom provider-specific content SHALL contain only Type and ProviderOptions. Images SHALL use "file" with an image media type (e.g. image/png).
 
 #### Scenario: inline file data content value
 - **WHEN** a `ToolResultContentValue` is constructed with `Type: "file"`, `Data: &DataContent{Base64: "<base64>"}`, `MediaType: "application/pdf"`, and `Filename` pointing to `"report.pdf"`
@@ -78,6 +79,22 @@ The legacy `"file-data"`, `"file-url"`, and `"file-reference"` wire discriminato
 #### Scenario: Empty filename and empty selected payload
 - **WHEN** a tool-result file carries explicitly selected empty text or data and a present empty filename
 - **THEN** JSON round-trip and input conversion SHALL preserve both selections, distinct from an absent filename or unselected data
+
+### Requirement: Tool-result file media and presence
+
+Tool-result file `MediaType` SHALL accept full IANA type, top-level segment or equivalent `*`-subtype wildcard. Filename absence SHALL remain nil and explicit empty SHALL remain pointer-to-empty through JSON and provider conversion. Selection SHALL survive an empty selected payload.
+
+#### Scenario: Tool-result file media and presence
+- **WHEN** a file has wildcard media type, selected empty text and explicit empty filename
+- **THEN** media acceptance and JSON/provider conversion SHALL retain the selected payload and filename presence
+
+### Requirement: Legacy tool-result file discriminator normalization
+
+Decoding SHALL continue accepting "file-data", "file-url" and "file-reference", normalizing them to "file". Marshaling SHALL emit canonical "file" with tagged data union.
+
+#### Scenario: Legacy tool-result file discriminator normalization
+- **WHEN** a legacy file-reference tool-result is decoded then marshaled
+- **THEN** its decoded type SHALL normalize to "file" and output SHALL use canonical "file" and tagged reference data
 
 ### Requirement: Stream part ID verification for Anthropic provider
 

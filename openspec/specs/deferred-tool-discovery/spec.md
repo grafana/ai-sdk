@@ -8,7 +8,7 @@ Define opt-in generation-local discovery of deferred tools, including bounded ke
 
 ### Requirement: Core discovery is explicitly opted into
 
-The root package SHALL expose `ToolSearch() Tool` and an optional `Tool.DeferLoading` flag. The zero-value flag SHALL retain ordinary loading. The search tool SHALL be an internally marked function tool whose marker survives value copies, registration under arbitrary names, and changes to its ordinary tool fields. Execution without generation binding SHALL return an error, not perform global discovery. Tools marked deferred without an available search SHALL remain undiscovered for new model-step calls. Provider-hosted search SHALL remain a separate contract; discovery SHALL NOT change tool type or locally execute provider-executed calls.
+The root package SHALL expose ToolSearch() Tool and optional Tool.DeferLoading, whose zero value retains ordinary loading. Search SHALL be an internally marked function tool; the marker SHALL survive copies, arbitrary registration names and ordinary field changes. Unbound execution SHALL error without global discovery. Deferred tools without available search SHALL remain undiscovered for new model-step calls.
 
 #### Scenario: Customized copied search
 - **WHEN** a caller copies a ToolSearch value, changes its description, and registers it under a different name
@@ -32,6 +32,14 @@ The root package SHALL expose `ToolSearch() Tool` and an optional `Tool.DeferLoa
 - **THEN** its streamed input and available input SHALL retain the registered static UI classification and assemble into one tool part
 - **AND** presentation classification SHALL NOT restore input validation, callbacks or local execution eligibility
 
+### Requirement: Core discovery does not replace provider search
+
+Provider-hosted search SHALL remain a separate contract. Discovery SHALL NOT change tool type or locally execute provider-executed calls.
+
+#### Scenario: Provider search remains provider-owned
+- **WHEN** a deferred provider-defined tool is discovered
+- **THEN** it SHALL retain its provider type, and provider-executed calls SHALL NOT become local executions.
+
 ### Requirement: Search has a bounded schema-only public contract
 
 ToolSearch SHALL accept a JSON object containing only the required `query` string of minimum length one. It SHALL return an object containing only `tools`, an array of objects with required `name` and optional `description`. Search results SHALL NOT include input/output schemas, tool definitions, titles or unrelated registry data. Its ordinary model description and schemas SHALL remain stable across steps unless explicitly customized by the caller.
@@ -46,7 +54,7 @@ ToolSearch SHALL accept a JSON object containing only the required `query` strin
 
 ### Requirement: Discovery routes are validated on the original registry
 
-Before a provider request, orchestration SHALL validate every deferred or marked search entry against the original registry and ToolRoutes, regardless of active selection. Each named caller SHALL be a local caller with a `PrepareModelMessage` callback; provider callers and local callers lacking that callback SHALL be rejected for these entries. A marked search SHALL NOT defer loading. An omitted route SHALL allow direct discovery, while an explicit zero-value route SHALL allow no callers and SHALL remain valid. Ordinary entries SHALL retain existing caller validation.
+Before provider requests, every deferred/marked search entry SHALL be validated against the original registry and ToolRoutes regardless of active selection. Named callers SHALL be local with PrepareModelMessage; provider callers and local callers lacking it SHALL be rejected. Marked search SHALL NOT defer. Omitted routes SHALL allow direct discovery; explicit zero-value routes SHALL allow no callers and remain valid. Ordinary caller validation SHALL remain unchanged.
 
 #### Scenario: Unsupported inactive route
 - **WHEN** an inactive deferred tool names a provider caller or a local caller without PrepareModelMessage
@@ -62,7 +70,7 @@ Before a provider request, orchestration SHALL validate every deferred or marked
 
 ### Requirement: Active selection and caller overlap constrain candidates
 
-Discovery SHALL snapshot the effective active registry after per-step overrides. An omitted active selection SHALL include all configured tools; an explicit empty selection SHALL include none. Each bound search SHALL consider only active deferred non-search entries sharing at least one eligible caller with that search. Direct access SHALL count as shared caller access; named caller access SHALL count only when that caller is active. A search SHALL NOT cross direct/local or distinct named-caller boundaries. Previously discovered tools SHALL remain eligible search candidates when active.
+Discovery SHALL snapshot effective active registry after step overrides: omitted selection includes all tools; explicit empty includes none. Bound searches SHALL consider only active deferred non-search entries sharing at least one eligible caller with the search: direct access counts; named callers count only if active. Search SHALL NOT cross direct/local or distinct named-caller boundaries. Previously discovered tools SHALL remain candidates when active.
 
 #### Scenario: Explicitly empty selection
 - **WHEN** WithActiveTools is explicitly empty or PrepareStep returns an empty non-nil ActiveTools slice
@@ -82,7 +90,7 @@ Discovery SHALL snapshot the effective active registry after per-step overrides.
 
 ### Requirement: Search ranking is deterministic and limited
 
-Search SHALL tokenize names, descriptions and queries by splitting an ASCII lowercase-letter/digit followed by an ASCII uppercase-letter, lowercasing and collecting Unicode letter/number runs. Query terms SHALL be deduplicated. Each unique query term SHALL score two points for name-token membership and one for description-token membership. Only positive-score candidates SHALL match. Results SHALL sort by descending score, then ascending tool name for ties, and SHALL contain at most five matches. Exactly the returned names SHALL be discovered. Sorted-name ties SHALL be documented as the Go map-order adaptation to upstream's stable insertion-order ties.
+Search SHALL tokenize names/descriptions/queries by splitting ASCII lowercase-letter/digit followed by ASCII uppercase-letter, lowercasing and collecting Unicode letter/number runs. Deduplicated query terms SHALL score two points for name-token membership and one for description-token membership; only positive scores SHALL match.
 
 #### Scenario: Name score and five-result limit
 - **WHEN** one candidate matches a query term in its name and six match only their descriptions
@@ -101,9 +109,17 @@ Search SHALL tokenize names, descriptions and queries by splitting an ASCII lowe
 - **WHEN** equal-score candidates straddle the five-match limit and search is repeated
 - **THEN** both searches SHALL return the same ascending-name tie selection, including already discovered matching entries
 
+### Requirement: Search result limits and tie ordering
+
+Results SHALL sort by descending score, then ascending tool name for ties, and contain at most five matches. Exactly returned names SHALL be discovered. Sorted-name ties SHALL be documented as the Go map-order adaptation to upstream stable insertion-order ties.
+
+#### Scenario: Tie ordering limits discovered names
+- **WHEN** six positive-score candidates tie for five result slots
+- **THEN** ascending tool name SHALL select exactly the five returned discoveries, with this ordering documented as the Go adaptation.
+
 ### Requirement: Descriptions resolve against the current runtime context
 
-Tool SHALL preserve its static Description string and accept an optional DescriptionFunc callback receiving ToolDescriptionOptions.Context. A non-nil callback SHALL override the static string, including an empty result. Search execution SHALL resolve candidate descriptions against the captured effective runtime context for its step. Model definitions and caller catalog preparation SHALL use the same description-resolution contract for eligible tools. Resolution SHALL NOT mutate the original registry or introduce sandbox/per-tool context APIs. Search SHALL omit an absent static description and SHALL preserve the presence of an explicitly empty callback result.
+Tool SHALL retain static Description and optional DescriptionFunc receiving ToolDescriptionOptions.Context. Non-nil callbacks SHALL override static strings even with empty results. Search SHALL resolve candidates with captured effective step context; eligible model definitions and caller catalogs SHALL use the same contract. Resolution SHALL NOT mutate the registry or introduce sandbox/per-tool context APIs.
 
 #### Scenario: Context-dependent match
 - **WHEN** a candidate's callback returns a capability keyword from the effective PrepareStep context and search queries that keyword
@@ -119,9 +135,17 @@ Tool SHALL preserve its static Description string and accept an optional Descrip
 - **WHEN** one matching candidate has an empty static Description with no callback and another callback returns an empty string
 - **THEN** search SHALL omit description for the first candidate and SHALL include an empty description for the second
 
+### Requirement: Search description presence is explicit
+
+Search SHALL omit absent static descriptions and preserve explicitly empty callback results.
+
+#### Scenario: Empty callback description is present
+- **WHEN** a matched tool has an empty static description without a callback or a callback returning empty
+- **THEN** search SHALL omit the static description but retain an explicitly empty callback description.
+
 ### Requirement: Discoveries activate only in the next model preparation
 
-A generation SHALL snapshot step tools before execution and SHALL exclude undiscovered deferred entries from model definitions, caller bindings/catalogs, and parsing/approval/execution lookup for newly generated local calls. Search executions SHALL update only generation discovery state, without widening the current step snapshot. Subsequent preparation SHALL admit discovered tools only when active and route-eligible. Direct discovery SHALL NOT inject new catalog messages. Stop conditions SHALL remain unchanged; search SHALL NOT force another step.
+Generations SHALL snapshot step tools before execution, excluding undiscovered deferred entries from model definitions, caller bindings/catalogs and new-local-call parsing/approval/execution lookup. Search SHALL update only generation state, not widen the current snapshot. Later preparation SHALL admit discoveries only if active and route-eligible. Direct discovery SHALL NOT inject catalog messages. Stop conditions SHALL remain unchanged; search SHALL NOT force another step.
 
 #### Scenario: Direct search with an early call
 - **WHEN** one model step calls search and then attempts a static deferred tool call before the next preparation
@@ -159,9 +183,7 @@ Each StreamText generation, including GenerateText and ToolLoopAgent generate/st
 
 ### Requirement: Approvals and cancellation preserve generation boundaries
 
-Bound search SHALL use ordinary local execution and approval rules. Pending or denied approval SHALL NOT run search or discover names; automatic approval SHALL discover only when execution runs. Deferred tools SHALL retain existing validation/approval/output behavior once eligible. Nested caller invocation SHALL remain owned by the caller callback, without a second orchestration approval layer. Canceled generations SHALL NOT continue model steps or leak discoveries to later generations; completed-search rollback SHALL NOT be guaranteed.
-
-Historical approval resume SHALL retain original-registry execution before step binding and existing signature/policy checks. A resumed marked search SHALL remain unbound, produce the ordinary tool-output error and discover nothing. A historically approved deferred callee SHALL retain existing resume execution behavior without seeding discovery or becoming advertised in new model steps. The new-call eligibility guarantee SHALL NOT be used to reject already-approved historical executions.
+Bound search SHALL use ordinary local execution/approval rules: pending or denied approval SHALL NOT execute or discover; automatic approval SHALL discover only when executed. Eligible deferred tools SHALL retain validation/approval/output behavior. Nested invocation SHALL remain caller-callback-owned without a second approval layer. Canceled generations SHALL NOT continue steps or leak discoveries; completed-search rollback SHALL NOT be guaranteed.
 
 #### Scenario: Pending, denied and automatically approved search
 - **WHEN** ordinary approval handling leaves a bound search pending, denies it, or automatically approves it
@@ -180,9 +202,17 @@ Historical approval resume SHALL retain original-registry execution before step 
 - **WHEN** a discovery-enabled generation is canceled while tools execute or before its next step
 - **THEN** existing abort handling SHALL prevent further steps and a later generation using the same registry SHALL start undiscovered
 
+### Requirement: Historical discovery approval resume uses the original registry
+
+Historical approval resume SHALL retain original-registry execution before step binding and signature/policy checks. Resumed marked search SHALL remain unbound, emit ordinary tool-output error and discover nothing. Historically approved deferred callees SHALL retain resume execution without seeding discovery or new-step advertising. New-call eligibility SHALL NOT reject already-approved historical executions.
+
+#### Scenario: Historical approved execution does not advertise a tool
+- **WHEN** an approved historical deferred callee resumes in a new generation
+- **THEN** original-registry execution and signature/policy checks SHALL apply without seeding discovery or advertising it in new steps.
+
 ### Requirement: Core and frontend evidence remain distinct from provider evidence
 
-Discovery SHALL preserve existing UI chunk types and SSE framing. Regression coverage SHALL pair provider-independent multi-step UI chunks with captured core provider-request definitions/prompts, and SHALL validate frontend schema parsing and assembled messages against the registered frontend baseline. Synthetic core/UI fixtures SHALL NOT be presented as real recorded provider events or imported upstream provider fixtures. Evidence documentation SHALL distinguish deterministic Go tie ordering and core mock proof from unsupported live-provider acceptance claims.
+Discovery SHALL preserve UI chunk types/SSE framing. Coverage SHALL pair provider-independent multi-step UI chunks with captured core request definitions/prompts and validate frontend schema parsing/assembly against the registered baseline. Synthetic core/UI fixtures SHALL NOT be called real recorded events or imported upstream provider fixtures. Evidence SHALL distinguish Go tie ordering/core mocks from unsupported live-provider acceptance claims.
 
 #### Scenario: Cross-language discovery flow
 - **WHEN** a deterministic Go discovery scenario is consumed by the pinned TypeScript frontend

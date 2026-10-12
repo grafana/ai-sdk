@@ -5,9 +5,13 @@ Define construction constraints for direct Anthropic providers and ensure explic
 ## Requirements
 
 ### Requirement: Direct Anthropic construction ignores SDK environment defaults
-`providers/anthropic.New` SHALL construct its underlying Anthropic SDK client by passing `option.WithoutEnvironmentDefaults()` and then `option.WithAPIKey(apiKey)` directly to `anthropic.NewClient`. `WithoutEnvironmentDefaults` SHALL NOT be deferred through the provider's per-request `WithRequestOptions` path because the SDK decides whether to load environment defaults during client construction.
 
-The direct provider SHALL therefore ignore ambient Anthropic SDK configuration, including `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_PROFILE`, fallback profiles, federation variables, identity-token files/tokens, and `ANTHROPIC_CUSTOM_HEADERS`. The explicit `apiKey` argument and explicit provider request options SHALL remain authoritative. Vertex construction SHALL retain its separate explicit Google-auth path.
+`providers/anthropic.New` SHALL pass `option.WithoutEnvironmentDefaults()` then `option.WithAPIKey(apiKey)` directly to `anthropic.NewClient`, not defer environment suppression to per-request `WithRequestOptions`. Ambient SDK configuration SHALL be ignored; the explicit key and provider request options SHALL remain authoritative. Vertex SHALL retain its separate explicit Google-auth construction.
+
+#### Scenario: Ambient SDK configuration is not loaded
+- **WHEN** a direct model is constructed with ambient `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_PROFILE`, fallback profiles, federation variables, identity-token files/tokens, or `ANTHROPIC_CUSTOM_HEADERS`
+- **THEN** the SDK SHALL ignore those sources during construction and requests
+- **AND** the explicit `apiKey` argument and provider request options SHALL remain authoritative
 
 #### Scenario: Environment base URL is poisoned
 - **WHEN** `ANTHROPIC_BASE_URL` points to a poison server and the direct model has an explicit request-option base URL
@@ -25,7 +29,8 @@ The direct provider SHALL therefore ignore ambient Anthropic SDK configuration, 
 - **AND** explicit reviewed request options SHALL continue to work
 
 ### Requirement: Direct Anthropic requests use the upstream Messages target
-Direct Anthropic models SHALL use `/v1/messages` without an implicit `beta=true` query for both unary and streaming requests, matching the registered TypeScript provider. Beta feature headers and request-body conversion SHALL remain intact. The provider SHALL remove the underlying SDK's implicit beta query before applying explicit caller request options, so unrelated caller query parameters, ordered repeated values and deliberate raw SDK overrides remain supported. Vertex construction and routing SHALL remain unchanged. Request snapshots SHALL compare the complete target without filtering the beta query or rewriting TypeScript expectations to accommodate it.
+
+Direct unary and streaming models SHALL use `/v1/messages` without implicit `beta=true`, preserving beta headers and body conversion. The SDK beta query SHALL be removed before explicit caller options, retaining other query parameters, repeated-value order and raw SDK overrides. Vertex SHALL remain unchanged. Snapshots SHALL compare the full target against registered TypeScript expectations without filtering beta or rewriting expectations.
 
 #### Scenario: Default unary and streaming targets
 - **WHEN** a direct Anthropic model sends a unary or streaming request without explicit query options

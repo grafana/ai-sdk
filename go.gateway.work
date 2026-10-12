@@ -8,6 +8,7 @@ use (
 	./middleware/logger
 	./middleware/prometheus
 	./providers/anthropic
+	./providers/azure
 	./providers/bedrock
 	./providers/grafana
 	./providers/openai

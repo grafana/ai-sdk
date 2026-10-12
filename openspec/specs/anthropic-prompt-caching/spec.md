@@ -5,7 +5,8 @@ Define Anthropic prompt-caching behavior across messages, content parts, tools, 
 ## Requirements
 
 ### Requirement: Cache control extraction from ProviderOptions
-The Anthropic provider SHALL extract `cache_control` configuration from the `"anthropic"` namespace within `ProviderOptions` on any message, content part, or tool definition. The provider SHALL use `provider.ResolveOption` to handle both typed options (direct `AnthropicOptions` or cache control option values) and round-tripped raw options (`RawProviderOption` from previous SSE responses). The provider SHALL accept both `cacheControl` (camelCase) and `cache_control` (snake_case) as key names when resolving from `RawProviderOption` JSON, with `cacheControl` taking precedence when both are present.
+
+The Anthropic provider SHALL extract cache annotations from each message, content part, or tool's `ProviderOptions["anthropic"]` using `provider.ResolveOption` for typed `AnthropicOptions`/cache-control values and round-tripped `RawProviderOption` from SSE responses. Raw JSON SHALL accept both `cacheControl` and `cache_control`, preferring `cacheControl` when both occur.
 
 #### Scenario: cache_control set on a system message
 - **WHEN** a `SystemMessage` has `ProviderOptions["anthropic"]` containing cache control type `"ephemeral"`

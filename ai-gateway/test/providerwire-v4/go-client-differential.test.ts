@@ -109,7 +109,8 @@ async function eventually(check: () => boolean, label: string): Promise<void> {
 
 describe("Go and exact-pinned Gateway differential", () => {
   it("covers every protected header with lower, upper, and canonical casing in both call modes", async () => {
-    const protectedNames = ["x-access-token", "x-grafana-id", "content-type", "accept", "ai-language-model-id", "ai-language-model-specification-version", "ai-language-model-streaming"];
+    const authenticationNames = ["authorization", "x-access-token", "x-grafana-id", "x-scope-orgid", "x-cloud-org-id", "x-access-policy-id"];
+    const protectedNames = [...authenticationNames, "content-type", "accept", "ai-language-model-id", "ai-language-model-specification-version", "ai-language-model-streaming"];
     const casings = [(name: string) => name, (name: string) => name.toUpperCase(), (name: string) => name.split("-").map((part) => part[0]!.toUpperCase() + part.slice(1)).join("-")];
     let classifiedOwnershipDifferences = 0;
     for (const streaming of [false, true]) {
@@ -123,6 +124,12 @@ describe("Go and exact-pinned Gateway differential", () => {
           const ts = streaming ? await tsModel.doStream(options) : await tsModel.doGenerate(options);
           if ("stream" in ts) for await (const _part of ts.stream) { /* drain the actual pinned client */ }
           const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", userIDToken: "user", modelID: "assistant", mode: streaming ? "stream" : "generate", headers: { [key]: ["configured-injection"], "x-custom": ["configured"] }, options });
+          if (authenticationNames.includes(header)) {
+            assert.equal(go.error?.message, "grafana: reserved authentication header");
+            assert.equal(server.requests.length, 1, "Go rejects reserved authentication headers before network activity");
+            classifiedOwnershipDifferences++;
+            continue;
+          }
           assert.equal(go.error, undefined);
           const actual = server.requests[1]!;
           const expected: Record<string, string> = { "x-access-token": "token", "x-grafana-id": "user", "content-type": "application/json", accept: streaming ? "text/event-stream" : "application/json", "ai-language-model-id": "assistant", "ai-language-model-specification-version": "4", "ai-language-model-streaming": String(streaming) };

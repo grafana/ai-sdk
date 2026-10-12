@@ -5,11 +5,8 @@ Define middleware behavior for applying default language-model call settings whi
 ## Requirements
 
 ### Requirement: Apply default call options
-`DefaultSettings` SHALL accept a settings struct and return a `Middleware` whose `TransformParams` hook merges the settings as defaults into `provider.CallOptions`.
 
-Caller-provided values SHALL take precedence over defaults. Only fields not set by the caller (nil pointers, zero-length slices, nil maps) SHALL be filled with defaults.
-
-Supported default fields: `MaxOutputTokens`, `Temperature`, `TopP`, `TopK`, `PresencePenalty`, `FrequencyPenalty`, `StopSequences`, `ResponseFormat`, `Seed`, `Headers`, `ProviderOptions`, `Tools`, `ToolChoice`.
+`DefaultSettings` SHALL accept a settings struct and return a `Middleware` whose `TransformParams` merges defaults into `provider.CallOptions`. Caller values SHALL take precedence; only unset fields (nil pointers, zero-length slices, nil maps) SHALL be filled. Supported fields: `MaxOutputTokens`, `Temperature`, `TopP`, `TopK`, `PresencePenalty`, `FrequencyPenalty`, `StopSequences`, `ResponseFormat`, `Seed`, `Headers`, `ProviderOptions`, `Tools`, `ToolChoice`.
 
 #### Scenario: Default temperature applied
 - **WHEN** `DefaultSettings` is configured with `Temperature: ptr(0.7)`

@@ -7,27 +7,8 @@ and conformance expectations needed to stay aligned with Vercel's upstream AI
 SDK behavior.
 ## Requirements
 ### Requirement: Provider construction and identity
-The system SHALL provide a `providers/openai` Go module exposing both
-`NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel`
-and
-`NewResponsesWithClient(client openai.Client, modelID string, opts ...Option) provider.LanguageModel`.
-Each constructor SHALL return a value implementing `provider.LanguageModel`
-backed by the OpenAI Responses API via `github.com/openai/openai-go`. The model
-SHALL report `SpecificationVersion() == "v4"` and `ModelID()` equal to the
-constructor `modelID`. The API-key constructor SHALL create a standard OpenAI
-client configured with the supplied key and report `Provider() == "openai"` by
-default. The preconfigured-client constructor SHALL preserve provider-owned
-client configuration. Both constructors SHALL accept functional options,
-including `WithRequestOptions(...)` for model request options and
-`WithProviderName(...)` for provider integrations to override the identity
-reported by `Provider()`. For custom identities, the provider-options and
-metadata namespace SHALL be resolved once (`"azure"` when the identity contains
-`"azure"`, otherwise `"openai"`) and SHALL remain stable across calls. Azure
-models SHALL fall back to `"openai"` call options when no Azure options are
-present. The existing constructor with the default `"openai"` identity SHALL
-retain its per-call OpenAI-first, Azure-fallback option resolution. An empty
-provider-name override SHALL preserve that default identity and behavior.
-Construction SHALL NOT panic or perform network calls.
+
+The `providers/openai` Go module SHALL expose `NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel` and `NewResponsesWithClient(client openai.Client, modelID string, opts ...Option) provider.LanguageModel`, backed by Responses via `github.com/openai/openai-go`. Both SHALL implement provider.LanguageModel, report v4 and the supplied modelID, accept functional options, and neither panic nor call the network during construction.
 
 #### Scenario: Construct a Responses model
 - **WHEN** `NewResponses("test-key", "gpt-4o")` is called
@@ -86,14 +67,8 @@ reasoning models and `system` otherwise, and SHALL be overridable via the
 - **AND** an `unsupported` warning for `system messages are removed for this model` is emitted
 
 ### Requirement: User and assistant message conversion
-The provider SHALL convert user messages to `{ role: "user", content: [...] }`
-input items mapping text parts to `input_text`, image parts to `input_image`
-(via `image_url`, `file_id`, or data URI; honoring `imageDetail`), and file
-parts to `input_file` (via `file_id`, `file_url`, or `filename` + `file_data`).
-Reconstructed assistant text SHALL use string content in an easy-input message,
-retaining phase but omitting stale item IDs. Stored assistant text SHALL use an
-`item_reference` when store is true and an item ID is present. Unsupported
-file media types SHALL emit a warning or error matching upstream behavior.
+
+User input SHALL use role user and content arrays: text→input_text; image→input_image via image_url/file_id/data URI honoring imageDetail; file→input_file via file_id/file_url or filename+file_data. Unsupported file media SHALL warn/error as upstream. Reconstructed assistant text SHALL use easy-input string content, retain phase, omit stale IDs. Stored assistant text SHALL use item_reference when store=true with an ID.
 
 #### Scenario: User text and image
 - **WHEN** a user message contains a text part and an image URL part
@@ -125,27 +100,8 @@ file media types SHALL emit a warning or error matching upstream behavior.
 - **AND** phase is preserved when present without emitting an incomplete output message
 
 ### Requirement: Tool call and tool result conversion
-The provider SHALL convert assistant tool-call parts to `function_call` items
-(or built-in call items such as `local_shell_call`, `shell_call`,
-`apply_patch_call`, `tool_search_call`, `custom_tool_call` when the corresponding
-tool is present) and tool-role result parts to `function_call_output` (or the
-matching built-in output item). Tool-call arguments SHALL serialize `undefined`
-input to `"{}"`. When `store` is true and an item id is present, eligible
-provider-defined and provider-executed calls SHALL emit an `item_reference`
-instead of re-sending the call, except where `previousResponseId` semantics
-dictate skipping. Ordinary client-executed function calls SHALL remain inline,
-even with a stored item id, so a following `function_call_output` can pair by
-`call_id`.
 
-On subsequent turns, assistant provider-executed tool calls and results SHALL
-retain the Responses item taxonomy and call/result identity established by the
-prior response. Stored hosted items SHALL use their item ids as
-`item_reference` entries. Non-stored hosted calls and results SHALL be omitted
-or reconstructed according to the upstream tool-specific behavior. Client
-provider tools SHALL preserve their native call/output item types and pair them
-with the same `call_id`. Tool names SHALL be resolved through the configured
-provider-tool name mapping before taxonomy dispatch. Execution-denied assistant
-results SHALL be omitted when no corresponding OpenAI item exists.
+Assistant calls SHALL become function_call or corresponding built-in call items (local_shell_call, shell_call, apply_patch_call, tool_search_call, custom_tool_call when configured); tool-role results SHALL become function_call_output or matching built-in outputs. Undefined tool input SHALL serialize to "{}". Names SHALL resolve through provider-tool mapping before taxonomy dispatch.
 
 #### Scenario: Function call round-trip
 - **WHEN** an assistant message contains a tool-call with name `getWeather` and arguments and a following tool result is present
@@ -175,7 +131,8 @@ results SHALL be omitted when no corresponding OpenAI item exists.
 - **AND** execution-denied synthetic results are omitted
 
 ### Requirement: Function result output conversion
-The OpenAI Responses provider SHALL convert ordinary function tool results to `function_call_output` with the original `call_id` and existing result `caller`. Scalar text, error-text, JSON, error-JSON, and execution-denied outputs SHALL retain their current string and output-schema JSON-encoding rules. A scalar output-level cache breakpoint SHALL take precedence over the tool-result part breakpoint, both resolved under the active OpenAI/Azure provider-options namespace; either SHALL wrap the string as an `input_text` array element carrying `prompt_cache_breakpoint`. Without a selected breakpoint, scalar output SHALL remain a string. Content-array output SHALL instead preserve content order as typed `input_text`, `input_image`, and `input_file` elements, with cache breakpoints read from each content element's provider options rather than result/output-level scalar options.
+
+Ordinary results SHALL use function_call_output with original call_id and existing result caller. Scalar text/error-text/JSON/error-JSON/execution-denied SHALL retain string and output-schema JSON encoding rules. Scalar output SHALL remain string unless a selected active OpenAI/Azure breakpoint wraps it in input_text with prompt_cache_breakpoint.
 
 #### Scenario: Scalar results retain cache precedence and schema encoding
 - **WHEN** a function output is text, JSON, error-text, error-JSON, or execution-denied and both its output and tool-result part carry distinct active-namespace cache breakpoints
@@ -200,7 +157,8 @@ The OpenAI Responses provider SHALL convert ordinary function tool results to `f
 - **AND** supported elements remain in their original order under the same `call_id`
 
 ### Requirement: Custom tool result output conversion
-The provider SHALL retain `custom_tool_call_output` and the original `call_id` for configured custom provider tools. Scalar text, error-text, JSON, error-JSON, and execution-denied outputs SHALL remain strings unless a cache breakpoint is selected from output-level options before tool-result part options in the active namespace; when selected, the output SHALL be an `input_text` array. Custom multipart text, inline file/image data, and file/image URLs SHALL retain typed content, image detail and per-content cache options. For custom multipart uploaded file references, the provider SHALL warn `unsupported custom tool content part type: file with data type: reference` and omit the reference content; it SHALL NOT claim or emit `file_id` support for custom outputs under the registered upstream baseline.
+
+Configured custom results SHALL retain custom_tool_call_output and original call_id. Scalar text/error-text/JSON/error-JSON/execution-denied SHALL stay strings unless a selected active-namespace breakpoint (output before result part) makes an input_text array. Multipart text, inline image/file data and image/file URLs SHALL retain typed content, image detail and per-content cache options.
 
 #### Scenario: Custom scalar breakpoint and output identity
 - **WHEN** a custom tool result has a scalar output with output-level or result-part active-namespace cache breakpoint
@@ -214,7 +172,8 @@ The provider SHALL retain `custom_tool_call_output` and the original `call_id` f
 - **AND** no custom reference is represented as `file_id`
 
 ### Requirement: Parallel wrapper function result serialization
-Grouped internal parallel function-tool results SHALL retain their original wrapper `call_id`, child index order, and existing continuation behavior. Each child SHALL use ordinary function-result conversion before its output is serialized: scalar strings remain strings, while multipart typed arrays become JSON-serialized strings. The wrapper SHALL join child strings with newlines. A selected scalar child output/result-part breakpoint SHALL instead produce ordered `input_text` wrapper elements (newline-prefixed after the first), carrying only the corresponding scalar child breakpoint. Multipart child-level scalar breakpoints SHALL NOT apply; multipart content element breakpoints SHALL survive inside the serialized JSON string. Unsupported multipart items SHALL emit warnings without reordering other child output. Existing hosted-tool and invalid/incomplete parallel-group dispatch SHALL remain unchanged.
+
+Grouped parallel function results SHALL retain wrapper call_id, child index order and continuation behavior. Each child SHALL undergo ordinary result conversion: scalar strings stay strings, multipart typed arrays become JSON strings; wrapper SHALL join strings with newlines. Unsupported multipart items SHALL warn without reordering. Hosted-tool and invalid/incomplete group dispatch SHALL remain unchanged.
 
 #### Scenario: Ordered multipart and scalar children
 - **WHEN** a grouped parallel wrapper receives child results out of index order, including generic multipart output with an uploaded reference and a scalar child
@@ -227,13 +186,8 @@ Grouped internal parallel function-tool results SHALL retain their original wrap
 - **AND** multipart child result/output-level cache options do not cause wrapper-level breakpoints
 
 ### Requirement: Reasoning conversion
-The provider SHALL convert assistant reasoning parts to `reasoning` input items
-carrying `encrypted_content` and `summary` entries, or to an `item_reference`
-when `store` is true and a reasoning item id is present. When
-`conversation`/`previousResponseId` is active and a reasoning id is present, the
-reasoning item SHALL be skipped. Reasoning parts lacking an item id SHALL fall
-back to `encrypted_content`, and when `store` is false, reasoning items lacking
-encrypted content SHALL be filtered out with a warning.
+
+Assistant reasoning SHALL become reasoning items with encrypted_content and summary, or item_reference when store=true with an ID. Active conversation/previousResponseId SHALL skip reasoning with IDs. Missing IDs SHALL fall back to encrypted_content; store=false reasoning without encrypted content SHALL be filtered with a warning.
 
 #### Scenario: Stored reasoning becomes item reference
 - **WHEN** `store` is true and a reasoning part carries an item id
@@ -260,7 +214,8 @@ when no schema is provided.
 - **THEN** the request `text.format` is a `json_schema` format carrying the normalized schema, name, and `strict` flag
 
 ### Requirement: GPT-6 Responses capability and reasoning-effort validation
-The OpenAI Responses provider SHALL recognize anchored `gpt-6` and later model IDs as supporting configuration updates and async tool calling, with supported request-level reasoning efforts `low`, `medium`, `high`, `xhigh`, `max`. It SHALL resolve the request effort from the existing provider-option/core-setting precedence and omit an effort not in that list with an `unsupported` warning for `reasoningEffort` listing the supported values. Earlier, non-GPT, and unrecognized models SHALL retain their existing request-effort behavior. An explicitly forced reasoning mode SHALL NOT by itself turn on GPT-6 capabilities. GPT-6 and later reasoning models SHALL omit requested logprobs and the `message.output_text.logprobs` include with an `unsupported` `logprobs` warning. They SHALL also omit legacy `promptCacheRetention` with an `unsupported` warning directing callers to `promptCacheOptions`. For the Mantle-prefixed provider variant, existing endpoint-specific overrides SHALL remain intact; enabling the new flags for that endpoint requires separate endpoint-owner verification rather than inference from its OpenAI-like model ID.
+
+Anchored gpt-6 and later SHALL support configuration updates and async calling. Request effort SHALL resolve via existing provider-option/core precedence; only low/medium/high/xhigh/max SHALL be sent, others omitted with unsupported reasoningEffort warning listing supported values. Earlier/non-GPT/unknown models SHALL retain effort behavior; forced reasoning alone SHALL NOT enable GPT-6 capabilities.
 
 #### Scenario: Supported GPT-6 effort from provider option
 - **WHEN** a `gpt-6-astra` generate or stream request sets `reasoningEffort` to `max`
@@ -285,7 +240,8 @@ The OpenAI Responses provider SHALL recognize anchored `gpt-6` and later model I
 - **THEN** this new GPT-6 effort-list check does not change that model's previous effort behavior
 
 ### Requirement: OpenAI reasoning configuration update and explicit compaction trigger
-The OpenAI provider SHALL support `reasoningEffortUpdate` restricted to `low`, `medium`, `high`, `xhigh`, `max` and optional `compactionTrigger`. For GPT-6 and later in standard reasoning mode without configured automatic context management or automatic truncation, a configured update SHALL prepend `{ "type": "configuration_update", "reasoning": { "effort": <update> } }` to the *current request* input before all converted prompt items. On unsupported models it SHALL omit the update with an `unsupported` `reasoningEffortUpdate` warning saying only GPT-6 and later support it; on conflicting `reasoningMode: pro`, present `contextManagement` (including an explicit empty list), or `truncation: auto`, it SHALL omit the update with an `unsupported` warning explaining the standard mode/no automatic compaction or truncation condition. If `compactionTrigger` is true it SHALL append `{ "type": "compaction_trigger" }` after all converted prompt items, regardless of model; absent/false SHALL NOT append it. Neither control SHALL mutate caller-owned messages, change request-level effort, become persisted conversation content, nor alter default requests.
+
+The provider SHALL support reasoningEffortUpdate restricted to low/medium/high/xhigh/max and optional compactionTrigger. Eligible GPT-6+ standard-mode updates without automatic context management/truncation SHALL prepend {"type":"configuration_update","reasoning":{"effort":<update>}} before all converted prompt items in the current request. Neither control SHALL mutate caller messages, change request effort, persist as conversation content or alter defaults.
 
 #### Scenario: Independent update with previous response
 - **WHEN** a `gpt-6-astra` request has `reasoningEffort: low`, `reasoningEffortUpdate: high`, `previousResponseId`, and a user prompt
@@ -309,7 +265,8 @@ The OpenAI provider SHALL support `reasoningEffortUpdate` restricted to `low`, `
 - **THEN** the request contains no compaction-trigger item, including on pre-GPT-6 models
 
 ### Requirement: Capability-gated async tools and round-trip metadata
-The OpenAI provider SHALL accept a tri-state `async` setting on function-tool and namespaced function-tool options, and on `openai.custom` tool arguments. It SHALL include `async: true` only when the model supports async calling; when unsupported it SHALL omit true and emit an `unsupported` warning naming the tool. It SHALL preserve explicit `async: false` on any model and omit the property when absent. Generate and stream SHALL carry present function/custom-tool call async values (including false) under the resolved OpenAI/Azure `ProviderMetadata` namespace; stream `output_item.done` SHALL take precedence, falling back to an explicitly present value from `output_item.added`. On reconstructed, non-stored continuation, the assistant function/custom-tool call SHALL retain present async, and stored item-reference behavior SHALL remain unchanged for provider-defined custom calls; ordinary function calls SHALL remain inline for `call_id`/output pairing.
+
+Function-tool and namespaced-function options and openai.custom args SHALL accept tri-state async. True SHALL be included only with async capability, else omitted with unsupported warning naming the tool. False SHALL be retained on any model; absence SHALL omit it. Generate/stream calls SHALL carry present async (including false) in resolved OpenAI/Azure ProviderMetadata.
 
 #### Scenario: Supported and unsupported function tools
 - **WHEN** GPT-6 and GPT-5.6 each receive a function tool with `async: true`
@@ -338,7 +295,8 @@ The OpenAI provider SHALL accept a tri-state `async` setting on function-tool an
 - **AND** the ordinary function call remains inline so its `function_call_output` can be matched by `call_id`
 
 ### Requirement: Programmatic denial remains a local unsupported continuation
-The OpenAI provider SHALL reject an `execution-denied` tool-result continuation for a programmatic function call before sending any request, whether the result itself carries `caller.type: program` or a preceding assistant call with the same `toolCallId` carries that caller. Direct-call denied results SHALL retain their existing conversion; synthetic denied provider-executed results in assistant content SHALL remain omitted. Generate and stream orchestration SHALL preserve existing approval/denial semantics and caller metadata sufficiently for this conversion; this requirement does not introduce a new async executor.
+
+Before HTTP, the provider SHALL reject execution-denied programmatic function results identified by result caller.type:program or a preceding assistant call with matching toolCallId and that caller. Direct denied results SHALL keep conversion; synthetic denied provider-executed assistant results SHALL stay omitted. Generate/stream orchestration SHALL preserve approval/denial semantics and sufficient caller metadata; no new async executor is introduced.
 
 #### Scenario: Programmatic denial identified from assistant call
 - **WHEN** a generate or stream continuation includes a programmatic assistant function call and a following `execution-denied` tool result with matching call ID but no result caller metadata
@@ -357,15 +315,8 @@ The OpenAI provider SHALL reject an `execution-denied` tool-result continuation 
 - **THEN** no synthetic result item is sent as OpenAI conversation history
 
 ### Requirement: Model capability gating
-The provider SHALL detect model capabilities via prefix matching mirroring
-upstream `getOpenAILanguageModelCapabilities` (`isReasoningModel`,
-`systemMessageMode`, `supportsFlexProcessing`, `supportsPriorityProcessing`,
-`supportsNonReasoningParameters`). For reasoning models it SHALL strip
-`temperature` and `topP` (unless reasoning effort is `none` and the model
-supports non-reasoning parameters), emitting `unsupported` warnings. For
-non-reasoning models it SHALL emit warnings when `reasoningEffort` or
-`reasoningSummary` are set. It SHALL strip `serviceTier` `flex`/`priority` when
-unsupported, with a warning.
+
+Capabilities SHALL use upstream getOpenAILanguageModelCapabilities prefix matching: isReasoningModel, systemMessageMode, supportsFlexProcessing, supportsPriorityProcessing, supportsNonReasoningParameters. Reasoning models SHALL strip temperature/topP with unsupported warnings unless effort=none and non-reasoning parameters are supported. Non-reasoning models SHALL warn on reasoningEffort/reasoningSummary. Unsupported serviceTier flex/priority SHALL be stripped with warning.
 
 #### Scenario: Temperature stripped on reasoning model
 - **WHEN** the model is a reasoning model and `temperature` is set
@@ -376,15 +327,8 @@ unsupported, with a warning.
 - **THEN** the request omits `service_tier` and emits an `unsupported` warning
 
 ### Requirement: Provider options
-The provider SHALL parse typed provider options under the `openai` key
-(`provider.ResolveOption[OpenAIResponsesOptions]`) and apply them to the request,
-including `previousResponseId`, `conversation`, `instructions`, `reasoningEffort`,
-`reasoningSummary`, `truncation`, `store`, `metadata`, `include`, `maxToolCalls`,
-`parallelToolCalls`, `serviceTier`, `textVerbosity`, `user`, `logprobs`,
-`strictJsonSchema`, `systemMessageMode`, `forceReasoning`, `allowedTools`,
-`promptCacheKey`, `promptCacheRetention`, `safetyIdentifier`,
-`passThroughUnsupportedFiles`, and `contextManagement`. Setting both
-`conversation` and `previousResponseId` SHALL emit an `unsupported` warning.
+
+The provider SHALL parse typed openai options with provider.ResolveOption[OpenAIResponsesOptions] and apply configured request controls. conversation plus previousResponseId SHALL emit an unsupported warning.
 
 #### Scenario: previousResponseId continuation
 - **WHEN** the `openai` provider option `previousResponseId` is set
@@ -399,29 +343,8 @@ including `previousResponseId`, `conversation`, `instructions`, `reasoningEffort
 - **THEN** the request `include` contains `message.output_text.logprobs` and `top_logprobs` is set
 
 ### Requirement: Tool preparation and tool choice
-The provider SHALL prepare function tools as `function` tool declarations with normalized input and optional output schemas and
-provider tools by their OpenAI tool id (`openai.web_search`,
-`openai.web_search_preview`, `openai.code_interpreter`, `openai.file_search`,
-`openai.image_generation`, `openai.local_shell`, `openai.shell`,
-`openai.apply_patch`, `openai.computer`, `openai.mcp`, `openai.tool_search`,
-`openai.programmatic_tool_calling`, `openai.custom`) into
-the corresponding Responses tool objects. It SHALL resolve `toolChoice` of
-`auto`/`none`/`required` as pass-through strings and `tool` as the typed/object
-choice, with `allowedTools` overriding `toolChoice` as an `allowed_tools`
-choice when declarations exist. Unknown declarations SHALL emit an `unsupported` warning rather than erroring.
-For ordinary forced `tool` choices when `allowedTools` is absent, the provider SHALL resolve configured provider-tool aliases to their canonical names before selecting the request shape. The ordinary hosted-choice allowlist SHALL be exactly `code_interpreter`, `file_search`, `image_generation`, `web_search_preview`, `web_search`, `mcp`, `apply_patch`, `computer`, and `programmatic_tool_calling`, emitted as `{type: <canonical name>}`. Named custom provider tools SHALL retain `{type: "custom", name: <custom name>}` choices. Other ordinary selections SHALL use `{type: "function", name: <resolved name>}`, including `shell`, `local_shell`, and `tool_search`; an unmapped name SHALL retain its spelling. This classification SHALL NOT remove supported provider declarations or their bidirectional name mappings, alter the separate `allowedTools` resolution, or introduce new name validation.
 
-When a supported web-search tool is present, the provider SHALL automatically
-add `web_search_call.action.sources` to `include` unless either a provider-owned
-model capability is false or the per-call `includeWebSearchSources` option is
-explicitly false. This capability SHALL default to enabled for ordinary OpenAI
-Responses models. An explicit per-call true SHALL NOT override a disabled model
-capability. The provider SHALL retain all caller-specified `include` values even
-when automatic web sources are disabled; unrelated automatic includes SHALL
-remain independent. Without a web-search tool it SHALL NOT automatically add
-web sources.
-
-For nonempty declarations and a present `allowedTools` option, the provider SHALL resolve each selected name against the emitted declarations, preferring a direct declaration name to a canonical provider-name alias, preserving source order and duplicate selections. It SHALL select function, custom, MCP, and supported hosted tools in their Responses `allowed_tools` request shapes. It SHALL emit an `unsupported` warning for a direct-name/alias collision and select the direct name; it SHALL warn and drop ambiguous aliases or known selections that cannot be allow-listed (namespace-contained/deferred functions and unsupported hosted kinds including `tool_search`). An unknown name SHALL warn but be sent as a mapped function entry. It SHALL fail before transport only when no allowed entries remain (including an empty selection list), identifying dropped names in their original order. If no tools are declared, it SHALL omit tools and tool choice even when `allowedTools` or `toolChoice` is supplied. A non-nil `allowedTools` option SHALL override ordinary `toolChoice` even if `toolNames` is empty; its mode SHALL default to `auto` if omitted, and the supported option domain is `auto` or `required` without an additional runtime mode check in tool preparation. Resolution SHALL NOT mutate caller-provided tools, option slices, or mappings.
+The provider SHALL prepare function declarations with normalized input/optional output schemas and supported provider IDs as Responses objects. Unknown declarations SHALL warn unsupported, not error. auto/none/required choice SHALL pass through as strings; tool choice SHALL use typed/object shape; present allowedTools SHALL override as allowed_tools when declarations exist.
 
 #### Scenario: Function tool declaration
 - **WHEN** a function tool is provided
@@ -523,27 +446,8 @@ For nonempty declarations and a present `allowedTools` option, the provider SHAL
 - **AND** selecting a declared `tool_search` alongside a selectable function still warns and drops `tool_search`, preserving the function
 
 ### Requirement: Non-streaming response conversion
-`DoGenerate` SHALL convert every Responses output item to provider content:
-`message` text (with annotations -> `source` parts), `reasoning` summaries,
-`function_call` / `custom_tool_call` tool-calls, and provider-executed built-in
-calls (`web_search_call`, `file_search_call`, `code_interpreter_call`,
-`image_generation_call`, `local_shell_call`, `shell_call` + `shell_call_output`,
-`apply_patch_call`, `tool_search_call` + `tool_search_output`, `computer_call`,
-`mcp_call`, `mcp_approval_request`, `compaction`). Shell and local-shell call
-inputs SHALL preserve optional execution constraints while translating API
-snake_case fields to the provider content model's camelCase fields so later
-turns can reconstruct equivalent request items. The conversion SHALL map usage
-and finish reason, set provider metadata (`responseId`, logprobs,
-`serviceTier`), and carry warnings. Annotation-derived `source` parts SHALL carry
-their display text in the canonical `Title` field: a URL citation's title, and
-a document's filename, or its file id when the annotation carries no filename.
-The legacy `Text` field SHALL NOT carry a source title. When logprobs were requested and an output-text
-content part returns a non-null logprobs array, including an empty array,
-`ProviderMetadata["openai"].logprobs` SHALL contain one outer entry for that
-content part in response order. Each entry SHALL preserve token order and contain
-`token`, `logprob`, and `top_logprobs` alternatives with `token` and `logprob`,
-without provider-only byte arrays. Null or missing arrays SHALL NOT add outer
-entries, and unrequested logprobs SHALL NOT add a `logprobs` metadata field.
+
+DoGenerate SHALL map Responses output to provider content: message text/annotation sources, reasoning summaries, function/custom calls, and built-in calls/results. Conversion SHALL map usage/finish reason, provider metadata (responseId, logprobs, serviceTier) and warnings. Shell/local-shell inputs SHALL preserve optional execution constraints, translating snake_case to camelCase for equivalent later-turn reconstruction.
 
 #### Scenario: Generated output logprobs metadata
 - **WHEN** logprobs are requested and output-text content returns token logprobs with top alternatives
@@ -609,22 +513,8 @@ The provider SHALL round-trip client-executed computer calls using stored item r
 - **THEN** the request includes the expanded actions and a `computer_call_output` preserving screenshot detail and acknowledged safety checks
 
 ### Requirement: Streaming response conversion
-`DoStream` SHALL drive a stateful event consumer over the Responses SSE event
-stream and emit `provider.StreamPart`s with ordering matching upstream:
-`response.created` -> stream start + response metadata; message
-`output_item.added`/`output_text.delta`/`output_item.done` -> text start/delta/end
-(carrying phase and annotations); `function_call_arguments.delta`/`output_item.done`
--> tool-input start/delta/end + tool-call; reasoning summary events ->
-reasoning start/delta/end; provider-executed tools -> their lifecycle parts with
-`ProviderExecuted`; `response.completed`/`response.incomplete`/`response.failed`
--> finish with usage and finish reason; `error` -> error part. Unknown events
-SHALL NOT error. When logprobs were requested, non-null
-`response.output_text.delta.logprobs` arrays, including empty arrays, SHALL be
-accumulated in event order and included as `ProviderMetadata["openai"].logprobs`
-on the final `PartFinish`, using the same normalized token and top-alternative
-shape as non-streaming responses. Null or missing arrays SHALL NOT add outer
-entries, and unrequested stream logprobs SHALL NOT add a `logprobs` metadata
-field.
+
+DoStream SHALL consume the Responses SSE stream statefully and emit provider.StreamParts with upstream ordering. Unknown events SHALL NOT error. Message lifecycle SHALL carry phase and annotations; function input SHALL finish before tool-call emission, and provider-executed tool lifecycle parts SHALL carry ProviderExecuted.
 
 #### Scenario: Stream finish with logprobs
 - **WHEN** logprobs are requested and output-text delta events return token logprobs with top alternatives
@@ -721,13 +611,8 @@ unexpandable wrappers SHALL retain their original input deltas and call identity
 - **AND** incomplete or conflicting groups remain ordinary child results
 
 ### Requirement: Recoverable malformed Responses stream events
-Malformed JSON SSE data SHALL emit a nonretryable stream error without discarding
-subsequent decodable events. Transport/setup failures SHALL retain their existing
-preflight retry/error contract. The provider SHALL emit at most one finish, after
-flushing pending input. A malformed-frame error SHALL survive later completed or
-incomplete responses while retaining their usage and metadata. SDK transport and
-authentication SHALL remain in control, and each acquired framing decoder SHALL
-be constructed and closed exactly once.
+
+Malformed JSON SSE SHALL emit nonretryable error without discarding later decodable events. Transport/setup SHALL retain preflight retry/error behavior. At most one finish SHALL follow pending-input flush. Malformed-frame error SHALL survive completed/incomplete responses with their usage/metadata. SDK transport/auth SHALL stay in control; each acquired framing decoder SHALL be constructed/closed exactly once.
 
 #### Scenario: Malformed events surround valid output
 - **WHEN** malformed JSON occurs before and after valid tool or text events
@@ -748,7 +633,8 @@ both generate and completed stream calls.
 - **THEN** its unified finish reason is tool-calls rather than stop
 
 ### Requirement: OpenAI Responses schema normalization
-Before building an OpenAI Responses request, the provider SHALL normalize each supplied JSON structured-response schema and each function-tool input and optional output schema, including function tools inside namespaces. It SHALL remove `propertyNames` whose schema has `type: "string"` and emit exactly one `compatibility` warning per affected schema with feature `JSON Schema propertyNames` and details `OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.` It SHALL remove `propertyNames: null` without a compatibility warning and SHALL reject boolean or non-string, non-null `propertyNames` with an error before sending any HTTP request. It SHALL NOT mutate caller-owned schema data. Normalization and rejection SHALL apply whether or not strict output is requested and for both `DoGenerate` and `DoStream`.
+
+Before DoGenerate/DoStream, the provider SHALL normalize JSON structured-response and function input/optional output schemas, including namespaced functions, regardless of strict setting, without mutating caller data. String-schema propertyNames SHALL be removed with one compatibility warning per affected schema; null SHALL be removed silently; boolean/non-string/non-null propertyNames SHALL error before HTTP.
 
 #### Scenario: Recursive string property names are removed
 - **WHEN** a schema contains string-schema `propertyNames` in nested `properties`, `patternProperties`, `additionalProperties`, `additionalItems`, `items`, `contains`, `not`, `allOf`, `anyOf`, `oneOf`, `definitions`, `$defs`, schema-valued `dependencies`, or `if`/`then`/`else`
@@ -784,3 +670,273 @@ Before building an OpenAI Responses request, the provider SHALL normalize each s
 #### Scenario: Unaffected schemas remain unchanged
 - **WHEN** the response or function schema contains no `propertyNames` keyword, including schemas with boolean subschemas and `additionalProperties: false`
 - **THEN** the request preserves the schema without a normalization compatibility warning
+
+### Requirement: OpenAI client and request-option ownership
+
+The API-key constructor SHALL create a standard OpenAI client with the supplied key and default Provider() "openai". The preconfigured-client constructor SHALL preserve provider-owned client configuration. Both SHALL accept WithRequestOptions(...) for model request options and WithProviderName(...) for integrations overriding Provider().
+
+#### Scenario: OpenAI client and request-option ownership
+
+- **WHEN** a configured client is supplied with a custom provider name and model request options
+- **THEN** calls SHALL retain configured endpoint/authentication/headers/retries/transport, apply request options and report the overridden identity
+
+### Requirement: OpenAI custom identity namespace resolution
+
+Custom identities SHALL resolve options/metadata namespace once: azure if identity contains "azure", otherwise openai, stable across calls. Azure models SHALL fall back to openai call options if Azure options are absent. Default openai construction SHALL retain per-call OpenAI-first/Azure-fallback resolution. Empty name override SHALL retain default identity and behavior.
+
+#### Scenario: OpenAI custom identity namespace resolution
+
+- **WHEN** a custom Azure identity continues an item without top-level Azure options
+- **THEN** Azure item metadata SHALL still resolve under azure; openai call options SHALL apply when Azure options are absent
+
+### Requirement: OpenAI stored tool-call eligibility
+
+With store=true and an item ID, eligible provider-defined/executed calls SHALL use item_reference rather than resend, except previousResponseId skipping. Ordinary client-executed function calls SHALL stay inline even with stored IDs so function_call_output pairs by call_id.
+
+#### Scenario: OpenAI stored tool-call eligibility
+
+- **WHEN** stored ordinary and hosted calls are continued with their outputs
+- **THEN** ordinary function_call SHALL stay inline with its paired call_id; eligible hosted items SHALL reference their stored IDs unless previousResponseId requires skipping
+
+### Requirement: OpenAI hosted and client provider history taxonomy
+
+Subsequent assistant provider-executed calls/results SHALL retain Responses taxonomy and identity. Stored hosted items SHALL use their item IDs as references; nonstored hosted items SHALL be omitted or reconstructed per upstream tool-specific behavior. Client provider tools SHALL retain native call/output types with matching call_id. Execution-denied assistant results SHALL be omitted when no corresponding OpenAI item exists.
+
+#### Scenario: OpenAI hosted and client provider history taxonomy
+
+- **WHEN** stateless hosted history and a client shell call/output are supplied
+- **THEN** hosted items SHALL follow their taxonomy-specific omission/reconstruction; shell SHALL retain native paired types and call_id, and synthetic unmatched denied assistant results SHALL be omitted
+
+### Requirement: OpenAI scalar result breakpoint precedence
+
+Scalar output-level cache breakpoints SHALL precede tool-result-part breakpoints in the active OpenAI/Azure namespace. Content-array output SHALL instead preserve ordered input_text/input_image/input_file elements and take cache breakpoints from each element, not result/output-level scalar options.
+
+#### Scenario: OpenAI scalar result breakpoint precedence
+
+- **WHEN** multipart output has element cache hints and conflicting result/output scalar hints
+- **THEN** typed elements SHALL retain order and only their own active-namespace hints; scalar output SHALL choose output-level before result-part hints
+
+### Requirement: OpenAI custom uploaded-reference boundary
+
+Custom multipart uploaded references SHALL be omitted with warning `unsupported custom tool content part type: file with data type: reference`. The provider SHALL NOT claim or emit custom-output file_id support under the registered baseline.
+
+#### Scenario: OpenAI custom uploaded-reference boundary
+
+- **WHEN** a custom result mixes text and an uploaded file reference
+- **THEN** text SHALL survive while the reference is dropped with the specified warning and no file_id
+
+### Requirement: OpenAI parallel child cache-breakpoint placement
+
+Selected scalar child output/result-part breakpoints SHALL produce ordered input_text wrapper elements, newline-prefixed after the first and carrying only the corresponding child breakpoint. Multipart child-level scalar breakpoints SHALL NOT apply; element breakpoints SHALL survive within serialized JSON.
+
+#### Scenario: OpenAI parallel child cache-breakpoint placement
+
+- **WHEN** a parallel group mixes a scalar child with a selected breakpoint and a multipart child with scalar and element hints
+- **THEN** wrapper input_text elements SHALL preserve child order/newlines; multipart JSON SHALL retain only its per-element hints
+
+### Requirement: OpenAI GPT-6 unsupported request fields
+
+GPT-6+ reasoning models SHALL omit requested logprobs and message.output_text.logprobs include with unsupported logprobs warning. They SHALL omit legacy promptCacheRetention with unsupported warning directing callers to promptCacheOptions.
+
+#### Scenario: OpenAI GPT-6 unsupported request fields
+
+- **WHEN** GPT-6 requests logprobs, its include and legacy promptCacheRetention
+- **THEN** all three SHALL be omitted with their specified warnings rather than sent
+
+### Requirement: OpenAI Mantle capability ownership
+
+Mantle-prefixed variants SHALL retain endpoint-specific overrides. Enabling new GPT-6 capability flags there SHALL require separate endpoint-owner verification, not inference from an OpenAI-like model ID.
+
+#### Scenario: OpenAI Mantle capability ownership
+
+- **WHEN** a Mantle-prefixed model has a GPT-6-like ID without endpoint-owner verification
+- **THEN** existing endpoint capability overrides SHALL remain unchanged
+
+### Requirement: OpenAI configuration-update rejection conditions
+
+Unsupported models SHALL omit updates with unsupported reasoningEffortUpdate warning saying only GPT-6+ support it. reasoningMode:pro, present contextManagement (even []), or truncation:auto SHALL omit updates with unsupported warning explaining standard mode/no automatic compaction or truncation.
+
+#### Scenario: OpenAI configuration-update rejection conditions
+
+- **WHEN** GPT-6 supplies reasoningEffortUpdate with an explicitly empty contextManagement list
+- **THEN** the update SHALL be omitted with the conflict warning, just as for pro mode or automatic truncation
+
+### Requirement: OpenAI explicit compaction trigger placement
+
+compactionTrigger:true SHALL append {"type":"compaction_trigger"} after all converted prompt items on any model; absent/false SHALL NOT append it. It SHALL NOT mutate caller messages, change request effort, persist as conversation content or alter default requests.
+
+#### Scenario: OpenAI explicit compaction trigger placement
+
+- **WHEN** a pre-GPT-6 request enables compactionTrigger after stateless history and a user prompt
+- **THEN** the trigger SHALL be last without altering caller history or request-level effort
+
+### Requirement: OpenAI async streaming metadata precedence
+
+Stream output_item.done async SHALL override output_item.added; when done omits it, explicitly present added async SHALL be retained. Absent values SHALL remain absent.
+
+#### Scenario: OpenAI async streaming metadata precedence
+
+- **WHEN** added carries async:true and done carries async:false, or omits async
+- **THEN** call metadata SHALL use false in the former case and retain true in the latter
+
+### Requirement: OpenAI async continuation boundaries
+
+Reconstructed nonstored assistant function/custom calls SHALL retain present async. Stored provider-defined custom calls SHALL retain item-reference behavior; ordinary functions SHALL remain inline for call_id/output pairing.
+
+#### Scenario: OpenAI async continuation boundaries
+
+- **WHEN** stored async custom and ordinary function calls have item IDs
+- **THEN** custom SHALL reference its item without extra reconstruction, while ordinary function SHALL stay inline; nonstored reconstruction SHALL retain present async
+
+### Requirement: OpenAI continuation and reasoning option projection
+
+Options SHALL apply previousResponseId, conversation, instructions, reasoningEffort, reasoningSummary, truncation, store, metadata, include, maxToolCalls and parallelToolCalls.
+
+#### Scenario: OpenAI continuation and reasoning option projection
+
+- **WHEN** typed options set previousResponseId:"resp_1", instructions:"Answer briefly" and store:false
+- **THEN** the request SHALL retain previous_response_id:"resp_1", instructions:"Answer briefly" and store:false; adding conversation SHALL emit the existing unsupported conflict warning
+
+### Requirement: OpenAI service and output option projection
+
+Options SHALL apply serviceTier, textVerbosity, user, logprobs, strictJsonSchema, systemMessageMode, forceReasoning, allowedTools, promptCacheKey, promptCacheRetention, safetyIdentifier, passThroughUnsupportedFiles and contextManagement.
+
+#### Scenario: OpenAI service and output option projection
+
+- **WHEN** a typed call configures positive logprobs, text verbosity and prompt cache settings
+- **THEN** configured values SHALL apply, including automatic logprobs include and top_logprobs, subject to existing model capability gates
+
+### Requirement: OpenAI supported provider-tool declarations
+
+Supported IDs SHALL be openai.web_search, openai.web_search_preview, openai.code_interpreter, openai.file_search, openai.image_generation, openai.local_shell, openai.shell, openai.apply_patch, openai.computer, openai.mcp, openai.tool_search, openai.programmatic_tool_calling and openai.custom, converted to corresponding Responses tool objects.
+
+#### Scenario: OpenAI supported provider-tool declarations
+
+- **WHEN** openai.code_interpreter and openai.file_search are declared with configured names runCode and searchFiles
+- **THEN** tools SHALL contain code_interpreter and file_search declarations with their corresponding bidirectional name mappings retained
+
+### Requirement: OpenAI ordinary forced-choice classification
+
+Without allowedTools, ordinary forced choices SHALL resolve configured aliases to canonical names. Hosted type-only choices SHALL be exactly code_interpreter, file_search, image_generation, web_search_preview, web_search, mcp, apply_patch, computer, programmatic_tool_calling. Named custom tools SHALL use {type:"custom",name:<custom name>}; others SHALL use {type:"function",name:<resolved name>}, including shell/local_shell/tool_search; unmapped spelling SHALL remain.
+
+#### Scenario: OpenAI ordinary forced-choice classification
+
+- **WHEN** ordinary choice selects a renamed shell provider tool or a hosted web-search alias
+- **THEN** shell SHALL use the function shape with canonical shell name; search SHALL use only canonical hosted type
+
+### Requirement: OpenAI ordinary choice classification boundary
+
+Ordinary forced-choice classification SHALL NOT remove supported declarations/bidirectional mappings, alter separate allowedTools resolution or introduce name validation.
+
+#### Scenario: OpenAI ordinary choice classification boundary
+
+- **WHEN** ordinary forced shell choice is used instead of allowedTools
+- **THEN** the shell declaration and mappings SHALL remain supported; a later allowedTools selection SHALL still use the declaration-aware shell shape
+
+### Requirement: OpenAI automatic web-source include policy
+
+With a web-search tool, automatic web_search_call.action.sources SHALL default on for ordinary OpenAI models, but SHALL be suppressed by model capability false or includeWebSearchSources:false. Per-call true SHALL NOT override disabled capability. No web-search tool SHALL mean no automatic source include.
+
+#### Scenario: OpenAI automatic web-source include policy
+
+- **WHEN** a web tool is supplied with per-call true on a source-include-disabled model
+- **THEN** the tool SHALL remain while automatic web sources SHALL be omitted
+
+### Requirement: OpenAI include ownership and independence
+
+Caller include values SHALL remain even when automatic web sources are disabled. Unrelated automatic includes SHALL remain independent.
+
+#### Scenario: OpenAI include ownership and independence
+
+- **WHEN** caller explicitly includes web_search_call.action.sources with automatic sources disabled alongside code-interpreter, logprobs or encrypted-reasoning includes
+- **THEN** explicit web sources SHALL survive and unrelated includes SHALL retain their own rules
+
+### Requirement: OpenAI allowed-tools declaration resolution
+
+With nonempty declarations and present allowedTools, each name SHALL resolve against emitted declarations, direct name before canonical alias, retaining source order/duplicates. Function/custom/MCP/supported hosted selections SHALL use their Responses allowed_tools shapes. Direct-name/alias collisions SHALL warn unsupported and select the direct name.
+
+#### Scenario: OpenAI allowed-tools declaration resolution
+
+- **WHEN** a function named web_search collides with a web-search canonical alias and is selected twice
+- **THEN** both positions SHALL select the direct function and a shadowing warning SHALL be emitted
+
+### Requirement: OpenAI unselectable and unknown allowed-tools names
+
+Ambiguous aliases or unallowlistable known selections (namespace-contained/deferred functions and unsupported hosted kinds including tool_search) SHALL warn and drop. Unknown names SHALL warn but be sent as mapped functions. Preparation SHALL fail before transport only if no entries remain (including empty selection), identifying dropped names in source order.
+
+#### Scenario: OpenAI unselectable and unknown allowed-tools names
+
+- **WHEN** allowedTools mixes ambiguous mcp, deferred function, tool_search and an unknown name
+- **THEN** the first three SHALL warn/drop in source order; the unknown SHALL warn and survive as a mapped function, avoiding empty-selection failure
+
+### Requirement: OpenAI allowed-tools presence defaults and ownership
+
+Without declarations, tools/choice SHALL be omitted even if allowedTools/toolChoice is supplied. Non-nil allowedTools SHALL override ordinary choice even with empty toolNames. Mode SHALL default auto; supported domain SHALL be auto|required without extra runtime mode check in preparation. Resolution SHALL NOT mutate caller tools, option slices or mappings.
+
+#### Scenario: OpenAI allowed-tools presence defaults and ownership
+
+- **WHEN** declarations exist but non-nil allowedTools has empty toolNames and an ordinary choice
+- **THEN** allowedTools SHALL override and preparation SHALL fail locally for no allowed entries, leaving all caller-owned inputs unchanged
+
+### Requirement: OpenAI generated built-in output taxonomy
+
+Generated provider-executed built-ins SHALL include web_search_call, file_search_call, code_interpreter_call, image_generation_call, local_shell_call, shell_call+shell_call_output, apply_patch_call, tool_search_call+tool_search_output, computer_call, mcp_call, mcp_approval_request and compaction.
+
+#### Scenario: OpenAI generated built-in output taxonomy
+
+- **WHEN** the response contains a web_search_call with ID search_1
+- **THEN** conversion SHALL emit the corresponding provider-executed tool call and tool result linked to search_1 rather than an ordinary client function call
+
+### Requirement: OpenAI annotation source title field
+
+Annotation-derived sources SHALL use canonical Title for URL citation title and document filename (or file ID without filename). Legacy Text SHALL NOT carry source titles.
+
+#### Scenario: OpenAI annotation source title field
+
+- **WHEN** message annotations include a URL citation and a document without a filename
+- **THEN** sources SHALL place URL title and document file ID in Title, leaving Text empty
+
+### Requirement: OpenAI generated logprobs metadata normalization
+
+Requested non-null output-text logprobs arrays, even [], SHALL each add an outer entry to ProviderMetadata["openai"].logprobs in response order. Tokens SHALL preserve order and token/logprob/top_logprobs alternatives (token/logprob), without provider byte arrays. Null/missing SHALL add no entry; unrequested logprobs SHALL add no field.
+
+#### Scenario: OpenAI generated logprobs metadata normalization
+
+- **WHEN** requested logprobs contain token alternatives in one content part, [] in another and null in a third
+- **THEN** metadata SHALL retain ordered normalized token and empty arrays, omit null and byte arrays, and be absent if unrequested
+
+### Requirement: OpenAI streaming logprobs normalization
+
+Requested non-null response.output_text.delta.logprobs arrays, including [], SHALL accumulate in event order on final PartFinish at ProviderMetadata["openai"].logprobs with unary-normalized token/top-alternative shape. Null/missing SHALL add no outer entry; unrequested stream logprobs SHALL add no field.
+
+#### Scenario: OpenAI streaming logprobs normalization
+
+- **WHEN** requested stream deltas have token alternatives, an empty array and a null logprobs value
+- **THEN** final finish SHALL retain token and empty arrays in delta order, without byte fields or null entries
+
+### Requirement: OpenAI property-name normalization warning contract
+
+Each affected schema SHALL emit exactly one compatibility warning with feature `JSON Schema propertyNames` and details `OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints.`
+
+#### Scenario: OpenAI property-name normalization warning contract
+
+- **WHEN** one schema has multiple nested string-schema propertyNames keywords
+- **THEN** all SHALL be removed but only one warning SHALL be emitted with the exact feature and details
+
+### Requirement: OpenAI stream response envelope lifecycle
+
+`response.created` SHALL emit stream start and response metadata. `response.completed`, `response.incomplete` and `response.failed` SHALL emit finish with usage and mapped finish reason; `error` SHALL emit an error part.
+
+#### Scenario: OpenAI stream response envelope lifecycle
+
+- **WHEN** a stream emits response.created, content events and then response.incomplete with usage
+- **THEN** start and response metadata SHALL precede content, followed by finish with that usage and finish reason
+
+### Requirement: OpenAI stream content event mapping
+
+Message `output_item.added`/`output_text.delta`/`output_item.done` SHALL emit text start/delta/end with phase/annotations. `function_call_arguments.delta`/`output_item.done` SHALL emit tool-input start/delta/end then tool-call. Reasoning summary events SHALL emit reasoning start/delta/end. Provider-executed tools SHALL emit their lifecycle parts with ProviderExecuted.
+
+#### Scenario: OpenAI stream content event mapping
+
+- **WHEN** message added, output_text.delta and message done events arrive with phase and annotations
+- **THEN** text-start, text-delta and text-end SHALL appear in order carrying phase and annotations

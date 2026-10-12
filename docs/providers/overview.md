@@ -9,6 +9,7 @@ authentication your application uses.
 | Provider | Use it when |
 |---|---|
 | [Anthropic](anthropic.md) | You call Claude through the Anthropic API or Google Vertex AI |
+| [Microsoft Azure](azure.md) | You call Claude through Microsoft Foundry |
 | [Amazon Bedrock](bedrock.md) | You call models through AWS Bedrock Converse |
 | [OpenAI](openai.md) | You call OpenAI's Responses API |
 | [OpenAI-compatible](openai-compatible.md) | You call a Chat Completions-compatible `/v1/chat/completions` server |

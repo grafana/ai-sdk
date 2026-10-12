@@ -7,7 +7,8 @@ Validate coordinated candidate SDK and Gateway source independently of standalon
 ## Requirements
 
 ### Requirement: Required CI integrates candidate source
-Required source CI SHALL build, vet, lint, test and exercise cross-language integration against candidate SDK, providers, middleware and Gateway. It SHALL retain formatting, docs, license/isolation, parity/conformance, structural boundary, module-policy and canonical merged-pin checks. Real published internal pins MAY lag candidate source but SHALL remain downloadable and merged in canonical main; required source checks SHALL NOT compile candidate code against those pins as a prerequisite to merge.
+
+Required source CI SHALL build, vet, lint, test and exercise cross-language integration against candidate SDK, providers, middleware and Gateway. It SHALL retain formatting, docs, license/isolation, parity/conformance, structural boundary, module-policy and canonical merged-pin checks. Real published internal pins MAY lag candidate source but SHALL remain downloadable and merged in canonical main; compiling candidate code against those pins SHALL NOT be a merge prerequisite.
 
 #### Scenario: Coordinated source with older merged pins
 - **WHEN** candidate root/provider/middleware/Gateway changes work together but an older merged dependency pin cannot compile that candidate independently
@@ -20,7 +21,8 @@ Required source CI SHALL build, vet, lint, test and exercise cross-language inte
 - **AND** every copied Go-client mutant SHALL be selected by its test workspace and rejected by a semantic differential assertion, not a build/setup failure
 
 ### Requirement: Gateway publication is independently gated
-Standalone selected-module and all-module commands SHALL remain available without directly or indirectly blocking an ordinary source PR. On an eligible canonical main or Gateway-tag push, image validation and publication SHALL use a fresh clean checkout, verify HEAD equals the push SHA with standard Git cleanliness checks, and build from a narrowly filtered Gateway Dockerfile-specific context. Image validation SHALL then build multiarchitecture and native Gateway images using the explicit Gateway workspace source and smoke-test the native image. Gateway standalone module compilation against published pins SHALL NOT block its container image release or main deployment. Publication SHALL depend on successful required source checks, merged-pin and one-way boundary checks, and image-validation jobs for that revision; main deployment SHALL follow successful publication. A skipped, cancelled or failed source or image-validation job SHALL NOT authorize publication or deployment.
+
+Standalone selected-module and all-module commands SHALL remain available without directly or indirectly blocking ordinary source PRs. Gateway standalone compilation against published pins SHALL NOT block container image release or main deployment. Publication SHALL require successful required source, merged-pin, one-way boundary and image-validation jobs for that revision; main deployment SHALL follow successful publication.
 
 #### Scenario: Unready Gateway artifact
 - **WHEN** coordinated source checks pass but standalone Gateway cannot compile with its older merged declared dependencies
@@ -34,6 +36,22 @@ Standalone selected-module and all-module commands SHALL remain available withou
 #### Scenario: Failed source, image or smoke check
 - **WHEN** a required candidate-source check, build, smoke, ancestry or boundary check fails, is skipped or is cancelled
 - **THEN** Gateway publication and deployment SHALL remain blocked
+
+### Requirement: Gateway publication checkout and image validation
+
+On eligible canonical main or Gateway-tag pushes, image validation and publication SHALL use a fresh clean checkout, verify HEAD equals push SHA with standard Git cleanliness checks, and build from a narrowly filtered Gateway Dockerfile-specific context. Validation SHALL build multiarchitecture and native images using explicit Gateway workspace source and smoke-test the native image.
+
+#### Scenario: Gateway publication checkout and image validation
+- **WHEN** image validation runs for an eligible Gateway-tag push
+- **THEN** the clean push-SHA checkout and filtered context SHALL build multiarchitecture and native workspace-source images and smoke-test the native image
+
+### Requirement: Gateway publication fails closed on job state
+
+A skipped, cancelled or failed required source or image-validation job SHALL NOT authorize publication or deployment.
+
+#### Scenario: Gateway publication fails closed on job state
+- **WHEN** an image-validation job is cancelled
+- **THEN** Gateway publication and main deployment SHALL remain unauthorized
 
 ### Requirement: Release automation remains separate
 A green source PR SHALL NOT authorize an SDK release or change required-check/ruleset settings. Any required-check identity change SHALL require coordinated maintainer approval without bypassing checks. SDK release automation remains owned by #245/#21.

@@ -6,24 +6,7 @@ Define how provider-executed tool calls and their results round-trip through the
 ## Requirements
 ### Requirement: Orchestration routes provider-executed tool results inline in assistant message
 
-The `appendToolResults` function SHALL build a `[]provider.ContentPart` from
-the step in stream order (reasoning blocks first, then a `text` part if
-non-empty, then for each tool call the call followed immediately by its
-matching provider-executed `tool-result`, then any remaining
-non-provider-executed `tool-result` parts) and SHALL delegate the conversion
-of that slice to the public `ToResponseMessages(parts)` helper. The
-returned messages SHALL be appended to the input `msgs` slice and returned.
-The function SHALL preserve all behavior previously specified —
-provider-executed tool results inline in the assistant message,
-non-provider-executed tool results in a separate tool message,
-`ProviderMetadata` carried through to `ProviderOptions` on every
-`tool-call`, `tool-result`, and `reasoning` part, and `ModelOutput` honored
-for provider-executed inline results — with the additional guarantee that
-`reasoning` parts and their `ProviderOptions` (notably Anthropic's extended-
-thinking signature) survive every tool-result round.
-
-When a step contains only provider-executed tool results and no
-non-provider-executed tool results, no tool message SHALL be appended.
+appendToolResults SHALL build []provider.ContentPart from the step in stream order: reasoning first, nonempty text, each call immediately followed by its matching provider-executed result, then remaining non-provider-executed results. It SHALL delegate to public ToResponseMessages(parts), append returned messages to input msgs and return them. Provider results SHALL remain inline; local results SHALL use a separate tool message; provider-only results SHALL NOT append a tool message.
 
 #### Scenario: Provider-executed tool result goes inline in assistant message
 
@@ -94,13 +77,17 @@ non-provider-executed tool results, no tool message SHALL be appended.
 - **AND** the resulting message list SHALL be suitable as the next-call
   prompt without any reasoning content being dropped
 
+### Requirement: Tool rounds retain reasoning and provider metadata
+
+In appendToolResults, every tool-call, tool-result and reasoning part SHALL carry ProviderMetadata through to ProviderOptions. Provider-executed inline results SHALL honor ModelOutput. Reasoning and its ProviderOptions, notably Anthropic extended-thinking signatures, SHALL survive every tool-result round.
+
+#### Scenario: Reasoning metadata survives multiple tool rounds
+- **WHEN** a step with signed reasoning and tool results is appended to history
+- **THEN** reasoning ProviderOptions and all call/result metadata SHALL survive, and inline results SHALL use supplied ModelOutput.
+
 ### Requirement: Anthropic converts provider-executed tool calls to server_tool_use blocks
 
-The `convertAssistantContent` function SHALL check `ProviderExecuted` on `ToolCallContentPart` entries. When `ProviderExecuted` is true and the tool call is not an MCP tool, the function SHALL emit a `server_tool_use` block instead of a regular `tool_use` block. The tool name SHALL be resolved through `toolNameMapping.toProviderToolName`.
-
-For code execution tool calls where the input contains a `type` field with value `bash_code_execution` or `text_editor_code_execution`, the emitted `server_tool_use` block SHALL use the sub-tool name from the input's `type` field as the wire name.
-
-For code execution tool calls where the input contains a `type` field with value `programmatic-tool-call`, the function SHALL strip the `type` field from the input and emit a `server_tool_use` block with name `code_execution`.
+convertAssistantContent SHALL check ToolCallContentPart.ProviderExecuted. True non-MCP calls SHALL emit server_tool_use instead of tool_use with names resolved by toolNameMapping.toProviderToolName.
 
 #### Scenario: Provider-executed web_search tool call emits server_tool_use
 
@@ -142,17 +129,17 @@ For code execution tool calls where the input contains a `type` field with value
 - **WHEN** `convertAssistantContent` encounters a `ToolCallContentPart` with `ProviderExecuted: true` and a provider tool name that is not recognized (not `code_execution`, `web_search`, `web_fetch`, `tool_search_*`)
 - **THEN** it produces a warning and does not emit a block for that tool call
 
+### Requirement: Anthropic code execution sub-tool wire names
+
+For provider-executed code execution calls, input type bash_code_execution or text_editor_code_execution SHALL become the server_tool_use wire name. For programmatic-tool-call, conversion SHALL strip input type and emit server_tool_use named code_execution.
+
+#### Scenario: Text editor execution uses its sub-tool name
+- **WHEN** a provider-executed code_execution call has input type text_editor_code_execution
+- **THEN** server_tool_use SHALL use text_editor_code_execution as its wire name.
+
 ### Requirement: Anthropic converts inline tool results to provider-specific result blocks
 
-The `convertAssistantContent` function SHALL handle `ToolResultContentPart` entries that appear inline in assistant message content. The function SHALL dispatch to the appropriate Anthropic API result block type based on the tool name resolved through `toolNameMapping.toProviderToolName`:
-
-- MCP tool results (tracked via `mcpToolUseIDs`): `mcp_tool_result`
-- `code_execution`: dispatch to `code_execution_tool_result`, `bash_code_execution_tool_result`, or `text_editor_code_execution_tool_result` based on the output content's `type` field
-- `web_search`: `web_search_tool_result`
-- `web_fetch`: `web_fetch_tool_result`
-- `tool_search_tool_regex` / `tool_search_tool_bm25`: `tool_search_tool_result`
-
-Unsupported or unrecognized tool results SHALL produce a warning.
+convertAssistantContent SHALL dispatch inline ToolResultContentPart by toolNameMapping.toProviderToolName: MCP IDs tracked in mcpToolUseIDs to mcp_tool_result; web_search/web_fetch to web_search_tool_result/web_fetch_tool_result; tool_search_tool_regex/tool_search_tool_bm25 to tool_search_tool_result. Unsupported or unrecognized results SHALL produce a warning.
 
 #### Scenario: MCP tool result inline emits mcp_tool_result
 
@@ -208,6 +195,14 @@ Unsupported or unrecognized tool results SHALL produce a warning.
 
 - **WHEN** `convertAssistantContent` encounters a `ToolResultContentPart` with a provider tool name not matching any known server tool type
 - **THEN** it produces a warning and does not emit a block for that result
+
+### Requirement: Anthropic code result dispatch uses output type
+
+Inline code_execution results SHALL dispatch to code_execution_tool_result, bash_code_execution_tool_result or text_editor_code_execution_tool_result according to the output content type field.
+
+#### Scenario: Code result type determines the native block
+- **WHEN** an inline code_execution output indicates a bash execution result
+- **THEN** conversion SHALL emit bash_code_execution_tool_result rather than a generic tool result.
 
 ### Requirement: Anthropic caller metadata survives server-tool round trips
 Anthropic server tool calls and web search/fetch results SHALL preserve supplied

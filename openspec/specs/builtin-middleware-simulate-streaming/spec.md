@@ -5,7 +5,8 @@ Define middleware behavior for simulating streamed language-model output from no
 ## Requirements
 
 ### Requirement: Simulate streaming from generate results
-`SimulateStreaming` SHALL return a `Middleware` that intercepts `DoStream` calls, calls `DoGenerate` on the inner model instead, and converts the generate result into a synthetic stream of `provider.StreamPart` events. It SHALL preserve every applicable field of the supported `LanguageModelV4` generated content variants in the equivalent stream parts, using the established Go source and file representations, and SHALL terminate its emitting goroutine when the call context is canceled even if the stream is not being consumed.
+
+`SimulateStreaming` SHALL return a `Middleware` that intercepts `DoStream`, calls the inner `DoGenerate` instead, and converts its result into synthetic `provider.StreamPart` events. Equivalent stream parts SHALL preserve every applicable field of supported `LanguageModelV4` generated content variants using established Go source and file representations. The emitter SHALL terminate on call-context cancellation even if the stream is not consumed.
 
 #### Scenario: Text content converted to stream parts
 - **WHEN** `DoStream` is called on a model wrapped with `SimulateStreaming`
