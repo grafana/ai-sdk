@@ -196,17 +196,23 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeError{category: safeInternal})
 		return
 	}
+	executionLimit := h.limits.UnaryResponseBytes
 	if validated.mode == executionStreaming {
-		h.serveStream(w, r.Context(), resolved.Model, options, history)
+		executionLimit = h.limits.StreamFrameBytes
+	}
+	executionContext, capture := newExecutionContext(r.Context(), validated.modelID, resolved, executionLimit)
+	defer capture.seal()
+	if validated.mode == executionStreaming {
+		h.serveStream(w, executionContext, resolved.Model, options, history)
 		return
 	}
-	result, err := h.invokeModel(r.Context(), resolved.Model, options)
+	result, err := h.invokeModel(executionContext, resolved.Model, options)
 	if err != nil {
-		h.writeSafeError(w, safeErrorFromProvider(err))
+		h.writeExecutionError(w, safeErrorFromProvider(err), capture)
 		return
 	}
-	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history}) {
-		h.writeSafeError(w, safeError{category: safeInternal})
+	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, execution: capture}) {
+		h.writeExecutionError(w, safeError{category: safeInternal}, capture)
 	}
 }
 
@@ -356,6 +362,7 @@ func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel,
 			if outcome.result == nil && outcome.err == nil {
 				outcome.err = errModelInternal
 			}
+			executionFromContext(modelContext).direct(outcome.err)
 			outcomes <- outcome
 		}()
 		outcome.result, outcome.err = model.DoGenerate(modelContext, options)

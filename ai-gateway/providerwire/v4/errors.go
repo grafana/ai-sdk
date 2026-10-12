@@ -2,6 +2,7 @@ package v4
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -207,4 +208,20 @@ func writeSafeErrorDocument(w http.ResponseWriter, document safeErrorDocument) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(document.status)
 	_, _ = w.Write(document.body)
+}
+
+const defaultClientErrorBytes int64 = 64 << 10
+
+func (h *handler) writeExecutionError(w http.ResponseWriter, value safeError, capture *executionCapture) {
+	document := documentForSafeError(value)
+	if metadata := capture.metadata(nil); len(metadata) != 0 {
+		var envelope map[string]json.RawMessage
+		if json.Unmarshal(document.body, &envelope) == nil {
+			envelope["providerMetadata"], _ = json.Marshal(metadata)
+			if body, err := json.Marshal(envelope); err == nil && int64(len(body)) <= min(h.limits.UnaryResponseBytes, defaultClientErrorBytes) {
+				document.body = body
+			}
+		}
+	}
+	writeSafeErrorDocument(w, document)
 }

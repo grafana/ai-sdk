@@ -15,7 +15,7 @@
 
 - [x] 3.1 Exercise both clients in unary and streaming modes with no schema and schema, absent/empty/nonempty names, normalized descriptions and semantic schema edge values from design matrix.
 - [x] 3.2 Prove TS generateText/streamText and Go GenerateText/StreamText output parsing and invalid final output validation at client layer.
-- [ ] 3.3 Prove configured fallback secondary success, noneligible/all-failed actual attribution and bounds, first-part commitment/no replay and cancellation cleanup for structured requests; report any unresolved existing attribution gap explicitly.
+- [x] 3.3 Prove configured fallback secondary success, noneligible/all-failed actual attribution and bounds, first-part commitment/no replay and cancellation cleanup for structured requests; use compact actual execution metadata in existing supported carriers and preserve optional-omission behavior.
 - [x] 3.4 Prove operator/consumer capture independence with structured request/output and errors, one logical observation, useful consumer opt-in capture and unchanged caller responses.
 
 ## 4. Documentation and validation

@@ -43,7 +43,14 @@ func (c *staticCatalog) ResolveModel(_ context.Context, modelID string) (Resolve
 	if !exists {
 		return ResolvedModel{}, &UnknownModelError{ModelID: modelID}
 	}
-	return ResolvedModel{ID: canonicalID, Model: c.models[canonicalID]}, nil
+	var candidates []ConfiguredCandidate
+	for _, info := range c.namespace.infos {
+		if info.ID == canonicalID {
+			candidates = append([]ConfiguredCandidate(nil), info.Candidates...)
+			break
+		}
+	}
+	return ResolvedModel{ID: canonicalID, Model: c.models[canonicalID], Candidates: candidates}, nil
 }
 
 func (c *staticCatalog) ListModels(_ context.Context) ([]ModelInfo, error) {

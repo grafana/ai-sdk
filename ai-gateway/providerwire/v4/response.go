@@ -46,7 +46,8 @@ type unaryToolResult struct {
 }
 
 type unaryMappingContext struct {
-	history map[string]string
+	execution *executionCapture
+	history   map[string]string
 }
 
 type unaryToolState struct {
@@ -344,6 +345,12 @@ func (h *handler) writeUnarySuccess(w http.ResponseWriter, result *provider.Gene
 	body, ok := encodeUnarySuccess(mapped, h.limits.UnaryResponseBytes)
 	if !ok {
 		return false
+	}
+	if len(contexts) != 0 && contexts[0].execution != nil {
+		mapped.Metadata = contexts[0].execution.metadata(mapped.Metadata)
+		if enriched, fits := encodeUnarySuccess(mapped, h.limits.UnaryResponseBytes); fits {
+			body = enriched
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

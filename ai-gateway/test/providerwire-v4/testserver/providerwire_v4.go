@@ -262,6 +262,17 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "test-stop"}}
 		close(stream)
 		return &provider.StreamResult{Stream: stream}, nil
+	case "structured-committed":
+		m.stats.recordSuccess(options)
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartStreamStart},
+			provider.StreamPart{Type: provider.PartTextStart, ID: "object"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "object", Delta: `{"value":`},
+			provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400, Message: "wrapper must not escape", Data: json.RawMessage(`{"error":{"message":"event detail","type":"schema_error","code":17}}`)})},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "object", Delta: `"ok"}`},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "object"},
+			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}},
+		)}, nil
 	case "stream-errors":
 		stream := make(chan provider.StreamPart, 8)
 		stream <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusServiceUnavailable, Message: "private overload"})}
@@ -400,6 +411,14 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		return nil, err
 	}
 	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "structured-fallback"}, Model: structured})
+	committed, err := fallback.New(&providerWireV4Model{kind: "structured-committed", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "structured-committed", Candidates: []catalog.ConfiguredCandidate{
+		{ProviderInstance: "selected", Provider: "test", ModelID: "private-structured-committed"},
+		{ProviderInstance: "unused", Provider: "test", ModelID: "private-success"},
+	}}, Model: committed})
 	resolver, err := catalog.NewStatic(entries)
 	if err != nil {
 		return nil, err

@@ -324,6 +324,35 @@ status-derived retryability. Error envelope and payload fields use standard Go
 JSON decoding, including case-insensitive field matching. Later valid stream
 parts remain consumable.
 
+Configured routes can attach a compact execution overview at
+`providerMetadata.gateway.execution` on unary results and stream finishes. It
+contains the requested and canonical model IDs and ordered, actually observed
+candidates, each with its configured provider instance, provider, model and
+selection outcome. Failed candidates may include a native message, type, string
+or numeric code, and status. These are candidate-local summaries, not raw native
+bodies, headers or a trace of the error's causes. Native status is distinct from
+the Gateway HTTP status and does not change retryability or fallback selection.
+
+For unary and stream-setup failures, read this metadata from the error response:
+Go exposes it in `APICallError.Data`; the registered TypeScript client's
+`GatewayError.cause` is an `APICallError` whose `data` retains the envelope.
+Committed stream errors carry `error.data.providerMetadata` and an event-local
+`error.data.nativeError`. Later valid content and finish events remain readable;
+these diagnostics do not cause another candidate to replay an established stream.
+
+The overview is best effort and independent of operator capture. Incomplete
+observation or an existing transport limit can omit it, without implying that no
+candidate ran. HTTP error enrichment also fits within the default Go client’s
+64 KiB error-envelope limit. Missing or malformed native payloads omit the
+message/type/code rather than copying verbose SDK wrapper text. When adding its overview, the Gateway preserves a native
+`gateway` namespace under `gateway.nativeMetadata`. If optional enrichment is
+omitted, native metadata remains unchanged: an opaque `gateway.execution` value
+alone is not proof of Gateway provenance. Native summary text is retained as
+returned by the provider; it is not filtered by the server's logging policy.
+Selection means an accepted unary result or the first stream part, not completed
+generation. Retrying a call can repeat provider work or effects, including after
+response validation fails; the overview does not promise exactly-once execution.
+
 Use call headers for application metadata. All constructors and call options
 reject reserved authentication-header overrides; configure authentication on
 the client instead. See the

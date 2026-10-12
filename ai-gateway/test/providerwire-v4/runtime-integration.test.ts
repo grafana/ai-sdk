@@ -989,3 +989,35 @@ it("both clients reach native Responses with structured names, schemas and fallb
     }
   }
 });
+
+
+it("both clients retain event-local structured errors without replay or lost continuation", async () => {
+  const before = await stats();
+  const options = { prompt: [], responseFormat: { type: "json" as const, name: "" } };
+  const client = model("structured-committed");
+  const parts = await collect((await client.doStream(options)).stream);
+  for (const part of parts) assert.equal(validateStreamEvent(part), true, JSON.stringify(validateStreamEvent.errors));
+  assert.deepEqual(parts.map(part => part.type), ["stream-start", "text-start", "text-delta", "error", "text-delta", "text-end", "finish"]);
+  const event = parts[3] as any;
+  assert.equal(event.error.statusCode, 424);
+  const execution = event.error.data.providerMetadata.gateway.execution;
+  assert.deepEqual(execution.attempts, [{ providerInstance: "selected", provider: "test", modelId: "private-structured-committed", outcome: "selected" }]);
+  assert.deepEqual(event.error.data.nativeError, { message: "event detail", type: "schema_error", code: 17, statusCode: 400 });
+  assert.deepEqual((parts.at(-1) as any).providerMetadata.gateway.execution, execution);
+  const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "test", modelID: "structured-committed", mode: "stream", options });
+  assert.equal(go.error, undefined);
+  assert.deepEqual(go.parts.map((part: any) => part.type), parts.map(part => part.type));
+  const goError = go.parts[3].error;
+  assert.equal(goError.statusCode, 424);
+  assert.deepEqual(goError.data, event.error.data);
+  assert.equal(go.parts.filter((part: any) => part.type === "text-delta").map((part: any) => part.delta).join(""), '{"value":"ok"}');
+  assert.deepEqual(go.partMetadata.at(-1).gateway.execution, execution);
+  const high = streamText({ model: client, prompt: "structured", output: Output.json(), maxRetries: 0, onError: () => {} });
+  const highParts = [];
+  for await (const part of high.fullStream) highParts.push(part);
+  const highError = highParts.find(part => part.type === "error") as any;
+  assert.deepEqual(highError.error.data.data, event.error.data);
+  assert.deepEqual(await high.output, { value: "ok" });
+  const after = await stats();
+  assert.equal(after.streamCalls - before.streamCalls, 3, "one selected physical invocation per client call, no fallback replay");
+});

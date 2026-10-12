@@ -3,9 +3,7 @@
 ## Purpose
 
 Define configured fallback for mapped Gateway capabilities beneath one logical observation chain, with first-part commitment, bounded lifecycle ownership and existing physical-attempt attribution.
-
 ## Requirements
-
 ### Requirement: Ordered direct text routes
 The Gateway SHALL construct each public route from one required primary and zero or more ordered direct provider/backend candidates. Every invocation SHALL begin at the primary and consider later candidates only in configured order; no prior winner, request value, health signal, or concurrent call SHALL reorder or skip candidates.
 
@@ -188,13 +186,17 @@ Configured candidates SHALL compose directly through reusable fallback beneath t
 - **THEN** configured fallback SHALL NOT re-enter selection or replay the call on another candidate
 
 #### Scenario: Deferred or protected request remains refused
-- **WHEN** a request activates an unsupported provider-tool, provider-executed history, approval, raw/custom/generated/structured codec, unconsumed host control or concrete native bypass
+- **WHEN** a request activates an unsupported provider-tool, provider-executed history, approval, raw/custom/generated codec, unconsumed host control or concrete native bypass
 - **THEN** its existing owning validation/protection boundary SHALL remain effective before prohibited native I/O
 - **AND** removal of the text guard SHALL NOT enable the deferred feature
 
 #### Scenario: Capture policy does not govern admission
 - **WHEN** a supported tool/file/reasoning/options request runs through configured fallback under metadata-only operator capture
 - **THEN** capture policy SHALL NOT reject the mapped content or alter supported responses and one logical observation SHALL cover the physical attempts
+
+#### Scenario: Structured output is mapped
+- **WHEN** a valid JSON response format is supplied on a configured fallback route
+- **THEN** it SHALL remain eligible under gateway-structured-output with candidate-native validation and existing commitment rules
 
 ### Requirement: Ordinary namespace values do not narrow fallback
 Empty namespace objects and active members including null, false, zero, empty strings, arrays and nested objects SHALL NOT create a separate fallback restriction. Native adapters SHALL retain their own namespace interpretation and concrete consumption-backed protections; mapped eligibility SHALL NOT imply acceptance by every backend. The Gateway SHALL NOT filter to a candidate intersection, translate native options or replace option loss with blanket refusal.

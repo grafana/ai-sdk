@@ -1,5 +1,8 @@
-## ADDED Requirements
+# gateway-structured-output Specification
 
+## Purpose
+TBD - created by archiving change add-gateway-structured-output-114. Update Purpose after archive.
+## Requirements
 ### Requirement: Presence-aware structured request
 The root provider contract and both Gateway clients SHALL preserve response-format name absence independently from an explicitly empty or nonempty string. Description absence and empty SHALL normalize to the empty string. JSON mode without schema and schema mode with an opaque JSON object SHALL reach native adapters in unary and streaming calls; explicit text format SHALL retain existing text behavior. Schema values SHALL retain semantic numeric and nested value fidelity without Gateway schema rewriting.
 
@@ -33,7 +36,7 @@ The Gateway SHALL transport structured output using existing text response and s
 - **THEN** final output validation SHALL fail in the client without Gateway repair or a fabricated provider success
 
 ### Requirement: Safe malformed requests and native failures
-Malformed JSON and invalid response-format field/root shapes SHALL fail before provider invocation under existing request bounds. Schema object contents SHALL remain opaque; provider-invalid schema and provider errors SHALL follow existing safe error handling, retaining supported useful error fields without exposing configured credentials.
+Malformed JSON and invalid response-format field/root shapes SHALL fail before provider invocation under existing request bounds. Schema object contents SHALL remain opaque; provider-invalid schema and provider errors SHALL follow existing safe error handling, retaining supported useful candidate-local native error fields. Raw response bodies, request headers and wrapper prose SHALL NOT be copied; provider-origin messages may echo caller or provider data.
 
 #### Scenario: Invalid schema root
 - **WHEN** schema is null, a scalar, a boolean or an array, or name/description has an invalid type
@@ -44,7 +47,7 @@ Malformed JSON and invalid response-format field/root shapes SHALL fail before p
 - **THEN** its useful supported error information SHALL reach both clients through existing error conversion
 
 ### Requirement: Mapped fallback and independent observation
-Structured output SHALL be eligible on configured fallback routes under existing native namespace interpretation, selection, cancellation and commitment rules. Selected failures SHALL identify the actual candidate and exhaustion SHALL retain available bounded candidate failure information through existing machinery. Operator and consumer capture SHALL remain independently configured and SHALL NOT change admission or caller responses.
+Structured output SHALL be eligible on configured fallback routes under existing native namespace interpretation, selection, cancellation and commitment rules. Selected failures SHALL identify the actual candidate and exhaustion SHALL retain available bounded candidate failure information through compact execution metadata in existing provider metadata/error-data carriers. Operator and consumer capture SHALL remain independently configured and SHALL NOT change admission or caller responses.
 
 #### Scenario: Native secondary succeeds
 - **WHEN** the primary fails eligibly before commitment and a native secondary accepts the structured request
@@ -57,3 +60,13 @@ Structured output SHALL be eligible on configured fallback routes under existing
 #### Scenario: Exhaustion and capture
 - **WHEN** all candidates fail or capture is independently enabled on either side
 - **THEN** scoped tests SHALL prove actual failure attribution and bounds, one logical observation, useful supported consumer capture, and unchanged caller output/error behavior
+
+#### Scenario: Optional attribution fits existing transport
+- **WHEN** a complete observed execution overview fits existing document/frame limits and the default Go client error-envelope limit for HTTP failures
+- **THEN** it SHALL identify actual ordered configured candidates without aggregate causes or fallback-intent serialization
+- **AND** incomplete or oversized enrichment SHALL be omitted without changing the original response or retry classification
+
+#### Scenario: Native metadata collision and selected adaptation failure
+- **WHEN** native metadata contains the gateway namespace and enrichment fits
+- **THEN** the original namespace SHALL be preserved under gateway.nativeMetadata
+- **AND** a local adaptation error after selection SHALL identify the selected execution without fabricating a native error summary or replaying the request

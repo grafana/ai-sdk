@@ -32,6 +32,8 @@ type ResolvedModel struct {
 	ID string
 	// Model is the resolved provider language model.
 	Model provider.LanguageModel
+	// Candidates are explicit configured invocation destinations.
+	Candidates []ConfiguredCandidate
 }
 
 // ModelCapability identifies behavior guaranteed by a public model route.

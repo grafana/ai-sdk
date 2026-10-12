@@ -314,7 +314,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Cont
 	case outcome = <-outcomes:
 	case <-modelContext.Done():
 		cancel()
-		h.writeSafeError(w, safeError{category: streamContextErrorCategory(requestContext)})
+		h.writeExecutionError(w, safeError{category: streamContextErrorCategory(requestContext)}, executionFromContext(requestContext))
 		return
 	}
 
@@ -324,7 +324,8 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext context.Cont
 			h.startStreamDrain(outcome.result.Stream, counter)
 		}
 		if !isNilInterface(outcome.err) {
-			h.writeSafeError(w, safeErrorFromProvider(outcome.err))
+			executionFromContext(requestContext).direct(outcome.err)
+			h.writeExecutionError(w, safeErrorFromProvider(outcome.err), executionFromContext(requestContext))
 		} else {
 			h.writeSafeError(w, safeError{category: safeInternal})
 		}
@@ -439,6 +440,7 @@ const (
 )
 
 type streamState struct {
+	execution        *executionCapture
 	metadataSeen     bool
 	textStarted      bool
 	activeID         string
@@ -468,16 +470,17 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) != streamWriteSuccess {
 			return
 		}
-		h.writeStreamTerminalForWait(w, waitResult)
+		h.writeStreamTerminalForWait(w, waitResult, executionFromContext(requestContext))
 		return
 	}
 
+	executionFromContext(requestContext).direct(nil)
 	if part.Type == provider.PartStreamStart {
 		warnings, err := mapStreamWarnings(part.Warnings, h.limits.StreamFrameBytes)
 		if err != nil {
 			cancel()
 			if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) == streamWriteSuccess {
-				h.writeStreamTerminalError(w, safeError{category: safeInternal})
+				h.writeStreamTerminalError(w, safeError{category: safeInternal}, executionFromContext(requestContext))
 			}
 			return
 		}
@@ -487,7 +490,7 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		case streamWriteEncodingFailure:
 			cancel()
 			if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) == streamWriteSuccess {
-				h.writeStreamTerminalError(w, safeError{category: safeInternal})
+				h.writeStreamTerminalError(w, safeError{category: safeInternal}, executionFromContext(requestContext))
 			}
 			return
 		default:
@@ -498,8 +501,9 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 			return
 		}
 		state := newStreamState(h.limits.StreamParts, history)
+		state.execution = executionFromContext(requestContext)
 		result := h.processStreamPart(w, state, part)
-		if h.handleStreamPartResult(w, cancel, result) {
+		if h.handleStreamPartResult(w, cancel, result, state.execution) {
 			return
 		}
 		idleTimer.Reset(h.limits.StreamIdleDuration)
@@ -507,7 +511,9 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		return
 	}
 
-	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, newStreamState(h.limits.StreamParts, history))
+	state := newStreamState(h.limits.StreamParts, history)
+	state.execution = executionFromContext(requestContext)
+	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, state)
 }
 
 func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, state *streamState) {
@@ -515,24 +521,24 @@ func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, mode
 		part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
 		if waitResult != streamWaitPart {
 			cancel()
-			h.writeStreamTerminalForWait(w, waitResult)
+			h.writeStreamTerminalForWait(w, waitResult, executionFromContext(requestContext))
 			return
 		}
 		result := h.processStreamPart(w, state, part)
-		if h.handleStreamPartResult(w, cancel, result) {
+		if h.handleStreamPartResult(w, cancel, result, state.execution) {
 			return
 		}
 		idleTimer.Reset(h.limits.StreamIdleDuration)
 	}
 }
 
-func (h *handler) handleStreamPartResult(w http.ResponseWriter, cancel context.CancelFunc, result streamPartResult) bool {
+func (h *handler) handleStreamPartResult(w http.ResponseWriter, cancel context.CancelFunc, result streamPartResult, captures ...*executionCapture) bool {
 	switch result {
 	case streamPartContinue:
 		return false
 	case streamPartAdapterFailure:
 		cancel()
-		h.writeStreamTerminalError(w, safeError{category: safeInternal})
+		h.writeStreamTerminalError(w, safeError{category: safeInternal}, captures...)
 	}
 	return true
 }
@@ -660,7 +666,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		state.activeID = ""
 		return streamPartContinue
 	case provider.PartError:
-		if result := h.emitSafeStreamError(w, safeErrorFromStreamProvider(part.APICallError)); result != streamWriteSuccess {
+		if result := h.emitExecutionStreamError(w, safeErrorFromStreamProvider(part.APICallError), state.execution, part.APICallError); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
 			}
@@ -693,7 +699,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			return streamPartAdapterFailure
 		}
 		event := streamEvent{typeName: provider.PartFinish, finishReason: *part.FinishReason, inputUsage: inputUsage, outputUsage: outputUsage, rawUsage: part.Usage.Raw, metadata: part.ProviderMetadata}
-		if result := h.emitStreamEvent(w, event); result != streamWriteSuccess {
+		if result := h.emitExecutionFinish(w, event, state.execution); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
 			}
@@ -774,18 +780,22 @@ func streamErrorFrameForSafeError(value safeError) []byte {
 	}
 }
 
-func (h *handler) writeStreamTerminalForWait(w http.ResponseWriter, result streamWaitResult) {
+func (h *handler) writeStreamTerminalForWait(w http.ResponseWriter, result streamWaitResult, captures ...*executionCapture) {
 	switch result {
 	case streamWaitCanceled:
-		h.writeStreamTerminalError(w, safeError{category: safeCancellation})
+		h.writeStreamTerminalError(w, safeError{category: safeCancellation}, captures...)
 	case streamWaitTotalTimeout, streamWaitIdleTimeout:
-		h.writeStreamTerminalError(w, safeError{category: safeTimeout})
+		h.writeStreamTerminalError(w, safeError{category: safeTimeout}, captures...)
 	default:
-		h.writeStreamTerminalError(w, safeError{category: safeInternal})
+		h.writeStreamTerminalError(w, safeError{category: safeInternal}, captures...)
 	}
 }
 
-func (h *handler) writeStreamTerminalError(w http.ResponseWriter, value safeError) {
+func (h *handler) writeStreamTerminalError(w http.ResponseWriter, value safeError, captures ...*executionCapture) {
+	if len(captures) != 0 {
+		h.emitExecutionStreamError(w, value, captures[0], nil)
+		return
+	}
 	h.emitSafeStreamError(w, value)
 }
 
@@ -810,4 +820,46 @@ func (h *handler) drainStream(stream <-chan provider.StreamPart, counter *stream
 			return
 		}
 	}
+}
+
+func (h *handler) emitExecutionFinish(w http.ResponseWriter, event streamEvent, capture *executionCapture) streamWriteResult {
+	frame, ok := encodeStreamFrame(event, h.limits.StreamFrameBytes)
+	if !ok {
+		return streamWriteEncodingFailure
+	}
+	event.metadata = capture.metadata(event.metadata)
+	if enriched, fits := encodeStreamFrame(event, h.limits.StreamFrameBytes); fits {
+		frame = enriched
+	}
+	if !writeCompleteStreamFrame(w, frame) {
+		return streamWriteWriterFailure
+	}
+	return streamWriteSuccess
+}
+
+func (h *handler) emitExecutionStreamError(w http.ResponseWriter, value safeError, capture *executionCapture, native error) streamWriteResult {
+	frame := streamErrorFrameForSafeError(value)
+	if int64(len(frame)) > h.limits.StreamFrameBytes {
+		return streamWriteEncodingFailure
+	}
+	if metadata := capture.metadata(nil); len(metadata) != 0 {
+		var envelope map[string]json.RawMessage
+		if json.Unmarshal(frame[6:len(frame)-2], &envelope) == nil {
+			var detail map[string]json.RawMessage
+			if json.Unmarshal(envelope["error"], &detail) == nil {
+				detail["data"], _ = json.Marshal(struct {
+					Metadata    provider.ProviderMetadata `json:"providerMetadata"`
+					NativeError *nativeErrorSummary       `json:"nativeError,omitempty"`
+				}{metadata, summarizeNativeError(native, h.limits.StreamFrameBytes)})
+				envelope["error"], _ = json.Marshal(detail)
+				if body, err := json.Marshal(envelope); err == nil && int64(len(body)+8) <= h.limits.StreamFrameBytes {
+					frame = append(append([]byte("data: "), body...), '\n', '\n')
+				}
+			}
+		}
+	}
+	if !writeCompleteStreamFrame(w, frame) {
+		return streamWriteWriterFailure
+	}
+	return streamWriteSuccess
 }

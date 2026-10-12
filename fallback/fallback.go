@@ -271,11 +271,12 @@ type failedAttempt struct {
 }
 
 func (m *Model) observeAttempt(ctx context.Context, index int, candidate provider.LanguageModel, startedAt time.Time, err error, outcome AttemptOutcome, next bool) {
-	if m.observer == nil {
+	observer, _ := ctx.Value(attemptObserverKey{}).(AttemptObserver)
+	if m.observer == nil && observer == nil {
 		return
 	}
 	defer func() { _ = recover() }()
-	m.observer(ctx, Attempt{
+	attempt := Attempt{
 		Index:        index + 1,
 		Provider:     candidate.Provider(),
 		ModelID:      candidate.ModelID(),
@@ -284,7 +285,9 @@ func (m *Model) observeAttempt(ctx context.Context, index int, candidate provide
 		Err:          err,
 		Outcome:      outcome,
 		WillFallback: next,
-	})
+	}
+	notifyAttemptObserver(ctx, m.observer, attempt)
+	notifyAttemptObserver(ctx, observer, attempt)
 }
 
 func failedAttemptsError(failures []failedAttempt) error {
@@ -338,4 +341,20 @@ func isContextWindowError(apiErr *provider.APICallError) bool {
 		return true
 	}
 	return false
+}
+
+type attemptObserverKey struct{}
+
+// WithAttemptObserver observes actual fallback attempts for this request independently
+// of the observer configured on the model. Observer panics do not affect execution.
+func WithAttemptObserver(ctx context.Context, observer AttemptObserver) context.Context {
+	return context.WithValue(ctx, attemptObserverKey{}, observer)
+}
+
+func notifyAttemptObserver(ctx context.Context, observer AttemptObserver, attempt Attempt) {
+	if observer == nil {
+		return
+	}
+	defer func() { _ = recover() }()
+	observer(ctx, attempt)
 }
