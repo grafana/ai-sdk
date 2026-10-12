@@ -673,6 +673,19 @@ For `DoStream`, the provider SHALL decode the AWS Smithy event-stream binary res
 - **WHEN** the stream emits `messageStop` with `stopReason` followed by `metadata` with `usage`
 - **THEN** the channel emits a finish part carrying the mapped unified finish reason and a usage part built from the metadata
 
+#### Scenario: Clean EOF before messageStop
+
+- **WHEN** the response body ends on a complete frame boundary before a `messageStop` event, including an empty body or a stream containing metadata only
+- **THEN** the channel emits exactly one final `PartError` carrying a retryable `*provider.APICallError` whose message states that the stream ended before `messageStop`
+- **AND** the channel closes without a `PartFinish` or a synthesized `PartToolCall` for an unclosed tool block
+- **AND** this intentionally differs from the registered `@ai-sdk/amazon-bedrock` 5.0.97 behavior, which emits a finish with `other` and an absent raw reason on clean EOF without `messageStop`
+
+#### Scenario: Clean EOF after messageStop
+
+- **WHEN** the response body ends after `messageStop`, with or without a subsequent `metadata` event
+- **THEN** the channel emits one finish carrying the mapped reason and any reported usage
+- **AND** an empty stop reason or an unmapped reason such as `model_context_window_exceeded` remains `other` with the received raw reason and does not become a premature-EOF error
+
 #### Scenario: Stream-level exception
 
 - **WHEN** the stream emits a frame whose `:exception-type` is `throttlingException`

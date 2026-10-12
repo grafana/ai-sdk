@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"testing"
 	"time"
 
@@ -292,14 +293,103 @@ func TestRunStream_ValidationExceptionNotRetryable(t *testing.T) {
 }
 
 func TestRunStream_MidStreamTransportFailureEmitsRetryable(t *testing.T) {
-	// Provide truncated bytes: prelude says totalLen=N but body is shorter.
 	hdr := frameHeader{MessageType: "event", EventType: "contentBlockDelta"}
 	full := encodeFrame(hdr, []byte(`{"contentBlockIndex":0,"delta":{"text":"hi"}}`))
-	parts := drainStream(t, full[:len(full)-5], requestMeta{})
+	corrupt := append([]byte(nil), full...)
+	corrupt[len(corrupt)-1] ^= 1
+	for _, tc := range []struct {
+		name string
+		body []byte
+	}{
+		{name: "partial frame", body: full[:len(full)-5]},
+		{name: "CRC mismatch", body: corrupt},
+		{name: "malformed messageStop", body: encodeFrame(frameHeader{MessageType: "event", EventType: "messageStop"}, []byte(`{"stopReason":`))},
+		{name: "partial frame after messageStop", body: append(encodeFixture(t, `{"messageStop":{"stopReason":"end_turn"}}`), full[:len(full)-5]...)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := drainStream(t, tc.body, requestMeta{})
+			errIdx := findParts(parts, provider.PartError)
+			require.Len(t, errIdx, 1)
+			require.NotNil(t, parts[errIdx[0]].APICallError)
+			assert.True(t, parts[errIdx[0]].APICallError.IsRetryable)
+			assert.Empty(t, findParts(parts, provider.PartFinish))
+		})
+	}
+}
 
-	errIdx := findParts(parts, provider.PartError)
-	require.Len(t, errIdx, 1)
-	assert.True(t, parts[errIdx[0]].APICallError.IsRetryable)
+type cancelOnEOFReader struct {
+	*bytes.Reader
+	cancel context.CancelFunc
+}
+
+func (r cancelOnEOFReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	if err == io.EOF {
+		r.cancel()
+	}
+	return n, err
+}
+
+func TestRunStream_CanceledAtEOFBeforeMessageStop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	body := encodeFixture(t, `{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"partial"}}}`)
+	out := make(chan provider.StreamPart, streamBufferSize)
+	m := New("anthropic.claude-sonnet-4-5-20250929-v1:0").(*model)
+	m.runStream(ctx, cancelOnEOFReader{Reader: bytes.NewReader(body), cancel: cancel}, nil, requestMeta{}, nil, false, out)
+	close(out)
+	var parts []provider.StreamPart
+	for part := range out {
+		parts = append(parts, part)
+	}
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	require.Len(t, findParts(parts, provider.PartTextDelta), 1)
+	assert.Empty(t, findParts(parts, provider.PartError))
+	assert.Empty(t, findParts(parts, provider.PartFinish))
+}
+
+func TestRunStream_EOFAfterMessageStop(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		stopReason string
+		want       provider.UnifiedFinishReason
+		metadata   bool
+	}{
+		{name: "without metadata", stopReason: "end_turn", want: provider.FinishReasonStop},
+		{name: "with metadata", stopReason: "max_tokens", want: provider.FinishReasonLength, metadata: true},
+		{name: "unmapped reason", stopReason: "model_context_window_exceeded", want: provider.FinishReasonOther},
+		{name: "empty reason", stopReason: "", want: provider.FinishReasonOther},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stop, err := json.Marshal(map[string]any{"messageStop": map[string]string{"stopReason": tc.stopReason}})
+			require.NoError(t, err)
+			body := encodeFixtures(t,
+				`{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"complete"}}}`,
+				`{"contentBlockStop":{"contentBlockIndex":0}}`,
+				string(stop),
+			)
+			if tc.metadata {
+				body = append(body, encodeFixture(t, `{"metadata":{"usage":{"inputTokens":10,"outputTokens":5}}}`)...)
+			}
+			parts := drainStream(t, body, requestMeta{})
+			assert.Empty(t, findParts(parts, provider.PartError))
+			require.Len(t, findParts(parts, provider.PartFinish), 1)
+			finish := parts[len(parts)-1]
+			require.Equal(t, provider.PartFinish, finish.Type)
+			require.NotNil(t, finish.FinishReason)
+			assert.Equal(t, provider.FinishReason{Unified: tc.want, Raw: tc.stopReason}, *finish.FinishReason)
+			require.NotNil(t, finish.Usage)
+			if tc.metadata {
+				require.NotNil(t, finish.Usage.InputTokens.Total)
+				require.NotNil(t, finish.Usage.OutputTokens.Total)
+				assert.Equal(t, 10, *finish.Usage.InputTokens.Total)
+				assert.Equal(t, 5, *finish.Usage.OutputTokens.Total)
+			} else {
+				assert.Nil(t, finish.Usage.InputTokens.Total)
+				assert.Nil(t, finish.Usage.OutputTokens.Total)
+			}
+		})
+	}
 }
 
 func TestRunStream_ContextCancellation(t *testing.T) {
