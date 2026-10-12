@@ -26,7 +26,7 @@ knownGaps:
     status: intentional-deviation
     description: Go sums cache read and cache creation tokens over the same
       message and compaction executor iterations used for input and output,
-      correcting compaction undercounts in registered @ai-sdk/anthropic 4.0.65,
+      correcting compaction undercounts in registered @ai-sdk/anthropic 4.0.71,
       which takes cache counts only from top-level usage. Fallback-served turns
       and responses without executor iterations retain top-level usage; advisor
       iterations remain excluded. Missing or null iteration cache counts are
