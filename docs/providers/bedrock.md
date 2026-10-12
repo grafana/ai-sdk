@@ -11,6 +11,11 @@ capabilities.
 go get github.com/grafana/ai-sdk/providers/bedrock
 ```
 
+If your application still serves the removed `gateway/providerwire` endpoint,
+follow [the legacy ProviderWire migration guide](../guides/legacy-provider-wire-migration.md)
+before upgrading. It identifies the historical pin and the module/type boundary
+needed to adopt later Bedrock fixes.
+
 ## Create a model
 
 ```go

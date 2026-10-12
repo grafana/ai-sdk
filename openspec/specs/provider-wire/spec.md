@@ -10,6 +10,8 @@ Record the retirement boundary for the former tolerant remote `provider.Language
 
 The repository SHALL NOT publish, build, test, document as available, or claim compatibility for the tolerant legacy unversioned `gateway/providerwire` server or the retired tolerant `providers/grafana` implementation. It SHALL NOT provide compatibility aliases, forwarding shims, copied legacy codecs, or a legacy transport mode at another import path.
 
+Historical migration documentation MAY identify the last compatible commit and an exactly pinned frozen module from the separate `legacy/provider-wire` branch. It SHALL distinguish that snapshot from the current SDK surface, state its frozen development status, and explain that provider upgrades require migration or application-owned translation between distinct legacy/current Go types. It SHALL NOT imply a maintained provider-fix backport line, a supplied general compatibility adapter, or automatic legacy compatibility for the current strict V4 client. This exception does not permit importing or restoring legacy production code or verification harnesses in the current development tree.
+
 #### Scenario: Legacy production packages remain removed
 - **WHEN** the repository's tracked Go packages and modules are inspected
 - **THEN** no Go package SHALL have the exact import path `github.com/grafana/ai-sdk/gateway/providerwire`

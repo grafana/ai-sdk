@@ -84,6 +84,9 @@ the service your application calls:
 
 - [Writing a provider](providers/writing-a-provider.md) — adapt another model
   service to the common SDK behavior.
+- [Upgrade providers behind legacy ProviderWire](guides/legacy-provider-wire-migration.md)
+  — identify the last compatible snapshot and isolate a historical endpoint
+  before taking current provider fixes.
 
 ## Operate in production
 
