@@ -88,6 +88,8 @@ func (a *streamAdapter) mergeRawUsage(raw string) error {
 func convertAnthropicUsage(usage anthropicUsage) provider.Usage {
 	inputTokens := usage.inputTokens
 	outputTokens := usage.outputTokens
+	cacheReadTokens := usage.cacheReadInputTokens
+	cacheWriteTokens := usage.cacheCreationInputTokens
 	servedByFallback := false
 	for _, iteration := range usage.iterations {
 		if anthropicIterationType(iteration.Type) == anthropicIterationFallbackMessage {
@@ -99,6 +101,8 @@ func convertAnthropicUsage(usage anthropicUsage) provider.Usage {
 	if len(usage.iterations) > 0 && !servedByFallback {
 		var executorInputTokens int64
 		var executorOutputTokens int64
+		var executorCacheReadTokens int64
+		var executorCacheWriteTokens int64
 		executorIterations := 0
 		for _, iteration := range usage.iterations {
 			iterationType := anthropicIterationType(iteration.Type)
@@ -107,17 +111,21 @@ func convertAnthropicUsage(usage anthropicUsage) provider.Usage {
 			}
 			executorInputTokens += iteration.InputTokens
 			executorOutputTokens += iteration.OutputTokens
+			executorCacheReadTokens += iteration.CacheReadInputTokens
+			executorCacheWriteTokens += iteration.CacheCreationInputTokens
 			executorIterations++
 		}
 		if executorIterations > 0 {
 			inputTokens = executorInputTokens
 			outputTokens = executorOutputTokens
+			cacheReadTokens = executorCacheReadTokens
+			cacheWriteTokens = executorCacheWriteTokens
 		}
 	}
 
 	noCache := int(inputTokens)
-	cacheRead := int(usage.cacheReadInputTokens)
-	cacheWrite := int(usage.cacheCreationInputTokens)
+	cacheRead := int(cacheReadTokens)
+	cacheWrite := int(cacheWriteTokens)
 	totalInput := noCache + cacheRead + cacheWrite
 	totalOutput := int(outputTokens)
 	var textOutput, reasoningOutput *int

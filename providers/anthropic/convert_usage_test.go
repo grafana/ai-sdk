@@ -29,7 +29,7 @@ func TestConvertAnthropicUsage(t *testing.T) {
 			raw: `{"input_tokens":20,"output_tokens":4,"cache_creation_input_tokens":5,"cache_read_input_tokens":3,"iterations":[` +
 				`{"type":"compaction","input_tokens":100,"output_tokens":10},` +
 				`{"type":"advisor_message","model":"claude-haiku-4-5","input_tokens":200,"output_tokens":20},` +
-				`{"type":"message","input_tokens":30,"output_tokens":4}]}`,
+				`{"type":"message","input_tokens":30,"output_tokens":4,"cache_read_input_tokens":3,"cache_creation_input_tokens":5}]}`,
 			wantInput:   138,
 			wantNoCache: 130,
 			wantOutput:  14,
@@ -231,7 +231,7 @@ func TestConvertResponse_Usage(t *testing.T) {
 			"cache_read_input_tokens":3,
 			"iterations":[
 				{"type":"compaction","input_tokens":100,"output_tokens":10},
-				{"type":"message","input_tokens":30,"output_tokens":4}
+				{"type":"message","input_tokens":30,"output_tokens":4,"cache_read_input_tokens":3,"cache_creation_input_tokens":5}
 			]
 		}
 	}`)
