@@ -30,6 +30,11 @@ func run() error {
 		}
 		defer closeRecorded()
 	}
+	closeStructured, err := registerNativeStructured(mux)
+	if err != nil {
+		return err
+	}
+	defer closeStructured()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err

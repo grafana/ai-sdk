@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/grafana/ai-sdk/internal/anthropicschema"
+	"github.com/grafana/ai-sdk/internal/jsonschema"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -148,10 +149,11 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 
 	// Native structured output goes through additionalModelRequestFields.
 	if useNativeStructuredOutput {
-		var schema map[string]any
-		if err := json.Unmarshal(opts.ResponseFormat.Schema, &schema); err != nil {
+		schema, err := jsonschema.DecodeObject(opts.ResponseFormat.Schema)
+		if err != nil {
 			return nil, warnings, meta, fmt.Errorf("bedrock: parsing response format schema: %w", err)
 		}
+
 		ensureMap(addRequestFields, "output_config")["format"] = map[string]any{
 			"type":   "json_schema",
 			"schema": anthropicschema.Sanitize(schema),

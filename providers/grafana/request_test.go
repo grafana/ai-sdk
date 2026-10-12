@@ -203,7 +203,7 @@ func TestEncodeRequest_RejectsInvalid(t *testing.T) {
 		{"invalid tool", provider.CallOptions{Tools: []provider.Tool{{Type: "alien"}}}},
 		{"inactive tool", provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeProvider, InputSchema: json.RawMessage(`{}`)}}}},
 		{"invalid choice", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto, ToolName: "lost"}}},
-		{"inactive format", provider.CallOptions{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatText, Name: "lost"}}},
+		{"inactive format", provider.CallOptions{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatText, Name: new("lost")}}},
 		{"header collision", provider.CallOptions{Headers: map[string]string{"x-test": "a", "X-Test": "b"}}},
 		{"header newline", provider.CallOptions{Headers: map[string]string{"x-test": "a\nb"}}},
 		{"header name", provider.CallOptions{Headers: map[string]string{"bad name": "x"}}},
@@ -230,4 +230,21 @@ func TestEncodeRequest_UnsafeInteger(t *testing.T) {
 	value := int(large)
 	_, err := encodeRequest(provider.CallOptions{Seed: &value})
 	require.Error(t, err)
+}
+
+func TestEncodeRequest_StructuredNameAndSchema(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","x-extra":[9007199254740993,null,false,"☃"]}`)
+	for _, name := range []*string{nil, new(""), new("answer")} {
+		body, err := encodeRequest(provider.CallOptions{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: name, Schema: schema}})
+		require.NoError(t, err)
+		var request struct {
+			Format struct {
+				Name   *string         `json:"name"`
+				Schema json.RawMessage `json:"schema"`
+			} `json:"responseFormat"`
+		}
+		require.NoError(t, json.Unmarshal(body, &request))
+		assert.Equal(t, name, request.Format.Name)
+		assert.Equal(t, schema, request.Format.Schema)
+	}
 }

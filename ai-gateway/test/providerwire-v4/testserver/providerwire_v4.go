@@ -247,14 +247,14 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			raw = json.RawMessage(`{}`)
 		}
 		return &provider.StreamResult{Stream: scenarioStream(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{Raw: raw}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}})}, nil
-	case "success":
+	case "success", "structured", "structured-invalid":
 		m.stats.recordSuccess(options)
 		stream := make(chan provider.StreamPart, 8)
 		stream <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: []provider.Warning{{Type: provider.WarnOther, Message: "private warning"}}}
 		stream <- provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "stream-response-1", ModelID: "private-backend", Provider: "private-provider", Timestamp: time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)}
 		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"}
 		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: ""}
-		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "hello from Go stream"}
+		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: scenarioOutputText(m.kind, "hello from Go stream")}
 		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"}
 		stream <- provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{
 			InputTokens:  provider.InputTokenUsage{Total: &two, NoCache: &one, CacheRead: &one, CacheWrite: &zero},
@@ -348,13 +348,13 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			raw = json.RawMessage(`{}`)
 		}
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "ok"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{Raw: raw}}, nil
-	case "success":
+	case "success", "structured", "structured-invalid":
 		m.stats.recordSuccess(options)
 		zero := 0
 		one := 1
 		two := 2
 		return &provider.GenerateResult{
-			Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: "hello from Go"}},
+			Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: scenarioOutputText(m.kind, "hello from Go")}},
 			FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "test-stop"},
 			Usage: provider.Usage{
 				InputTokens:  provider.InputTokenUsage{Total: &two, NoCache: &one, CacheRead: &one, CacheWrite: &zero},
@@ -383,7 +383,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 22)
-	for _, id := range []string{"native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
+	for _, id := range []string{"structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -395,6 +395,11 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		return nil, err
 	}
 	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "mapped-fallback"}, Model: ordered})
+	structured, err := fallback.New(&providerWireV4Model{kind: "setup-failure", stats: stats}, &providerWireV4Model{kind: "structured", stats: stats})
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "structured-fallback"}, Model: structured})
 	resolver, err := catalog.NewStatic(entries)
 	if err != nil {
 		return nil, err
@@ -468,4 +473,15 @@ func registerProviderWireV4(mux *http.ServeMux) error {
 	}
 	scenario.register(mux)
 	return nil
+}
+
+func scenarioOutputText(kind, fallbackText string) string {
+	switch kind {
+	case "structured":
+		return `{"value":"ok"}`
+	case "structured-invalid":
+		return `{"value":42}`
+	default:
+		return fallbackText
+	}
 }

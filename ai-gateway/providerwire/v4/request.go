@@ -15,7 +15,6 @@ const (
 	capabilityCustomContent    unsupportedCapability = "custom-content"
 	capabilityTools            unsupportedCapability = "tools"
 	capabilityToolApprovals    unsupportedCapability = "tool-approvals"
-	capabilityStructuredOutput unsupportedCapability = "structured-output"
 	capabilityProviderOptions  unsupportedCapability = "provider-options"
 	capabilityRawOutput        unsupportedCapability = "raw-output"
 	// Policy refusals. These are not unsupported capabilities: the runtime maps
@@ -64,7 +63,10 @@ type wirePart struct {
 }
 
 type wireResponseFormat struct {
-	Type provider.ResponseFormatType `json:"type"`
+	Type        provider.ResponseFormatType `json:"type"`
+	Schema      json.RawMessage             `json:"schema"`
+	Name        *string                     `json:"name"`
+	Description string                      `json:"description"`
 }
 
 type wireReasoning string
@@ -123,7 +125,7 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 		switch request.ResponseFormat.Type {
 		case provider.ResponseFormatText:
 		case provider.ResponseFormatJSON:
-			return provider.CallOptions{}, unsupportedMappingFailure(capabilityStructuredOutput)
+			options.ResponseFormat = &provider.ResponseFormat{Type: request.ResponseFormat.Type, Schema: request.ResponseFormat.Schema, Name: request.ResponseFormat.Name, Description: request.ResponseFormat.Description}
 		default:
 			return provider.CallOptions{}, invalidMappingFailure()
 		}

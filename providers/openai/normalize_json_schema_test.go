@@ -97,7 +97,7 @@ func TestBuildParams_NormalizesResponsesSchemas(t *testing.T) {
 				}
 				opts := provider.CallOptions{
 					Prompt:          []provider.Message{provider.UserText("hi")},
-					ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: "result", Schema: response},
+					ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: new("result"), Schema: response},
 					ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{StrictJSONSchema: &strict}),
 					Tools:           []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: input, ProviderOptions: provider.BuildProviderOptions(toolOptions)}},
 				}

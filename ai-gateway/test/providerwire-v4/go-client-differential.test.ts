@@ -212,7 +212,6 @@ describe("Go and exact-pinned Gateway differential", () => {
     delete assistant.content.find((part: any) => part.toolCallId === "call-denied").output.reason;
     const tool = expected.prompt.find((message: any) => message.role === "tool");
     delete tool.content.find((part: any) => part.type === "tool-approval-response").reason;
-    delete expected.responseFormat.name;
     delete expected.responseFormat.description;
     delete expected.tools[0].description;
     const server = await endpoint(JSON.stringify(unary));

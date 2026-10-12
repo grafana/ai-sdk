@@ -12,7 +12,7 @@ import (
 // ObjectOutput implements aisdk.Output for generating a single typed object.
 type ObjectOutput[T any] struct {
 	schema schema.Schema
-	name   string
+	name   *string
 	desc   string
 }
 
@@ -63,7 +63,7 @@ func (d objectDescription) applyObject(o any) {
 // WithDescription sets the schema description passed to the provider.
 func WithDescription(desc string) ObjectOption { return objectDescription(desc) }
 
-func (o *ObjectOutput[T]) setName(name string)        { o.name = name }
+func (o *ObjectOutput[T]) setName(name string)        { o.name = &name }
 func (o *ObjectOutput[T]) setDescription(desc string) { o.desc = desc }
 func (o *ObjectOutput[T]) ResponseFormat() *provider.ResponseFormat {
 	return &provider.ResponseFormat{

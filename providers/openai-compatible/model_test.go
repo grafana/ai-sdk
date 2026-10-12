@@ -899,7 +899,7 @@ func TestDoGenerateStructuredOutputAndToolCallResponse(t *testing.T) {
 		Prompt: []provider.Message{provider.UserText("use a tool")},
 		ResponseFormat: &provider.ResponseFormat{
 			Type:        provider.ResponseFormatJSON,
-			Name:        "weather_response",
+			Name:        new("weather_response"),
 			Description: "Weather response",
 			Schema:      json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
 		},
