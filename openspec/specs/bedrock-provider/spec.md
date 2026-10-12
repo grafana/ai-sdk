@@ -678,7 +678,7 @@ For `DoStream`, the provider SHALL decode the AWS Smithy event-stream binary res
 - **WHEN** the response body ends on a complete frame boundary before a `messageStop` event, including an empty body or a stream containing metadata only
 - **THEN** the channel emits exactly one final `PartError` carrying a retryable `*provider.APICallError` whose message states that the stream ended before `messageStop`
 - **AND** the channel closes without a `PartFinish` or a synthesized `PartToolCall` for an unclosed tool block
-- **AND** this intentionally differs from the registered `@ai-sdk/amazon-bedrock` 5.0.97 behavior, which emits a finish with `other` and an absent raw reason on clean EOF without `messageStop`
+- **AND** this intentionally differs from the registered `@ai-sdk/amazon-bedrock` 5.0.105 behavior, which emits a finish with `other` and an absent raw reason on clean EOF without `messageStop`
 
 #### Scenario: Clean EOF after messageStop
 

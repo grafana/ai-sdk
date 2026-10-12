@@ -26,7 +26,7 @@ knownGaps:
     status: intentional-deviation
     description: Go rejects clean frame-boundary EOF before messageStop with a
       retryable APICallError and no finish or synthesized incomplete tool call.
-      The registered amazon-bedrock 5.0.97 reference emits finish with other and
+      The registered amazon-bedrock 5.0.105 reference emits finish with other and
       no raw reason instead. EOF after messageStop remains valid without
       metadata, including empty or unmapped stop reasons. Synthetic HTTP and
       frame tests cover this transport failure; no provider recording is claimed.
