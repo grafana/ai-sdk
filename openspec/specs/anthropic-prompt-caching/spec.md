@@ -128,7 +128,7 @@ The Anthropic provider SHALL expose cache usage metrics through `Usage.InputToke
 - **THEN** the emitted `StreamPart` usage SHALL report zero for both cache fields
 
 ### Requirement: Executor iteration cache accounting
-When usage contains one or more `message` or `compaction` iterations and no `fallback_message`, the Anthropic provider SHALL sum uncached input, output, cache reads and cache writes from those executor iterations. Missing or null iteration cache counters SHALL contribute zero. It SHALL exclude `advisor_message` iterations and SHALL NOT add top-level usage to the iteration totals. This is an intentional deviation from the registered `@ai-sdk/anthropic` converter, which uses top-level cache counts and undercounts compaction cache activity.
+When usage contains one or more `message` or `compaction` iterations and no `fallback_message`, the Anthropic provider SHALL sum uncached input, output, cache reads and cache writes from those executor iterations. Missing or null iteration cache counters SHALL contribute zero. It SHALL exclude `advisor_message` iterations and SHALL NOT add top-level usage to the iteration totals.
 
 #### Scenario: On-demand compaction with zero top-level usage
 - **WHEN** all top-level counters are zero and a `compaction` iteration has 112 input tokens, 281 output tokens and 79228 cache-read tokens
