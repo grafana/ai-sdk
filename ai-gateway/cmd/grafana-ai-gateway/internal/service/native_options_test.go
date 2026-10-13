@@ -86,6 +86,93 @@ func TestNativeOptions_ConsumedRequests(t *testing.T) {
 					},
 				},
 				{
+					name: "anthropic custom history and tool references", backend: "anthropic",
+					body: `{"prompt":[{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}},{"type":"custom","kind":"anthropic.fallback","providerOptions":{"anthropic":{"type":"fallback","from":{"model":"claude-a"},"to":{"model":"claude-b"}}}},{"type":"custom","kind":"example.kind"},{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"content","value":[{"type":"text","text":"before"},{"type":"custom","providerOptions":{"anthropic":{"type":"tool-reference","toolName":"search"}}},{"type":"custom","providerOptions":{"anthropic":{"type":"other"}}},{"type":"custom"}]}}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						messages := body["messages"].([]any)
+						assistant := messages[0].(map[string]any)["content"].([]any)
+						require.Len(t, assistant, 3)
+						assert.Equal(t, "text", assistant[0].(map[string]any)["type"])
+						fallback := assistant[1].(map[string]any)
+						assert.Equal(t, "fallback", fallback["type"])
+						assert.Equal(t, map[string]any{"model": "claude-a"}, fallback["from"])
+						assert.Equal(t, map[string]any{"model": "claude-b"}, fallback["to"])
+						assert.Equal(t, "tool_use", assistant[2].(map[string]any)["type"])
+						result := messages[1].(map[string]any)["content"].([]any)[0].(map[string]any)
+						assert.Equal(t, []any{
+							map[string]any{"type": "text", "text": "before"},
+							map[string]any{"type": "tool_reference", "tool_name": "search"},
+						}, result["content"])
+					},
+				},
+				{
+					name: "anthropic custom scopes cannot enable guarded features", backend: "anthropic",
+					body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"anthropic.fallback","providerOptions":{"anthropic":{"type":"fallback","from":{"model":"claude-a"},"to":{"model":"claude-b"},"fallbacks":{"default":true},"container":{"skills":[{"type":"custom","skillId":"s"}]},"mcpServers":[{"type":"url","name":"n","url":"http://insecure.example.test"}]}}},{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"content","value":[{"type":"custom","providerOptions":{"anthropic":{"type":"tool-reference","toolName":"search","container":{"skills":[{"type":"custom","skillId":"s"}]},"mcpServers":[{"type":"url","name":"n","url":"http://insecure.example.test"}]}}}]}}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						for _, field := range []string{"container", "mcp_servers", "fallbacks"} {
+							assert.NotContains(t, body, field)
+						}
+						fallback := body["messages"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)
+						assert.Equal(t, map[string]any{"type": "fallback", "from": map[string]any{"model": "claude-a"}, "to": map[string]any{"model": "claude-b"}}, fallback)
+						result := body["messages"].([]any)[1].(map[string]any)["content"].([]any)[0].(map[string]any)
+						assert.Equal(t, []any{map[string]any{"type": "tool_reference", "tool_name": "search"}}, result["content"])
+					},
+				},
+				{
+					name: "openai stateless compaction history", backend: "openai",
+					body: `{"providerOptions":{"openai":{"store":false}},"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}},{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_2"}}},{"type":"custom","kind":"anthropic.fallback","providerOptions":{"anthropic":{"type":"fallback"}}}]},{"role":"user","content":[{"type":"text","text":"continue"}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						input := body["input"].([]any)
+						require.Len(t, input, 3)
+						assert.Equal(t, map[string]any{"type": "compaction", "id": "cmp_1", "encrypted_content": "ENC"}, input[0])
+						assert.Equal(t, map[string]any{"type": "compaction", "id": "cmp_2"}, input[1])
+						assert.Equal(t, "user", input[2].(map[string]any)["role"])
+					},
+				},
+				{
+					name: "openai stored compaction item reference", backend: "openai",
+					body: `{"providerOptions":{"openai":{"store":true}},"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}}]},{"role":"user","content":[{"type":"text","text":"continue"}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						input := body["input"].([]any)
+						require.Len(t, input, 2)
+						assert.Equal(t, map[string]any{"type": "item_reference", "id": "cmp_1"}, input[0])
+					},
+				},
+				{
+					name: "compatible skips custom history", backend: "openai-compatible",
+					body: `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]},{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}},{"type":"custom","kind":"anthropic.fallback","providerOptions":{"anthropic":{"type":"fallback"}}}]},{"role":"user","content":[{"type":"text","text":"next"}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						messages := body["messages"].([]any)
+						require.Len(t, messages, 3)
+						assistant := messages[1].(map[string]any)
+						assert.Equal(t, "answer", assistant["content"])
+						assert.NotContains(t, assistant, "tool_calls")
+						assert.NotContains(t, string(mustMarshal(t, body)), "ENC")
+					},
+				},
+				{
+					name: "compatible stringifies custom tool-result entries", backend: "openai-compatible",
+					body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"content","value":[{"type":"text","text":"before"},{"type":"custom","providerOptions":{"anthropic":{"type":"tool-reference","toolName":"search"}}}]}}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						messages := body["messages"].([]any)
+						require.Len(t, messages, 2)
+						tool := messages[1].(map[string]any)
+						assert.Equal(t, "tool", tool["role"])
+						assert.JSONEq(t, `[{"type":"text","text":"before"},{"type":"custom","providerOptions":{"anthropic":{"type":"tool-reference","toolName":"search"}}}]`, tool["content"].(string))
+					},
+				},
+				{
+					name: "openai drops custom tool-result entries", backend: "openai",
+					body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"content","value":[{"type":"text","text":"before"},{"type":"custom","providerOptions":{"openai":{"type":"secret","itemId":"item_1"}}}]}}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						assert.NotContains(t, string(mustMarshal(t, body)), "secret")
+						assert.NotContains(t, string(mustMarshal(t, body)), "item_1")
+						output := body["input"].([]any)[1].(map[string]any)
+						assert.Equal(t, "function_call_output", output["type"])
+						assert.Equal(t, []any{map[string]any{"type": "input_text", "text": "before"}}, output["output"])
+					},
+				},
+				{
 					name: "openai azure phase and reasoning", backend: "openai",
 					body: `{"providerOptions":{"azure":{"store":false,"model":"ignored","reasoningEffort":"low"}},"prompt":[{"role":"assistant","content":[{"type":"text","text":"answer","providerOptions":{"azure":{"phase":"final_answer","itemId":"msg_supplied"}}},{"type":"reasoning","text":"thought","providerOptions":{"azure":{"itemId":"rs_supplied","reasoningEncryptedContent":"opaque"}}}]}]}`,
 					check: func(t *testing.T, body map[string]any) {
@@ -497,4 +584,11 @@ func writeNativeOptionsResponse(w http.ResponseWriter, backend string, streaming
 	default:
 		_, _ = fmt.Fprint(w, `{"id":"chat","model":"backend","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
 	}
+}
+
+func mustMarshal(t *testing.T, value any) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	require.NoError(t, err)
+	return encoded
 }

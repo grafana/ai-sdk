@@ -366,6 +366,7 @@ func TestModel_StreamInvalidEvents(t *testing.T) {
 		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"private":"`+strings.Repeat("x", 1<<20)+`"}`, 1),
 		`{"type":"stream-start","warnings":[{"Type":"other","message":"safe"}]}`,
 		`{"type":"stream-start","warnings":[{"type":"other","Message":"safe"}]}`,
+		`{"type":"custom"}`, `{"type":"custom","kind":null}`, `{"type":"custom","kind":7}`, `{"type":"custom","kind":"x.y","providerMetadata":{"x":null}}`,
 		`{"type":"reasoning-start"}`, `{"type":"text-start"}`, `{"type":"text-delta","id":"a"}`, `{"type":"text-end","id":null}`, `{"type":"finish"}`, `{"type":"stream-start"}`, `{"type":"stream-start","warnings":[{"type":"unknown"}]}`, `{"type":"response-metadata","timestamp":"bad"}`, `{"type":"raw"}`, `{"type":"error","error":{"message":"bad"}}`, `{"type":"error","error":{"message":"safe","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":false}}`, `{"type":"text-delta","id":"a","delta":1}`, `{"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{"total":-1},"outputTokens":{}}}`, `{"type":`, "[DONE] ", "",
 	} {
 		name := event
@@ -565,4 +566,44 @@ func TestDecodeStreamPart_FunctionTools(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, input, part.Input)
 	}
+}
+
+func TestModel_StreamCustomParts(t *testing.T) {
+	frames := []string{
+		`{"type":"text-start","id":"t"}`,
+		`{"type":"text-delta","id":"t","delta":"a"}`,
+		`{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_1","usage":{"input_tokens":3}}}}`,
+		`{"type":"text-delta","id":"t","delta":"b"}`,
+		`{"type":"custom","kind":"example.bare"}`,
+		`{"type":"custom","kind":"example.empty","providerMetadata":{}}`,
+		`{"type":"custom","kind":"","text":7}`,
+		`{"type":"text-end","id":"t"}`,
+		finishEvent,
+	}
+	var payload strings.Builder
+	for _, frame := range frames {
+		payload.WriteString(sseFrame(frame))
+	}
+	model := streamFromBody(t, io.NopCloser(strings.NewReader(payload.String())), nil)
+	stream, err := model.DoStream(context.Background(), provider.CallOptions{})
+	require.NoError(t, err)
+
+	parts := collectParts(t, stream)
+
+	require.Len(t, parts, len(frames))
+	types := make([]provider.StreamPartType, len(parts))
+	for i, part := range parts {
+		types[i] = part.Type
+	}
+	assert.Equal(t, []provider.StreamPartType{
+		provider.PartTextStart, provider.PartTextDelta, provider.PartCustom, provider.PartTextDelta, provider.PartCustom,
+		provider.PartCustom, provider.PartCustom, provider.PartTextEnd, provider.PartFinish,
+	}, types)
+	assert.Equal(t, "anthropic.message_start", parts[2].Kind)
+	assert.JSONEq(t, `{"id":"msg_1","usage":{"input_tokens":3}}`, string(parts[2].ProviderMetadata["anthropic"]))
+	assert.Equal(t, "example.bare", parts[4].Kind)
+	assert.Nil(t, parts[4].ProviderMetadata)
+	assert.NotNil(t, parts[5].ProviderMetadata)
+	assert.Empty(t, parts[5].ProviderMetadata)
+	assert.Equal(t, "", parts[6].Kind)
 }

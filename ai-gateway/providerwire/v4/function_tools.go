@@ -135,6 +135,12 @@ func mapToolOutput(wire *wireToolOutput) (*provider.ToolResultOutput, *requestFa
 					Type: provider.ToolContentFile, Data: &data, MediaType: part.MediaType,
 					Filename: part.Filename, ProviderOptions: options,
 				})
+			case provider.ContentPartTypeCustom:
+				options, failure := mapWireProviderOptions(part.ProviderOptions)
+				if failure != nil {
+					return nil, failure
+				}
+				output.Content = append(output.Content, provider.ToolResultContentValue{Type: provider.ToolContentCustom, ProviderOptions: options})
 			default:
 				return nil, rejectedMappingFailure(capabilityTools)
 			}

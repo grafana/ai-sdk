@@ -300,7 +300,11 @@ func TestModel_UnaryFailures(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"missing content", `{"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`},
 		{"null content", strings.Replace(unaryFixture, `[{"type":"text","text":"hello"},{"type":"text","text":""}]`, `null`, 1)},
-		{"unknown family", strings.Replace(unaryFixture, `"type":"text"`, `"type":"custom"`, 1)},
+		{"unknown family", strings.Replace(unaryFixture, `"type":"text"`, `"type":"file"`, 1)},
+		{"custom missing kind", strings.Replace(unaryFixture, `{"type":"text","text":""}`, `{"type":"custom"}`, 1)},
+		{"custom null kind", strings.Replace(unaryFixture, `{"type":"text","text":""}`, `{"type":"custom","kind":null}`, 1)},
+		{"custom non-string kind", strings.Replace(unaryFixture, `{"type":"text","text":""}`, `{"type":"custom","kind":7}`, 1)},
+		{"custom malformed metadata", strings.Replace(unaryFixture, `{"type":"text","text":""}`, `{"type":"custom","kind":"x.y","providerMetadata":{"x":null}}`, 1)},
 		{"missing text", strings.Replace(unaryFixture, `,"text":"hello"`, "", 1)},
 		{"null text", strings.Replace(unaryFixture, `"text":"hello"`, `"text":null`, 1)},
 		{"unknown finish", strings.Replace(unaryFixture, `"unified":"stop"`, `"unified":"unknown"`, 1)},
@@ -621,4 +625,46 @@ func TestModel_UnaryBoundsAndTransport(t *testing.T) {
 		require.ErrorAs(t, err, &api)
 		assert.True(t, api.IsRetryable)
 	})
+}
+
+func TestModel_UnaryCustomContent(t *testing.T) {
+	for _, tc := range []struct {
+		name, custom string
+		wantKind     string
+		wantMetadata map[string]string
+	}{
+		{"opaque metadata", `{"type":"custom","kind":"openai.compaction","providerMetadata":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC","nested":{"zero":0,"no":false,"none":null,"empty":""}}}}`, "openai.compaction", map[string]string{"openai": `{"itemId":"cmp_1","encryptedContent":"ENC","nested":{"zero":0,"no":false,"none":null,"empty":""}}`}},
+		{"absent metadata", `{"type":"custom","kind":"anthropic.fallback"}`, "anthropic.fallback", nil},
+		{"empty metadata", `{"type":"custom","kind":"example.kind","providerMetadata":{}}`, "example.kind", map[string]string{}},
+		{"empty kind is accepted", `{"type":"custom","kind":""}`, "", nil},
+		{"unrelated fields are ignored", `{"type":"custom","kind":"example.kind","text":7,"toolCallId":[]}`, "example.kind", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := strings.Replace(unaryFixture, `{"type":"text","text":""}`, tc.custom, 1)
+			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, body)
+			}, nil)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+
+			result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+
+			require.NoError(t, err)
+			require.Len(t, result.Content, 2)
+			assert.Equal(t, provider.ContentText, result.Content[0].Type)
+			custom := result.Content[1]
+			assert.Equal(t, provider.ContentCustom, custom.Type)
+			assert.Equal(t, tc.wantKind, custom.Kind)
+			if tc.wantMetadata == nil {
+				assert.Nil(t, custom.ProviderMetadata)
+				return
+			}
+			require.NotNil(t, custom.ProviderMetadata)
+			require.Len(t, custom.ProviderMetadata, len(tc.wantMetadata))
+			for namespace, want := range tc.wantMetadata {
+				assert.JSONEq(t, want, string(custom.ProviderMetadata[namespace]))
+			}
+		})
+	}
 }

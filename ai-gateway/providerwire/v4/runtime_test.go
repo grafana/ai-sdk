@@ -365,10 +365,8 @@ func TestRuntimeRequestRejections(t *testing.T) {
 		body string
 		want []byte
 	}{
-		{name: "capability/custom content", body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x"}]}]}`, want: unsupportedCustomContentError},
 		{name: "capability/tool approval", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-approval-response","approvalId":"a","approved":false}]}]}`, want: unsupportedToolApprovalsError},
 		{name: "capability/denied tool output", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"execution-denied","reason":""}}]}]}`, want: unsupportedToolsError},
-		{name: "capability/custom tool output", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"custom"}]}}]}]}`, want: unsupportedToolsError},
 		{name: "capability/tool output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"text","value":"","providerOptions":{"p":{"value":true}}}}]}]}`, want: unsupportedProviderOptionsError},
 		{name: "capability/nested text output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"text","text":"","providerOptions":{"p":{"value":true}}}]}}]}]}`, want: unsupportedProviderOptionsError},
 		{name: "capability/structured output", body: `{"prompt":[],"responseFormat":{"type":"json"}}`, want: unsupportedStructuredOutputError},
@@ -439,6 +437,8 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		{file: "scalar-presence.json", status: http.StatusOK, modelCalls: 1},
 		{file: "headers.json", status: http.StatusOK, modelCalls: 1},
 		{file: "headers.json", index: 1, status: http.StatusOK, modelCalls: 1},
+		{file: "custom-content.json", status: http.StatusOK, modelCalls: 1},
+		{file: "custom-content.json", index: 1, status: http.StatusOK, modelCalls: 1},
 		{file: "comprehensive-unions.json", status: http.StatusBadRequest},
 		{file: "provider-tools.json", status: http.StatusOK, modelCalls: 1},
 		{file: "provider-tools.json", index: 1, status: http.StatusOK, modelCalls: 1},
@@ -930,7 +930,6 @@ func TestPublicError_FixedBytes(t *testing.T) {
 		{"permission", safeError{category: safePermission}, 403, canonicalPermissionError, canonicalInternalStreamErrorFrame},
 		{"zero", safeError{}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
 		{"unknown", safeError{category: 255}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
-		{"custom", safeError{category: safeInvalidRequest, reason: capabilityCustomContent}, 400, unsupportedCustomContentError, canonicalInternalStreamErrorFrame},
 		{"tools", safeError{category: safeInvalidRequest, reason: capabilityTools}, 400, unsupportedToolsError, canonicalInternalStreamErrorFrame},
 		{"approval", safeError{category: safeInvalidRequest, reason: capabilityToolApprovals}, 400, unsupportedToolApprovalsError, canonicalInternalStreamErrorFrame},
 		{"output", safeError{category: safeInvalidRequest, reason: capabilityStructuredOutput}, 400, unsupportedStructuredOutputError, canonicalInternalStreamErrorFrame},
@@ -1019,7 +1018,7 @@ func TestSafeErrorReduction(t *testing.T) {
 			{value: safeError{category: safeTimeout}, status: http.StatusGatewayTimeout},
 			{value: safeError{category: safeCancellation}, status: 499},
 			{value: safeError{category: safeInternal}, status: http.StatusInternalServerError},
-			{value: safeError{category: safeInvalidRequest, reason: capabilityCustomContent}, status: http.StatusBadRequest},
+			{value: safeError{category: safeInvalidRequest, reason: capabilityTools}, status: http.StatusBadRequest},
 		} {
 			h := newTestHandler(t, testLimits())
 			response := httptest.NewRecorder()

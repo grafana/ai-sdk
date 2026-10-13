@@ -40,7 +40,6 @@ var (
 	canonicalCancellationError   = []byte(`{"error":{"message":"request canceled","type":"internal_server_error","param":null,"code":"canceled"}}`)
 	canonicalInternalError       = []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)
 
-	unsupportedCustomContentError    = []byte(`{"error":{"message":"unsupported capability: custom-content","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedToolsError            = []byte(`{"error":{"message":"unsupported capability: tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedToolApprovalsError    = []byte(`{"error":{"message":"unsupported capability: tool-approvals","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedStructuredOutputError = []byte(`{"error":{"message":"unsupported capability: structured-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
@@ -165,7 +164,6 @@ func TestErrorSchema(t *testing.T) {
 		canonicalTimeoutError,
 		canonicalCancellationError,
 		canonicalInternalError,
-		unsupportedCustomContentError,
 		unsupportedToolsError,
 		unsupportedToolApprovalsError,
 		unsupportedStructuredOutputError,
