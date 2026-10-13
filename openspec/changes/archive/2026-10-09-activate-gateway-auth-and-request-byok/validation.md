@@ -225,3 +225,37 @@ the approved account/capture contract. The owner explicitly requests archive wit
 external task4.1 unchecked. No activation/network proof, merge or task completion
 is inferred. All-strict98/98 main specs pass after archive; #317 observation delivery
 and deployment handoff remain pending. Logs: `/tmp/byok-review-*`.
+
+## Configured-source summary policy integration
+
+The later owner-approved policy supersedes unconditional echo preservation ONLY
+for Gateway-produced summary message/type/string-code: exact configured provider
+API keys and the enabled exporter credential are protected. Static Gateway access
+keys are excluded; #398 digest-only authentication, configuration and boot builder
+are unchanged. Caller-only BYOK echoes and ordinary text/opaque metadata are not
+filtered; collisions with configured values follow configured ownership.
+
+Replay uses exact old parent956a20e4, tail80cd4da8 (all11 commits including #398)
+and new parent877f8256, without moving main or the lower refs. Both configured and
+conditional Cloud handlers retain ConfiguredAPIKeys. Existing native-classification,
+retryability, fit/read/envelope, observer ownership and no-replay semantics remain.
+Current/archived activation clauses align with the shared failure-evidence policy;
+no new proposal, request inventory, raw static-key retention or HTTP field is added.
+
+Native Anthropic/OpenAI cases cover no-policy, configured-source and caller-value
+collision cases across unary/setup/committed modes; they retain one call and outer
+SDK observation without invented provenance. Both clients inspect real Cloud SSE
+mixed provider/exporter/BYOK echoes and unchanged ordinary text. Omitting Cloud
+policy wiring fails both collision witnesses; restoring it passes. Direct filtered
+runs first used the harness's published-module default and did not compile; the
+valid red/green witness uses its GATEWAY_TEST_GOWORK source-workspace setting.
+
+Go1.27.2 full local gates and focused racesx10, readonly client/harness races,
+source runtime48/command81 without skips, frontend25 files/140 tests, exact eb77
+parity/shapes, docs, boundaries and image checks pass. Current strict99/99 specs
+pass with zero active changes (#398 adds one spec). Workspace checksum churn is
+removed; baseline pins, published manifests and provider inputs are unchanged.
+Logs: `/tmp/byok-stack-pr369-configured-summary-20261013/` and
+`/tmp/byok-configured-summary-{cloud-wiring-red3,cloud-wiring-green3,service-green2,tail-range-diff}.log`.
+No independent clean review, live-provider/network proof or merge is claimed.
+External task4.1 and #317's missing attempt/unary/setup observation stay pending.

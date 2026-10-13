@@ -1884,34 +1884,47 @@ describe("authenticated Anthropic Gateway command", () => {
 });
 
 describe("Trusted-proxy composition (dummy credentials, not production authentication)", () => {
-  it("preserves Cloud provider echoes in SSE native summaries without inventing account attribution", async () => {
-    const [native, gateway, edge] = await startCloudGateway();
-    native.streamErrorWithEcho = true;
-    try {
-      const options = { ...cloudCall("normal-stream"), providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }, { apiKey: "unused-second-key" }] } } } };
-      const expected = { message: "provider-echo request-only-key backend-private", type: "api_error", statusCode: 200 };
-      const ts = await collectStream((await edge.client(EDGE_WRITE_KEY)(BYOK_MODEL).doStream(options)).stream);
-      const go = await captureGoClient(goClientBinaryPath, { mode: "stream", modelID: BYOK_MODEL, options, cloudCredentials: { StackID: 27038, CAPToken: "dummy-write-key", BaseURL: `${edge.url}/api/v1/aisdk` } });
-      assert.equal(go.error, undefined);
-      for (const parts of [ts, go.parts]) {
-        const errors = parts.filter((part: { type: string; error?: { data?: { nativeError?: unknown } } }) => part.type === "error" && part.error?.data?.nativeError !== undefined);
-        assert.equal(errors.length, 1);
-        assert.deepEqual(errors[0].error.data, { nativeError: expected });
-        assert.equal(errors[0].error.statusCode, 502);
-        assert.equal(errors[0].error.retryable ?? errors[0].error.isRetryable, true);
-        assert.ok(parts.every((part: { type: string }) => part.type !== "finish"));
-        assert.equal(parts.at(-1).type, "error");
-        assert.ok(!JSON.stringify(parts).includes('"execution"'));
-        assert.ok(!JSON.stringify(parts).includes('"providerInstance"'));
+  for (const collision of [false, true]) {
+    it(`preserves Cloud BYOK echoes and protects configured summary keys, collision=${collision}`, async () => {
+      const observer = await FakeAgentObservability.start();
+      const configuredKey = collision ? "request-only-key" : "integration-anthropic-key";
+      let resources: Awaited<ReturnType<typeof startCloudGateway>> | undefined;
+      try {
+        resources = await startCloudGateway([
+          "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
+          "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
+        ], undefined, { GATEWAY_TEST_ANTHROPIC_KEY: configuredKey, GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+        const [native, gateway, edge] = resources;
+        native.streamErrorMessage = `provider-echo request-only-key ${configuredKey} integration-agento11y-key static-gateway-key backend-private`;
+        const options = { ...cloudCall("normal-stream"), providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }, { apiKey: "unused-second-key" }] } } } };
+        const expected = { message: `provider-echo ${collision ? "[REDACTED]" : "request-only-key"} [REDACTED] [REDACTED] static-gateway-key backend-private`, type: "api_error", statusCode: 200 };
+        const ts = await collectStream((await edge.client(EDGE_WRITE_KEY)(BYOK_MODEL).doStream(options)).stream);
+        const go = await captureGoClient(goClientBinaryPath, { mode: "stream", modelID: BYOK_MODEL, options, cloudCredentials: { StackID: 27038, CAPToken: "dummy-write-key", BaseURL: `${edge.url}/api/v1/aisdk` } });
+        assert.equal(go.error, undefined);
+        for (const parts of [ts, go.parts]) {
+          const errors = parts.filter((part: { type: string; error?: { data?: { nativeError?: unknown } } }) => part.type === "error" && part.error?.data?.nativeError !== undefined);
+          assert.equal(errors.length, 1);
+          assert.deepEqual(errors[0].error.data, { nativeError: expected });
+          const text = parts.filter((part: { type: string }) => part.type === "text-delta").map((part: { delta: string }) => part.delta).join("");
+          assert.equal(text, native.streamErrorMessage);
+          assert.equal(errors[0].error.statusCode, 502);
+          assert.equal(errors[0].error.retryable ?? errors[0].error.isRetryable, true);
+          assert.ok(parts.every((part: { type: string }) => part.type !== "finish"));
+          assert.equal(parts.at(-1).type, "error");
+          assert.ok(!JSON.stringify(parts).includes('"execution"'));
+          assert.ok(!JSON.stringify(parts).includes('"providerInstance"'));
+        }
+        assert.equal(native.requests.length, 2);
+        assert.ok(native.requests.every(request => request.apiKey === "request-only-key"));
+        const metrics = await gateway.metrics();
+        await gateway.stop();
+        assertCloudPrivateValuesAbsent(gateway.stderr + metrics, ["request-only-key", "unused-second-key", "provider-echo", "static-gateway-key", "integration-agento11y-key"]);
+        assert.deepEqual(native.violations, []);
+      } finally {
+        await settleCleanup(...(resources ? [() => resources![2].stop(), () => resources![1].stop(), () => resources![0].stop()] : []), () => observer.stop());
       }
-      assert.equal(native.requests.length, 2);
-      assert.ok(native.requests.every(request => request.apiKey === "request-only-key"));
-      const metrics = await gateway.metrics();
-      await gateway.stop();
-      assertCloudPrivateValuesAbsent(gateway.stderr + metrics, ["request-only-key", "unused-second-key", "provider-echo"]);
-      assert.deepEqual(native.violations, []);
-    } finally { await settleCleanup(() => edge.stop(), () => gateway.stop(), () => native.stop()); }
-  });
+    });
+  }
   it("distinguishes native credential rejection from Gateway authentication without rotating keys or echoing them", async () => {
     const [native, gateway, edge] = await startCloudGateway();
     native.failureStatus = 401;
@@ -2997,14 +3010,14 @@ function edgeRawRequest(edge: DummyCloudEdge, operation: "discovery" | "unary" |
   ], body);
 }
 
-async function startCloudGateway(extraArgs: string[] = [], configuredURL?: string): Promise<[FakeAnthropic, GatewayProcess, DummyCloudEdge]> {
+async function startCloudGateway(extraArgs: string[] = [], configuredURL?: string, extraEnv: Record<string, string> = {}): Promise<[FakeAnthropic, GatewayProcess, DummyCloudEdge]> {
   const fake = await FakeAnthropic.start();
   fake.backendModel = "request-only-native";
   fake.apiKey = "request-only-key";
   const proxy = await startNativeProviderProxy(fake.url);
   let gateway: GatewayProcess | undefined;
   try {
-    gateway = await GatewayProcess.start(binaryPath, configuredURL ?? fake.url, extraArgs, { HTTPS_PROXY: proxy.url, NO_PROXY: "127.0.0.1,localhost", SSL_CERT_FILE: nativeProxyCertificate }, "cloud-gateway");
+    gateway = await GatewayProcess.start(binaryPath, configuredURL ?? fake.url, extraArgs, { HTTPS_PROXY: proxy.url, NO_PROXY: "127.0.0.1,localhost", SSL_CERT_FILE: nativeProxyCertificate, ...extraEnv }, "cloud-gateway");
     gateway.nativeProxy = proxy;
     return [fake, gateway, await DummyCloudEdge.start(gateway.url)];
   } catch (error) {
@@ -3347,7 +3360,7 @@ class FakeAnthropic {
   redirectTo?: string;
   oversizedErrors = false;
   failureStatus?: number;
-  streamErrorWithEcho = false;
+  streamErrorMessage?: string;
   functionTools = false;
   providerTools = false;
   providerToolCaller = false;
@@ -3504,7 +3517,14 @@ class FakeAnthropic {
 
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     response.write(`event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_test", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } })}\n\n`);
-    if (this.streamErrorWithEcho) response.write(`event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "api_error", message: `provider-echo ${this.apiKey} backend-private` } })}\n\n`);
+    if (this.streamErrorMessage) {
+      response.write(`event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`);
+      response.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: this.streamErrorMessage } })}\n\n`);
+      response.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`);
+      response.write(`event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "api_error", message: this.streamErrorMessage } })}\n\n`);
+      response.end();
+      return;
+    }
     if (marker === "normal-stream") {
       response.write(`event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`);
       response.write(`event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hello from fake Anthropic stream" } })}\n\n`);

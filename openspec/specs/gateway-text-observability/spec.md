@@ -31,7 +31,7 @@ BYOK SHALL receive one request-local logical observer outside ordered attempts, 
 #### Scenario: Credential markers at automatic sinks
 - **WHEN** real logger, enrichment, metrics and Agent Observability/export sinks capture a BYOK success, rejection, cancellation or late-result cleanup
 - **THEN** configured sensitive fields SHALL follow logger policy and metadata-only exporters SHALL retain their exclusions while timing, usage and outcome facts remain available
-- **AND** independent caller-visible native diagnostics SHALL preserve available producer echoes
+- **AND** independent caller-visible native summaries SHALL preserve BYOK-only echoes subject to the configured provider/exporter key policy; operator capture SHALL not filter returned content or opaque metadata
 
 #### Scenario: Results are not operator capture policy
 - **WHEN** a BYOK provider returns supported native content, warnings, identity or continuation metadata

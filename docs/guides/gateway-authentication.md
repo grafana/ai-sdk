@@ -273,8 +273,11 @@ Start with metadata-only logging. If you enable content capture, configure
 [structured logging redaction](../middleware/structured-logging.md) for your
 sensitive fields and review what your application and exporters collect.
 Redacting credential fields does not remove secrets echoed in provider text or
-error messages. Returned diagnostics may contain those echoes; only log or
-display them when your capture policy allows it. See
+error messages. Gateway-produced summaries replace exact configured provider-key
+and enabled exporter-credential matches, including collisions with BYOK values.
+BYOK-only echoes remain available; static access keys, ordinary content and opaque
+native metadata are outside that summary policy. Returned diagnostics can still
+contain secrets, so only log or display them when your capture policy allows it. See
 [Inspect execution overviews and failures](../providers/grafana-gateway.md#inspect-execution-overviews-and-failures)
 for details on the diagnostics available to clients.
 

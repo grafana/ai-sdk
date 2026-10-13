@@ -125,85 +125,103 @@ func TestAccountSelection_Isolation(t *testing.T) {
 }
 
 func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
-	const nativeMessage = "provider-echo dummy-first dummy-second request-org request-project"
-	for _, name := range []string{"anthropic", "openai"} {
-		for _, mode := range []string{"unary", "setup", "committed"} {
-			t.Run(name+"/"+mode, func(t *testing.T) {
-				var calls, observed atomic.Int32
-				client := &http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
-					calls.Add(1)
-					status, contentType := http.StatusUnauthorized, "application/json"
-					body := fmt.Sprintf(`{"type":"error","error":{"type":"authentication_error","message":%q}}`, nativeMessage)
-					if mode == "committed" {
-						status, contentType = http.StatusOK, "text/event-stream"
+	const nativeMessage = "provider-echo dummy-first dummy-second request-org request-project configured-provider-key configured-exporter-key static-gateway-key"
+	for _, policy := range []struct {
+		name string
+		keys []string
+	}{
+		{name: "BYOK-only"},
+		{name: "configured sources", keys: []string{"configured-provider-key", "configured-exporter-key"}},
+		{name: "configured value collision", keys: []string{"configured-provider-key", "configured-exporter-key", "dummy-first"}},
+	} {
+		expectedMessage := nativeMessage
+		for _, key := range policy.keys {
+			expectedMessage = strings.ReplaceAll(expectedMessage, key, "[REDACTED]")
+		}
+		for _, name := range []string{"anthropic", "openai"} {
+			for _, mode := range []string{"unary", "setup", "committed"} {
+				t.Run(policy.name+"/"+name+"/"+mode, func(t *testing.T) {
+					var calls, observed atomic.Int32
+					client := &http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+						calls.Add(1)
 						if name == "anthropic" {
-							body = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"native-model\",\"content\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n" +
-								fmt.Sprintf("event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":%q}}\n\n", nativeMessage)
+							assert.Equal(t, "dummy-first", r.Header.Get("X-Api-Key"))
 						} else {
-							body = "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"model\":\"native-model\",\"output\":[]}}\n\n" +
-								"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"role\":\"assistant\",\"content\":[]}}\n\n" +
-								fmt.Sprintf("event: error\ndata: {\"type\":\"error\",\"code\":\"invalid_api_key\",\"message\":%q}\n\n", nativeMessage)
+							assert.Equal(t, "Bearer dummy-first", r.Header.Get("Authorization"))
 						}
+						status, contentType := http.StatusUnauthorized, "application/json"
+						body := fmt.Sprintf(`{"type":"error","error":{"type":"authentication_error","message":%q}}`, nativeMessage)
+						if mode == "committed" {
+							status, contentType = http.StatusOK, "text/event-stream"
+							if name == "anthropic" {
+								body = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"native-model\",\"content\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n" +
+									fmt.Sprintf("event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":%q}}\n\n", nativeMessage)
+							} else {
+								body = "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"model\":\"native-model\",\"output\":[]}}\n\n" +
+									"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"role\":\"assistant\",\"content\":[]}}\n\n" +
+									fmt.Sprintf("event: error\ndata: {\"type\":\"error\",\"code\":\"invalid_api_key\",\"message\":%q}\n\n", nativeMessage)
+							}
+						}
+						return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+					})}
+					factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
+					wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits(), ConfiguredAPIKeys: policy.keys})
+					require.NoError(t, err)
+					writer := providerv4.NewHostErrorWriter()
+					authenticator, headers := serviceModeAuthentication(gatewayauth.SourceCloudGateway)
+					handler := gatewayauth.Middleware(authenticator, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorAuthentication) }, func(context.Context, gatewayauth.Observation) {}, wire)
+					accountFields := ""
+					if name == "openai" {
+						accountFields = `,"organization":"request-org","project":"request-project"`
 					}
-					return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
-				})}
-				factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-				wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
-				require.NoError(t, err)
-				writer := providerv4.NewHostErrorWriter()
-				authenticator, headers := serviceModeAuthentication(gatewayauth.SourceCloudGateway)
-				handler := gatewayauth.Middleware(authenticator, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorAuthentication) }, func(context.Context, gatewayauth.Observation) {}, wire)
-				accountFields := ""
-				if name == "openai" {
-					accountFields = `,"organization":"request-org","project":"request-project"`
-				}
-				body := fmt.Sprintf(`{"prompt":[],"maxOutputTokens":32,"providerOptions":{"gateway":{"byok":{%q:[{"apiKey":"dummy-first"%s},{"apiKey":"dummy-second"}]}}}}`, name, accountFields)
-				ctx := fallback.WithAttemptObserver(t.Context(), func(context.Context, fallback.Attempt) { observed.Add(1) })
-				request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body)).WithContext(ctx)
-				request.Header = headers
-				request.Header.Set("Content-Type", "application/json")
-				request.Header.Set(providerv4.HeaderModelID, name+"/native-model")
-				request.Header.Set(providerv4.HeaderSpecificationVersion, "4")
-				request.Header.Set(providerv4.HeaderStreaming, strconv.FormatBool(mode != "unary"))
-				response := httptest.NewRecorder()
-				handler.ServeHTTP(response, request)
-				if mode == "committed" {
-					assert.Equal(t, http.StatusOK, response.Code)
-					var nativeErrors []json.RawMessage
-					for _, frame := range strings.Split(strings.TrimSpace(response.Body.String()), "\n\n") {
-						var event struct {
-							Error struct {
-								StatusCode int
-								Data       struct {
-									NativeError json.RawMessage
+					body := fmt.Sprintf(`{"prompt":[],"maxOutputTokens":32,"providerOptions":{"gateway":{"byok":{%q:[{"apiKey":"dummy-first"%s},{"apiKey":"dummy-second"}]}}}}`, name, accountFields)
+					ctx := fallback.WithAttemptObserver(t.Context(), func(context.Context, fallback.Attempt) { observed.Add(1) })
+					request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body)).WithContext(ctx)
+					request.Header = headers
+					request.Header.Set("Content-Type", "application/json")
+					request.Header.Set(providerv4.HeaderModelID, name+"/native-model")
+					request.Header.Set(providerv4.HeaderSpecificationVersion, "4")
+					request.Header.Set(providerv4.HeaderStreaming, strconv.FormatBool(mode != "unary"))
+					response := httptest.NewRecorder()
+					handler.ServeHTTP(response, request)
+					if mode == "committed" {
+						assert.Equal(t, http.StatusOK, response.Code)
+						var nativeErrors []json.RawMessage
+						for _, frame := range strings.Split(strings.TrimSpace(response.Body.String()), "\n\n") {
+							var event struct {
+								Error struct {
+									StatusCode int
+									Data       struct {
+										NativeError json.RawMessage
+									}
+								}
+							}
+							require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &event))
+							if len(event.Error.Data.NativeError) != 0 {
+								nativeErrors = append(nativeErrors, event.Error.Data.NativeError)
+								if name == "anthropic" {
+									assert.Equal(t, http.StatusBadGateway, event.Error.StatusCode)
+								} else {
+									assert.Equal(t, http.StatusFailedDependency, event.Error.StatusCode)
 								}
 							}
 						}
-						require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &event))
-						if len(event.Error.Data.NativeError) != 0 {
-							nativeErrors = append(nativeErrors, event.Error.Data.NativeError)
-							if name == "anthropic" {
-								assert.Equal(t, http.StatusBadGateway, event.Error.StatusCode)
-							} else {
-								assert.Equal(t, http.StatusFailedDependency, event.Error.StatusCode)
-							}
+						require.Len(t, nativeErrors, 1)
+						if name == "anthropic" {
+							assert.JSONEq(t, fmt.Sprintf(`{"message":%q,"type":"api_error","statusCode":200}`, expectedMessage), string(nativeErrors[0]))
+						} else {
+							assert.JSONEq(t, fmt.Sprintf(`{"message":%q,"type":"error","code":"invalid_api_key","statusCode":400}`, expectedMessage), string(nativeErrors[0]))
 						}
-					}
-					require.Len(t, nativeErrors, 1)
-					if name == "anthropic" {
-						assert.JSONEq(t, fmt.Sprintf(`{"message":%q,"type":"api_error","statusCode":200}`, nativeMessage), string(nativeErrors[0]))
 					} else {
-						assert.JSONEq(t, fmt.Sprintf(`{"message":%q,"type":"error","code":"invalid_api_key","statusCode":400}`, nativeMessage), string(nativeErrors[0]))
+						assert.Equal(t, http.StatusFailedDependency, response.Code)
+						assert.JSONEq(t, `{"error":{"message":"failed dependency","type":"failed_dependency","param":null,"code":"failed_dependency"}}`, response.Body.String())
 					}
-				} else {
-					assert.Equal(t, http.StatusFailedDependency, response.Code)
-					assert.JSONEq(t, `{"error":{"message":"failed dependency","type":"failed_dependency","param":null,"code":"failed_dependency"}}`, response.Body.String())
-				}
-				assert.Equal(t, int32(1), calls.Load())
-				assert.Equal(t, int32(1), observed.Load())
-				assert.NotContains(t, response.Body.String(), `"execution"`)
-				assert.NotContains(t, response.Body.String(), `"providerInstance"`)
-			})
+					assert.Equal(t, int32(1), calls.Load())
+					assert.Equal(t, int32(1), observed.Load())
+					assert.NotContains(t, response.Body.String(), `"execution"`)
+					assert.NotContains(t, response.Body.String(), `"providerInstance"`)
+				})
+			}
 		}
 	}
 }

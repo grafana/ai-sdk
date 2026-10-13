@@ -67,16 +67,20 @@ or configured-account dependency.
 ## Execution observation integration
 
 Configured selection delegates to `CatalogSelector` and preserves copied actual
-candidate descriptors, without credential-source inventories or value suppression.
+candidate descriptors, without request-credential inventories or generic output suppression.
 #373's SDK observer and #370's projection remain independent of operator capture.
 Native event-local SSE summaries apply to request-only selections without catalog
-context and preserve producer echoes. BYOK has no Gateway attempt overview and
+context. Both host handlers receive the same immutable configured provider/exporter
+key policy for Gateway-produced summary message/type/string-code. Exact configured
+matches are replaced, including BYOK value collisions; BYOK-only echoes, numeric
+code/status, source errors, opaque metadata and ordinary content remain unchanged.
+Static access keys stay outside this policy and retain #398 hash-only storage. BYOK has no Gateway attempt overview and
 no unary/setup native summary today: this is a missing capability under #317,
 not a confidentiality rule or permanent prohibition. Additional observation must
 reuse the existing SDK seam and honest request identity, without a second collector
 or fabricated configured/account IDs. Full native bodies/headers remain #323.
 Logger field policy and exporter capture apply independently to observations;
-returned provider data is not censored. Existing read/envelope/fit paths remain
+ordinary returned provider data is not filtered; the summary policy is separate. Existing read/envelope/fit paths remain
 coherent pending #394, with validation/client/other JSON work kept separately scoped.
 
 Account-access refusal and unsupported discovery reuse #370's typed fixed error
