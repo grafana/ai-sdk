@@ -3,6 +3,7 @@
 ## Purpose
 
 Define the single Apache-licensed Go client for authenticated, bounded, strict ProviderWire V4 discovery and text calls through Grafana AI Gateway.
+
 ## Requirements
 
 ### Requirement: Single Apache-licensed public Gateway client
@@ -401,7 +402,7 @@ A successful streaming setup SHALL require SSE media type and return a `StreamRe
 - **THEN** the client SHALL stop reading, emit at most one bounded protocol error when delivery remains possible, and close all owned resources
 
 #### Scenario: Unsupported response family is received
-- **WHEN** the client receives file, custom, approval or another unsupported later-package stream part
+- **WHEN** the client receives file, approval or another unsupported later-package stream part
 - **THEN** it SHALL produce an explicit protocol error rather than decoding through provider-domain JSON accidentally
 
 #### Scenario: Hosted dynamic call with preview results
@@ -737,9 +738,10 @@ Unknown source discriminators and malformed metadata SHALL use the existing boun
 #### Scenario: Source decoder errors legacy fields and evidence limits
 - **WHEN** a unary source has valid display fields and a later source has an unknown discriminator
 - **THEN** the valid source SHALL populate Title and legacy Text, and the invalid source SHALL use bounded protocol failure without claiming the server metadata gap is solved
+
 ### Requirement: Independent opaque stream metadata consumption
 
-The Grafana client SHALL independently decode providerMetadata on supported text/reasoning start/delta/end, reasoning-file, source, tool-input start/delta/end, function call, basic result and finish parts. It SHALL preserve namespace objects, nested values, original event order and absent versus empty presence without IncludeRawChunks. Original accepted events, retained copies and metadata cardinality SHALL remain bounded by the existing event, cumulative byte and count limits.
+The Grafana client SHALL independently decode providerMetadata on supported text/reasoning start/delta/end, reasoning-file, source, tool-input start/delta/end, function call, basic result, custom and finish parts. It SHALL preserve namespace objects, nested values, original event order and absent versus empty presence without IncludeRawChunks. Original accepted events, retained copies and metadata cardinality SHALL remain bounded by the existing event, cumulative byte and count limits.
 
 #### Scenario: Unknown namespace survives all supported placements
 - **WHEN** valid events carry future object-valued namespaces with nested null/false/zero/empty values and explicit empty metadata at supported positions
@@ -805,3 +807,25 @@ grammar. The server SHALL remain responsible for selector capability validation.
 #### Scenario: Invalid transport selector
 - **WHEN** a selector is empty, invalid UTF-8, over 2,048 bytes or contains whitespace/control characters
 - **THEN** model construction SHALL fail before I/O
+
+### Requirement: Custom content consumption
+The client SHALL decode unary `custom` content into provider custom content and stream `custom` events into custom stream parts, retaining kind, order and opaque providerMetadata presence. A missing or non-string kind SHALL fail through the existing bounded protocol-error paths. Unrelated fields SHALL be ignored.
+
+#### Scenario: Unary custom content
+- **WHEN** a unary success contains text followed by custom content `openai.compaction` with metadata
+- **THEN** the result SHALL contain both parts in order with the kind and metadata unchanged
+
+#### Scenario: Streamed custom event
+- **WHEN** a stream contains a custom event between text deltas, with and without metadata
+- **THEN** the client SHALL deliver a custom part in order with the kind preserved and metadata absent or retained as supplied
+
+#### Scenario: Malformed custom kind
+- **WHEN** unary or streamed custom content has a missing or non-string kind
+- **THEN** unary decoding SHALL fail explicitly and streaming SHALL emit at most one bounded protocol PartError
+
+### Requirement: Custom request projection is unchanged
+The client SHALL continue projecting assistant custom parts with dotted kinds and custom tool-result entries with their scoped options, matching the registered client's request bodies.
+
+#### Scenario: Custom request bodies match
+- **WHEN** equivalent custom history and custom tool-result content are sent through both clients
+- **THEN** their semantic request bodies SHALL be equal
