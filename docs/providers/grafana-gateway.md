@@ -204,8 +204,24 @@ For Anthropic MCP, use distinct server names and HTTPS URLs without embedded
 credentials or fragments. Include the server configuration again when continuing
 the conversation, along with prior calls, results and provider metadata.
 
-Tool approvals, custom tool-result formats and generated media responses are
-not supported.
+Tool approvals and generated media responses are not supported.
+
+## Preserve custom content
+
+Some providers return content that has no standard type, such as OpenAI
+compaction items or Anthropic fallback markers. The Gateway returns it as
+custom content with a `kind` such as `openai.compaction` and provider metadata.
+Keep these parts in the history you send back, with the metadata as their
+provider options, so the same provider can continue the conversation.
+
+Providers ignore history they do not recognize. For example, an OpenAI
+compaction item is skipped when a fallback candidate is an OpenAI-compatible or
+Anthropic model. Tool results can also carry custom entries with their own
+provider options; a provider that cannot represent such an entry omits it with
+a warning, and Bedrock Converse rejects the request when tools are active, as
+the [Bedrock guide](bedrock.md#handle-unsupported-content) describes. When
+every candidate rejects, the Gateway returns a non-retryable invalid-request
+error.
 
 ## Use your own provider credentials
 

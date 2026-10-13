@@ -72,8 +72,8 @@
 
 ## 9. Docs and parity
 
-- [ ] 9.1 Update `docs/providers/grafana-gateway.md` to describe custom content support and remove "custom tool-result formats are not supported". Update the PARITY.md Gateway rows and the synthetic-evidence gaps for `tool_reference` and `container_upload`, and note that no command-served adapter produces the rejection yet. Verify with `mise run lint-docs` and `mise run validate-parity-baseline`.
-- [ ] 9.2 File `upstream-sync` issues for the pre-existing native gaps listed in the design's non-goals. One covers Anthropic (content-entry cache control, dropped-file warnings, request-wide MCP routing); one covers Bedrock assistant-role tool results. Verify both exist and are linked in the PR.
+- [x] 9.1 Update `docs/providers/grafana-gateway.md` to describe custom content support and remove "custom tool-result formats are not supported". Update the PARITY.md Gateway rows and the synthetic-evidence gaps for `tool_reference` and `container_upload`, and note that no command-served adapter produces the rejection yet. Verify with `mise run lint-docs` and `mise run validate-parity-baseline`.
+- [x] 9.2 File `upstream-sync` issues for the pre-existing native gaps listed in the design's non-goals. One covers Anthropic (content-entry cache control, dropped-file warnings, request-wide MCP routing); one covers Bedrock assistant-role tool results. Verify both exist and are linked in the PR.
 
 ## 10. Integration checks
 
