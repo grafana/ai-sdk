@@ -234,7 +234,7 @@ func TestGatewayAnthropicStream_FinishOnMessageStop(t *testing.T) {
 				map[string]config.ResolvedProvider{"native": {Type: "anthropic", APIKey: "native-key", BaseURL: backend.URL, ProviderName: "anthropic"}},
 				backend.Client(), identityModelFactory)
 			require.NoError(t, err)
-			handler, err := providerv4.New(providerv4.Config{Resolver: catalog, Limits: serviceTestLimits()})
+			handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(catalog), Limits: serviceTestLimits()})
 			require.NoError(t, err)
 			request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[]}`))
 			request.Header.Set("Content-Type", "application/json")
