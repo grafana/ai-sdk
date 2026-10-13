@@ -76,10 +76,13 @@ func TestConvertAnthropicUsage(t *testing.T) {
 
 func TestConvertAnthropicUsage_ThinkingTokens(t *testing.T) {
 	var usage anthropic.BetaUsage
-	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":10,"output_tokens":20,"output_tokens_details":{"thinking_tokens":7}}`), &usage))
+	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":10,"output_tokens":1}`), &usage))
+	var first anthropic.BetaMessageDeltaUsage
+	require.NoError(t, json.Unmarshal([]byte(`{"output_tokens":20,"output_tokens_details":{"thinking_tokens":7}}`), &first))
 
 	adapter := &streamAdapter{}
 	require.NoError(t, adapter.resetUsage(usage))
+	require.NoError(t, adapter.updateUsage(first))
 	got := convertAnthropicUsage(adapter.usage)
 	require.NotNil(t, got.OutputTokens.Total)
 	assert.Equal(t, 20, *got.OutputTokens.Total)
@@ -97,6 +100,34 @@ func TestConvertAnthropicUsage_ThinkingTokens(t *testing.T) {
 	assert.Equal(t, 16, *got.OutputTokens.Text)
 }
 
+func TestStreamAdapter_MessageStartKeepsStreamLevelOutputUsage(t *testing.T) {
+	var start anthropic.BetaUsage
+	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":10,"output_tokens":20,"output_tokens_details":{"thinking_tokens":7}}`), &start))
+
+	t.Run("output usage on message start is ignored", func(t *testing.T) {
+		adapter := &streamAdapter{}
+		require.NoError(t, adapter.resetUsage(start))
+		got := convertAnthropicUsage(adapter.usage)
+		require.NotNil(t, got.InputTokens.Total)
+		assert.Equal(t, 10, *got.InputTokens.Total)
+		require.NotNil(t, got.OutputTokens.Total)
+		assert.Equal(t, 0, *got.OutputTokens.Total)
+		assert.Nil(t, got.OutputTokens.Reasoning)
+	})
+
+	t.Run("a later message start keeps the previous output usage", func(t *testing.T) {
+		adapter := &streamAdapter{}
+		var delta anthropic.BetaMessageDeltaUsage
+		require.NoError(t, json.Unmarshal([]byte(`{"output_tokens":25,"output_tokens_details":{"thinking_tokens":9}}`), &delta))
+		require.NoError(t, adapter.updateUsage(delta))
+		require.NoError(t, adapter.resetUsage(start))
+		got := convertAnthropicUsage(adapter.usage)
+		assert.Equal(t, 25, *got.OutputTokens.Total)
+		assert.Equal(t, 9, *got.OutputTokens.Reasoning)
+		assert.Equal(t, 10, *got.InputTokens.Total)
+	})
+}
+
 func TestConvertAnthropicUsage_MissingOrNullThinkingTokensRemainNil(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -109,10 +140,10 @@ func TestConvertAnthropicUsage_MissingOrNullThinkingTokensRemainNil(t *testing.T
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var usage anthropic.BetaUsage
+			var usage anthropic.BetaMessageDeltaUsage
 			require.NoError(t, json.Unmarshal([]byte(tc.usage), &usage))
 			adapter := &streamAdapter{}
-			require.NoError(t, adapter.resetUsage(usage))
+			require.NoError(t, adapter.updateUsage(usage))
 			got := convertAnthropicUsage(adapter.usage)
 			assert.Nil(t, got.OutputTokens.Reasoning)
 			assert.Nil(t, got.OutputTokens.Text)
@@ -120,10 +151,10 @@ func TestConvertAnthropicUsage_MissingOrNullThinkingTokensRemainNil(t *testing.T
 	}
 
 	t.Run("explicit zero is retained", func(t *testing.T) {
-		var usage anthropic.BetaUsage
+		var usage anthropic.BetaMessageDeltaUsage
 		require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":10,"output_tokens":20,"output_tokens_details":{"thinking_tokens":0}}`), &usage))
 		adapter := &streamAdapter{}
-		require.NoError(t, adapter.resetUsage(usage))
+		require.NoError(t, adapter.updateUsage(usage))
 		got := convertAnthropicUsage(adapter.usage)
 		require.NotNil(t, got.OutputTokens.Reasoning)
 		assert.Equal(t, 0, *got.OutputTokens.Reasoning)
@@ -133,12 +164,20 @@ func TestConvertAnthropicUsage_MissingOrNullThinkingTokensRemainNil(t *testing.T
 }
 
 func TestConvertAnthropicUsage_DeltaThinkingTokenPresence(t *testing.T) {
-	var initial anthropic.BetaUsage
-	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":10,"output_tokens":20,"output_tokens_details":{"thinking_tokens":7}}`), &initial))
+	var start anthropic.BetaUsage
+	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":10,"output_tokens":1}`), &start))
+	var initial anthropic.BetaMessageDeltaUsage
+	require.NoError(t, json.Unmarshal([]byte(`{"output_tokens":20,"output_tokens_details":{"thinking_tokens":7}}`), &initial))
+	newAdapter := func(t *testing.T) *streamAdapter {
+		t.Helper()
+		adapter := &streamAdapter{}
+		require.NoError(t, adapter.resetUsage(start))
+		require.NoError(t, adapter.updateUsage(initial))
+		return adapter
+	}
 
 	t.Run("omitted parent preserves the previous count", func(t *testing.T) {
-		adapter := &streamAdapter{}
-		require.NoError(t, adapter.resetUsage(initial))
+		adapter := newAdapter(t)
 		var delta anthropic.BetaMessageDeltaUsage
 		require.NoError(t, json.Unmarshal([]byte(`{"output_tokens":25}`), &delta))
 		require.NoError(t, adapter.updateUsage(delta))
@@ -148,8 +187,7 @@ func TestConvertAnthropicUsage_DeltaThinkingTokenPresence(t *testing.T) {
 	})
 
 	t.Run("parent null preserves the previous count", func(t *testing.T) {
-		adapter := &streamAdapter{}
-		require.NoError(t, adapter.resetUsage(initial))
+		adapter := newAdapter(t)
 		var delta anthropic.BetaMessageDeltaUsage
 		require.NoError(t, json.Unmarshal([]byte(`{"output_tokens":25,"output_tokens_details":null}`), &delta))
 		require.NoError(t, adapter.updateUsage(delta))
@@ -166,8 +204,7 @@ func TestConvertAnthropicUsage_DeltaThinkingTokenPresence(t *testing.T) {
 		{name: "child null clears", delta: `{"output_tokens":25,"output_tokens_details":{"thinking_tokens":null}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			adapter := &streamAdapter{}
-			require.NoError(t, adapter.resetUsage(initial))
+			adapter := newAdapter(t)
 			var delta anthropic.BetaMessageDeltaUsage
 			require.NoError(t, json.Unmarshal([]byte(tc.delta), &delta))
 			require.NoError(t, adapter.updateUsage(delta))
@@ -243,4 +280,26 @@ func TestConvertResponse_Usage(t *testing.T) {
 	require.NotNil(t, result.Usage.OutputTokens.Total)
 	assert.Equal(t, 14, *result.Usage.OutputTokens.Total)
 	assert.JSONEq(t, msg.Usage.RawJSON(), string(result.Usage.Raw))
+}
+
+func TestFilterUsageIterations(t *testing.T) {
+	t.Run("keeps the fields the upstream schema declares", func(t *testing.T) {
+		filtered, err := filterUsageIterations(json.RawMessage(`[{"type":"message","model":"m","input_tokens":1,"output_tokens":2,"cache_creation_input_tokens":3,"cache_read_input_tokens":4,"cache_creation":{"ephemeral_5m_input_tokens":0},"future":true}]`))
+		require.NoError(t, err)
+		assert.JSONEq(t, `[{"type":"message","model":"m","input_tokens":1,"output_tokens":2,"cache_creation_input_tokens":3,"cache_read_input_tokens":4}]`, string(filtered))
+	})
+
+	t.Run("null passes through", func(t *testing.T) {
+		filtered, err := filterUsageIterations(json.RawMessage(`null`))
+		require.NoError(t, err)
+		assert.Equal(t, "null", string(filtered))
+	})
+
+	t.Run("merged raw usage is filtered", func(t *testing.T) {
+		adapter := &streamAdapter{}
+		var delta anthropic.BetaMessageDeltaUsage
+		require.NoError(t, json.Unmarshal([]byte(`{"output_tokens":5,"iterations":[{"type":"message","input_tokens":1,"output_tokens":5,"cache_creation":{"ephemeral_1h_input_tokens":0}}]}`), &delta))
+		require.NoError(t, adapter.updateUsage(delta))
+		assert.JSONEq(t, `{"output_tokens":5,"iterations":[{"type":"message","input_tokens":1,"output_tokens":5}]}`, string(adapter.usage.raw))
+	})
 }

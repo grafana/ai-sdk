@@ -15,6 +15,9 @@ type safeErrorCategory uint8
 
 const (
 	safeInvalidRequest safeErrorCategory = iota + 1
+	safeBYOKCredentials
+	safeBYOKSelector
+	safeGatewayControl
 	safeModelNotFound
 	safeRateLimit
 	safeOverload
@@ -36,6 +39,9 @@ type safeErrorDocument struct {
 }
 
 var (
+	byokCredentialsError         = []byte(`{"error":{"message":"providerOptions.gateway.byok requires supported provider arrays with valid accounts","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	byokSelectorError            = []byte(`{"error":{"message":"BYOK requires a supported provider/model selector","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
+	gatewayControlError          = []byte(`{"error":{"message":"unsupported gateway control; only gateway.byok is supported","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	canonicalInvalidRequestError = []byte(`{"error":{"message":"invalid request","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	canonicalAuthenticationError = []byte(`{"error":{"message":"authentication failed","type":"authentication_error","param":null,"code":"authentication_error"}}`)
 	canonicalPermissionError     = []byte(`{"error":{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden"}}`)
@@ -66,6 +72,12 @@ var (
 
 func documentForSafeError(value safeError) safeErrorDocument {
 	switch value.category {
+	case safeBYOKCredentials:
+		return safeErrorDocument{status: http.StatusBadRequest, body: byokCredentialsError}
+	case safeBYOKSelector:
+		return safeErrorDocument{status: http.StatusBadRequest, body: byokSelectorError}
+	case safeGatewayControl:
+		return safeErrorDocument{status: http.StatusBadRequest, body: gatewayControlError}
 	case safeInvalidRequest:
 		body := unsupportedCapabilityDocument(value.capability)
 		if body == nil {
@@ -125,6 +137,17 @@ func safeErrorFromResolution(err error) (result safeError) {
 	}()
 	if isNilInterface(err) {
 		return result
+	}
+	switch {
+	case errors.Is(err, ErrInvalidBYOK):
+		return safeError{category: safeBYOKCredentials}
+	case errors.Is(err, ErrInvalidBYOKSelector):
+		return safeError{category: safeBYOKSelector}
+	case errors.Is(err, ErrUnsupportedGatewayControl):
+		return safeError{category: safeGatewayControl}
+	}
+	if errors.Is(err, ErrReservedProviderOptions) {
+		return safeError{category: safeInvalidRequest, capability: capabilityReservedProviderOptions}
 	}
 	if errors.Is(err, catalog.ErrUnknownModel) {
 		return safeError{category: safeModelNotFound}

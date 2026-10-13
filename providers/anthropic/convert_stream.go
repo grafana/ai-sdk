@@ -38,7 +38,7 @@ type streamAdapter struct {
 	isJsonResponseFromTool bool
 	usage                  anthropicUsage
 	metadataFields         map[string]json.RawMessage
-	safeguardResults       json.RawMessage
+	finishReason           provider.FinishReason
 	messageOpen            bool
 	activeMessageID        string
 	invalidMessageSequence bool
@@ -80,9 +80,12 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.resetUsage(msg.Usage); err != nil {
 			return err
 		}
-		a.metadataFields = messageMetadataFields(msg.RawJSON())
-		delete(a.metadataFields, "safeguard_results")
-		a.safeguardResults = nil
+		if err := a.carryMessageStartMetadata(msg.RawJSON()); err != nil {
+			return err
+		}
+		if msg.StopReason != "" {
+			a.finishReason = a.mapStopReason(msg.StopReason)
+		}
 		usage := convertAnthropicUsage(a.usage)
 		ch <- provider.StreamPart{
 			Type:            provider.PartResponseMeta,
@@ -473,25 +476,36 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.updateUsage(e.Usage); err != nil {
 			return err
 		}
-		a.metadataFields = mergeMessageDeltaMetadata(a.metadataFields, e.RawJSON())
 		var envelope struct {
-			Delta map[string]json.RawMessage `json:"delta"`
+			Delta                map[string]json.RawMessage `json:"delta"`
+			InputTransformations json.RawMessage            `json:"input_transformations"`
 		}
 		if err := json.Unmarshal([]byte(e.RawJSON()), &envelope); err != nil {
 			return fmt.Errorf("decoding safeguard delta: %w", err)
 		}
+		if !isJSONNullOrAbsent(envelope.InputTransformations) {
+			if _, err := mapInputTransformations(envelope.InputTransformations); err != nil {
+				return err
+			}
+		}
+		a.metadataFields = mergeMessageDeltaMetadata(a.metadataFields, e.RawJSON())
 		if value := envelope.Delta["safeguard_results"]; len(value) > 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			a.safeguardResults = value
+			if _, err := mapSafeguardResults(value); err != nil {
+				return err
+			}
+			a.metadataFields["safeguard_results"] = value
 		}
-		if len(a.safeguardResults) > 0 {
-			a.metadataFields["safeguard_results"] = a.safeguardResults
-		}
+		a.finishReason = a.mapStopReason(e.Delta.StopReason)
+
+	case anthropic.BetaRawMessageStopEvent:
+		a.messageOpen = false
+		a.activeMessageID = ""
 		usage := convertAnthropicUsage(a.usage)
-		fr := mapFinishReason(e.Delta.StopReason)
-		if a.isJsonResponseFromTool && e.Delta.StopReason == anthropic.BetaStopReasonToolUse {
-			fr = provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(e.Delta.StopReason)}
+		fr := a.finishReason
+		if fr.Unified == "" {
+			fr = mapFinishReason("")
 		}
-		providerMetadata, err := buildAnthropicProviderMetadata(a.metadataFields, a.usage.raw)
+		providerMetadata, err := buildAnthropicProviderMetadata(a.metadataFields, a.usage.raw, a.usage.iterationsRaw)
 		if err != nil {
 			return err
 		}
@@ -501,12 +515,36 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			Usage:            &usage,
 			ProviderMetadata: providerMetadata,
 		}
-
-	case anthropic.BetaRawMessageStopEvent:
-		a.messageOpen = false
-		a.activeMessageID = ""
 	}
 	return nil
+}
+
+// carryMessageStartMetadata applies what upstream reads from message_start
+// into metadata that lives for the whole stream: a non-null container and
+// non-null input transformations. Everything else, including a verdict, stays
+// until a later delta replaces it.
+func (a *streamAdapter) carryMessageStartMetadata(raw string) error {
+	if a.metadataFields == nil {
+		a.metadataFields = map[string]json.RawMessage{}
+	}
+	fields := messageMetadataFields(raw)
+	if container := fields["container"]; !isJSONNullOrAbsent(container) {
+		a.metadataFields["container"] = container
+	}
+	if transformations := fields["input_transformations"]; !isJSONNullOrAbsent(transformations) {
+		if _, err := mapInputTransformations(transformations); err != nil {
+			return err
+		}
+		a.metadataFields["input_transformations"] = transformations
+	}
+	return nil
+}
+
+func (a *streamAdapter) mapStopReason(reason anthropic.BetaStopReason) provider.FinishReason {
+	if a.isJsonResponseFromTool && reason == anthropic.BetaStopReasonToolUse {
+		return provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(reason)}
+	}
+	return mapFinishReason(reason)
 }
 
 func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolResultBlock, ch chan<- provider.StreamPart) error {
