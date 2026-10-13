@@ -359,11 +359,12 @@ Each pre-finish provider `PartError` SHALL be independently reduced through the 
 
 ### Requirement: Provider error canonical fallback and privacy exclusions
 
-Nil, malformed, or unclassifiable provider error values SHALL reduce to the canonical internal safe error part. Arbitrary native bodies, headers, causes and metadata SHALL NOT enter the public error event. Native message/type/code/status summaries and observed configured identity MAY appear through governed optional error data. Provider-originated scalar echoes SHALL NOT be credential-filtered; account authorization and request isolation SHALL remain intact.
+Nil, malformed, or unclassifiable provider error values SHALL reduce to the canonical internal safe error part. Arbitrary native bodies, headers, causes and metadata SHALL NOT enter the public error event. Native message/type/code/status summaries and observed configured identity MAY appear through governed optional error data. Summary protection SHALL follow gateway-attempt-failure-evidence.
 
 #### Scenario: Provider error canonical fallback and privacy exclusions
 - **WHEN** a provider PartError is nil or carries arbitrary backend details
 - **THEN** nil/unclassifiable values SHALL reduce to the internal safe error; only governed native current-error and execution summaries MAY accompany the base fields, with no arbitrary native transport data
+- **AND** summary strings SHALL redact exact configured API-key matches; other scalar echoes, account authorization and request isolation SHALL remain intact
 
 ### Requirement: Synthetic terminal adapter errors
 

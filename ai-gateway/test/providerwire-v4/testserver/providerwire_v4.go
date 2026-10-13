@@ -266,6 +266,14 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "test-stop"}}
 		close(stream)
 		return &provider.StreamResult{Stream: stream}, nil
+	case "stream-key-errors":
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Data: json.RawMessage(`{"message":"configured-test-key own-byok-key","type":"configured-test-key","code":"configured-test-key"}`)})},
+			provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "configured-test-key"},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, ProviderMetadata: provider.ProviderMetadata{"native": json.RawMessage(`{"opaque":"configured-test-key"}`)}},
+		)}, nil
 	case "stream-errors":
 		stream := make(chan provider.StreamPart, 8)
 		stream <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusServiceUnavailable, Message: "private overload"})}
@@ -414,7 +422,11 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	}
 	configured := providerwirev4.CatalogSelector(resolver)
 	runtime, err := providerwirev4.New(providerwirev4.Config{
+		ConfiguredAPIKeys: []string{"configured-test-key"},
 		Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (providerwirev4.Selection, error) {
+			if id == "unconfigured-key-errors" {
+				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-key-errors", stats: stats}}, nil
+			}
 			if id == "unconfigured-errors" {
 				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-errors", stats: stats}}, nil
 			}

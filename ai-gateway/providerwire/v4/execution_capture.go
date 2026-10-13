@@ -49,10 +49,11 @@ func (capture *attemptCapture) discard() {
 }
 
 type executionRequest struct {
-	requested   string
-	canonical   string
-	candidates  []catalog.ConfiguredCandidate
-	sourceBytes int64
+	requested       string
+	canonical       string
+	candidates      []catalog.ConfiguredCandidate
+	sourceBytes     int64
+	summaryRedactor execution.SummaryRedactor
 }
 
 func newExecutionRequest(requested string, selected Selection, sourceBytes int64) executionRequest {
@@ -67,7 +68,7 @@ func newExecutionRequest(requested string, selected Selection, sourceBytes int64
 
 func (request executionRequest) snapshot(capture *attemptCapture, err error) (view executionView) {
 	entered, attempts := capture.seal()
-	view = executionView{sourceBytes: request.sourceBytes}
+	view = executionView{sourceBytes: request.sourceBytes, summaryRedactor: request.summaryRedactor}
 	defer func() {
 		if recover() != nil {
 			view.overview = nil
@@ -84,19 +85,26 @@ func (request executionRequest) snapshot(capture *attemptCapture, err error) (vi
 		attempts = []fallback.Attempt{{Index: 1, Outcome: outcome, SourceErr: err}}
 	}
 	view.overview = execution.Project(request.requested, request.canonical, attempts, request.candidates, request.sourceBytes)
+	if view.overview != nil {
+		for i := range view.overview.Attempts {
+			attempt := &view.overview.Attempts[i]
+			attempt.Error = request.summaryRedactor.Redact(attempt.Error)
+		}
+	}
 	return view
 }
 
 type executionView struct {
-	overview    *execution.Overview
-	sourceBytes int64
+	overview        *execution.Overview
+	sourceBytes     int64
+	summaryRedactor execution.SummaryRedactor
 }
 
 func (view executionView) current(err *provider.APICallError) *execution.Failure {
 	if err == nil || view.sourceBytes == 0 {
 		return nil
 	}
-	return execution.Summary(err, view.sourceBytes)
+	return view.summaryRedactor.Redact(execution.Summary(err, view.sourceBytes))
 }
 
 func (view executionView) metadata() provider.ProviderMetadata {

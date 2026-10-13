@@ -810,6 +810,21 @@ describe("real ProviderWire V4 streaming runtime", () => {
     assert.equal(JSON.stringify(go.parts).includes('"execution"'), false);
   });
 
+  it("redacts configured keys only in Gateway summaries through both clients", async () => {
+    const parts = await collect((await model("unconfigured-key-errors").doStream({ prompt: [] })).stream);
+    for (const part of parts) assert.ok(validateStreamEvent(part), JSON.stringify(validateStreamEvent.errors));
+    assert.deepEqual(parts.map(part => part.type), ["stream-start", "error", "text-start", "text-delta", "text-end", "finish"]);
+    const data = (parts.find(part => part.type === "error") as any).error.data;
+    assert.deepEqual(data, { nativeError: { message: "[REDACTED] own-byok-key", type: "[REDACTED]", code: "[REDACTED]", statusCode: 503 } });
+    assert.equal((parts.find(part => part.type === "text-delta") as any).delta, "configured-test-key");
+    assert.deepEqual((parts.at(-1) as any).providerMetadata, { native: { opaque: "configured-test-key" } });
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "test", modelID: "unconfigured-key-errors", mode: "stream", options: { prompt: [] } });
+    assert.equal(go.error, undefined);
+    assert.deepEqual(go.parts.find((part: any) => part.type === "error").error.data, data);
+    assert.deepEqual(go.parts.at(-1).providerMetadata, (parts.at(-1) as any).providerMetadata);
+    assert.equal(JSON.stringify(go.parts).includes('"execution"'), false);
+  });
+
   it("preserves ordered provider errors and emits terminal timeout", async () => {
     const withErrors = await model("stream-errors").doStream({ prompt: [] });
     const errorParts = await collect(withErrors.stream);

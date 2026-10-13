@@ -12,7 +12,7 @@ The Gateway SHALL publish a compact overview for one finalized configured direct
 
 #### Scenario: Request-local actual execution projection policy
 - **WHEN** a configured invocation is observed and its result or failure is delivered
-- **THEN** It SHALL use requested/canonical route identity once, ordered observed configured destinations and selected/failed/canceled outcomes with optional native failure summaries. Shared models SHALL NOT retain request execution state. Incomplete/mixed histories SHALL omit the optional overview rather than invent invocations. Projection SHALL NOT collect credentials or suppress provider-originated scalar echoes. Account authorization, request isolation and credential exclusion from configured discovery SHALL remain intact.
+- **THEN** It SHALL use requested/canonical route identity once, ordered observed configured destinations and selected/failed/canceled outcomes with optional native failure summaries. Shared models SHALL NOT retain request execution state. Incomplete/mixed histories SHALL omit the optional overview rather than invent invocations. Projection SHALL NOT extract credentials from requests; runtime delivery SHALL apply the configured-key summary policy without filtering other provider-originated values. Account authorization, request isolation and credential exclusion from configured discovery SHALL remain intact.
 
 #### Scenario: Primary failure followed by secondary selection
 - **WHEN** a configured primary fails and a secondary is actually selected
@@ -65,8 +65,9 @@ Unary result/stream finish SHALL optionally carry providerMetadata.gateway.execu
 - **THEN** the original response SHALL remain successful with native metadata unchanged, including an opaque native gateway namespace when relocation cannot fit
 
 #### Scenario: Provider-originated credential echo
-- **WHEN** a native message, type or code echoes a caller-supplied or service-owned credential
-- **THEN** returned summaries SHALL preserve that value without a credential inventory or value-based suppression, independently of operator logger field policy
+- **WHEN** a native message, type or string code echoes a configured server API key
+- **THEN** the Gateway SHALL replace exact matches before publishing the summary in execution metadata or event-local nativeError, independently of caller type and operator logger field policy
+- **AND** caller-owned BYOK echoes SHALL remain unchanged unless they also match configured keys; status and numeric code SHALL remain unchanged
 
 #### Scenario: Failure enrichment does not fit
 - **WHEN** the original classified failure fits but optional overview/current summary does not
@@ -75,6 +76,30 @@ Unary result/stream finish SHALL optionally carry providerMetadata.gateway.execu
 #### Scenario: Primary output is invalid
 - **WHEN** original metadata, content or usage is invalid or oversized
 - **THEN** the existing adaptation failure SHALL remain effective without relocation repairing it or another candidate replaying generation
+
+### Requirement: Configured API-key summary protection
+
+The Gateway SHALL protect exact configured API-key values in its produced native failure summaries without filtering arbitrary response content.
+
+#### Scenario: Immutable configured-key policy
+- **WHEN** the service constructs its language-model handler
+- **THEN** it SHALL supply all resolved configured provider API keys, including unused accounts, and the enabled exporter credential to an immutable summary policy
+- **AND** changes to caller-owned configuration slices SHALL NOT change that policy; keys SHALL NOT enter discovery or request-selected catalog identity
+- **AND** static Gateway access keys SHALL remain outside this policy, preserving their authentication-owned hash-only storage without retaining raw copies for summary matching
+
+#### Scenario: Configured and BYOK callers receive summaries
+- **WHEN** message, type or string code contains an exact configured-key match
+- **THEN** every occurrence SHALL be replaced before publishing execution metadata or event-local nativeError, including after successful fallback
+- **AND** configured ownership SHALL take precedence over a matching BYOK value; unrelated BYOK echoes, numeric code, status, classification and retryability SHALL remain unchanged
+- **AND** JSON escapes SHALL be handled through ordinary decoding; arbitrary transformed or encoded-secret detection SHALL NOT be implied
+
+#### Scenario: Protection cannot preserve a field or fit the envelope
+- **WHEN** a replacement still contains a configured key or protected optional output does not fit
+- **THEN** the affected field or optional enrichment SHALL be omitted rather than publishing its unredacted form, without replaying provider work
+
+#### Scenario: Native content remains outside summary protection
+- **WHEN** native metadata, generated text or tool output contains the same value
+- **THEN** this summary policy SHALL NOT rewrite those values or buffer stream fragments; source errors and independent SDK observers SHALL remain unchanged
 
 ### Requirement: Real runtime and consumer evidence
 

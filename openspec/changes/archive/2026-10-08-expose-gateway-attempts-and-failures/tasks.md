@@ -27,3 +27,10 @@
 - [x] 5.2 Separate classification, typed public definitions and transport encoding; preserve projected context/protection/ownership, validate and publish without sync/archive or merge.
 - [x] 5.3 Remove unreachable reasoning errors and obsolete tool-mode gating, clarify request refusal reasons and public definitions, and verify reachable capability/policy responses before publishing.
 - [x] 5.4 Rewrite request capture as explicit short-lived observation and finalized views; isolate credential extraction, preserve ownership/protection/wire behavior and validate before publishing.
+
+## 6. Configured-key summary protection
+
+- [x] 6.1 Revise the existing contract and add failing regression tests for exact configured-key redaction in Gateway-produced summaries, preserving BYOK-only echoes and source errors.
+- [x] 6.2 Construct an immutable configured-key summary redactor at startup and apply it to attempt and event-local summaries without changing attribution, classification, fit or stream lifecycle.
+- [x] 6.3 Validate configured failure, successful fallback and unconfigured committed errors through handler and both-client command tests; preserve opaque metadata and ordinary content.
+- [x] 6.4 Sync current specs/docs and the reused change, run relevant full validation and prepare the exact-boundary #369 handoff without changing #373.
