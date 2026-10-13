@@ -20,8 +20,11 @@ const (
 )
 
 type messageStreamItem struct {
-	event      *sdk.BetaRawMessageStreamEventUnion
-	err        error
+	event *sdk.BetaRawMessageStreamEventUnion
+	err   error
+	// errorFrame marks an Anthropic error event: it is reported and reading
+	// continues, unlike transport and decoding failures which end the stream.
+	errorFrame bool
 	rawValue   json.RawMessage
 	hasRaw     bool
 	frameBytes int
@@ -82,8 +85,11 @@ func pumpMessageStream(ctx context.Context, response *http.Response, includeRaw 
 						item.err = apiErr
 					}
 				}
-				send(item)
-				return
+				item.errorFrame = true
+				if !send(item) {
+					return
+				}
+				continue
 			}
 			stream := ssestream.NewStream[sdk.BetaRawMessageStreamEventUnion](&messageFrameDecoder{frame: frame, pending: true}, nil)
 			if stream.Next() {

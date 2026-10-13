@@ -15,10 +15,10 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
-	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -453,7 +453,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	t.Cleanup(sink.Close)
 	h := &fallbackAcceptance{}
 	h.logText = logs.String
-	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ ...anthropicprovider.Option) provider.LanguageModel {
+	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 		index, model := 0, primary
 		if id == "backend-secondary" {
 			index, model = 1, secondary
@@ -479,7 +479,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	resolved, err := catalog.ResolveModel(context.Background(), "alias")
 	require.NoError(t, err)
 	h.model = resolved.Model
-	h.handler, err = providerv4.New(providerv4.Config{Resolver: catalog, Limits: serviceTestLimits()})
+	h.handler, err = providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(catalog), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	h.context = func(ctx context.Context) context.Context {
 		state := &telemetryState{}

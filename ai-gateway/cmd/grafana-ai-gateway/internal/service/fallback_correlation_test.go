@@ -14,8 +14,8 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	"github.com/grafana/ai-sdk/provider"
-	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,7 +31,7 @@ func TestFallbackRoute_ConcurrentMappedObservation(t *testing.T) {
 	require.NoError(t, err)
 	sink := newPhysicalAttemptSink(&output, telemetry, count*2, time.Second, time.Second)
 	defer sink.Close()
-	created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ ...anthropicprovider.Option) provider.LanguageModel {
+	created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 		invoke := func(ctx context.Context, opts provider.CallOptions) error {
 			marker := opts.Headers["x-request"]
 			assert.Equal(t, marker, observationFromContext(ctx).correlationID)
@@ -126,7 +126,7 @@ func TestFallbackRoute_OneLogicalGenerationJoinsPhysicalDecisions(t *testing.T) 
 	require.NoError(t, err)
 	sink := newPhysicalAttemptSink(&output, telemetry, 8, time.Second, time.Second)
 	defer sink.Close()
-	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ ...anthropicprovider.Option) provider.LanguageModel {
+	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 		return &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 			if id == "backend-primary" {
 				return nil, errors.New("private-upstream-body")

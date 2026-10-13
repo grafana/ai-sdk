@@ -4,11 +4,11 @@ min_version = "2026.5.4"
 experimental = true
 
 [tools]
-go = "1.27.1"
+go = "1.27.2"
 jq = "1.8.2"
 node = "24"
-pnpm = "12.8.2"
-python = "3.14.8"
+pnpm = "12.11.2"
+python = "3.15.0"
 golangci-lint = "2.14.0"
 "npm:@fission-ai/openspec" = "1.14.1"
 "npm:markdownlint-cli2" = "0.23.3"
