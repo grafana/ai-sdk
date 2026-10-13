@@ -134,6 +134,29 @@ a `required` or named tool choice is sent as `auto` with a warning, and a JSON
 schema response uses a system-prompt instruction instead of the forced JSON
 tool.
 
+## Handle unsupported content
+
+Most unsupported Converse content is dropped with a warning. A few cases fail
+before any request is sent, and the error wraps `provider.ErrUnsupportedFunctionality`
+so you can match it with `errors.Is`:
+
+- custom tool-result content entries, whenever tools are active;
+- file parts with provider references, non-S3 file URLs, and unsupported image,
+  video, or document media types.
+
+Rejecting custom tool-result content follows the upstream provider, which throws
+for it. Dropping the entry silently would change how the model continues.
+Streaming and non-streaming calls behave the same. When no tools are active,
+tool content is removed with the `toolContent` warning instead. Custom parts in
+assistant history, such as compaction or fallback markers from another provider,
+are skipped without a warning.
+
+Core retry never retries this error. A fallback chain moves on to the next
+candidate by default, and the Gateway reports it as a non-retryable invalid
+request only when every attempted candidate rejected the content. Bedrock Mantle
+is unaffected and keeps its OpenAI Responses warning for custom tool-result
+content.
+
 Validate the capabilities required by your workflow before putting unlike model
 families in the same fallback chain.
 

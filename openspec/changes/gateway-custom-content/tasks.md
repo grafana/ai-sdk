@@ -2,9 +2,9 @@
 
 ## 1. Root unsupported-functionality sentinel
 
-- [ ] 1.1 Export `provider.ErrUnsupportedFunctionality` with godoc that states it is pre-I/O and distinct from APICallError. Add root tests showing wrapped identity survives `errors.Is` and that `errors.As` finds no APICallError. Verify with `go test ./provider/...`.
-- [ ] 1.2 Add retry tests showing StreamText and GenerateText make exactly one model call and no backoff for a wrapped sentinel. Verify with `go test -run Retry ./...`.
-- [ ] 1.3 Add fallback tests for unary and stream setup:
+- [x] 1.1 Export `provider.ErrUnsupportedFunctionality` with godoc that states it is pre-I/O and distinct from APICallError. Add root tests showing wrapped identity survives `errors.Is` and that `errors.As` finds no APICallError. Verify with `go test ./provider/...`.
+- [x] 1.2 Add retry tests showing StreamText and GenerateText make exactly one model call and no backoff for a wrapped sentinel. Verify with `go test -run Retry ./...`.
+- [x] 1.3 Add fallback tests for unary and stream setup:
   - the default decider advances on the sentinel to a succeeding candidate;
   - all-reject exhaustion keeps every sentinel identity, with one call per candidate;
   - a custom decider returning false stops.
@@ -13,18 +13,18 @@
 
 ## 2. Anthropic custom alignment
 
-- [ ] 2.1 Convert a custom tool-result entry with `anthropic.type: "tool-reference"` to a raw `tool_reference` block (raw `toolName`, omitted when absent), and warn `other` / `unsupported custom tool content part` for other custom entries. Send `content: []` when non-empty content loses every entry. Add request-snapshot unit tests labeled synthetic: mixed text/file/custom order, missing and non-string `toolName`, and a single non-reference entry. Verify with `mise run test-anthropic`.
-- [ ] 2.2 Skip unknown assistant custom kinds without a warning while keeping `anthropic.fallback` replay. Update the existing warning tests to assert absence. Verify with `mise run test-anthropic`.
-- [ ] 2.3 Emit unary `anthropic.container_upload` custom content with `anthropic.fileId` in block order; streaming stays unchanged. Add synthetic response-conversion tests. Verify with `mise run test-anthropic` and `mise run test-conformance`, with existing fixtures unchanged.
+- [x] 2.1 Convert a custom tool-result entry with `anthropic.type: "tool-reference"` to a raw `tool_reference` block (raw `toolName`, omitted when absent), and warn `other` / `unsupported custom tool content part` for other custom entries. Send `content: []` when non-empty content loses every entry. Add request-snapshot unit tests labeled synthetic: mixed text/file/custom order, missing and non-string `toolName`, and a single non-reference entry. Verify with `mise run test-anthropic`.
+- [x] 2.2 Skip unknown assistant custom kinds without a warning while keeping `anthropic.fallback` replay. Update the existing warning tests to assert absence. Verify with `mise run test-anthropic`.
+- [x] 2.3 Emit unary `anthropic.container_upload` custom content with `anthropic.fileId` in block order; streaming stays unchanged. Add synthetic response-conversion tests. Verify with `mise run test-anthropic` and `mise run test-conformance`, with existing fixtures unchanged.
 
 ## 3. Bedrock, OpenAI-compatible and OpenAI custom alignment
 
-- [ ] 3.1 In Bedrock Converse, return a wrapped sentinel error naming the custom tool content type while converting user/tool-role results. The existing pre-conversion filter already removes tool content when `hasActiveTools` is false. Add DoGenerate and DoStream tests asserting zero HTTP requests and `errors.Is`, filtering without rejection for no tools and for tools with `toolChoice: none`, unchanged warnings for existing file cases, and an unchanged Mantle warning. Verify with `mise run test-bedrock`.
-- [ ] 3.2 Wrap the existing Converse conversion errors for provider-reference files, non-S3 URLs and unsupported image/video/file media types with the sentinel, keeping their messages. Add `errors.Is` and zero-HTTP tests, and confirm warning sites are unchanged. Verify with `mise run test-bedrock`.
-- [ ] 3.3 Skip Bedrock Converse assistant custom parts without a warning, with a request test asserting no warning. Verify with `mise run test-bedrock`.
-- [ ] 3.4 Skip OpenAI-compatible assistant custom parts instead of returning an error, with a request-snapshot test. Verify with `mise run test-openai-compatible`.
-- [ ] 3.5 Align OpenAI Responses compaction replay with upstream. Use a local raw-presence check for `itemId` (an empty string counts; null or absent doesn't) without changing the exported options type. Make `encryptedContent` optional, building the item with an override that omits the key. Add request-snapshot tests asserting the key is absent. Verify with `mise run test-openai`.
-- [ ] 3.6 Document the Converse rejection and sentinel classification, and the Mantle difference, in `docs/providers/bedrock.md`. Record the scoped AGENTS-convention exception there and in a code comment, not in PARITY.md. Verify with `mise run lint-docs`.
+- [x] 3.1 In Bedrock Converse, return a wrapped sentinel error naming the custom tool content type while converting user/tool-role results. The existing pre-conversion filter already removes tool content when `hasActiveTools` is false. Add DoGenerate and DoStream tests asserting zero HTTP requests and `errors.Is`, filtering without rejection for no tools and for tools with `toolChoice: none`, unchanged warnings for existing file cases, and an unchanged Mantle warning. Verify with `mise run test-bedrock`.
+- [x] 3.2 Wrap the existing Converse conversion errors for provider-reference files, non-S3 URLs and unsupported image/video/file media types with the sentinel, keeping their messages. Add `errors.Is` and zero-HTTP tests, and confirm warning sites are unchanged. Verify with `mise run test-bedrock`.
+- [x] 3.3 Skip Bedrock Converse assistant custom parts without a warning, with a request test asserting no warning. Verify with `mise run test-bedrock`.
+- [x] 3.4 Skip OpenAI-compatible assistant custom parts instead of returning an error, with a request-snapshot test. Verify with `mise run test-openai-compatible`.
+- [x] 3.5 Align OpenAI Responses compaction replay with upstream. Use a local raw-presence check for `itemId` (an empty string counts; null or absent doesn't) without changing the exported options type. Make `encryptedContent` optional, building the item with an override that omits the key. Add request-snapshot tests asserting the key is absent. Verify with `mise run test-openai`.
+- [x] 3.6 Document the Converse rejection and sentinel classification, and the Mantle difference, in `docs/providers/bedrock.md`. Record the scoped AGENTS-convention exception there and in a code comment, not in PARITY.md. Verify with `mise run lint-docs`.
 
 ## 4. Grafana client custom consumption
 

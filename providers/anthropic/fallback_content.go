@@ -10,6 +10,7 @@ import (
 )
 
 const anthropicFallbackKind = "anthropic.fallback"
+const anthropicContainerUploadKind = "anthropic.container_upload"
 const fallbackBlockType constant.Fallback = "fallback"
 
 func marshalFallbackMetadata(block anthropic.BetaFallbackBlock) (provider.ProviderMetadata, error) {

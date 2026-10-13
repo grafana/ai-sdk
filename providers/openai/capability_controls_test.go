@@ -254,3 +254,66 @@ func TestResponsesCapabilityControls_GenerateAndStreamRequests(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildParams_CompactionReplayPresence(t *testing.T) {
+	encrypted := "encrypted"
+	raw := func(value string) provider.ProviderOptions {
+		return provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: json.RawMessage(value)}}
+	}
+	tests := []struct {
+		name         string
+		options      provider.ProviderOptions
+		store        bool
+		conversation string
+		want         []map[string]any
+	}{
+		{
+			name:    "stateless with encrypted content",
+			options: raw(`{"itemId":"cmp_1","encryptedContent":"encrypted"}`),
+			want:    []map[string]any{{"type": "compaction", "id": "cmp_1", "encrypted_content": encrypted}},
+		},
+		{
+			name:    "stateless without encrypted content omits the key",
+			options: raw(`{"itemId":"cmp_1"}`),
+			want:    []map[string]any{{"type": "compaction", "id": "cmp_1"}},
+		},
+		{
+			name:    "stored empty item ID is present",
+			options: raw(`{"itemId":""}`),
+			store:   true,
+			want:    []map[string]any{{"type": "item_reference", "id": ""}},
+		},
+		{
+			name:         "conversation skips the part",
+			options:      raw(`{"itemId":"cmp_1","encryptedContent":"encrypted"}`),
+			store:        true,
+			conversation: "conv_1",
+		},
+		{name: "null item ID is absent", options: raw(`{"itemId":null,"encryptedContent":"encrypted"}`)},
+		{name: "missing item ID is absent", options: raw(`{"encryptedContent":"encrypted"}`)},
+		{name: "no options is absent"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			compaction := provider.CustomPart("openai.compaction")
+			compaction.ProviderOptions = tc.options
+			store := tc.store
+			options := OpenAIResponsesOptions{Store: &store}
+			if tc.conversation != "" {
+				options.Conversation = tc.conversation
+			}
+			body, warnings := buildBody(t, "gpt-6", provider.CallOptions{
+				Prompt:          []provider.Message{provider.NewAssistantMessage(compaction), provider.UserText("continue")},
+				ProviderOptions: withOpenAIOptions(options),
+			})
+			assert.Empty(t, warnings)
+
+			input := body["input"].([]any)
+			require.Len(t, input, len(tc.want)+1)
+			for i, want := range tc.want {
+				assert.Equal(t, want, input[i])
+			}
+			assert.Equal(t, "user", input[len(tc.want)].(map[string]any)["role"])
+		})
+	}
+}
