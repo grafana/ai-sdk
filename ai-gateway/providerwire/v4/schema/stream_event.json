@@ -8,6 +8,7 @@
     { "$ref": "#/$defs/reasoningBoundary" },
     { "$ref": "#/$defs/reasoningDelta" },
     { "$ref": "#/$defs/reasoningFile" },
+    { "$ref": "#/$defs/custom" },
     { "$ref": "#/$defs/streamStart" },
     { "$ref": "#/$defs/responseMetadata" },
     { "$ref": "#/$defs/textStart" },
@@ -30,6 +31,11 @@
     "reasoningDelta": {
       "type": "object", "required": ["type", "id", "delta"],
       "properties": {"type": {"const": "reasoning-delta"}, "id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
+      "additionalProperties": false
+    },
+    "custom": {
+      "type": "object", "required": ["type", "kind"],
+      "properties": {"type": {"const": "custom"}, "kind": {"type": "string", "pattern": "\\."}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "reasoningFile": {

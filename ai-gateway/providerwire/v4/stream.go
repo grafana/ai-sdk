@@ -22,6 +22,7 @@ type streamEvent struct {
 	typeName         provider.StreamPartType
 	warnings         []responseWarning
 	id               string
+	kind             string
 	modelID          string
 	delta            string
 	timestamp        time.Time
@@ -56,6 +57,12 @@ type streamTextEvent struct {
 	Type     provider.StreamPartType   `json:"type"`
 	ID       string                    `json:"id"`
 	Delta    *string                   `json:"delta,omitempty"`
+	Metadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
+}
+
+type streamCustomEvent struct {
+	Type     provider.StreamPartType   `json:"type"`
+	Kind     string                    `json:"kind"`
 	Metadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
@@ -105,6 +112,11 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 		payload, err = json.Marshal(reasoningFilePart{Type: string(value.typeName), MediaType: value.mediaType, Data: projectReasoningFile(value.fileData), Metadata: value.metadata})
 	case provider.PartSource:
 		payload, err = json.Marshal(value.source)
+	case provider.PartCustom:
+		if !validCustomKind(value.kind) {
+			return nil, false
+		}
+		payload, err = json.Marshal(streamCustomEvent{Type: value.typeName, Kind: value.kind, Metadata: value.metadata})
 	case provider.PartStreamStart:
 		warnings := value.warnings
 		if warnings == nil {
@@ -190,6 +202,8 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 		fits = reasoningFileFits(value.fileData, value.mediaType, &remaining)
 	case provider.PartSource:
 		fits = value.source != nil
+	case provider.PartCustom:
+		fits = check(value.kind)
 	case provider.PartStreamStart:
 		if !streamWarningCountFits(len(value.warnings), limit) {
 			return false
@@ -601,6 +615,15 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			return streamPartAdapterFailure
 		}
 		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartSource, source: source}); result != streamWriteSuccess {
+			if result == streamWriteEncodingFailure {
+				return streamPartAdapterFailure
+			}
+			return streamPartWriterFailure
+		}
+		state.textStarted = true
+		return streamPartContinue
+	case provider.PartCustom:
+		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartCustom, kind: part.Kind, metadata: part.ProviderMetadata}); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
 			}

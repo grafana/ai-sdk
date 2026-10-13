@@ -319,7 +319,9 @@ func TestStreamingRuntimeTextStateAndUnsupportedParts(t *testing.T) {
 		{name: "tool", parts: []provider.StreamPart{{Type: provider.PartToolCall, ToolName: "private"}}},
 		{name: "file", parts: []provider.StreamPart{{Type: provider.PartFile, Filename: "private"}}},
 		{name: "source", parts: []provider.StreamPart{{Type: provider.PartSource, Title: "private"}}},
-		{name: "custom", parts: []provider.StreamPart{{Type: provider.PartCustom, Kind: "private"}}},
+		{name: "custom with undotted kind", parts: []provider.StreamPart{{Type: provider.PartCustom, Kind: "private"}}},
+		{name: "custom with empty kind", parts: []provider.StreamPart{{Type: provider.PartCustom}}},
+		{name: "custom with invalid UTF-8 kind", parts: []provider.StreamPart{{Type: provider.PartCustom, Kind: "private." + invalidUTF8}}},
 		{name: "raw", parts: []provider.StreamPart{{Type: provider.PartRaw, RawValue: json.RawMessage(`{"private":true}`)}}},
 		{name: "approval", parts: []provider.StreamPart{{Type: provider.PartToolApprovalRequest, ApprovalID: "private"}}},
 	}

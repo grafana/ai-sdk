@@ -41,8 +41,8 @@
 
 ## 6. Gateway unary and stream custom output
 
-- [ ] 6.1 Add a private unary custom DTO with kind validation, kind bytes in the content preflight, and the shared metadata budget. Add a custom arm to the test-only `schema/unary_success.json`, with valid fixtures and invalid ones (undotted or missing kind, extra members). Relabel the `response_test.go` empty-kind `ContentCustom` case as invalid-kind. Test custom-only paid success, metadata absent/`{}`/opaque, and fixed internal error for invalid kind or over-budget output before HTTP 200. Verify with `mise run test-ai-gateway`.
-- [ ] 6.2 Add the atomic stream custom event with complete-frame preflight; it sets content-started and leaves block state unchanged. Add a custom arm to the test-only `schema/stream_event.json`, with valid and invalid fixtures. Test:
+- [x] 6.1 Add a private unary custom DTO with kind validation, kind bytes in the content preflight, and the shared metadata budget. Add a custom arm to the test-only `schema/unary_success.json`, with valid fixtures and invalid ones (undotted or missing kind, extra members). Relabel the `response_test.go` empty-kind `ContentCustom` case as invalid-kind. Test custom-only paid success, metadata absent/`{}`/opaque, and fixed internal error for invalid kind or over-budget output before HTTP 200. Verify with `mise run test-ai-gateway`.
+- [x] 6.2 Add the atomic stream custom event with complete-frame preflight; it sets content-started and leaves block state unchanged. Add a custom arm to the test-only `schema/stream_event.json`, with valid and invalid fixtures. Test:
   - custom between open text and tool blocks;
   - the existing `stream_test.go` custom case with kind `"private"` moves to the invalid-kind cases, and a dotted-kind case passes;
   - response metadata after custom fails;
@@ -51,7 +51,7 @@
   - a synthetic `anthropic.message_start`-shaped custom event (`anthropic: {id, model, usage}`) immediately after response metadata and before text passes unchanged. It is labeled synthetic, and no baseline native emission is claimed.
 
   Verify with `mise run test-ai-gateway`.
-- [ ] 6.3 Add metadata-only telemetry tests showing custom options and metadata stay out of operator logs and Agent Observability records while caller responses retain them. Assert the intended disposition: AO omits custom parts, the logger keeps only the kind, and Prometheus counts custom as first output. Verify with `mise run test-ai-gateway`.
+- [x] 6.3 Add metadata-only telemetry tests showing custom options and metadata stay out of operator logs and Agent Observability records while caller responses retain them. Assert the intended disposition: AO omits custom parts, the logger records no custom kind, and Prometheus counts custom as first output. Verify with `mise run test-ai-gateway`.
 
 ## 7. Gateway unsupported-functionality classification
 

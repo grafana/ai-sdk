@@ -83,6 +83,9 @@ func TestUnarySuccessValidation(t *testing.T) {
 		tests := []*provider.GenerateResult{
 			nil,
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}},
+			{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "undotted"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}},
+			{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "invalid." + string([]byte{0xff})}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}},
+			{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "example.kind", ProviderExecuted: true}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}},
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentText}}, FinishReason: provider.FinishReason{Unified: provider.UnifiedFinishReason("future")}},
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentText}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{InputTokens: provider.InputTokenUsage{Total: &negative}}},
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentText}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &tooLarge}}},

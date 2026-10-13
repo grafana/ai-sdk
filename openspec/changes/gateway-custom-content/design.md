@@ -129,7 +129,7 @@ The predicate runs last, after the existing `catalog.ErrUnsupportedRequest`, can
 ### Observability disposition
 The existing per-capability mappings are the intended behavior for custom content; no new mapping is added.
 - Agent Observability omits custom parts, because they have no representation on its wire.
-- The logger keeps only the kind unless capture is enabled.
+- The logger records no custom kind, options or metadata under metadata-only capture. Stream custom parts keep only their type even with capture enabled.
 - Prometheus counts custom as payload-bearing, which affects first-output timing.
 
 Task 6.3 asserts each of these.

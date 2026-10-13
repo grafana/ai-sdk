@@ -92,6 +92,25 @@ func TestUnarySuccessSchema(t *testing.T) {
 	require.NoError(t, compiled.Validate(json.RawMessage(valid)))
 	require.NoError(t, compiled.Validate(json.RawMessage(`{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{},"raw":{"native":{"tokens":[1,null,true]}}},"warnings":[],"response":{}}`)))
 
+	for _, content := range []string{
+		`{"type":"custom","kind":"anthropic.fallback"}`,
+		`{"type":"custom","kind":"openai.compaction","providerMetadata":{}}`,
+		`{"type":"custom","kind":"example.kind","providerMetadata":{"ns":{"nested":[null,false,0,"",[],{}]}}}`,
+	} {
+		require.NoError(t, compiled.Validate(json.RawMessage(`{"content":[`+content+`],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`)), content)
+	}
+	for _, content := range []string{
+		`{"type":"custom"}`,
+		`{"type":"custom","kind":"undotted"}`,
+		`{"type":"custom","kind":""}`,
+		`{"type":"custom","kind":7}`,
+		`{"type":"custom","kind":"example.kind","providerMetadata":null}`,
+		`{"type":"custom","kind":"example.kind","providerMetadata":{"ns":[]}}`,
+		`{"type":"custom","kind":"example.kind","text":"extra"}`,
+	} {
+		assert.Error(t, compiled.Validate(json.RawMessage(`{"content":[`+content+`],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"warnings":[]}`)), content)
+	}
+
 	invalid := [][]byte{
 		[]byte(`{"content":[],"finishReason":{"unified":"stop"}}`),
 		[]byte(`{"content":[],"finishReason":{"unified":"future"},"usage":{"inputTokens":{},"outputTokens":{}}}`),
@@ -114,6 +133,9 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"text-start","id":"a"}`,
 		`{"type":"text-delta","id":"a","delta":""}`,
 		`{"type":"text-end","id":"a"}`,
+		`{"type":"custom","kind":"anthropic.message_start"}`,
+		`{"type":"custom","kind":"openai.compaction","providerMetadata":{}}`,
+		`{"type":"custom","kind":"example.kind","providerMetadata":{"ns":{"nested":[null,false,0,"",[],{}]}}}`,
 		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{}},"finishReason":{"unified":"stop"}}`,
 		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{},"raw":{"native":{"tokens":[1,null,true]}}},"finishReason":{"unified":"stop"}}`,
 	}
@@ -145,6 +167,13 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"error","error":{"message":"internal error","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded","statusCode":429,"retryable":true}}`,
 		`{"type":"error","error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true,"details":"private"}}`,
 		`{"type":"raw","rawValue":{}}`,
+		`{"type":"custom"}`,
+		`{"type":"custom","kind":"undotted"}`,
+		`{"type":"custom","kind":""}`,
+		`{"type":"custom","kind":7}`,
+		`{"type":"custom","kind":"example.kind","providerMetadata":null}`,
+		`{"type":"custom","kind":"example.kind","providerMetadata":{"ns":[]}}`,
+		`{"type":"custom","kind":"example.kind","id":"extra"}`,
 	}
 	for _, document := range invalid {
 		assert.Error(t, compiled.Validate(json.RawMessage(document)), document)
