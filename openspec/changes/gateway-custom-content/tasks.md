@@ -77,7 +77,7 @@
 
 ## 10. Integration checks
 
-- [ ] 10.1 Run `mise run check`, `mise run lint`, `mise run parity-check`, `mise run test-ai-gateway-source-integration`, `mise run verify-ai-gateway-boundary`, `mise run verify-sdk-gateway-isolation` and `mise run verify-merged-pins`. Confirm they pass, and report any standalone module-pin readiness gap without claiming publication readiness.
+- [x] 10.1 Run `mise run check`, `mise run lint`, `mise run parity-check`, `mise run test-ai-gateway-source-integration`, `mise run verify-ai-gateway-boundary`, `mise run verify-sdk-gateway-isolation` and `mise run verify-merged-pins`. Confirm they pass, and report any standalone module-pin readiness gap without claiming publication readiness.
 
 ## Workflow follow-up
 
