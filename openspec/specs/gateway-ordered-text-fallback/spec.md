@@ -108,11 +108,11 @@ Successful ProviderWire JSON/SSE and client-visible normal output SHALL preserve
 - **THEN** normal output SHALL retain supported native warning/source/response identity while routing and operator metrics remain canonical
 
 ### Requirement: Normal fallback output excludes runtime evidence and topology
-Runtime output MAY add the separately governed optional compact gateway.execution overview of actual observed destinations/outcomes/failures. It SHALL NOT emit unrun configured destinations or synthesize credentials; configured discovery remains separately owned. Account authorization and request isolation SHALL remain effective; native scalar echoes SHALL NOT be value-filtered.
+Runtime output MAY add the separately governed optional compact gateway.execution overview of actual observed destinations/outcomes/failures. It SHALL NOT emit unrun configured destinations or synthesize credentials; configured discovery remains separately owned. Account authorization and request isolation SHALL remain effective; Gateway-produced native summaries SHALL redact exact configured API-key matches under gateway-attempt-failure-evidence without filtering other native output.
 
 #### Scenario: Normal fallback output excludes runtime evidence and topology
 - **WHEN** a selected candidate completes successfully for an authorized caller
-- **THEN** ordinary native output SHALL remain opaque; optional gateway.execution SHALL describe only actually observed destinations under its separate contract, with account authorization and request isolation unchanged and provider-originated credential echoes preserved
+- **THEN** ordinary native output SHALL remain opaque; optional gateway.execution SHALL describe only actually observed destinations under its separate contract, with account authorization and request isolation unchanged and configured-key protection limited to its native failure summaries
 
 ### Requirement: Deterministic fallback and privacy evidence
 Both registered TypeScript and independent Go clients SHALL exercise direct and configured-fallback unary and streaming requests for representative supported function definitions/history/choices, file arms/presence, reasoning and headers/options. Fake native requests SHALL prove candidate-specific option consumption without cross-provider translation or route-wide intersections.

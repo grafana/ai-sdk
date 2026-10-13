@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
@@ -60,14 +61,17 @@ type Limits struct {
 // Config configures an immutable ProviderWire V4 language-model handler.
 type Config struct {
 	Selector RequestSelector
+	// ConfiguredAPIKeys are provider/exporter credentials redacted only from native error summaries.
+	ConfiguredAPIKeys []string `json:"-"`
 	// Limits bounds request processing, responses, and model execution.
 	Limits Limits
 }
 
 type handler struct {
-	selector      RequestSelector
-	limits        Limits
-	requestSchema *schema.CompiledSchema
+	selector        RequestSelector
+	limits          Limits
+	requestSchema   *schema.CompiledSchema
+	summaryRedactor execution.SummaryRedactor
 }
 
 // New constructs an immutable strict ProviderWire V4 HTTP handler.
@@ -84,9 +88,10 @@ func New(config Config) (http.Handler, error) {
 		return nil, fmt.Errorf("providerwire v4: compiling request schema: %w", err)
 	}
 	return &handler{
-		selector:      config.Selector,
-		limits:        config.Limits,
-		requestSchema: requestSchema,
+		selector:        config.Selector,
+		limits:          config.Limits,
+		requestSchema:   requestSchema,
+		summaryRedactor: execution.NewSummaryRedactor(config.ConfiguredAPIKeys),
 	}, nil
 }
 
@@ -201,6 +206,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request := newExecutionRequest(validated.modelID, resolved, h.limits.UnaryResponseBytes)
+	request.summaryRedactor = h.summaryRedactor
 	capture := &attemptCapture{sealed: resolved.configured == nil}
 	if resolved.configured != nil {
 		ctx = fallback.WithAttemptObserver(ctx, capture.observe)

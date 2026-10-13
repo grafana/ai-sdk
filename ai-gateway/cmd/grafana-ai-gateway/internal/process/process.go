@@ -113,7 +113,17 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	if err != nil {
 		return err
 	}
-	agentRuntime, err := service.NewAgentObservabilityRuntime(settings.AgentObservability, lookupEnv, telemetry)
+	configuredAPIKeys := make([]string, 0, len(resolvedProviders)+1)
+	for _, provider := range resolvedProviders {
+		configuredAPIKeys = append(configuredAPIKeys, provider.APIKey)
+	}
+	agentRuntime, err := service.NewAgentObservabilityRuntime(settings.AgentObservability, func(name string) (string, bool) {
+		value, exists := lookupEnv(name)
+		if exists && name == settings.AgentObservability.AuthSecretEnv {
+			configuredAPIKeys = append(configuredAPIKeys, value)
+		}
+		return value, exists
+	}, telemetry)
 	if err != nil {
 		return err
 	}
@@ -131,7 +141,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
 	discoveryHandler := discovery.New(modelCatalog, errorWriter)
-	languageHandler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(modelCatalog), Limits: settings.ProviderWire})
+	languageHandler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(modelCatalog), Limits: settings.ProviderWire, ConfiguredAPIKeys: configuredAPIKeys})
 	if err != nil {
 		agentRuntime.Close()
 		return err

@@ -1,32 +1,30 @@
 ## Why
 
-Callers need the selected destination and preceding candidate failures through ordinary Gateway results and errors. The shared observation and compact projector in #373 are ready, but production delivery still uses neither; the historical #370 wiring targets a removed collector and mandatory diagnostic budgets.
+Callers need actual configured attempt outcomes and useful native failures through ordinary Gateway results and errors. Runtime activation is implemented; the owner-approved review follow-up protects configured API-key echoes in Gateway-produced summaries without returning to broad credential filtering.
 
 ## What Changes
 
-- Rebuild #370's runtime integration on #373, retaining the PR and this single OpenSpec change rather than carrying obsolete collector code forward.
-- Bridge immutable configured destination identity and actual protected sources from service configuration to invocation handling without exposing credentials through discovery.
-- Accumulate one call's shared fallback decisions independently of operator capture. Observe direct calls at existing handler ownership boundaries without turning them into fallback models.
-- Publish optional gateway.execution on unary results, finish events and classified failures. Preserve original responses when enrichment cannot fit existing complete-envelope limits.
-- Keep current committed failures event-local with protected summaries; do not retain stream-error history, raw diagnostics, completion/replay claims or a selected index.
-- Replace historical expectations with actual production invocation, both-client, middleware and frontend ordering proof.
+- Preserve request-owned SDK attempt observation, copied configured identity and optional execution metadata on existing unary/SSE carriers.
+- Register configured provider API keys and the enabled exporter credential once at startup, excluding static Gateway access keys and redact exact matches in summary message, type and string code for every caller.
+- Preserve BYOK-only echoes, numeric code/status, classification, original errors, opaque native metadata and existing transport/lifecycle behavior.
+- Reuse this existing change and update current specs, tests and docs. No new proposal or wire shape.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `gateway-attempt-failure-evidence`: Production delivery of compact execution overviews and useful event-local failures.
+- `gateway-attempt-failure-evidence`: Runtime compact execution delivery and configured-key protection limited to Gateway-produced summaries.
 
 ### Modified Capabilities
 
-- `gateway-execution-overview`: Allow independent foundation reuse by the runtime activation layer.
-- `gateway-provider-metadata`: Explicit best-effort result/finish namespace enrichment exception while preserving primary validation and ordinary opaque transport.
-- `gateway-ordered-text-fallback`: Consumer capture independent of physical operator capture, without changed fallback policy.
-- `providerwire-v4-unary-runtime`: Optional overview enrichment of results and classified failures.
-- `providerwire-v4-streaming-runtime`: Optional finish/error enrichment and event-local protected failures without lifecycle changes.
+- `gateway-execution-overview`: Keep pure projection reusable and govern protected runtime delivery separately.
+- `gateway-provider-metadata`: Preserve opaque native metadata and optional result/finish enrichment.
+- `gateway-ordered-text-fallback`: Keep execution/observation policy unchanged while protecting candidate-local summary fields.
+- `providerwire-v4-unary-runtime`: Protect native summaries in optional success/failure attribution.
+- `providerwire-v4-streaming-runtime`: Protect finish-attempt and event-local error summaries without stream buffering.
 
 ## Impact
 
-AGPL catalog/service and ProviderWire runtime, internal execution helper reuse, schemas, client test capture helpers, frontend scenarios, docs and PARITY evidence. No client decoder redesign, SDK fallback policy change, dependency/pin or minimum Go change. Builds use the same-revision go.gateway.work. Fuller transport diagnostics (#323), routing (#316), BYOK (#317), discovery (#324), client acceptance (#375) and producer/core fixes (#299) remain separate.
+AGPL service startup, ProviderWire handler and internal summary policy; focused and both-client tests, current specs/docs and this reused change. No SDK/client API, schema, provider fixture, dependency or minimum-Go change. No generic output filtering, request credential inventories, encoded-secret inference or new HTTP nativeError carrier. Request-account observation (#317), raw diagnostics (#323) and shared transport policy (#394) remain separately owned.
 
-The owner-approved compact contract supersedes historical #321 shape/budgets and #370's earlier validation claims. Reference: ai 7.0.118, Gateway 4.0.96, Provider 4.0.18 and Provider Utils 5.0.49 at 5d12eaa6caa193d3901cbab98a734403eb6bf622. This is a Grafana extension, not private-service parity.
+Registered reference remains eb77f09e3c06c28e860d92e0de941b143c2eecec (ai7.0.127/Gateway4.0.103). This Gateway security policy is not a claim about upstream private-service behavior or live provider echoes. Earlier archived validation describes historical implementations, not approval of this follow-up.

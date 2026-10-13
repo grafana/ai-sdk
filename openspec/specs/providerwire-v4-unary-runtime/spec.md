@@ -327,11 +327,11 @@ Every runtime error response SHALL retain fixed classified status, message, type
 
 ### Requirement: Runtime error detail exclusions
 
-Arbitrary cause trees and raw bodies/headers SHALL NOT be serialized by failure projection. Optional native candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, within existing complete-response limits; they SHALL NOT change classification or retryability. Provider-originated scalar echoes SHALL NOT be credential-filtered.
+Arbitrary cause trees and raw bodies/headers SHALL NOT be serialized by failure projection. Optional native candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, within existing complete-response limits; they SHALL NOT change classification or retryability. Summary protection SHALL follow gateway-attempt-failure-evidence.
 
 #### Scenario: Runtime error detail exclusions
 - **WHEN** a resolver or provider failure carries URL, credentials and metadata
-- **THEN** arbitrary cause trees and raw bodies/headers SHALL NOT be serialized; governed native candidate-local summaries SHALL retain provider-originated scalar echoes while the base fields remain fixed
+- **THEN** arbitrary cause trees and raw bodies/headers SHALL NOT be serialized; governed native candidate-local summaries SHALL redact exact configured API-key matches while preserving other scalar echoes and fixed base fields
 
 ### Requirement: Minimal unary success response
 
@@ -544,7 +544,7 @@ The handler SHALL use synchronized request-local observation to optionally enric
 
 #### Scenario: Optional unary execution overview policy
 - **WHEN** the runtime encodes the corresponding response or stream event
-- **THEN** Original primary validation and existing complete-response limits SHALL apply before accepting enrichment. Optional encoding/fit failure SHALL preserve the original document and classification; original adaptation failures SHALL NOT replay generation. Configured candidate identity SHALL remain separate from native-summary eligibility; filtering-only credential sources SHALL NOT be collected. Configured direct calls SHALL retain their existing invocation/cancellation ownership.
+- **THEN** Original primary validation and existing complete-response limits SHALL apply before accepting enrichment. Optional encoding/fit failure SHALL preserve the original document and classification; original adaptation failures SHALL NOT replay generation. Configured candidate identity SHALL remain separate from native-summary eligibility; only explicit configured API keys SHALL supply summary protection; request credentials SHALL NOT be inventoried. Configured direct calls SHALL retain their existing invocation/cancellation ownership.
 
 #### Scenario: Valid result with no enrichment room
 - **WHEN** a native result fits but adding or relocating the overview exceeds the existing response bound

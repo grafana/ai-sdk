@@ -32,7 +32,7 @@ Candidate-local projection SHALL retain available native message, type, string-o
 
 #### Scenario: Small native failure summaries policy
 - **WHEN** a candidate-local native failure is summarized
-- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Projection SHALL NOT collect credential sources or suppress field values by blacklists, substring matching or escaped-value matching. Provider-originated echoes SHALL remain available independently of logger field policy. Inputs SHALL remain unchanged. Malformed, unavailable or oversized diagnostics under the integrator's existing source/read limit SHALL degrade optional fields without creating an error or a new quota.
+- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Pure projection SHALL NOT extract credentials from requests or diagnostic trees. Runtime delivery SHALL redact exact configured API-key matches from summary message, type and string code under gateway-attempt-failure-evidence; other provider-originated values SHALL remain available independently of logger field policy. Inputs SHALL remain unchanged. Malformed, unavailable or oversized diagnostics under the integrator's existing source/read limit SHALL degrade optional fields without creating an error or a new quota.
 
 #### Scenario: Original native failure survives cancellation
 - **WHEN** a canceled decision retains a candidate-native SourceErr
@@ -43,8 +43,8 @@ Candidate-local projection SHALL retain available native message, type, string-o
 - **THEN** the message SHALL remain available without serializing the URL/cause or suppressing it merely because those fields exist
 
 #### Scenario: Provider echoes a credential in a summary
-- **WHEN** a provider-originated message, type or code contains a caller-supplied or service-owned credential value
-- **THEN** the summary SHALL retain that value without collecting credentials or mutating the source; account authorization and request isolation SHALL remain unchanged
+- **WHEN** a provider-originated message, type or string code contains a credential value
+- **THEN** runtime delivery SHALL redact exact configured API-key matches and SHALL preserve caller-owned BYOK values that do not match configured keys, without mutating source errors; account authorization and request isolation SHALL remain unchanged
 
 #### Scenario: Numeric code exceeds float precision
 - **WHEN** a native error supplies a large numeric code

@@ -1219,6 +1219,84 @@ func TestInvocation_NativeEchoAndErrorLimit(t *testing.T) {
 	assert.Equal(t, canonicalDependencyError, response.Body.Bytes())
 }
 
+func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
+	for _, tc := range []struct {
+		name                                             string
+		streaming, committed, fallback, exhausted, plain bool
+	}{
+		{name: "unary failure"},
+		{name: "unary fallback success", fallback: true},
+		{name: "unary exhausted", fallback: true, exhausted: true},
+		{name: "stream setup failure", streaming: true},
+		{name: "stream fallback success", streaming: true, fallback: true},
+		{name: "stream exhausted", streaming: true, fallback: true, exhausted: true},
+		{name: "configured committed error", streaming: true, committed: true},
+		{name: "plain committed error", streaming: true, committed: true, plain: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const source = `{"message":"echo server-key unused-key own-byok-key","type":"type-server-key","code":"code-unused-key"}`
+			native := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Data: json.RawMessage(source)})
+			first := &recordingModel{
+				generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return nil, native },
+				stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					if tc.committed {
+						return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartError, APICallError: native}, finishPart())}, nil
+					}
+					return nil, native
+				},
+			}
+			models := []*recordingModel{first}
+			if tc.fallback {
+				second := &recordingModel{}
+				if tc.exhausted {
+					second.generate, second.stream = first.generate, first.stream
+				}
+				models = append(models, second)
+			}
+			h := invocationHarness(t, testLimits(), models...)
+			selector := CatalogSelector(h.resolver)
+			if tc.plain {
+				selector = func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+					return Selection{ID: "request/model", Model: first}, nil
+				}
+			}
+			keys := []string{"server-key", "unused-key"}
+			handler, err := New(Config{Selector: selector, Limits: testLimits(), ConfiguredAPIKeys: keys})
+			require.NoError(t, err)
+			keys[0] = "caller-mutation"
+			request := validRequest(`{"prompt":[]}`)
+			if tc.plain {
+				request = validRequest(`{"prompt":[],"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"own-byok-key"}]}}}}`)
+			}
+			request.Header.Set(HeaderStreaming, fmt.Sprint(tc.streaming))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			status := http.StatusServiceUnavailable
+			if tc.committed || tc.fallback && !tc.exhausted {
+				status = http.StatusOK
+			}
+			assert.Equal(t, status, response.Code)
+			body := response.Body.String()
+			assert.NotContains(t, body, "server-key")
+			assert.NotContains(t, body, "unused-key")
+			assert.Contains(t, body, `"message":"echo [REDACTED] [REDACTED] own-byok-key"`)
+			assert.Contains(t, body, `"type":"type-[REDACTED]"`)
+			assert.Contains(t, body, `"code":"code-[REDACTED]"`)
+			assert.Contains(t, body, `"statusCode":503`)
+			assert.Equal(t, json.RawMessage(source), native.Data)
+			for _, model := range models {
+				assert.Equal(t, 1, model.callCount())
+			}
+			if tc.plain {
+				assert.NotContains(t, body, "execution")
+			}
+			if tc.streaming && status == http.StatusOK {
+				assert.Contains(t, body, `"type":"finish"`)
+			}
+		})
+	}
+}
+
 func TestInvocation_RequestCredentialEcho(t *testing.T) {
 	for _, tc := range []struct {
 		name, request string

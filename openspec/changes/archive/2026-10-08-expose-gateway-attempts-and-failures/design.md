@@ -1,61 +1,55 @@
 ## Context
 
-This rewrite keeps #370 open but starts its implementation from #373 at ea668bef. The historical 4d0f9bfc implementation remains backed up and is reference material, not code to mechanically migrate. The consolidated foundation is archived and synced; this branch owns only expose-gateway-attempts-and-failures.
+This change owns #370's runtime activation of #373's compact execution projection. The existing activation, transport-owned fit checks, request-local capture and native-summary audit are implemented. The owner-approved follow-up addresses configured API-key echoes in Gateway-produced failure summaries, not arbitrary response content.
 
-Reference: ai 7.0.118, Gateway 4.0.96, Provider 4.0.18, Provider Utils 5.0.49 at 5d12eaa6caa193d3901cbab98a734403eb6bf622. The registered TypeScript Gateway spreads unary metadata, passes stream parts through and maps setup errors with their original API-call cause. The Go client retains bounded original HTTP/SSE error data. There is no upstream shared fallback implementation or private Gateway overview contract. PARITY classifies runtime, provider contract and frontend evidence separately.
+Reference: registered ai 7.0.127, Gateway 4.0.103, Provider 4.0.21 and Provider Utils 5.0.53 at eb77f09e3c06c28e860d92e0de941b143c2eecec. The upstream client preserves provider metadata and error data; it does not define the private service's credential-disclosure policy. This is an intentional Gateway security adaptation, with synthetic service/client evidence rather than live-provider parity.
 
 ## Goals / Non-Goals
 
-**Goals:** Deliver actual configured destination outcomes and useful protected failures independently of operator capture, without changing execution policy or invalidating primary output for optional attribution.
+**Goals:** Preserve useful compact native diagnostics while removing exact configured server API-key matches from their message, type and string code. Apply the same policy to configured and BYOK callers and to failure, successful fallback and committed-error carriers. Preserve caller-owned BYOK echoes unless their values also match configured keys.
 
-**Non-Goals:** Trace/history frameworks, SDK serialization, mutable shared-model execution state, raw transport diagnostics, retry/classification changes, readers/executors/cleanup owners, selected indexes, completion/replay claims, native identity duplication or client acceptance redesign.
+**Non-Goals:** Generic response filtering, generated text/tool/metadata scanning, stream-fragment buffering, arbitrary encoded-secret detection, request credential inventories, model wrappers, account-provenance APIs, new collectors, routing/retry changes, schema/client changes or transport-budget redesign.
 
 ## Decisions
 
-### Immutable route context, not instrumentation wrappers
+### Immutable startup policy
 
-The resolver currently returns only canonical ID and model; configured descriptors live in catalog metadata and actual credentials in service configuration. Carry copied configured descriptors and private protected-source values in the resolved invocation context. Static construction keeps sources out of public ModelInfo/discovery and excludes them from JSON. Registry/custom resolution can omit unavailable configuration rather than invent account identity. No request value selects destinations.
+The service resolves configured credentials at startup, with no hot reload. Collect actual configured API-key values there, including unused configured provider accounts, rather than deriving keys from the selected model or scanning requests. The ProviderWire handler receives configured keys separately from its selector and builds an immutable redactor. Empty values are ignored; duplicates and overlapping values have deterministic handling. Caller mutation of the configuration slice cannot change the policy. A future reload must replace the handler and credentials together, not mutate in-flight policy.
 
-Keep configured candidates and the existing model observer unchanged. Request observation uses fallback.WithAttemptObserver; its independent panic recovery and delivery order already belong to the foundation. Do not reinstall candidate wrappers or replace the model's operator callback to collect consumer output.
+The protected set consists of configured provider API keys and the enabled exporter credential. The owner explicitly excludes static Gateway access keys: their authentication-owned hash-only storage remains unchanged, with no raw copies retained for summary matching.
 
-### Call-local decisions and existing ownership
+The policy is handler-owned, not part of public catalog identity, discovery, SDK fallback events or request options. BYOK selection cannot disable it. There is no per-request secret extraction and no global mutable inventory.
 
-Immutable executionRequest values hold copied route identity and credential sources. A separate short-lived attemptCapture synchronizes only entry, fallback observations and sealing; handlers pass it explicitly rather than retrieving Gateway state from context. The SDK request observer remains context-scoped. At the existing accepted outcome or first-part boundary, capture detaches observations under its lock and projection runs outside the lock, producing an executionView. Established-stream code receives only that finalized view. Deferred cleanup discards observations without projecting unused output. No global state, diagnostic history cap or per-stream error history. Mixed/incomplete observation is omitted as the foundation requires; cancellation after intent does not invent another invocation. Late callbacks cannot rewrite a published snapshot. Unary worker outcomes rejected by the existing cancellation/timeout boundary discard unverifiable fallback history and seal capture there, before response construction; configured direct cancellation retains its existing locally owned outcome. This does not change fallback SourceErr preservation or result ownership.
+### Projection followed by mandatory summary protection
 
-For a configured direct route, observe actual call entry and the handler-owned setup/result/first-part boundary. Derive its local projection input without inserting synthetic fallback observations into the capture buffer. Selection means a non-invalid unary result or first received provider part, including error. Preserve direct HTTP commitment timing, cancellation ownership, setup select behavior and bounded drain. Never turn a direct route into one-candidate fallback. Do not attribute an unowned late native failure to cancellation.
+Keep the foundation's pure native extraction and exact numeric-code decoding. Protect only the newly projected Failure objects before execution metadata or current-error data reaches encoding. Both overview attempt failures and event-local nativeError use one redactor. It replaces exact matches in decoded message, type and string code with a fixed marker; numeric code and status are unchanged. Raw source errors, observations and opaque provider metadata are never mutated. If a marker would itself leave a configured key in a field, omit that field rather than expose the key.
 
-### Optional carriers and current failures
+All supplied configured keys apply to every summary, including plain request selections without configured attribution. Values that are also caller-supplied remain protected because configured ownership takes precedence. JSON escaping is handled by normal decoding and encoding; URL/base64 or other transformations are not inferred.
 
-Use execution.Project and execution.Metadata. Unary success and finish carry providerMetadata.gateway.execution. Unary/setup errors add top-level providerMetadata; committed errors add error.data.providerMetadata. Current committed native summaries remain event-local in error.data.nativeError, using the same small protected fields as attempt summaries; they are not added to selected-attempt/finish history. Current classification, status and client retryability remain unchanged.
+### Existing lifecycle and transport boundaries
 
-Namespace assembly returns optional candidate metadata without transport callbacks. The transport validates and encodes the original output first, then independently checks the candidate using existing complete-response or complete-SSE-frame validation and limits, including original-byte metadata preflight. It writes the accepted bytes directly; no fit predicate mutates response state or rechecks the original output. If optional summary/overview encoding cannot fit, preserve the existing primary document/frame rather than emit a new failure. Native gateway collision relocates intact only when fitting; otherwise native metadata remains opaque. Existing invalid primary output remains an adaptation failure, without fallback replay. No essential/detail quotas, truncation, dispositions or error-detail collapse.
+Immutable executionRequest values retain copied configured identity, the existing source bound and immutable summary policy. attemptCapture keeps its existing synchronized enter/observe/seal/discard lifecycle. Projection and protection run outside capture locks. Configured direct outcomes remain locally derived; no one-candidate fallback or unowned late outcome is introduced.
 
-Summary extraction uses the caller's existing response/source bound and actual credential/tenant sources, not a new diagnostic allocation. Request credential sources stay in private request/view values and never become output or discovery data. Stateless extraction lives alongside the internal execution protection helpers, with separate Anthropic/OpenAI MCP field handling; mixed-type OpenAI headers retain independently valid credential strings. Explicit Anthropic MCP authorization tokens, OpenAI MCP authorization/recognized credential headers, and known credential query/userinfo values in their named destination URLs join the actual configured keys and inbound/body-carried protected headers; this is not an application-data scan or new request admission policy. Complete HTTP errors additionally stay within the independent Go client's existing 64 KiB default read bound, not a per-diagnostic quota. Unknown internal/panic/aggregate errors do not become arbitrarily attributed native error trees.
+Unary successes and stream finish retain optional providerMetadata.gateway.execution; unary/setup failures retain optional top-level providerMetadata; committed errors retain optional error.data.providerMetadata and event-local nativeError. Original primary validation, complete-response/frame fit and the existing HTTP error-read bound remain unchanged pending #394. Optional enrichment may be omitted, but a Gateway-produced summary must never revert to its unredacted form. Native metadata remains opaque even when enrichment is omitted; this narrow contract does not claim to sanitize it.
 
-### Error classification and transport encoding
+Selection, classification/retryability, SDK observers, first-part commitment, finish authority and bounded cleanup are unchanged. Plain/request-account unary/setup summary and attempt-overview gaps remain #317; no new carrier or identity is invented.
 
-Classification holds only the public category and optional request-failure reason. Reasons distinguish unsupported capabilities from credential/namespace policy refusals; both retain their existing public invalid-request response. Request mapping does not depend on invocation mode, and supported reasoning has no dormant refusal category. One typed definition supplies fixed message/type/code/status/retry values for HTTP and SSE; their existing classification differences remain deliberate. HTTP and SSE build their payloads directly without decoding self-generated JSON or mixing encoded bytes with mutable wire fields. The original literal documents/frames remain frozen test expectations, not a production catalog.
+## Evidence
 
-Execution boundaries finalize capture and project protected metadata/current summaries before handing them to transport writers. Writers know neither native provider errors nor invocation lifecycle. They encode the base response first, then attempt bounded optional output. Committed-error encoding preserves current-summary priority: an invalid or oversized current summary retains the canonical error, while a fitting current summary survives unavailable/non-fitting overview metadata. Existing complete bounds, credential projection, cancellation rejection and response order remain unchanged.
-
-### Evidence and client access
-
-Rewrite old assertions instead of preserving their shape. Retain actual request-count, ordering, direct/preselection, late-result, namespace, credential, shared-model and saturated physical-sink setups. Both registered TypeScript and independent Go clients must exercise success, noneligible/exhausted/setup/committed paths and consumer middleware; Go GenerateText is a streaming invocation, not unary DoGenerate proof. Frontend scenarios parse UI SSE with registered schema and assert assembled error/content/finish behavior without automatic diagnostic text exposure.
-
-Synthetic endpoints remain scoped wire/behavior witnesses, not recorded provider inputs or live/private-service parity. Full checks and limitations are recorded afresh; historical review/test counts do not approve this rewrite.
+Focused tests exercise empty/duplicate/overlapping keys, replacement-marker collisions, JSON-escaped values, string versus numeric codes, immutable configuration, source nonmutation and preserved BYOK-only diagnostics. Handler tests cover direct and exhausted failures, successful fallback unary/finish, configured and plain committed errors, original metadata/content preservation and unchanged classification/counts/order. Both registered clients exercise the real command with dummy configured keys independently of operator capture. Existing frontend assembly tests remain applicable because the wire shape does not change.
 
 ## Risks / Trade-offs
 
-- Optional overview omission → document that absence does not prove no attempts and namespace presence does not establish provenance.
-- Cancellation/late callback races → seal under synchronization; only existing ownership decides results and stream parts.
-- Configured credential exposure → separate private invocation sources from public catalog/discovery and JSON; test cloning and output protection.
-- Primary adaptation failures → preserve strict validation and no replay, without pretending selection proves completion.
-- HTTP retry repetition → preserve status-derived client policy and document caller retry controls; no exactly-once claim.
+- Exact matching is deliberately not arbitrary transformation detection or general output DLP.
+- Every configured API-key source must be registered by host composition; custom hosts own that configuration.
+- Startup-only key policy avoids mutable shared state; no reload mechanism is added.
+- Optional fit failure may remove diagnostics, not expose an unredacted Gateway summary or replay execution.
+- Synthetic tests prove the disclosure boundary, not that a real provider currently echoes credentials.
 
 ## Migration Plan
 
-Rebuild on the archived #373 foundation, rewrite this one OpenSpec change, implement with failing runtime regressions first, update schema/client/frontend and command evidence, then validate/commit/push with an explicit lease against 4d0f9bfc. Rollback removes runtime enrichment while leaving the shared SDK and pure projection foundation. No module pins/minimums change; candidate-source builds use go.gateway.work. Do not sync/archive or merge #370 without further approval.
+Reuse this existing change and current specs, retaining prior completed tasks as history. Implement the follow-up on current #370, leave #373 unchanged, validate and publish, then coordinate #369 from its recorded exact parent. No new proposal, schema, dependency or minimum-Go change. No merge or deployment action.
 
 ## Open Questions
 
-None for the approved scope. Stop if ownership, carrier or protection work requires a material departure.
+None for the approved narrow summary policy.

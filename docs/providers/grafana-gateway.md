@@ -49,10 +49,16 @@ so namespace presence alone does not establish provenance, and an absent
 overview does not imply no provider attempts.
 
 Summaries select native message, type, string-or-number code and status, not
-raw bodies, headers or arbitrary cause trees. Returned provider values are not
-filtered and may echo caller-supplied or service-owned credentials. Account
-authorization and request isolation still apply. Logger credential-field policy
-is separate and does not rewrite caller output; independently authorize logging
+raw bodies, headers or arbitrary cause trees. Gateway-produced summaries replace
+exact configured server API-key matches with `[REDACTED]` in message, type and
+string code, including after successful fallback. This covers configured provider
+keys and the enabled exporter credential, not static Gateway access keys; those
+retain hash-only authentication storage. Caller-owned BYOK echoes remain
+unchanged unless they also match a configured key. Numeric code and status are
+unchanged. This is not general output filtering: native metadata, generated text,
+tool output and arbitrarily encoded secrets are outside this protection.
+Account authorization and request isolation still apply. Logger field policy
+remains separate; independently authorize logging
 or display of native diagnostics. These fields
 are not automatically UI message metadata or display content; map only
 deliberately selected values for your frontend.
