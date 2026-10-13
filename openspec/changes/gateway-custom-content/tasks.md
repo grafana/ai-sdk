@@ -68,7 +68,7 @@
 ## 8. Two-client and cross-language evidence
 
 - [x] 8.1 Add TS workspace tests where the registered Vercel client consumes unary and streaming custom output (known and unknown kinds, metadata presence), plus Go-client differential scenarios. Verify with `mise run test-providerwire-v4`.
-- [ ] 8.2 Add authenticated command tests with native OpenAI and OpenAI-compatible fakes for compaction round trips through both clients on direct and fallback routes. Add native Anthropic fakes for fallback-marker output and history replay, labeled format-conversion evidence because the command refuses enabling server-side fallback. Verify with `mise run test-ai-gateway-command`.
+- [x] 8.2 Add authenticated command tests with native OpenAI and OpenAI-compatible fakes for compaction round trips through both clients on direct and fallback routes. Add native Anthropic fakes for fallback-marker output and history replay, labeled format-conversion evidence because the command refuses enabling server-side fallback. Verify with `mise run test-ai-gateway-command`.
 
 ## 9. Docs and parity
 
