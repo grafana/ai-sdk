@@ -273,7 +273,7 @@ func mapWirePart(part wirePart, role provider.Role) (provider.ContentPart, *requ
 		mapped.ProviderOptions = options
 		return mapped, nil
 	case provider.ContentPartTypeCustom:
-		if role != provider.RoleAssistant || !strings.Contains(part.Kind, ".") {
+		if role != provider.RoleAssistant || !validCustomKind(part.Kind) {
 			return provider.ContentPart{}, invalidMappingFailure()
 		}
 		options, failure := mapWireProviderOptions(part.ProviderOptions)
