@@ -309,12 +309,45 @@ type CacheControlType struct {
 
 // AnthropicCacheControl carries per-part cache control configuration.
 // Used on message and content part ProviderOptions for cache control only.
+// JSON uses the nested cacheControl shape, preserving annotations across
+// provider-option serialization boundaries.
 type AnthropicCacheControl struct {
 	CacheType string
 	TTL       string
 }
 
 func (AnthropicCacheControl) ProviderKey() string { return "anthropic" }
+
+// MarshalJSON emits the upstream nested cacheControl provider-option shape.
+func (c AnthropicCacheControl) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		CacheControl CacheControlType `json:"cacheControl"`
+	}{CacheControl: CacheControlType{Type: c.CacheType, TTL: c.TTL}})
+}
+
+// UnmarshalJSON accepts the cacheControl and cache_control provider-option
+// shapes, preferring cacheControl. It also accepts the legacy exported fields.
+func (c *AnthropicCacheControl) UnmarshalJSON(data []byte) error {
+	value := struct {
+		CacheControl *CacheControlType `json:"cacheControl"`
+		CacheCtrl    *CacheControlType `json:"cache_control"`
+		CacheType    string
+		TTL          string
+	}{CacheType: c.CacheType, TTL: c.TTL}
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	cc := value.CacheControl
+	if cc == nil {
+		cc = value.CacheCtrl
+	}
+	if cc != nil {
+		*c = AnthropicCacheControl{CacheType: cc.Type, TTL: cc.TTL}
+	} else {
+		*c = AnthropicCacheControl{CacheType: value.CacheType, TTL: value.TTL}
+	}
+	return nil
+}
 
 // CacheControl returns a ProviderOption that configures cache control on a
 // content part, message, or tool definition. Common usage:
