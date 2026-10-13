@@ -55,7 +55,7 @@
 
 ## 7. Gateway unsupported-functionality classification
 
-- [ ] 7.1 Add the all-branches sentinel predicate in the shared provider error mapping. It goes last, after the APICallError, `url.Error` and `net.Error` checks and immediately before the internal default. Add ProviderWire handler tests with fake models returning the wrapped sentinel, for unary and stream setup:
+- [x] 7.1 Add the all-branches sentinel predicate in the shared provider error mapping. It goes last, after the APICallError, `url.Error` and `net.Error` checks and immediately before the internal default. Add ProviderWire handler tests with fake models returning the wrapped sentinel, for unary and stream setup:
   - direct rejection returns 400 with no client retry;
   - all candidates rejecting returns 400;
   - rejection then success returns the success;
