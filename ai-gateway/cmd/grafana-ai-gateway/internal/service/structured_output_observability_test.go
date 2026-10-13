@@ -82,7 +82,7 @@ func TestStructuredOutput_IndependentOperatorAndConsumerCapture(t *testing.T) {
 						}
 						models, err := catalog.NewStatic([]catalog.StaticEntry{{Info: catalog.ModelInfo{ID: "public"}, Model: model}})
 						require.NoError(t, err)
-						handler, err := providerv4.New(providerv4.Config{Resolver: models, Limits: serviceTestLimits()})
+						handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(models), Limits: serviceTestLimits()})
 						require.NoError(t, err)
 						server := httptest.NewServer(handler)
 						defer server.Close()

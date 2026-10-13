@@ -134,7 +134,7 @@ func newRuntimeHarness(t *testing.T, limits Limits) *runtimeHarness {
 	t.Helper()
 	model := &recordingModel{}
 	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model}}
-	created, err := New(Config{Resolver: resolver, Limits: limits})
+	created, err := New(Config{Selector: CatalogSelector(resolver), Limits: limits})
 	require.NoError(t, err)
 	return &runtimeHarness{handler: created.(*handler), resolver: resolver, model: model}
 }

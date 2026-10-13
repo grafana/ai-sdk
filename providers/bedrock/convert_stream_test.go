@@ -158,9 +158,13 @@ func TestRunStream_ToolCall(t *testing.T) {
 	parts := drainStream(t, body, requestMeta{})
 
 	// Find tool input lifecycle parts.
-	require.NotEmpty(t, findParts(parts, provider.PartToolInputStart))
+	startIdx := findParts(parts, provider.PartToolInputStart)
+	require.NotEmpty(t, startIdx)
 	require.NotEmpty(t, findParts(parts, provider.PartToolInputDelta))
 	require.NotEmpty(t, findParts(parts, provider.PartToolInputEnd))
+	assert.Equal(t, "call-1", parts[startIdx[0]].ID)
+	assert.Equal(t, "weather", parts[startIdx[0]].ToolName)
+	assert.Empty(t, parts[startIdx[0]].ToolCallID, "tool input parts are identified by id only")
 
 	// One tool-call event with accumulated input.
 	tcIdx := findParts(parts, provider.PartToolCall)
@@ -344,9 +348,9 @@ func TestRunStream_IncludeRawChunksEmitsRawPerFrame(t *testing.T) {
 	withRaw := drainStreamRaw(t, body, requestMeta{}, true)
 	rawIdx := findParts(withRaw, provider.PartRaw)
 	require.Len(t, rawIdx, len(lines), "expected one raw part per frame")
-	// Raw payloads carry the decoded frame body (the event payload, with the
-	// :event-type discriminator carried in the frame header).
-	assert.JSONEq(t, `{"role":"assistant"}`, string(withRaw[rawIdx[0]].RawValue))
+	// Raw values wrap the decoded frame body under its event type and drop the
+	// AWS padding field, as upstream does.
+	assert.JSONEq(t, `{"messageStart":{"role":"assistant"}}`, string(withRaw[rawIdx[0]].RawValue))
 	// Normal lifecycle parts are still emitted alongside raw parts.
 	require.NotEmpty(t, findParts(withRaw, provider.PartTextDelta))
 	last := withRaw[len(withRaw)-1]
@@ -364,8 +368,29 @@ func TestRunStream_IncludeRawChunksOnException(t *testing.T) {
 
 	parts := drainStreamRaw(t, body, requestMeta{}, true)
 	// Two frames -> two raw parts (messageStart + exception).
-	require.Len(t, findParts(parts, provider.PartRaw), 2)
+	rawIdx := findParts(parts, provider.PartRaw)
+	require.Len(t, rawIdx, 2)
+	assert.JSONEq(t, `{"throttlingException":{"message":"rate limited"}}`, string(parts[rawIdx[1]].RawValue))
 	require.Len(t, findParts(parts, provider.PartError), 1)
+}
+
+func TestRawFrameValue(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		hdr     frameHeader
+		payload string
+		want    string
+	}{
+		{name: "event wrapped and padding dropped", hdr: frameHeader{MessageType: "event", EventType: "messageStop"}, payload: `{"stopReason":"end_turn","p":"abc"}`, want: `{"messageStop":{"stopReason":"end_turn"}}`},
+		{name: "exception wrapped by exception type", hdr: frameHeader{MessageType: "exception", ExceptionType: "throttlingException"}, payload: `{"message":"slow"}`, want: `{"throttlingException":{"message":"slow"}}`},
+		{name: "missing type forwards the payload", hdr: frameHeader{MessageType: "event"}, payload: `{"a":1,"p":"x"}`, want: `{"a":1,"p":"x"}`},
+		{name: "non-object payload is unchanged", hdr: frameHeader{MessageType: "event", EventType: "metadata"}, payload: `[1,2]`, want: `[1,2]`},
+		{name: "invalid JSON is unchanged", hdr: frameHeader{MessageType: "event", EventType: "metadata"}, payload: `not json`, want: `not json`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, string(rawFrameValue(tc.hdr, []byte(tc.payload))))
+		})
+	}
 }
 
 func TestRunStream_StopSequenceInFinishMetadata(t *testing.T) {

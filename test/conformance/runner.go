@@ -1201,6 +1201,11 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	if cfg.MaxRetries != nil {
 		streamOpts = append(streamOpts, aisdk.WithMaxRetries(*cfg.MaxRetries))
 	}
+	var recorder *recordingModel
+	if providerPartsProviders[tc.Provider] {
+		recorder = newRecordingModel(model)
+		model = recorder
+	}
 	result := aisdk.StreamText(t.Context(), model, streamOpts...)
 
 	uiStream := result.ToUIMessageStream(cfg.BuildUIMessageStreamOptions()...)
@@ -1255,6 +1260,10 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	expectedObjectPath := filepath.Join(tc.Dir, "expected-object.json")
 	if _, err := os.Stat(expectedObjectPath); err == nil {
 		compareOutputObject(t, expectedObjectPath, result.OutputValue(), actual, cfg.AssertOutputValue)
+	}
+
+	if recorder != nil {
+		assertProviderParts(t, tc, recorder)
 	}
 }
 

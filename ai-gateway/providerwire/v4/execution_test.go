@@ -17,7 +17,7 @@ import (
 
 func executionTestCapture(count int, limit int64) *executionCapture {
 	candidates := []catalog.ConfiguredCandidate{{ProviderInstance: "primary", Provider: "anthropic", ModelID: "model-a"}, {ProviderInstance: "secondary", Provider: "openai", ModelID: "model-b"}}
-	_, capture := newExecutionContext(context.Background(), "alias", catalog.ResolvedModel{ID: "canonical", Candidates: candidates[:count]}, limit)
+	_, capture := newExecutionContext(context.Background(), "alias", Selection{ID: "canonical", Candidates: candidates[:count]}, limit)
 	return capture
 }
 

@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
+	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,15 +22,24 @@ type streamErrorCase struct {
 	name          string
 	errorType     string
 	initialStatus int
-	initialRetry  bool
-	streamRetry   bool
+	streamStatus  int
+	retry         bool
 }
 
+// The classification mirrors upstream's getAnthropicStreamErrorMetadata. An
+// unclassified type fails a call with a server error but keeps no status on a
+// mid-stream error part.
 var streamErrorCases = []streamErrorCase{
-	{name: "overloaded", errorType: "overloaded_error", initialStatus: 529, initialRetry: true, streamRetry: true},
-	{name: "api", errorType: "api_error", initialStatus: 500, initialRetry: true, streamRetry: true},
-	{name: "rate limit", errorType: "rate_limit_error", initialStatus: 500},
-	{name: "invalid request", errorType: "invalid_request_error", initialStatus: 500},
+	{name: "overloaded", errorType: "overloaded_error", initialStatus: 529, streamStatus: 529, retry: true},
+	{name: "api", errorType: "api_error", initialStatus: 500, streamStatus: 500, retry: true},
+	{name: "rate limit", errorType: "rate_limit_error", initialStatus: 429, streamStatus: 429, retry: true},
+	{name: "request too large", errorType: "request_too_large", initialStatus: 413, streamStatus: 413},
+	{name: "authentication", errorType: "authentication_error", initialStatus: 401, streamStatus: 401},
+	{name: "permission", errorType: "permission_error", initialStatus: 403, streamStatus: 403},
+	{name: "not found", errorType: "not_found_error", initialStatus: 404, streamStatus: 404},
+	{name: "billing", errorType: "billing_error", initialStatus: 400, streamStatus: 400},
+	{name: "invalid request", errorType: "invalid_request_error", initialStatus: 400, streamStatus: 400},
+	{name: "unclassified", errorType: "future_error", initialStatus: 500},
 }
 
 func TestSafeguardsTransportFailure(t *testing.T) {
@@ -114,7 +126,7 @@ func TestDoStream_InitialSSEError(t *testing.T) {
 			assert.Nil(t, result)
 			apiErr := requireAPICallError(t, err, tc.errorType)
 			assert.Equal(t, tc.initialStatus, apiErr.StatusCode)
-			assert.Equal(t, tc.initialRetry, apiErr.IsRetryable)
+			assert.Equal(t, tc.retry, apiErr.IsRetryable)
 			assert.Equal(t, "failed", apiErr.Message)
 			assert.JSONEq(t, fmt.Sprintf(`{"type":%q,"message":"failed"}`, tc.errorType), apiErr.ResponseBody)
 			assert.Contains(t, apiErr.URL, "/v1/messages")
@@ -132,7 +144,7 @@ func TestDoStream_RawInitialError(t *testing.T) {
 			assert.Nil(t, result)
 			apiErr := requireAPICallError(t, err, tc.errorType)
 			assert.Equal(t, tc.initialStatus, apiErr.StatusCode)
-			assert.Equal(t, tc.initialRetry, apiErr.IsRetryable)
+			assert.Equal(t, tc.retry, apiErr.IsRetryable)
 		})
 	}
 }
@@ -171,8 +183,9 @@ func TestDoStream_PostOutputSSEError(t *testing.T) {
 			assert.Equal(t, "Hello", text)
 			require.NotNil(t, apiErr)
 			apiErr = requireAPICallError(t, apiErr, tc.errorType)
-			assert.Equal(t, http.StatusOK, apiErr.StatusCode)
-			assert.Equal(t, tc.streamRetry, apiErr.IsRetryable)
+			assert.Equal(t, tc.streamStatus, apiErr.StatusCode)
+			assert.Equal(t, tc.retry, apiErr.IsRetryable)
+			assert.Equal(t, "failed", apiErr.Message)
 		})
 	}
 }
@@ -252,4 +265,95 @@ func requireAPICallError(t *testing.T, err error, errorType string) *provider.AP
 	require.NoError(t, json.Unmarshal(apiErr.Data, &envelope))
 	assert.Equal(t, errorType, envelope.Error.Type)
 	return apiErr
+}
+
+func TestDoStream_ErrorFrames(t *testing.T) {
+	const errorFrame = `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`
+	start, textStart, textDelta, textEnd, delta, stop := transportEvents[0], transportEvents[1], transportEvents[2], transportEvents[3], transportEvents[4], transportEvents[5]
+
+	for _, tc := range []struct {
+		name         string
+		events       []string
+		wantCallErr  bool
+		wantTypes    []provider.StreamPartType
+		wantFinishes int
+	}{
+		{
+			name:         "error between delta and stop keeps reading and finishes",
+			events:       []string{start, textStart, textDelta, textEnd, delta, errorFrame, stop},
+			wantTypes:    []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd, provider.PartError, provider.PartFinish},
+			wantFinishes: 1,
+		},
+		{
+			name:      "error without stop produces no finish",
+			events:    []string{start, textStart, textDelta, textEnd, delta, errorFrame},
+			wantTypes: []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd, provider.PartError},
+		},
+		{
+			name:        "error as the first frame fails the call",
+			events:      []string{errorFrame, start, stop},
+			wantCallErr: true,
+		},
+		{
+			name:      "undecodable frame after an error frame stays terminal",
+			events:    []string{start, errorFrame, `not JSON`, stop},
+			wantTypes: []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartError, provider.PartError},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				response := transportResponse(r, true)
+				response.Body = io.NopCloser(strings.NewReader(transportSSE(tc.events)))
+				return response, nil
+			})}
+			model := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithMaxRetries(0), option.WithHTTPClient(client)))
+
+			result, err := model.DoStream(t.Context(), provider.CallOptions{})
+			if tc.wantCallErr {
+				var apiErr *provider.APICallError
+				require.ErrorAs(t, err, &apiErr)
+				return
+			}
+			require.NoError(t, err)
+			var types []provider.StreamPartType
+			finishes := 0
+			for part := range result.Stream {
+				types = append(types, part.Type)
+				if part.Type == provider.PartFinish {
+					finishes++
+				}
+			}
+			assert.Equal(t, tc.wantTypes, types)
+			assert.Equal(t, tc.wantFinishes, finishes)
+		})
+	}
+}
+
+func TestStreamText_TruncatedAfterMessageDelta(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		events     []string
+		wantFinish provider.UnifiedFinishReason
+	}{
+		{name: "complete stream", events: transportEvents, wantFinish: provider.FinishReasonStop},
+		{name: "ends after message_delta", events: transportEvents[:5], wantFinish: provider.FinishReasonOther},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				response := transportResponse(r, true)
+				response.Body = io.NopCloser(strings.NewReader(transportSSE(tc.events)))
+				return response, nil
+			})}
+			model := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithMaxRetries(0), option.WithHTTPClient(client)))
+
+			result := aisdk.StreamText(t.Context(), model, aisdk.WithModelMessages(provider.UserText("hello")))
+			for range result.FullStream() {
+			}
+
+			require.NoError(t, result.Err())
+			require.Len(t, result.Steps(), 1)
+			assert.Equal(t, tc.wantFinish, result.Steps()[0].FinishReason.Unified)
+			assert.Equal(t, "hello", result.Text())
+		})
+	}
 }

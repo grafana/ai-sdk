@@ -131,7 +131,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
 	discoveryHandler := discovery.New(modelCatalog, errorWriter)
-	languageHandler, err := providerv4.New(providerv4.Config{Resolver: modelCatalog, Limits: settings.ProviderWire})
+	languageHandler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(modelCatalog), Limits: settings.ProviderWire})
 	if err != nil {
 		agentRuntime.Close()
 		return err

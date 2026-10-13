@@ -45,7 +45,7 @@ type executionCapture struct {
 
 type executionContextKey struct{}
 
-func newExecutionContext(ctx context.Context, requested string, resolved catalog.ResolvedModel, limit int64) (context.Context, *executionCapture) {
+func newExecutionContext(ctx context.Context, requested string, resolved Selection, limit int64) (context.Context, *executionCapture) {
 	c := &executionCapture{limit: limit, bytes: int64(len(requested) + len(resolved.ID)), candidates: append([]catalog.ConfiguredCandidate(nil), resolved.Candidates...), overview: executionOverview{RequestedModelID: requested, CanonicalModelID: resolved.ID}}
 	ctx = context.WithValue(ctx, executionContextKey{}, c)
 	return fallback.WithAttemptObserver(ctx, c.observe), c
