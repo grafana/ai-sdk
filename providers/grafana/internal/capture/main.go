@@ -21,6 +21,7 @@ func main() {
 		UserIDToken       string                          `json:"userIDToken"`
 		TokenExchange     *grafana.TokenExchangeConfig    `json:"tokenExchange"`
 		CloudCredentials  *grafana.CloudCredentialsConfig `json:"cloudCredentials"`
+		Decisions         []bool                          `json:"decisions"`
 		Mode              string                          `json:"mode"`
 		ModelID           string                          `json:"modelID"`
 		Options           provider.CallOptions            `json:"options"`
@@ -105,6 +106,12 @@ func main() {
 	model, err := client.LanguageModel(input.ModelID)
 	if err != nil {
 		emitError(err)
+		return
+	}
+	if input.Mode == "approval-unary" || input.Mode == "approval-stream" || input.Mode == "approval-high-generate" || input.Mode == "approval-high-stream" {
+		if err := captureApprovalReplay(ctx, model, input.Options, input.Mode, input.Decisions); err != nil {
+			emitError(err)
+		}
 		return
 	}
 	if input.Mode == "recorded-ui" {

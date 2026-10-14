@@ -2023,9 +2023,9 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 			{OfText: &anthropic.BetaTextBlockParam{Text: string(output.JSON)}},
 		}
 	case provider.ToolOutputExecutionDenied:
-		reason := output.Reason
-		if reason == "" {
-			reason = "tool execution was denied"
+		reason := "Tool call execution denied."
+		if output.Reason != nil {
+			reason = *output.Reason
 		}
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: reason}},
