@@ -1,0 +1,7 @@
+{"type":"stream-start","warnings":[]}
+{"type":"response-metadata","id":"msg_1","modelId":"test-model"}
+{"type":"text-start","id":"text-1"}
+{"type":"text-delta","id":"text-1","delta":"Hello"}
+{"type":"text-end","id":"text-1"}
+{"type":"error","error":{"message":"Overloaded","isRetryable":true,"statusCode":529}}
+{"type":"finish","finishReason":{"unified":"stop","raw":"end_turn"},"usage":{"inputTokens":{"total":10},"outputTokens":{"total":5}}}

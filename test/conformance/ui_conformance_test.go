@@ -153,6 +153,29 @@ func TestUIConformance_TextMetadataOnlyDelta(t *testing.T) {
 	require.Equal(t, expected, actual)
 }
 
+func TestUIConformance_ErrorThenFinish(t *testing.T) {
+	fixtureDir := filepath.Join("ui", "error-then-finish")
+	parts := loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))
+	expected := loadUIExpected(t, filepath.Join(fixtureDir, "expected.jsonl"))
+
+	result := aisdk.StreamText(t.Context(), uiFixtureModel{parts: parts},
+		aisdk.WithModelMessages(provider.UserText("test")),
+	)
+	var actual []map[string]any
+	for chunk := range result.ToUIMessageStream(
+		aisdk.WithUIMessageStreamGenerateID(func() string { return "message-1" }),
+		aisdk.OnUIMessageStreamError(func(error) string { return "provider error" }),
+	) {
+		data, err := json.Marshal(chunk)
+		require.NoError(t, err)
+		var decoded map[string]any
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		actual = append(actual, decoded)
+	}
+
+	require.Equal(t, expected, actual)
+}
+
 func TestUIConformance_EffectiveToolChoice(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

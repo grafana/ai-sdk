@@ -121,6 +121,13 @@ routing accounts for Bedrock's model-specific native-output reliability.
 Reasoning, structured output, cache controls, and other provider options may be
 supported by one family and ignored with a warning by another.
 
+Cache points remain attached only when their source message contributes content
+to the Converse request. When no prepared tools are active, tool calls and results
+are removed before message grouping, together with cache points on messages that
+become empty; the result includes a `toolContent` warning. Approval bookkeeping
+and unsigned reasoning also cannot create cache-only messages. A synthetic JSON
+response tool counts as an active tool.
+
 Claude Sonnet 5.5 rejects disabled thinking and forced tool use. For
 `claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking,
 a `required` or named tool choice is sent as `auto` with a warning, and a JSON

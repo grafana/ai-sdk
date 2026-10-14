@@ -299,11 +299,9 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 		if state.started {
 			state.args += argument
 			return sendStreamPart(s.ctx, s.out, provider.StreamPart{
-				Type:       provider.PartToolInputDelta,
-				ID:         state.id,
-				ToolCallID: state.id,
-				ToolName:   state.name,
-				Delta:      argument,
+				Type:  provider.PartToolInputDelta,
+				ID:    state.id,
+				Delta: argument,
 			})
 		}
 		state.args += argument
@@ -321,21 +319,18 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 			return true
 		}
 		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
-			Type:       provider.PartToolInputStart,
-			ID:         state.id,
-			ToolCallID: state.id,
-			ToolName:   state.name,
+			Type:     provider.PartToolInputStart,
+			ID:       state.id,
+			ToolName: state.name,
 		}) {
 			return false
 		}
 		state.started = true
 		if state.args != "" {
 			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
-				Type:       provider.PartToolInputDelta,
-				ID:         state.id,
-				ToolCallID: state.id,
-				ToolName:   state.name,
-				Delta:      state.args,
+				Type:  provider.PartToolInputDelta,
+				ID:    state.id,
+				Delta: state.args,
 			}) {
 				return false
 			}
@@ -392,20 +387,17 @@ func (s *streamState) flush() {
 		}
 		if !tc.started {
 			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
-				Type:       provider.PartToolInputStart,
-				ID:         tc.id,
-				ToolCallID: tc.id,
-				ToolName:   tc.name,
+				Type:     provider.PartToolInputStart,
+				ID:       tc.id,
+				ToolName: tc.name,
 			}) {
 				return
 			}
 			if tc.args != "" {
 				if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
-					Type:       provider.PartToolInputDelta,
-					ID:         tc.id,
-					ToolCallID: tc.id,
-					ToolName:   tc.name,
-					Delta:      tc.args,
+					Type:  provider.PartToolInputDelta,
+					ID:    tc.id,
+					Delta: tc.args,
 				}) {
 					return
 				}
@@ -433,10 +425,8 @@ func (s *streamState) flush() {
 
 func (s *streamState) finishToolCall(tc *streamToolCall) bool {
 	if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
-		Type:       provider.PartToolInputEnd,
-		ID:         tc.id,
-		ToolCallID: tc.id,
-		ToolName:   tc.name,
+		Type: provider.PartToolInputEnd,
+		ID:   tc.id,
 	}) {
 		return false
 	}

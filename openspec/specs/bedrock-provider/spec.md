@@ -1,7 +1,9 @@
 ## Purpose
 
 Define the AWS Bedrock provider module, its `provider.LanguageModel` implementation driving the Bedrock Converse API, request/response conversion, authentication, streaming, error semantics, and registry integration.
+
 ## Requirements
+
 ### Requirement: Module location and naming
 
 The Bedrock provider SHALL be implemented as a separate Go module located at `providers/bedrock/` with module path `github.com/grafana/ai-sdk/providers/bedrock`. It MUST NOT be a subpackage of the root `aisdk` module and MUST NOT depend on `providers/anthropic`.
@@ -589,7 +591,7 @@ The provider SHALL classify OpenAI IDs by anchored `openai.` with optional regio
 
 ### Requirement: Converse option merge preserves cache and beta precedence
 
-Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks. Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
+Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks only when the source message emits native content. A marker SHALL NOT survive solely because another source in the same merged block emits content. Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
 
 #### Scenario: Cache point remains at selected message boundary
 
@@ -672,6 +674,19 @@ For `DoStream`, the provider SHALL decode the AWS Smithy event-stream binary res
 
 - **WHEN** the stream emits `messageStop` with `stopReason` followed by `metadata` with `usage`
 - **THEN** the channel emits a finish part carrying the mapped unified finish reason and a usage part built from the metadata
+
+#### Scenario: Clean EOF before messageStop
+
+- **WHEN** the response body ends on a complete frame boundary before a `messageStop` event, including an empty body or a stream containing metadata only
+- **THEN** the channel emits exactly one final `PartError` carrying a retryable `*provider.APICallError` whose message states that the stream ended before `messageStop`
+- **AND** the channel closes without a `PartFinish` or a synthesized `PartToolCall` for an unclosed tool block
+- **AND** this intentionally differs from the registered `@ai-sdk/amazon-bedrock` 5.0.105 behavior, which emits a finish with `other` and an absent raw reason on clean EOF without `messageStop`
+
+#### Scenario: Clean EOF after messageStop
+
+- **WHEN** the response body ends after `messageStop`, with or without a subsequent `metadata` event
+- **THEN** the channel emits one finish carrying the mapped reason and any reported usage
+- **AND** an empty stop reason or an unmapped reason such as `model_context_window_exceeded` remains `other` with the received raw reason and does not become a premature-EOF error
 
 #### Scenario: Stream-level exception
 
@@ -869,3 +884,53 @@ As a Go extension, `reasoningConfig.type` SHALL accept `between_tools`, sent as 
 
 - **WHEN** Sonnet 5.5 requests between-tools thinking with display, budget, sampling, and effort `xhigh` or `max`
 - **THEN** thinking SHALL contain only its type, sampling SHALL be removed, and effort SHALL be capped to high with the specified warning
+
+### Requirement: Filter inactive tool history before Converse message grouping
+
+The provider SHALL prepare the effective tools before converting the prompt.
+When no tools remain active, it SHALL remove tool-call and tool-result parts from
+non-system source messages, discard messages made empty by that filtering, and
+then group the remaining messages. It SHALL emit the existing `toolContent`
+warning once when tool content is removed and SHALL NOT mutate the caller's
+prompt. A synthetic JSON response tool counts as active; native JSON output
+without active tools does not.
+
+#### Scenario: Final response after a disabled tool loop
+
+- **WHEN** tool calls and a cached tool-result message occur between user messages and no prepared tools remain active
+- **THEN** the request SHALL combine the surviving adjacent user messages
+- **AND** the cache point owned by the removed tool-result message SHALL be omitted
+- **AND** cache points on surviving source content SHALL preserve their placement and TTL
+
+#### Scenario: Content is ignored during conversion
+
+- **WHEN** an assistant source contains only unsigned reasoning or approval bookkeeping, or a user/tool source contains only approval bookkeeping
+- **THEN** that source SHALL contribute neither native content nor a cache point
+- **AND** an unsupported system-only source SHALL likewise contribute no cache point while retaining its unsupported-content warning
+
+#### Scenario: Preserve conversion boundaries
+
+- **WHEN** inactive tool filtering removes the last part or message of the prompt
+- **THEN** assistant prefill trimming SHALL use the resulting source positions
+- **AND** other ignored content SHALL retain the existing source-position trimming rules
+- **AND** provider options on a wholly removed tool message SHALL NOT be parsed, while retained messages SHALL retain existing option validation
+
+### Requirement: Bedrock raw stream chunks mirror upstream
+
+When raw chunks are requested, each event-stream frame SHALL produce a raw part whose value is the frame's JSON payload without the AWS padding field `p`, wrapped under its event type, or under its exception type for exception frames. Payloads that are not JSON objects, or frames with no type, SHALL be forwarded unchanged.
+
+#### Scenario: Event frame
+- **WHEN** a `messageStop` event frame with payload `{"stopReason":"end_turn","p":"abc"}` is decoded with raw chunks requested
+- **THEN** the raw value SHALL be `{"messageStop":{"stopReason":"end_turn"}}`
+
+#### Scenario: Exception frame
+- **WHEN** a `throttlingException` exception frame with payload `{"message":"rate limited"}` is decoded with raw chunks requested
+- **THEN** the raw value SHALL be `{"throttlingException":{"message":"rate limited"}}`
+
+### Requirement: Bedrock tool input parts are identified by id
+
+`tool-input-start` SHALL carry the tool call `id` and the tool name, and SHALL NOT carry a separate tool call ID field.
+
+#### Scenario: Tool use block
+- **WHEN** a Converse tool-use block starts
+- **THEN** the `tool-input-start` part SHALL carry `id` and `toolName` only
