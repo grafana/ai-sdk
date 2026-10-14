@@ -24,7 +24,7 @@ export function buildGoClientCapture(directory: string, sourceDirectory = resolv
     assert.equal(selected.Main, true);
   }
   const binary = join(directory, "go-client-capture");
-  execFileSync("go", ["build", "-o", binary, "./internal/capture"], { cwd: sourceDirectory, env, stdio: "pipe" });
+  execFileSync("go", ["build", "-o", binary, "github.com/grafana/ai-sdk/providers/grafana/internal/capture"], { cwd: sourceDirectory, env, stdio: "pipe" });
   return binary;
 }
 

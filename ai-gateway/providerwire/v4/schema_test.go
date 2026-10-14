@@ -115,6 +115,7 @@ func TestErrorSchema(t *testing.T) {
 	compiled := compileWireSchema(t, errorSchemaJSON)
 
 	documents := [][]byte{
+		canonicalPermissionError,
 		canonicalInvalidRequestError,
 		canonicalModelNotFoundError,
 		canonicalRateLimitError,
@@ -137,5 +138,11 @@ func TestErrorSchema(t *testing.T) {
 		require.NoError(t, compiled.Validate(json.RawMessage(document)), string(document))
 	}
 
-	require.Error(t, compiled.Validate(json.RawMessage(`{"error":{"message":"private","type":"internal_server_error","param":null,"code":"internal_error","extra":true}}`)))
+	for _, document := range []string{
+		`{"error":{"message":"private","type":"internal_server_error","param":null,"code":"internal_error","extra":true}}`,
+		`{"error":{"message":"private rule reason","type":"forbidden","param":null,"code":"forbidden"}}`,
+		`{"error":{"message":"forbidden","type":"forbidden","param":{"ruleId":"private"},"code":"forbidden"}}`,
+	} {
+		require.Error(t, compiled.Validate(json.RawMessage(document)))
+	}
 }

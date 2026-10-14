@@ -113,6 +113,11 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	if err != nil {
 		return err
 	}
+	guardRuntime, err := service.NewGuardRuntime(settings.Guards, settings.DeploymentMode, lookupEnv, telemetry)
+	if err != nil {
+		return err
+	}
+	defer guardRuntime.Close()
 	agentRuntime, err := service.NewAgentObservabilityRuntime(settings.AgentObservability, lookupEnv, telemetry)
 	if err != nil {
 		return err
@@ -131,7 +136,12 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
 	discoveryHandler := discovery.New(modelCatalog, errorWriter)
-	languageHandler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(modelCatalog), Limits: settings.ProviderWire})
+	languageConfig := providerv4.Config{Selector: providerv4.CatalogSelector(modelCatalog), Limits: settings.ProviderWire}
+	if guardRuntime != nil {
+		languageConfig.Guard = guardRuntime
+		languageConfig.GuardRetainedBytes = settings.Guards.RetainedBytes - settings.Guards.RetainedBytes/2
+	}
+	languageHandler, err := providerv4.New(languageConfig)
 	if err != nil {
 		agentRuntime.Close()
 		return err
