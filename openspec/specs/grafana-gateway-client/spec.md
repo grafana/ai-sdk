@@ -401,7 +401,7 @@ A successful streaming setup SHALL require SSE media type and return a `StreamRe
 - **THEN** the client SHALL stop reading, emit at most one bounded protocol error when delivery remains possible, and close all owned resources
 
 #### Scenario: Unsupported response family is received
-- **WHEN** the client receives file, custom, approval or another unsupported later-package stream part
+- **WHEN** the client receives custom, approval or another unsupported later-package stream part
 - **THEN** it SHALL produce an explicit protocol error rather than decoding through provider-domain JSON accidentally
 
 #### Scenario: Hosted dynamic call with preview results
@@ -805,3 +805,14 @@ grammar. The server SHALL remain responsible for selector capability validation.
 #### Scenario: Invalid transport selector
 - **WHEN** a selector is empty, invalid UTF-8, over 2,048 bytes or contains whitespace/control characters
 - **THEN** model construction SHALL fail before I/O
+
+### Requirement: Independent generated-file response decoding
+The Apache Grafana client SHALL decode registered generated files in unary and streaming responses without importing Gateway code. It SHALL preserve data/URL values, optional originalUrl, media type, metadata presence and ordering under its existing cumulative, event-count and response limits. Provider-local filenames SHALL not become normalized generated-file fields.
+
+#### Scenario: Generated file response is decoded
+- **WHEN** the server returns a valid generated file using data or URL in unary or SSE output
+- **THEN** the client SHALL expose the corresponding provider file value with metadata intact and selected empty data preserved
+
+#### Scenario: Malformed or oversized response
+- **WHEN** a generated file has malformed consumed fields or exceeds client limits
+- **THEN** existing bounded protocol-error, cancellation and body-ownership behavior SHALL terminate consumption

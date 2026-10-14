@@ -137,7 +137,7 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
 			mapped.Content = append(mapped.Content, unaryTextPart{Type: provider.ContentText, Text: part.Text, Metadata: part.ProviderMetadata})
-		case provider.ContentReasoning, provider.ContentReasoningFile:
+		case provider.ContentReasoning, provider.ContentReasoningFile, provider.ContentFile:
 			if part.Type == provider.ContentReasoning {
 				if !utf8.ValidString(part.Text) {
 					return unarySuccess{}, errInvalidUnarySuccess
@@ -237,26 +237,17 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 		}
 	}
 	for _, part := range result.Content {
-		if part.Type == provider.ContentReasoning || part.Type == provider.ContentReasoningFile {
-			if part.Type == provider.ContentReasoningFile {
-				if part.Data == nil {
-					return false
-				}
-				for _, size := range []int{len(part.MediaType), len(part.Data.Base64), len(part.Data.URL), len(part.Data.Reference), len(part.Data.Text)} {
-					if int64(size) > remaining {
-						return false
-					}
-					remaining -= int64(size)
-				}
-				if int64(len(part.Data.Bytes)) > (remaining/4)*3 {
-					return false
-				}
-				encoded := (int64(len(part.Data.Bytes)) + 2) / 3 * 4
-				if encoded > remaining {
-					return false
-				}
-				remaining -= encoded
+		if part.Type == provider.ContentFile {
+			if !reasoningFileFits(unaryReasoningFile(part.Data), part.MediaType, &remaining) {
+				return false
 			}
+			continue
+		}
+		if part.Type == provider.ContentReasoningFile {
+			if !reasoningFileFits(unaryReasoningFile(part.Data), part.MediaType, &remaining) {
+				return false
+			}
+			continue
 		}
 		for _, length := range []int{len(part.Text), len(part.Title), len(part.ID), len(part.URL), len(part.MediaType), len(part.Filename), len(part.ToolCallID), len(part.ToolName), len(part.Input), len(part.Result)} {
 			if int64(length) > remaining {

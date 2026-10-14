@@ -57,6 +57,25 @@ See [Generate text from Go](../getting-started/backend-only.md#stream-text-as-it
 for the stream-consumption pattern, or [Full-stack chat](../getting-started/full-stack-chat.md)
 to connect a streaming response to your frontend. Consume or cancel every stream.
 
+## Receive generated files
+
+When a configured model emits generated files, the Gateway transports them in
+unary and streaming responses. The low-level Grafana client preserves inline
+base64, URL strings, optional original URLs and opaque provider metadata. Inline
+bytes are encoded once. Provider-local generated filenames are omitted because
+they are not part of the registered output contract.
+
+High-level generation resolves file URLs into file bytes using the SDK's existing
+download policy. The Gateway itself does not download or rewrite media URLs.
+Response and stream-frame limits include encoded media and metadata; oversized
+output fails before a successful body or file frame is written. A selected file
+commits its fallback candidate, so later failures do not replay generation.
+
+Operator capture and application middleware capture are independently configured;
+neither setting removes files or ordinary metadata from caller responses. Capture
+formats can differ from the provider wire representation. This transport support
+does not add image, speech or video generation capabilities to native adapters.
+
 ## Discover and select public models
 
 Use `client.ListModels(ctx)` to build a model picker:

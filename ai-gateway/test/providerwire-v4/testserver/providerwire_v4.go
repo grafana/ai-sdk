@@ -156,6 +156,15 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.test/reasoning"}},
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}},
 		)}, nil
+	case "generated-files":
+		m.stats.recordSuccess(options)
+		meta := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"file","reasoningEncryptedContent":null}`)}
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData}, ProviderMetadata: meta},
+			provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Bytes: []byte{1, 2, 3}}, ProviderMetadata: provider.ProviderMetadata{}},
+			provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "opaque:generated", OriginalURL: stringPointer("opaque:Original?token=application")}},
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}},
+		)}, nil
 	case "reasoning":
 		m.stats.recordSuccess(options)
 		return &provider.StreamResult{Stream: scenarioStream(
@@ -301,6 +310,16 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &data, ProviderMetadata: provider.ProviderMetadata{}},
 			{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &url},
 		}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}}, nil
+	case "generated-files":
+		m.stats.recordSuccess(options)
+		empty, data, url := provider.Base64DataContent(""), provider.BytesDataContent([]byte{1, 2, 3}), provider.URLDataContent("opaque:generated")
+		url.OriginalURL = stringPointer("opaque:Original?token=application")
+		two := 2
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{
+			{Type: provider.ContentFile, MediaType: "image/png", Data: &empty, ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"file","reasoningEncryptedContent":null}`)}},
+			{Type: provider.ContentFile, MediaType: "image/png", Data: &data, ProviderMetadata: provider.ProviderMetadata{}},
+			{Type: provider.ContentFile, MediaType: "image/png", Data: &url},
+		}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}}, nil
 	case "reasoning":
 		m.stats.recordSuccess(options)
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentReasoning, Text: "", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"end-signature"}`)}}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
@@ -383,7 +402,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 22)
-	for _, id := range []string{"native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
+	for _, id := range []string{"generated-files", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -469,3 +488,5 @@ func registerProviderWireV4(mux *http.ServeMux) error {
 	scenario.register(mux)
 	return nil
 }
+
+func stringPointer(value string) *string { return &value }
