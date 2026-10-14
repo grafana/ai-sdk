@@ -264,7 +264,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			return nil, err
 		}
 		switch part.Type {
-		case provider.ContentReasoning, provider.ContentReasoningFile:
+		case provider.ContentReasoning, provider.ContentReasoningFile, provider.ContentFile:
 			mapped := provider.GenerateContentPart{Type: part.Type, ProviderMetadata: metadata}
 			if part.Type == provider.ContentReasoning {
 				if decodeFields(raw, &part, "text") != nil || part.Text == nil {
@@ -282,6 +282,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 				file := provider.Base64DataContent(data.Base64)
 				if data.Type == provider.StreamFileDataTypeURL {
 					file = provider.URLDataContent(data.URL)
+					file.OriginalURL = data.OriginalURL
 				}
 				mapped.Data, mapped.MediaType = &file, *part.MediaType
 			}
