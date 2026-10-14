@@ -50,9 +50,12 @@ type unaryMappingContext struct {
 }
 
 type unaryToolState struct {
-	name    string
-	preview bool
-	final   bool
+	historical       bool
+	providerExecuted bool
+	approvalID       string
+	name             string
+	preview          bool
+	final            bool
 }
 
 type unaryFinishReason struct {
@@ -119,8 +122,9 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 	}
 	states := make(map[string]unaryToolState, len(context.history))
 	for id, name := range context.history {
-		states[id] = unaryToolState{name: name}
+		states[id] = unaryToolState{name: name, providerExecuted: true, historical: true}
 	}
+	approvals := make(map[string]struct{})
 	for _, part := range result.Content {
 		if part.Type != provider.ContentToolCall && part.Type != provider.ContentToolResult && (part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary)) {
 			return unarySuccess{}, errInvalidUnarySuccess
@@ -154,11 +158,21 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 			if part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || !utf8.Valid(part.Input) || (part.Preliminary != nil && *part.Preliminary) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			if _, exists := states[part.ToolCallID]; exists {
+			if prior, exists := states[part.ToolCallID]; exists && (!prior.historical || prior.final || prior.preview || !part.ProviderExecuted || prior.name != part.ToolName) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			states[part.ToolCallID] = unaryToolState{name: part.ToolName}
+			states[part.ToolCallID] = unaryToolState{name: part.ToolName, providerExecuted: part.ProviderExecuted, approvalID: states[part.ToolCallID].approvalID}
 			mapped.Content = append(mapped.Content, unaryToolCall{Type: provider.ContentToolCall, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: string(part.Input), ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Metadata: part.ProviderMetadata})
+		case provider.ContentToolApprovalRequest:
+			state, exists := states[part.ToolCallID]
+			_, duplicate := approvals[part.ApprovalID]
+			if !exists || !state.providerExecuted || state.final || state.preview || state.approvalID != "" || duplicate || part.ApprovalID == "" || !utf8.ValidString(part.ApprovalID) || !utf8.ValidString(part.ToolCallID) {
+				return unarySuccess{}, errInvalidUnarySuccess
+			}
+			state.approvalID = part.ApprovalID
+			states[part.ToolCallID] = state
+			approvals[part.ApprovalID] = struct{}{}
+			mapped.Content = append(mapped.Content, approvalRequestEvent{Type: "tool-approval-request", ApprovalID: part.ApprovalID, ToolCallID: part.ToolCallID, Metadata: part.ProviderMetadata})
 		case provider.ContentToolResult:
 			state, exists := states[part.ToolCallID]
 			if !exists || state.name != part.ToolName || state.final || part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || len(part.Result) == 0 || !utf8.Valid(part.Result) || !json.Valid(part.Result) || bytes.Equal(bytes.TrimSpace(part.Result), []byte("null")) {
@@ -258,7 +272,7 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 				remaining -= encoded
 			}
 		}
-		for _, length := range []int{len(part.Text), len(part.Title), len(part.ID), len(part.URL), len(part.MediaType), len(part.Filename), len(part.ToolCallID), len(part.ToolName), len(part.Input), len(part.Result)} {
+		for _, length := range []int{len(part.Text), len(part.Title), len(part.ID), len(part.URL), len(part.MediaType), len(part.Filename), len(part.ToolCallID), len(part.ApprovalID), len(part.ToolName), len(part.Input), len(part.Result)} {
 			if int64(length) > remaining {
 				return false
 			}

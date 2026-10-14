@@ -24,7 +24,7 @@
     "ToolChoiceType": "string",
     "ToolResultContentType": "string",
     "ToolResultContentValue": "struct {\n\tType            ToolResultContentType `json:\"type\"`\n\tText            string                `json:\"text,omitempty\"`\n\tData            *DataContent          `json:\"data,omitempty\"`\n\tMediaType       string                `json:\"mediaType,omitempty\"`\n\tFilename        *string               `json:\"filename,omitempty\"`\n\tProviderOptions ProviderOptions       `json:\"providerOptions,omitempty\"`\n}",
-    "ToolResultOutput": "struct {\n\tType            ToolResultOutputType     `json:\"type\"`\n\tText            string                   `json:\"text,omitempty\"`\n\tJSON            json.RawMessage          `json:\"json,omitempty\"`\n\tContent         []ToolResultContentValue `json:\"content,omitempty\"`\n\tReason          string                   `json:\"reason,omitempty\"`\n\tProviderOptions ProviderOptions          `json:\"providerOptions,omitempty\"`\n}",
+    "ToolResultOutput": "struct {\n\tType            ToolResultOutputType     `json:\"type\"`\n\tText            string                   `json:\"text,omitempty\"`\n\tJSON            json.RawMessage          `json:\"json,omitempty\"`\n\tContent         []ToolResultContentValue `json:\"content,omitempty\"`\n\tReason          *string                  `json:\"reason,omitempty\"`\n\tProviderOptions ProviderOptions          `json:\"providerOptions,omitempty\"`\n}",
     "ToolResultOutputType": "string",
     "ToolType": "string",
     "dataContentVariant": "string"
