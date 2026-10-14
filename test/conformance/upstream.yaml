@@ -21,6 +21,16 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: buffered-model-fallback
+    surface: core-streamtext
+    status: intentional-deviation
+    description: Go fallback optionally buffers a bounded complete provider stream
+      before selecting a candidate, with a timeout per attempt. This permits
+      cross-model recovery without exposing failed partial output. The registered
+      ai 7.0.127 core has no equivalent fallback wrapper; its generateText uses
+      doGenerate, while Go GenerateText collects StreamText. Synthetic unit,
+      GenerateText and schema-parsed frontend integration tests cover selection,
+      metadata, cancellation and resource limits, not live provider acceptance.
   - id: bedrock-converse-premature-eof
     surface: provider-bedrock
     status: intentional-deviation
