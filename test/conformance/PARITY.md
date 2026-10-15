@@ -47,6 +47,15 @@ evidence boundary changes, not merely because the pinned versions change.
 
 ## Evidence boundaries
 
+- Anthropic executor usage intentionally sums cache reads and writes from the
+  same `message` and `compaction` iterations as uncached input and output.
+  Synthetic HTTP generation and streaming tests cover compaction, server-tool
+  loops, advisor exclusion, fallback and absent executor iterations. The
+  registered upstream converter uses top-level cache counts; imported compaction
+  fixtures have zero cache activity and do not prove cached-compaction billing.
+  Three synthetic multi-message stream cases explicitly assert this cache-total
+  deviation while comparing all other fields with unchanged upstream snapshots.
+  See `anthropic-executor-iteration-cache-usage` in [upstream.yaml](upstream.yaml).
 - Gateway native warning/source/response identity mapping has closed raw/schema,
   pinned TS/independent Go and synthetic authenticated command evidence. Native
   source IDs/display/order and optional registered response identity survive;

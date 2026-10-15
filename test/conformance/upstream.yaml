@@ -21,6 +21,18 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: anthropic-executor-iteration-cache-usage
+    surface: provider-anthropic
+    status: intentional-deviation
+    description: Go sums cache read and cache creation tokens over the same
+      message and compaction executor iterations used for input and output,
+      correcting compaction undercounts in registered @ai-sdk/anthropic 4.0.71,
+      which takes cache counts only from top-level usage. Fallback-served turns
+      and responses without executor iterations retain top-level usage; advisor
+      iterations remain excluded. Missing or null iteration cache counts are
+      zero. Synthetic HTTP generation and streaming tests cover this policy;
+      existing imported compaction fixtures contain no cache activity, so live
+      cached-compaction conformance is not claimed.
   - id: buffered-model-fallback
     surface: core-streamtext
     status: intentional-deviation
