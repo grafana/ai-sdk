@@ -56,8 +56,9 @@ func (m *Model) doBufferedStream(ctx context.Context, params provider.CallOption
 		if err != nil && result != nil && result.Stream != nil {
 			go drainStream(result.Stream)
 		}
+		sourceErr := err
 		outcome, next, err := m.decision(ctx, i, err)
-		m.observeAttempt(ctx, i, candidate, startedAt, err, outcome, next)
+		m.observeAttempt(ctx, i, candidate, startedAt, err, sourceErr, outcome, next)
 		if err != nil {
 			failures = append(failures, failedAttempt{candidate: candidate, err: err})
 			if !next {
