@@ -225,7 +225,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 	part := provider.StreamPart{Type: value.Type}
 	switch value.Type {
 	case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd,
-		provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd, provider.PartReasoningFile,
+		provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd, provider.PartReasoningFile, provider.PartFile,
 		provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd,
 		provider.PartToolCall, provider.PartToolResult, provider.PartFinish:
 		metadata, err := decodeProviderMetadata(value.Metadata)
@@ -235,7 +235,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		part.ProviderMetadata = metadata
 	}
 	switch value.Type {
-	case provider.PartReasoningFile:
+	case provider.PartReasoningFile, provider.PartFile:
 		if decodeFields(data, &value, "data", "mediaType") != nil {
 			return invalid()
 		}
