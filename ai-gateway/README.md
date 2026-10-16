@@ -8,11 +8,11 @@ This directory contains the ProviderWire V4 request contract, exact-pinned
 registered-client evidence, public model catalog, unary and streaming text HTTP
 runtimes, the authenticated Anthropic, OpenAI Responses and OpenAI-compatible
 service under `cmd/grafana-ai-gateway`, and its container packaging. The service supports
-`X-Access-Token` JSON Web Token (JWT) authentication or caller identity supplied
-by a trusted authenticating reverse proxy. Provider credentials come from server
-configuration in both modes. The reverse-proxy mode requires a separate listener
-for operational routes and deployment network controls that allow only the proxy
-to reach the API listener. A reusable Go Gateway client remains future work.
+private JWT/configured-account and trusted-Cloud/request-only BYOK access in one
+process, with a third operational listener. Cloud application access must be
+restricted to the authenticating proxy, including denial to internal JWT clients.
+The Apache-licensed [Go client](../docs/providers/grafana-gateway.md) and pinned
+Vercel Gateway client support both credential flows.
 
 Gateway code may import explicitly pinned SDK modules. SDK modules must not
 import, require, or replace the Gateway module, which remains outside the root

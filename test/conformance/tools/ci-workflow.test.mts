@@ -71,7 +71,14 @@ describe("source and artifact workflow gates", () => {
     assert.match(commands("image-validation"), /--platform linux\/amd64,linux\/arm64/);
     assert.match(commands("image-validation"), /-f ai-gateway\/Dockerfile/);
     assert.match(commands("image-validation"), /build-ai-gateway-image/);
-    assert.ok(jobs["image-validation"]!.steps.some((step) => step.name === "Smoke test native image with IPv6 disabled"));
+    const smoke = jobs["image-validation"]!.steps.find((step) => step.name === "Smoke test native image with IPv6 disabled")!.run!;
+    assert.match(smoke, /--network none/);
+    assert.doesNotMatch(smoke, /--auth\.unsafe/);
+    assert.match(smoke, /--auth\.jwks-url=https:\/\/auth\.example\.invalid\/jwks/);
+    assert.match(smoke, /GET \/ready/);
+    assert.match(smoke, /GET \/api\/v1\/aisdk\/config/);
+    assert.match(smoke, /" 200 "/);
+    assert.match(smoke, /" 401 "/);
     assert.match(commands("publish-ai-gateway-image"), /-f ai-gateway\/Dockerfile/);
     assert.match(commands("publish-ai-gateway-image"), /VCS_REF=\$GITHUB_SHA/);
     for (const required of [...source, "image-validation"]) {

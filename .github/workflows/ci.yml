@@ -273,8 +273,11 @@ jobs:
             --mount "type=bind,source=$config,target=/etc/gateway/models.yaml,readonly" \
             --env GRAFANA_AI_GATEWAY_CONFIG_FILE=/etc/gateway/models.yaml \
             --env ANTHROPIC_API_KEY=smoke-test-not-a-secret \
-            ai-gateway:ci --deployment.mode=development --auth.mode=cloud-gateway \
-            --server.listen-address=:8080 --server.operational-listen-address=:8081)
+            ai-gateway:ci --deployment.mode=development \
+            --auth.jwks-url=https://auth.example.invalid/jwks \
+            --server.private-listen-address=127.0.0.1:8082 \
+            --server.cloud-listen-address=127.0.0.1:8080 \
+            --server.operational-listen-address=127.0.0.1:8081)
           for ((attempt = 0; attempt < 30; attempt++)); do
             if docker exec "$container" timeout 2 bash -c '
               exec 3<>/dev/tcp/127.0.0.1/8081
@@ -282,6 +285,12 @@ jobs:
               read -r status <&3
               [[ "$status" == *" 200 "* ]]
             '; then
+              docker exec "$container" timeout 2 bash -c '
+                exec 3<>/dev/tcp/127.0.0.1/8082
+                printf "GET /api/v1/aisdk/config HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3
+                read -r status <&3
+                [[ "$status" == *" 401 "* ]]
+              '
               exit 0
             fi
             if [ "$(docker inspect --format '{{.State.Running}}' "$container")" != true ]; then

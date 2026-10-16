@@ -232,6 +232,9 @@ Three event layers: `provider.StreamPart` (raw) -> `TextStreamPart`
 
 ## Documentation Strategy
 
+This repository is public. Describe deployment contracts generically; do not name
+or link private infrastructure repositories in specs, docs or GitHub content.
+
 Docs live in three surfaces, each with one job. Keep content in the right place
 to avoid README bloat and godoc drift. Full rules: [CONTRIBUTING.md](CONTRIBUTING.md).
 

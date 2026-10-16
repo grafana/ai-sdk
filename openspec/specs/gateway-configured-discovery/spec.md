@@ -7,7 +7,11 @@ Define authenticated, bounded discovery of explicitly configured route candidate
 ## Requirements
 
 ### Requirement: Explicit configured route projection
-Authenticated `GET /api/v1/aisdk/config` SHALL return one row per visible canonical model, in ascending canonical-ID order, retaining its public `id` and `specification.modelId`, specification version `v4`, provider `grafana` and existing name/description. Each command-configured row SHALL include `gateway: {aliases, primary: {providerInstance, provider, providerModelId}, fallbacks: [{providerInstance, provider, providerModelId}]}`.
+Configured-access-authorized discovery SHALL expose ordered canonical public rows with typed aliases, primary and ordered fallback facts, without generation, inferred candidates or substitution of native identity.
+
+#### Scenario: Explicit configured route projection policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** Configured-access-authorized `GET /api/v1/aisdk/config` SHALL return one row per visible canonical model, in ascending canonical-ID order, retaining its public `id` and `specification.modelId`, specification version `v4`, provider `grafana` and existing name/description. Each command-configured row SHALL include `gateway: {aliases, primary: {providerInstance, provider, providerModelId}, fallbacks: [{providerInstance, provider, providerModelId}]}`. Alias and fallback order SHALL preserve configuration; empty aliases and fallbacks SHALL be `[]`. Aliases SHALL remain callable without appearing as separate rows. `providerModelId` SHALL identify the configured native invocation model, never a public selection ID or response identity. Ordinary catalog entries without candidate metadata SHALL omit the extension rather than infer it.
 
 #### Scenario: Alias and mixed-provider candidates are inspected
 - **WHEN** an authorized caller discovers an alias for a route with an Anthropic primary and an OpenAI fallback
@@ -38,7 +42,11 @@ Alias and fallback order SHALL preserve configuration; empty aliases and fallbac
 - **THEN** the ordinary entry SHALL omit gateway and the configured route SHALL retain its configured invocation model ID
 
 ### Requirement: Account-authorized projection excludes credential sources
-Discovery SHALL authenticate before listing and SHALL pass the request context to the existing model lister. It SHALL project only entries and candidate facts visible at the same account/route boundary as resolution, without supplementing a scoped list from global configuration. The explicit projection SHALL exclude API keys, environment/secret credential references, signing/workload credential material, caller-auth headers and unrelated account/provider state.
+Discovery SHALL require configured-account authorization before listing and project only request-visible route/candidate facts. Explicit keys, secret references, caller credentials and unrelated account state SHALL not enter the projection; ordinary authorized identifiers SHALL remain available.
+
+#### Scenario: Account-authorized projection excludes credential sources policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** Discovery SHALL authenticate and require configured-account access before listing and SHALL pass the request context to the existing model lister. It SHALL project only entries and candidate facts visible at the same account/route boundary as resolution, without supplementing a scoped list from global configuration. The explicit projection SHALL exclude API keys, environment/secret credential references, signing/workload credential material, caller-auth headers and unrelated account/provider state. Authorized route, candidate, provider-instance, provider and model identifiers SHALL NOT be categorically concealed. This feature SHALL NOT introduce account provisioning or a new policy engine.
 
 #### Scenario: Scoped host listing matches resolution
 - **WHEN** a host decorator restricts a request to one route and its configured candidates
@@ -53,6 +61,15 @@ Discovery SHALL authenticate before listing and SHALL pass the request context t
 #### Scenario: Authentication fails
 - **WHEN** the existing authentication layer rejects a discovery request
 - **THEN** no catalog listing or provider work SHALL occur and the existing bounded authentication response SHALL apply
+
+#### Scenario: Authenticated BYOK discovery
+- **WHEN** a trusted Cloud/BYOK caller requests /api/v1/aisdk/config
+- **THEN** the host SHALL return HTTP 400 with type invalid_request_error, code invalid_request, param null and a fixed message that catalog discovery is unsupported for BYOK
+- **AND** it SHALL NOT list or resolve the catalog, return an empty success, enumerate providers or perform inference
+
+#### Scenario: Authentication still precedes unsupported operation
+- **WHEN** an unauthenticated Cloud request asks for discovery
+- **THEN** authentication SHALL fail before the application returns an authenticated unsupported-operation response
 
 ### Requirement: Authorized discovery identities and policy scope
 Authorized route, candidate, provider-instance, provider and model identifiers SHALL NOT be categorically concealed. This feature SHALL NOT introduce account provisioning or a new policy engine.
@@ -122,7 +139,12 @@ Standard JSON string and duplicate-member semantics SHALL apply: Go normalizes e
 - **THEN** standard decoder semantics SHALL apply, with Go U+FFFD normalization and TS UTF-16 retention rather than a lossless identity claim
 
 ### Requirement: Bounded TS companion access on the existing route
-The repository SHALL provide a documented, typechecked and deterministically tested copyable `fetchConfiguredModels({baseURL, headers, fetch, signal, maxBytes})` consumer helper retaining typed configured-route facts from the existing authenticated `/config` document. It SHALL NOT be a new published TS package or endpoint.
+The existing copyable typed TS discovery helper SHALL read configured facts from authenticated /config using explicit private JWT headers, bounded reads, ordinary recognized-field decoding and deterministic cleanup. It SHALL not be a new package/endpoint or grant account access, switch credentials, cache catalogs or invoke inference.
+
+#### Scenario: Bounded TS companion access on the existing route policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** The repository SHALL provide a documented, typechecked and deterministically tested copyable `fetchConfiguredModels({baseURL, headers, fetch, signal, maxBytes})` consumer helper retaining typed configured-route facts from the existing authenticated `/config` document. It SHALL NOT be a new published TS package or endpoint. The helper SHALL preserve an HTTP(S) API-prefix base URL, reject URL credentials/query/fragment, use explicit private-endpoint JWT outer headers, issue one GET, refuse redirects, honor abort, check success and JSON media type, bound reads incrementally and validate the entire raw UTF-8 JSON document and recognized model/extension fields before return. It SHALL ignore unrelated unknown additive fields rather than expose arbitrary configuration. It SHALL release/cancel reader resources on success or failure and SHALL NOT embed auth headers or arbitrary response bodies in errors, cache catalogs, switch credentials or invoke inference.
+- **AND** Stock exact-pinned `getAvailableModels()` SHALL remain tested as compatible normalized discovery listing canonical rows and stripping the extension, including aliases and provider choices. It SHALL NOT be presented as an access path for these facts; known alias IDs SHALL remain callable. The helper SHALL accept ordinary rows with absent/null gateway; a non-null extension with a JSON shape or field type incompatible with ConfiguredRoute SHALL fail the complete document. It SHALL NOT check route semantics.
 
 #### Scenario: Both TS discovery surfaces are demonstrated
 - **WHEN** the registered Gateway client and shipped helper read the same configured response
@@ -136,6 +158,10 @@ The repository SHALL provide a documented, typechecked and deterministically tes
 #### Scenario: Endpoint attempts credential forwarding
 - **WHEN** discovery redirects to another endpoint
 - **THEN** the helper SHALL refuse the redirect without sending credentials to the redirect target
+
+#### Scenario: Helper cannot grant configured access
+- **WHEN** the helper is pointed at the Cloud/BYOK endpoint with Cloud credentials
+- **THEN** it SHALL surface the non-success discovery response without switching credentials/endpoints or returning an empty catalog
 
 ### Requirement: TS discovery URL and bounded transport validation
 The helper SHALL preserve an HTTP(S) API-prefix base URL, reject URL credentials/query/fragment, use explicit selected JWT or CAP outer headers, issue one GET, refuse redirects, honor abort, check success and JSON media type, bound reads incrementally and validate the entire raw UTF-8 JSON document and recognized model/extension fields before return. It SHALL ignore unrelated unknown additive fields rather than expose arbitrary configuration.
@@ -166,15 +192,21 @@ The helper SHALL accept ordinary rows with absent/null gateway; a non-null exten
 - **THEN** null gateway SHALL be accepted but the incompatible extension SHALL fail the complete document without route-semantic checks
 
 ### Requirement: Independent evidence and honest support guidance
-This feature SHALL ship startup route-policy tests, server complete-projection tests and independent Go/TS malformed/type-error/oversized/boundary tests, immutable catalog tests, raw HTTP/schema tests and exact-pinned client/real-command discovery tests. Successful and denied discovery tests SHALL assert zero native inference requests.
+Configured discovery SHALL retain independent Go/TS/server/real-command tests, module boundaries and honest support guidance. Successful/denied discovery SHALL assert no inference; Cloud discovery SHALL be authenticated but unsupported without catalog lookup.
+
+#### Scenario: Independent evidence and honest support guidance policy
+- **WHEN** the activated Gateway enforces this contract
+- **THEN** This feature SHALL ship startup route-policy tests, server complete-projection tests and independent Go/TS malformed/type-error/oversized/boundary tests, immutable catalog tests, raw HTTP/schema tests and exact-pinned client/real-command discovery tests. Successful and denied discovery tests SHALL assert zero native inference requests. The TS example SHALL be registered in the existing ProviderWire workspace's typecheck/test commands, and Go client tests SHALL remain independent of AGPL implementation imports.
+- **AND** Guidance SHALL distinguish configured candidates from actual attempts/response identity, stock TS normalized discovery from helper access, and configured-account visibility from catalog-independent Cloud/BYOK execution. Scoped fakes and dummy Cloud edges SHALL NOT be presented as deployed customer isolation or live CAP authorization proof. Operator telemetry configuration SHALL remain independent of developer discovery; no discovery feature SHALL enable payload capture or new topology labels. Applicable catalog/discovery/client specs, docs/navigation, parity and module checks SHALL ship with the feature.
 
 #### Scenario: Command proves access without generation
 - **WHEN** raw HTTP, pinned TS normalized discovery, the TS helper and Go ListModels exercise configured direct and fallback aliases against the real test command
 - **THEN** normalized row compatibility and configured access SHALL be proven with intended authentication and zero native inference calls
 
 #### Scenario: Current Cloud fixture is documented
-- **WHEN** deterministic Cloud-auth command tests use the current static configured catalog
-- **THEN** evidence SHALL identify that fixture's actual boundary without claiming customer account construction, internal-key exclusion for future BYOK or deployed cross-tenant isolation
+- **WHEN** deterministic Cloud-auth command tests run against the unified service
+- **THEN** discovery SHALL be rejected without catalog access and inference SHALL require BYOK
+- **AND** no fixture SHALL preserve the retired Cloud-to-configured-account behavior as a compatibility requirement
 
 ### Requirement: Discovery test registration and module-independent delivery
 The TS example SHALL be registered in the existing ProviderWire workspace's typecheck/test commands, and Go client tests SHALL remain independent of AGPL implementation imports. Applicable catalog/discovery/client specs, docs/navigation, parity and module checks SHALL ship with the feature.
