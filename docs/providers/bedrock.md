@@ -136,26 +136,16 @@ tool.
 
 ## Handle unsupported content
 
-Most unsupported Converse content is dropped with a warning. A few cases fail
-before any request is sent, and the error wraps `provider.ErrUnsupportedFunctionality`
-so you can match it with `errors.Is`:
+Most unsupported Converse content is dropped with a warning. Some content makes
+the request fail before it is sent:
 
-- custom tool-result content entries, whenever tools are active;
-- file parts with provider references, non-S3 file URLs, and unsupported image,
-  video, or document media types.
+- custom tool-result entries, when tools are active;
+- file parts with provider references, non-S3 URLs, or unsupported image,
+  video, or document types.
 
-Rejecting custom tool-result content follows the upstream provider, which throws
-for it. Dropping the entry silently would change how the model continues.
-Streaming and non-streaming calls behave the same. When no tools are active,
-tool content is removed with the `toolContent` warning instead. Custom parts in
-assistant history, such as compaction or fallback markers from another provider,
-are skipped without a warning.
-
-Core retry never retries this error. A fallback chain moves on to the next
-candidate by default, and the Gateway reports it as a non-retryable invalid
-request only when every attempted candidate rejected the content. Bedrock Mantle
-is unaffected and keeps its OpenAI Responses warning for custom tool-result
-content.
+Match these failures with `errors.Is(err, provider.ErrUnsupportedFunctionality)`.
+In a fallback chain, the request moves on to the next model. Custom content
+from other providers in assistant history, such as compaction items, is ignored.
 
 Validate the capabilities required by your workflow before putting unlike model
 families in the same fallback chain.

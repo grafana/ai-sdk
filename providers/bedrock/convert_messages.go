@@ -748,7 +748,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 				// Deliberate exception to the warning convention: upstream throws
 				// UnsupportedFunctionalityError, and silently dropping the entry
 				// would change continuation semantics.
-				return nil, fmt.Errorf("bedrock: unsupported tool content part type: %s: %w", provider.ToolContentCustom, provider.ErrUnsupportedFunctionality)
+				return nil, unsupportedFunctionality("bedrock: unsupported tool content part type: %s", provider.ToolContentCustom)
 			default:
 				*warnings = append(*warnings, provider.Warning{
 					Type:    provider.WarnUnsupported,

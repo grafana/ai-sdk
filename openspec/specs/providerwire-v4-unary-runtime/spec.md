@@ -568,7 +568,7 @@ The handler SHALL use synchronized request-local observation to optionally enric
 - **THEN** the existing context error SHALL be returned and published attribution SHALL NOT capture the unowned late native failure
 
 ### Requirement: Unsupported-functionality rejection classification
-When unary invocation or stream setup fails and every attempted failure is the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request document. Existing unsupported-request, cancellation, deadline and API-call-error classification SHALL take precedence, and an empty join SHALL NOT qualify. Any other mix SHALL keep the existing classification.
+When unary invocation or stream setup fails and every attempted failure is the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline and API-call-error classification SHALL take precedence, and an empty join SHALL NOT qualify. Any other mix SHALL keep the existing classification.
 
 #### Scenario: Direct rejection
 - **WHEN** a direct route's adapter returns a wrapped unsupported-functionality rejection before any I/O, in unary or streaming setup

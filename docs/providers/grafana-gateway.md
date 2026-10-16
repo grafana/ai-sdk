@@ -209,19 +209,14 @@ Tool approvals and generated media responses are not supported.
 ## Preserve custom content
 
 Some providers return content that has no standard type, such as OpenAI
-compaction items or Anthropic fallback markers. The Gateway returns it as
-custom content with a `kind` such as `openai.compaction` and provider metadata.
-Keep these parts in the history you send back, with the metadata as their
-provider options, so the same provider can continue the conversation.
+compaction items. The Gateway returns it as custom content with a `kind`, for
+example `openai.compaction`, and provider metadata. Keep these parts in the
+history you send back, with the metadata as their provider options, so the same
+provider can continue the conversation. Other providers ignore custom content
+they do not recognize, so it is safe to use with fallback chains.
 
-Providers ignore history they do not recognize. For example, an OpenAI
-compaction item is skipped when a fallback candidate is an OpenAI-compatible or
-Anthropic model. Tool results can also carry custom entries with their own
-provider options; a provider that cannot represent such an entry omits it with
-a warning, and Bedrock Converse rejects the request when tools are active, as
-the [Bedrock guide](bedrock.md#handle-unsupported-content) describes. When
-every candidate rejects, the Gateway returns a non-retryable invalid-request
-error.
+If no model in the chain can accept the custom content in a tool result, the
+Gateway returns a non-retryable invalid-request error.
 
 ## Use your own provider credentials
 

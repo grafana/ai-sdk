@@ -1,6 +1,7 @@
 package v4
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -213,5 +214,106 @@ func TestUnarySuccessBoundaries(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		assert.False(t, h.writeUnarySuccess(recorder, result))
 		assert.Empty(t, recorder.Body.String())
+	})
+}
+
+func customResult(parts ...provider.GenerateContentPart) *provider.GenerateResult {
+	return &provider.GenerateResult{Content: parts, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}
+}
+
+func TestUnaryCustomContent_Output(t *testing.T) {
+	opaque := json.RawMessage(`{"itemId":"cmp_1","nested":{"zero":0,"no":false,"none":null,"empty":"","list":[]}}`)
+	tests := []struct {
+		name string
+		part provider.GenerateContentPart
+		want string
+	}{
+		{"absent metadata", provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "anthropic.fallback"}, `{"type":"custom","kind":"anthropic.fallback"}`},
+		{"empty metadata", provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "example.kind", ProviderMetadata: provider.ProviderMetadata{}}, `{"type":"custom","kind":"example.kind","providerMetadata":{}}`},
+		{"opaque metadata", provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "openai.compaction", ProviderMetadata: provider.ProviderMetadata{"openai": opaque}}, `{"type":"custom","kind":"openai.compaction","providerMetadata":{"openai":` + string(opaque) + `}}`},
+	}
+	for _, tc := range tests {
+		t.Run("custom-only "+tc.name, func(t *testing.T) {
+			mapped, err := mapUnarySuccess(customResult(tc.part), 1<<20)
+			require.NoError(t, err)
+			body, ok := encodeUnarySuccess(mapped, 1<<20)
+			require.True(t, ok)
+			require.NoError(t, compileWireSchema(t, unarySuccessSchemaJSON).Validate(body))
+			var decoded struct {
+				Content []json.RawMessage `json:"content"`
+			}
+			require.NoError(t, json.Unmarshal(body, &decoded))
+			require.Len(t, decoded.Content, 1)
+			assert.JSONEq(t, tc.want, string(decoded.Content[0]))
+		})
+	}
+
+	t.Run("keeps content order", func(t *testing.T) {
+		mapped, err := mapUnarySuccess(customResult(
+			provider.GenerateContentPart{Type: provider.ContentText, Text: "before"},
+			provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "example.kind"},
+			provider.GenerateContentPart{Type: provider.ContentText, Text: "after"},
+		), 1<<20)
+		require.NoError(t, err)
+		body, ok := encodeUnarySuccess(mapped, 1<<20)
+		require.True(t, ok)
+		var decoded struct {
+			Content []struct {
+				Type string `json:"type"`
+			} `json:"content"`
+		}
+		require.NoError(t, json.Unmarshal(body, &decoded))
+		require.Len(t, decoded.Content, 3)
+		assert.Equal(t, []string{"text", "custom", "text"}, []string{decoded.Content[0].Type, decoded.Content[1].Type, decoded.Content[2].Type})
+	})
+
+	t.Run("metadata budget is shared", func(t *testing.T) {
+		part := provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "example.kind", ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"` + strings.Repeat("x", 1000) + `"}`)}}
+		_, err := mapUnarySuccess(customResult(part), 512)
+		require.Error(t, err)
+		_, err = mapUnarySuccess(customResult(part), 1<<20)
+		require.NoError(t, err)
+	})
+
+	t.Run("kind bytes count toward the preflight", func(t *testing.T) {
+		part := provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "example." + strings.Repeat("k", 4096)}
+		_, err := mapUnarySuccess(customResult(part), 2048)
+		require.Error(t, err)
+	})
+
+	t.Run("invalid kinds and metadata fail before HTTP 200", func(t *testing.T) {
+		for name, part := range map[string]provider.GenerateContentPart{
+			"empty kind":       {Type: provider.ContentCustom},
+			"undotted kind":    {Type: provider.ContentCustom, Kind: "private"},
+			"invalid UTF-8":    {Type: provider.ContentCustom, Kind: "private." + string([]byte{0xff})},
+			"array metadata":   {Type: provider.ContentCustom, Kind: "example.kind", ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`[]`)}},
+			"invalid metadata": {Type: provider.ContentCustom, Kind: "example.kind", ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{`)}},
+		} {
+			t.Run(name, func(t *testing.T) {
+				harness := newRuntimeHarness(t, testLimits())
+				harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+					return customResult(part), nil
+				}
+
+				response := harness.serve(validRequest(`{"prompt":[]}`))
+
+				assert.Equal(t, http.StatusInternalServerError, response.Code)
+				assert.JSONEq(t, string(canonicalInternalError), response.Body.String())
+				assert.NotContains(t, response.Body.String(), "private")
+			})
+		}
+	})
+
+	t.Run("custom-only success is served once", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
+		harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+			return customResult(provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "anthropic.fallback", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"fallback"}`)}}), nil
+		}
+
+		response := harness.serve(validRequest(`{"prompt":[]}`))
+
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		assert.Equal(t, 1, harness.model.callCount())
+		assert.Contains(t, response.Body.String(), `"kind":"anthropic.fallback"`)
 	})
 }
