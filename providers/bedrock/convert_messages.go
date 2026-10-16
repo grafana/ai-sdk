@@ -111,6 +111,9 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 	var warnings []provider.Warning
 	var out convertedPrompt
 	documentCounter := 0
+	if !hasAnyTools {
+		prompt, warnings = filterToolContentFromPrompt(prompt, warnings)
+	}
 
 	blocks := groupPromptBlocks(prompt)
 	for blockIndex, block := range blocks {
@@ -139,6 +142,7 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 			// message per Converse contract.
 			var content []contentBlock
 			for _, msg := range block.messages {
+				contentStart := len(content)
 				switch msg.Role {
 				case provider.RoleUser:
 					blocks, err := convertUserContent(msg.Content, &documentCounter, &warnings, isMistral)
@@ -157,7 +161,7 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 				if err != nil {
 					return convertedPrompt{}, warnings, err
 				}
-				if cp != nil {
+				if cp != nil && len(content) > contentStart {
 					content = append(content, contentBlock{CachePoint: cp})
 				}
 			}
@@ -178,7 +182,7 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 				if err != nil {
 					return convertedPrompt{}, warnings, err
 				}
-				if cp != nil {
+				if cp != nil && len(contentBlocks) > 0 {
 					content = append(content, contentBlock{CachePoint: cp})
 				}
 			}
@@ -188,19 +192,13 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 		}
 	}
 
-	// Filter tool content when no tools are active. Matches upstream behavior
-	// that prevents 400s from Bedrock when a tool-result block is sent
-	// without active tools.
-	if !hasAnyTools {
-		out.Messages, warnings = filterToolContentFromMessages(out.Messages, warnings)
-	}
-
 	return out, warnings, nil
 }
 
 func convertSystemBlock(messages []provider.Message, warnings *[]provider.Warning) ([]systemContentBlock, error) {
 	var out []systemContentBlock
 	for _, msg := range messages {
+		contentStart := len(out)
 		for _, part := range msg.Content {
 			if part.Type != provider.ContentPartTypeText {
 				*warnings = append(*warnings, provider.Warning{
@@ -216,7 +214,7 @@ func convertSystemBlock(messages []provider.Message, warnings *[]provider.Warnin
 		if err != nil {
 			return nil, err
 		}
-		if cp != nil {
+		if cp != nil && len(out) > contentStart {
 			out = append(out, systemContentBlock{CachePoint: cp})
 		}
 	}
@@ -760,36 +758,29 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 	return out, nil
 }
 
-// filterToolContentFromMessages strips tool-call and tool-result blocks from
-// every message when no tools are active. Bedrock 400s otherwise.
-func filterToolContentFromMessages(messages []converseMessage, warnings []provider.Warning) ([]converseMessage, []provider.Warning) {
-	hasToolContent := false
-	for _, m := range messages {
-		for _, b := range m.Content {
-			if b.ToolUse != nil || b.ToolResult != nil {
-				hasToolContent = true
-				break
-			}
+func filterToolContentFromPrompt(prompt []provider.Message, warnings []provider.Warning) ([]provider.Message, []provider.Warning) {
+	removed := false
+	out := make([]provider.Message, 0, len(prompt))
+	for _, message := range prompt {
+		if message.Role == provider.RoleSystem {
+			out = append(out, message)
+			continue
 		}
-		if hasToolContent {
-			break
-		}
-	}
-	if !hasToolContent {
-		return messages, warnings
-	}
-	out := make([]converseMessage, 0, len(messages))
-	for _, m := range messages {
-		filtered := make([]contentBlock, 0, len(m.Content))
-		for _, b := range m.Content {
-			if b.ToolUse != nil || b.ToolResult != nil {
+		content := make([]provider.ContentPart, 0, len(message.Content))
+		for _, part := range message.Content {
+			if part.Type == provider.ContentPartTypeToolCall || part.Type == provider.ContentPartTypeToolResult {
+				removed = true
 				continue
 			}
-			filtered = append(filtered, b)
+			content = append(content, part)
 		}
-		if len(filtered) > 0 {
-			out = append(out, converseMessage{Role: m.Role, Content: filtered})
+		if len(content) > 0 {
+			message.Content = content
+			out = append(out, message)
 		}
+	}
+	if !removed {
+		return prompt, warnings
 	}
 	warnings = append(warnings, provider.Warning{
 		Type:    provider.WarnUnsupported,

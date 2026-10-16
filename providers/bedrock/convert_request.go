@@ -66,22 +66,6 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	isAnthropic := isAnthropicModelForCall(modelID, family, hasBudgetTokens)
 	bo.ReasoningConfig = resolveReasoningConfig(modelID, isAnthropic, opts.Reasoning, bo.ReasoningConfig, &warnings)
 
-	// Convert the prompt. We must know whether tools are active to decide
-	// whether to strip tool content. Pre-prepare tools first so we know.
-	hasAnyToolsHint := len(opts.Tools) > 0
-	if opts.ResponseFormat != nil && opts.ResponseFormat.Type == provider.ResponseFormatJSON && len(opts.ResponseFormat.Schema) > 0 {
-		// JSON response either injects the synthetic tool (non-native) or
-		// uses native output_config -- either way callers benefit from tool
-		// content being preserved in the prompt.
-		hasAnyToolsHint = true
-	}
-
-	converted, promptWarnings, err := convertPrompt(opts.Prompt, meta.isMistral, hasAnyToolsHint)
-	warnings = append(warnings, promptWarnings...)
-	if err != nil {
-		return nil, warnings, meta, err
-	}
-
 	// Whether extended thinking is enabled (Anthropic only). Used both for the
 	// native-structured-output gate and inference-config adjustments below.
 	isThinkingEnabled := bo.ReasoningConfig != nil &&
@@ -105,7 +89,6 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 			// The JSON response tool needs forced tool use, so models that
 			// reject it always get the instruction (upstream
 			// amazon-bedrock-chat-language-model.ts, 5.0.99).
-			converted.System = injectJSONInstruction(converted.System, opts.ResponseFormat.Schema)
 			meta.usesJSONInstruction = true
 		} else {
 			meta.usesJSONResponseTool = true
@@ -132,6 +115,15 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 		return nil, warnings, meta, err
 	}
 	warnings = append(warnings, pt.warnings...)
+
+	converted, promptWarnings, err := convertPrompt(opts.Prompt, meta.isMistral, hasActiveTools(pt))
+	warnings = append(warnings, promptWarnings...)
+	if err != nil {
+		return nil, warnings, meta, err
+	}
+	if meta.usesJSONInstruction {
+		converted.System = injectJSONInstruction(converted.System, opts.ResponseFormat.Schema)
+	}
 
 	// Inference config (scalar sampling params).
 	inf, infWarnings := buildInferenceConfig(modelID, opts, isAnthropic, bo)
@@ -200,10 +192,6 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	var addRespPaths []string
 	if isAnthropic {
 		addRespPaths = []string{"/delta/stop_sequence"}
-	}
-
-	if !hasActiveTools(pt) {
-		converted.Messages, warnings = filterToolContentFromMessages(converted.Messages, warnings)
 	}
 
 	// Match upstream: system is always present, defaulting to an empty array.

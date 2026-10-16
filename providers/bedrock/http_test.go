@@ -266,6 +266,80 @@ func TestDoStream_ContextCancellation(t *testing.T) {
 	}
 }
 
+func TestDoStream_EOFBeforeMessageStop(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		lines     []string
+		partType  provider.StreamPartType
+		wantDelta string
+	}{
+		{name: "empty body"},
+		{
+			name: "partial text",
+			lines: []string{
+				`{"messageStart":{"role":"assistant"}}`,
+				`{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"partial"}}}`,
+			},
+			partType: provider.PartTextDelta, wantDelta: "partial",
+		},
+		{
+			name: "closed text block",
+			lines: []string{
+				`{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"text":"partial"}}}`,
+				`{"contentBlockStop":{"contentBlockIndex":0}}`,
+			},
+			partType: provider.PartTextDelta, wantDelta: "partial",
+		},
+		{
+			name: "partial tool input",
+			lines: []string{
+				`{"messageStart":{"role":"assistant"}}`,
+				`{"contentBlockStart":{"contentBlockIndex":0,"start":{"toolUse":{"toolUseId":"call-1","name":"weather"}}}}`,
+				`{"contentBlockDelta":{"contentBlockIndex":0,"delta":{"toolUse":{"input":"{\"city\":"}}}}`,
+			},
+			partType: provider.PartToolInputDelta, wantDelta: `{"city":`,
+		},
+		{
+			name:  "metadata without messageStop",
+			lines: []string{`{"metadata":{"usage":{"inputTokens":10,"outputTokens":5}}}`},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := encodeFixtures(t, tc.lines...)
+			lm := newStubBedrockProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.True(t, strings.HasSuffix(r.URL.Path, "/converse-stream"))
+				w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
+				_, _ = w.Write(body)
+			}))
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			result, err := lm.DoStream(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
+			require.NoError(t, err)
+			var parts []provider.StreamPart
+			for part := range result.Stream {
+				parts = append(parts, part)
+			}
+			require.NoError(t, ctx.Err())
+			if tc.partType != "" {
+				indices := findParts(parts, tc.partType)
+				require.Len(t, indices, 1)
+				assert.Equal(t, tc.wantDelta, parts[indices[0]].Delta)
+			}
+			assert.Empty(t, findParts(parts, provider.PartFinish))
+			assert.Empty(t, findParts(parts, provider.PartToolCall))
+			assert.Empty(t, findParts(parts, provider.PartToolInputEnd))
+			indices := findParts(parts, provider.PartError)
+			require.Len(t, indices, 1)
+			assert.Equal(t, len(parts)-1, indices[0])
+			apiErr := parts[indices[0]].APICallError
+			require.NotNil(t, apiErr)
+			assert.True(t, apiErr.IsRetryable)
+			assert.Contains(t, apiErr.Message, "stream ended before messageStop")
+			assert.ErrorIs(t, apiErr, io.ErrUnexpectedEOF)
+		})
+	}
+}
+
 func TestDoGenerate_RequestSignedAndBodyRoundtrip(t *testing.T) {
 	var seenAuth string
 	var seenBody string

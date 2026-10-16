@@ -122,6 +122,9 @@ func (m *model) runStream(ctx context.Context, body io.Reader, responseHeaders m
 		}
 		return c.handleFrame(hdr, payload)
 	})
+	if err == nil && !c.finishKnown {
+		err = fmt.Errorf("stream ended before messageStop: %w", io.ErrUnexpectedEOF)
+	}
 	switch {
 	case err == nil:
 		// Stream completed normally; emit the finish event.

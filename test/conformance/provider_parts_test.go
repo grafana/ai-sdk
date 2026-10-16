@@ -220,6 +220,27 @@ func TestAnthropicSyntheticStreamParts(t *testing.T) {
 			expectation, ok := expectations[tc.Name]
 			require.True(t, ok, "no upstream expectation for case %q", tc.Name)
 
+			switch tc.Name {
+			case "usage-resets-and-metadata-carries-across-messages",
+				"delta-less-message-repeats-iterations-and-context-management",
+				"null-context-management-delta-keeps-previous":
+				finish := expectation.Parts[len(expectation.Parts)-1]
+				require.Equal(t, "finish", finish["type"])
+				switch usage := finish["usage"].(type) {
+				case map[string]any:
+					require.Equal(t, map[string]any{
+						"cacheRead": float64(0), "cacheWrite": float64(0),
+						"noCache": float64(10), "total": float64(10),
+					}, usage["inputTokens"], "registered upstream cache accounting changed; review anthropic-executor-iteration-cache-usage")
+					usage["inputTokens"] = map[string]any{
+						"cacheRead": float64(4), "cacheWrite": float64(2),
+						"noCache": float64(10), "total": float64(16),
+					}
+				default:
+					t.Fatal("upstream finish usage must be an object")
+				}
+			}
+
 			server := syntheticStreamServer(t, tc.Events)
 			model := anthropicProvider.New("test-api-key", anthropicStreamPartsModel,
 				anthropicProvider.WithRequestOptions(option.WithBaseURL(server.URL), option.WithMaxRetries(0)))
