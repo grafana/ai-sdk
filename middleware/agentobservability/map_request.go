@@ -318,7 +318,12 @@ func toolResultContent(output *provider.ToolResultOutput) (json.RawMessage, bool
 		}
 		return raw, isErr
 	case provider.ToolOutputExecutionDenied:
-		raw, err := json.Marshal(output.Reason)
+		raw, err := json.Marshal(func() string {
+			if output.Reason != nil {
+				return *output.Reason
+			}
+			return ""
+		}())
 		if err != nil {
 			return nil, isErr
 		}

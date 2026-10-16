@@ -203,6 +203,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		FinishReason     *wireFinish             `json:"finishReason"`
 		Usage            *wireUsage              `json:"usage"`
 		RawValue         json.RawMessage         `json:"rawValue"`
+		ApprovalID       *string                 `json:"approvalId"`
 		ToolCallID       *string                 `json:"toolCallId"`
 		ToolName         *string                 `json:"toolName"`
 		Input            *string                 `json:"input"`
@@ -227,7 +228,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 	case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd,
 		provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd, provider.PartReasoningFile,
 		provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd,
-		provider.PartToolCall, provider.PartToolResult, provider.PartFinish:
+		provider.PartToolApprovalRequest, provider.PartToolCall, provider.PartToolResult, provider.PartFinish:
 		metadata, err := decodeProviderMetadata(value.Metadata)
 		if err != nil {
 			return invalid()
@@ -276,6 +277,11 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 			}
 			part.Delta = *value.Delta
 		}
+	case provider.PartToolApprovalRequest:
+		if decodeFields(data, &value, "approvalId", "toolCallId") != nil || value.ApprovalID == nil || *value.ApprovalID == "" || value.ToolCallID == nil || *value.ToolCallID == "" {
+			return invalid()
+		}
+		part.ApprovalID, part.ToolCallID = *value.ApprovalID, *value.ToolCallID
 	case provider.PartToolCall, provider.PartToolResult:
 		fields := []string{"toolCallId", "toolName", "dynamic"}
 		if value.Type == provider.PartToolCall {

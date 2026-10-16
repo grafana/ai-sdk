@@ -573,7 +573,7 @@ func TestToResponseMessages(t *testing.T) {
 		assert.Equal(t, "weather", denied.ToolName)
 		require.NotNil(t, denied.Output)
 		assert.Equal(t, provider.ToolOutputExecutionDenied, denied.Output.Type)
-		assert.Equal(t, "user denied", denied.Output.Reason)
+		assert.Equal(t, new("user denied"), denied.Output.Reason)
 	})
 
 	t.Run("approved tool-approval-response routes without synthetic result", func(t *testing.T) {

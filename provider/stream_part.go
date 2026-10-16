@@ -341,7 +341,12 @@ func legacyToolResult(o *ToolResultOutput) (json.RawMessage, bool) {
 		}
 		return b, false
 	case ToolOutputExecutionDenied:
-		b, _ := json.Marshal(o.Reason)
+		b, _ := json.Marshal(func() string {
+			if o.Reason != nil {
+				return *o.Reason
+			}
+			return ""
+		}())
 		return b, true
 	default:
 		return json.RawMessage("null"), false

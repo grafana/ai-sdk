@@ -14,6 +14,7 @@ import { generateText, isStepCount, jsonSchema, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 import packageManifest from "./package.json" with { type: "json" };
 import { fetchConfiguredModels } from "../../examples/configured-discovery";
+import { nativeApprovalReply } from "./native-approvals";
 import { nativeMetadataReply } from "./native-metadata";
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
@@ -3354,6 +3355,8 @@ class FakeCompatible {
 }
 
 class FakeOpenAI {
+ approvals = false;
+ approvalFailure = false;
   metadata = false;
   readonly url: string;
   readonly requests: FakeRequest[] = [];
@@ -3417,6 +3420,7 @@ class FakeOpenAI {
       response.end(JSON.stringify({ error: { type: "server_error", message: "provider-secret-response" } }));
       return;
     }
+    if (this.approvals) { nativeApprovalReply(body, response, this.approvalFailure); return; }
     if (this.metadata) { nativeMetadataReply("openai", body, response); return; }
     const stream = body.stream === true;
     const text = stream ? "hello from fake openai stream" : "hello from fake openai";
@@ -3591,3 +3595,139 @@ async function poll(check: () => Promise<boolean>, timeoutMs: number, descriptio
   }
   throw new Error(`timed out waiting for ${description}`);
 }
+
+describe("provider approval continuation", () => {
+  for (const fallback of [false, true]) for (const store of [false, true]) {
+    it(`actual outputs continue approved denied mixed, fallback=${fallback}, store=${store}`, async () => {
+      const openai = await FakeOpenAI.start(); openai.approvals = true;
+      const anthropic = await FakeAnthropic.start(); anthropic.failureStatus = 503;
+      const config = `providers:
+  openai:
+    type: openai
+    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY
+    baseURL: ${openai.url}/v1
+  anthropic:
+    type: anthropic
+    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY
+    baseURL: ${anthropic.url}
+models:
+  approvals:
+    name: Approvals
+    primary:
+      provider: ${fallback ? "anthropic" : "openai"}
+      model: backend-private
+${fallback ? "    fallback:\n      - provider: openai\n        model: backend-private\n" : ""}`;
+      let gateway: GatewayProcess | undefined;
+      try {
+        gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", config);
+        const model = gateway.client()("approvals");
+        for (const decisions of [[true,true], [false,false], [true,false], [true,true,true], [false,false,false], [true,false,true]]) {
+          const local = decisions.length === 3;
+          for (const path of ["ts-unary", "ts-stream", "ts-high-generate", "ts-high-stream", "go-unary", "go-stream", "go-high-generate", "go-high-stream"]) {
+            if(local && !path.includes("high")) continue;
+            let executions = 0;
+            const localTool = tool({inputSchema:jsonSchema<Record<string,unknown>>({type:"object"}),needsApproval:true,execute:async()=>{executions++;return "local-result";}});
+            const offset = openai.requests.length;
+            const options: LanguageModelV4CallOptions = { prompt: [{role:"user",content:[{type:"text",text:local?"approval-local":"approval"}]}], providerOptions:{openai:{store}}, maxOutputTokens:64 };
+            if (path.startsWith("go")) {
+              const go = await captureGoClient(goClientBinaryPath,{baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:"approvals",mode:path.replace("go-","approval-"),decisions,options});
+              assert.equal(go.error,undefined,JSON.stringify(go.error)); assert.equal(go.approvals.length,decisions.length);executions=go.executions;
+            } else if (path.includes("high")) {
+              const initial = {model,tools:{local:localTool,"mcp.lookup":{...localTool,needsApproval:false}},prompt:local?"approval-local":"approval",providerOptions:{openai:{store}},maxRetries:0};
+              const first = path.endsWith("generate") ? await generateText(initial) : streamText(initial);
+              const messages = (await first.response).messages;
+              const approvals = messages.flatMap<any>(message => Array.isArray(message.content) ? message.content : []).filter((part:any)=>part.type==="tool-approval-request") as any[];
+              assert.equal(approvals.length,decisions.length);
+              const calls = messages.flatMap<any>(message=>Array.isArray(message.content)?message.content:[]).filter((part:any)=>part.type==="tool-call");
+              for (const approval of approvals) {const call=calls.find((part:any)=>part.toolCallId===approval.toolCallId);if(call?.providerExecuted)call.providerOptions={...call.providerOptions,openai:{...call.providerOptions?.openai,approvalRequestId:approval.approvalId}};}
+              const resumed = {model,tools:{local:localTool,"mcp.lookup":{...localTool,needsApproval:false}},messages:[...messages,{role:"tool" as const,content:approvals.map((part,index)=>({type:"tool-approval-response" as const,approvalId:part.approvalId,approved:decisions[index],providerExecuted:calls.find((call:any)=>call.toolCallId===part.toolCallId)?.providerExecuted}))}],providerOptions:{openai:{store}},maxRetries:0};
+              const second = path.endsWith("generate") ? await generateText(resumed) : streamText(resumed);
+              const nextMessages=(await second.response).messages;
+              const results=nextMessages.flatMap<any>(message=>Array.isArray(message.content)?message.content:[]).filter((part:any)=>part.type==="tool-result"&&part.toolName==="mcp.lookup");
+              assert.equal(results.length,decisions.slice(0,2).filter(Boolean).length);
+              for(const result of results)assert.ok(calls.some((call:any)=>call.toolCallId===result.toolCallId));
+              const third={...resumed,messages:[...resumed.messages,...nextMessages,{role:"user" as const,content:"third-turn"}]};
+              if(path.endsWith("generate"))await generateText(third);else await streamText(third).consumeStream();
+            } else {
+              const streaming = path.endsWith("stream");
+              const first: any[] = streaming ? await collectGatewayStream((await model.doStream(options)).stream) : (await model.doGenerate(options)).content;
+              const approvals = first.filter(part=>part.type==="tool-approval-request"); assert.equal(approvals.length,2);
+              const calls = first.filter(part=>part.type==="tool-call").map(part=>({type:"tool-call" as const,toolCallId:part.toolCallId,toolName:part.toolName,input:JSON.parse(part.input),providerExecuted:part.providerExecuted,providerOptions:part.providerMetadata}));
+              for(const approval of approvals){const call=calls.find(part=>part.toolCallId===approval.toolCallId);assert.ok(call);call.providerOptions={...call.providerOptions,openai:{...call.providerOptions?.openai,approvalRequestId:approval.approvalId}};}
+              const responses = approvals.map((part,index)=>({type:"tool-approval-response" as const,approvalId:part.approvalId,approved:decisions[index],reason:"",providerOptions:{openai:{extension:false}}}));
+              const next: LanguageModelV4CallOptions = {...options,prompt:[...options.prompt,{role:"assistant",content:calls},{role:"tool",content:responses}]};
+              const resumed:any[]=streaming?await collectGatewayStream((await model.doStream(next)).stream):(await model.doGenerate(next)).content;
+              const results=resumed.filter(part=>part.type==="tool-result");assert.equal(results.length,decisions.filter(Boolean).length);
+              for(const result of results){const approval=approvals.find(part=>part.toolCallId===result.toolCallId);assert.ok(approval);assert.equal(result.providerMetadata?.openai?.itemId,`result-${approval.approvalId}`);}
+            }
+            const requests = openai.requests.slice(offset); assert.equal(requests.length,path.includes("high")?3:2,path);
+            const input = requests[1].body.input as any[];
+            assert.deepEqual(input.filter(item=>item.type==="mcp_approval_response"),decisions.slice(0,2).map((approve,index)=>({type:"mcp_approval_response",approval_request_id:`approval-${index}`,approve})),path);
+            for (let index=0;index<2;index++) assert.equal(input.some(item=>item.type==="item_reference"&&item.id===`approval-${index}`),store,path);
+            assert.equal(executions,local&&decisions[2]?1:0,path);
+            const localResult=input.find(item=>item.type==="function_call_output");
+            if(local){assert.ok(localResult,path);assert.equal(localResult.call_id,"local-call");assert.equal(localResult.output,decisions[2]?"local-result":"Tool call execution denied.",path);} else assert.equal(localResult,undefined,path);
+          }
+        }
+      } finally { await settleCleanup(...(gateway?[()=>gateway!.stop()]:[]),()=>openai.stop(),()=>anthropic.stop()); }
+    });
+  }
+});
+
+describe("approval commitment",()=>{
+ it("does not replay onto fallback after approval output and a native stream failure",async()=>{
+  const openai=await FakeOpenAI.start();openai.approvals=true;openai.approvalFailure=true;
+  const anthropic=await FakeAnthropic.start();let gateway:GatewayProcess|undefined;
+  const config=`providers:
+  openai:
+    type: openai
+    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY
+    baseURL: ${openai.url}/v1
+  anthropic:
+    type: anthropic
+    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY
+    baseURL: ${anthropic.url}
+models:
+  approvals:
+    name: Approvals
+    primary:
+      provider: openai
+      model: backend-private
+    fallback:
+      - provider: anthropic
+        model: backend-private
+`;
+  try{
+   gateway=await GatewayProcess.start(binaryPath,"",[],{},"access-token",config);
+   const options:LanguageModelV4CallOptions={prompt:[{role:"user",content:[{type:"text",text:"approval"}]}]};
+   const ts=await collectGatewayStream((await gateway.client()("approvals").doStream(options)).stream);
+   const go=await captureGoClient(goClientBinaryPath,{baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:"approvals",mode:"stream",options});
+   for(const parts of [ts,go.parts]){assert.ok(parts.some((part:any)=>part.type==="tool-approval-request"));assert.ok(parts.some((part:any)=>part.type==="error"));}
+   assert.equal(openai.requests.length,2);assert.equal(anthropic.requests.length,0);
+  }finally{await settleCleanup(...(gateway?[()=>gateway!.stop()]:[]),()=>openai.stop(),()=>anthropic.stop());}
+ });
+});
+
+it("registered nested result options reach native OpenAI through both clients and modes", async () => {
+  const [native, gateway] = await startOpenAIGateway();
+  try {
+    const breakpoint = { mode: "explicit" };
+    const options: LanguageModelV4CallOptions = { prompt: [{ role: "tool", content: [{ type: "tool-result", toolCallId: "call", toolName: "lookup", output: { type: "content", value: [
+      { type: "text", text: "result", providerOptions: { openai: { promptCacheBreakpoint: breakpoint } } },
+      { type: "file", data: { type: "data", data: "AQI=" }, mediaType: "image/png", providerOptions: { openai: { imageDetail: "high", promptCacheBreakpoint: breakpoint } } },
+    ] } }] }] };
+    for (const mode of ["generate", "stream"] as const) for (const client of ["ts", "go"]) {
+      const offset = native.requests.length;
+      if (client === "go") {
+        const result = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "openai", mode, options });
+        assert.equal(result.error, undefined);
+      } else if (mode === "generate") await gateway.client()("openai").doGenerate(options);
+      else await collectGatewayStream((await gateway.client()("openai").doStream(options)).stream);
+      const output = (native.requests[offset].body.input as any[]).find(item => item.type === "function_call_output").output;
+      assert.deepEqual(output, [
+        { type: "input_text", text: "result", prompt_cache_breakpoint: breakpoint },
+        { type: "input_image", image_url: "data:image/png;base64,AQI=", detail: "high", prompt_cache_breakpoint: breakpoint },
+      ]);
+    }
+  } finally { await settleCleanup(() => gateway.stop(), () => native.stop()); }
+});

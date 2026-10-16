@@ -3,7 +3,8 @@
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/stream-event.schema.json",
   "title": "ProviderWire V4 strict streaming text and function-tool event",
   "oneOf": [
-    { "$ref": "#/$defs/urlSource" },
+    { "$ref": "#/$defs/toolApprovalRequest" },
+          { "$ref": "#/$defs/urlSource" },
     { "$ref": "#/$defs/documentSource" },
     { "$ref": "#/$defs/reasoningBoundary" },
     { "$ref": "#/$defs/reasoningDelta" },
@@ -22,6 +23,17 @@
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
+    "toolApprovalRequest": {
+      "type": "object",
+      "required": ["type", "approvalId", "toolCallId"],
+      "properties": {
+        "type": { "const": "tool-approval-request" },
+        "approvalId": { "type": "string", "minLength": 1 },
+        "toolCallId": { "type": "string", "minLength": 1 },
+        "providerMetadata": { "$ref": "#/$defs/providerMetadata" }
+      },
+      "additionalProperties": false
+    },
     "reasoningBoundary": {
       "type": "object", "required": ["type", "id"],
       "properties": {"type": {"enum": ["reasoning-start", "reasoning-end"]}, "id": {"type": "string", "minLength": 1}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},

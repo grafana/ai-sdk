@@ -193,7 +193,7 @@ func ToResponseMessages(parts []provider.ContentPart) []provider.Message {
 					ToolName:   p.ToolName,
 					Output: &provider.ToolResultOutput{
 						Type:   provider.ToolOutputExecutionDenied,
-						Reason: p.Reason,
+						Reason: denialReason(p.Reason),
 					},
 				})
 			}
@@ -257,4 +257,11 @@ func sortToolContentByToolCallOrder(content []provider.ContentPart, toolCallOrde
 		}
 	}
 	return out
+}
+
+func denialReason(reason string) *string {
+	if reason == "" {
+		return nil
+	}
+	return &reason
 }

@@ -2312,7 +2312,7 @@ func TestBuildParams_BetaDeduplication(t *testing.T) {
 func TestSerializeToolOutput_ExecutionDenied(t *testing.T) {
 	output := provider.ToolResultOutput{
 		Type:   provider.ToolOutputExecutionDenied,
-		Reason: "user rejected the tool call",
+		Reason: new("user rejected the tool call"),
 	}
 
 	blocks := serializeToolOutput(&output, nil, nil)
@@ -2329,7 +2329,7 @@ func TestSerializeToolOutput_ExecutionDenied_DefaultReason(t *testing.T) {
 
 	blocks := serializeToolOutput(&output, nil, nil)
 
-	assert.Equal(t, "tool execution was denied", blocks[0].OfText.Text)
+	assert.Equal(t, "Tool call execution denied.", blocks[0].OfText.Text)
 }
 
 func TestSerializeToolOutput_Content(t *testing.T) {

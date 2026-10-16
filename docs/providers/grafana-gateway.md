@@ -204,8 +204,31 @@ For Anthropic MCP, use distinct server names and HTTPS URLs without embedded
 credentials or fragments. Include the server configuration again when continuing
 the conversation, along with prior calls, results and provider metadata.
 
-Tool approvals, custom tool-result formats and generated media responses are
-not supported.
+Provider approval requests can be approved or denied and resumed through unary
+or streaming calls, including configured fallback routes. Keep the returned
+approval ID distinct from the tool-call ID. The high-level SDK owns application
+approval history; the V4 prompt carries tool-role approval responses, with an
+explicit boolean decision. The Gateway does not execute or persist approvals.
+
+For OpenAI hosted MCP, preserve the link between the two returned IDs before
+resuming: find the provider-executed tool call with the approval's `toolCallId`
+and set that call's `providerOptions.openai.approvalRequestId` to the returned
+`approvalId`, retaining its other options. The registered native adapter uses
+this option to associate the later result with the original tool call. Apply
+this step to high-level response messages as well as direct provider prompts;
+the registered high-level SDK does not add it automatically. Send the decision
+with the same approval ID and retain the provider ownership marker in
+application history.
+
+Execution-denied results preserve an absent reason separately from an explicitly
+empty reason. In Go, `ToolResultOutput.Reason` is now `*string`: use nil for an
+absent reason and `new("")` to preserve empty text. Existing string-valued
+constructors must be migrated to pointers. Approval-response reasons remain
+strings; empty and absent both mean no reason.
+
+Registered output options and nested text/file result options reach native
+adapters. The `content` output wrapper has no `providerOptions` field. Custom
+tool-result formats and generated media responses are not supported.
 
 ## Use your own provider credentials
 

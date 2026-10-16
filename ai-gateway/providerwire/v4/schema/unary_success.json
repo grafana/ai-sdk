@@ -12,6 +12,7 @@
       "type": "array",
       "items": {
         "oneOf": [
+          { "$ref": "#/$defs/toolApprovalRequest" },
           { "$ref": "#/$defs/urlSource" },
           { "$ref": "#/$defs/documentSource" },
           { "$ref": "#/$defs/reasoning" },
@@ -82,6 +83,17 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "toolApprovalRequest": {
+      "type": "object",
+      "required": ["type", "approvalId", "toolCallId"],
+      "properties": {
+        "type": { "const": "tool-approval-request" },
+        "approvalId": { "type": "string", "minLength": 1 },
+        "toolCallId": { "type": "string", "minLength": 1 },
+        "providerMetadata": { "$ref": "#/$defs/providerMetadata" }
+      },
+      "additionalProperties": false
+    },
     "responseIdentity": {
       "type": "object",
       "properties": {

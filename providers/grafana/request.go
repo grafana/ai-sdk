@@ -353,8 +353,10 @@ func projectOutput(p *provider.ToolResultOutput) (requestObject, error) {
 		out["value"] = p.JSON
 		rest.JSON = nil
 	case provider.ToolOutputExecutionDenied:
-		optionalString(out, "reason", p.Reason)
-		rest.Reason = ""
+		if p.Reason != nil {
+			out["reason"] = *p.Reason
+		}
+		rest.Reason = nil
 	case provider.ToolOutputContent:
 		if p.ProviderOptions != nil || p.Content == nil {
 			return nil, errRequest
