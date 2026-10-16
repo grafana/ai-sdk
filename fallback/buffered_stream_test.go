@@ -73,6 +73,12 @@ func TestBufferedStream_RecoversWithoutLeakingFailedOutput(t *testing.T) {
 			assert.Equal(t, completedParts(), readParts(result))
 			assert.ErrorIs(t, abandoned.Err(), context.Canceled)
 			require.Len(t, attempts, 3)
+			for _, attempt := range attempts[:2] {
+				assert.NotNil(t, attempt.SourceErr)
+				assert.Equal(t, attempt.Err, attempt.SourceErr)
+			}
+			assert.Same(t, retryable, attempts[1].SourceErr)
+			assert.Nil(t, attempts[2].SourceErr)
 			assert.Equal(t, AttemptFailed, attempts[0].Outcome)
 			assert.True(t, attempts[0].WillFallback)
 			assert.Equal(t, "claude-haiku-5-5", attempts[2].ModelID)

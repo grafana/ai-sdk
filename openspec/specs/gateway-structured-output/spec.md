@@ -36,7 +36,7 @@ The Gateway SHALL transport structured output using existing text response and s
 - **THEN** final output validation SHALL fail in the client without Gateway repair or a fabricated provider success
 
 ### Requirement: Safe malformed requests and native failures
-Malformed JSON and invalid response-format field/root shapes SHALL fail before provider invocation under existing request bounds. Schema object contents SHALL remain opaque; provider-invalid schema and provider errors SHALL follow existing safe error handling, retaining supported useful candidate-local native error fields. Raw response bodies, request headers and wrapper prose SHALL NOT be copied; provider-origin messages may echo caller or provider data.
+Malformed JSON and invalid response-format field/root shapes SHALL fail before provider invocation under existing request bounds. Schema object contents SHALL remain opaque; provider-invalid schema and provider errors SHALL follow existing safe error handling, retaining supported useful candidate-local native error fields. Diagnostics SHALL use the shared Gateway attempt-failure contract and its configured-credential policy; raw response bodies and request headers SHALL NOT be copied.
 
 #### Scenario: Invalid schema root
 - **WHEN** schema is null, a scalar, a boolean or an array, or name/description has an invalid type

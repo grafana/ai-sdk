@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
@@ -12,7 +13,11 @@ import (
 type Selection struct {
 	ID         string
 	Model      provider.LanguageModel
-	Candidates []catalog.ConfiguredCandidate
+	configured *selectionExecution
+}
+
+type selectionExecution struct {
+	candidates []catalog.ConfiguredCandidate
 }
 
 type RequestSelector func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error)
@@ -36,7 +41,13 @@ func CatalogSelector(resolver catalog.ModelResolver) RequestSelector {
 		if err != nil {
 			return Selection{}, err
 		}
-		return Selection{ID: resolved.ID, Model: resolved.Model, Candidates: resolved.Candidates}, nil
+		return Selection{
+			ID:    resolved.ID,
+			Model: resolved.Model,
+			configured: &selectionExecution{
+				candidates: slices.Clone(resolved.Candidates),
+			},
+		}, nil
 	}
 }
 

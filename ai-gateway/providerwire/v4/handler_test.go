@@ -451,7 +451,7 @@ func TestRequestSelection_Deadline(t *testing.T) {
 					return Selection{}, ctx.Err()
 				}
 				assert.LessOrEqual(t, time.Until(selectionDeadline), limits.ModelDuration-20*time.Millisecond)
-				return Selection{ID: id, Model: model, Candidates: []catalog.ConfiguredCandidate{{ProviderInstance: "configured", Provider: model.Provider(), ModelID: model.ModelID()}}}, nil
+				return Selection{ID: id, Model: model, configured: &selectionExecution{candidates: []catalog.ConfiguredCandidate{{ProviderInstance: "configured", Provider: model.Provider(), ModelID: model.ModelID()}}}}, nil
 			}})
 			require.NoError(t, err)
 			r := validRequest(`{"prompt":[]}`)

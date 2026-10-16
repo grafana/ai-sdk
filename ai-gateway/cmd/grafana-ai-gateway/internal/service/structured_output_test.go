@@ -59,6 +59,7 @@ func TestStructuredOutput_NativeSchemaRejection(t *testing.T) {
 		response, requests := nativeOptionsRequest(t, "openai", `{"prompt":[],"responseFormat":{"type":"json","schema":{"propertyNames":{"type":"number"}}}}`, streaming, false)
 		assert.Equal(t, http.StatusInternalServerError, response.Code)
 		assert.Empty(t, requests)
-		assert.NotContains(t, response.Body.String(), "propertyNames")
+		assert.Contains(t, response.Body.String(), "propertyNames")
+		assert.Contains(t, response.Body.String(), `"outcome":"failed"`)
 	}
 }

@@ -23,6 +23,7 @@ var syntheticRawUsage = json.RawMessage(`{"input_tokens":32,"cache_read_input_to
 type providerWireV4Stats struct {
 	successCalls        atomic.Int64
 	streamCalls         atomic.Int64
+	executionFailures   atomic.Int64
 	blockingCalls       atomic.Int64
 	streamBlockingCalls atomic.Int64
 	cancellations       atomic.Int64
@@ -145,6 +146,9 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	one := 1
 	two := 2
 	switch m.kind {
+	case "execution-failure":
+		m.stats.executionFailures.Add(1)
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "native unavailable"})
 	case "native-values", "native-empty", "native-partial", "native-absent":
 		return scenarioNativeStream(m.kind), nil
 	case "reasoning-files":
@@ -273,6 +277,14 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartTextEnd, ID: "object"},
 			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}},
 		)}, nil
+	case "stream-key-errors":
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Data: json.RawMessage(`{"message":"configured-test-key own-byok-key","type":"configured-test-key","code":"configured-test-key"}`)})},
+			provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "configured-test-key"},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, ProviderMetadata: provider.ProviderMetadata{"native": json.RawMessage(`{"opaque":"configured-test-key"}`)}},
+		)}, nil
 	case "stream-errors":
 		stream := make(chan provider.StreamPart, 8)
 		stream <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusServiceUnavailable, Message: "private overload"})}
@@ -301,6 +313,9 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 
 func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	switch m.kind {
+	case "execution-failure":
+		m.stats.executionFailures.Add(1)
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "native unavailable"})
 	case "native-values", "native-empty", "native-partial", "native-absent":
 		return scenarioNativeValues(m.kind), nil
 	case "reasoning-files":
@@ -401,6 +416,7 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		})
 
 	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "execution-errors", Candidates: []catalog.ConfiguredCandidate{{Provider: "test", ProviderInstance: "configured", ModelID: "errors"}}}, Model: &providerWireV4Model{kind: "stream-errors", stats: stats}})
 	ordered, err := fallback.New(&providerWireV4Model{kind: "setup-failure", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
 	if err != nil {
 		return nil, err
@@ -419,12 +435,27 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		{ProviderInstance: "selected", Provider: "test", ModelID: "private-structured-committed"},
 		{ProviderInstance: "unused", Provider: "test", ModelID: "private-success"},
 	}}, Model: committed})
+	executionModel, err := fallback.New(&providerWireV4Model{kind: "execution-failure", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "execution-fallback", Candidates: []catalog.ConfiguredCandidate{{Provider: "test", ProviderInstance: "primary", ModelID: "execution-failure"}, {Provider: "test", ProviderInstance: "secondary", ModelID: "success"}}}, Model: executionModel})
 	resolver, err := catalog.NewStatic(entries)
 	if err != nil {
 		return nil, err
 	}
+	configured := providerwirev4.CatalogSelector(resolver)
 	runtime, err := providerwirev4.New(providerwirev4.Config{
-		Selector: providerwirev4.CatalogSelector(resolver),
+		ConfiguredAPIKeys: []string{"configured-test-key"},
+		Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (providerwirev4.Selection, error) {
+			if id == "unconfigured-key-errors" {
+				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-key-errors", stats: stats}}, nil
+			}
+			if id == "unconfigured-errors" {
+				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-errors", stats: stats}}, nil
+			}
+			return configured(ctx, id, options, gateway)
+		},
 		Limits: providerwirev4.Limits{
 			RequestBytes:        1 << 20,
 			UnaryResponseBytes:  1 << 20,
@@ -473,6 +504,7 @@ func (s *providerWireV4Scenario) register(mux *http.ServeMux) {
 		_ = json.NewEncoder(w).Encode(map[string]int64{
 			"successCalls":        s.stats.successCalls.Load(),
 			"streamCalls":         s.stats.streamCalls.Load(),
+			"executionFailures":   s.stats.executionFailures.Load(),
 			"blockingCalls":       s.stats.blockingCalls.Load(),
 			"streamBlockingCalls": s.stats.streamBlockingCalls.Load(),
 			"cancellations":       s.stats.cancellations.Load(),

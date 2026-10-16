@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"unicode/utf8"
 
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -46,8 +47,8 @@ type unaryToolResult struct {
 }
 
 type unaryMappingContext struct {
-	execution *executionCapture
-	history   map[string]string
+	history  map[string]string
+	overview *execution.Overview
 }
 
 type unaryToolState struct {
@@ -346,10 +347,16 @@ func (h *handler) writeUnarySuccess(w http.ResponseWriter, result *provider.Gene
 	if !ok {
 		return false
 	}
-	if len(contexts) != 0 && contexts[0].execution != nil {
-		mapped.Metadata = contexts[0].execution.metadata(mapped.Metadata)
-		if enriched, fits := encodeUnarySuccess(mapped, h.limits.UnaryResponseBytes); fits {
-			body = enriched
+	if len(contexts) > 0 && contexts[0].overview != nil {
+		if metadata := execution.Metadata(contexts[0].overview, mapped.Metadata); metadata != nil {
+			candidate := *result
+			candidate.ProviderMetadata = metadata
+			if unarySuccessPreflight(&candidate, h.limits.UnaryResponseBytes) {
+				mapped.Metadata = metadata
+				if enriched, fits := encodeUnarySuccess(mapped, h.limits.UnaryResponseBytes); fits {
+					body = enriched
+				}
+			}
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
