@@ -109,18 +109,12 @@ The rejection applies only on user/tool-role results and only when tools remain 
 
 **Framing.** Advancing is a Go routing policy, not an upstream parity claim, because there is no public upstream fallback oracle.
 
-### Gateway classification only when every failure is the rejection
-**Decision.** In `safeErrorFromProvider`, after the existing cancellation and deadline checks, a recursive predicate walks the error tree:
-- a leaf matching the sentinel counts;
-- an `Unwrap() error` link recurses;
-- an `Unwrap() []error` join requires every branch to qualify;
-- anything else is false.
+### Gateway classification by sentinel match
+**Decision.** In `safeErrorFromProvider`, an `errors.Is` match on the sentinel maps to the existing fixed invalid-request document. Unary invocation and stream setup share this path.
 
-Only a true result maps to the existing fixed invalid-request document. Unary invocation and stream setup share this path.
+The match runs last, after the existing `catalog.ErrUnsupportedRequest`, cancellation, deadline, APICallError and transport cases, just before the internal-error default. Placement matters because `APICallError.Unwrap` returns its cause: an API error whose cause wraps the sentinel must keep API classification, as retry and the fallback decider do. A rejection joined with a retryable API failure, such as a 503, therefore keeps that classification.
 
-The predicate runs last, after the existing `catalog.ErrUnsupportedRequest`, cancellation, deadline and APICallError cases, just before the internal-error default. Placement matters because `APICallError.Unwrap` returns its cause: an API error whose cause wraps the sentinel must keep API classification, as retry and the fallback decider do. An empty join does not qualify.
-
-**Rationale.** `errors.Is` on a join matches any branch. Using it alone would turn "rejection plus a retryable 503" into a non-retryable 400 and hide an operational failure.
+**Rationale.** The earlier checks already protect operational failures, so a tree walk requiring every branch to be the sentinel only changes a rejection joined with an unclassified internal error, and is not worth its complexity.
 
 **Alternative rejected.** Classifying by last attempt only would change existing semantics.
 

@@ -104,7 +104,7 @@ A successful response SHALL contain ordered supported text, function-tool-call, 
 ## ADDED Requirements
 
 ### Requirement: Unsupported-functionality rejection classification
-When unary invocation or stream setup fails and every attempted failure is the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline and API-call-error classification SHALL take precedence, and an empty join SHALL NOT qualify. Any other mix SHALL keep the existing classification.
+When unary invocation or stream setup fails with the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline, API-call-error and transport classification SHALL take precedence.
 
 #### Scenario: Direct rejection
 - **WHEN** a direct route's adapter returns a wrapped unsupported-functionality rejection before any I/O, in unary or streaming setup
@@ -114,9 +114,9 @@ When unary invocation or stream setup fails and every attempted failure is the p
 - **WHEN** every configured-fallback candidate returns the rejection
 - **THEN** the handler SHALL return the fixed invalid-request document
 
-#### Scenario: Mixed failures keep existing classification
-- **WHEN** fallback attempts end with the rejection and a retryable 503, in either order, or with the rejection and an unknown internal error
-- **THEN** the handler SHALL NOT return the invalid-request document solely because the rejection is present, and SHALL keep the existing classification
+#### Scenario: Operational failures keep existing classification
+- **WHEN** fallback attempts end with the rejection and a retryable 503, in either order
+- **THEN** the handler SHALL keep the existing 503 classification
 
 #### Scenario: API call error wrapping the sentinel
 - **WHEN** an API call error's cause wraps the sentinel

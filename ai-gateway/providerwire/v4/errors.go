@@ -100,37 +100,10 @@ func safeErrorFromProvider(err error) (result safeError) {
 	if transportError, ok := safeErrorFromTransport(err); ok {
 		return transportError
 	}
-	if onlyUnsupportedFunctionality(err) {
+	if errors.Is(err, provider.ErrUnsupportedFunctionality) {
 		return safeError{category: safeInvalidRequest}
 	}
 	return safeError{category: safeInternal}
-}
-
-// onlyUnsupportedFunctionality reports whether every failure in the error tree
-// is the provider unsupported-functionality rejection. errors.Is would match a
-// join with any such branch, which would hide a retryable operational failure
-// behind a non-retryable invalid-request response.
-func onlyUnsupportedFunctionality(err error) bool {
-	if err == nil {
-		return false
-	}
-	if err == provider.ErrUnsupportedFunctionality {
-		return true
-	}
-	switch wrapped := err.(type) {
-	case interface{ Unwrap() []error }:
-		branches := wrapped.Unwrap()
-		for _, branch := range branches {
-			if !onlyUnsupportedFunctionality(branch) {
-				return false
-			}
-		}
-		return len(branches) > 0
-	case interface{ Unwrap() error }:
-		return onlyUnsupportedFunctionality(wrapped.Unwrap())
-	default:
-		return false
-	}
 }
 
 func safeErrorFromTransport(err error) (safeError, bool) {

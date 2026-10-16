@@ -1927,10 +1927,10 @@ func TestUnsupportedFunctionalityClassification(t *testing.T) {
 		}, documentForSafeError(safeError{category: safeOverload}), []int{1, 1}},
 		{"rejection then unknown error", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(unsupported("a")), newScripted(errors.New("private failure"))}
-		}, documentForSafeError(safeError{category: safeInternal}), []int{1, 1}},
+		}, invalid, []int{1, 1}},
 		{"unknown error then rejection", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(errors.New("private failure")), newScripted(unsupported("a"))}
-		}, documentForSafeError(safeError{category: safeInternal}), []int{1, 1}},
+		}, invalid, []int{1, 1}},
 		{"API error wrapping the sentinel keeps API classification", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(wrapsSentinel)}
 		}, documentForSafeError(safeError{category: safeFailedDependency}), []int{1}},
@@ -1976,29 +1976,5 @@ func TestUnsupportedFunctionalityClassification(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestOnlyUnsupportedFunctionality(t *testing.T) {
-	sentinel := provider.ErrUnsupportedFunctionality
-	for name, tc := range map[string]struct {
-		err  error
-		want bool
-	}{
-		"nil":                     {nil, false},
-		"bare":                    {sentinel, true},
-		"wrapped":                 {unsupported("a"), true},
-		"deeply wrapped":          {fmt.Errorf("outer: %w", unsupported("a")), true},
-		"join of rejections":      {errors.Join(unsupported("a"), unsupported("b")), true},
-		"nested joins":            {errors.Join(errors.Join(unsupported("a")), fmt.Errorf("x: %w", unsupported("b"))), true},
-		"join with other":         {errors.Join(unsupported("a"), errors.New("other")), false},
-		"multiple %w with other":  {fmt.Errorf("%w; %w", unsupported("a"), errors.New("other")), false},
-		"unrelated":               {errors.New("other"), false},
-		"empty join":              {errors.Join(), false},
-		"wrapper without a cause": {fmt.Errorf("no cause"), false},
-	} {
-		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, tc.want, onlyUnsupportedFunctionality(tc.err))
-		})
 	}
 }
