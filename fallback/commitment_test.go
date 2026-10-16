@@ -35,8 +35,16 @@ func TestDoStream_CommitmentBoundary(t *testing.T) {
 				calls++
 				return nil, errors.New("must not run")
 			}}).WithDecider(func(error) bool { decisions++; return true })
-			result, err := m.DoStream(context.Background(), provider.CallOptions{})
+			var attempts []Attempt
+			ctx := WithAttemptObserver(context.Background(), func(_ context.Context, attempt Attempt) {
+				attempts = append(attempts, attempt)
+			})
+			result, err := m.DoStream(ctx, provider.CallOptions{})
 			require.NoError(t, err)
+			require.Len(t, attempts, 1)
+			assert.Equal(t, AttemptSelected, attempts[0].Outcome)
+			assert.Nil(t, attempts[0].Err)
+			assert.Nil(t, attempts[0].SourceErr)
 			var got []provider.StreamPart
 			for part := range result.Stream {
 				got = append(got, part)
@@ -147,6 +155,7 @@ func TestDoStream_PrecommitDecisions(t *testing.T) {
 				assert.Equal(t, AttemptFailed, attempts[0].Outcome)
 				assert.Equal(t, allow, attempts[0].WillFallback)
 				assert.ErrorIs(t, attempts[0].Err, tc.want)
+				assert.ErrorIs(t, attempts[0].SourceErr, tc.want)
 				assert.Equal(t, 1, attempts[0].Index)
 				assert.Equal(t, "first", attempts[0].Provider)
 				assert.False(t, attempts[0].FinishedAt.Before(attempts[0].StartedAt))
@@ -182,7 +191,11 @@ func TestDoStream_CancellationOwnership(t *testing.T) {
 					<-candidateCtx.Done()
 					parts <- provider.StreamPart{Type: provider.PartError}
 				}()
-				return &provider.StreamResult{Stream: parts}, nil
+				var lateErr error
+				if duringSetup {
+					lateErr = errors.New("unowned late native failure")
+				}
+				return &provider.StreamResult{Stream: parts}, lateErr
 			}}).WithAttemptObserver(func(_ context.Context, attempt Attempt) { attempts = append(attempts, attempt) })
 			done := make(chan error, 1)
 			go func() { _, err := m.DoStream(ctx, provider.CallOptions{}); done <- err }()
@@ -202,6 +215,7 @@ func TestDoStream_CancellationOwnership(t *testing.T) {
 			}
 			require.Len(t, attempts, 1)
 			assert.Equal(t, AttemptCanceled, attempts[0].Outcome)
+			assert.ErrorIs(t, attempts[0].SourceErr, context.Canceled)
 			assert.False(t, attempts[0].WillFallback)
 		})
 	}
