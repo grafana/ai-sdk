@@ -30,8 +30,12 @@ Output approvals SHALL correlate to available provider-owned tool-call state und
 Both clients SHALL continue actual unary/streaming output after approved, denied and mixed decisions while retaining local/provider execution ownership, denial semantics, tool IDs, native options and opaque metadata. Direct and configured fallback SHALL accept mapped approval history and preserve existing ordering/eligibility/commitment/cancellation behavior.
 
 #### Scenario: Native next request
-- **WHEN** each client consumes approval output, appends decisions and resumes generation
+- **WHEN** each client consumes approval output, retains the native correlation options, appends decisions and resumes generation
 - **THEN** native fake HTTP assertions SHALL prove correct next-request approval IDs, decisions, result/options and metadata, with local tools executed only by the consumer and hosted tools only by the provider
+
+#### Scenario: OpenAI hosted result correlation
+- **WHEN** a caller resumes an OpenAI hosted approval and requires the result to retain its original tool-call ID
+- **THEN** the caller SHALL copy the returned approval ID into the matching provider-owned call's openai.approvalRequestId option before provider-prompt conversion, and Gateway SHALL preserve that option without synthesizing provider-specific history
 
 #### Scenario: Fallback and capture independence
 - **WHEN** a configured first candidate fails before commitment and a later candidate emits approval output with operator capture toggled and independent consumer capture configured
