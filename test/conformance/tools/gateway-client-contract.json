@@ -15,7 +15,7 @@
     "ProviderOption": "interface {\n\tProviderKey() string\n}",
     "ProviderOptions": "map[string]ProviderOption",
     "ReasoningEffort": "string",
-    "ResponseFormat": "struct {\n\tType        ResponseFormatType `json:\"type\"`\n\tSchema      json.RawMessage    `json:\"schema,omitempty\"`\n\tName        string             `json:\"name,omitempty\"`\n\tDescription string             `json:\"description,omitempty\"`\n}",
+    "ResponseFormat": "struct {\n\tType        ResponseFormatType `json:\"type\"`\n\tSchema      json.RawMessage    `json:\"schema,omitempty\"`\n\tName        *string            `json:\"name,omitempty\"`\n\tDescription string             `json:\"description,omitempty\"`\n}",
     "ResponseFormatType": "string",
     "Role": "string",
     "SourceType": "string",

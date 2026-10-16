@@ -181,6 +181,27 @@ Choose a model that supports the file types, tools and reasoning settings your
 application needs. When using fallback, provide appropriate settings for each
 provider that may receive the request.
 
+## Structured output
+
+Use the SDK's [structured output helpers](../guides/structured-output.md) with
+the Gateway in unary or streaming calls. JSON mode and object schemas reach
+the selected native adapter, including configured fallback candidates. The
+Gateway returns the native text; your SDK parses and validates the final object.
+Schemas must have an object root. Their contents stay opaque until native
+provider validation, so a valid Gateway request can still be rejected by a model.
+
+Schema support remains provider-specific. OpenAI Responses and Anthropic use
+their native structured-output behavior. Configured OpenAI-compatible routes
+currently retain their default JSON-mode fallback and return a warning when a
+schema is supplied; the standalone compatible provider supports explicit schema
+opt-in. The Gateway does not force schema support for those routes.
+
+When migrating direct `provider.ResponseFormat` literals, supply a pointer for
+`Name`: `new("answer")` supplies a name and `new("")` explicitly supplies an
+empty one. Omit it to retain the native default. `output.WithName("")` also
+preserves explicit emptiness. Missing and empty descriptions are equivalent.
+See the [provider API reference](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#ResponseFormat).
+
 ## Function tools
 
 Define tools in your application to let the model request actions such as

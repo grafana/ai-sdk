@@ -34,9 +34,9 @@ func applyResponseFormat(body *responses.ResponseNewParams, opts provider.CallOp
 				return nil, fmt.Errorf("openai: normalizing response schema: %w", err)
 			}
 			warnings = append(warnings, schemaWarnings...)
-			name := rf.Name
-			if name == "" {
-				name = "response"
+			name := "response"
+			if rf.Name != nil {
+				name = *rf.Name
 			}
 			cfg := responses.ResponseFormatTextJSONSchemaConfigParam{
 				Name:   name,

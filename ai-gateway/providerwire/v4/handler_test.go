@@ -451,7 +451,7 @@ func TestRequestSelection_Deadline(t *testing.T) {
 					return Selection{}, ctx.Err()
 				}
 				assert.LessOrEqual(t, time.Until(selectionDeadline), limits.ModelDuration-20*time.Millisecond)
-				return Selection{ID: id, Model: model}, nil
+				return Selection{ID: id, Model: model, configured: &selectionExecution{candidates: []catalog.ConfiguredCandidate{{ProviderInstance: "configured", Provider: model.Provider(), ModelID: model.ModelID()}}}}, nil
 			}})
 			require.NoError(t, err)
 			r := validRequest(`{"prompt":[]}`)
@@ -461,6 +461,8 @@ func TestRequestSelection_Deadline(t *testing.T) {
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r.WithContext(ctx))
 			assert.Equal(t, http.StatusOK, w.Code)
+			assert.Contains(t, w.Body.String(), `"providerInstance":"configured"`)
+			assert.Contains(t, w.Body.String(), `"outcome":"selected"`)
 			deadline, _ := ctx.Deadline()
 			assert.True(t, selectionDeadline.Before(deadline))
 		})

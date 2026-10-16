@@ -15,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/grafana/ai-sdk/internal/jsonschema"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -78,8 +79,8 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 		}
 	}
 
-	var schemaMap map[string]any
-	if err := json.Unmarshal(rf.Schema, &schemaMap); err != nil {
+	schemaMap, err := jsonschema.DecodeObject(rf.Schema)
+	if err != nil {
 		return buildResult{
 			warnings: []provider.Warning{{
 				Type:    provider.WarnUnsupported,

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	aisdk "github.com/grafana/ai-sdk"
+	"github.com/grafana/ai-sdk/output"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/providers/grafana"
 )
@@ -126,6 +127,34 @@ func main() {
 	if input.Mode == "metadata-unary-replay" || input.Mode == "metadata-stream-replay" {
 		if err := captureMetadataReplay(ctx, model, input.Options, input.Mode == "metadata-stream-replay"); err != nil {
 			emitError(err)
+		}
+		return
+	}
+	if input.Mode == "structured-generate" || input.Mode == "structured-stream" {
+		opts := []aisdk.GenerateOption{aisdk.WithModelMessages(input.Options.Prompt...), aisdk.WithMaxRetries(0), aisdk.WithOutput(output.JSON(output.WithName("")))}
+		if input.Options.MaxOutputTokens != nil {
+			opts = append(opts, aisdk.WithMaxOutputTokens(*input.Options.MaxOutputTokens))
+		}
+		if input.Mode == "structured-stream" {
+			streamOpts := []aisdk.StreamOption{aisdk.WithModelMessages(input.Options.Prompt...), aisdk.WithMaxRetries(0), aisdk.WithOutput(output.JSON(output.WithName("")))}
+			if input.Options.MaxOutputTokens != nil {
+				streamOpts = append(streamOpts, aisdk.WithMaxOutputTokens(*input.Options.MaxOutputTokens))
+			}
+			result := aisdk.StreamText(ctx, model, streamOpts...)
+			for range result.FullStream() {
+			}
+			if err := result.Err(); err != nil {
+				emitError(err)
+				return
+			}
+			emit(map[string]any{"text": result.Text(), "providerMetadata": result.ProviderMetadata()})
+		} else {
+			result, err := aisdk.GenerateText(ctx, model, opts...)
+			if err != nil {
+				emitError(err)
+				return
+			}
+			emit(map[string]any{"text": result.Text, "providerMetadata": result.ProviderMetadata})
 		}
 		return
 	}

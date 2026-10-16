@@ -371,7 +371,6 @@ func TestRuntimeRequestRejections(t *testing.T) {
 		{name: "capability/custom tool output", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"custom"}]}}]}]}`, want: unsupportedToolsError},
 		{name: "capability/tool output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"text","value":"","providerOptions":{"p":{"value":true}}}}]}]}`, want: unsupportedProviderOptionsError},
 		{name: "capability/nested text output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"text","text":"","providerOptions":{"p":{"value":true}}}]}}]}]}`, want: unsupportedProviderOptionsError},
-		{name: "capability/structured output", body: `{"prompt":[],"responseFormat":{"type":"json"}}`, want: unsupportedStructuredOutputError},
 		{name: "capability/raw output", body: `{"prompt":[],"includeRawChunks":true}`, want: unsupportedRawOutputError},
 		{name: "policy/reserved provider namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, want: reservedProviderOptionsError},
 		{name: "policy/protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, want: protectedCallHeaderError},
