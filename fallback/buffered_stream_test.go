@@ -168,3 +168,38 @@ func TestBufferedStream_RejectsInvalidConfiguration(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestBufferedStream_ObserversRetainSourceErrorAfterDecisionCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	nativeErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: "interrupted", StatusCode: 503})
+	var observed []Attempt
+	var order []string
+	ctx = WithAttemptObserver(ctx, func(_ context.Context, a Attempt) {
+		order = append(order, "request")
+		observed = append(observed, a)
+	})
+	model := mustNew(t, &mockModel{doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return bufferedResult(provider.StreamPart{Type: provider.PartTextDelta, Delta: "discarded"}, provider.StreamPart{Type: provider.PartError, APICallError: nativeErr}), nil
+	}}).WithDecider(func(err error) bool {
+		require.Same(t, nativeErr, err)
+		cancel()
+		return true
+	}).WithAttemptObserver(func(_ context.Context, a Attempt) {
+		order = append(order, "model")
+		observed = append(observed, a)
+	})
+	model, err := model.WithBufferedStream(1<<20, time.Second)
+	require.NoError(t, err)
+	result, err := model.DoStream(ctx, provider.CallOptions{})
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, result)
+	assert.Equal(t, []string{"request", "model"}, order)
+	require.Len(t, observed, 2)
+	for _, attempt := range observed {
+		assert.ErrorIs(t, attempt.Err, context.Canceled)
+		assert.Same(t, nativeErr, attempt.SourceErr)
+		assert.Equal(t, AttemptCanceled, attempt.Outcome)
+		assert.False(t, attempt.WillFallback)
+	}
+}
