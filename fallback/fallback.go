@@ -57,8 +57,9 @@ type Attempt struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
 	Err        error
-	// SourceErr is the owned setup, validation or first-part-wait error before
-	// decision-time cancellation substitution. It does not include stream error parts.
+	// SourceErr is the owned candidate failure before decision-time cancellation
+	// substitution. Buffered streams include errors encountered before selection;
+	// unbuffered streams exclude error parts after first-part commitment.
 	SourceErr error
 	Outcome   AttemptOutcome
 	// WillFallback records eligibility and a remaining candidate while the context

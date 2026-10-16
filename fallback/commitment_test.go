@@ -189,6 +189,7 @@ func TestDoStream_CancellationOwnership(t *testing.T) {
 					defer close(producerDone)
 					defer close(parts)
 					<-candidateCtx.Done()
+					<-release
 					parts <- provider.StreamPart{Type: provider.PartError}
 				}()
 				var lateErr error
