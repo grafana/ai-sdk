@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -51,7 +50,7 @@ func TestGeneratedFileCaptureIndependence(t *testing.T) {
 							return fallbackParts(provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: data.URL, OriginalURL: &original}, ProviderMetadata: metadata}, provider.StreamPart{Type: provider.PartFinish, FinishReason: &finish, Usage: &provider.Usage{}}), nil
 						},
 					}
-					var operatorLogs bytes.Buffer
+					var operatorLogs lockedBuffer
 					operatorModel := middleware.WrapLanguageModel(lower, clientlogger.Middleware(clientlogger.Options{Logger: slog.New(slog.NewJSONHandler(&operatorLogs, &slog.HandlerOptions{Level: slog.LevelDebug})), LogStreamParts: true, Capture: clientlogger.CaptureOptions{Outputs: serverCapture, Files: serverCapture, ProviderMetadata: serverCapture, MaxJSONBytes: 16384}}))
 					observed, err := factory("files", operatorModel)
 					require.NoError(t, err)
@@ -65,7 +64,7 @@ func TestGeneratedFileCaptureIndependence(t *testing.T) {
 					require.NoError(t, err)
 					model, err := client.LanguageModel("files")
 					require.NoError(t, err)
-					var consumerLogs bytes.Buffer
+					var consumerLogs lockedBuffer
 					wrapped := middleware.WrapLanguageModel(model, clientlogger.Middleware(clientlogger.Options{Logger: slog.New(slog.NewJSONHandler(&consumerLogs, &slog.HandlerOptions{Level: slog.LevelDebug})), LogStreamParts: true, Capture: clientlogger.CaptureOptions{Outputs: consumerCapture, Files: consumerCapture, ProviderMetadata: consumerCapture, ResponseBody: consumerCapture, MaxJSONBytes: 16384}}))
 					if streaming {
 						result, err := wrapped.DoStream(t.Context(), provider.CallOptions{Prompt: []provider.Message{}})
