@@ -8,20 +8,17 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-type unsupportedCapability string
+type requestFailureReason string
 
 const (
-	capabilityReasoningContent unsupportedCapability = "reasoning-content"
-	capabilityCustomContent    unsupportedCapability = "custom-content"
-	capabilityTools            unsupportedCapability = "tools"
-	capabilityToolApprovals    unsupportedCapability = "tool-approvals"
-	capabilityStructuredOutput unsupportedCapability = "structured-output"
-	capabilityProviderOptions  unsupportedCapability = "provider-options"
-	capabilityRawOutput        unsupportedCapability = "raw-output"
-	// Policy refusals. These are not unsupported capabilities: the runtime maps
-	// provider options and call headers, and refuses only what the host owns.
-	capabilityReservedProviderOptions unsupportedCapability = "reserved-provider-options"
-	capabilityProtectedCallHeader     unsupportedCapability = "protected-call-header"
+	capabilityCustomContent       requestFailureReason = "custom-content"
+	capabilityTools               requestFailureReason = "tools"
+	capabilityToolApprovals       requestFailureReason = "tool-approvals"
+	capabilityStructuredOutput    requestFailureReason = "structured-output"
+	capabilityProviderOptions     requestFailureReason = "provider-options"
+	capabilityRawOutput           requestFailureReason = "raw-output"
+	policyReservedProviderOptions requestFailureReason = "reserved-provider-options"
+	policyProtectedCallHeader     requestFailureReason = "protected-call-header"
 )
 
 type wireRequest struct {
@@ -82,16 +79,16 @@ const (
 	wireReasoningXHigh           wireReasoning = "xhigh"
 )
 
-func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, *requestFailure) {
+func mapWireRequest(body []byte) (provider.CallOptions, *requestFailure) {
 	var request wireRequest
 	if err := json.Unmarshal(body, &request); err != nil {
 		return provider.CallOptions{}, invalidMappingFailure()
 	}
 
-	return mapRequest(request, modes...)
+	return mapRequest(request)
 }
 
-func mapRequest(request wireRequest, modes ...executionMode) (provider.CallOptions, *requestFailure) {
+func mapRequest(request wireRequest) (provider.CallOptions, *requestFailure) {
 	options := provider.CallOptions{
 		MaxOutputTokens:  request.MaxOutputTokens,
 		Temperature:      request.Temperature,
@@ -102,9 +99,8 @@ func mapRequest(request wireRequest, modes ...executionMode) (provider.CallOptio
 		StopSequences:    request.StopSequences,
 		Seed:             request.Seed,
 	}
-	toolsEnabled := len(modes) == 0 || modes[0] == executionUnary || modes[0] == executionStreaming
 	for _, wireMessage := range request.Prompt {
-		message, failure := mapWireMessage(wireMessage, toolsEnabled)
+		message, failure := mapWireMessage(wireMessage)
 		if failure != nil {
 			return provider.CallOptions{}, failure
 		}
@@ -117,9 +113,6 @@ func mapRequest(request wireRequest, modes ...executionMode) (provider.CallOptio
 	}
 	options.Headers = headers
 	if len(request.Tools) > 0 || len(request.ToolChoice) > 0 {
-		if !toolsEnabled {
-			return provider.CallOptions{}, unsupportedMappingFailure(capabilityTools)
-		}
 		tools, choice, failure := mapFunctionTools(request.Tools, request.ToolChoice)
 		if failure != nil {
 			return provider.CallOptions{}, failure
@@ -130,7 +123,7 @@ func mapRequest(request wireRequest, modes ...executionMode) (provider.CallOptio
 		switch request.ResponseFormat.Type {
 		case provider.ResponseFormatText:
 		case provider.ResponseFormatJSON:
-			return provider.CallOptions{}, unsupportedMappingFailure(capabilityStructuredOutput)
+			return provider.CallOptions{}, rejectedMappingFailure(capabilityStructuredOutput)
 		default:
 			return provider.CallOptions{}, invalidMappingFailure()
 		}
@@ -141,7 +134,7 @@ func mapRequest(request wireRequest, modes ...executionMode) (provider.CallOptio
 	}
 	options.ProviderOptions = rootOptions
 	if request.IncludeRawChunks {
-		return provider.CallOptions{}, unsupportedMappingFailure(capabilityRawOutput)
+		return provider.CallOptions{}, rejectedMappingFailure(capabilityRawOutput)
 	}
 	if request.Reasoning != nil {
 		reasoning, err := mapWireReasoning(*request.Reasoning)
@@ -201,7 +194,7 @@ func unresolvedProviderCalls(prompt []provider.Message) (map[string]string, *req
 	return pending, nil
 }
 
-func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *requestFailure) {
+func mapWireMessage(message wireMessage) (provider.Message, *requestFailure) {
 	messageOptions, failure := mapWireProviderOptions(message.ProviderOptions)
 	if failure != nil {
 		return provider.Message{}, failure
@@ -223,7 +216,7 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 		}
 		parts := make([]provider.ContentPart, 0, len(wireParts))
 		for _, wirePart := range wireParts {
-			part, failure := mapWirePart(wirePart, message.Role, toolsEnabled)
+			part, failure := mapWirePart(wirePart, message.Role)
 			if failure != nil {
 				return provider.Message{}, failure
 			}
@@ -245,7 +238,7 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 	}
 }
 
-func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider.ContentPart, *requestFailure) {
+func mapWirePart(part wirePart, role provider.Role) (provider.ContentPart, *requestFailure) {
 	// Options are mapped inside the branch that keeps them, so a part type this
 	// runtime does not support reports its own family whatever options it carries.
 	switch part.Type {
@@ -289,11 +282,8 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		mapped.ProviderOptions = options
 		return mapped, nil
 	case provider.ContentPartTypeCustom:
-		return provider.ContentPart{}, unsupportedMappingFailure(capabilityCustomContent)
+		return provider.ContentPart{}, rejectedMappingFailure(capabilityCustomContent)
 	case provider.ContentPartTypeToolCall:
-		if !toolsEnabled {
-			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
-		}
 		if role != provider.RoleAssistant {
 			return provider.ContentPart{}, invalidMappingFailure()
 		}
@@ -305,8 +295,8 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		call.ProviderExecuted, call.ProviderOptions = part.ProviderExecuted, options
 		return call, nil
 	case provider.ContentPartTypeToolResult:
-		if !toolsEnabled || role != provider.RoleTool && role != provider.RoleAssistant {
-			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
+		if role != provider.RoleTool && role != provider.RoleAssistant {
+			return provider.ContentPart{}, rejectedMappingFailure(capabilityTools)
 		}
 		output, failure := mapToolOutput(part.Output)
 		if failure != nil {
@@ -331,7 +321,7 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		result.ProviderOptions = options
 		return result, nil
 	case provider.ContentPartTypeToolApprovalRequest:
-		return provider.ContentPart{}, unsupportedMappingFailure(capabilityToolApprovals)
+		return provider.ContentPart{}, rejectedMappingFailure(capabilityToolApprovals)
 	default:
 		return provider.ContentPart{}, invalidMappingFailure()
 	}
@@ -386,7 +376,7 @@ func mapWireHeaders(headers map[string]string) (map[string]string, *requestFailu
 	seen := make(map[string]struct{}, len(headers))
 	for name, value := range headers {
 		if IsProtectedCallHeader(name) {
-			return nil, unsupportedMappingFailure(capabilityProtectedCallHeader)
+			return nil, rejectedMappingFailure(policyProtectedCallHeader)
 		}
 		// HTTP header names are case-insensitive, so two spellings of one name
 		// would reach a backend in map order, with a different value each run.
@@ -422,7 +412,7 @@ func mapWireProviderOptions(options map[string]json.RawMessage) (provider.Provid
 	// exactly, because provider-option namespaces are case-significant.
 	for _, namespace := range []string{ReservedProviderOptionNamespace, "gateway", "grafana-ai-sdk"} {
 		if _, reserved := options[namespace]; reserved {
-			return nil, unsupportedMappingFailure(capabilityReservedProviderOptions)
+			return nil, rejectedMappingFailure(policyReservedProviderOptions)
 		}
 	}
 	mapped := make(provider.ProviderOptions, len(options))

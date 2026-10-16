@@ -8,6 +8,16 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
+// Summary projects an event-local failure without retaining its native data.
+func Summary(err error, sourceBytes int64) (failure *Failure) {
+	defer func() {
+		if recover() != nil {
+			failure = nil
+		}
+	}()
+	return summarize(err, sourceBytes)
+}
+
 func summarize(err error, sourceBytes int64) *Failure {
 	if err == nil {
 		return nil

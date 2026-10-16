@@ -56,14 +56,14 @@ func mapFunctionTools(rawTools []json.RawMessage, rawChoice json.RawMessage) ([]
 			continue
 		}
 		if kind.Type != provider.ToolTypeFunction {
-			return nil, nil, unsupportedMappingFailure(capabilityTools)
+			return nil, nil, rejectedMappingFailure(capabilityTools)
 		}
 		var wire wireFunctionTool
 		if json.Unmarshal(raw, &wire) != nil {
 			return nil, nil, invalidMappingFailure()
 		}
 		if trimmed := bytes.TrimSpace(wire.InputSchema); len(trimmed) == 0 || trimmed[0] != '{' {
-			return nil, nil, unsupportedMappingFailure(capabilityTools)
+			return nil, nil, rejectedMappingFailure(capabilityTools)
 		}
 		tool := provider.Tool{Type: wire.Type, Name: wire.Name, Description: wire.Description, InputSchema: wire.InputSchema, Strict: wire.Strict}
 		if wire.InputExamples != nil {
@@ -100,7 +100,7 @@ func mapToolOutput(wire *wireToolOutput) (*provider.ToolResultOutput, *requestFa
 		return nil, invalidMappingFailure()
 	}
 	if wire.Type == provider.ToolOutputContent && !providerOptionsEmpty(wire.ProviderOptions) {
-		return nil, unsupportedMappingFailure(capabilityProviderOptions)
+		return nil, rejectedMappingFailure(capabilityProviderOptions)
 	}
 	options, failure := mapWireProviderOptions(wire.ProviderOptions)
 	if failure != nil {
@@ -144,11 +144,11 @@ func mapToolOutput(wire *wireToolOutput) (*provider.ToolResultOutput, *requestFa
 					Filename: part.Filename, ProviderOptions: options,
 				})
 			default:
-				return nil, unsupportedMappingFailure(capabilityTools)
+				return nil, rejectedMappingFailure(capabilityTools)
 			}
 		}
 	default:
-		return nil, unsupportedMappingFailure(capabilityTools)
+		return nil, rejectedMappingFailure(capabilityTools)
 	}
 	return output, nil
 }
