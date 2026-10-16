@@ -215,7 +215,10 @@ func TestDoStream_CancellationOwnership(t *testing.T) {
 			}
 			require.Len(t, attempts, 1)
 			assert.Equal(t, AttemptCanceled, attempts[0].Outcome)
-			assert.ErrorIs(t, attempts[0].SourceErr, context.Canceled)
+			assert.ErrorIs(t, attempts[0].Err, context.Canceled)
+			if duringSetup || attempts[0].SourceErr != nil {
+				assert.ErrorIs(t, attempts[0].SourceErr, context.Canceled)
+			}
 			assert.False(t, attempts[0].WillFallback)
 		})
 	}
