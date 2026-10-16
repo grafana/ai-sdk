@@ -5,6 +5,7 @@
   "type": "object",
   "required": ["error"],
   "properties": {
+    "providerMetadata": {"type":"object","additionalProperties":{"type":"object"}},
     "error": {
       "type": "object",
       "required": ["message", "type", "param", "code"],

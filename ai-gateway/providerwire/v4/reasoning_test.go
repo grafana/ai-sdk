@@ -13,13 +13,25 @@ import (
 )
 
 func TestReasoningRequest(t *testing.T) {
-	body := []byte(`{"prompt":[{"role":"assistant","content":[{"type":"reasoning","text":"","providerOptions":{"anthropic":{"signature":"signed"}}},{"type":"reasoning-file","mediaType":"image/png","data":{"type":"data","data":""}}]}]}`)
-	opts, failure := mapWireRequest(body)
-	require.Nil(t, failure)
-	require.Len(t, opts.Prompt[0].Content, 2)
-	assert.Equal(t, provider.ContentPartTypeReasoning, opts.Prompt[0].Content[0].Type)
-	require.NotNil(t, opts.Prompt[0].Content[0].ProviderOptions["anthropic"])
-	assert.True(t, opts.Prompt[0].Content[1].Data.IsData())
+	body := `{"prompt":[{"role":"assistant","content":[{"type":"reasoning","text":"","providerOptions":{"anthropic":{"signature":"signed"}}},{"type":"reasoning-file","mediaType":"image/png","data":{"type":"data","data":""}}]}]}`
+	for _, streaming := range []string{"false", "true"} {
+		t.Run(streaming, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			request := validRequest(body)
+			request.Header.Set(HeaderStreaming, streaming)
+			response := harness.serve(request)
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			assert.Equal(t, 1, harness.resolver.callCount())
+			assert.Equal(t, 1, harness.model.callCount())
+			opts := harness.model.receivedOptions()
+			require.Len(t, opts.Prompt, 1)
+			require.Len(t, opts.Prompt[0].Content, 2)
+			assert.Equal(t, provider.ContentPartTypeReasoning, opts.Prompt[0].Content[0].Type)
+			require.NotNil(t, opts.Prompt[0].Content[0].ProviderOptions["anthropic"])
+			assert.Equal(t, provider.ContentPartTypeReasoningFile, opts.Prompt[0].Content[1].Type)
+			assert.True(t, opts.Prompt[0].Content[1].Data.IsData())
+		})
+	}
 }
 
 func TestReasoningUnary(t *testing.T) {

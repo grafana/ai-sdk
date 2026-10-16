@@ -22,13 +22,13 @@ func NewHostErrorWriter() *HostErrorWriter { return &HostErrorWriter{} }
 
 // Write writes the fixed error document for category.
 func (*HostErrorWriter) Write(w http.ResponseWriter, category HostErrorCategory) {
-	document := safeErrorDocument{status: http.StatusInternalServerError, body: canonicalInternalError}
+	value := safeError{category: safeInternal}
 	switch category {
 	case HostErrorAuthentication:
-		document = safeErrorDocument{status: http.StatusUnauthorized, body: canonicalAuthenticationError}
+		value.category = safeAuthentication
 	case HostErrorPermission:
-		document = safeErrorDocument{status: http.StatusForbidden, body: canonicalPermissionError}
-	case HostErrorInternal:
+		value.category = safePermission
 	}
-	writeSafeErrorDocument(w, document)
+	status, body := encodeHTTPError(value, nil, maxErrorResponseBytes)
+	writeErrorResponse(w, status, body)
 }
