@@ -124,7 +124,7 @@ func TestUnsupportedFunctionality_ExistingConversionErrors(t *testing.T) {
 
 			for name, err := range callBoth(t, model, tc.opts) {
 				require.ErrorIs(t, err, provider.ErrUnsupportedFunctionality, name)
-				assert.EqualError(t, err, tc.message, name)
+				assert.EqualError(t, err, tc.message+": provider: unsupported functionality", name)
 			}
 			assert.Zero(t, requests.Load())
 		})

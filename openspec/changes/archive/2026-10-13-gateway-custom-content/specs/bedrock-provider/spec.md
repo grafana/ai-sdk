@@ -22,11 +22,11 @@ When tools remain active after tool preparation, the Bedrock Converse adapter SH
 - **THEN** it SHALL keep the existing `unsupported tool content part type: custom` warning rather than rejecting
 
 ### Requirement: Existing unsupported conversion errors carry the sentinel
-Bedrock Converse prompt-conversion errors whose registered upstream counterpart throws UnsupportedFunctionalityError SHALL wrap the provider unsupported-functionality sentinel, keeping their existing messages and pre-I/O timing. This covers provider-reference file parts, non-S3 file URLs, and unsupported image, video and file media types. Existing warnings SHALL remain warnings.
+Bedrock Converse prompt-conversion errors whose registered upstream counterpart throws UnsupportedFunctionalityError SHALL wrap the provider unsupported-functionality sentinel, keeping their existing message text as the prefix and their pre-I/O timing. This covers provider-reference file parts, non-S3 file URLs, and unsupported image, video and file media types. Existing warnings SHALL remain warnings.
 
 #### Scenario: Unsupported user file data source
 - **WHEN** a user file part carries a non-S3 URL or a provider reference, or an unsupported image, video or document media type
-- **THEN** conversion SHALL fail before any HTTP request with an error satisfying errors.Is for the sentinel and the existing message
+- **THEN** conversion SHALL fail before any HTTP request with an error satisfying errors.Is for the sentinel whose message starts with the existing message
 
 #### Scenario: Warning sites unchanged
 - **WHEN** a request hits an existing Bedrock warning, such as separated system messages or unsupported tool-result file data

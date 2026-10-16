@@ -981,7 +981,7 @@ func TestBuildRequest_UnsupportedToolResultFileMediaType(t *testing.T) {
 				MediaType: tt.mediaType,
 			}))
 
-			require.EqualError(t, err, tt.expectedError)
+			require.EqualError(t, err, tt.expectedError+": provider: unsupported functionality")
 		})
 	}
 }

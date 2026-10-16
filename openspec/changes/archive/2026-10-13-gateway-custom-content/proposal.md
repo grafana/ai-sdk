@@ -25,7 +25,7 @@ Issue #112 (work package 18) requires registered LanguageModelV4 custom content 
 - Skip assistant custom history in OpenAI-compatible (instead of failing) and Bedrock Converse (instead of warning), matching upstream.
 - Align OpenAI Responses compaction replay presence with upstream, now that callers can supply it through the Gateway.
 - **BREAKING** (Bedrock Converse direct callers): when tools remain active after tool preparation, reject custom tool-result content before any I/O, matching upstream, instead of warning and dropping it. Bedrock Mantle is unchanged.
-- Wrap Bedrock Converse's existing pre-I/O conversion errors whose upstream counterpart throws UnsupportedFunctionalityError with the same sentinel (provider-reference files, non-S3 URLs, unsupported media types). Messages are unchanged; warnings stay warnings.
+- Wrap Bedrock Converse's existing pre-I/O conversion errors whose upstream counterpart throws UnsupportedFunctionalityError with the same sentinel (provider-reference files, non-S3 URLs, unsupported media types). The sentinel text is appended to the existing message; warnings stay warnings.
 - Add the root sentinel `provider.ErrUnsupportedFunctionality` for deterministic pre-I/O adapter rejection. Core retry never retries it. The default fallback decider advances past it. The Gateway reports it as the fixed non-retryable invalid request only when every attempted failure is that rejection.
 - Keep custom options and metadata out of metadata-only operator telemetry. Update the Gateway guide and parity map.
 

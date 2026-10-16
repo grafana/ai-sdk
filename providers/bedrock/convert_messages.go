@@ -347,14 +347,8 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 	return out, nil
 }
 
-type unsupportedFunctionalityError struct{ message string }
-
-func (e unsupportedFunctionalityError) Error() string { return e.message }
-
-func (e unsupportedFunctionalityError) Unwrap() error { return provider.ErrUnsupportedFunctionality }
-
 func unsupportedFunctionality(format string, args ...any) error {
-	return unsupportedFunctionalityError{message: fmt.Sprintf(format, args...)}
+	return fmt.Errorf(format+": %w", append(args, provider.ErrUnsupportedFunctionality)...)
 }
 
 func buildDocumentContentBlock(p provider.ContentPart, mediaType, b64 string, documentCounter *int) (contentBlock, error) {
