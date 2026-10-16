@@ -33,6 +33,15 @@ AZQyZzpO1m2j7ssH8rnVewhnqwAJ34q2IakKRIgtfelx+zsYbGLe1R2s8aJJXm0m
 Ls6diS9KzfBJWfXD/xMY6j+zruhyaKYlUK/ffIFVbVYMUA4+Xck=
 -----END RSA PRIVATE KEY-----`; // trufflehog:ignore
 
+export function nativeProxyEnvironment(proxyURL: string): Record<string, string> {
+  return {
+    HTTPS_PROXY: proxyURL,
+    NO_PROXY: "127.0.0.1,localhost",
+    GATEWAY_TEST_CA_FILE: nativeProxyCertificate,
+    GODEBUG: [process.env.GODEBUG, "x509usefallbackroots=1"].filter(Boolean).join(","),
+  };
+}
+
 export async function startNativeProviderProxy(target: string, authority: "api.anthropic.com:443" | "api.openai.com:443" = "api.anthropic.com:443") {
   const context = createSecureContext({
     cert: readFileSync(nativeProxyCertificate),

@@ -15,7 +15,7 @@ import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from 
 import packageManifest from "./package.json" with { type: "json" };
 import { fetchConfiguredModels } from "../../examples/configured-discovery";
 import { nativeMetadataReply } from "./native-metadata";
-import { nativeProxyCertificate, startNativeProviderProxy } from "./native-provider-proxy";
+import { nativeProxyEnvironment, startNativeProviderProxy } from "./native-provider-proxy";
 
 const BYOK_MODEL = "anthropic/request-only-native";
 const BYOK_OPTIONS = { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }] } } };
@@ -28,21 +28,25 @@ const TEST_USER_TOKEN = unsafeUserIDToken();
 
 let buildDirectory: string;
 let binaryPath: string;
+let nativeProxyBinaryPath: string;
 let goClientBinaryPath: string;
 let goStreamTextBinaryPath: string;
 
 before(() => {
   buildDirectory = mkdtempSync(join(tmpdir(), "grafana-ai-gateway-build-"));
   binaryPath = join(buildDirectory, "grafana-ai-gateway");
-  execFileSync("go", ["build", "-o", binaryPath, "."], {
-    cwd: COMMAND_DIR,
-    stdio: "pipe",
-    env: {
-      ...nodeProcess.env,
-      GOWORK: nodeProcess.env.GATEWAY_TEST_GOWORK ?? "off",
-      GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly`,
-    },
-  });
+  nativeProxyBinaryPath = join(buildDirectory, "grafana-ai-gateway-native-proxy");
+  for (const [binary, tags] of [[binaryPath, []], [nativeProxyBinaryPath, ["-tags=gatewaytest"]]] as const) {
+    execFileSync("go", ["build", ...tags, "-o", binary, "."], {
+      cwd: COMMAND_DIR,
+      stdio: "pipe",
+      env: {
+        ...nodeProcess.env,
+        GOWORK: nodeProcess.env.GATEWAY_TEST_GOWORK ?? "off",
+        GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly`,
+      },
+    });
+  }
   goClientBinaryPath = buildGoClientCapture(buildDirectory);
   goStreamTextBinaryPath = buildGoStreamTextCapture(buildDirectory);
 });
@@ -1884,6 +1888,27 @@ describe("authenticated Anthropic Gateway command", () => {
 });
 
 describe("Trusted-proxy composition (dummy credentials, not production authentication)", () => {
+  it("rejects the native proxy certificate without explicit test trust", async () => {
+    const [native, gateway, edge] = await startCloudGateway([], undefined, { GATEWAY_TEST_CA_FILE: "" });
+    try {
+      await assert.rejects(async () => edge.client(EDGE_WRITE_KEY)(BYOK_MODEL).doGenerate(cloudCall("unary")), (error: unknown) => {
+        assert.equal((error as { statusCode?: number }).statusCode, 502);
+        return true;
+      });
+      assert.equal(native.requests.length, 0);
+    } finally { await settleCleanup(() => edge.stop(), () => gateway.stop(), () => native.stop()); }
+  });
+
+  it("rejects invalid explicit test trust without affecting the production binary", async () => {
+    const certificate = join(buildDirectory, "invalid-test-ca.pem");
+    writeFileSync(certificate, "not a certificate");
+    await assert.rejects(startCloudGateway([], undefined, { GATEWAY_TEST_CA_FILE: certificate }), /gateway test: invalid certificate file/);
+    const [fake, gateway] = await startGateway([], { GATEWAY_TEST_CA_FILE: certificate, GODEBUG: "x509usefallbackroots=1" });
+    try {
+      assert.equal(await gateway.ready(), true);
+      assert.ok(!gateway.stderr.includes("gateway test: invalid certificate file"));
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
   for (const collision of [false, true]) {
     it(`preserves Cloud BYOK echoes and protects configured summary keys, collision=${collision}`, async () => {
       const observer = await FakeAgentObservability.start();
@@ -1968,8 +1993,8 @@ describe("Trusted-proxy composition (dummy credentials, not production authentic
     let gateway: GatewayProcess | undefined;
     let edge: DummyCloudEdge | undefined;
     try {
-      gateway = await GatewayProcess.start(binaryPath, configured.url, [], {
-        HTTPS_PROXY: proxy.url, NO_PROXY: "127.0.0.1,localhost", SSL_CERT_FILE: nativeProxyCertificate,
+      gateway = await GatewayProcess.start(nativeProxyBinaryPath, configured.url, [], {
+        ...nativeProxyEnvironment(proxy.url),
         OPENAI_API_KEY: "ambient-private-key", OPENAI_BASE_URL: configured.url,
         OPENAI_ORG_ID: "ambient-private-org", OPENAI_PROJECT_ID: "ambient-private-project",
       }, "cloud-gateway");
@@ -3017,7 +3042,7 @@ async function startCloudGateway(extraArgs: string[] = [], configuredURL?: strin
   const proxy = await startNativeProviderProxy(fake.url);
   let gateway: GatewayProcess | undefined;
   try {
-    gateway = await GatewayProcess.start(binaryPath, configuredURL ?? fake.url, extraArgs, { HTTPS_PROXY: proxy.url, NO_PROXY: "127.0.0.1,localhost", SSL_CERT_FILE: nativeProxyCertificate, ...extraEnv }, "cloud-gateway");
+    gateway = await GatewayProcess.start(nativeProxyBinaryPath, configuredURL ?? fake.url, extraArgs, { ...nativeProxyEnvironment(proxy.url), ...extraEnv }, "cloud-gateway");
     gateway.nativeProxy = proxy;
     return [fake, gateway, await DummyCloudEdge.start(gateway.url)];
   } catch (error) {

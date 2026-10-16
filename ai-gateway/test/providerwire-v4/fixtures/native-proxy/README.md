@@ -8,8 +8,15 @@ The embedded key uses the scanner's inline `trufflehog:ignore` tag; adding that
 comment inside a PEM file would break TLS parsing. The certificate has a test-only
 preamble outside its PEM block.
 
-The test subprocess receives this certificate through `SSL_CERT_FILE` and a local
-`HTTPS_PROXY`; neither the system trust store nor production configuration changes.
+Native-proxy cases use a command binary built with the `gatewaytest` tag. Its
+bootstrap reads this certificate from `GATEWAY_TEST_CA_FILE` into an explicit
+`x509.CertPool` and registers it with `x509.SetFallbackRoots`. The subprocess gets
+`GODEBUG=x509usefallbackroots=1` and a local `HTTPS_PROXY`; this works with the
+module's Go 1.26 minimum and newer Go versions on macOS without `SSL_CERT_FILE`
+or system trust changes. Certificate and hostname verification remain enabled.
+
+Ordinary command cases and production builds omit the tag and its trust bootstrap.
+Negative command cases check missing/invalid test trust and production exclusion.
 The proxy accepts only the explicitly supported test hostname. These responses are
 focused integration fixtures, not recorded provider responses or parity evidence
 about Vercel's hosted Gateway account-selection policy.
