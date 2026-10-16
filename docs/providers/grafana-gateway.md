@@ -170,8 +170,8 @@ For Anthropic MCP, use distinct server names and HTTPS URLs without embedded
 credentials or fragments. Include the server configuration again when continuing
 the conversation, along with prior calls, results and provider metadata.
 
-Tool approvals, custom tool-result formats and generated media responses are
-not supported.
+Tool approvals and custom tool-result formats are not supported. Generated file
+transport is described in [Receive generated files](#receive-generated-files).
 
 ## Use your own provider credentials
 
