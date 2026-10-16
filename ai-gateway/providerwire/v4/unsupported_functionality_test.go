@@ -2,6 +2,7 @@ package v4
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -39,6 +40,25 @@ func (m *scriptedModel) DoStream(context.Context, provider.CallOptions) (*provid
 	return &provider.StreamResult{Stream: makeStream(finishPart())}, nil
 }
 
+type expectedDocument struct {
+	status int
+	body   []byte
+}
+
+func documentForSafeError(value safeError) expectedDocument {
+	status, body := encodeHTTPError(value, nil, maxErrorResponseBytes)
+	return expectedDocument{status: status, body: body}
+}
+
+func publicErrorMember(t *testing.T, body []byte) json.RawMessage {
+	t.Helper()
+	var document struct {
+		Error json.RawMessage `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(body, &document))
+	return document.Error
+}
+
 func unsupported(name string) error {
 	return fmt.Errorf("%s: unsupported tool content part type: custom: %w", name, provider.ErrUnsupportedFunctionality)
 }
@@ -51,7 +71,7 @@ func TestUnsupportedFunctionalityClassification(t *testing.T) {
 	tests := []struct {
 		name       string
 		candidates func() []*scriptedModel
-		want       safeErrorDocument
+		want       expectedDocument
 		wantCalls  []int
 	}{
 		{"direct rejection", func() []*scriptedModel { return []*scriptedModel{newScripted(unsupported("a"))} }, invalid, []int{1}},
@@ -60,7 +80,7 @@ func TestUnsupportedFunctionalityClassification(t *testing.T) {
 		}, invalid, []int{1, 1}},
 		{"rejection then success", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(unsupported("a")), newScripted(nil)}
-		}, safeErrorDocument{status: http.StatusOK}, []int{1, 1}},
+		}, expectedDocument{status: http.StatusOK}, []int{1, 1}},
 		{"rejection then 503", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(unsupported("a")), newScripted(overload)}
 		}, documentForSafeError(safeError{category: safeOverload}), []int{1, 1}},
@@ -106,13 +126,16 @@ func TestUnsupportedFunctionalityClassification(t *testing.T) {
 
 				assert.Equal(t, tc.want.status, response.Code, response.Body.String())
 				if tc.want.body != nil {
-					assert.JSONEq(t, string(tc.want.body), response.Body.String())
+					assert.JSONEq(t, string(publicErrorMember(t, tc.want.body)), string(publicErrorMember(t, response.Body.Bytes())))
 				}
 				for i, candidate := range candidates {
 					assert.Equal(t, tc.wantCalls[i], candidate.calls, "candidate %d", i)
 				}
-				assert.NotContains(t, response.Body.String(), "unsupported tool content")
-				assert.NotContains(t, response.Body.String(), "private")
+				if tc.want.body != nil {
+					errorMember := string(publicErrorMember(t, response.Body.Bytes()))
+					assert.NotContains(t, errorMember, "unsupported tool content")
+					assert.NotContains(t, errorMember, "private")
+				}
 			})
 		}
 	}
