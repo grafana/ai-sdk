@@ -25,15 +25,29 @@ func TestExecutionCapture(t *testing.T) {
 	t.Run("ordered actual failures and native summary", func(t *testing.T) {
 		capture := executionTestCapture(2, 8192)
 		err := provider.NewAPICallError(provider.APICallErrorOptions{Message: "wrapper URL and raw body must not escape", StatusCode: 503, ResponseBody: `{"error":{"message":"native detail","type":"busy","code":9007199254740993},"private":"never"}`})
-		capture.observe(context.Background(), fallback.Attempt{Index: 1, Provider: "anthropic", ModelID: "model-a", Outcome: fallback.AttemptFailed, WillFallback: true, Err: err})
+		capture.observe(context.Background(), fallback.Attempt{Index: 1, Provider: "anthropic", ModelID: "model-a", Outcome: fallback.AttemptFailed, WillFallback: true, Err: err, SourceErr: err})
 		assert.Nil(t, capture.metadata(nil), "fallback intent is not a completed history")
-		capture.observe(context.Background(), fallback.Attempt{Index: 2, Provider: "openai", ModelID: "model-b", Outcome: fallback.AttemptFailed, Err: err})
+		capture.observe(context.Background(), fallback.Attempt{Index: 2, Provider: "openai", ModelID: "model-b", Outcome: fallback.AttemptFailed, Err: err, SourceErr: err})
 		raw := capture.metadata(nil)["gateway"]
 		assert.Contains(t, string(raw), `"code":9007199254740993`)
 		assert.NotContains(t, string(raw), "wrapper")
 		assert.NotContains(t, string(raw), "private")
 		assert.NotContains(t, string(raw), "willFallback")
 		assert.JSONEq(t, `{"execution":{"requestedModelId":"alias","canonicalModelId":"canonical","attempts":[{"providerInstance":"primary","provider":"anthropic","modelId":"model-a","outcome":"failed","nativeError":{"message":"native detail","type":"busy","code":9007199254740993,"statusCode":503}},{"providerInstance":"secondary","provider":"openai","modelId":"model-b","outcome":"failed","nativeError":{"message":"native detail","type":"busy","code":9007199254740993,"statusCode":503}}]}}`, string(raw))
+	})
+	t.Run("canceled decision retains only owned native failure", func(t *testing.T) {
+		failure := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Data: json.RawMessage(`{"message":"native detail","code":"busy"}`)})
+		for _, sourceErr := range []error{failure, nil} {
+			capture := executionTestCapture(1, 8192)
+			capture.observe(context.Background(), fallback.Attempt{Index: 1, Provider: "anthropic", ModelID: "model-a", Outcome: fallback.AttemptCanceled, Err: context.Canceled, SourceErr: sourceErr})
+			raw := string(capture.metadata(nil)["gateway"])
+			assert.Contains(t, raw, `"outcome":"canceled"`)
+			if sourceErr != nil {
+				assert.Contains(t, raw, `"nativeError":{"message":"native detail","code":"busy","statusCode":503}`)
+			} else {
+				assert.NotContains(t, raw, `"nativeError"`)
+			}
+		}
 	})
 	t.Run("collision preserves native and sealing rejects late callbacks", func(t *testing.T) {
 		capture := executionTestCapture(1, 8192)

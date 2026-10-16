@@ -1,7 +1,7 @@
 # gateway-structured-output Specification
 
 ## Purpose
-TBD - created by archiving change add-gateway-structured-output-114. Update Purpose after archive.
+Define presence-aware JSON/schema request forwarding, native text transport and client-owned output validation through the Gateway.
 ## Requirements
 ### Requirement: Presence-aware structured request
 The root provider contract and both Gateway clients SHALL preserve response-format name absence independently from an explicitly empty or nonempty string. Description absence and empty SHALL normalize to the empty string. JSON mode without schema and schema mode with an opaque JSON object SHALL reach native adapters in unary and streaming calls; explicit text format SHALL retain existing text behavior. Schema values SHALL retain semantic numeric and nested value fidelity without Gateway schema rewriting.
@@ -70,3 +70,7 @@ Structured output SHALL be eligible on configured fallback routes under existing
 - **WHEN** native metadata contains the gateway namespace and enrichment fits
 - **THEN** the original namespace SHALL be preserved under gateway.nativeMetadata
 - **AND** a local adaptation error after selection SHALL identify the selected execution without fabricating a native error summary or replaying the request
+
+#### Scenario: Cancellation after an owned candidate failure
+- **WHEN** request cancellation replaces an already observed native failure during fallback selection
+- **THEN** the outcome SHALL remain canceled and optional diagnostics SHALL summarize the owned source failure without substituting another candidate or replaying the request

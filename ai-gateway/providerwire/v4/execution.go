@@ -79,7 +79,7 @@ func (c *executionCapture) observe(_ context.Context, attempt fallback.Attempt) 
 		c.invalid = true
 		return
 	}
-	summary := summarizeNativeError(attempt.Err, c.limit)
+	summary := summarizeNativeError(attempt.SourceErr, c.limit)
 	c.bytes += int64(len(candidate.ProviderInstance) + len(candidate.Provider) + len(candidate.ModelID))
 	if summary != nil {
 		c.bytes += int64(len(summary.Message) + len(summary.Type) + len(summary.Code))
@@ -118,7 +118,7 @@ func (c *executionCapture) direct(err error) {
 	}
 	candidate := c.candidates[0]
 
-	c.observe(context.Background(), fallback.Attempt{Index: 1, Provider: candidate.Provider, ModelID: candidate.ModelID, Outcome: outcome, Err: err})
+	c.observe(context.Background(), fallback.Attempt{Index: 1, Provider: candidate.Provider, ModelID: candidate.ModelID, Outcome: outcome, Err: err, SourceErr: err})
 }
 
 func (c *executionCapture) metadata(native provider.ProviderMetadata) provider.ProviderMetadata {

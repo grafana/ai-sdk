@@ -336,6 +336,8 @@ selection outcome. Failed candidates may include a native message, type, string
 or numeric code, and status. These are candidate-local summaries, not raw native
 bodies, headers or a trace of the error's causes. Native status is distinct from
 the Gateway HTTP status and does not change retryability or fallback selection.
+If cancellation interrupts selection after a native failure, the canceled attempt
+can still retain that candidate’s original failure summary.
 
 For unary and stream-setup failures, read this metadata from the error response:
 Go exposes it in `APICallError.Data`; the registered TypeScript client's
