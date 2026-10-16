@@ -208,7 +208,7 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 						}
 						require.Len(t, nativeErrors, 1)
 						if name == "anthropic" {
-							assert.JSONEq(t, fmt.Sprintf(`{"message":%q,"type":"api_error","statusCode":200}`, expectedMessage), string(nativeErrors[0]))
+							assert.JSONEq(t, fmt.Sprintf(`{"message":%q,"type":"api_error","statusCode":500}`, expectedMessage), string(nativeErrors[0]))
 						} else {
 							assert.JSONEq(t, fmt.Sprintf(`{"message":%q,"type":"error","code":"invalid_api_key","statusCode":400}`, expectedMessage), string(nativeErrors[0]))
 						}

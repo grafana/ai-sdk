@@ -1,0 +1,130 @@
+[
+  {
+    "name": "input-transformations-present",
+    "description": "SYNTHETIC: the response reports a dropped thinking block with an extra field the upstream schema strips.",
+    "response": {
+      "id": "msg_1",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-fable-5-1",
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello"
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 4,
+        "output_tokens": 5
+      },
+      "input_transformations": [
+        {
+          "type": "thinking_block_dropped",
+          "path": "messages[1].content[0]",
+          "reason": "prefix_mismatch",
+          "extra": {
+            "ignored": true
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "input-transformations-empty-array",
+    "description": "SYNTHETIC: an empty array is non-null, so upstream reports it.",
+    "response": {
+      "id": "msg_1",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-fable-5-1",
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello"
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 4,
+        "output_tokens": 5
+      },
+      "input_transformations": []
+    }
+  },
+  {
+    "name": "input-transformations-null",
+    "description": "SYNTHETIC: null is omitted.",
+    "response": {
+      "id": "msg_1",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-fable-5-1",
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello"
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 4,
+        "output_tokens": 5
+      },
+      "input_transformations": null
+    }
+  },
+  {
+    "name": "input-transformations-absent",
+    "description": "SYNTHETIC: absent is omitted.",
+    "response": {
+      "id": "msg_1",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-fable-5-1",
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello"
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 4,
+        "output_tokens": 5
+      }
+    }
+  },
+  {
+    "name": "input-transformations-missing-reason",
+    "description": "SYNTHETIC: an entry without reason fails upstream's response schema.",
+    "response": {
+      "id": "msg_1",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-fable-5-1",
+      "content": [
+        {
+          "type": "text",
+          "text": "Hello"
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 4,
+        "output_tokens": 5
+      },
+      "input_transformations": [
+        {
+          "type": "t",
+          "path": "p"
+        }
+      ]
+    }
+  }
+]

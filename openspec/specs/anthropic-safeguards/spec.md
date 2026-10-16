@@ -54,35 +54,6 @@ Valid non-null unary `safeguard_results` SHALL appear only at `GenerateResult.Pr
 - **WHEN** `safeguard_results` is present but is not an array of entries matching the defined field shapes
 - **THEN** conversion SHALL return an error and SHALL NOT expose the malformed raw payload as provider metadata
 
-### Requirement: Anthropic streaming safeguard verdict lifecycle
-
-The adapter SHALL retain the last non-null valid `message_delta.delta.safeguard_results` per message, replacing it even with [], ignoring null/missing, and resetting for a new message. No valid delta SHALL mean no safeguardResults key. The last PartFinish and completed step SHALL carry the retained array under ProviderMetadata["anthropic"].safeguardResults without unrelated raw fields.
-
-#### Scenario: Null then verdict then null
-- **WHEN** successive message deltas contain null, a valid verdict array keyed by `toolu_01`, then null, followed by `message_stop`
-- **THEN** the final `PartFinish` and completed stream step SHALL contain that verdict array under `safeguardResults` with nested wire shape preserved
-
-#### Scenario: Later valid verdict replaces earlier verdict
-- **WHEN** two deltas contain different non-null arrays, including when the later one is `[]`
-- **THEN** the final `PartFinish` SHALL contain the later array
-
-#### Scenario: No streaming verdict
-- **WHEN** deltas omit `safeguard_results` or contain only null
-- **THEN** all produced Anthropic finish metadata SHALL omit `safeguardResults`
-
-#### Scenario: Verdict only in message start
-- **WHEN** `message_start` contains `safeguard_results` but the following deltas omit or null that field
-- **THEN** all produced Anthropic finish metadata SHALL omit `safeguardResults`
-
-#### Scenario: Reset on new message
-- **WHEN** a new `message_start` follows a message with a verdict
-- **THEN** a finish for the new message SHALL NOT inherit the prior message's verdict
-
-#### Scenario: Malformed streaming verdict and transport failure
-- **WHEN** a delta contains a malformed non-null `safeguard_results` value
-- **THEN** the stream SHALL emit the existing error part without a successful metadata projection for that delta
-- **AND** a transport failure SHALL remain a transport error, without synthesizing safeguard metadata or silently retrying without safeguards
-
 ### Requirement: Anthropic safeguard opt-in beta and null handling
 
 Nonempty safeguards SHALL add `dangerous-tool-use-2026-09-03` to anthropic-beta exactly once, even when explicitly supplied. Absent/empty safeguards SHALL add neither field nor beta automatically. Explicit JSON safeguards:null SHALL fail before HTTP, matching registered upstream optional-array schema. Explicit caller Betas SHALL be honored independently.
@@ -103,9 +74,38 @@ Verdict entries SHALL contain string type and object status with string type; op
 
 ### Requirement: Anthropic streaming safeguard error and timing boundary
 
-Malformed present verdict arrays SHALL follow the existing stream-error path, not a successful finish with malformed metadata. Safeguard handling SHALL NOT change existing finish-event timing.
+Malformed present verdict arrays SHALL follow the existing stream-error path at the offending `message_delta`, not a successful finish with malformed metadata. Safeguard handling SHALL NOT change the finish-event timing defined by `anthropic-stream-finish-lifecycle`.
 
 #### Scenario: Anthropic streaming safeguard error and timing boundary
 
 - **WHEN** a message delta contains malformed safeguard_results
-- **THEN** the existing error part SHALL be emitted without successful malformed metadata, while finish-event timing SHALL remain unchanged
+- **THEN** the existing error part SHALL be emitted without successful malformed metadata, no `PartFinish` SHALL follow for that message, and the finish-event timing SHALL remain that of `anthropic-stream-finish-lifecycle`
+
+### Requirement: Anthropic streaming safeguard verdict is stream-level
+
+The adapter SHALL retain the last non-null valid `message_delta.delta.safeguard_results` for the whole stream, replacing it even with [] and ignoring null/missing, as upstream does; a new message does not reset it. No valid delta SHALL mean no safeguardResults key. The single PartFinish emitted at the message's `message_stop`, and the completed step, SHALL carry the retained array under ProviderMetadata["anthropic"].safeguardResults without unrelated raw fields.
+
+#### Scenario: Null then verdict then null
+- **WHEN** successive message deltas contain null, a valid verdict array keyed by `toolu_01`, then null, followed by `message_stop`
+- **THEN** the message's only `PartFinish` and the completed stream step SHALL contain that verdict array under `safeguardResults` with nested wire shape preserved
+
+#### Scenario: Later valid verdict replaces earlier verdict
+- **WHEN** two deltas contain different non-null arrays, including when the later one is `[]`
+- **THEN** the message's `PartFinish` SHALL contain the later array
+
+#### Scenario: No streaming verdict
+- **WHEN** deltas omit `safeguard_results` or contain only null
+- **THEN** the produced Anthropic finish metadata SHALL omit `safeguardResults`
+
+#### Scenario: Verdict only in message start
+- **WHEN** `message_start` contains `safeguard_results` but the following deltas omit or null that field
+- **THEN** the produced Anthropic finish metadata SHALL omit `safeguardResults`
+
+#### Scenario: Verdict carries into the next message
+- **WHEN** a new `message_start` follows a message with a verdict and the new message's deltas omit or null `safeguard_results`
+- **THEN** the finish for the new message SHALL carry the prior message's verdict, as upstream does
+
+#### Scenario: Malformed streaming verdict and transport failure
+- **WHEN** a delta contains a malformed non-null `safeguard_results` value
+- **THEN** the stream SHALL emit the existing error part without a successful metadata projection for that delta
+- **AND** a transport failure SHALL remain a transport error, without synthesizing safeguard metadata or silently retrying without safeguards

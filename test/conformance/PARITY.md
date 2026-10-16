@@ -25,9 +25,11 @@ evidence boundary changes, not merely because the pinned versions change.
 | Structured output | mixed | Object snapshots and focused unit tests exercise schemas, partial values, array elements, parsing, repair failure paths and raw-response preservation. | Final-value snapshots alone do not establish partial-delivery or failure behavior; those require focused tests. |
 | UI messages and SSE | mixed | Chunk snapshots, framing tests and schema-parsed frontend tests exercise conversion, ordering and assembly, including opaque metadata replacement, omitted versus explicit empty objects, metadata-only deltas and separate tool call/result history. Pinned differentials cover seven static/dynamic tool states through persistence, resume and conversion, including accumulated raw-string partial-input restoration, output tool-metadata replacement and superseded approvals. | Reader/writer tests do not establish all browser or hook lifecycle behavior; scalar construction and provider-domain optional-empty representations remain bounded adaptations. |
 | React hooks | mixed | Actual useChat, useCompletion and useObject tests exercise selected success, error, stop, tool, approval and generated-file delivery flows. Tool-state tests persist/remount/resume preliminary and approval history through Go and compare the fake provider prompt with the pinned Agent. | Other lifecycle paths are not established by these tests or by chunk snapshots alone; the deterministic model does not prove live provider acceptance. |
+| Buffered model fallback | mixed | Synthetic fallback tests cover discarded partial output, cross-model selection, cancellation, attempt deadlines and buffer bounds. GenerateText and schema-parsed frontend integration exercise successful backup identity, usage and output assembly. | An opt-in Go extension with no registered Vercel core equivalent; no live provider acceptance or reversal of provider-executed effects is claimed. |
 | Agent, middleware and registry | mixed | Root tests exercise configuration, wrapping, provider resolution, simulated generated-content projection and cancellation; schema-parsed frontend tests check simulated UI chunks, isolated history validation/normalization and zero provider calls on invalid history. | Dynamic tools skip static schemas; application metadata/data schemas, unrepresented provider-tool schemas, approval input-schema provenance and transforms/refinements remain outside validation proof. Shared schema cases are not exhaustive. Synthetic generation does not prove real provider emissions; delegation to another implementation does not independently prove every entry point. |
 | Fallback observation | mixed | SDK tests cover request-scoped observation on shared models, independent observer panic recovery, original candidate errors across cancellation, setup/EOF validation, first-part commitment and exclusion of unowned late results. High-level GenerateText/StreamText tests preserve selected metadata and capture earlier candidate failures. | Go-specific observation hooks, not automatic trace grouping or metadata serialization. The registered upstream has no matching fallback implementation. Native errors remain in-process; these tests do not establish Gateway projection, runtime delivery or live-provider behavior. |
 | Agent Observability integration | mixed | Tests against the agento11y versions in the middleware's `go.mod` cover cached unary/streaming usage, inclusive export/span/metric semantics, and hook fixtures replayed through the real HTTP decoder. Gateway tests cover cached unary/streaming inclusive exports with both source and published middleware, bounded HTTP/gRPC export attempts, and ambient configuration rejection. | Hook validation starts after SDK normalization; discarded wire fields cannot be validated, and lost provider-tool discriminators fail reconstruction. Local HTTP servers do not prove deployed hook-service compatibility. Experimental OTel generation export is outside this evidence. |
+| Provider stream parts | automated | Every streaming Anthropic, Bedrock, OpenAI and OpenAI-compatible `recorded/` and `upstream/` case compares Go provider parts with parts recorded from the pinned upstream provider, per model call and including raw chunks, so finish count and timing, raw ordering, usage and finish metadata are checked. Labeled synthetic streams under `testdata/anthropic-stream-parts/` cover several deltas per message, messages without a delta, consecutive messages, end of stream after a delta, error frames and overlapping messages against upstream-generated output. | Mock-stream evidence only: it does not show that the live API sends these sequences. Synthetic inputs are not recordings. Errors without a provider status are compared by position, not content. Bedrock `generate`-operation cases and providers without conformance fixtures have no provider-parts evidence. Synthetic stream and unary cases cover Anthropic only, including input transformations, which no recorded or upstream fixture exercises (upstream tests only their absence). |
 | LanguageModelV4 contract | mixed | Discriminator checks, finite ProviderWire witnesses and provider request snapshots exercise represented types and mappings. | Shape checks are not complete semantic interface verification. |
 | Provider adapters | mixed | `recorded/` and `upstream/` fixtures exercise represented requests, stream events, usage and outputs; provider tests cover synthetic failures and local invariants, including native Anthropic default Messages targets and caller-option precedence, OpenAI capability-gated reasoning/configuration controls, async tool metadata and continuation, multipart function-result conversion, immutable Responses schema normalization, and synthetic forced-choice HTTP request assertions for shell, local-shell and tool-search against registered upstream shapes. | No recorded/imported OpenAI request fixture exercises multipart result references, cache breakpoints or `propertyNames` normalization; focused request tests do not prove live acceptance. Request capture does not prove returned SDK metadata. Volatile SigV4 headers are excluded from snapshots. |
 | Anthropic on Microsoft Foundry | mixed | Synthetic HTTP tests exercise endpoint/authentication, retry credential refresh, deployment-name request mapping, canonical generation/stream identity, tools, reasoning and usage through the shared Anthropic adapter. | The registered `@ai-sdk/anthropic` baseline has no Foundry constructor. This Go extension follows the native Foundry contract and composes an older published Anthropic adapter for consumer compatibility; no live Foundry recording or hosting-version capability proof is claimed. |
@@ -48,6 +50,15 @@ evidence boundary changes, not merely because the pinned versions change.
 
 ## Evidence boundaries
 
+- Anthropic executor usage intentionally sums cache reads and writes from the
+  same `message` and `compaction` iterations as uncached input and output.
+  Synthetic HTTP generation and streaming tests cover compaction, server-tool
+  loops, advisor exclusion, fallback and absent executor iterations. The
+  registered upstream converter uses top-level cache counts; imported compaction
+  fixtures have zero cache activity and do not prove cached-compaction billing.
+  Three synthetic multi-message stream cases explicitly assert this cache-total
+  deviation while comparing all other fields with unchanged upstream snapshots.
+  See `anthropic-executor-iteration-cache-usage` in [upstream.yaml](upstream.yaml).
 - Gateway native warning/source/response identity mapping has closed raw/schema,
   pinned TS/independent Go and synthetic authenticated command evidence. Native
   source IDs/display/order and optional registered response identity survive;
@@ -168,10 +179,12 @@ issue rather than being maintained in both places.
   ToUIMessageStream supplies a default ID generator with original messages and
   avoids an unused generation on continuation. Timeout warnings are returned on
   successful results rather than logged globally before invocation.
+- Malformed Anthropic `safeguard_results` and `input_transformations` end the Go stream
+  at the offending event, where upstream reports the invalid chunk and keeps reading.
+  Go unit tests cover this; no golden can, because the two differ by design.
 - Anthropic uses explicit credentials/options rather than ambient SDK defaults.
-  With no tools, required/named choices are retained. Its api_error/overloaded_error
-  retry classification is broader than upstream's initial-overload rule; the full
-  error envelope and inner response error are retained separately.
+  With no tools, required/named choices are retained. The full error envelope and
+  inner response error are retained separately from the classified message.
 - Foundry keeps canonical model IDs for capability selection and response
   identity while transmitting Azure deployment names. Its endpoint/auth facade
   deliberately preempts ambient authentication in the compatible published
@@ -185,6 +198,16 @@ issue rather than being maintained in both places.
   provider finish, preserving Go's incomplete-stream distinction; that is not a
   claim of complete upstream EOF parity.
 - Bedrock warns and omits unsupported tool-result file URLs instead of failing.
+  Cache points are retained only when their source message emits native content,
+  including user/tool approval-only messages and system messages with only
+  unsupported parts. This deliberately goes beyond the registered upstream's
+  assistant cache-only suppression and prevents orphaned markers from borrowing
+  content from another source in a merged block. Focused conversion and synthetic
+  Converse/ConverseStream HTTP tests cover tool filtering, ownership, TTL and
+  preserved warnings; they do not establish live cache acceptance. Tool filtering
+  happens before grouping with the prepared tool set, matching upstream. The
+  registered behavior of leaving adjacent user messages after an unsigned-only
+  assistant is omitted remains unchanged.
 - Gateway is a Grafana extension with no private-service oracle. It deliberately
   uses strict response families and protected auth/protocol headers. Go rejects
   reserved authentication-header overrides before I/O, unlike the pinned client's

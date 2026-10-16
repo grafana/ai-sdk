@@ -31,7 +31,7 @@ const (
 type AttemptOutcome string
 
 const (
-	// AttemptSelected means a unary result or the first stream part was accepted.
+	// AttemptSelected means a result was accepted at the configured commitment point.
 	AttemptSelected AttemptOutcome = "selected"
 	// AttemptFailed means the invocation failed before selection.
 	AttemptFailed AttemptOutcome = "failed"
@@ -43,9 +43,10 @@ const (
 // implements LanguageModel. It tries candidates in order, falling back
 // on errors according to the configured decider.
 type Model struct {
-	candidates []provider.LanguageModel
-	decider    func(error) bool
-	observer   AttemptObserver
+	candidates   []provider.LanguageModel
+	decider      func(error) bool
+	observer     AttemptObserver
+	streamBuffer *streamBufferConfig
 }
 
 // Attempt describes one candidate invocation made by a fallback model.
@@ -56,8 +57,9 @@ type Attempt struct {
 	StartedAt  time.Time
 	FinishedAt time.Time
 	Err        error
-	// SourceErr is the owned setup, validation or first-part-wait error before
-	// decision-time cancellation substitution. It does not include stream error parts.
+	// SourceErr is the owned candidate failure before decision-time cancellation
+	// substitution. Buffered streams include errors encountered before selection;
+	// unbuffered streams exclude error parts after first-part commitment.
 	SourceErr error
 	Outcome   AttemptOutcome
 	// WillFallback records eligibility and a remaining candidate while the context
@@ -92,7 +94,9 @@ func (m *Model) WithDecider(fn func(error) bool) *Model {
 // WithAttemptObserver registers a callback invoked after each candidate
 // attempt. Index is one-based. For streams, an attempt finishes when the first
 // part arrives, the stream closes, or the provider returns an error. FinishedAt
-// is decision time, not stream completion. The callback must return promptly.
+// is decision time, not stream completion, unless WithBufferedStream is enabled.
+// Buffered attempts finish after successful stream closure or failure.
+// The callback must return promptly.
 func (m *Model) WithAttemptObserver(fn AttemptObserver) *Model {
 	m.observer = fn
 	return m
@@ -132,6 +136,9 @@ func (m *Model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 }
 
 func (m *Model) DoStream(ctx context.Context, params provider.CallOptions) (*provider.StreamResult, error) {
+	if m.streamBuffer != nil {
+		return m.doBufferedStream(ctx, params)
+	}
 	var failures []failedAttempt
 	for i, c := range m.candidates {
 		if ctx.Err() != nil {
@@ -325,6 +332,9 @@ func failedAttemptsError(failures []failedAttempt) error {
 // returns false for context-window/context-length failures, because the next
 // candidate would fail identically.
 func defaultDecider(err error) bool {
+	if errors.Is(err, ErrStreamBufferLimit) {
+		return false
+	}
 	var apiErr *provider.APICallError
 	if errors.As(err, &apiErr) {
 		if isContextWindowError(apiErr) {
