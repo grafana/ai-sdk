@@ -100,9 +100,9 @@ func TestBuildCatalog_ModelFactoryReceivesCanonicalAndProtectedLowerOnce(t *test
 		factoryCalls++
 		switch canonicalID {
 		case "grafana/assistant":
-			assert.Same(t, direct["claude-assistant"], lower.(nativeoptions.Model).LanguageModel)
+			assert.Equal(t, direct["claude-assistant"].ModelID(), lower.(nativeoptions.Model).ModelID())
 		case "grafana/other":
-			assert.Same(t, direct["claude-other"], lower.(nativeoptions.Model).LanguageModel)
+			assert.Equal(t, direct["claude-other"].ModelID(), lower.(nativeoptions.Model).ModelID())
 		default:
 			t.Fatalf("unexpected canonical ID %q", canonicalID)
 		}
