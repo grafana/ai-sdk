@@ -102,9 +102,45 @@ Fallback never closes provider-owned channels. A provider that ignores context
 cancellation may still retain its own producer or a synchronous setup call;
 fallback cannot force provider code to stop.
 
+## Buffer a complete response before selection
+
+For short decisions that do not need incremental output, opt in to buffering:
+
+```go
+model, err = model.WithBufferedStream(1<<20, 30*time.Second)
+if err != nil {
+    return err
+}
+```
+
+The limits apply to each candidate: up to 1 MiB of JSON-encoded parts in this
+example, a fixed ceiling of 4096 parts, and 30 seconds for setup and streaming.
+The parent request deadline and cancellation still take precedence. This option
+affects `DoStream`, including Go `GenerateText`; it does not change `DoGenerate`.
+
+Selection waits for the stream to close after a successful finish part. Leading
+or later error events, missing finish and attempt timeouts reach the configured
+fallback decider. Failed partial output and usage are discarded. A successful
+candidate's parts, response metadata and usage are replayed unchanged. Buffer
+limit errors stop the default chain; a custom decider can choose otherwise.
+
+Candidates can use different models and providers, such as Luna on Mantle,
+Luna on OpenAI, then Haiku on an approved Claude provider. Ensure every candidate
+supports the prompt, context size and required output. Provider-specific options
+are forwarded unchanged: the caller must choose options valid for the chain.
+
+Buffering delays all output and does not undo provider-executed tools or other
+remote side effects. Use it only for safely repeatable calls. Bound SDK/client
+retries as well as fallback attempts, and meter the actual serving model rather
+than the wrapper's primary identity. Failed work can still incur provider costs.
+
+This is a Go extension. The registered Vercel core has no equivalent fallback
+wrapper, and its `generateText` uses `doGenerate` rather than collecting a stream.
+
 ## Observe candidate decisions
 
-`WithAttemptObserver` reports one decision per invoked candidate. Outcomes are
+The [model observer](https://pkg.go.dev/github.com/grafana/ai-sdk/fallback#Model.WithAttemptObserver)
+reports one decision per invoked candidate. Outcomes are
 `selected`, `failed`, and `canceled`; `WillFallback` is true only when a failed
 attempt is eligible to advance, another candidate exists, and the request is
 live at decision time. Later cancellation, including during the observer, may
@@ -116,10 +152,27 @@ Cancellation observable immediately after the decider returns takes precedence
 over its answer: the event is `canceled`, its error preserves the context cause,
 and `WillFallback` is false. After a failed decision to advance, later cancellation
 does not rewrite the event already delivered, but stops the next invocation and
-remains in the returned error chain.
+remains in the returned error chain. `SourceErr` separately preserves the owned
+candidate error before this cancellation substitution; it does not change the
+error returned to the caller.
 
-For streaming, the finish timestamp is the selection decision time, not the
-end of the selected stream. Post-selection error events remain stream data.
+Use a [request-scoped observer](https://pkg.go.dev/github.com/grafana/ai-sdk/fallback#WithAttemptObserver)
+to collect decisions for one call without changing a shared model. It runs before
+and independently of the model observer. A child registration replaces inherited
+request observation; a nil callback disables it without affecting the model
+observer. Use separate contexts for independently captured calls and synchronize
+an accumulator if calls sharing that context can run concurrently.
+
+Request observation includes repeated SDK steps, retries and nested fallback
+calls using that context. Candidate indices restart per fallback invocation;
+this hook does not automatically group a trace or add provider metadata.
+Native source errors are in-process diagnostics and may contain credential
+echoes. Choose the fields your application publishes rather than serializing
+whole error trees. Observation and logger field policies do not rewrite values
+returned to the caller.
+
+For ordinary streaming, the finish timestamp is the selection decision time, not the
+end of the selected stream. With buffering, it is the complete stream decision time. Post-selection error events remain stream data.
 Observers run synchronously and must return promptly; enqueue into a bounded
 queue when exporting records. Observer panics are isolated from model calls.
 
