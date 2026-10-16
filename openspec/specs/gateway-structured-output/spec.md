@@ -4,7 +4,7 @@
 Define presence-aware JSON/schema request forwarding, native text transport and client-owned output validation through the Gateway.
 ## Requirements
 ### Requirement: Presence-aware structured request
-The root provider contract and both Gateway clients SHALL preserve response-format name absence independently from an explicitly empty or nonempty string. Description absence and empty SHALL normalize to the empty string. JSON mode without schema and schema mode with an opaque JSON object SHALL reach native adapters in unary and streaming calls; explicit text format SHALL retain existing text behavior. Schema values SHALL retain semantic numeric and nested value fidelity without Gateway schema rewriting.
+The provider contract and both Gateway clients SHALL distinguish absent, empty and nonempty names and normalize absent/empty descriptions to empty. JSON mode and opaque object schemas SHALL reach native adapters in unary and streaming calls. Explicit text format SHALL retain existing behavior. The Gateway SHALL preserve numeric and nested schema values without rewriting them.
 
 #### Scenario: Name and description presence
 - **WHEN** either client sends absent, empty or nonempty name and absent or empty description in either execution mode
