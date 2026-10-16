@@ -29,6 +29,16 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			content = append(content, provider.GenerateContentPart{
 				Type: provider.ContentCustom, Kind: anthropicFallbackKind, ProviderMetadata: metadata,
 			})
+		case "container_upload":
+			metadata, err := json.Marshal(struct {
+				FileID string `json:"fileId"`
+			}{FileID: block.AsContainerUpload().FileID})
+			if err != nil {
+				return nil, fmt.Errorf("marshaling container upload metadata: %w", err)
+			}
+			content = append(content, provider.GenerateContentPart{
+				Type: provider.ContentCustom, Kind: anthropicContainerUploadKind, ProviderMetadata: provider.ProviderMetadata{"anthropic": metadata},
+			})
 		case "text":
 			if !usesJsonResponseTool {
 				var webSearchCitations []json.RawMessage

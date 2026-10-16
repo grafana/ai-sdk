@@ -180,8 +180,6 @@ func definitionForError(value safeError) errorDefinition {
 
 func requestFailureMessage(reason requestFailureReason) string {
 	switch reason {
-	case capabilityCustomContent:
-		return "unsupported capability: custom-content"
 	case capabilityTools:
 		return "unsupported capability: tools"
 	case capabilityToolApprovals:

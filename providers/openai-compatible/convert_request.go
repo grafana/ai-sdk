@@ -456,7 +456,7 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 				}
 			}
 			toolCalls = append(toolCalls, toolCall)
-		case provider.ContentPartTypeToolApprovalRequest, provider.ContentPartTypeToolApprovalResponse:
+		case provider.ContentPartTypeToolApprovalRequest, provider.ContentPartTypeToolApprovalResponse, provider.ContentPartTypeCustom:
 			continue
 		default:
 			return chatMessage{}, fmt.Errorf("openai: assistant messages do not support content part %q", part.Type)

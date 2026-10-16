@@ -167,6 +167,16 @@ func TestFallbackRoute_MappedOptions(t *testing.T) {
 			{"history", provider.CallOptions{Prompt: []provider.Message{provider.NewAssistantMessage(provider.ToolCallPart("call", "lookup", json.RawMessage(`{}`))), provider.NewToolMessage(provider.ToolResultPart("call", "lookup", &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`null`)}))}}},
 			{"files", mappedFallbackFiles()},
 			{"reasoning", provider.CallOptions{Reasoning: provider.ReasoningHigh, Prompt: []provider.Message{provider.NewAssistantMessage(provider.ReasoningPart("thought"), provider.ReasoningFilePart("image/png", provider.BytesDataContent(nil)), provider.ReasoningFilePart("image/png", provider.URLDataContent("https://example.test/reasoning")))}}},
+			{"custom history", func() provider.CallOptions {
+				compaction := provider.CustomPart("openai.compaction")
+				compaction.ProviderOptions = mappedFallbackOptions()
+				return provider.CallOptions{Prompt: []provider.Message{provider.NewAssistantMessage(provider.TextPart("answer"), compaction, provider.CustomPart("example.kind"))}}
+			}()},
+			{"custom tool result entries", provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(provider.ToolResultPart("call", "lookup", &provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{
+				{Type: provider.ToolContentText, Text: "before"},
+				{Type: provider.ToolContentCustom, ProviderOptions: mappedFallbackOptions()},
+				{Type: provider.ToolContentCustom},
+			}}))}}},
 			{"headers", provider.CallOptions{Headers: map[string]string{"x-ordinary": "value"}}},
 			{"scoped options", provider.CallOptions{ProviderOptions: mappedFallbackOptions(), Prompt: []provider.Message{func() provider.Message {
 				message := provider.UserText("request")

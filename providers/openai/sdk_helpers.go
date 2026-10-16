@@ -64,3 +64,14 @@ func marshalToolInput(value any) (json.RawMessage, error) {
 	}
 	return json.RawMessage(bytes.TrimSuffix(buf.Bytes(), []byte("\n"))), nil
 }
+
+func compactionItem(id string, encryptedContent *string) responses.ResponseInputItemUnionParam {
+	if encryptedContent != nil {
+		item := responses.ResponseInputItemParamOfCompaction(*encryptedContent)
+		item.OfCompaction.ID = param.NewOpt(id)
+		return item
+	}
+	raw, _ := json.Marshal(map[string]any{"type": "compaction", "id": id})
+	value := param.Override[responses.ResponseCompactionItemParam](json.RawMessage(raw))
+	return responses.ResponseInputItemUnionParam{OfCompaction: &value}
+}

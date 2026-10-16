@@ -134,6 +134,19 @@ a `required` or named tool choice is sent as `auto` with a warning, and a JSON
 schema response uses a system-prompt instruction instead of the forced JSON
 tool.
 
+## Handle unsupported content
+
+Most unsupported Converse content is dropped with a warning. Some content makes
+the request fail before it is sent:
+
+- custom tool-result entries, when tools are active;
+- file parts with provider references, non-S3 URLs, or unsupported image,
+  video, or document types.
+
+Match these failures with `errors.Is(err, provider.ErrUnsupportedFunctionality)`.
+In a fallback chain, the request moves on to the next model. Custom content
+from other providers in assistant history, such as compaction items, is ignored.
+
 Validate the capabilities required by your workflow before putting unlike model
 families in the same fallback chain.
 

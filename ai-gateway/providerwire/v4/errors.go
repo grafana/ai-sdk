@@ -100,6 +100,9 @@ func safeErrorFromProvider(err error) (result safeError) {
 	if transportError, ok := safeErrorFromTransport(err); ok {
 		return transportError
 	}
+	if errors.Is(err, provider.ErrUnsupportedFunctionality) {
+		return safeError{category: safeInvalidRequest}
+	}
 	return safeError{category: safeInternal}
 }
 

@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -148,5 +149,19 @@ func TestAPICallError_Unwrap(t *testing.T) {
 			StatusCode: 400,
 		})
 		assert.Nil(t, noCause.Unwrap())
+	})
+}
+
+func TestErrUnsupportedFunctionality(t *testing.T) {
+	wrapped := fmt.Errorf("bedrock: unsupported tool content part type: custom: %w", ErrUnsupportedFunctionality)
+
+	t.Run("wrapped identity survives errors.Is", func(t *testing.T) {
+		assert.ErrorIs(t, wrapped, ErrUnsupportedFunctionality)
+		assert.ErrorIs(t, errors.Join(errors.New("other"), wrapped), ErrUnsupportedFunctionality)
+	})
+
+	t.Run("is not an APICallError", func(t *testing.T) {
+		var apiErr *APICallError
+		assert.False(t, errors.As(wrapped, &apiErr))
 	})
 }

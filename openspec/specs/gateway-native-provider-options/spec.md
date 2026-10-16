@@ -7,7 +7,7 @@ Define opaque native provider-option forwarding at supported Gateway scopes, con
 ## Requirements
 
 ### Requirement: Opaque options reach native adapters at supported scopes
-The Gateway SHALL forward ordinary provider-option namespace objects to native adapters at their original supported call, message, content-part, function-tool and nested tool-result file-entry scopes. It SHALL preserve namespace spelling, opaque namespace JSON bytes and meaningful empty/nested values without mutation, field inventories, namespace filtering, hoisting or cross-provider translation.
+The Gateway SHALL forward ordinary provider-option namespace objects to native adapters at their original supported call, message, content-part (including assistant custom parts), function-tool and nested tool-result file-entry and custom-entry scopes. It SHALL preserve namespace spelling, opaque namespace JSON bytes and meaningful empty/nested values without mutation, field inventories, namespace filtering, hoisting or cross-provider translation.
 
 #### Scenario: Empty and nested options survive mapping
 - **WHEN** a supported direct unary or streaming request carries namespace objects containing null, false, zero, empty strings, empty arrays, empty objects and nested JSON at the supported scopes
@@ -117,3 +117,10 @@ The implementation SHALL ship applicable specs, centralized documentation, Provi
 - **WHEN** the change is considered implemented
 - **THEN** registered ProviderWire, command, parity and applicable candidate-source module/boundary checks SHALL pass
 - **AND** the coverage summary SHALL distinguish mapped preservation, native fake-request consumption and remaining support/evidence gaps
+
+### Requirement: Custom-scope consumption audit
+Admitting custom history and custom tool-result entries SHALL record the consumption-backed audit for each newly caller-reachable native path, with a disposition and paired bypass/harmless cases. The paths are Anthropic tool-reference `toolName` and fallback replay, OpenAI compaction `itemId`/`encryptedContent`, OpenAI-compatible stringification of custom entries, and the OpenAI Responses custom-entry drop.
+
+#### Scenario: Compaction item reference through a configured account
+- **WHEN** a caller supplies `openai.compaction` history with an `itemId` on a route whose OpenAI adapter stores responses
+- **THEN** the audit SHALL record that the adapter sends an item reference within the configured account, its disposition relative to the accepted reasoning `itemId` precedent, and a regression case

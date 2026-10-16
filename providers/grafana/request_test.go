@@ -231,3 +231,33 @@ func TestEncodeRequest_UnsafeInteger(t *testing.T) {
 	_, err := encodeRequest(provider.CallOptions{Seed: &value})
 	require.Error(t, err)
 }
+
+func TestEncodeRequest_CustomProjection(t *testing.T) {
+	options := func(raw string) provider.ProviderOptions {
+		return provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: json.RawMessage(raw)}}
+	}
+	compaction := provider.CustomPart("openai.compaction")
+	compaction.ProviderOptions = options(`{"itemId":"cmp_1","encryptedContent":"ENC"}`)
+	result := provider.ToolResultPart("call", "tool", &provider.ToolResultOutput{
+		Type: provider.ToolOutputContent,
+		Content: []provider.ToolResultContentValue{
+			{Type: provider.ToolContentText, Text: "before"},
+			{Type: provider.ToolContentCustom, ProviderOptions: options(`{"type":"tool-reference","toolName":"search"}`)},
+			{Type: provider.ToolContentCustom},
+		},
+	})
+
+	body, err := encodeRequest(provider.CallOptions{Prompt: []provider.Message{
+		provider.NewAssistantMessage(compaction, result),
+	}})
+	require.NoError(t, err)
+
+	assert.JSONEq(t, `{"prompt":[{"role":"assistant","content":[
+		{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}},
+		{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[
+			{"type":"text","text":"before"},
+			{"type":"custom","providerOptions":{"openai":{"type":"tool-reference","toolName":"search"}}},
+			{"type":"custom"}
+		]}}
+	]}]}`, string(body))
+}

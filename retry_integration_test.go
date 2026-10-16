@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -711,4 +712,45 @@ func TestStreamText_DefaultMaxRetries(t *testing.T) {
 	assert.Equal(t, "ok", result.Text())
 	assert.NoError(t, result.Err())
 	assert.Equal(t, int32(3), callCount.Load(), "default maxRetries=2 means 3 total attempts")
+}
+
+func TestRetry_UnsupportedFunctionalityIsNotRetried(t *testing.T) {
+	rejection := fmt.Errorf("bedrock: unsupported tool content part type: custom: %w", provider.ErrUnsupportedFunctionality)
+	newModel := func(calls *atomic.Int32) *mockModel {
+		return &mockModel{
+			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				calls.Add(1)
+				return nil, rejection
+			},
+		}
+	}
+
+	t.Run("StreamText", func(t *testing.T) {
+		var calls atomic.Int32
+		start := time.Now()
+		result := StreamText(context.Background(), newModel(&calls),
+			WithModelMessages(provider.UserText("hi")),
+			WithMaxRetries(3),
+			withRetryTiming(500, 2),
+		)
+		for range result.FullStream() {
+		}
+
+		require.ErrorIs(t, result.Err(), provider.ErrUnsupportedFunctionality)
+		assert.Equal(t, int32(1), calls.Load())
+		assert.Less(t, time.Since(start), 400*time.Millisecond, "no backoff delay")
+	})
+
+	t.Run("GenerateText", func(t *testing.T) {
+		var calls atomic.Int32
+		start := time.Now()
+		_, err := GenerateText(context.Background(), newModel(&calls),
+			WithModelMessages(provider.UserText("hi")),
+			WithMaxRetries(3),
+		)
+
+		require.ErrorIs(t, err, provider.ErrUnsupportedFunctionality)
+		assert.Equal(t, int32(1), calls.Load())
+		assert.Less(t, time.Since(start), 400*time.Millisecond, "no backoff delay")
+	})
 }

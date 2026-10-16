@@ -649,3 +649,44 @@ func TestFallbackAcceptance_MetadataFailureDoesNotReplay(t *testing.T) {
 		}
 	}
 }
+
+func TestFallbackAcceptance_CustomContentCommitsCandidate(t *testing.T) {
+	t.Run("stream first part", func(t *testing.T) {
+		errorPart := provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}
+		h := newFallbackAcceptance(t,
+			&observabilityTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return fallbackParts(provider.StreamPart{Type: provider.PartCustom, Kind: "example.kind"}, errorPart), nil
+			}},
+			&observabilityTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return fallbackParts(hostileFallbackParts()...), nil
+			}},
+		)
+		response := httptest.NewRecorder()
+
+		h.handler.ServeHTTP(response, h.request(context.Background(), true))
+
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.Contains(t, response.Body.String(), `"kind":"example.kind"`)
+		assert.EqualValues(t, 1, h.calls[0].Load())
+		assert.Zero(t, h.calls[1].Load(), "a candidate that emitted custom content stays selected")
+		assert.NotContains(t, response.Body.String(), "public-answer")
+	})
+
+	t.Run("unary success with an unencodable custom part", func(t *testing.T) {
+		h := newFallbackAcceptance(t,
+			&observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "undotted"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+			}},
+			&observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return &provider.GenerateResult{}, nil
+			}},
+		)
+		response := httptest.NewRecorder()
+
+		h.handler.ServeHTTP(response, h.request(context.Background(), false))
+
+		assert.Equal(t, http.StatusInternalServerError, response.Code)
+		assert.EqualValues(t, 1, h.calls[0].Load())
+		assert.Zero(t, h.calls[1].Load())
+	})
+}

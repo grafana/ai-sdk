@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"sync"
@@ -174,6 +175,22 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartTextEnd, ID: "1"},
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
 		)}, nil
+	case "custom":
+		m.stats.recordSuccess(options)
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "custom-response", ModelID: "custom-model"},
+			scenarioCustomStreamPart(scenarioCustom()[0]),
+			provider.StreamPart{Type: provider.PartTextStart, ID: "text"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "answer"},
+			scenarioCustomStreamPart(scenarioCustom()[1]),
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "text"},
+			scenarioCustomStreamPart(scenarioCustom()[2]),
+			scenarioCustomStreamPart(scenarioCustom()[3]),
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
+		)}, nil
+	case "unsupported-functionality":
+		m.stats.recordSuccess(options)
+		return nil, fmt.Errorf("test: unsupported tool content part type: custom: %w", provider.ErrUnsupportedFunctionality)
 	case "sources":
 		parts := []provider.StreamPart{}
 		for _, source := range scenarioSources() {
@@ -319,6 +336,12 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 	case "reasoning":
 		m.stats.recordSuccess(options)
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentReasoning, Text: "", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"end-signature"}`)}}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+	case "custom":
+		m.stats.recordSuccess(options)
+		return &provider.GenerateResult{Content: append([]provider.GenerateContentPart{{Type: provider.ContentText, Text: "answer"}}, scenarioCustom()...), FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+	case "unsupported-functionality":
+		m.stats.recordSuccess(options)
+		return nil, fmt.Errorf("test: unsupported tool content part type: custom: %w", provider.ErrUnsupportedFunctionality)
 	case "sources":
 		return &provider.GenerateResult{Content: scenarioSources(), FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "hosted-deferred", "hosted-deferred-error":
@@ -397,8 +420,8 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 22)
-	for _, id := range []string{"native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
+	entries := make([]catalog.StaticEntry, 0, 24)
+	for _, id := range []string{"native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "custom", "unsupported-functionality", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -455,6 +478,19 @@ func scenarioStream(parts ...provider.StreamPart) <-chan provider.StreamPart {
 	}
 	close(stream)
 	return stream
+}
+
+func scenarioCustom() []provider.GenerateContentPart {
+	return []provider.GenerateContentPart{
+		{Type: provider.ContentCustom, Kind: "openai.compaction", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"type":"compaction","itemId":"cmp_1","encryptedContent":"ENC","nested":{"none":null,"no":false,"zero":0,"empty":""}}`)}},
+		{Type: provider.ContentCustom, Kind: "anthropic.fallback", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"fallback","from":{"model":"a"},"to":{"model":"b"}}`)}},
+		{Type: provider.ContentCustom, Kind: "example.future_block"},
+		{Type: provider.ContentCustom, Kind: "example.empty", ProviderMetadata: provider.ProviderMetadata{}},
+	}
+}
+
+func scenarioCustomStreamPart(part provider.GenerateContentPart) provider.StreamPart {
+	return provider.StreamPart{Type: provider.PartCustom, Kind: part.Kind, ProviderMetadata: part.ProviderMetadata}
 }
 
 func scenarioSources() []provider.GenerateContentPart {
