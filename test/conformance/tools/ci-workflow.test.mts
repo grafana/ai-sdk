@@ -80,6 +80,9 @@ describe("source and artifact workflow gates", () => {
     assert.match(e2e.env?.GRAFANA_VERSION ?? "", /^nightly@sha256:[0-9a-f]{64}$/);
     const build = steps.find((step) => step.run === "mise run build-ai-gateway-plugin")!;
     assert.equal(build.env?.AI_GATEWAY_VCS_REF, "${{ github.sha }}");
+    const caches = steps.filter((step) => step.uses?.startsWith("actions/cache@"));
+    assert.equal(caches.length, 2, "plugin validation caches Go and pnpm");
+    for (const cache of caches) assert.equal(normalize(cache.with?.["lookup-only"] as string), "${{ startsWith(github.ref, 'refs/tags/') }}");
     const keep = steps.at(-1)!;
     assert.match(keep.uses!, /^actions\/upload-artifact@[0-9a-f]{40}$/);
     assert.equal(normalize(keep.if), pushGuard);
