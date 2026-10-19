@@ -10,10 +10,11 @@ import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
 import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
 import type { JSONValue, LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import { generateText, isStepCount, jsonSchema, streamText, tool } from "ai";
+import { generateText, isStepCount, jsonSchema, Output, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 import packageManifest from "./package.json" with { type: "json" };
 import { fetchConfiguredModels } from "../../examples/configured-discovery";
+import { nativeApprovalReply } from "./native-approvals";
 import { nativeMetadataReply } from "./native-metadata";
 import { nativeProxyEnvironment, startNativeProviderProxy } from "./native-provider-proxy";
 
@@ -99,6 +100,162 @@ describe("self-hosted static-key command", () => {
       assert.equal((await captureGoClient(goClientBinaryPath, { ...restartedBase, accessToken: replacementKey, mode: "discovery" })).error, undefined);
       assert.ok((await gateway.client(replacementKey).getAvailableModels()).models.length > 0);
     } finally { await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop()); }
+  });
+});
+
+describe("structured output candidate attribution", () => {
+  it("preserves actual failures and selection through both clients on configured heterogeneous routes", async () => {
+    const primary = await FakeAnthropic.start();
+    const secondary = await FakeOpenAI.start();
+    primary.failureCode = "schema_rejected";
+    secondary.failureCode = 7123;
+    secondary.structuredOutput = true;
+    const config = `providers:
+  structured-primary:
+    type: anthropic
+    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY
+    baseURL: ${primary.url}
+  structured-secondary:
+    type: openai
+    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY
+    baseURL: ${secondary.url}/v1
+models:
+  structured-route:
+    name: Structured output
+    aliases: [structured-alias]
+    primary:
+      provider: structured-primary
+      model: backend-private
+    fallback:
+      - provider: structured-secondary
+        model: backend-private
+`;
+    let gateway: GatewayProcess | undefined;
+    try {
+      gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", config);
+      const options: LanguageModelV4CallOptions = {
+        prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }],
+        maxOutputTokens: 64,
+        responseFormat: { type: "json", name: "", schema: { type: "object", properties: { value: { type: "string" } } } },
+      };
+      for (const scenario of [
+        { name: "noneligible", primary: 400, secondaryFails: false, secondaryCalls: 0, status: 424 },
+        { name: "exhausted", primary: 503, secondaryFails: true, secondaryCalls: 1, status: 502 },
+        { name: "secondary-selected", primary: 503, secondaryFails: false, secondaryCalls: 1, status: undefined },
+      ]) {
+        primary.failureStatus = scenario.primary;
+        secondary.failWithSecret = scenario.secondaryFails;
+        for (const mode of ["generate", "stream"] as const) {
+          for (const language of ["go", "typescript"] as const) {
+            const counts = [primary.requests.length, secondary.requests.length];
+            let metadata: any;
+            if (language === "go") {
+              const result = await captureGoClient(goClientBinaryPath, {
+                baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN,
+                modelID: "structured-alias", mode, options,
+              });
+              assert.equal(result.error?.statusCode, scenario.status);
+              metadata = scenario.status === undefined
+                ? mode === "generate" ? result.result.providerMetadata : result.partMetadata.at(-1)
+                : result.error.apiError.data.providerMetadata;
+            } else {
+              const model = gateway.client()("structured-alias");
+              if (scenario.status !== undefined) {
+                await assert.rejects(async () => mode === "generate" ? await model.doGenerate(options) : await model.doStream(options), (error: any) => {
+                  assert.equal(error.statusCode, scenario.status);
+                  metadata = error.cause.data.providerMetadata;
+                  return true;
+                });
+              } else if (mode === "generate") {
+                metadata = (await model.doGenerate(options)).providerMetadata;
+              } else {
+                const parts = await collectGatewayStream((await model.doStream(options)).stream);
+                metadata = (parts.at(-1) as any).providerMetadata;
+              }
+            }
+            if (scenario.status !== undefined) {
+              if (language === "go") {
+                const high = await captureGoClient(goClientBinaryPath, {
+                  baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN,
+                  modelID: "structured-alias", mode: `structured-${mode}`, options,
+                });
+                assert.equal(high.error?.statusCode, scenario.status);
+                assert.deepEqual(high.error.apiError.data.providerMetadata, metadata);
+              } else {
+                const highOptions: { model: LanguageModelV4; prompt: string; maxOutputTokens: number; maxRetries: number; output: ReturnType<typeof Output.json> } = { model: gateway.client()("structured-alias"), prompt: "normal-stream", maxOutputTokens: 64, maxRetries: 0, output: Output.json() };
+                if (mode === "generate") {
+                  await assert.rejects(() => generateText(highOptions), (error: any) => {
+                    assert.deepEqual(error.cause.data.providerMetadata, metadata);
+                    return true;
+                  });
+                } else {
+                  const failures: any[] = [];
+                  await streamText({ ...highOptions, onError: ({ error }) => { failures.push(error); } }).consumeStream();
+                  assert.equal(failures.length, 1);
+                  assert.deepEqual(failures[0].cause.data.providerMetadata, metadata);
+                }
+              }
+            }
+            if (scenario.status === undefined) {
+              if (language === "go") {
+                const high = await captureGoClient(goClientBinaryPath, {
+                  baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN,
+                  modelID: "structured-alias", mode: `structured-${mode}`, options,
+                });
+                assert.equal(high.error, undefined);
+                assert.equal(high.text, '{"value":"ok"}');
+                assert.deepEqual(high.providerMetadata, metadata);
+              } else {
+                const highOptions: { model: LanguageModelV4; prompt: string; maxOutputTokens: number; maxRetries: number; output: ReturnType<typeof Output.json> } = { model: gateway.client()("structured-alias"), prompt: "normal-stream", maxOutputTokens: 64, maxRetries: 0, output: Output.json() };
+                if (mode === "generate") {
+                  const high = await generateText(highOptions);
+                  assert.deepEqual(high.output, { value: "ok" });
+                  assert.deepEqual(high.providerMetadata, metadata);
+                } else {
+                  const high = streamText(highOptions);
+                  await high.consumeStream();
+                  assert.deepEqual(await high.output, { value: "ok" });
+                  assert.deepEqual(await high.providerMetadata, metadata);
+                }
+              }
+            }
+            const execution = metadata?.gateway?.execution;
+            assert.ok(execution, `${scenario.name} ${language} ${mode}: execution evidence missing`);
+            assert.equal(execution.requestedModelId, "structured-alias");
+            assert.equal(execution.canonicalModelId, "structured-route");
+            assert.equal(execution.attempts.length, 1 + scenario.secondaryCalls);
+            assert.equal(execution.attempts[0].provider, "anthropic");
+            assert.equal(execution.attempts[0].modelId, "backend-private");
+            assert.equal(execution.attempts[0].outcome, "failed");
+            assert.equal(execution.attempts[0].providerInstance, "structured-primary");
+            assert.equal(execution.attempts[0].error.statusCode, scenario.primary);
+            assert.equal(execution.attempts[0].error.type, "api_error");
+            assert.equal(execution.attempts[0].error.code, "schema_rejected");
+            assert.equal(execution.attempts[0].error.message, "provider-secret-response [REDACTED] backend-private");
+            if (scenario.secondaryCalls) {
+              assert.equal(execution.attempts[1].provider, "openai");
+              assert.equal(execution.attempts[1].modelId, "backend-private");
+              assert.equal(execution.attempts[1].outcome, scenario.secondaryFails ? "failed" : "selected");
+              assert.equal(execution.attempts[1].providerInstance, "structured-secondary");
+              if (scenario.secondaryFails) {
+                assert.equal(execution.attempts[1].error.statusCode, 502);
+                assert.equal(execution.attempts[1].error.type, "server_error");
+                assert.equal(execution.attempts[1].error.code, 7123);
+              }
+              else assert.equal(execution.attempts[1].error, undefined);
+            }
+            const calls = 2;
+            assert.deepEqual([primary.requests.length - counts[0], secondary.requests.length - counts[1]], [calls, scenario.secondaryCalls * calls]);
+            const evidence = JSON.stringify(execution);
+            for (const excluded of [primary.url, secondary.url, "x-private-provider", "backend-private-request", "responseHeaders", "responseBody", "isRetryable", "willFallback"]) {
+              assert.ok(!evidence.includes(excluded), `unapproved detail ${excluded}`);
+            }
+          }
+        }
+      }
+    } finally {
+      await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => primary.stop(), () => secondary.stop());
+    }
   });
 });
 
@@ -1823,7 +1980,7 @@ describe("authenticated Anthropic Gateway command", () => {
         TEST_TOKEN,
         "authorization-is-ignored",
       ]) {
-        assert.ok(!redirectError.includes(privateValue));
+        assert.ok(!JSON.stringify(withoutConfiguredExecution(redirectError)).includes(privateValue));
         assert.ok(!metrics.includes(privateValue));
         assert.ok(!logs.includes(privateValue));
       }
@@ -2774,7 +2931,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
     }
   });
 
-  it("rejects redirects and hides upstream failures without exposing private configuration", async () => {
+  it("rejects redirects and exposes only attributed native failure summaries", async () => {
     const [fake, gateway] = await startCompatibleGateway();
     const redirectTarget = await FakeCompatible.start();
     try {
@@ -2912,7 +3069,7 @@ describe("authenticated OpenAI Responses Gateway command", () => {
     }
   });
 
-  it("hides upstream failures and rejects redirects without exposing private configuration", async () => {
+  it("exposes attributed native failures and rejects redirects", async () => {
     const [fake, gateway] = await startOpenAIGateway();
     const redirectTarget = await FakeOpenAI.start();
     try {
@@ -3186,6 +3343,33 @@ function anthropicFallbackConfig(primaryURL: string, fallbackURL: string, backen
   return `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${primaryURL}\n  anthropic-secondary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fallbackURL}\nmodels:\n  grafana/assistant:\n    name: Grafana Assistant\n    description: Integration model\n    primary:\n      provider: anthropic-primary\n      model: ${backendModel}\n    fallback:\n      - provider: anthropic-secondary\n        model: ${backendModel}\n    aliases:\n      - assistant\n`;
 }
 
+function withoutConfiguredExecution(value: unknown): unknown {
+  if (typeof value === "string" && /^[\[{]/.test(value)) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(value); } catch { return value; }
+    return withoutConfiguredExecution(parsed);
+  }
+  if (Array.isArray(value)) return value.map(withoutConfiguredExecution);
+  if (value == null || typeof value !== "object") return value;
+  const result = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withoutConfiguredExecution(item)]));
+  const metadata = (result.gateway ? result : result.providerMetadata) as Record<string, any> | undefined;
+  if (metadata?.gateway?.execution) {
+    const execution = metadata.gateway.execution;
+    assert.deepEqual(Object.keys(execution).sort(), ["attempts", "canonicalModelId", "requestedModelId"]);
+    for (const attempt of execution.attempts) {
+      assert.ok(Object.keys(attempt).every(key => ["providerInstance", "provider", "modelId", "outcome", "error"].includes(key)));
+      if (attempt.error) assert.ok(Object.keys(attempt.error).every(key => ["message", "type", "code", "statusCode"].includes(key)));
+    }
+    delete metadata.gateway.execution;
+    if (Object.keys(metadata.gateway).length === 0) delete metadata.gateway;
+    if (Object.keys(metadata).length === 0) delete result.providerMetadata;
+  }
+  if ((value as any).providerMetadata?.gateway?.execution && result.providerMetadata && Object.keys(result.providerMetadata as object).length === 0) {
+    delete result.providerMetadata;
+  }
+  return result;
+}
+
 function assertPrivateValuesAbsent(value: unknown, fake: FakeAnthropic, extra: string[] = [], nativeResponse = false): void {
   const serialized = JSON.stringify(value);
   for (const secret of [TEST_TOKEN, TEST_USER_TOKEN, "integration-cap", "integration-anthropic-key", "GATEWAY_TEST_ANTHROPIC_KEY", "anthropic-primary", ...(nativeResponse ? [] : ["backend-private"]), "provider-secret-response", fake.url, ...extra]) {
@@ -3386,6 +3570,7 @@ class FakeAnthropic {
   oversizedErrors = false;
   failureStatus?: number;
   streamErrorMessage?: string;
+  failureCode?: string | number;
   functionTools = false;
   providerTools = false;
   providerToolCaller = false;
@@ -3447,7 +3632,7 @@ class FakeAnthropic {
 
     if (this.failureStatus != null) {
       response.writeHead(this.failureStatus, { "Content-Type": "application/json", "x-private-provider": "backend-private" });
-      response.end(JSON.stringify({ type: "error", error: { type: "api_error", message: serialized.includes("configured-key-summary") ? "integration-anthropic-key integration-openai-key integration-agento11y-key own-byok-key" : `provider-secret-response ${this.apiKey} backend-private` }, request_id: "backend-private-request" }));
+      response.end(JSON.stringify({ type: "error", error: { type: "api_error", code: this.failureCode, message: serialized.includes("configured-key-summary") ? "integration-anthropic-key integration-openai-key integration-agento11y-key own-byok-key" : `provider-secret-response ${this.apiKey} backend-private` }, request_id: "backend-private-request" }));
       return;
     }
     if (this.metadata) { nativeMetadataReply("anthropic", body, response); return; }
@@ -3657,12 +3842,16 @@ class FakeCompatible {
 }
 
 class FakeOpenAI {
+ approvals = false;
+ approvalFailure = false;
   metadata = false;
+  structuredOutput = false;
   readonly url: string;
   readonly requests: FakeRequest[] = [];
   readonly violations: string[] = [];
   redirectTo?: string;
   failWithSecret = false;
+  failureCode?: string | number;
   sources = false;
   apiKey = "integration-openai-key";
   backendModel = "backend-private";
@@ -3719,12 +3908,13 @@ class FakeOpenAI {
     }
     if (this.failWithSecret) {
       response.writeHead(502, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ error: { type: "server_error", message: "provider-secret-response" } }));
+      response.end(JSON.stringify({ error: { type: "server_error", code: this.failureCode, message: "provider-secret-response" } }));
       return;
     }
+    if (this.approvals) { nativeApprovalReply(body, response, this.approvalFailure); return; }
     if (this.metadata) { nativeMetadataReply("openai", body, response); return; }
     const stream = body.stream === true;
-    const text = stream ? "hello from fake openai stream" : "hello from fake openai";
+    const text = this.structuredOutput ? '{"value":"ok"}' : stream ? "hello from fake openai stream" : "hello from fake openai";
     const annotations=this.sources ? [
       {type:"url_citation",url:"https://public.example",title:"Public citation",start_index:0,end_index:5},
       {type:"file_path",file_id:"native-file-sk-application",index:0},
@@ -3896,3 +4086,139 @@ async function poll(check: () => Promise<boolean>, timeoutMs: number, descriptio
   }
   throw new Error(`timed out waiting for ${description}`);
 }
+
+describe("provider approval continuation", () => {
+  for (const fallback of [false, true]) for (const store of [false, true]) {
+    it(`actual outputs continue approved denied mixed, fallback=${fallback}, store=${store}`, async () => {
+      const openai = await FakeOpenAI.start(); openai.approvals = true;
+      const anthropic = await FakeAnthropic.start(); anthropic.failureStatus = 503;
+      const config = `providers:
+  openai:
+    type: openai
+    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY
+    baseURL: ${openai.url}/v1
+  anthropic:
+    type: anthropic
+    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY
+    baseURL: ${anthropic.url}
+models:
+  approvals:
+    name: Approvals
+    primary:
+      provider: ${fallback ? "anthropic" : "openai"}
+      model: backend-private
+${fallback ? "    fallback:\n      - provider: openai\n        model: backend-private\n" : ""}`;
+      let gateway: GatewayProcess | undefined;
+      try {
+        gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", config);
+        const model = gateway.client()("approvals");
+        for (const decisions of [[true,true], [false,false], [true,false], [true,true,true], [false,false,false], [true,false,true]]) {
+          const local = decisions.length === 3;
+          for (const path of ["ts-unary", "ts-stream", "ts-high-generate", "ts-high-stream", "go-unary", "go-stream", "go-high-generate", "go-high-stream"]) {
+            if(local && !path.includes("high")) continue;
+            let executions = 0;
+            const localTool = tool({inputSchema:jsonSchema<Record<string,unknown>>({type:"object"}),needsApproval:true,execute:async()=>{executions++;return "local-result";}});
+            const offset = openai.requests.length;
+            const options: LanguageModelV4CallOptions = { prompt: [{role:"user",content:[{type:"text",text:local?"approval-local":"approval"}]}], providerOptions:{openai:{store}}, maxOutputTokens:64 };
+            if (path.startsWith("go")) {
+              const go = await captureGoClient(goClientBinaryPath,{baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:"approvals",mode:path.replace("go-","approval-"),decisions,options});
+              assert.equal(go.error,undefined,JSON.stringify(go.error)); assert.equal(go.approvals.length,decisions.length);executions=go.executions;
+            } else if (path.includes("high")) {
+              const initial = {model,tools:{local:localTool,"mcp.lookup":{...localTool,needsApproval:false}},prompt:local?"approval-local":"approval",providerOptions:{openai:{store}},maxRetries:0};
+              const first = path.endsWith("generate") ? await generateText(initial) : streamText(initial);
+              const messages = (await first.response).messages;
+              const approvals = messages.flatMap<any>(message => Array.isArray(message.content) ? message.content : []).filter((part:any)=>part.type==="tool-approval-request") as any[];
+              assert.equal(approvals.length,decisions.length);
+              const calls = messages.flatMap<any>(message=>Array.isArray(message.content)?message.content:[]).filter((part:any)=>part.type==="tool-call");
+              for (const approval of approvals) {const call=calls.find((part:any)=>part.toolCallId===approval.toolCallId);if(call?.providerExecuted)call.providerOptions={...call.providerOptions,openai:{...call.providerOptions?.openai,approvalRequestId:approval.approvalId}};}
+              const resumed = {model,tools:{local:localTool,"mcp.lookup":{...localTool,needsApproval:false}},messages:[...messages,{role:"tool" as const,content:approvals.map((part,index)=>({type:"tool-approval-response" as const,approvalId:part.approvalId,approved:decisions[index],providerExecuted:calls.find((call:any)=>call.toolCallId===part.toolCallId)?.providerExecuted}))}],providerOptions:{openai:{store}},maxRetries:0};
+              const second = path.endsWith("generate") ? await generateText(resumed) : streamText(resumed);
+              const nextMessages=(await second.response).messages;
+              const results=nextMessages.flatMap<any>(message=>Array.isArray(message.content)?message.content:[]).filter((part:any)=>part.type==="tool-result"&&part.toolName==="mcp.lookup");
+              assert.equal(results.length,decisions.slice(0,2).filter(Boolean).length);
+              for(const result of results)assert.ok(calls.some((call:any)=>call.toolCallId===result.toolCallId));
+              const third={...resumed,messages:[...resumed.messages,...nextMessages,{role:"user" as const,content:"third-turn"}]};
+              if(path.endsWith("generate"))await generateText(third);else await streamText(third).consumeStream();
+            } else {
+              const streaming = path.endsWith("stream");
+              const first: any[] = streaming ? await collectGatewayStream((await model.doStream(options)).stream) : (await model.doGenerate(options)).content;
+              const approvals = first.filter(part=>part.type==="tool-approval-request"); assert.equal(approvals.length,2);
+              const calls = first.filter(part=>part.type==="tool-call").map(part=>({type:"tool-call" as const,toolCallId:part.toolCallId,toolName:part.toolName,input:JSON.parse(part.input),providerExecuted:part.providerExecuted,providerOptions:part.providerMetadata}));
+              for(const approval of approvals){const call=calls.find(part=>part.toolCallId===approval.toolCallId);assert.ok(call);call.providerOptions={...call.providerOptions,openai:{...call.providerOptions?.openai,approvalRequestId:approval.approvalId}};}
+              const responses = approvals.map((part,index)=>({type:"tool-approval-response" as const,approvalId:part.approvalId,approved:decisions[index],reason:"",providerOptions:{openai:{extension:false}}}));
+              const next: LanguageModelV4CallOptions = {...options,prompt:[...options.prompt,{role:"assistant",content:calls},{role:"tool",content:responses}]};
+              const resumed:any[]=streaming?await collectGatewayStream((await model.doStream(next)).stream):(await model.doGenerate(next)).content;
+              const results=resumed.filter(part=>part.type==="tool-result");assert.equal(results.length,decisions.filter(Boolean).length);
+              for(const result of results){const approval=approvals.find(part=>part.toolCallId===result.toolCallId);assert.ok(approval);assert.equal(result.providerMetadata?.openai?.itemId,`result-${approval.approvalId}`);}
+            }
+            const requests = openai.requests.slice(offset); assert.equal(requests.length,path.includes("high")?3:2,path);
+            const input = requests[1].body.input as any[];
+            assert.deepEqual(input.filter(item=>item.type==="mcp_approval_response"),decisions.slice(0,2).map((approve,index)=>({type:"mcp_approval_response",approval_request_id:`approval-${index}`,approve})),path);
+            for (let index=0;index<2;index++) assert.equal(input.some(item=>item.type==="item_reference"&&item.id===`approval-${index}`),store,path);
+            assert.equal(executions,local&&decisions[2]?1:0,path);
+            const localResult=input.find(item=>item.type==="function_call_output");
+            if(local){assert.ok(localResult,path);assert.equal(localResult.call_id,"local-call");assert.equal(localResult.output,decisions[2]?"local-result":"Tool call execution denied.",path);} else assert.equal(localResult,undefined,path);
+          }
+        }
+      } finally { await settleCleanup(...(gateway?[()=>gateway!.stop()]:[]),()=>openai.stop(),()=>anthropic.stop()); }
+    });
+  }
+});
+
+describe("approval commitment",()=>{
+ it("does not replay onto fallback after approval output and a native stream failure",async()=>{
+  const openai=await FakeOpenAI.start();openai.approvals=true;openai.approvalFailure=true;
+  const anthropic=await FakeAnthropic.start();let gateway:GatewayProcess|undefined;
+  const config=`providers:
+  openai:
+    type: openai
+    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY
+    baseURL: ${openai.url}/v1
+  anthropic:
+    type: anthropic
+    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY
+    baseURL: ${anthropic.url}
+models:
+  approvals:
+    name: Approvals
+    primary:
+      provider: openai
+      model: backend-private
+    fallback:
+      - provider: anthropic
+        model: backend-private
+`;
+  try{
+   gateway=await GatewayProcess.start(binaryPath,"",[],{},"access-token",config);
+   const options:LanguageModelV4CallOptions={prompt:[{role:"user",content:[{type:"text",text:"approval"}]}]};
+   const ts=await collectGatewayStream((await gateway.client()("approvals").doStream(options)).stream);
+   const go=await captureGoClient(goClientBinaryPath,{baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:"approvals",mode:"stream",options});
+   for(const parts of [ts,go.parts]){assert.ok(parts.some((part:any)=>part.type==="tool-approval-request"));assert.ok(parts.some((part:any)=>part.type==="error"));}
+   assert.equal(openai.requests.length,2);assert.equal(anthropic.requests.length,0);
+  }finally{await settleCleanup(...(gateway?[()=>gateway!.stop()]:[]),()=>openai.stop(),()=>anthropic.stop());}
+ });
+});
+
+it("registered nested result options reach native OpenAI through both clients and modes", async () => {
+  const [native, gateway] = await startOpenAIGateway();
+  try {
+    const breakpoint = { mode: "explicit" };
+    const options: LanguageModelV4CallOptions = { prompt: [{ role: "tool", content: [{ type: "tool-result", toolCallId: "call", toolName: "lookup", output: { type: "content", value: [
+      { type: "text", text: "result", providerOptions: { openai: { promptCacheBreakpoint: breakpoint } } },
+      { type: "file", data: { type: "data", data: "AQI=" }, mediaType: "image/png", providerOptions: { openai: { imageDetail: "high", promptCacheBreakpoint: breakpoint } } },
+    ] } }] }] };
+    for (const mode of ["generate", "stream"] as const) for (const client of ["ts", "go"]) {
+      const offset = native.requests.length;
+      if (client === "go") {
+        const result = await captureGoClient(goClientBinaryPath, { baseURL: `${gateway.url}/api/v1/aisdk`, accessToken: TEST_TOKEN, modelID: "openai", mode, options });
+        assert.equal(result.error, undefined);
+      } else if (mode === "generate") await gateway.client()("openai").doGenerate(options);
+      else await collectGatewayStream((await gateway.client()("openai").doStream(options)).stream);
+      const output = (native.requests[offset].body.input as any[]).find(item => item.type === "function_call_output").output;
+      assert.deepEqual(output, [
+        { type: "input_text", text: "result", prompt_cache_breakpoint: breakpoint },
+        { type: "input_image", image_url: "data:image/png;base64,AQI=", detail: "high", prompt_cache_breakpoint: breakpoint },
+      ]);
+    }
+  } finally { await settleCleanup(() => gateway.stop(), () => native.stop()); }
+});

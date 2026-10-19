@@ -643,3 +643,22 @@ func TestSimulateStreaming_BlockedConsumerCancellation(t *testing.T) {
 		})
 	}
 }
+
+func TestGeneratedOriginalURLConversion(t *testing.T) {
+	original := "opaque:ORIGINAL"
+	for _, kind := range []provider.GenerateContentType{provider.ContentFile, provider.ContentReasoningFile} {
+		data := provider.URLDataContent("opaque:url")
+		data.OriginalURL = &original
+		part := contentPartToStreamPart(provider.GenerateContentPart{Type: kind, Data: &data})
+		require.NotNil(t, part.Data.OriginalURL)
+		require.Equal(t, original, *part.Data.OriginalURL)
+	}
+}
+
+func TestGeneratedOriginalURLInvalidConversion(t *testing.T) {
+	original := "opaque:original"
+	for _, data := range []provider.DataContent{{Bytes: []byte{1}, OriginalURL: &original}, {Base64: "AQ==", OriginalURL: &original}} {
+		part := contentPartToStreamPart(provider.GenerateContentPart{Type: provider.ContentFile, Data: &data})
+		require.Error(t, part.Data.Validate())
+	}
+}
