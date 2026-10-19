@@ -71,6 +71,23 @@ type Settings struct {
 	ProviderWire                   providerv4.Limits
 }
 
+// settingsError names the environment setting whose value failed to parse,
+// without the value. Parse errors for explicit arguments keep kingpin's text.
+func settingsError(app *kingpin.Application, err error) error {
+	for _, flag := range app.Model().Flags {
+		for _, value := range flag.Default {
+			if flag.Value.Set(value) != nil {
+				return fmt.Errorf("config: %s has an invalid value", settingEnvironmentName(flag.Name))
+			}
+		}
+	}
+	return fmt.Errorf("config: parsing settings arguments: %w", err)
+}
+
+func settingEnvironmentName(flag string) string {
+	return "GRAFANA_AI_GATEWAY_" + strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(flag))
+}
+
 // ParseSettings parses flags and explicit environment bindings and validates scalar settings.
 func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	if lookupEnv == nil {
@@ -114,7 +131,7 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	app.Flag("providerwire.stream-drain-duration", "ProviderWire stream drain duration.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_PROVIDERWIRE_STREAM_DRAIN_DURATION", "1s")).DurationVar(&settings.ProviderWire.StreamDrainDuration)
 
 	if _, err := app.Parse(args); err != nil {
-		return Settings{}, fmt.Errorf("parsing settings: %w", err)
+		return Settings{}, settingsError(app, err)
 	}
 	settings.DeploymentMode = DeploymentMode(deploymentMode)
 	settings.AgentObservability.Protocol = AgentObservabilityProtocol(agentObservabilityProtocol)
@@ -164,20 +181,11 @@ func (settings Settings) Validate() error {
 			return fmt.Errorf("config: %s cannot safely use limit+1", limit.name)
 		}
 	}
-	positiveInts := []struct {
-		name  string
-		value int
-		safe  bool
-	}{
-		{name: "providerwire stream parts", value: settings.ProviderWire.StreamParts, safe: true},
+	if settings.ProviderWire.StreamParts <= 0 {
+		return fmt.Errorf("config: providerwire stream parts must be positive")
 	}
-	for _, limit := range positiveInts {
-		if limit.value <= 0 {
-			return fmt.Errorf("config: %s must be positive", limit.name)
-		}
-		if limit.safe && limit.value == math.MaxInt {
-			return fmt.Errorf("config: %s cannot safely use limit+1", limit.name)
-		}
+	if settings.ProviderWire.StreamParts == math.MaxInt {
+		return fmt.Errorf("config: providerwire stream parts cannot safely use limit+1")
 	}
 	durations := []struct {
 		name  string

@@ -18,7 +18,7 @@ Every Gateway log record SHALL be emitted through the plugin host's structured l
 - **THEN** the relayed record SHALL contain flattened dotted keys and no dropped attributes
 
 ### Requirement: Transport-only logging change
-Moving logs to the host protocol SHALL NOT change which records are emitted, their allowlists, redaction, payload exclusions or access-policy-appropriate identity.
+Moving logs to the host protocol SHALL NOT change which records are emitted, their allowlists, redaction, payload exclusions or access-policy-appropriate identity, except that startup and plugin failure records carry their secret-safe reason as `gateway-plugin-host` specifies.
 
 #### Scenario: Secret-bearing provider failure
 - **WHEN** a provider error contains credentials and arbitrary text

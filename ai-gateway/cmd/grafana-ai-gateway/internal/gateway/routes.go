@@ -38,6 +38,10 @@ func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, e
 	languagePattern := http.MethodPost + " " + RoutePrefix() + "/language-model"
 	mux := http.NewServeMux()
 	mux.Handle(configPattern, protect(byAccess(routes.configuredDiscovery, routes.byokDiscovery, refuse)))
+	mux.HandleFunc(http.MethodHead+" "+RoutePrefix()+"/config", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Allow", http.MethodGet)
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})
 	mux.Handle(languagePattern, protect(languageModelPath(byAccess(routes.configuredLanguage, routes.byokLanguage, refuse))))
 	label := func(request *http.Request) string {
 		switch _, pattern := mux.Handler(request); pattern {
@@ -69,10 +73,8 @@ func byAccess(configured, byok http.Handler, refuse func(http.ResponseWriter)) h
 func languageModelPath(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		cloned := request.Clone(request.Context())
-		urlCopy := *request.URL
-		urlCopy.Path = providerv4.LanguageModelPath
-		urlCopy.RawPath = ""
-		cloned.URL = &urlCopy
+		cloned.URL.Path = providerv4.LanguageModelPath
+		cloned.URL.RawPath = ""
 		next.ServeHTTP(w, cloned)
 	})
 }

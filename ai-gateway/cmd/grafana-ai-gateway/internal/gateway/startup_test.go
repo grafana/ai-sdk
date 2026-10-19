@@ -93,6 +93,9 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 			env["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development"
 		}, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
 		{name: "both signing key sources", change: func(env map[string]string) { env["GRAFANA_JWKS_URL"] = "https://auth.example/jwks" }, message: "only one"},
+		{name: "unparsable scalar", change: func(env map[string]string) {
+			env["GRAFANA_AI_GATEWAY_PROVIDERWIRE_REQUEST_BYTES"] = "password"
+		}, message: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_REQUEST_BYTES has an invalid value"},
 		{name: "scalar relationship", change: func(env map[string]string) {
 			env["GRAFANA_AI_GATEWAY_PROVIDERWIRE_STREAM_IDLE_DURATION"] = "10m"
 		}, message: "stream idle duration"},

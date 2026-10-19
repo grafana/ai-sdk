@@ -127,9 +127,7 @@ func (h *Host) Exchange(ctx context.Context, service string, request authn.Token
 // clients send as an Authorization bearer.
 func (h *Host) AddServiceAccount(uid, namespace string) string {
 	token := serviceTokenPrefix + randomSecret()
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.serviceAccounts[token] = session{identityType: types.TypeServiceAccount, uid: uid, namespace: namespace}
+	h.RegisterServiceAccount(token, uid, namespace)
 	return token
 }
 

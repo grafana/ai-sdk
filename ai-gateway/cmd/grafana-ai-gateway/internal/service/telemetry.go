@@ -108,7 +108,7 @@ func NewTelemetry(logger *slog.Logger, options ...TelemetryOptions) (*Telemetry,
 
 func (telemetry *Telemetry) observePhysicalDrop(class physicalDropClass) {
 	switch class {
-	case physicalDropQueue, physicalDropProjection, physicalDropTransport, physicalDropShutdown, physicalDropWorker:
+	case physicalDropQueue, physicalDropProjection, physicalDropShutdown, physicalDropWorker:
 	default:
 		class = physicalDropWorker
 	}

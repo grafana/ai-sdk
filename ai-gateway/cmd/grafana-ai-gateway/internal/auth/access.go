@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/grafana/authlib/types"
@@ -74,15 +75,13 @@ func ParseAccessPolicy(mode, internalServices string) (AccessPolicy, error) {
 	if len(entries) > maxInternalServices {
 		return AccessPolicy{}, fmt.Errorf("config: the internal service allowlist accepts at most %d entries", maxInternalServices)
 	}
-	seen := make(map[string]bool, len(entries))
 	for _, entry := range entries {
 		if !validServiceIdentity(entry) {
 			return AccessPolicy{}, errors.New("config: internal service entries must be 1-128 visible ASCII characters without commas")
 		}
-		if seen[entry] {
+		if slices.Contains(policy.InternalServices, entry) {
 			return AccessPolicy{}, errors.New("config: internal service entries must be unique")
 		}
-		seen[entry] = true
 		policy.InternalServices = append(policy.InternalServices, entry)
 	}
 	return policy, nil
@@ -132,7 +131,7 @@ func (policy AccessPolicy) Decide(info types.AuthInfo, namespace string) (Caller
 	extra := info.GetExtra()
 	caller := Caller{Namespace: namespace, Service: single(extra[DirectCallerServiceKey]), Identity: single(extra[IdentityActorKey])}
 	switch {
-	case policy.Mode == AccessModeCloud && caller.Service != "" && policy.internal(caller.Service):
+	case policy.Mode == AccessModeCloud && caller.Service != "" && slices.Contains(policy.InternalServices, caller.Service):
 		caller.access, caller.attributed = ConfiguredAccounts, true
 		return caller, DecisionConfigured
 	case caller.Identity == "":
@@ -146,15 +145,6 @@ func (policy AccessPolicy) Decide(info types.AuthInfo, namespace string) (Caller
 	default:
 		return Caller{}, DecisionRefused
 	}
-}
-
-func (policy AccessPolicy) internal(service string) bool {
-	for _, entry := range policy.InternalServices {
-		if entry == service {
-			return true
-		}
-	}
-	return false
 }
 
 func single(values []string) string {

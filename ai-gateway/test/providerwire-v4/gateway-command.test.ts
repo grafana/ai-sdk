@@ -1516,7 +1516,7 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.deepEqual(result.models.map((model: { id: string }) => model.id), ["grafana/assistant"]);
       assert.equal(fake.requests.length, 0);
       const metrics = await gateway.metrics();
-      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="configured"\} 1/);
+      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="configured"\} 1$/m);
       await gateway.stop();
       assertDiscoverySecretsAbsent(result, fake, [cap]);
       assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [cap]);
@@ -1999,7 +1999,7 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
       assert.equal(native.requests.length, 4);
       assert.ok(native.requests.every(request => request.apiKey === "request-only-key"));
       const metrics = await gateway.metrics();
-      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="byok"\} 4/);
+      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="byok"\} 4$/m);
       assert.doesNotMatch(metrics, /decision="refused"/);
       await gateway.stop();
       assertCloudPrivateValuesAbsent(gateway.stderr + metrics, ["request-only-key", "unused-second-key"]);
@@ -2222,7 +2222,7 @@ describe("platform caller access in cloud mode", () => {
       assert.ok(fake.requests.every((request) => request.apiKey === "integration-anthropic-key"));
       for (const secret of [cap, userIDToken, delegated, "private-user-uid"]) assert.ok(!JSON.stringify(fake.requests).includes(secret));
       const metrics = await gateway.metrics();
-      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="configured"\} 9/);
+      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="configured"\} 9$/m);
       assert.doesNotMatch(metrics, /decision="(?:byok|refused)"/);
       await gateway.stop();
       assert.ok(gateway.stderr.includes(`"caller_service":"${INTERNAL_SERVICE}"`));
@@ -2257,7 +2257,7 @@ describe("platform caller access in cloud mode", () => {
       assert.equal((await fetch(`${gateway.baseURL}/config`)).status, 401);
       assert.equal(fake.requests.length, 0);
       const metrics = await gateway.metrics();
-      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="refused"\} 6/);
+      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="refused"\} 6$/m);
       assert.doesNotMatch(metrics, /decision="(?:configured|byok)"/);
       await gateway.stop();
       assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [internal, relayed, anonymous, unlisted, "relay-service", "viewer"]);
@@ -2994,6 +2994,7 @@ class GatewayProcess {
     this.lastFailedDirectory = undefined;
     const topology: Topology = mode === "cloud-gateway" ? "cloud" : "self-hosted";
     let proc: ChildProcess | undefined;
+    let exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | undefined;
     let stderr = "";
     try {
       const configPath = join(directory, "models.yaml");
@@ -3017,7 +3018,7 @@ class GatewayProcess {
         },
       });
       proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-      const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
         proc!.once("error", reject);
         proc!.once("close", (code, signal) => resolve({ code, signal }));
       });
@@ -3036,7 +3037,10 @@ class GatewayProcess {
     } catch (error) {
       this.lastFailedDirectory = directory;
       try {
-        if (proc != null && proc.exitCode == null && proc.signalCode == null) proc.kill("SIGKILL");
+        if (proc != null && exited != null && proc.exitCode == null && proc.signalCode == null) {
+          proc.kill("SIGTERM");
+          await withTimeout(exited, 5_000, "gateway did not exit").catch(() => proc!.kill("SIGKILL"));
+        }
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }

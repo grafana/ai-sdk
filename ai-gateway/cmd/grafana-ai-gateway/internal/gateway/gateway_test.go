@@ -135,6 +135,10 @@ func TestGateway_UndeclaredAndLegacyRoutesDoNoWork(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, status)
 	status, _ = do(t, discoveryRequest(t, h.url("language-model"), internal))
 	assert.Equal(t, http.StatusMethodNotAllowed, status)
+	head := discoveryRequest(t, h.url("config"), internal)
+	head.Method = http.MethodHead
+	status, _ = do(t, head)
+	assert.Equal(t, http.StatusMethodNotAllowed, status)
 	status, _ = do(t, discoveryRequest(t, h.url("models"), internal))
 	assert.Equal(t, http.StatusNotFound, status)
 

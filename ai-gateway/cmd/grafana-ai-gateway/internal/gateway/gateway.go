@@ -121,26 +121,24 @@ func New(options Options) (*Gateway, error) {
 		closing.Go(func() { agentRuntime.Close(ctx) })
 		closing.Wait()
 	}
-	closeAll := func() {
+	fail := func(err error) (*Gateway, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), FinalFlushBudget)
 		defer cancel()
 		closeSinks(ctx)
+		return nil, err
 	}
 	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(telemetry, options.Logger, agentRuntime, settings.ProviderWire.StreamDrainDuration)
 	if err != nil {
-		closeAll()
-		return nil, err
+		return fail(err)
 	}
 	modelCatalog, err := service.BuildCatalog(file, resolvedProviders, nativeClient, modelFactory, physicalSink)
 	if err != nil {
-		closeAll()
-		return nil, err
+		return fail(err)
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
 	configuredLanguage, err := providerv4.New(providerv4.Config{Selector: service.NewConfiguredSelector(modelCatalog), Limits: settings.ProviderWire, ConfiguredAPIKeys: configuredAPIKeys})
 	if err != nil {
-		closeAll()
-		return nil, err
+		return fail(err)
 	}
 	routes := routeHandlers{
 		configuredDiscovery: service.ConfiguredDiscovery(discovery.New(modelCatalog, errorWriter), errorWriter),
@@ -149,8 +147,7 @@ func New(options Options) (*Gateway, error) {
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
 		byokLanguage, err := providerv4.New(providerv4.Config{Selector: service.NewBYOKSelector(nativeClient, byokFactory), Limits: settings.ProviderWire, ConfiguredAPIKeys: configuredAPIKeys})
 		if err != nil {
-			closeAll()
-			return nil, err
+			return fail(err)
 		}
 		routes.byokDiscovery = service.BYOKDiscovery(errorWriter)
 		routes.byokLanguage = byokLanguage

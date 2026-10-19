@@ -214,7 +214,7 @@ func (h *harness) onBehalfOf(t *testing.T, service string, identityType types.Id
 	t.Helper()
 	user, err := h.host.IDToken(identityType, uid, testNamespace)
 	require.NoError(t, err)
-	token, err := h.host.Exchange(context.Background(), service, authn.TokenExchangeRequest{Namespace: testNamespace, Audiences: []string{PluginID}, SubjectToken: user})
+	token, err := h.host.Exchange(context.Background(), service, delegation(user))
 	require.NoError(t, err)
 	return token
 }

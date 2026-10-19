@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -67,18 +68,7 @@ func run() error {
 		return err
 	}
 
-	stopped := make(chan time.Duration, 1)
-	stop := func() time.Duration {
-		select {
-		case elapsed := <-stopped:
-			stopped <- elapsed
-			return elapsed
-		default:
-		}
-		elapsed := process.Stop()
-		stopped <- elapsed
-		return elapsed
-	}
+	stop := sync.OnceValue(process.Stop)
 	defer stop()
 
 	mux := http.NewServeMux()
@@ -110,9 +100,10 @@ func run() error {
 		writeJSON(w, map[string]string{"status": status, "message": message})
 	})
 	done := make(chan struct{})
+	signalDone := sync.OnceFunc(func() { close(done) })
 	mux.HandleFunc("POST /platformhost/stop", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, map[string]int64{"durationMs": stop().Milliseconds()})
-		close(done)
+		signalDone()
 	})
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -141,8 +132,21 @@ func run() error {
 	return server.Shutdown(ctx)
 }
 
+type credentialKind string
+
+const (
+	credentialService        credentialKind = "service"
+	credentialIDToken        credentialKind = "id-token"
+	credentialOnBehalfOf     credentialKind = "on-behalf-of"
+	credentialRelay          credentialKind = "relay"
+	credentialDelegated      credentialKind = "delegated"
+	credentialServiceAccount credentialKind = "service-account"
+	credentialSession        credentialKind = "session"
+	credentialAccessPolicy   credentialKind = "access-policy"
+)
+
 type credentialRequest struct {
-	Kind         string             `json:"kind"`
+	Kind         credentialKind     `json:"kind"`
 	Service      string             `json:"service"`
 	IdentityType types.IdentityType `json:"identityType"`
 	UID          string             `json:"uid"`
@@ -163,19 +167,19 @@ func credential(ctx context.Context, host *platformhost.Host, defaultNamespace s
 		return host.Exchange(ctx, service, authn.TokenExchangeRequest{Namespace: namespace, Audiences: []string{host.Config().PluginID}, SubjectToken: subject})
 	}
 	switch request.Kind {
-	case "service":
+	case credentialService:
 		return host.ServiceToken(request.Service, namespace)
-	case "id-token":
+	case credentialIDToken:
 		return host.IDToken(request.IdentityType, request.UID, namespace)
-	case "on-behalf-of":
+	case credentialOnBehalfOf:
 		subject, err := host.IDToken(request.IdentityType, request.UID, namespace)
 		if err != nil {
 			return "", err
 		}
 		return exchange(request.Service, subject)
-	case "relay":
+	case credentialRelay:
 		return exchange(request.Service, request.Subject)
-	case "delegated":
+	case credentialDelegated:
 		subject, err := host.IDToken(request.IdentityType, request.UID, namespace)
 		if err != nil {
 			return "", err
@@ -185,11 +189,11 @@ func credential(ctx context.Context, host *platformhost.Host, defaultNamespace s
 			return "", err
 		}
 		return host.Exchange(ctx, platformhost.RouterService, authn.TokenExchangeRequest{Namespace: namespace, Audiences: []string{request.Service}, SubjectToken: viaFrontDoor})
-	case "service-account":
+	case credentialServiceAccount:
 		return host.AddServiceAccount(request.UID, namespace), nil
-	case "session":
+	case credentialSession:
 		return host.AddSession(request.IdentityType, request.UID, namespace), nil
-	case "access-policy":
+	case credentialAccessPolicy:
 		return host.AddAccessPolicy(request.Service), nil
 	default:
 		return "", fmt.Errorf("unknown credential kind %q", request.Kind)

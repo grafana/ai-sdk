@@ -24,7 +24,6 @@ type physicalDropClass string
 const (
 	physicalDropQueue      physicalDropClass = "queue_full"
 	physicalDropProjection physicalDropClass = "invalid_record"
-	physicalDropTransport  physicalDropClass = "transport"
 	physicalDropShutdown   physicalDropClass = "shutdown"
 	physicalDropWorker     physicalDropClass = "worker"
 )
