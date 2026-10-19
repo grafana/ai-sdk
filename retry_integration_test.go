@@ -715,71 +715,78 @@ func TestStreamText_DefaultMaxRetries(t *testing.T) {
 	assert.Equal(t, int32(3), callCount.Load(), "default maxRetries=2 means 3 total attempts")
 }
 
-func TestRetry_UnsupportedFunctionalityIsNotRetried(t *testing.T) {
+func TestRetry_UnsupportedFunctionality(t *testing.T) {
+	const initialDelay = 500 * time.Millisecond
 	rejection := fmt.Errorf("bedrock: unsupported tool content part type: custom: %w", provider.ErrUnsupportedFunctionality)
-	newModel := func(calls *atomic.Int32) *mockModel {
-		return &mockModel{
-			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-				calls.Add(1)
-				return nil, rejection
-			},
-		}
-	}
 
-	t.Run("StreamText", func(t *testing.T) {
-		synctest.Test(t, func(t *testing.T) {
-			var calls atomic.Int32
-			start := time.Now()
-			result := StreamText(context.Background(), newModel(&calls),
-				WithModelMessages(provider.UserText("hi")),
-				WithMaxRetries(3),
-				withRetryTiming(500, 2),
-			)
-			for range result.FullStream() {
-			}
-
-			require.ErrorIs(t, result.Err(), provider.ErrUnsupportedFunctionality)
-			assert.Equal(t, int32(1), calls.Load())
-			assert.Zero(t, time.Since(start), "no backoff delay")
-		})
-	})
-
-	t.Run("GenerateText", func(t *testing.T) {
-		synctest.Test(t, func(t *testing.T) {
-			var calls atomic.Int32
-			start := time.Now()
-			_, err := GenerateText(context.Background(), newModel(&calls),
-				WithModelMessages(provider.UserText("hi")),
-				WithMaxRetries(3),
-			)
-
-			require.ErrorIs(t, err, provider.ErrUnsupportedFunctionality)
-			assert.Equal(t, int32(1), calls.Load())
-			assert.Zero(t, time.Since(start), "no backoff delay")
-		})
-	})
-
-	t.Run("control: a retryable error is retried with virtual backoff", func(t *testing.T) {
-		synctest.Test(t, func(t *testing.T) {
-			var calls atomic.Int32
-			model := &mockModel{
-				streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-					calls.Add(1)
-					return nil, retryableAPIError("transient", nil)
-				},
-			}
-			start := time.Now()
+	modes := []struct {
+		name string
+		run  func(model *mockModel) error
+	}{
+		{"StreamText", func(model *mockModel) error {
 			result := StreamText(context.Background(), model,
 				WithModelMessages(provider.UserText("hi")),
 				WithMaxRetries(3),
-				withRetryTiming(500, 2),
+				withRetryTiming(float64(initialDelay.Milliseconds()), 2),
 			)
 			for range result.FullStream() {
 			}
+			return result.Err()
+		}},
+		{"GenerateText", func(model *mockModel) error {
+			_, err := GenerateText(context.Background(), model,
+				WithModelMessages(provider.UserText("hi")),
+				WithMaxRetries(3),
+				withRetryTiming(float64(initialDelay.Milliseconds()), 2),
+			)
+			return err
+		}},
+	}
+	cases := []struct {
+		name      string
+		err       error
+		wantCalls int32
+		check     func(t *testing.T, err error, elapsed time.Duration)
+	}{
+		{
+			name:      "rejection is not retried",
+			err:       rejection,
+			wantCalls: 1,
+			check: func(t *testing.T, err error, elapsed time.Duration) {
+				require.ErrorIs(t, err, provider.ErrUnsupportedFunctionality)
+				assert.Zero(t, elapsed, "no backoff delay")
+			},
+		},
+		{
+			name:      "retryable error is retried with backoff",
+			err:       retryableAPIError("transient", nil),
+			wantCalls: 4,
+			check: func(t *testing.T, err error, elapsed time.Duration) {
+				require.Error(t, err)
+				assert.GreaterOrEqual(t, elapsed, initialDelay)
+			},
+		},
+	}
 
-			require.Error(t, result.Err())
-			assert.Equal(t, int32(4), calls.Load())
-			assert.GreaterOrEqual(t, time.Since(start), 500*time.Millisecond)
-		})
-	})
+	for _, mode := range modes {
+		for _, tc := range cases {
+			t.Run(mode.name+"/"+tc.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					var calls atomic.Int32
+					model := &mockModel{
+						streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+							calls.Add(1)
+							return nil, tc.err
+						},
+					}
+					start := time.Now()
+
+					err := mode.run(model)
+
+					assert.Equal(t, tc.wantCalls, calls.Load())
+					tc.check(t, err, time.Since(start))
+				})
+			})
+		}
+	}
 }
