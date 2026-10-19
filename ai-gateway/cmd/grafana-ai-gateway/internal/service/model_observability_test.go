@@ -25,6 +25,8 @@ import (
 	"github.com/grafana/ai-sdk/middleware"
 	agentmiddleware "github.com/grafana/ai-sdk/middleware/agentobservability"
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -75,9 +77,7 @@ func TestBYOKObservability_LogicalExportAndCredentialPrivacy(t *testing.T) {
 				})}
 				wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, observe), Limits: serviceTestLimits()})
 				require.NoError(t, err)
-				writer := providerv4.NewHostErrorWriter()
-				authenticator, headers := serviceModeAuthentication(gatewayauth.SourceCloudGateway)
-				handler := gatewayauth.Middleware(authenticator, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorAuthentication) }, func(context.Context, gatewayauth.Observation) {}, wire)
+				handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
 				request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[{"role":"user","content":[{"type":"text","text":"application-content"}]}],"maxOutputTokens":32,"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}}}`))
 				requestID := "anthropic/native-" + strings.Repeat("x", 140)
 				request = request.WithContext(ctx)
@@ -1114,8 +1114,10 @@ func TestNewModelObservabilityFactory_NormalAndPrematureStreamsFinalizeOnce(t *t
 
 func testMetrics(t *testing.T, telemetry *Telemetry) string {
 	t.Helper()
+	gatherer, ok := telemetry.Registerer().(prometheus.Gatherer)
+	require.True(t, ok)
 	response := httptest.NewRecorder()
-	telemetry.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	return response.Body.String()
 }
 

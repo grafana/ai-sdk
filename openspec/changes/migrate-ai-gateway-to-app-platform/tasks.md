@@ -53,10 +53,10 @@
 
 ## 4. Plugin host runtime and caller access
 
-- [ ] 4.1 Implement the Gateway authenticator, passed with `plugin.WithAuthenticator`. It wraps authlib's access-token verifier with app-sdk's audiences, reimplements app-sdk's key-source rules for `GRAFANA_JWKS_URL` and `GRAFANA_JWKS`, and adds the first actor's service identity and the identity actor's typed UID to `GetExtra()`. Switch the in-process test host to serve with this authenticator built from the test JWKS. Verify table tests over the test host's actor chains, plus key-source config tests for both variables set, a non-http(s) URL, and a private key or missing key ID:
+- [x] 4.1 Implement the Gateway authenticator, passed with `plugin.WithAuthenticator`. It wraps authlib's access-token verifier with app-sdk's audiences, reimplements app-sdk's key-source rules for `GRAFANA_JWKS_URL` and `GRAFANA_JWKS`, and adds the first actor's service identity and the identity actor's typed UID to `GetExtra()`. Switch the in-process test host to serve with this authenticator built from the test JWKS. Verify table tests over the test host's actor chains, plus key-source config tests for both variables set, a non-http(s) URL, and a private key or missing key ID:
   - direct service, on-behalf-of user, relayed, front-door user and service account, and no actor;
   - unsigned request data never contributes.
-- [ ] 4.2 Implement the required `access.mode` / `GRAFANA_AI_GATEWAY_ACCESS_MODE` setting (`cloud` or `self-hosted`, no default), and the `cloud`-only `access.internal-services` / `GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES` allowlist with bounded, unique, exact-match validation. Implement the access middleware producing the private caller value:
+- [x] 4.2 Implement the required `access.mode` / `GRAFANA_AI_GATEWAY_ACCESS_MODE` setting (`cloud` or `self-hosted`, no default), and the `cloud`-only `access.internal-services` / `GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES` allowlist with bounded, unique, exact-match validation. Implement the access middleware producing the private caller value:
   - `cloud`: an allowlisted direct caller gets configured access; otherwise a user or service-account identity actor gets BYOK;
   - the emitted `caller_service` is set only for configured `cloud` access;
   - `self-hosted`: a user or service-account identity actor gets configured access, with BYOK controls refused;
@@ -65,7 +65,7 @@
   Verify:
   - table tests across modes, actor chains, wildcard tokens and route namespaces, with zero catalog and provider calls on refusal;
   - config tests for a missing or unknown mode, an allowlist in `self-hosted` mode, an empty allowlist, case and whitespace near-matches, and invalid entries.
-- [ ] 4.3 Move startup composition from `process.Run` into the app constructor and replace `main` with `plugin.Run`, passing `plugin.WithPluginID` with a constant. The app's `RouteHandlerProvider` is a `ServeMux` dispatching the two route patterns through the access middleware, with the namespace from `RouteRequestInfo`. Also:
+- [x] 4.3 Move startup composition from `process.Run` into the app constructor and replace `main` with `plugin.Run`, passing `plugin.WithPluginID` with a constant. The app's `RouteHandlerProvider` is a `ServeMux` dispatching the two route patterns through the access middleware, with the namespace from `RouteRequestInfo`. Also:
   - make `Telemetry` take its registerer and gatherer as options, with `main` passing the default registry and tests private ones;
   - normalize route metric labels to `config` and `language_model`;
   - port the `process` startup tests to the constructor;
@@ -78,8 +78,8 @@
   - route labels without namespace values;
   - the plugin ID constant matching `src/plugin.json`;
   - the ported startup tests passing.
-- [ ] 4.4 Prove incremental streaming and cancellation through the in-process test host. Verify a test that delays provider parts and asserts each frame arrives before the next part is emitted, and a test where caller cancellation cancels the model context and drains within existing bounds.
-- [ ] 4.5 Remove the listener, HTTP-server timeout, JWT/JWKS, audience, unsafe and Cloud settings, and make the strict config file reject `auth` and `server` blocks. Keep `deployment.mode`, and fail production startup unless `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` is set. In development mode with `GF_PLUGIN_INSECURE_SKIP_AUTHENTICATION=true`, build the Gateway authenticator on authlib's unsafe verifier; production refuses it. Delete JWT/JWKS, header normalization, Cloud assertion and static-key code, and the `outbound` JWKS client. Verify config tests for:
+- [x] 4.4 Prove incremental streaming and cancellation through the in-process test host. Verify a test that delays provider parts and asserts each frame arrives before the next part is emitted, and a test where caller cancellation cancels the model context and drains within existing bounds.
+- [x] 4.5 Remove the listener, HTTP-server timeout, JWT/JWKS, audience, unsafe and Cloud settings, and make the strict config file reject `auth` and `server` blocks. Keep `deployment.mode`, and fail production startup unless `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` is set. In development mode with `GF_PLUGIN_INSECURE_SKIP_AUTHENTICATION=true`, build the Gateway authenticator on authlib's unsafe verifier; production refuses it. Delete JWT/JWKS, header normalization, Cloud assertion and static-key code, and the `outbound` JWKS client. Verify config tests for:
   - secret-safe unknown-field failures;
   - environment-only startup with no arguments;
   - the production signing-key guard and refusal of insecure skip, with development permitting the test host and the unsafe verifier;
@@ -96,7 +96,7 @@
   - update the `test:command` script, the `test-ai-gateway-command` mise task and `test/conformance/UPGRADING.md`.
 
   Verify that `mise run test-ai-gateway-command` and `mise run test-ai-gateway-source-integration` pass.
-- [ ] 4.8 Prove that request content cannot change access, and attribution privacy. Verify tests that:
+- [x] 4.8 Prove that request content cannot change access, and attribution privacy. Verify tests that:
   - tenant headers are ignored;
   - configured attribution in `cloud` mode equals the direct caller's service identity;
   - the private caller value holds the identity actor's UID;

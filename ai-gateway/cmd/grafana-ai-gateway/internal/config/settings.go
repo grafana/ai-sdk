@@ -7,12 +7,12 @@ import (
 	"net"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
@@ -57,32 +57,15 @@ type AgentObservabilitySettings struct {
 	ShutdownTimeout time.Duration
 }
 
-// Settings contains every scalar process setting.
+// Settings contains every scalar plugin setting.
 type Settings struct {
 	ConfigFile                     string
 	ConfigMaxBytes                 int64
 	DeploymentMode                 DeploymentMode
-	PrivateListenAddress           string
-	CloudListenAddress             string
-	OperationalListenAddress       string
-	ReadHeaderTimeout              time.Duration
-	ReadTimeout                    time.Duration
-	WriteTimeout                   time.Duration
-	IdleTimeout                    time.Duration
-	MaxHeaderBytes                 int
-	ResponseGrace                  time.Duration
-	ShutdownTimeout                time.Duration
+	Access                         auth.AccessPolicy
 	ObservationRegion              string
 	ObservationApplication         string
 	AgentObservability             AgentObservabilitySettings
-	AuthUnsafe                     bool
-	JWKSURL                        string
-	Audiences                      []string
-	JWKSRequestTimeout             time.Duration
-	JWKSResponseBytes              int64
-	JWKSMaxKeys                    int
-	JWKSRefreshInterval            time.Duration
-	JWKSMaxAge                     time.Duration
 	AnthropicResponseHeaderTimeout time.Duration
 	AnthropicResponseBytes         int64
 	ProviderWire                   providerv4.Limits
@@ -95,22 +78,14 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	}
 	var settings Settings
 	var deploymentMode string
-	var audiences string
+	var accessMode, internalServices string
 	var agentObservabilityProtocol string
-	app := kingpin.New("grafana-ai-gateway", "Authenticated Grafana AI Gateway")
+	app := kingpin.New("grafana-ai-gateway", "Grafana AI Gateway plugin")
 	app.Flag("config.file", "Model configuration YAML file.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_CONFIG_FILE", "")).StringVar(&settings.ConfigFile)
 	app.Flag("config.max-bytes", "Maximum model configuration bytes.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_CONFIG_MAX_BYTES", "1048576")).Int64Var(&settings.ConfigMaxBytes)
 	app.Flag("deployment.mode", "Deployment mode.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE", "production")).StringVar(&deploymentMode)
-	app.Flag("server.private-listen-address", "Private JWT API listen address.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS", ":8082")).StringVar(&settings.PrivateListenAddress)
-	app.Flag("server.cloud-listen-address", "Proxy-only Cloud BYOK API listen address.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_CLOUD_LISTEN_ADDRESS", ":8080")).StringVar(&settings.CloudListenAddress)
-	app.Flag("server.operational-listen-address", "Operational listen address for /live, /ready, and /metrics.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS", ":8081")).StringVar(&settings.OperationalListenAddress)
-	app.Flag("server.read-header-timeout", "HTTP read-header timeout.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_READ_HEADER_TIMEOUT", "5s")).DurationVar(&settings.ReadHeaderTimeout)
-	app.Flag("server.read-timeout", "HTTP request-read timeout.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_READ_TIMEOUT", "30s")).DurationVar(&settings.ReadTimeout)
-	app.Flag("server.write-timeout", "HTTP response-write timeout.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_WRITE_TIMEOUT", "165s")).DurationVar(&settings.WriteTimeout)
-	app.Flag("server.idle-timeout", "HTTP idle timeout.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_IDLE_TIMEOUT", "120s")).DurationVar(&settings.IdleTimeout)
-	app.Flag("server.max-header-bytes", "Go HTTP maximum header parser bytes.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_MAX_HEADER_BYTES", "65536")).IntVar(&settings.MaxHeaderBytes)
-	app.Flag("server.response-grace", "Response completion grace.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_RESPONSE_GRACE", "5s")).DurationVar(&settings.ResponseGrace)
-	app.Flag("server.shutdown-timeout", "Graceful shutdown timeout.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_SERVER_SHUTDOWN_TIMEOUT", "15s")).DurationVar(&settings.ShutdownTimeout)
+	app.Flag("access.mode", "Access mode (cloud or self-hosted).").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_ACCESS_MODE", "")).StringVar(&accessMode)
+	app.Flag("access.internal-services", "Comma-separated service identities with configured access in cloud mode.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES", "")).StringVar(&internalServices)
 	app.Flag("observation.region", "Trusted static observation region.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_OBSERVATION_REGION", "")).StringVar(&settings.ObservationRegion)
 	app.Flag("observation.application", "Trusted static observation application.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_OBSERVATION_APPLICATION", "")).StringVar(&settings.ObservationApplication)
 	app.Flag("agento11y.enabled", "Enable Agent Observability generation export.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED", "false")).BoolVar(&settings.AgentObservability.Enabled)
@@ -128,14 +103,6 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	app.Flag("agento11y.flush-interval", "Agent Observability asynchronous batch flush interval.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL", "1s")).DurationVar(&settings.AgentObservability.FlushInterval)
 	app.Flag("agento11y.flush-timeout", "Maximum Agent Observability explicit flush duration.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT", "5s")).DurationVar(&settings.AgentObservability.FlushTimeout)
 	app.Flag("agento11y.shutdown-timeout", "Maximum Agent Observability shutdown duration.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT", "5s")).DurationVar(&settings.AgentObservability.ShutdownTimeout)
-	app.Flag("auth.unsafe", "Enable unsafe development authentication.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_UNSAFE", "false")).BoolVar(&settings.AuthUnsafe)
-	app.Flag("auth.jwks-url", "JWKS endpoint URL.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_JWKS_URL", "")).StringVar(&settings.JWKSURL)
-	app.Flag("auth.audiences", "Comma-separated accepted audiences.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_AUDIENCES", "ai-sdk")).StringVar(&audiences)
-	app.Flag("auth.jwks-timeout", "JWKS request timeout.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_JWKS_TIMEOUT", "5s")).DurationVar(&settings.JWKSRequestTimeout)
-	app.Flag("auth.jwks-response-bytes", "Maximum JWKS response bytes.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_JWKS_RESPONSE_BYTES", "1048576")).Int64Var(&settings.JWKSResponseBytes)
-	app.Flag("auth.jwks-max-keys", "Maximum keys in one JWKS snapshot.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_JWKS_MAX_KEYS", "128")).IntVar(&settings.JWKSMaxKeys)
-	app.Flag("auth.jwks-refresh-interval", "Minimum JWKS refresh interval.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_JWKS_REFRESH_INTERVAL", "5m")).DurationVar(&settings.JWKSRefreshInterval)
-	app.Flag("auth.jwks-max-age", "Maximum JWKS snapshot age.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AUTH_JWKS_MAX_AGE", "15m")).DurationVar(&settings.JWKSMaxAge)
 	app.Flag("anthropic.response-header-timeout", "Model provider response-header timeout (all provider types).").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_ANTHROPIC_RESPONSE_HEADER_TIMEOUT", "10s")).DurationVar(&settings.AnthropicResponseHeaderTimeout)
 	app.Flag("anthropic.response-bytes", "Maximum cumulative model provider response bytes (all provider types).").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_ANTHROPIC_RESPONSE_BYTES", "16777216")).Int64Var(&settings.AnthropicResponseBytes)
 	app.Flag("providerwire.request-bytes", "Maximum ProviderWire request bytes.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_PROVIDERWIRE_REQUEST_BYTES", "1048576")).Int64Var(&settings.ProviderWire.RequestBytes)
@@ -151,11 +118,11 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	}
 	settings.DeploymentMode = DeploymentMode(deploymentMode)
 	settings.AgentObservability.Protocol = AgentObservabilityProtocol(agentObservabilityProtocol)
-	parsedAudiences, err := parseAudiences(audiences)
+	access, err := auth.ParseAccessPolicy(accessMode, internalServices)
 	if err != nil {
 		return Settings{}, err
 	}
-	settings.Audiences = parsedAudiences
+	settings.Access = access
 	if err := settings.Validate(); err != nil {
 		return Settings{}, err
 	}
@@ -202,7 +169,6 @@ func (settings Settings) Validate() error {
 		value int
 		safe  bool
 	}{
-		{name: "maximum header bytes", value: settings.MaxHeaderBytes},
 		{name: "providerwire stream parts", value: settings.ProviderWire.StreamParts, safe: true},
 	}
 	for _, limit := range positiveInts {
@@ -213,19 +179,10 @@ func (settings Settings) Validate() error {
 			return fmt.Errorf("config: %s cannot safely use limit+1", limit.name)
 		}
 	}
-	if int64(settings.MaxHeaderBytes) > math.MaxInt64-4096 {
-		return fmt.Errorf("config: maximum header bytes cannot safely include parser slop")
-	}
 	durations := []struct {
 		name  string
 		value time.Duration
 	}{
-		{name: "read-header timeout", value: settings.ReadHeaderTimeout},
-		{name: "read timeout", value: settings.ReadTimeout},
-		{name: "write timeout", value: settings.WriteTimeout},
-		{name: "idle timeout", value: settings.IdleTimeout},
-		{name: "response grace", value: settings.ResponseGrace},
-		{name: "shutdown timeout", value: settings.ShutdownTimeout},
 		{name: "anthropic response-header timeout", value: settings.AnthropicResponseHeaderTimeout},
 		{name: "providerwire model duration", value: settings.ProviderWire.ModelDuration},
 		{name: "providerwire stream idle duration", value: settings.ProviderWire.StreamIdleDuration},
@@ -247,88 +204,6 @@ func (settings Settings) Validate() error {
 	}
 	if _, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(limitValidationResolver{}), Limits: settings.ProviderWire}); err != nil {
 		return fmt.Errorf("config: providerwire limits: %w", err)
-	}
-	minimum, err := checkedDurationSum(settings.ReadTimeout, settings.ProviderWire.ModelDuration, settings.ResponseGrace)
-	if err != nil {
-		return err
-	}
-	if settings.WriteTimeout < minimum {
-		return fmt.Errorf("config: write timeout must be at least %s", minimum)
-	}
-	return nil
-}
-
-// ValidateRuntime validates selected authentication and active listeners before secrets or I/O.
-func (settings Settings) ValidateRuntime(auth EffectiveAuth, cloudEnabled bool) error {
-	if err := settings.Validate(); err != nil {
-		return err
-	}
-	if settings.DeploymentMode == DeploymentProduction && !settings.AgentObservability.Enabled && (auth.Type != AuthStaticKey || cloudEnabled) {
-		return fmt.Errorf("config: agent observability must be enabled in production")
-	}
-	if auth.Type != AuthStaticKey && (len(settings.Audiences) != 1 || settings.Audiences[0] != "ai-sdk") {
-		return fmt.Errorf("config: audience must be ai-sdk")
-	}
-	listenHosts := make([]string, 0, 3)
-	addresses := []string{settings.PrivateListenAddress, settings.OperationalListenAddress}
-	if cloudEnabled {
-		addresses = append(addresses, settings.CloudListenAddress)
-	}
-	seenAddresses := make(map[string]bool)
-	for _, address := range addresses {
-		host, err := validateListenAddress(address)
-		if err != nil {
-			return err
-		}
-		_, port, _ := net.SplitHostPort(address)
-		if seenAddresses[address] && port != "0" {
-			return fmt.Errorf("config: private, Cloud and operational listen addresses must differ")
-		}
-		seenAddresses[address] = true
-		listenHosts = append(listenHosts, host)
-	}
-
-	var jwksLatency time.Duration
-	if auth.Type == AuthJWT {
-		if settings.JWKSResponseBytes <= 0 {
-			return fmt.Errorf("config: jwks response bytes must be positive")
-		}
-		if settings.JWKSResponseBytes == math.MaxInt64 {
-			return fmt.Errorf("config: jwks response bytes cannot safely use limit+1")
-		}
-		if settings.JWKSMaxKeys <= 0 {
-			return fmt.Errorf("config: jwks maximum keys must be positive")
-		}
-		if settings.JWKSRequestTimeout <= 0 || settings.JWKSRefreshInterval <= 0 || settings.JWKSMaxAge <= 0 {
-			return fmt.Errorf("config: jwks request timeout, refresh interval, and maximum age must each be positive")
-		}
-		if settings.JWKSMaxAge < settings.JWKSRefreshInterval {
-			return fmt.Errorf("config: jwks maximum age must be at least refresh interval")
-		}
-
-		if auth.JWKSURL == "" {
-			return fmt.Errorf("config: jwks URL is required for safe authentication")
-		}
-		jwksLatency = settings.JWKSRequestTimeout
-	} else if auth.Type != AuthUnsafe && auth.Type != AuthStaticKey {
-		return fmt.Errorf("config: unsupported authentication type")
-	}
-	minimum, err := checkedDurationSum(settings.ReadTimeout, jwksLatency, settings.ProviderWire.ModelDuration, settings.ResponseGrace)
-	if err != nil {
-		return err
-	}
-	if settings.WriteTimeout < minimum {
-		return fmt.Errorf("config: write timeout must be at least %s", minimum)
-	}
-	if auth.Type == AuthUnsafe {
-		if settings.DeploymentMode != DeploymentDevelopment {
-			return fmt.Errorf("config: unsafe authentication requires development mode")
-		}
-		for _, host := range listenHosts {
-			if err := validateUnsafeListenHost(host); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }
@@ -494,66 +369,6 @@ func validateOptionalObservationSetting(name, value string) error {
 	return nil
 }
 
-func validateListenAddress(address string) (string, error) {
-	host, port, err := net.SplitHostPort(address)
-	if err != nil || port == "" {
-		return "", fmt.Errorf("config: listen address must use TCP host:port syntax")
-	}
-	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
-		return "", fmt.Errorf("config: listen address must use a numeric TCP port")
-	}
-	if !validListenHost(host) {
-		return "", fmt.Errorf("config: listen address contains an invalid TCP host")
-	}
-	return host, nil
-}
-
-func validListenHost(host string) bool {
-	if host == "" || strings.EqualFold(host, "localhost") {
-		return true
-	}
-	address := host
-	if before, zone, found := strings.Cut(host, "%"); found {
-		if zone == "" || strings.TrimSpace(zone) != zone {
-			return false
-		}
-		address = before
-	}
-	if net.ParseIP(address) != nil {
-		return true
-	}
-	name := strings.TrimSuffix(host, ".")
-	if name == "" || len(name) > 253 {
-		return false
-	}
-	for _, label := range strings.Split(name, ".") {
-		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-			return false
-		}
-		for _, character := range label {
-			if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '-' {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func validateUnsafeListenHost(host string) error {
-	if strings.EqualFold(host, "localhost") {
-		return nil
-	}
-	ipAddress := host
-	if before, _, found := strings.Cut(host, "%"); found {
-		ipAddress = before
-	}
-	ip := net.ParseIP(ipAddress)
-	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("config: unsafe authentication requires a loopback TCP listen address")
-	}
-	return nil
-}
-
 func envDefault(lookupEnv LookupEnv, name, fallback string) string {
 	if value, ok := lookupEnv(name); ok {
 		return value
@@ -561,37 +376,8 @@ func envDefault(lookupEnv LookupEnv, name, fallback string) string {
 	return fallback
 }
 
-func parseAudiences(value string) ([]string, error) {
-	parts := strings.Split(value, ",")
-	seen := make(map[string]struct{}, len(parts))
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			return nil, fmt.Errorf("config: auth audiences must contain only non-empty values")
-		}
-		if _, exists := seen[part]; exists {
-			return nil, fmt.Errorf("config: auth audiences must be unique")
-		}
-		seen[part] = struct{}{}
-		result = append(result, part)
-	}
-	return result, nil
-}
-
 type limitValidationResolver struct{}
 
 func (limitValidationResolver) ResolveModel(context.Context, string) (catalog.ResolvedModel, error) {
 	return catalog.ResolvedModel{}, catalog.ErrUnknownModel
-}
-
-func checkedDurationSum(values ...time.Duration) (time.Duration, error) {
-	var total time.Duration
-	for _, value := range values {
-		if value > 0 && total > time.Duration(math.MaxInt64)-value {
-			return 0, fmt.Errorf("config: minimum write timeout overflows duration")
-		}
-		total += value
-	}
-	return total, nil
 }

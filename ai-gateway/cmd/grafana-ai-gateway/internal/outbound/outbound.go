@@ -28,16 +28,6 @@ var (
 	ErrResponseTooLarge = errors.New("gateway outbound: response exceeds byte limit")
 )
 
-// NewJWKSClient returns a client that rejects redirects and limits response bytes and total request time.
-func NewJWKSClient(timeout time.Duration, responseBytes int64) (*http.Client, error) {
-	client, err := NewAnthropicClient(timeout, responseBytes)
-	if err != nil {
-		return nil, err
-	}
-	client.Timeout = timeout
-	return client, nil
-}
-
 // NewAnthropicClient returns a streaming client that rejects redirects and limits response bytes and response-header wait time.
 func NewAnthropicClient(headerTimeout time.Duration, responseBytes int64) (*http.Client, error) {
 	if headerTimeout <= 0 {

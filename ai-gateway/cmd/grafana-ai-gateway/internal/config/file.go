@@ -25,8 +25,6 @@ var publicIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
 
 // File contains strict named provider and model configuration.
 type File struct {
-	Auth      *AuthConfig         `yaml:"auth,omitempty"`
-	Server    *ServerConfig       `yaml:"server,omitempty"`
 	Providers map[string]Provider `yaml:"providers"`
 	Models    map[string]Model    `yaml:"models"`
 }
@@ -92,7 +90,7 @@ func LoadFile(path string, maxBytes int64) (File, error) {
 	if err := yaml.Unmarshal(data, &document); err != nil {
 		return File{}, fmt.Errorf("config: invalid YAML document")
 	}
-	if err := validateAuthPresence(&document); err != nil {
+	if err := validateDocumentShape(&document); err != nil {
 		return File{}, err
 	}
 	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
@@ -116,11 +114,6 @@ func LoadFile(path string, maxBytes int64) (File, error) {
 
 // Validate validates provider references, model routes, and public IDs.
 func (file File) Validate() error {
-	if file.Auth != nil {
-		if err := file.Auth.validate(); err != nil {
-			return err
-		}
-	}
 	if len(file.Providers) == 0 {
 		return fmt.Errorf("config: at least one provider is required")
 	}
@@ -262,11 +255,10 @@ func validatePublicID(value string) error {
 	return nil
 }
 
-func validateAuthPresence(document *yaml.Node) error {
+func validateDocumentShape(document *yaml.Node) error {
 	if err := rejectYAMLIndirection(document); err != nil {
 		return err
 	}
-
 	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
 		return fmt.Errorf("config: YAML root must be a mapping")
 	}
@@ -274,28 +266,6 @@ func validateAuthPresence(document *yaml.Node) error {
 	for i := 0; i < len(root.Content); i += 2 {
 		if root.Content[i].Kind != yaml.ScalarNode || root.Content[i].Tag != "!!str" {
 			return fmt.Errorf("config: YAML root mapping keys must be strings")
-		}
-		if root.Content[i].Value == "server" {
-			if err := validateServerTypes(root.Content[i+1], 0); err != nil {
-				return err
-			}
-		}
-		if root.Content[i].Value != "auth" {
-			continue
-		}
-		auth := root.Content[i+1]
-		if auth.Kind != yaml.MappingNode || len(auth.Content) == 0 {
-			return fmt.Errorf("config: auth must be a nonempty mapping")
-		}
-		if err := validateAuthScalarTypes(auth); err != nil {
-			return err
-		}
-		for j := 0; j < len(auth.Content); j += 2 {
-			if auth.Content[j].Value == "jwt" || auth.Content[j].Value == "staticKey" {
-				if auth.Content[j+1].Kind != yaml.MappingNode {
-					return fmt.Errorf("config: auth provider configuration must be a mapping")
-				}
-			}
 		}
 	}
 	return nil
@@ -308,39 +278,6 @@ func rejectYAMLIndirection(node *yaml.Node) error {
 	for _, child := range node.Content {
 		if err := rejectYAMLIndirection(child); err != nil {
 			return err
-		}
-	}
-	return nil
-}
-
-func validateAuthScalarTypes(node *yaml.Node) error {
-	if node.Kind == yaml.ScalarNode && node.Tag != "!!str" {
-		return fmt.Errorf("config: auth values and mapping keys must be strings")
-	}
-	for _, child := range node.Content {
-		if err := validateAuthScalarTypes(child); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateServerTypes(node *yaml.Node, depth int) error {
-	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("config: server configuration must be a mapping")
-	}
-	for i := 0; i < len(node.Content); i += 2 {
-		key, value := node.Content[i], node.Content[i+1]
-		if key.Kind != yaml.ScalarNode || key.Tag != "!!str" {
-			return fmt.Errorf("config: server mapping keys must be strings")
-		}
-		if depth == 0 && key.Value == "cloud" {
-			if err := validateServerTypes(value, 1); err != nil {
-				return err
-			}
-		}
-		if depth == 1 && key.Value == "enabled" && (value.Kind != yaml.ScalarNode || value.Tag != "!!bool") {
-			return fmt.Errorf("config: server.cloud.enabled must be a boolean")
 		}
 	}
 	return nil

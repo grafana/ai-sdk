@@ -54,26 +54,26 @@ func TestValidateEndpoint(t *testing.T) {
 }
 
 func TestNewClients_IndependentExactTransports(t *testing.T) {
-	jwks, err := NewJWKSClient(5*time.Second, 1024)
+	first, err := NewAnthropicClient(5*time.Second, 1024)
 	require.NoError(t, err)
-	anthropic, err := NewAnthropicClient(10*time.Second, 2048)
+	second, err := NewAnthropicClient(10*time.Second, 2048)
 	require.NoError(t, err)
-	jwksBounded := requireBoundedTransport(t, jwks)
-	anthropicBounded := requireBoundedTransport(t, anthropic)
-	assert.NotSame(t, jwksBounded, anthropicBounded)
-	assert.NotSame(t, jwksBounded.base, anthropicBounded.base)
-	assert.Equal(t, int64(1024), jwksBounded.limit)
-	assert.Equal(t, int64(2048), anthropicBounded.limit)
-	assert.Equal(t, 5*time.Second, jwks.Timeout)
-	assert.Zero(t, anthropic.Timeout)
+	firstBounded := requireBoundedTransport(t, first)
+	secondBounded := requireBoundedTransport(t, second)
+	assert.NotSame(t, firstBounded, secondBounded)
+	assert.NotSame(t, firstBounded.base, secondBounded.base)
+	assert.Equal(t, int64(1024), firstBounded.limit)
+	assert.Equal(t, int64(2048), secondBounded.limit)
+	assert.Zero(t, first.Timeout)
+	assert.Zero(t, second.Timeout)
 
 	for _, tc := range []struct {
 		name      string
 		transport *http.Transport
 		header    time.Duration
 	}{
-		{name: "jwks", transport: jwksBounded.base.(*http.Transport), header: 5 * time.Second},
-		{name: "anthropic", transport: anthropicBounded.base.(*http.Transport), header: 10 * time.Second},
+		{name: "first", transport: firstBounded.base.(*http.Transport), header: 5 * time.Second},
+		{name: "second", transport: secondBounded.base.(*http.Transport), header: 10 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.NotNil(t, tc.transport.Proxy)
@@ -118,11 +118,9 @@ func TestClients_RejectRedirectsBeforeCredentialForwarding(t *testing.T) {
 			}))
 			defer source.Close()
 
-			jwks, err := NewJWKSClient(time.Second, 1024)
+			client, err := NewAnthropicClient(time.Second, 1024)
 			require.NoError(t, err)
-			anthropic, err := NewAnthropicClient(time.Second, 1024)
-			require.NoError(t, err)
-			for _, client := range []*http.Client{jwks, anthropic} {
+			{
 				request, err := http.NewRequest(http.MethodGet, source.URL, nil)
 				require.NoError(t, err)
 				request.Header.Set("X-Access-Token", "secret-access")
@@ -173,8 +171,8 @@ func TestBoundedTransport_DecompressedResponseBoundaries(t *testing.T) {
 
 				for _, delta := range []int64{1, 0, -1} {
 					limit := int64(len(payload.payload)) + delta
-					for _, newClient := range []func(time.Duration, int64) (*http.Client, error){NewJWKSClient, NewAnthropicClient} {
-						client, err := newClient(time.Second, limit)
+					{
+						client, err := NewAnthropicClient(time.Second, limit)
 						require.NoError(t, err)
 						response, err := client.Get(server.URL)
 						require.NoError(t, err)
@@ -243,22 +241,6 @@ func TestClients_HostileServersTerminateWithinBounds(t *testing.T) {
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled))
 	})
-
-	t.Run("JWKS stalled body timeout", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			assert.NoError(t, http.NewResponseController(w).Flush())
-			<-request.Context().Done()
-		}))
-		defer server.Close()
-		client, err := NewJWKSClient(50*time.Millisecond, 1024)
-		require.NoError(t, err)
-		response, err := client.Get(server.URL)
-		require.NoError(t, err)
-		defer func() { _ = response.Body.Close() }()
-		_, err = io.ReadAll(response.Body)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-	})
 }
 
 func TestNewClients_InvalidLimits(t *testing.T) {
@@ -266,7 +248,6 @@ func TestNewClients_InvalidLimits(t *testing.T) {
 		name      string
 		newClient func(time.Duration, int64) (*http.Client, error)
 	}{
-		{name: "jwks", newClient: NewJWKSClient},
 		{name: "anthropic", newClient: NewAnthropicClient},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

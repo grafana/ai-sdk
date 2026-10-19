@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,8 +38,8 @@ func (c *accountCatalogSpy) ListModels(context.Context) ([]catalog.ModelInfo, er
 }
 
 func TestAccountSelection_Isolation(t *testing.T) {
-	for _, privateSource := range []gatewayauth.Source{gatewayauth.SourceAccessToken, gatewayauth.SourceStaticKey} {
-		t.Run(string(privateSource), func(t *testing.T) {
+	for _, configuredMode := range []gatewayauth.AccessMode{gatewayauth.AccessModeCloud, gatewayauth.AccessModeSelfHosted} {
+		t.Run(string(configuredMode), func(t *testing.T) {
 			const body = `{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"APIKEY":"dummy-request-key","Organization":"request-organization","Project":"request-project","ModelMappings":[],"headers":{"Authorization":"untrusted-key"},"maxRetries":100,"future":true}]}},"openai":{"store":false}}}`
 			for _, streaming := range []bool{false, true} {
 				t.Run(strconv.FormatBool(streaming), func(t *testing.T) {
@@ -81,24 +80,17 @@ func TestAccountSelection_Isolation(t *testing.T) {
 					}{
 						{"byok inference", true, byokHandler, http.StatusFailedDependency},
 						{"configured rejects BYOK", false, configuredHandler, http.StatusBadRequest},
-						{"cloud cannot use configured selector", true, configuredHandler, http.StatusForbidden},
-						{"private cannot use BYOK selector", false, byokHandler, http.StatusForbidden},
+						{"BYOK cannot use configured selector", true, configuredHandler, http.StatusForbidden},
+						{"configured cannot use BYOK selector", false, byokHandler, http.StatusForbidden},
 						{"BYOK discovery", true, BYOKDiscovery(writer), http.StatusBadRequest},
-						{"cloud cannot use configured discovery", true, ConfiguredDiscovery(discovery.New(configured, writer), writer), http.StatusForbidden},
+						{"BYOK cannot use configured discovery", true, ConfiguredDiscovery(discovery.New(configured, writer), writer), http.StatusForbidden},
 					} {
 						t.Run(tc.name, func(t *testing.T) {
-							source := privateSource
+							mode, access := configuredMode, gatewayauth.ConfiguredAccounts
 							if tc.cloud {
-								source = gatewayauth.SourceCloudGateway
+								mode, access = gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK
 							}
-							authenticator, headers := serviceModeAuthentication(source)
-							if source == gatewayauth.SourceStaticKey {
-								var err error
-								authenticator, err = gatewayauth.NewStaticKeyAuthenticator([]gatewayauth.StaticIdentity{{Name: "deployment", KeyDigest: sha256.Sum256([]byte("local-key"))}})
-								require.NoError(t, err)
-								headers = http.Header{"X-Access-Token": {"local-key"}}
-							}
-							h := gatewayauth.Middleware(authenticator, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorAuthentication) }, func(context.Context, gatewayauth.Observation) {}, tc.handler)
+							h, headers := withAccess(t, mode, access, tc.handler)
 							r := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
 							r.Header = headers
 							r.Header.Set("Content-Type", "application/json")
@@ -167,9 +159,7 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 					factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
 					wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits(), ConfiguredAPIKeys: policy.keys})
 					require.NoError(t, err)
-					writer := providerv4.NewHostErrorWriter()
-					authenticator, headers := serviceModeAuthentication(gatewayauth.SourceCloudGateway)
-					handler := gatewayauth.Middleware(authenticator, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorAuthentication) }, func(context.Context, gatewayauth.Observation) {}, wire)
+					handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
 					accountFields := ""
 					if name == "openai" {
 						accountFields = `,"organization":"request-org","project":"request-project"`
