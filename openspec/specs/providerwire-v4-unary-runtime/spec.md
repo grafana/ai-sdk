@@ -140,7 +140,7 @@ A body-carried header whose name belongs to the runtime's own protocol namespace
 
 ### Requirement: Unsupported capability families
 
-Schema-valid provider tools and tool approvals, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Structured output SHALL execute within gateway-structured-output. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers. Assistant custom history and custom tool-result content SHALL execute within gateway-custom-content.
+Schema-valid provider tools and tool approvals, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Structured output SHALL execute within gateway-structured-output. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family
@@ -153,6 +153,10 @@ Schema-valid provider tools and tool approvals, and raw output SHALL return a st
 #### Scenario: Reasoning continuation is supported
 - **WHEN** a valid assistant reasoning part carries supported scoped continuation options
 - **THEN** the model SHALL receive them without enabling deferred capability families
+
+#### Scenario: Custom content is supported
+- **WHEN** a valid request carries assistant custom history or custom tool-result content
+- **THEN** it SHALL execute within gateway-custom-content without a blanket unsupported-family failure
 
 #### Scenario: Ordinary files no longer trigger blanket rejection
 - **WHEN** a schema-valid unary or streaming request contains only supported text, ordinary files, supported tool history, and permitted message/file options
