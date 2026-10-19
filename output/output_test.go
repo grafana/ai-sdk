@@ -37,7 +37,7 @@ func TestObjectOutput_ResponseFormat(t *testing.T) {
 
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
-	assert.Equal(t, "recipe", rf.Name)
+	assert.Equal(t, new("recipe"), rf.Name)
 	assert.Equal(t, "A recipe", rf.Description)
 	assert.NotNil(t, rf.Schema)
 }
@@ -121,7 +121,7 @@ func TestArrayOutput_ResponseFormat(t *testing.T) {
 
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
-	assert.Equal(t, "cities", rf.Name)
+	assert.Equal(t, new("cities"), rf.Name)
 	assert.Equal(t, "City list", rf.Description)
 
 	var s map[string]any
@@ -201,7 +201,7 @@ func TestChoiceOutput_ResponseFormat(t *testing.T) {
 
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
-	assert.Equal(t, "weather", rf.Name)
+	assert.Equal(t, new("weather"), rf.Name)
 	assert.Equal(t, "Weather choice", rf.Description)
 
 	var s map[string]any
@@ -249,7 +249,7 @@ func TestJSONOutput_ResponseFormat(t *testing.T) {
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
 	assert.Nil(t, rf.Schema)
-	assert.Equal(t, "payload", rf.Name)
+	assert.Equal(t, new("payload"), rf.Name)
 	assert.Equal(t, "Raw JSON payload", rf.Description)
 }
 
@@ -449,5 +449,25 @@ func TestWrappedOutputs_RequestSchemasStayStrict(t *testing.T) {
 			assert.Equal(t, false, s["additionalProperties"], "runtime extraction is permissive, the request is not")
 			assert.Equal(t, []any{tc.required}, s["required"])
 		})
+	}
+}
+
+func TestOutputNamePresence(t *testing.T) {
+	s, err := schema.SchemaFor[recipe]()
+	require.NoError(t, err)
+	for _, name := range []*string{nil, new(""), new("answer")} {
+		var opts []ObjectOption
+		if name != nil {
+			opts = append(opts, WithName(*name))
+		}
+		object, err := Object[recipe](s, opts...)
+		require.NoError(t, err)
+		array, err := Array[recipe](s, opts...)
+		require.NoError(t, err)
+		choice, err := ChoiceWithOptions([]string{"yes", "no"}, opts...)
+		require.NoError(t, err)
+		for _, format := range []*provider.ResponseFormat{object.ResponseFormat(), array.ResponseFormat(), choice.ResponseFormat(), JSON(opts...).ResponseFormat()} {
+			assert.Equal(t, name, format.Name)
+		}
 	}
 }

@@ -852,7 +852,7 @@ func TestBuildRequest_ToolResultMessageCollapsedToUserRole(t *testing.T) {
 	assert.Equal(t, "user", req.Messages[2].Role)
 	require.NotNil(t, req.Messages[2].Content[0].ToolResult)
 	assert.Equal(t, "call-1", req.Messages[2].Content[0].ToolResult.ToolUseID)
-	assert.Equal(t, "Sunny, 22C", req.Messages[2].Content[0].ToolResult.Content[0].Text)
+	assert.Equal(t, new("Sunny, 22C"), req.Messages[2].Content[0].ToolResult.Content[0].Text)
 }
 
 func toolResultFileCallOptions(file provider.ToolResultContentValue) provider.CallOptions {

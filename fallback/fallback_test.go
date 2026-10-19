@@ -453,3 +453,24 @@ func TestUnsupportedFunctionality_Fallback(t *testing.T) {
 		})
 	}
 }
+
+func TestWithAttemptObserver_RequestIsolationAndIndependentPanics(t *testing.T) {
+	model := mustNew(t, &mockModel{providerName: "native", modelID: "model", doGenerate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		return &provider.GenerateResult{}, nil
+	}})
+	model.WithAttemptObserver(func(context.Context, Attempt) { panic("operator observer failure") })
+	for range 2 {
+		var attempts []Attempt
+		ctx := WithAttemptObserver(context.Background(), func(_ context.Context, attempt Attempt) { attempts = append(attempts, attempt) })
+		_, err := model.DoGenerate(ctx, provider.CallOptions{})
+		require.NoError(t, err)
+		require.Len(t, attempts, 1)
+		assert.Equal(t, AttemptSelected, attempts[0].Outcome)
+	}
+	calls := 0
+	model.WithAttemptObserver(func(context.Context, Attempt) { calls++ })
+	ctx := WithAttemptObserver(context.Background(), func(context.Context, Attempt) { panic("consumer observer failure") })
+	_, err := model.DoGenerate(ctx, provider.CallOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+}

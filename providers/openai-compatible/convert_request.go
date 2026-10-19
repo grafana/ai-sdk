@@ -736,8 +736,8 @@ func toolResultOutputString(output *provider.ToolResultOutput) (string, error) {
 	case provider.ToolOutputText, provider.ToolOutputErrorText:
 		return output.Text, nil
 	case provider.ToolOutputExecutionDenied:
-		if output.Reason != "" {
-			return output.Reason, nil
+		if output.Reason != nil {
+			return *output.Reason, nil
 		}
 		return "Tool call execution denied.", nil
 	case provider.ToolOutputJSON, provider.ToolOutputErrorJSON:
@@ -842,9 +842,9 @@ func (m *model) convertResponseFormat(format *provider.ResponseFormat, opts Open
 	if opts.StrictJSONSchema != nil {
 		strict = *opts.StrictJSONSchema
 	}
-	name := format.Name
-	if name == "" {
-		name = "response"
+	name := "response"
+	if format.Name != nil {
+		name = *format.Name
 	}
 	return &responseFormat{
 		Type: "json_schema",

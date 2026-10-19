@@ -642,25 +642,25 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 		ToolUseID: normalizeToolCallID(p.ToolCallID, isMistral),
 	}
 	if p.Output == nil {
-		out.Content = []toolResultContent{{Text: ""}}
+		out.Content = []toolResultContent{{Text: new("")}}
 		return out, nil
 	}
 	switch p.Output.Type {
 	case provider.ToolOutputText, provider.ToolOutputErrorText:
-		out.Content = []toolResultContent{{Text: p.Output.Text}}
+		out.Content = []toolResultContent{{Text: new(p.Output.Text)}}
 	case provider.ToolOutputJSON, provider.ToolOutputErrorJSON:
-		out.Content = []toolResultContent{{Text: string(p.Output.JSON)}}
+		out.Content = []toolResultContent{{Text: new(string(p.Output.JSON))}}
 	case provider.ToolOutputExecutionDenied:
-		reason := p.Output.Reason
-		if reason == "" {
-			reason = "Tool call execution denied."
+		reason := "Tool call execution denied."
+		if p.Output.Reason != nil {
+			reason = *p.Output.Reason
 		}
-		out.Content = []toolResultContent{{Text: reason}}
+		out.Content = []toolResultContent{{Text: new(reason)}}
 	case provider.ToolOutputContent:
 		for _, c := range p.Output.Content {
 			switch c.Type {
 			case provider.ToolContentText:
-				out.Content = append(out.Content, toolResultContent{Text: c.Text})
+				out.Content = append(out.Content, toolResultContent{Text: new(c.Text)})
 			case provider.ToolContentFile:
 				if c.Data == nil {
 					*warnings = append(*warnings, provider.Warning{
@@ -758,7 +758,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 			}
 		}
 		if len(out.Content) == 0 {
-			out.Content = []toolResultContent{{Text: ""}}
+			out.Content = []toolResultContent{{Text: new("")}}
 		}
 	default:
 		*warnings = append(*warnings, provider.Warning{
@@ -766,7 +766,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 			Feature: "toolResultOutputType",
 			Details: fmt.Sprintf("Bedrock tool results do not support %q", p.Output.Type),
 		})
-		out.Content = []toolResultContent{{Text: ""}}
+		out.Content = []toolResultContent{{Text: new("")}}
 	}
 	return out, nil
 }

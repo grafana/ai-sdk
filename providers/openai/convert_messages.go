@@ -305,9 +305,9 @@ func toolResultOutputString(out *provider.ToolResultOutput, encodeTextAsJSON boo
 		}
 		return out.Text
 	case provider.ToolOutputExecutionDenied:
-		reason := out.Reason
-		if reason == "" {
-			reason = "Tool call execution denied."
+		reason := "Tool call execution denied."
+		if out.Reason != nil {
+			reason = *out.Reason
 		}
 		if encodeTextAsJSON {
 			encoded, _ := json.Marshal(reason)

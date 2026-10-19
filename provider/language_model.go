@@ -60,10 +60,12 @@ const (
 )
 
 // ResponseFormat specifies the desired output format (text or JSON).
+// Name nil leaves the native default in effect; a pointer to an empty string
+// explicitly supplies an empty name. Description absence and empty are equivalent.
 type ResponseFormat struct {
 	Type        ResponseFormatType `json:"type"`
 	Schema      json.RawMessage    `json:"schema,omitempty"`
-	Name        string             `json:"name,omitempty"`
+	Name        *string            `json:"name,omitempty"`
 	Description string             `json:"description,omitempty"`
 }
 

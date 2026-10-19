@@ -15,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/grafana/ai-sdk/internal/jsonschema"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -78,8 +79,8 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 		}
 	}
 
-	var schemaMap map[string]any
-	if err := json.Unmarshal(rf.Schema, &schemaMap); err != nil {
+	schemaMap, err := jsonschema.DecodeObject(rf.Schema)
+	if err != nil {
 		return buildResult{
 			warnings: []provider.Warning{{
 				Type:    provider.WarnUnsupported,
@@ -2032,9 +2033,9 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 			{OfText: &anthropic.BetaTextBlockParam{Text: string(output.JSON)}},
 		}
 	case provider.ToolOutputExecutionDenied:
-		reason := output.Reason
-		if reason == "" {
-			reason = "tool execution was denied"
+		reason := "Tool call execution denied."
+		if output.Reason != nil {
+			reason = *output.Reason
 		}
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: reason}},

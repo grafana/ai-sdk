@@ -245,6 +245,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			Type             provider.GenerateContentType `json:"type"`
 			Kind             *string                      `json:"kind"`
 			Text             *string                      `json:"text"`
+			ApprovalID       *string                      `json:"approvalId"`
 			ToolCallID       *string                      `json:"toolCallId"`
 			ToolName         *string                      `json:"toolName"`
 			Input            *string                      `json:"input"`
@@ -265,7 +266,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			return nil, err
 		}
 		switch part.Type {
-		case provider.ContentReasoning, provider.ContentReasoningFile:
+		case provider.ContentReasoning, provider.ContentReasoningFile, provider.ContentFile:
 			mapped := provider.GenerateContentPart{Type: part.Type, ProviderMetadata: metadata}
 			if part.Type == provider.ContentReasoning {
 				if decodeFields(raw, &part, "text") != nil || part.Text == nil {
@@ -283,6 +284,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 				file := provider.Base64DataContent(data.Base64)
 				if data.Type == provider.StreamFileDataTypeURL {
 					file = provider.URLDataContent(data.URL)
+					file.OriginalURL = data.OriginalURL
 				}
 				mapped.Data, mapped.MediaType = &file, *part.MediaType
 			}
@@ -303,6 +305,11 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 				return nil, errors.New("grafana: missing unary text")
 			}
 			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text, ProviderMetadata: metadata})
+		case provider.ContentToolApprovalRequest:
+			if decodeFields(raw, &part, "approvalId", "toolCallId") != nil || part.ApprovalID == nil || *part.ApprovalID == "" || part.ToolCallID == nil || *part.ToolCallID == "" {
+				return nil, errors.New("grafana: invalid approval request")
+			}
+			content = append(content, provider.GenerateContentPart{Type: part.Type, ApprovalID: *part.ApprovalID, ToolCallID: *part.ToolCallID, ProviderMetadata: metadata})
 		case provider.ContentToolCall, provider.ContentToolResult:
 			fields := []string{"toolCallId", "toolName", "dynamic"}
 			if part.Type == provider.ContentToolCall {

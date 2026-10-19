@@ -3,7 +3,6 @@
 Define the production ProviderWire V4 unary text and client-executed function-tool runtime and the observable contract proven against the registered Gateway client.
 
 ## Requirements
-
 ### Requirement: Constructed language-model handler
 
 The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for relative `POST /language-model` unary and streaming requests. Construction SHALL require a non-nil host-owned request selector independent of catalog interfaces and positive limits for request bytes, unary response bytes, provider stream-part count, complete SSE frame bytes, total model duration, stream idle duration, and bounded post-cancellation drain duration.
@@ -141,7 +140,7 @@ A body-carried header whose name belongs to the runtime's own protocol namespace
 
 ### Requirement: Unsupported capability families
 
-Schema-valid provider tools and tool approvals, structured output, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers. Assistant custom history and custom tool-result content SHALL execute within gateway-custom-content.
+Schema-valid provider tools and tool approvals, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Structured output SHALL execute within gateway-structured-output. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers. Assistant custom history and custom tool-result content SHALL execute within gateway-custom-content.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family

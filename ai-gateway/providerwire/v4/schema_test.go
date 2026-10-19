@@ -195,7 +195,6 @@ func TestErrorSchema(t *testing.T) {
 		canonicalInternalError,
 		unsupportedToolsError,
 		unsupportedToolApprovalsError,
-		unsupportedStructuredOutputError,
 		reservedProviderOptionsError,
 		protectedCallHeaderError,
 		unsupportedRawOutputError,

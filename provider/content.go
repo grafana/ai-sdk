@@ -22,6 +22,8 @@ type DataContent struct {
 	Bytes  []byte `json:"bytes,omitempty"`
 	Base64 string `json:"base64,omitempty"`
 	URL    string `json:"url,omitempty"`
+	// OriginalURL preserves the original opaque URI on the URL arm; nil omits it.
+	OriginalURL *string `json:"originalUrl,omitempty"`
 	// Reference carries the upstream `{type:"reference",reference}` variant, an
 	// opaque provider reference object (`{ [provider]: id }`).
 	Reference json.RawMessage `json:"reference,omitempty"`
@@ -114,9 +116,10 @@ func (d DataContent) MarshalJSON() ([]byte, error) {
 		}{Type: "data", Data: data})
 	case d.IsURL():
 		return json.Marshal(struct {
-			Type string `json:"type"`
-			URL  string `json:"url"`
-		}{Type: "url", URL: d.URL})
+			Type        string  `json:"type"`
+			URL         string  `json:"url"`
+			OriginalURL *string `json:"originalUrl,omitempty"`
+		}{Type: "url", URL: d.URL, OriginalURL: d.OriginalURL})
 	case d.IsReference():
 		return json.Marshal(struct {
 			Type      string          `json:"type"`
@@ -158,7 +161,7 @@ func (d *DataContent) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("provider: unsupported file-data variant %q (supported: data, url, reference, text)", variant)
 		}
 		for key := range fields {
-			if key != "type" && key != selectedField {
+			if key != "type" && key != selectedField && (variant != dataContentVariantURL || key != "originalUrl") {
 				return fmt.Errorf("provider: inactive file-data member %q", key)
 			}
 		}
@@ -176,6 +179,11 @@ func (d *DataContent) UnmarshalJSON(data []byte) error {
 				decoded.Bytes = []byte{}
 			}
 		case dataContentVariantURL:
+			if raw, ok := fields["originalUrl"]; ok {
+				if string(raw) == "null" || json.Unmarshal(raw, &decoded.OriginalURL) != nil {
+					return errors.New("provider: invalid originalUrl")
+				}
+			}
 			raw, ok := fields["url"]
 			if !ok || string(raw) == "null" {
 				return errors.New("provider: file-data variant url is required")
@@ -240,6 +248,9 @@ func (d *DataContent) UnmarshalJSON(data []byte) error {
 
 // Validate returns an error if DataContent has no data or multiple data sources set.
 func (d DataContent) Validate() error {
+	if d.OriginalURL != nil && !d.IsURL() {
+		return errors.New("provider: originalUrl requires URL arm")
+	}
 	if d.Bytes != nil && d.Base64 != "" {
 		return errors.New("provider: DataContent has multiple inline data representations")
 	}

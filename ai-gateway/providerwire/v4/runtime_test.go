@@ -365,11 +365,6 @@ func TestRuntimeRequestRejections(t *testing.T) {
 		body string
 		want []byte
 	}{
-		{name: "capability/tool approval", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-approval-response","approvalId":"a","approved":false}]}]}`, want: unsupportedToolApprovalsError},
-		{name: "capability/denied tool output", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"execution-denied","reason":""}}]}]}`, want: unsupportedToolsError},
-		{name: "capability/tool output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"text","value":"","providerOptions":{"p":{"value":true}}}}]}]}`, want: unsupportedProviderOptionsError},
-		{name: "capability/nested text output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"text","text":"","providerOptions":{"p":{"value":true}}}]}}]}]}`, want: unsupportedProviderOptionsError},
-		{name: "capability/structured output", body: `{"prompt":[],"responseFormat":{"type":"json"}}`, want: unsupportedStructuredOutputError},
 		{name: "capability/raw output", body: `{"prompt":[],"includeRawChunks":true}`, want: unsupportedRawOutputError},
 		{name: "policy/reserved provider namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, want: reservedProviderOptionsError},
 		{name: "policy/protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, want: protectedCallHeaderError},
@@ -1804,8 +1799,6 @@ func TestCustomContentRequest_Refusals(t *testing.T) {
 		{"non-object options", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x","providerOptions":{"p":[]}}]}]}`, string(canonicalInvalidRequestError)},
 		{"reserved namespace on custom part", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x","providerOptions":{"gateway":{}}}]}]}`, string(reservedProviderOptionsError)},
 		{"reserved namespace on tool-result custom entry", `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"content","value":[{"type":"custom","providerOptions":{"grafana":{}}}]}}]}]}`, string(reservedProviderOptionsError)},
-		{"approval response options stay uninterpreted", `{"prompt":[{"role":"tool","content":[{"type":"tool-approval-response","approvalId":"a","approved":false,"providerOptions":{"gateway":{}}}]}]}`, string(unsupportedToolApprovalsError)},
-		{"nested options on text entry stay refused", `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"content","value":[{"type":"text","text":"x","providerOptions":{"p":{"a":1}}}]}}]}]}`, string(unsupportedProviderOptionsError)},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
