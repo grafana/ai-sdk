@@ -75,7 +75,7 @@ describe("source and artifact workflow gates", () => {
       assert.ok(next > position, `${command} must run in order`);
       position = next;
     }
-    assert.match(commands("plugin-validation"), /git status --porcelain --untracked-files=all -- ai-gateway\/src\/app-sdk-manifest\.json ai-gateway\/cmd\/grafana-ai-gateway\/internal\/manifestdata/);
+    assert.match(commands("plugin-validation"), /git status --porcelain --untracked-files=all -- ai-gateway\)"/);
     const e2e = steps.find((step) => step.run === "mise run test-ai-gateway-e2e")!;
     assert.match(e2e.env?.GRAFANA_VERSION ?? "", /^nightly@sha256:[0-9a-f]{64}$/);
     const build = steps.find((step) => step.run === "mise run build-ai-gateway-plugin")!;

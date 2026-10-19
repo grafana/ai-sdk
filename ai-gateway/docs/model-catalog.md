@@ -170,7 +170,7 @@ status codes, response envelopes, or another transport's lifecycle.
 
 ## Let users inspect provider choices
 
-The Gateway command lets authenticated clients inspect the providers and models
+The Gateway lets authenticated clients inspect the providers and models
 configured behind a public name without generating a response. For example,
 `balanced` might use an Anthropic model first and an OpenAI model as a fallback.
 Clients still select `balanced` or one of its aliases, not a candidate's model ID.
@@ -189,12 +189,12 @@ and selected; clients should handle missing candidate information. See
 [discovering models from Go and TypeScript](../../docs/providers/grafana-gateway.md#discover-and-select-public-models)
 for client examples.
 
-The command shares its configured model list with all authenticated callers.
+The Gateway shares its configured model list with all authenticated callers.
 Before exposing it, check that those callers may see the provider choices. For
 request-specific visibility, apply the same access rules to listing and resolution
 as described above.
 
-The command validates route configuration at startup, before accepting requests.
+The Gateway validates route configuration at startup, before accepting requests.
 Discovery then returns the complete visible configured catalog; it does not
 revalidate routes or impose a response-size cap. Ensure your clients' read limits
 accommodate the resulting document. Stock TypeScript discovery discards the
