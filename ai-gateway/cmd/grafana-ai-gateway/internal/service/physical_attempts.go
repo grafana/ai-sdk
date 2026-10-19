@@ -3,8 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"io"
+	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
@@ -13,10 +14,9 @@ import (
 
 const (
 	physicalQueueSize        = 256
-	physicalWriteTimeout     = 100 * time.Millisecond
-	physicalShutdownTimeout  = time.Second
 	physicalMaxIdentityBytes = 512
 	physicalMaxRecordBytes   = 4096
+	physicalAttemptMessage   = "gateway physical attempt"
 )
 
 type physicalDropClass string
@@ -41,42 +41,26 @@ type physicalAttemptRecord struct {
 	Winner           bool                    `json:"winner"`
 }
 
-type physicalOutput interface {
-	io.WriteCloser
-	SetWriteDeadline(time.Time) error
-}
-
-// PhysicalAttemptSink owns the private operator output and one bounded queue/worker.
+// PhysicalAttemptSink writes private operator attempt records through the
+// Gateway logger from one bounded queue and worker.
 type PhysicalAttemptSink struct {
-	output          physicalOutput
-	telemetry       *Telemetry
-	queue           chan physicalAttemptRecord
-	done            chan struct{}
-	mu              sync.Mutex
-	closed          bool
-	shutdownAt      time.Time
-	writeTimeout    time.Duration
-	shutdownTimeout time.Duration
+	logger    *slog.Logger
+	telemetry *Telemetry
+	queue     chan physicalAttemptRecord
+	done      chan struct{}
+	mu        sync.Mutex
+	closed    bool
+	abandoned atomic.Bool
 }
 
-// NewPhysicalAttemptSink opens a separate deadline-capable handle to the existing
-// private stderr destination. Failure disables this output without failing calls.
-func NewPhysicalAttemptSink(telemetry *Telemetry) *PhysicalAttemptSink {
-	output, err := openPhysicalOutput()
-	if err != nil {
-		if output != nil {
-			_ = output.Close()
-		}
-		sink := newPhysicalAttemptSink(nil, telemetry, physicalQueueSize, physicalWriteTimeout, physicalShutdownTimeout)
-		sink.drop(physicalDropTransport)
-		return sink
-	}
-	return newPhysicalAttemptSink(output, telemetry, physicalQueueSize, physicalWriteTimeout, physicalShutdownTimeout)
+// NewPhysicalAttemptSink starts the worker. Without a logger, records are dropped.
+func NewPhysicalAttemptSink(logger *slog.Logger, telemetry *Telemetry) *PhysicalAttemptSink {
+	return newPhysicalAttemptSink(logger, telemetry, physicalQueueSize)
 }
 
-func newPhysicalAttemptSink(output physicalOutput, telemetry *Telemetry, capacity int, writeTimeout, shutdownTimeout time.Duration) *PhysicalAttemptSink {
-	sink := &PhysicalAttemptSink{output: output, telemetry: telemetry, queue: make(chan physicalAttemptRecord, capacity), done: make(chan struct{}), writeTimeout: writeTimeout, shutdownTimeout: shutdownTimeout}
-	if output == nil {
+func newPhysicalAttemptSink(logger *slog.Logger, telemetry *Telemetry, capacity int) *PhysicalAttemptSink {
+	sink := &PhysicalAttemptSink{logger: logger, telemetry: telemetry, queue: make(chan physicalAttemptRecord, capacity), done: make(chan struct{})}
+	if logger == nil {
 		sink.closed = true
 		close(sink.queue)
 		close(sink.done)
@@ -103,20 +87,24 @@ func (sink *PhysicalAttemptSink) enqueue(record physicalAttemptRecord) {
 	}
 }
 
-// Close drains until the fixed shutdown deadline and releases the owned output.
-// It is safe to call repeatedly or concurrently with physical observation.
-func (sink *PhysicalAttemptSink) Close() {
+// Close stops accepting records and lets the worker drain the queue until ctx
+// ends, abandoning a worker that is stalled on log output at that point. It is
+// safe to call repeatedly or concurrently with physical observation.
+func (sink *PhysicalAttemptSink) Close(ctx context.Context) {
 	if sink == nil {
 		return
 	}
 	sink.mu.Lock()
 	if !sink.closed {
 		sink.closed = true
-		sink.shutdownAt = time.Now().Add(sink.shutdownTimeout)
 		close(sink.queue)
 	}
 	sink.mu.Unlock()
-	<-sink.done
+	select {
+	case <-sink.done:
+	case <-ctx.Done():
+		sink.abandoned.Store(true)
+	}
 }
 
 func (sink *PhysicalAttemptSink) run() {
@@ -134,39 +122,32 @@ func (sink *PhysicalAttemptSink) run() {
 		for range sink.queue {
 			sink.drop(physicalDropShutdown)
 		}
-		_ = sink.output.Close()
 	}()
 	for record := range sink.queue {
-		deadline := time.Now().Add(sink.writeTimeout)
-		sink.mu.Lock()
-		shutdownAt := sink.shutdownAt
-		sink.mu.Unlock()
-		if !shutdownAt.IsZero() {
-			if !time.Now().Before(shutdownAt) {
-				sink.drop(physicalDropShutdown)
-				return
-			}
-			if shutdownAt.Before(deadline) {
-				deadline = shutdownAt
-			}
+		if sink.abandoned.Load() {
+			sink.drop(physicalDropShutdown)
+			continue
 		}
-		encoded, err := json.Marshal(struct {
-			Event string `json:"event"`
-			physicalAttemptRecord
-		}{Event: "gateway_physical_attempt", physicalAttemptRecord: record})
-		if err != nil || len(encoded)+1 > physicalMaxRecordBytes {
+		encoded, err := json.Marshal(record)
+		if err != nil || len(encoded) > physicalMaxRecordBytes {
 			sink.drop(physicalDropProjection)
 			continue
 		}
-		encoded = append(encoded, '\n')
-		if err := sink.output.SetWriteDeadline(deadline); err != nil {
-			sink.drop(physicalDropTransport)
-			continue
+		attrs := []slog.Attr{slog.String("event", "gateway_physical_attempt")}
+		if record.CorrelationID != "" {
+			attrs = append(attrs, slog.String("correlation_id", record.CorrelationID))
 		}
-		n, err := sink.output.Write(encoded)
-		if err != nil || n != len(encoded) {
-			sink.drop(physicalDropTransport)
-		}
+		attrs = append(attrs,
+			slog.Int("candidate_index", record.CandidateIndex),
+			slog.String("provider_instance", record.ProviderInstance),
+			slog.String("backend_model_id", record.BackendModelID),
+			slog.Time("started_at", record.StartedAt),
+			slog.Time("decided_at", record.DecidedAt),
+			slog.String("outcome", string(record.Outcome)),
+			slog.Bool("will_fallback", record.WillFallback),
+			slog.Bool("winner", record.Winner),
+		)
+		sink.logger.LogAttrs(context.Background(), slog.LevelInfo, physicalAttemptMessage, attrs...)
 	}
 }
 

@@ -2,12 +2,14 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -51,7 +53,7 @@ func (e *startupEnvironment) start(t *testing.T) (*Gateway, string, error) {
 	var logs bytes.Buffer
 	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry()})
 	if gw != nil {
-		t.Cleanup(gw.Close)
+		t.Cleanup(func() { gw.Close(context.Background()) })
 	}
 	return gw, logs.String(), err
 }
@@ -219,4 +221,24 @@ func TestNew_EnvironmentOnlyStartup(t *testing.T) {
 		})
 	}
 	assert.Zero(t, providerCalls)
+}
+
+func TestNew_ProductionExportWithDefaultTimeoutsClosesWithinTheBudget(t *testing.T) {
+	unsetAmbientAgentObservabilityEnvironment(t)
+	env := newStartupEnvironment(t, "https://provider.example")
+	for name, value := range map[string]string{
+		"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
+		"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.invalid:4317",
+		"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
+		"AO_SECRET": "agent-secret-value",
+	} {
+		env.values[name] = value
+	}
+	gw, _, err := env.start(t)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), FinalFlushBudget)
+	defer cancel()
+	started := time.Now()
+	gw.Close(ctx)
+	assert.Less(t, time.Since(started), FinalFlushBudget+500*time.Millisecond)
 }

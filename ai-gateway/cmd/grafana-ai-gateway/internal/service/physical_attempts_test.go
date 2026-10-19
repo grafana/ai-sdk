@@ -9,15 +9,18 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
+
+	backendlog "github.com/grafana/grafana-plugin-sdk-go/backend/log"
+
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/pluginlog"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -25,17 +28,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type physicalBuffer struct{ lockedBuffer }
+type hclogAdapter struct{ logger hclog.Logger }
 
-func (*physicalBuffer) SetWriteDeadline(time.Time) error { return nil }
-func (*physicalBuffer) Close() error                     { return nil }
+func (a hclogAdapter) Debug(msg string, args ...any) { a.logger.Debug(msg, args...) }
+func (a hclogAdapter) Info(msg string, args ...any)  { a.logger.Info(msg, args...) }
+func (a hclogAdapter) Warn(msg string, args ...any)  { a.logger.Warn(msg, args...) }
+func (a hclogAdapter) Error(msg string, args ...any) { a.logger.Error(msg, args...) }
+func (a hclogAdapter) With(args ...any) backendlog.Logger {
+	return hclogAdapter{logger: a.logger.With(args...)}
+}
+func (a hclogAdapter) Level() backendlog.Level                       { return backendlog.Info }
+func (a hclogAdapter) FromContext(context.Context) backendlog.Logger { return a }
+
+func hclogLogger(output io.Writer) *slog.Logger {
+	return slog.New(pluginlog.NewHandler(hclogAdapter{logger: hclog.New(&hclog.LoggerOptions{Output: output, JSONFormat: true, Level: hclog.Info})}, slog.LevelInfo))
+}
 
 func TestPhysicalAttempts_AllowlistedProjectionAndImmutableIdentity(t *testing.T) {
-	var output physicalBuffer
+	var output lockedBuffer
 	var logs lockedBuffer
 	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(&logs, nil)))
 	require.NoError(t, err)
-	sink := newPhysicalAttemptSink(&output, telemetry, 8, time.Second, time.Second)
+	sink := newPhysicalAttemptSink(hclogLogger(&output), telemetry, 8)
 	descriptors := []config.Primary{{Provider: "primary-instance", Model: "backend-primary"}, {Provider: "secondary-instance", Model: "backend-secondary"}}
 	observer := physicalAttemptObserver(descriptors, sink)
 	descriptors[0].Provider = "mutated"
@@ -50,7 +64,7 @@ func TestPhysicalAttempts_AllowlistedProjectionAndImmutableIdentity(t *testing.T
 	observer(ctx, attempt)
 	attempt.Index, attempt.Outcome = 2, "private-outcome"
 	observer(ctx, attempt)
-	sink.Close()
+	sink.Close(context.Background())
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
 	require.Len(t, lines, 3)
 	var records []physicalAttemptRecord
@@ -59,6 +73,8 @@ func TestPhysicalAttempts_AllowlistedProjectionAndImmutableIdentity(t *testing.T
 		require.NoError(t, json.Unmarshal([]byte(line), &record))
 		records = append(records, record)
 		assert.Contains(t, line, `"event":"gateway_physical_attempt"`)
+		assert.Contains(t, line, `"@level":"info"`)
+		assert.Contains(t, line, `"@message":"gateway physical attempt"`)
 	}
 	assert.Equal(t, "primary-instance", records[0].ProviderInstance)
 	assert.Equal(t, "backend-secondary", records[1].BackendModelID)
@@ -67,6 +83,7 @@ func TestPhysicalAttempts_AllowlistedProjectionAndImmutableIdentity(t *testing.T
 	assert.Empty(t, records[2].CorrelationID)
 	assert.True(t, records[0].WillFallback)
 	assert.True(t, records[1].Winner)
+	assert.False(t, records[0].StartedAt.IsZero())
 	for _, secret := range []string{"private-caller", "private-namespace", "secret.example", "private-header", "private-key", "private-body", "private-raw-error", "private-outcome", "mutated"} {
 		assert.NotContains(t, output.String()+logs.String()+testMetrics(t, telemetry), secret)
 	}
@@ -74,75 +91,63 @@ func TestPhysicalAttempts_AllowlistedProjectionAndImmutableIdentity(t *testing.T
 	assert.Empty(t, logs.String())
 }
 
-func TestPhysicalAttempts_BoundedSaturationShutdownAndConcurrentClose(t *testing.T) {
+func TestPhysicalAttempts_StalledOutputSaturationAndClose(t *testing.T) {
 	writer, reader := net.Pipe()
-	defer func() { _ = reader.Close() }()
 	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	require.NoError(t, err)
-	sink := newPhysicalAttemptSink(writer, telemetry, 2, 20*time.Millisecond, 30*time.Millisecond)
+	sink := newPhysicalAttemptSink(hclogLogger(writer), telemetry, 2)
 	started := time.Now()
 	for range 10000 {
-		sink.enqueue(physicalAttemptRecord{})
+		sink.enqueue(physicalAttemptRecord{ProviderInstance: "primary", BackendModelID: "model"})
 	}
 	assert.Less(t, time.Since(started), time.Second)
-	var work sync.WaitGroup
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	var closing sync.WaitGroup
 	for range 20 {
-		work.Add(1)
-		go func() { defer work.Done(); sink.enqueue(physicalAttemptRecord{}); sink.Close() }()
+		closing.Go(func() {
+			sink.enqueue(physicalAttemptRecord{})
+			sink.Close(ctx)
+		})
 	}
-	work.Wait()
+	closing.Wait()
 	assert.Less(t, time.Since(started), time.Second)
 	select {
 	case <-sink.done:
+		t.Fatal("the stalled worker should have been abandoned, not drained")
 	default:
-		t.Fatal("worker survived shutdown")
+	}
+
+	require.NoError(t, reader.Close())
+	select {
+	case <-sink.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("abandoned worker did not stop after its output failed")
 	}
 	metrics := testMetrics(t, telemetry)
 	assert.Contains(t, metrics, `class="queue_full"`)
-	assert.Contains(t, metrics, `class="transport"`)
 	assert.Contains(t, metrics, `class="shutdown"`)
 }
 
-func TestPhysicalAttempts_RealPipeWriteDeadline(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("production FIFO output is Linux-only; portable worker bounds use net.Pipe")
-	}
-	reader, writer, err := os.Pipe()
-	require.NoError(t, err)
-	defer func() { _ = reader.Close() }()
-	require.NoError(t, writer.SetWriteDeadline(time.Now().Add(10*time.Millisecond)))
-	_, err = writer.Write(make([]byte, 4<<20))
-	require.Error(t, err)
-	sink := newPhysicalAttemptSink(writer, nil, 2, 10*time.Millisecond, 20*time.Millisecond)
-	for range 3 {
-		sink.enqueue(physicalAttemptRecord{})
-	}
-	started := time.Now()
-	sink.Close()
-	assert.Less(t, time.Since(started), time.Second)
-	_, err = writer.Write([]byte("closed"))
-	require.ErrorIs(t, err, os.ErrClosed)
-}
+type panicHandler struct{ slog.Handler }
 
-type panicPhysicalOutput struct{}
-
-func (panicPhysicalOutput) SetWriteDeadline(time.Time) error { return nil }
-func (panicPhysicalOutput) Write([]byte) (int, error)        { panic("private-panic") }
-func (panicPhysicalOutput) Close() error                     { return nil }
+func (panicHandler) Enabled(context.Context, slog.Level) bool  { return true }
+func (panicHandler) Handle(context.Context, slog.Record) error { panic("private-panic") }
 
 func TestPhysicalAttempts_WorkerPanicAndUnavailableOutputFailOpen(t *testing.T) {
 	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	require.NoError(t, err)
-	sink := newPhysicalAttemptSink(panicPhysicalOutput{}, telemetry, 2, time.Second, time.Second)
+	sink := newPhysicalAttemptSink(slog.New(panicHandler{}), telemetry, 2)
 	sink.enqueue(physicalAttemptRecord{})
-	sink.Close()
+	sink.Close(context.Background())
 	assert.Contains(t, testMetrics(t, telemetry), `physical_attempt_dropped_total{class="worker"} 1`)
-	disabled := newPhysicalAttemptSink(nil, telemetry, 2, time.Second, time.Second)
+	disabled := newPhysicalAttemptSink(nil, telemetry, 2)
 	disabled.enqueue(physicalAttemptRecord{})
-	disabled.Close()
+	disabled.Close(context.Background())
 	var absent *PhysicalAttemptSink
 	absent.enqueue(physicalAttemptRecord{})
-	absent.Close()
+	absent.Close(context.Background())
 }
 
 func TestPhysicalAttempts_SaturationDoesNotSuppressConsumerEvidence(t *testing.T) {
@@ -150,8 +155,12 @@ func TestPhysicalAttempts_SaturationDoesNotSuppressConsumerEvidence(t *testing.T
 	defer func() { _ = reader.Close() }()
 	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	require.NoError(t, err)
-	sink := newPhysicalAttemptSink(writer, telemetry, 1, time.Second, 20*time.Millisecond)
-	defer sink.Close()
+	sink := newPhysicalAttemptSink(hclogLogger(writer), telemetry, 1)
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		sink.Close(ctx)
+	}()
 	for range 10000 {
 		sink.enqueue(physicalAttemptRecord{})
 	}

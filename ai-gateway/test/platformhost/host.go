@@ -3,6 +3,7 @@ package platformhost
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/grafana/authlib/authn"
 	"github.com/grafana/authlib/types"
+	"go.opentelemetry.io/otel/propagation"
 
 	clientv3 "github.com/grafana/grafana-app-sdk/plugin/client/v3"
 	"github.com/grafana/grafana-app-sdk/plugin/httpadapter"
@@ -65,6 +67,7 @@ type Host struct {
 	mu              sync.Mutex
 	serviceAccounts map[string]session
 	sessions        map[string]session
+	accessPolicies  map[string]string
 }
 
 // New returns a host for config.
@@ -79,7 +82,7 @@ func New(config Config) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Host{config: config, signer: s, serviceAccounts: map[string]session{}, sessions: map[string]session{}}, nil
+	return &Host{config: config, signer: s, serviceAccounts: map[string]session{}, sessions: map[string]session{}, accessPolicies: map[string]string{}}, nil
 }
 
 // Config returns the host configuration.
@@ -128,6 +131,57 @@ func (h *Host) AddServiceAccount(uid, namespace string) string {
 	defer h.mu.Unlock()
 	h.serviceAccounts[token] = session{identityType: types.TypeServiceAccount, uid: uid, namespace: namespace}
 	return token
+}
+
+// RegisterServiceAccount registers a Grafana service account under a fixed token.
+func (h *Host) RegisterServiceAccount(token, uid, namespace string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.serviceAccounts[token] = session{identityType: types.TypeServiceAccount, uid: uid, namespace: namespace}
+}
+
+// AddAccessPolicy registers an access policy token for an internal service
+// and returns the token the service presents to TokenExchangeHandler.
+func (h *Host) AddAccessPolicy(service string) string {
+	token := randomSecret()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.accessPolicies[token] = service
+	return token
+}
+
+// TokenExchangeHandler serves the platform token exchange for access policy
+// tokens from AddAccessPolicy: it signs an access token for the service, or
+// an on-behalf-of token when the request carries a subject token.
+func (h *Host) TokenExchangeHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		policy, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		h.mu.Lock()
+		service, known := h.accessPolicies[policy]
+		h.mu.Unlock()
+		if r.Method != http.MethodPost || !ok || !known {
+			http.Error(w, `{"status":"error"}`, http.StatusUnauthorized)
+			return
+		}
+		var request authn.TokenExchangeRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Namespace == "" {
+			http.Error(w, `{"status":"error"}`, http.StatusBadRequest)
+			return
+		}
+		var token string
+		var err error
+		if request.SubjectToken == "" {
+			token, err = h.signer.accessToken(typedUID(types.TypeAccessPolicy, service), request.Audiences, authn.AccessTokenClaims{Namespace: request.Namespace, ServiceIdentity: service})
+		} else {
+			token, err = h.Exchange(r.Context(), service, request)
+		}
+		if err != nil {
+			http.Error(w, `{"status":"error"}`, http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]string{"token": token}})
+	})
 }
 
 // AddSession registers a signed-in Grafana identity, such as a user or an
@@ -186,7 +240,8 @@ func (h *Host) Handler(client clientv3.RouteClient) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		ctx := httpadapter.WithRouteInfo(types.WithAuthInfo(r.Context(), caller), info)
+		ctx := propagation.TraceContext{}.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		ctx = httpadapter.WithRouteInfo(types.WithAuthInfo(ctx, caller), info)
 		forward(w, r.WithContext(ctx))
 	})
 }

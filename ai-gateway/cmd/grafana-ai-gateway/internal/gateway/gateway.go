@@ -3,10 +3,13 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/grafana/authlib/authn"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,6 +30,9 @@ import (
 // delegated tokens to it, so every build must identify as it.
 const PluginID = "grafana-aigateway-app"
 
+// FinalFlushBudget bounds the telemetry flush after the plugin host stops the plugin.
+const FinalFlushBudget = time.Second
+
 // EnvInsecureSkipAuthentication names the plugin host setting for local
 // development without platform signing keys.
 const EnvInsecureSkipAuthentication = "GF_PLUGIN_INSECURE_SKIP_AUTHENTICATION"
@@ -42,7 +48,7 @@ type Options struct {
 type Gateway struct {
 	handler       http.Handler
 	authenticator authn.Authenticator
-	close         func()
+	close         func(context.Context)
 }
 
 // New validates settings and constructs every Gateway dependency before any
@@ -108,15 +114,22 @@ func New(options Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	physicalSink := service.NewPhysicalAttemptSink(options.Logger, telemetry)
+	closeSinks := func(ctx context.Context) {
+		var closing sync.WaitGroup
+		closing.Go(func() { physicalSink.Close(ctx) })
+		closing.Go(func() { agentRuntime.Close(ctx) })
+		closing.Wait()
+	}
+	closeAll := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), FinalFlushBudget)
+		defer cancel()
+		closeSinks(ctx)
+	}
 	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(telemetry, options.Logger, agentRuntime, settings.ProviderWire.StreamDrainDuration)
 	if err != nil {
-		agentRuntime.Close()
+		closeAll()
 		return nil, err
-	}
-	physicalSink := service.NewPhysicalAttemptSink(telemetry)
-	closeAll := func() {
-		physicalSink.Close()
-		agentRuntime.Close()
 	}
 	modelCatalog, err := service.BuildCatalog(file, resolvedProviders, nativeClient, modelFactory, physicalSink)
 	if err != nil {
@@ -145,7 +158,7 @@ func New(options Options) (*Gateway, error) {
 	return &Gateway{
 		handler:       newHandler(settings.Access, telemetry, errorWriter, routes),
 		authenticator: authenticator,
-		close:         closeAll,
+		close:         closeSinks,
 	}, nil
 }
 
@@ -182,5 +195,6 @@ func (g *Gateway) Provider() app.Provider {
 	})
 }
 
-// Close releases telemetry exporters and workers.
-func (g *Gateway) Close() { g.close() }
+// Close flushes Agent Observability and attempt records concurrently until
+// ctx ends, then releases them. Later records are dropped and counted.
+func (g *Gateway) Close(ctx context.Context) { g.close(ctx) }

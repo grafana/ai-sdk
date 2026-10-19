@@ -99,9 +99,11 @@ func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, lo
 	return runtime, nil
 }
 
-// Close performs independent bounded flush and shutdown attempts. It never
-// returns raw SDK errors to process logging.
-func (runtime *AgentObservabilityRuntime) Close() {
+// Close waits for in-flight recordings, flushes and shuts the client down.
+// Each step ends at ctx's deadline or its configured timeout, whichever is
+// first, and later recordings are dropped. It never returns raw SDK errors to
+// process logging.
+func (runtime *AgentObservabilityRuntime) Close(ctx context.Context) {
 	if runtime == nil || runtime.client == nil {
 		return
 	}
@@ -109,15 +111,17 @@ func (runtime *AgentObservabilityRuntime) Close() {
 		runtime.mu.Lock()
 		runtime.closing = true
 		runtime.mu.Unlock()
-		if !runtime.waitForRecordings(runtime.flushTimeout) {
+		waitCtx, cancelWait := context.WithTimeout(ctx, runtime.flushTimeout)
+		if !runtime.waitForRecordings(waitCtx) {
 			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		}
-		flushCtx, cancelFlush := context.WithTimeout(context.Background(), runtime.flushTimeout)
+		cancelWait()
+		flushCtx, cancelFlush := context.WithTimeout(ctx, runtime.flushTimeout)
 		if err := runtime.client.Flush(flushCtx); err != nil {
 			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		}
 		cancelFlush()
-		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), runtime.shutdownTimeout)
+		shutdownCtx, cancelShutdown := context.WithTimeout(ctx, runtime.shutdownTimeout)
 		if err := runtime.client.Shutdown(shutdownCtx); err != nil {
 			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		}
@@ -131,7 +135,11 @@ func (runtime *AgentObservabilityRuntime) acquireClient(context.Context) *agento
 	}
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
-	if runtime.closing || runtime.client == nil {
+	if runtime.client == nil {
+		return nil
+	}
+	if runtime.closing {
+		runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		return nil
 	}
 	runtime.recordings.Add(1)
@@ -142,18 +150,16 @@ func (runtime *AgentObservabilityRuntime) recordingComplete() {
 	runtime.recordings.Done()
 }
 
-func (runtime *AgentObservabilityRuntime) waitForRecordings(timeout time.Duration) bool {
+func (runtime *AgentObservabilityRuntime) waitForRecordings(ctx context.Context) bool {
 	done := make(chan struct{})
 	go func() {
 		runtime.recordings.Wait()
 		close(done)
 	}()
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
 	select {
 	case <-done:
 		return true
-	case <-timer.C:
+	case <-ctx.Done():
 		return false
 	}
 }

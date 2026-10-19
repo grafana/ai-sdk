@@ -75,7 +75,7 @@ func TestAgentObservabilityRuntime_ExportAttemptTimeout(t *testing.T) {
 				FlushTimeout: time.Second, ShutdownTimeout: time.Second,
 			}, func(name string) (string, bool) { return "private-secret", name == "AO_SECRET" }, telemetry)
 			require.NoError(t, err)
-			t.Cleanup(runtime.Close)
+			t.Cleanup(func() { runtime.Close(context.Background()) })
 			t.Setenv("AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES", "true")
 			require.ErrorIs(t, runtime.client.RequireExperimental("test"), agento11y.ErrExperimentalFeatureDisabled)
 			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, time.Millisecond)

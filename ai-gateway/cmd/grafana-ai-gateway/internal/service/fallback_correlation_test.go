@@ -23,14 +23,14 @@ import (
 func TestFallbackRoute_ConcurrentMappedObservation(t *testing.T) {
 	const count = 12
 	var logs lockedBuffer
-	var output physicalBuffer
+	var output lockedBuffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, nil, 10*time.Millisecond)
 	require.NoError(t, err)
-	sink := newPhysicalAttemptSink(&output, telemetry, count*2, time.Second, time.Second)
-	defer sink.Close()
+	sink := newPhysicalAttemptSink(hclogLogger(&output), telemetry, count*2)
+	defer sink.Close(context.Background())
 	created, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 		invoke := func(ctx context.Context, opts provider.CallOptions) error {
 			marker := opts.Headers["x-request"]
@@ -89,7 +89,7 @@ func TestFallbackRoute_ConcurrentMappedObservation(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	sink.Close()
+	sink.Close(context.Background())
 	for _, mode := range []string{"generate", "stream"} {
 		assert.Equal(t, count/2, countModelLogEvent(t, logs.String(), "aisdk.model."+mode+".start"))
 		assert.Equal(t, count/2, countModelLogEvent(t, logs.String(), "aisdk.model."+mode+".finish"))
@@ -117,15 +117,15 @@ func TestFallbackRoute_OneLogicalGenerationJoinsPhysicalDecisions(t *testing.T) 
 		cfg.Hooks = agento11y.HooksConfig{Enabled: false}
 	})
 	var logs lockedBuffer
-	var output physicalBuffer
+	var output lockedBuffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
-	sink := newPhysicalAttemptSink(&output, telemetry, 8, time.Second, time.Second)
-	defer sink.Close()
+	sink := newPhysicalAttemptSink(hclogLogger(&output), telemetry, 8)
+	defer sink.Close(context.Background())
 	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 		return &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 			if id == "backend-primary" {
@@ -142,7 +142,7 @@ func TestFallbackRoute_OneLogicalGenerationJoinsPhysicalDecisions(t *testing.T) 
 	ctx := context.WithValue(context.Background(), telemetryStateKey{}, state)
 	_, err = model.Model.DoGenerate(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("private-prompt")}})
 	require.NoError(t, err)
-	sink.Close()
+	sink.Close(context.Background())
 	env.Shutdown(t)
 	generation := env.SingleGenerationJSON(t)
 	metadata, ok := generation["metadata"].(map[string]any)

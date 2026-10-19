@@ -98,7 +98,7 @@ func TestBYOKObservability_LogicalExportAndCredentialPrivacy(t *testing.T) {
 					assert.Equal(t, http.StatusOK, response.Code)
 					assert.Equal(t, []string{"dummy-first", "dummy-second"}, keys)
 				}
-				runtime.Close()
+				runtime.Close(context.Background())
 				generation := env.SingleGenerationJSON(t)
 				assert.Equal(t, "anthropic", testkit.StringValue(t, generation, "model", "provider"))
 				assert.Equal(t, requestID, testkit.StringValue(t, generation, "model", "name"))
@@ -133,7 +133,7 @@ func TestNewAgentObservabilityRuntime_DisabledDoesNotResolveSecret(t *testing.T)
 	require.NotNil(t, runtime)
 	assert.Nil(t, runtime.client)
 	assert.Zero(t, calls)
-	runtime.Close()
+	runtime.Close(context.Background())
 }
 
 func TestAgentObservabilityRuntime_CloseWaitsForAcquiredRecordings(t *testing.T) {
@@ -150,7 +150,7 @@ func TestAgentObservabilityRuntime_CloseWaitsForAcquiredRecordings(t *testing.T)
 	require.Same(t, env.Client, runtime.acquireClient(context.Background()))
 	closed := make(chan struct{})
 	go func() {
-		runtime.Close()
+		runtime.Close(context.Background())
 		close(closed)
 	}()
 	require.Eventually(t, func() bool {
@@ -191,9 +191,31 @@ func TestAgentObservabilityRuntime_CloseBoundsRecordingWait(t *testing.T) {
 	}
 	require.Same(t, env.Client, runtime.acquireClient(context.Background()))
 	started := time.Now()
-	runtime.Close()
+	runtime.Close(context.Background())
 	assert.Less(t, time.Since(started), time.Second)
 	assert.Contains(t, logs.String(), `"class":"shutdown"`)
+	runtime.recordingComplete()
+}
+
+func TestAgentObservabilityRuntime_CloseEndsAtTheSharedDeadline(t *testing.T) {
+	env := testkit.NewEnv(t)
+	var logs lockedBuffer
+	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(&logs, nil)))
+	require.NoError(t, err)
+	runtime := &AgentObservabilityRuntime{
+		client:          env.Client,
+		telemetry:       telemetry,
+		flushTimeout:    5 * time.Second,
+		shutdownTimeout: 5 * time.Second,
+	}
+	require.Same(t, env.Client, runtime.acquireClient(context.Background()))
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	runtime.Close(ctx)
+	assert.Less(t, time.Since(started), time.Second)
+	assert.Nil(t, runtime.acquireClient(context.Background()))
+	assert.Contains(t, testMetrics(t, telemetry), `grafana_ai_gateway_agento11y_export_failures_total{class="shutdown"}`)
 	runtime.recordingComplete()
 }
 
@@ -222,7 +244,7 @@ func TestAgentObservabilityRuntime_ConcurrentAcquireAndClose(t *testing.T) {
 	closed := make(chan struct{})
 	go func() {
 		<-start
-		runtime.Close()
+		runtime.Close(context.Background())
 		close(closed)
 	}()
 	close(start)
@@ -263,7 +285,7 @@ func TestNewModelObservabilityFactory_CloseWaitsForAbandonedStreamRecording(t *t
 	cancel()
 	closed := make(chan struct{})
 	go func() {
-		runtime.Close()
+		runtime.Close(context.Background())
 		close(closed)
 	}()
 	select {
@@ -392,7 +414,7 @@ func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayl
 	require.NoError(t, err)
 	_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("prompt-private")}})
 	require.NoError(t, err)
-	runtime.Close()
+	runtime.Close(context.Background())
 	assert.Equal(t, 1, secretCalls)
 	request := <-captured
 	assert.Equal(t, "Bearer agent-secret", request.authorization)
@@ -451,7 +473,7 @@ func TestNewAgentObservabilityRuntime_RejectedHTTPBatchIsOneFailOpenFailure(t *t
 		return "agent-secret", name == "AO_SECRET"
 	}, telemetry)
 	require.NoError(t, err)
-	defer runtime.Close()
+	defer runtime.Close(context.Background())
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	expected := &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "model-private"}}}
