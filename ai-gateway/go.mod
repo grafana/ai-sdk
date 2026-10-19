@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/anthropics/anthropic-sdk-go v1.80.0
-	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/grafana/agento11y/go v0.18.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260928202004-dd43c6dff058
@@ -51,7 +51,7 @@ require (
 	github.com/pb33f/go-yaml v0.1.1 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.2 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
-	github.com/prometheus/common v0.72.0 // indirect
+	github.com/prometheus/common v0.72.1 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/tidwall/gjson v1.20.0 // indirect
