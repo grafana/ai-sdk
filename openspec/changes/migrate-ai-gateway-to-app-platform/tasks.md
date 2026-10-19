@@ -159,14 +159,14 @@
 
 ## 7. Packaging, CI and release
 
-- [ ] 7.1 Make `build-ai-gateway-plugin` package:
+- [x] 7.1 Make `build-ai-gateway-plugin` package:
   - the AGPL `LICENSE` and `NOTICE` and the Apache SDK license;
   - a per-platform Go module inventory with each module's license and notice files, ported from the Dockerfile;
   - frontend dependency licenses;
   - source-revision attribution, marking local builds as unverified development builds.
 
   Verify that a local build contains them and that a CI-style build records the commit SHA.
-- [ ] 7.2 Extend `test/module-policy.sh`'s candidate-source overlay check to the mage-built plugin backend, and add a `validate-ai-gateway-plugin` mise task running the pinned plugin validator on the package. Verify that `mise run test-module-policy` and `mise run validate-ai-gateway-plugin` pass.
+- [x] 7.2 Extend `test/module-policy.sh`'s candidate-source overlay check to the mage-built plugin backend, and add a `validate-ai-gateway-plugin` mise task running the pinned plugin validator on the package. Verify that `mise run test-module-policy` and `mise run validate-ai-gateway-plugin` pass.
 - [ ] 7.3 Replace the `ci.yml` image validation, publish and deploy jobs with plugin validation jobs on pull requests and eligible pushes:
   - plugin build;
   - manifest regeneration diff;
