@@ -137,11 +137,11 @@ func contentPartToStreamPart(part provider.GenerateContentPart) provider.StreamP
 		if part.Data != nil {
 			switch {
 			case part.Data.Bytes != nil:
-				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: part.Data.Bytes}
+				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: part.Data.Bytes, OriginalURL: part.Data.OriginalURL}
 			case part.Data.Base64 != "":
-				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: part.Data.Base64}
-			case part.Data.URL != "":
-				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: part.Data.URL}
+				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: part.Data.Base64, OriginalURL: part.Data.OriginalURL}
+			case part.Data.IsURL():
+				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: part.Data.URL, OriginalURL: part.Data.OriginalURL}
 			}
 		}
 	}

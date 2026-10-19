@@ -43,6 +43,14 @@ by `parity-apply`; `parity-upgrade` also refreshes the lockfile and generated
 provider expectations. Baseline validation checks consumer pins and reviewed
 Gateway evidence for drift.
 
+Renovate must not update baseline-managed AI SDK packages. Keep every package name
+in `upstream.yaml` explicitly listed in the root `renovate.json` `ignoreDeps` array;
+baseline validation enforces this. Exact exclusions are needed because Grafana's
+self-hosted `force.enabled` setting overrides disabling package rules, and
+`ignoreDeps` does not support wildcards. The parity-upgrade workflow owns these
+version changes. Exclusions do not freeze transitive lockfile resolution, so review
+lockfile changes and run parity checks for other dependency updates too.
+
 In guides and fixture documentation, link to the registered baseline or consumer
 manifest instead of spelling out current package versions. Test assertions and
 installation commands should derive exact versions from those validated manifests,
@@ -73,7 +81,7 @@ changed expectations without modifying provider input provenance.
 | `mise run test-integration` | Covered frontend hook and stream interactions | Lower-level schema acceptance alone does not prove hook lifecycle behavior |
 | ProviderWire/Gateway contract and runtime tests | Covered mapping, client consumption, service lifecycle and privacy | Verify the actual dependency versions and runtime exercised |
 | `mise run verify-module-resolution` | Tests against published Go dependencies outside the workspace | Does not decide good PR boundaries or replace workspace/integration tests |
-| `mise run validate-parity-baseline` | Consumer-pin consistency, verification-date validity and reviewed Gateway witness consistency | Metadata consistency is not semantic review |
+| `mise run validate-parity-baseline` | Consumer-pin consistency, Renovate exclusions, verification-date validity and reviewed Gateway witness consistency | Metadata consistency is not semantic review |
 
 Use request snapshots for provider conversion, UI/output snapshots for orchestration,
 and hook scenarios for frontend behavior. For unsupported fixture inputs, use focused

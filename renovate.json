@@ -14,6 +14,17 @@
       "github>grafana/grafana-renovate-config//presets/npm",
       ":preserveSemverRanges"
     ],
+    "ignoreDeps": [
+      "ai",
+      "@ai-sdk/amazon-bedrock",
+      "@ai-sdk/anthropic",
+      "@ai-sdk/gateway",
+      "@ai-sdk/openai",
+      "@ai-sdk/openai-compatible",
+      "@ai-sdk/provider",
+      "@ai-sdk/provider-utils",
+      "@ai-sdk/react"
+    ],
     "prConcurrentLimit": 10,
     "minimumReleaseAge": "14 days",
     "rebaseWhen": "behind-base-branch",

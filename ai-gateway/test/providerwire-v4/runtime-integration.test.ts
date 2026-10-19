@@ -281,6 +281,31 @@ describe("opaque native options through the production handler", () => {
   });
 });
 
+describe("synthetic generated media through the authenticated real handler", () => {
+  it("preserves files in both registered clients and strict raw schemas", async () => {
+    const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })("generated-files");
+    const config = { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "generated-files", options: { prompt: [] } };
+    const first = await client.doGenerate({ prompt: [] });
+    const goFirst = await captureGoClient(goClientBinary, { ...config, mode: "generate" });
+    assert.equal(goFirst.error, undefined);
+    const content = goFirst.result.content.map((part: any, i: number) => goFirst.contentMetadata[i] === null ? part : { ...part, providerMetadata: goFirst.contentMetadata[i] });
+    assert.deepEqual(content, first.content);
+    assert.deepEqual(first.content.map((part: any) => part.data), [
+      { type: "data", data: "" }, { type: "data", data: "AQID" },
+      { type: "url", url: "opaque:generated", originalUrl: "opaque:Original?token=application" },
+    ]);
+    assert.equal(validateUnarySuccess(first.response!.body), true, JSON.stringify(validateUnarySuccess.errors));
+    const streamed = await client.doStream({ prompt: [] });
+    const parts = await collect(streamed.stream);
+    const goStream = await captureGoClient(goClientBinary, { ...config, mode: "stream" });
+    assert.equal(goStream.error, undefined);
+    const goParts = goStream.parts.map((part: any, i: number) => goStream.partMetadata[i] === null ? part : { ...part, providerMetadata: goStream.partMetadata[i] });
+    assert.deepEqual(goParts.slice(1), parts.slice(1));
+    assert.deepEqual(parts.filter(part => part.type === "file"), first.content);
+    for (const part of parts) assert.equal(validateStreamEvent(part), true, JSON.stringify(validateStreamEvent.errors));
+  });
+});
+
 describe("reasoning continuation through the authenticated real handler", () => {
   it("admits pinned-client reasoning history and matches independent file data/URL/usage in both modes", async () => {
     const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } });
