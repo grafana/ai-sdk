@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"regexp"
 	"strings"
@@ -61,6 +62,17 @@ type ResolvedProvider struct {
 	ProviderName string
 }
 
+// fileError reports a file operation failure by its class, without the path
+// the underlying error names.
+func fileError(operation string, err error) error {
+	for _, class := range []error{fs.ErrNotExist, fs.ErrPermission} {
+		if errors.Is(err, class) {
+			return fmt.Errorf("config: %s file: %w", operation, class)
+		}
+	}
+	return fmt.Errorf("config: %s file failed", operation)
+}
+
 // LoadFile reads and validates exactly one bounded strict YAML document.
 func LoadFile(path string, maxBytes int64) (File, error) {
 	if maxBytes <= 0 || maxBytes == int64(^uint64(0)>>1) {
@@ -68,20 +80,20 @@ func LoadFile(path string, maxBytes int64) (File, error) {
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return File{}, fmt.Errorf("config: inspecting file: %w", err)
+		return File{}, fileError("inspecting", err)
 	}
 	if !info.Mode().IsRegular() {
 		return File{}, fmt.Errorf("config: path is not a regular file")
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return File{}, fmt.Errorf("config: opening file: %w", err)
+		return File{}, fileError("opening", err)
 	}
 	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
-		return File{}, fmt.Errorf("config: reading file: %w", err)
+		return File{}, fileError("reading", err)
 	}
 	if int64(len(data)) > maxBytes {
 		return File{}, fmt.Errorf("config: file exceeds %d bytes", maxBytes)

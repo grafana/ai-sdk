@@ -32,6 +32,7 @@ func TestValidateEndpoint(t *testing.T) {
 		{name: "relative", raw: "/jwks", mode: config.DeploymentDevelopment},
 		{name: "empty host", raw: "https:///jwks", mode: config.DeploymentDevelopment},
 		{name: "userinfo", raw: "https://user:password@auth.example/jwks", mode: config.DeploymentDevelopment},
+		{name: "malformed with userinfo", raw: "https://user:password@auth.example:port/jwks", mode: config.DeploymentDevelopment},
 		{name: "opaque", raw: "https:opaque", mode: config.DeploymentDevelopment},
 		{name: "query", raw: "https://auth.example/jwks?secret=value", mode: config.DeploymentDevelopment},
 		{name: "forced query", raw: "https://auth.example/jwks?", mode: config.DeploymentDevelopment},
@@ -48,6 +49,7 @@ func TestValidateEndpoint(t *testing.T) {
 			} else {
 				require.Error(t, err)
 				assert.Nil(t, parsed)
+				assert.NotContains(t, err.Error(), "password")
 			}
 		})
 	}

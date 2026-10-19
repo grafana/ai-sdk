@@ -69,6 +69,11 @@ The Gateway SHALL read settings from the environment its host provides and the b
 - **WHEN** the model configuration file contains an `auth` or `server` block
 - **THEN** startup SHALL fail with a secret-safe unknown-field error
 
+#### Scenario: Startup failure is logged with its reason
+- **WHEN** configuration or construction fails at startup
+- **THEN** the Gateway SHALL log the failure with its reason before exiting
+- **AND** the reason SHALL name the failing setting, file or provider without its value, the configuration file path or credentials
+
 #### Scenario: Environment-only startup
 - **WHEN** the host starts the plugin with no arguments and valid environment and configuration file
 - **THEN** the Gateway SHALL construct its catalog, BYOK factories and telemetry, and serve requests

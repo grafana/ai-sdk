@@ -46,7 +46,7 @@ func NewAnthropicClient(headerTimeout time.Duration, responseBytes int64) (*http
 func ValidateEndpoint(raw string, mode config.DeploymentMode) (*url.URL, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("gateway outbound: parsing endpoint: %w", err)
+		return nil, fmt.Errorf("gateway outbound: endpoint is not a valid URL")
 	}
 	if !parsed.IsAbs() || parsed.Opaque != "" || parsed.Host == "" {
 		return nil, fmt.Errorf("gateway outbound: endpoint must be an absolute hierarchical URL with a host")

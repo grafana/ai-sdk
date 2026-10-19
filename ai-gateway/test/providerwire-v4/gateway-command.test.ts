@@ -1855,7 +1855,7 @@ describe("authenticated Anthropic Gateway command", () => {
     }
   });
 
-  it("fails malformed scalar startup before readiness without leaking configuration", async () => {
+  it("fails malformed scalar startup before readiness with a secret-safe reason", async () => {
     const fake = await FakeAnthropic.start();
     try {
       let failure = "";
@@ -1866,6 +1866,7 @@ describe("authenticated Anthropic Gateway command", () => {
       }
       assert.ok(failure.includes("gateway exited unsuccessfully"));
       assert.ok(failure.includes("gateway plugin failed to start"));
+      assert.ok(failure.includes("stream idle duration"));
       assert.deepEqual(processLifecycleEvents(failure), []);
       assert.notEqual(GatewayProcess.lastFailedDirectory, undefined);
       assert.equal(existsSync(GatewayProcess.lastFailedDirectory!), false);

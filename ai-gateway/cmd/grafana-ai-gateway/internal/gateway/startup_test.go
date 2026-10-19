@@ -108,6 +108,10 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 		}, message: "ambient agent observability SDK environment"},
 		{name: "production cleartext provider", url: "http://provider.example", message: "production endpoint must use https"},
 		{name: "credential-bearing provider endpoint", url: "https://user:password@provider.example", message: "userinfo"},
+		{name: "malformed credential-bearing provider endpoint", url: "https://user:password@provider.example:port", message: "not a valid URL"},
+		{name: "missing configuration file", change: func(env map[string]string) {
+			env["GRAFANA_AI_GATEWAY_CONFIG_FILE"] += ".missing"
+		}, message: "file does not exist"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
