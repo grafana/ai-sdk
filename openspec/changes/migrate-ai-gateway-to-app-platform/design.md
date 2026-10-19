@@ -10,7 +10,7 @@ See proposal.md for motivation. The current Gateway command in `ai-gateway/cmd/g
 
 Everything below the router is host-independent and stays. That includes `providerwire/v4`, `catalog`, `byok`, `nativemodel`, `nativeoptions` and the provider client and endpoint validation in `outbound`.
 
-Relevant host facts, checked against `grafana-app-sdk` `v0.60.13` / `plugin/v0.60.13`, `grafana-plugin-sdk-go` v0.296.5 and `go-plugin` v1.8.0:
+Relevant host facts, checked against `grafana-app-sdk` `v0.60.13` / `plugin/v0.60.13`, `grafana-plugin-sdk-go` v0.296.5 and `go-plugin` v1.8.0, and rechecked against `v0.60.16` and v0.297.0 (the create-plugin 7.14.0 pins):
 - **Cloud routing and auth:** user traffic reaches the Grafana router through the stack front door, which authenticates sessions and service account tokens and forwards an access token carrying the caller. Internal services call the router directly with their own access tokens. The router authenticates the caller's `X-Access-Token`. It exchanges the caller's access token for one addressed to the plugin and calls the plugin's v3 `RouteService.CallRoute` over gRPC. App-sdk's server verifies that token's signature, audience (plugin ID or API group) and namespace before the handler runs.
 - **Delegated token shape:** each exchange wraps the subject token as the next actor and keeps its signed `serviceIdentity`, which only internal access policies can carry. The first actor is therefore the router's direct caller, and the innermost actor is the user or service account, if any. authlib's `AuthInfo` exposes neither the first actor's service identity nor, for on-behalf-of calls, the right one.
 - **Self-hosted Grafana:** v3 routes need the experimental `grafana.useRouterMiddleware` toggle. A caller identity reaches the plugin only when `[plugins] v3_token_exchange_url` and `v3_cap_token` point at a token-exchange service. Otherwise requests carry none, except in development mode with `insecure_skip_authentication`, where Grafana mints locally signed tokens with the caller's identity. The App Platform team plans v3 to work unmodified, with identity out of the box, on self-hosted Grafana.
@@ -126,9 +126,9 @@ The TypeScript suites that spawn `grafana-ai-gateway` spawn the test binary inst
 
 ### 10. Packaging in `ai-gateway/`
 `ai-gateway/` becomes the plugin root and a pnpm workspace package, so it inherits the workspace supply-chain policy:
-- `package.json`, `src/plugin.json` (`grafana-aigateway-app`, backend `gpx_aigateway`) and a `src/module.tsx` that registers an empty `AppPlugin`;
-- the unmodified create-plugin `.config/` scaffold, including its webpack build, local Grafana compose environment and `experimental-app-sdk` generator pinned to the app-sdk version. Only build, typecheck, dev, server and generation scripts are wired until the plugin has UI code, and `@swc/core`'s install script is denied because it only installs an unlocked fallback;
-- a `Magefile.go` using `RootPackagePath: ./cmd/grafana-ai-gateway`, with mage pinned in `mise.toml`;
+- the create-plugin 7.14.0 app scaffold with the `experimental-app-sdk` addition, kept close to its output so `create-plugin update` codemods apply cleanly. `.config/` is verbatim, and the Gateway module uses the app-sdk and plugin SDK versions its generator pins. The scaffold's scripts, frontend tooling, `kinds/` layout and root configuration files stay. `src/plugin.json` (`grafana-aigateway-app`, backend `gpx_aigateway`) declares one overview page that shows the stack's Gateway endpoint and a quick start;
+- deviations only where the repository requires them: the existing `cmd/grafana-ai-gateway` entry point, pnpm workspace membership, repository CI instead of the scaffold workflows, the AGPL license and release version, local Gateway settings in `docker-compose.yaml`, and an ESLint and Prettier scope limited to the frontend. Install scripts of `@swc/core`, `@parcel/watcher` and `unrs-resolver` are denied because they only build or download fallbacks for the locked native binaries;
+- the scaffold `Magefile.go`, with a build callback setting `RootPackagePath: ./cmd/grafana-ai-gateway`, and mage pinned in `mise.toml`;
 - `dist/` gitignored and `node_modules` excluded from the Go module.
 
 The plugin SDK and app-sdk `plugin` module declare `go 1.26.5`, so `ai-gateway/go.mod` and `go.gateway.work` move to 1.26.5 with the new dependencies.
@@ -136,7 +136,7 @@ The plugin SDK and app-sdk `plugin` module declare `go 1.26.5`, so `ai-gateway/g
 The backend builds through `mise run build-ai-gateway-plugin` with `GOWORK=$PWD/../go.gateway.work` and `GOFLAGS=-mod=readonly -trimpath`. The build writes a per-platform Go module inventory with license and notice files, ported from the Dockerfile, plus frontend dependency licenses. The module-policy overlay check extends to the mage-built backend to prove same-revision source.
 
 `ci.yml` replaces the image jobs with validation jobs that run on pull requests and eligible pushes:
-- plugin build and frontend build;
+- frontend typecheck, lint and unit tests, plugin build and frontend build;
 - manifest regeneration diff;
 - plugin validator;
 - Gateway tests and test host suites.

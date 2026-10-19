@@ -7,7 +7,7 @@ Build, license and validate the Gateway app plugin package from the `ai-gateway/
 ## ADDED Requirements
 
 ### Requirement: Plugin package from the Gateway directory
-The `ai-gateway/` directory SHALL be the plugin root. It SHALL contain the plugin metadata, a minimal frontend entry, the app manifest source and its committed generated outputs. The backend SHALL be built from the Gateway command package for Linux amd64 and arm64 at minimum.
+The `ai-gateway/` directory SHALL be the plugin root. It SHALL contain the plugin metadata, a frontend with an overview page, the app manifest source and its committed generated outputs. The backend SHALL be built from the Gateway command package for Linux amd64 and arm64 at minimum.
 
 #### Scenario: Package contents
 - **WHEN** the plugin package is built

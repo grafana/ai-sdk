@@ -25,6 +25,15 @@
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
+  "includes": [
+    {
+      "type": "page",
+      "name": "Overview",
+      "path": "/a/%PLUGIN_ID%/overview",
+      "addToNav": true,
+      "defaultNav": true
+    }
+  ],
   "dependencies": {
     "grafanaDependency": ">=13.3.0-0",
     "plugins": []

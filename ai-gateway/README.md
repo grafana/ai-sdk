@@ -127,6 +127,7 @@ Current platform limits:
 ## Build and validate
 
 ```bash
+mise run test-ai-gateway-frontend    # frontend typecheck, lint and unit tests
 mise run build-ai-gateway-plugin     # frontend, Linux amd64/arm64 backends, licenses
 mise run validate-ai-gateway-plugin  # package contents and the Grafana plugin validator
 mise run test-ai-gateway             # Go tests, including the built plugin process
@@ -139,8 +140,18 @@ revision. Local builds are marked as unverified development builds. CI keeps the
 validated package of eligible pushes as a workflow artifact; the plugin is not
 published yet.
 
-For a local Grafana, `pnpm --filter ./ai-gateway server` starts the
-create-plugin compose environment with the required feature toggles.
+The plugin follows the create-plugin scaffold with its App Platform addition:
+`.config/` is scaffold-owned and changes only through `create-plugin update`,
+and `kinds/` holds the manifest source for `generate:kinds`.
+
+For a local Grafana, build the plugin and run `pnpm --filter ./ai-gateway server`.
+It starts the create-plugin compose environment on Grafana nightly with the App
+Platform feature toggles, `self-hosted` access, development mode with
+`insecure_skip_authentication`, and the catalog in
+`provisioning/aigateway/models.yaml`. Export `ANTHROPIC_API_KEY` first to call
+models. The environment signs in anonymously, which the Gateway refuses, so call
+the routes with a service account token. `pnpm --filter ./ai-gateway e2e` runs
+the Playwright tests against it.
 
 ## More
 

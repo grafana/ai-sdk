@@ -4,7 +4,7 @@
 
 - [x] 1.1 Add the plugin root files in `ai-gateway/`:
   - `package.json` with `build` and `generate:kinds` scripts;
-  - `src/plugin.json` (`grafana-aigateway-app`, backend `gpx_aigateway`) and a `src/module.tsx` registering an empty `AppPlugin`;
+  - `src/plugin.json` (`grafana-aigateway-app`, backend `gpx_aigateway`) and a `src/module.tsx` registering the `AppPlugin`;
   - the create-plugin `.config/` scaffold with its webpack build and local Grafana compose environment.
 
   Register `ai-gateway` in `pnpm-workspace.yaml` and the `mise.toml` deps sources, extending `allowBuilds` only as the toolchain requires. Gitignore `ai-gateway/dist/` and exclude `node_modules` from the Go module with an `ignore` directive. Verify that:
@@ -16,9 +16,11 @@
   - OpenAPI paths `namespaces/{namespace}/config` (GET) and `namespaces/{namespace}/language-model` (POST).
 
   Commit the generated manifest data. Verify that `pnpm --filter ./ai-gateway generate:kinds` leaves no diff, and that a Go test asserts the generated manifest declares only those two routes and no kinds.
-- [x] 1.3 Add `grafana-app-sdk` `v0.60.13` (app, simple) and `plugin/v0.60.13`, plus `grafana-plugin-sdk-go`, to `ai-gateway/go.mod`. Move `ai-gateway/go.mod` and `go.gateway.work` to Go 1.26.5 with `go work use`. Add a `Magefile.go` with `RootPackagePath: ./cmd/grafana-ai-gateway`, pin mage in `mise.toml` `[tools]`, and add a `build-ai-gateway-plugin` mise task. The task runs mage with `GOWORK=$PWD/../go.gateway.work` and `GOFLAGS=-mod=readonly -trimpath`. Verify:
+- [x] 1.3 Add `grafana-app-sdk` (app, simple) and `plugin` at the version the create-plugin generator pins (`v0.60.16`), plus `grafana-plugin-sdk-go`, to `ai-gateway/go.mod`. Move `ai-gateway/go.mod` and `go.gateway.work` to Go 1.26.5 with `go work use`. Add a `Magefile.go` with `RootPackagePath: ./cmd/grafana-ai-gateway`, pin mage in `mise.toml` `[tools]`, and add a `build-ai-gateway-plugin` mise task. The task runs mage with `GOWORK=$PWD/../go.gateway.work` and `GOFLAGS=-mod=readonly -trimpath`. Verify:
   - the task builds Linux amd64/arm64 backends into `ai-gateway/dist/`;
   - `mise run verify-gateway-workspace`, `mise run test-ai-gateway`, `mise run verify-ai-gateway-boundary` and `mise run verify-sdk-gateway-isolation` pass.
+- [x] 1.4 Align `ai-gateway/` with a fresh create-plugin 7.14.0 app scaffold plus `experimental-app-sdk`: verbatim `.config/`, the scaffold scripts, dependencies and root configuration files, `kinds/` in the scaffold form, and the scaffold `Magefile.go` with the entry-point callback. Keep only the deviations listed in the design. Add a `test-ai-gateway-frontend` mise task (typecheck, lint, unit tests) and run it in plugin validation. Verify that `.config/` matches the scaffold byte for byte, that regeneration changes only the display name, and that the plugin builds and validates.
+- [x] 1.5 Add an overview page in the scaffold app layout that shows the stack's Gateway endpoint, a TypeScript and Go quick start, and documentation links. Make `pnpm server` start the Gateway on Grafana nightly in development mode. Verify with Jest tests, Playwright tests against that environment, and by compiling the quick-start snippets.
 
 ## 2. Protocol test host package
 

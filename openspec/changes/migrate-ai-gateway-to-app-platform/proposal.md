@@ -59,7 +59,7 @@ The Gateway currently ships as a standalone service. It owns three listeners, JW
 
 - **Code:**
   - `ai-gateway/cmd/grafana-ai-gateway`: removes the listener and signal code in `process`, the JWT/JWKS, Cloud and static-key code in `auth`, the JWKS client in `outbound`, and the operational router. Startup composition moves into the plugin app. Settings change, telemetry is reworked and the attempt-sink output is replaced.
-  - New plugin scaffolding in `ai-gateway/`: `plugin.json`, a minimal frontend, the CUE manifest, generated manifest data and the build configuration.
+  - New plugin scaffolding in `ai-gateway/`: `plugin.json`, a create-plugin frontend with an overview page, the CUE manifest, generated manifest data and the build configuration.
   - `providers/grafana`: constructors and documentation change.
 - **Unchanged:** `ai-gateway/providerwire/v4`, `ai-gateway/catalog`, BYOK, native model and option code, and ProviderWire wire compatibility with `@ai-sdk/gateway`.
 - **Dependencies:** the Gateway module adds `grafana-app-sdk` (plugin, app and simple packages) and `grafana-plugin-sdk-go`, plus their transitive Kubernetes API machinery. The Gateway gains a Node toolchain for plugin packaging. The SDK modules stay independent of the Gateway.

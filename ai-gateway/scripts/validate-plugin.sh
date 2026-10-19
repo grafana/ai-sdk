@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Validates the built plugin package in ai-gateway/dist: its exact contents and
-# the pinned Grafana plugin validator.
+# Validates the built plugin package in ai-gateway/dist: its exact contents,
+# allowing the numbered webpack chunks of lazily loaded pages, and the pinned
+# Grafana plugin validator.
 set -euo pipefail
 
 validator_version=0.51.0
@@ -22,7 +23,7 @@ dist=$repo_root/ai-gateway/dist
 fail() { echo "$*" >&2; exit 1; }
 
 [[ -d "$dist" ]] || fail "build the plugin package first: mise run build-ai-gateway-plugin"
-actual=$(find "$dist" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
+actual=$(find "$dist" -mindepth 1 -maxdepth 1 -printf '%f\n' | grep -Ev '^[0-9]+\.js(\.map)?$' | sort)
 expected=$(printf '%s\n' "${expected_entries[@]}" | sort)
 [[ "$actual" == "$expected" ]] || fail "unexpected plugin package contents:"$'\n'"$(diff <(echo "$expected") <(echo "$actual") || true)"
 [[ $(jq -r .id "$dist/plugin.json") == "$plugin_id" ]] || fail "plugin.json does not declare $plugin_id"
