@@ -18,10 +18,10 @@ func main() {
 	var input struct {
 		BaseURL           string                          `json:"baseURL"`
 		AccessToken       string                          `json:"accessToken"`
+		ServiceAccount    string                          `json:"serviceAccountToken"`
 		UserIDToken       string                          `json:"userIDToken"`
 		OnBehalfOf        string                          `json:"onBehalfOf"`
 		TokenExchange     *grafana.TokenExchangeConfig    `json:"tokenExchange"`
-		ServiceAccount    *grafana.ServiceAccountConfig   `json:"serviceAccount"`
 		CloudCredentials  *grafana.CloudCredentialsConfig `json:"cloudCredentials"`
 		Mode              string                          `json:"mode"`
 		ModelID           string                          `json:"modelID"`
@@ -76,7 +76,7 @@ func main() {
 	if input.TokenExchange != nil {
 		selected++
 	}
-	if input.ServiceAccount != nil {
+	if input.ServiceAccount != "" {
 		selected++
 	}
 	if input.CloudCredentials != nil {
@@ -92,8 +92,8 @@ func main() {
 	switch {
 	case input.TokenExchange != nil:
 		client, err = grafana.NewWithTokenExchange(*input.TokenExchange)
-	case input.ServiceAccount != nil:
-		client, err = grafana.NewWithServiceAccountToken(*input.ServiceAccount)
+	case input.ServiceAccount != "":
+		client, err = grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{Token: input.ServiceAccount, BaseURL: input.BaseURL, Headers: input.Headers})
 	case input.CloudCredentials != nil:
 		client, err = grafana.NewWithCloudCredentials(*input.CloudCredentials)
 	default:

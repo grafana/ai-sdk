@@ -84,10 +84,10 @@
   - environment-only startup with no arguments;
   - the production signing-key guard and refusal of insecure skip, with development permitting the test host and the unsafe verifier;
   - unchanged ProviderWire, provider and Agent Observability setting validation.
-- [ ] 4.6 Add the plugin-process test binary. It builds a host-platform plugin executable with `go build`, launches it through a go-plugin client and `grpcplugin.NewClientV3`, and serves HTTP through the test host package. It exposes `CollectMetrics` and `CheckHealth` results, sending a `PluginContext` with the plugin ID and empty app instance settings, relays plugin logs and stops the plugin through Shutdown. It reads the access mode, fake providers and catalog from the environment like the current command fixtures. Verify:
+- [x] 4.6 Add the plugin-process test binary. It builds a host-platform plugin executable with `go build`, launches it through a go-plugin client and `grpcplugin.NewClientV3`, and serves HTTP through the test host package. It exposes `CollectMetrics` and `CheckHealth` results, sending a `PluginContext` with the plugin ID and empty app instance settings, relays plugin logs and stops the plugin through Shutdown. It reads the access mode, fake providers and catalog from the environment like the current command fixtures. Verify:
   - a Go smoke test gets a healthy check, a fixed response and host-collected Gateway metrics from the built plugin;
   - plugin build output contains no test binary.
-- [ ] 4.7 Move the TypeScript ProviderWire suites that spawn `grafana-ai-gateway` to the test binary:
+- [x] 4.7 Move the TypeScript ProviderWire suites that spawn `grafana-ai-gateway` to the test binary:
   - private-JWT cases become internal-service cases. Vercel private-JWT cases become raw HTTP or TS-helper cases with `X-Access-Token`, or self-hosted service-account cases;
   - Cloud cases become service-account BYOK in `cloud` mode;
   - keep the pinned `getAvailableModels` extension-stripping check on its fake-server test;
@@ -117,24 +117,24 @@
 
 ## 5. Host telemetry
 
-- [ ] 5.1 Add the `slog.Handler` bridge to the plugin SDK logger, with level mapping, dotted group flattening, `LogValuer` resolution and trace/span IDs from context, and use it for every Gateway logger. Verify:
+- [x] 5.1 Add the `slog.Handler` bridge to the plugin SDK logger, with level mapping, dotted group flattening, `LogValuer` resolution and trace/span IDs from context, and use it for every Gateway logger. Verify:
   - unit tests on emitted hclog JSON for levels, flattened keys, trace IDs and records bounded below 64 KiB;
   - a plugin-process test that the plugin writes nothing outside the log protocol;
   - a plugin-process test that a request with a `traceparent` and host tracing configured produces a relayed request log carrying that trace ID, and no exporter without tracing configuration;
   - `mise run test-ai-gateway-command` passes.
-- [ ] 5.2 Route attempt records through the logger from the existing bounded worker, give `Close` a context deadline that abandons a stalled worker, and delete `physical_output.go`. Verify:
+- [x] 5.2 Route attempt records through the logger from the existing bounded worker, give `Close` a context deadline that abandons a stalled worker, and delete `physical_output.go`. Verify:
   - with the real hclog writer over a blocked pipe, enqueueing does not block, saturation drops are counted and `Close` returns by its deadline;
   - `mise run test-ai-gateway-command` passes.
-- [ ] 5.3 Remove the `/metrics` handler, `authentication_total`, the `ready` gauge and `SetReady`, and add the bounded access-decision counter. Verify:
+- [x] 5.3 Remove the `/metrics` handler, `authentication_total`, the `ready` gauge and `SetReady`, and add the bounded access-decision counter. Verify:
   - tests gathering after unary and streaming calls;
   - access-decision labels limited to `configured`, `byok` and `refused`;
   - the existing duplicate-registration refusal still fails startup;
   - `mise run test-ai-gateway-command` passes.
-- [ ] 5.4 Give the Agent Observability and attempt-sink `Close` methods a context, and run them in parallel from `main` after `plugin.Run` returns under one 1 s context. Each step's deadline derives from that context, capped by its configured duration, and records emitted after close are dropped with counters. Verify:
+- [x] 5.4 Give the Agent Observability and attempt-sink `Close` methods a context, and run them in parallel from `main` after `plugin.Run` returns under one 1 s context. Each step's deadline derives from that context, capped by its configured duration, and records emitted after close are dropped with counters. Verify:
   - a unit test that undeliverable telemetry is abandoned before the budget ends;
   - a config test for production startup with export enabled and default timeouts;
   - a plugin-process test where Shutdown leads to exit before the host's kill delay.
-- [ ] 5.5 Make Agent Observability export optional in every deployment mode, keeping production TLS and credential validation when it is enabled. Verify config tests for production without export and for production cleartext export failing.
+- [x] 5.5 Make Agent Observability export optional in every deployment mode, keeping production TLS and credential validation when it is enabled. Verify config tests for production without export and for production cleartext export failing.
 - [ ] 5.6 Update `ai-gateway/docs/text-observability.md` and the README telemetry section. Cover host log relay, host-collected metrics, tracing from the host, and the final-flush budget shared with tracer shutdown. Verify that `mise run lint-docs` passes and relative links resolve.
 
 ## 6. Client documentation and cross-language evidence
