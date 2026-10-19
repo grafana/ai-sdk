@@ -122,7 +122,7 @@ It has two modes:
 
 The TypeScript suites that spawn `grafana-ai-gateway` spawn the test binary instead.
 - **Alternative:** testing handlers directly. Rejected because it would skip the protocol hop the specs require.
-- **Alternative:** a real Grafana in CI. Rejected for now as too slow and heavy for every PR; it stays a manual check.
+- **Real Grafana in CI** complements the test host for the frontend: plugin validation runs the Playwright tests against the packaged plugin in the create-plugin environment on a digest-pinned Grafana nightly, the only line with the router middleware. The pin keeps unrelated Grafana changes from failing PRs and is bumped deliberately. Protocol and access behavior stay on the test host, since the environment authenticates callers anonymously.
 
 ### 10. Packaging in `ai-gateway/`
 `ai-gateway/` becomes the plugin root and a pnpm workspace package, so it inherits the workspace supply-chain policy:
@@ -137,6 +137,7 @@ The backend builds through `mise run build-ai-gateway-plugin` with `GOWORK=$PWD/
 
 `ci.yml` replaces the image jobs with validation jobs that run on pull requests and eligible pushes:
 - frontend typecheck, lint and unit tests, plugin build and frontend build;
+- Playwright tests against the packaged plugin in Grafana;
 - manifest regeneration diff;
 - plugin validator;
 - Gateway tests and test host suites.

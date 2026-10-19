@@ -132,6 +132,7 @@ mise run build-ai-gateway-plugin     # frontend, Linux amd64/arm64 backends, lic
 mise run validate-ai-gateway-plugin  # package contents and the Grafana plugin validator
 mise run test-ai-gateway             # Go tests, including the built plugin process
 mise run test-ai-gateway-command     # cross-language suites through the plugin test host
+mise run test-ai-gateway-e2e         # Playwright tests against the built plugin in Grafana
 ```
 
 The package includes the Gateway and SDK licenses, every linked Go module with
@@ -151,7 +152,9 @@ Platform feature toggles, `self-hosted` access, development mode with
 `provisioning/aigateway/models.yaml`. Export `ANTHROPIC_API_KEY` first to call
 models. The environment signs in anonymously, which the Gateway refuses, so call
 the routes with a service account token. `pnpm --filter ./ai-gateway e2e` runs
-the Playwright tests against it.
+the Playwright tests against a running environment; `mise run
+test-ai-gateway-e2e` starts one, runs them and stops it. CI pins the Grafana
+nightly image by digest.
 
 ## More
 

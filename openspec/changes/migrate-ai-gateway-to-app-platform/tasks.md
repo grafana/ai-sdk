@@ -186,6 +186,7 @@
   - `mise run lint-docs` passes;
   - `rg -i 'dockerfile|container image' CONTRIBUTING.md release AGENTS.md docs` finds no Gateway image references.
 - [x] 7.5 Align the release-please `ai-gateway` component with the plugin package version source without enabling release automation. Verify that `mise run release-check` passes.
+- [x] 7.6 Add a `test-ai-gateway-e2e` mise task that starts the create-plugin environment on the built package, waits for Grafana, runs the Playwright tests and stops the environment. Run it in plugin validation after the validator, against a digest-pinned Grafana nightly, keeping the Playwright report of a failed run. Verify it locally with the pinned image and in the CI workflow test.
 
 ## 8. Integration verification
 

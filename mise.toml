@@ -93,6 +93,13 @@ pnpm --filter ./ai-gateway lint
 pnpm --filter ./ai-gateway test:ci
 """
 
+[tasks.test-ai-gateway-e2e]
+description = "Run the AI Gateway plugin Playwright tests against the built plugin in Grafana"
+run = """
+mise deps install --only test
+bash ai-gateway/scripts/e2e.sh
+"""
+
 [tasks.validate-ai-gateway-plugin]
 description = "Validate the built AI Gateway plugin package"
 run = "bash ai-gateway/scripts/validate-plugin.sh"

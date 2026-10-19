@@ -67,7 +67,7 @@ describe("source and artifact workflow gates", () => {
     assert.equal(normalize(clean.if), "${{ github.event_name == 'push' }}");
     assert.match(clean.run!, /git rev-parse HEAD.*GITHUB_SHA/);
     assert.match(clean.run!, /git status --porcelain --untracked-files=all/);
-    const order = ["generate:kinds", "mise run test-ai-gateway-frontend", "mise run build-ai-gateway-plugin", "mise run validate-ai-gateway-plugin", "mise run test-ai-gateway\n", "mise run test-ai-gateway-command"];
+    const order = ["generate:kinds", "mise run test-ai-gateway-frontend", "mise run build-ai-gateway-plugin", "mise run validate-ai-gateway-plugin", "mise run test-ai-gateway-e2e", "mise run test-ai-gateway\n", "mise run test-ai-gateway-command"];
     const script = `${commands("plugin-validation")}\n`;
     let position = -1;
     for (const command of order) {
@@ -76,6 +76,8 @@ describe("source and artifact workflow gates", () => {
       position = next;
     }
     assert.match(commands("plugin-validation"), /git status --porcelain --untracked-files=all -- ai-gateway\/src\/app-sdk-manifest\.json ai-gateway\/cmd\/grafana-ai-gateway\/internal\/manifestdata/);
+    const e2e = steps.find((step) => step.run === "mise run test-ai-gateway-e2e")!;
+    assert.match(e2e.env?.GRAFANA_VERSION ?? "", /^nightly@sha256:[0-9a-f]{64}$/);
     const build = steps.find((step) => step.run === "mise run build-ai-gateway-plugin")!;
     assert.equal(build.env?.AI_GATEWAY_VCS_REF, "${{ github.sha }}");
     const keep = steps.at(-1)!;

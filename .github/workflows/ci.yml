@@ -230,6 +230,19 @@ jobs:
       - name: Validate plugin package
         run: mise run validate-ai-gateway-plugin
 
+      - name: Plugin end-to-end tests
+        env:
+          GRAFANA_VERSION: nightly@sha256:5d4bd69f298a7d45b3e14e93d65cd4636cc77619eea120bc1d065662c1b1ceb3
+        run: mise run test-ai-gateway-e2e
+
+      - name: Keep the Playwright report of a failed run
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: grafana-aigateway-app-playwright-report-${{ github.sha }}
+          path: ai-gateway/playwright-report
+          if-no-files-found: ignore
+
       - name: Gateway tests
         run: mise run test-ai-gateway
 

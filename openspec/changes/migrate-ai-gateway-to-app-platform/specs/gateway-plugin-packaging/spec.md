@@ -32,7 +32,11 @@ The package SHALL include the Gateway AGPL license and notice, applicable Apache
 - **THEN** the package SHALL list every Go module linked into it and include each module's license and notice files
 
 ### Requirement: Validated package artifact
-CI SHALL build and validate the plugin package on pull requests and eligible pushes, and SHALL retain the validated package of eligible pushes as a workflow artifact. This repository SHALL NOT publish the plugin to a catalog or deploy it until a publication workflow exists that depends on the same validation.
+CI SHALL build and validate the plugin package on pull requests and eligible pushes, run the frontend end-to-end tests against it in a pinned Grafana, and SHALL retain the validated package of eligible pushes as a workflow artifact. This repository SHALL NOT publish the plugin to a catalog or deploy it until a publication workflow exists that depends on the same validation.
+
+#### Scenario: End-to-end failure
+- **WHEN** the frontend end-to-end tests fail against the packaged plugin
+- **THEN** CI SHALL fail and no package artifact SHALL be retained for that revision
 
 #### Scenario: Validator failure
 - **WHEN** plugin package validation fails for a revision
