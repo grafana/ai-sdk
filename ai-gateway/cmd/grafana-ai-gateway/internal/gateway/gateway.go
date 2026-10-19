@@ -30,8 +30,8 @@ import (
 // delegated tokens to it, so every build must identify as it.
 const PluginID = "grafana-aigateway-app"
 
-// FinalFlushBudget bounds the telemetry flush after the plugin host stops the plugin.
-const FinalFlushBudget = time.Second
+// finalFlushBudget bounds the telemetry flush after the plugin host stops the plugin.
+const finalFlushBudget = time.Second
 
 // EnvInsecureSkipAuthentication names the plugin host setting for local
 // development without platform signing keys.
@@ -48,7 +48,7 @@ type Options struct {
 type Gateway struct {
 	handler       http.Handler
 	authenticator authn.Authenticator
-	close         func(context.Context)
+	close         func()
 }
 
 // New validates settings and constructs every Gateway dependency before any
@@ -115,16 +115,16 @@ func New(options Options) (*Gateway, error) {
 		return nil, err
 	}
 	physicalSink := service.NewPhysicalAttemptSink(options.Logger, telemetry)
-	closeSinks := func(ctx context.Context) {
+	closeSinks := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), finalFlushBudget)
+		defer cancel()
 		var closing sync.WaitGroup
 		closing.Go(func() { physicalSink.Close(ctx) })
 		closing.Go(func() { agentRuntime.Close(ctx) })
 		closing.Wait()
 	}
 	fail := func(err error) (*Gateway, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), FinalFlushBudget)
-		defer cancel()
-		closeSinks(ctx)
+		closeSinks()
 		return nil, err
 	}
 	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(telemetry, options.Logger, agentRuntime, settings.ProviderWire.StreamDrainDuration)
@@ -192,6 +192,7 @@ func (g *Gateway) Provider() app.Provider {
 	})
 }
 
-// Close flushes Agent Observability and attempt records concurrently until
-// ctx ends, then releases them. Later records are dropped and counted.
-func (g *Gateway) Close(ctx context.Context) { g.close(ctx) }
+// Close flushes Agent Observability and attempt records concurrently for at
+// most the final flush budget, then releases them. Later records are dropped
+// and counted.
+func (g *Gateway) Close() { g.close() }

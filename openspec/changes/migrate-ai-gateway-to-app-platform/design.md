@@ -53,9 +53,7 @@ Relevant host facts, checked against `grafana-app-sdk` `v0.60.13` / `plugin/v0.6
 - **Alternative:** a placeholder kind to obtain a bindable role. Rejected as a resource kept only for permissions.
 
 ### 3. Caller access from the verified actor chain
-The Gateway supplies its own authenticator through `plugin.WithAuthenticator`. It wraps authlib's access-token verifier with the same audiences (plugin ID and API group) as app-sdk's default, and reimplements app-sdk's unexported key-source rules: exactly one of `GRAFANA_JWKS_URL` (absolute http(s), read with `authn.NewKeyRetriever`) or `GRAFANA_JWKS` (public signing keys, each with a key ID). From the verified claims it adds two values to `GetExtra()`, which app-sdk passes through:
-- the direct caller's service identity: the first actor's `serviceIdentity`, ignoring the top-level signer, which is the plugin host;
-- the identity actor: the innermost actor's typed UID when it is a user or service account.
+The Gateway supplies its own authenticator through `plugin.WithAuthenticator`. It wraps authlib's access-token verifier with the same audiences (plugin ID and API group) as app-sdk's default, and reimplements app-sdk's unexported key-source rules: exactly one of `GRAFANA_JWKS_URL` (absolute http(s), read with `authn.NewKeyRetriever`) or `GRAFANA_JWKS` (public signing keys, each with a key ID). From the verified claims it adds the direct caller's service identity to `GetExtra()`, which app-sdk passes through: the first actor's `serviceIdentity`, ignoring the top-level signer, which is the plugin host. The identity actor, the innermost actor when it is a user or service account, comes from authlib's `AuthInfo` identity type and typed UID.
 
 A middleware turns those values, the route namespace and the access mode into the private caller value (access class, service, identity actor, namespace) consumed by selection and observation:
 

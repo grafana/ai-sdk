@@ -16,7 +16,7 @@ import (
 type telemetryStateKey struct{}
 
 type telemetryState struct {
-	access      atomic.Pointer[gatewayauth.Decision]
+	access      atomic.Pointer[gatewayauth.AccountAccess]
 	observation atomic.Pointer[requestObservation]
 }
 
@@ -145,15 +145,15 @@ func (telemetry *Telemetry) Registerer() prometheus.Registerer {
 
 // ObserveAccess records the closed access decision and retains the verified
 // caller's attributable values privately for request observations.
-func (telemetry *Telemetry) ObserveAccess(ctx context.Context, decision gatewayauth.Decision, caller *gatewayauth.Caller) {
-	decision = accessClass(decision)
-	telemetry.accessDecisions.WithLabelValues(string(decision)).Inc()
+func (telemetry *Telemetry) ObserveAccess(ctx context.Context, caller gatewayauth.Caller) {
+	access := caller.AccountAccess()
+	telemetry.accessDecisions.WithLabelValues(string(access)).Inc()
 	state, ok := ctx.Value(telemetryStateKey{}).(*telemetryState)
 	if !ok {
 		return
 	}
-	state.access.Store(&decision)
-	if caller != nil && decision != gatewayauth.DecisionRefused {
+	state.access.Store(&access)
+	if access != gatewayauth.Refused {
 		current := observationFromContext(ctx)
 		current.callerService = boundedObservationValue(caller.AttributedService())
 		current.namespace = boundedObservationValue(caller.Namespace)
@@ -226,15 +226,6 @@ func (writer *responseWriter) Write(value []byte) (int, error) {
 
 func (writer *responseWriter) Unwrap() http.ResponseWriter {
 	return writer.ResponseWriter
-}
-
-func accessClass(decision gatewayauth.Decision) gatewayauth.Decision {
-	switch decision {
-	case gatewayauth.DecisionConfigured, gatewayauth.DecisionBYOK:
-		return decision
-	default:
-		return gatewayauth.DecisionRefused
-	}
 }
 
 func normalizeMethod(method string) string {

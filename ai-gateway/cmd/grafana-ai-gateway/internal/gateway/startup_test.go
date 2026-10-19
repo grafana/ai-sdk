@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"bytes"
-	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -53,7 +52,7 @@ func (e *startupEnvironment) start(t *testing.T) (*Gateway, string, error) {
 	var logs bytes.Buffer
 	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry()})
 	if gw != nil {
-		t.Cleanup(func() { gw.Close(context.Background()) })
+		t.Cleanup(gw.Close)
 	}
 	return gw, logs.String(), err
 }
@@ -243,9 +242,7 @@ func TestNew_ProductionExportWithDefaultTimeoutsClosesWithinTheBudget(t *testing
 	}
 	gw, _, err := env.start(t)
 	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(context.Background(), FinalFlushBudget)
-	defer cancel()
 	started := time.Now()
-	gw.Close(ctx)
-	assert.Less(t, time.Since(started), FinalFlushBudget+500*time.Millisecond)
+	gw.Close()
+	assert.Less(t, time.Since(started), finalFlushBudget+500*time.Millisecond)
 }

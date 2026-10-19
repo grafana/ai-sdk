@@ -29,23 +29,17 @@ const (
 	maxServiceIdentityByte = 128
 )
 
-// AccountAccess is the account population a request may use.
-type AccountAccess uint8
+// AccountAccess is the closed outcome of the access check: the account
+// population a request may use, or refusal.
+type AccountAccess string
 
 const (
 	// ConfiguredAccounts allows configured accounts and the catalog.
-	ConfiguredAccounts AccountAccess = iota + 1
+	ConfiguredAccounts AccountAccess = "configured"
 	// RequestBYOK allows only request-supplied provider credentials.
-	RequestBYOK
-)
-
-// Decision is the closed outcome of the access check.
-type Decision string
-
-const (
-	DecisionConfigured Decision = "configured"
-	DecisionBYOK       Decision = "byok"
-	DecisionRefused    Decision = "refused"
+	RequestBYOK AccountAccess = "byok"
+	// Refused allows no account access.
+	Refused AccountAccess = "refused"
 )
 
 // AccessPolicy maps verified callers to account access.
@@ -123,28 +117,36 @@ func (caller Caller) AttributedService() string {
 	return ""
 }
 
-// Decide maps the verified caller and route namespace to account access.
-func (policy AccessPolicy) Decide(info types.AuthInfo, namespace string) (Caller, Decision) {
+// Decide maps the verified caller and route namespace to account access. A
+// refused caller carries no other values.
+func (policy AccessPolicy) Decide(info types.AuthInfo, namespace string) Caller {
+	refused := Caller{access: Refused}
 	if info == nil || namespace == "" {
-		return Caller{}, DecisionRefused
+		return refused
 	}
-	extra := info.GetExtra()
-	caller := Caller{Namespace: namespace, Service: single(extra[DirectCallerServiceKey]), Identity: single(extra[IdentityActorKey])}
+	caller := Caller{Namespace: namespace, Service: single(info.GetExtra()[DirectCallerServiceKey]), Identity: identityActor(info)}
 	switch {
 	case policy.Mode == AccessModeCloud && caller.Service != "" && slices.Contains(policy.InternalServices, caller.Service):
 		caller.access, caller.attributed = ConfiguredAccounts, true
-		return caller, DecisionConfigured
 	case caller.Identity == "":
-		return Caller{}, DecisionRefused
+		return refused
 	case policy.Mode == AccessModeCloud:
 		caller.access = RequestBYOK
-		return caller, DecisionBYOK
 	case policy.Mode == AccessModeSelfHosted:
 		caller.access = ConfiguredAccounts
-		return caller, DecisionConfigured
 	default:
-		return Caller{}, DecisionRefused
+		return refused
 	}
+	return caller
+}
+
+// identityActor returns the typed UID of the innermost actor when it is a
+// user or service account.
+func identityActor(info types.AuthInfo) string {
+	if !types.IsIdentityType(info.GetIdentityType(), types.TypeUser, types.TypeServiceAccount) || info.GetIdentifier() == "" {
+		return ""
+	}
+	return info.GetUID()
 }
 
 func single(values []string) string {
@@ -159,20 +161,19 @@ type callerContextKey struct{}
 // AccessMiddleware derives the caller's account access from the verified
 // identity and route namespace before invoking next. Refused requests are
 // answered by refuse and never reach next.
-func AccessMiddleware(policy AccessPolicy, refuse func(http.ResponseWriter), observe func(context.Context, Decision, *Caller), next http.Handler) http.Handler {
+func AccessMiddleware(policy AccessPolicy, refuse func(http.ResponseWriter), observe func(context.Context, Caller), next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		info, _ := types.AuthInfoFrom(request.Context())
 		var namespace string
 		if route := resource.RouteRequestInfoFrom(request.Context()); route != nil {
 			namespace = route.Namespace
 		}
-		caller, decision := policy.Decide(info, namespace)
-		if decision == DecisionRefused {
-			observe(request.Context(), decision, nil)
+		caller := policy.Decide(info, namespace)
+		observe(request.Context(), caller)
+		if caller.AccountAccess() == Refused {
 			refuse(w)
 			return
 		}
-		observe(request.Context(), decision, &caller)
 		next.ServeHTTP(w, request.WithContext(context.WithValue(request.Context(), callerContextKey{}, caller)))
 	})
 }

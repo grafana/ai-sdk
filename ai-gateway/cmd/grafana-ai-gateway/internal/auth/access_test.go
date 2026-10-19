@@ -65,30 +65,30 @@ func TestAccessPolicy_Decide(t *testing.T) {
 		keys       *platformhost.Host
 		token      string
 		namespace  string
-		decision   Decision
+		access     AccountAccess
 		service    string
 		identity   string
 		attributed string
 	}{
-		{name: "cloud allowlisted direct service", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), decision: DecisionConfigured, service: "svc-a", attributed: "svc-a"},
-		{name: "cloud allowlisted service for a user", policy: allowlisted, token: cloud.cloud(cloud.exchange("svc-a", cloud.identity(types.TypeUser, "u1"))), decision: DecisionConfigured, service: "svc-a", identity: "user:u1", attributed: "svc-a"},
-		{name: "cloud wildcard internal token", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", "*")), decision: DecisionConfigured, service: "svc-a", attributed: "svc-a"},
-		{name: "cloud relay without a user", policy: allowlisted, token: cloud.cloud(cloud.exchange("relay", cloud.service("svc-a", testNamespace))), decision: DecisionRefused},
-		{name: "cloud relay of a user call", policy: allowlisted, token: cloud.cloud(cloud.exchange("relay", cloud.exchange("svc-a", cloud.identity(types.TypeUser, "u1")))), decision: DecisionBYOK, service: "relay", identity: "user:u1"},
-		{name: "cloud front-door user", policy: allowlisted, token: cloud.frontDoor(types.TypeUser, "u1"), decision: DecisionBYOK, service: platformhost.FrontDoorService, identity: "user:u1"},
-		{name: "cloud front-door service account", policy: allowlisted, token: cloud.frontDoor(types.TypeServiceAccount, "sa1"), decision: DecisionBYOK, service: platformhost.FrontDoorService, identity: "service-account:sa1"},
-		{name: "cloud front-door anonymous", policy: allowlisted, token: cloud.frontDoor(types.TypeAnonymous, "anon"), decision: DecisionRefused},
-		{name: "cloud service off the allowlist", policy: allowlisted, token: cloud.cloud(cloud.service("svc-b", testNamespace)), decision: DecisionRefused},
-		{name: "cloud case near-match", policy: allowlisted, token: cloud.cloud(cloud.service("SVC-A", testNamespace)), decision: DecisionRefused},
-		{name: "cloud whitespace near-match", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a ", testNamespace)), decision: DecisionRefused},
-		{name: "cloud empty allowlist service", policy: emptyAllowlist, token: cloud.cloud(cloud.service("svc-a", testNamespace)), decision: DecisionRefused},
-		{name: "cloud empty allowlist user", policy: emptyAllowlist, token: cloud.frontDoor(types.TypeUser, "u1"), decision: DecisionBYOK, service: platformhost.FrontDoorService, identity: "user:u1"},
-		{name: "self-hosted service account", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeServiceAccount, "sa1")), decision: DecisionConfigured, identity: "service-account:sa1"},
-		{name: "self-hosted user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeUser, "u1")), decision: DecisionConfigured, identity: "user:u1"},
-		{name: "self-hosted service with a user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.exchange("svc-a", self.identity(types.TypeUser, "u1"))), decision: DecisionConfigured, service: "svc-a", identity: "user:u1"},
-		{name: "self-hosted anonymous", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeAnonymous, "anon")), decision: DecisionRefused},
-		{name: "self-hosted service without a user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.service("svc-a", testNamespace)), decision: DecisionRefused},
-		{name: "missing route namespace", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), namespace: "-", decision: DecisionRefused},
+		{name: "cloud allowlisted direct service", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), access: ConfiguredAccounts, service: "svc-a", attributed: "svc-a"},
+		{name: "cloud allowlisted service for a user", policy: allowlisted, token: cloud.cloud(cloud.exchange("svc-a", cloud.identity(types.TypeUser, "u1"))), access: ConfiguredAccounts, service: "svc-a", identity: "user:u1", attributed: "svc-a"},
+		{name: "cloud wildcard internal token", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", "*")), access: ConfiguredAccounts, service: "svc-a", attributed: "svc-a"},
+		{name: "cloud relay without a user", policy: allowlisted, token: cloud.cloud(cloud.exchange("relay", cloud.service("svc-a", testNamespace))), access: Refused},
+		{name: "cloud relay of a user call", policy: allowlisted, token: cloud.cloud(cloud.exchange("relay", cloud.exchange("svc-a", cloud.identity(types.TypeUser, "u1")))), access: RequestBYOK, service: "relay", identity: "user:u1"},
+		{name: "cloud front-door user", policy: allowlisted, token: cloud.frontDoor(types.TypeUser, "u1"), access: RequestBYOK, service: platformhost.FrontDoorService, identity: "user:u1"},
+		{name: "cloud front-door service account", policy: allowlisted, token: cloud.frontDoor(types.TypeServiceAccount, "sa1"), access: RequestBYOK, service: platformhost.FrontDoorService, identity: "service-account:sa1"},
+		{name: "cloud front-door anonymous", policy: allowlisted, token: cloud.frontDoor(types.TypeAnonymous, "anon"), access: Refused},
+		{name: "cloud service off the allowlist", policy: allowlisted, token: cloud.cloud(cloud.service("svc-b", testNamespace)), access: Refused},
+		{name: "cloud case near-match", policy: allowlisted, token: cloud.cloud(cloud.service("SVC-A", testNamespace)), access: Refused},
+		{name: "cloud whitespace near-match", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a ", testNamespace)), access: Refused},
+		{name: "cloud empty allowlist service", policy: emptyAllowlist, token: cloud.cloud(cloud.service("svc-a", testNamespace)), access: Refused},
+		{name: "cloud empty allowlist user", policy: emptyAllowlist, token: cloud.frontDoor(types.TypeUser, "u1"), access: RequestBYOK, service: platformhost.FrontDoorService, identity: "user:u1"},
+		{name: "self-hosted service account", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeServiceAccount, "sa1")), access: ConfiguredAccounts, identity: "service-account:sa1"},
+		{name: "self-hosted user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeUser, "u1")), access: ConfiguredAccounts, identity: "user:u1"},
+		{name: "self-hosted service with a user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.exchange("svc-a", self.identity(types.TypeUser, "u1"))), access: ConfiguredAccounts, service: "svc-a", identity: "user:u1"},
+		{name: "self-hosted anonymous", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeAnonymous, "anon")), access: Refused},
+		{name: "self-hosted service without a user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.service("svc-a", testNamespace)), access: Refused},
+		{name: "missing route namespace", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), namespace: "-", access: Refused},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -104,21 +104,16 @@ func TestAccessPolicy_Decide(t *testing.T) {
 			if tc.namespace == "-" {
 				namespace = ""
 			}
-			caller, decision := tc.policy.Decide(info, namespace)
-			assert.Equal(t, tc.decision, decision)
-			if decision == DecisionRefused {
-				assert.Equal(t, Caller{}, caller)
+			caller := tc.policy.Decide(info, namespace)
+			if tc.access == Refused {
+				assert.Equal(t, Caller{access: Refused}, caller)
 				return
 			}
+			assert.Equal(t, tc.access, caller.AccountAccess())
 			assert.Equal(t, testNamespace, caller.Namespace)
 			assert.Equal(t, tc.service, caller.Service)
 			assert.Equal(t, tc.identity, caller.Identity)
 			assert.Equal(t, tc.attributed, caller.AttributedService())
-			wantAccess := ConfiguredAccounts
-			if decision == DecisionBYOK {
-				wantAccess = RequestBYOK
-			}
-			assert.Equal(t, wantAccess, caller.AccountAccess())
 		})
 	}
 }
@@ -130,34 +125,36 @@ func TestAccessMiddleware(t *testing.T) {
 		if service != "" {
 			values[DirectCallerServiceKey] = []string{service}
 		}
+		var claims authn.Claims[authn.AccessTokenClaims]
 		if identity != "" {
-			values[IdentityActorKey] = []string{identity}
+			typ, uid, err := types.ParseTypeID(identity)
+			require.NoError(t, err)
+			claims.Rest.Actor = &authn.ActorClaims{IDTokenClaims: authn.IDTokenClaims{Type: typ, Identifier: uid}}
 		}
-		return platformAuthInfo{AuthInfo: authn.NewAccessTokenAuthInfo(authn.Claims[authn.AccessTokenClaims]{}), extra: values}
+		return platformAuthInfo{AuthInfo: authn.NewAccessTokenAuthInfo(claims), extra: values}
 	}
 	tests := []struct {
-		name     string
-		info     types.AuthInfo
-		route    bool
-		decision Decision
+		name   string
+		info   types.AuthInfo
+		route  bool
+		access AccountAccess
 	}{
-		{name: "configured", info: extra("svc-a", ""), route: true, decision: DecisionConfigured},
-		{name: "byok", info: extra("front-door", "user:u1"), route: true, decision: DecisionBYOK},
-		{name: "refused", info: extra("svc-b", ""), route: true, decision: DecisionRefused},
-		{name: "no identity", route: true, decision: DecisionRefused},
-		{name: "no route info", info: extra("svc-a", ""), decision: DecisionRefused},
-		{name: "spoofed headers are ignored", info: extra("front-door", ""), route: true, decision: DecisionRefused},
+		{name: "configured", info: extra("svc-a", ""), route: true, access: ConfiguredAccounts},
+		{name: "byok", info: extra("front-door", "user:u1"), route: true, access: RequestBYOK},
+		{name: "refused", info: extra("svc-b", ""), route: true, access: Refused},
+		{name: "no identity", route: true, access: Refused},
+		{name: "no route info", info: extra("svc-a", ""), access: Refused},
+		{name: "spoofed headers are ignored", info: extra("front-door", ""), route: true, access: Refused},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var served, refused int
-			var observed []Decision
+			var observed []AccountAccess
 			handler := AccessMiddleware(policy, func(w http.ResponseWriter) {
 				refused++
 				w.WriteHeader(http.StatusForbidden)
-			}, func(_ context.Context, decision Decision, caller *Caller) {
-				observed = append(observed, decision)
-				assert.Equal(t, decision == DecisionRefused, caller == nil)
+			}, func(_ context.Context, caller Caller) {
+				observed = append(observed, caller.AccountAccess())
 			}, http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
 				served++
 				caller, ok := CallerFromContext(request.Context())
@@ -175,9 +172,9 @@ func TestAccessMiddleware(t *testing.T) {
 				ctx = resource.WithRouteRequestInfo(ctx, &resource.RouteRequestInfo{FullIdentifier: resource.FullIdentifier{Namespace: testNamespace}})
 			}
 			handler.ServeHTTP(httptest.NewRecorder(), request.WithContext(ctx))
-			assert.Equal(t, []Decision{tc.decision}, observed)
-			assert.Equal(t, tc.decision == DecisionRefused, refused == 1)
-			assert.Equal(t, tc.decision != DecisionRefused, served == 1)
+			assert.Equal(t, []AccountAccess{tc.access}, observed)
+			assert.Equal(t, tc.access == Refused, refused == 1)
+			assert.Equal(t, tc.access != Refused, served == 1)
 		})
 	}
 }

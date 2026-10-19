@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -15,7 +14,6 @@ import (
 const (
 	physicalQueueSize        = 256
 	physicalMaxIdentityBytes = 512
-	physicalMaxRecordBytes   = 4096
 	physicalAttemptMessage   = "gateway physical attempt"
 )
 
@@ -125,11 +123,6 @@ func (sink *PhysicalAttemptSink) run() {
 	for record := range sink.queue {
 		if sink.abandoned.Load() {
 			sink.drop(physicalDropShutdown)
-			continue
-		}
-		encoded, err := json.Marshal(record)
-		if err != nil || len(encoded) > physicalMaxRecordBytes {
-			sink.drop(physicalDropProjection)
 			continue
 		}
 		attrs := []slog.Attr{slog.String("event", "gateway_physical_attempt")}

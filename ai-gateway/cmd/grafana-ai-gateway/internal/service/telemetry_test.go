@@ -28,7 +28,7 @@ func TestTelemetry_RegistersNoRuntimeCollectors(t *testing.T) {
 	registry := prometheus.NewRegistry()
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(io.Discard, nil)), TelemetryOptions{Registerer: registry})
 	require.NoError(t, err)
-	telemetry.ObserveAccess(context.Background(), gatewayauth.DecisionRefused, nil)
+	telemetry.ObserveAccess(context.Background(), verifiedCaller(gatewayauth.AccessModeCloud, nil, "", "", testNamespace))
 	metrics := testMetrics(t, telemetry)
 	for _, forbidden := range []string{"go_goroutines", "process_cpu_seconds", "grafana_ai_gateway_ready", "grafana_ai_gateway_authentication_total"} {
 		assert.NotContains(t, metrics, forbidden)
@@ -39,8 +39,13 @@ func TestTelemetry_AccessDecisionsUseFixedLabels(t *testing.T) {
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	require.NoError(t, err)
 	handler := telemetry.Middleware(fixedRoute("config"), http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
-		for _, decision := range []gatewayauth.Decision{gatewayauth.DecisionConfigured, gatewayauth.DecisionBYOK, gatewayauth.DecisionRefused, "private-decision"} {
-			telemetry.ObserveAccess(request.Context(), decision, nil)
+		for _, caller := range []gatewayauth.Caller{
+			verifiedCaller(gatewayauth.AccessModeCloud, []string{testInternalService}, testInternalService, "", testNamespace),
+			verifiedCaller(gatewayauth.AccessModeCloud, nil, "front-door", "user:u1", testNamespace),
+			verifiedCaller(gatewayauth.AccessModeCloud, nil, "", "", testNamespace),
+			verifiedCaller(gatewayauth.AccessModeCloud, nil, "", "", ""),
+		} {
+			telemetry.ObserveAccess(request.Context(), caller)
 		}
 	}))
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
@@ -48,7 +53,6 @@ func TestTelemetry_AccessDecisionsUseFixedLabels(t *testing.T) {
 	assert.Contains(t, metrics, `grafana_ai_gateway_access_decisions_total{decision="configured"} 1`)
 	assert.Contains(t, metrics, `grafana_ai_gateway_access_decisions_total{decision="byok"} 1`)
 	assert.Contains(t, metrics, `grafana_ai_gateway_access_decisions_total{decision="refused"} 2`)
-	assert.NotContains(t, metrics, "private-decision")
 }
 
 func TestResponseWriter_UnwrapStatusAndFlush(t *testing.T) {

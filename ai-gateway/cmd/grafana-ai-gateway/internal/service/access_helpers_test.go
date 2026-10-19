@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/grafana/authlib/authn"
 	"github.com/grafana/authlib/types"
 	"github.com/stretchr/testify/require"
 
@@ -31,22 +32,18 @@ func verifiedContext(ctx context.Context, service, identity, namespace string) c
 	if service != "" {
 		extra[gatewayauth.DirectCallerServiceKey] = []string{service}
 	}
-	if identity != "" {
-		extra[gatewayauth.IdentityActorKey] = []string{identity}
+	var claims authn.Claims[authn.AccessTokenClaims]
+	if typ, uid, err := types.ParseTypeID(identity); err == nil {
+		claims.Rest.Actor = &authn.ActorClaims{IDTokenClaims: authn.IDTokenClaims{Type: typ, Identifier: uid}}
 	}
-	ctx = types.WithAuthInfo(ctx, verifiedInfo{extra: extra})
+	ctx = types.WithAuthInfo(ctx, verifiedInfo{AuthInfo: authn.NewAccessTokenAuthInfo(claims), extra: extra})
 	return resource.WithRouteRequestInfo(ctx, &resource.RouteRequestInfo{FullIdentifier: resource.FullIdentifier{Namespace: namespace}})
 }
 
-func verifiedCaller(t *testing.T, mode gatewayauth.AccessMode, internal []string, service, identity, namespace string) (*gatewayauth.Caller, gatewayauth.Decision) {
-	t.Helper()
+func verifiedCaller(mode gatewayauth.AccessMode, internal []string, service, identity, namespace string) gatewayauth.Caller {
 	policy := gatewayauth.AccessPolicy{Mode: mode, InternalServices: internal}
 	info, _ := types.AuthInfoFrom(verifiedContext(context.Background(), service, identity, namespace))
-	caller, decision := policy.Decide(info, namespace)
-	if decision == gatewayauth.DecisionRefused {
-		return nil, decision
-	}
-	return &caller, decision
+	return policy.Decide(info, namespace)
 }
 
 func withAccess(t *testing.T, mode gatewayauth.AccessMode, access gatewayauth.AccountAccess, next http.Handler) (http.Handler, http.Header) {
@@ -64,7 +61,7 @@ func withAccess(t *testing.T, mode gatewayauth.AccessMode, access gatewayauth.Ac
 		policy.InternalServices = []string{testInternalService}
 	}
 	writer := providerv4.NewHostErrorWriter()
-	protected := gatewayauth.AccessMiddleware(policy, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorPermission) }, func(context.Context, gatewayauth.Decision, *gatewayauth.Caller) {}, next)
+	protected := gatewayauth.AccessMiddleware(policy, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorPermission) }, func(context.Context, gatewayauth.Caller) {}, next)
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		protected.ServeHTTP(w, request.WithContext(verifiedContext(request.Context(), service, identity, testNamespace)))
 	}), http.Header{}

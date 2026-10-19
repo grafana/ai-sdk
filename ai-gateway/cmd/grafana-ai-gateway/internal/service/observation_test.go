@@ -42,8 +42,7 @@ func TestRequestObservation_AuthenticatedTrustBoundary(t *testing.T) {
 	originalOption := append([]byte(nil), options.ProviderOptions["provider"].(provider.RawProviderOption).Raw...)
 
 	handler := telemetry.Middleware(fixedRoute("language_model"), http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		caller, decision := verifiedCaller(t, gatewayauth.AccessModeCloud, []string{"verified-service"}, "verified-service", "user:acting-user", "verified-namespace")
-		telemetry.ObserveAccess(request.Context(), decision, caller)
+		telemetry.ObserveAccess(request.Context(), verifiedCaller(gatewayauth.AccessModeCloud, []string{"verified-service"}, "verified-service", "user:acting-user", "verified-namespace"))
 		retained = observationFromContext(request.Context())
 		metadata = observationMetadata(request.Context())
 		w.WriteHeader(http.StatusNoContent)
@@ -106,8 +105,7 @@ func TestRequestObservation_OptionalAndInvalidValuesAreOmitted(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var got requestObservation
 			handler := telemetry.Middleware(fixedRoute("config"), http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-				caller, decision := verifiedCaller(t, gatewayauth.AccessModeCloud, []string{test.service}, test.service, "", test.namespace)
-				telemetry.ObserveAccess(request.Context(), decision, caller)
+				telemetry.ObserveAccess(request.Context(), verifiedCaller(gatewayauth.AccessModeCloud, []string{test.service}, test.service, "", test.namespace))
 				got = observationFromContext(request.Context())
 			}))
 			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/live", nil))
@@ -127,8 +125,9 @@ func TestRequestObservation_RefusedAccessCannotProjectCaller(t *testing.T) {
 
 	var got requestObservation
 	handler := telemetry.Middleware(fixedRoute("config"), http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		caller, _ := verifiedCaller(t, gatewayauth.AccessModeCloud, []string{"must-not-project"}, "must-not-project", "", "must-not-project")
-		telemetry.ObserveAccess(request.Context(), gatewayauth.DecisionRefused, caller)
+		caller := verifiedCaller(gatewayauth.AccessModeCloud, nil, "must-not-project", "", "must-not-project")
+		require.Equal(t, gatewayauth.Refused, caller.AccountAccess())
+		telemetry.ObserveAccess(request.Context(), caller)
 		got = observationFromContext(request.Context())
 	}))
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
@@ -145,11 +144,11 @@ func TestRequestObservation_NonConfiguredCallsCarryNoCallerService(t *testing.T)
 		internal []string
 		service  string
 		identity string
-		decision gatewayauth.Decision
+		access   gatewayauth.AccountAccess
 	}{
-		{name: "cloud BYOK through the front door", mode: gatewayauth.AccessModeCloud, internal: []string{"internal-service"}, service: "front-door", identity: "user:u1", decision: gatewayauth.DecisionBYOK},
-		{name: "cloud relayed user", mode: gatewayauth.AccessModeCloud, internal: []string{"internal-service"}, service: "relay", identity: "user:u1", decision: gatewayauth.DecisionBYOK},
-		{name: "self-hosted with a direct service", mode: gatewayauth.AccessModeSelfHosted, service: "internal-service", identity: "service-account:sa1", decision: gatewayauth.DecisionConfigured},
+		{name: "cloud BYOK through the front door", mode: gatewayauth.AccessModeCloud, internal: []string{"internal-service"}, service: "front-door", identity: "user:u1", access: gatewayauth.RequestBYOK},
+		{name: "cloud relayed user", mode: gatewayauth.AccessModeCloud, internal: []string{"internal-service"}, service: "relay", identity: "user:u1", access: gatewayauth.RequestBYOK},
+		{name: "self-hosted with a direct service", mode: gatewayauth.AccessModeSelfHosted, service: "internal-service", identity: "service-account:sa1", access: gatewayauth.ConfiguredAccounts},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var logs bytes.Buffer
@@ -158,9 +157,9 @@ func TestRequestObservation_NonConfiguredCallsCarryNoCallerService(t *testing.T)
 			var got requestObservation
 			var metadata map[string]any
 			handler := telemetry.Middleware(fixedRoute("language_model"), http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-				caller, decision := verifiedCaller(t, tc.mode, tc.internal, tc.service, tc.identity, "stacks-1")
-				require.Equal(t, tc.decision, decision)
-				telemetry.ObserveAccess(request.Context(), decision, caller)
+				caller := verifiedCaller(tc.mode, tc.internal, tc.service, tc.identity, "stacks-1")
+				require.Equal(t, tc.access, caller.AccountAccess())
+				telemetry.ObserveAccess(request.Context(), caller)
 				got = observationFromContext(request.Context())
 				metadata = observationMetadata(request.Context())
 			}))

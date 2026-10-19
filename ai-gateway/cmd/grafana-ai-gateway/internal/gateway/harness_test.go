@@ -194,7 +194,7 @@ func newHarness(t *testing.T, topology platformhost.Topology) *harness {
 	t.Cleanup(func() {
 		server.Close()
 		served.Close()
-		gw.Close(context.Background())
+		gw.Close()
 	})
 	return &harness{host: host, served: served, server: server, gateway: gw, registry: registry, logs: logs, anthropic: anthropic}
 }

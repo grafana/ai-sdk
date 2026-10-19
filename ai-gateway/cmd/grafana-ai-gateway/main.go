@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log/slog"
 	"os"
 
@@ -28,9 +27,7 @@ func run() int {
 	}
 	logger.Info("gateway plugin lifecycle", "event", "plugin_started")
 	err = plugin.Run(gw.Provider(), plugin.WithPluginID(gateway.PluginID), plugin.WithAuthenticator(gw.Authenticator()))
-	ctx, cancel := context.WithTimeout(context.Background(), gateway.FinalFlushBudget)
-	gw.Close(ctx)
-	cancel()
+	gw.Close()
 	logger.Info("gateway plugin lifecycle", "event", "plugin_stopped")
 	if err != nil {
 		logger.Error("gateway plugin failed", "class", "plugin_failure", "reason", err.Error())

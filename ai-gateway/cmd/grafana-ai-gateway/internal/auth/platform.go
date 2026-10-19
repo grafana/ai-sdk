@@ -24,9 +24,6 @@ const (
 	// DirectCallerServiceKey is the AuthInfo extra holding the signed service
 	// identity of the first actor, the service that called the plugin host.
 	DirectCallerServiceKey = "aigateway.directCallerService"
-	// IdentityActorKey is the AuthInfo extra holding the typed UID of the
-	// innermost actor when it is a user or service account.
-	IdentityActorKey = "aigateway.identityActor"
 )
 
 // ErrNoSigningKeys reports that neither signing key source is configured.
@@ -104,7 +101,7 @@ type PlatformConfig struct {
 
 // NewPlatformAuthenticator returns the plugin authenticator for delegated
 // access tokens. Its AuthInfo extras add the direct caller's service
-// identity and the identity actor's typed UID from the verified actor chain.
+// identity from the verified actor chain.
 func NewPlatformAuthenticator(config PlatformConfig) (authn.Authenticator, error) {
 	if config.PluginID == "" || config.Group == "" {
 		return nil, errors.New("gateway auth: plugin ID and API group audiences are required")
@@ -134,17 +131,8 @@ func (a platformAuthenticator) Authenticate(ctx context.Context, provider authn.
 		return nil, fmt.Errorf("gateway auth: verifying access token: %w", err)
 	}
 	extra := map[string][]string{}
-	if actor := claims.Rest.Actor; actor != nil {
-		if actor.ServiceIdentity != "" {
-			extra[DirectCallerServiceKey] = []string{actor.ServiceIdentity}
-		}
-		innermost := actor
-		for innermost.Actor != nil {
-			innermost = innermost.Actor
-		}
-		if types.IsIdentityType(innermost.Type, types.TypeUser, types.TypeServiceAccount) && innermost.Identifier != "" {
-			extra[IdentityActorKey] = []string{string(innermost.Type) + ":" + innermost.Identifier}
-		}
+	if actor := claims.Rest.Actor; actor != nil && actor.ServiceIdentity != "" {
+		extra[DirectCallerServiceKey] = []string{actor.ServiceIdentity}
 	}
 	return platformAuthInfo{AuthInfo: authn.NewAccessTokenAuthInfo(*claims), extra: extra}, nil
 }

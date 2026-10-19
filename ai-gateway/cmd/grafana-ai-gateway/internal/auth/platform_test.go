@@ -81,7 +81,7 @@ func TestPlatformAuthenticator_ActorChains(t *testing.T) {
 			require.NoError(t, err)
 			extra := info.GetExtra()
 			assert.Equal(t, optional(tc.service), extra[DirectCallerServiceKey])
-			assert.Equal(t, optional(tc.actor), extra[IdentityActorKey])
+			assert.Equal(t, tc.actor, identityActor(info))
 			assert.NotContains(t, extra, "id-token")
 		})
 	}
@@ -96,7 +96,7 @@ func TestPlatformAuthenticator_SelfHostedServiceAccount(t *testing.T) {
 	info, err := authenticator.Authenticate(context.Background(), platformTokens{access: delegate(t, host, platformhost.GrafanaService, account)})
 	require.NoError(t, err)
 	assert.Empty(t, info.GetExtra()[DirectCallerServiceKey])
-	assert.Equal(t, []string{"service-account:sa1"}, info.GetExtra()[IdentityActorKey])
+	assert.Equal(t, "service-account:sa1", identityActor(info))
 }
 
 func TestPlatformAuthenticator_Refusals(t *testing.T) {
