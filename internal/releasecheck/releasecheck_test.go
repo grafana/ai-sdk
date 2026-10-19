@@ -119,6 +119,9 @@ func TestReleasePleaseConfig_GatewayVersionsThePluginPackage(t *testing.T) {
 		assert.Emptyf(t, packageConfig.ExtraFiles, "library %q is versioned by its tag only", packagePath)
 	}
 
+	if os.Getenv("SDK_GATEWAY_ISOLATION") == "1" {
+		t.Skip("Gateway source is absent in the SDK isolation check")
+	}
 	content, err := os.ReadFile(filepath.Join(repositoryRoot, "ai-gateway", "package.json"))
 	require.NoError(t, err)
 	var plugin struct {

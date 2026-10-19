@@ -19,8 +19,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/grafana-app-sdk/app"
-	pluginv3 "github.com/grafana/grafana-app-sdk/plugin/genproto/grafana/plugin/v3"
 	"github.com/grafana/grafana-app-sdk/plugin/appadapter"
+	pluginv3 "github.com/grafana/grafana-app-sdk/plugin/genproto/grafana/plugin/v3"
 	"github.com/grafana/grafana-app-sdk/plugin/grpcplugin"
 	"github.com/grafana/grafana-app-sdk/resource"
 )
