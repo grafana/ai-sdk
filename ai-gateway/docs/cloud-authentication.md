@@ -92,7 +92,7 @@ Choose models that support the function tools, file inputs, and reasoning your
 application needs. See the [Gateway client guide](../../docs/providers/grafana-gateway.md)
 for tool workflows, model requirements, and fallback behavior.
 
-Bring-your-own-key (BYOK) requests and native OpenAI/Anthropic API adapters
+Bring-your-own-key (BYOK) requests and public OpenAI/Anthropic API adapters
 are not supported.
 
 Before exposing the API, verify that your deployed proxy rejects unauthenticated

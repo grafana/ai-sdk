@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync/atomic"
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
@@ -26,10 +28,11 @@ type RouterDependencies struct {
 	Telemetry     *Telemetry
 	Authenticator gatewayauth.RequestAuthenticator
 	// AuthSource is the configured authentication mode, including for failed requests.
-	AuthSource    gatewayauth.Source
-	ErrorWriter   *providerv4.HostErrorWriter
-	Discovery     http.Handler
-	LanguageModel http.Handler
+	AuthSource      gatewayauth.Source
+	ErrorWriter     *providerv4.HostErrorWriter
+	Discovery       http.Handler
+	LanguageModel   http.Handler
+	ChatCompletions http.Handler
 }
 
 // NewRouter combines the two API routes and three operational routes.
@@ -86,9 +89,26 @@ func newRouter(deps RouterDependencies, api, operational bool) http.Handler {
 		}))
 		routes["/api/v1/aisdk/config"] = route{http.MethodGet, protectedDiscovery.ServeHTTP}
 		routes["/api/v1/aisdk/language-model"] = route{http.MethodPost, protectedLanguageModel.ServeHTTP}
+		if deps.ChatCompletions != nil {
+			protectedAdapter := gatewayauth.Middleware(gatewayauth.AdapterAuthenticator(deps.Authenticator, deps.AuthSource), func(w http.ResponseWriter) { chatcompletions.WriteError(w, 401) }, observe, deps.ChatCompletions)
+			routes[chatcompletions.Path] = route{http.MethodPost, protectedAdapter.ServeHTTP}
+		}
 	}
 
 	dispatch := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if api && (request.URL.Path == "/v1" || strings.HasPrefix(request.URL.Path, "/v1/")) {
+			if request.URL.Path != chatcompletions.Path || request.URL.RawPath != "" || deps.ChatCompletions == nil {
+				chatcompletions.WriteError(w, 404)
+				return
+			}
+			if request.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				chatcompletions.WriteError(w, 405)
+				return
+			}
+			routes[chatcompletions.Path].handle(w, request)
+			return
+		}
 		if request.URL.RawPath != "" {
 			http.NotFound(w, request)
 			return

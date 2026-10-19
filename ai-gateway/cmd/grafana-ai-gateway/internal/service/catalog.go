@@ -9,6 +9,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
+	"github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
@@ -79,6 +80,14 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			}
 			if candidate == nil {
 				return nil, fmt.Errorf("gateway service: constructing model %q returned nil", id)
+			}
+			switch providerConfig.Type {
+			case "openai":
+				candidate = chatcompletions.WithChatDefaults(candidate, chatcompletions.BackendResponses, "")
+			case "anthropic":
+				candidate = chatcompletions.WithChatDefaults(candidate, chatcompletions.BackendAnthropic, "")
+			case "openai-compatible":
+				candidate = chatcompletions.WithChatDefaults(candidate, chatcompletions.BackendCompatible, providerConfig.ProviderName)
 			}
 			if validateOptions != nil {
 				candidate = nativeoptions.Model{LanguageModel: candidate, Validate: validateOptions}
