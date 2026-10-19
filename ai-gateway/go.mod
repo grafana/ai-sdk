@@ -6,7 +6,7 @@ require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/anthropics/anthropic-sdk-go v1.80.0
 	github.com/go-jose/go-jose/v4 v4.1.6
-	github.com/grafana/agento11y/go v0.18.0
+	github.com/grafana/agento11y/go v0.19.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260928202004-dd43c6dff058
