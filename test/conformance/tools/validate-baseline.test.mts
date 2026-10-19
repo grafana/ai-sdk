@@ -9,6 +9,7 @@ import {
   providerWireRequiredPackages,
   validateBaseline,
   validateBaselineFiles,
+  validateRenovateExclusions,
   validateVerificationDate,
 } from "./validate-baseline.mts";
 
@@ -140,6 +141,55 @@ describe("validateBaseline", () => {
       assert.deepEqual(errors, [
         `ai-gateway/test/providerwire-v4/package.json must declare dependency ${omitted}@${baseline.packages[omitted]}`,
       ]);
+    }
+  });
+});
+
+describe("Renovate baseline ownership", () => {
+  const baseline = { packages: { ai: "7.0.127", "@ai-sdk/react": "4.0.130" } };
+
+  it("accepts explicit exclusions and unrelated ignored packages", () => {
+    assert.deepEqual(validateRenovateExclusions(baseline, {
+      ignoreDeps: ["ai", "@ai-sdk/react", "another-package"],
+    }), []);
+  });
+
+  for (const ignoreDeps of [undefined, [], ["ai", "@ai-sdk/**"]]) {
+    it(`rejects missing exact exclusions: ${JSON.stringify(ignoreDeps)}`, () => {
+      const errors = validateRenovateExclusions(baseline, { ignoreDeps });
+      assert.ok(errors.includes("renovate.json ignoreDeps must include baseline-managed package @ai-sdk/react"));
+      assert.equal(errors.length, ignoreDeps?.includes("ai") ? 1 : 2);
+    });
+  }
+
+  it("requires exclusions for newly registered baseline packages", () => {
+    assert.deepEqual(validateRenovateExclusions({
+      packages: { ...baseline.packages, "@ai-sdk/new-provider": "1.0.0" },
+    }, { ignoreDeps: Object.keys(baseline.packages) }), [
+      "renovate.json ignoreDeps must include baseline-managed package @ai-sdk/new-provider",
+    ]);
+  });
+
+  it("enforces exclusions during file validation despite a disabling package rule", () => {
+    const directory = mkdtempSync(join(tmpdir(), "baseline-renovate-"));
+    try {
+      const evidence = readGatewayContractEvidence();
+      const packages = { ...evidence.packages, ai: "7.0.127" };
+      const manifestPath = join(directory, "baseline.json");
+      const renovatePath = join(directory, "renovate.json");
+      writeFileSync(manifestPath, JSON.stringify({
+        upstream: { commit: evidence.upstreamCommit, verifiedAt: "2026-01-01" },
+        packages,
+      }));
+      writeFileSync(renovatePath, JSON.stringify({
+        ignoreDeps: Object.keys(packages).filter(name => name !== "ai"),
+        packageRules: [{ matchPackageNames: ["ai", "@ai-sdk/**"], enabled: false }],
+      }));
+      assert.deepEqual(validateBaselineFiles(manifestPath, [], renovatePath), [
+        "renovate.json ignoreDeps must include baseline-managed package ai",
+      ]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
     }
   });
 });
