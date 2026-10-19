@@ -84,6 +84,48 @@ func TestOnBehalfOf_ExchangesSubjectToken(t *testing.T) {
 	assert.Equal(t, map[string]int{"": 1, "subject-token-user": 1, "subject-token-delegated": 1}, exchanges)
 }
 
+func TestOnBehalfOf_ExchangesForDifferentSubjectsConcurrently(t *testing.T) {
+	subjects := []string{"subject-token-a", "subject-token-b"}
+	var arrived sync.WaitGroup
+	arrived.Add(len(subjects))
+	allArrived := make(chan struct{})
+	go func() { arrived.Wait(); close(allArrived) }()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/exchange" {
+			var request authn.TokenExchangeRequest
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+			arrived.Done()
+			select {
+			case <-allArrived:
+			case <-time.After(5 * time.Second):
+				http.Error(w, "exchanges were serialized", http.StatusConflict)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]string{"token": exchangedToken(t, request.SubjectToken)}})
+			return
+		}
+		_, _ = io.WriteString(w, discoveryFixture)
+	}))
+	defer srv.Close()
+	p, err := NewWithTokenExchange(TokenExchangeConfig{
+		CAPToken: "cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app",
+		BaseURL: srv.URL + "/api", TokenExchangeURL: srv.URL + "/exchange", HTTPClient: srv.Client(),
+	})
+	require.NoError(t, err)
+
+	errs := make(chan error, len(subjects))
+	for _, subject := range subjects {
+		go func() {
+			_, err := p.ListModels(WithOnBehalfOf(context.Background(), subject))
+			errs <- err
+		}()
+	}
+	for range subjects {
+		require.NoError(t, <-errs)
+	}
+}
+
 func TestOnBehalfOf_RefusedBeforeIO(t *testing.T) {
 	var calls atomic.Int32
 	transport := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {

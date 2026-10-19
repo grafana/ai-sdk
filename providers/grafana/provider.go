@@ -54,7 +54,7 @@ type ServiceAccountConfig struct {
 	Limits     *Limits
 }
 
-// AccessTokenConfig configures a caller-managed access token or self-hosted static key.
+// AccessTokenConfig configures a caller-managed access token.
 type AccessTokenConfig struct {
 	AccessToken string
 	BaseURL     string
@@ -74,15 +74,15 @@ func WithHTTPClient(client *http.Client) Option {
 
 // Provider creates models and discovers the Gateway's public catalog.
 type Provider struct {
-	baseURL      string
-	client       *http.Client
-	headers      http.Header
-	limits       Limits
-	exchanger    authn.TokenExchanger
-	namespace    string
-	audience     string
-	exchangeGate chan struct{}
-	bearer       string
+	baseURL   string
+	client    *http.Client
+	headers   http.Header
+	limits    Limits
+	exchanger authn.TokenExchanger
+	namespace string
+	audience  string
+	bearer    string
+	exchanges exchangeGates
 }
 
 // NewWithServiceAccountToken constructs a provider that sends a Grafana
@@ -209,7 +209,7 @@ func newProvider(rawURL string, client *http.Client, headers http.Header, limits
 			}
 		}
 	}
-	return &Provider{baseURL: baseURL, client: &ownedClient, headers: canonical, limits: selectedLimits, exchangeGate: make(chan struct{}, 1)}, nil
+	return &Provider{baseURL: baseURL, client: &ownedClient, headers: canonical, limits: selectedLimits}, nil
 }
 
 func normalizeURL(raw string) (string, error) {
@@ -307,13 +307,12 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 		req.Header.Set("Authorization", p.bearer)
 		return req, nil
 	}
-	select {
-	case p.exchangeGate <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	release, err := p.exchanges.acquire(ctx, subject)
+	if err != nil {
+		return nil, err
 	}
 	token, err := p.exchanger.Exchange(ctx, authn.TokenExchangeRequest{Namespace: p.namespace, Audiences: []string{p.audience}, SubjectToken: subject})
-	<-p.exchangeGate
+	release()
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
