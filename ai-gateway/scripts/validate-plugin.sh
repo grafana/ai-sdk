@@ -12,7 +12,7 @@ declare -A validator_sha256=(
 )
 plugin_id=grafana-aigateway-app
 expected_entries=(
-  CHANGELOG.md LICENSE README.md SOURCE_REVISION aigateway-manifest.json go_plugin_build_manifest
+  CHANGELOG.md LICENSE README.md SOURCE_REVISION app-sdk-manifest.json go_plugin_build_manifest
   gpx_aigateway_linux_amd64 gpx_aigateway_linux_arm64 img licenses module.js module.js.map plugin.json
 )
 

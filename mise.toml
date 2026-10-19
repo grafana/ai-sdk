@@ -80,7 +80,6 @@ mise run verify-gateway-workspace
 mise deps install --only test
 rm -rf ai-gateway/dist
 pnpm --filter ./ai-gateway build
-cp ai-gateway/definitions/aigateway-manifest.json ai-gateway/dist/
 (cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly -trimpath" mage -v)
 GOWORK="$workspace_file" bash ai-gateway/scripts/package-licenses.sh
 """

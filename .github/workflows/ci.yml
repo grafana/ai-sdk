@@ -217,7 +217,7 @@ jobs:
         run: |
           mise deps install --only test
           pnpm --filter ./ai-gateway generate:kinds
-          test -z "$(git status --porcelain --untracked-files=all -- ai-gateway/definitions ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata)"
+          test -z "$(git status --porcelain --untracked-files=all -- ai-gateway/src/app-sdk-manifest.json ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata)"
 
       - name: Build plugin package
         env:

@@ -75,7 +75,7 @@ describe("source and artifact workflow gates", () => {
       assert.ok(next > position, `${command} must run in order`);
       position = next;
     }
-    assert.match(commands("plugin-validation"), /git status --porcelain --untracked-files=all -- ai-gateway\/definitions ai-gateway\/cmd\/grafana-ai-gateway\/internal\/manifestdata/);
+    assert.match(commands("plugin-validation"), /git status --porcelain --untracked-files=all -- ai-gateway\/src\/app-sdk-manifest\.json ai-gateway\/cmd\/grafana-ai-gateway\/internal\/manifestdata/);
     const build = steps.find((step) => step.run === "mise run build-ai-gateway-plugin")!;
     assert.equal(build.env?.AI_GATEWAY_VCS_REF, "${{ github.sha }}");
     const keep = steps.at(-1)!;
