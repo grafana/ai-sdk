@@ -167,7 +167,7 @@
 
   Verify that a local build contains them and that a CI-style build records the commit SHA.
 - [x] 7.2 Extend `test/module-policy.sh`'s candidate-source overlay check to the mage-built plugin backend, and add a `validate-ai-gateway-plugin` mise task running the pinned plugin validator on the package. Verify that `mise run test-module-policy` and `mise run validate-ai-gateway-plugin` pass.
-- [ ] 7.3 Replace the `ci.yml` image validation, publish and deploy jobs with plugin validation jobs on pull requests and eligible pushes:
+- [x] 7.3 Replace the `ci.yml` image validation, publish and deploy jobs with plugin validation jobs on pull requests and eligible pushes:
   - plugin build;
   - manifest regeneration diff;
   - plugin validator;
@@ -187,14 +187,14 @@
 
 ## 8. Integration verification
 
-- [ ] 8.1 Run the full checks and verify that all pass:
+- [x] 8.1 Run the full checks and verify that all pass:
   - `mise run check`, `mise run build`, `mise run lint`;
   - `mise run parity-check`, `mise run test-ai-gateway`;
   - `mise run test-integration`, `mise run test-ci-workflow`, `mise run test-module-policy`;
   - `mise run verify-ai-gateway-boundary`, `mise run verify-sdk-gateway-isolation`;
   - `mise run validate-ai-gateway-plugin`;
   - `openspec validate migrate-ai-gateway-to-app-platform --strict`.
-- [ ] 8.2 Run the built plugin in a local Grafana nightly (create-plugin docker compose, app-sdk feature toggles including the router toggle, `forward_host_env_vars`, development mode with `insecure_skip_authentication`, so Grafana mints local tokens) in `self-hosted` mode. Exercise discovery and unary and streaming calls as a service account. Record the outcome in the PR description: either incremental responses with Gateway log records relayed at info level, or the exact blocker.
+- [x] 8.2 Run the built plugin in a local Grafana nightly (create-plugin docker compose, app-sdk feature toggles including the router toggle, `forward_host_env_vars`, development mode with `insecure_skip_authentication`, so Grafana mints local tokens) in `self-hosted` mode. Exercise discovery and unary and streaming calls as a service account. Record the outcome in the PR description: either incremental responses with Gateway log records relayed at info level, or the exact blocker.
 
 ## Workflow follow-up
 
