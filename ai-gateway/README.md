@@ -49,6 +49,11 @@ caller, so it does not inherit that service's access. BYOK is open to every
 stack user and service account; their provider keys are used only for their
 own requests. The allowlist is rejected in `self-hosted` mode.
 
+Grafana admits callers to the routes by plugin app access; the plugin declares
+no roles of its own, because Grafana does not yet apply manifest roles to
+custom routes. In Cloud the router grants app access to every authenticated
+caller.
+
 In `self-hosted` mode, anyone Grafana admits to the plugin can use the
 configured models. Plugin app access is part of Grafana's basic roles, so
 restrict it with role-based access control where available, or give access

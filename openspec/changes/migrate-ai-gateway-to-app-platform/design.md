@@ -30,7 +30,7 @@ Relevant host facts, checked against `grafana-app-sdk` `v0.60.13` / `plugin/v0.6
 
 **Non-Goals:**
 - App Platform kinds: tenant catalogs, stored BYOK secrets as secure values, or model routes as resources.
-- Manifest roles or RBAC route checks. BYOK needs no Gateway role, as `gateway-caller-access` specifies.
+- Manifest roles or RBAC route checks, which Grafana does not apply to custom routes yet (decision 2). BYOK needs no Gateway role, as `gateway-caller-access` specifies.
 - Deployment wiring, catalog publishing and a plugin publish job. These are tracked as follow-ups.
 - A plugin memory-limit setting. It is a deployment concern, tracked as a follow-up.
 - Changing ProviderWire wire format or error documents.
@@ -49,6 +49,8 @@ Relevant host facts, checked against `grafana-app-sdk` `v0.60.13` / `plugin/v0.6
 - **Why routes-only:** a routes-only manifest gets the platform's lighter routes-only handler, with no storage.
 - **Generated outputs:** committed, as `gateway-plugin-packaging` specifies.
 - **Alternative:** a kind with subresource routes. Rejected because there is nothing to store yet, and it would force folder semantics on callers.
+- **Route authorization:** Grafana authorizes custom routes with plugin app access and optional per-operation checks declared with the `x-grafana-declared-authz-*` extensions. Manifest roles only grant access to kinds, and Grafana does not convert their route lists, so a routes-only manifest registers no roles; the default roles app-sdk generates have no effect. A declared check would refuse every user and service account, because only kind roles grant the permission it names. The Gateway therefore relies on app access and its own caller-access decision, and declares no route checks. This deviates from the scaffold guidance to keep authorization out of app code: account selection by caller chain and mode is not expressible in the manifest. App access is granted to every authenticated caller in Cloud router deployments, and is a basic-role permission an administrator can restrict in self-hosted Grafana.
+- **Alternative:** a placeholder kind to obtain a bindable role. Rejected as a resource kept only for permissions.
 
 ### 3. Caller access from the verified actor chain
 The Gateway supplies its own authenticator through `plugin.WithAuthenticator`. It wraps authlib's access-token verifier with the same audiences (plugin ID and API group) as app-sdk's default, and reimplements app-sdk's unexported key-source rules: exactly one of `GRAFANA_JWKS_URL` (absolute http(s), read with `authn.NewKeyRetriever`) or `GRAFANA_JWKS` (public signing keys, each with a key ID). From the verified claims it adds two values to `GetExtra()`, which app-sdk passes through:
@@ -191,7 +193,8 @@ Tracked with the App Platform and deployment owners, outside this repository:
   - per-request gRPC load balancing to plugin backends;
   - re-resolving the plugin client after a plugin restart;
   - exporting plugin metrics from the plugin host;
-  - a configurable tracer shutdown timeout in the plugin SDK.
+  - a configurable tracer shutdown timeout in the plugin SDK;
+  - authorizing custom routes from manifest roles, after which the Gateway can bind a route role to the basic roles.
 - **Router plugin deployment:**
   - plugin tracing environment;
   - `GRAFANA_JWKS_URL`;
