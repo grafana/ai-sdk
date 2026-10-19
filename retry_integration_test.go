@@ -758,4 +758,28 @@ func TestRetry_UnsupportedFunctionalityIsNotRetried(t *testing.T) {
 			assert.Zero(t, time.Since(start), "no backoff delay")
 		})
 	})
+
+	t.Run("control: a retryable error is retried with virtual backoff", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			var calls atomic.Int32
+			model := &mockModel{
+				streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+					calls.Add(1)
+					return nil, retryableAPIError("transient", nil)
+				},
+			}
+			start := time.Now()
+			result := StreamText(context.Background(), model,
+				WithModelMessages(provider.UserText("hi")),
+				WithMaxRetries(3),
+				withRetryTiming(500, 2),
+			)
+			for range result.FullStream() {
+			}
+
+			require.Error(t, result.Err())
+			assert.Equal(t, int32(4), calls.Load())
+			assert.GreaterOrEqual(t, time.Since(start), 500*time.Millisecond)
+		})
+	})
 }
