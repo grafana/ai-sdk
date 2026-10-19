@@ -219,6 +219,9 @@ jobs:
           pnpm --filter ./ai-gateway generate:kinds
           test -z "$(git status --porcelain --untracked-files=all -- ai-gateway/src/app-sdk-manifest.json ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata)"
 
+      - name: Frontend checks
+        run: mise run test-ai-gateway-frontend
+
       - name: Build plugin package
         env:
           AI_GATEWAY_VCS_REF: ${{ github.sha }}

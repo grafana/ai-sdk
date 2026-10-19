@@ -80,8 +80,17 @@ mise run verify-gateway-workspace
 mise deps install --only test
 rm -rf ai-gateway/dist
 pnpm --filter ./ai-gateway build
-(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly -trimpath" mage -v)
+(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly -trimpath" mage -v build:linux build:linuxARM64)
 GOWORK="$workspace_file" bash ai-gateway/scripts/package-licenses.sh
+"""
+
+[tasks.test-ai-gateway-frontend]
+description = "Typecheck, lint and unit test the AI Gateway plugin frontend"
+run = """
+mise deps install --only test
+pnpm --filter ./ai-gateway typecheck
+pnpm --filter ./ai-gateway lint
+pnpm --filter ./ai-gateway test:ci
 """
 
 [tasks.validate-ai-gateway-plugin]

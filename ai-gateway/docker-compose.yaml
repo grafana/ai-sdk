@@ -3,5 +3,16 @@ services:
     extends:
       file: .config/docker-compose-base.yaml
       service: grafana
+    build:
+      args:
+        grafana_image: ${GRAFANA_IMAGE:-grafana}
+        grafana_version: ${GRAFANA_VERSION:-nightly}
     environment:
       GF_FEATURE_TOGGLES_ENABLE: appplugins.loadAppManifest,appplugins.registerAPIServer,grafana.useRouterMiddleware
+      GF_DEFAULT_APP_MODE: development
+      GF_PLUGINS_FORWARD_HOST_ENV_VARS: grafana-aigateway-app
+      GF_PLUGIN_GRAFANA_AIGATEWAY_APP_INSECURE_SKIP_AUTHENTICATION: 'true'
+      GRAFANA_AI_GATEWAY_CONFIG_FILE: /etc/grafana/provisioning/aigateway/models.yaml
+      GRAFANA_AI_GATEWAY_ACCESS_MODE: self-hosted
+      GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE: development
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-unset-local-key}

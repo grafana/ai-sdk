@@ -531,7 +531,8 @@ SDK's Go module dependency graph.
   `mise run verify-module-resolution` checks all published modules.
 - **Gateway plugin:** Gateway uses the separate `go.gateway.work` to build the
   plugin backend from same-revision local source. Plugin validation runs on pull
-  requests and pushes: manifest regeneration, `mise run build-ai-gateway-plugin`,
+  requests and pushes: manifest regeneration, `mise run test-ai-gateway-frontend`,
+  `mise run build-ai-gateway-plugin`,
   `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
   pushes keep the validated package, built from a clean checkout of the push
   revision, as a workflow artifact. Gateway is not published as a standalone Go

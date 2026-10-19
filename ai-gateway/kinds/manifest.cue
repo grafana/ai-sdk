@@ -1,12 +1,19 @@
 package kinds
 
 manifest: {
-	appName: "aigateway"
-	versions: "v1alpha1": v1alpha1
+	appName:        "aigateway"
+	appDisplayName: "AI Gateway"
+	versions: {
+		"v1alpha1": v1alpha1
+	}
+	extraPermissions: {
+		accessKinds: []
+	}
 }
 
 v1alpha1: {
 	kinds: []
+	served: true
 	openapi: paths: {
 		"/namespaces/{namespace}/config": get: {
 			operationId: "getConfig"

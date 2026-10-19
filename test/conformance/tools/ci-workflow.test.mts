@@ -67,7 +67,7 @@ describe("source and artifact workflow gates", () => {
     assert.equal(normalize(clean.if), "${{ github.event_name == 'push' }}");
     assert.match(clean.run!, /git rev-parse HEAD.*GITHUB_SHA/);
     assert.match(clean.run!, /git status --porcelain --untracked-files=all/);
-    const order = ["generate:kinds", "mise run build-ai-gateway-plugin", "mise run validate-ai-gateway-plugin", "mise run test-ai-gateway\n", "mise run test-ai-gateway-command"];
+    const order = ["generate:kinds", "mise run test-ai-gateway-frontend", "mise run build-ai-gateway-plugin", "mise run validate-ai-gateway-plugin", "mise run test-ai-gateway\n", "mise run test-ai-gateway-command"];
     const script = `${commands("plugin-validation")}\n`;
     let position = -1;
     for (const command of order) {

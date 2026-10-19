@@ -26,7 +26,7 @@ import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs
 import { join, resolve } from 'node:path';
 import { arch, platform, tmpdir } from 'node:os';
 
-const VERSION = 'v0.60.13';
+const VERSION = 'v0.60.16';
 const REPO = 'grafana/grafana-app-sdk';
 const BIN = 'grafana-app-sdk';
 

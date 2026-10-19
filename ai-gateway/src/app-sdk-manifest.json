@@ -6,7 +6,7 @@
     },
     "spec": {
         "appName": "aigateway",
-        "appDisplayName": "aigateway",
+        "appDisplayName": "AI Gateway",
         "group": "aigateway.ext.grafana.app",
         "versions": [
             {
@@ -126,15 +126,15 @@
         "preferredVersion": "v1alpha1",
         "roles": {
             "aigateway:admin": {
-                "title": "aigateway Admin",
+                "title": "AI Gateway Admin",
                 "description": "Allows all actions on "
             },
             "aigateway:editor": {
-                "title": "aigateway Editor",
+                "title": "AI Gateway Editor",
                 "description": "Create, Read, Update, and Delete "
             },
             "aigateway:reader": {
-                "title": "aigateway Reader",
+                "title": "AI Gateway Reader",
                 "description": "Read "
             }
         },

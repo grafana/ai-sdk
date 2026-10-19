@@ -1,10 +1,11 @@
 //go:build mage
+// +build mage
 
 package main
 
 import (
+	// mage:import
 	build "github.com/grafana/grafana-plugin-sdk-go/build"
-	"github.com/magefile/mage/mg"
 )
 
 func init() {
@@ -14,11 +15,5 @@ func init() {
 	})
 }
 
-// Default is the target mage runs without arguments.
-var Default = Linux
-
-// Linux builds the Linux amd64 and arm64 plugin backends.
-func Linux() {
-	b := build.Build{}
-	mg.Deps(b.Linux, b.LinuxARM64)
-}
+// Default configures the default target.
+var Default = build.BuildAll

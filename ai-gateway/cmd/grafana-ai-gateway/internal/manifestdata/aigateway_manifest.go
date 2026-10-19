@@ -17,7 +17,7 @@ import (
 
 var appManifestData = app.ManifestData{
 	AppName:          "aigateway",
-	AppDisplayName:   "aigateway",
+	AppDisplayName:   "AI Gateway",
 	Group:            "aigateway.ext.grafana.app",
 	PreferredVersion: "v1alpha1",
 	Versions: []app.ManifestVersion{
@@ -44,19 +44,19 @@ var appManifestData = app.ManifestData{
 	},
 	Roles: map[string]app.ManifestRole{
 		"aigateway:admin": {
-			Title:       "aigateway Admin",
+			Title:       "AI Gateway Admin",
 			Description: "Allows all actions on ",
 			Kinds:       []app.ManifestRoleKind{},
 			Routes:      []string{},
 		},
 		"aigateway:editor": {
-			Title:       "aigateway Editor",
+			Title:       "AI Gateway Editor",
 			Description: "Create, Read, Update, and Delete ",
 			Kinds:       []app.ManifestRoleKind{},
 			Routes:      []string{},
 		},
 		"aigateway:reader": {
-			Title:       "aigateway Reader",
+			Title:       "AI Gateway Reader",
 			Description: "Read ",
 			Kinds:       []app.ManifestRoleKind{},
 			Routes:      []string{},
