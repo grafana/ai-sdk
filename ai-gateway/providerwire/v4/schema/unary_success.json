@@ -17,6 +17,7 @@
           { "$ref": "#/$defs/documentSource" },
           { "$ref": "#/$defs/reasoning" },
           { "$ref": "#/$defs/reasoningFile" },
+          { "$ref": "#/$defs/generatedFile" },
           {
             "type": "object",
             "required": ["type", "text"],
@@ -125,10 +126,15 @@
       "properties": { "type": {"const": "reasoning-file"}, "mediaType": {"type": "string"}, "data": {"$ref": "#/$defs/reasoningFileData"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"} },
       "additionalProperties": false
     },
+    "generatedFile": {
+      "type": "object", "required": ["type", "mediaType", "data"],
+      "properties": { "type": {"const": "file"}, "mediaType": {"type": "string"}, "data": {"$ref": "#/$defs/reasoningFileData"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"} },
+      "additionalProperties": false
+    },
     "reasoningFileData": {
       "oneOf": [
         { "type": "object", "required": ["type", "data"], "properties": {"type": {"const": "data"}, "data": {"type": "string"}}, "additionalProperties": false },
-        { "type": "object", "required": ["type", "url"], "properties": {"type": {"const": "url"}, "url": {"type": "string", "minLength": 1}}, "additionalProperties": false }
+        { "type": "object", "required": ["type", "url"], "properties": {"type": {"const": "url"}, "url": {"type": "string", "minLength": 1}, "originalUrl": {"type": "string"}}, "additionalProperties": false }
       ]
     },
     "providerMetadata": {

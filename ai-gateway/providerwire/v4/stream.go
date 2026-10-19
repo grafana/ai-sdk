@@ -99,7 +99,7 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Metadata: value.metadata})
 	case provider.PartReasoningDelta:
 		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta, Metadata: value.metadata})
-	case provider.PartReasoningFile:
+	case provider.PartReasoningFile, provider.PartFile:
 		if !validReasoningFile(value.fileData, value.mediaType) {
 			return nil, false
 		}
@@ -189,7 +189,7 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 	switch value.typeName {
 	case provider.PartReasoningStart, provider.PartReasoningEnd, provider.PartReasoningDelta:
 		fits = check(value.id, value.delta)
-	case provider.PartReasoningFile:
+	case provider.PartReasoningFile, provider.PartFile:
 		fits = reasoningFileFits(value.fileData, value.mediaType, &remaining)
 	case provider.PartSource:
 		fits = value.source != nil
@@ -598,7 +598,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 	switch part.Type {
 	case provider.PartToolApprovalRequest:
 		return h.processApprovalRequest(w, state, part)
-	case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd, provider.PartReasoningFile:
+	case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd, provider.PartReasoningFile, provider.PartFile:
 		return h.processReasoningPart(w, state, part)
 	case provider.PartSource:
 		if part.Source == nil {

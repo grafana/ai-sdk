@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -53,6 +52,8 @@ type StreamFileData struct {
 	Bytes  []byte             `json:"-"`
 	Base64 string             `json:"-"`
 	URL    string             `json:"-"`
+	// OriginalURL preserves the original opaque URI on the URL arm; nil omits it.
+	OriginalURL *string `json:"-"`
 }
 
 // MarshalJSON emits the upstream LanguageModelV4 generated-file data union.
@@ -73,39 +74,53 @@ func (d StreamFileData) MarshalJSON() ([]byte, error) {
 		}{Type: dataType, Data: data})
 	}
 	return json.Marshal(struct {
-		Type StreamFileDataType `json:"type"`
-		URL  string             `json:"url"`
-	}{Type: dataType, URL: d.URL})
+		Type        StreamFileDataType `json:"type"`
+		URL         string             `json:"url"`
+		OriginalURL *string            `json:"originalUrl,omitempty"`
+	}{Type: dataType, URL: d.URL, OriginalURL: d.OriginalURL})
 }
 
 // UnmarshalJSON decodes the upstream LanguageModelV4 generated-file data union.
 func (d *StreamFileData) UnmarshalJSON(data []byte) error {
-	var tagged struct {
-		Type StreamFileDataType `json:"type"`
-		Data *string            `json:"data"`
-		URL  string             `json:"url"`
-	}
-	if err := json.Unmarshal(data, &tagged); err != nil {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-
-	*d = StreamFileData{Type: tagged.Type}
-	switch tagged.Type {
-	case StreamFileDataTypeData:
-		if tagged.Data == nil {
-			return errors.New("provider: stream file data variant is missing required data")
-		}
-		d.Base64 = *tagged.Data
-	case StreamFileDataTypeURL:
-		d.URL = tagged.URL
-	default:
-		return fmt.Errorf("provider: unsupported stream file-data variant %q (supported: data, url)", tagged.Type)
+	var kind StreamFileDataType
+	if err := json.Unmarshal(fields["type"], &kind); err != nil {
+		return err
 	}
-	return d.Validate()
+	if kind != StreamFileDataTypeData && kind != StreamFileDataTypeURL {
+		return errors.New("provider: unsupported stream file-data variant")
+	}
+	if kind == StreamFileDataTypeData && (fields["data"] == nil || string(fields["data"]) == "null") {
+		return errors.New("provider: stream file data variant is missing required data")
+	}
+	var value DataContent
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	var decoded StreamFileData
+	switch {
+	case value.IsData():
+		decoded = StreamFileData{Type: StreamFileDataTypeData, Base64: value.Base64}
+	case value.IsURL():
+		decoded = StreamFileData{Type: StreamFileDataTypeURL, URL: value.URL, OriginalURL: value.OriginalURL}
+	default:
+		return errors.New("provider: unsupported stream file-data variant")
+	}
+	if err := decoded.Validate(); err != nil {
+		return err
+	}
+	*d = decoded
+	return nil
 }
 
 // Validate returns an error when generated file data sources conflict or a URL is empty.
 func (d StreamFileData) Validate() error {
+	if d.OriginalURL != nil && d.dataType() != StreamFileDataTypeURL {
+		return errors.New("provider: originalUrl requires URL arm")
+	}
 	switch d.dataType() {
 	case StreamFileDataTypeData:
 		if d.URL != "" || (d.Bytes != nil && d.Base64 != "") {
