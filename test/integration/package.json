@@ -6,16 +6,16 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@ai-sdk/provider-utils": "5.0.53",
-    "@ai-sdk/react": "4.0.130",
+    "@ai-sdk/provider-utils": "5.0.61",
+    "@ai-sdk/react": "4.0.146",
     "@testing-library/react": "^16.3.2",
     "@vitejs/plugin-react": "^6.0.3",
-    "ai": "7.0.127",
+    "ai": "7.0.142",
     "jsdom": "^30.0.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "vitest": "^5.0.0",
     "typescript": "^7.0.0",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   }
 }
