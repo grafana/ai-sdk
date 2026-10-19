@@ -1,0 +1,153 @@
+{
+    "apiVersion": "apps.grafana.app/v1alpha2",
+    "kind": "AppManifest",
+    "metadata": {
+        "name": "aigateway"
+    },
+    "spec": {
+        "appName": "aigateway",
+        "appDisplayName": "aigateway",
+        "group": "aigateway.ext.grafana.app",
+        "versions": [
+            {
+                "name": "v1alpha1",
+                "served": true,
+                "kinds": [],
+                "routes": {
+                    "namespaced": {
+                        "/config": {
+                            "get": {
+                                "operationId": "getConfig",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "ProviderWire discovery response"
+                                    }
+                                }
+                            }
+                        },
+                        "/language-model": {
+                            "post": {
+                                "operationId": "createLanguageModel",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "ProviderWire language-model response"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "openapi": {
+                    "paths": {
+                        "/namespaces/{namespace}/config": {
+                            "get": {
+                                "operationId": "getConfig",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "ProviderWire discovery response"
+                                    }
+                                }
+                            },
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ]
+                        },
+                        "/namespaces/{namespace}/language-model": {
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ],
+                            "post": {
+                                "operationId": "createLanguageModel",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "ProviderWire language-model response"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        ],
+        "preferredVersion": "v1alpha1",
+        "roles": {
+            "aigateway:admin": {
+                "title": "aigateway Admin",
+                "description": "Allows all actions on "
+            },
+            "aigateway:editor": {
+                "title": "aigateway Editor",
+                "description": "Create, Read, Update, and Delete "
+            },
+            "aigateway:reader": {
+                "title": "aigateway Reader",
+                "description": "Read "
+            }
+        },
+        "roleBindings": {
+            "viewer": [
+                "aigateway:reader"
+            ],
+            "editor": [
+                "aigateway:editor"
+            ],
+            "admin": [
+                "aigateway:admin"
+            ]
+        }
+    }
+}

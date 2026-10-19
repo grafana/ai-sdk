@@ -2,6 +2,7 @@ packages:
   - test/integration
   - test/cli
   - test/conformance/tools
+  - ai-gateway
   - ai-gateway/test/providerwire-v4
 
 # Supply-chain hardening
@@ -13,6 +14,7 @@ minimumReleaseAge: 4320
 # strictDepBuilds; everything not listed has its build scripts blocked).
 allowBuilds:
   esbuild: true
+  '@swc/core': false
 minimumReleaseAgeExclude:
   # Renovate security update: vitest@4.1.11
   - vitest@4.1.11

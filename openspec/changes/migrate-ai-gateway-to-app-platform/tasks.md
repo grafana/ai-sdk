@@ -2,21 +2,21 @@
 
 ## 1. Plugin scaffolding and dependencies
 
-- [ ] 1.1 Add the plugin root files in `ai-gateway/`:
+- [x] 1.1 Add the plugin root files in `ai-gateway/`:
   - `package.json` with `build` and `generate:kinds` scripts;
-  - `src/plugin.json` (`grafana-aigateway-app`, backend `gpx_aigateway`) and a minimal `src/module.ts`;
-  - the frontend build config.
+  - `src/plugin.json` (`grafana-aigateway-app`, backend `gpx_aigateway`) and a `src/module.tsx` registering an empty `AppPlugin`;
+  - the create-plugin `.config/` scaffold with its webpack build and local Grafana compose environment.
 
   Register `ai-gateway` in `pnpm-workspace.yaml` and the `mise.toml` deps sources, extending `allowBuilds` only as the toolchain requires. Gitignore `ai-gateway/dist/` and exclude `node_modules` from the Go module with an `ignore` directive. Verify that:
   - `mise deps` installs with the frozen lockfile;
   - `pnpm --filter ./ai-gateway build` produces `dist/plugin.json` and `dist/module.js`;
   - `go list ./...` in `ai-gateway/` includes no `node_modules` package.
-- [ ] 1.2 Add the app-sdk generator config, with a pinned generator version, and a routes-only CUE manifest under `ai-gateway/kinds/`:
+- [x] 1.2 Add the app-sdk generator config, with a pinned generator version, and a routes-only CUE manifest under `ai-gateway/kinds/`:
   - app name `aigateway`, version `v1alpha1`, no kinds;
   - OpenAPI paths `namespaces/{namespace}/config` (GET) and `namespaces/{namespace}/language-model` (POST).
 
   Commit the generated manifest data. Verify that `pnpm --filter ./ai-gateway generate:kinds` leaves no diff, and that a Go test asserts the generated manifest declares only those two routes and no kinds.
-- [ ] 1.3 Add `grafana-app-sdk` `v0.60.13` (app, simple) and `plugin/v0.60.13`, plus `grafana-plugin-sdk-go`, to `ai-gateway/go.mod`. Move `ai-gateway/go.mod` and `go.gateway.work` to Go 1.26.5 with `go work use`. Add a `Magefile.go` with `RootPackagePath: ./cmd/grafana-ai-gateway`, pin mage in `mise.toml` `[tools]`, and add a `build-ai-gateway-plugin` mise task. The task runs mage with `GOWORK=$PWD/../go.gateway.work` and `GOFLAGS=-mod=readonly -trimpath`. Verify:
+- [x] 1.3 Add `grafana-app-sdk` `v0.60.13` (app, simple) and `plugin/v0.60.13`, plus `grafana-plugin-sdk-go`, to `ai-gateway/go.mod`. Move `ai-gateway/go.mod` and `go.gateway.work` to Go 1.26.5 with `go work use`. Add a `Magefile.go` with `RootPackagePath: ./cmd/grafana-ai-gateway`, pin mage in `mise.toml` `[tools]`, and add a `build-ai-gateway-plugin` mise task. The task runs mage with `GOWORK=$PWD/../go.gateway.work` and `GOFLAGS=-mod=readonly -trimpath`. Verify:
   - the task builds Linux amd64/arm64 backends into `ai-gateway/dist/`;
   - `mise run verify-gateway-workspace`, `mise run test-ai-gateway`, `mise run verify-ai-gateway-boundary` and `mise run verify-sdk-gateway-isolation` pass.
 

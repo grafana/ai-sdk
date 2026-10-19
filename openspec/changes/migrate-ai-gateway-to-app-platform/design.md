@@ -126,8 +126,8 @@ The TypeScript suites that spawn `grafana-ai-gateway` spawn the test binary inst
 
 ### 10. Packaging in `ai-gateway/`
 `ai-gateway/` becomes the plugin root and a pnpm workspace package, so it inherits the workspace supply-chain policy:
-- `package.json`, `src/plugin.json` (`grafana-aigateway-app`, backend `gpx_aigateway`) and a minimal `src/module.ts`;
-- the create-plugin app-sdk generator config;
+- `package.json`, `src/plugin.json` (`grafana-aigateway-app`, backend `gpx_aigateway`) and a `src/module.tsx` that registers an empty `AppPlugin`;
+- the unmodified create-plugin `.config/` scaffold, including its webpack build, local Grafana compose environment and `experimental-app-sdk` generator pinned to the app-sdk version. Only build, typecheck, dev, server and generation scripts are wired until the plugin has UI code, and `@swc/core`'s install script is denied because it only installs an unlocked fallback;
 - a `Magefile.go` using `RootPackagePath: ./cmd/grafana-ai-gateway`, with mage pinned in `mise.toml`;
 - `dist/` gitignored and `node_modules` excluded from the Go module.
 

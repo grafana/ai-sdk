@@ -1,0 +1,42 @@
+{
+  "name": "@grafana/aigateway-app",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",
+    "dev": "webpack -w -c ./.config/webpack/webpack.config.ts --env development",
+    "typecheck": "tsc --noEmit",
+    "server": "docker compose up --build",
+    "generate:kinds": "node ./.config/app-sdk/generate-kinds.mjs"
+  },
+  "dependencies": {
+    "@grafana/data": "13.2.3",
+    "react": "19.3.1"
+  },
+  "devDependencies": {
+    "@grafana/tsconfig": "2.2.0",
+    "@swc/core": "1.16.18",
+    "@swc/helpers": "0.5.23",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "copy-webpack-plugin": "14.0.0",
+    "diagnostics-webpack-plugin": "1.0.1",
+    "fork-ts-checker-webpack-plugin": "9.1.0",
+    "glob": "11.1.0",
+    "imports-loader": "5.0.0",
+    "replace-in-file-webpack-plugin": "1.0.6",
+    "swc-loader": "0.2.7",
+    "terser-webpack-plugin": "5.6.1",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.2",
+    "webpack": "5.112.0",
+    "webpack-cli": "6.0.1",
+    "webpack-livereload-plugin": "3.0.2",
+    "webpack-subresource-integrity": "5.1.0",
+    "webpack-virtual-modules": "0.6.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

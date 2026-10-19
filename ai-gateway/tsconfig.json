@@ -1,0 +1,4 @@
+{
+  "extends": "./.config/tsconfig.json",
+  "include": ["src", ".config/types/bundler-rules.d.ts", ".config/types/webpack-plugins.d.ts"]
+}

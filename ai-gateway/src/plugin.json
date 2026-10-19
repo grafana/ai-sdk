@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "app",
+  "name": "Grafana AI Gateway",
+  "id": "grafana-aigateway-app",
+  "backend": true,
+  "executable": "gpx_aigateway",
+  "info": {
+    "description": "Serves ProviderWire language-model calls to configured and request-supplied model providers.",
+    "author": {
+      "name": "Grafana Labs",
+      "url": "https://grafana.com"
+    },
+    "keywords": ["ai", "llm", "gateway"],
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "links": [
+      {
+        "name": "Source",
+        "url": "https://github.com/grafana/ai-sdk/tree/main/ai-gateway"
+      }
+    ],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=13.3.0-0",
+    "plugins": []
+  }
+}

@@ -41,6 +41,7 @@
   ],
   "ignores": [
     "**/node_modules/**",
+    "ai-gateway/.config/**",
     "openspec/**"
   ]
 }
