@@ -89,21 +89,6 @@ GOWORK="$workspace_file" bash ai-gateway/scripts/package-licenses.sh
 description = "Validate the built AI Gateway plugin package"
 run = "bash ai-gateway/scripts/validate-plugin.sh"
 
-[tasks.build-ai-gateway-image]
-description = "Build and load the AI Gateway image for the local architecture"
-run = """
-image=${AI_GATEWAY_IMAGE:-ai-gateway:local}
-revision=${AI_GATEWAY_VCS_REF:-local-unverified}
-docker build -f ai-gateway/Dockerfile --build-arg "VCS_REF=$revision" --tag "$image" .
-"""
-
-[tasks.test-ai-gateway-image-source]
-description = "Prove the Gateway image uses local SDK/provider source and packages its dependency evidence"
-run = """
-mise deps install --only test
-cd test/conformance/tools && pnpm exec tsx --test gateway-image-source.test.mts
-"""
-
 [tasks.test-anthropic]
 description = "Run Anthropic provider tests"
 run = "cd providers/anthropic && go test ./..."

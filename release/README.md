@@ -42,7 +42,7 @@ reads. Nothing else is needed in a feature pull request:
 A change is attributed to a module by the files it touches, not by its scope.
 Library attribution follows actual module ownership: root-owned files such as
 `middleware/extract_json.go` release core; nested `middleware/logger/` files release
-Logger. A provider-only change can also affect a workspace-built Gateway image.
+Logger. A provider-only change can also affect a workspace-built Gateway plugin package.
 Automatic Gateway attribution for these linked changes remains an activation blocker
 in #245; do not manufacture dependency bumps or assume path-only attribution is enough. Scopes are still worth
 writing because they appear in the changelog.
@@ -120,16 +120,17 @@ dependent library releases -> Renovate provider updates -> Bedrock readiness. Th
 root release needs no internal prerequisite tags; nested first releases wait for tagged
 prerequisites. Already-merged pseudo-versions remain valid for ordinary source PRs.
 
-Gateway has a separate application contract: main and versioned images must build the
-same-revision workspace and pass image/runtime validation, with no dependency on prior
-SDK tags or standalone Gateway compilation. Gateway release readiness currently fails
-closed pending versioned-image validation and #245's linked workspace release attribution.
-The merged source baseline includes #263's workspace image recipe, but this release
-path has not yet proved its selected tag, image smoke and license evidence.
-It remains registered and independently versioned. Library readiness does not substitute
-for application/image readiness.
+Gateway has a separate application contract: main and versioned plugin packages must
+build from the same-revision workspace and pass plugin build, licensing and validator
+checks, with no dependency on prior SDK tags or standalone Gateway compilation. CI keeps
+the validated package of eligible pushes as a workflow artifact; this repository does not
+publish the plugin yet. Its release also updates `ai-gateway/package.json`, the plugin's
+version source. Gateway release readiness currently fails closed pending a plugin
+publication workflow and #245's linked workspace release attribution. It remains
+registered and independently versioned. Library readiness does not substitute for
+application readiness.
 
-Before activation, complete Gateway attribution and image validation; register the
+Before activation, complete Gateway attribution and plugin publication; register the
 release readiness check as required; enforce up-to-date bases or equivalent merge-queue
 validation; confirm App/broker prerequisites; and review exact-candidate publication,
 bootstrap boundaries, retry behavior, and pending release PRs. The new check rejects a

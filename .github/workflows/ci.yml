@@ -191,12 +191,8 @@ jobs:
       - name: Integration tests
         run: mise run test-integration
 
-  image-validation:
-    name: Validate AI Gateway image
-    if: >-
-      ${{ github.event_name == 'push' &&
-          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) &&
-          github.repository == 'grafana/ai-sdk' }}
+  plugin-validation:
+    name: Validate AI Gateway plugin
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -207,100 +203,46 @@ jobs:
 
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          cache: false
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
-      - name: Verify clean image source at the artifact revision
+      - name: Verify clean plugin source at the artifact revision
+        if: ${{ github.event_name == 'push' }}
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain --untracked-files=all)"
 
-      - name: Verify local workspace source in the image
-        run: mise run test-ai-gateway-image-source
-
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        with:
-          platforms: arm64
-
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Build target platforms
-        run: >-
-          docker buildx build
-          --platform linux/amd64,linux/arm64
-          --build-arg VCS_REF="$GITHUB_SHA"
-          --output "type=oci,dest=$RUNNER_TEMP/ai-gateway.oci"
-          -f ai-gateway/Dockerfile .
-
-      - name: Build native image
-        env:
-          AI_GATEWAY_IMAGE: ai-gateway:ci
-          AI_GATEWAY_VCS_REF: ${{ github.sha }}
-        run: mise run build-ai-gateway-image
-
-      - name: Smoke test native image with IPv6 disabled
-        timeout-minutes: 2
+      - name: Verify generated app manifest
         run: |
-          test "$(docker image inspect --format '{{.Config.User}}' ai-gateway:ci)" = '10001:10001'
-          config="$RUNNER_TEMP/ai-gateway-smoke.yaml"
-          printf '%s\n' \
-            'providers:' \
-            '  smoke:' \
-            '    type: anthropic' \
-            '    apiKeyEnv: ANTHROPIC_API_KEY' \
-            '    baseURL: http://127.0.0.1:1' \
-            'models:' \
-            '  smoke:' \
-            '    name: Smoke test' \
-            '    primary:' \
-            '      provider: smoke' \
-            '      model: smoke' > "$config"
-          chmod 644 "$config"
-          container=''
-          trap '
-            if [ -n "$container" ]; then
-              docker logs "$container" || true
-              docker rm --force "$container" || true
-            fi
-            rm -f "$config"
-          ' EXIT
-          container=$(docker run --detach \
-            --network none \
-            --sysctl net.ipv6.conf.all.disable_ipv6=1 \
-            --sysctl net.ipv6.conf.lo.disable_ipv6=1 \
-            --read-only --cap-drop ALL --security-opt no-new-privileges \
-            --mount "type=bind,source=$config,target=/etc/gateway/models.yaml,readonly" \
-            --env GRAFANA_AI_GATEWAY_CONFIG_FILE=/etc/gateway/models.yaml \
-            --env ANTHROPIC_API_KEY=smoke-test-not-a-secret \
-            ai-gateway:ci --deployment.mode=development \
-            --auth.jwks-url=https://auth.example.invalid/jwks \
-            --server.private-listen-address=127.0.0.1:8082 \
-            --server.cloud-listen-address=127.0.0.1:8080 \
-            --server.operational-listen-address=127.0.0.1:8081)
-          for ((attempt = 0; attempt < 30; attempt++)); do
-            if docker exec "$container" timeout 2 bash -c '
-              exec 3<>/dev/tcp/127.0.0.1/8081
-              printf "GET /ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3
-              read -r status <&3
-              [[ "$status" == *" 200 "* ]]
-            '; then
-              docker exec "$container" timeout 2 bash -c '
-                exec 3<>/dev/tcp/127.0.0.1/8082
-                printf "GET /api/v1/aisdk/config HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3
-                read -r status <&3
-                [[ "$status" == *" 401 "* ]]
-              '
-              exit 0
-            fi
-            if [ "$(docker inspect --format '{{.State.Running}}' "$container")" != true ]; then
-              echo 'AI Gateway exited before becoming ready' >&2
-              exit 1
-            fi
-            sleep 1
-          done
-          echo 'AI Gateway did not become ready within 30 attempts' >&2
-          exit 1
+          mise deps install --only test
+          pnpm --filter ./ai-gateway generate:kinds
+          test -z "$(git status --porcelain --untracked-files=all -- ai-gateway/definitions ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata)"
+
+      - name: Build plugin package
+        env:
+          AI_GATEWAY_VCS_REF: ${{ github.sha }}
+        run: mise run build-ai-gateway-plugin
+
+      - name: Validate plugin package
+        run: mise run validate-ai-gateway-plugin
+
+      - name: Gateway tests
+        run: mise run test-ai-gateway
+
+      - name: Plugin test host suites
+        run: mise run test-ai-gateway-command
+
+      - name: Keep validated plugin package
+        if: >-
+          ${{ github.event_name == 'push' &&
+              (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) &&
+              github.repository == 'grafana/ai-sdk' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: grafana-aigateway-app-${{ github.sha }}
+          path: ai-gateway/dist
+          if-no-files-found: error
 
   conformance-test:
     runs-on: ubuntu-latest
@@ -369,89 +311,3 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "${{ steps.conformance.outputs.exit_code }}"
-
-  publish-ai-gateway-image:
-    name: Publish AI Gateway image
-    if: >-
-      ${{ github.event_name == 'push' &&
-          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) &&
-          github.repository == 'grafana/ai-sdk' }}
-    needs:
-      - ci
-      - docs-lint
-      - module-resolution
-      - parity-baseline
-      - integration-test
-      - conformance-test
-      - image-validation
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      tag: ${{ steps.image.outputs.tag }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Select image tag
-        id: image
-        shell: bash
-        run: |
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test -z "$(git status --porcelain --untracked-files=all)"
-          if [[ "$GITHUB_REF" == refs/heads/main ]]; then
-            tag="sha-$GITHUB_SHA"
-          else
-            tag="${GITHUB_REF_NAME#ai-gateway/}"
-            if [[ ! "$tag" =~ ^v[0-9][A-Za-z0-9_.-]*$ || ${#tag} -gt 128 ]]; then
-              echo "Invalid image tag: $tag" >&2
-              exit 1
-            fi
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        with:
-          platforms: arm64
-
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Log in to GHCR
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-
-      - name: Build and publish image
-        env:
-          IMAGE_TAG: ${{ steps.image.outputs.tag }}
-        run: docker buildx build --platform linux/amd64,linux/arm64 --build-arg "VCS_REF=$GITHUB_SHA" --tag "ghcr.io/grafana/ai-gateway:$IMAGE_TAG" --push -f ai-gateway/Dockerfile .
-
-      - name: Log out of GHCR
-        if: always()
-        run: docker logout ghcr.io
-
-  deploy-ai-gateway:
-    name: Deploy AI Gateway
-    if: >-
-      ${{ github.event_name == 'push' &&
-          github.ref == 'refs/heads/main' &&
-          github.repository == 'grafana/ai-sdk' }}
-    needs: publish-ai-gateway-image
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - name: Trigger Argo workflow
-        uses: grafana/shared-workflows/actions/trigger-argo-workflow@5a212d56e9d224851dc4b3c2643bbc5bac484d5d # trigger-argo-workflow/v2.0.0
-        with:
-          instance: ops
-          namespace: ai-gateway-cd
-          workflow_template: ai-gateway
-          parameters: |
-            commit=${{ github.sha }}
-            commit_author=${{ github.event.head_commit.author.username || github.event.head_commit.author.name }}
-            commit_link=${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
-            dockertag=${{ needs.publish-ai-gateway-image.outputs.tag }}

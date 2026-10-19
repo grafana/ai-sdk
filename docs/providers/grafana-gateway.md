@@ -69,36 +69,43 @@ deliberately selected values for your frontend.
 
 ## Authenticate the client
 
-Ask your Gateway operator for the URL and credentials your application should
-use. Include the API prefix in the URL, for example
-`https://gateway.example.com/api/v1/aisdk`. Cloud access uses request-supplied
-provider keys, not configured accounts. Create its client with your stack ID and
-Cloud Access Policy (CAP) token:
+The Gateway runs as a Grafana app plugin. Use its route prefix as the base URL,
+for example
+`https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123`.
+Choose the constructor for your credential:
+
+- `NewWithServiceAccountToken` sends a Grafana service account token. In Grafana
+  Cloud it gives request-scoped BYOK access; in self-hosted Grafana it gives the
+  configured models.
+- `NewWithTokenExchange` exchanges an internal service's access policy token for
+  the `grafana-aigateway-app` audience and gives the configured models in
+  Grafana Cloud when the operator allowlists the service. Add `WithOnBehalfOf`
+  to a call context to make that call on behalf of a user.
+- `NewWithAccessToken` sends an access token you obtain and refresh yourself.
 
 ```go
-client, err := grafana.NewWithCloudCredentials(grafana.CloudCredentialsConfig{
-	StackID:  stackID,
-	CAPToken: capToken,
-	BaseURL:  gatewayURL,
+client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
+	Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
+	BaseURL: gatewayURL,
 })
 if err != nil {
 	return err
 }
 ```
 
-For a self-hosted static-key URL, use `NewWithAccessToken` with the operator's
-opaque key from your server environment. No Cloud stack, CAP, JWT parsing or
-exchange is needed. The same client supports discovery, unary and streaming.
-For a private JWT URL, use `NewWithTokenExchange` or `NewWithAccessToken`. See [Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
-for credential setup and Go/Vercel examples. Use HTTPS and configure
-credentials through the client rather than adding authentication headers to
-individual calls.
+See [Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
+for the access each credential gets in Grafana Cloud and self-hosted Grafana,
+with Go and Vercel examples. Use HTTPS and configure credentials through the
+client rather than adding authentication headers to individual calls. Grafana
+rejects some requests before the Gateway runs; those responses are not Gateway
+error documents.
 
 ## Generate or stream a response
 
-For private configured-account calls, choose a public model ID from your operator
-or the model list below. This example assumes a private JWT client. Cloud calls
-use a native `provider/model` ID and provider keys; see
+For configured-model calls, choose a public model ID from your operator or the
+model list below. This example assumes an internal service in Grafana Cloud or a
+service account in self-hosted Grafana. BYOK calls use a native `provider/model`
+ID and provider keys; see
 [Use your own provider credentials](#use-your-own-provider-credentials).
 
 ```go
@@ -162,16 +169,16 @@ import { fetchConfiguredModels } from "./configured-discovery";
 
 const { models } = await fetchConfiguredModels({
   baseURL,
-  headers: { "X-Access-Token": accessToken },
+  headers: { Authorization: `Bearer ${serviceAccountToken}` },
   signal,
 });
 const aliases = models[0]?.gateway?.aliases;
 ```
 
-A static key or private access JWT may alternatively use bearer `Authorization`; never send
-both access headers. Use the same private Gateway URL and credentials as your
-client; see the [authentication guide](../guides/gateway-authentication.md).
-This helper does not support Cloud/BYOK discovery.
+An internal service may instead send its exchanged token as `X-Access-Token`;
+never send both headers. Use the same base URL and credentials as your client;
+see the [authentication guide](../guides/gateway-authentication.md). This helper
+does not support BYOK discovery.
 
 ### Handle large catalogs
 
@@ -223,9 +230,9 @@ not supported.
 
 ## Use your own provider credentials
 
-Cloud calls use bring your own key (BYOK): send your provider credentials with
-each request. Confirm the Cloud/BYOK URL and availability with your operator;
-Gateway authentication is still required. These calls never use configured
+In Grafana Cloud, service account callers use bring your own key (BYOK): send
+your provider credentials with each request. Gateway authentication is still
+required. These calls never use configured
 accounts, aliases or discovery; native providers decide model availability.
 
 For BYOK, select the provider's native model using a `provider/model` ID rather

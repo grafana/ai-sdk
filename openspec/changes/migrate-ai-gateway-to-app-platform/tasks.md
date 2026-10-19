@@ -104,7 +104,7 @@
   - user and service-account UIDs, subjects, logins and emails never reach logs, metrics, exports or provider requests;
   - credential headers sent through the bare v3 route client reach no logs, metrics, exports, bodies or provider requests.
 - [x] 4.9 Remove `NewWithCloudCredentials`, `CloudCredentialsConfig` and `WithUserIDToken` from `providers/grafana`, and shrink the reserved headers to `Authorization`, `X-Access-Token` and `X-Grafana-Id`. Move their remaining users to the platform flows: `providers/grafana/internal/capture/main.go`, `test/integration/testserver/grafana_logger_capture_test.go` and `ai-gateway/test/providerwire-v4/go-client-differential.test.ts`. Verify that `mise run test-grafana`, `mise run test-integration`, `mise run test-providerwire-v4` and `mise run test-ai-gateway-command` pass.
-- [ ] 4.10 Remove `ai-gateway/docs/cloud-authentication.md` and its links from `docs/guides/gateway-authentication.md` and `docs/guides/ai-gateway-container.md`. Rewrite `ai-gateway/README.md` as the operator overview, covering:
+- [x] 4.10 Remove `ai-gateway/docs/cloud-authentication.md` and its links from `docs/guides/gateway-authentication.md` and `docs/guides/ai-gateway-container.md`. Rewrite `ai-gateway/README.md` as the operator overview, covering:
   - plugin hosting and the route prefix;
   - access modes: the `cloud` allowlist with service identities, on-behalf-of users, BYOK open to every stack user, and `self-hosted` catalog access for users and service accounts;
   - the self-hosted requirements today: the router toggle, plus a token-exchange service and signing keys until vanilla Grafana passes v3 identity; and one service account per application or person to attribute;
@@ -135,11 +135,11 @@
   - a config test for production startup with export enabled and default timeouts;
   - a plugin-process test where Shutdown leads to exit before the host's kill delay.
 - [x] 5.5 Make Agent Observability export optional in every deployment mode, keeping production TLS and credential validation when it is enabled. Verify config tests for production without export and for production cleartext export failing.
-- [ ] 5.6 Update `ai-gateway/docs/text-observability.md` and the README telemetry section. Cover host log relay, host-collected metrics, tracing from the host, and the final-flush budget shared with tracer shutdown. Verify that `mise run lint-docs` passes and relative links resolve.
+- [x] 5.6 Update `ai-gateway/docs/text-observability.md` and the README telemetry section. Cover host log relay, host-collected metrics, tracing from the host, and the final-flush budget shared with tracer shutdown. Verify that `mise run lint-docs` passes and relative links resolve.
 
 ## 6. Client documentation and cross-language evidence
 
-- [ ] 6.1 Update the godoc and `docs/providers/grafana-gateway.md`, and rewrite `docs/guides/gateway-authentication.md`. Cover:
+- [x] 6.1 Update the godoc and `docs/providers/grafana-gateway.md`, and rewrite `docs/guides/gateway-authentication.md`. Cover:
   - the route prefix and the two access modes;
   - internal token exchange with configured models, the `grafana-aigateway-app` audience, namespace, caller-owned token refresh and on-behalf-of calls, in Go;
   - service-account BYOK in `cloud` mode, stating that configured discovery is unavailable there, and the service-account catalog in `self-hosted` mode with one service account per application or person, in Go and pinned Vercel;
@@ -155,7 +155,7 @@
   - sentinel credentials absent from bodies, provider requests and server sinks.
 
   Update the configured-discovery fixtures' header values. Verify that `mise run test-ai-gateway-command` and `mise run test-providerwire-v4` pass.
-- [ ] 6.3 Update the Gateway rows in `test/conformance/PARITY.md`: host composition, request-only accounts, execution overviews, runtime and Go client, and provider metadata. Replace command, dummy-edge, static-key and image evidence with test host evidence, the Vercel internal-caller gap and the documented platform boundaries. Verify that `mise run validate-parity-baseline` passes.
+- [x] 6.3 Update the Gateway rows in `test/conformance/PARITY.md`: host composition, request-only accounts, execution overviews, runtime and Go client, and provider metadata. Replace command, dummy-edge, static-key and image evidence with test host evidence, the Vercel internal-caller gap and the documented platform boundaries. Verify that `mise run validate-parity-baseline` passes.
 
 ## 7. Packaging, CI and release
 
@@ -174,7 +174,7 @@
   - Gateway tests and test host suites.
 
   On eligible pushes, use a clean push-SHA checkout and keep the validated package as a workflow artifact. Rewrite `test/conformance/tools/ci-workflow.test.mts` for those jobs and their `needs`. Verify that `mise run test-ci-workflow` passes and that the PR run executes all plugin jobs.
-- [ ] 7.4 Delete:
+- [x] 7.4 Delete:
   - `ai-gateway/Dockerfile`, `ai-gateway/Dockerfile.dockerignore` and `ai-gateway/.dockerignore`;
   - the `build-ai-gateway-image` and `test-ai-gateway-image-source` tasks and `gateway-image-source.test.mts`;
   - `docs/guides/ai-gateway-container.md`.
@@ -183,7 +183,7 @@
   - `mise tasks` lists no image tasks;
   - `mise run lint-docs` passes;
   - `rg -i 'dockerfile|container image' CONTRIBUTING.md release AGENTS.md docs` finds no Gateway image references.
-- [ ] 7.5 Align the release-please `ai-gateway` component with the plugin package version source without enabling release automation. Verify that `mise run release-check` passes.
+- [x] 7.5 Align the release-please `ai-gateway` component with the plugin package version source without enabling release automation. Verify that `mise run release-check` passes.
 
 ## 8. Integration verification
 

@@ -102,13 +102,16 @@ def verify_candidate(pr, base, head):
 
 def verify_release_files(component, files):
     changelog = "CHANGELOG.md" if component == "." else f"{component}/CHANGELOG.md"
-    if not set(files).issubset({MANIFEST, changelog}) or MANIFEST not in files:
+    allowed = {MANIFEST, changelog}
+    if component == "ai-gateway":
+        allowed.add("ai-gateway/package.json")
+    if not set(files).issubset(allowed) or MANIFEST not in files:
         raise ValueError("release candidate may only update its generated changelog and version manifest")
 
 
 def verify_library(root, base, roots):
     if root == "ai-gateway":
-        raise ValueError("Gateway application readiness awaits #263 and workspace release attribution; publication remains disabled")
+        raise ValueError("Gateway application readiness awaits a plugin publication workflow and workspace release attribution; publication remains disabled")
     with tempfile.TemporaryDirectory(prefix="release-readiness-") as cache:
         env = dict(os.environ, GOWORK="off", GOFLAGS="-mod=readonly -modcacherw",
                    GOPROXY="https://proxy.golang.org", GOPRIVATE="", GONOPROXY="",

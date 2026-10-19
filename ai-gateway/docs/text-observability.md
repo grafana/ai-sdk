@@ -9,6 +9,18 @@ A request produces one logical observation even when fallback tries several
 models. Use the public model ID to monitor application traffic and private
 fallback logs to investigate individual provider attempts.
 
+## Logs and traces through the plugin host
+
+The Gateway writes every log record through the plugin SDK logger, which the
+plugin host relays as structured records at their own level. Nested attributes
+appear as dotted keys, and records stay below the host's 64 KiB line limit. The
+plugin writes nothing else to its standard streams.
+
+Tracing comes from the plugin host. When the host configures it through
+`GF_INSTANCE_OTLP_*`, the plugin SDK instruments the route call and exports
+spans; the Gateway adds no exporter or span attributes of its own. Request log
+records carry the `traceID` and `spanID` of the incoming trace context.
+
 ## Trusted metadata and privacy
 
 The Gateway generates a new bounded correlation ID for the HTTP request. Only
@@ -41,7 +53,7 @@ exported.
 
 ## Inspect fallback attempts
 
-Use private stderr logs to investigate which models were attempted for a request.
+Use the Gateway's relayed logs to investigate which models were attempted for a request.
 Each `gateway_physical_attempt` record includes the request correlation ID when
 available, candidate index, configured provider and backend model, timing,
 outcome, and whether fallback was planned. These records are separate from the
@@ -50,15 +62,10 @@ endpoint URLs, and raw errors. Restrict access because they reveal provider
 configuration. Callers may independently receive compact execution overviews;
 operator timing, correlation and fallback-intent records are not consumer output.
 
-Verify your runtime's stderr transport before relying on these diagnostics.
-Supported destinations are Linux sockets and pipes, plus sockets already
-configured as nonblocking on other Unix platforms. Blocking macOS sockets,
-ordinary files, and terminals disable this output without interrupting model
-calls. The Gateway does not change the shared stderr descriptor's flags.
-
-Attempt logging uses a 256-record queue, a 100 ms write deadline, a 4096-byte
-record limit, and a one-second shutdown budget. Queue saturation or write failures
-can drop records; monitor `grafana_ai_gateway_physical_attempt_dropped_total`
+Attempt records go through the same logger from one background worker with a
+256-record queue and a 4096-byte record limit, so model calls never wait for
+log output. Queue saturation, invalid records and records emitted after
+shutdown are dropped; monitor `grafana_ai_gateway_physical_attempt_dropped_total`
 before treating the logs as a complete account of provider attempts.
 
 ## Caller execution overviews
@@ -82,10 +89,13 @@ controls. See
 
 ## Prometheus
 
-The existing unauthenticated `GET /metrics` endpoint is the single scrape
-target for both HTTP and model metrics. Model collectors are registered once
-on the service-owned registry before listener binding; duplicate registration
-fails startup.
+The plugin host collects the Gateway's metrics through the plugin protocol; the
+Gateway serves no metrics endpoint. Gateway collectors are registered once on
+the plugin's default registry when the plugin starts, and duplicate registration
+fails startup. Route metrics use the fixed route names `config`, `language_model`
+and `unmatched`, never namespaces.
+`grafana_ai_gateway_access_decisions_total` counts route requests by the fixed
+`decision` values `configured`, `byok` and `refused`.
 
 The `aisdk_model_*` families use only the following bounded labels:
 
@@ -111,45 +121,49 @@ uses only the fixed `class` values `queue_full`, `serialization`, `transport`,
 
 ## Agent Observability configuration
 
-Production requires Agent Observability to be enabled, TLS-protected, and
-credentialed. Development may disable it explicitly. Every setting has the
-equivalent `GRAFANA_AI_GATEWAY_` environment binding shown below.
+Agent Observability export is optional in every deployment mode. When enabled
+in production, it must be TLS-protected and credentialed. The plugin reads these
+settings from its environment.
 
-| Flag | Environment | Default / constraint |
-| --- | --- | --- |
-| `--observation.region` | `GRAFANA_AI_GATEWAY_OBSERVATION_REGION` | optional, visible ASCII, at most 128 bytes |
-| `--observation.application` | `GRAFANA_AI_GATEWAY_OBSERVATION_APPLICATION` | optional, visible ASCII, at most 128 bytes |
-| `--agento11y.enabled` | `GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED` | `false`; required in production |
-| `--agento11y.protocol` | `GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL` | `grpc`; `grpc` or `http` |
-| `--agento11y.endpoint` | `GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT` | required when enabled; credential-free absolute HTTP(S) URL for HTTP, host:port for gRPC |
-| `--agento11y.tls` | `GRAFANA_AI_GATEWAY_AGENTO11Y_TLS` | `true`; required in production |
-| `--agento11y.auth-secret-env` | `GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV` | required environment-variable reference; SDK-reserved names are rejected |
-| `--agento11y.queue-size` | `GRAFANA_AI_GATEWAY_AGENTO11Y_QUEUE_SIZE` | `2000`; 1–1,000,000 |
-| `--agento11y.batch-size` | `GRAFANA_AI_GATEWAY_AGENTO11Y_BATCH_SIZE` | `100`; 1–queue size |
-| `--agento11y.payload-max-bytes` | `GRAFANA_AI_GATEWAY_AGENTO11Y_PAYLOAD_MAX_BYTES` | 16 MiB; at most 64 MiB |
-| `--agento11y.max-retries` | `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES` | `5`; 1–10 |
-| `--agento11y.initial-backoff` | `GRAFANA_AI_GATEWAY_AGENTO11Y_INITIAL_BACKOFF` | `100ms`; positive, at most 5m |
-| `--agento11y.max-backoff` | `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF` | `5s`; initial–5m |
-| `--agento11y.export-timeout` | `GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT` | `10s`; per HTTP/gRPC export attempt, positive, at most 5m |
-| `--agento11y.flush-interval` | `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL` | `1s`; positive, at most 5m |
-| `--agento11y.flush-timeout` | `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT` | `5s`; independent positive bound, at most 5m |
-| `--agento11y.shutdown-timeout` | `GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT` | `5s`; independent positive bound, at most 5m |
+| Environment | Default / constraint |
+| --- | --- |
+| `GRAFANA_AI_GATEWAY_OBSERVATION_REGION` | optional, visible ASCII, at most 128 bytes |
+| `GRAFANA_AI_GATEWAY_OBSERVATION_APPLICATION` | optional, visible ASCII, at most 128 bytes |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED` | `false` |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL` | `grpc`; `grpc` or `http` |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT` | required when enabled; credential-free absolute HTTP(S) URL for HTTP, host:port for gRPC |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_TLS` | `true`; required in production when enabled |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV` | required environment-variable reference; SDK-reserved names are rejected |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_QUEUE_SIZE` | `2000`; 1–1,000,000 |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_BATCH_SIZE` | `100`; 1–queue size |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_PAYLOAD_MAX_BYTES` | 16 MiB; at most 64 MiB |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES` | `5`; 1–10 |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_INITIAL_BACKOFF` | `100ms`; positive, at most 5m |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF` | `5s`; initial–5m |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT` | `10s`; per HTTP/gRPC export attempt, positive, at most 5m |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL` | `1s`; positive, at most 5m |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT` | `5s`; independent positive bound, at most 5m |
+| `GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT` | `5s`; independent positive bound, at most 5m |
 
-The secret reference is resolved once before the listener binds; neither its
+The secret reference is resolved once while the plugin starts; neither its
 name nor value is logged. Ambient `AGENTO11Y_*` and legacy `SIGIL_*` SDK
 configuration is rejected so it cannot bypass validated Gateway policy.
 
-Use `--agento11y.export-timeout` to bound each export attempt independently of
+Use `GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT` to bound each export attempt independently of
 flush and shutdown timeouts.
 
 Queue pressure, validation failures, exporter rejection/outage, and bounded
 flush or shutdown failure are fail-open for model traffic. Diagnostics and
-metrics expose only a fixed failure class. After readiness falls and HTTP
-serving stops, the process first waits up to the flush-timeout budget for
-already-started recorders and refuses new recorder acquisition. Flush and
-shutdown then each receive a fresh independent timeout. The
-`process_shutdown_completed` lifecycle event is logged only after this bounded
-finalizer returns.
+metrics expose only a fixed failure class.
+
+After the plugin host stops the plugin, the Gateway flushes Agent Observability
+and attempt records concurrently within one second. Agent Observability waits
+for already-started recorders, flushes and shuts down; each step ends at the
+shared one-second deadline or its configured timeout, whichever comes first, so
+the configured timeouts can only shorten it. Records emitted after the flush
+starts are dropped and counted. The host's tracer shutdown shares the same
+window before the host kills the process, so a slow trace exporter can cut the
+flush short. The `plugin_stopped` lifecycle event is logged after the flush.
 
 ## Returned values and consumer observation
 

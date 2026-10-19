@@ -34,11 +34,19 @@ type Config struct {
 
 // PackageConfig is the per-package release-please configuration.
 type PackageConfig struct {
-	Component             string   `json:"component"`
-	IncludeComponentInTag *bool    `json:"include-component-in-tag"`
-	PrereleaseType        string   `json:"prerelease-type"`
-	InitialVersion        string   `json:"initial-version"`
-	ExcludePaths          []string `json:"exclude-paths"`
+	Component             string      `json:"component"`
+	IncludeComponentInTag *bool       `json:"include-component-in-tag"`
+	PrereleaseType        string      `json:"prerelease-type"`
+	InitialVersion        string      `json:"initial-version"`
+	ExcludePaths          []string    `json:"exclude-paths"`
+	ExtraFiles            []ExtraFile `json:"extra-files"`
+}
+
+// ExtraFile is a release-please file whose version field follows the component.
+type ExtraFile struct {
+	Type     string `json:"type"`
+	Path     string `json:"path"`
+	JSONPath string `json:"jsonpath"`
 }
 
 // Module is a release component with a Go module build boundary.

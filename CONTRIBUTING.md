@@ -492,7 +492,7 @@ using the right type in its title:
 
 A library change is attributed to its module by the files it touches. #245 will
 also attribute relevant SDK, provider, and middleware changes to the
-workspace-built Gateway image release. While the modules are in the `alpha`
+workspace-built Gateway plugin release. While the modules are in the `alpha`
 channel, each release advances the prerelease counter
 (`v0.1.0-alpha.1` to `v0.1.0-alpha.2`).
 
@@ -503,8 +503,8 @@ mise run release-check      # configuration and readiness policy tests
 mise run release-preview    # dry-run of the next release pull request
 ```
 
-Release automation is inactive until #245 readiness and Gateway attribution/image
-gates are implemented and reviewed. No release PRs or tags are created by #21 alone.
+Release automation is inactive until #245 readiness and Gateway attribution/plugin
+publication gates are implemented and reviewed. No release PRs or tags are created by #21 alone.
 After activation, each library gets its own release pull request. Maintainers merge the root one
 first, let Renovate carry the new core version into the nested `go.mod` files,
 then merge the rest. The complete workflow is in the
@@ -529,10 +529,13 @@ SDK's Go module dependency graph.
   (substitute the module being released). This check remains manual pending
   release automation (#245/#21). For a broader diagnostic,
   `mise run verify-module-resolution` checks all published modules.
-- **Gateway images:** Gateway uses the separate `go.gateway.work` to build from
-  same-revision local source. Push-only image validation checks the Gateway
-  artifact at the checkout revision before publication or deployment. Gateway
-  is not published as a standalone Go module.
+- **Gateway plugin:** Gateway uses the separate `go.gateway.work` to build the
+  plugin backend from same-revision local source. Plugin validation runs on pull
+  requests and pushes: manifest regeneration, `mise run build-ai-gateway-plugin`,
+  `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
+  pushes keep the validated package, built from a clean checkout of the push
+  revision, as a workflow artifact. Gateway is not published as a standalone Go
+  module.
 
 The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
 but SDK modules must not import, require, or replace Gateway. Real published
