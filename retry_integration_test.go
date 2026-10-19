@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -726,31 +727,35 @@ func TestRetry_UnsupportedFunctionalityIsNotRetried(t *testing.T) {
 	}
 
 	t.Run("StreamText", func(t *testing.T) {
-		var calls atomic.Int32
-		start := time.Now()
-		result := StreamText(context.Background(), newModel(&calls),
-			WithModelMessages(provider.UserText("hi")),
-			WithMaxRetries(3),
-			withRetryTiming(500, 2),
-		)
-		for range result.FullStream() {
-		}
+		synctest.Test(t, func(t *testing.T) {
+			var calls atomic.Int32
+			start := time.Now()
+			result := StreamText(context.Background(), newModel(&calls),
+				WithModelMessages(provider.UserText("hi")),
+				WithMaxRetries(3),
+				withRetryTiming(500, 2),
+			)
+			for range result.FullStream() {
+			}
 
-		require.ErrorIs(t, result.Err(), provider.ErrUnsupportedFunctionality)
-		assert.Equal(t, int32(1), calls.Load())
-		assert.Less(t, time.Since(start), 400*time.Millisecond, "no backoff delay")
+			require.ErrorIs(t, result.Err(), provider.ErrUnsupportedFunctionality)
+			assert.Equal(t, int32(1), calls.Load())
+			assert.Zero(t, time.Since(start), "no backoff delay")
+		})
 	})
 
 	t.Run("GenerateText", func(t *testing.T) {
-		var calls atomic.Int32
-		start := time.Now()
-		_, err := GenerateText(context.Background(), newModel(&calls),
-			WithModelMessages(provider.UserText("hi")),
-			WithMaxRetries(3),
-		)
+		synctest.Test(t, func(t *testing.T) {
+			var calls atomic.Int32
+			start := time.Now()
+			_, err := GenerateText(context.Background(), newModel(&calls),
+				WithModelMessages(provider.UserText("hi")),
+				WithMaxRetries(3),
+			)
 
-		require.ErrorIs(t, err, provider.ErrUnsupportedFunctionality)
-		assert.Equal(t, int32(1), calls.Load())
-		assert.Less(t, time.Since(start), 400*time.Millisecond, "no backoff delay")
+			require.ErrorIs(t, err, provider.ErrUnsupportedFunctionality)
+			assert.Equal(t, int32(1), calls.Load())
+			assert.Zero(t, time.Since(start), "no backoff delay")
+		})
 	})
 }
