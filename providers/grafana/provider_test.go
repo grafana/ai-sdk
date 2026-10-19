@@ -161,16 +161,17 @@ func TestTokenExchange_ValidationAndExchange(t *testing.T) {
 		{"CAP", func(c *TokenExchangeConfig) { c.CAPToken = " " }},
 		{"namespace", func(c *TokenExchangeConfig) { c.Namespace = " " }},
 		{"audience", func(c *TokenExchangeConfig) { c.Audience = " " }},
+		{"omitted audience", func(c *TokenExchangeConfig) { c.Audience = "" }},
 		{"exchange URL", func(c *TokenExchangeConfig) { c.TokenExchangeURL = "https://secret@host" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := TokenExchangeConfig{CAPToken: "cap", Namespace: "stacks-1", BaseURL: "https://gateway.test", TokenExchangeURL: "https://auth.test"}
+			cfg := TokenExchangeConfig{CAPToken: "cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app", BaseURL: "https://gateway.test", TokenExchangeURL: "https://auth.test"}
 			tc.change(&cfg)
 			_, err := NewWithTokenExchange(cfg)
 			require.Error(t, err)
 		})
 	}
-	for _, audience := range []string{"", "explicit-audience"} {
+	for _, audience := range []string{"grafana-aigateway-app", "explicit-audience"} {
 		t.Run("audience="+audience, func(t *testing.T) {
 			var exchanges, gateway atomic.Int32
 			claims, _ := json.Marshal(map[string]any{"exp": time.Now().Add(time.Hour).Unix()})
@@ -183,11 +184,8 @@ func TestTokenExchange_ValidationAndExchange(t *testing.T) {
 					var request authn.TokenExchangeRequest
 					assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
 					assert.Equal(t, "stacks-1", request.Namespace)
-					expected := audience
-					if expected == "" {
-						expected = "ai-sdk"
-					}
-					assert.Equal(t, []string{expected}, request.Audiences)
+					assert.Equal(t, []string{audience}, request.Audiences)
+					assert.Empty(t, request.SubjectToken)
 					_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]string{"token": token}})
 					return
 				}
@@ -216,7 +214,7 @@ func TestCloudAuth_InvalidFileNeverAuthenticatesOrSends(t *testing.T) {
 	}))
 	defer server.Close()
 	p, err := NewWithTokenExchange(TokenExchangeConfig{
-		CAPToken: "cap", Namespace: "stacks-1", BaseURL: server.URL + "/api",
+		CAPToken: "cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app", BaseURL: server.URL + "/api",
 		TokenExchangeURL: server.URL + "/exchange", HTTPClient: server.Client(),
 	})
 	require.NoError(t, err)
@@ -343,10 +341,13 @@ func TestProvider_ReservedAuthenticationHeaders(t *testing.T) {
 			return NewWithAccessToken(AccessTokenConfig{AccessToken: "dummy-access", BaseURL: "https://gateway.invalid", Headers: headers})
 		}},
 		{"exchange", func(headers http.Header) (*Provider, error) {
-			return NewWithTokenExchange(TokenExchangeConfig{CAPToken: "dummy-cap", Namespace: "stacks-1", TokenExchangeURL: "https://exchange.invalid", BaseURL: "https://gateway.invalid", Headers: headers})
+			return NewWithTokenExchange(TokenExchangeConfig{CAPToken: "dummy-cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app", TokenExchangeURL: "https://exchange.invalid", BaseURL: "https://gateway.invalid", Headers: headers})
 		}},
 		{"cloud", func(headers http.Header) (*Provider, error) {
 			return NewWithCloudCredentials(CloudCredentialsConfig{StackID: 1, CAPToken: "dummy-cap", BaseURL: "https://gateway.invalid", Headers: headers})
+		}},
+		{"service account", func(headers http.Header) (*Provider, error) {
+			return NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_dummy", BaseURL: "https://gateway.invalid", Headers: headers})
 		}},
 	} {
 		t.Run(flow.name, func(t *testing.T) {

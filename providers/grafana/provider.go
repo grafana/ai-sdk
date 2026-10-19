@@ -34,6 +34,7 @@ func DefaultLimits() Limits {
 }
 
 // TokenExchangeConfig configures CAP exchange for an internally provisioned service.
+// Audience is required and names the Gateway plugin, grafana-aigateway-app.
 type TokenExchangeConfig struct {
 	CAPToken         string
 	TokenExchangeURL string
@@ -49,6 +50,15 @@ type TokenExchangeConfig struct {
 type CloudCredentialsConfig struct {
 	StackID    int64
 	CAPToken   string
+	BaseURL    string
+	HTTPClient *http.Client
+	Headers    http.Header
+	Limits     *Limits
+}
+
+// ServiceAccountConfig configures a Grafana service account token.
+type ServiceAccountConfig struct {
+	Token      string
 	BaseURL    string
 	HTTPClient *http.Client
 	Headers    http.Header
@@ -83,7 +93,7 @@ type Provider struct {
 	namespace    string
 	audience     string
 	exchangeGate chan struct{}
-	cloudBearer  string
+	bearer       string
 }
 
 // NewWithCloudCredentials constructs a provider for a Cloud proxy using a stack-scoped CAP token.
@@ -98,7 +108,21 @@ func NewWithCloudCredentials(cfg CloudCredentialsConfig, opts ...Option) (*Provi
 	if err != nil {
 		return nil, err
 	}
-	p.cloudBearer = "Bearer " + strconv.FormatInt(cfg.StackID, 10) + ":" + cfg.CAPToken
+	p.bearer = "Bearer " + strconv.FormatInt(cfg.StackID, 10) + ":" + cfg.CAPToken
+	return p, nil
+}
+
+// NewWithServiceAccountToken constructs a provider that sends a Grafana
+// service account token as its only credential, an Authorization bearer.
+func NewWithServiceAccountToken(cfg ServiceAccountConfig, opts ...Option) (*Provider, error) {
+	if !validCredential(cfg.Token) {
+		return nil, errors.New("grafana: invalid service account token")
+	}
+	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, cfg.Limits, opts)
+	if err != nil {
+		return nil, err
+	}
+	p.bearer = "Bearer " + cfg.Token
 	return p, nil
 }
 
@@ -132,16 +156,13 @@ func NewWithAccessToken(cfg AccessTokenConfig, opts ...Option) (*Provider, error
 	return p, nil
 }
 
-// NewWithTokenExchange constructs an authlib token exchanger; omitted audience defaults to ai-sdk.
+// NewWithTokenExchange constructs an authlib token exchanger for an explicit audience.
 func NewWithTokenExchange(cfg TokenExchangeConfig, opts ...Option) (*Provider, error) {
 	if !validCredential(cfg.CAPToken) {
 		return nil, errors.New("grafana: invalid CAP token")
 	}
 	if !validCredential(cfg.Namespace) {
 		return nil, errors.New("grafana: invalid namespace")
-	}
-	if cfg.Audience == "" {
-		cfg.Audience = "ai-sdk"
 	}
 	if !validCredential(cfg.Audience) {
 		return nil, errors.New("grafana: invalid audience")
@@ -263,6 +284,17 @@ func validHeaderValue(value string) bool {
 
 type userIDTokenKey struct{}
 
+type onBehalfOfKey struct{}
+
+// WithOnBehalfOf makes token-exchange calls in ctx act on behalf of the
+// identity in subjectToken, a Grafana user ID token or a delegated access
+// token. The exchange uses it as its subject, so the Gateway receives the
+// caller and that identity in one access token. Other flows, and exchanges
+// for every namespace, refuse such calls before any network request.
+func WithOnBehalfOf(ctx context.Context, subjectToken string) context.Context {
+	return context.WithValue(ctx, onBehalfOfKey{}, subjectToken)
+}
+
 // WithUserIDToken attaches an acting-user token to Gateway requests in ctx.
 func WithUserIDToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, userIDTokenKey{}, token)
@@ -293,16 +325,29 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 	if user != "" && !validCredential(user) {
 		return nil, errors.New("grafana: invalid acting-user token")
 	}
-	if p.cloudBearer != "" {
+	subject, onBehalfOf := ctx.Value(onBehalfOfKey{}).(string)
+	if onBehalfOf {
+		switch {
+		case !validCredential(subject):
+			return nil, errors.New("grafana: invalid on-behalf-of token")
+		case p.namespace == "":
+			return nil, errors.New("grafana: on-behalf-of calls require token exchange")
+		case p.namespace == "*":
+			return nil, errors.New("grafana: on-behalf-of calls require a concrete namespace")
+		case user != "":
+			return nil, errors.New("grafana: acting-user and on-behalf-of tokens conflict")
+		}
+	}
+	if p.bearer != "" {
 		if user != "" {
-			return nil, errors.New("grafana: acting-user token is unsupported with cloud credentials")
+			return nil, errors.New("grafana: acting-user token requires an access token flow")
 		}
 		req, err := http.NewRequestWithContext(ctx, method, p.baseURL+route, nil)
 		if err != nil {
 			return nil, errors.New("grafana: cannot construct Gateway request")
 		}
 		req.Header = headers
-		req.Header.Set("Authorization", p.cloudBearer)
+		req.Header.Set("Authorization", p.bearer)
 		return req, nil
 	}
 	select {
@@ -310,7 +355,7 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	token, err := p.exchanger.Exchange(ctx, authn.TokenExchangeRequest{Namespace: p.namespace, Audiences: []string{p.audience}})
+	token, err := p.exchanger.Exchange(ctx, authn.TokenExchangeRequest{Namespace: p.namespace, Audiences: []string{p.audience}, SubjectToken: subject})
 	<-p.exchangeGate
 	if err != nil {
 		if ctx.Err() != nil {

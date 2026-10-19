@@ -19,7 +19,9 @@ func main() {
 		BaseURL           string                          `json:"baseURL"`
 		AccessToken       string                          `json:"accessToken"`
 		UserIDToken       string                          `json:"userIDToken"`
+		OnBehalfOf        string                          `json:"onBehalfOf"`
 		TokenExchange     *grafana.TokenExchangeConfig    `json:"tokenExchange"`
+		ServiceAccount    *grafana.ServiceAccountConfig   `json:"serviceAccount"`
 		CloudCredentials  *grafana.CloudCredentialsConfig `json:"cloudCredentials"`
 		Mode              string                          `json:"mode"`
 		ModelID           string                          `json:"modelID"`
@@ -65,10 +67,16 @@ func main() {
 	if input.UserIDToken != "" {
 		ctx = grafana.WithUserIDToken(ctx, input.UserIDToken)
 	}
+	if input.OnBehalfOf != "" {
+		ctx = grafana.WithOnBehalfOf(ctx, input.OnBehalfOf)
+	}
 	var client *grafana.Provider
 	var err error
 	selected := 0
 	if input.TokenExchange != nil {
+		selected++
+	}
+	if input.ServiceAccount != nil {
 		selected++
 	}
 	if input.CloudCredentials != nil {
@@ -84,6 +92,8 @@ func main() {
 	switch {
 	case input.TokenExchange != nil:
 		client, err = grafana.NewWithTokenExchange(*input.TokenExchange)
+	case input.ServiceAccount != nil:
+		client, err = grafana.NewWithServiceAccountToken(*input.ServiceAccount)
 	case input.CloudCredentials != nil:
 		client, err = grafana.NewWithCloudCredentials(*input.CloudCredentials)
 	default:

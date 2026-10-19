@@ -1459,13 +1459,13 @@ describe("authenticated Anthropic Gateway command", () => {
       exchanges++; assert.equal(request.headers.authorization, "Bearer integration-cap");
       assert.equal(request.url, "/exchange/");
       const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString()), { namespace: "stacks-27038", audiences: ["ai-sdk"] });
+      assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString()), { namespace: "stacks-27038", audiences: ["grafana-aigateway-app"] });
       response.writeHead(200, { "content-type": "application/json" }); response.end(JSON.stringify({ data: { token: TEST_TOKEN } }));
     });
     await new Promise<void>((resolve) => exchange.listen(0, "127.0.0.1", resolve));
     try {
       const address = exchange.address(); assert.ok(address && typeof address !== "string");
-      const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: "integration-cap", Namespace: "stacks-27038", BaseURL: `${gateway.url}/api/v1/aisdk`, TokenExchangeURL: `http://127.0.0.1:${address.port}/exchange/` } });
+      const result = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: "integration-cap", Namespace: "stacks-27038", Audience: "grafana-aigateway-app", BaseURL: `${gateway.url}/api/v1/aisdk`, TokenExchangeURL: `http://127.0.0.1:${address.port}/exchange/` } });
       assert.equal(result.error, undefined); assert.equal(result.models.length, 1); assert.equal(exchanges, 1);
       assert.equal(fake.requests.length, 0);
       const metrics = await (await fetch(`${gateway.operationalURL}/metrics`)).text();

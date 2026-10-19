@@ -42,7 +42,7 @@
 
 ## 3. Go client platform flows
 
-- [ ] 3.1 In `providers/grafana`:
+- [x] 3.1 In `providers/grafana`:
   - add `NewWithServiceAccountToken`, which sends one `Authorization: Bearer`;
   - make `TokenExchangeConfig.Audience` required;
   - add the call-context helper for on-behalf-of subject tokens, either a user ID token or a delegated access token. The exchange flow uses it as `SubjectToken`; other flows and wildcard namespaces refuse the call before I/O.
