@@ -412,7 +412,7 @@ A successful streaming setup SHALL require SSE media type and return a `StreamRe
 - **THEN** the client SHALL stop reading, emit at most one bounded protocol error when delivery remains possible, and close all owned resources
 
 #### Scenario: Unsupported response family is received
-- **WHEN** the client receives file, custom, approval or another unsupported later-package stream part
+- **WHEN** the client receives custom or another unsupported later-package stream part
 - **THEN** it SHALL produce an explicit protocol error rather than decoding through provider-domain JSON accidentally
 
 #### Scenario: Hosted dynamic call with preview results
@@ -825,3 +825,25 @@ grammar. The server SHALL remain responsible for selector capability validation.
 #### Scenario: Invalid transport selector
 - **WHEN** a selector is empty, invalid UTF-8, over 2,048 bytes or contains whitespace/control characters
 - **THEN** model construction SHALL fail before I/O
+
+### Requirement: Provider approval consumption and continuation
+The independent Go client SHALL decode unary and streamed provider approval requests, retain opaque metadata and tool/approval IDs, and encode required false approval decisions and presence-aware execution-denied outputs compatibly with the registered Vercel client. Client encoding SHALL preserve provider prompt role boundaries.
+
+#### Scenario: Approval output round trip
+- **WHEN** a provider approval request is received and a valid V4 decision continuation is submitted
+- **THEN** the independent client SHALL preserve the IDs, decision and registered metadata/options without adding application-only approval requests to provider prompts
+
+#### Scenario: High-level Go continuation
+- **WHEN** Go GenerateText or StreamText resumes actual response history containing a provider-owned approval and decision
+- **THEN** core prompt conversion SHALL retain only registered approval-response fields at the provider boundary after handling ownership, without mutating the caller's history, and the next Gateway/native request SHALL succeed
+
+### Requirement: Independent generated-file response decoding
+The Apache Grafana client SHALL decode registered generated files in unary and streaming responses without importing Gateway code. It SHALL preserve data/URL values, optional originalUrl, media type, metadata presence and ordering under its existing cumulative, event-count and response limits. Provider-local filenames SHALL not become normalized generated-file fields.
+
+#### Scenario: Generated file response is decoded
+- **WHEN** the server returns a valid generated file using data or URL in unary or SSE output
+- **THEN** the client SHALL expose the corresponding provider file value with metadata intact and selected empty data preserved
+
+#### Scenario: Malformed or oversized response
+- **WHEN** a generated file has malformed consumed fields or exceeds client limits
+- **THEN** existing bounded protocol-error, cancellation and body-ownership behavior SHALL terminate consumption

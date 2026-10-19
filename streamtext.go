@@ -1780,7 +1780,7 @@ func (r *StreamTextResult) executeTools(
 			// reserved for the resume-from-prior-message flow in
 			// resolveToolApprovals.
 			if !tc.ProviderExecuted {
-				step.ToolResults = append(step.ToolResults, ToolResult{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input, ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: decision.Reason}, Dynamic: tc.Dynamic, Title: tc.Title, ProviderMetadata: tc.ProviderMetadata})
+				step.ToolResults = append(step.ToolResults, ToolResult{ToolCallID: tc.ToolCallID, ToolName: tc.ToolName, Input: tc.Input, ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: denialReason(decision.Reason)}, Dynamic: tc.Dynamic, Title: tc.Title, ProviderMetadata: tc.ProviderMetadata})
 			}
 			r.emitToolApprovalRequest(cfg, req)
 			r.emitToolApprovalResponse(cfg, resp)
@@ -2241,7 +2241,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 			ToolName:   approval.toolCall.ToolName,
 			Output: &provider.ToolResultOutput{
 				Type:   provider.ToolOutputExecutionDenied,
-				Reason: approval.response.Reason,
+				Reason: denialReason(approval.response.Reason),
 			},
 		})
 	}
@@ -2454,6 +2454,9 @@ func sanitizePromptForProvider(msgs []provider.Message) ([]provider.Message, err
 			}
 			if msg.Role == provider.RoleTool && part.Type == provider.ContentPartTypeToolApprovalResponse && !part.ProviderExecuted {
 				continue
+			}
+			if part.Type == provider.ContentPartTypeToolApprovalResponse {
+				part = provider.ContentPart{Type: part.Type, ApprovalID: part.ApprovalID, Approved: part.Approved, Reason: part.Reason, ProviderOptions: part.ProviderOptions}
 			}
 			filtered.Content = append(filtered.Content, part)
 		}

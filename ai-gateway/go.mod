@@ -10,7 +10,7 @@ ignore (
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/anthropics/anthropic-sdk-go v1.80.0
-	github.com/go-jose/go-jose/v4 v4.1.5
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/grafana/agento11y/go v0.18.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260928202004-dd43c6dff058
@@ -128,7 +128,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.29 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
-	github.com/prometheus/common v0.72.0 // indirect
+	github.com/prometheus/common v0.72.1 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -171,7 +171,7 @@ require (
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/api v0.301.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect

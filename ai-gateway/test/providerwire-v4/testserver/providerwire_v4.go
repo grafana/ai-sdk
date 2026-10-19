@@ -160,6 +160,15 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.test/reasoning"}},
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}},
 		)}, nil
+	case "generated-files":
+		m.stats.recordSuccess(options)
+		meta := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"file","reasoningEncryptedContent":null}`)}
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData}, ProviderMetadata: meta},
+			provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Bytes: []byte{1, 2, 3}}, ProviderMetadata: provider.ProviderMetadata{}},
+			provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "opaque:generated", OriginalURL: stringPointer("opaque:Original?token=application")}},
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}},
+		)}, nil
 	case "reasoning":
 		m.stats.recordSuccess(options)
 		return &provider.StreamResult{Stream: scenarioStream(
@@ -251,14 +260,14 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			raw = json.RawMessage(`{}`)
 		}
 		return &provider.StreamResult{Stream: scenarioStream(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{Raw: raw}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}})}, nil
-	case "success":
+	case "success", "structured", "structured-invalid":
 		m.stats.recordSuccess(options)
 		stream := make(chan provider.StreamPart, 8)
 		stream <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: []provider.Warning{{Type: provider.WarnOther, Message: "private warning"}}}
 		stream <- provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "stream-response-1", ModelID: "private-backend", Provider: "private-provider", Timestamp: time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)}
 		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"}
 		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: ""}
-		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "hello from Go stream"}
+		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: scenarioOutputText(m.kind, "hello from Go stream")}
 		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"}
 		stream <- provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{
 			InputTokens:  provider.InputTokenUsage{Total: &two, NoCache: &one, CacheRead: &one, CacheWrite: &zero},
@@ -266,6 +275,17 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "test-stop"}}
 		close(stream)
 		return &provider.StreamResult{Stream: stream}, nil
+	case "structured-committed":
+		m.stats.recordSuccess(options)
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartStreamStart},
+			provider.StreamPart{Type: provider.PartTextStart, ID: "object"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "object", Delta: `{"value":`},
+			provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400, Message: "wrapper must not escape", Data: json.RawMessage(`{"error":{"message":"event detail","type":"schema_error","code":17}}`)})},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "object", Delta: `"ok"}`},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "object"},
+			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}},
+		)}, nil
 	case "stream-key-errors":
 		return &provider.StreamResult{Stream: scenarioStream(
 			provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Data: json.RawMessage(`{"message":"configured-test-key own-byok-key","type":"configured-test-key","code":"configured-test-key"}`)})},
@@ -316,6 +336,16 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &data, ProviderMetadata: provider.ProviderMetadata{}},
 			{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &url},
 		}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}}, nil
+	case "generated-files":
+		m.stats.recordSuccess(options)
+		empty, data, url := provider.Base64DataContent(""), provider.BytesDataContent([]byte{1, 2, 3}), provider.URLDataContent("opaque:generated")
+		url.OriginalURL = stringPointer("opaque:Original?token=application")
+		two := 2
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{
+			{Type: provider.ContentFile, MediaType: "image/png", Data: &empty, ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"file","reasoningEncryptedContent":null}`)}},
+			{Type: provider.ContentFile, MediaType: "image/png", Data: &data, ProviderMetadata: provider.ProviderMetadata{}},
+			{Type: provider.ContentFile, MediaType: "image/png", Data: &url},
+		}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}}, nil
 	case "reasoning":
 		m.stats.recordSuccess(options)
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentReasoning, Text: "", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"end-signature"}`)}}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
@@ -363,13 +393,13 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			raw = json.RawMessage(`{}`)
 		}
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "ok"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{Raw: raw}}, nil
-	case "success":
+	case "success", "structured", "structured-invalid":
 		m.stats.recordSuccess(options)
 		zero := 0
 		one := 1
 		two := 2
 		return &provider.GenerateResult{
-			Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: "hello from Go"}},
+			Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: scenarioOutputText(m.kind, "hello from Go")}},
 			FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "test-stop"},
 			Usage: provider.Usage{
 				InputTokens:  provider.InputTokenUsage{Total: &two, NoCache: &one, CacheRead: &one, CacheWrite: &zero},
@@ -398,7 +428,7 @@ type providerWireV4Scenario struct {
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
 	entries := make([]catalog.StaticEntry, 0, 22)
-	for _, id := range []string{"native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
+	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -411,6 +441,19 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		return nil, err
 	}
 	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "mapped-fallback"}, Model: ordered})
+	structured, err := fallback.New(&providerWireV4Model{kind: "setup-failure", stats: stats}, &providerWireV4Model{kind: "structured", stats: stats})
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "structured-fallback"}, Model: structured})
+	committed, err := fallback.New(&providerWireV4Model{kind: "structured-committed", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "structured-committed", Candidates: []catalog.ConfiguredCandidate{
+		{ProviderInstance: "selected", Provider: "test", ModelID: "private-structured-committed"},
+		{ProviderInstance: "unused", Provider: "test", ModelID: "private-success"},
+	}}, Model: committed})
 	executionModel, err := fallback.New(&providerWireV4Model{kind: "execution-failure", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
 	if err != nil {
 		return nil, err
@@ -501,3 +544,15 @@ func registerProviderWireV4(mux *http.ServeMux) error {
 	scenario.register(mux)
 	return nil
 }
+
+func scenarioOutputText(kind, fallbackText string) string {
+	switch kind {
+	case "structured":
+		return `{"value":"ok"}`
+	case "structured-invalid":
+		return `{"value":42}`
+	default:
+		return fallbackText
+	}
+}
+func stringPointer(value string) *string { return &value }

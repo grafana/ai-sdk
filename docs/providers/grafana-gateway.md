@@ -127,6 +127,25 @@ See [Generate text from Go](../getting-started/backend-only.md#stream-text-as-it
 for the stream-consumption pattern, or [Full-stack chat](../getting-started/full-stack-chat.md)
 to connect a streaming response to your frontend. Consume or cancel every stream.
 
+## Receive generated files
+
+When a configured model emits generated files, the Gateway transports them in
+unary and streaming responses. The low-level Grafana client preserves inline
+base64, URL strings, optional original URLs and opaque provider metadata. Inline
+bytes are encoded once. Provider-local generated filenames are omitted because
+they are not part of the registered output contract.
+
+High-level generation resolves file URLs into file bytes using the SDK's existing
+download policy. The Gateway itself does not download or rewrite media URLs.
+Response and stream-frame limits include encoded media and metadata; oversized
+output fails before a successful body or file frame is written. A selected file
+commits its fallback candidate, so later failures do not replay generation.
+
+Operator capture and application middleware capture are independently configured;
+neither setting removes files or ordinary metadata from caller responses. Capture
+formats can differ from the provider wire representation. This transport support
+does not add image, speech or video generation capabilities to native adapters.
+
 ## Discover and select public models
 
 Discovery is private configured-account functionality. Cloud/BYOK discovery
@@ -202,6 +221,27 @@ Choose a model that supports the file types, tools and reasoning settings your
 application needs. When using fallback, provide appropriate settings for each
 provider that may receive the request.
 
+## Structured output
+
+Use the SDK's [structured output helpers](../guides/structured-output.md) with
+the Gateway in unary or streaming calls. JSON mode and object schemas reach
+the selected native adapter, including configured fallback candidates. The
+Gateway returns the native text; your SDK parses and validates the final object.
+Schemas must have an object root. Their contents stay opaque until native
+provider validation, so a valid Gateway request can still be rejected by a model.
+
+Schema support remains provider-specific. OpenAI Responses and Anthropic use
+their native structured-output behavior. Configured OpenAI-compatible routes
+currently retain their default JSON-mode fallback and return a warning when a
+schema is supplied; the standalone compatible provider supports explicit schema
+opt-in. The Gateway does not force schema support for those routes.
+
+When migrating direct `provider.ResponseFormat` literals, supply a pointer for
+`Name`: `new("answer")` supplies a name and `new("")` explicitly supplies an
+empty one. Omit it to retain the native default. `output.WithName("")` also
+preserves explicit emptiness. Missing and empty descriptions are equivalent.
+See the [provider API reference](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#ResponseFormat).
+
 ## Function tools
 
 Define tools in your application to let the model request actions such as
@@ -225,8 +265,32 @@ For Anthropic MCP, use distinct server names and HTTPS URLs without embedded
 credentials or fragments. Include the server configuration again when continuing
 the conversation, along with prior calls, results and provider metadata.
 
-Tool approvals, custom tool-result formats and generated media responses are
-not supported.
+Provider approval requests can be approved or denied and resumed through unary
+or streaming calls, including configured fallback routes. Keep the returned
+approval ID distinct from the tool-call ID. The high-level SDK owns application
+approval history; the V4 prompt carries tool-role approval responses, with an
+explicit boolean decision. The Gateway does not execute or persist approvals.
+
+For OpenAI hosted MCP, preserve the link between the two returned IDs before
+resuming: find the provider-executed tool call with the approval's `toolCallId`
+and set that call's `providerOptions.openai.approvalRequestId` to the returned
+`approvalId`, retaining its other options. The registered native adapter uses
+this option to associate the later result with the original tool call. Apply
+this step to high-level response messages as well as direct provider prompts;
+the registered high-level SDK does not add it automatically. Send the decision
+with the same approval ID and retain the provider ownership marker in
+application history.
+
+Execution-denied results preserve an absent reason separately from an explicitly
+empty reason. In Go, `ToolResultOutput.Reason` is now `*string`: use nil for an
+absent reason and `new("")` to preserve empty text. Existing string-valued
+constructors must be migrated to pointers. Approval-response reasons remain
+strings; empty and absent both mean no reason.
+
+Registered output options and nested text/file result options reach native
+adapters. The `content` output wrapper has no `providerOptions` field. Custom
+tool-result formats are not supported. Generated file
+transport is described in [Receive generated files](#receive-generated-files).
 
 ## Use your own provider credentials
 

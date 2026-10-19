@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root=$(git rev-parse --show-toplevel)
 source "$repo_root/scripts/module-policy.sh"
 fixture=$(mktemp -d)
+fixture=$(cd "$fixture" && pwd -P)
 trap 'rm -rf "$fixture"' EXIT
 
 assert_fails() {

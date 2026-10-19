@@ -15,7 +15,7 @@ import (
 type ArrayOutput[T any] struct {
 	elementSchema schema.Schema
 	wrappedSchema schema.Schema
-	name          string
+	name          *string
 	desc          string
 }
 
@@ -77,7 +77,7 @@ func buildArrayWrapperSchema(elementSchema json.RawMessage) (json.RawMessage, er
 	return json.Marshal(wrapper)
 }
 
-func (o *ArrayOutput[T]) setName(name string)        { o.name = name }
+func (o *ArrayOutput[T]) setName(name string)        { o.name = &name }
 func (o *ArrayOutput[T]) setDescription(desc string) { o.desc = desc }
 func (o *ArrayOutput[T]) ResponseFormat() *provider.ResponseFormat {
 	return &provider.ResponseFormat{

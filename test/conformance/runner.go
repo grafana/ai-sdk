@@ -202,7 +202,7 @@ type ResponseFormatConfig struct {
 	OutputMode  string   `yaml:"outputMode,omitempty"`
 	Schema      any      `yaml:"schema"`
 	Choices     []string `yaml:"choices,omitempty"`
-	Name        string   `yaml:"name,omitempty"`
+	Name        *string  `yaml:"name,omitempty"`
 	Description string   `yaml:"description,omitempty"`
 }
 
@@ -302,8 +302,8 @@ func (cfg *Config) BuildOutput() (aisdk.Output, error) {
 		return nil, nil
 	}
 	var opts []output.ObjectOption
-	if cfg.ResponseFormat.Name != "" {
-		opts = append(opts, output.WithName(cfg.ResponseFormat.Name))
+	if cfg.ResponseFormat.Name != nil {
+		opts = append(opts, output.WithName(*cfg.ResponseFormat.Name))
 	}
 	if cfg.ResponseFormat.Description != "" {
 		opts = append(opts, output.WithDescription(cfg.ResponseFormat.Description))

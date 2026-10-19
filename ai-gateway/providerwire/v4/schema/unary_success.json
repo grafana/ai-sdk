@@ -12,10 +12,12 @@
       "type": "array",
       "items": {
         "oneOf": [
+          { "$ref": "#/$defs/toolApprovalRequest" },
           { "$ref": "#/$defs/urlSource" },
           { "$ref": "#/$defs/documentSource" },
           { "$ref": "#/$defs/reasoning" },
           { "$ref": "#/$defs/reasoningFile" },
+          { "$ref": "#/$defs/generatedFile" },
           {
             "type": "object",
             "required": ["type", "text"],
@@ -82,6 +84,17 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "toolApprovalRequest": {
+      "type": "object",
+      "required": ["type", "approvalId", "toolCallId"],
+      "properties": {
+        "type": { "const": "tool-approval-request" },
+        "approvalId": { "type": "string", "minLength": 1 },
+        "toolCallId": { "type": "string", "minLength": 1 },
+        "providerMetadata": { "$ref": "#/$defs/providerMetadata" }
+      },
+      "additionalProperties": false
+    },
     "responseIdentity": {
       "type": "object",
       "properties": {
@@ -113,10 +126,15 @@
       "properties": { "type": {"const": "reasoning-file"}, "mediaType": {"type": "string"}, "data": {"$ref": "#/$defs/reasoningFileData"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"} },
       "additionalProperties": false
     },
+    "generatedFile": {
+      "type": "object", "required": ["type", "mediaType", "data"],
+      "properties": { "type": {"const": "file"}, "mediaType": {"type": "string"}, "data": {"$ref": "#/$defs/reasoningFileData"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"} },
+      "additionalProperties": false
+    },
     "reasoningFileData": {
       "oneOf": [
         { "type": "object", "required": ["type", "data"], "properties": {"type": {"const": "data"}, "data": {"type": "string"}}, "additionalProperties": false },
-        { "type": "object", "required": ["type", "url"], "properties": {"type": {"const": "url"}, "url": {"type": "string", "minLength": 1}}, "additionalProperties": false }
+        { "type": "object", "required": ["type", "url"], "properties": {"type": {"const": "url"}, "url": {"type": "string", "minLength": 1}, "originalUrl": {"type": "string"}}, "additionalProperties": false }
       ]
     },
     "providerMetadata": {
