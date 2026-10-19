@@ -146,7 +146,7 @@
   - the platform-error caveat.
 
   Put the Go examples in `providers/grafana` example tests and the TypeScript example in the ProviderWire workspace. Verify that `mise run test-grafana`, `mise run test-providerwire-v4` and `mise run lint-docs` pass.
-- [ ] 6.2 Cover exact-client evidence through the test binary:
+- [x] 6.2 Cover exact-client evidence through the test binary:
   - Go configured discovery, unary and streaming for internal callers in `cloud` mode, directly and on behalf of a user with both an ID-token and a delegated-access-token subject, with the token only in `X-Access-Token`;
   - Go and pinned Vercel service-account BYOK unary and streaming in `cloud` mode, plus unsupported discovery;
   - Go and pinned Vercel service-account configured discovery, unary and streaming in `self-hosted` mode;

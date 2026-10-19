@@ -2037,6 +2037,78 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
   }
 });
 
+describe("platform caller access in cloud mode", () => {
+  it("serves configured models to internal Go callers directly and on behalf of users", async () => {
+    const fake = await FakeAnthropic.start();
+    let gateway: GatewayProcess | undefined;
+    try {
+      gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "cloud-gateway");
+      const cap = await gateway.credential({ kind: "access-policy", service: INTERNAL_SERVICE });
+      const tokenExchange = { CAPToken: cap, Namespace: TEST_NAMESPACE, Audience: "grafana-aigateway-app", BaseURL: gateway.baseURL, TokenExchangeURL: `${gateway.url}/platformhost/exchange` };
+      const userIDToken = await gateway.credential({ kind: "id-token", identityType: "user", uid: "private-user-uid" });
+      const delegated = await gateway.credential({ kind: "delegated", service: "other-app", identityType: "user", uid: "private-user-uid" });
+      for (const onBehalfOf of [undefined, userIDToken, delegated]) {
+        const base = { tokenExchange, ...(onBehalfOf ? { onBehalfOf } : {}), modelID: "assistant" };
+        const discovery = await captureGoClient(goClientBinaryPath, { ...base, mode: "discovery" });
+        assert.equal(discovery.error, undefined);
+        assert.deepEqual(discovery.models.map((model: { id: string }) => model.id), ["grafana/assistant"]);
+        const unary = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", options: { prompt: [{ role: "user", content: [{ type: "text", text: "unary" }] }], maxOutputTokens: 32 } });
+        assert.equal(unary.error, undefined);
+        assert.deepEqual(unary.result.content, [{ type: "text", text: "hello from fake Anthropic" }]);
+        const stream = await captureGoClient(goClientBinaryPath, { ...base, mode: "stream", options: { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], maxOutputTokens: 32 } });
+        assert.equal(stream.error, undefined);
+        assert.equal(stream.parts.at(-1).type, "finish");
+        assertConsumerSecretsAbsent([discovery, unary, stream], [cap, userIDToken, delegated]);
+      }
+      assert.equal(fake.requests.length, 6);
+      assert.ok(fake.requests.every((request) => request.apiKey === "integration-anthropic-key"));
+      for (const secret of [cap, userIDToken, delegated, "private-user-uid"]) assert.ok(!JSON.stringify(fake.requests).includes(secret));
+      const metrics = await gateway.metrics();
+      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="configured"\} 9/);
+      assert.doesNotMatch(metrics, /decision="(?:byok|refused)"/);
+      await gateway.stop();
+      assert.ok(gateway.stderr.includes(`"caller_service":"${INTERNAL_SERVICE}"`));
+      assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [cap, userIDToken, delegated, "private-user-uid", "other-app"]);
+      assert.deepEqual(fake.violations, []);
+    } finally {
+      await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop());
+    }
+  });
+
+  it("refuses relayed, anonymous and unauthenticated callers before any work", async () => {
+    const fake = await FakeAnthropic.start();
+    let gateway: GatewayProcess | undefined;
+    try {
+      gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "cloud-gateway");
+      const internal = await gateway.credential({ kind: "service", service: INTERNAL_SERVICE });
+      const relayed = await gateway.credential({ kind: "relay", service: "relay-service", subject: internal });
+      const anonymous = await gateway.credential({ kind: "session", identityType: "anonymous", uid: "viewer" });
+      const unlisted = await gateway.credential({ kind: "access-policy", service: "relay-service" });
+      const permission = '{"error":{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden"}}';
+      const callers: Array<Record<string, string>> = [{ "X-Access-Token": relayed }, { Cookie: `grafana_session=${anonymous}` }];
+      for (const headers of callers) {
+        const discovery: Response = await fetch(`${gateway.baseURL}/config`, { headers });
+        assert.equal(discovery.status, 403);
+        assert.equal(await discovery.text(), permission);
+        const inference = await rawHTTPRequest(`${gateway.baseURL}/language-model`, "POST", [...Object.entries(headers), ["Content-Type", "application/json"], ["ai-language-model-specification-version", "4"], ["ai-language-model-id", "assistant"], ["ai-language-model-streaming", "false"]], JSON.stringify({ prompt: [] }));
+        assert.equal(inference.status, 403);
+      }
+      await assert.rejects(gateway.accessTokenClient(relayed).getAvailableModels());
+      const go = await captureGoClient(goClientBinaryPath, { mode: "discovery", tokenExchange: { CAPToken: unlisted, Namespace: TEST_NAMESPACE, Audience: "grafana-aigateway-app", BaseURL: gateway.baseURL, TokenExchangeURL: `${gateway.url}/platformhost/exchange` } });
+      assert.equal(go.error?.statusCode, 403);
+      assert.equal((await fetch(`${gateway.baseURL}/config`)).status, 401);
+      assert.equal(fake.requests.length, 0);
+      const metrics = await gateway.metrics();
+      assert.match(metrics, /grafana_ai_gateway_access_decisions_total\{decision="refused"\} 6/);
+      assert.doesNotMatch(metrics, /decision="(?:configured|byok)"/);
+      await gateway.stop();
+      assertPrivateValuesAbsent([metrics, gateway.stderr], fake, [internal, relayed, anonymous, unlisted, "relay-service", "viewer"]);
+    } finally {
+      await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop());
+    }
+  });
+});
+
 describe("authenticated OpenAI-compatible Gateway command", () => {
   it("forwards native provider options and refuses host and credential values", async () => {
     const [fake, gateway] = await startCompatibleGateway();
@@ -2685,7 +2757,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
 }
 
 type Topology = "cloud" | "self-hosted";
-type CredentialRequest = { kind: "service" | "id-token" | "on-behalf-of" | "relay" | "service-account" | "session" | "access-policy"; service?: string; identityType?: string; uid?: string; subject?: string; namespace?: string };
+type CredentialRequest = { kind: "service" | "id-token" | "on-behalf-of" | "relay" | "delegated" | "service-account" | "session" | "access-policy"; service?: string; identityType?: string; uid?: string; subject?: string; namespace?: string };
 
 function flagEnvironment(args: string[]): Record<string, string> {
   const environment: Record<string, string> = {};

@@ -175,6 +175,16 @@ func credential(ctx context.Context, host *platformhost.Host, defaultNamespace s
 		return exchange(request.Service, subject)
 	case "relay":
 		return exchange(request.Service, request.Subject)
+	case "delegated":
+		subject, err := host.IDToken(request.IdentityType, request.UID, namespace)
+		if err != nil {
+			return "", err
+		}
+		viaFrontDoor, err := host.Exchange(ctx, platformhost.FrontDoorService, authn.TokenExchangeRequest{Namespace: namespace, SubjectToken: subject})
+		if err != nil {
+			return "", err
+		}
+		return host.Exchange(ctx, platformhost.RouterService, authn.TokenExchangeRequest{Namespace: namespace, Audiences: []string{request.Service}, SubjectToken: viaFrontDoor})
 	case "service-account":
 		return host.AddServiceAccount(request.UID, namespace), nil
 	case "session":
