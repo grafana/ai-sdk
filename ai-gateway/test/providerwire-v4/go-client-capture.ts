@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 
 export function buildGoClientCapture(directory: string, sourceDirectory = resolve(import.meta.dirname, "../../../providers/grafana")): string {
-  const root = resolve(import.meta.dirname, "../../..");
+  sourceDirectory = realpathSync(sourceDirectory);
+  directory = realpathSync(directory);
+  const root = realpathSync(resolve(import.meta.dirname, "../../.."));
   const rootClient = join(root, "providers/grafana");
   let workspace = join(root, "go.work");
   if (sourceDirectory !== rootClient) {

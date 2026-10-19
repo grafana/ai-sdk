@@ -208,6 +208,7 @@ workspace() {
 isolation() (
   local dir root module selected directory workspace_file
   dir=$(mktemp -d)
+  dir=$(cd "$dir" && pwd -P)
   trap 'rm -rf "$dir"' EXIT
   rsync -a --exclude='/.git' --exclude='/ai-gateway' --exclude='**/node_modules' "$repo_root/" "$dir/"
   [[ ! -e "$dir/ai-gateway" ]] || fail 'isolated copy contains Gateway source'

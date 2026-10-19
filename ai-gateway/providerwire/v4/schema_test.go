@@ -168,7 +168,6 @@ func TestErrorSchema(t *testing.T) {
 		unsupportedCustomContentError,
 		unsupportedToolsError,
 		unsupportedToolApprovalsError,
-		unsupportedStructuredOutputError,
 		reservedProviderOptionsError,
 		protectedCallHeaderError,
 		unsupportedRawOutputError,

@@ -94,7 +94,7 @@ func encodeRequest(opts provider.CallOptions) ([]byte, error) {
 		v := requestObject{"type": f.Type}
 		switch f.Type {
 		case provider.ResponseFormatText:
-			if f.Schema != nil || f.Name != "" || f.Description != "" {
+			if f.Schema != nil || f.Name != nil || f.Description != "" {
 				return nil, errRequest
 			}
 		case provider.ResponseFormatJSON:
@@ -104,7 +104,9 @@ func encodeRequest(opts provider.CallOptions) ([]byte, error) {
 				}
 				v["schema"] = f.Schema
 			}
-			optionalString(v, "name", f.Name)
+			if f.Name != nil {
+				v["name"] = *f.Name
+			}
 			optionalString(v, "description", f.Description)
 		default:
 			return nil, errRequest

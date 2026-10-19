@@ -64,7 +64,10 @@ type wirePart struct {
 }
 
 type wireResponseFormat struct {
-	Type provider.ResponseFormatType `json:"type"`
+	Type        provider.ResponseFormatType `json:"type"`
+	Schema      json.RawMessage             `json:"schema"`
+	Name        *string                     `json:"name"`
+	Description string                      `json:"description"`
 }
 
 type wireReasoning string
@@ -123,7 +126,7 @@ func mapRequest(request wireRequest) (provider.CallOptions, *requestFailure) {
 		switch request.ResponseFormat.Type {
 		case provider.ResponseFormatText:
 		case provider.ResponseFormatJSON:
-			return provider.CallOptions{}, rejectedMappingFailure(capabilityStructuredOutput)
+			options.ResponseFormat = &provider.ResponseFormat{Type: request.ResponseFormat.Type, Schema: request.ResponseFormat.Schema, Name: request.ResponseFormat.Name, Description: request.ResponseFormat.Description}
 		default:
 			return provider.CallOptions{}, invalidMappingFailure()
 		}

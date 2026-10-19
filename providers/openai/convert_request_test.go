@@ -1378,7 +1378,7 @@ func TestBuildParams_JSONSchemaStructuredOutput(t *testing.T) {
 		Prompt: []provider.Message{provider.UserText("hi")},
 		ResponseFormat: &provider.ResponseFormat{
 			Type:   provider.ResponseFormatJSON,
-			Name:   "weather",
+			Name:   new("weather"),
 			Schema: json.RawMessage(`{"type":"object"}`),
 		},
 	})
