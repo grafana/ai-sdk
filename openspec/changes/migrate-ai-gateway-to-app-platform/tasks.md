@@ -22,7 +22,7 @@
 
 ## 2. Protocol test host package
 
-- [ ] 2.1 Add a test-only Go package under `ai-gateway/test/` that:
+- [x] 2.1 Add a test-only Go package under `ai-gateway/test/` that:
   - accepts service account tokens only as an `Authorization` bearer and access tokens only as `X-Access-Token`;
   - signs delegated tokens with an in-memory JWKS and builds platform-shaped actor chains:
     - direct service call, with the service identity on the first actor;

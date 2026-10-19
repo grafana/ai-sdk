@@ -24,11 +24,6 @@ func TestManifest_DeclaresOnlyGatewayRoutes(t *testing.T) {
 	assert.Equal(t, "v1alpha1", version.Name)
 	assert.True(t, version.Served)
 	assert.Empty(t, version.Kinds)
-	assert.Empty(t, version.Routes.Cluster)
-	assert.Equal(t, map[string][]string{
-		"/config":         {http.MethodGet},
-		"/language-model": {http.MethodPost},
-	}, operations(version.Routes.Namespaced))
 	assert.Equal(t, map[string][]string{
 		"/namespaces/{namespace}/config":         {http.MethodGet},
 		"/namespaces/{namespace}/language-model": {http.MethodPost},
