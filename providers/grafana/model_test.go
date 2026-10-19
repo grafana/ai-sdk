@@ -179,9 +179,10 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 		calls.Add(1)
 		assert.Equal(t, "POST", r.Method)
 		assert.Equal(t, "/api/v1/aisdk/language-model", r.URL.Path)
-		for key, want := range map[string]string{"Content-Type": "application/json", "Accept": "application/json", "X-Access-Token": "access-token", "X-Grafana-Id": "user-token", "Ai-Language-Model-Id": "assistant", "Ai-Language-Model-Specification-Version": "4", "Ai-Language-Model-Streaming": "false", "X-Custom": "call"} {
+		for key, want := range map[string]string{"Content-Type": "application/json", "Accept": "application/json", "X-Access-Token": "access-token", "Ai-Language-Model-Id": "assistant", "Ai-Language-Model-Specification-Version": "4", "Ai-Language-Model-Streaming": "false", "X-Custom": "call"} {
 			assert.Equal(t, []string{want}, r.Header.Values(key), key)
 		}
+		assert.Empty(t, r.Header.Values("X-Grafana-Id"))
 		var body map[string]json.RawMessage
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		assert.JSONEq(t, `[]`, string(body["prompt"]))
@@ -201,7 +202,7 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 	m, err := p.LanguageModel("assistant")
 	require.NoError(t, err)
 	zero := 0
-	result, err := m.DoGenerate(WithUserIDToken(context.Background(), "user-token"), provider.CallOptions{Prompt: []provider.Message{}, MaxOutputTokens: &zero, Headers: map[string]string{"x-custom": "call", "ai-language-model-id": "evil-model", "accept": "evil-accept", "content-type": "evil-type", "ai-language-model-streaming": "true", "ai-language-model-specification-version": "3"}})
+	result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}, MaxOutputTokens: &zero, Headers: map[string]string{"x-custom": "call", "ai-language-model-id": "evil-model", "accept": "evil-accept", "content-type": "evil-type", "ai-language-model-streaming": "true", "ai-language-model-specification-version": "3"}})
 	require.NoError(t, err)
 	require.Len(t, result.Content, 2)
 	assert.Equal(t, "hello", result.Content[0].Text)

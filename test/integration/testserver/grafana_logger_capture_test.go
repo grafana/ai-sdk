@@ -43,7 +43,7 @@ func TestModel_BYOKLoggerCapture(t *testing.T) {
 					}
 				}))
 				defer srv.Close()
-				p, err := grafana.NewWithCloudCredentials(grafana.CloudCredentialsConfig{StackID: 123, CAPToken: "dummy-cap", BaseURL: srv.URL + "/api/v1/aisdk"})
+				p, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{Token: "glsa_dummy", BaseURL: srv.URL + "/api/v1/aisdk"})
 				require.NoError(t, err)
 				base, err := p.LanguageModel("openai/native")
 				require.NoError(t, err)

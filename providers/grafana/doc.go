@@ -1,7 +1,7 @@
-// Package grafana provides authenticated public model discovery for Grafana AI
-// Gateway. Base URLs identify the ProviderWire API prefix, for example
-// https://gateway.example/api/v1/aisdk. NewWithCloudCredentials sends a
-// stack-scoped Cloud Access Policy token through an authenticating proxy.
+// Package grafana provides authenticated model discovery and inference for the
+// Grafana AI Gateway plugin. Base URLs are the plugin's namespaced route
+// prefix, for example
+// https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1.
 // NewWithServiceAccountToken sends a Grafana service account token as an
 // Authorization bearer. NewWithTokenExchange delegates internal token exchange
 // and caching to Grafana authlib for an explicit audience, and WithOnBehalfOf

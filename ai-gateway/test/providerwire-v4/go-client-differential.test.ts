@@ -109,7 +109,7 @@ async function eventually(check: () => boolean, label: string): Promise<void> {
 
 describe("Go and exact-pinned Gateway differential", () => {
   it("covers every protected header with lower, upper, and canonical casing in both call modes", async () => {
-    const authenticationNames = ["authorization", "x-access-token", "x-grafana-id", "x-scope-orgid", "x-cloud-org-id", "x-access-policy-id"];
+    const authenticationNames = ["authorization", "x-access-token", "x-grafana-id"];
     const protectedNames = [...authenticationNames, "content-type", "accept", "ai-language-model-id", "ai-language-model-specification-version", "ai-language-model-streaming"];
     const casings = [(name: string) => name, (name: string) => name.toUpperCase(), (name: string) => name.split("-").map((part) => part[0]!.toUpperCase() + part.slice(1)).join("-")];
     let classifiedOwnershipDifferences = 0;
@@ -120,10 +120,10 @@ describe("Go and exact-pinned Gateway differential", () => {
         try {
           const headers = { [key]: "call-injection", "x-custom": "call", "x-empty": "" };
           const options = { prompt: [], headers };
-          const tsModel = createGateway({ apiKey: "test", baseURL: server.baseURL, headers: { "x-access-token": "token", "x-grafana-id": "user", "x-custom": "configured", [key]: "configured-injection" } })("assistant");
+          const tsModel = createGateway({ apiKey: "test", baseURL: server.baseURL, headers: { "x-access-token": "token", "x-custom": "configured", [key]: "configured-injection" } })("assistant");
           const ts = streaming ? await tsModel.doStream(options) : await tsModel.doGenerate(options);
           if ("stream" in ts) for await (const _part of ts.stream) { /* drain the actual pinned client */ }
-          const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", userIDToken: "user", modelID: "assistant", mode: streaming ? "stream" : "generate", headers: { [key]: ["configured-injection"], "x-custom": ["configured"] }, options });
+          const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: streaming ? "stream" : "generate", headers: { [key]: ["configured-injection"], "x-custom": ["configured"] }, options });
           if (authenticationNames.includes(header)) {
             assert.equal(go.error?.message, "grafana: reserved authentication header");
             assert.equal(server.requests.length, 1, "Go rejects reserved authentication headers before network activity");
@@ -132,7 +132,7 @@ describe("Go and exact-pinned Gateway differential", () => {
           }
           assert.equal(go.error, undefined);
           const actual = server.requests[1]!;
-          const expected: Record<string, string> = { "x-access-token": "token", "x-grafana-id": "user", "content-type": "application/json", accept: streaming ? "text/event-stream" : "application/json", "ai-language-model-id": "assistant", "ai-language-model-specification-version": "4", "ai-language-model-streaming": String(streaming) };
+          const expected: Record<string, string> = { "x-access-token": "token", "content-type": "application/json", accept: streaming ? "text/event-stream" : "application/json", "ai-language-model-id": "assistant", "ai-language-model-specification-version": "4", "ai-language-model-streaming": String(streaming) };
           for (const name of protectedNames) assert.equal(actual.headers[name], expected[name], `${key}: ${name} must have one client-owned value`);
           assert.equal(actual.headers["x-custom"], "call");
           assert.equal(actual.headers["x-empty"], "");
@@ -263,12 +263,12 @@ describe("Go and exact-pinned Gateway differential", () => {
   for (const testCase of cases) it(`matches ${testCase.name} requests and unary normalization`, async () => {
     const server = await endpoint(JSON.stringify(unary));
     try {
-      const configured = { "x-access-token": "access-token", "x-grafana-id": "acting-user", "x-configured": "configured" };
+      const configured = { "x-access-token": "access-token", "x-configured": "configured" };
       const client = createGateway({ apiKey: "test-key", baseURL: server.baseURL, headers: configured });
       const requestOptions = testCase.name.includes("file") ? testCase.options : structuredClone(testCase.options);
       const input = goOptions(requestOptions);
       const ts = await client("assistant").doGenerate(requestOptions);
-      const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "access-token", userIDToken: "acting-user", modelID: "assistant", mode: "generate", headers: { "x-configured": ["configured"] }, options: input, preferBytes: testCase.name.includes("file") });
+      const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "access-token", modelID: "assistant", mode: "generate", headers: { "x-configured": ["configured"] }, options: input, preferBytes: testCase.name.includes("file") });
       assert.equal(go.error, undefined);
       assert.deepEqual(semanticRequest(server.requests[1]!), semanticRequest(server.requests[0]!));
       assert.deepEqual(go.result.content.map((part: { type: string; text?: string }) => ({ type: part.type, text: part.text ?? "" })), ts.content);

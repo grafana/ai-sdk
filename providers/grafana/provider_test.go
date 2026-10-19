@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -130,21 +129,23 @@ func TestProvider_ImmutableConfigurationAndRegistry(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load())
 }
 
-func TestProvider_DiscoveryConcurrencyAndActingUser(t *testing.T) {
+type discoveryCallKey struct{}
+
+func TestProvider_DiscoveryConcurrency(t *testing.T) {
 	var calls atomic.Int32
 	p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		assert.Equal(t, "GET", r.Method)
 		assert.Equal(t, "/api/v1/aisdk/config", r.URL.Path)
 		assert.Equal(t, []string{"access-token"}, r.Header.Values("X-Access-Token"))
-		assert.True(t, strings.HasPrefix(r.Header.Get("X-Grafana-Id"), "user-"))
+		assert.Empty(t, r.Header.Values("X-Grafana-Id"))
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = io.WriteString(w, discoveryFixture)
 	}, nil)
 	var wg sync.WaitGroup
 	for i := range 32 {
 		wg.Go(func() {
-			rows, err := p.ListModels(WithUserIDToken(context.Background(), fmt.Sprintf("user-%d", i)))
+			rows, err := p.ListModels(context.WithValue(context.Background(), discoveryCallKey{}, i))
 			assert.NoError(t, err)
 			assert.Len(t, rows, 2)
 		})
@@ -231,13 +232,13 @@ func TestCloudAuth_InvalidFileNeverAuthenticatesOrSends(t *testing.T) {
 }
 
 func TestProvider_CancellationAndRedirect(t *testing.T) {
-	t.Run("pre-canceled and invalid user never exchange", func(t *testing.T) {
+	t.Run("pre-canceled and invalid on-behalf-of never exchange", func(t *testing.T) {
 		p := testProvider(t, func(http.ResponseWriter, *http.Request) { t.Error("unexpected network request") }, nil)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		_, err := p.ListModels(ctx)
 		assert.ErrorIs(t, err, context.Canceled)
-		_, err = p.ListModels(WithUserIDToken(context.Background(), "bad\nuser"))
+		_, err = p.ListModels(WithOnBehalfOf(context.Background(), "bad\nuser"))
 		require.Error(t, err)
 	})
 	t.Run("cancel response read", func(t *testing.T) {
@@ -343,9 +344,6 @@ func TestProvider_ReservedAuthenticationHeaders(t *testing.T) {
 		{"exchange", func(headers http.Header) (*Provider, error) {
 			return NewWithTokenExchange(TokenExchangeConfig{CAPToken: "dummy-cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app", TokenExchangeURL: "https://exchange.invalid", BaseURL: "https://gateway.invalid", Headers: headers})
 		}},
-		{"cloud", func(headers http.Header) (*Provider, error) {
-			return NewWithCloudCredentials(CloudCredentialsConfig{StackID: 1, CAPToken: "dummy-cap", BaseURL: "https://gateway.invalid", Headers: headers})
-		}},
 		{"service account", func(headers http.Header) (*Provider, error) {
 			return NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_dummy", BaseURL: "https://gateway.invalid", Headers: headers})
 		}},
@@ -361,7 +359,7 @@ func TestProvider_ReservedAuthenticationHeaders(t *testing.T) {
 			})
 			model, err := p.LanguageModel("openai/model")
 			require.NoError(t, err)
-			for _, name := range []string{"Authorization", "aUtHoRiZaTiOn", "X-Access-Token", "x-grafana-id", "X-Scope-OrgID", "X-Cloud-Org-ID", "X-Access-Policy-ID"} {
+			for _, name := range []string{"Authorization", "aUtHoRiZaTiOn", "X-Access-Token", "x-grafana-id"} {
 				for _, value := range []string{"", "dummy-private-marker"} {
 					t.Run(name+"/"+value, func(t *testing.T) {
 						configured, err := flow.new(http.Header{name: {value}})
@@ -386,7 +384,7 @@ func TestProvider_ReservedAuthenticationHeaders(t *testing.T) {
 }
 
 func TestLanguageModel_RequestSelectorBounds(t *testing.T) {
-	client, err := NewWithCloudCredentials(CloudCredentialsConfig{StackID: 123, CAPToken: "dummy-cap", BaseURL: "https://gateway.invalid/api/v1/aisdk"})
+	client, err := NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_dummy", BaseURL: "https://gateway.invalid/api/v1/aisdk"})
 	require.NoError(t, err)
 	for _, tc := range []struct {
 		name, id string

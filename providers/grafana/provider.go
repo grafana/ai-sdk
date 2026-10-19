@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -44,16 +43,6 @@ type TokenExchangeConfig struct {
 	HTTPClient       *http.Client
 	Headers          http.Header
 	Limits           *Limits
-}
-
-// CloudCredentialsConfig configures direct Cloud Access Policy authentication at an authenticating proxy.
-type CloudCredentialsConfig struct {
-	StackID    int64
-	CAPToken   string
-	BaseURL    string
-	HTTPClient *http.Client
-	Headers    http.Header
-	Limits     *Limits
 }
 
 // ServiceAccountConfig configures a Grafana service account token.
@@ -96,22 +85,6 @@ type Provider struct {
 	bearer       string
 }
 
-// NewWithCloudCredentials constructs a provider for a Cloud proxy using a stack-scoped CAP token.
-func NewWithCloudCredentials(cfg CloudCredentialsConfig, opts ...Option) (*Provider, error) {
-	if cfg.StackID <= 0 {
-		return nil, errors.New("grafana: invalid stack ID")
-	}
-	if !validCredential(cfg.CAPToken) {
-		return nil, errors.New("grafana: invalid CAP token")
-	}
-	p, err := newProvider(cfg.BaseURL, cfg.HTTPClient, cfg.Headers, cfg.Limits, opts)
-	if err != nil {
-		return nil, err
-	}
-	p.bearer = "Bearer " + strconv.FormatInt(cfg.StackID, 10) + ":" + cfg.CAPToken
-	return p, nil
-}
-
 // NewWithServiceAccountToken constructs a provider that sends a Grafana
 // service account token as its only credential, an Authorization bearer.
 func NewWithServiceAccountToken(cfg ServiceAccountConfig, opts ...Option) (*Provider, error) {
@@ -128,7 +101,7 @@ func NewWithServiceAccountToken(cfg ServiceAccountConfig, opts ...Option) (*Prov
 
 func reservedAuthenticationHeader(name string) bool {
 	switch strings.ToLower(name) {
-	case "authorization", "x-access-token", "x-grafana-id", "x-scope-orgid", "x-cloud-org-id", "x-access-policy-id":
+	case "authorization", "x-access-token", "x-grafana-id":
 		return true
 	}
 	return false
@@ -282,8 +255,6 @@ func validHeaderValue(value string) bool {
 	return true
 }
 
-type userIDTokenKey struct{}
-
 type onBehalfOfKey struct{}
 
 // WithOnBehalfOf makes token-exchange calls in ctx act on behalf of the
@@ -293,11 +264,6 @@ type onBehalfOfKey struct{}
 // for every namespace, refuse such calls before any network request.
 func WithOnBehalfOf(ctx context.Context, subjectToken string) context.Context {
 	return context.WithValue(ctx, onBehalfOfKey{}, subjectToken)
-}
-
-// WithUserIDToken attaches an acting-user token to Gateway requests in ctx.
-func WithUserIDToken(ctx context.Context, token string) context.Context {
-	return context.WithValue(ctx, userIDTokenKey{}, token)
 }
 
 func (p *Provider) request(ctx context.Context, method, route string, callHeaders ...map[string]string) (*http.Request, error) {
@@ -321,10 +287,6 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 			headers.Set(canonical, value)
 		}
 	}
-	user, _ := ctx.Value(userIDTokenKey{}).(string)
-	if user != "" && !validCredential(user) {
-		return nil, errors.New("grafana: invalid acting-user token")
-	}
 	subject, onBehalfOf := ctx.Value(onBehalfOfKey{}).(string)
 	if onBehalfOf {
 		switch {
@@ -334,14 +296,9 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 			return nil, errors.New("grafana: on-behalf-of calls require token exchange")
 		case p.namespace == "*":
 			return nil, errors.New("grafana: on-behalf-of calls require a concrete namespace")
-		case user != "":
-			return nil, errors.New("grafana: acting-user and on-behalf-of tokens conflict")
 		}
 	}
 	if p.bearer != "" {
-		if user != "" {
-			return nil, errors.New("grafana: acting-user token requires an access token flow")
-		}
 		req, err := http.NewRequestWithContext(ctx, method, p.baseURL+route, nil)
 		if err != nil {
 			return nil, errors.New("grafana: cannot construct Gateway request")
@@ -377,10 +334,6 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 	}
 	req.Header = headers
 	req.Header.Set("X-Access-Token", token.Token)
-	req.Header.Del("X-Grafana-Id")
-	if user != "" {
-		req.Header.Set("X-Grafana-Id", user)
-	}
 	return req, nil
 }
 

@@ -109,9 +109,6 @@ func TestOnBehalfOf_RefusedBeforeIO(t *testing.T) {
 		{"wildcard namespace", exchange("*"), func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "subject-token") }},
 		{"empty subject", exchange("stacks-1"), func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "") }},
 		{"unsafe subject", exchange("stacks-1"), func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "subject\r\ntoken") }},
-		{"acting-user conflict", exchange("stacks-1"), func(ctx context.Context) context.Context {
-			return WithUserIDToken(WithOnBehalfOf(ctx, "subject-token"), "user-token")
-		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := tc.new()
