@@ -18,7 +18,7 @@
     "@grafana/tsconfig": "2.2.0",
     "@swc/core": "1.16.18",
     "@swc/helpers": "0.5.23",
-    "@types/node": "24.19.2",
+    "@types/node": "25.9.9",
     "@types/react": "19.3.0",
     "copy-webpack-plugin": "14.0.0",
     "diagnostics-webpack-plugin": "1.0.1",

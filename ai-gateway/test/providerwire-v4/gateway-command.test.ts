@@ -968,7 +968,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const [fake, gateway] = resources;
       fake.functionTools = true;
       const client = gateway.client(token);
-      const tools = [{ type: "function" as const, name: "weather", inputSchema: { type: "object" as const, properties: { city: { type: "string" } }, required: ["city"] }, strict: false, inputExamples: [{ input: { city: "Rio" } }] }];
+      const tools = [{ type: "function" as const, name: "weather", inputSchema: { type: "object" as const, properties: { city: { type: "string" as const } }, required: ["city"] }, strict: false, inputExamples: [{ input: { city: "Rio" } }] }];
       const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Weather in Rio?" }] }];
       const toolChoice = { type: "tool" as const, toolName: "weather" };
       const options = { prompt, tools, toolChoice, maxOutputTokens: 64 };
@@ -1155,7 +1155,7 @@ describe("authenticated Anthropic Gateway command", () => {
     const [fake, gateway] = await startGateway([], {}, "claude-sonnet-4-6");
     fake.providerToolCaller = true;
     try {
-      const tools = [{ type: "function" as const, name: "execute", inputSchema: { type: "object" } }];
+      const tools = [{ type: "function" as const, name: "execute", inputSchema: { type: "object" as const } }];
       const prompt = [{ role: "user" as const, content: [{ type: "text" as const, text: "Use a tool" }] }];
       for (const mode of ["generate", "stream"] as const) {
         for (const implementation of ["vercel", "go"] as const) {

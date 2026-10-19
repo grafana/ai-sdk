@@ -185,8 +185,8 @@ importers:
         specifier: 0.5.23
         version: 0.5.23
       '@types/node':
-        specifier: 24.19.2
-        version: 24.19.2
+        specifier: 25.9.9
+        version: 25.9.9
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
@@ -216,7 +216,7 @@ importers:
         version: 5.6.1(@swc/core@1.16.18(@swc/helpers@0.5.23))(esbuild@0.28.2)(lightningcss@1.33.0)(postcss@8.5.28)(webpack@5.112.0)
       ts-node:
         specifier: 10.9.2
-        version: 10.9.2(@swc/core@1.16.18(@swc/helpers@0.5.23))(@types/node@24.19.2)(typescript@5.9.2)
+        version: 10.9.2(@swc/core@1.16.18(@swc/helpers@0.5.23))(@types/node@25.9.9)(typescript@5.9.2)
       typescript:
         specifier: 5.9.2
         version: 5.9.2
@@ -257,6 +257,9 @@ importers:
         specifier: 3.0.1
         version: 3.0.1
     devDependencies:
+      '@types/json-schema':
+        specifier: 7.0.15
+        version: 7.0.15
       '@types/node':
         specifier: 25.9.9
         version: 25.9.9
@@ -1080,9 +1083,6 @@ packages:
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
-
-  '@types/node@24.19.2':
-    resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
 
   '@types/node@25.9.5':
     resolution: {integrity: sha512-OScDchr2fwuUmWdf4kZ9h7PcJiYDVInhJizG/biAq3cAvqwYktuy/TYGGdZNMtNTFUP7rnb0NU4TUdm82kt4Rg==}
@@ -3795,10 +3795,6 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
-  '@types/node@24.19.2':
-    dependencies:
-      undici-types: 7.24.6
-
   '@types/node@25.9.5':
     dependencies:
       undici-types: 7.24.6
@@ -5435,14 +5431,14 @@ snapshots:
 
   ts-easing@0.2.0: {}
 
-  ts-node@10.9.2(@swc/core@1.16.18(@swc/helpers@0.5.23))(@types/node@24.19.2)(typescript@5.9.2):
+  ts-node@10.9.2(@swc/core@1.16.18(@swc/helpers@0.5.23))(@types/node@25.9.9)(typescript@5.9.2):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       '@tsconfig/node10': 1.0.13
       '@tsconfig/node12': 1.0.11
       '@tsconfig/node14': 1.0.3
       '@tsconfig/node16': 1.0.4
-      '@types/node': 24.19.2
+      '@types/node': 25.9.9
       acorn: 8.19.0
       acorn-walk: 8.3.5
       arg: 4.1.3
