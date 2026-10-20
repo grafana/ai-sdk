@@ -447,6 +447,14 @@ func TestStreamAdapter_MessageEvents(t *testing.T) {
 		assert.Equal(t, "claude-sonnet-4-6", parts[0].ModelID)
 	})
 
+	t.Run("message_start custom metadata uses null for absent id and model", func(t *testing.T) {
+		parts := collectParts([]anthropic.BetaRawMessageStreamEventUnion{
+			unmarshalEvent(t, `{"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}`),
+		})
+		require.Len(t, parts, 2)
+		assert.JSONEq(t, `{"id":null,"model":null,"usage":{"input_tokens":1,"output_tokens":0}}`, string(parts[1].ProviderMetadata["anthropic"]))
+	})
+
 	t.Run("message_start carries provider", func(t *testing.T) {
 		adapter := &streamAdapter{
 			blocks:          make(map[int64]*blockState),
@@ -1323,6 +1331,25 @@ func TestStreamAdapter_CitationsDelta(t *testing.T) {
 		parts := collectPartsWithOpts(events, toolNameMapping{}, nil, seqIDGenerator())
 		require.Len(t, parts, 1)
 		assert.Equal(t, provider.PartTextStart, parts[0].Type)
+	})
+
+	t.Run("untracked text block still yields fallback sources", func(t *testing.T) {
+		events := []anthropic.BetaRawMessageStreamEventUnion{
+			textBlockStart,
+			unmarshalEvent(t, `{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","url":"https://example.com","title":"Example","cited_text":"some text","encrypted_index":"enc123"}}}`),
+			unmarshalEvent(t, `{"type":"content_block_stop","index":0}`),
+			unmarshalEvent(t, `{"type":"message_stop"}`),
+		}
+		parts := collectPartsWithJsonResponseTool(events)
+		var sources []provider.StreamPart
+		for _, part := range parts {
+			assert.NotEqual(t, provider.PartTextStart, part.Type)
+			if part.Type == provider.PartSource {
+				sources = append(sources, part)
+			}
+		}
+		require.Len(t, sources, 1)
+		assert.Equal(t, "https://example.com", sources[0].Source.URL)
 	})
 }
 

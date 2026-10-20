@@ -95,7 +95,7 @@ func (StreamTextDelta) textStreamPart() {}
 
 // StreamTextEnd closes a text block.
 type StreamTextEnd struct {
-	Citations        []provider.Citation `json:"citations,omitzero"`
+	Citations        []provider.Citation
 	ID               string
 	ProviderMetadata provider.ProviderMetadata
 }

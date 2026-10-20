@@ -714,16 +714,24 @@ func (a *streamAdapter) emitAnnotationSource(raw string, annotation any, ch chan
 		return
 	}
 	a.ongoingCitations = append(a.ongoingCitations, convertCitationAnnotations([]responses.ResponseOutputTextAnnotationUnion{union}, a.providerOptionsName)...)
-	if union.Type == "url_citation" || union.Type == "file_citation" {
+	if union.Type == annotationURLCitation || union.Type == annotationFileCitation {
 		a.fallbackAnnotations = append(a.fallbackAnnotations, union)
 		return
 	}
-	a.emitSources(convertAnnotations([]responses.ResponseOutputTextAnnotationUnion{union}, a.generateID, a.providerOptionsName), ch)
+	a.emitConvertedAnnotation(union, ch)
+}
+
+func (a *streamAdapter) emitConvertedAnnotation(annotation responses.ResponseOutputTextAnnotationUnion, ch chan<- provider.StreamPart) {
+	if part, ok := convertAnnotation(annotation, a.generateID, a.providerOptionsName); ok {
+		source := sourceInfo(part)
+		ch <- provider.StreamPart{Type: provider.PartSource, Source: &source}
+	}
 }
 
 func (a *streamAdapter) emitSources(sources []provider.GenerateContentPart, ch chan<- provider.StreamPart) {
 	for _, part := range sources {
-		ch <- provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: part.SourceType, ID: part.ID, URL: part.URL, Title: part.Title, MediaType: part.MediaType, Filename: part.Filename, ProviderMetadata: part.ProviderMetadata}}
+		source := sourceInfo(part)
+		ch <- provider.StreamPart{Type: provider.PartSource, Source: &source}
 	}
 }
 
@@ -796,10 +804,10 @@ func (a *streamAdapter) recordStreamError(raw string) {
 
 func (a *streamAdapter) flush(ch chan<- provider.StreamPart) {
 	for _, annotation := range a.fallbackAnnotations {
-		if (annotation.Type == "url_citation" && a.hasWebSearchSources) || (annotation.Type == "file_citation" && a.hasFileSearchResults) {
+		if fallbackSourceSuppressed(annotation.Type, a.hasWebSearchSources, a.hasFileSearchResults) {
 			continue
 		}
-		a.emitSources(convertAnnotations([]responses.ResponseOutputTextAnnotationUnion{annotation}, a.generateID, a.providerOptionsName), ch)
+		a.emitConvertedAnnotation(annotation, ch)
 	}
 	a.fallbackAnnotations = nil
 	indices := make([]int64, 0, len(a.ongoingToolCalls))

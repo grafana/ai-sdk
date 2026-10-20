@@ -304,6 +304,9 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		return true, nil
 
 	case ChunkToolInputStart:
+		if !validToolInputEncoding(chunk.InputEncoding) {
+			return false, fmt.Errorf("aisdk: invalid tool input encoding %q", chunk.InputEncoding)
+		}
 		dynamic := chunk.Dynamic != nil && *chunk.Dynamic
 		s.partialToolCalls[chunk.ToolCallID] = &partialToolCallState{
 			toolName: chunk.ToolName, dynamic: dynamic, inputEncoding: chunk.InputEncoding,
@@ -318,13 +321,11 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 			return false, fmt.Errorf("aisdk: received tool-input-delta for missing tool call %q", chunk.ToolCallID)
 		}
 		partial.text += chunk.InputTextDelta
-		input := parsePartialJSONRaw(partial.text)
+		var input json.RawMessage
 		if partial.inputEncoding == provider.ToolInputEncodingText {
-			encoded, err := json.Marshal(partial.text)
-			if err != nil {
-				return false, fmt.Errorf("aisdk: marshaling text tool input: %w", err)
-			}
-			input = encoded
+			input, _ = json.Marshal(partial.text)
+		} else {
+			input = parsePartialJSONRaw(partial.text)
 		}
 		next := UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: chunk.ToolCallID, ToolName: partial.toolName, InputEncoding: partial.inputEncoding, Input: input, ToolMetadata: partial.toolMetadata}
 		if partial.title != nil {

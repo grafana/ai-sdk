@@ -52,11 +52,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 				for _, citation := range block.Citations {
 					rawCitations = append(rawCitations, json.RawMessage(citation.RawJSON()))
 				}
-				citations, err := mapCitations(rawCitations, citDocs)
-				if err != nil {
-					return nil, err
-				}
-				metadata, err := marshalWebSearchCitationMetadata(rawCitations)
+				citations, metadata, err := textCitations(rawCitations, citDocs)
 				if err != nil {
 					return nil, err
 				}

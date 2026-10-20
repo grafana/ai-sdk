@@ -130,7 +130,7 @@ func isEmptyJSONObj(raw json.RawMessage) bool {
 }
 
 func validateToolUIState(part *toolPartFields) error {
-	if part.InputEncoding != "" && part.InputEncoding != provider.ToolInputEncodingJSON && part.InputEncoding != provider.ToolInputEncodingText {
+	if !validToolInputEncoding(part.InputEncoding) {
 		return fmt.Errorf("unknown tool input encoding %q", part.InputEncoding)
 	}
 	if part.State != ToolStateInputStreaming {

@@ -62,10 +62,12 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 							ProviderMetadata: textMeta(providerOptionsName, v.ID, string(v.Phase), rawList(ot.Annotations)),
 						})
 						for _, annotation := range ot.Annotations {
-							if (annotation.Type == "url_citation" && hasWebSources) || (annotation.Type == "file_citation" && hasFileResults) {
+							if fallbackSourceSuppressed(annotation.Type, hasWebSources, hasFileResults) {
 								continue
 							}
-							content = append(content, convertAnnotations([]responses.ResponseOutputTextAnnotationUnion{annotation}, generateID, providerOptionsName)...)
+							if part, ok := convertAnnotation(annotation, generateID, providerOptionsName); ok {
+								content = append(content, part)
+							}
 						}
 					}
 				}

@@ -7,59 +7,61 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-// convertAnnotations converts text output annotations into source content
-// parts. generateID provides deterministic source IDs. Titles go in the
+const (
+	annotationURLCitation  = "url_citation"
+	annotationFileCitation = "file_citation"
+)
+
+// convertAnnotation converts a text output annotation into a source content
+// part. generateID provides deterministic source IDs. Titles go in the
 // canonical Title field, the same field the streaming adapter and the V4
 // source contract use; a document source takes its filename as its title, as
 // the registered upstream conversion does.
-func convertAnnotations(annotations []responses.ResponseOutputTextAnnotationUnion, generateID func() string, providerName string) []provider.GenerateContentPart {
-	var parts []provider.GenerateContentPart
-	for _, ann := range annotations {
-		switch a := ann.AsAny().(type) {
-		case responses.ResponseOutputTextAnnotationURLCitation:
-			parts = append(parts, provider.GenerateContentPart{
-				Type:       provider.ContentSource,
-				ID:         generateID(),
-				SourceType: provider.SourceTypeURL,
-				URL:        a.URL,
-				Title:      a.Title,
-			})
+func convertAnnotation(ann responses.ResponseOutputTextAnnotationUnion, generateID func() string, providerName string) (provider.GenerateContentPart, bool) {
+	switch a := ann.AsAny().(type) {
+	case responses.ResponseOutputTextAnnotationURLCitation:
+		return provider.GenerateContentPart{
+			Type:       provider.ContentSource,
+			ID:         generateID(),
+			SourceType: provider.SourceTypeURL,
+			URL:        a.URL,
+			Title:      a.Title,
+		}, true
 
-		case responses.ResponseOutputTextAnnotationFileCitation:
-			parts = append(parts, provider.GenerateContentPart{
-				Type:             provider.ContentSource,
-				ID:               generateID(),
-				SourceType:       provider.SourceTypeDocument,
-				MediaType:        "text/plain",
-				Title:            a.Filename,
-				Filename:         a.Filename,
-				ProviderMetadata: sourceMeta(providerName, "file_citation", a.FileID, a.Index),
-			})
+	case responses.ResponseOutputTextAnnotationFileCitation:
+		return provider.GenerateContentPart{
+			Type:             provider.ContentSource,
+			ID:               generateID(),
+			SourceType:       provider.SourceTypeDocument,
+			MediaType:        "text/plain",
+			Title:            a.Filename,
+			Filename:         a.Filename,
+			ProviderMetadata: sourceMeta(providerName, "file_citation", a.FileID, a.Index),
+		}, true
 
-		case responses.ResponseOutputTextAnnotationContainerFileCitation:
-			parts = append(parts, provider.GenerateContentPart{
-				Type:             provider.ContentSource,
-				ID:               generateID(),
-				SourceType:       provider.SourceTypeDocument,
-				MediaType:        "text/plain",
-				Title:            a.Filename,
-				Filename:         a.Filename,
-				ProviderMetadata: containerSourceMeta(providerName, a.FileID, a.ContainerID),
-			})
+	case responses.ResponseOutputTextAnnotationContainerFileCitation:
+		return provider.GenerateContentPart{
+			Type:             provider.ContentSource,
+			ID:               generateID(),
+			SourceType:       provider.SourceTypeDocument,
+			MediaType:        "text/plain",
+			Title:            a.Filename,
+			Filename:         a.Filename,
+			ProviderMetadata: containerSourceMeta(providerName, a.FileID, a.ContainerID),
+		}, true
 
-		case responses.ResponseOutputTextAnnotationFilePath:
-			parts = append(parts, provider.GenerateContentPart{
-				Type:             provider.ContentSource,
-				ID:               generateID(),
-				SourceType:       provider.SourceTypeDocument,
-				MediaType:        "application/octet-stream",
-				Title:            a.FileID,
-				Filename:         a.FileID,
-				ProviderMetadata: sourceMeta(providerName, "file_path", a.FileID, a.Index),
-			})
-		}
+	case responses.ResponseOutputTextAnnotationFilePath:
+		return provider.GenerateContentPart{
+			Type:             provider.ContentSource,
+			ID:               generateID(),
+			SourceType:       provider.SourceTypeDocument,
+			MediaType:        "application/octet-stream",
+			Title:            a.FileID,
+			Filename:         a.FileID,
+			ProviderMetadata: sourceMeta(providerName, "file_path", a.FileID, a.Index),
+		}, true
 	}
-	return parts
+	return provider.GenerateContentPart{}, false
 }
 
 func webSearchSources(action responses.ResponseFunctionWebSearchActionUnion, generateID func() string) []provider.GenerateContentPart {
@@ -104,14 +106,18 @@ func convertCitationAnnotations(annotations []responses.ResponseOutputTextAnnota
 		default:
 			continue
 		}
-		parts := convertAnnotations([]responses.ResponseOutputTextAnnotationUnion{annotation}, func() string { return id }, providerName)
-		part := parts[0]
-		citations = append(citations, provider.Citation{
-			Source:     provider.SourceInfo{SourceType: part.SourceType, ID: part.ID, URL: part.URL, Title: part.Title, MediaType: part.MediaType, Filename: part.Filename, ProviderMetadata: part.ProviderMetadata},
-			StartIndex: start, EndIndex: end,
-		})
+		part, _ := convertAnnotation(annotation, func() string { return id }, providerName)
+		citations = append(citations, provider.Citation{Source: sourceInfo(part), StartIndex: start, EndIndex: end})
 	}
 	return citations
+}
+
+func sourceInfo(part provider.GenerateContentPart) provider.SourceInfo {
+	return provider.SourceInfo{SourceType: part.SourceType, ID: part.ID, URL: part.URL, Title: part.Title, MediaType: part.MediaType, Filename: part.Filename, ProviderMetadata: part.ProviderMetadata}
+}
+
+func fallbackSourceSuppressed(annotationType string, hasWebSources, hasFileResults bool) bool {
+	return (annotationType == annotationURLCitation && hasWebSources) || (annotationType == annotationFileCitation && hasFileResults)
 }
 
 func sourceMeta(providerName, citationType, fileID string, index int64) provider.ProviderMetadata {

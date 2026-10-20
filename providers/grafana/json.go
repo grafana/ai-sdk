@@ -6,7 +6,18 @@ import (
 	"unicode/utf8"
 )
 
+const maxSafeInteger = 1<<53 - 1
+
 func validJSON(data []byte) bool { return utf8.Valid(data) && json.Valid(data) }
+
+func validSafeCounts(values ...*int) bool {
+	for _, value := range values {
+		if value != nil && (*value < 0 || int64(*value) > maxSafeInteger) {
+			return false
+		}
+	}
+	return true
+}
 
 func decodeObject(data []byte) (map[string]json.RawMessage, error) {
 	var object map[string]json.RawMessage

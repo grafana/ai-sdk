@@ -198,10 +198,8 @@ func decodeUsage(value *wireUsage) (provider.Usage, error) {
 		return provider.Usage{}, errors.New("grafana: missing usage")
 	}
 	i, o := value.InputTokens, value.OutputTokens
-	for _, count := range []*int{i.Total, i.NoCache, i.CacheRead, i.CacheWrite, o.Total, o.Text, o.Reasoning} {
-		if count != nil && (*count < 0 || int64(*count) > 9007199254740991) {
-			return provider.Usage{}, errors.New("grafana: invalid token count")
-		}
+	if !validSafeCounts(i.Total, i.NoCache, i.CacheRead, i.CacheWrite, o.Total, o.Text, o.Reasoning) {
+		return provider.Usage{}, errors.New("grafana: invalid token count")
 	}
 	var raw json.RawMessage
 	if len(value.Raw) > 0 {

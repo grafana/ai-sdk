@@ -33,6 +33,10 @@ func marshalToolPart(p toolPartJSON) ([]byte, error) {
 func (p ToolInvocationPart) MarshalJSON() ([]byte, error) { return marshalToolPart(toolPartJSON(p)) }
 func (p DynamicToolUIPart) MarshalJSON() ([]byte, error)  { return marshalToolPart(toolPartJSON(p)) }
 
+func validToolInputEncoding(encoding provider.ToolInputEncoding) bool {
+	return encoding == "" || encoding == provider.ToolInputEncodingJSON || encoding == provider.ToolInputEncodingText
+}
+
 func unmarshalToolPart(data []byte) (toolPartJSON, error) {
 	var p toolPartJSON
 	if err := rejectNullToolFields(data, "title", "toolMetadata", "errorText", "preliminary", "providerExecuted", "inputEncoding", "callProviderMetadata", "resultProviderMetadata", "approval"); err != nil {
@@ -41,7 +45,7 @@ func unmarshalToolPart(data []byte) (toolPartJSON, error) {
 	if err := json.Unmarshal(data, &p); err != nil {
 		return p, err
 	}
-	if p.InputEncoding != "" && p.InputEncoding != provider.ToolInputEncodingJSON && p.InputEncoding != provider.ToolInputEncodingText {
+	if !validToolInputEncoding(p.InputEncoding) {
 		return p, fmt.Errorf("aisdk: invalid tool input encoding %q", p.InputEncoding)
 	}
 	if p.State == ToolStateInputStreaming && p.RawInput != nil {

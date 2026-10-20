@@ -14,16 +14,8 @@ func citationsPreflight(citations []provider.Citation, remaining *int64) bool {
 	}
 	*remaining -= int64(len(citations)) * minimumCitationBytes
 	for _, citation := range citations {
-		if !sourcePreflightBudget(citation.Source, remaining) || !validTokenCounts(citation.StartIndex, citation.EndIndex) {
+		if !sourcePreflightBudget(citation.Source, remaining) || !validTokenCounts(citation.StartIndex, citation.EndIndex) || !validSourceFields(citation.Source) {
 			return false
-		}
-		if citation.Source.SourceType != provider.SourceTypeURL && citation.Source.SourceType != provider.SourceTypeDocument {
-			return false
-		}
-		for _, text := range []string{citation.Source.ID, citation.Source.URL, citation.Source.Title, citation.Source.MediaType, citation.Source.Filename} {
-			if !utf8.ValidString(text) {
-				return false
-			}
 		}
 		if citation.CitedText != nil && (!responseStringsFit(remaining, *citation.CitedText) || !utf8.ValidString(*citation.CitedText)) {
 			return false

@@ -15,9 +15,13 @@ const (
 	citationSearchResultLocation    citationLocationType = "search_result_location"
 )
 
-func mapCitations(citations []json.RawMessage, documents []citationDocument) ([]provider.Citation, error) {
+func textCitations(citations []json.RawMessage, documents []citationDocument) ([]provider.Citation, provider.ProviderMetadata, error) {
 	if len(citations) == 0 {
-		return nil, nil
+		return nil, nil, nil
+	}
+	metadata, err := json.Marshal(map[string][]json.RawMessage{"citations": citations})
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshaling citation metadata: %w", err)
 	}
 	result := make([]provider.Citation, 0, len(citations))
 	for _, raw := range citations {
@@ -32,7 +36,7 @@ func mapCitations(citations []json.RawMessage, documents []citationDocument) ([]
 			FileID        *string              `json:"file_id"`
 		}
 		if err := json.Unmarshal(raw, &citation); err != nil {
-			return nil, fmt.Errorf("decoding citation: %w", err)
+			return nil, nil, fmt.Errorf("decoding citation: %w", err)
 		}
 		source := provider.SourceInfo{ProviderMetadata: provider.ProviderMetadata{"anthropic": raw}}
 		if citation.Type == citationWebSearchResultLocation || citation.Type == citationSearchResultLocation {
@@ -60,5 +64,5 @@ func mapCitations(citations []json.RawMessage, documents []citationDocument) ([]
 		}
 		result = append(result, provider.Citation{Source: source, CitedText: citation.CitedText})
 	}
-	return result, nil
+	return result, provider.ProviderMetadata{"anthropic": metadata}, nil
 }

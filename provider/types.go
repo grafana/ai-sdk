@@ -87,10 +87,13 @@ type Warning struct {
 	Details string      `json:"details,omitempty"`
 }
 
+// ToolInputEncoding identifies how streamed tool-input deltas are encoded.
 type ToolInputEncoding string
 
 const (
+	// ToolInputEncodingJSON streams partial JSON input. It is the default when unset.
 	ToolInputEncodingJSON ToolInputEncoding = "json"
+	// ToolInputEncodingText streams raw text input that concatenates into a string.
 	ToolInputEncodingText ToolInputEncoding = "text"
 )
 

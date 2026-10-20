@@ -304,6 +304,7 @@ func WithUIMessageStreamReasoning(send bool) UIMessageStreamOption {
 }
 
 // WithUIMessageStreamSources configures whether source chunks are sent.
+// Citations attached to text-end chunks and custom chunks are sent regardless.
 func WithUIMessageStreamSources(send bool) UIMessageStreamOption {
 	return uiMessageStreamOptionFunc(func(cfg *uiMessageStreamConfig) {
 		cfg.sendSources = &send

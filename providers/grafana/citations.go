@@ -32,10 +32,8 @@ func decodeCitations(raw json.RawMessage) ([]provider.Citation, error) {
 				return nil, errors.New("grafana: invalid citation field")
 			}
 		}
-		for _, index := range []*int{value.StartIndex, value.EndIndex} {
-			if index != nil && (*index < 0 || int64(*index) > 9007199254740991) {
-				return nil, errors.New("grafana: invalid citation index")
-			}
+		if !validSafeCounts(value.StartIndex, value.EndIndex) {
+			return nil, errors.New("grafana: invalid citation index")
 		}
 		var discriminator struct {
 			Type provider.GenerateContentType `json:"type"`
