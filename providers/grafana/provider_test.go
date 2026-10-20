@@ -454,34 +454,52 @@ func TestTokenExchange_FailureAndCancellation(t *testing.T) {
 			}
 		})
 	}
-	t.Run("canceled waiter does not wait for another exchange", func(t *testing.T) {
+	t.Run("canceled waiter does not wait for a shared exchange", func(t *testing.T) {
 		p := testProvider(t, func(http.ResponseWriter, *http.Request) { t.Error("Gateway request after cancellation") }, nil)
-		started := make(chan struct{})
-		var exchanges atomic.Int32
-		p.exchanger = exchangeFunc(func(ctx context.Context, _ authn.TokenExchangeRequest) (*authn.TokenExchangeResponse, error) {
-			exchanges.Add(1)
+		started, finish := make(chan struct{}), make(chan struct{})
+		p.exchanger = exchangeFunc(func(context.Context, authn.TokenExchangeRequest) (*authn.TokenExchangeResponse, error) {
 			close(started)
-			<-ctx.Done()
-			return nil, ctx.Err()
+			<-finish
+			return nil, errors.New("exchange failed")
 		})
+		defer close(finish)
 		first, cancelFirst := context.WithCancel(context.Background())
 		defer cancelFirst()
 		doneFirst := make(chan error, 1)
 		go func() { _, err := p.ListModels(first); doneFirst <- err }()
 		<-started
 		second, cancelSecond := context.WithCancel(context.Background())
-		doneSecond := make(chan error, 1)
-		go func() { _, err := p.ListModels(second); doneSecond <- err }()
 		cancelSecond()
-		select {
-		case err := <-doneSecond:
-			assert.ErrorIs(t, err, context.Canceled)
-		case <-time.After(time.Second):
-			t.Fatal("canceled waiter blocked behind token exchange")
-		}
+		_, err := p.ListModels(second)
+		assert.ErrorIs(t, err, context.Canceled)
 		cancelFirst()
 		assert.ErrorIs(t, <-doneFirst, context.Canceled)
-		assert.Equal(t, int32(1), exchanges.Load())
+	})
+	t.Run("first caller's cancellation does not cancel a shared exchange", func(t *testing.T) {
+		p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, discoveryFixture)
+		}, nil)
+		exchangeCtx, finish := make(chan context.Context, 1), make(chan struct{})
+		p.exchanger = exchangeFunc(func(ctx context.Context, _ authn.TokenExchangeRequest) (*authn.TokenExchangeResponse, error) {
+			select {
+			case exchangeCtx <- ctx:
+			default:
+			}
+			<-finish
+			return &authn.TokenExchangeResponse{Token: "exchanged-token"}, ctx.Err()
+		})
+		first, cancelFirst := context.WithCancel(context.Background())
+		doneFirst := make(chan error, 1)
+		go func() { _, err := p.ListModels(first); doneFirst <- err }()
+		shared := <-exchangeCtx
+		doneSecond := make(chan error, 1)
+		go func() { _, err := p.ListModels(context.Background()); doneSecond <- err }()
+		cancelFirst()
+		assert.ErrorIs(t, <-doneFirst, context.Canceled)
+		assert.NoError(t, shared.Err(), "the shared exchange outlives the first caller")
+		close(finish)
+		assert.NoError(t, <-doneSecond)
 	})
 }
 
@@ -629,29 +647,6 @@ func TestOnBehalfOf_RefusedBeforeIO(t *testing.T) {
 		})
 	}
 	assert.Zero(t, calls.Load())
-}
-
-func TestExchangeGates_PerSubject(t *testing.T) {
-	var gates exchangeGates
-	releaseA, err := gates.acquire(context.Background(), "subject-a")
-	require.NoError(t, err)
-
-	releaseB, err := gates.acquire(context.Background(), "subject-b")
-	require.NoError(t, err, "another subject does not wait")
-	releaseB()
-
-	canceled, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = gates.acquire(canceled, "subject-a")
-	require.ErrorIs(t, err, context.Canceled, "the same subject waits until released")
-
-	releaseA()
-	releaseA, err = gates.acquire(context.Background(), "subject-a")
-	require.NoError(t, err, "the subject is admitted again after release")
-	releaseA()
-	gates.mu.Lock()
-	defer gates.mu.Unlock()
-	assert.Empty(t, gates.gates)
 }
 
 func TestProvider_ReservedAuthenticationHeaders(t *testing.T) {

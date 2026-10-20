@@ -6,6 +6,7 @@ require (
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20261007173843-8d36b82dfd52
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/stretchr/testify v1.12.1
+	golang.org/x/sync v0.24.0
 )
 
 require (
@@ -29,7 +30,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.61.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941 // indirect

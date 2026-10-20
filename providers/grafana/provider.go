@@ -8,12 +8,13 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/authlib/authn"
+	"golang.org/x/sync/singleflight"
 )
 
 // Limits bounds response processing. A nil Limits configuration selects defaults;
@@ -83,7 +84,7 @@ type Provider struct {
 	namespace string
 	audience  string
 	bearer    string
-	exchanges exchangeGates
+	exchanges singleflight.Group
 }
 
 // NewWithServiceAccountToken constructs a provider that sends a Grafana
@@ -230,6 +231,10 @@ func validCredential(value string) bool {
 
 const maxModelIDBytes = 2048
 
+// tokenExchangeTimeout bounds a shared token exchange, including authlib's
+// retries, independently of the callers waiting for it.
+const tokenExchangeTimeout = 30 * time.Second
+
 func validHeaderName(value string) bool {
 	if value == "" {
 		return false
@@ -308,12 +313,7 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 		req.Header.Set("Authorization", p.bearer)
 		return req, nil
 	}
-	release, err := p.exchanges.acquire(ctx, subject)
-	if err != nil {
-		return nil, err
-	}
-	token, err := p.exchanger.Exchange(ctx, authn.TokenExchangeRequest{Namespace: p.namespace, Audiences: []string{p.audience}, SubjectToken: subject})
-	release()
+	token, err := p.exchange(ctx, subject)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -337,45 +337,24 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 	return req, nil
 }
 
-// exchangeGates admits one token exchange per subject at a time. Authlib runs
-// concurrent exchanges for one subject as a single call under the first
-// caller's context, so waiting here keeps each caller's cancellation its own
-// while exchanges for different subjects proceed in parallel.
-type exchangeGates struct {
-	mu    sync.Mutex
-	gates map[string]*exchangeGate
-}
-
-type exchangeGate struct {
-	slot    chan struct{}
-	waiters int
-}
-
-func (g *exchangeGates) acquire(ctx context.Context, subject string) (release func(), err error) {
-	g.mu.Lock()
-	if g.gates == nil {
-		g.gates = map[string]*exchangeGate{}
-	}
-	gate, ok := g.gates[subject]
-	if !ok {
-		gate = &exchangeGate{slot: make(chan struct{}, 1)}
-		g.gates[subject] = gate
-	}
-	gate.waiters++
-	g.mu.Unlock()
-	leave := func() {
-		g.mu.Lock()
-		defer g.mu.Unlock()
-		if gate.waiters--; gate.waiters == 0 {
-			delete(g.gates, subject)
-		}
-	}
+// exchange returns an access token for subject. Concurrent calls for one
+// subject share a single exchange that no caller can cancel, bounded by
+// tokenExchangeTimeout, while each caller still returns when its own ctx
+// ends. An exchange that outlives its callers still fills the token cache.
+func (p *Provider) exchange(ctx context.Context, subject string) (*authn.TokenExchangeResponse, error) {
+	result := p.exchanges.DoChan(subject, func() (any, error) {
+		exchangeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tokenExchangeTimeout)
+		defer cancel()
+		return p.exchanger.Exchange(exchangeCtx, authn.TokenExchangeRequest{Namespace: p.namespace, Audiences: []string{p.audience}, SubjectToken: subject})
+	})
 	select {
-	case gate.slot <- struct{}{}:
-		return func() { <-gate.slot; leave() }, nil
 	case <-ctx.Done():
-		leave()
 		return nil, ctx.Err()
+	case shared := <-result:
+		if shared.Err != nil {
+			return nil, shared.Err
+		}
+		return shared.Val.(*authn.TokenExchangeResponse), nil
 	}
 }
 
