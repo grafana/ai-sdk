@@ -44,7 +44,7 @@ is for, when there is one.
 
 In `cloud` mode, `GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES` lists the signed
 service identities allowed to use configured models, comma-separated and
-matched exactly. A service that relays another service's token is the direct
+matched exactly; whitespace around entries is ignored. A service that relays another service's token is the direct
 caller, so it does not inherit that service's access. BYOK is open to every
 stack user and service account; their provider keys are used only for their
 own requests. The allowlist is rejected in `self-hosted` mode.

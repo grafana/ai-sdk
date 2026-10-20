@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -22,11 +21,6 @@ const (
 	AccessModeCloud AccessMode = "cloud"
 	// AccessModeSelfHosted grants the catalog to users and service accounts.
 	AccessModeSelfHosted AccessMode = "self-hosted"
-)
-
-const (
-	maxInternalServices    = 64
-	maxServiceIdentityByte = 128
 )
 
 // AccountAccess is the closed outcome of the access check: the account
@@ -65,13 +59,10 @@ func ParseAccessPolicy(mode, internalServices string) (AccessPolicy, error) {
 	if policy.Mode != AccessModeCloud {
 		return AccessPolicy{}, errors.New("config: the internal service allowlist requires cloud access mode")
 	}
-	entries := strings.Split(internalServices, ",")
-	if len(entries) > maxInternalServices {
-		return AccessPolicy{}, fmt.Errorf("config: the internal service allowlist accepts at most %d entries", maxInternalServices)
-	}
-	for _, entry := range entries {
-		if !validServiceIdentity(entry) {
-			return AccessPolicy{}, errors.New("config: internal service entries must be 1-128 visible ASCII characters without commas")
+	for entry := range strings.SplitSeq(internalServices, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			return AccessPolicy{}, errors.New("config: internal service entries must not be empty")
 		}
 		if slices.Contains(policy.InternalServices, entry) {
 			return AccessPolicy{}, errors.New("config: internal service entries must be unique")
@@ -79,18 +70,6 @@ func ParseAccessPolicy(mode, internalServices string) (AccessPolicy, error) {
 		policy.InternalServices = append(policy.InternalServices, entry)
 	}
 	return policy, nil
-}
-
-func validServiceIdentity(value string) bool {
-	if value == "" || len(value) > maxServiceIdentityByte {
-		return false
-	}
-	for i := range len(value) {
-		if value[i] < 0x21 || value[i] > 0x7e || value[i] == ',' {
-			return false
-		}
-	}
-	return true
 }
 
 // Caller is the private verified caller retained in the request context.

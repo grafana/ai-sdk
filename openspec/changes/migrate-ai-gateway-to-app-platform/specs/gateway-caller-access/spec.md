@@ -70,7 +70,7 @@ In `self-hosted` mode, a request whose identity actor is a user or service accou
 - **THEN** the request SHALL be refused
 
 ### Requirement: Internal service allowlist configuration
-The internal allowlist SHALL be explicit Gateway configuration of bounded, nonempty, unique service identity names, matched exactly and case-sensitively against the direct caller's service identity. An empty allowlist SHALL grant configured access to no caller. Invalid entries SHALL fail startup.
+The internal allowlist SHALL be explicit Gateway configuration of nonempty, unique, comma-separated service identity names, with surrounding whitespace removed from each entry, matched exactly and case-sensitively against the direct caller's service identity. An empty allowlist SHALL grant configured access to no caller. Invalid entries SHALL fail startup.
 
 #### Scenario: Empty allowlist
 - **WHEN** the allowlist is empty in `cloud` mode

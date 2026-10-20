@@ -383,12 +383,11 @@ func TestParseSettings_AccessPolicy(t *testing.T) {
 		{name: "unknown mode", mode: "hybrid", wantErr: "cloud or self-hosted"},
 		{name: "mode case", mode: "Cloud", wantErr: "cloud or self-hosted"},
 		{name: "allowlist in self-hosted", mode: "self-hosted", services: "svc-a", wantErr: "requires cloud access mode"},
-		{name: "surrounding whitespace", mode: "cloud", services: "svc-a, svc-b", wantErr: "visible ASCII"},
-		{name: "empty entry", mode: "cloud", services: "svc-a,,svc-b", wantErr: "visible ASCII"},
-		{name: "trailing comma", mode: "cloud", services: "svc-a,", wantErr: "visible ASCII"},
-		{name: "duplicate", mode: "cloud", services: "svc-a,svc-a", wantErr: "unique"},
-		{name: "entry too long", mode: "cloud", services: strings.Repeat("s", 129), wantErr: "visible ASCII"},
-		{name: "too many entries", mode: "cloud", services: strings.TrimSuffix(strings.Repeat("svc,", 65), ","), wantErr: "at most 64"},
+		{name: "surrounding whitespace is trimmed", mode: "cloud", services: " svc-a , svc-b ", want: auth.AccessPolicy{Mode: auth.AccessModeCloud, InternalServices: []string{"svc-a", "svc-b"}}},
+		{name: "empty entry", mode: "cloud", services: "svc-a,,svc-b", wantErr: "must not be empty"},
+		{name: "trailing comma", mode: "cloud", services: "svc-a,", wantErr: "must not be empty"},
+		{name: "blank entry", mode: "cloud", services: "svc-a, ", wantErr: "must not be empty"},
+		{name: "duplicate after trimming", mode: "cloud", services: "svc-a, svc-a", wantErr: "unique"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
