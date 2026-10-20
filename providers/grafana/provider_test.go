@@ -89,6 +89,158 @@ func TestNewWithAccessToken_Validation(t *testing.T) {
 	}
 }
 
+const serviceAccountRoutePrefix = "/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1"
+
+func TestServiceAccount_Requests(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		assert.Equal(t, []string{"Bearer glsa_dummy-token"}, r.Header.Values("Authorization"))
+		assert.Empty(t, r.Header.Values("X-Access-Token"))
+		assert.Empty(t, r.Header.Values("X-Grafana-Id"))
+		assert.Equal(t, "configured", r.Header.Get("X-Custom"))
+		switch r.URL.Path {
+		case serviceAccountRoutePrefix + "/config":
+			assert.Equal(t, http.MethodGet, r.Method)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, discoveryFixture)
+		case serviceAccountRoutePrefix + "/language-model":
+			assert.Equal(t, http.MethodPost, r.Method)
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			assert.NotContains(t, string(body), "glsa_dummy-token")
+			if r.Header.Get("Ai-Language-Model-Streaming") == "true" {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, "data: {\"type\":\"stream-start\"}\n\ndata: [DONE]\n\n")
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, unaryFixture)
+		default:
+			t.Errorf("unexpected route: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	p, err := NewWithServiceAccountToken(ServiceAccountConfig{
+		Token: "glsa_dummy-token", BaseURL: srv.URL + serviceAccountRoutePrefix, Headers: http.Header{"X-Custom": {"configured"}},
+	})
+	require.NoError(t, err)
+	rows, err := p.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	m, err := p.LanguageModel("assistant")
+	require.NoError(t, err)
+	result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
+	require.NoError(t, err)
+	assert.Equal(t, "hello", result.Content[0].Text)
+	stream, err := m.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+	require.NoError(t, err)
+	for range stream.Stream {
+	}
+	assert.Equal(t, int32(3), requests.Load())
+}
+
+func TestServiceAccount_Validation(t *testing.T) {
+	valid := ServiceAccountConfig{Token: "glsa_token", BaseURL: "https://example.test" + serviceAccountRoutePrefix}
+	for _, tc := range []struct {
+		name   string
+		change func(*ServiceAccountConfig)
+	}{
+		{"empty token", func(c *ServiceAccountConfig) { c.Token = "" }},
+		{"token whitespace", func(c *ServiceAccountConfig) { c.Token = "glsa_bad token" }},
+		{"token injection", func(c *ServiceAccountConfig) { c.Token = "glsa_bad\r\nsecret" }},
+		{"token utf8", func(c *ServiceAccountConfig) { c.Token = string([]byte{0xff}) }},
+		{"unsafe URL", func(c *ServiceAccountConfig) { c.BaseURL = "https://secret@example.test" }},
+		{"reserved config", func(c *ServiceAccountConfig) { c.Headers = http.Header{"authorization": {"private-value"}} }},
+		{"invalid limits", func(c *ServiceAccountConfig) { c.Limits = &Limits{} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := valid
+			tc.change(&cfg)
+			p, err := NewWithServiceAccountToken(cfg)
+			require.Error(t, err)
+			assert.Nil(t, p)
+			assert.NotContains(t, err.Error(), "private-value")
+			assert.NotContains(t, err.Error(), "secret")
+		})
+	}
+}
+
+func TestServiceAccount_RedirectDoesNotLeakToken(t *testing.T) {
+	var received atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { received.Add(1) }))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) }))
+	defer srv.Close()
+	p, err := NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_token", BaseURL: srv.URL})
+	require.NoError(t, err)
+	_, err = p.ListModels(context.Background())
+	require.Error(t, err)
+	assert.Zero(t, received.Load())
+}
+
+func TestServiceAccount_ConflictsAndCancellation(t *testing.T) {
+	var requests atomic.Int32
+	p, err := NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_dummy", BaseURL: "https://example.test/api/v1/aisdk", HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(unaryFixture)), Request: r}, nil
+	})}})
+	require.NoError(t, err)
+	m, err := p.LanguageModel("assistant")
+	require.NoError(t, err)
+	for _, name := range []string{"Authorization", "AUTHORIZATION", "X-Access-Token", "x-grafana-id"} {
+		t.Run(name, func(t *testing.T) {
+			for _, value := range []string{"private-value", ""} {
+				for _, streaming := range []bool{false, true} {
+					options := provider.CallOptions{Prompt: []provider.Message{}, Headers: map[string]string{name: value}}
+					var err error
+					if streaming {
+						_, err = m.DoStream(context.Background(), options)
+					} else {
+						_, err = m.DoGenerate(context.Background(), options)
+					}
+					require.Error(t, err)
+					assert.NotContains(t, err.Error(), "private-value")
+					assert.Zero(t, requests.Load())
+				}
+			}
+		})
+	}
+	_, err = p.ListModels(WithOnBehalfOf(context.Background(), "user-token"))
+	require.Error(t, err)
+	assert.Zero(t, requests.Load())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = m.DoStream(ctx, provider.CallOptions{Prompt: []provider.Message{}})
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Zero(t, requests.Load())
+	_, err = m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), requests.Load())
+}
+
+func TestServiceAccount_ConcurrentAndRedirect(t *testing.T) {
+	var reached atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached.Add(1) }))
+	defer target.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer glsa_dummy", r.Header.Get("Authorization"))
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer origin.Close()
+	p, err := NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_dummy", BaseURL: origin.URL + "/api/v1/aisdk"})
+	require.NoError(t, err)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			_, err := p.ListModels(context.Background())
+			assert.Error(t, err)
+		})
+	}
+	wg.Wait()
+	assert.Zero(t, reached.Load())
+}
+
 func TestProvider_ImmutableConfigurationAndRegistry(t *testing.T) {
 	limits := DefaultLimits()
 	headers := http.Header{"x-config": {"original"}}
@@ -331,6 +483,175 @@ func TestTokenExchange_FailureAndCancellation(t *testing.T) {
 		assert.ErrorIs(t, <-doneFirst, context.Canceled)
 		assert.Equal(t, int32(1), exchanges.Load())
 	})
+}
+
+func exchangedToken(t *testing.T, marker string) string {
+	t.Helper()
+	claims, err := json.Marshal(map[string]any{"exp": time.Now().Add(time.Hour).Unix(), "jti": marker})
+	require.NoError(t, err)
+	return "eyJhbGciOiJFUzI1NiJ9." + base64.RawURLEncoding.EncodeToString(claims) + ".c2lnbmF0dXJl"
+}
+
+func TestOnBehalfOf_ExchangesSubjectToken(t *testing.T) {
+	var mu sync.Mutex
+	var expected string
+	exchanges := map[string]int{}
+	issued := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/exchange" {
+			var request authn.TokenExchangeRequest
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+			assert.Equal(t, "stacks-1", request.Namespace)
+			assert.Equal(t, []string{"grafana-aigateway-app"}, request.Audiences)
+			mu.Lock()
+			exchanges[request.SubjectToken]++
+			token := exchangedToken(t, request.SubjectToken)
+			issued[token] = request.SubjectToken
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]string{"token": token}})
+			return
+		}
+		assert.Len(t, r.Header.Values("X-Access-Token"), 1)
+		assert.Empty(t, r.Header.Values("X-Grafana-Id"))
+		assert.Empty(t, r.Header.Values("Authorization"))
+		mu.Lock()
+		subject, ok := issued[r.Header.Get("X-Access-Token")]
+		expected := expected
+		mu.Unlock()
+		assert.True(t, ok)
+		assert.Equal(t, expected, subject)
+		for _, values := range r.Header {
+			for _, value := range values {
+				assert.NotContains(t, value, "subject-token-")
+			}
+		}
+		_, _ = io.WriteString(w, discoveryFixture)
+	}))
+	defer srv.Close()
+	p, err := NewWithTokenExchange(TokenExchangeConfig{
+		CAPToken: "cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app",
+		BaseURL: srv.URL + "/api", TokenExchangeURL: srv.URL + "/exchange", HTTPClient: srv.Client(),
+	})
+	require.NoError(t, err)
+
+	for _, subject := range []string{"", "subject-token-user", "subject-token-delegated", "subject-token-user"} {
+		ctx := context.Background()
+		if subject != "" {
+			ctx = WithOnBehalfOf(ctx, subject)
+		}
+		mu.Lock()
+		expected = subject
+		mu.Unlock()
+		rows, err := p.ListModels(ctx)
+		require.NoError(t, err)
+		assert.Len(t, rows, 2)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, map[string]int{"": 1, "subject-token-user": 1, "subject-token-delegated": 1}, exchanges)
+}
+
+func TestOnBehalfOf_ExchangesForDifferentSubjectsConcurrently(t *testing.T) {
+	subjects := []string{"subject-token-a", "subject-token-b"}
+	var arrived sync.WaitGroup
+	arrived.Add(len(subjects))
+	allArrived := make(chan struct{})
+	go func() { arrived.Wait(); close(allArrived) }()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/exchange" {
+			var request authn.TokenExchangeRequest
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+			arrived.Done()
+			select {
+			case <-allArrived:
+			case <-time.After(5 * time.Second):
+				http.Error(w, "exchanges were serialized", http.StatusConflict)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]string{"token": exchangedToken(t, request.SubjectToken)}})
+			return
+		}
+		_, _ = io.WriteString(w, discoveryFixture)
+	}))
+	defer srv.Close()
+	p, err := NewWithTokenExchange(TokenExchangeConfig{
+		CAPToken: "cap", Namespace: "stacks-1", Audience: "grafana-aigateway-app",
+		BaseURL: srv.URL + "/api", TokenExchangeURL: srv.URL + "/exchange", HTTPClient: srv.Client(),
+	})
+	require.NoError(t, err)
+
+	errs := make(chan error, len(subjects))
+	for _, subject := range subjects {
+		go func() {
+			_, err := p.ListModels(WithOnBehalfOf(context.Background(), subject))
+			errs <- err
+		}()
+	}
+	for range subjects {
+		require.NoError(t, <-errs)
+	}
+}
+
+func TestOnBehalfOf_RefusedBeforeIO(t *testing.T) {
+	var calls atomic.Int32
+	transport := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return nil, context.Canceled
+	})}
+	exchange := func(namespace string) func() (*Provider, error) {
+		return func() (*Provider, error) {
+			return NewWithTokenExchange(TokenExchangeConfig{CAPToken: "cap", Namespace: namespace, Audience: "grafana-aigateway-app", BaseURL: "https://gateway.invalid", TokenExchangeURL: "https://exchange.invalid", HTTPClient: transport})
+		}
+	}
+	for _, tc := range []struct {
+		name    string
+		new     func() (*Provider, error)
+		context func(context.Context) context.Context
+	}{
+		{"access token flow", func() (*Provider, error) {
+			return NewWithAccessToken(AccessTokenConfig{AccessToken: "access", BaseURL: "https://gateway.invalid", HTTPClient: transport})
+		}, func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "subject-token") }},
+		{"service account flow", func() (*Provider, error) {
+			return NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_token", BaseURL: "https://gateway.invalid", HTTPClient: transport})
+		}, func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "subject-token") }},
+		{"wildcard namespace", exchange("*"), func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "subject-token") }},
+		{"empty subject", exchange("stacks-1"), func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "") }},
+		{"unsafe subject", exchange("stacks-1"), func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "subject\r\ntoken") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := tc.new()
+			require.NoError(t, err)
+			_, err = p.ListModels(tc.context(context.Background()))
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "subject-token")
+		})
+	}
+	assert.Zero(t, calls.Load())
+}
+
+func TestExchangeGates_PerSubject(t *testing.T) {
+	var gates exchangeGates
+	releaseA, err := gates.acquire(context.Background(), "subject-a")
+	require.NoError(t, err)
+
+	releaseB, err := gates.acquire(context.Background(), "subject-b")
+	require.NoError(t, err, "another subject does not wait")
+	releaseB()
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = gates.acquire(canceled, "subject-a")
+	require.ErrorIs(t, err, context.Canceled, "the same subject waits until released")
+
+	releaseA()
+	releaseA, err = gates.acquire(context.Background(), "subject-a")
+	require.NoError(t, err, "the subject is admitted again after release")
+	releaseA()
+	gates.mu.Lock()
+	defer gates.mu.Unlock()
+	assert.Empty(t, gates.gates)
 }
 
 func TestProvider_ReservedAuthenticationHeaders(t *testing.T) {

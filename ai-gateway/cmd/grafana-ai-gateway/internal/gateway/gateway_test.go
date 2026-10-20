@@ -1,29 +1,26 @@
 package gateway
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strconv"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/grafana/authlib/types"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata"
+	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
+	"github.com/hashicorp/go-hclog"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/metadata"
-
-	pluginv3 "github.com/grafana/grafana-app-sdk/plugin/genproto/grafana/plugin/v3"
-
-	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
-	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 )
-
-const unaryBody = `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]}],"maxOutputTokens":16}`
 
 func TestPluginID_MatchesPluginMetadata(t *testing.T) {
 	raw, err := os.ReadFile("../../../../src/plugin.json")
@@ -35,229 +32,364 @@ func TestPluginID_MatchesPluginMetadata(t *testing.T) {
 	assert.Equal(t, metadata.ID, PluginID)
 }
 
-func TestGateway_CloudAccess(t *testing.T) {
-	h := newHarness(t, platformhost.TopologyCloud)
-	internal := accessToken(h.serviceToken(t, testInternalService))
-	onBehalf := accessToken(h.onBehalfOf(t, testInternalService, types.TypeUser, "private-user-uid"))
-	user := session(h.host.AddSession(types.TypeUser, "private-user-uid", testNamespace))
-	account := bearer(h.host.AddServiceAccount("private-account-uid", testNamespace))
-	anonymous := session(h.host.AddSession(types.TypeAnonymous, "anon", testNamespace))
-	other := accessToken(h.serviceToken(t, "svc-b"))
-
-	t.Run("configured discovery for internal callers", func(t *testing.T) {
-		for _, auth := range []credential{internal, onBehalf} {
-			status, body := do(t, discoveryRequest(t, h.url("config"), auth))
-			assert.Equal(t, http.StatusOK, status)
-			assert.Contains(t, body, `"id":"public"`)
-		}
-	})
-	t.Run("configured inference for internal callers", func(t *testing.T) {
-		for _, auth := range []credential{internal, onBehalf} {
-			status, body := do(t, languageRequest(t, context.Background(), h.url("language-model"), unaryBody, false, auth))
-			assert.Equal(t, http.StatusOK, status, body)
-			assert.Contains(t, body, "hello")
-		}
-	})
-	t.Run("BYOK discovery is unsupported for users and service accounts", func(t *testing.T) {
-		for _, auth := range []credential{user, account} {
-			status, body := do(t, discoveryRequest(t, h.url("config"), auth))
-			assert.Equal(t, http.StatusBadRequest, status)
-			assert.Contains(t, body, "catalog discovery is unsupported for BYOK")
-		}
-	})
-	t.Run("BYOK callers cannot select configured models", func(t *testing.T) {
-		before := h.anthropic.requests.Load()
-		status, body := do(t, languageRequest(t, context.Background(), h.url("language-model"), unaryBody, false, account))
-		assert.Equal(t, http.StatusBadRequest, status)
-		assert.Contains(t, body, "BYOK requires a supported provider/model selector")
-		assert.Equal(t, before, h.anthropic.requests.Load())
-	})
-	t.Run("refused callers do no work", func(t *testing.T) {
-		before := h.anthropic.requests.Load()
-		for _, auth := range []credential{anonymous, other} {
-			status, body := do(t, discoveryRequest(t, h.url("config"), auth))
-			assert.Equal(t, http.StatusForbidden, status)
-			assert.Contains(t, body, "error")
-			status, _ = do(t, languageRequest(t, context.Background(), h.url("language-model"), unaryBody, false, auth))
-			assert.Equal(t, http.StatusForbidden, status)
-		}
-		assert.Equal(t, before, h.anthropic.requests.Load())
-	})
-	t.Run("route metrics and access decisions", func(t *testing.T) {
-		metrics := h.metrics(t)
-		assert.Contains(t, metrics, `grafana_ai_gateway_http_requests_total{method="GET",route="config",status="2xx"}`)
-		assert.Contains(t, metrics, `grafana_ai_gateway_http_requests_total{method="POST",route="language_model",status="2xx"}`)
-		assert.Contains(t, metrics, `grafana_ai_gateway_access_decisions_total{decision="configured"}`)
-		assert.Contains(t, metrics, `grafana_ai_gateway_access_decisions_total{decision="byok"}`)
-		assert.Contains(t, metrics, `grafana_ai_gateway_access_decisions_total{decision="refused"}`)
-		for _, private := range []string{testNamespace, testInternalService, "svc-b", "private-user-uid", "private-account-uid", "front-door", providerSecret} {
-			assert.NotContains(t, metrics, private)
-		}
-		sinks := strings.Join(append(h.anthropic.recorded(), h.logs.String()), "\n")
-		for _, private := range []string{"private-user-uid", "private-account-uid", "front-door", "svc-b"} {
-			assert.NotContains(t, sinks, private)
-		}
-		assert.Contains(t, h.logs.String(), `"caller_service":"`+testInternalService+`"`)
-	})
+type startupEnvironment struct {
+	values  map[string]string
+	secrets map[string]int
 }
 
-func TestGateway_SelfHostedAccess(t *testing.T) {
-	h := newHarness(t, platformhost.TopologySelfHosted)
-	account := bearer(h.host.AddServiceAccount("sa1", testNamespace))
-	user := session(h.host.AddSession(types.TypeUser, "u1", testNamespace))
-	anonymous := session(h.host.AddSession(types.TypeAnonymous, "anon", testNamespace))
-
-	for _, auth := range []credential{account, user} {
-		status, body := do(t, discoveryRequest(t, h.url("config"), auth))
-		assert.Equal(t, http.StatusOK, status)
-		assert.Contains(t, body, `"id":"public"`)
-		status, body = do(t, languageRequest(t, context.Background(), h.url("language-model"), unaryBody, false, auth))
-		assert.Equal(t, http.StatusOK, status, body)
-	}
-
-	before := h.anthropic.requests.Load()
-	byok := `{"prompt":[],"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-request-key"}]}}}}`
-	status, body := do(t, languageRequest(t, context.Background(), h.url("language-model"), byok, false, account))
-	assert.Equal(t, http.StatusBadRequest, status)
-	assert.NotContains(t, body, "dummy-request-key")
-	status, _ = do(t, discoveryRequest(t, h.url("config"), anonymous))
-	assert.Equal(t, http.StatusForbidden, status)
-	assert.Equal(t, before, h.anthropic.requests.Load())
-	assert.NotContains(t, h.metrics(t), `decision="byok"`)
-}
-
-func TestGateway_UndeclaredAndLegacyRoutesDoNoWork(t *testing.T) {
-	h := newHarness(t, platformhost.TopologyCloud)
-	internal := accessToken(h.serviceToken(t, testInternalService))
-	before := h.anthropic.requests.Load()
-
-	status, _ := do(t, languageRequest(t, context.Background(), h.url("config"), unaryBody, false, internal))
-	assert.Equal(t, http.StatusMethodNotAllowed, status)
-	status, _ = do(t, discoveryRequest(t, h.url("language-model"), internal))
-	assert.Equal(t, http.StatusMethodNotAllowed, status)
-	head := discoveryRequest(t, h.url("config"), internal)
-	head.Method = http.MethodHead
-	status, _ = do(t, head)
-	assert.Equal(t, http.StatusMethodNotAllowed, status)
-	status, _ = do(t, discoveryRequest(t, h.url("models"), internal))
-	assert.Equal(t, http.StatusNotFound, status)
-
-	for _, path := range []string{"/api/v1/aisdk/config", "/api/v1/aisdk/language-model", "/live", "/ready", "/metrics"} {
-		response := httptest.NewRecorder()
-		h.gateway.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
-		assert.Equal(t, http.StatusNotFound, response.Code, path)
-	}
-	assert.Equal(t, before, h.anthropic.requests.Load())
-	assert.Contains(t, h.metrics(t), `route="unmatched"`)
-	assert.NotContains(t, h.metrics(t), `decision=`)
-}
-
-func TestGateway_CredentialHeadersFromTheHostStayPrivate(t *testing.T) {
-	h := newHarness(t, platformhost.TopologyCloud)
-	token, err := h.host.Exchange(context.Background(), platformhost.RouterService, delegation(h.serviceToken(t, testInternalService)))
+func newStartupEnvironment(t *testing.T, providerURL string) *startupEnvironment {
+	t.Helper()
+	host, err := platformhost.New(platformhost.Config{Topology: platformhost.TopologyCloud, PluginID: PluginID, Group: "aigateway.ext.grafana.app", Version: "v1alpha1"})
 	require.NoError(t, err)
-	sentinels := map[string]string{
-		"Authorization":  "Bearer sentinel-authorization",
-		"X-Access-Token": "sentinel-access-token",
-		"X-Grafana-Id":   "sentinel-id-token",
-		"Cookie":         "grafana_session=sentinel-cookie",
-	}
-	for _, streaming := range []bool{false, true} {
-		request := &pluginv3.CallRouteRequest{}
-		request.SetMethod(http.MethodPost)
-		request.SetGroup(h.host.Config().Group)
-		request.SetVersion(h.host.Config().Version)
-		request.SetNamespace(testNamespace)
-		request.SetPath("/language-model")
-		request.SetUrl(strings.Replace(RoutePrefix(), "{namespace}", testNamespace, 1) + "/language-model")
-		headers := map[string]*pluginv3.StringList{
-			"Content-Type":                        pluginv3.StringList_builder{Values: []string{"application/json"}}.Build(),
-			providerv4.HeaderModelID:              pluginv3.StringList_builder{Values: []string{"public"}}.Build(),
-			providerv4.HeaderSpecificationVersion: pluginv3.StringList_builder{Values: []string{providerv4.SpecificationVersion}}.Build(),
-			providerv4.HeaderStreaming:            pluginv3.StringList_builder{Values: []string{strconv.FormatBool(streaming)}}.Build(),
-		}
-		for name, value := range sentinels {
-			headers[name] = pluginv3.StringList_builder{Values: []string{value}}.Build()
-		}
-		request.SetHeaders(headers)
-		request.SetBody([]byte(unaryBody))
-		stream, err := h.served.BareRouteClient().CallRoute(metadata.AppendToOutgoingContext(context.Background(), "x-access-token", token), request)
-		require.NoError(t, err)
-		var body strings.Builder
-		for {
-			response, err := stream.Recv()
-			if err != nil {
-				break
-			}
-			body.Write(response.GetBody())
-		}
-		if streaming {
-			assert.Contains(t, body.String(), `"delta":"second"`)
-		} else {
-			assert.Contains(t, body.String(), "hello")
-		}
-		for _, value := range sentinels {
-			assert.NotContains(t, body.String(), strings.TrimPrefix(value, "Bearer "))
-		}
-	}
-	serialized := strings.Join(append(h.anthropic.recorded(), h.logs.String(), h.metrics(t)), "\n")
-	for _, value := range []string{"sentinel-authorization", "sentinel-access-token", "sentinel-id-token", "sentinel-cookie"} {
-		assert.NotContains(t, serialized, value)
+	keys, err := host.JWKS()
+	require.NoError(t, err)
+	return &startupEnvironment{
+		values: map[string]string{
+			"GRAFANA_AI_GATEWAY_CONFIG_FILE": writeModelConfig(t, providerURL),
+			"GRAFANA_AI_GATEWAY_ACCESS_MODE": "cloud",
+			"GRAFANA_JWKS":                   string(keys),
+			"ANTHROPIC_SECRET":               providerSecret,
+		},
+		secrets: map[string]int{},
 	}
 }
 
-func TestGateway_StreamsIncrementallyAndCancels(t *testing.T) {
-	h := newHarness(t, platformhost.TopologyCloud)
-	internal := accessToken(h.serviceToken(t, testInternalService))
-	release := h.anthropic.hold()
+func (e *startupEnvironment) lookup(name string) (string, bool) {
+	if name == "ANTHROPIC_SECRET" || name == "AO_SECRET" {
+		e.secrets[name]++
+	}
+	value, ok := e.values[name]
+	return value, ok
+}
 
-	ctx, cancel := context.WithCancel(context.Background())
+func (e *startupEnvironment) start(t *testing.T) (*Gateway, string, error) {
+	t.Helper()
+	var logs bytes.Buffer
+	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry()})
+	if gw != nil {
+		t.Cleanup(gw.Close)
+	}
+	return gw, logs.String(), err
+}
+
+func unsetAmbientAgentObservabilityEnvironment(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{
+		"AGENTO11Y_ENDPOINT", "SIGIL_ENDPOINT", "AGENTO11Y_PROTOCOL", "SIGIL_PROTOCOL",
+		"AGENTO11Y_INSECURE", "SIGIL_INSECURE", "AGENTO11Y_HEADERS", "SIGIL_HEADERS",
+		"AGENTO11Y_AUTH_MODE", "SIGIL_AUTH_MODE", "AGENTO11Y_AUTH_TENANT_ID", "SIGIL_AUTH_TENANT_ID",
+		"AGENTO11Y_AUTH_TOKEN", "SIGIL_AUTH_TOKEN", "AGENTO11Y_AGENT_NAME", "SIGIL_AGENT_NAME",
+		"AGENTO11Y_AGENT_VERSION", "SIGIL_AGENT_VERSION", "AGENTO11Y_USER_ID", "SIGIL_USER_ID",
+		"AGENTO11Y_TAGS", "SIGIL_TAGS", "AGENTO11Y_CONTENT_CAPTURE_MODE", "SIGIL_CONTENT_CAPTURE_MODE",
+		"AGENTO11Y_DEBUG", "SIGIL_DEBUG", "AGENTO11Y_REDACT_INPUT_MESSAGES", "SIGIL_REDACT_INPUT_MESSAGES",
+	} {
+		t.Setenv(name, "")
+	}
+}
+
+func TestNew_ValidatesBeforeSecrets(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		change  func(map[string]string)
+		message string
+	}{
+		{name: "missing access mode", change: func(env map[string]string) { delete(env, "GRAFANA_AI_GATEWAY_ACCESS_MODE") }, message: "access mode is required"},
+		{name: "unknown access mode", change: func(env map[string]string) { env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "hybrid" }, message: "cloud or self-hosted"},
+		{name: "allowlist in self-hosted mode", change: func(env map[string]string) {
+			env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "self-hosted"
+			env["GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES"] = "svc-a"
+		}, message: "requires cloud access mode"},
+		{name: "production without signing keys", change: func(env map[string]string) { delete(env, "GRAFANA_JWKS") }, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
+		{name: "production with insecure skip", change: func(env map[string]string) { env[EnvInsecureSkipAuthentication] = "true" }, message: "requires development mode"},
+		{name: "development without keys or insecure skip", change: func(env map[string]string) {
+			delete(env, "GRAFANA_JWKS")
+			env["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development"
+		}, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
+		{name: "both signing key sources", change: func(env map[string]string) { env["GRAFANA_JWKS_URL"] = "https://auth.example/jwks" }, message: "only one"},
+		{name: "unparsable scalar", change: func(env map[string]string) {
+			env["GRAFANA_AI_GATEWAY_PROVIDERWIRE_REQUEST_BYTES"] = "password"
+		}, message: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_REQUEST_BYTES has an invalid value"},
+		{name: "scalar relationship", change: func(env map[string]string) {
+			env["GRAFANA_AI_GATEWAY_PROVIDERWIRE_STREAM_IDLE_DURATION"] = "10m"
+		}, message: "stream idle duration"},
+		{name: "legacy listener environment is ignored, legacy flags are not accepted", change: func(env map[string]string) {
+			env["GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS"] = "bad"
+			delete(env, "GRAFANA_AI_GATEWAY_ACCESS_MODE")
+		}, message: "access mode is required"},
+		{name: "ambient agent observability environment", change: func(env map[string]string) {
+			env["GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED"] = "true"
+			env["GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT"] = "collector.example:4317"
+			env["GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV"] = "AO_SECRET"
+			env["SIGIL_TAGS"] = "private=ambient"
+		}, message: "ambient agent observability SDK environment"},
+		{name: "production cleartext provider", url: "http://provider.example", message: "production endpoint must use https"},
+		{name: "credential-bearing provider endpoint", url: "https://user:password@provider.example", message: "userinfo"},
+		{name: "malformed credential-bearing provider endpoint", url: "https://user:password@provider.example:port", message: "not a valid URL"},
+		{name: "missing configuration file", change: func(env map[string]string) {
+			env["GRAFANA_AI_GATEWAY_CONFIG_FILE"] += ".missing"
+		}, message: "file does not exist"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			url := tc.url
+			if url == "" {
+				url = "https://provider.example"
+			}
+			env := newStartupEnvironment(t, url)
+			if tc.change != nil {
+				tc.change(env.values)
+			}
+			_, logs, err := env.start(t)
+			require.ErrorContains(t, err, tc.message)
+			assert.Empty(t, env.secrets)
+			for _, private := range []string{providerSecret, "private=ambient", "password", env.values["GRAFANA_AI_GATEWAY_CONFIG_FILE"]} {
+				assert.NotContains(t, err.Error(), private)
+				assert.NotContains(t, logs, private)
+			}
+		})
+	}
+}
+
+func TestNew_RejectsInvalidRoutesBeforeSecrets(t *testing.T) {
+	for _, tc := range []struct{ name, old, replacement string }{
+		{"invalid ID", "  public:", "  bad id:"},
+		{"blank name", "name: Public", "name: ' '"},
+		{"blank native model", "model: backend-private", "model: ' '"},
+		{"duplicate candidate", "model: backend-private", "model: backend-private\n    fallback:\n      - provider: anthropic-primary\n        model: backend-private"},
+		{"duplicate alias", "model: backend-private", "model: backend-private\n    aliases: [alias, alias]"},
+		{"canonical alias collision", "model: backend-private", "model: backend-private\n    aliases: [public]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newStartupEnvironment(t, "https://provider.example")
+			path := env.values["GRAFANA_AI_GATEWAY_CONFIG_FILE"]
+			data, err := os.ReadFile(path)
+			require.NoError(t, err)
+			changed := strings.Replace(string(data), tc.old, tc.replacement, 1)
+			require.NotEqual(t, string(data), changed)
+			require.NoError(t, os.WriteFile(path, []byte(changed), 0o600))
+			_, _, err = env.start(t)
+			require.ErrorContains(t, err, "config:")
+			assert.Empty(t, env.secrets)
+		})
+	}
+}
+
+func TestNew_EnvironmentOnlyStartup(t *testing.T) {
+	unsetAmbientAgentObservabilityEnvironment(t)
+	var providerCalls int
+	provider := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { providerCalls++ }))
+	defer provider.Close()
+	collector := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer collector.Close()
+
+	tests := []struct {
+		name   string
+		change func(map[string]string)
+	}{
+		{name: "development with insecure skip", change: func(env map[string]string) {
+			delete(env, "GRAFANA_JWKS")
+			env[EnvInsecureSkipAuthentication] = "true"
+		}},
+		{name: "keys URL", change: func(env map[string]string) {
+			delete(env, "GRAFANA_JWKS")
+			env["GRAFANA_JWKS_URL"] = "http://auth.internal/jwks"
+		}},
+		{name: "self-hosted", change: func(env map[string]string) { env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "self-hosted" }},
+		{name: "grpc agent observability", change: func(env map[string]string) {
+			for name, value := range map[string]string{
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":          "true",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL":         "grpc",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":         "127.0.0.1:1",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_TLS":              "false",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV":  "AO_SECRET",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES":      "1",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT":    "10ms",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT": "10ms",
+				"AO_SECRET": "agent-secret-value",
+			} {
+				env[name] = value
+			}
+		}},
+		{name: "http agent observability", change: func(env map[string]string) {
+			for name, value := range map[string]string{
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL":        "http",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        collector.URL,
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_TLS":             "false",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
+				"AO_SECRET": "agent-secret-value",
+			} {
+				env[name] = value
+			}
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newStartupEnvironment(t, provider.URL)
+			env.values["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development"
+			tc.change(env.values)
+			gw, logs, err := env.start(t)
+			require.NoError(t, err)
+			require.NotNil(t, gw.Handler())
+			require.NotNil(t, gw.Authenticator())
+			if _, enabled := env.values["AO_SECRET"]; enabled {
+				assert.Equal(t, 1, env.secrets["AO_SECRET"])
+			}
+			for _, private := range []string{providerSecret, "agent-secret-value", "AO_SECRET", "127.0.0.1:1"} {
+				assert.NotContains(t, logs, private)
+			}
+		})
+	}
+	assert.Zero(t, providerCalls)
+}
+
+func TestNew_ProductionExportWithDefaultTimeoutsClosesWithinTheBudget(t *testing.T) {
+	unsetAmbientAgentObservabilityEnvironment(t)
+	env := newStartupEnvironment(t, "https://provider.example")
+	for name, value := range map[string]string{
+		"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
+		"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.invalid:4317",
+		"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
+		"AO_SECRET": "agent-secret-value",
+	} {
+		env.values[name] = value
+	}
+	gw, _, err := env.start(t)
+	require.NoError(t, err)
+	started := time.Now()
+	gw.Close()
+	assert.Less(t, time.Since(started), finalFlushBudget+500*time.Millisecond)
+}
+
+func buildPlugin(t *testing.T) string {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("builds the plugin executable")
+	}
+	binary := filepath.Join(t.TempDir(), "gpx_aigateway")
+	command := exec.Command("go", "build", "-o", binary, ".")
+	command.Dir = "../.."
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, string(output))
+	return binary
+}
+
+type pluginProcess struct {
+	host    *platformhost.Host
+	process *platformhost.PluginProcess
+	server  *httptest.Server
+	logs    *syncBuffer
+	raw     *syncBuffer
+	fake    *fakeAnthropic
+}
+
+func launchPlugin(t *testing.T, binary string, env map[string]string) *pluginProcess {
+	t.Helper()
+	data := manifestdata.LocalManifest().ManifestData
+	host, err := platformhost.New(platformhost.Config{Topology: platformhost.TopologyCloud, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion})
+	require.NoError(t, err)
+	fake := newFakeAnthropic(t)
+	environment := []string{
+		"GRAFANA_AI_GATEWAY_CONFIG_FILE=" + writeModelConfig(t, fake.server.URL),
+		"GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE=development",
+		"GRAFANA_AI_GATEWAY_ACCESS_MODE=cloud",
+		"GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES=" + testInternalService,
+		"ANTHROPIC_SECRET=" + providerSecret,
+	}
+	for name, value := range env {
+		environment = append(environment, name+"="+value)
+	}
+	logs, raw := &syncBuffer{}, &syncBuffer{}
+	process, err := host.LaunchPlugin(platformhost.PluginConfig{
+		Binary: binary,
+		Env:    environment,
+		Logger: hclog.New(&hclog.LoggerOptions{Name: "plugin", Level: hclog.Info, Output: logs, JSONFormat: true}),
+		Stderr: raw,
+	})
+	require.NoError(t, err)
+	server := httptest.NewServer(host.Handler(process.RouteClient()))
+	t.Cleanup(func() {
+		server.Close()
+		process.Stop()
+	})
+	return &pluginProcess{host: host, process: process, server: server, logs: logs, raw: raw, fake: fake}
+}
+
+func (p *pluginProcess) url(route string) string {
+	return p.server.URL + strings.Replace(RoutePrefix(), "{namespace}", testNamespace, 1) + "/" + route
+}
+
+func TestPluginProcess_ServesThroughThePluginProtocol(t *testing.T) {
+	p := launchPlugin(t, buildPlugin(t), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	response, err := http.DefaultClient.Do(languageRequest(t, ctx, h.url("language-model"), unaryBody, true, internal))
-	require.NoError(t, err)
-	defer func() { _ = response.Body.Close() }()
-	require.Equal(t, http.StatusOK, response.StatusCode)
 
-	reader := bufio.NewReader(response.Body)
-	readUntil := func(marker string) {
-		t.Helper()
-		done := make(chan bool, 1)
-		go func() {
-			for {
-				line, err := reader.ReadString('\n')
-				if err != nil {
-					done <- false
-					return
-				}
-				if strings.Contains(line, marker) {
-					done <- true
-					return
+	status, message, err := p.process.CheckHealth(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "OK", status)
+	assert.NotEmpty(t, message)
+
+	token, err := p.host.ServiceToken(testInternalService, testNamespace)
+	require.NoError(t, err)
+	code, body := do(t, languageRequest(t, ctx, p.url("language-model"), unaryBody, false, accessToken(token)))
+	assert.Equal(t, http.StatusOK, code, body)
+	assert.Contains(t, body, "hello")
+
+	metrics, err := p.process.CollectMetrics(ctx)
+	require.NoError(t, err)
+	assert.Contains(t, string(metrics), `grafana_ai_gateway_http_requests_total{method="POST",route="language_model",status="2xx"} 1`)
+	assert.Contains(t, string(metrics), `grafana_ai_gateway_access_decisions_total{decision="configured"} 1`)
+	assert.NotContains(t, string(metrics), providerSecret)
+
+	assert.Less(t, p.process.Stop(), 2*time.Second)
+}
+
+func TestPluginProcess_LogsThroughTheHostProtocol(t *testing.T) {
+	binary := buildPlugin(t)
+	const (
+		traceID      = "4bf92f3577b34da6a3ce929d0e0e4736"
+		parentSpanID = "00f067aa0ba902b7"
+	)
+	for _, tc := range []struct {
+		name   string
+		env    map[string]string
+		traced bool
+	}{
+		{name: "host tracing configured", env: map[string]string{"GF_INSTANCE_OTLP_ADDRESS": "127.0.0.1:1", "GF_INSTANCE_OTLP_PROPAGATION": "w3c"}, traced: true},
+		{name: "no tracing configuration"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := launchPlugin(t, binary, tc.env)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			token, err := p.host.ServiceToken(testInternalService, testNamespace)
+			require.NoError(t, err)
+			request := languageRequest(t, ctx, p.url("language-model"), unaryBody, false, accessToken(token))
+			request.Header.Set("traceparent", "00-"+traceID+"-"+parentSpanID+"-01")
+			code, body := do(t, request)
+			require.Equal(t, http.StatusOK, code, body)
+			p.process.Stop()
+
+			var completed map[string]any
+			for _, line := range strings.Split(strings.TrimSpace(p.raw.String()), "\n") {
+				var record map[string]any
+				require.NoError(t, json.Unmarshal([]byte(line), &record), "plugin wrote outside the log protocol: %s", line)
+				require.Contains(t, record, "@level", line)
+				if record["@message"] == "http request completed" {
+					completed = record
 				}
 			}
-		}()
-		select {
-		case found := <-done:
-			require.True(t, found, marker)
-		case <-time.After(3 * time.Second):
-			t.Fatalf("frame %q did not arrive while the provider was paused", marker)
-		}
+			require.NotNil(t, completed)
+			assert.Equal(t, "info", completed["@level"])
+			assert.Equal(t, "language_model", completed["route"])
+			assert.Contains(t, p.logs.String(), `"@message":"http request completed"`)
+			assert.Equal(t, traceID, completed["traceID"])
+			if tc.traced {
+				assert.NotEqual(t, parentSpanID, completed["spanID"], "the host-configured tracer creates the server span")
+			} else {
+				assert.Equal(t, parentSpanID, completed["spanID"], "without tracing configuration no local span is created")
+			}
+		})
 	}
-	readUntil(`"delta":"first"`)
-	select {
-	case <-h.anthropic.canceled:
-		t.Fatal("provider stream ended before cancellation")
-	default:
-	}
-	assert.Contains(t, h.metrics(t), `grafana_ai_gateway_http_requests_in_flight{method="POST",route="language_model"} 1`)
-
-	cancel()
-	select {
-	case <-h.anthropic.canceled:
-	case <-time.After(3 * time.Second):
-		t.Fatal("caller cancellation did not cancel the provider call")
-	}
-	close(release)
-	require.Eventually(t, func() bool {
-		return strings.Contains(h.metrics(t), `grafana_ai_gateway_http_requests_in_flight{method="POST",route="language_model"} 0`)
-	}, 3*time.Second, 10*time.Millisecond)
 }
