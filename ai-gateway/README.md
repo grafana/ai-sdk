@@ -161,16 +161,56 @@ The plugin follows the create-plugin scaffold with its App Platform addition:
 `.config/` is scaffold-owned and changes only through `create-plugin update`,
 and `kinds/` holds the manifest source for `generate:kinds`.
 
-For a local Grafana, build the plugin and run `pnpm --filter ./ai-gateway server`.
-It starts the create-plugin compose environment on Grafana nightly with
-`provisioning/grafana.ini`, which enables the App Platform feature toggles and
-configures `self-hosted` access with Grafana's own token signing and the
-catalog in `provisioning/aigateway/models.yaml`. Export `ANTHROPIC_API_KEY` first to call
-models. The environment signs in anonymously, which the Gateway refuses, so call
-the routes with a service account token. `pnpm --filter ./ai-gateway e2e` runs
-the Playwright tests against a running environment; `mise run
-test-ai-gateway-e2e` starts one, runs them and stops it. CI pins the Grafana
-nightly image by digest.
+## Local development
+
+The local environment is the create-plugin Docker Compose setup running Grafana
+nightly. It mounts `dist/` as the plugin and loads `provisioning/grafana.ini`,
+which enables the App Platform feature toggles, selects `self-hosted` access
+and points the Gateway at the development catalog in
+`provisioning/aigateway/models.yaml`. It needs Docker and the workspace tools
+from `mise deps`.
+
+Build the plugin once and start Grafana on <http://localhost:3000>:
+
+```bash
+mise run build-ai-gateway-plugin
+export ANTHROPIC_API_KEY=...        # optional; needed only to call models
+pnpm --filter ./ai-gateway server   # docker compose up --build
+```
+
+Then iterate from `ai-gateway/`:
+
+| Change | Apply it with |
+| --- | --- |
+| Frontend (`src/`) | Keep `pnpm dev` running; it rebuilds into `dist/` and the page reloads. |
+| Backend (`cmd/`, `internal/`) or the catalog | `GOWORK=$PWD/../go.gateway.work mage -v build:linux` (`build:linuxARM64` on arm64 hosts), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin process with the new binary and catalog. |
+| `provisioning/grafana.ini` | `docker compose restart grafana` |
+
+The `GOWORK` setting builds against the SDK source in this checkout rather than
+the published modules. The scaffold's `DEVELOPMENT=true` image is not used: it
+builds inside the container, which sees only `ai-gateway/`.
+
+The Gateway refuses Grafana's anonymous sign-in, so call the routes with a
+service account token:
+
+```bash
+grafana=http://localhost:3000
+routes=$grafana/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/default
+id=$(curl -fsS -H 'Content-Type: application/json' \
+  -d '{"name":"gateway-dev","role":"Viewer"}' $grafana/api/serviceaccounts | jq .id)
+token=$(curl -fsS -H 'Content-Type: application/json' \
+  -d '{"name":"gateway-dev"}' $grafana/api/serviceaccounts/$id/tokens | jq -r .key)
+curl -H "Authorization: Bearer $token" $routes/config
+```
+
+[Authenticate to the Gateway](../docs/guides/gateway-authentication.md) shows
+how to call models through the Go client with the same token.
+
+`docker compose logs -f grafana` follows Grafana and the plugin, which logs at
+debug level. `pnpm e2e` runs the Playwright tests against the running
+environment, and `docker compose down --volumes` stops it and discards its
+data. `mise run test-ai-gateway-e2e` does all of this in one step against the
+built plugin; CI pins the Grafana nightly image by digest.
 
 ## More
 
