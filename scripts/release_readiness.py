@@ -155,8 +155,7 @@ def release_publication_disabled(workflow):
 
 def release_automation_disabled(workflow):
     return bool(
-        re.search(r"(?m)^on:\n  workflow_dispatch:\n\npermissions:", workflow)
-        and re.search(
+        re.search(
             r"(?m)^  release-please:\n    if: \$\{\{ false \}\}(?:[ \t]+#.*)?$",
             workflow,
         )
