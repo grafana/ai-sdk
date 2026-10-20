@@ -2,6 +2,7 @@ name: Release readiness
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions: {}
 
@@ -29,4 +30,7 @@ jobs:
         run: gh api "repos/grafana/ai-sdk/pulls/$PR_NUMBER" > "$RUNNER_TEMP/release-pr.json"
 
       - name: Validate selected library publication readiness
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/release_readiness.py --pull-request "$RUNNER_TEMP/release-pr.json"

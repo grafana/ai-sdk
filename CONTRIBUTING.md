@@ -534,8 +534,10 @@ SDK's Go module dependency graph.
 - **Go module releases:** Before tagging an SDK, provider, or middleware version
   for external Go consumers, validate that module against its declared `go.mod`
   dependencies with `MODULE=providers/anthropic mise run verify-published-module`
-  (substitute the module being released). This check remains manual pending
-  release automation (#245/#21). For a broader diagnostic,
+  (substitute the module being released). Release PR readiness additionally checks
+  current-base metadata, canonical tagged prerequisite freshness, and isolated
+  selected-consumer regressions; see the [release runbook](release/README.md).
+  Publication automation remains disabled pending #245. For a broader diagnostic,
   `mise run verify-module-resolution` checks all published modules.
 - **Gateway images:** Gateway uses the separate `go.gateway.work` to build from
   same-revision local source. Push-only image validation checks the Gateway
