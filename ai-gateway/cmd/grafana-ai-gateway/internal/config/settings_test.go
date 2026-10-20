@@ -185,15 +185,6 @@ func TestParseSettings_RejectsUnknownAndInvalidValues(t *testing.T) {
 	require.Error(t, err)
 	_, err = ParseSettings([]string{"--deployment.mode=other"}, environment)
 	require.Error(t, err)
-	for _, legacy := range []string{
-		"--auth.unsafe", "--auth.jwks-url=https://auth.example/jwks", "--auth.audiences=ai-sdk", "--auth.mode=cloud-gateway",
-		"--server.private-listen-address=:8082", "--server.cloud-listen-address=:8080", "--server.operational-listen-address=:8081",
-		"--server.write-timeout=165s", "--server.shutdown-timeout=15s",
-	} {
-		_, err = ParseSettings([]string{legacy}, environment)
-		require.ErrorContains(t, err, "unknown long flag", legacy)
-	}
-
 	removed := []struct {
 		flag string
 		env  string
