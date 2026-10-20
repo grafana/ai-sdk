@@ -21,13 +21,10 @@ type telemetryState struct {
 	observation atomic.Pointer[requestObservation]
 }
 
-// TelemetryOptions contains trusted static observation values and the
-// registerer for Gateway collectors. Without a registerer, collectors use a
-// private registry.
+// TelemetryOptions contains the registerer for Gateway collectors. Without a
+// registerer, collectors use a private registry.
 type TelemetryOptions struct {
-	Region      string
-	Application string
-	Registerer  prometheus.Registerer
+	Registerer prometheus.Registerer
 }
 
 // Telemetry owns bounded HTTP lifecycle metrics and completion logging.
@@ -40,7 +37,6 @@ type Telemetry struct {
 	accessDecisions       *prometheus.CounterVec
 	agentExportFailures   *prometheus.CounterVec
 	physicalDrops         *prometheus.CounterVec
-	staticObservation     requestObservation
 	generateCorrelationID func() string
 }
 
@@ -55,12 +51,8 @@ func NewTelemetry(logger *slog.Logger, options ...TelemetryOptions) (*Telemetry,
 		registerer = prometheus.NewRegistry()
 	}
 	telemetry := &Telemetry{
-		logger:     logger,
-		registerer: registerer,
-		staticObservation: requestObservation{
-			region:      boundedObservationValue(configured.Region),
-			application: boundedObservationValue(configured.Application),
-		},
+		logger:                logger,
+		registerer:            registerer,
 		generateCorrelationID: newRequestCorrelationID,
 		inFlight: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "grafana_ai_gateway",
@@ -168,7 +160,7 @@ func (telemetry *Telemetry) Middleware(route func(*http.Request) string, next ht
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		routeName := route(request)
 		method := normalizeMethod(request.Method)
-		observation := telemetry.staticObservation
+		var observation requestObservation
 		observation.correlationID = boundedObservationValue(telemetry.generateCorrelationID())
 		state := &telemetryState{}
 		state.observation.Store(&observation)

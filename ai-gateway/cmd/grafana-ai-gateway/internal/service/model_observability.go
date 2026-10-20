@@ -290,8 +290,6 @@ var allowedAgentMetadataKeys = map[string]struct{}{
 	"gateway.correlation_id": {},
 	"gateway.caller_service": {},
 	"gateway.namespace":      {},
-	"gateway.region":         {},
-	"gateway.application":    {},
 }
 
 // filterAgentGeneration removes every metadata/tag/identity field not owned by

@@ -37,8 +37,6 @@ func TestAllowModelLogAttrs_ClosedPolicy(t *testing.T) {
 		slog.String("correlation_id", "correlation"),
 		slog.String("caller_service", "service"),
 		slog.String("namespace", "stack-1"),
-		slog.String("region", "us-central1"),
-		slog.String("application", "ai-gateway"),
 	}
 	assert.Equal(t, allowed, allowModelLogAttrs(allowed, gatewayauth.ConfiguredAccounts))
 }

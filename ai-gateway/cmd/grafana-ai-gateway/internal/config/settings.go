@@ -61,8 +61,6 @@ type Settings struct {
 	ConfigMaxBytes                 int64
 	DeploymentMode                 DeploymentMode
 	Access                         auth.AccessPolicy
-	ObservationRegion              string
-	ObservationApplication         string
 	AgentObservability             AgentObservabilitySettings
 	AnthropicResponseHeaderTimeout time.Duration
 	AnthropicResponseBytes         int64
@@ -104,8 +102,6 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	setting("deployment.mode", "Deployment mode.", "production").StringVar(&deploymentMode)
 	setting("access.mode", "Access mode (cloud or self-hosted).", "").StringVar(&accessMode)
 	setting("access.internal-services", "Comma-separated service identities with configured access in cloud mode.", "").StringVar(&internalServices)
-	setting("observation.region", "Trusted static observation region.", "").StringVar(&settings.ObservationRegion)
-	setting("observation.application", "Trusted static observation application.", "").StringVar(&settings.ObservationApplication)
 	setting("agento11y.enabled", "Enable Agent Observability generation export.", "false").BoolVar(&settings.AgentObservability.Enabled)
 	setting("agento11y.protocol", "Agent Observability export protocol (grpc or http).", "grpc").StringVar(&agentObservabilityProtocol)
 	setting("agento11y.endpoint", "Agent Observability generation export endpoint.", "").StringVar(&settings.AgentObservability.Endpoint)
@@ -152,12 +148,6 @@ func (settings Settings) Validate() error {
 	}
 	if settings.DeploymentMode != DeploymentProduction && settings.DeploymentMode != DeploymentDevelopment {
 		return fmt.Errorf("config: deployment mode must be production or development")
-	}
-	if err := validateOptionalObservationSetting("region", settings.ObservationRegion); err != nil {
-		return err
-	}
-	if err := validateOptionalObservationSetting("application", settings.ObservationApplication); err != nil {
-		return err
 	}
 	if err := settings.AgentObservability.validate(settings.DeploymentMode); err != nil {
 		return err
@@ -355,21 +345,6 @@ func validateAgentObservabilityEndpoint(protocol AgentObservabilityProtocol, end
 	}
 	if _, _, err := net.SplitHostPort(endpoint); err != nil {
 		return fmt.Errorf("config: agent observability grpc endpoint must use host:port syntax")
-	}
-	return nil
-}
-
-func validateOptionalObservationSetting(name, value string) error {
-	if value == "" {
-		return nil
-	}
-	if strings.TrimSpace(value) != value || len(value) > 128 {
-		return fmt.Errorf("config: observation %s must be at most 128 characters without surrounding whitespace", name)
-	}
-	for _, character := range value {
-		if character < 0x21 || character > 0x7e {
-			return fmt.Errorf("config: observation %s must contain only visible ASCII", name)
-		}
 	}
 	return nil
 }

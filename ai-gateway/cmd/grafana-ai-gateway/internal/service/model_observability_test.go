@@ -543,9 +543,9 @@ func TestFilterAgentGeneration_ClosedMetadataAndIdentityPolicy(t *testing.T) {
 		Tags:                map[string]string{"private": "tag-private"},
 		Metadata: map[string]any{
 			"gateway.correlation_id": "correlation",
-			"gateway.region":         "us-central1",
+			"gateway.namespace":      "verified-namespace",
 			"provider.private":       "provider-option-private",
-			"gateway.namespace":      strings.Repeat("x", maxObservationValueLen+1),
+			"gateway.caller_service": strings.Repeat("x", maxObservationValueLen+1),
 		},
 		SystemPrompt: "content preserved for metadata-only stripping",
 		Usage:        agento11y.TokenUsage{InputTokens: 2, OutputTokens: 3},
@@ -561,7 +561,7 @@ func TestFilterAgentGeneration_ClosedMetadataAndIdentityPolicy(t *testing.T) {
 	assert.Equal(t, generation.SystemPrompt, filtered.SystemPrompt)
 	assert.Equal(t, map[string]any{
 		"gateway.correlation_id": "correlation",
-		"gateway.region":         "us-central1",
+		"gateway.namespace":      "verified-namespace",
 	}, filtered.Metadata)
 	assert.Empty(t, filtered.ResponseID)
 	assert.Empty(t, filtered.ResponseModel)

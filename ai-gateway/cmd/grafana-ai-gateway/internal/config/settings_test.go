@@ -2,7 +2,6 @@ package config
 
 import (
 	"math"
-	"strings"
 	"testing"
 	"time"
 
@@ -70,8 +69,6 @@ func TestParseSettings_ExactFlagAndEnvironmentBindings(t *testing.T) {
 		{flag: "access.internal-services", env: "GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES", value: "svc-a,svc-b", check: func(t *testing.T, s Settings) {
 			assert.Equal(t, []string{"svc-a", "svc-b"}, s.Access.InternalServices)
 		}},
-		{flag: "observation.region", env: "GRAFANA_AI_GATEWAY_OBSERVATION_REGION", value: "us-central1", check: func(t *testing.T, s Settings) { assert.Equal(t, "us-central1", s.ObservationRegion) }},
-		{flag: "observation.application", env: "GRAFANA_AI_GATEWAY_OBSERVATION_APPLICATION", value: "ai-gateway", check: func(t *testing.T, s Settings) { assert.Equal(t, "ai-gateway", s.ObservationApplication) }},
 		{flag: "agento11y.enabled", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED", value: "true", prepare: func(environment map[string]string) { environment["GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED"] = "false" }, check: func(t *testing.T, s Settings) { assert.True(t, s.AgentObservability.Enabled) }},
 		{flag: "agento11y.protocol", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL", value: "http", prepare: func(environment map[string]string) {
 			environment["GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT"] = "https://collector.example/export"
@@ -145,8 +142,6 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		{name: "integer zero", mutate: func(s *Settings) { s.ProviderWire.StreamParts = 0 }},
 		{name: "integer limit+1 overflow", mutate: func(s *Settings) { s.ProviderWire.StreamParts = math.MaxInt }},
 		{name: "duration zero", mutate: func(s *Settings) { s.ProviderWire.ModelDuration = 0 }},
-		{name: "observation region whitespace", mutate: func(s *Settings) { s.ObservationRegion = " bad" }},
-		{name: "observation application over limit", mutate: func(s *Settings) { s.ObservationApplication = strings.Repeat("x", 129) }},
 		{name: "agento11y protocol", mutate: func(s *Settings) { s.AgentObservability.Protocol = "other" }},
 		{name: "agento11y endpoint", mutate: func(s *Settings) { s.AgentObservability.Endpoint = "" }},
 		{name: "agento11y endpoint credentials", mutate: func(s *Settings) {

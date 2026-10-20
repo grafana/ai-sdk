@@ -32,8 +32,6 @@ metadata:
 | `gateway.correlation_id` | Gateway-generated opaque request ID |
 | `gateway.caller_service` | successfully verified service identity |
 | `gateway.namespace` | successfully verified authentication namespace |
-| `gateway.region` | validated static `observation.region` setting |
-| `gateway.application` | validated static `observation.application` setting |
 
 Missing values are omitted. Incoming headers, raw claims, acting-user values,
 arbitrary context, and provider response metadata are not trusted sources.
@@ -114,7 +112,7 @@ operation/status/error/finish/chunk values come from finite classifications;
 unknown stream-part values are bucketed as `other`.
 Status-code labels use `100`–`599`, `none` when absent, and `other` for every
 out-of-range provider value.
-Caller, namespace, correlation, region, application, aliases, backend identity,
+Caller, namespace, correlation, aliases, backend identity,
 URLs, and content are never labels. `grafana_ai_gateway_agento11y_export_failures_total`
 uses only the fixed `class` values `queue_full`, `serialization`, `transport`,
 `rejected`, `shutdown`, and `unknown`.
@@ -127,8 +125,6 @@ settings from its environment.
 
 | Environment | Default / constraint |
 | --- | --- |
-| `GRAFANA_AI_GATEWAY_OBSERVATION_REGION` | optional, visible ASCII, at most 128 bytes |
-| `GRAFANA_AI_GATEWAY_OBSERVATION_APPLICATION` | optional, visible ASCII, at most 128 bytes |
 | `GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED` | `false` |
 | `GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL` | `grpc`; `grpc` or `http` |
 | `GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT` | required when enabled; credential-free absolute HTTP(S) URL for HTTP, host:port for gRPC |

@@ -18,15 +18,12 @@ import (
 
 func TestRequestObservation_AuthenticatedTrustBoundary(t *testing.T) {
 	var logs bytes.Buffer
-	telemetry, err := NewTelemetry(
-		slog.New(slog.NewJSONHandler(&logs, nil)),
-		TelemetryOptions{Region: "us-central1", Application: "ai-gateway"},
-	)
+	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(&logs, nil)))
 	require.NoError(t, err)
 	telemetry.generateCorrelationID = func() string { return "generated-correlation" }
 
 	untrusted := []string{
-		"header-correlation", "header-region", "header-application", "header-user",
+		"header-correlation", "header-region", "header-user",
 		"arbitrary-context", "acting-user", "raw-claim", "access-secret",
 	}
 	type arbitraryContextKey struct{}
@@ -50,7 +47,6 @@ func TestRequestObservation_AuthenticatedTrustBoundary(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/aisdk/language-model", nil)
 	request.Header.Set("X-Request-ID", "header-correlation")
 	request.Header.Set("X-Region", "header-region")
-	request.Header.Set("X-Application", "header-application")
 	request.Header.Set("X-User", "header-user")
 	request.Header.Set("Authorization", "access-secret")
 	request = request.WithContext(context.WithValue(request.Context(), arbitraryContextKey{}, "arbitrary-context"))
@@ -60,35 +56,28 @@ func TestRequestObservation_AuthenticatedTrustBoundary(t *testing.T) {
 		correlationID: "generated-correlation",
 		callerService: "verified-service",
 		namespace:     "verified-namespace",
-		region:        "us-central1",
-		application:   "ai-gateway",
 	}, retained)
 	assert.Equal(t, map[string]any{
 		"gateway.correlation_id": "generated-correlation",
 		"gateway.caller_service": "verified-service",
 		"gateway.namespace":      "verified-namespace",
-		"gateway.region":         "us-central1",
-		"gateway.application":    "ai-gateway",
 	}, metadata)
 	assert.Equal(t, originalHeaders, options.Headers["X-Existing"])
 	assert.Equal(t, originalOption, []byte(options.ProviderOptions["provider"].(provider.RawProviderOption).Raw))
 
 	serialized := logs.String()
-	for _, expected := range []string{"generated-correlation", "verified-service", "verified-namespace", "us-central1", "ai-gateway"} {
+	for _, expected := range []string{"generated-correlation", "verified-service", "verified-namespace"} {
 		assert.Contains(t, serialized, expected)
 	}
 	for _, value := range untrusted {
-		assert.NotContains(t, retained.correlationID+retained.callerService+retained.namespace+retained.region+retained.application, value)
+		assert.NotContains(t, retained.correlationID+retained.callerService+retained.namespace, value)
 		assert.NotContains(t, serialized, value)
 	}
 }
 
 func TestRequestObservation_OptionalAndInvalidValuesAreOmitted(t *testing.T) {
 	tooLong := strings.Repeat("x", maxObservationValueLen+1)
-	telemetry, err := NewTelemetry(
-		slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
-		TelemetryOptions{Region: "bad\nregion", Application: tooLong},
-	)
+	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	require.NoError(t, err)
 	telemetry.generateCorrelationID = func() string { return "correlation" }
 
@@ -112,8 +101,6 @@ func TestRequestObservation_OptionalAndInvalidValuesAreOmitted(t *testing.T) {
 			assert.Equal(t, "correlation", got.correlationID)
 			assert.Empty(t, got.callerService)
 			assert.Empty(t, got.namespace)
-			assert.Empty(t, got.region)
-			assert.Empty(t, got.application)
 		})
 	}
 }

@@ -84,6 +84,28 @@ Queue saturation, serialization failure, transport failure, and rejected exports
 - **WHEN** export delivery fails while records are queued at shutdown
 - **THEN** only fixed diagnostics and bounded counters SHALL be emitted, and flush/shutdown SHALL use the shared final-flush context after the host stops serving
 
+### Requirement: Trusted bounded request observation context
+
+The Gateway SHALL create one private immutable observation view per accepted HTTP request. It SHALL contain only a bounded Gateway-generated opaque request correlation ID and the normalized verified caller service and namespace from the authenticated caller context. Empty optional values SHALL be omitted.
+
+#### Scenario: Authenticated request is enriched
+- **WHEN** authentication stores a normalized caller
+- **THEN** logical logs and Agent Observability metadata SHALL contain the same request correlation ID, caller service and namespace under fixed keys
+- **AND** the direct provider's call headers and provider options SHALL contain none of those values unless an independent future policy explicitly approves them
+
+#### Scenario: Untrusted headers attempt enrichment
+- **WHEN** an authenticated request supplies arbitrary request, region, application, user, or tenant headers
+- **THEN** those header values SHALL NOT replace or extend the trusted observation view
+- **AND** none SHALL become logical metadata or provider-bound options through this capability
+
+#### Scenario: Optional deployment context is absent
+- **WHEN** the verified caller has no attributable service or namespace
+- **THEN** the field SHALL be absent from logical telemetry rather than populated from request input or a placeholder
+
+#### Scenario: Existing clients require no change
+- **WHEN** the registered Vercel client or WP7 Go client performs a text call
+- **THEN** no new request field, request header, response field, or response header SHALL be required or returned for observability correlation
+
 ## ADDED Requirements
 
 ### Requirement: Optional exporter in every deployment mode

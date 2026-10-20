@@ -1633,8 +1633,6 @@ describe("authenticated Anthropic Gateway command", () => {
     let resources: [FakeAnthropic, GatewayProcess] | undefined;
     try {
       resources = await startGateway([
-        "--observation.region=test-region",
-        "--observation.application=test-application",
         "--agento11y.enabled",
         "--agento11y.protocol=http",
         `--agento11y.endpoint=${observer.url}`,
@@ -1719,7 +1717,7 @@ describe("authenticated Anthropic Gateway command", () => {
       assert.deepEqual(observer.violations, []);
       assert.equal(observer.generations.length, 5);
       const allowedMetadata = new Set([
-        "gateway.application", "gateway.caller_service", "gateway.correlation_id", "gateway.namespace", "gateway.region",
+        "gateway.caller_service", "gateway.correlation_id", "gateway.namespace",
         "agento11y.sdk.content_capture_mode", "agento11y.sdk.name", "call_error",
       ]);
       for (const generation of observer.generations) {
@@ -1727,10 +1725,8 @@ describe("authenticated Anthropic Gateway command", () => {
         assert.equal(generation.agent_name ?? "", "");
         assert.equal(generation.user_id ?? "", "");
         const metadata = generation.metadata as Record<string, unknown>;
-        assert.equal(metadata["gateway.application"], "test-application");
         assert.equal(metadata["gateway.caller_service"], undefined);
         assert.equal(metadata["gateway.namespace"], "stacks-27038");
-        assert.equal(metadata["gateway.region"], "test-region");
         assert.equal(typeof metadata["gateway.correlation_id"], "string");
         assert.ok(Object.keys(metadata).every((key) => allowedMetadata.has(key)));
         assert.ok([undefined, "server_error", "canceled"].includes(metadata.call_error as string | undefined));

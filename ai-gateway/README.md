@@ -99,7 +99,6 @@ models:
 | `GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE` | `production` (default) or `development`, which allows HTTP provider endpoints. |
 | `GRAFANA_AI_GATEWAY_PROVIDERWIRE_*` | Request, response, stream and model-duration limits. |
 | `GRAFANA_AI_GATEWAY_AGENTO11Y_*` | Optional Agent Observability export. |
-| `GRAFANA_AI_GATEWAY_OBSERVATION_*` | Static region and application observation values. |
 
 Invalid settings, or an `auth` or `server` block in the catalog file stop the
 plugin before it serves requests. In development, Grafana's

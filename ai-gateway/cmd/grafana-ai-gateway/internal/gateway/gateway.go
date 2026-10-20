@@ -127,11 +127,7 @@ type sinks struct {
 }
 
 func newSinks(settings config.Settings, options Options, agentSecret string) (sinks, error) {
-	telemetry, err := service.NewTelemetry(options.Logger, service.TelemetryOptions{
-		Region:      settings.ObservationRegion,
-		Application: settings.ObservationApplication,
-		Registerer:  options.Registerer,
-	})
+	telemetry, err := service.NewTelemetry(options.Logger, service.TelemetryOptions{Registerer: options.Registerer})
 	if err != nil {
 		return sinks{}, err
 	}
