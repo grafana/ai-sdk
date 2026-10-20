@@ -93,6 +93,7 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 		name    string
 		url     string
 		change  func(map[string]string)
+		ambient map[string]string
 		message string
 	}{
 		{name: "missing access mode", change: func(env map[string]string) { delete(env, "GF_PLUGIN_ACCESS_MODE") }, message: "access mode is required"},
@@ -121,8 +122,7 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 		{name: "ambient agent observability environment", change: func(env map[string]string) {
 			env["GF_PLUGIN_AGENTO11Y_ENABLED"] = "true"
 			env["GF_PLUGIN_AGENTO11Y_ENDPOINT"] = "collector.example:4317"
-			env["SIGIL_TAGS"] = "private=ambient"
-		}, message: "ambient agent observability SDK environment"},
+		}, ambient: map[string]string{"SIGIL_TAGS": "private=ambient"}, message: "ambient agent observability SDK environment"},
 		{name: "unsupported provider scheme", url: "ftp://provider.example", message: "must use http or https"},
 		{name: "credential-bearing provider endpoint", url: "https://user:password@provider.example", message: "userinfo"},
 		{name: "malformed credential-bearing provider endpoint", url: "https://user:password@provider.example:port", message: "not a valid URL"},
@@ -139,6 +139,9 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 			env := newStartupEnvironment(t, url)
 			if tc.change != nil {
 				tc.change(env.values)
+			}
+			for name, value := range tc.ambient {
+				t.Setenv(name, value)
 			}
 			_, logs, err := env.start(t)
 			require.ErrorContains(t, err, tc.message)

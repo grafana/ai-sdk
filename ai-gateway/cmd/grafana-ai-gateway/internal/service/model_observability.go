@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -57,9 +56,8 @@ var defaultAgentExportTuning = agentExportTuning{
 }
 
 // NewAgentObservabilityRuntime consumes prevalidated settings and the
-// resolved bearer credential, rejects the SDK's ambient configuration layer
-// in the process environment, and constructs one metadata-only
-// hooks-disabled client. A disabled development
+// resolved bearer credential and constructs one metadata-only hooks-disabled
+// client. Callers reject the SDK's ambient configuration layer first. A disabled development
 // configuration returns a no-op runtime.
 func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, secret string, telemetry *Telemetry) (*AgentObservabilityRuntime, error) {
 	return newAgentObservabilityRuntime(settings, secret, telemetry, defaultAgentExportTuning)
@@ -74,9 +72,6 @@ func newAgentObservabilityRuntime(settings config.AgentObservabilitySettings, se
 	}
 	if !settings.Enabled {
 		return runtime, nil
-	}
-	if err := settings.ValidateAmbientEnvironment(os.LookupEnv); err != nil {
-		return nil, err
 	}
 	protocol := agento11y.GenerationExportProtocolGRPC
 	if settings.Protocol == config.AgentObservabilityHTTP {

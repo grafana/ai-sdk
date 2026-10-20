@@ -273,28 +273,6 @@ func TestNewModelObservabilityFactory_CloseWaitsForAbandonedStreamRecording(t *t
 	close(upstream)
 }
 
-func TestNewAgentObservabilityRuntime_RejectsActualSDKEnvironment(t *testing.T) {
-	for _, name := range []string{
-		"AGENTO11Y_TAGS", "AGENTO11Y_EXPORT_TIMEOUT_MS", "SIGIL_EXPORT_TIMEOUT_MS",
-		"AGENTO11Y_MAX_RETRIES", "SIGIL_MAX_RETRIES", "AGENTO11Y_MAX_BACKOFF_MS", "SIGIL_MAX_BACKOFF_MS",
-		"AGENTO11Y_QUEUE_SIZE", "SIGIL_QUEUE_SIZE", "AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES",
-		"AGENTO11Y_USE_EXPERIMENTAL_OTEL", "SIGIL_USE_EXPERIMENTAL_OTEL",
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Setenv(name, "private=ambient")
-			telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
-			require.NoError(t, err)
-			settings := config.AgentObservabilitySettings{Enabled: true}
-			runtime, err := NewAgentObservabilityRuntime(settings, "private-secret", telemetry)
-			require.Error(t, err)
-			assert.Nil(t, runtime)
-			assert.EqualError(t, err, "config: ambient agent observability SDK environment is not allowed")
-			assert.NotContains(t, err.Error(), name)
-			assert.NotContains(t, err.Error(), "private=ambient")
-		})
-	}
-}
-
 func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayload(t *testing.T) {
 	type capturedRequest struct {
 		authorization string

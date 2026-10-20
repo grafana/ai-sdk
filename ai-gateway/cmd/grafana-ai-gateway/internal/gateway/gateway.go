@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -61,7 +62,8 @@ func New(options Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := settings.AgentObservability.ValidateAmbientEnvironment(lookupEnv); err != nil {
+	// The Agent Observability SDK reads the process environment itself.
+	if err := settings.AgentObservability.ValidateAmbientEnvironment(os.LookupEnv); err != nil {
 		return nil, err
 	}
 	file, err := config.LoadFile(settings.ConfigFile, config.MaxFileBytes)
