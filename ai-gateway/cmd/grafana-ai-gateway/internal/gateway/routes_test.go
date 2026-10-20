@@ -173,16 +173,16 @@ func newHarness(t *testing.T, topology platformhost.Topology) *harness {
 	require.NoError(t, err)
 	anthropic := newFakeAnthropic(t)
 	env := map[string]string{
-		"GRAFANA_AI_GATEWAY_CONFIG_FILE":     writeModelConfig(t, anthropic.server.URL),
-		"GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE": "development",
-		"GRAFANA_JWKS":                       string(keys),
-		"ANTHROPIC_SECRET":                   providerSecret,
+		"GF_PLUGIN_CONFIG_FILE":     writeModelConfig(t, anthropic.server.URL),
+		"GF_PLUGIN_DEPLOYMENT_MODE": "development",
+		"GRAFANA_JWKS":              string(keys),
+		"ANTHROPIC_SECRET":          providerSecret,
 	}
 	if topology == platformhost.TopologyCloud {
-		env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "cloud"
-		env["GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES"] = testInternalService
+		env["GF_PLUGIN_ACCESS_MODE"] = "cloud"
+		env["GF_PLUGIN_ACCESS_INTERNAL_SERVICES"] = testInternalService
 	} else {
-		env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "self-hosted"
+		env["GF_PLUGIN_ACCESS_MODE"] = "self-hosted"
 	}
 	logs := &syncBuffer{}
 	registry := prometheus.NewRegistry()

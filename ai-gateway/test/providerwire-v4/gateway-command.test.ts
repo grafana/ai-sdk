@@ -309,7 +309,7 @@ describe("metadata observation policies", () => {
     const seen: unknown[] = [];
     try {
       for (const enabled of [false, true]) {
-        const args = enabled ? ["--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`, "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY", "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms"] : [];
+        const args = enabled ? ["--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`, "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY"] : [];
         const [fake, gateway] = await startGateway(args, { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
         fake.metadata = true;
         try {
@@ -455,7 +455,6 @@ describe("native option forwarding through the authenticated command", () => {
           gateway = await GatewayProcess.start(binaryPath, "", [
             "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
             "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-            "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
           ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "access-token", config);
           const prompt: LanguageModelV4CallOptions["prompt"] = [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }];
           const options: LanguageModelV4CallOptions = family === "anthropic"
@@ -1041,7 +1040,6 @@ describe("authenticated Anthropic Gateway command", () => {
       resources = await startGateway([
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
         "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-        "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "claude-sonnet-4-6");
       const [fake, gateway] = resources;
       fake.functionTools = true;
@@ -1135,7 +1133,6 @@ describe("authenticated Anthropic Gateway command", () => {
       resources = await startGateway([
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
         "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-        "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "claude-sonnet-4-6");
       const [fake, gateway] = resources;
       fake.providerTools = true;
@@ -1638,13 +1635,6 @@ describe("authenticated Anthropic Gateway command", () => {
         `--agento11y.endpoint=${observer.url}`,
         "--no-agento11y.tls",
         "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-        "--agento11y.queue-size=16",
-        "--agento11y.batch-size=1",
-        "--agento11y.payload-max-bytes=1048576",
-        "--agento11y.max-retries=1",
-        "--agento11y.initial-backoff=1ms",
-        "--agento11y.max-backoff=1ms",
-        "--agento11y.flush-interval=1ms",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
       const [fake, gateway] = resources;
       const fileParts = [
@@ -1755,13 +1745,6 @@ describe("authenticated Anthropic Gateway command", () => {
       `--agento11y.endpoint=http://127.0.0.1:${unavailablePort}`,
       "--no-agento11y.tls",
       "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-      "--agento11y.queue-size=4",
-      "--agento11y.batch-size=1",
-      "--agento11y.payload-max-bytes=1048576",
-      "--agento11y.max-retries=1",
-      "--agento11y.initial-backoff=1ms",
-      "--agento11y.max-backoff=1ms",
-      "--agento11y.flush-interval=1ms",
     ], { GATEWAY_TEST_AGENTO11Y_KEY: "outage-agento11y-key" });
     try {
       const response = await rawProviderWireRequest(gateway.baseURL, "outage-private-input");
@@ -1772,7 +1755,7 @@ describe("authenticated Anthropic Gateway command", () => {
       await poll(async () => {
         metrics = await gateway.metrics();
         return metrics.includes('grafana_ai_gateway_agento11y_export_failures_total{class="transport"} 1');
-      }, 5_000, "Agent Observability transport failure metric");
+      }, 30_000, "Agent Observability transport failure metric");
       assert.equal(await gateway.ready(), true);
       assert.equal(fake.requests.length, 1);
       for (const privateValue of [
@@ -1850,13 +1833,13 @@ describe("authenticated Anthropic Gateway command", () => {
     try {
       let failure = "";
       try {
-        await GatewayProcess.start(binaryPath, fake.url, ["--providerwire.stream-idle-duration=10m"]);
+        await GatewayProcess.start(binaryPath, fake.url, ["--max-model-duration=20s"]);
       } catch (error) {
         failure = String(error);
       }
       assert.ok(failure.includes("gateway exited unsuccessfully"));
       assert.ok(failure.includes("gateway plugin failed to start"));
-      assert.ok(failure.includes("stream idle duration"));
+      assert.ok(failure.includes("max model duration must be at least"));
       assert.deepEqual(processLifecycleEvents(failure), []);
       assert.notEqual(GatewayProcess.lastFailedDirectory, undefined);
       assert.equal(existsSync(GatewayProcess.lastFailedDirectory!), false);
@@ -1876,27 +1859,6 @@ describe("authenticated Anthropic Gateway command", () => {
     assert.doesNotMatch(imports, /providerwire|gateway\/catalog/);
   });
 
-  it("bounds oversized Anthropic failures without exposing response data", async () => {
-    const [fake, gateway] = await startGateway(["--anthropic.response-bytes=128"]);
-    fake.oversizedErrors = true;
-    try {
-      const response = await rawProviderWireRequest(gateway.baseURL, "oversized");
-      assert.ok(response.status >= 500);
-      const publicError = await response.text();
-      const metrics = await gateway.metrics();
-      assert.equal(await gateway.ready(), true);
-      assert.deepEqual(fake.violations, []);
-      await gateway.stop();
-      const logs = gateway.stderr;
-      assertConsumerSecretsAbsent(publicError);
-      for (const privateValue of ["provider-secret-response", "integration-anthropic-key", "backend-private", fake.url, TEST_TOKEN]) {
-        assert.ok(!logs.includes(privateValue));
-        assert.ok(!metrics.includes(privateValue));
-      }
-    } finally {
-      await settleCleanup(() => gateway.stop(), () => fake.stop());
-    }
-  });
 });
 
 describe("Cloud BYOK through the platform host (test-signed identities, dummy native trust)", () => {
@@ -2433,7 +2395,6 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
       resources = await startCompatibleGateway([
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
         "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-        "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
       const [fake, gateway] = resources;
       for (const mode of ["generate", "stream"] as const) {
@@ -3052,7 +3013,7 @@ function flagEnvironment(args: string[]): Record<string, string> {
   for (const arg of args) {
     const match = /^--(no-)?([a-z0-9.-]+)(?:=(.*))?$/.exec(arg);
     if (match == null) throw new Error(`unsupported Gateway flag: ${arg}`);
-    const name = `GRAFANA_AI_GATEWAY_${match[2]!.toUpperCase().replace(/[.-]/g, "_")}`;
+    const name = `GF_PLUGIN_${match[2]!.toUpperCase().replace(/[.-]/g, "_")}`;
     environment[name] = match[3] ?? (match[1] ? "false" : "true");
   }
   return environment;
@@ -3113,11 +3074,11 @@ class GatewayProcess {
         cwd: directory,
         stdio: ["ignore", "pipe", "pipe"],
         env: {
-          ...Object.fromEntries(Object.entries(nodeProcess.env).filter(([name]) => !name.startsWith("GRAFANA_AI_GATEWAY_") && !name.startsWith("AGENTO11Y_") && !name.startsWith("SIGIL_") && !name.startsWith("GRAFANA_JWKS") && !name.startsWith("GF_"))),
-          GRAFANA_AI_GATEWAY_CONFIG_FILE: configPath,
-          GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE: "development",
-          GRAFANA_AI_GATEWAY_ACCESS_MODE: topology,
-          ...(topology === "cloud" ? { GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES: INTERNAL_SERVICE } : {}),
+          ...Object.fromEntries(Object.entries(nodeProcess.env).filter(([name]) => !name.startsWith("AGENTO11Y_") && !name.startsWith("SIGIL_") && !name.startsWith("GRAFANA_JWKS") && !name.startsWith("GF_"))),
+          GF_PLUGIN_CONFIG_FILE: configPath,
+          GF_PLUGIN_DEPLOYMENT_MODE: "development",
+          GF_PLUGIN_ACCESS_MODE: topology,
+          ...(topology === "cloud" ? { GF_PLUGIN_ACCESS_INTERNAL_SERVICES: INTERNAL_SERVICE } : {}),
           GATEWAY_TEST_ANTHROPIC_KEY: "integration-anthropic-key",
           GATEWAY_TEST_COMPATIBLE_KEY: "integration-compatible-key",
           GATEWAY_TEST_OPENAI_KEY: "integration-openai-key",
@@ -3230,7 +3191,6 @@ class FakeAnthropic {
   readonly violations: string[] = [];
   readonly canceled = new Set<string>();
   redirectTo?: string;
-  oversizedErrors = false;
   failureStatus?: number;
   streamErrorMessage?: string;
   failureCode?: string | number;
@@ -3329,11 +3289,6 @@ class FakeAnthropic {
     if (this.redirectTo != null) {
       response.writeHead(307, { Location: this.redirectTo });
       response.end();
-      return;
-    }
-    if (this.oversizedErrors) {
-      response.writeHead(502, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ error: { type: "api_error", message: `provider-secret-response-${"x".repeat(512)}` } }));
       return;
     }
     if (marker === "provider-error") {
@@ -3659,7 +3614,7 @@ class FakeAgentObservability {
   }
 
   async waitForGenerations(count: number): Promise<void> {
-    await poll(async () => this.generations.length >= count, 5_000, `${count} Agent Observability generations`);
+    await poll(async () => this.generations.length >= count, 10_000, `${count} Agent Observability generations`);
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {

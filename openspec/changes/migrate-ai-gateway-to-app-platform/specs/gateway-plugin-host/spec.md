@@ -63,11 +63,15 @@ The Gateway SHALL NOT create network listeners or HTTP servers of its own beyond
 - **THEN** no Gateway handler SHALL serve the request
 
 ### Requirement: Host-compatible configuration
-The Gateway SHALL read settings from the environment its host provides and the bounded strict model configuration file without requiring command-line arguments. Operator documentation SHALL state how each supported host supplies that environment. Configuration SHALL NOT accept authentication, listener or Cloud-ingress settings, and invalid configuration SHALL fail plugin startup before any request is served, without exposing secret values.
+The Gateway SHALL read settings as `GF_PLUGIN_<KEY>` variables, which Grafana derives from its plugin configuration section, and the bounded strict model file, without command-line arguments. Operator documentation SHALL state how each host supplies them. Configuration SHALL NOT accept authentication, listener or Cloud-ingress settings, and invalid configuration SHALL fail plugin startup before any request is served, without exposing secret values.
 
 #### Scenario: Legacy authentication blocks are present
 - **WHEN** the model configuration file contains an `auth` or `server` block
 - **THEN** startup SHALL fail with a secret-safe unknown-field error
+
+#### Scenario: Settings from the Grafana configuration section
+- **WHEN** Grafana's configuration has a `[plugin.grafana-aigateway-app]` section with `access_mode` and `config_file`
+- **THEN** the Gateway SHALL start with those settings, read from `GF_PLUGIN_ACCESS_MODE` and `GF_PLUGIN_CONFIG_FILE`
 
 #### Scenario: Startup failure is logged with its reason
 - **WHEN** configuration or construction fails at startup

@@ -121,29 +121,23 @@ uses only the fixed `class` values `queue_full`, `serialization`, `transport`,
 
 Agent Observability export is optional in every deployment mode. When enabled
 in production, it must be TLS-protected and credentialed. The plugin reads these
-settings from its environment.
+settings:
 
-| Environment | Default / constraint |
+| Setting | Default / constraint |
 | --- | --- |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED` | `false` |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL` | `grpc`; `grpc` or `http` |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT` | required when enabled; credential-free absolute HTTP(S) URL for HTTP, host:port for gRPC |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_TLS` | `true`; required in production when enabled |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV` | required environment-variable reference; SDK-reserved names are rejected |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_QUEUE_SIZE` | `2000`; 1–1,000,000 |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_BATCH_SIZE` | `100`; 1–queue size |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_PAYLOAD_MAX_BYTES` | 16 MiB; at most 64 MiB |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES` | `5`; 1–10 |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_INITIAL_BACKOFF` | `100ms`; positive, at most 5m |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF` | `5s`; initial–5m |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT` | `10s`; per HTTP/gRPC export attempt, positive, at most 5m |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL` | `1s`; positive, at most 5m |
+| `agento11y_enabled` | `false` |
+| `agento11y_protocol` | `grpc`; `grpc` or `http` |
+| `agento11y_endpoint` | required when enabled; credential-free absolute HTTP(S) URL for HTTP, host:port for gRPC |
+| `agento11y_tls` | `true`; required in production when enabled |
+| `agento11y_auth_secret_env` | required environment-variable reference; SDK-reserved names are rejected |
+
+These are keys of the `[plugin.grafana-aigateway-app]` section, passed to the
+plugin as `GF_PLUGIN_AGENTO11Y_*`. Queueing, batching, retries and the 10-second
+per-attempt export timeout are fixed.
 
 The secret reference is resolved once while the plugin starts; neither its
 name nor value is logged. Ambient `AGENTO11Y_*` and legacy `SIGIL_*` SDK
 configuration is rejected so it cannot bypass validated Gateway policy.
-
-Use `GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT` to bound each export attempt.
 
 Queue pressure, validation failures, exporter rejection/outage, and bounded
 flush or shutdown failure are fail-open for model traffic. Diagnostics and

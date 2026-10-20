@@ -30,7 +30,7 @@ go through the plugin protocol.
 
 ## Access modes
 
-`GRAFANA_AI_GATEWAY_ACCESS_MODE` is required and has no default. The Gateway
+`access_mode` is required and has no default. The Gateway
 reads the verified token's actor chain. The direct caller is the service that
 called the host, and the identity actor is the user or service account the call
 is for, when there is one.
@@ -42,7 +42,7 @@ is for, when there is one.
 | `self-hosted` | User or service account | Configured models and discovery; BYOK is refused |
 | either | Anything else | Refused with the permission error |
 
-In `cloud` mode, `GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES` lists the signed
+In `cloud` mode, `access_internal_services` lists the signed
 service identities allowed to use configured models, comma-separated and
 matched exactly; whitespace around entries is ignored. A service that relays another service's token is the direct
 caller, so it does not inherit that service's access. BYOK is open to every
@@ -74,8 +74,15 @@ requires such a service.
 
 ## Configuration
 
-Settings come from the environment, and the model catalog from a YAML file that
-names provider secrets by environment variable:
+Settings go in Grafana's `[plugin.grafana-aigateway-app]` configuration
+section, and the model catalog in a YAML file that names provider secrets by
+environment variable:
+
+```ini
+[plugin.grafana-aigateway-app]
+config_file = /etc/grafana/aigateway/models.yaml
+access_mode = self-hosted
+```
 
 ```yaml
 providers:
@@ -92,13 +99,19 @@ models:
 
 | Setting | Purpose |
 |---|---|
-| `GRAFANA_AI_GATEWAY_CONFIG_FILE` | Model catalog file. |
-| `GRAFANA_AI_GATEWAY_ACCESS_MODE` | `cloud` or `self-hosted`. |
-| `GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES` | Internal service allowlist, `cloud` mode only. |
-| `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` | Signing keys of the token exchange; exactly one is required in production. |
-| `GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE` | `production` (default) or `development`, which allows HTTP provider endpoints. |
-| `GRAFANA_AI_GATEWAY_PROVIDERWIRE_*` | Request, response, stream and model-duration limits. |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_*` | Optional Agent Observability export. |
+| `config_file` | Model catalog file. Required. |
+| `access_mode` | `cloud` or `self-hosted`. Required. |
+| `access_internal_services` | Internal service allowlist, `cloud` mode only. |
+| `deployment_mode` | `production` (default) or `development`, which allows HTTP provider endpoints and insecure authentication. |
+| `max_request_bytes` | Largest accepted request body, 1 MiB by default. Raise it for large file inputs. |
+| `max_model_duration` | Longest model call, `120s` by default and at least `30s`. |
+| `agento11y_*` | Optional Agent Observability export; see [text observability](docs/text-observability.md#agent-observability-configuration). |
+
+Grafana passes each key to the plugin as `GF_PLUGIN_<KEY>`, for example
+`GF_PLUGIN_ACCESS_MODE`. A host that starts the plugin itself, such as the App
+Platform router, sets those variables directly. Signing keys use app-sdk's
+`GRAFANA_JWKS_URL` or `GRAFANA_JWKS`; exactly one is required in production.
+Other limits, such as response sizes and stream timeouts, are fixed.
 
 Invalid settings, or an `auth` or `server` block in the catalog file stop the
 plugin before it serves requests. In development, Grafana's
@@ -107,15 +120,16 @@ plugin before it serves requests. In development, Grafana's
 Grafana's locally signed tokens without checking signatures. Production
 refuses that setting.
 
-Hosts supply this environment differently. Grafana forwards its own environment
-only to plugins listed in `[plugins] forward_host_env_vars`, so list
-`grafana-aigateway-app` there. The App Platform router passes the environment
-of its plugin deployment.
+Provider keys named in the catalog, and the Agent Observability secret, are
+read from the plugin's environment. Grafana forwards its own environment only
+to plugins listed in `[plugins] forward_host_env_vars`, so list
+`grafana-aigateway-app` there when the keys are set on Grafana's process. The
+App Platform router passes the environment of its plugin deployment.
 
 ## Lifecycle and limits
 
 The host drains in-flight requests when it stops the plugin, so its termination
-grace period must exceed `GRAFANA_AI_GATEWAY_PROVIDERWIRE_MODEL_DURATION`
+grace period must exceed `max_model_duration`
 (120 seconds by default) plus the stream drain time. After the host stops the
 plugin, the Gateway flushes Agent Observability and attempt records within one
 second. The host's tracer shutdown shares the same window before the host kills

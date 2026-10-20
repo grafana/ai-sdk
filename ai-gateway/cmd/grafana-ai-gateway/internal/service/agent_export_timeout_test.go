@@ -67,12 +67,13 @@ func TestAgentObservabilityRuntime_ExportAttemptTimeout(t *testing.T) {
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
-			runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{
+			runtime, err := newAgentObservabilityRuntime(config.AgentObservabilitySettings{
 				Enabled: true, Protocol: protocol, Endpoint: endpoint, AuthSecretEnv: "AO_SECRET",
-				QueueSize: 4, BatchSize: 1, PayloadMaxBytes: 1 << 20, MaxRetries: 1,
-				InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond,
-				ExportTimeout: 100 * time.Millisecond, FlushInterval: time.Hour,
-			}, "private-secret", telemetry)
+			}, "private-secret", telemetry, agentExportTuning{
+				queueSize: 4, batchSize: 1, payloadMaxBytes: 1 << 20, maxRetries: 1,
+				initialBackoff: time.Millisecond, maxBackoff: time.Millisecond,
+				exportTimeout: 100 * time.Millisecond, flushInterval: time.Hour,
+			})
 			require.NoError(t, err)
 			t.Cleanup(func() { runtime.Close(context.Background()) })
 			t.Setenv("AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES", "true")

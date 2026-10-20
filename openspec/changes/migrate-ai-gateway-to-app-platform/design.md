@@ -65,11 +65,11 @@ A middleware turns those values, the route namespace and the access mode into th
 | either | Anything else | refused with `HostErrorPermission` |
 
 - **Why the first actor:** a plugin calling for a user produces `plugin → router → front door → user`. The innermost service is the router and authlib's `InnermostServiceIdentityKey` returns the user's empty value. Only the first actor names the service that called the Gateway. Any-hop matching was rejected because a non-allowlisted service relaying an allowlisted service's token would gain the catalog.
-- **Access mode:** `access.mode` / `GRAFANA_AI_GATEWAY_ACCESS_MODE`, required, `cloud` or `self-hosted`. Running Cloud as `self-hosted` would give every stack user the catalog, so there is no default.
-- **Allowlist setting:** comma-separated `access.internal-services` / `GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES`, valid only in `cloud` mode. Entries are the calling services' signed service identities.
+- **Access mode:** `access_mode` / `GF_PLUGIN_ACCESS_MODE`, required, `cloud` or `self-hosted`. Running Cloud as `self-hosted` would give every stack user the catalog, so there is no default.
+- **Allowlist setting:** comma-separated `access_internal_services` / `GF_PLUGIN_ACCESS_INTERNAL_SERVICES`, valid only in `cloud` mode. Entries are the calling services' signed service identities.
 - **Emitted attribution:** the existing `caller_service` log and export field carries the direct caller's service identity only for configured `cloud` access, and is omitted otherwise.
 - **Attribution:** the identity actor's UID stays in the private caller value for future usage attribution and is not emitted.
-- **Production guard:** `deployment.mode` stays, defaulting to production. Production startup fails unless `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` is set.
+- **Production guard:** `deployment_mode` stays, defaulting to production. Production startup fails unless `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` is set.
 - **Local development:** Grafana's development-mode tokens are signed with an unpublished key. In development mode with `GF_PLUGIN_INSECURE_SKIP_AUTHENTICATION=true`, the Gateway authenticator uses authlib's unsafe verifier, which skips signatures but still checks audience and expiry; app-sdk still requires exactly one token and checks the namespace. Production refuses that combination.
 
 The `auth` package shrinks to this authenticator and mapping. JWKS fetching, header normalization, Cloud assertions, static keys, unsafe verifiers and the `outbound` JWKS client are deleted.
@@ -105,7 +105,9 @@ Removed settings:
 - the YAML `auth` and `server` blocks;
 - the Agent Observability "required in production" rule.
 
-Kept: `deployment.mode`, and kingpin and environment parsing for the ProviderWire limits, provider transport, observation, Agent Observability and config file settings. The plugin starts with no arguments, so values come from the host environment. Operator documentation covers `forward_host_env_vars` for Grafana and the router host environment.
+Settings are keys of Grafana's `[plugin.grafana-aigateway-app]` section, which Grafana passes to the plugin as `GF_PLUGIN_<KEY>`; a host that starts the plugin itself, such as the router, sets the same variables. A small typed reader parses them; there are no command-line arguments and no kingpin. Only real deployment choices are settings: `config_file`, `access_mode`, `access_internal_services`, `deployment_mode`, `max_request_bytes`, `max_model_duration` and the Agent Observability exporter selection. Other limits (response sizes, stream bounds, provider transport, exporter tuning) are constants, pending #394's shared resource policy. The static region and application observation labels are removed.
+- **Alternative:** app instance settings (`jsonData`). Rejected because they are per org and arrive with requests, while the catalog and exporters are built and validated before the plugin serves.
+- **Alternative:** keeping `GRAFANA_AI_GATEWAY_*` names. Rejected because self-hosted operators would then need `forward_host_env_vars` for configuration, not only for secrets.
 
 ### 9. Protocol test host
 A test-only Go package under `ai-gateway/test/` acts as the platform:

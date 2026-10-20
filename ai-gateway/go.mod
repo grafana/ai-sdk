@@ -8,7 +8,6 @@ ignore (
 )
 
 require (
-	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/anthropics/anthropic-sdk-go v1.80.0
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/grafana/agento11y/go v0.19.0
@@ -46,7 +45,6 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.3.0 // indirect
 	cloud.google.com/go/compute/metadata v0.10.0 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
-	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b // indirect
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -143,7 +141,6 @@ require (
 	github.com/unknwon/log v0.0.0-20200308114134-929b1006e34a // indirect
 	github.com/urfave/cli v1.22.17 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	github.com/xhit/go-str2duration/v2 v2.2.0 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.72.0 // indirect

@@ -339,20 +339,20 @@ func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayl
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{
-		Enabled:         true,
-		Protocol:        config.AgentObservabilityHTTP,
-		Endpoint:        server.URL,
-		TLS:             false,
-		AuthSecretEnv:   "AO_SECRET",
-		QueueSize:       8,
-		BatchSize:       1,
-		PayloadMaxBytes: 1 << 20,
-		MaxRetries:      1,
-		InitialBackoff:  time.Millisecond,
-		MaxBackoff:      time.Millisecond,
-		FlushInterval:   time.Hour,
-	}, "agent-secret", telemetry)
+	runtime, err := newAgentObservabilityRuntime(config.AgentObservabilitySettings{
+		Enabled:       true,
+		Protocol:      config.AgentObservabilityHTTP,
+		Endpoint:      server.URL,
+		AuthSecretEnv: "AO_SECRET",
+	}, "agent-secret", telemetry, agentExportTuning{
+		queueSize:       8,
+		batchSize:       1,
+		payloadMaxBytes: 1 << 20,
+		maxRetries:      1,
+		initialBackoff:  time.Millisecond,
+		maxBackoff:      time.Millisecond,
+		flushInterval:   time.Hour,
+	})
 	require.NoError(t, err)
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
@@ -407,20 +407,20 @@ func TestNewAgentObservabilityRuntime_RejectedHTTPBatchIsOneFailOpenFailure(t *t
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{
-		Enabled:         true,
-		Protocol:        config.AgentObservabilityHTTP,
-		Endpoint:        server.URL,
-		TLS:             false,
-		AuthSecretEnv:   "AO_SECRET",
-		QueueSize:       4,
-		BatchSize:       1,
-		PayloadMaxBytes: 1 << 20,
-		MaxRetries:      1,
-		InitialBackoff:  time.Millisecond,
-		MaxBackoff:      time.Millisecond,
-		FlushInterval:   time.Hour,
-	}, "agent-secret", telemetry)
+	runtime, err := newAgentObservabilityRuntime(config.AgentObservabilitySettings{
+		Enabled:       true,
+		Protocol:      config.AgentObservabilityHTTP,
+		Endpoint:      server.URL,
+		AuthSecretEnv: "AO_SECRET",
+	}, "agent-secret", telemetry, agentExportTuning{
+		queueSize:       4,
+		batchSize:       1,
+		payloadMaxBytes: 1 << 20,
+		maxRetries:      1,
+		initialBackoff:  time.Millisecond,
+		maxBackoff:      time.Millisecond,
+		flushInterval:   time.Hour,
+	})
 	require.NoError(t, err)
 	defer runtime.Close(context.Background())
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)

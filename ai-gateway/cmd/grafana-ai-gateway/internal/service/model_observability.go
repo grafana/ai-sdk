@@ -33,12 +33,39 @@ type AgentObservabilityRuntime struct {
 	closeOnce  sync.Once
 }
 
+// agentExportTuning holds the exporter's queueing, batching and retry policy.
+type agentExportTuning struct {
+	queueSize       int
+	batchSize       int
+	payloadMaxBytes int
+	maxRetries      int
+	initialBackoff  time.Duration
+	maxBackoff      time.Duration
+	exportTimeout   time.Duration
+	flushInterval   time.Duration
+}
+
+var defaultAgentExportTuning = agentExportTuning{
+	queueSize:       2000,
+	batchSize:       100,
+	payloadMaxBytes: 16 << 20,
+	maxRetries:      5,
+	initialBackoff:  100 * time.Millisecond,
+	maxBackoff:      5 * time.Second,
+	exportTimeout:   10 * time.Second,
+	flushInterval:   time.Second,
+}
+
 // NewAgentObservabilityRuntime consumes prevalidated settings and the
 // resolved bearer credential, rejects the SDK's ambient configuration layer
 // in the process environment, and constructs one metadata-only
 // hooks-disabled client. A disabled development
 // configuration returns a no-op runtime.
-func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, secret string, telemetry *Telemetry) (runtime *AgentObservabilityRuntime, err error) {
+func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, secret string, telemetry *Telemetry) (*AgentObservabilityRuntime, error) {
+	return newAgentObservabilityRuntime(settings, secret, telemetry, defaultAgentExportTuning)
+}
+
+func newAgentObservabilityRuntime(settings config.AgentObservabilitySettings, secret string, telemetry *Telemetry, tuning agentExportTuning) (runtime *AgentObservabilityRuntime, err error) {
 	if telemetry == nil {
 		return nil, fmt.Errorf("gateway service: telemetry is required")
 	}
@@ -62,16 +89,16 @@ func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, se
 			Endpoint:                   settings.Endpoint,
 			Auth:                       agento11y.AuthConfig{Mode: agento11y.ExportAuthModeBearer, BearerToken: secret},
 			Insecure:                   new(insecure),
-			GRPCMaxSendMessageBytes:    settings.PayloadMaxBytes,
-			GRPCMaxReceiveMessageBytes: settings.PayloadMaxBytes,
-			BatchSize:                  settings.BatchSize,
-			FlushInterval:              settings.FlushInterval,
-			QueueSize:                  settings.QueueSize,
-			MaxRetries:                 settings.MaxRetries,
-			InitialBackoff:             settings.InitialBackoff,
-			MaxBackoff:                 settings.MaxBackoff,
-			PayloadMaxBytes:            settings.PayloadMaxBytes,
-			ExportTimeout:              settings.ExportTimeout,
+			GRPCMaxSendMessageBytes:    tuning.payloadMaxBytes,
+			GRPCMaxReceiveMessageBytes: tuning.payloadMaxBytes,
+			BatchSize:                  tuning.batchSize,
+			FlushInterval:              tuning.flushInterval,
+			QueueSize:                  tuning.queueSize,
+			MaxRetries:                 tuning.maxRetries,
+			InitialBackoff:             tuning.initialBackoff,
+			MaxBackoff:                 tuning.maxBackoff,
+			PayloadMaxBytes:            tuning.payloadMaxBytes,
+			ExportTimeout:              tuning.exportTimeout,
 		},
 		EnableExperimentalFeatures: new(false),
 		Hooks:                      agento11y.HooksConfig{Enabled: false},

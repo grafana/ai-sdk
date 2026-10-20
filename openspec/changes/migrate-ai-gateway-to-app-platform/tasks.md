@@ -58,7 +58,7 @@
 - [x] 4.1 Implement the Gateway authenticator, passed with `plugin.WithAuthenticator`. It wraps authlib's access-token verifier with app-sdk's audiences, reimplements app-sdk's key-source rules for `GRAFANA_JWKS_URL` and `GRAFANA_JWKS`, and adds the first actor's service identity and the identity actor's typed UID to `GetExtra()`. Switch the in-process test host to serve with this authenticator built from the test JWKS. Verify table tests over the test host's actor chains, plus key-source config tests for both variables set, a non-http(s) URL, and a private key or missing key ID:
   - direct service, on-behalf-of user, relayed, front-door user and service account, and no actor;
   - unsigned request data never contributes.
-- [x] 4.2 Implement the required `access.mode` / `GRAFANA_AI_GATEWAY_ACCESS_MODE` setting (`cloud` or `self-hosted`, no default), and the `cloud`-only `access.internal-services` / `GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES` allowlist with bounded, unique, exact-match validation. Implement the access middleware producing the private caller value:
+- [x] 4.2 Implement the required `access_mode` / `GF_PLUGIN_ACCESS_MODE` setting (`cloud` or `self-hosted`, no default), and the `cloud`-only `access.internal-services` / `GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES` allowlist with bounded, unique, exact-match validation. Implement the access middleware producing the private caller value:
   - `cloud`: an allowlisted direct caller gets configured access; otherwise a user or service-account identity actor gets BYOK;
   - the emitted `caller_service` is set only for configured `cloud` access;
   - `self-hosted`: a user or service-account identity actor gets configured access, with BYOK controls refused;
@@ -81,7 +81,7 @@
   - the plugin ID constant matching `src/plugin.json`;
   - the ported startup tests passing.
 - [x] 4.4 Prove incremental streaming and cancellation through the in-process test host. Verify a test that delays provider parts and asserts each frame arrives before the next part is emitted, and a test where caller cancellation cancels the model context and drains within existing bounds.
-- [x] 4.5 Remove the listener, HTTP-server timeout, JWT/JWKS, audience, unsafe and Cloud settings, and make the strict config file reject `auth` and `server` blocks. Keep `deployment.mode`, and fail production startup unless `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` is set. In development mode with `GF_PLUGIN_INSECURE_SKIP_AUTHENTICATION=true`, build the Gateway authenticator on authlib's unsafe verifier; production refuses it. Delete JWT/JWKS, header normalization, Cloud assertion and static-key code, and the `outbound` JWKS client. Verify config tests for:
+- [x] 4.5 Remove the listener, HTTP-server timeout, JWT/JWKS, audience, unsafe and Cloud settings, and make the strict config file reject `auth` and `server` blocks. Keep `deployment_mode`, and fail production startup unless `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` is set. In development mode with `GF_PLUGIN_INSECURE_SKIP_AUTHENTICATION=true`, build the Gateway authenticator on authlib's unsafe verifier; production refuses it. Delete JWT/JWKS, header normalization, Cloud assertion and static-key code, and the `outbound` JWKS client. Verify config tests for:
   - secret-safe unknown-field failures;
   - environment-only startup with no arguments;
   - the production signing-key guard and refusal of insecure skip, with development permitting the test host and the unsafe verifier;
@@ -187,6 +187,7 @@
   - `rg -i 'dockerfile|container image' CONTRIBUTING.md release AGENTS.md docs` finds no Gateway image references.
 - [x] 7.5 Align the release-please `ai-gateway` component with the plugin package version source without enabling release automation. Verify that `mise run release-check` passes.
 - [x] 7.6 Add a `test-ai-gateway-e2e` mise task that starts the create-plugin environment on the built package, waits for Grafana, runs the Playwright tests and stops the environment. Run it in plugin validation after the validator, against a digest-pinned Grafana nightly, keeping the Playwright report of a failed run. Verify it locally with the pinned image and in the CI workflow test.
+- [x] 7.7 Read settings as `GF_PLUGIN_<KEY>` from the `[plugin.grafana-aigateway-app]` section with a small typed reader instead of kingpin, keep only deployment choices as settings (config file, access mode and allowlist, deployment mode, request size, model duration, Agent Observability exporter selection) and make the other limits constants. Remove the static region and application observation labels. The local compose environment loads the section from `provisioning/grafana.ini`. Verify with the Go tests, the command suites and the end-to-end tests.
 
 ## 8. Integration verification
 

@@ -53,7 +53,7 @@ type Gateway struct {
 // read, and failures are secret-safe.
 func New(options Options) (*Gateway, error) {
 	lookupEnv := options.LookupEnv
-	settings, err := config.ParseSettings(nil, lookupEnv)
+	settings, err := config.ParseSettings(lookupEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func New(options Options) (*Gateway, error) {
 	if err := settings.AgentObservability.ValidateAmbientEnvironment(lookupEnv); err != nil {
 		return nil, err
 	}
-	file, err := config.LoadFile(settings.ConfigFile, settings.ConfigMaxBytes)
+	file, err := config.LoadFile(settings.ConfigFile, config.MaxFileBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (s sinks) close() {
 }
 
 func newRouteHandler(settings config.Settings, file config.File, providers map[string]config.ResolvedProvider, secrets []string, sinks sinks, logger *slog.Logger) (http.Handler, error) {
-	nativeClient, err := outbound.NewAnthropicClient(settings.AnthropicResponseHeaderTimeout, settings.AnthropicResponseBytes)
+	nativeClient, err := outbound.NewAnthropicClient(config.ProviderResponseHeaderTimeout, config.ProviderResponseBytes)
 	if err != nil {
 		return nil, err
 	}

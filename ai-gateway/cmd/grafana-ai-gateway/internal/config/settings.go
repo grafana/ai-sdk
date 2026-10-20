@@ -3,14 +3,13 @@ package config
 import (
 	"context"
 	"fmt"
-	"math"
 	"net"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/alecthomas/kingpin/v2"
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
@@ -37,100 +36,147 @@ const (
 	AgentObservabilityHTTP AgentObservabilityProtocol = "http"
 )
 
-// AgentObservabilitySettings contains the bounded process-wide exporter policy.
-// Export credentials are represented only by an environment-variable name.
+// SettingEnvironmentPrefix prefixes every plugin setting. Grafana passes each
+// key of its [plugin.grafana-aigateway-app] configuration section to the
+// plugin as GF_PLUGIN_<KEY>.
+const SettingEnvironmentPrefix = "GF_PLUGIN_"
+
+const (
+	// MaxFileBytes bounds the model configuration file.
+	MaxFileBytes = 1 << 20
+	// ProviderResponseHeaderTimeout bounds the wait for a model provider's
+	// response headers.
+	ProviderResponseHeaderTimeout = 10 * time.Second
+	// ProviderResponseBytes bounds a model provider response body. It stays
+	// below the Anthropic SDK's 32 MiB stream scanner limit.
+	ProviderResponseBytes = 16 << 20
+)
+
+// Defaults of the configurable ProviderWire limits, and the fixed ones.
+const (
+	defaultRequestBytes  = 1 << 20
+	defaultModelDuration = 120 * time.Second
+	unaryResponseBytes   = 8 << 20
+	streamParts          = 100_000
+	streamFrameBytes     = 1 << 20
+	streamIdleDuration   = 30 * time.Second
+	streamDrainDuration  = time.Second
+)
+
+// AgentObservabilitySettings selects the Agent Observability exporter.
+// The export credential is represented only by an environment-variable name.
 type AgentObservabilitySettings struct {
-	Enabled         bool
-	Protocol        AgentObservabilityProtocol
-	Endpoint        string
-	TLS             bool
-	AuthSecretEnv   string
-	QueueSize       int
-	BatchSize       int
-	PayloadMaxBytes int
-	MaxRetries      int
-	InitialBackoff  time.Duration
-	MaxBackoff      time.Duration
-	ExportTimeout   time.Duration
-	FlushInterval   time.Duration
+	Enabled       bool
+	Protocol      AgentObservabilityProtocol
+	Endpoint      string
+	TLS           bool
+	AuthSecretEnv string
 }
 
-// Settings contains every scalar plugin setting.
+// Settings contains every plugin setting.
 type Settings struct {
-	ConfigFile                     string
-	ConfigMaxBytes                 int64
-	DeploymentMode                 DeploymentMode
-	Access                         auth.AccessPolicy
-	AgentObservability             AgentObservabilitySettings
-	AnthropicResponseHeaderTimeout time.Duration
-	AnthropicResponseBytes         int64
-	ProviderWire                   providerv4.Limits
+	ConfigFile         string
+	DeploymentMode     DeploymentMode
+	Access             auth.AccessPolicy
+	AgentObservability AgentObservabilitySettings
+	ProviderWire       providerv4.Limits
 }
 
-// settingsError names the environment setting whose value failed to parse,
-// without the value. Parse errors for explicit arguments keep kingpin's text.
-func settingsError(app *kingpin.Application, err error) error {
-	for _, flag := range app.Model().Flags {
-		for _, value := range flag.Default {
-			if flag.Value.Set(value) != nil {
-				return fmt.Errorf("config: %s has an invalid value", settingEnvironmentName(flag.Name))
-			}
-		}
-	}
-	return fmt.Errorf("config: parsing settings arguments: %w", err)
+// SettingName returns the environment variable of a plugin setting key, as
+// Grafana derives it from the [plugin.grafana-aigateway-app] section.
+func SettingName(key string) string {
+	return SettingEnvironmentPrefix + strings.ToUpper(key)
 }
 
-func settingEnvironmentName(flag string) string {
-	return "GRAFANA_AI_GATEWAY_" + strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(flag))
+// environment reads typed settings and keeps the first invalid one. An unset
+// or empty variable selects the default.
+type environment struct {
+	lookup LookupEnv
+	err    error
 }
 
-// ParseSettings parses flags and explicit environment bindings and validates scalar settings.
-func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
-	if lookupEnv == nil {
-		lookupEnv = func(string) (string, bool) { return "", false }
-	}
-	var settings Settings
-	var deploymentMode string
-	var accessMode, internalServices string
-	var agentObservabilityProtocol string
-	app := kingpin.New("grafana-ai-gateway", "Grafana AI Gateway plugin")
-	setting := func(name, help, fallback string) *kingpin.FlagClause {
-		return app.Flag(name, help).Default(envDefault(lookupEnv, settingEnvironmentName(name), fallback))
-	}
-	setting("config.file", "Model configuration YAML file.", "").StringVar(&settings.ConfigFile)
-	setting("config.max-bytes", "Maximum model configuration bytes.", "1048576").Int64Var(&settings.ConfigMaxBytes)
-	setting("deployment.mode", "Deployment mode.", "production").StringVar(&deploymentMode)
-	setting("access.mode", "Access mode (cloud or self-hosted).", "").StringVar(&accessMode)
-	setting("access.internal-services", "Comma-separated service identities with configured access in cloud mode.", "").StringVar(&internalServices)
-	setting("agento11y.enabled", "Enable Agent Observability generation export.", "false").BoolVar(&settings.AgentObservability.Enabled)
-	setting("agento11y.protocol", "Agent Observability export protocol (grpc or http).", "grpc").StringVar(&agentObservabilityProtocol)
-	setting("agento11y.endpoint", "Agent Observability generation export endpoint.", "").StringVar(&settings.AgentObservability.Endpoint)
-	setting("agento11y.tls", "Require TLS for Agent Observability export.", "true").BoolVar(&settings.AgentObservability.TLS)
-	setting("agento11y.auth-secret-env", "Environment variable containing the Agent Observability bearer credential.", "").StringVar(&settings.AgentObservability.AuthSecretEnv)
-	setting("agento11y.queue-size", "Maximum queued Agent Observability generations.", "2000").IntVar(&settings.AgentObservability.QueueSize)
-	setting("agento11y.batch-size", "Maximum Agent Observability export batch size.", "100").IntVar(&settings.AgentObservability.BatchSize)
-	setting("agento11y.payload-max-bytes", "Maximum Agent Observability export payload bytes.", "16777216").IntVar(&settings.AgentObservability.PayloadMaxBytes)
-	setting("agento11y.max-retries", "Maximum Agent Observability export retries.", "5").IntVar(&settings.AgentObservability.MaxRetries)
-	setting("agento11y.initial-backoff", "Initial Agent Observability retry backoff.", "100ms").DurationVar(&settings.AgentObservability.InitialBackoff)
-	setting("agento11y.max-backoff", "Maximum Agent Observability retry backoff.", "5s").DurationVar(&settings.AgentObservability.MaxBackoff)
-	setting("agento11y.export-timeout", "Maximum duration of each Agent Observability HTTP or gRPC export attempt.", "10s").DurationVar(&settings.AgentObservability.ExportTimeout)
-	setting("agento11y.flush-interval", "Agent Observability asynchronous batch flush interval.", "1s").DurationVar(&settings.AgentObservability.FlushInterval)
-	setting("anthropic.response-header-timeout", "Model provider response-header timeout (all provider types).", "10s").DurationVar(&settings.AnthropicResponseHeaderTimeout)
-	setting("anthropic.response-bytes", "Maximum cumulative model provider response bytes (all provider types).", "16777216").Int64Var(&settings.AnthropicResponseBytes)
-	setting("providerwire.request-bytes", "Maximum ProviderWire request bytes.", "1048576").Int64Var(&settings.ProviderWire.RequestBytes)
-	setting("providerwire.unary-response-bytes", "Maximum ProviderWire unary response bytes.", "8388608").Int64Var(&settings.ProviderWire.UnaryResponseBytes)
-	setting("providerwire.stream-parts", "Maximum ProviderWire stream parts.", "100000").IntVar(&settings.ProviderWire.StreamParts)
-	setting("providerwire.stream-frame-bytes", "Maximum ProviderWire stream frame bytes.", "1048576").Int64Var(&settings.ProviderWire.StreamFrameBytes)
-	setting("providerwire.model-duration", "Maximum ProviderWire model duration.", "120s").DurationVar(&settings.ProviderWire.ModelDuration)
-	setting("providerwire.stream-idle-duration", "Maximum ProviderWire stream idle duration.", "30s").DurationVar(&settings.ProviderWire.StreamIdleDuration)
-	setting("providerwire.stream-drain-duration", "ProviderWire stream drain duration.", "1s").DurationVar(&settings.ProviderWire.StreamDrainDuration)
+func (e *environment) raw(key string) (string, string, bool) {
+	name := SettingName(key)
+	value, ok := e.lookup(name)
+	return name, value, ok && value != ""
+}
 
-	if _, err := app.Parse(args); err != nil {
-		return Settings{}, settingsError(app, err)
+func (e *environment) invalid(name string) {
+	if e.err == nil {
+		e.err = fmt.Errorf("config: %s has an invalid value", name)
 	}
-	settings.DeploymentMode = DeploymentMode(deploymentMode)
-	settings.AgentObservability.Protocol = AgentObservabilityProtocol(agentObservabilityProtocol)
-	access, err := auth.ParseAccessPolicy(accessMode, internalServices)
+}
+
+func (e *environment) string(key, fallback string) string {
+	if _, value, ok := e.raw(key); ok {
+		return value
+	}
+	return fallback
+}
+
+func (e *environment) bool(key string, fallback bool) bool {
+	name, value, ok := e.raw(key)
+	if !ok {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		e.invalid(name)
+	}
+	return parsed
+}
+
+func (e *environment) int64(key string, fallback int64) int64 {
+	name, value, ok := e.raw(key)
+	if !ok {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		e.invalid(name)
+	}
+	return parsed
+}
+
+func (e *environment) duration(key string, fallback time.Duration) time.Duration {
+	name, value, ok := e.raw(key)
+	if !ok {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		e.invalid(name)
+	}
+	return parsed
+}
+
+// ParseSettings reads and validates the plugin settings from the environment.
+func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
+	env := environment{lookup: lookupEnv}
+	settings := Settings{
+		ConfigFile:     env.string("config_file", ""),
+		DeploymentMode: DeploymentMode(env.string("deployment_mode", string(DeploymentProduction))),
+		AgentObservability: AgentObservabilitySettings{
+			Enabled:       env.bool("agento11y_enabled", false),
+			Protocol:      AgentObservabilityProtocol(env.string("agento11y_protocol", string(AgentObservabilityGRPC))),
+			Endpoint:      env.string("agento11y_endpoint", ""),
+			TLS:           env.bool("agento11y_tls", true),
+			AuthSecretEnv: env.string("agento11y_auth_secret_env", ""),
+		},
+		ProviderWire: providerv4.Limits{
+			RequestBytes:        env.int64("max_request_bytes", defaultRequestBytes),
+			UnaryResponseBytes:  unaryResponseBytes,
+			StreamParts:         streamParts,
+			StreamFrameBytes:    streamFrameBytes,
+			ModelDuration:       env.duration("max_model_duration", defaultModelDuration),
+			StreamIdleDuration:  streamIdleDuration,
+			StreamDrainDuration: streamDrainDuration,
+		},
+	}
+	if env.err != nil {
+		return Settings{}, env.err
+	}
+	access, err := auth.ParseAccessPolicy(env.string("access_mode", ""), env.string("access_internal_services", ""))
 	if err != nil {
 		return Settings{}, err
 	}
@@ -141,7 +187,7 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	return settings, nil
 }
 
-// Validate validates all scalar process settings without performing I/O.
+// Validate validates the settings without performing I/O.
 func (settings Settings) Validate() error {
 	if strings.TrimSpace(settings.ConfigFile) == "" {
 		return fmt.Errorf("config: config file is required")
@@ -152,52 +198,8 @@ func (settings Settings) Validate() error {
 	if err := settings.AgentObservability.validate(settings.DeploymentMode); err != nil {
 		return err
 	}
-	byteLimits := []struct {
-		name  string
-		value int64
-	}{
-		{name: "config max bytes", value: settings.ConfigMaxBytes},
-		{name: "anthropic response bytes", value: settings.AnthropicResponseBytes},
-		{name: "providerwire request bytes", value: settings.ProviderWire.RequestBytes},
-		{name: "providerwire unary response bytes", value: settings.ProviderWire.UnaryResponseBytes},
-		{name: "providerwire stream frame bytes", value: settings.ProviderWire.StreamFrameBytes},
-	}
-	for _, limit := range byteLimits {
-		if limit.value <= 0 {
-			return fmt.Errorf("config: %s must be positive", limit.name)
-		}
-		if limit.value == math.MaxInt64 {
-			return fmt.Errorf("config: %s cannot safely use limit+1", limit.name)
-		}
-	}
-	if settings.ProviderWire.StreamParts <= 0 {
-		return fmt.Errorf("config: providerwire stream parts must be positive")
-	}
-	if settings.ProviderWire.StreamParts == math.MaxInt {
-		return fmt.Errorf("config: providerwire stream parts cannot safely use limit+1")
-	}
-	durations := []struct {
-		name  string
-		value time.Duration
-	}{
-		{name: "anthropic response-header timeout", value: settings.AnthropicResponseHeaderTimeout},
-		{name: "providerwire model duration", value: settings.ProviderWire.ModelDuration},
-		{name: "providerwire stream idle duration", value: settings.ProviderWire.StreamIdleDuration},
-		{name: "providerwire stream drain duration", value: settings.ProviderWire.StreamDrainDuration},
-	}
-	for _, duration := range durations {
-		if duration.value <= 0 {
-			return fmt.Errorf("config: %s must be positive", duration.name)
-		}
-	}
-	if settings.AnthropicResponseBytes >= 32<<20 {
-		return fmt.Errorf("config: anthropic response bytes must be below the SDK scanner limit")
-	}
-	if settings.AnthropicResponseHeaderTimeout > settings.ProviderWire.ModelDuration {
-		return fmt.Errorf("config: anthropic response-header timeout must not exceed model duration")
-	}
-	if settings.ProviderWire.StreamIdleDuration > settings.ProviderWire.ModelDuration {
-		return fmt.Errorf("config: providerwire stream idle duration must not exceed model duration")
+	if settings.ProviderWire.ModelDuration < ProviderResponseHeaderTimeout || settings.ProviderWire.ModelDuration < streamIdleDuration {
+		return fmt.Errorf("config: max model duration must be at least %s", max(ProviderResponseHeaderTimeout, streamIdleDuration))
 	}
 	if _, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(limitValidationResolver{}), Limits: settings.ProviderWire}); err != nil {
 		return fmt.Errorf("config: providerwire limits: %w", err)
@@ -253,34 +255,6 @@ func (settings AgentObservabilitySettings) validate(mode DeploymentMode) error {
 	if mode == DeploymentProduction && !settings.TLS {
 		return fmt.Errorf("config: agent observability production export requires TLS")
 	}
-	if settings.QueueSize <= 0 || settings.QueueSize > 1_000_000 {
-		return fmt.Errorf("config: agent observability queue size must be between 1 and 1000000")
-	}
-	if settings.BatchSize <= 0 || settings.BatchSize > settings.QueueSize {
-		return fmt.Errorf("config: agent observability batch size must be positive and no greater than queue size")
-	}
-	if settings.PayloadMaxBytes <= 0 || settings.PayloadMaxBytes > 64<<20 {
-		return fmt.Errorf("config: agent observability payload max bytes must be between 1 and 67108864")
-	}
-	if settings.MaxRetries <= 0 || settings.MaxRetries > 10 {
-		return fmt.Errorf("config: agent observability max retries must be between 1 and 10")
-	}
-	for _, duration := range []struct {
-		name  string
-		value time.Duration
-	}{
-		{name: "initial backoff", value: settings.InitialBackoff},
-		{name: "maximum backoff", value: settings.MaxBackoff},
-		{name: "export timeout", value: settings.ExportTimeout},
-		{name: "flush interval", value: settings.FlushInterval},
-	} {
-		if duration.value <= 0 || duration.value > 5*time.Minute {
-			return fmt.Errorf("config: agent observability %s must be positive and no greater than 5m", duration.name)
-		}
-	}
-	if settings.MaxBackoff < settings.InitialBackoff {
-		return fmt.Errorf("config: agent observability maximum backoff must be at least initial backoff")
-	}
 	return nil
 }
 
@@ -304,7 +278,7 @@ func (settings AgentObservabilitySettings) ResolveAuthSecret(lookupEnv LookupEnv
 }
 
 // ValidateAmbientEnvironment rejects the SDK's independent environment layer.
-// Gateway-owned GRAFANA_AI_GATEWAY_* bindings are the only configuration
+// Gateway-owned GF_PLUGIN_* settings are the only configuration
 // source; this prevents NewClient from importing ambient identity, tags,
 // headers, endpoints, auth, or capture policy behind the validated settings.
 func (settings AgentObservabilitySettings) ValidateAmbientEnvironment(lookupEnv LookupEnv) error {
@@ -347,13 +321,6 @@ func validateAgentObservabilityEndpoint(protocol AgentObservabilityProtocol, end
 		return fmt.Errorf("config: agent observability grpc endpoint must use host:port syntax")
 	}
 	return nil
-}
-
-func envDefault(lookupEnv LookupEnv, name, fallback string) string {
-	if value, ok := lookupEnv(name); ok {
-		return value
-	}
-	return fallback
 }
 
 type limitValidationResolver struct{}

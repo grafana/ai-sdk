@@ -46,10 +46,10 @@ func newStartupEnvironment(t *testing.T, providerURL string) *startupEnvironment
 	require.NoError(t, err)
 	return &startupEnvironment{
 		values: map[string]string{
-			"GRAFANA_AI_GATEWAY_CONFIG_FILE": writeModelConfig(t, providerURL),
-			"GRAFANA_AI_GATEWAY_ACCESS_MODE": "cloud",
-			"GRAFANA_JWKS":                   string(keys),
-			"ANTHROPIC_SECRET":               providerSecret,
+			"GF_PLUGIN_CONFIG_FILE": writeModelConfig(t, providerURL),
+			"GF_PLUGIN_ACCESS_MODE": "cloud",
+			"GRAFANA_JWKS":          string(keys),
+			"ANTHROPIC_SECRET":      providerSecret,
 		},
 		secrets: map[string]int{},
 	}
@@ -95,40 +95,41 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 		change  func(map[string]string)
 		message string
 	}{
-		{name: "missing access mode", change: func(env map[string]string) { delete(env, "GRAFANA_AI_GATEWAY_ACCESS_MODE") }, message: "access mode is required"},
-		{name: "unknown access mode", change: func(env map[string]string) { env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "hybrid" }, message: "cloud or self-hosted"},
+		{name: "missing access mode", change: func(env map[string]string) { delete(env, "GF_PLUGIN_ACCESS_MODE") }, message: "access mode is required"},
+		{name: "unknown access mode", change: func(env map[string]string) { env["GF_PLUGIN_ACCESS_MODE"] = "hybrid" }, message: "cloud or self-hosted"},
 		{name: "allowlist in self-hosted mode", change: func(env map[string]string) {
-			env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "self-hosted"
-			env["GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES"] = "svc-a"
+			env["GF_PLUGIN_ACCESS_MODE"] = "self-hosted"
+			env["GF_PLUGIN_ACCESS_INTERNAL_SERVICES"] = "svc-a"
 		}, message: "requires cloud access mode"},
 		{name: "production without signing keys", change: func(env map[string]string) { delete(env, "GRAFANA_JWKS") }, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
 		{name: "production with insecure skip", change: func(env map[string]string) { env[plugin.EnvVarInsecureSkipAuthentication] = "true" }, message: "requires development mode"},
 		{name: "development without keys or insecure skip", change: func(env map[string]string) {
 			delete(env, "GRAFANA_JWKS")
-			env["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development"
+			env["GF_PLUGIN_DEPLOYMENT_MODE"] = "development"
 		}, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
 		{name: "both signing key sources", change: func(env map[string]string) { env["GRAFANA_JWKS_URL"] = "https://auth.example/jwks" }, message: "only one"},
 		{name: "unparsable scalar", change: func(env map[string]string) {
-			env["GRAFANA_AI_GATEWAY_PROVIDERWIRE_REQUEST_BYTES"] = "password"
-		}, message: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_REQUEST_BYTES has an invalid value"},
+			env["GF_PLUGIN_MAX_REQUEST_BYTES"] = "password"
+		}, message: "GF_PLUGIN_MAX_REQUEST_BYTES has an invalid value"},
 		{name: "scalar relationship", change: func(env map[string]string) {
-			env["GRAFANA_AI_GATEWAY_PROVIDERWIRE_STREAM_IDLE_DURATION"] = "10m"
-		}, message: "stream idle duration"},
-		{name: "legacy listener environment is ignored, legacy flags are not accepted", change: func(env map[string]string) {
+			env["GF_PLUGIN_MAX_MODEL_DURATION"] = "20s"
+		}, message: "max model duration must be at least"},
+		{name: "legacy settings are ignored", change: func(env map[string]string) {
 			env["GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS"] = "bad"
-			delete(env, "GRAFANA_AI_GATEWAY_ACCESS_MODE")
+			env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "cloud"
+			delete(env, "GF_PLUGIN_ACCESS_MODE")
 		}, message: "access mode is required"},
 		{name: "ambient agent observability environment", change: func(env map[string]string) {
-			env["GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED"] = "true"
-			env["GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT"] = "collector.example:4317"
-			env["GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV"] = "AO_SECRET"
+			env["GF_PLUGIN_AGENTO11Y_ENABLED"] = "true"
+			env["GF_PLUGIN_AGENTO11Y_ENDPOINT"] = "collector.example:4317"
+			env["GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV"] = "AO_SECRET"
 			env["SIGIL_TAGS"] = "private=ambient"
 		}, message: "ambient agent observability SDK environment"},
 		{name: "production cleartext provider", url: "http://provider.example", message: "production endpoint must use https"},
 		{name: "credential-bearing provider endpoint", url: "https://user:password@provider.example", message: "userinfo"},
 		{name: "malformed credential-bearing provider endpoint", url: "https://user:password@provider.example:port", message: "not a valid URL"},
 		{name: "missing configuration file", change: func(env map[string]string) {
-			env["GRAFANA_AI_GATEWAY_CONFIG_FILE"] += ".missing"
+			env["GF_PLUGIN_CONFIG_FILE"] += ".missing"
 		}, message: "file does not exist"},
 	}
 	for _, tc := range tests {
@@ -144,7 +145,7 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 			_, logs, err := env.start(t)
 			require.ErrorContains(t, err, tc.message)
 			assert.Empty(t, env.secrets)
-			for _, private := range []string{providerSecret, "private=ambient", "password", env.values["GRAFANA_AI_GATEWAY_CONFIG_FILE"]} {
+			for _, private := range []string{providerSecret, "private=ambient", "password", env.values["GF_PLUGIN_CONFIG_FILE"]} {
 				assert.NotContains(t, err.Error(), private)
 				assert.NotContains(t, logs, private)
 			}
@@ -163,7 +164,7 @@ func TestNew_RejectsInvalidRoutesBeforeSecrets(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := newStartupEnvironment(t, "https://provider.example")
-			path := env.values["GRAFANA_AI_GATEWAY_CONFIG_FILE"]
+			path := env.values["GF_PLUGIN_CONFIG_FILE"]
 			data, err := os.ReadFile(path)
 			require.NoError(t, err)
 			changed := strings.Replace(string(data), tc.old, tc.replacement, 1)
@@ -196,28 +197,27 @@ func TestNew_EnvironmentOnlyStartup(t *testing.T) {
 			delete(env, "GRAFANA_JWKS")
 			env["GRAFANA_JWKS_URL"] = "http://auth.internal/jwks"
 		}},
-		{name: "self-hosted", change: func(env map[string]string) { env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "self-hosted" }},
+		{name: "self-hosted", change: func(env map[string]string) { env["GF_PLUGIN_ACCESS_MODE"] = "self-hosted" }},
 		{name: "grpc agent observability", change: func(env map[string]string) {
 			for name, value := range map[string]string{
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL":        "grpc",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "127.0.0.1:1",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_TLS":             "false",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES":     "1",
-				"AO_SECRET": "agent-secret-value",
+				"GF_PLUGIN_AGENTO11Y_ENABLED":         "true",
+				"GF_PLUGIN_AGENTO11Y_PROTOCOL":        "grpc",
+				"GF_PLUGIN_AGENTO11Y_ENDPOINT":        "127.0.0.1:1",
+				"GF_PLUGIN_AGENTO11Y_TLS":             "false",
+				"GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
+				"AO_SECRET":                           "agent-secret-value",
 			} {
 				env[name] = value
 			}
 		}},
 		{name: "http agent observability", change: func(env map[string]string) {
 			for name, value := range map[string]string{
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL":        "http",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        collector.URL,
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_TLS":             "false",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
-				"AO_SECRET": "agent-secret-value",
+				"GF_PLUGIN_AGENTO11Y_ENABLED":         "true",
+				"GF_PLUGIN_AGENTO11Y_PROTOCOL":        "http",
+				"GF_PLUGIN_AGENTO11Y_ENDPOINT":        collector.URL,
+				"GF_PLUGIN_AGENTO11Y_TLS":             "false",
+				"GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
+				"AO_SECRET":                           "agent-secret-value",
 			} {
 				env[name] = value
 			}
@@ -226,7 +226,7 @@ func TestNew_EnvironmentOnlyStartup(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			env := newStartupEnvironment(t, provider.URL)
-			env.values["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development"
+			env.values["GF_PLUGIN_DEPLOYMENT_MODE"] = "development"
 			tc.change(env.values)
 			gw, logs, err := env.start(t)
 			require.NoError(t, err)
@@ -247,10 +247,10 @@ func TestNew_ProductionExportWithDefaultTimeoutsClosesWithinTheBudget(t *testing
 	unsetAmbientAgentObservabilityEnvironment(t)
 	env := newStartupEnvironment(t, "https://provider.example")
 	for name, value := range map[string]string{
-		"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
-		"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.invalid:4317",
-		"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
-		"AO_SECRET": "agent-secret-value",
+		"GF_PLUGIN_AGENTO11Y_ENABLED":         "true",
+		"GF_PLUGIN_AGENTO11Y_ENDPOINT":        "collector.invalid:4317",
+		"GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
+		"AO_SECRET":                           "agent-secret-value",
 	} {
 		env.values[name] = value
 	}
@@ -290,10 +290,10 @@ func launchPlugin(t *testing.T, binary string, env map[string]string) *pluginPro
 	require.NoError(t, err)
 	fake := newFakeAnthropic(t)
 	environment := []string{
-		"GRAFANA_AI_GATEWAY_CONFIG_FILE=" + writeModelConfig(t, fake.server.URL),
-		"GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE=development",
-		"GRAFANA_AI_GATEWAY_ACCESS_MODE=cloud",
-		"GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES=" + testInternalService,
+		"GF_PLUGIN_CONFIG_FILE=" + writeModelConfig(t, fake.server.URL),
+		"GF_PLUGIN_DEPLOYMENT_MODE=development",
+		"GF_PLUGIN_ACCESS_MODE=cloud",
+		"GF_PLUGIN_ACCESS_INTERNAL_SERVICES=" + testInternalService,
 		"ANTHROPIC_SECRET=" + providerSecret,
 	}
 	for name, value := range env {
