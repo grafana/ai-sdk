@@ -73,7 +73,7 @@ func TestAgentObservabilityRuntime_ExportAttemptTimeout(t *testing.T) {
 				InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond,
 				ExportTimeout: 100 * time.Millisecond, FlushInterval: time.Hour,
 				FlushTimeout: time.Second, ShutdownTimeout: time.Second,
-			}, func(name string) (string, bool) { return "private-secret", name == "AO_SECRET" }, telemetry)
+			}, "private-secret", telemetry)
 			require.NoError(t, err)
 			t.Cleanup(func() { runtime.Close(context.Background()) })
 			t.Setenv("AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES", "true")

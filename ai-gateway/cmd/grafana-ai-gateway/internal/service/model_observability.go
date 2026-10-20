@@ -35,11 +35,12 @@ type AgentObservabilityRuntime struct {
 	closeOnce       sync.Once
 }
 
-// NewAgentObservabilityRuntime consumes prevalidated settings, rejects the
-// SDK's ambient configuration layer, resolves the bearer credential once, and
-// constructs one metadata-only hooks-disabled client. A disabled development
+// NewAgentObservabilityRuntime consumes prevalidated settings and the
+// resolved bearer credential, rejects the SDK's ambient configuration layer
+// in the process environment, and constructs one metadata-only
+// hooks-disabled client. A disabled development
 // configuration returns a no-op runtime.
-func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, lookupEnv config.LookupEnv, telemetry *Telemetry) (runtime *AgentObservabilityRuntime, err error) {
+func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, secret string, telemetry *Telemetry) (runtime *AgentObservabilityRuntime, err error) {
 	if telemetry == nil {
 		return nil, fmt.Errorf("gateway service: telemetry is required")
 	}
@@ -51,14 +52,7 @@ func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, lo
 	if !settings.Enabled {
 		return runtime, nil
 	}
-	if err := settings.ValidateAmbientEnvironment(lookupEnv); err != nil {
-		return nil, err
-	}
 	if err := settings.ValidateAmbientEnvironment(os.LookupEnv); err != nil {
-		return nil, err
-	}
-	secret, err := settings.ResolveAuthSecret(lookupEnv)
-	if err != nil {
 		return nil, err
 	}
 	protocol := agento11y.GenerationExportProtocolGRPC

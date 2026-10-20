@@ -48,16 +48,14 @@ type Options struct {
 type Gateway struct {
 	handler       http.Handler
 	authenticator authn.Authenticator
-	close         func()
+	sinks         sinks
 }
 
 // New validates settings and constructs every Gateway dependency before any
-// request can be served. Failures are secret-safe.
+// request can be served. Configuration is validated before any secret is
+// read, and failures are secret-safe.
 func New(options Options) (*Gateway, error) {
 	lookupEnv := options.LookupEnv
-	if lookupEnv == nil {
-		lookupEnv = func(string) (string, bool) { return "", false }
-	}
 	settings, err := config.ParseSettings(nil, lookupEnv)
 	if err != nil {
 		return nil, err
@@ -73,90 +71,121 @@ func New(options Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateProviderEndpoints(file, settings.DeploymentMode); err != nil {
+		return nil, err
+	}
+	providers, err := file.ResolveProviderSecrets(lookupEnv)
+	if err != nil {
+		return nil, err
+	}
+	agentSecret, err := settings.AgentObservability.ResolveAuthSecret(lookupEnv)
+	if err != nil {
+		return nil, err
+	}
+	sinks, err := newSinks(settings, options, agentSecret)
+	if err != nil {
+		return nil, err
+	}
+	handler, err := newRouteHandler(settings, file, providers, configuredSecrets(providers, agentSecret), sinks, options.Logger)
+	if err != nil {
+		sinks.close()
+		return nil, err
+	}
+	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks}, nil
+}
+
+func validateProviderEndpoints(file config.File, mode config.DeploymentMode) error {
 	for name, provider := range file.Providers {
 		if provider.BaseURL == "" {
 			continue
 		}
-		parsed, err := outbound.ValidateEndpoint(provider.BaseURL, settings.DeploymentMode)
+		parsed, err := outbound.ValidateEndpoint(provider.BaseURL, mode)
 		if err != nil {
-			return nil, fmt.Errorf("gateway: validating provider %q endpoint: %w", name, err)
+			return fmt.Errorf("gateway: validating provider %q endpoint: %w", name, err)
 		}
 		provider.BaseURL = parsed.String()
 		file.Providers[name] = provider
 	}
-	resolvedProviders, err := file.ResolveProviderSecrets(lookupEnv)
-	if err != nil {
-		return nil, err
+	return nil
+}
+
+// configuredSecrets lists the provider keys and exporter credential that
+// Gateway-produced error summaries must not echo.
+func configuredSecrets(providers map[string]config.ResolvedProvider, agentSecret string) []string {
+	secrets := make([]string, 0, len(providers)+1)
+	for _, provider := range providers {
+		secrets = append(secrets, provider.APIKey)
 	}
-	nativeClient, err := outbound.NewAnthropicClient(settings.AnthropicResponseHeaderTimeout, settings.AnthropicResponseBytes)
-	if err != nil {
-		return nil, err
+	if agentSecret != "" {
+		secrets = append(secrets, agentSecret)
 	}
+	return secrets
+}
+
+// sinks are the telemetry destinations that must be flushed on shutdown.
+type sinks struct {
+	telemetry *service.Telemetry
+	agent     *service.AgentObservabilityRuntime
+	attempts  *service.PhysicalAttemptSink
+}
+
+func newSinks(settings config.Settings, options Options, agentSecret string) (sinks, error) {
 	telemetry, err := service.NewTelemetry(options.Logger, service.TelemetryOptions{
 		Region:      settings.ObservationRegion,
 		Application: settings.ObservationApplication,
 		Registerer:  options.Registerer,
 	})
 	if err != nil {
-		return nil, err
+		return sinks{}, err
 	}
-	configuredAPIKeys := make([]string, 0, len(resolvedProviders)+1)
-	for _, provider := range resolvedProviders {
-		configuredAPIKeys = append(configuredAPIKeys, provider.APIKey)
+	agent, err := service.NewAgentObservabilityRuntime(settings.AgentObservability, agentSecret, telemetry)
+	if err != nil {
+		return sinks{}, err
 	}
-	agentRuntime, err := service.NewAgentObservabilityRuntime(settings.AgentObservability, func(name string) (string, bool) {
-		value, exists := lookupEnv(name)
-		if exists && name == settings.AgentObservability.AuthSecretEnv {
-			configuredAPIKeys = append(configuredAPIKeys, value)
-		}
-		return value, exists
-	}, telemetry)
+	return sinks{telemetry: telemetry, agent: agent, attempts: service.NewPhysicalAttemptSink(options.Logger, telemetry)}, nil
+}
+
+// close flushes the sinks concurrently for at most the final flush budget.
+func (s sinks) close() {
+	ctx, cancel := context.WithTimeout(context.Background(), finalFlushBudget)
+	defer cancel()
+	var closing sync.WaitGroup
+	closing.Go(func() { s.attempts.Close(ctx) })
+	closing.Go(func() { s.agent.Close(ctx) })
+	closing.Wait()
+}
+
+func newRouteHandler(settings config.Settings, file config.File, providers map[string]config.ResolvedProvider, secrets []string, sinks sinks, logger *slog.Logger) (http.Handler, error) {
+	nativeClient, err := outbound.NewAnthropicClient(settings.AnthropicResponseHeaderTimeout, settings.AnthropicResponseBytes)
 	if err != nil {
 		return nil, err
 	}
-	physicalSink := service.NewPhysicalAttemptSink(options.Logger, telemetry)
-	closeSinks := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), finalFlushBudget)
-		defer cancel()
-		var closing sync.WaitGroup
-		closing.Go(func() { physicalSink.Close(ctx) })
-		closing.Go(func() { agentRuntime.Close(ctx) })
-		closing.Wait()
-	}
-	fail := func(err error) (*Gateway, error) {
-		closeSinks()
+	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(sinks.telemetry, logger, sinks.agent, settings.ProviderWire.StreamDrainDuration)
+	if err != nil {
 		return nil, err
 	}
-	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(telemetry, options.Logger, agentRuntime, settings.ProviderWire.StreamDrainDuration)
+	catalog, err := service.BuildCatalog(file, providers, nativeClient, modelFactory, sinks.attempts)
 	if err != nil {
-		return fail(err)
-	}
-	modelCatalog, err := service.BuildCatalog(file, resolvedProviders, nativeClient, modelFactory, physicalSink)
-	if err != nil {
-		return fail(err)
+		return nil, err
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
-	configuredLanguage, err := providerv4.New(providerv4.Config{Selector: service.NewConfiguredSelector(modelCatalog), Limits: settings.ProviderWire, ConfiguredAPIKeys: configuredAPIKeys})
+	configuredLanguage, err := providerv4.New(providerv4.Config{Selector: service.NewConfiguredSelector(catalog), Limits: settings.ProviderWire, ConfiguredAPIKeys: secrets})
 	if err != nil {
-		return fail(err)
+		return nil, err
 	}
 	routes := routeHandlers{
-		configuredDiscovery: service.ConfiguredDiscovery(discovery.New(modelCatalog, errorWriter), errorWriter),
+		configuredDiscovery: service.ConfiguredDiscovery(discovery.New(catalog, errorWriter), errorWriter),
 		configuredLanguage:  configuredLanguage,
 	}
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
-		byokLanguage, err := providerv4.New(providerv4.Config{Selector: service.NewBYOKSelector(nativeClient, byokFactory), Limits: settings.ProviderWire, ConfiguredAPIKeys: configuredAPIKeys})
+		byokLanguage, err := providerv4.New(providerv4.Config{Selector: service.NewBYOKSelector(nativeClient, byokFactory), Limits: settings.ProviderWire, ConfiguredAPIKeys: secrets})
 		if err != nil {
-			return fail(err)
+			return nil, err
 		}
 		routes.byokDiscovery = service.BYOKDiscovery(errorWriter)
 		routes.byokLanguage = byokLanguage
 	}
-	return &Gateway{
-		handler:       newHandler(settings.Access, telemetry, errorWriter, routes),
-		authenticator: authenticator,
-		close:         closeSinks,
-	}, nil
+	return newHandler(settings.Access, sinks.telemetry, errorWriter, routes), nil
 }
 
 func newAuthenticator(mode config.DeploymentMode, lookupEnv config.LookupEnv) (authn.Authenticator, error) {
@@ -195,4 +224,4 @@ func (g *Gateway) Provider() app.Provider {
 // Close flushes Agent Observability and attempt records concurrently for at
 // most the final flush budget, then releases them. Later records are dropped
 // and counted.
-func (g *Gateway) Close() { g.close() }
+func (g *Gateway) Close() { g.sinks.close() }

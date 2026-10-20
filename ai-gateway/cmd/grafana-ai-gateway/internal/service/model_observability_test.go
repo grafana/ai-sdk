@@ -122,18 +122,13 @@ func TestBYOKObservability_LogicalExportAndCredentialPrivacy(t *testing.T) {
 	}
 }
 
-func TestNewAgentObservabilityRuntime_DisabledDoesNotResolveSecret(t *testing.T) {
+func TestNewAgentObservabilityRuntime_DisabledIsNoOp(t *testing.T) {
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	require.NoError(t, err)
-	calls := 0
-	runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{}, func(string) (string, bool) {
-		calls++
-		return "private", true
-	}, telemetry)
+	runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{}, "", telemetry)
 	require.NoError(t, err)
 	require.NotNil(t, runtime)
 	assert.Nil(t, runtime.client)
-	assert.Zero(t, calls)
 	runtime.Close(context.Background())
 }
 
@@ -317,13 +312,7 @@ func TestNewAgentObservabilityRuntime_RejectsActualSDKEnvironment(t *testing.T) 
 			telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 			require.NoError(t, err)
 			settings := config.AgentObservabilitySettings{Enabled: true, AuthSecretEnv: "AO_SECRET"}
-			runtime, err := NewAgentObservabilityRuntime(settings, func(name string) (string, bool) {
-				if name == "AO_SECRET" {
-					t.Error("secret resolved before ambient environment validation")
-					return "private-secret", true
-				}
-				return "", false
-			}, telemetry)
+			runtime, err := NewAgentObservabilityRuntime(settings, "private-secret", telemetry)
 			require.Error(t, err)
 			assert.Nil(t, runtime)
 			assert.EqualError(t, err, "config: ambient agent observability SDK environment is not allowed")
@@ -377,7 +366,6 @@ func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayl
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	secretCalls := 0
 	runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{
 		Enabled:         true,
 		Protocol:        config.AgentObservabilityHTTP,
@@ -393,13 +381,7 @@ func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayl
 		FlushInterval:   time.Hour,
 		FlushTimeout:    time.Second,
 		ShutdownTimeout: time.Second,
-	}, func(name string) (string, bool) {
-		if name == "AO_SECRET" {
-			secretCalls++
-			return "agent-secret", true
-		}
-		return "", false
-	}, telemetry)
+	}, "agent-secret", telemetry)
 	require.NoError(t, err)
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
@@ -416,7 +398,6 @@ func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayl
 	_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("prompt-private")}})
 	require.NoError(t, err)
 	runtime.Close(context.Background())
-	assert.Equal(t, 1, secretCalls)
 	request := <-captured
 	assert.Equal(t, "Bearer agent-secret", request.authorization)
 	assert.Equal(t, "/api/v1/generations:export", request.path)
@@ -470,9 +451,7 @@ func TestNewAgentObservabilityRuntime_RejectedHTTPBatchIsOneFailOpenFailure(t *t
 		FlushInterval:   time.Hour,
 		FlushTimeout:    time.Second,
 		ShutdownTimeout: time.Second,
-	}, func(name string) (string, bool) {
-		return "agent-secret", name == "AO_SECRET"
-	}, telemetry)
+	}, "agent-secret", telemetry)
 	require.NoError(t, err)
 	defer runtime.Close(context.Background())
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
