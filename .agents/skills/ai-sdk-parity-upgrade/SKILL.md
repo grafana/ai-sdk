@@ -37,8 +37,8 @@ before moving the pins. Other assessed differences can be registered for later w
 
 Perform a comprehensive comparison across the declared supported surfaces: core
 orchestration, provider contracts/adapters, frontend behavior and Gateway. Include
-harness limitations when evaluating the evidence. Use relevant `PARITY.md` entries
-to identify current support, deviations and coverage.
+harness limitations when evaluating the evidence. Use `PARITY.md` for surfaces and
+evidence locations, and `upstream.yaml` `knownGaps` for accepted deviations.
 
 Inspect exact upstream implementation and tests alongside the current Go paths.
 The release delta and changelogs guide investigation, but do not bound it: look for
@@ -70,11 +70,10 @@ Give each durable record one responsibility:
   the behavior and impact, exact upstream reference, current Go difference,
   intended outcome, API decisions, dependencies, owner and acceptance evidence.
   Do not restate that content in repository documentation or mirror issue state.
-- **`PARITY.md` owns stable coverage facts.** Update it only when a surface's
-  coverage classification, confidence source, supported boundary or accepted
-  deviation changes. Never add a dated/versioned assessment section, issue catalog
-  or upgrade-run ledger. A newly discovered actionable difference does not by
-  itself require a `PARITY.md` change once an issue owns it.
+- **`upstream.yaml` `knownGaps` owns accepted deviations and support boundaries.**
+  `PARITY.md` changes only when a surface is added or removed or its status or
+  evidence location changes. Neither gets dated assessments, issue catalogs or
+  run ledgers. See [record ownership](../../../CONTRIBUTING.md#the-coverage-map-and-the-layers).
 - **The upgrade PR owns the run ledger.** Record the target, corrections,
   validation and a compact exact list of created or reused issues. Summarize
   adaptations, exclusions and unresolved blockers there; promote only durable
@@ -103,9 +102,7 @@ Select a registered package and confirm its contract against the current pinned
 reference. Refine the Go design and acceptance tests, then implement the complete
 behavior with regression proof. Prefer failing conformance cases with authentic
 inputs; otherwise use focused tests and state the remaining boundary coverage gap.
-Preserve fixture provenance. When work is completed, close or update its issue;
-change the coverage map only if the stable coverage status, evidence, support
-boundary or accepted deviation changed.
+Preserve fixture provenance. When work is completed, close or update its issue.
 
 Work packages are behavioral units, not PRs. Related packages may share a PR; a
 package spanning published modules may require producer and consumer changes in

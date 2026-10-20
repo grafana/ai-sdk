@@ -72,7 +72,7 @@ changed expectations without modifying provider input provenance.
 | Tool / source | What it establishes | Limit |
 | --- | --- | --- |
 | Exact upstream implementation/tests and Go source | Semantics, execution paths and likely missing behavior | Requires analysis; not executable proof by itself |
-| `PARITY.md` | Declared support, existing evidence and known gaps | A coverage map, not an automatically verified feature inventory |
+| `PARITY.md` and `upstream.yaml` `knownGaps` | Declared surfaces, evidence locations and accepted deviations | Not an automatically verified feature inventory |
 | `parity-select` / `parity-apply` | Fixed versions, maturity, coherence and exact source evidence | Does not decide scope or certify behavior |
 | `mise run parity-coverage` | Provider fixture inventory, imports and byte-identical provenance | Does not measure behavioral coverage of every capability |
 | `mise run generate-conformance` | Upstream expectations from existing inputs | Generation succeeding does not mean Go matches |
@@ -194,10 +194,11 @@ Keep each durable record focused:
 - `upstream-sync` issues are authoritative for actionable deferred work, including
   the assessed upstream reference, Go difference and impact, outcome, decisions,
   dependencies and acceptance tests.
-- `PARITY.md` records stable coverage classifications, confidence sources, supported
-  boundaries and accepted deviations. Update it only when one of those facts changes.
-  Do not add a dated/versioned assessment section, issue catalog, run ledger or copy
-  of issue detail. Do not mirror issue state in repository documentation.
+- `upstream.yaml` `knownGaps` (or the owning capability spec) records accepted
+  deviations and support boundaries. `PARITY.md` lists surfaces, status and
+  evidence locations, and changes only when one of those changes. Neither holds
+  dated assessments, issue catalogs, run ledgers, copies of issue detail or
+  issue state.
 - The upgrade PR records its target, corrections, validation and a compact exact
   list of created or reused issues. It may summarize run-specific adaptations,
   exclusions and blockers without turning those notes into a permanent coverage
@@ -231,7 +232,7 @@ Before creating an issue:
    may have its own issue with an explicit relationship to the existing one.
 5. Recheck relevant open results immediately before creation, then link the resulting
    issue identifier from the upgrade PR's deferred-work list. Do not copy its body
-   into `PARITY.md`, overwrite unrelated content, post comments or close/reopen issues
+   into repository documentation, overwrite unrelated content, post comments or close/reopen issues
    as part of registration.
 
 Use `gh issue list --repo grafana/ai-sdk --state all --search '<query>'` for searches
@@ -281,8 +282,7 @@ as ordinary parity issues merely with a `security` label.
 The pinned-version PR is complete when its checks pass and the comprehensive
 assessment is accounted for, including registered remaining work. A parity package
 is complete only when its behavior and proof are delivered; update or close its
-issue then, and update the coverage map only if stable coverage, evidence, support
-boundaries or accepted deviations changed. A tracked correction is not a permanent
+issue then, and update the parity records only as their ownership rules require. A tracked correction is not a permanent
 accepted deviation, and a proposed API is not approved merely because it has an
 issue. Unresolved upgrade-blocking risks or existing failures cannot be relabeled
 as follow-ups.

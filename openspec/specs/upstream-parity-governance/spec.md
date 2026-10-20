@@ -33,28 +33,36 @@ Pinned-version transitions SHALL retain their selected target record with the ch
 
 ### Requirement: Parity coverage map
 
-The repository SHALL maintain a stable coverage map classifying surfaces by status, layer, confidence source, durable support boundary and accepted deviation. It SHALL cover at minimum core orchestration/UI chunks, provider contract, provider implementation, frontend interop and conformance harness. Status SHALL be automated, manual, documented deviation, mixed coverage or gap.
+The repository SHALL maintain a compact coverage map in `test/conformance/PARITY.md` listing each parity surface with its layer, status and evidence location. It SHALL cover at minimum core orchestration/UI chunks, provider contract, provider implementation, frontend interop and conformance harness. Status SHALL be automated, manual, documented deviation, mixed coverage or gap. The map SHALL change only when a surface is added or removed, or its status or evidence location changes.
 
 #### Scenario: Reviewer evaluates compatibility coverage
 - **WHEN** a reviewer inspects a change touching a parity-sensitive surface
-- **THEN** the coverage map identifies the affected layer and whether that surface is protected by automated conformance, manual review, documented deviation, mixed coverage, or an explicit gap
+- **THEN** the coverage map identifies the affected layer, its status and where its evidence lives
 
 #### Scenario: New parity surface is added
 - **WHEN** implementation adds a new upstream compatibility surface
-- **THEN** the coverage map is updated to classify how the new surface is verified
+- **THEN** the coverage map gains one row classifying how the new surface is verified
 
-#### Scenario: Provider implementation work is reviewed
-- **WHEN** implementation changes provider request conversion, provider response parsing, provider-defined tools, or provider options
-- **THEN** the coverage map identifies the provider implementation capability and whether request snapshots, stream snapshots, manual review, or a durable boundary provide confidence
-
-#### Scenario: Core ai-sdk work is reviewed
-- **WHEN** implementation changes orchestration, stream part conversion, UI chunk output, tools, or structured output
-- **THEN** the coverage map identifies the core capability and whether UI chunk snapshots, structured output snapshots, manual review, or a durable boundary provide confidence
+#### Scenario: Tests are added to an existing surface
+- **WHEN** a change adds or extends tests for a surface already in the map without changing its status or evidence location
+- **THEN** the coverage map SHALL NOT change
 
 #### Scenario: Actionable deferred work is registered
 - **WHEN** a parity difference has a new or reused `upstream-sync` issue
 - **THEN** the issue SHALL remain authoritative for the behavior, evidence, impact, scope, dependencies and acceptance criteria
-- **AND** the coverage map SHALL change only if the surface's coverage classification, confidence source, supported boundary or accepted deviation changed
+- **AND** the coverage map SHALL change only if the surface's status changed
+
+### Requirement: Parity record ownership
+
+Accepted deviations and durable support boundaries SHALL be recorded in `test/conformance/upstream.yaml` `knownGaps` or in the owning `openspec/specs/` capability. General evidence limits SHALL be stated once in `test/conformance/README.md`. The coverage map SHALL NOT restate test inventories, per-surface evidence narratives or content owned by these records.
+
+#### Scenario: Accepted deviation is introduced
+- **WHEN** implementation intentionally differs from the registered upstream or accepts a durable support boundary
+- **THEN** the difference is recorded as a `knownGaps` entry or in the owning capability spec, not in the coverage map
+
+#### Scenario: Evidence limit applies to many surfaces
+- **WHEN** a limit such as synthetic input not proving live acceptance applies across surfaces
+- **THEN** it is stated once in the conformance README rather than repeated per surface
 
 ### Requirement: Coverage map is not an upgrade ledger
 
@@ -227,20 +235,18 @@ The repository SHALL include hook-level frontend interop tests for upstream AI S
 
 #### Scenario: Lower-level evidence remains distinct
 - **WHEN** a parity claim is supported only by chunk snapshots, SSE parsing, or UI-message reader tests
-- **THEN** the coverage map identifies that proof as lower-level evidence rather than hook-level state-machine coverage
+- **THEN** the evidence limits in `test/conformance/README.md` identify that proof as lower-level evidence rather than hook-level state-machine coverage
 
 ### Requirement: Frontend parity status reflects covered breadth
-Frontend capability statuses in `test/conformance/PARITY.md` SHALL reflect the breadth of behavior directly exercised at the stated layer. A broad capability with automated coverage for only a subset of its state transitions or failures MUST be classified as `mixed`, with the automated subset and remaining gap described in its confidence source or notes.
+Frontend capability statuses in `test/conformance/PARITY.md` SHALL reflect the breadth of behavior directly exercised at the stated layer. A broad capability with automated coverage for only a subset of its state transitions or failures MUST be classified as `mixed`.
 
 #### Scenario: Hook surfaces have partial state-machine coverage
-- **WHEN** the suite automates the hook scenarios required by this change but does not exhaustively cover each public hook lifecycle and failure path
-- **THEN** the broad `useChat`, `useCompletion`, and `useObject` compatibility rows are classified as `mixed`
-- **AND** each row describes the behavior that is automated through the hook
+- **WHEN** the suite automates selected hook scenarios but does not exhaustively cover each public hook lifecycle and failure path
+- **THEN** the React hooks row is classified as `mixed`
 
 #### Scenario: Chunk ordering evidence is broader than hook evidence
 - **WHEN** conformance snapshots automate chunk ordering for fixtures but React assertions cover only selected state transitions
-- **THEN** the broad chunk ordering and state transitions row is classified as `mixed`
-- **AND** its notes distinguish conformance stream ordering from React hook state transitions
+- **THEN** the UI messages and React hooks rows are both classified as `mixed`
 
 ### Requirement: Independent parity work packages
 
@@ -286,7 +292,8 @@ Pinned-version upgrades SHALL account for all assessed differences via correctio
 #### Scenario: Parity package is delivered
 - **WHEN** the full behavioral outcome and regression proof are implemented
 - **THEN** the issue SHALL reflect completion
-- **AND** the coverage map SHALL change only when the delivered work changes its stable classification, confidence source, supported boundary or accepted deviation
+- **AND** the coverage map SHALL change only when the delivered work changes a surface's status or evidence location
+- **AND** a new accepted deviation SHALL be recorded in `upstream.yaml` `knownGaps` or the owning capability spec
 
 #### Scenario: A later upgrade reassesses outstanding work
 - **WHEN** the pinned reference advances again
@@ -421,7 +428,7 @@ Configured daily automation SHALL execute pinned-version upgrade and comprehensi
 #### Scenario: Nonblocking parity work is registered
 - **WHEN** the assessment identifies a remaining actionable difference
 - **THEN** the automation SHALL reuse a matching issue or create a work-package issue and link it from the upgrade PR
-- **AND** it SHALL update the coverage map only for a durable coverage, evidence, support-boundary or accepted-deviation change
+- **AND** it SHALL update the coverage map only when a surface's status or evidence location changes
 - **AND** registration SHALL NOT authorize implementation of that package or silently accept a permanent deviation
 
 #### Scenario: No version update is needed
@@ -466,14 +473,14 @@ The repository SHALL register `ai-gateway/test/providerwire-v4` as a parity Type
 - **AND** compile-time drift, schema drift, request-golden drift, and client-consumption drift SHALL be reviewed before the upgrade is complete
 - **AND** request goldens SHALL change only through the explicit ProviderWire golden update workflow
 
-#### Scenario: Coverage map records the evidence boundary
-- **WHEN** ProviderWire V4 contract coverage is added or changed
-- **THEN** `test/conformance/PARITY.md` SHALL identify the registered-client HTTP projection and consumption behavior that is automated
-- **AND** it SHALL state that strict Go request replay, server response correctness, runtime lifecycle, privacy, and resource bounds are not established by this contract workspace
+#### Scenario: Contract workspace evidence boundary
+- **WHEN** ProviderWire V4 contract checks pass
+- **THEN** they establish the registered-client HTTP projection and consumption behavior
+- **AND** they do not establish strict Go request replay, server response correctness, runtime lifecycle, privacy, or resource bounds
 
 ### Requirement: ProviderWire contract evidence classification
 
-The parity coverage map SHALL classify ProviderWire contract evidence separately from provider conformance, frontend hook state-machine and future Go ProviderWire runtime coverage.
+The parity coverage map SHALL list ProviderWire request projection as its own surface, separate from provider conformance, frontend hook state-machine and Go ProviderWire runtime coverage.
 
 #### Scenario: ProviderWire contract evidence classification
 - **WHEN** ProviderWire workspace contract checks pass

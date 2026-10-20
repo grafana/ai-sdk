@@ -47,10 +47,10 @@ The package versions in the manifest must match every parity TypeScript
 consumer: conformance tools, integration tests, CLI tooling, and the
 Gateway-owned workspace under `ai-gateway/test/providerwire-v4`.
 
-The current parity coverage map lives in `test/conformance/PARITY.md`. It
-classifies each compatibility surface by layer, status, confidence source, and
-known gaps. Use it when deciding whether a change needs new fixtures, upstream
-source review, or a documented deviation.
+The parity coverage map lives in `test/conformance/PARITY.md`. It lists each
+compatibility surface with its layer, status and where its evidence lives. Use
+it to decide which proof a change needs. Accepted deviations and support
+boundaries live in `upstream.yaml` `knownGaps`.
 
 For upgrades, use the [parity-upgrade skill](../../.agents/skills/ai-sdk-parity-upgrade/SKILL.md)
 to update the pinned reference, assess current Go behavior comprehensively and
@@ -66,6 +66,34 @@ recorded provider chunks or provider request snapshots, add or update the
 fixture first, confirm the Go replay fails, and then fix the implementation.
 For new parity-sensitive features, record or import upstream behavior alongside
 the implementation so future baseline upgrades have an executable contract.
+
+## Evidence Limits
+
+Each kind of evidence proves a specific thing. Passing one does not establish
+the others, and no check claims exhaustive parity.
+
+- **Recorded inputs** (`recorded/`) show what the live provider sent at
+  recording time. **Imported inputs** (`upstream/`) show upstream's own fixtures.
+- **Replay and snapshots** show that Go matches upstream for those inputs. They
+  do not show that the live API still sends them, or accepts the replayed
+  requests.
+- **Synthetic inputs** (unit tests, fake transports, `testdata/`, `ui/`
+  fixtures) are not recordings. They prove local behavior or Go/upstream
+  agreement on invented input, not live acceptance.
+- **Request capture** proves the outbound request, not the returned SDK
+  metadata.
+- **Chunk snapshots, SSE parsing and UI-message reader tests** are lower-level
+  evidence. Only tests that run through the upstream hooks prove hook
+  state-machine behavior.
+- **Generation** (`mise run generate-conformance`) produces expectations; it
+  does not establish input provenance.
+- **Workspace substitutions** do not prove that a published module adopted a
+  producer change.
+- **Request snapshots** exclude volatile SigV4 headers. Header redaction does
+  not protect query-string credentials, so a query-authenticated recording
+  needs an explicit secret and volatility policy.
+- **Platform-specific tests** (for example Linux FIFO deadlines) do not
+  establish behavior on other platforms.
 
 ## Prerequisites
 
@@ -200,7 +228,7 @@ prove: that the live API sends that input, or that upstream's behavior on it is
 intended. A case therefore never belongs under `recorded/` or `upstream/`, says
 SYNTHETIC in its description, and is not evidence of API behavior. Where Go differs from
 upstream by design, the case is left out of the golden set and the difference is
-recorded in `PARITY.md`.
+recorded in `upstream.yaml` `knownGaps`.
 
 `testdata/anthropic-stream-parts/` holds the streaming inputs. `expected-parts.jsonl` is
 produced by running the registered upstream `doStream`, and it regenerates on a baseline
