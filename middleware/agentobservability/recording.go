@@ -186,19 +186,55 @@ func runStreamTee(
 	onRecordError RecordErrorHandler,
 	onRecordComplete RecordCompleteHandler,
 ) {
+	var recordErr error
+	finalized := false
+	finalize := func(canceled bool) {
+		if finalized {
+			return
+		}
+		finalized = true
+		if first := streamRec.FirstChunkAt(); !first.IsZero() {
+			recorder.SetFirstTokenAt(first)
+		}
+		if canceled {
+			recorder.SetCallError(ctx.Err())
+		} else if callErr := streamRec.CallError(); callErr != nil {
+			recorder.SetCallError(callErr)
+		}
+
+		gen := streamRec.Generation()
+		// Carry caller-supplied identity into the final Generation in case the
+		// seed got normalized away by the recorder.
+		if gen.UserID == "" {
+			gen.UserID = ctxInfo.UserID
+		}
+		if gen.AgentName == "" {
+			gen.AgentName = ctxInfo.AgentName
+		}
+		if gen.AgentVersion == "" {
+			gen.AgentVersion = ctxInfo.AgentVersion
+		}
+		recorder.SetResult(filterGeneration(gen, streamRec.seed, streamRec.finishReasonForFilter(), generationFilter), nil)
+		recordErr = endRecording(recorder)
+	}
 	defer func() {
-		// Finalize and enqueue before downstream observes EOF. Process owners may
-		// close the shared client once request serving completes, so closing first
-		// would race the final generation against client shutdown. Report the
-		// lifecycle callbacks only after close so consumer callbacks cannot delay
-		// downstream completion.
-		recordErr := endRecording(recorder)
+		// A finish part finalizes and enqueues the generation before it is
+		// forwarded, so a consumer that stops at finish cannot cancel the stream
+		// or close the shared client ahead of the recording. Streams without one
+		// finalize when upstream closes or the context ends. Lifecycle callbacks
+		// run only after close so consumer callbacks cannot delay downstream
+		// completion.
+		if !finalized {
+			finalized = true
+			recordErr = endRecording(recorder)
+		}
 		close(tee)
 		reportRecordComplete(onRecordComplete)
 		reportRecordError(recordErr, onRecordError)
 	}()
 
 	canceled := false
+	finished := false
 streamLoop:
 	for {
 		if drainTimeout > 0 && ctx.Err() != nil {
@@ -211,7 +247,13 @@ streamLoop:
 				canceled = ctx.Err() != nil
 				break streamLoop
 			}
-			streamRec.Observe(part)
+			if !finished {
+				streamRec.Observe(part)
+				if part.Type == provider.PartFinish {
+					finished = true
+					finalize(false)
+				}
+			}
 			if drainTimeout > 0 && ctx.Err() != nil {
 				canceled = true
 				break streamLoop
@@ -229,32 +271,11 @@ streamLoop:
 		}
 	}
 
-	if first := streamRec.FirstChunkAt(); !first.IsZero() {
-		recorder.SetFirstTokenAt(first)
+	if canceled && drainTimeout > 0 {
+		deadline := time.Now().Add(drainTimeout)
+		go drainStreamUntil(upstream, deadline)
 	}
-	if canceled {
-		if drainTimeout > 0 {
-			deadline := time.Now().Add(drainTimeout)
-			go drainStreamUntil(upstream, deadline)
-		}
-		recorder.SetCallError(ctx.Err())
-	} else if callErr := streamRec.CallError(); callErr != nil {
-		recorder.SetCallError(callErr)
-	}
-
-	gen := streamRec.Generation()
-	// Carry caller-supplied identity into the final Generation in case the
-	// seed got normalized away by the recorder.
-	if gen.UserID == "" {
-		gen.UserID = ctxInfo.UserID
-	}
-	if gen.AgentName == "" {
-		gen.AgentName = ctxInfo.AgentName
-	}
-	if gen.AgentVersion == "" {
-		gen.AgentVersion = ctxInfo.AgentVersion
-	}
-	recorder.SetResult(filterGeneration(gen, streamRec.seed, streamRec.finishReasonForFilter(), generationFilter), nil)
+	finalize(canceled)
 }
 
 func filterGeneration(generation agento11y.Generation, start agento11y.GenerationStart, finishReason provider.FinishReason, filter GenerationFilter) (filtered agento11y.Generation) {
