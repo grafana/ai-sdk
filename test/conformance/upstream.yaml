@@ -21,6 +21,22 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: agent-ui-validation-schemas
+    surface: core-agent
+    status: gap
+    description: Upstream exports validateUIMessages with application
+      metadataSchema and dataSchemas. Go validates Agent UI history only inside
+      the Agent UI helper and exposes no general validator or application
+      metadata/data schema API. Dynamic tools receive state and shape checks but
+      no configured schemas, and provider-defined tools without a represented
+      schema are not schema-validated.
+  - id: anthropic-base-url-normalization
+    surface: provider-anthropic
+    status: gap
+    description: Upstream @ai-sdk/anthropic normalizes a bare https://api.anthropic.com
+      base URL to include /v1. The Go provider currently exposes raw anthropic-sdk-go
+      request options rather than a first-class TypeScript-compatible base URL
+      setting, so this provider configuration behavior is not parity-covered.
   - id: anthropic-executor-iteration-cache-usage
     surface: provider-anthropic
     status: intentional-deviation
@@ -33,81 +49,28 @@ knownGaps:
       zero. Synthetic HTTP generation and streaming tests cover this policy;
       existing imported compaction fixtures contain no cache activity, so live
       cached-compaction conformance is not claimed.
-  - id: buffered-model-fallback
-    surface: core-streamtext
+  - id: anthropic-explicit-configuration
+    surface: provider-anthropic
     status: intentional-deviation
-    description: Go fallback optionally buffers a bounded complete provider stream
-      before selecting a candidate, with a timeout per attempt. This permits
-      cross-model recovery without exposing failed partial output. The registered
-      ai 7.0.127 core has no equivalent fallback wrapper; its generateText uses
-      doGenerate, while Go GenerateText collects StreamText. Synthetic unit,
-      GenerateText and schema-parsed frontend integration tests cover selection,
-      metadata, cancellation and resource limits, not live provider acceptance.
-  - id: bedrock-converse-premature-eof
-    surface: provider-bedrock
+    description: Go uses explicit credentials and options rather than ambient
+      SDK defaults. With no tools, required and named tool choices are retained.
+      The full error envelope and inner response error are retained separately
+      from the classified message.
+  - id: anthropic-malformed-event-termination
+    surface: provider-anthropic
     status: intentional-deviation
-    description: Go rejects clean frame-boundary EOF before messageStop with a
-      retryable APICallError and no finish or synthesized incomplete tool call.
-      The registered amazon-bedrock 5.0.105 reference emits finish with other and
-      no raw reason instead. EOF after messageStop remains valid without
-      metadata, including empty or unmapped stop reasons. Synthetic HTTP and
-      frame tests cover this transport failure; no provider recording is claimed.
-  - id: mantle-luna-reasoning-summary
-    surface: provider-openai
-    status: intentional-deviation
-    description: Mantle Luna 6 defaults to omitting reasoning summaries while
-      preserving effort and explicit per-call summary overrides. Direct OpenAI
-      retains the registered upstream default; explicit null omits the summary
-      on both endpoints. Automatic adaptation remains Luna-only. Synthetic HTTP
-      tests cover unary and streaming requests; no live SDK Mantle conformance
-      recording is claimed.
-  - id: astra-model-catalog
-    surface: provider-openai
-    status: gap
-    description: The GPT-6 Astra, Sol and Luna advisory catalogue and existing
-      non-reasoning sampling rules match the registered OpenAI target. Mantle
-      routing retains the documented AWS compatibility-path adaptation. Synthetic
-      tests cover routing/capabilities; no live GPT-6 recording is claimed.
-  - id: concurrent-tool-emission-nondeterminism
-    surface: core-streamtext
-    status: documented-deviation
-    description: Upstream enqueues each tool result as its own tool resolves. Go
-      also emits each result as its tool completes, but concurrent mocked tools
-      need not resolve ties in the same order across runtimes, so
-      the relative order of sibling tool outputs within a step is scheduler-dependent.
-      The conformance comparator therefore treats a run of adjacent locally-executed
-      tool-output-available and tool-output-error chunks as unordered. Provider-executed
-      outputs come off the recorded wire, and outputs of calls rejected with
-      tool-input-error are emitted during the model stream, so both stay exactly ordered.
-  - id: step-tool-results-call-order
-    surface: core-streamtext
-    status: documented-deviation
-    description: Upstream step.toolResults lists results in arrival order. Go
-      orders StepResult.ToolResults by the step's tool calls for every mix of
-      provider-executed, rejected, denied and executed calls, so the field is
-      deterministic across runs. UI chunks, step content and the next provider
-      request keep their existing order.
-  - id: anthropic-base-url-normalization
+    description: Malformed safeguard_results and input_transformations end the
+      Go stream at the offending event, where upstream reports the invalid chunk
+      and keeps reading. Go unit tests cover this; no golden can, because the two
+      differ by design.
+  - id: anthropic-restricted-access-recordings
     surface: provider-anthropic
     status: gap
-    description: Upstream @ai-sdk/anthropic normalizes a bare https://api.anthropic.com
-      base URL to include /v1. The Go provider currently exposes raw anthropic-sdk-go
-      request options rather than a first-class TypeScript-compatible base URL
-      setting, so this provider configuration behavior is not parity-covered.
-  - id: openai-chat-provider
-    surface: provider-openai
-    status: gap
-    description: Upstream OpenAI exposes both Chat Completions and Responses
-      language models. The Go OpenAI provider intentionally exposes only its
-      Responses adapter, so Chat-only request/output behavior (including audio
-      transcript fallback) is outside the current supported provider surface.
-  - id: openai-base-url-validation
-    surface: provider-openai
-    status: gap
-    description: Upstream @ai-sdk/openai rejects empty explicit and environment-derived
-      base URLs during provider creation. The Go provider exposes raw openai-go request
-      options through an error-free constructor, so invalid base URLs fail later when
-      a request is made rather than at construction time.
+    description: Opt-in safeguards and input transformations require provider
+      access the recorder does not have. Evidence is focused request and stream
+      tests plus synthetic cases under testdata/anthropic-stream-parts and
+      testdata/anthropic-unary. No recorded or imported fixture exercises input
+      transformations; upstream tests only their absence.
   - id: anthropic-sonnet-5-5-evidence
     surface: provider-anthropic
     status: gap
@@ -126,6 +89,64 @@ knownGaps:
       upstream does. With the JSON response tool fallback, Go sends only the
       JSON tool, where upstream also sends the caller's tools under a forced
       choice. Covered by converter and HTTP request tests.
+  - id: anthropic-vertex-native-json-output
+    surface: provider-anthropic
+    status: intentional-deviation
+    description: Vertex enables the Anthropic adapter's native JSON output
+      capability, following Google Cloud's documented output_config.format
+      support. This adapts the capability gate only; response mapping is
+      unchanged and strict tool capability remains separate. Synthetic request
+      tests cover supported models, streaming and non-streaming requests, and
+      the absence of forced tool choice and synthetic tools. Organization policy
+      must enable structured outputs; no live Vertex recording is claimed.
+  - id: astra-model-catalog
+    surface: provider-openai
+    status: gap
+    description: The GPT-6 Astra, Sol and Luna advisory catalogue and existing
+      non-reasoning sampling rules match the registered OpenAI target. Mantle
+      routing retains the documented AWS compatibility-path adaptation. Synthetic
+      tests cover routing/capabilities; no live GPT-6 recording is claimed.
+  - id: batch-language-model-surface
+    surface: provider-contract
+    status: gap
+    description: The target exposes batch through separate provider/core contracts
+      rather than the former experimental language-model batch extension. Go scopes
+      this baseline to synchronous LanguageModel generate/stream calls and does not
+      expose durable batch APIs or batch conformance coverage.
+  - id: bedrock-anthropic-invoke-surface
+    surface: provider-bedrock
+    status: gap
+    description: Upstream @ai-sdk/amazon-bedrock exposes a separate Anthropic Invoke
+      provider that translates eager_input_streaming into the fine-grained tool
+      streaming beta. The Go Bedrock provider currently implements only the Converse
+      and ConverseStream APIs, so that provider surface and behavior are not exposed.
+  - id: bedrock-cache-point-ownership
+    surface: provider-bedrock
+    status: intentional-deviation
+    description: Cache points are retained only when their source message emits
+      native content, including user/tool approval-only messages and system
+      messages with only unsupported parts. This goes beyond the registered
+      upstream's assistant cache-only suppression and prevents orphaned markers
+      from borrowing content from another source in a merged block. Tool
+      filtering happens before grouping with the prepared tool set, matching
+      upstream. Adjacent user messages left after an omitted unsigned-only
+      assistant message remain unchanged.
+  - id: bedrock-converse-premature-eof
+    surface: provider-bedrock
+    status: intentional-deviation
+    description: Go rejects clean frame-boundary EOF before messageStop with a
+      retryable APICallError and no finish or synthesized incomplete tool call.
+      The registered amazon-bedrock 5.0.105 reference emits finish with other and
+      no raw reason instead. EOF after messageStop remains valid without
+      metadata, including empty or unmapped stop reasons. Synthetic HTTP and
+      frame tests cover this transport failure; no provider recording is claimed.
+  - id: bedrock-mantle-chat-provider
+    surface: provider-bedrock
+    status: gap
+    description: Upstream @ai-sdk/amazon-bedrock/mantle exposes Chat as its callable,
+      languageModel, and chat surface, including Chat-only safeguard models. The Go
+      Mantle package currently exposes Responses only because the Go OpenAI provider
+      has no shared Chat implementation; it does not present Responses as the default.
   - id: bedrock-sonnet-5-5-reasoning-none
     surface: provider-bedrock
     status: documented-deviation
@@ -136,20 +157,39 @@ knownGaps:
       accepts it at low, medium, and high effort. Go also accepts
       reasoningConfig.type between_tools, which upstream does not, and lowers
       xhigh or max effort to high for it, as the Anthropic provider does.
-  - id: bedrock-anthropic-invoke-surface
+  - id: bedrock-tool-result-file-urls
     surface: provider-bedrock
-    status: gap
-    description: Upstream @ai-sdk/amazon-bedrock exposes a separate Anthropic Invoke
-      provider that translates eager_input_streaming into the fine-grained tool
-      streaming beta. The Go Bedrock provider currently implements only the Converse
-      and ConverseStream APIs, so that provider surface and behavior are not exposed.
-  - id: bedrock-mantle-chat-provider
-    surface: provider-bedrock
-    status: gap
-    description: Upstream @ai-sdk/amazon-bedrock/mantle exposes Chat as its callable,
-      languageModel, and chat surface, including Chat-only safeguard models. The Go
-      Mantle package currently exposes Responses only because the Go OpenAI provider
-      has no shared Chat implementation; it does not present Responses as the default.
+    status: intentional-deviation
+    description: Bedrock warns and omits unsupported tool-result file URLs
+      instead of failing the request.
+  - id: buffered-model-fallback
+    surface: core-streamtext
+    status: intentional-deviation
+    description: Go fallback optionally buffers a bounded complete provider stream
+      before selecting a candidate, with a timeout per attempt. This permits
+      cross-model recovery without exposing failed partial output. The registered
+      ai 7.0.127 core has no equivalent fallback wrapper; its generateText uses
+      doGenerate, while Go GenerateText collects StreamText. Synthetic unit,
+      GenerateText and schema-parsed frontend integration tests cover selection,
+      metadata, cancellation and resource limits, not live provider acceptance.
+  - id: concurrent-tool-emission-nondeterminism
+    surface: core-streamtext
+    status: documented-deviation
+    description: Upstream enqueues each tool result as its own tool resolves. Go
+      also emits each result as its tool completes, but concurrent mocked tools
+      need not resolve ties in the same order across runtimes, so
+      the relative order of sibling tool outputs within a step is scheduler-dependent.
+      The conformance comparator therefore treats a run of adjacent locally-executed
+      tool-output-available and tool-output-error chunks as unordered. Provider-executed
+      outputs come off the recorded wire, and outputs of calls rejected with
+      tool-input-error are emitted during the model stream, so both stay exactly ordered.
+  - id: deferred-discovery-tie-order
+    surface: core-streamtext
+    status: documented-deviation
+    description: Deferred tool discovery orders equal-score matches by tool name
+      because Go ToolSet maps have no insertion order; upstream ties preserve
+      object insertion order. Context-dependent descriptions use the shared Go
+      runtime context, not upstream's per-tool context or sandbox-session surface.
   - id: embedding-and-evaluation-model-surfaces
     surface: provider-contract
     status: gap
@@ -158,13 +198,22 @@ knownGaps:
       and evaluation lifecycle hooks. The Go port currently scopes provider parity
       to LanguageModel calls and does not expose these model families or their
       conformance coverage.
-  - id: transcription-model-surface
-    surface: provider-contract
-    status: gap
-    description: Upstream provider v4 includes transcription models, including
-      experimental streaming transcription in the current registered baseline. The
-      Go port currently scopes provider parity to LanguageModel surfaces and does
-      not expose transcription model APIs or conformance coverage.
+  - id: foundry-anthropic-provider
+    surface: provider-azure
+    status: intentional-deviation
+    description: The registered @ai-sdk/anthropic has no Foundry constructor.
+      This Go extension follows the native Foundry contract and composes the
+      shared Anthropic adapter. It keeps canonical model IDs for capability
+      selection and response identity while transmitting Azure deployment names,
+      preempts ambient authentication and supports per-attempt API-key rotation.
+      Hosting-specific capability restrictions, approved deployments and
+      residency policy belong to consumers. No live Foundry recording is claimed.
+  - id: generate-text-collects-stream
+    surface: core-streamtext
+    status: documented-deviation
+    description: GenerateText and Agent.Generate collect StreamText, while
+      upstream generateText calls doGenerate. Provider DoGenerate tests therefore
+      do not prove the high-level generation paths.
   - id: image-model-surface
     surface: provider-contract
     status: gap
@@ -172,14 +221,58 @@ knownGaps:
       model APIs and provider-specific image options. The Go port currently scopes
       provider parity to LanguageModel surfaces and does not expose image model APIs
       or conformance coverage.
-  - id: video-model-surface
-    surface: provider-contract
+  - id: local-approval-batching
+    surface: core-streamtext
+    status: intentional-deviation
+    description: Go batches local approval handling after provider streaming,
+      while upstream resolves streaming approvals before completed-response
+      validation. Completed tool-choice violations therefore bypass new local
+      approvals and execution; already streamed provider events and prior-message
+      approvals keep their existing handling.
+  - id: mantle-luna-reasoning-summary
+    surface: provider-openai
+    status: intentional-deviation
+    description: Mantle Luna 6 defaults to omitting reasoning summaries while
+      preserving effort and explicit per-call summary overrides. Direct OpenAI
+      retains the registered upstream default; explicit null omits the summary
+      on both endpoints. Automatic adaptation remains Luna-only. Synthetic HTTP
+      tests cover unary and streaming requests; no live SDK Mantle conformance
+      recording is claimed.
+  - id: openai-apply-patch-aliases
+    surface: provider-openai
+    status: documented-deviation
+    description: The OpenAI provider resolves configured apply-patch tool aliases.
+  - id: openai-base-url-validation
+    surface: provider-openai
     status: gap
-    description: Upstream provider v4 and ai expose video model APIs, including
-      asynchronous start/status operations, polling, and webhook completion in the
-      current registered baseline. The Go port currently scopes provider parity to
-      LanguageModel surfaces and does not expose video model APIs or conformance
-      coverage.
+    description: Upstream @ai-sdk/openai rejects empty explicit and environment-derived
+      base URLs during provider creation. The Go provider exposes raw openai-go request
+      options through an error-free constructor, so invalid base URLs fail later when
+      a request is made rather than at construction time.
+  - id: openai-chat-provider
+    surface: provider-openai
+    status: gap
+    description: Upstream OpenAI exposes both Chat Completions and Responses
+      language models. The Go OpenAI provider intentionally exposes only its
+      Responses adapter, so Chat-only request/output behavior (including audio
+      transcript fallback) is outside the current supported provider surface.
+  - id: openai-incomplete-stream
+    surface: provider-openai
+    status: intentional-deviation
+    description: Legacy nested-error envelopes terminate stream consumption. A
+      plain EOF without a terminal or error event does not synthesize a provider
+      finish, preserving Go's incomplete-stream distinction; complete upstream
+      EOF parity is not claimed.
+  - id: sdk-final-outbound-request-body
+    surface: provider-contract
+    status: documented-deviation
+    description: SDK-backed providers return the final outbound JSON after SDK
+      transformations rather than upstream's sometimes-logical pre-transform
+      request body. Non-JSON outbound bodies omit JSON request metadata.
+      Anthropic preserves SDK event-name filtering even for malformed ignored
+      payloads. Both adapters limit stream startup to 64 data frames and 1 MiB
+      before handoff; overflow fails setup without truncating evidence or
+      enabling retries.
   - id: speech-translation-model-surface
     surface: provider-contract
     status: gap
@@ -188,10 +281,51 @@ knownGaps:
       exposes a realtime translation model. The Go port currently scopes provider
       parity to LanguageModel surfaces and does not expose speech translation models,
       stream orchestration, realtime translation transport, or conformance coverage.
-  - id: batch-language-model-surface
+  - id: step-tool-results-call-order
+    surface: core-streamtext
+    status: documented-deviation
+    description: Upstream step.toolResults lists results in arrival order. Go
+      orders StepResult.ToolResults by the step's tool calls for every mix of
+      provider-executed, rejected, denied and executed calls, so the field is
+      deterministic across runs. UI chunks, step content and the next provider
+      request keep their existing order.
+  - id: transcription-model-surface
     surface: provider-contract
     status: gap
-    description: The target exposes batch through separate provider/core contracts
-      rather than the former experimental language-model batch extension. Go scopes
-      this baseline to synchronous LanguageModel generate/stream calls and does not
-      expose durable batch APIs or batch conformance coverage.
+    description: Upstream provider v4 includes transcription models, including
+      experimental streaming transcription in the current registered baseline. The
+      Go port currently scopes provider parity to LanguageModel surfaces and does
+      not expose transcription model APIs or conformance coverage.
+  - id: typed-provider-tool-decoding
+    surface: provider-contract
+    status: intentional-deviation
+    description: Typed Go decoding of provider-tool calls and results rejects
+      unrepresentable consumed field types rather than duplicating upstream's
+      untyped response passthrough. Unrelated variant fields are ignored, and
+      optional null flags normalize to Go absence or zero.
+  - id: ui-optional-presence
+    surface: core-ui
+    status: documented-deviation
+    description: Persisted provider-executed and automatic tool scalars and
+      signatures omit false or empty values, as do optional scalar zero values in
+      directly constructed chunks. Decoded chunks retain selected empty and false
+      values, and false clears a prior true. Static tool JSON includes a redundant
+      toolName. Provider projections may omit empty options and optional approval
+      reasons, signatures and false flags, but never required denied or text
+      content or presence-based metadata selection. Optional empty Go strings
+      normalize absence where the domain API cannot distinguish it.
+  - id: ui-stream-defaults
+    surface: core-streamtext
+    status: documented-deviation
+    description: ToUIMessageStream supplies a default ID generator when given
+      original messages and skips an unused generation on continuation. Timeout
+      warnings are returned on successful results rather than logged globally
+      before invocation.
+  - id: video-model-surface
+    surface: provider-contract
+    status: gap
+    description: Upstream provider v4 and ai expose video model APIs, including
+      asynchronous start/status operations, polling, and webhook completion in the
+      current registered baseline. The Go port currently scopes provider parity to
+      LanguageModel surfaces and does not expose video model APIs or conformance
+      coverage.

@@ -399,4 +399,5 @@ The Agent proposal implementation SHALL document upstream `ai@7.0.19` Agent sett
 
 #### Scenario: Parity coverage records Agent surface
 - **WHEN** the Agent API and Agent UI helper are implemented
-- **THEN** `test/conformance/PARITY.md` SHALL classify the new core orchestration and frontend interop surfaces, their verification strategy, provider call-header gaps, Agent UI validation gaps, and unsupported upstream-only fields
+- **THEN** `test/conformance/PARITY.md` SHALL list the Agent surface with its layer, status and evidence location
+- **AND** Agent UI validation gaps and other accepted deviations SHALL be recorded in `test/conformance/upstream.yaml` `knownGaps`
