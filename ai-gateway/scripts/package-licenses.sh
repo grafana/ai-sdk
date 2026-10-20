@@ -18,8 +18,7 @@ fail() { echo "$*" >&2; exit 1; }
 rm -rf "$licenses"
 mkdir -p "$licenses/grafana-ai-gateway" "$licenses/grafana-ai-sdk"
 cp "$gateway/LICENSE" "$gateway/NOTICE" "$licenses/grafana-ai-gateway/"
-cp "$repo_root/LICENSE" "$licenses/grafana-ai-sdk/"
-[[ ! -f "$repo_root/NOTICE" ]] || cp "$repo_root/NOTICE" "$licenses/grafana-ai-sdk/"
+cp "$repo_root/LICENSE" "$repo_root/NOTICE" "$licenses/grafana-ai-sdk/"
 if [[ "$revision" == local-unverified ]]; then
   printf 'local-unverified: development build from an unverified working tree\n' >"$dist/SOURCE_REVISION"
 else

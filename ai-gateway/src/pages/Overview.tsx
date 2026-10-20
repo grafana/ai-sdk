@@ -4,7 +4,6 @@ import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
 import { Stack, Tab, TabContent, TabsBar, Text, TextLink, useStyles2 } from '@grafana/ui';
 import { CodeSnippet } from '../components/CodeSnippet/CodeSnippet';
-import { testIds } from '../components/testIds';
 import { API_GROUP, API_VERSION } from '../constants';
 
 const REPOSITORY_URL = 'https://github.com/grafana/ai-sdk';
@@ -123,7 +122,7 @@ function Overview() {
 
   return (
     <PluginPage subTitle="Call language models from Go and TypeScript through Grafana.">
-      <div className={s.page} data-testid={testIds.overview.container}>
+      <div className={s.page}>
         <Stack direction="column" gap={4}>
           <Stack direction="column" gap={1}>
             <Text element="p">
@@ -145,9 +144,7 @@ function Overview() {
             <Text element="p" color="secondary">
               Point a client at this Grafana stack&apos;s Gateway routes:
             </Text>
-            <div data-testid={testIds.overview.endpoint}>
-              <CodeSnippet code={endpoint} />
-            </div>
+            <CodeSnippet code={endpoint} />
           </Stack>
 
           <Stack direction="column" gap={1}>

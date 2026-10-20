@@ -1,6 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { testIds } from '../components/testIds';
+import { fireEvent, render, screen } from '@testing-library/react';
 import Overview, { gatewayEndpoint } from './Overview';
 
 const ENDPOINT = 'https://grafana.example/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123';
@@ -30,7 +29,7 @@ describe('pages/Overview', () => {
   test('shows this stack endpoint', () => {
     render(<Overview />);
 
-    expect(within(screen.getByTestId(testIds.overview.endpoint)).getByText(ENDPOINT)).toBeInTheDocument();
+    expect(screen.getByText(ENDPOINT)).toBeInTheDocument();
   });
 
   test('switches the quick start between TypeScript and Go with the stack endpoint', () => {
