@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/internal/streamusage"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
@@ -70,6 +71,7 @@ func (l *modelLogger) runStreamTee(ctx context.Context, input streamTeeInput) {
 
 	summary := streamSummary{}
 	cancelled := false
+	observing := true
 
 streamLoop:
 	for {
@@ -84,10 +86,8 @@ streamLoop:
 				cancelled = ctx.Err() != nil
 				break streamLoop
 			}
-			observedAt := l.opts.clock()
-			summary.Observe(part, input.started, observedAt)
-			if l.opts.logStreamParts {
-				l.logStreamPart(ctx, input.callID, input.model, part, summary.total)
+			if observing {
+				observing = l.observeStreamPart(ctx, input, &summary, part)
 			}
 
 			select {
@@ -103,7 +103,22 @@ streamLoop:
 			break streamLoop
 		}
 	}
+	l.logStreamEnd(ctx, input, &summary, cancelled)
+}
 
+// observeStreamPart reports false when observation panicked; the caller then
+// stops observing and keeps forwarding.
+func (l *modelLogger) observeStreamPart(ctx context.Context, input streamTeeInput, summary *streamSummary, part provider.StreamPart) (ok bool) {
+	defer streamrecover.Recover(func() { ok = false })
+	summary.Observe(part, input.started, l.opts.clock())
+	if l.opts.logStreamParts {
+		l.logStreamPart(ctx, input.callID, input.model, part, summary.total)
+	}
+	return true
+}
+
+func (l *modelLogger) logStreamEnd(ctx context.Context, input streamTeeInput, summary *streamSummary, cancelled bool) {
+	defer streamrecover.Recover(func() {})
 	duration := l.opts.clock().Sub(input.started)
 	outcome := outcomeSuccess
 	if summary.firstErrSet {
