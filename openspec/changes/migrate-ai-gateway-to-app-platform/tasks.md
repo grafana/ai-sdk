@@ -157,7 +157,7 @@
   - sentinel credentials absent from bodies, provider requests and server sinks.
 
   Update the configured-discovery fixtures' header values. Verify that `mise run test-ai-gateway-command` and `mise run test-providerwire-v4` pass.
-- [x] 6.3 Update the Gateway rows in `test/conformance/PARITY.md`: host composition, request-only accounts, execution overviews, runtime and Go client, and provider metadata. Replace command, dummy-edge, static-key and image evidence with test host evidence, the Vercel internal-caller gap and the documented platform boundaries. Verify that `mise run validate-parity-baseline` passes.
+- [x] 6.3 Keep the compact `test/conformance/PARITY.md` AI Gateway row, which points to the Gateway specs. Record the test host evidence boundaries in the owning specs: test-signed tokens are not production authorization, pinned Vercel internal-caller access is unverified (`grafana-gateway-client`), and platform-produced errors, route deadlines and host draining are outside the test host (`gateway-plugin-host`). Verify that `mise run validate-parity-baseline` passes.
 
 ## 7. Packaging, CI and release
 

@@ -101,7 +101,7 @@ Draining in-flight requests SHALL belong to the host; the Gateway SHALL NOT depe
 - **THEN** it SHALL state that the host's termination grace period must exceed the configured maximum model duration plus drain time, and that host tracer shutdown shares the final-flush window
 
 ### Requirement: Protocol test host
-Deterministic tests SHALL serve the Gateway through the real plugin route protocol, from HTTP through the plugin route RPC and route adapter to the Gateway handlers, with test-signed delegated tokens and fake native providers. Cross-language suites SHALL launch the built plugin executable as a plugin host does. The test host SHALL be test-only and SHALL NOT be built, packaged or documented as a supported server.
+Deterministic tests SHALL serve the Gateway through the real plugin route protocol, from HTTP through the plugin route RPC and route adapter to the Gateway handlers, with test-signed delegated tokens and fake native providers. Cross-language suites SHALL launch the built plugin executable as a plugin host does. The test host SHALL be test-only and SHALL NOT be built, packaged or documented as a supported server, or as evidence of the platform's route deadline or host draining.
 
 #### Scenario: Test host exercises the protocol hop
 - **WHEN** a client test sends a request to the test host
