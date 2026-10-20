@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/responses"
 )
@@ -12,6 +13,7 @@ func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffere
 	parts := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(parts)
+		defer streamrecover.Recover(func() { parts <- streamrecover.Part() })
 		consumeStreamParts(items, buffered, parts, warnings, br, requestBody, response, generateID, providerName)
 	}()
 
