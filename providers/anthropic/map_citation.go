@@ -8,6 +8,13 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
+type citationLocationType string
+
+const (
+	citationWebSearchResultLocation citationLocationType = "web_search_result_location"
+	citationSearchResultLocation    citationLocationType = "search_result_location"
+)
+
 func mapCitations(citations []json.RawMessage, documents []citationDocument) ([]provider.Citation, error) {
 	if len(citations) == 0 {
 		return nil, nil
@@ -15,22 +22,22 @@ func mapCitations(citations []json.RawMessage, documents []citationDocument) ([]
 	result := make([]provider.Citation, 0, len(citations))
 	for _, raw := range citations {
 		var citation struct {
-			Type          string  `json:"type"`
-			URL           string  `json:"url"`
-			Source        string  `json:"source"`
-			Title         string  `json:"title"`
-			CitedText     *string `json:"cited_text"`
-			DocumentIndex int     `json:"document_index"`
-			DocumentTitle *string `json:"document_title"`
-			FileID        *string `json:"file_id"`
+			Type          citationLocationType `json:"type"`
+			URL           string               `json:"url"`
+			Source        string               `json:"source"`
+			Title         string               `json:"title"`
+			CitedText     *string              `json:"cited_text"`
+			DocumentIndex int                  `json:"document_index"`
+			DocumentTitle *string              `json:"document_title"`
+			FileID        *string              `json:"file_id"`
 		}
 		if err := json.Unmarshal(raw, &citation); err != nil {
 			return nil, fmt.Errorf("decoding citation: %w", err)
 		}
 		source := provider.SourceInfo{ProviderMetadata: provider.ProviderMetadata{"anthropic": raw}}
-		if citation.Type == "web_search_result_location" || citation.Type == "search_result_location" {
+		if citation.Type == citationWebSearchResultLocation || citation.Type == citationSearchResultLocation {
 			url := citation.URL
-			if citation.Type == "search_result_location" {
+			if citation.Type == citationSearchResultLocation {
 				url = citation.Source
 			}
 			source.SourceType = provider.SourceTypeURL

@@ -159,7 +159,7 @@ func createCitationSource(citation any, docs []citationDocument, generateID func
 		}
 		doc := docs[c.DocumentIndex]
 		title := doc.title
-		if c.DocumentTitle != "" {
+		if c.DocumentTitle != "" || c.JSON.DocumentTitle.Valid() {
 			title = c.DocumentTitle
 		}
 		metaJSON, err := json.Marshal(map[string]any{
@@ -187,7 +187,7 @@ func createCitationSource(citation any, docs []citationDocument, generateID func
 		}
 		doc := docs[c.DocumentIndex]
 		title := doc.title
-		if c.DocumentTitle != "" {
+		if c.DocumentTitle != "" || c.JSON.DocumentTitle.Valid() {
 			title = c.DocumentTitle
 		}
 		metaJSON, err := json.Marshal(map[string]any{

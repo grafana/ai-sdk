@@ -1274,7 +1274,7 @@ func TestStreamAdapter_CitationsDelta(t *testing.T) {
 		require.NotNil(t, src)
 		assert.Equal(t, provider.SourceTypeDocument, src.SourceType)
 		assert.Equal(t, "application/pdf", src.MediaType)
-		assert.Equal(t, "Report", src.Title)
+		assert.Empty(t, src.Title)
 		assert.Equal(t, "report.pdf", src.Filename)
 
 		var meta map[string]any

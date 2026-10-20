@@ -4281,7 +4281,8 @@ ${fallback ? "    fallback:\n      - provider: openai\n        model: backend-pr
               const nextMessages=await second.responseMessages;
               const mcpResults=nextMessages.flatMap<any>(message=>Array.isArray(message.content)?message.content:[]).filter((part:any)=>part.type==="tool-result"&&part.toolName==="mcp.lookup");
               const results=mcpResults.filter((part:any)=>part.output.type!=="execution-denied");
-              assert.equal(mcpResults.filter((part:any)=>part.output.type==="execution-denied").length,decisions.slice(0,2).filter(value=>!value).length);
+              const expectedDenied=path.endsWith("generate")?decisions.slice(0,2).filter(value=>!value).length:0;
+              assert.equal(mcpResults.filter((part:any)=>part.output.type==="execution-denied").length,expectedDenied,path);
               assert.equal(results.length,decisions.slice(0,2).filter(Boolean).length);
               for(const result of results)assert.ok(calls.some((call:any)=>call.toolCallId===result.toolCallId));
               const third={...resumed,messages:[...resumed.messages,...nextMessages,{role:"user" as const,content:"third-turn"}]};

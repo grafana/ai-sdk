@@ -81,6 +81,9 @@ func validateAgentUIPart(part Part, tools ToolSet) (Part, error) {
 		}
 		return DynamicToolUIPart(fields), nil
 	case TextPart:
+		if err := validateCitations(p.Citations); err != nil {
+			return nil, err
+		}
 		if err := validateUIContentState(p.State); err != nil {
 			return nil, err
 		}

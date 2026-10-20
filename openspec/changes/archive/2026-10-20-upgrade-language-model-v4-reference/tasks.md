@@ -16,9 +16,9 @@
 
 ## 3. Merge-candidate verification
 
-- [ ] 3.1 Review and refresh the Gateway witness and verification date, then pass aggregate parity checks and byte-stable regeneration including independent UI generators.
-- [ ] 3.2 Pass build/test/vet/lint, frontend/command integration, module ancestry/license boundaries and relevant race checks; report standalone published-module evidence separately.
-- [ ] 3.3 Review upstream-to-Go completeness and Go-to-requirement scope; retain concise verification and resolve all required implementation findings before archival.
+- [x] 3.1 Review and refresh the Gateway witness and verification date, then pass aggregate parity checks and byte-stable regeneration including independent UI generators.
+- [x] 3.2 Pass build/test/vet/lint, frontend/command integration, module ancestry/license boundaries and relevant race checks; report standalone published-module evidence separately.
+- [x] 3.3 Review upstream-to-Go completeness and Go-to-requirement scope; retain concise verification and resolve all required implementation findings before archival.
 
 ## Workflow follow-up
 

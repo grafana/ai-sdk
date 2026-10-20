@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { readUIMessageStream, simulateReadableStream, type UIMessage } from "ai";
+import { readUIMessageStream, simulateReadableStream, validateUIMessages, type UIMessage } from "ai";
 import { fetchScenario } from "./helpers.js";
 import { canonicalUI, json, readToolStateStream } from "./ui-tool-state-helpers.js";
 
 describe("citations and text-encoded tool input", () => {
+  it.each([
+    { source: { type: "source", sourceType: "url", id: "u", url: "url" }, startIndex: -1 },
+    { source: { type: "source", sourceType: "other", id: "u" } },
+    { source: { type: "source", sourceType: "url", id: "u", url: "url", providerMetadata: { test: null } } },
+  ])("rejects malformed citations before Agent invocation: %j", async citation => {
+    const message = { id: "m", role: "assistant", parts: [{ type: "text", text: "answer", citations: [citation] }] };
+    await expect(validateUIMessages({ messages: [message] })).rejects.toThrow();
+    const response = await fetchScenario("ui-tool-state-agent", { headers: { "content-type": "application/json" }, body: JSON.stringify({ messages: [message] }) });
+    expect(response.status).toBe(400);
+    expect((await response.json()).providerCalls).toBe(0);
+  });
   it("preserves citations, raw partial text and persisted resume across Go and the pinned frontend", async () => {
     const { chunks, snapshots } = await readToolStateStream(await fetchScenario("citations-text-input"));
     const end = chunks.find(chunk => chunk.type === "text-end");
