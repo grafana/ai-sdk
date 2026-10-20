@@ -139,6 +139,7 @@ export const reasoningValues = {
   medium: true,
   high: true,
   xhigh: true,
+  max: true,
 } as const satisfies Witness<NonNullable<LanguageModelV4CallOptions["reasoning"]>>;
 
 export const generatedContentTypes = {

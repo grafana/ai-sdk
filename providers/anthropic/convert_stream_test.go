@@ -148,7 +148,7 @@ func TestStreamAdapter_FinishLifecycle(t *testing.T) {
 			name:       "several deltas produce one finish after the stop",
 			events:     []string{start("msg_1", "null", ""), delta("null", 1), delta(endTurn, 3), delta(endTurn, 5), stop},
 			wantFinish: []finishSummary{{provider.FinishReasonStop, "end_turn", 5}},
-			wantOrder:  []provider.StreamPartType{provider.PartResponseMeta, provider.PartFinish},
+			wantOrder:  []provider.StreamPartType{provider.PartResponseMeta, provider.PartCustom, provider.PartFinish},
 		},
 		{
 			name:       "message without a delta still finishes",
@@ -321,8 +321,8 @@ func TestStreamAdapter_FallbackProviderMetadata(t *testing.T) {
 	}
 
 	parts := collectParts(events)
-	require.Len(t, parts, 2)
-	finish := parts[1]
+	require.Len(t, parts, 3)
+	finish := parts[2]
 	assert.Equal(t, provider.PartFinish, finish.Type)
 	require.NotNil(t, finish.ProviderMetadata)
 	var metadata map[string]any
@@ -438,7 +438,10 @@ func TestStreamAdapter_MessageEvents(t *testing.T) {
 
 		parts := collectParts(events)
 
-		require.Len(t, parts, 1)
+		require.Len(t, parts, 2)
+		assert.Equal(t, provider.PartCustom, parts[1].Type)
+		assert.Equal(t, "anthropic.message_start", parts[1].Kind)
+		assert.JSONEq(t, `{"id":"msg_123","model":"claude-sonnet-4-6","usage":{"input_tokens":10,"output_tokens":0}}`, string(parts[1].ProviderMetadata["anthropic"]))
 		assert.Equal(t, provider.PartResponseMeta, parts[0].Type)
 		assert.Equal(t, "msg_123", parts[0].ResponseID)
 		assert.Equal(t, "claude-sonnet-4-6", parts[0].ModelID)
@@ -498,7 +501,7 @@ func TestStreamAdapter_MessageEvents(t *testing.T) {
 		}
 
 		parts := collectParts(events)
-		require.Len(t, parts, 1)
+		require.Len(t, parts, 2)
 		assert.Equal(t, provider.PartResponseMeta, parts[0].Type)
 	})
 
@@ -524,7 +527,7 @@ func TestStreamAdapter_MessageEvents(t *testing.T) {
 		for part := range ch {
 			parts = append(parts, part)
 		}
-		require.Len(t, parts, 1)
+		require.Len(t, parts, 2)
 		assert.Equal(t, "msg_1", parts[0].ResponseID)
 	})
 }
@@ -537,7 +540,7 @@ func TestStreamAdapter_CacheMetrics(t *testing.T) {
 
 		parts := collectParts(events)
 
-		require.Len(t, parts, 1)
+		require.Len(t, parts, 2)
 		require.NotNil(t, parts[0].Usage)
 		require.NotNil(t, parts[0].Usage.InputTokens.Total)
 		assert.Equal(t, 180, *parts[0].Usage.InputTokens.Total)
@@ -1234,23 +1237,26 @@ func TestStreamAdapter_CitationsDelta(t *testing.T) {
 			textBlockStart,
 			unmarshalEvent(t, `{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":{"type":"web_search_result_location","url":"https://example.com","title":"Example","cited_text":"some text","encrypted_index":"enc123"}}}`),
 			unmarshalEvent(t, `{"type":"content_block_stop","index":0}`),
+			unmarshalEvent(t, `{"type":"message_stop"}`),
 		}
 		parts := collectPartsWithOpts(events, toolNameMapping{}, nil, seqIDGenerator())
-		require.Len(t, parts, 3)
-		assert.Equal(t, provider.PartSource, parts[1].Type)
-		require.NotNil(t, parts[1].Source)
-		assert.Equal(t, provider.SourceTypeURL, parts[1].Source.SourceType)
-		assert.Equal(t, "https://example.com", parts[1].Source.URL)
-		assert.Equal(t, "Example", parts[1].Source.Title)
-		assert.NotEmpty(t, parts[1].Source.ID)
+		require.Len(t, parts, 4)
+		assert.Equal(t, provider.PartSource, parts[2].Type)
+		require.NotNil(t, parts[2].Source)
+		assert.Equal(t, provider.SourceTypeURL, parts[2].Source.SourceType)
+		assert.Equal(t, "https://example.com", parts[2].Source.URL)
+		assert.Equal(t, "Example", parts[2].Source.Title)
+		assert.NotEmpty(t, parts[2].Source.ID)
 
 		var meta map[string]any
-		require.NoError(t, json.Unmarshal(parts[1].Source.ProviderMetadata["anthropic"], &meta))
+		require.NoError(t, json.Unmarshal(parts[2].Source.ProviderMetadata["anthropic"], &meta))
 		assert.Equal(t, "some text", meta["citedText"])
 		assert.Equal(t, "enc123", meta["encryptedIndex"])
 
-		assert.Equal(t, provider.PartTextEnd, parts[2].Type)
-		assert.JSONEq(t, `{"citations":[{"type":"web_search_result_location","url":"https://example.com","title":"Example","cited_text":"some text","encrypted_index":"enc123"}]}`, string(parts[2].ProviderMetadata["anthropic"]))
+		require.Len(t, parts[1].Citations, 1)
+		assert.Equal(t, "https://example.com", parts[1].Citations[0].Source.ID)
+		assert.Equal(t, provider.PartTextEnd, parts[1].Type)
+		assert.JSONEq(t, `{"citations":[{"type":"web_search_result_location","url":"https://example.com","title":"Example","cited_text":"some text","encrypted_index":"enc123"}]}`, string(parts[1].ProviderMetadata["anthropic"]))
 	})
 
 	t.Run("page location with tracked document", func(t *testing.T) {

@@ -53,6 +53,7 @@ const (
 
 // TextPart carries text content in a UIMessage.
 type TextPart struct {
+	Citations        []provider.Citation       `json:"citations,omitzero"`
 	Text             string                    `json:"text"`
 	State            string                    `json:"state,omitempty"`
 	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
@@ -111,6 +112,8 @@ const (
 // legacy output-error input separately from Input. Other opaque JSON fields
 // preserve JSON null, while nil means absent.
 type ToolInvocationPart struct {
+	toolUnavailable        bool
+	InputEncoding          provider.ToolInputEncoding `json:"inputEncoding,omitempty"`
 	ToolCallID             string                     `json:"toolCallId"`
 	ToolName               string                     `json:"toolName"`
 	State                  ToolInvocationState        `json:"state"`
@@ -134,6 +137,8 @@ func (p ToolInvocationPart) PartType() string { return "tool-" + p.ToolName }
 // Same shape and field-presence contracts as [ToolInvocationPart], but with
 // type "dynamic-tool" on the wire.
 type DynamicToolUIPart struct {
+	toolUnavailable        bool
+	InputEncoding          provider.ToolInputEncoding `json:"inputEncoding,omitempty"`
 	ToolCallID             string                     `json:"toolCallId"`
 	ToolName               string                     `json:"toolName"`
 	State                  ToolInvocationState        `json:"state"`

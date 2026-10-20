@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_first","model":"claude-3-haiku-20240307","usage":{"input_tokens":17,"output_tokens":1}}}}
 {"type":"reasoning-start","id":"0"}
 {"type":"reasoning-delta","id":"0","delta":"I will call the tool."}
 {"type":"reasoning-delta","id":"0","delta":"","providerMetadata":{"anthropic":{"signature":"sig-first"}}}

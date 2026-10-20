@@ -119,7 +119,9 @@ func TestValidateAgentUIMessages_NormalizedClone(t *testing.T) {
 	require.NoError(t, err)
 	got, ok := normalized[0].Parts[0].(DynamicToolUIPart)
 	require.True(t, ok)
-	assert.Equal(t, toolPartFields(part), toolPartFields(got))
+	expected := toolPartFields(part)
+	expected.toolUnavailable = true
+	assert.Equal(t, expected, toolPartFields(got))
 	*got.Title = "changed"
 	*got.ErrorText = "changed"
 	got.RawInput[0] = 'x'

@@ -249,7 +249,7 @@ export const validRequests: SchemaCase[] = [
     name: "named tool choice",
     value: withValue((value) => (value.toolChoice = { type: "tool", toolName: "lookup" })),
   },
-  ...["none", "minimal", "low", "medium", "high", "xhigh"].map((reasoning) => ({
+  ...["none", "minimal", "low", "medium", "high", "xhigh", "max"].map((reasoning) => ({
     name: `${reasoning} reasoning`,
     value: withValue((value) => (value.reasoning = reasoning)),
   })),

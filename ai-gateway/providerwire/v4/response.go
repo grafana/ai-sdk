@@ -21,9 +21,10 @@ const (
 var errInvalidUnarySuccess = errors.New("providerwire v4: invalid unary success")
 
 type unaryTextPart struct {
-	Type     provider.GenerateContentType `json:"type"`
-	Text     string                       `json:"text"`
-	Metadata provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
+	Citations []provider.Citation          `json:"citations,omitzero"`
+	Type      provider.GenerateContentType `json:"type"`
+	Text      string                       `json:"text"`
+	Metadata  provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
 }
 
 type unaryCustomPart struct {
@@ -149,7 +150,7 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 			if !utf8.ValidString(part.Text) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			mapped.Content = append(mapped.Content, unaryTextPart{Type: provider.ContentText, Text: part.Text, Metadata: part.ProviderMetadata})
+			mapped.Content = append(mapped.Content, unaryTextPart{Type: provider.ContentText, Text: part.Text, Citations: part.Citations, Metadata: part.ProviderMetadata})
 		case provider.ContentCustom:
 			if !validCustomKind(part.Kind) {
 				return unarySuccess{}, errInvalidUnarySuccess
@@ -265,6 +266,9 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 		}
 	}
 	for _, part := range result.Content {
+		if part.Type == provider.ContentText && !citationsPreflight(part.Citations, &remaining) {
+			return false
+		}
 		if part.Type == provider.ContentFile {
 			if !reasoningFileFits(unaryReasoningFile(part.Data), part.MediaType, &remaining) {
 				return false

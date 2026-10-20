@@ -1,6 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-start","toolCallId":"call_custom_sql_001","toolName":"write_sql"}
+{"type":"tool-input-start","toolCallId":"call_custom_sql_001","toolName":"write_sql","inputEncoding":"text"}
 {"type":"tool-input-delta","toolCallId":"call_custom_sql_001","inputTextDelta":"SELECT * "}
 {"type":"tool-input-delta","toolCallId":"call_custom_sql_001","inputTextDelta":"FROM users "}
 {"type":"tool-input-delta","toolCallId":"call_custom_sql_001","inputTextDelta":"WHERE age > 25"}

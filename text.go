@@ -25,6 +25,7 @@ type ContentPart interface {
 
 // TextContent represents generated text content.
 type TextContent struct {
+	Citations        []provider.Citation       `json:"citations,omitzero"`
 	Text             string                    `json:"text"`
 	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 }
@@ -165,6 +166,7 @@ type StepResult struct {
 	Reasoning             []ReasoningOutput `json:"reasoning,omitempty"`
 	Content               []ContentPart     `json:"-"`
 	responseContent       []provider.ContentPart
+	responseCitations     map[int][]provider.Citation
 	ToolCalls             []ToolCall                `json:"toolCalls,omitempty"`
 	ToolApprovalRequests  []ToolApprovalRequest     `json:"toolApprovalRequests,omitempty"`
 	ToolApprovalResponses []ToolApprovalResponse    `json:"toolApprovalResponses,omitempty"`

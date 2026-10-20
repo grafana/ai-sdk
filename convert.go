@@ -464,6 +464,9 @@ func stringValue(value *string) string {
 }
 
 func createToolModelOutput(tp toolPartFields, tools ToolSet) (*provider.ToolResultOutput, error) {
+	if _, exists := tools[tp.ToolName]; !exists && tp.toolUnavailable {
+		return &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "Tool output omitted because the tool is no longer available."}, nil
+	}
 	if tool, ok := tools[tp.ToolName]; ok && tool.ToModelOutput != nil {
 		output, err := tool.ToModelOutput(ToolOutputContext{
 			ToolCallID: tp.ToolCallID,

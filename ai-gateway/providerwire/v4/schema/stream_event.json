@@ -25,6 +25,38 @@
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
+    "citation": {
+      "type": "object",
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/urlSource"
+            },
+            {
+              "$ref": "#/$defs/documentSource"
+            }
+          ]
+        },
+        "startIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "endIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "citedText": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "toolApprovalRequest": {
       "type": "object",
       "required": ["type", "approvalId", "toolCallId"],
@@ -139,7 +171,7 @@
     },
     "toolInputStart": {
       "type": "object", "required": ["type", "id", "toolName"],
-      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "providerExecuted": {"type": "boolean"}, "dynamic": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
+      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "inputEncoding": {"enum": ["json", "text"]}, "providerExecuted": {"type": "boolean"}, "dynamic": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "toolInputDelta": {
@@ -212,6 +244,7 @@
       "required": ["type", "id"],
       "properties": {
         "type": { "const": "text-end" },
+        "citations": { "type": "array", "items": { "$ref": "#/$defs/citation" } },
         "providerMetadata": { "$ref": "#/$defs/providerMetadata" },
         "id": { "type": "string", "minLength": 1 }
       },

@@ -53,11 +53,12 @@ func buildUIMessageReaderConfig(opts []UIMessageReaderOption) uiMessageReaderCon
 }
 
 type partialToolCallState struct {
-	text         string
-	toolName     string
-	dynamic      bool
-	title        *string
-	toolMetadata json.RawMessage
+	inputEncoding provider.ToolInputEncoding
+	text          string
+	toolName      string
+	dynamic       bool
+	title         *string
+	toolMetadata  json.RawMessage
 }
 
 type uiMessageReaderState struct {
@@ -123,7 +124,7 @@ func newUIMessageReaderState(cfg uiMessageReaderConfig) (*uiMessageReaderState, 
 					toolMetadata = nil
 				}
 				state.partialToolCalls[fields.ToolCallID] = &partialToolCallState{
-					text: raw, toolName: fields.ToolName, dynamic: dynamic,
+					text: raw, toolName: fields.ToolName, dynamic: dynamic, inputEncoding: fields.InputEncoding,
 					title: fields.Title, toolMetadata: toolMetadata,
 				}
 			}
@@ -223,6 +224,9 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 		}
 		part := s.message.Parts[idx].(TextPart)
 		part.State = "done"
+		if chunk.Citations != nil {
+			part.Citations = cloneCitations(chunk.Citations)
+		}
 		if chunk.ProviderMetadata != nil {
 			part.ProviderMetadata = cloneProviderMetadata(chunk.ProviderMetadata)
 		}
@@ -302,7 +306,7 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 	case ChunkToolInputStart:
 		dynamic := chunk.Dynamic != nil && *chunk.Dynamic
 		s.partialToolCalls[chunk.ToolCallID] = &partialToolCallState{
-			toolName: chunk.ToolName, dynamic: dynamic,
+			toolName: chunk.ToolName, dynamic: dynamic, inputEncoding: chunk.InputEncoding,
 			title: chunkToolTitle(chunk), toolMetadata: cloneRawMessage(chunk.ToolMetadata),
 		}
 		chunk.Input = nil
@@ -314,7 +318,15 @@ func (s *uiMessageReaderState) apply(chunk UIMessageChunk) (bool, error) {
 			return false, fmt.Errorf("aisdk: received tool-input-delta for missing tool call %q", chunk.ToolCallID)
 		}
 		partial.text += chunk.InputTextDelta
-		next := UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: chunk.ToolCallID, ToolName: partial.toolName, Input: parsePartialJSONRaw(partial.text), ToolMetadata: partial.toolMetadata}
+		input := parsePartialJSONRaw(partial.text)
+		if partial.inputEncoding == provider.ToolInputEncodingText {
+			encoded, err := json.Marshal(partial.text)
+			if err != nil {
+				return false, fmt.Errorf("aisdk: marshaling text tool input: %w", err)
+			}
+			input = encoded
+		}
+		next := UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: chunk.ToolCallID, ToolName: partial.toolName, InputEncoding: partial.inputEncoding, Input: input, ToolMetadata: partial.toolMetadata}
 		if partial.title != nil {
 			next.Title = *partial.title
 			next.titlePresent = true
@@ -565,6 +577,7 @@ func (s *uiMessageReaderState) upsertToolPart(chunk UIMessageChunk, dynamic bool
 		tp.ToolName = toolNameOrExisting(chunk.ToolName, tp.ToolName)
 		tp.State = state
 		tp.Input = cloneRawMessage(chunk.Input)
+		tp.InputEncoding = chunk.InputEncoding
 		tp.Output = nil
 		tp.ErrorText = nil
 		tp.Preliminary = nil
@@ -942,6 +955,7 @@ func cloneUIMessage(message UIMessage) UIMessage {
 func clonePart(part Part) Part {
 	switch p := part.(type) {
 	case TextPart:
+		p.Citations = cloneCitations(p.Citations)
 		p.ProviderMetadata = cloneProviderMetadata(p.ProviderMetadata)
 		return p
 	case ReasoningPart:

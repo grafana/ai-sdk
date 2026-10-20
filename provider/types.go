@@ -87,6 +87,13 @@ type Warning struct {
 	Details string      `json:"details,omitempty"`
 }
 
+type ToolInputEncoding string
+
+const (
+	ToolInputEncodingJSON ToolInputEncoding = "json"
+	ToolInputEncodingText ToolInputEncoding = "text"
+)
+
 // ReasoningEffort specifies the reasoning effort level for the model.
 type ReasoningEffort string
 
@@ -98,6 +105,7 @@ const (
 	ReasoningMedium          ReasoningEffort = "medium"
 	ReasoningHigh            ReasoningEffort = "high"
 	ReasoningXHigh           ReasoningEffort = "xhigh"
+	ReasoningMax             ReasoningEffort = "max"
 )
 
 // ToolResultOutputType identifies the kind of tool result.

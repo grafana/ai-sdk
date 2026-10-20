@@ -50,10 +50,19 @@ type streamAdapter struct {
 	// layer accepts them when a 20260209 web tool implicitly triggers them.
 	markCodeExecutionDynamic bool
 
-	citationDocuments []citationDocument
-	generateID        func() string
-	providerName      string
-	responseHeaders   map[string]string
+	citationDocuments    []citationDocument
+	hasWebSearchResults  bool
+	fallbackWebCitations []any
+	generateID           func() string
+	providerName         string
+	responseHeaders      map[string]string
+}
+
+func optionalMessageString(value string, present bool) *string {
+	if !present {
+		return nil
+	}
+	return &value
 }
 
 func blockID(idx int64) string {
@@ -95,6 +104,16 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			ResponseHeaders: a.responseHeaders,
 			Usage:           &usage,
 		}
+
+		metadata, err := json.Marshal(struct {
+			ID    *string         `json:"id"`
+			Model *string         `json:"model"`
+			Usage json.RawMessage `json:"usage"`
+		}{ID: optionalMessageString(msg.ID, msg.JSON.ID.Valid()), Model: optionalMessageString(string(msg.Model), msg.JSON.Model.Valid()), Usage: a.usage.raw})
+		if err != nil {
+			return fmt.Errorf("marshaling message start metadata: %w", err)
+		}
+		ch <- provider.StreamPart{Type: provider.PartCustom, Kind: "anthropic.message_start", ProviderMetadata: provider.ProviderMetadata{"anthropic": metadata}}
 
 		for _, block := range msg.Content {
 			if block.Type != "tool_use" {
@@ -396,9 +415,11 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			cd := delta.AsCitationsDelta()
 			citation := cd.Citation.AsAny()
 			if bs.blockType == "text" {
-				if _, ok := citation.(anthropic.BetaCitationsWebSearchResultLocation); ok {
-					bs.citations = append(bs.citations, json.RawMessage(cd.Citation.RawJSON()))
-				}
+				bs.citations = append(bs.citations, json.RawMessage(cd.Citation.RawJSON()))
+			}
+			if _, ok := citation.(anthropic.BetaCitationsWebSearchResultLocation); ok {
+				a.fallbackWebCitations = append(a.fallbackWebCitations, citation)
+				return nil
 			}
 			src, err := createCitationSource(citation, a.citationDocuments, a.generateID)
 			if err != nil {
@@ -424,7 +445,11 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			if err != nil {
 				return err
 			}
-			ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: blockID(idx), ProviderMetadata: metadata}
+			citations, err := mapCitations(bs.citations, a.citationDocuments)
+			if err != nil {
+				return err
+			}
+			ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: blockID(idx), Citations: citations, ProviderMetadata: metadata}
 		case "thinking", "reasoning":
 			ch <- provider.StreamPart{Type: provider.PartReasoningEnd, ID: blockID(idx)}
 		case "json_response":
@@ -509,6 +534,18 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err != nil {
 			return err
 		}
+		if !a.hasWebSearchResults {
+			for _, citation := range a.fallbackWebCitations {
+				source, err := createCitationSource(citation, a.citationDocuments, a.generateID)
+				if err != nil {
+					return err
+				}
+				if source != nil {
+					ch <- provider.StreamPart{Type: provider.PartSource, Source: source}
+				}
+			}
+		}
+		a.fallbackWebCitations = nil
 		ch <- provider.StreamPart{
 			Type:             provider.PartFinish,
 			FinishReason:     &fr,
@@ -584,6 +621,7 @@ func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolRes
 	}
 
 	for _, result := range content.OfBetaWebSearchResultBlockArray {
+		a.hasWebSearchResults = true
 		pageAgeMeta, err := json.Marshal(map[string]any{"pageAge": nilIfEmpty(result.PageAge)})
 		if err != nil {
 			return fmt.Errorf("marshaling web search page age: %w", err)

@@ -90,10 +90,8 @@ func TestNewResponses_GenerateAndContinue(t *testing.T) {
 
 	var continuation map[string]any
 	require.NoError(t, json.Unmarshal(bodies[1], &continuation))
-	reference := findInput(continuation, "item_reference")
-	require.NotNil(t, reference)
-	assert.Equal(t, "msg_1", reference["id"])
-	assert.NotContains(t, string(bodies[1]), "first answer")
+	assert.Nil(t, findInput(continuation, "item_reference"))
+	assert.Contains(t, string(bodies[1]), "first answer")
 }
 
 func TestNewResponses_WebSearchSourcesInclude(t *testing.T) {

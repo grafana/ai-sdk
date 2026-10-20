@@ -39,6 +39,8 @@ type streamEvent struct {
 	mediaType        string
 	fileData         *provider.StreamFileData
 	source           any
+	citations        []provider.Citation
+	inputEncoding    provider.ToolInputEncoding
 	providerExecuted bool
 	dynamic          *bool
 	preliminary      *bool
@@ -55,10 +57,11 @@ type streamMetadataEvent struct {
 }
 
 type streamTextEvent struct {
-	Type     provider.StreamPartType   `json:"type"`
-	ID       string                    `json:"id"`
-	Delta    *string                   `json:"delta,omitempty"`
-	Metadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
+	Citations []provider.Citation       `json:"citations,omitzero"`
+	Type      provider.StreamPartType   `json:"type"`
+	ID        string                    `json:"id"`
+	Delta     *string                   `json:"delta,omitempty"`
+	Metadata  provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
 type streamCustomEvent struct {
@@ -131,11 +134,11 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 		}
 		payload, err = json.Marshal(streamMetadataEvent{Type: value.typeName, responseIdentity: identity})
 	case provider.PartTextStart, provider.PartTextEnd:
-		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Metadata: value.metadata})
+		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Citations: value.citations, Metadata: value.metadata})
 	case provider.PartTextDelta:
 		payload, err = json.Marshal(streamTextEvent{Type: value.typeName, ID: value.id, Delta: &value.delta, Metadata: value.metadata})
 	case provider.PartToolInputStart:
-		payload, err = json.Marshal(streamToolStartEvent{Type: value.typeName, ID: value.id, ToolName: value.toolName, ProviderExecuted: value.providerExecuted, Dynamic: value.dynamic, Metadata: value.metadata})
+		payload, err = json.Marshal(streamToolStartEvent{Type: value.typeName, ID: value.id, ToolName: value.toolName, InputEncoding: value.inputEncoding, ProviderExecuted: value.providerExecuted, Dynamic: value.dynamic, Metadata: value.metadata})
 	case provider.PartToolInputDelta:
 		payload, err = json.Marshal(streamToolDeltaEvent{Type: value.typeName, ID: value.id, Delta: value.delta, Metadata: value.metadata})
 	case provider.PartToolInputEnd:
@@ -235,11 +238,11 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 	case provider.PartResponseMeta:
 		fits = responseIdentityFits(value.id, value.modelID, value.timestamp, &remaining) && utf8.ValidString(value.id) && utf8.ValidString(value.modelID)
 	case provider.PartTextStart, provider.PartTextEnd:
-		fits = check(value.id)
+		fits = check(value.id) && citationsPreflight(value.citations, &remaining)
 	case provider.PartTextDelta:
 		fits = check(value.id, value.delta)
 	case provider.PartToolInputStart:
-		fits = check(value.id, value.toolName)
+		fits = check(value.id, value.toolName) && (value.inputEncoding == "" || value.inputEncoding == provider.ToolInputEncodingJSON || value.inputEncoding == provider.ToolInputEncodingText)
 	case provider.PartToolInputDelta:
 		fits = check(value.id, value.delta)
 	case provider.PartToolInputEnd:
@@ -686,7 +689,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if state.activeID == "" || part.ID != state.activeID {
 			return streamPartAdapterFailure
 		}
-		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartTextEnd, id: part.ID, metadata: part.ProviderMetadata}); result != streamWriteSuccess {
+		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartTextEnd, id: part.ID, citations: part.Citations, metadata: part.ProviderMetadata}); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
 			}

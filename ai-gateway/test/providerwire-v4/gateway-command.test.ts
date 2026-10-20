@@ -1802,8 +1802,9 @@ describe("authenticated Anthropic Gateway command", () => {
       const streamParts = await collectGatewayStream(streamed.stream);
       assert.equal(streamParts[0]?.type, "stream-start");
       assert.deepEqual(streamParts.map((part) => part.type), [
-        "stream-start", "response-metadata", "text-start", "text-delta", "text-end", "finish",
+        "stream-start", "response-metadata", "custom", "text-start", "text-delta", "text-end", "finish",
       ]);
+      assert.deepEqual(streamParts[2], { type: "custom", kind: "anthropic.message_start", providerMetadata: { anthropic: { id: "msg_test", model: "backend-private", usage: { input_tokens: 2, output_tokens: 0 } } } });
       assert.equal(streamParts.filter((part) => part.type === "text-delta").map((part) => part.delta).join(""), "hello from fake Anthropic stream");
 
       const providerFailure = await rawProviderWireRequest(gateway.url, "provider-error", "assistant", fileParts);
@@ -3082,7 +3083,11 @@ describe("custom content through the authenticated command", () => {
       assert.equal(goUnary.error, undefined);
       assert.equal(goStream.error, undefined);
       const expected = [{ type: "custom", kind: "anthropic.fallback", providerMetadata: fallbackMetadata }];
-      for (const parts of [tsUnary.content, tsStream, goUnary.result.content, goStream.parts]) assert.deepEqual(customParts(parts), expected);
+      for (const parts of [tsUnary.content, goUnary.result.content]) assert.deepEqual(customParts(parts), expected);
+      for (const parts of [tsStream, goStream.parts]) assert.deepEqual(customParts(parts), [
+        { type: "custom", kind: "anthropic.message_start", providerMetadata: { anthropic: { id: "msg_fallback", model: "backend-private", usage: { input_tokens: 2, output_tokens: 0 } } } },
+        ...expected,
+      ]);
 
       const history = { ...replay("anthropic.fallback", fallbackMetadata, "history"), maxOutputTokens: 64 };
       await model.doGenerate(history);
@@ -3120,7 +3125,7 @@ describe("authenticated OpenAI Responses Gateway command", () => {
       const parts:unknown[]=[];
       const reader=streamed.stream.getReader();
       for (;;) {const next=await reader.read();if(next.done)break;parts.push(next.value);}
-      assert.deepEqual(nativeSources(parts),expected);
+      assert.deepEqual(nativeSources(parts),[expected[1],expected[0]]);
       assert.deepEqual(parts.find((part:any)=>part.type==="response-metadata"), { type: "response-metadata", id: "resp_test", modelId: "backend-private", timestamp: new Date("1970-01-01T00:00:01Z") });
       const config={baseURL:`${gateway.url}/api/v1/aisdk`,accessToken:TEST_TOKEN,modelID:"openai",options};
       const goUnary=await captureGoClient(goClientBinaryPath,{...config,mode:"generate"});
@@ -3130,7 +3135,7 @@ describe("authenticated OpenAI Responses Gateway command", () => {
       assert.equal(goUnary.result.response.modelId, undefined);
       const goStream=await captureGoClient(goClientBinaryPath,{...config,mode:"stream"});
       assert.equal(goStream.error,undefined);
-      assert.deepEqual(nativeSources(goStream.parts),expected);
+      assert.deepEqual(nativeSources(goStream.parts),[expected[1],expected[0]]);
       assert.deepEqual(goStream.parts.find((part:any)=>part.type==="response-metadata"), { type: "response-metadata", id: "resp_test", modelId: "backend-private", timestamp: "1970-01-01T00:00:01.000Z" });
       const metrics=await (await fetch(`${gateway.operationalURL}/metrics`)).text();
       for (const privateValue of ["native-file-sk-application","Public citation","https://public.example", "backend-private", "resp_test"]) {
@@ -4273,8 +4278,10 @@ ${fallback ? "    fallback:\n      - provider: openai\n        model: backend-pr
               for (const approval of approvals) {const call=calls.find((part:any)=>part.toolCallId===approval.toolCallId);if(call?.providerExecuted)call.providerOptions={...call.providerOptions,openai:{...call.providerOptions?.openai,approvalRequestId:approval.approvalId}};}
               const resumed = {model,tools:{local:localTool,"mcp.lookup":{...localTool,needsApproval:false}},messages:[...messages,{role:"tool" as const,content:approvals.map((part,index)=>({type:"tool-approval-response" as const,approvalId:part.approvalId,approved:decisions[index],providerExecuted:calls.find((call:any)=>call.toolCallId===part.toolCallId)?.providerExecuted}))}],providerOptions:{openai:{store}},maxRetries:0};
               const second = path.endsWith("generate") ? await generateText(resumed) : streamText(resumed);
-              const nextMessages=(await second.response).messages;
-              const results=nextMessages.flatMap<any>(message=>Array.isArray(message.content)?message.content:[]).filter((part:any)=>part.type==="tool-result"&&part.toolName==="mcp.lookup");
+              const nextMessages=await second.responseMessages;
+              const mcpResults=nextMessages.flatMap<any>(message=>Array.isArray(message.content)?message.content:[]).filter((part:any)=>part.type==="tool-result"&&part.toolName==="mcp.lookup");
+              const results=mcpResults.filter((part:any)=>part.output.type!=="execution-denied");
+              assert.equal(mcpResults.filter((part:any)=>part.output.type==="execution-denied").length,decisions.slice(0,2).filter(value=>!value).length);
               assert.equal(results.length,decisions.slice(0,2).filter(Boolean).length);
               for(const result of results)assert.ok(calls.some((call:any)=>call.toolCallId===result.toolCallId));
               const third={...resumed,messages:[...resumed.messages,...nextMessages,{role:"user" as const,content:"third-turn"}]};

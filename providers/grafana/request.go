@@ -115,7 +115,7 @@ func encodeRequest(opts provider.CallOptions) ([]byte, error) {
 	}
 	switch opts.Reasoning {
 	case provider.ReasoningProviderDefault:
-	case provider.ReasoningNone, provider.ReasoningMinimal, provider.ReasoningLow, provider.ReasoningMedium, provider.ReasoningHigh, provider.ReasoningXHigh:
+	case provider.ReasoningNone, provider.ReasoningMinimal, provider.ReasoningLow, provider.ReasoningMedium, provider.ReasoningHigh, provider.ReasoningXHigh, provider.ReasoningMax:
 		out["reasoning"] = opts.Reasoning
 	default:
 		return nil, errRequest

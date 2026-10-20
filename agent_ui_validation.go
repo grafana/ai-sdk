@@ -50,6 +50,7 @@ func validateAgentUIPart(part Part, tools ToolSet) (Part, error) {
 		terminal := p.State == ToolStateOutputAvailable || p.State == ToolStateOutputError || p.State == ToolStateOutputDenied
 		if !exists {
 			if terminal {
+				fields.toolUnavailable = true
 				return DynamicToolUIPart(fields), nil
 			}
 			return nil, fmt.Errorf("tool %q is not configured on agent", p.ToolName)
@@ -126,6 +127,12 @@ func isEmptyJSONObj(raw json.RawMessage) bool {
 }
 
 func validateToolUIState(part *toolPartFields) error {
+	if part.InputEncoding != "" && part.InputEncoding != provider.ToolInputEncodingJSON && part.InputEncoding != provider.ToolInputEncodingText {
+		return fmt.Errorf("unknown tool input encoding %q", part.InputEncoding)
+	}
+	if part.State != ToolStateInputStreaming {
+		part.InputEncoding = ""
+	}
 	for _, metadata := range []provider.ProviderMetadata{part.CallProviderMetadata, part.ResultProviderMetadata} {
 		if err := validateProviderMetadata(metadata); err != nil {
 			return err

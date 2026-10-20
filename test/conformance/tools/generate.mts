@@ -516,15 +516,18 @@ async function generateExpected(tc: TestCase): Promise<void> {
 
     const output = buildOutput(cfg);
 
-    const result = streamText(buildStreamTextOptions(cfg, {
-      model,
-      messages,
-      prompt,
-      tools,
-      output,
-      stopWhen: stepCountIs(stopWhenStepCount),
-      generateId: mockId("id"),
-    }) as Parameters<typeof streamText>[0]);
+    const result = streamText({
+      ...buildStreamTextOptions(cfg, {
+        model,
+        messages,
+        prompt,
+        tools,
+        output,
+        stopWhen: stepCountIs(stopWhenStepCount),
+        generateId: mockId("id"),
+      }) as Parameters<typeof streamText>[0],
+      experimental_lowMemory: false,
+    });
 
     const uiStream = result.toUIMessageStream(cfg.streamOptions ?? {});
 

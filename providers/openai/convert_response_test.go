@@ -223,7 +223,9 @@ func TestConvertResponse_FileSearchResultFields(t *testing.T) {
 	}`)
 
 	res := mustConvertResponse(t, resp, buildResult{})
-	require.Len(t, res.Content, 2)
+	require.Len(t, res.Content, 3)
+	assert.Equal(t, provider.ContentSource, res.Content[2].Type)
+	assert.Equal(t, "guide.pdf", res.Content[2].Title)
 	assert.JSONEq(t, `{
 		"queries":["q"],
 		"results":[{

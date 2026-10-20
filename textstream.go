@@ -95,6 +95,7 @@ func (StreamTextDelta) textStreamPart() {}
 
 // StreamTextEnd closes a text block.
 type StreamTextEnd struct {
+	Citations        []provider.Citation `json:"citations,omitzero"`
 	ID               string
 	ProviderMetadata provider.ProviderMetadata
 }
@@ -128,6 +129,7 @@ func (StreamReasoningEnd) textStreamPart() {}
 
 // StreamToolInputStart opens tool argument streaming.
 type StreamToolInputStart struct {
+	InputEncoding    provider.ToolInputEncoding
 	ID               string
 	ToolName         string
 	ProviderExecuted bool

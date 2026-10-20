@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: eb77f09e3c06c28e860d92e0de941b143c2eecec
+  commit: b7f6255acaae7724adc0fd37aac3dae3f3466578
   packageSource: npm
-  verifiedAt: 2026-10-07
+  verifiedAt: null
 packages:
-  ai: 7.0.127
-  "@ai-sdk/anthropic": 4.0.71
-  "@ai-sdk/amazon-bedrock": 5.0.105
-  "@ai-sdk/gateway": 4.0.103
-  "@ai-sdk/openai": 4.0.83
-  "@ai-sdk/openai-compatible": 3.0.62
-  "@ai-sdk/provider": 4.0.21
-  "@ai-sdk/provider-utils": 5.0.53
-  "@ai-sdk/react": 4.0.130
+  ai: 7.0.143
+  "@ai-sdk/anthropic": 4.0.82
+  "@ai-sdk/amazon-bedrock": 5.0.118
+  "@ai-sdk/gateway": 4.0.116
+  "@ai-sdk/openai": 4.0.96
+  "@ai-sdk/openai-compatible": 3.0.71
+  "@ai-sdk/provider": 4.0.29
+  "@ai-sdk/provider-utils": 5.0.62
+  "@ai-sdk/react": 4.0.147
 verification:
   status: enforced
   conformanceScope: full
@@ -26,8 +26,8 @@ knownGaps:
     status: intentional-deviation
     description: Go sums cache read and cache creation tokens over the same
       message and compaction executor iterations used for input and output,
-      correcting compaction undercounts in registered @ai-sdk/anthropic 4.0.71,
-      which takes cache counts only from top-level usage. Fallback-served turns
+      correcting upstream compaction undercounts, where cache counts are taken
+      only from top-level usage. Fallback-served turns
       and responses without executor iterations retain top-level usage; advisor
       iterations remain excluded. Missing or null iteration cache counts are
       zero. Synthetic HTTP generation and streaming tests cover this policy;
@@ -39,7 +39,7 @@ knownGaps:
     description: Go fallback optionally buffers a bounded complete provider stream
       before selecting a candidate, with a timeout per attempt. This permits
       cross-model recovery without exposing failed partial output. The registered
-      ai 7.0.127 core has no equivalent fallback wrapper; its generateText uses
+      upstream core has no equivalent fallback wrapper; its generateText uses
       doGenerate, while Go GenerateText collects StreamText. Synthetic unit,
       GenerateText and schema-parsed frontend integration tests cover selection,
       metadata, cancellation and resource limits, not live provider acceptance.
@@ -48,7 +48,7 @@ knownGaps:
     status: intentional-deviation
     description: Go rejects clean frame-boundary EOF before messageStop with a
       retryable APICallError and no finish or synthesized incomplete tool call.
-      The registered amazon-bedrock 5.0.105 reference emits finish with other and
+      The registered upstream reference emits finish with other and
       no raw reason instead. EOF after messageStop remains valid without
       metadata, including empty or unmapped stop reasons. Synthetic HTTP and
       frame tests cover this transport failure; no provider recording is claimed.
@@ -64,10 +64,10 @@ knownGaps:
   - id: astra-model-catalog
     surface: provider-openai
     status: gap
-    description: The GPT-6 Astra, Sol and Luna advisory catalogue and existing
-      non-reasoning sampling rules match the registered OpenAI target. Mantle
-      routing retains the documented AWS compatibility-path adaptation. Synthetic
-      tests cover routing/capabilities; no live GPT-6 recording is claimed.
+    description: The GPT-6 Astra, Sol and Luna advisory catalogue and Mantle
+      routing retain the documented AWS compatibility-path adaptation. Synthetic
+      tests cover represented routing and capability branches, not exhaustive
+      model capability parity; no live GPT-6 recording is claimed.
   - id: concurrent-tool-emission-nondeterminism
     surface: core-streamtext
     status: documented-deviation
@@ -119,13 +119,12 @@ knownGaps:
   - id: anthropic-tool-choice-none
     surface: provider-anthropic
     status: intentional-deviation
-    description: Upstream @ai-sdk/anthropic removes all tools for tool choice
-      none. Go keeps the tools and sends tool_choice none, which the Messages API
-      supports on the direct and Vertex endpoints, so the tool definitions stay
-      in the prompt cache prefix. Without tools, tool_choice is omitted as
-      upstream does. With the JSON response tool fallback, Go sends only the
-      JSON tool, where upstream also sends the caller's tools under a forced
-      choice. Covered by converter and HTTP request tests.
+    description: Ordinary tool choice none now preserves definitions in both
+      Go and upstream, retaining the prompt cache prefix. Without tools,
+      tool_choice is omitted. The remaining intentional difference is the JSON
+      response tool fallback, where Go sends only the JSON tool and upstream also
+      sends the caller's tools under a forced choice. Converter and HTTP request
+      tests cover this narrower boundary.
   - id: bedrock-sonnet-5-5-reasoning-none
     surface: provider-bedrock
     status: documented-deviation
@@ -150,12 +149,12 @@ knownGaps:
       languageModel, and chat surface, including Chat-only safeguard models. The Go
       Mantle package currently exposes Responses only because the Go OpenAI provider
       has no shared Chat implementation; it does not present Responses as the default.
-  - id: embedding-and-evaluation-model-surfaces
+  - id: embedding-and-decision-model-surfaces
     surface: provider-contract
     status: gap
     description: The registered provider and core packages expose embedding
-      and experimental evaluation models, including per-batch embedding options
-      and evaluation lifecycle hooks. The Go port currently scopes provider parity
+      and experimental decision models, including per-batch embedding options
+      and decision lifecycle hooks. The Go port currently scopes provider parity
       to LanguageModel calls and does not expose these model families or their
       conformance coverage.
   - id: transcription-model-surface
