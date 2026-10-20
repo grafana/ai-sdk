@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"strings"
 	"testing"
 	"time"
 
@@ -114,20 +113,4 @@ func TestHandler_TraceContext(t *testing.T) {
 	assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", got[0]["traceID"])
 	assert.Equal(t, "00f067aa0ba902b7", got[0]["spanID"])
 	assert.NotContains(t, got[1], "traceID")
-}
-
-func TestHandler_RecordsStayBelowTheHostLineLimit(t *testing.T) {
-	logger, output := newTestLogger(slog.LevelInfo)
-	logger.Info("large value", "value", strings.Repeat("x", 100<<10))
-	args := make([]any, 0, 40)
-	for i := range 20 {
-		args = append(args, strings.Repeat("k", 4)+string(rune('a'+i)), strings.Repeat("v", 7<<10))
-	}
-	logger.Info("many values", args...)
-	for _, line := range strings.Split(strings.TrimSpace(output.String()), "\n") {
-		assert.Less(t, len(line), 64<<10)
-	}
-	got := records(t, output)
-	require.Len(t, got, 2)
-	assert.Equal(t, true, got[1][truncatedKey])
 }

@@ -7,7 +7,7 @@ Deliver Gateway logs, fallback-attempt records, metrics and traces through the A
 ## ADDED Requirements
 
 ### Requirement: Host log protocol
-Every Gateway log record SHALL be emitted through the plugin host's structured log protocol with its level, message and attributes preserved; nested attribute groups SHALL be flattened into dotted keys. The Gateway SHALL NOT write raw text or foreign JSON to its standard streams, and each record SHALL stay below the host's per-line limit.
+Every Gateway log record SHALL be emitted through the plugin host's structured log protocol with its level, message and attributes preserved; nested attribute groups SHALL be flattened into dotted keys. The Gateway SHALL NOT write raw text or foreign JSON to its standard streams. Records SHALL stay below the host's per-line limit because their producers emit bounded fields, not through truncation in the log adapter.
 
 #### Scenario: Info record at production level
 - **WHEN** the Gateway emits an info-level lifecycle or request record and the host relays at info level

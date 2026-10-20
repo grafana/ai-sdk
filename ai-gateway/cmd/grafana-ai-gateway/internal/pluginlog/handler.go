@@ -6,19 +6,9 @@ import (
 	"context"
 	"log/slog"
 	"slices"
-	"strings"
 
 	backendlog "github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"go.opentelemetry.io/otel/trace"
-)
-
-const (
-	// maxValueBytes bounds each string value so a record stays well below the
-	// host's 64 KiB line limit.
-	maxValueBytes = 8 << 10
-	// maxRecordBytes bounds a whole record's keys and string values.
-	maxRecordBytes = 48 << 10
-	truncatedKey   = "log_truncated"
 )
 
 // Handler adapts slog records to a plugin SDK logger, flattening groups into
@@ -50,7 +40,6 @@ func (h *Handler) Handle(ctx context.Context, record slog.Record) error {
 	if span := trace.SpanContextFromContext(ctx); span.IsValid() {
 		args = append(args, "traceID", span.TraceID().String(), "spanID", span.SpanID().String())
 	}
-	args = bound(args)
 	switch {
 	case record.Level < slog.LevelInfo:
 		h.logger.Debug(record.Message, args...)
@@ -105,39 +94,15 @@ func appendAttr(args []any, prefix string, attr slog.Attr) []any {
 func value(v slog.Value) any {
 	switch v.Kind() {
 	case slog.KindString:
-		return truncate(v.String())
+		return v.String()
 	case slog.KindDuration:
 		return v.Duration().String()
 	case slog.KindTime:
 		return v.Time()
 	default:
 		if err, ok := v.Any().(error); ok {
-			return truncate(err.Error())
+			return err.Error()
 		}
 		return v.Any()
 	}
-}
-
-func truncate(value string) string {
-	if len(value) <= maxValueBytes {
-		return value
-	}
-	return strings.ToValidUTF8(value[:maxValueBytes], "")
-}
-
-func bound(args []any) []any {
-	size := 0
-	for i, arg := range args {
-		switch v := arg.(type) {
-		case string:
-			size += len(v)
-		default:
-			size += 32
-		}
-		if size > maxRecordBytes {
-			end := i - i%2
-			return append(args[:end:end], truncatedKey, true)
-		}
-	}
-	return args
 }

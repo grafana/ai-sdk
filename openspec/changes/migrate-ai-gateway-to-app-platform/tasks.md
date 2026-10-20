@@ -120,7 +120,7 @@
 ## 5. Host telemetry
 
 - [x] 5.1 Add the `slog.Handler` bridge to the plugin SDK logger, with level mapping, dotted group flattening, `LogValuer` resolution and trace/span IDs from context, and use it for every Gateway logger. Verify:
-  - unit tests on emitted hclog JSON for levels, flattened keys, trace IDs and records bounded below 64 KiB;
+  - unit tests on emitted hclog JSON for levels, flattened keys and trace IDs;
   - a plugin-process test that the plugin writes nothing outside the log protocol;
   - a plugin-process test that a request with a `traceparent` and host tracing configured produces a relayed request log carrying that trace ID, and no exporter without tracing configuration;
   - `mise run test-ai-gateway-command` passes.
