@@ -12,7 +12,7 @@ Token exchange SHALL require CAP token, token-exchange URL, namespace and audien
 
 ### Requirement: Exact ProviderWire routes and protected headers
 
-The configured base URL SHALL be treated as the ProviderWire API prefix, which for a platform-hosted Gateway is `/apis/<group>/<version>/namespaces/<namespace>` on the platform origin, and the client SHALL append exactly `/config` for discovery and `/language-model` for calls without discarding an existing path prefix. Every model call SHALL use `POST`, JSON content type, the requested model ID, specification version `4`, exact streaming value `true` or `false`, and the matching JSON or SSE accept type.
+The configured base URL SHALL be the ProviderWire API prefix, `/apis/<group>/<version>/namespaces/<namespace>` on the platform origin for a platform-hosted Gateway, and the client SHALL append exactly `/config` for discovery and `/language-model` for calls without discarding an existing path prefix. Every model call SHALL use `POST`, JSON content type, the requested model ID, specification version `4`, exact streaming value `true` or `false`, and the matching JSON or SSE accept type.
 
 #### Scenario: Header ownership applies to every authentication flow
 - **WHEN** constructor or call-level authentication headers are supplied

@@ -2,7 +2,9 @@
 
 ## Purpose
 Define bounded native Gateway source projection, independent client decoding, and separate lifecycle and metadata-only observation contracts for URL and document citations.
+
 ## Requirements
+
 ### Requirement: Registered source output
 The Gateway SHALL emit atomic flat source parts in unary content and streams. URL sources SHALL contain type, sourceType, id and url; nonempty title MAY be included. Document sources SHALL contain type, sourceType, id, mediaType and title even when title is empty; nonempty filename MAY be included. Optional empty URL titles and document filenames SHALL be omitted as the documented Go absent/empty normalization.
 
@@ -135,8 +137,8 @@ Any response identity in assembled message metadata SHALL be copied explicitly b
 - **THEN** a test-only WithUIMessageStreamMessageMetadata callback SHALL explicitly copy it without claiming automatic identity/warning projection or Gateway absent-value semantics
 
 ### Requirement: Source transport provenance and delivery evidence separation
-Synthetic transports SHALL NOT be presented as provider recordings. Published dependency, candidate-workspace and image evidence SHALL be reported separately.
+Synthetic transports SHALL NOT be presented as provider recordings. Published dependency, candidate-workspace and plugin package evidence SHALL be reported separately.
 
 #### Scenario: Source transport provenance and delivery evidence separation
 - **WHEN** source acceptance uses a synthetic transport and candidate workspace build
-- **THEN** the report SHALL NOT label the transport as a recording and SHALL separate published-dependency, candidate-workspace and image evidence
+- **THEN** the report SHALL NOT label the transport as a recording and SHALL separate published-dependency, candidate-workspace and plugin package evidence

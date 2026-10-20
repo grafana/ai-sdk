@@ -3,7 +3,9 @@
 ## Purpose
 
 Define configured fallback for mapped Gateway capabilities beneath one logical observation chain, with first-part commitment, bounded lifecycle ownership and existing physical-attempt attribution.
+
 ## Requirements
+
 ### Requirement: Ordered direct text routes
 The Gateway SHALL construct each public route from one required primary and zero or more ordered direct provider/backend candidates. Every invocation SHALL begin at the primary and consider later candidates only in configured order; no prior winner, request value, health signal, or concurrent call SHALL reorder or skip candidates.
 
@@ -75,7 +77,6 @@ A missing WP9 physical sink or missing correlation SHALL fail open for model exe
 
 ### Requirement: Configured topology and operator identity boundaries
 Authenticated configured discovery SHALL expose authorized candidate count/order, provider-instance/provider identifiers and configured model IDs through the gateway-configured-discovery projection at the same visibility boundary as resolution. Credentials, secret references and unrelated account configuration SHALL remain excluded. Discovery SHALL describe configured possibilities, not whether fallback actually occurred or which candidate completed a request.
-
 
 #### Scenario: Primary and secondary produce equivalent success
 - **WHEN** otherwise equivalent eligible calls are served by different physical candidates
@@ -229,15 +230,15 @@ A bounded strict YAML document SHALL own named providers and public model routes
 
 #### Scenario: Ordered Anthropic configuration is valid
 - **WHEN** YAML defines multiple named Anthropic instances and a public model with one primary plus distinct ordered fallback provider/backend references
-- **THEN** startup SHALL accept the route without contacting Anthropic or JWKS and SHALL preserve the declared candidate order
+- **THEN** startup SHALL accept the route without contacting Anthropic and SHALL preserve the declared candidate order
 
 #### Scenario: Minimal direct Anthropic configuration remains valid
 - **WHEN** YAML defines one named Anthropic provider by API-key environment reference and one header-safe public route with only a primary provider/backend reference
-- **THEN** startup SHALL construct the direct route without requiring a fallback list or contacting Anthropic or JWKS
+- **THEN** startup SHALL construct the direct route without requiring a fallback list or contacting Anthropic
 
 #### Scenario: Route references are invalid
 - **WHEN** any route candidate has an empty field, names an unknown provider, repeats an earlier provider/backend tuple, attempts to name a public route, or contains a nested fallback field
-- **THEN** startup SHALL fail before secret resolution, provider construction, or listener binding
+- **THEN** startup SHALL fail before secret resolution, provider construction, or serving requests
 
 #### Scenario: Unsafe public ID is configured
 - **WHEN** a canonical ID or alias contains whitespace, control bytes, commas, non-ASCII bytes, or exceeds 128 bytes

@@ -71,7 +71,7 @@ OpenAI Responses models SHALL inherit the shared redirect rejection, the `anthro
 Authenticated discovery SHALL publish one canonical row per configured model with its name, description and specification provider grafana, plus authorized aliases/primary/fallbacks and provider-instance/provider/providerModelId facts through the gateway-configured-discovery projection. It SHALL NOT contain an OpenAI provider's API key, apiKeyEnv name, baseURL or unrelated configuration. Authorized provider-instance and configured model identifiers SHALL NOT be treated as credentials.
 
 #### Scenario: Discovery lists OpenAI models
-- **WHEN** an authorized authenticated client requests /api/v1/aisdk/config
+- **WHEN** an authorized authenticated client requests the plugin `config` route
 - **THEN** the response SHALL list one canonical row per OpenAI model with explicit aliases, primary and ordered fallback facts
 - **AND** it SHALL NOT contain provider credentials, secret references, baseURL or unrelated account/provider configuration
 
@@ -121,10 +121,10 @@ The Gateway command model configuration SHALL accept `providers.<name>` instance
 - **THEN** the resolved provider SHALL carry the API key value, base URL and provider name
 
 ### Requirement: Compatible endpoint validation before readiness
-Every failure SHALL occur during startup before readiness, and a non-empty compatible `baseURL` SHALL pass the same credential-free endpoint validation as other provider endpoints, including HTTPS in production deployment mode.
+Every failure SHALL occur during startup before readiness, and a non-empty compatible `baseURL` SHALL pass the same credential-free http or https endpoint validation as other provider endpoints.
 
 #### Scenario: Compatible endpoint validation before readiness
-- **WHEN** a compatible provider configures a credential-bearing URL or non-HTTPS production endpoint
+- **WHEN** a compatible provider configures a credential-bearing URL or an endpoint with another scheme
 - **THEN** startup SHALL reject it before readiness under the shared endpoint validation
 
 ### Requirement: Compatible model construction over the bounded model transport
@@ -163,18 +163,18 @@ Streaming requests to `openai-compatible` backends SHALL send `stream_options.in
 - **THEN** the request body SHALL contain `"stream_options":{"include_usage":true}`
 
 ### Requirement: Compatible stream cancellation
-When a client cancels an established stream from a compatible public model, the Gateway SHALL cancel the in-flight backend request and SHALL remain ready.
+When a client cancels an established stream from a compatible public model, the Gateway SHALL cancel the in-flight backend request and SHALL keep serving.
 
 #### Scenario: Client cancels an established stream
 - **WHEN** a client cancels a compatible stream after `stream-start`
 - **THEN** the backend request SHALL observe connection close
-- **AND** `/ready` SHALL continue to succeed
+- **AND** the plugin SHALL continue serving requests and report healthy
 
 ### Requirement: Compatible configuration and operator identity boundaries
 Authenticated discovery SHALL publish one canonical row per configured model with its name, description and specification provider grafana, plus authorized aliases/primary/fallbacks and provider-instance/effective-provider/providerModelId facts through the gateway-configured-discovery projection. The effective provider SHALL reflect the configured providerName or existing constructor default.
 
 #### Scenario: Discovery lists compatible models
-- **WHEN** an authorized authenticated client requests /api/v1/aisdk/config
+- **WHEN** an authorized authenticated client requests the plugin `config` route
 - **THEN** the response SHALL list one canonical row per compatible model with explicit aliases, primary and ordered fallback facts
 - **AND** it SHALL NOT contain credentials, secret references, baseURL, error bodies or unrelated account/provider configuration
 

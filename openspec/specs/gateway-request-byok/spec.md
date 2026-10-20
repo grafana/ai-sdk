@@ -10,7 +10,7 @@ Define catalog-independent native account selection, destination approval, reque
 Authenticated BYOK SHALL use the shared engine's native provider/model selection without configured lookup, new selector grammar or extra byte ceilings. Native model suffixes and provider-owned availability SHALL remain unchanged.
 
 #### Scenario: Authenticated destination policy
-- **WHEN** a Cloud caller requests native BYOK inference
+- **WHEN** a platform-verified user or service-account caller with BYOK access in `cloud` mode requests native BYOK inference
 - **THEN** Authenticated BYOK inference SHALL require a provider/model selector in the existing ai-language-model-id header.
 - **AND** The selector SHALL be valid UTF-8, have a supported case-sensitive provider prefix before the first slash and a nonempty native-model suffix.
 - **AND** The service SHALL reuse the request-only engine's decoder and the existing whole-request and HTTP header bounds without adding selector grammar or a separate byte ceiling.
@@ -61,7 +61,7 @@ Host authorization, explicit credential sources and request isolation SHALL rema
 - **WHEN** the host processes request-only credentials and observes execution
 - **THEN** Host controls SHALL be consumed for account selection rather than forwarded wholesale to native inference.
 - **AND** Logging SHALL use configured field-aware redaction; other exporters SHALL own their capture policies, and metric labels SHALL NOT contain credential payloads.
-- **AND** The host SHALL NOT inventory request credentials. Only Gateway-produced native summary fields SHALL apply the configured provider/exporter key policy; source errors, opaque metadata, ordinary content and unrelated BYOK echoes SHALL remain unchanged. Static Gateway access keys SHALL remain excluded with hash-only authentication storage.
+- **AND** The host SHALL NOT inventory request credentials. Only Gateway-produced native summary fields SHALL apply the configured provider/exporter key policy; source errors, opaque metadata, ordinary content and unrelated BYOK echoes SHALL remain unchanged. Platform-delegated access tokens and other inbound platform credentials SHALL remain excluded.
 - **AND** The host SHALL NOT synthesize diagnostics from an internal credential store or another request's state.
 - **AND** Supported provider/model identity, application content and native response values SHALL remain available under their existing contracts.
 - **AND** Configured execution attribution SHALL remain independent of logical BYOK observation.
@@ -84,7 +84,7 @@ Acceptance SHALL retain independent pinned-client/native-HTTP/service/SDK/race w
 
 #### Scenario: BYOK evidence policy
 - **WHEN** the delivery's acceptance evidence is collected or summarized
-- **THEN** Acceptance SHALL include exact-pinned Vercel HTTP captures, independent Go-client tests without AGPL imports, fake native HTTP requests, real unified-command tests, middleware sink tests and race/lifetime tests.
+- **THEN** Acceptance SHALL include exact-pinned Vercel HTTP captures, independent Go-client tests without AGPL imports, fake native HTTP requests, protocol test host tests, middleware sink tests and race/lifetime tests.
 - **AND** Synthetic credential cases SHALL use dummy values in focused tests, not invented recorded/upstream conformance inputs.
 - **AND** Existing authentic provider inputs SHALL remain unchanged.
 - **AND** Applicable parity/module/frontend checks SHALL run, with coverage gaps and deferred families/routing explicitly recorded.
@@ -263,7 +263,7 @@ Validated plain accounts SHALL feed explicit native construction without raw-JSO
 #### Scenario: Native endpoints observe selected credentials
 - **WHEN** both provider entries contain distinct dummy keys and the request selects Anthropic
 - **THEN** the Anthropic authentication transport SHALL contain only the selected Anthropic key
-- **AND** no BYOK map, OpenAI key, Gateway JWT/CAP or configured key SHALL enter its native JSON body or headers
+- **AND** no BYOK map, OpenAI key, platform access token or configured key SHALL enter its native JSON body or headers
 
 #### Scenario: Native content is preserved
 - **WHEN** a BYOK request contains supported native options, reasoning/file/tool history or continuation

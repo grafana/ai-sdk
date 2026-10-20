@@ -4,7 +4,7 @@
 
 ### Requirement: Gateway publication is independently gated
 
-Standalone selected-module and all-module commands SHALL remain available without directly or indirectly blocking ordinary source PRs. Gateway standalone compilation against published pins SHALL NOT block plugin release or main deployment. Until a Gateway plugin publication workflow exists, CI SHALL NOT publish or deploy the Gateway. Any publication workflow SHALL require successful required source, merged-pin, one-way boundary and plugin-validation jobs for that revision, and main deployment SHALL follow successful publication.
+Standalone selected-module and all-module commands SHALL remain available without blocking ordinary source PRs. Gateway standalone compilation against published pins SHALL NOT block plugin release or main deployment. Until a Gateway plugin publication workflow exists, CI SHALL NOT publish or deploy the Gateway. Any publication workflow SHALL require the source, merged-pin, boundary and plugin-validation jobs to pass for that revision, and deployment SHALL follow publication.
 
 #### Scenario: Unready Gateway artifact
 - **WHEN** coordinated source checks pass but standalone Gateway cannot compile with its older merged declared dependencies
