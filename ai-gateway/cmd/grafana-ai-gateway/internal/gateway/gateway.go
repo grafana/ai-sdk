@@ -57,7 +57,7 @@ func New(options Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	authenticator, err := newAuthenticator(settings.DeploymentMode, lookupEnv)
+	authenticator, err := newAuthenticator(lookupEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -181,24 +181,15 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	return newHandler(settings.Access, sinks.telemetry, errorWriter, routes), nil
 }
 
-func newAuthenticator(mode config.DeploymentMode, lookupEnv config.LookupEnv) (authn.Authenticator, error) {
-	insecure, _ := lookupEnv(plugin.EnvVarInsecureSkipAuthentication)
-	skip := insecure == "true"
-	if skip && mode != config.DeploymentDevelopment {
-		return nil, errors.New("config: insecure authentication skipping requires development mode")
-	}
-	group := manifestdata.LocalManifest().ManifestData.Group
+func newAuthenticator(lookupEnv config.LookupEnv) (authn.Authenticator, error) {
 	keys, err := gatewayauth.SigningKeys(lookupEnv)
-	switch {
-	case err == nil:
-		return gatewayauth.NewPlatformAuthenticator(gatewayauth.PlatformConfig{PluginID: PluginID, Group: group, Keys: keys})
-	case !errors.Is(err, gatewayauth.ErrNoSigningKeys):
-		return nil, err
-	case skip:
-		return gatewayauth.NewPlatformAuthenticator(gatewayauth.PlatformConfig{PluginID: PluginID, Group: group, Unsafe: true})
-	default:
+	if errors.Is(err, gatewayauth.ErrNoSigningKeys) {
 		return nil, fmt.Errorf("config: set %s or %s to verify platform tokens", plugin.EnvVarGrafanaJWKSURL, plugin.EnvVarGrafanaJWKS)
 	}
+	if err != nil {
+		return nil, err
+	}
+	return gatewayauth.NewPlatformAuthenticator(gatewayauth.PlatformConfig{PluginID: PluginID, Group: manifestdata.LocalManifest().ManifestData.Group, Keys: keys})
 }
 
 // Handler returns the ProviderWire route handler for the plugin route adapter.

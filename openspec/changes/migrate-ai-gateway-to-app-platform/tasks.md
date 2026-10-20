@@ -81,10 +81,10 @@
   - the plugin ID constant matching `src/plugin.json`;
   - the ported startup tests passing.
 - [x] 4.4 Prove incremental streaming and cancellation through the in-process test host. Verify a test that delays provider parts and asserts each frame arrives before the next part is emitted, and a test where caller cancellation cancels the model context and drains within existing bounds.
-- [x] 4.5 Remove the listener, HTTP-server timeout, JWT/JWKS, audience, unsafe and Cloud settings, and make the strict config file reject `auth` and `server` blocks. Keep `deployment_mode`, and fail production startup unless `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` is set. In development mode with `GF_PLUGIN_INSECURE_SKIP_AUTHENTICATION=true`, build the Gateway authenticator on authlib's unsafe verifier; production refuses it. Delete JWT/JWKS, header normalization, Cloud assertion and static-key code, and the `outbound` JWKS client. Verify config tests for:
+- [x] 4.5 Remove the listener, HTTP-server timeout, JWT/JWKS, audience, unsafe and Cloud settings, and make the strict config file reject `auth` and `server` blocks. Fail startup unless `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` is set; there is no unverified mode. Delete JWT/JWKS, header normalization, Cloud assertion and static-key code, and the `outbound` JWKS client. Verify config tests for:
   - secret-safe unknown-field failures;
   - environment-only startup with no arguments;
-  - the production signing-key guard and refusal of insecure skip, with development permitting the test host and the unsafe verifier;
+  - the signing-key guard, with no unverified mode;
   - unchanged ProviderWire, provider and Agent Observability setting validation.
 - [x] 4.6 Add the plugin-process test binary. It builds a host-platform plugin executable with `go build`, launches it through a go-plugin client and `grpcplugin.NewClientV3`, and serves HTTP through the test host package. It exposes `CollectMetrics` and `CheckHealth` results, sending a `PluginContext` with the plugin ID and empty app instance settings, relays plugin logs and stops the plugin through Shutdown. It reads the access mode, fake providers and catalog from the environment like the current command fixtures. Verify:
   - a Go smoke test gets a healthy check, a fixed response and host-collected Gateway metrics from the built plugin;
@@ -109,7 +109,7 @@
 - [x] 4.10 Remove `ai-gateway/docs/cloud-authentication.md` and its links from `docs/guides/gateway-authentication.md` and `docs/guides/ai-gateway-container.md`. Rewrite `ai-gateway/README.md` as the operator overview, covering:
   - plugin hosting and the route prefix;
   - access modes: the `cloud` allowlist with service identities, on-behalf-of users, BYOK open to every stack user, and `self-hosted` catalog access for users and service accounts;
-  - the self-hosted requirements today: the router toggle, plus a token-exchange service and signing keys until vanilla Grafana passes v3 identity; and one service account per application or person to attribute;
+  - the self-hosted requirements today: the router and app manifest toggles, with Grafana signing plugin tokens itself; and one service account per application or person to attribute;
   - that self-hosted catalog access follows Grafana's plugin app access, which basic roles usually include, and how operators restrict it;
   - settings, and how hosts supply environment: `forward_host_env_vars` for Grafana, the router host environment;
   - the grace period above model duration plus drain;

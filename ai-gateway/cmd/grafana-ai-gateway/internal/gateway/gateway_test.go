@@ -101,11 +101,10 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 			env["GF_PLUGIN_ACCESS_MODE"] = "self-hosted"
 			env["GF_PLUGIN_ACCESS_INTERNAL_SERVICES"] = "svc-a"
 		}, message: "requires cloud access mode"},
-		{name: "production without signing keys", change: func(env map[string]string) { delete(env, "GRAFANA_JWKS") }, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
-		{name: "production with insecure skip", change: func(env map[string]string) { env[plugin.EnvVarInsecureSkipAuthentication] = "true" }, message: "requires development mode"},
-		{name: "development without keys or insecure skip", change: func(env map[string]string) {
+		{name: "no signing keys", change: func(env map[string]string) { delete(env, "GRAFANA_JWKS") }, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
+		{name: "no signing keys with insecure skip", change: func(env map[string]string) {
 			delete(env, "GRAFANA_JWKS")
-			env["GF_PLUGIN_DEPLOYMENT_MODE"] = "development"
+			env[plugin.EnvVarInsecureSkipAuthentication] = "true"
 		}, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
 		{name: "both signing key sources", change: func(env map[string]string) { env["GRAFANA_JWKS_URL"] = "https://auth.example/jwks" }, message: "only one"},
 		{name: "unparsable scalar", change: func(env map[string]string) {
@@ -189,10 +188,6 @@ func TestNew_EnvironmentOnlyStartup(t *testing.T) {
 		name   string
 		change func(map[string]string)
 	}{
-		{name: "development with insecure skip", change: func(env map[string]string) {
-			delete(env, "GRAFANA_JWKS")
-			env[plugin.EnvVarInsecureSkipAuthentication] = "true"
-		}},
 		{name: "keys URL", change: func(env map[string]string) {
 			delete(env, "GRAFANA_JWKS")
 			env["GRAFANA_JWKS_URL"] = "http://auth.internal/jwks"

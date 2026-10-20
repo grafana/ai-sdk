@@ -141,18 +141,9 @@ func TestPlatformAuthenticator_Refusals(t *testing.T) {
 		})
 	}
 
-	unsafe, err := NewPlatformAuthenticator(PlatformConfig{PluginID: testPluginID, Group: testGroup, Unsafe: true})
-	require.NoError(t, err)
-	info, err := unsafe.Authenticate(context.Background(), platformTokens{access: chains{t: t, host: other}.cloud(foreignSubject)})
-	require.NoError(t, err)
-	assert.Equal(t, []string{"svc-a"}, info.GetExtra()[DirectCallerServiceKey])
-	_, err = unsafe.Authenticate(context.Background(), platformTokens{access: foreignAudience})
-	require.Error(t, err)
-
 	for name, config := range map[string]PlatformConfig{
-		"no audiences":    {Keys: host.Keys()},
-		"neither source":  {PluginID: testPluginID, Group: testGroup},
-		"keys and unsafe": {PluginID: testPluginID, Group: testGroup, Keys: host.Keys(), Unsafe: true},
+		"no audiences": {Keys: host.Keys()},
+		"no keys":      {PluginID: testPluginID, Group: testGroup},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := NewPlatformAuthenticator(config)

@@ -73,7 +73,6 @@ The Gateway currently ships as a standalone service. It owns three listeners, JW
   - per-request gRPC load balancing;
   - plugin client recovery after crashes;
   - plugin metrics export;
-  - verified caller identity on v3 in self-hosted Grafana without a token-exchange service;
   - tracing and JWKS environment variables for the plugin;
   - a termination grace period;
   - autoscaling;

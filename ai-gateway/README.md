@@ -65,12 +65,12 @@ want to attribute usage to.
 
 Self-hosted Grafana serves App Platform plugin routes only with the experimental
 `grafana.useRouterMiddleware` feature toggle, together with
-`appplugins.loadAppManifest` and `appplugins.registerAPIServer`. Grafana passes a
-caller identity to the plugin only when `[plugins] v3_token_exchange_url` and
-`v3_cap_token` point at a token-exchange service, and the Gateway needs that
-service's signing keys in `GRAFANA_JWKS_URL` or `GRAFANA_JWKS`. App Platform
-plans to provide identity in vanilla Grafana; until then, self-hosted access
-requires such a service.
+`appplugins.loadAppManifest` and `appplugins.registerAPIServer`. With those
+toggles and no token exchange configured, Grafana 13.3 signs the tokens it
+sends to the plugin itself and passes the plugin their signing keys in
+`GRAFANA_JWKS`, so the caller's identity reaches the Gateway with no extra
+service. A Grafana configured with `[plugins] v3_token_exchange_url` uses that
+exchange instead; then set its signing keys in `GRAFANA_JWKS_URL`.
 
 ## Configuration
 
@@ -109,16 +109,14 @@ models:
 
 Grafana passes each key to the plugin as `GF_PLUGIN_<KEY>`, for example
 `GF_PLUGIN_ACCESS_MODE`. A host that starts the plugin itself, such as the App
-Platform router, sets those variables directly. Signing keys use app-sdk's
-`GRAFANA_JWKS_URL` or `GRAFANA_JWKS`; exactly one is required in production.
+Platform router, sets those variables directly. Token signing keys come from
+app-sdk's `GRAFANA_JWKS_URL` or `GRAFANA_JWKS`, and exactly one is required;
+self-hosted Grafana sets `GRAFANA_JWKS` itself.
 Other limits, such as response sizes and stream timeouts, are fixed.
 
 Invalid settings, or an `auth` or `server` block in the catalog file stop the
-plugin before it serves requests. In development, Grafana's
-`[plugin.grafana-aigateway-app] insecure_skip_authentication = true` sets
-`GF_PLUGIN_INSECURE_SKIP_AUTHENTICATION`, and the Gateway then accepts
-Grafana's locally signed tokens without checking signatures. Production
-refuses that setting.
+plugin before it serves requests. The Gateway always verifies token
+signatures; app-sdk's `insecure_skip_authentication` has no effect.
 
 Provider keys named in the catalog, and the Agent Observability secret, are
 read from the plugin's environment. Grafana forwards its own environment only
@@ -165,8 +163,8 @@ and `kinds/` holds the manifest source for `generate:kinds`.
 
 For a local Grafana, build the plugin and run `pnpm --filter ./ai-gateway server`.
 It starts the create-plugin compose environment on Grafana nightly with the App
-Platform feature toggles, `self-hosted` access, development mode with
-`insecure_skip_authentication`, and the catalog in
+Platform feature toggles, `self-hosted` access with Grafana's own token
+signing, and the catalog in
 `provisioning/aigateway/models.yaml`. Export `ANTHROPIC_API_KEY` first to call
 models. The environment signs in anonymously, which the Gateway refuses, so call
 the routes with a service account token. `pnpm --filter ./ai-gateway e2e` runs

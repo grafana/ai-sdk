@@ -86,10 +86,8 @@ type PlatformConfig struct {
 	// PluginID and Group are the accepted token audiences.
 	PluginID string
 	Group    string
-	// Keys verifies token signatures. Without keys, Unsafe must be set.
+	// Keys verifies token signatures.
 	Keys authn.KeyRetriever
-	// Unsafe parses tokens without verifying signatures, for local development.
-	Unsafe bool
 }
 
 // NewPlatformAuthenticator returns the plugin authenticator for delegated
@@ -99,15 +97,11 @@ func NewPlatformAuthenticator(config PlatformConfig) (authn.Authenticator, error
 	if config.PluginID == "" || config.Group == "" {
 		return nil, errors.New("gateway auth: plugin ID and API group audiences are required")
 	}
-	verifierConfig := authn.VerifierConfig{AllowedAudiences: []string{config.PluginID, config.Group}}
-	switch {
-	case config.Unsafe && config.Keys == nil:
-		return platformAuthenticator{verifier: authn.NewUnsafeAccessTokenVerifier(verifierConfig)}, nil
-	case !config.Unsafe && config.Keys != nil:
-		return platformAuthenticator{verifier: authn.NewAccessTokenVerifier(verifierConfig, config.Keys)}, nil
-	default:
-		return nil, errors.New("gateway auth: configure either signing keys or unsafe verification")
+	if config.Keys == nil {
+		return nil, errors.New("gateway auth: signing keys are required")
 	}
+	verifierConfig := authn.VerifierConfig{AllowedAudiences: []string{config.PluginID, config.Group}}
+	return platformAuthenticator{verifier: authn.NewAccessTokenVerifier(verifierConfig, config.Keys)}, nil
 }
 
 type platformAuthenticator struct {
