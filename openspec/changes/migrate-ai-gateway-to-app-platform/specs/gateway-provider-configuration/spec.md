@@ -38,3 +38,10 @@ When a client cancels an established stream from a compatible public model, the 
 - **WHEN** a client cancels a compatible stream after `stream-start`
 - **THEN** the backend request SHALL observe connection close
 - **AND** the plugin SHALL continue serving requests and report healthy
+
+### Requirement: Compatible endpoint validation before readiness
+Every failure SHALL occur during startup before readiness, and a non-empty compatible `baseURL` SHALL pass the same credential-free http or https endpoint validation as other provider endpoints.
+
+#### Scenario: Compatible endpoint validation before readiness
+- **WHEN** a compatible provider configures a credential-bearing URL or an endpoint with another scheme
+- **THEN** startup SHALL reject it before readiness under the shared endpoint validation

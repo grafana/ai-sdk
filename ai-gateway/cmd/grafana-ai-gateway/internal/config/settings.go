@@ -18,16 +18,6 @@ import (
 // LookupEnv resolves one environment variable.
 type LookupEnv func(string) (string, bool)
 
-// DeploymentMode controls production-only security restrictions.
-type DeploymentMode string
-
-const (
-	// DeploymentProduction enables production security restrictions.
-	DeploymentProduction DeploymentMode = "production"
-	// DeploymentDevelopment permits explicit local-development behavior.
-	DeploymentDevelopment DeploymentMode = "development"
-)
-
 // AgentObservabilityProtocol selects the generation export transport.
 type AgentObservabilityProtocol string
 
@@ -76,7 +66,6 @@ type AgentObservabilitySettings struct {
 // Settings contains every plugin setting.
 type Settings struct {
 	ConfigFile         string
-	DeploymentMode     DeploymentMode
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
 	ProviderWire       providerv4.Limits
@@ -154,8 +143,7 @@ func (e *environment) duration(key string, fallback time.Duration) time.Duration
 func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 	env := environment{lookup: lookupEnv}
 	settings := Settings{
-		ConfigFile:     env.string("config_file", ""),
-		DeploymentMode: DeploymentMode(env.string("deployment_mode", string(DeploymentProduction))),
+		ConfigFile: env.string("config_file", ""),
 		AgentObservability: AgentObservabilitySettings{
 			Enabled:       env.bool("agento11y_enabled", false),
 			Protocol:      AgentObservabilityProtocol(env.string("agento11y_protocol", string(AgentObservabilityGRPC))),
@@ -192,10 +180,7 @@ func (settings Settings) Validate() error {
 	if strings.TrimSpace(settings.ConfigFile) == "" {
 		return fmt.Errorf("config: config file is required")
 	}
-	if settings.DeploymentMode != DeploymentProduction && settings.DeploymentMode != DeploymentDevelopment {
-		return fmt.Errorf("config: deployment mode must be production or development")
-	}
-	if err := settings.AgentObservability.validate(settings.DeploymentMode); err != nil {
+	if err := settings.AgentObservability.validate(); err != nil {
 		return err
 	}
 	if settings.ProviderWire.ModelDuration < ProviderResponseHeaderTimeout || settings.ProviderWire.ModelDuration < streamIdleDuration {
@@ -231,7 +216,7 @@ var ambientAgentObservabilityEnvironment = []string{
 	"AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES", "AGENTO11Y_USE_EXPERIMENTAL_OTEL", "SIGIL_USE_EXPERIMENTAL_OTEL",
 }
 
-func (settings AgentObservabilitySettings) validate(mode DeploymentMode) error {
+func (settings AgentObservabilitySettings) validate() error {
 	if !settings.Enabled {
 		return nil
 	}
@@ -251,9 +236,6 @@ func (settings AgentObservabilitySettings) validate(mode DeploymentMode) error {
 		if settings.AuthSecretEnv == reserved {
 			return fmt.Errorf("config: agent observability auth secret reference must not use an SDK-reserved environment variable")
 		}
-	}
-	if mode == DeploymentProduction && !settings.TLS {
-		return fmt.Errorf("config: agent observability production export requires TLS")
 	}
 	return nil
 }

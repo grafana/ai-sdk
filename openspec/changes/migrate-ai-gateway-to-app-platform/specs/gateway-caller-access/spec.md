@@ -7,14 +7,14 @@ Define how the Gateway turns the caller identity verified and delegated by the A
 ## ADDED Requirements
 
 ### Requirement: Verified delegated identity
-The Gateway SHALL serve a route request only when the plugin host contract delivers a delegated access token whose signature, expiry, audience and namespace were verified against the platform's signing keys. The audience SHALL name the plugin ID or its API group, and the token namespace SHALL cover the route namespace. Production SHALL refuse to run without a platform signing-key source. Development MAY accept delegated tokens without signature verification for local runs.
+The Gateway SHALL serve a route request only when the plugin host contract delivers a delegated access token whose signature, expiry, audience and namespace were verified against the platform's signing keys. The audience SHALL name the plugin ID or its API group, and the token namespace SHALL cover the route namespace. The Gateway SHALL refuse to run without a platform signing-key source and SHALL have no unverified mode.
 
 #### Scenario: Token for another audience or namespace
 - **WHEN** a delegated token names a different audience or a namespace that does not cover the route namespace
 - **THEN** the request SHALL be refused before selection, catalog or provider work
 
-#### Scenario: Unverified identity in production
-- **WHEN** production configuration provides no platform signing-key source
+#### Scenario: No signing-key source
+- **WHEN** the plugin environment provides no platform signing-key source, including when insecure authentication skipping is requested
 - **THEN** the Gateway SHALL fail startup without serving inference
 
 ### Requirement: Explicit access mode

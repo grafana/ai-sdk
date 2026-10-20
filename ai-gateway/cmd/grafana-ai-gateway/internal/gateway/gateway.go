@@ -68,7 +68,7 @@ func New(options Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := validateProviderEndpoints(file, settings.DeploymentMode); err != nil {
+	if err := validateProviderEndpoints(file); err != nil {
 		return nil, err
 	}
 	providers, err := file.ResolveProviderSecrets(lookupEnv)
@@ -91,12 +91,12 @@ func New(options Options) (*Gateway, error) {
 	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks}, nil
 }
 
-func validateProviderEndpoints(file config.File, mode config.DeploymentMode) error {
+func validateProviderEndpoints(file config.File) error {
 	for name, provider := range file.Providers {
 		if provider.BaseURL == "" {
 			continue
 		}
-		parsed, err := outbound.ValidateEndpoint(provider.BaseURL, mode)
+		parsed, err := outbound.ValidateEndpoint(provider.BaseURL)
 		if err != nil {
 			return fmt.Errorf("gateway: validating provider %q endpoint: %w", name, err)
 		}

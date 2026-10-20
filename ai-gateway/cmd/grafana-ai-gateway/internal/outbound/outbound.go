@@ -9,8 +9,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 )
 
 const (
@@ -42,8 +40,9 @@ func NewAnthropicClient(headerTimeout time.Duration, responseBytes int64) (*http
 	}, nil
 }
 
-// ValidateEndpoint validates a credential-free hierarchical endpoint URL.
-func ValidateEndpoint(raw string, mode config.DeploymentMode) (*url.URL, error) {
+// ValidateEndpoint validates a credential-free hierarchical http or https
+// endpoint URL.
+func ValidateEndpoint(raw string) (*url.URL, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("gateway outbound: endpoint is not a valid URL")
@@ -54,18 +53,8 @@ func ValidateEndpoint(raw string, mode config.DeploymentMode) (*url.URL, error) 
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
 		return nil, fmt.Errorf("gateway outbound: endpoint must not contain userinfo, query, forced query, or fragment")
 	}
-	scheme := strings.ToLower(parsed.Scheme)
-	switch mode {
-	case config.DeploymentProduction:
-		if scheme != "https" {
-			return nil, fmt.Errorf("gateway outbound: production endpoint must use https")
-		}
-	case config.DeploymentDevelopment:
-		if scheme != "http" && scheme != "https" {
-			return nil, fmt.Errorf("gateway outbound: development endpoint must use http or https")
-		}
-	default:
-		return nil, fmt.Errorf("gateway outbound: invalid deployment mode")
+	if scheme := strings.ToLower(parsed.Scheme); scheme != "http" && scheme != "https" {
+		return nil, fmt.Errorf("gateway outbound: endpoint must use http or https")
 	}
 	return parsed, nil
 }

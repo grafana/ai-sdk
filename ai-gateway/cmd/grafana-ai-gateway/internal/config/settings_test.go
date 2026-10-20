@@ -21,9 +21,8 @@ func TestParseSettings_Defaults(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	assert.Equal(t, Settings{
-		ConfigFile:     "/tmp/models.yaml",
-		DeploymentMode: DeploymentProduction,
-		Access:         auth.AccessPolicy{Mode: auth.AccessModeCloud},
+		ConfigFile: "/tmp/models.yaml",
+		Access:     auth.AccessPolicy{Mode: auth.AccessModeCloud},
 		AgentObservability: AgentObservabilitySettings{
 			Enabled:       true,
 			Protocol:      AgentObservabilityGRPC,
@@ -50,7 +49,6 @@ func TestParseSettings_EnvironmentBindings(t *testing.T) {
 		check func(*testing.T, Settings)
 	}{
 		{env: "GF_PLUGIN_CONFIG_FILE", value: "/etc/models.yaml", check: func(t *testing.T, s Settings) { assert.Equal(t, "/etc/models.yaml", s.ConfigFile) }},
-		{env: "GF_PLUGIN_DEPLOYMENT_MODE", value: "development", check: func(t *testing.T, s Settings) { assert.Equal(t, DeploymentDevelopment, s.DeploymentMode) }},
 		{env: "GF_PLUGIN_ACCESS_MODE", value: "self-hosted", check: func(t *testing.T, s Settings) { assert.Equal(t, auth.AccessModeSelfHosted, s.Access.Mode) }},
 		{env: "GF_PLUGIN_AGENTO11Y_PROTOCOL", value: "http", check: func(t *testing.T, s Settings) {
 			assert.Equal(t, AgentObservabilityHTTP, s.AgentObservability.Protocol)
@@ -100,11 +98,9 @@ func TestParseSettings_InvalidValuesNameTheSetting(t *testing.T) {
 func TestParseSettings_EmptyValuesSelectDefaults(t *testing.T) {
 	environment := baseSettingsEnvironment()
 	environment["GF_PLUGIN_MAX_REQUEST_BYTES"] = ""
-	environment["GF_PLUGIN_DEPLOYMENT_MODE"] = ""
 	settings, err := ParseSettings(mapLookup(environment))
 	require.NoError(t, err)
 	assert.Equal(t, int64(defaultRequestBytes), settings.ProviderWire.RequestBytes)
-	assert.Equal(t, DeploymentProduction, settings.DeploymentMode)
 }
 
 func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
@@ -116,7 +112,6 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		mutate func(*Settings)
 	}{
 		{name: "config file", mutate: func(s *Settings) { s.ConfigFile = " " }},
-		{name: "deployment mode", mutate: func(s *Settings) { s.DeploymentMode = "staging" }},
 		{name: "model duration below provider and idle timeouts", mutate: func(s *Settings) { s.ProviderWire.ModelDuration = 29 * time.Second }},
 		{name: "request bytes zero", mutate: func(s *Settings) { s.ProviderWire.RequestBytes = 0 }},
 		{name: "request bytes limit+1 overflow", mutate: func(s *Settings) { s.ProviderWire.RequestBytes = math.MaxInt64 }},
@@ -126,7 +121,11 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 			s.AgentObservability.Protocol = AgentObservabilityHTTP
 			s.AgentObservability.Endpoint = "https://user:secret@collector.example/export"
 		}},
-		{name: "agento11y production cleartext", mutate: func(s *Settings) { s.AgentObservability.TLS = false }},
+		{name: "agento11y cleartext with a TLS endpoint", mutate: func(s *Settings) {
+			s.AgentObservability.Protocol = AgentObservabilityHTTP
+			s.AgentObservability.Endpoint = "https://collector.example/export"
+			s.AgentObservability.TLS = false
+		}},
 		{name: "agento11y secret reference", mutate: func(s *Settings) { s.AgentObservability.AuthSecretEnv = "literal secret" }},
 		{name: "agento11y reserved secret reference", mutate: func(s *Settings) { s.AgentObservability.AuthSecretEnv = "AGENTO11Y_AUTH_TOKEN" }},
 	}
@@ -152,9 +151,8 @@ func TestParseSettings_IgnoresRemovedSettings(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestAgentObservabilitySettings_DevelopmentDisablement(t *testing.T) {
+func TestAgentObservabilitySettings_Disabled(t *testing.T) {
 	environment := baseSettingsEnvironment()
-	environment["GF_PLUGIN_DEPLOYMENT_MODE"] = "development"
 	environment["GF_PLUGIN_AGENTO11Y_ENABLED"] = "false"
 	delete(environment, "GF_PLUGIN_AGENTO11Y_ENDPOINT")
 	delete(environment, "GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV")
@@ -339,20 +337,12 @@ func TestParseSettings_AccessPolicy(t *testing.T) {
 	}
 }
 
-func TestParseSettings_AgentObservabilityOptionalInProduction(t *testing.T) {
+func TestParseSettings_AgentObservabilityTransportSecurityIsExplicit(t *testing.T) {
 	environment := baseSettingsEnvironment()
-	environment["GF_PLUGIN_AGENTO11Y_ENABLED"] = "false"
-	delete(environment, "GF_PLUGIN_AGENTO11Y_ENDPOINT")
-	delete(environment, "GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV")
+	environment["GF_PLUGIN_AGENTO11Y_TLS"] = "false"
 	settings, err := ParseSettings(mapLookup(environment))
 	require.NoError(t, err)
-	assert.Equal(t, DeploymentProduction, settings.DeploymentMode)
-	assert.False(t, settings.AgentObservability.Enabled)
-
-	environment = baseSettingsEnvironment()
-	environment["GF_PLUGIN_AGENTO11Y_TLS"] = "false"
-	_, err = ParseSettings(mapLookup(environment))
-	require.ErrorContains(t, err, "production export requires TLS")
+	assert.False(t, settings.AgentObservability.TLS)
 }
 
 func baseSettingsEnvironment() map[string]string {

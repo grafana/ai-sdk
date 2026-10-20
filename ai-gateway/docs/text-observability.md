@@ -119,9 +119,9 @@ uses only the fixed `class` values `queue_full`, `serialization`, `transport`,
 
 ## Agent Observability configuration
 
-Agent Observability export is optional in every deployment mode. When enabled
-in production, it must be TLS-protected and credentialed. The plugin reads these
-settings:
+Agent Observability export is optional. When enabled, it needs a credential,
+and its endpoint must match `agento11y_tls`, which defaults to `true`. The
+plugin reads these settings:
 
 | Setting | Default / constraint |
 | --- | --- |

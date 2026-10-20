@@ -61,7 +61,7 @@ BYOK requests SHALL use a fixed BYOK model class and, if exposed, only bounded s
 Gateway-owned settings SHALL explicitly select and validate Agent Observability enablement, protocol, endpoint, transport security and authentication secret reference before client construction. Batch and queue sizes, payload bytes, retry/backoff behavior and a 10-second per-attempt HTTP/gRPC export timeout SHALL be fixed finite Gateway constants. Final flush and shutdown are bounded by the plugin's shared final-flush budget.
 
 #### Scenario: Exporter configuration is unsafe
-- **WHEN** production configuration enables an insecure endpoint, names an unset secret, or provides a non-positive resource bound
+- **WHEN** configuration enables an endpoint that contradicts its transport security or names an unset secret
 - **THEN** plugin startup SHALL fail before constructing models or serving requests
 - **AND** no secret value SHALL appear in the error or log
 
@@ -108,13 +108,13 @@ The Gateway SHALL create one private immutable observation view per accepted HTT
 
 ## ADDED Requirements
 
-### Requirement: Optional exporter in every deployment mode
-Agent Observability export SHALL be optional in every deployment mode. When export is disabled, the Gateway SHALL resolve no exporter credential and start no exporter workers. When it is enabled, production SHALL retain every existing exporter validation, including transport security and credential requirements.
+### Requirement: Optional exporter with explicit transport security
+Agent Observability export SHALL be optional. When export is disabled, the Gateway SHALL resolve no exporter credential and start no exporter workers. When it is enabled, the Gateway SHALL require a credential, and the endpoint SHALL match the configured transport security, which defaults to TLS.
 
-#### Scenario: Production without export
-- **WHEN** production configuration disables Agent Observability export
+#### Scenario: Plugin without export
+- **WHEN** configuration disables Agent Observability export
 - **THEN** the plugin SHALL start and serve requests without an exporter
 
-#### Scenario: Production export without TLS
-- **WHEN** production configuration enables export to a cleartext endpoint
+#### Scenario: Endpoint contradicts transport security
+- **WHEN** export is enabled with TLS and a cleartext endpoint, or without TLS and an https endpoint
 - **THEN** plugin startup SHALL fail before serving requests

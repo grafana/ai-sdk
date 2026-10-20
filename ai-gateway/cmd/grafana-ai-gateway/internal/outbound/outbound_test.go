@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,27 +21,24 @@ func TestValidateEndpoint(t *testing.T) {
 	tests := []struct {
 		name  string
 		raw   string
-		mode  config.DeploymentMode
 		valid bool
 	}{
-		{name: "production https", raw: "https://auth.example/jwks", mode: config.DeploymentProduction, valid: true},
-		{name: "development https", raw: "https://provider.example/prefix", mode: config.DeploymentDevelopment, valid: true},
-		{name: "development http", raw: "http://127.0.0.1:8080/prefix", mode: config.DeploymentDevelopment, valid: true},
-		{name: "production http", raw: "http://auth.example/jwks", mode: config.DeploymentProduction},
-		{name: "relative", raw: "/jwks", mode: config.DeploymentDevelopment},
-		{name: "empty host", raw: "https:///jwks", mode: config.DeploymentDevelopment},
-		{name: "userinfo", raw: "https://user:password@auth.example/jwks", mode: config.DeploymentDevelopment},
-		{name: "malformed with userinfo", raw: "https://user:password@auth.example:port/jwks", mode: config.DeploymentDevelopment},
-		{name: "opaque", raw: "https:opaque", mode: config.DeploymentDevelopment},
-		{name: "query", raw: "https://auth.example/jwks?secret=value", mode: config.DeploymentDevelopment},
-		{name: "forced query", raw: "https://auth.example/jwks?", mode: config.DeploymentDevelopment},
-		{name: "fragment", raw: "https://auth.example/jwks#fragment", mode: config.DeploymentDevelopment},
-		{name: "unsupported scheme", raw: "ftp://auth.example/jwks", mode: config.DeploymentDevelopment},
-		{name: "invalid mode", raw: "https://auth.example/jwks", mode: config.DeploymentMode("other")},
+		{name: "https", raw: "https://auth.example/jwks", valid: true},
+		{name: "https with a path", raw: "https://provider.example/prefix", valid: true},
+		{name: "http", raw: "http://127.0.0.1:8080/prefix", valid: true},
+		{name: "relative", raw: "/jwks"},
+		{name: "empty host", raw: "https:///jwks"},
+		{name: "userinfo", raw: "https://user:password@auth.example/jwks"},
+		{name: "malformed with userinfo", raw: "https://user:password@auth.example:port/jwks"},
+		{name: "opaque", raw: "https:opaque"},
+		{name: "query", raw: "https://auth.example/jwks?secret=value"},
+		{name: "forced query", raw: "https://auth.example/jwks?"},
+		{name: "fragment", raw: "https://auth.example/jwks#fragment"},
+		{name: "unsupported scheme", raw: "ftp://auth.example/jwks"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			parsed, err := ValidateEndpoint(tc.raw, tc.mode)
+			parsed, err := ValidateEndpoint(tc.raw)
 			if tc.valid {
 				require.NoError(t, err)
 				assert.Equal(t, tc.raw, parsed.String())

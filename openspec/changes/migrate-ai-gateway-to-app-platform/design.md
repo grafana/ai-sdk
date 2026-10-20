@@ -69,7 +69,7 @@ A middleware turns those values, the route namespace and the access mode into th
 - **Allowlist setting:** comma-separated `access_internal_services` / `GF_PLUGIN_ACCESS_INTERNAL_SERVICES`, valid only in `cloud` mode. Entries are the calling services' signed service identities.
 - **Emitted attribution:** the existing `caller_service` log and export field carries the direct caller's service identity only for configured `cloud` access, and is omitted otherwise.
 - **Attribution:** the identity actor's UID stays in the private caller value for future usage attribution and is not emitted.
-- **Production guard:** `deployment_mode` stays, defaulting to production. Production startup fails unless `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` is set.
+- **Signing keys:** startup fails unless `GRAFANA_JWKS_URL` or `GRAFANA_JWKS` is set. There is no deployment mode: provider endpoints may use http or https because they are operator configuration, and Agent Observability transport security is its own explicit setting.
 - **Always verified:** the Gateway has no unverified mode. Local development uses Grafana's own token signing, so app-sdk's `GF_PLUGIN_INSECURE_SKIP_AUTHENTICATION` has no effect once the Gateway supplies its authenticator.
 
 The `auth` package shrinks to this authenticator and mapping. JWKS fetching, header normalization, Cloud assertions, static keys, unsafe verifiers and the `outbound` JWKS client are deleted.
@@ -105,7 +105,7 @@ Removed settings:
 - the YAML `auth` and `server` blocks;
 - the Agent Observability "required in production" rule.
 
-Settings are keys of Grafana's `[plugin.grafana-aigateway-app]` section, which Grafana passes to the plugin as `GF_PLUGIN_<KEY>`; a host that starts the plugin itself, such as the router, sets the same variables. A small typed reader parses them; there are no command-line arguments and no kingpin. Only real deployment choices are settings: `config_file`, `access_mode`, `access_internal_services`, `deployment_mode`, `max_request_bytes`, `max_model_duration` and the Agent Observability exporter selection. Other limits (response sizes, stream bounds, provider transport, exporter tuning) are constants, pending #394's shared resource policy. The static region and application observation labels are removed.
+Settings are keys of Grafana's `[plugin.grafana-aigateway-app]` section, which Grafana passes to the plugin as `GF_PLUGIN_<KEY>`; a host that starts the plugin itself, such as the router, sets the same variables. A small typed reader parses them; there are no command-line arguments and no kingpin. Only real deployment choices are settings: `config_file`, `access_mode`, `access_internal_services`, `max_request_bytes`, `max_model_duration` and the Agent Observability exporter selection. Other limits (response sizes, stream bounds, provider transport, exporter tuning) are constants, pending #394's shared resource policy. The static region and application observation labels are removed.
 - **Alternative:** app instance settings (`jsonData`). Rejected because they are per org and arrive with requests, while the catalog and exporters are built and validated before the plugin serves.
 - **Alternative:** keeping `GRAFANA_AI_GATEWAY_*` names. Rejected because self-hosted operators would then need `forward_host_env_vars` for configuration, not only for secrets.
 

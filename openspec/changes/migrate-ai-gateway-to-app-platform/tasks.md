@@ -136,7 +136,7 @@
   - a unit test that undeliverable telemetry is abandoned before the budget ends;
   - a config test for production startup with export enabled and default timeouts;
   - a plugin-process test where Shutdown leads to exit before the host's kill delay.
-- [x] 5.5 Make Agent Observability export optional in every deployment mode, keeping production TLS and credential validation when it is enabled. Verify config tests for production without export and for production cleartext export failing.
+- [x] 5.5 Make Agent Observability export optional, keeping credential validation and an endpoint that matches the explicit TLS setting when it is enabled. Verify config tests for startup without export and for a contradicting endpoint failing.
 - [x] 5.6 Update `ai-gateway/docs/text-observability.md` and the README telemetry section. Cover host log relay, host-collected metrics, tracing from the host, and the final-flush budget shared with tracer shutdown. Verify that `mise run lint-docs` passes and relative links resolve.
 
 ## 6. Client documentation and cross-language evidence
@@ -187,7 +187,7 @@
   - `rg -i 'dockerfile|container image' CONTRIBUTING.md release AGENTS.md docs` finds no Gateway image references.
 - [x] 7.5 Align the release-please `ai-gateway` component with the plugin package version source without enabling release automation. Verify that `mise run release-check` passes.
 - [x] 7.6 Add a `test-ai-gateway-e2e` mise task that starts the create-plugin environment on the built package, waits for Grafana, runs the Playwright tests and stops the environment. Run it in plugin validation after the validator, against a digest-pinned Grafana nightly, keeping the Playwright report of a failed run. Verify it locally with the pinned image and in the CI workflow test.
-- [x] 7.7 Read settings as `GF_PLUGIN_<KEY>` from the `[plugin.grafana-aigateway-app]` section with a small typed reader instead of kingpin, keep only deployment choices as settings (config file, access mode and allowlist, deployment mode, request size, model duration, Agent Observability exporter selection) and make the other limits constants. Remove the static region and application observation labels. The local compose environment loads the section from `provisioning/grafana.ini`. Verify with the Go tests, the command suites and the end-to-end tests.
+- [x] 7.7 Read settings as `GF_PLUGIN_<KEY>` from the `[plugin.grafana-aigateway-app]` section with a small typed reader instead of kingpin, keep only deployment choices as settings (config file, access mode and allowlist, request size, model duration, Agent Observability exporter selection) and make the other limits constants. Remove the static region and application observation labels. The local compose environment loads the section from `provisioning/grafana.ini`. Verify with the Go tests, the command suites and the end-to-end tests.
 
 ## 8. Integration verification
 

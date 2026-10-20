@@ -102,7 +102,6 @@ models:
 | `config_file` | Model catalog file. Required. |
 | `access_mode` | `cloud` or `self-hosted`. Required. |
 | `access_internal_services` | Internal service allowlist, `cloud` mode only. |
-| `deployment_mode` | `production` (default) or `development`, which allows HTTP provider endpoints and insecure authentication. |
 | `max_request_bytes` | Largest accepted request body, 1 MiB by default. Raise it for large file inputs. |
 | `max_model_duration` | Longest model call, `120s` by default and at least `30s`. |
 | `agento11y_*` | Optional Agent Observability export; see [text observability](docs/text-observability.md#agent-observability-configuration). |

@@ -173,10 +173,9 @@ func newHarness(t *testing.T, topology platformhost.Topology) *harness {
 	require.NoError(t, err)
 	anthropic := newFakeAnthropic(t)
 	env := map[string]string{
-		"GF_PLUGIN_CONFIG_FILE":     writeModelConfig(t, anthropic.server.URL),
-		"GF_PLUGIN_DEPLOYMENT_MODE": "development",
-		"GRAFANA_JWKS":              string(keys),
-		"ANTHROPIC_SECRET":          providerSecret,
+		"GF_PLUGIN_CONFIG_FILE": writeModelConfig(t, anthropic.server.URL),
+		"GRAFANA_JWKS":          string(keys),
+		"ANTHROPIC_SECRET":      providerSecret,
 	}
 	if topology == platformhost.TopologyCloud {
 		env["GF_PLUGIN_ACCESS_MODE"] = "cloud"

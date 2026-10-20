@@ -45,7 +45,7 @@ The Gateway currently ships as a standalone service. It owns three listeners, JW
 - `gateway-workspace-container`: All requirements removed. Superseded by `gateway-plugin-packaging`.
 - `gateway-request-byok`: BYOK destination policy applies to platform-verified users and service accounts in `cloud` mode rather than Cloud-listener callers.
 - `gateway-configured-discovery`: Discovery authorization and the BYOK unsupported response use caller access, the access mode and the plugin route instead of the Cloud listener and `/api/v1/aisdk/config`.
-- `gateway-text-observability`: Model metrics are exported through the plugin host instead of `/metrics`. Exporter shutdown follows the host stop sequence with a short final-flush budget. Agent Observability export becomes optional in every deployment mode.
+- `gateway-text-observability`: Model metrics are exported through the plugin host instead of `/metrics`. Exporter shutdown follows the host stop sequence with a short final-flush budget. Agent Observability export becomes optional, with its transport security an explicit setting.
 - `gateway-anthropic-mcp`, `gateway-ordered-text-fallback`, `gateway-provider-configuration`: Evidence, startup, readiness and discovery-route wording follows the protocol test host, plugin startup, plugin health and plugin `config` route.
 - `grafana-gateway-client`: Constructor, authentication-flow, reserved-header, discovery and evidence requirements change for platform-hosted routes and identities.
 - `providerwire-v4-http-contract`: The Gateway release artifact becomes the plugin package. The integration workspace serves plugin backend builds.

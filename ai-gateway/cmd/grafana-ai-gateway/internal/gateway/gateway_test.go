@@ -124,7 +124,7 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 			env["GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV"] = "AO_SECRET"
 			env["SIGIL_TAGS"] = "private=ambient"
 		}, message: "ambient agent observability SDK environment"},
-		{name: "production cleartext provider", url: "http://provider.example", message: "production endpoint must use https"},
+		{name: "unsupported provider scheme", url: "ftp://provider.example", message: "must use http or https"},
 		{name: "credential-bearing provider endpoint", url: "https://user:password@provider.example", message: "userinfo"},
 		{name: "malformed credential-bearing provider endpoint", url: "https://user:password@provider.example:port", message: "not a valid URL"},
 		{name: "missing configuration file", change: func(env map[string]string) {
@@ -221,7 +221,6 @@ func TestNew_EnvironmentOnlyStartup(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			env := newStartupEnvironment(t, provider.URL)
-			env.values["GF_PLUGIN_DEPLOYMENT_MODE"] = "development"
 			tc.change(env.values)
 			gw, logs, err := env.start(t)
 			require.NoError(t, err)
@@ -286,7 +285,6 @@ func launchPlugin(t *testing.T, binary string, env map[string]string) *pluginPro
 	fake := newFakeAnthropic(t)
 	environment := []string{
 		"GF_PLUGIN_CONFIG_FILE=" + writeModelConfig(t, fake.server.URL),
-		"GF_PLUGIN_DEPLOYMENT_MODE=development",
 		"GF_PLUGIN_ACCESS_MODE=cloud",
 		"GF_PLUGIN_ACCESS_INTERNAL_SERVICES=" + testInternalService,
 		"ANTHROPIC_SECRET=" + providerSecret,

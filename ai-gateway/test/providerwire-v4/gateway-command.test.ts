@@ -3076,7 +3076,6 @@ class GatewayProcess {
         env: {
           ...Object.fromEntries(Object.entries(nodeProcess.env).filter(([name]) => !name.startsWith("AGENTO11Y_") && !name.startsWith("SIGIL_") && !name.startsWith("GRAFANA_JWKS") && !name.startsWith("GF_"))),
           GF_PLUGIN_CONFIG_FILE: configPath,
-          GF_PLUGIN_DEPLOYMENT_MODE: "development",
           GF_PLUGIN_ACCESS_MODE: topology,
           ...(topology === "cloud" ? { GF_PLUGIN_ACCESS_INTERNAL_SERVICES: INTERNAL_SERVICE } : {}),
           GATEWAY_TEST_ANTHROPIC_KEY: "integration-anthropic-key",
