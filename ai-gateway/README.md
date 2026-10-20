@@ -170,7 +170,8 @@ and points the Gateway at the development catalog in
 `provisioning/aigateway/models.yaml`. It needs Docker and the workspace tools
 from `mise deps`.
 
-Build the plugin once and start Grafana on <http://localhost:3000>:
+From the repository root, build the plugin once and start Grafana on
+<http://localhost:3000>:
 
 ```bash
 mise run build-ai-gateway-plugin
@@ -191,15 +192,16 @@ the published modules. The scaffold's `DEVELOPMENT=true` image is not used: it
 builds inside the container, which sees only `ai-gateway/`.
 
 The Gateway refuses Grafana's anonymous sign-in, so call the routes with a
-service account token:
+service account token. Each run creates a new service account:
 
 ```bash
 grafana=http://localhost:3000
 routes=$grafana/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/default
+name=gateway-dev-$(date +%s)
 id=$(curl -fsS -H 'Content-Type: application/json' \
-  -d '{"name":"gateway-dev","role":"Viewer"}' $grafana/api/serviceaccounts | jq .id)
+  -d "{\"name\":\"$name\",\"role\":\"Viewer\"}" $grafana/api/serviceaccounts | jq .id)
 token=$(curl -fsS -H 'Content-Type: application/json' \
-  -d '{"name":"gateway-dev"}' $grafana/api/serviceaccounts/$id/tokens | jq -r .key)
+  -d "{\"name\":\"$name\"}" $grafana/api/serviceaccounts/$id/tokens | jq -r .key)
 curl -H "Authorization: Bearer $token" $routes/config
 ```
 
