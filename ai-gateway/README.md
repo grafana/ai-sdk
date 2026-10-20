@@ -162,10 +162,10 @@ The plugin follows the create-plugin scaffold with its App Platform addition:
 and `kinds/` holds the manifest source for `generate:kinds`.
 
 For a local Grafana, build the plugin and run `pnpm --filter ./ai-gateway server`.
-It starts the create-plugin compose environment on Grafana nightly with the App
-Platform feature toggles, `self-hosted` access with Grafana's own token
-signing, and the catalog in
-`provisioning/aigateway/models.yaml`. Export `ANTHROPIC_API_KEY` first to call
+It starts the create-plugin compose environment on Grafana nightly with
+`provisioning/grafana.ini`, which enables the App Platform feature toggles and
+configures `self-hosted` access with Grafana's own token signing and the
+catalog in `provisioning/aigateway/models.yaml`. Export `ANTHROPIC_API_KEY` first to call
 models. The environment signs in anonymously, which the Gateway refuses, so call
 the routes with a service account token. `pnpm --filter ./ai-gateway e2e` runs
 the Playwright tests against a running environment; `mise run

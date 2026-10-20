@@ -8,7 +8,5 @@ services:
         grafana_image: ${GRAFANA_IMAGE:-grafana}
         grafana_version: ${GRAFANA_VERSION:-nightly}
     environment:
-      GF_FEATURE_TOGGLES_ENABLE: appplugins.loadAppManifest,appplugins.registerAPIServer,grafana.useRouterMiddleware
-      GF_DEFAULT_APP_MODE: development
       GF_PATHS_CONFIG: /etc/grafana/provisioning/grafana.ini
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-unset-local-key}
