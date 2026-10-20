@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -59,6 +60,9 @@ func classifyError(err error) outcome {
 }
 
 func classifyStreamError(apiErr *provider.APICallError) outcome {
+	if apiErr != nil && errors.Is(apiErr, streamrecover.ErrPanic) {
+		return outcome{status: statusError, errorType: errorTypeOther, statusCode: statusCodeNone, finishReason: finishReasonNone}
+	}
 	if apiErr != nil {
 		return apiCallErrorOutcome(apiErr)
 	}
