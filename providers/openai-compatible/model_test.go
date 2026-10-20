@@ -1905,6 +1905,42 @@ func TestDoStreamProviderOptionsCannotReplaceStreamFields(t *testing.T) {
 	require.Equal(t, map[string]any{"1": float64(100)}, got["logit_bias"], "other fields still extend the request")
 }
 
+func TestDoGenerateSkipsAssistantCustomParts(t *testing.T) {
+	t.Parallel()
+
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl_1",
+			"model":"test-model",
+			"choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := New("test-model", WithBaseURL(server.URL)).DoGenerate(context.Background(), provider.CallOptions{
+		Prompt: []provider.Message{
+			provider.UserText("hi"),
+			provider.NewAssistantMessage(
+				provider.TextPart("answer"),
+				provider.ContentPart{Type: provider.ContentPartTypeCustom, Kind: "openai.compaction"},
+			),
+			provider.UserText("next"),
+		},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, result.Warnings)
+
+	messages := got["messages"].([]any)
+	require.Len(t, messages, 3)
+	assistant := messages[1].(map[string]any)
+	assert.Equal(t, "assistant", assistant["role"])
+	assert.Equal(t, "answer", assistant["content"])
+	assert.NotContains(t, assistant, "tool_calls")
+}
+
 func TestDoStream_EndsWithoutFinishReason(t *testing.T) {
 	const hel = `{"id":"r1","model":"m","created":1,"choices":[{"index":0,"delta":{"role":"assistant","content":"Hel"}}]}`
 	const lo = `{"id":"r1","model":"m","created":1,"choices":[{"index":0,"delta":{"content":"lo"}}]}`

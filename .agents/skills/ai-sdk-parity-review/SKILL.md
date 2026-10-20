@@ -12,8 +12,8 @@ assessment and implementation plan; use this skill to challenge the resulting wo
 
 ## Establish the contract
 
-Read `test/conformance/upstream.yaml` and the relevant `PARITY.md` entries to identify
-versions, supported behavior, existing evidence and accepted deviations. For an
+Read `test/conformance/upstream.yaml` (versions and `knownGaps`) and the relevant
+`PARITY.md` rows to identify supported surfaces, evidence locations and accepted deviations. For an
 upgrade, distinguish the starting baseline from its selected target and decisions.
 
 Inspect matching upstream implementation and tests alongside the Go paths involved.
@@ -51,15 +51,15 @@ registered work or an explicit adaptation/exclusion. Check that issue scopes and
 acceptance criteria actually cover the findings, duplicate candidates were considered,
 and every registered parity issue has `upstream-sync`. The upgrade PR should contain
 the run-specific issue list; reject dated assessment sections, issue catalogs and
-copied issue details in `PARITY.md`. That file changes only for durable coverage,
-evidence, support-boundary or accepted-deviation changes. Do not demand completion
+copied issue details in repository docs. Reject `PARITY.md` edits that only add test
+inventories or evidence narratives; it changes only when a surface or its status or
+evidence location changes. Do not demand completion
 of all parity work, but do not accept broken checks or a target-induced incompatibility
 that prevents a supported integration from working as a mere follow-up.
 
 For a parity work package, review its behavioral acceptance contract against the
 current pinned reference. Check design, implementation and proof; update or close
-the issue when complete. Update the coverage map only if its stable status, evidence,
-supported boundary or accepted deviation changed. One merged PR may deliver only a
+the issue when complete. One merged PR may deliver only a
 producer prerequisite, so package completion still requires the consumer behavior
 and evidence.
 
@@ -89,5 +89,5 @@ finding/action matrix. State commands actually run and distinguish completion of
 upgrade/assessment from completion of an individual parity work package. Do not accept a gap
 by omission or suggest weakening comparisons. Actionable deferred work belongs in
 `upstream-sync` issues; durable coverage boundaries and accepted deviations belong
-in `upstream.yaml` or `PARITY.md`; run-specific observations belong in the upgrade
+in `upstream.yaml` `knownGaps` or the owning capability spec; run-specific observations belong in the upgrade
 PR or review report.

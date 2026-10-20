@@ -3,6 +3,7 @@
 ## Purpose
 
 Define the production strict, bounded ProviderWire V4 streaming text runtime and its compatibility evidence.
+
 ## Requirements
 
 ### Requirement: Constructed streaming limits
@@ -195,7 +196,7 @@ Streaming SHALL preserve represented native identity and sequential text-block s
 
 #### Scenario: Native response metadata and text block state policy
 - **WHEN** the activated Gateway enforces this contract
-- **THEN** After public start and within the provider-part limit, the state machine SHALL accept at most one response-metadata part before payload output, sequential text blocks, independent tool events under gateway-streaming-function-tools, supported reasoning/sources under their capabilities, non-terminal provider errors and exactly one finish. Response metadata SHALL copy representable native ResponseID, ModelID and Timestamp at registered id, modelId and timestamp fields. Nonempty native strings SHALL remain unchanged; optional empty Go strings and zero timestamps SHALL be omitted as documented unrepresentable-presence adaptations. A nonzero timestamp SHALL encode a validated UTC RFC3339Nano instant. A provider metadata part with no identity SHALL contain only its type. The runtime SHALL NOT synthesize missing metadata or substitute requested/canonical route identity. Provider identity, headers and opaque metadata remain outside this scoped identity change.
+- **THEN** After public start and within the provider-part limit, the state machine SHALL accept at most one response-metadata part before payload output, sequential text blocks, independent tool events under gateway-streaming-function-tools, supported reasoning/sources/custom under their capabilities, non-terminal provider errors and exactly one finish. Response metadata SHALL copy representable native ResponseID, ModelID and Timestamp at registered id, modelId and timestamp fields. Nonempty native strings SHALL remain unchanged; optional empty Go strings and zero timestamps SHALL be omitted as documented unrepresentable-presence adaptations. A nonzero timestamp SHALL encode a validated UTC RFC3339Nano instant. A provider metadata part with no identity SHALL contain only its type. The runtime SHALL NOT synthesize missing metadata or substitute requested/canonical route identity. Provider identity, headers and opaque metadata remain outside this scoped identity change.
 - **AND** Configured canonical identity SHALL remain authoritative for configured resolution and operator logical metrics, separately from returned identity. BYOK selection and observation SHALL instead follow the request-scoped identity and bounded-cardinality rules in gateway-text-observability, without catalog lookup or response-derived logical identity. Each text-start ID SHALL remain nonempty, valid UTF-8 and globally unique within its stream, opening the only active text block. Deltas/ends SHALL use its active ID and required empty deltas SHALL survive. Provider errors SHALL not change text/metadata state. Existing reasoning/source/tool first-output placement rules SHALL remain effective. New native identity strings and timestamp bytes SHALL participate in preflight and complete-frame bounds before any write.
 
 #### Scenario: Native metadata precedes output
@@ -227,7 +228,7 @@ Each text-start, text-delta and text-end SHALL preserve supported opaque provide
 - **THEN** the handler SHALL cancel provider work and attempt at most one synthetic terminal internal error
 
 #### Scenario: Metadata placement is invalid
-- **WHEN** metadata is duplicated or arrives after text, tool, reasoning or source output starts
+- **WHEN** metadata is duplicated or arrives after text, tool, reasoning, source or custom output starts
 - **THEN** it SHALL not be forwarded and the existing safe terminal behavior SHALL apply
 
 #### Scenario: Metadata representation exceeds bounds
@@ -377,15 +378,19 @@ Nil, malformed, or unclassifiable provider error values SHALL reduce to the cano
 
 ### Requirement: Synthetic terminal adapter errors
 
-Before valid finish, unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior. Reasoning start/delta/end and atomic reasoning-file events SHALL be supported under gateway-reasoning-content, and URL/document sources SHALL be supported under gateway-sources. Ordinary generated files, custom/raw output, approvals and unsupported tool behavior SHALL remain unsupported.
+Before valid finish, unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior. Reasoning start/delta/end and atomic reasoning-file events SHALL be supported under gateway-reasoning-content, URL/document sources SHALL be supported under gateway-sources, and atomic custom events SHALL be supported under gateway-custom-content. Ordinary generated files, raw output, approvals and unsupported tool behavior SHALL remain unsupported.
 
 #### Scenario: Reasoning lifecycle violation
 - **WHEN** reasoning ends without a matching active start, reuses an ended reasoning ID, or remains open at finish
 - **THEN** the handler SHALL produce at most one safe terminal error and no synthetic finish
 
 #### Scenario: Unsupported stream family appears
-- **WHEN** the text runtime receives provider-executed/dynamic/preliminary tool behavior, ordinary generated file, custom, raw, approval, or another unsupported part
+- **WHEN** the text runtime receives provider-executed/dynamic/preliminary tool behavior, ordinary generated file, raw, approval, or another unsupported part
 - **THEN** it SHALL emit at most one terminal internal error rather than serializing the provider-domain part
+
+#### Scenario: Custom stream part is supported
+- **WHEN** the runtime receives a well-formed custom part between stream start and finish
+- **THEN** it SHALL emit the custom event and continue the stream rather than emitting a terminal error
 
 #### Scenario: Concurrent reasoning
 - **WHEN** two reasoning blocks and a text block sharing one raw ID interleave

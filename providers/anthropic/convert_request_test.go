@@ -3576,7 +3576,7 @@ func hasUnsupportedWarning(warnings []provider.Warning, feature string) bool {
 }
 
 func TestBuildParams_UnsupportedContentWarnings(t *testing.T) {
-	t.Run("CustomContentPart in assistant message", func(t *testing.T) {
+	t.Run("Unknown CustomContentPart in assistant message", func(t *testing.T) {
 		opts := provider.CallOptions{
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
@@ -3592,7 +3592,7 @@ func TestBuildParams_UnsupportedContentWarnings(t *testing.T) {
 		require.Len(t, p.Messages, 1)
 		require.Len(t, p.Messages[0].Content, 1, "custom content should be skipped")
 		require.NotNil(t, p.Messages[0].Content[0].OfText)
-		assert.True(t, hasUnsupportedWarning(warnings, "customContent"), "expected unsupported warning for CustomContentPart")
+		assert.Empty(t, warnings, "unknown assistant custom kinds are skipped without a warning")
 	})
 
 	t.Run("ReasoningFileContentPart in assistant message", func(t *testing.T) {
@@ -6111,5 +6111,89 @@ func TestBuildParams_VertexJSONOutput(t *testing.T) {
 				assert.NotContains(t, p.Betas, sdk.AnthropicBeta("structured-outputs-2025-11-13"))
 			})
 		}
+	}
+}
+
+func TestBuildParams_CustomToolResultContent(t *testing.T) {
+	// Synthetic request snapshots: no recorded provider traffic or upstream
+	// fixture covers custom tool-result entries.
+	anthropicOptions := func(raw string) provider.ProviderOptions {
+		return provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(raw)}}
+	}
+	file := provider.Base64DataContent("imgdata")
+
+	tests := []struct {
+		name         string
+		content      []provider.ToolResultContentValue
+		wantContent  string
+		wantWarnings int
+	}{
+		{
+			name: "mixed text file custom order",
+			content: []provider.ToolResultContentValue{
+				{Type: provider.ToolContentText, Text: "before"},
+				{Type: provider.ToolContentCustom, ProviderOptions: anthropicOptions(`{"type":"tool-reference","toolName":"search"}`)},
+				{Type: provider.ToolContentFile, Data: &file, MediaType: "image/png"},
+			},
+			wantContent: `[{"text":"before","type":"text"},{"tool_name":"search","type":"tool_reference"},{"source":{"data":"imgdata","media_type":"image/png","type":"base64"},"type":"image"}]`,
+		},
+		{
+			name:        "missing tool name omits tool_name",
+			content:     []provider.ToolResultContentValue{{Type: provider.ToolContentCustom, ProviderOptions: anthropicOptions(`{"type":"tool-reference"}`)}},
+			wantContent: `[{"type":"tool_reference"}]`,
+		},
+		{
+			name:        "non-string tool name is copied raw",
+			content:     []provider.ToolResultContentValue{{Type: provider.ToolContentCustom, ProviderOptions: anthropicOptions(`{"type":"tool-reference","toolName":7}`)}},
+			wantContent: `[{"tool_name":7,"type":"tool_reference"}]`,
+		},
+		{
+			name:         "single non-reference entry leaves empty content",
+			content:      []provider.ToolResultContentValue{{Type: provider.ToolContentCustom, ProviderOptions: anthropicOptions(`{"type":"other"}`)}},
+			wantContent:  `[]`,
+			wantWarnings: 1,
+		},
+		{
+			name:        "unsupported file entry also leaves empty content",
+			content:     []provider.ToolResultContentValue{{Type: provider.ToolContentFile, Data: &file, MediaType: "text/plain"}},
+			wantContent: `[]`,
+		},
+		{
+			name:         "non-string type warns instead of failing",
+			content:      []provider.ToolResultContentValue{{Type: provider.ToolContentCustom, ProviderOptions: anthropicOptions(`{"type":3}`)}},
+			wantContent:  `[]`,
+			wantWarnings: 1,
+		},
+		{
+			name:         "no anthropic options warns",
+			content:      []provider.ToolResultContentValue{{Type: provider.ToolContentCustom}},
+			wantContent:  `[]`,
+			wantWarnings: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := provider.CallOptions{Prompt: []provider.Message{
+				provider.NewToolMessage(provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{
+					Type:    provider.ToolOutputContent,
+					Content: tc.content,
+				})),
+			}}
+
+			p, _, warnings, _, err := buildParams("claude-sonnet-4-6", opts, false)
+			require.NoError(t, err)
+
+			result := p.Messages[0].Content[0].OfToolResult
+			require.NotNil(t, result)
+			encoded, err := json.Marshal(result.Content)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.wantContent, string(encoded))
+			require.Len(t, warnings, tc.wantWarnings)
+			for _, warning := range warnings {
+				assert.Equal(t, provider.WarnOther, warning.Type)
+				assert.Equal(t, "unsupported custom tool content part", warning.Message)
+			}
+		})
 	}
 }

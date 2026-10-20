@@ -365,8 +365,6 @@ func TestRuntimeRequestRejections(t *testing.T) {
 		body string
 		want []byte
 	}{
-		{name: "capability/custom content", body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x"}]}]}`, want: unsupportedCustomContentError},
-		{name: "capability/custom tool output", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"custom"}]}}]}]}`, want: unsupportedToolsError},
 		{name: "capability/raw output", body: `{"prompt":[],"includeRawChunks":true}`, want: unsupportedRawOutputError},
 		{name: "policy/reserved provider namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, want: reservedProviderOptionsError},
 		{name: "policy/protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, want: protectedCallHeaderError},
@@ -434,6 +432,8 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		{file: "scalar-presence.json", status: http.StatusOK, modelCalls: 1},
 		{file: "headers.json", status: http.StatusOK, modelCalls: 1},
 		{file: "headers.json", index: 1, status: http.StatusOK, modelCalls: 1},
+		{file: "custom-content.json", status: http.StatusOK, modelCalls: 1},
+		{file: "custom-content.json", index: 1, status: http.StatusOK, modelCalls: 1},
 		{file: "comprehensive-unions.json", status: http.StatusBadRequest},
 		{file: "provider-tools.json", status: http.StatusOK, modelCalls: 1},
 		{file: "provider-tools.json", index: 1, status: http.StatusOK, modelCalls: 1},
@@ -925,7 +925,6 @@ func TestPublicError_FixedBytes(t *testing.T) {
 		{"permission", safeError{category: safePermission}, 403, canonicalPermissionError, canonicalInternalStreamErrorFrame},
 		{"zero", safeError{}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
 		{"unknown", safeError{category: 255}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
-		{"custom", safeError{category: safeInvalidRequest, reason: capabilityCustomContent}, 400, unsupportedCustomContentError, canonicalInternalStreamErrorFrame},
 		{"tools", safeError{category: safeInvalidRequest, reason: capabilityTools}, 400, unsupportedToolsError, canonicalInternalStreamErrorFrame},
 		{"approval", safeError{category: safeInvalidRequest, reason: capabilityToolApprovals}, 400, unsupportedToolApprovalsError, canonicalInternalStreamErrorFrame},
 		{"output", safeError{category: safeInvalidRequest, reason: capabilityStructuredOutput}, 400, unsupportedStructuredOutputError, canonicalInternalStreamErrorFrame},
@@ -1014,7 +1013,7 @@ func TestSafeErrorReduction(t *testing.T) {
 			{value: safeError{category: safeTimeout}, status: http.StatusGatewayTimeout},
 			{value: safeError{category: safeCancellation}, status: 499},
 			{value: safeError{category: safeInternal}, status: http.StatusInternalServerError},
-			{value: safeError{category: safeInvalidRequest, reason: capabilityCustomContent}, status: http.StatusBadRequest},
+			{value: safeError{category: safeInvalidRequest, reason: capabilityTools}, status: http.StatusBadRequest},
 		} {
 			h := newTestHandler(t, testLimits())
 			response := httptest.NewRecorder()
@@ -1720,5 +1719,255 @@ func TestExecutionRequest_ProjectionAfterSeal(t *testing.T) {
 			_, attempts := capture.seal()
 			assert.Empty(t, attempts)
 		})
+	}
+}
+
+func rawOptions(namespace, raw string) provider.ProviderOptions {
+	return provider.ProviderOptions{namespace: provider.RawProviderOption{Key: namespace, Raw: []byte(raw)}}
+}
+
+func assertRawOptions(t *testing.T, namespace, want string, got provider.ProviderOptions) {
+	t.Helper()
+	require.Len(t, got, 1)
+	raw, ok := got[namespace].(provider.RawProviderOption)
+	require.True(t, ok)
+	assert.JSONEq(t, want, string(raw.Raw))
+}
+
+func TestCustomContentRequest_MapsAssistantHistoryAndToolResults(t *testing.T) {
+	const body = `{"prompt":[
+		{"role":"assistant","content":[
+			{"type":"text","text":"answer"},
+			{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}},
+			{"type":"custom","kind":"anthropic.fallback","providerOptions":{"anthropic":{"type":"fallback","from":{"model":"a"},"to":{"model":"b"}}}},
+			{"type":"custom","kind":"example.kind"}
+		]},
+		{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"search","output":{"type":"content","value":[
+			{"type":"text","text":"before"},
+			{"type":"custom","providerOptions":{"anthropic":{"type":"tool-reference","toolName":"search"}}},
+			{"type":"file","data":{"type":"data","data":"AA=="},"mediaType":"image/png"},
+			{"type":"custom"}
+		]}}]}
+	]}`
+
+	for _, streaming := range []string{"false", "true"} {
+		t.Run("streaming="+streaming, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			request := validRequest(body)
+			request.Header.Set(HeaderStreaming, streaming)
+
+			response := harness.serve(request)
+
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			require.Equal(t, 1, harness.model.callCount())
+			prompt := harness.model.receivedOptions().Prompt
+			require.Len(t, prompt, 2)
+
+			history := prompt[0].Content
+			require.Len(t, history, 4)
+			assert.Equal(t, provider.ContentPartTypeText, history[0].Type)
+			assert.Equal(t, provider.ContentPartTypeCustom, history[1].Type)
+			assert.Equal(t, "openai.compaction", history[1].Kind)
+			assert.Equal(t, rawOptions("openai", `{"itemId":"cmp_1","encryptedContent":"ENC"}`), history[1].ProviderOptions)
+			assert.Equal(t, "anthropic.fallback", history[2].Kind)
+			assert.Equal(t, "example.kind", history[3].Kind)
+			assert.Nil(t, history[3].ProviderOptions)
+
+			result := prompt[1].Content[0].Output
+			require.NotNil(t, result)
+			require.Len(t, result.Content, 4)
+			assert.Equal(t, provider.ToolContentText, result.Content[0].Type)
+			assert.Equal(t, provider.ToolContentCustom, result.Content[1].Type)
+			assert.Equal(t, rawOptions("anthropic", `{"type":"tool-reference","toolName":"search"}`), result.Content[1].ProviderOptions)
+			assert.Equal(t, provider.ToolContentFile, result.Content[2].Type)
+			assert.Equal(t, provider.ToolContentCustom, result.Content[3].Type)
+			assert.Nil(t, result.Content[3].ProviderOptions)
+		})
+	}
+}
+
+func TestCustomContentRequest_Refusals(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"custom in user message", `{"prompt":[{"role":"user","content":[{"type":"custom","kind":"p.x"}]}]}`, string(canonicalInvalidRequestError)},
+		{"custom in tool message", `{"prompt":[{"role":"tool","content":[{"type":"custom","kind":"p.x"}]}]}`, string(canonicalInvalidRequestError)},
+		{"undotted kind", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"unqualified"}]}]}`, string(canonicalInvalidRequestError)},
+		{"missing kind", `{"prompt":[{"role":"assistant","content":[{"type":"custom"}]}]}`, string(canonicalInvalidRequestError)},
+		{"non-object options", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x","providerOptions":{"p":[]}}]}]}`, string(canonicalInvalidRequestError)},
+		{"reserved namespace on custom part", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x","providerOptions":{"gateway":{}}}]}]}`, string(reservedProviderOptionsError)},
+		{"reserved namespace on tool-result custom entry", `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"content","value":[{"type":"custom","providerOptions":{"grafana":{}}}]}}]}]}`, string(reservedProviderOptionsError)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+
+			response := harness.serve(validRequest(tc.body))
+
+			assert.Equal(t, http.StatusBadRequest, response.Code)
+			assert.JSONEq(t, tc.want, response.Body.String())
+			assert.Zero(t, harness.resolver.callCount())
+			assert.Zero(t, harness.model.callCount())
+		})
+	}
+}
+
+func TestCustomContentRequest_RegisteredClientGolden(t *testing.T) {
+	records := loadGolden(t, "custom-content.json")
+	require.Len(t, records, 2)
+	for index, record := range records {
+		harness := newRuntimeHarness(t, testLimits())
+
+		response := harness.serve(requestFromGolden(t, record))
+
+		require.Equal(t, http.StatusOK, response.Code, "record %d: %s", index, response.Body.String())
+		require.Equal(t, 1, harness.model.callCount())
+		prompt := harness.model.receivedOptions().Prompt
+		require.Len(t, prompt, 3)
+
+		var kinds []string
+		for _, part := range prompt[1].Content {
+			if part.Type == provider.ContentPartTypeCustom {
+				kinds = append(kinds, part.Kind)
+			}
+		}
+		assert.Equal(t, []string{"openai.compaction", "anthropic.fallback", "example.kind"}, kinds)
+		assertRawOptions(t, "openai", `{"itemId":"cmp_1","encryptedContent":"ENC"}`, prompt[1].Content[1].ProviderOptions)
+
+		content := prompt[2].Content[0].Output.Content
+		require.Len(t, content, 3)
+		assert.Equal(t, provider.ToolContentCustom, content[1].Type)
+		assertRawOptions(t, "anthropic", `{"type":"tool-reference","toolName":"search"}`, content[1].ProviderOptions)
+		assert.Equal(t, provider.ToolContentCustom, content[2].Type)
+		assert.Nil(t, content[2].ProviderOptions)
+	}
+}
+
+type scriptedModel struct {
+	*recordingModel
+	err   error
+	calls int
+}
+
+func newScripted(err error) *scriptedModel {
+	return &scriptedModel{recordingModel: &recordingModel{}, err: err}
+}
+
+func (m *scriptedModel) DoGenerate(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+	m.calls++
+	if m.err != nil {
+		return nil, m.err
+	}
+	return validGenerateResult(), nil
+}
+
+func (m *scriptedModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+	m.calls++
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &provider.StreamResult{Stream: makeStream(finishPart())}, nil
+}
+
+type expectedDocument struct {
+	status int
+	body   []byte
+}
+
+func documentForSafeError(value safeError) expectedDocument {
+	status, body := encodeHTTPError(value, nil, maxErrorResponseBytes)
+	return expectedDocument{status: status, body: body}
+}
+
+func publicErrorMember(t *testing.T, body []byte) json.RawMessage {
+	t.Helper()
+	var document struct {
+		Error json.RawMessage `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(body, &document))
+	return document.Error
+}
+
+func unsupported(name string) error {
+	return fmt.Errorf("%s: unsupported tool content part type: custom: %w", name, provider.ErrUnsupportedFunctionality)
+}
+
+func TestUnsupportedFunctionalityClassification(t *testing.T) {
+	overload := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusServiceUnavailable, Message: "overloaded"})
+	wrapsSentinel := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusBadRequest, Message: "wrapped", Cause: unsupported("cause")})
+	invalid := documentForSafeError(safeError{category: safeInvalidRequest})
+
+	tests := []struct {
+		name       string
+		candidates func() []*scriptedModel
+		want       expectedDocument
+		wantCalls  []int
+	}{
+		{"direct rejection", func() []*scriptedModel { return []*scriptedModel{newScripted(unsupported("a"))} }, invalid, []int{1}},
+		{"every candidate rejects", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(unsupported("a")), newScripted(unsupported("b"))}
+		}, invalid, []int{1, 1}},
+		{"rejection then success", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(unsupported("a")), newScripted(nil)}
+		}, expectedDocument{status: http.StatusOK}, []int{1, 1}},
+		{"rejection then 503", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(unsupported("a")), newScripted(overload)}
+		}, documentForSafeError(safeError{category: safeOverload}), []int{1, 1}},
+		{"503 then rejection", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(overload), newScripted(unsupported("a"))}
+		}, documentForSafeError(safeError{category: safeOverload}), []int{1, 1}},
+		{"rejection then unknown error", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(unsupported("a")), newScripted(errors.New("private failure"))}
+		}, invalid, []int{1, 1}},
+		{"unknown error then rejection", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(errors.New("private failure")), newScripted(unsupported("a"))}
+		}, invalid, []int{1, 1}},
+		{"API error wrapping the sentinel keeps API classification", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(wrapsSentinel)}
+		}, documentForSafeError(safeError{category: safeFailedDependency}), []int{1}},
+		{"cancellation wins", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(errors.Join(unsupported("a"), context.Canceled))}
+		}, documentForSafeError(safeError{category: safeCancellation}), []int{1}},
+	}
+
+	for _, streaming := range []bool{false, true} {
+		for _, tc := range tests {
+			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
+				candidates := tc.candidates()
+				models := make([]provider.LanguageModel, len(candidates))
+				for i, candidate := range candidates {
+					models[i] = candidate
+				}
+				composed := models[0]
+				if len(models) > 1 {
+					var err error
+					composed, err = fallback.New(models...)
+					require.NoError(t, err)
+				}
+				harness := newRuntimeHarness(t, testLimits())
+				harness.resolver.resolved.Model = composed
+				request := validRequest(`{"prompt":[]}`)
+				if streaming {
+					request.Header.Set(HeaderStreaming, "true")
+				}
+
+				response := harness.serve(request)
+
+				assert.Equal(t, tc.want.status, response.Code, response.Body.String())
+				if tc.want.body != nil {
+					assert.JSONEq(t, string(publicErrorMember(t, tc.want.body)), string(publicErrorMember(t, response.Body.Bytes())))
+				}
+				for i, candidate := range candidates {
+					assert.Equal(t, tc.wantCalls[i], candidate.calls, "candidate %d", i)
+				}
+				if tc.want.body != nil {
+					errorMember := string(publicErrorMember(t, response.Body.Bytes()))
+					assert.NotContains(t, errorMember, "unsupported tool content")
+					assert.NotContains(t, errorMember, "private")
+				}
+			})
+		}
 	}
 }

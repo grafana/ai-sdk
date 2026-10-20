@@ -347,6 +347,65 @@ async function fileInputCapture(): Promise<SemanticRequest[]> {
   });
 }
 
+function customContentOptions(): LanguageModelV4CallOptions {
+  return {
+    prompt: [
+      { role: "user", content: [{ type: "text", text: "continue" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "answer" },
+          {
+            type: "custom",
+            kind: "openai.compaction",
+            providerOptions: { openai: { itemId: "cmp_1", encryptedContent: "ENC" } },
+          },
+          {
+            type: "custom",
+            kind: "anthropic.fallback",
+            providerOptions: {
+              anthropic: { type: "fallback", from: { model: "claude-a" }, to: { model: "claude-b" } },
+            },
+          },
+          { type: "custom", kind: "example.kind" },
+          { type: "tool-call", toolCallId: "call-1", toolName: "lookup", input: {} },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-1",
+            toolName: "lookup",
+            output: {
+              type: "content",
+              value: [
+                { type: "text", text: "before" },
+                {
+                  type: "custom",
+                  providerOptions: { anthropic: { type: "tool-reference", toolName: "search" } },
+                },
+                { type: "custom" },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function customContentCapture(): Promise<SemanticRequest[]> {
+  return captureCalls({
+    modelId: "grafana/custom",
+    calls: async (model) => {
+      await generate(model, customContentOptions());
+      await stream(model, customContentOptions());
+    },
+  });
+}
+
 async function streamingCapture(): Promise<SemanticRequest[]> {
   const controller = new AbortController();
   return captureCalls({
@@ -474,6 +533,11 @@ export const fileInputGoldenCase: RequestGoldenCase = {
   fileName: "file-inputs.json",
   capture: fileInputCapture,
 };
+export const customContentGoldenCase: RequestGoldenCase = {
+  name: "custom content",
+  fileName: "custom-content.json",
+  capture: customContentCapture,
+};
 export const streamingGoldenCase: RequestGoldenCase = {
   name: "streaming",
   fileName: "streaming.json",
@@ -504,6 +568,7 @@ export const requestGoldenCases: RequestGoldenCase[] = [
   scalarGoldenCase,
   comprehensiveGoldenCase,
   fileInputGoldenCase,
+  customContentGoldenCase,
   providerToolsGoldenCase,
   mcpToolsGoldenCase,
   streamingGoldenCase,

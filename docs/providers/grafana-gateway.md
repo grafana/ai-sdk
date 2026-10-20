@@ -288,9 +288,20 @@ constructors must be migrated to pointers. Approval-response reasons remain
 strings; empty and absent both mean no reason.
 
 Registered output options and nested text/file result options reach native
-adapters. The `content` output wrapper has no `providerOptions` field. Custom
-tool-result formats are not supported. Generated file
-transport is described in [Receive generated files](#receive-generated-files).
+adapters. The `content` output wrapper has no `providerOptions` field. Generated
+file transport is described in [Receive generated files](#receive-generated-files).
+
+## Preserve custom content
+
+Some providers return content that has no standard type, such as OpenAI
+compaction items. The Gateway returns it as custom content with a `kind`, for
+example `openai.compaction`, and provider metadata. Keep these parts in the
+history you send back, with the metadata as their provider options, so the same
+provider can continue the conversation. Other providers ignore custom content
+they do not recognize, so it is safe to use with fallback chains.
+
+If no model in the chain can accept the custom content in a tool result, the
+Gateway returns a non-retryable invalid-request error.
 
 ## Use your own provider credentials
 

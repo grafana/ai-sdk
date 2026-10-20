@@ -317,6 +317,43 @@ describe("Go and exact-pinned Gateway differential", () => {
     }
   });
 
+  it("matches custom unary content and stream events for known and unknown kinds", async () => {
+    const custom = [
+      { type: "custom", kind: "openai.compaction", providerMetadata: { openai: { type: "compaction", itemId: "cmp_1", encryptedContent: "ENC", nested: { none: null, no: false, zero: 0, empty: "" } } } },
+      { type: "custom", kind: "anthropic.fallback", providerMetadata: { anthropic: { type: "fallback", from: { model: "a" }, to: { model: "b" } } } },
+      { type: "custom", kind: "example.future_block" },
+      { type: "custom", kind: "example.empty", providerMetadata: {} },
+    ];
+    const project = (part: any, emptyMetadataIsAbsent = false) => part.type === "custom"
+      ? { type: part.type, kind: part.kind, metadata: part.providerMetadata === undefined || (emptyMetadataIsAbsent && Object.keys(part.providerMetadata).length === 0) ? "absent" : JSON.stringify(part.providerMetadata) }
+      : { type: part.type, id: part.id, text: part.text, delta: part.delta };
+    for (const streaming of [false, true]) {
+      const values = streaming
+        ? [{ type: "stream-start", warnings: [] }, custom[0], { type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "hi" }, custom[1], { type: "text-end", id: "t" }, custom[2], custom[3],
+          { type: "finish", finishReason: { unified: "stop" }, usage: { inputTokens: {}, outputTokens: {} } }]
+        : [{ type: "text", text: "hi" }, ...custom];
+      const payload = streaming ? values.map(value => `data: ${JSON.stringify(value)}\n\n`).join("") : JSON.stringify({ ...unary, content: values });
+      const server = await endpoint(payload, 200, streaming ? "text/event-stream" : "application/json");
+      try {
+        const model = createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant");
+        const tsParts: any[] = [];
+        if (streaming) {
+          for await (const part of (await model.doStream({ prompt: [] })).stream) tsParts.push(part);
+        } else {
+          tsParts.push(...(await model.doGenerate({ prompt: [] })).content);
+        }
+        const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: streaming ? "stream" : "generate", options: { prompt: [] } });
+        assert.equal(go.error, undefined);
+        const goParts: any[] = streaming ? go.parts : go.result.content;
+        const isContent = (part: any) => part.type === "custom" || part.type === "text" || part.type === "text-start" || part.type === "text-delta" || part.type === "text-end";
+        const expected = tsParts.filter(isContent).map((part) => project(part));
+        assert.deepEqual(goParts.filter(isContent).map((part) => project(part, true)), tsParts.filter(isContent).map((part) => project(part, true)));
+        assert.equal(expected.find((part) => part.kind === "example.empty")?.metadata, "{}");
+        assert.deepEqual(expected.filter((part) => part.type === "custom").map((part) => part.kind), ["openai.compaction", "anthropic.fallback", "example.future_block", "example.empty"]);
+      } finally { await server.stop(); }
+    }
+  });
+
   it("matches provider definitions, continuation and hosted unary output", async () => {
     const serverBody = { content: [
       { type: "tool-call", toolCallId: "call", toolName: "echo", input: "{}", providerExecuted: true, dynamic: true, providerMetadata: { anthropic: { caller: { type: "direct" } } } },

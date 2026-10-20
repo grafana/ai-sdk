@@ -906,3 +906,31 @@ func TestConvertResponse_InputTransformations(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertResponse_ContainerUpload(t *testing.T) {
+	// Synthetic response: no recorded Anthropic fixture contains container_upload.
+	msg := unmarshalMessage(t, `{
+		"id":"msg_1",
+		"type":"message",
+		"role":"assistant",
+		"model":"claude-sonnet-4-6",
+		"content":[
+			{"type":"text","text":"before"},
+			{"type":"container_upload","file_id":"file_1"},
+			{"type":"text","text":"after"}
+		],
+		"stop_reason":"end_turn",
+		"stop_sequence":null,
+		"usage":{"input_tokens":1,"output_tokens":1}
+	}`)
+
+	result, err := convertResponse(msg, toolNameMapping{}, false, nil, defaultGenerateID, "anthropic", false)
+	require.NoError(t, err)
+
+	require.Len(t, result.Content, 3)
+	assert.Equal(t, provider.ContentText, result.Content[0].Type)
+	assert.Equal(t, provider.ContentCustom, result.Content[1].Type)
+	assert.Equal(t, "anthropic.container_upload", result.Content[1].Kind)
+	assert.JSONEq(t, `{"fileId":"file_1"}`, string(result.Content[1].ProviderMetadata["anthropic"]))
+	assert.Equal(t, provider.ContentText, result.Content[2].Type)
+}

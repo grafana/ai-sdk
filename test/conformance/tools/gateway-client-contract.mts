@@ -33,7 +33,7 @@ export function validateGatewayContract(
   actual: GatewayContractInventory,
 ): string[] {
   const errors: string[] = [];
-  const review = "review Gateway client mapping, differential evidence, and PARITY.md before updating gateway-client-contract.json";
+  const review = "review Gateway client mapping, differential evidence, and the Gateway specs before updating gateway-client-contract.json";
   if (baseline.upstream?.commit !== evidence.upstreamCommit) {
     errors.push(`Gateway client evidence upstream commit changed; ${review}`);
   }

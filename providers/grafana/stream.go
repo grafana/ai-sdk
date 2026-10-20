@@ -196,6 +196,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 	var value struct {
 		Type             provider.StreamPartType `json:"type"`
 		ID               *string                 `json:"id"`
+		Kind             *string                 `json:"kind"`
 		Delta            *string                 `json:"delta"`
 		ModelID          *string                 `json:"modelId"`
 		Timestamp        *string                 `json:"timestamp"`
@@ -228,7 +229,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 	case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd,
 		provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd, provider.PartReasoningFile, provider.PartFile,
 		provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd,
-		provider.PartToolApprovalRequest, provider.PartToolCall, provider.PartToolResult, provider.PartFinish:
+		provider.PartToolApprovalRequest, provider.PartToolCall, provider.PartToolResult, provider.PartFinish, provider.PartCustom:
 		metadata, err := decodeProviderMetadata(value.Metadata)
 		if err != nil {
 			return invalid()
@@ -357,6 +358,11 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 			}
 			part.Delta = *value.Delta
 		}
+	case provider.PartCustom:
+		if decodeFields(data, &value, "kind") != nil || value.Kind == nil {
+			return invalid()
+		}
+		part.Kind = *value.Kind
 	case provider.PartFinish:
 		if decodeFields(data, &value, "finishReason", "usage") != nil {
 			return invalid()

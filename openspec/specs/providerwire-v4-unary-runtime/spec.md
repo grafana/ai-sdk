@@ -1,6 +1,7 @@
 ## Purpose
 
 Define the production ProviderWire V4 unary text and client-executed function-tool runtime and the observable contract proven against the registered Gateway client.
+
 ## Requirements
 ### Requirement: Constructed language-model handler
 
@@ -110,8 +111,12 @@ The handler SHALL map call-level, message-level and text-part provider options t
 Namespace names SHALL be compared exactly, because provider-option namespaces are case-significant. Provider options carried by a message role or part type the runtime does not support SHALL NOT be inspected, so such a request SHALL report the family of that role or part type. The handler SHALL map body-carried call headers to provider call headers, preserving each key's original case.
 
 #### Scenario: Unsupported custom-part options are not interpreted during mapping
-- **WHEN** a schema-valid request has no unsupported features except a `custom` content part of kind `example.custom` carrying an object-valued opaque provider-options namespace
-- **THEN** complete schema validation SHALL succeed before supported-subset mapping reports the `custom-content` family without interpreting that part's provider options
+- **WHEN** a schema-valid request has an assistant `custom` content part of kind `example.custom` carrying an object-valued opaque provider-options namespace
+- **THEN** complete schema validation SHALL succeed and, because custom content is now supported under gateway-custom-content, the part's options SHALL reach the model unchanged without a `custom-content` refusal
+
+#### Scenario: Options on a still-unsupported part type are not interpreted
+- **WHEN** a schema-valid request has no unsupported features except a tool-approval response carrying an object-valued opaque provider-options namespace
+- **THEN** supported-subset mapping SHALL report the `tool-approvals` family without interpreting that part's provider options
 
 #### Scenario: Supported namespace and header case is preserved
 - **WHEN** a supported text request carries distinct `anthropic` and `Anthropic` provider-option namespaces and a body header named `X-Request-ID`
@@ -135,7 +140,7 @@ A body-carried header whose name belongs to the runtime's own protocol namespace
 
 ### Requirement: Unsupported capability families
 
-Schema-valid custom content, provider tools and tool approvals, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Structured output SHALL execute within gateway-structured-output. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers.
+Schema-valid provider tools and tool approvals, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Structured output SHALL execute within gateway-structured-output. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family
@@ -149,17 +154,25 @@ Schema-valid custom content, provider tools and tool approvals, and raw output S
 - **WHEN** a valid assistant reasoning part carries supported scoped continuation options
 - **THEN** the model SHALL receive them without enabling deferred capability families
 
+#### Scenario: Custom content is supported
+- **WHEN** a valid request carries assistant custom history or custom tool-result content
+- **THEN** it SHALL execute within gateway-custom-content without a blanket unsupported-family failure
+
 #### Scenario: Ordinary files no longer trigger blanket rejection
 - **WHEN** a schema-valid unary or streaming request contains only supported text, ordinary files, supported tool history, and permitted message/file options
 - **THEN** it SHALL map without a blanket files or provider-options failure and continue through the existing execution boundary
 
+#### Scenario: Custom content no longer triggers rejection
+- **WHEN** a schema-valid unary or streaming request contains assistant custom history or custom tool-result content
+- **THEN** it SHALL map without a `custom-content` or `tools` refusal and continue through the existing execution boundary
+
 ### Requirement: Supported function continuation and deferred result option scopes
 
-Function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools and gateway-streaming-function-tools subsets, including the ordinary file-result extension. Function-tool and ordinary file-entry provider options SHALL be supported within those subsets; deferred output-level and non-file nested result options SHALL remain unsupported.
+Function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools and gateway-streaming-function-tools subsets, including the ordinary file-result and custom-result extensions. Function-tool, ordinary file-entry and custom-entry provider options SHALL be supported within those subsets; deferred output-level and text-entry nested result options SHALL remain unsupported.
 
 #### Scenario: Supported function continuation and deferred result option scopes
-- **WHEN** a request carries function definitions and file-bearing tool history with file-entry options
-- **THEN** it SHALL execute only in the unary/streaming function subsets without enabling deferred output-level or non-file nested options
+- **WHEN** a request carries function definitions and tool history whose content has file entries with options and custom entries with options
+- **THEN** it SHALL execute only in the unary/streaming function subsets without enabling deferred output-level or text-entry nested options
 
 ### Requirement: Reasoning history options and unsupported-family precedence boundary
 
@@ -358,7 +371,7 @@ Arbitrary cause trees and raw bodies/headers SHALL NOT be serialized by failure 
 
 ### Requirement: Minimal unary success response
 
-A successful response SHALL contain ordered supported text, function-tool-call, source, reasoning and reasoning-file content, finishReason, usage and a warnings array. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Supported result/content providerMetadata SHALL retain opaque namespace objects and represented presence under gateway-provider-metadata.
+A successful response SHALL contain ordered supported text, function-tool-call, source, reasoning, reasoning-file and custom content, finishReason, usage and a warnings array. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Supported result/content providerMetadata SHALL retain opaque namespace objects and represented presence under gateway-provider-metadata.
 
 #### Scenario: Reasoning-only paid success
 - **WHEN** a provider returns a valid reasoning-only result
@@ -368,6 +381,10 @@ A successful response SHALL contain ordered supported text, function-tool-call, 
 #### Scenario: Valid text result
 - **WHEN** the model returns text, a registered finish reason and valid usage without warnings or Response
 - **THEN** the handler SHALL preserve those values, emit warnings as an empty array and omit response
+
+#### Scenario: Valid custom result
+- **WHEN** the model returns text followed by custom content with a dotted kind and metadata
+- **THEN** the handler SHALL preserve both parts in order with the kind and metadata unchanged
 
 #### Scenario: Unsupported provider result
 - **WHEN** the model returns unsupported content, an unknown finish reason or warning type, invalid usage, nil result or panics
@@ -592,3 +609,26 @@ The handler SHALL use synchronized request-local observation to optionally enric
 #### Scenario: Owned cancellation and late native result
 - **WHEN** cancellation wins invocation ownership before a late native result
 - **THEN** the existing context error SHALL be returned and published attribution SHALL NOT capture the unowned late native failure
+
+### Requirement: Unsupported-functionality rejection classification
+When unary invocation or stream setup fails with the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline, API-call-error and transport classification SHALL take precedence.
+
+#### Scenario: Direct rejection
+- **WHEN** a direct route's adapter returns a wrapped unsupported-functionality rejection before any I/O, in unary or streaming setup
+- **THEN** the handler SHALL return the fixed invalid-request document and neither registered client SHALL retry the request
+
+#### Scenario: All candidates reject
+- **WHEN** every configured-fallback candidate returns the rejection
+- **THEN** the handler SHALL return the fixed invalid-request document
+
+#### Scenario: Operational failures keep existing classification
+- **WHEN** fallback attempts end with the rejection and a retryable 503, in either order
+- **THEN** the handler SHALL keep the existing 503 classification
+
+#### Scenario: API call error wrapping the sentinel
+- **WHEN** an API call error's cause wraps the sentinel
+- **THEN** the handler SHALL keep the existing API-call-error classification
+
+#### Scenario: Cancellation wins
+- **WHEN** the request is canceled after a candidate rejected
+- **THEN** the handler SHALL keep the existing cancellation classification

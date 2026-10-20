@@ -243,6 +243,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 	for _, raw := range *value.Content {
 		var part struct {
 			Type             provider.GenerateContentType `json:"type"`
+			Kind             *string                      `json:"kind"`
 			Text             *string                      `json:"text"`
 			ApprovalID       *string                      `json:"approvalId"`
 			ToolCallID       *string                      `json:"toolCallId"`
@@ -294,6 +295,11 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 				return nil, err
 			}
 			content = append(content, provider.GenerateContentPart{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, Text: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata})
+		case provider.ContentCustom:
+			if decodeFields(raw, &part, "kind") != nil || part.Kind == nil {
+				return nil, errors.New("grafana: invalid unary custom content")
+			}
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentCustom, Kind: *part.Kind, ProviderMetadata: metadata})
 		case provider.ContentText:
 			if decodeFields(raw, &part, "text") != nil || part.Text == nil {
 				return nil, errors.New("grafana: missing unary text")

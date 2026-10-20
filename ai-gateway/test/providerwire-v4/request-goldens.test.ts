@@ -5,6 +5,7 @@ import { createGateway } from "@ai-sdk/gateway";
 import { createCaptureFetch, drainStream } from "./capture.ts";
 import {
   comprehensiveGoldenCase,
+  customContentGoldenCase,
   fileInputGoldenCase,
   headersGoldenCase,
   providerToolsGoldenCase,
@@ -198,6 +199,24 @@ describe("registered Gateway semantic request goldens", () => {
       assert.equal(user.content[0].providerOptions.provider.nested.falseValue, false);
       assert.deepEqual(assistant.providerOptions.provider, {});
       assert.equal(nestedFiles[0].providerOptions.provider.nested.zero, 0);
+    }
+  });
+
+  it("preserves assistant custom parts and custom tool-result entries in both modes", async () => {
+    const requests = await customContentGoldenCase.capture();
+    assert.deepEqual(requests.map((request) => request.streaming), [false, true]);
+    for (const request of requests) {
+      const body = request.body as JsonObject;
+      const assistant = message(body, "assistant");
+      const custom = assistant.content.filter((part: JsonObject) => part.type === "custom");
+      assert.deepEqual(custom.map((part: JsonObject) => part.kind), ["openai.compaction", "anthropic.fallback", "example.kind"]);
+      assert.deepEqual(custom[0].providerOptions, { openai: { itemId: "cmp_1", encryptedContent: "ENC" } });
+      assert.equal("providerOptions" in custom[2], false);
+      const entries = message(body, "tool").content[0].output.value;
+      assert.deepEqual(entries.map((entry: JsonObject) => entry.type), ["text", "custom", "custom"]);
+      assert.deepEqual(entries[1].providerOptions, { anthropic: { type: "tool-reference", toolName: "search" } });
+      assert.equal("providerOptions" in entries[2], false);
+      assert.equal("kind" in entries[1], false);
     }
   });
 

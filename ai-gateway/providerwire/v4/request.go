@@ -11,7 +11,6 @@ import (
 type requestFailureReason string
 
 const (
-	capabilityCustomContent       requestFailureReason = "custom-content"
 	capabilityTools               requestFailureReason = "tools"
 	capabilityToolApprovals       requestFailureReason = "tool-approvals"
 	capabilityStructuredOutput    requestFailureReason = "structured-output"
@@ -51,6 +50,7 @@ type wirePart struct {
 	Approved         *bool                      `json:"approved"`
 	Reason           string                     `json:"reason"`
 	Type             provider.ContentPartType   `json:"type"`
+	Kind             string                     `json:"kind"`
 	Text             string                     `json:"text"`
 	Data             json.RawMessage            `json:"data"`
 	MediaType        string                     `json:"mediaType"`
@@ -285,7 +285,16 @@ func mapWirePart(part wirePart, role provider.Role) (provider.ContentPart, *requ
 		mapped.ProviderOptions = options
 		return mapped, nil
 	case provider.ContentPartTypeCustom:
-		return provider.ContentPart{}, rejectedMappingFailure(capabilityCustomContent)
+		if role != provider.RoleAssistant || !validCustomKind(part.Kind) {
+			return provider.ContentPart{}, invalidMappingFailure()
+		}
+		options, failure := mapWireProviderOptions(part.ProviderOptions)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		custom := provider.CustomPart(part.Kind)
+		custom.ProviderOptions = options
+		return custom, nil
 	case provider.ContentPartTypeToolCall:
 		if role != provider.RoleAssistant {
 			return provider.ContentPart{}, invalidMappingFailure()

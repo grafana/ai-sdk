@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
@@ -22,6 +23,12 @@ var errInvalidUnarySuccess = errors.New("providerwire v4: invalid unary success"
 type unaryTextPart struct {
 	Type     provider.GenerateContentType `json:"type"`
 	Text     string                       `json:"text"`
+	Metadata provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
+}
+
+type unaryCustomPart struct {
+	Type     provider.GenerateContentType `json:"type"`
+	Kind     string                       `json:"kind"`
 	Metadata provider.ProviderMetadata    `json:"providerMetadata,omitzero"`
 }
 
@@ -143,6 +150,11 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
 			mapped.Content = append(mapped.Content, unaryTextPart{Type: provider.ContentText, Text: part.Text, Metadata: part.ProviderMetadata})
+		case provider.ContentCustom:
+			if !validCustomKind(part.Kind) {
+				return unarySuccess{}, errInvalidUnarySuccess
+			}
+			mapped.Content = append(mapped.Content, unaryCustomPart{Type: provider.ContentCustom, Kind: part.Kind, Metadata: part.ProviderMetadata})
 		case provider.ContentReasoning, provider.ContentReasoningFile, provider.ContentFile:
 			if part.Type == provider.ContentReasoning {
 				if !utf8.ValidString(part.Text) {
@@ -265,7 +277,7 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 			}
 			continue
 		}
-		for _, length := range []int{len(part.Text), len(part.Title), len(part.ID), len(part.URL), len(part.MediaType), len(part.Filename), len(part.ToolCallID), len(part.ApprovalID), len(part.ToolName), len(part.Input), len(part.Result)} {
+		for _, length := range []int{len(part.Text), len(part.Title), len(part.Kind), len(part.ID), len(part.URL), len(part.MediaType), len(part.Filename), len(part.ToolCallID), len(part.ApprovalID), len(part.ToolName), len(part.Input), len(part.Result)} {
 			if int64(length) > remaining {
 				return false
 			}
@@ -292,6 +304,10 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 		}
 	}
 	return true
+}
+
+func validCustomKind(kind string) bool {
+	return utf8.ValidString(kind) && strings.Contains(kind, ".")
 }
 
 func mapInputUsage(usage provider.InputTokenUsage) (unaryInputTokenUsage, error) {

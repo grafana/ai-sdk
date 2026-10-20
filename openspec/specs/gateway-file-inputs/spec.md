@@ -18,7 +18,7 @@ The strict Gateway mapper SHALL support user/assistant ordinary file parts and f
 - **THEN** the model SHALL receive the selected empty arm and a present empty filename, not absent data or filename
 
 #### Scenario: Deferred sibling capabilities remain deferred
-- **WHEN** a request also activates custom content, approvals, or unsupported provider-executed history
+- **WHEN** a request also activates approvals or unsupported provider-executed history
 - **THEN** the applicable deferred capability SHALL fail safely before model invocation without enabling that family as a side effect of file support
 
 ### Requirement: Scoped file options preserve semantic JSON

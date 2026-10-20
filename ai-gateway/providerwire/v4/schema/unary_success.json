@@ -17,6 +17,7 @@
           { "$ref": "#/$defs/documentSource" },
           { "$ref": "#/$defs/reasoning" },
           { "$ref": "#/$defs/reasoningFile" },
+          { "$ref": "#/$defs/custom" },
           { "$ref": "#/$defs/generatedFile" },
           {
             "type": "object",
@@ -119,6 +120,11 @@
     "reasoning": {
       "type": "object", "required": ["type", "text"],
       "properties": { "type": {"const": "reasoning"}, "text": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"} },
+      "additionalProperties": false
+    },
+    "custom": {
+      "type": "object", "required": ["type", "kind"],
+      "properties": { "type": {"const": "custom"}, "kind": {"type": "string", "pattern": "\\."}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"} },
       "additionalProperties": false
     },
     "reasoningFile": {

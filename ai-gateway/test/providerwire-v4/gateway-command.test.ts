@@ -2610,6 +2610,120 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
   });
 });
 
+describe("custom content through the authenticated command", () => {
+  const compactionMetadata = { openai: { type: "compaction", itemId: "cmp_1", encryptedContent: "ENC" } };
+  const fallbackMetadata = { anthropic: { type: "fallback", from: { model: "claude-a" }, to: { model: "claude-b" } } };
+  const customParts = (parts: readonly any[]) => parts.filter((part) => part.type === "custom").map(({ type, kind, providerMetadata }) => ({ type, kind, providerMetadata }));
+  const replay = (kind: `${string}.${string}`, metadata: Record<string, unknown>, text: string, providerOptions?: Record<string, unknown>): LanguageModelV4CallOptions => ({
+    prompt: [
+      { role: "user", content: [{ type: "text", text }] },
+      { role: "assistant", content: [{ type: "text", text: "earlier" }, { type: "custom", kind, providerOptions: metadata as any }] },
+      { role: "user", content: [{ type: "text", text: "continue" }] },
+    ],
+    providerOptions: providerOptions as any,
+  });
+  const lastBody = (fake: { requests: FakeRequest[] }) => fake.requests.at(-1)!.body as any;
+
+  for (const route of ["direct", "fallback"] as const) {
+    it(`round-trips OpenAI compaction through both clients on the ${route} route`, async () => {
+      const primary = await FakeOpenAI.start();
+      const secondary = route === "fallback" ? await FakeOpenAI.start() : undefined;
+      primary.failWithSecret = route === "fallback";
+      const serving = secondary ?? primary;
+      let gateway: GatewayProcess | undefined;
+      try {
+        gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", openAIConfig(primary.url, secondary?.url));
+        const model = gateway.client()("openai");
+        const config = { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "openai" };
+        const prompt = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "wp112-compaction" }] }] };
+
+        const tsUnary = await model.doGenerate(prompt);
+        const tsStream = await collectGatewayStream((await model.doStream(prompt)).stream);
+        const goUnary = await captureGoClient(goClientBinaryPath, { ...config, mode: "generate", options: prompt });
+        const goStream = await captureGoClient(goClientBinaryPath, { ...config, mode: "stream", options: prompt });
+        assert.equal(goUnary.error, undefined);
+        assert.equal(goStream.error, undefined);
+        const expected = [{ type: "custom", kind: "openai.compaction", providerMetadata: compactionMetadata }];
+        for (const parts of [tsUnary.content, tsStream, goUnary.result.content, goStream.parts]) assert.deepEqual(customParts(parts), expected);
+
+        const replayed = new Map<string, unknown>();
+        for (const store of [true, false]) {
+          const options = replay("openai.compaction", compactionMetadata, "wp112-history", { openai: { store } });
+          await model.doGenerate(options);
+          const tsInput = lastBody(serving).input;
+          const go = await captureGoClient(goClientBinaryPath, { ...config, mode: "generate", options });
+          assert.equal(go.error, undefined);
+          assert.deepEqual(lastBody(serving).input, tsInput);
+          replayed.set(String(store), tsInput);
+          const stream = await captureGoClient(goClientBinaryPath, { ...config, mode: "stream", options });
+          assert.equal(stream.error, undefined);
+          assert.deepEqual(lastBody(serving).input, tsInput);
+        }
+        assert.deepEqual((replayed.get("true") as any[]).filter((item) => item.type === "item_reference"), [{ type: "item_reference", id: "cmp_1" }]);
+        assert.deepEqual((replayed.get("false") as any[]).filter((item) => item.type === "compaction"), [{ type: "compaction", id: "cmp_1", encrypted_content: "ENC" }]);
+        assert.deepEqual(primary.violations, []);
+        assert.deepEqual(secondary?.violations ?? [], []);
+      } finally { await settleCleanup(() => gateway?.stop() ?? Promise.resolve(), () => primary.stop(), () => secondary?.stop() ?? Promise.resolve()); }
+    });
+  }
+
+  it("skips OpenAI compaction history for OpenAI-compatible candidates, direct and after fallback", async () => {
+    for (const route of ["direct", "fallback"] as const) {
+      const openai = await FakeOpenAI.start();
+      const compatible = await FakeCompatible.start();
+      openai.failWithSecret = true;
+      let gateway: GatewayProcess | undefined;
+      try {
+        const config = route === "direct"
+          ? compatibleConfig(compatible.url)
+          : `providers:\n  openai-primary:\n    type: openai\n    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY\n    baseURL: ${openai.url}/v1\n  compatible-secondary:\n    type: openai-compatible\n    apiKeyEnv: GATEWAY_TEST_COMPATIBLE_KEY\n    baseURL: ${compatible.url}/v1\n    providerName: compatible-backend\nmodels:\n  grafana/compatible:\n    name: Grafana Compatible\n    description: Integration model\n    primary:\n      provider: openai-primary\n      model: backend-private\n    fallback:\n      - provider: compatible-secondary\n        model: backend-private\n    aliases:\n      - compatible\n`;
+        gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", config);
+        const options = replay("openai.compaction", compactionMetadata, "wp112-history normal-stream");
+        const goConfig = { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "compatible" };
+        await gateway.client()("compatible").doGenerate(options);
+        const tsMessages = lastBody(compatible).messages;
+        const go = await captureGoClient(goClientBinaryPath, { ...goConfig, mode: "generate", options });
+        assert.equal(go.error, undefined);
+        assert.deepEqual(lastBody(compatible).messages, tsMessages);
+        await collectGatewayStream((await gateway.client()("compatible").doStream(options)).stream);
+        assert.deepEqual(lastBody(compatible).messages, tsMessages);
+        assert.deepEqual(tsMessages.map((message: any) => message.role), ["user", "assistant", "user"]);
+        assert.equal(tsMessages[1].content, "earlier");
+        assert.ok(!JSON.stringify(compatible.requests).includes("ENC"), route);
+        assert.deepEqual(compatible.violations, []);
+      } finally { await settleCleanup(() => gateway?.stop() ?? Promise.resolve(), () => openai.stop(), () => compatible.stop()); }
+    }
+  });
+
+  it("returns and replays the Anthropic fallback marker through both clients (format-conversion evidence)", async () => {
+    const [fake, gateway] = await startGateway();
+    try {
+      const model = gateway.client()("assistant");
+      const config = { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "assistant" };
+      const prompt = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "wp112-fallback-marker" }] }], maxOutputTokens: 64 };
+      const tsUnary = await model.doGenerate(prompt);
+      const tsStream = await collectGatewayStream((await model.doStream(prompt)).stream);
+      const goUnary = await captureGoClient(goClientBinaryPath, { ...config, mode: "generate", options: prompt });
+      const goStream = await captureGoClient(goClientBinaryPath, { ...config, mode: "stream", options: prompt });
+      assert.equal(goUnary.error, undefined);
+      assert.equal(goStream.error, undefined);
+      const expected = [{ type: "custom", kind: "anthropic.fallback", providerMetadata: fallbackMetadata }];
+      for (const parts of [tsUnary.content, tsStream, goUnary.result.content, goStream.parts]) assert.deepEqual(customParts(parts), expected);
+
+      const history = { ...replay("anthropic.fallback", fallbackMetadata, "history"), maxOutputTokens: 64 };
+      await model.doGenerate(history);
+      const tsMessages = lastBody(fake).messages;
+      const go = await captureGoClient(goClientBinaryPath, { ...config, mode: "generate", options: history });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(lastBody(fake).messages, tsMessages);
+      const assistant = tsMessages[1].content;
+      assert.deepEqual(assistant.map((part: any) => part.type), ["text", "fallback"]);
+      assert.deepEqual(assistant[1], { type: "fallback", from: { model: "claude-a" }, to: { model: "claude-b" } });
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+});
+
 describe("authenticated OpenAI Responses Gateway command", () => {
   it("preserves native source/display and response identity separately from canonical operator identity", async () => {
     const [fake,gateway]=await startOpenAIGateway();
@@ -3194,6 +3308,28 @@ class FakeAnthropic {
       return;
     }
     if (this.metadata) { nativeMetadataReply("anthropic", body, response); return; }
+    if (serialized.includes("wp112-fallback-marker")) {
+      const fallbackBlock = { type: "fallback", from: { model: "claude-a" }, to: { model: "claude-b" } };
+      if (body.stream !== true) {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ id: "msg_fallback", type: "message", role: "assistant", model: "backend-private", content: [fallbackBlock, { type: "text", text: "fallback answer" }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 2, output_tokens: 3 } }));
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      const events: Array<{ type: string; [key: string]: unknown }> = [
+        { type: "message_start", message: { id: "msg_fallback", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } },
+        { type: "content_block_start", index: 0, content_block: fallbackBlock },
+        { type: "content_block_stop", index: 0 },
+        { type: "content_block_start", index: 1, content_block: { type: "text", text: "" } },
+        { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "fallback answer" } },
+        { type: "content_block_stop", index: 1 },
+        { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 3 } },
+        { type: "message_stop" },
+      ];
+      for (const event of events) response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+      response.end();
+      return;
+    }
     if (marker === "silent-unary-shutdown") {
       response.once("close", () => this.canceled.add(marker));
       return;
@@ -3472,14 +3608,17 @@ class FakeOpenAI {
     if (this.approvals) { nativeApprovalReply(body, response, this.approvalFailure); return; }
     if (this.metadata) { nativeMetadataReply("openai", body, response); return; }
     const stream = body.stream === true;
+    const compaction = JSON.stringify(body).includes("wp112-compaction");
     const text = this.structuredOutput ? '{"value":"ok"}' : stream ? "hello from fake openai stream" : "hello from fake openai";
     const annotations=this.sources ? [
       {type:"url_citation",url:"https://public.example",title:"Public citation",start_index:0,end_index:5},
       {type:"file_path",file_id:"native-file-sk-application",index:0},
     ] : [];
     const message = { id: "msg_test", type: "message", status: "completed", role: "assistant", content: [{ type: "output_text", annotations, logprobs: [], text }] };
+    const compactionItem = { type: "compaction", id: "cmp_1", encrypted_content: "ENC" };
+    const outputItems = compaction ? [compactionItem, message] : [message];
     const completed = (outputTokens: number) => ({
-      id: "resp_test", object: "response", created_at: 1, status: "completed", model: "backend-private", output: [message],
+      id: "resp_test", object: "response", created_at: 1, status: "completed", model: "backend-private", output: outputItems,
       usage: { input_tokens: 2, input_tokens_details: { cached_tokens: 0 }, output_tokens: outputTokens, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 2 + outputTokens },
     });
     if (!stream) {
@@ -3490,10 +3629,11 @@ class FakeOpenAI {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     const events: Array<Record<string, unknown>> = [
       { type: "response.created", response: { ...completed(0), status: "in_progress", output: [], usage: null } },
-      { type: "response.output_item.added", output_index: 0, item: { ...message, status: "in_progress", content: [] } },
-      { type: "response.output_text.delta", output_index: 0, content_index: 0, item_id: "msg_test", delta: text, logprobs: [] },
-      ...annotations.map((annotation,annotation_index)=>({type:"response.output_text.annotation.added",output_index:0,content_index:0,item_id:"msg_test",annotation_index,annotation})),
-      { type: "response.output_item.done", output_index: 0, item: message },
+      ...(compaction ? [{ type: "response.output_item.done", output_index: 0, item: compactionItem }] : []),
+      { type: "response.output_item.added", output_index: compaction ? 1 : 0, item: { ...message, status: "in_progress", content: [] } },
+      { type: "response.output_text.delta", output_index: compaction ? 1 : 0, content_index: 0, item_id: "msg_test", delta: text, logprobs: [] },
+      ...annotations.map((annotation,annotation_index)=>({type:"response.output_text.annotation.added",output_index:compaction ? 1 : 0,content_index:0,item_id:"msg_test",annotation_index,annotation})),
+      { type: "response.output_item.done", output_index: compaction ? 1 : 0, item: message },
       { type: "response.completed", response: completed(6) },
     ];
     events.forEach((event, index) => response.write(`event: ${String(event.type)}\ndata: ${JSON.stringify({ ...event, sequence_number: index })}\n\n`));

@@ -402,6 +402,61 @@ describe("sources through the authenticated handler", () => {
   });
 });
 
+describe("custom content through the authenticated handler", () => {
+  const expected = [
+    { type: "custom", kind: "openai.compaction", providerMetadata: { openai: { type: "compaction", itemId: "cmp_1", encryptedContent: "ENC", nested: { none: null, no: false, zero: 0, empty: "" } } } },
+    { type: "custom", kind: "anthropic.fallback", providerMetadata: { anthropic: { type: "fallback", from: { model: "a" }, to: { model: "b" } } } },
+    { type: "custom", kind: "example.future_block" },
+    { type: "custom", kind: "example.empty", providerMetadata: {} },
+  ];
+  const gateway = (modelID: string) => createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })(modelID);
+  const normalize = (part: any) => ({ type: part.type, kind: part.kind, providerMetadata: part.providerMetadata === undefined || Object.keys(part.providerMetadata).length === 0 ? undefined : part.providerMetadata });
+
+  it("delivers unary and streamed custom content to both clients unchanged", async () => {
+    const wire = (streaming: boolean) => fetch(`${baseURL}/function-tools/language-model`, { method: "POST", headers: { "content-type": "application/json", "x-access-token": "function-test-token", "ai-language-model-specification-version": "4", "ai-language-model-id": "custom", "ai-language-model-streaming": String(streaming) }, body: JSON.stringify({ prompt: [] }) });
+    const rawUnary = await (await wire(false)).json();
+    assert.equal(validateUnarySuccess(rawUnary), true, JSON.stringify(validateUnarySuccess.errors));
+    assert.deepEqual(rawUnary.content.filter((part: any) => part.type === "custom"), expected);
+    const rawFrames = (await (await wire(true)).text()).split("\n\n").filter(Boolean).map((frame) => JSON.parse(frame.slice("data: ".length)));
+    for (const frame of rawFrames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
+    assert.deepEqual(rawFrames.filter((part: any) => part.type === "custom"), expected);
+    const responseMetadata = rawFrames.findIndex((part: any) => part.type === "response-metadata");
+    assert.equal(rawFrames[responseMetadata + 1].kind, "openai.compaction");
+
+    const config = { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "custom", options: { prompt: [] } };
+    const tsUnary = (await gateway("custom").doGenerate({ prompt: [] })).content.filter((part) => part.type === "custom");
+    const tsStream = (await collect((await gateway("custom").doStream({ prompt: [] })).stream)).filter((part) => part.type === "custom");
+    const goUnary = (await captureGoClient(goClientBinary, { ...config, mode: "generate" })).result.content.filter((part: any) => part.type === "custom");
+    const goStream = (await captureGoClient(goClientBinary, { ...config, mode: "stream" })).parts.filter((part: any) => part.type === "custom");
+    const want = expected.map(normalize);
+    for (const got of [tsUnary, tsStream, goUnary, goStream]) assert.deepEqual(got.map(normalize), want);
+    assert.deepEqual(tsUnary, expected);
+    assert.deepEqual(tsStream, expected);
+  });
+
+  it("does not retry a paid custom success or an unsupported-functionality rejection", async () => {
+    const before = await stats();
+    const success = await generateText({ model: gateway("custom"), prompt: "hello" });
+    assert.equal(success.text, "answer");
+    assert.equal((await stats()).successCalls - before.successCalls, 1);
+
+    const rejectedBefore = await stats();
+    await assert.rejects(generateText({ model: gateway("unsupported-functionality"), prompt: "hello", maxRetries: 2 }), (error: unknown) => {
+      const cause = (error as { lastError?: unknown }).lastError ?? error;
+      assert.equal(GatewayInvalidRequestError.isInstance(cause), true);
+      return true;
+    });
+    assert.equal((await stats()).successCalls - rejectedBefore.successCalls, 1);
+
+    for (const mode of ["generate", "stream"]) {
+      const goBefore = await stats();
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "unsupported-functionality", mode, options: { prompt: [] } });
+      assert.ok(go.error !== undefined || (go.parts ?? []).some((part: any) => part.type === "error"), mode);
+      assert.equal((await stats()).successCalls - goBefore.successCalls, 1);
+    }
+  });
+});
+
 describe("native response values through the real handler", () => {
   for (const [name, identity] of Object.entries({
     "native-values": { id: "native-response", modelId: "native model ☃ /", timestamp: "2026-09-30T12:00:00.123Z" },
