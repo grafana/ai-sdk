@@ -1,19 +1,3 @@
-## MODIFIED Requirements
-
-### Requirement: Standalone validation publication boundary
-
-Selected SDK/provider/middleware standalone validation SHALL precede Go-module
-publication. Gateway standalone results SHALL NOT block plugin publication or
-deployment; all-module results SHALL NOT block ordinary source PRs. Gateway's
-supported distribution SHALL be its plugin package even when Go tooling discovers
-its application tags.
-
-#### Scenario: Standalone validation publication boundary
-
-- **WHEN** Go tooling discovers a Gateway tag but standalone compilation fails
-- **THEN** Gateway plugin validation remains independent of that failure
-- **AND** no library publication bypasses its own standalone check
-
 ## ADDED Requirements
 
 ### Requirement: Selected consumer regression evidence
