@@ -304,36 +304,31 @@ func (p *Provider) request(ctx context.Context, method, route string, callHeader
 			return nil, errors.New("grafana: on-behalf-of calls require a concrete namespace")
 		}
 	}
-	if p.bearer != "" {
-		req, err := http.NewRequestWithContext(ctx, method, p.baseURL+route, nil)
+	credentialHeader, credential := "Authorization", p.bearer
+	if p.bearer == "" {
+		token, err := p.exchange(ctx, subject)
 		if err != nil {
-			return nil, errors.New("grafana: cannot construct Gateway request")
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			// Authlib may include token-service response prose in its error. Do not
+			// retain that arbitrary text in an inspectable error chain.
+			return nil, protocolError("grafana: token exchange failed", 0, nil)
 		}
-		req.Header = headers
-		req.Header.Set("Authorization", p.bearer)
-		return req, nil
-	}
-	token, err := p.exchange(ctx, subject)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		// Authlib may include token-service response prose in its error. Do not
-		// retain that arbitrary text in an inspectable error chain.
-		return nil, protocolError("grafana: token exchange failed", 0, nil)
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if token == nil || !validCredential(token.Token) {
-		return nil, errors.New("grafana: invalid exchanged access token")
+		if token == nil || !validCredential(token.Token) {
+			return nil, errors.New("grafana: invalid exchanged access token")
+		}
+		credentialHeader, credential = "X-Access-Token", token.Token
 	}
 	req, err := http.NewRequestWithContext(ctx, method, p.baseURL+route, nil)
 	if err != nil {
 		return nil, errors.New("grafana: cannot construct Gateway request")
 	}
 	req.Header = headers
-	req.Header.Set("X-Access-Token", token.Token)
+	req.Header.Set(credentialHeader, credential)
 	return req, nil
 }
 

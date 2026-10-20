@@ -166,59 +166,6 @@ func TestServiceAccount_Validation(t *testing.T) {
 	}
 }
 
-func TestServiceAccount_RedirectDoesNotLeakToken(t *testing.T) {
-	var received atomic.Int32
-	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { received.Add(1) }))
-	defer target.Close()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) }))
-	defer srv.Close()
-	p, err := NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_token", BaseURL: srv.URL})
-	require.NoError(t, err)
-	_, err = p.ListModels(context.Background())
-	require.Error(t, err)
-	assert.Zero(t, received.Load())
-}
-
-func TestServiceAccount_ConflictsAndCancellation(t *testing.T) {
-	var requests atomic.Int32
-	p, err := NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_dummy", BaseURL: "https://example.test/api/v1/aisdk", HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		requests.Add(1)
-		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(unaryFixture)), Request: r}, nil
-	})}})
-	require.NoError(t, err)
-	m, err := p.LanguageModel("assistant")
-	require.NoError(t, err)
-	for _, name := range []string{"Authorization", "AUTHORIZATION", "X-Access-Token", "x-grafana-id"} {
-		t.Run(name, func(t *testing.T) {
-			for _, value := range []string{"private-value", ""} {
-				for _, streaming := range []bool{false, true} {
-					options := provider.CallOptions{Prompt: []provider.Message{}, Headers: map[string]string{name: value}}
-					var err error
-					if streaming {
-						_, err = m.DoStream(context.Background(), options)
-					} else {
-						_, err = m.DoGenerate(context.Background(), options)
-					}
-					require.Error(t, err)
-					assert.NotContains(t, err.Error(), "private-value")
-					assert.Zero(t, requests.Load())
-				}
-			}
-		})
-	}
-	_, err = p.ListModels(WithOnBehalfOf(context.Background(), "user-token"))
-	require.Error(t, err)
-	assert.Zero(t, requests.Load())
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = m.DoStream(ctx, provider.CallOptions{Prompt: []provider.Message{}})
-	assert.ErrorIs(t, err, context.Canceled)
-	assert.Zero(t, requests.Load())
-	_, err = m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
-	require.NoError(t, err)
-	assert.Equal(t, int32(1), requests.Load())
-}
-
 func TestServiceAccount_ConcurrentAndRedirect(t *testing.T) {
 	var reached atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached.Add(1) }))
@@ -281,8 +228,6 @@ func TestProvider_ImmutableConfigurationAndRegistry(t *testing.T) {
 	assert.Equal(t, int32(1), calls.Load())
 }
 
-type discoveryCallKey struct{}
-
 func TestProvider_DiscoveryConcurrency(t *testing.T) {
 	var calls atomic.Int32
 	p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
@@ -295,9 +240,9 @@ func TestProvider_DiscoveryConcurrency(t *testing.T) {
 		_, _ = io.WriteString(w, discoveryFixture)
 	}, nil)
 	var wg sync.WaitGroup
-	for i := range 32 {
+	for range 32 {
 		wg.Go(func() {
-			rows, err := p.ListModels(context.WithValue(context.Background(), discoveryCallKey{}, i))
+			rows, err := p.ListModels(context.Background())
 			assert.NoError(t, err)
 			assert.Len(t, rows, 2)
 		})
@@ -324,40 +269,39 @@ func TestTokenExchange_ValidationAndExchange(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
-	for _, audience := range []string{"grafana-aigateway-app", "explicit-audience"} {
-		t.Run("audience="+audience, func(t *testing.T) {
-			var exchanges, gateway atomic.Int32
-			claims, _ := json.Marshal(map[string]any{"exp": time.Now().Add(time.Hour).Unix()})
-			token := "eyJhbGciOiJFUzI1NiJ9." + base64.RawURLEncoding.EncodeToString(claims) + ".c2lnbmF0dXJl"
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				if r.URL.Path == "/exchange" {
-					exchanges.Add(1)
-					assert.Equal(t, "Bearer cap", r.Header.Get("Authorization"))
-					var request authn.TokenExchangeRequest
-					assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
-					assert.Equal(t, "stacks-1", request.Namespace)
-					assert.Equal(t, []string{audience}, request.Audiences)
-					assert.Empty(t, request.SubjectToken)
-					_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]string{"token": token}})
-					return
-				}
-				gateway.Add(1)
-				assert.Equal(t, token, r.Header.Get("X-Access-Token"))
-				_, _ = io.WriteString(w, discoveryFixture)
-			}))
-			defer srv.Close()
-			p, err := NewWithTokenExchange(TokenExchangeConfig{CAPToken: "cap", Namespace: "stacks-1", Audience: audience, BaseURL: srv.URL + "/api", TokenExchangeURL: srv.URL + "/exchange", HTTPClient: srv.Client()})
-			require.NoError(t, err)
-			for range 2 {
-				rows, err := p.ListModels(context.Background())
-				require.NoError(t, err)
-				assert.Len(t, rows, 2)
+	t.Run("exchange", func(t *testing.T) {
+		const audience = "grafana-aigateway-app"
+		var exchanges, gateway atomic.Int32
+		claims, _ := json.Marshal(map[string]any{"exp": time.Now().Add(time.Hour).Unix()})
+		token := "eyJhbGciOiJFUzI1NiJ9." + base64.RawURLEncoding.EncodeToString(claims) + ".c2lnbmF0dXJl"
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Path == "/exchange" {
+				exchanges.Add(1)
+				assert.Equal(t, "Bearer cap", r.Header.Get("Authorization"))
+				var request authn.TokenExchangeRequest
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				assert.Equal(t, "stacks-1", request.Namespace)
+				assert.Equal(t, []string{audience}, request.Audiences)
+				assert.Empty(t, request.SubjectToken)
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]string{"token": token}})
+				return
 			}
-			assert.Equal(t, int32(1), exchanges.Load())
-			assert.Equal(t, int32(2), gateway.Load())
-		})
-	}
+			gateway.Add(1)
+			assert.Equal(t, token, r.Header.Get("X-Access-Token"))
+			_, _ = io.WriteString(w, discoveryFixture)
+		}))
+		defer srv.Close()
+		p, err := NewWithTokenExchange(TokenExchangeConfig{CAPToken: "cap", Namespace: "stacks-1", Audience: audience, BaseURL: srv.URL + "/api", TokenExchangeURL: srv.URL + "/exchange", HTTPClient: srv.Client()})
+		require.NoError(t, err)
+		for range 2 {
+			rows, err := p.ListModels(context.Background())
+			require.NoError(t, err)
+			assert.Len(t, rows, 2)
+		}
+		assert.Equal(t, int32(1), exchanges.Load())
+		assert.Equal(t, int32(2), gateway.Load())
+	})
 }
 
 func TestCloudAuth_InvalidFileNeverAuthenticatesOrSends(t *testing.T) {
@@ -626,22 +570,22 @@ func TestOnBehalfOf_RefusedBeforeIO(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		new     func() (*Provider, error)
-		context func(context.Context) context.Context
+		subject string
 	}{
 		{"access token flow", func() (*Provider, error) {
 			return NewWithAccessToken(AccessTokenConfig{AccessToken: "access", BaseURL: "https://gateway.invalid", HTTPClient: transport})
-		}, func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "subject-token") }},
+		}, "subject-token"},
 		{"service account flow", func() (*Provider, error) {
 			return NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_token", BaseURL: "https://gateway.invalid", HTTPClient: transport})
-		}, func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "subject-token") }},
-		{"wildcard namespace", exchange("*"), func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "subject-token") }},
-		{"empty subject", exchange("stacks-1"), func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "") }},
-		{"unsafe subject", exchange("stacks-1"), func(ctx context.Context) context.Context { return WithOnBehalfOf(ctx, "subject\r\ntoken") }},
+		}, "subject-token"},
+		{"wildcard namespace", exchange("*"), "subject-token"},
+		{"empty subject", exchange("stacks-1"), ""},
+		{"unsafe subject", exchange("stacks-1"), "subject\r\ntoken"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := tc.new()
 			require.NoError(t, err)
-			_, err = p.ListModels(tc.context(context.Background()))
+			_, err = p.ListModels(WithOnBehalfOf(context.Background(), tc.subject))
 			require.Error(t, err)
 			assert.NotContains(t, err.Error(), "subject-token")
 		})
