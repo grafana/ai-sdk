@@ -1946,7 +1946,7 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
         const options = { ...cloudCall("normal-stream"), providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }, { apiKey: "unused-second-key" }] } } } };
         const expected = { message: `provider-echo ${collision ? "[REDACTED]" : "request-only-key"} [REDACTED] [REDACTED] static-gateway-key backend-private`, type: "api_error", statusCode: 500 };
         const ts = await collectStream((await gateway.client()(BYOK_MODEL).doStream(options)).stream);
-        const go = await captureGoClient(goClientBinaryPath, { mode: "stream", modelID: BYOK_MODEL, options, baseURL: gateway!.baseURL, serviceAccountToken: TEST_TOKEN });
+        const go = await captureGoClient(goClientBinaryPath, { mode: "stream", modelID: BYOK_MODEL, options, baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN });
         assert.equal(go.error, undefined);
         for (const parts of [ts, go.parts]) {
           const errors = parts.filter((part: { type: string; error?: { data?: { nativeError?: unknown } } }) => part.type === "error" && part.error?.data?.nativeError !== undefined);
@@ -1980,7 +1980,7 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
       for (const mode of ["generate", "stream"] as const) {
         const go = await captureGoClient(goClientBinaryPath, {
           mode, modelID: BYOK_MODEL, options,
-          baseURL: gateway!.baseURL, serviceAccountToken: TEST_TOKEN,
+          baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN,
         });
         assert.equal(go.error?.statusCode, 424);
         assert.equal(go.error?.category, "failed_dependency");
@@ -2036,7 +2036,7 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
       for (const mode of ["generate", "stream"] as const) {
         const go = await captureGoClient(goClientBinaryPath, {
           mode, modelID, options,
-          baseURL: gateway!.baseURL, serviceAccountToken: TEST_TOKEN,
+          baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN,
         });
         assert.equal(go.error, undefined);
         const model = gateway.client()(modelID);
@@ -2053,7 +2053,7 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
       const reasoningOptions: LanguageModelV4CallOptions = { ...options, prompt: [...options.prompt.slice(0, 2), { role: "user", content: [{ type: "text", text: "wp17-reasoning" }] }] };
       const goReasoning = await captureGoClient(goClientBinaryPath, {
         mode: "stream", modelID, options: reasoningOptions,
-        baseURL: gateway!.baseURL, serviceAccountToken: TEST_TOKEN,
+        baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN,
       });
       assert.equal(goReasoning.error, undefined);
       const tsReasoning = await collectStream((await gateway.client()(modelID).doStream(reasoningOptions)).stream);
