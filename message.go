@@ -226,7 +226,7 @@ func (SourceURLPart) PartType() string { return string(UIPartSourceURL) }
 type SourceDocumentPart struct {
 	SourceID         string                    `json:"sourceId"`
 	MediaType        string                    `json:"mediaType"`
-	Title            string                    `json:"title,omitempty"`
+	Title            string                    `json:"title"`
 	Filename         string                    `json:"filename,omitempty"`
 	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
