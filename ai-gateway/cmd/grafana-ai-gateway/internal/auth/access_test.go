@@ -66,26 +66,25 @@ func TestAccessPolicy_Decide(t *testing.T) {
 		token      string
 		namespace  string
 		access     AccountAccess
-		service    string
 		identity   string
 		attributed string
 	}{
-		{name: "cloud allowlisted direct service", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), access: ConfiguredAccounts, service: "svc-a", attributed: "svc-a"},
-		{name: "cloud allowlisted service for a user", policy: allowlisted, token: cloud.cloud(cloud.exchange("svc-a", cloud.identity(types.TypeUser, "u1"))), access: ConfiguredAccounts, service: "svc-a", identity: "user:u1", attributed: "svc-a"},
-		{name: "cloud wildcard internal token", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", "*")), access: ConfiguredAccounts, service: "svc-a", attributed: "svc-a"},
+		{name: "cloud allowlisted direct service", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), access: ConfiguredAccounts, attributed: "svc-a"},
+		{name: "cloud allowlisted service for a user", policy: allowlisted, token: cloud.cloud(cloud.exchange("svc-a", cloud.identity(types.TypeUser, "u1"))), access: ConfiguredAccounts, identity: "user:u1", attributed: "svc-a"},
+		{name: "cloud wildcard internal token", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", "*")), access: ConfiguredAccounts, attributed: "svc-a"},
 		{name: "cloud relay without a user", policy: allowlisted, token: cloud.cloud(cloud.exchange("relay", cloud.service("svc-a", testNamespace))), access: Refused},
-		{name: "cloud relay of a user call", policy: allowlisted, token: cloud.cloud(cloud.exchange("relay", cloud.exchange("svc-a", cloud.identity(types.TypeUser, "u1")))), access: RequestBYOK, service: "relay", identity: "user:u1"},
-		{name: "cloud front-door user", policy: allowlisted, token: cloud.frontDoor(types.TypeUser, "u1"), access: RequestBYOK, service: platformhost.FrontDoorService, identity: "user:u1"},
-		{name: "cloud front-door service account", policy: allowlisted, token: cloud.frontDoor(types.TypeServiceAccount, "sa1"), access: RequestBYOK, service: platformhost.FrontDoorService, identity: "service-account:sa1"},
+		{name: "cloud relay of a user call", policy: allowlisted, token: cloud.cloud(cloud.exchange("relay", cloud.exchange("svc-a", cloud.identity(types.TypeUser, "u1")))), access: RequestBYOK, identity: "user:u1"},
+		{name: "cloud front-door user", policy: allowlisted, token: cloud.frontDoor(types.TypeUser, "u1"), access: RequestBYOK, identity: "user:u1"},
+		{name: "cloud front-door service account", policy: allowlisted, token: cloud.frontDoor(types.TypeServiceAccount, "sa1"), access: RequestBYOK, identity: "service-account:sa1"},
 		{name: "cloud front-door anonymous", policy: allowlisted, token: cloud.frontDoor(types.TypeAnonymous, "anon"), access: Refused},
 		{name: "cloud service off the allowlist", policy: allowlisted, token: cloud.cloud(cloud.service("svc-b", testNamespace)), access: Refused},
 		{name: "cloud case near-match", policy: allowlisted, token: cloud.cloud(cloud.service("SVC-A", testNamespace)), access: Refused},
 		{name: "cloud whitespace near-match", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a ", testNamespace)), access: Refused},
 		{name: "cloud empty allowlist service", policy: emptyAllowlist, token: cloud.cloud(cloud.service("svc-a", testNamespace)), access: Refused},
-		{name: "cloud empty allowlist user", policy: emptyAllowlist, token: cloud.frontDoor(types.TypeUser, "u1"), access: RequestBYOK, service: platformhost.FrontDoorService, identity: "user:u1"},
+		{name: "cloud empty allowlist user", policy: emptyAllowlist, token: cloud.frontDoor(types.TypeUser, "u1"), access: RequestBYOK, identity: "user:u1"},
 		{name: "self-hosted service account", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeServiceAccount, "sa1")), access: ConfiguredAccounts, identity: "service-account:sa1"},
 		{name: "self-hosted user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeUser, "u1")), access: ConfiguredAccounts, identity: "user:u1"},
-		{name: "self-hosted service with a user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.exchange("svc-a", self.identity(types.TypeUser, "u1"))), access: ConfiguredAccounts, service: "svc-a", identity: "user:u1"},
+		{name: "self-hosted service with a user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.exchange("svc-a", self.identity(types.TypeUser, "u1"))), access: ConfiguredAccounts, identity: "user:u1"},
 		{name: "self-hosted anonymous", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeAnonymous, "anon")), access: Refused},
 		{name: "self-hosted service without a user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.service("svc-a", testNamespace)), access: Refused},
 		{name: "missing route namespace", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), namespace: "-", access: Refused},
@@ -111,7 +110,6 @@ func TestAccessPolicy_Decide(t *testing.T) {
 			}
 			assert.Equal(t, tc.access, caller.AccountAccess())
 			assert.Equal(t, testNamespace, caller.Namespace)
-			assert.Equal(t, tc.service, caller.Service)
 			assert.Equal(t, tc.identity, caller.Identity)
 			assert.Equal(t, tc.attributed, caller.AttributedService())
 		})
@@ -121,17 +119,13 @@ func TestAccessPolicy_Decide(t *testing.T) {
 func TestAccessMiddleware(t *testing.T) {
 	policy := AccessPolicy{Mode: AccessModeCloud, InternalServices: []string{"svc-a"}}
 	extra := func(service, identity string) types.AuthInfo {
-		values := map[string][]string{}
-		if service != "" {
-			values[DirectCallerServiceKey] = []string{service}
-		}
 		var claims authn.Claims[authn.AccessTokenClaims]
 		if identity != "" {
 			typ, uid, err := types.ParseTypeID(identity)
 			require.NoError(t, err)
 			claims.Rest.Actor = &authn.ActorClaims{IDTokenClaims: authn.IDTokenClaims{Type: typ, Identifier: uid}}
 		}
-		return platformAuthInfo{AuthInfo: authn.NewAccessTokenAuthInfo(claims), extra: values}
+		return platformAuthInfo{AuthInfo: authn.NewAccessTokenAuthInfo(claims), directCaller: service}
 	}
 	tests := []struct {
 		name   string

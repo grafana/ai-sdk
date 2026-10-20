@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"slices"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/grafana/authlib/authn"
@@ -124,22 +123,22 @@ func (a platformAuthenticator) Authenticate(ctx context.Context, provider authn.
 	if err != nil {
 		return nil, fmt.Errorf("gateway auth: verifying access token: %w", err)
 	}
-	extra := map[string][]string{}
-	if actor := claims.Rest.Actor; actor != nil && actor.ServiceIdentity != "" {
-		extra[DirectCallerServiceKey] = []string{actor.ServiceIdentity}
+	info := platformAuthInfo{AuthInfo: authn.NewAccessTokenAuthInfo(*claims)}
+	if actor := claims.Rest.Actor; actor != nil {
+		info.directCaller = actor.ServiceIdentity
 	}
-	return platformAuthInfo{AuthInfo: authn.NewAccessTokenAuthInfo(*claims), extra: extra}, nil
+	return info, nil
 }
 
 type platformAuthInfo struct {
 	types.AuthInfo
-	extra map[string][]string
+	directCaller string
 }
 
 func (info platformAuthInfo) GetExtra() map[string][]string {
 	result := info.AuthInfo.GetExtra()
-	for key, values := range info.extra {
-		result[key] = slices.Clone(values)
+	if info.directCaller != "" {
+		result[DirectCallerServiceKey] = []string{info.directCaller}
 	}
 	return result
 }

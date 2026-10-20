@@ -16,7 +16,8 @@ import (
 type telemetryStateKey struct{}
 
 type telemetryState struct {
-	access      atomic.Pointer[gatewayauth.AccountAccess]
+	// access is written and read on the request's handler goroutine.
+	access      gatewayauth.AccountAccess
 	observation atomic.Pointer[requestObservation]
 }
 
@@ -152,7 +153,7 @@ func (telemetry *Telemetry) ObserveAccess(ctx context.Context, caller gatewayaut
 	if !ok {
 		return
 	}
-	state.access.Store(&access)
+	state.access = access
 	if access != gatewayauth.Refused {
 		current := observationFromContext(ctx)
 		current.callerService = boundedObservationValue(caller.AttributedService())
@@ -186,8 +187,8 @@ func (telemetry *Telemetry) Middleware(route func(*http.Request) string, next ht
 			telemetry.requests.WithLabelValues(routeName, method, statusClass).Inc()
 			telemetry.duration.WithLabelValues(routeName, method, statusClass).Observe(duration)
 			access := "not_attempted"
-			if decision := state.access.Load(); decision != nil {
-				access = string(*decision)
+			if state.access != "" {
+				access = string(state.access)
 			}
 			attrs := []any{
 				"route", routeName,

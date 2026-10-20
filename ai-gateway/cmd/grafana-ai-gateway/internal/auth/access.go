@@ -76,12 +76,10 @@ func ParseAccessPolicy(mode, internalServices string) (AccessPolicy, error) {
 type Caller struct {
 	// Namespace is the route namespace the platform authorized.
 	Namespace string
-	// Service is the direct caller's signed service identity, when present.
-	Service string
 	// Identity is the identity actor's typed UID, when present. It is never emitted.
-	Identity   string
-	access     AccountAccess
-	attributed bool
+	Identity          string
+	access            AccountAccess
+	attributedService string
 }
 
 // AccountAccess returns the account population the caller may use.
@@ -89,12 +87,7 @@ func (caller Caller) AccountAccess() AccountAccess { return caller.access }
 
 // AttributedService returns the service identity that observations may
 // attribute, which is set only for configured access in cloud mode.
-func (caller Caller) AttributedService() string {
-	if caller.attributed {
-		return caller.Service
-	}
-	return ""
-}
+func (caller Caller) AttributedService() string { return caller.attributedService }
 
 // Decide maps the verified caller and route namespace to account access. A
 // refused caller carries no other values.
@@ -103,10 +96,11 @@ func (policy AccessPolicy) Decide(info types.AuthInfo, namespace string) Caller 
 	if info == nil || namespace == "" {
 		return refused
 	}
-	caller := Caller{Namespace: namespace, Service: single(info.GetExtra()[DirectCallerServiceKey]), Identity: identityActor(info)}
+	service := single(info.GetExtra()[DirectCallerServiceKey])
+	caller := Caller{Namespace: namespace, Identity: identityActor(info)}
 	switch {
-	case policy.Mode == AccessModeCloud && caller.Service != "" && slices.Contains(policy.InternalServices, caller.Service):
-		caller.access, caller.attributed = ConfiguredAccounts, true
+	case policy.Mode == AccessModeCloud && service != "" && slices.Contains(policy.InternalServices, service):
+		caller.access, caller.attributedService = ConfiguredAccounts, service
 	case caller.Identity == "":
 		return refused
 	case policy.Mode == AccessModeCloud:

@@ -122,17 +122,15 @@ func TestClients_RejectRedirectsBeforeCredentialForwarding(t *testing.T) {
 
 			client, err := NewAnthropicClient(time.Second, 1024)
 			require.NoError(t, err)
-			{
-				request, err := http.NewRequest(http.MethodGet, source.URL, nil)
-				require.NoError(t, err)
-				request.Header.Set("X-Access-Token", "secret-access")
-				request.Header.Set("Authorization", "Bearer secret")
-				request.Header.Set("X-Api-Key", "secret-api-key")
-				response, err := client.Do(request)
-				require.NoError(t, err)
-				assert.Equal(t, http.StatusTemporaryRedirect, response.StatusCode)
-				require.NoError(t, response.Body.Close())
-			}
+			request, err := http.NewRequest(http.MethodGet, source.URL, nil)
+			require.NoError(t, err)
+			request.Header.Set("X-Access-Token", "secret-access")
+			request.Header.Set("Authorization", "Bearer secret")
+			request.Header.Set("X-Api-Key", "secret-api-key")
+			response, err := client.Do(request)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusTemporaryRedirect, response.StatusCode)
+			require.NoError(t, response.Body.Close())
 		})
 	}
 	assert.Zero(t, targetCalls.Load())
@@ -173,20 +171,18 @@ func TestBoundedTransport_DecompressedResponseBoundaries(t *testing.T) {
 
 				for _, delta := range []int64{1, 0, -1} {
 					limit := int64(len(payload.payload)) + delta
-					{
-						client, err := NewAnthropicClient(time.Second, limit)
-						require.NoError(t, err)
-						response, err := client.Get(server.URL)
-						require.NoError(t, err)
-						body, readErr := io.ReadAll(response.Body)
-						_ = response.Body.Close()
-						if delta >= 0 {
-							require.NoError(t, readErr)
-							assert.Equal(t, payload.payload, string(body))
-						} else {
-							require.ErrorIs(t, readErr, ErrResponseTooLarge)
-							assert.Len(t, body, int(limit))
-						}
+					client, err := NewAnthropicClient(time.Second, limit)
+					require.NoError(t, err)
+					response, err := client.Get(server.URL)
+					require.NoError(t, err)
+					body, readErr := io.ReadAll(response.Body)
+					_ = response.Body.Close()
+					if delta >= 0 {
+						require.NoError(t, readErr)
+						assert.Equal(t, payload.payload, string(body))
+					} else {
+						require.ErrorIs(t, readErr, ErrResponseTooLarge)
+						assert.Len(t, body, int(limit))
 					}
 				}
 			})
@@ -245,28 +241,19 @@ func TestClients_HostileServersTerminateWithinBounds(t *testing.T) {
 	})
 }
 
-func TestNewClients_InvalidLimits(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		newClient func(time.Duration, int64) (*http.Client, error)
+func TestNewAnthropicClient_InvalidLimits(t *testing.T) {
+	for _, limits := range []struct {
+		timeout time.Duration
+		bytes   int64
 	}{
-		{name: "anthropic", newClient: NewAnthropicClient},
+		{timeout: 0, bytes: 1},
+		{timeout: -time.Second, bytes: 1},
+		{timeout: time.Second, bytes: 0},
+		{timeout: time.Second, bytes: -1},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			for _, limits := range []struct {
-				timeout time.Duration
-				bytes   int64
-			}{
-				{timeout: 0, bytes: 1},
-				{timeout: -time.Second, bytes: 1},
-				{timeout: time.Second, bytes: 0},
-				{timeout: time.Second, bytes: -1},
-			} {
-				client, err := tc.newClient(limits.timeout, limits.bytes)
-				require.Error(t, err)
-				assert.Nil(t, client)
-			}
-		})
+		client, err := NewAnthropicClient(limits.timeout, limits.bytes)
+		require.Error(t, err)
+		assert.Nil(t, client)
 	}
 }
 

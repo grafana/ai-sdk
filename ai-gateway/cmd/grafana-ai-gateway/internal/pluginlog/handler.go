@@ -92,17 +92,11 @@ func appendAttr(args []any, prefix string, attr slog.Attr) []any {
 }
 
 func value(v slog.Value) any {
-	switch v.Kind() {
-	case slog.KindString:
-		return v.String()
-	case slog.KindDuration:
+	if v.Kind() == slog.KindDuration {
 		return v.Duration().String()
-	case slog.KindTime:
-		return v.Time()
-	default:
-		if err, ok := v.Any().(error); ok {
-			return err.Error()
-		}
-		return v.Any()
 	}
+	if err, ok := v.Any().(error); ok {
+		return err.Error()
+	}
+	return v.Any()
 }
