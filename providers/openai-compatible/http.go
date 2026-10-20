@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -89,6 +90,7 @@ func (m *model) doStream(ctx context.Context, params provider.CallOptions) (*pro
 	go func() {
 		defer close(ch)
 		defer func() { _ = resp.Body.Close() }()
+		defer streamrecover.Recover(func() { sendStreamPart(ctx, ch, streamrecover.Part()) })
 		m.runStream(ctx, endpoint, bodyBytes, resp.Body, resp.Header, warnings, params.IncludeRawChunks, metadataKey, ch)
 	}()
 
