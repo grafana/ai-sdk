@@ -11,6 +11,7 @@ import (
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -52,6 +53,7 @@ func pumpMessageStream(ctx context.Context, response *http.Response, includeRaw 
 				return false
 			}
 		}
+		defer streamrecover.Recover(func() { send(messageStreamItem{err: streamrecover.ErrPanic}) })
 		decoder := ssestream.NewDecoder(response)
 		if decoder == nil {
 			send(messageStreamItem{err: errors.New("anthropic: missing stream response")})

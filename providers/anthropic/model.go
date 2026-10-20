@@ -13,6 +13,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	vertexsdk "github.com/anthropics/anthropic-sdk-go/vertex"
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -197,6 +198,7 @@ func consumeStream(ctx context.Context, items <-chan messageStreamItem, buffered
 	parts := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(parts)
+		defer streamrecover.Recover(func() { parts <- streamrecover.Part() })
 		consumeStreamParts(ctx, items, buffered, parts, mapping, warnings, usesJsonResponseTool, citDocs, generateID, providerName, markCodeExecutionDynamic, responseHeaders)
 	}()
 	for {
