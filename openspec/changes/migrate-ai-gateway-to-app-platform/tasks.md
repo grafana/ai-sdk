@@ -111,7 +111,7 @@
   - access modes: the `cloud` allowlist with service identities, on-behalf-of users, BYOK open to every stack user, and `self-hosted` catalog access for users and service accounts;
   - the self-hosted requirements today: the router and app manifest toggles, with Grafana signing plugin tokens itself; and one service account per application or person to attribute;
   - that self-hosted catalog access follows Grafana's plugin app access, which basic roles usually include, and how operators restrict it;
-  - settings, and how hosts supply environment: `forward_host_env_vars` for Grafana, the router host environment;
+  - settings, and how hosts supply them: the `[plugin.grafana-aigateway-app]` section for Grafana, including secrets through `$__file{}`, and the router host environment;
   - the grace period above model duration plus drain;
   - current platform limitations: route deadline, platform errors outside the ProviderWire document.
 

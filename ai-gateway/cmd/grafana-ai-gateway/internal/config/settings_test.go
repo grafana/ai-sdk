@@ -13,22 +13,20 @@ import (
 
 func TestParseSettings_Defaults(t *testing.T) {
 	settings, err := ParseSettings(mapLookup(map[string]string{
-		"GF_PLUGIN_CONFIG_FILE":               "/tmp/models.yaml",
-		"GF_PLUGIN_ACCESS_MODE":               "cloud",
-		"GF_PLUGIN_AGENTO11Y_ENABLED":         "true",
-		"GF_PLUGIN_AGENTO11Y_ENDPOINT":        "collector.example:4317",
-		"GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV": "AGENTO11Y_SECRET",
+		"GF_PLUGIN_CONFIG_FILE":        "/tmp/models.yaml",
+		"GF_PLUGIN_ACCESS_MODE":        "cloud",
+		"GF_PLUGIN_AGENTO11Y_ENABLED":  "true",
+		"GF_PLUGIN_AGENTO11Y_ENDPOINT": "collector.example:4317",
 	}))
 	require.NoError(t, err)
 	assert.Equal(t, Settings{
 		ConfigFile: "/tmp/models.yaml",
 		Access:     auth.AccessPolicy{Mode: auth.AccessModeCloud},
 		AgentObservability: AgentObservabilitySettings{
-			Enabled:       true,
-			Protocol:      AgentObservabilityGRPC,
-			Endpoint:      "collector.example:4317",
-			TLS:           true,
-			AuthSecretEnv: "AGENTO11Y_SECRET",
+			Enabled:  true,
+			Protocol: AgentObservabilityGRPC,
+			Endpoint: "collector.example:4317",
+			TLS:      true,
 		},
 		ProviderWire: providerv4.Limits{
 			RequestBytes:        1_048_576,
@@ -55,9 +53,6 @@ func TestParseSettings_EnvironmentBindings(t *testing.T) {
 		}},
 		{env: "GF_PLUGIN_AGENTO11Y_ENDPOINT", value: "other.example:4317", check: func(t *testing.T, s Settings) {
 			assert.Equal(t, "other.example:4317", s.AgentObservability.Endpoint)
-		}},
-		{env: "GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV", value: "OTHER_SECRET", check: func(t *testing.T, s Settings) {
-			assert.Equal(t, "OTHER_SECRET", s.AgentObservability.AuthSecretEnv)
 		}},
 		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.ProviderWire.RequestBytes) }},
 		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "45s", check: func(t *testing.T, s Settings) { assert.Equal(t, 45*time.Second, s.ProviderWire.ModelDuration) }},
@@ -126,8 +121,6 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 			s.AgentObservability.Endpoint = "https://collector.example/export"
 			s.AgentObservability.TLS = false
 		}},
-		{name: "agento11y secret reference", mutate: func(s *Settings) { s.AgentObservability.AuthSecretEnv = "literal secret" }},
-		{name: "agento11y reserved secret reference", mutate: func(s *Settings) { s.AgentObservability.AuthSecretEnv = "AGENTO11Y_AUTH_TOKEN" }},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -155,7 +148,6 @@ func TestAgentObservabilitySettings_Disabled(t *testing.T) {
 	environment := baseSettingsEnvironment()
 	environment["GF_PLUGIN_AGENTO11Y_ENABLED"] = "false"
 	delete(environment, "GF_PLUGIN_AGENTO11Y_ENDPOINT")
-	delete(environment, "GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV")
 
 	settings, err := ParseSettings(mapLookup(environment))
 	require.NoError(t, err)
@@ -172,7 +164,7 @@ func TestAgentObservabilitySettings_ResolveAuthSecretOnceAndKeepFailuresSecretFr
 	calls := 0
 	secret, err := settings.AgentObservability.ResolveAuthSecret(func(name string) (string, bool) {
 		calls++
-		assert.Equal(t, "AGENTO11Y_SECRET", name)
+		assert.Equal(t, "GF_PLUGIN_AGENTO11Y_TOKEN", name)
 		return "private-bearer-value", true
 	})
 	require.NoError(t, err)
@@ -192,7 +184,6 @@ func TestAgentObservabilitySettings_ResolveAuthSecretOnceAndKeepFailuresSecretFr
 		t.Run(test.name, func(t *testing.T) {
 			_, err := settings.AgentObservability.ResolveAuthSecret(test.lookup)
 			require.Error(t, err)
-			assert.NotContains(t, err.Error(), "AGENTO11Y_SECRET")
 			assert.NotContains(t, err.Error(), "private-bearer-value")
 		})
 	}
@@ -291,10 +282,6 @@ func TestAgentObservabilitySettings_RejectsNewSDKEnvironmentKeys(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			err := settings.AgentObservability.ValidateAmbientEnvironment(mapLookup(map[string]string{name: "private-invalid-value"}))
 			require.EqualError(t, err, "config: ambient agent observability SDK environment is not allowed")
-			environment := baseSettingsEnvironment()
-			environment["GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV"] = name
-			_, err = ParseSettings(mapLookup(environment))
-			require.ErrorContains(t, err, "SDK-reserved")
 		})
 	}
 }
@@ -347,11 +334,10 @@ func TestParseSettings_AgentObservabilityTransportSecurityIsExplicit(t *testing.
 
 func baseSettingsEnvironment() map[string]string {
 	return map[string]string{
-		"GF_PLUGIN_CONFIG_FILE":               "/tmp/models.yaml",
-		"GF_PLUGIN_ACCESS_MODE":               "cloud",
-		"GF_PLUGIN_AGENTO11Y_ENABLED":         "true",
-		"GF_PLUGIN_AGENTO11Y_ENDPOINT":        "collector.example:4317",
-		"GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV": "AGENTO11Y_SECRET",
+		"GF_PLUGIN_CONFIG_FILE":        "/tmp/models.yaml",
+		"GF_PLUGIN_ACCESS_MODE":        "cloud",
+		"GF_PLUGIN_AGENTO11Y_ENABLED":  "true",
+		"GF_PLUGIN_AGENTO11Y_ENDPOINT": "collector.example:4317",
 	}
 }
 

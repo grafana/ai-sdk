@@ -284,7 +284,7 @@ func TestNewAgentObservabilityRuntime_RejectsActualSDKEnvironment(t *testing.T) 
 			t.Setenv(name, "private=ambient")
 			telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 			require.NoError(t, err)
-			settings := config.AgentObservabilitySettings{Enabled: true, AuthSecretEnv: "AO_SECRET"}
+			settings := config.AgentObservabilitySettings{Enabled: true}
 			runtime, err := NewAgentObservabilityRuntime(settings, "private-secret", telemetry)
 			require.Error(t, err)
 			assert.Nil(t, runtime)
@@ -340,10 +340,9 @@ func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayl
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime, err := newAgentObservabilityRuntime(config.AgentObservabilitySettings{
-		Enabled:       true,
-		Protocol:      config.AgentObservabilityHTTP,
-		Endpoint:      server.URL,
-		AuthSecretEnv: "AO_SECRET",
+		Enabled:  true,
+		Protocol: config.AgentObservabilityHTTP,
+		Endpoint: server.URL,
 	}, "agent-secret", telemetry, agentExportTuning{
 		queueSize:       8,
 		batchSize:       1,
@@ -408,10 +407,9 @@ func TestNewAgentObservabilityRuntime_RejectedHTTPBatchIsOneFailOpenFailure(t *t
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime, err := newAgentObservabilityRuntime(config.AgentObservabilitySettings{
-		Enabled:       true,
-		Protocol:      config.AgentObservabilityHTTP,
-		Endpoint:      server.URL,
-		AuthSecretEnv: "AO_SECRET",
+		Enabled:  true,
+		Protocol: config.AgentObservabilityHTTP,
+		Endpoint: server.URL,
 	}, "agent-secret", telemetry, agentExportTuning{
 		queueSize:       4,
 		batchSize:       1,

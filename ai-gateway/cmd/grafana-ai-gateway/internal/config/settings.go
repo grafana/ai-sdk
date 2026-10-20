@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -53,14 +52,17 @@ const (
 	streamDrainDuration  = time.Second
 )
 
+// AgentObservabilityTokenSetting is the setting key of the Agent
+// Observability bearer token. The token is read only by ResolveAuthSecret,
+// after the other settings and the model configuration are validated.
+const AgentObservabilityTokenSetting = "agento11y_token"
+
 // AgentObservabilitySettings selects the Agent Observability exporter.
-// The export credential is represented only by an environment-variable name.
 type AgentObservabilitySettings struct {
-	Enabled       bool
-	Protocol      AgentObservabilityProtocol
-	Endpoint      string
-	TLS           bool
-	AuthSecretEnv string
+	Enabled  bool
+	Protocol AgentObservabilityProtocol
+	Endpoint string
+	TLS      bool
 }
 
 // Settings contains every plugin setting.
@@ -145,11 +147,10 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 	settings := Settings{
 		ConfigFile: env.string("config_file", ""),
 		AgentObservability: AgentObservabilitySettings{
-			Enabled:       env.bool("agento11y_enabled", false),
-			Protocol:      AgentObservabilityProtocol(env.string("agento11y_protocol", string(AgentObservabilityGRPC))),
-			Endpoint:      env.string("agento11y_endpoint", ""),
-			TLS:           env.bool("agento11y_tls", true),
-			AuthSecretEnv: env.string("agento11y_auth_secret_env", ""),
+			Enabled:  env.bool("agento11y_enabled", false),
+			Protocol: AgentObservabilityProtocol(env.string("agento11y_protocol", string(AgentObservabilityGRPC))),
+			Endpoint: env.string("agento11y_endpoint", ""),
+			TLS:      env.bool("agento11y_tls", true),
 		},
 		ProviderWire: providerv4.Limits{
 			RequestBytes:        env.int64("max_request_bytes", defaultRequestBytes),
@@ -192,8 +193,6 @@ func (settings Settings) Validate() error {
 	return nil
 }
 
-var environmentVariableName = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
-
 var ambientAgentObservabilityEnvironment = []string{
 	"AGENTO11Y_ENDPOINT", "SIGIL_ENDPOINT",
 	"AGENTO11Y_PROTOCOL", "SIGIL_PROTOCOL",
@@ -229,19 +228,11 @@ func (settings AgentObservabilitySettings) validate() error {
 	if err := validateAgentObservabilityEndpoint(settings.Protocol, settings.Endpoint, settings.TLS); err != nil {
 		return err
 	}
-	if !environmentVariableName.MatchString(settings.AuthSecretEnv) {
-		return fmt.Errorf("config: agent observability auth secret environment reference is required and must be an environment variable name")
-	}
-	for _, reserved := range ambientAgentObservabilityEnvironment {
-		if settings.AuthSecretEnv == reserved {
-			return fmt.Errorf("config: agent observability auth secret reference must not use an SDK-reserved environment variable")
-		}
-	}
 	return nil
 }
 
-// ResolveAuthSecret resolves the configured bearer credential once without
-// including its environment-variable name or value in failures.
+// ResolveAuthSecret reads the bearer token setting once without including
+// its value in failures.
 func (settings AgentObservabilitySettings) ResolveAuthSecret(lookupEnv LookupEnv) (string, error) {
 	if !settings.Enabled {
 		return "", nil
@@ -249,7 +240,7 @@ func (settings AgentObservabilitySettings) ResolveAuthSecret(lookupEnv LookupEnv
 	if lookupEnv == nil {
 		return "", fmt.Errorf("config: agent observability auth secret is unavailable")
 	}
-	secret, ok := lookupEnv(settings.AuthSecretEnv)
+	secret, ok := lookupEnv(SettingName(AgentObservabilityTokenSetting))
 	if !ok || strings.TrimSpace(secret) == "" {
 		return "", fmt.Errorf("config: agent observability auth secret is unavailable")
 	}

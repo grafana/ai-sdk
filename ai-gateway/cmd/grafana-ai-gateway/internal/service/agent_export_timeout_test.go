@@ -68,7 +68,7 @@ func TestAgentObservabilityRuntime_ExportAttemptTimeout(t *testing.T) {
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
 			runtime, err := newAgentObservabilityRuntime(config.AgentObservabilitySettings{
-				Enabled: true, Protocol: protocol, Endpoint: endpoint, AuthSecretEnv: "AO_SECRET",
+				Enabled: true, Protocol: protocol, Endpoint: endpoint,
 			}, "private-secret", telemetry, agentExportTuning{
 				queueSize: 4, batchSize: 1, payloadMaxBytes: 1 << 20, maxRetries: 1,
 				initialBackoff: time.Millisecond, maxBackoff: time.Millisecond,

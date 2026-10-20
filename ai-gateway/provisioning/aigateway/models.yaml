@@ -1,7 +1,7 @@
 providers:
   anthropic:
     type: anthropic
-    apiKeyEnv: ANTHROPIC_API_KEY
+    apiKeyEnv: GF_PLUGIN_ANTHROPIC_API_KEY
 models:
   anthropic/claude-sonnet-5:
     name: Claude Sonnet 5

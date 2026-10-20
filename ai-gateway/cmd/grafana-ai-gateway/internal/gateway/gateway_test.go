@@ -56,7 +56,7 @@ func newStartupEnvironment(t *testing.T, providerURL string) *startupEnvironment
 }
 
 func (e *startupEnvironment) lookup(name string) (string, bool) {
-	if name == "ANTHROPIC_SECRET" || name == "AO_SECRET" {
+	if name == "ANTHROPIC_SECRET" || name == "GF_PLUGIN_AGENTO11Y_TOKEN" {
 		e.secrets[name]++
 	}
 	value, ok := e.values[name]
@@ -121,7 +121,6 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 		{name: "ambient agent observability environment", change: func(env map[string]string) {
 			env["GF_PLUGIN_AGENTO11Y_ENABLED"] = "true"
 			env["GF_PLUGIN_AGENTO11Y_ENDPOINT"] = "collector.example:4317"
-			env["GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV"] = "AO_SECRET"
 			env["SIGIL_TAGS"] = "private=ambient"
 		}, message: "ambient agent observability SDK environment"},
 		{name: "unsupported provider scheme", url: "ftp://provider.example", message: "must use http or https"},
@@ -195,24 +194,22 @@ func TestNew_EnvironmentOnlyStartup(t *testing.T) {
 		{name: "self-hosted", change: func(env map[string]string) { env["GF_PLUGIN_ACCESS_MODE"] = "self-hosted" }},
 		{name: "grpc agent observability", change: func(env map[string]string) {
 			for name, value := range map[string]string{
-				"GF_PLUGIN_AGENTO11Y_ENABLED":         "true",
-				"GF_PLUGIN_AGENTO11Y_PROTOCOL":        "grpc",
-				"GF_PLUGIN_AGENTO11Y_ENDPOINT":        "127.0.0.1:1",
-				"GF_PLUGIN_AGENTO11Y_TLS":             "false",
-				"GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
-				"AO_SECRET":                           "agent-secret-value",
+				"GF_PLUGIN_AGENTO11Y_ENABLED":  "true",
+				"GF_PLUGIN_AGENTO11Y_PROTOCOL": "grpc",
+				"GF_PLUGIN_AGENTO11Y_ENDPOINT": "127.0.0.1:1",
+				"GF_PLUGIN_AGENTO11Y_TLS":      "false",
+				"GF_PLUGIN_AGENTO11Y_TOKEN":    "agent-secret-value",
 			} {
 				env[name] = value
 			}
 		}},
 		{name: "http agent observability", change: func(env map[string]string) {
 			for name, value := range map[string]string{
-				"GF_PLUGIN_AGENTO11Y_ENABLED":         "true",
-				"GF_PLUGIN_AGENTO11Y_PROTOCOL":        "http",
-				"GF_PLUGIN_AGENTO11Y_ENDPOINT":        collector.URL,
-				"GF_PLUGIN_AGENTO11Y_TLS":             "false",
-				"GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
-				"AO_SECRET":                           "agent-secret-value",
+				"GF_PLUGIN_AGENTO11Y_ENABLED":  "true",
+				"GF_PLUGIN_AGENTO11Y_PROTOCOL": "http",
+				"GF_PLUGIN_AGENTO11Y_ENDPOINT": collector.URL,
+				"GF_PLUGIN_AGENTO11Y_TLS":      "false",
+				"GF_PLUGIN_AGENTO11Y_TOKEN":    "agent-secret-value",
 			} {
 				env[name] = value
 			}
@@ -226,10 +223,10 @@ func TestNew_EnvironmentOnlyStartup(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, gw.Handler())
 			require.NotNil(t, gw.Authenticator())
-			if _, enabled := env.values["AO_SECRET"]; enabled {
-				assert.Equal(t, 1, env.secrets["AO_SECRET"])
+			if _, enabled := env.values["GF_PLUGIN_AGENTO11Y_TOKEN"]; enabled {
+				assert.Equal(t, 1, env.secrets["GF_PLUGIN_AGENTO11Y_TOKEN"])
 			}
-			for _, private := range []string{providerSecret, "agent-secret-value", "AO_SECRET", "127.0.0.1:1"} {
+			for _, private := range []string{providerSecret, "agent-secret-value", "127.0.0.1:1"} {
 				assert.NotContains(t, logs, private)
 			}
 		})
@@ -241,10 +238,9 @@ func TestNew_ProductionExportWithDefaultTimeoutsClosesWithinTheBudget(t *testing
 	unsetAmbientAgentObservabilityEnvironment(t)
 	env := newStartupEnvironment(t, "https://provider.example")
 	for name, value := range map[string]string{
-		"GF_PLUGIN_AGENTO11Y_ENABLED":         "true",
-		"GF_PLUGIN_AGENTO11Y_ENDPOINT":        "collector.invalid:4317",
-		"GF_PLUGIN_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
-		"AO_SECRET":                           "agent-secret-value",
+		"GF_PLUGIN_AGENTO11Y_ENABLED":  "true",
+		"GF_PLUGIN_AGENTO11Y_ENDPOINT": "collector.invalid:4317",
+		"GF_PLUGIN_AGENTO11Y_TOKEN":    "agent-secret-value",
 	} {
 		env.values[name] = value
 	}

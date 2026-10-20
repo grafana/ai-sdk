@@ -75,20 +75,22 @@ exchange instead; then set its signing keys in `GRAFANA_JWKS_URL`.
 ## Configuration
 
 Settings go in Grafana's `[plugin.grafana-aigateway-app]` configuration
-section, and the model catalog in a YAML file that names provider secrets by
-environment variable:
+section, and the model catalog in a YAML file that names each provider key by
+its environment variable. Keep keys in the same section, through Grafana's
+`$__file{}` or `$__env{}` expansion, and reference them as `GF_PLUGIN_<KEY>`:
 
 ```ini
 [plugin.grafana-aigateway-app]
 config_file = /etc/grafana/aigateway/models.yaml
 access_mode = self-hosted
+anthropic_api_key = $__file{/run/secrets/anthropic-api-key}
 ```
 
 ```yaml
 providers:
   anthropic-primary:
     type: anthropic
-    apiKeyEnv: ANTHROPIC_API_KEY
+    apiKeyEnv: GF_PLUGIN_ANTHROPIC_API_KEY
 models:
   grafana/assistant:
     name: Grafana Assistant
@@ -117,10 +119,9 @@ Invalid settings, or an `auth` or `server` block in the catalog file stop the
 plugin before it serves requests. The Gateway always verifies token
 signatures; app-sdk's `insecure_skip_authentication` has no effect.
 
-Provider keys named in the catalog, and the Agent Observability secret, are
-read from the plugin's environment. Grafana forwards its own environment only
-to plugins listed in `[plugins] forward_host_env_vars`, so list
-`grafana-aigateway-app` there when the keys are set on Grafana's process. The
+A catalog may also name any other variable of the plugin's environment. Grafana
+forwards its own environment only to plugins listed in `[plugins]
+forward_host_env_vars`, so keeping keys in the plugin section avoids that. The
 App Platform router passes the environment of its plugin deployment.
 
 ## Lifecycle and limits

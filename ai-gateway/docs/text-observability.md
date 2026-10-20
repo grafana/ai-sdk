@@ -128,15 +128,15 @@ plugin reads these settings:
 | `agento11y_enabled` | `false` |
 | `agento11y_protocol` | `grpc`; `grpc` or `http` |
 | `agento11y_endpoint` | required when enabled; credential-free absolute HTTP(S) URL for HTTP, host:port for gRPC |
-| `agento11y_tls` | `true`; required in production when enabled |
-| `agento11y_auth_secret_env` | required environment-variable reference; SDK-reserved names are rejected |
+| `agento11y_tls` | `true`; `false` allows a cleartext endpoint |
+| `agento11y_token` | bearer token, required when enabled; use `$__file{}` to keep it out of the configuration file |
 
 These are keys of the `[plugin.grafana-aigateway-app]` section, passed to the
 plugin as `GF_PLUGIN_AGENTO11Y_*`. Queueing, batching, retries and the 10-second
 per-attempt export timeout are fixed.
 
-The secret reference is resolved once while the plugin starts; neither its
-name nor value is logged. Ambient `AGENTO11Y_*` and legacy `SIGIL_*` SDK
+The token is read once while the plugin starts, after the other settings and
+the model catalog are validated, and is never logged. Ambient `AGENTO11Y_*` and legacy `SIGIL_*` SDK
 configuration is rejected so it cannot bypass validated Gateway policy.
 
 Queue pressure, validation failures, exporter rejection/outage, and bounded

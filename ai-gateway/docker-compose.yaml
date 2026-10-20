@@ -11,5 +11,4 @@ services:
       GF_FEATURE_TOGGLES_ENABLE: appplugins.loadAppManifest,appplugins.registerAPIServer,grafana.useRouterMiddleware
       GF_DEFAULT_APP_MODE: development
       GF_PATHS_CONFIG: /etc/grafana/provisioning/grafana.ini
-      GF_PLUGINS_FORWARD_HOST_ENV_VARS: grafana-aigateway-app
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-unset-local-key}

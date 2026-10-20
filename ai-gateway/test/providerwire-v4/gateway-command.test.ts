@@ -309,8 +309,8 @@ describe("metadata observation policies", () => {
     const seen: unknown[] = [];
     try {
       for (const enabled of [false, true]) {
-        const args = enabled ? ["--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`, "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY"] : [];
-        const [fake, gateway] = await startGateway(args, { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+        const args = enabled ? ["--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`, "--no-agento11y.tls"] : [];
+        const [fake, gateway] = await startGateway(args, { GF_PLUGIN_AGENTO11Y_TOKEN: "integration-agento11y-key" });
         fake.metadata = true;
         try {
           const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "metadata observation" }] }], maxOutputTokens: 64 };
@@ -454,8 +454,8 @@ describe("native option forwarding through the authenticated command", () => {
             : openAIConfig(primary.url, secondary?.url);
           gateway = await GatewayProcess.start(binaryPath, "", [
             "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
-            "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-          ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "access-token", config);
+            "--no-agento11y.tls",
+          ], { GF_PLUGIN_AGENTO11Y_TOKEN: "integration-agento11y-key" }, "access-token", config);
           const prompt: LanguageModelV4CallOptions["prompt"] = [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }];
           const options: LanguageModelV4CallOptions = family === "anthropic"
             ? {
@@ -1039,8 +1039,8 @@ describe("authenticated Anthropic Gateway command", () => {
     try {
       resources = await startGateway([
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
-        "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "claude-sonnet-4-6");
+        "--no-agento11y.tls",
+      ], { GF_PLUGIN_AGENTO11Y_TOKEN: "integration-agento11y-key" }, "claude-sonnet-4-6");
       const [fake, gateway] = resources;
       fake.functionTools = true;
       const client = gateway.client();
@@ -1132,8 +1132,8 @@ describe("authenticated Anthropic Gateway command", () => {
     try {
       resources = await startGateway([
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
-        "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "claude-sonnet-4-6");
+        "--no-agento11y.tls",
+      ], { GF_PLUGIN_AGENTO11Y_TOKEN: "integration-agento11y-key" }, "claude-sonnet-4-6");
       const [fake, gateway] = resources;
       fake.providerTools = true;
       const token = "mcp-private-token";
@@ -1324,8 +1324,8 @@ describe("authenticated Anthropic Gateway command", () => {
       const yaml = anthropicConfig(fake.url).replace("models:", "  unused:\n    type: openai\n    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY\nmodels:");
       gateway = await GatewayProcess.start(binaryPath, fake.url, [
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
-        "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "access-token", yaml);
+        "--no-agento11y.tls",
+      ], { GF_PLUGIN_AGENTO11Y_TOKEN: "integration-agento11y-key" }, "access-token", yaml);
       fake.failureStatus = 503;
       const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "configured-key-summary" }] }], maxOutputTokens: 32 };
       for (const mode of ["generate", "stream"] as const) {
@@ -1634,8 +1634,7 @@ describe("authenticated Anthropic Gateway command", () => {
         "--agento11y.protocol=http",
         `--agento11y.endpoint=${observer.url}`,
         "--no-agento11y.tls",
-        "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+      ], { GF_PLUGIN_AGENTO11Y_TOKEN: "integration-agento11y-key" });
       const [fake, gateway] = resources;
       const fileParts = [
         { type: "file", filename: "private-filename", data: { type: "data", data: "cHJpdmF0ZS1ieXRlcw==" }, mediaType: "image/png" },
@@ -1723,7 +1722,7 @@ describe("authenticated Anthropic Gateway command", () => {
       }
       const surfaces = JSON.stringify({ metrics, logs: gateway.stderr, generations: observer.generations });
       for (const privateValue of [
-        "integration-anthropic-key", "integration-agento11y-key", "GATEWAY_TEST_AGENTO11Y_KEY",
+        "integration-anthropic-key", "integration-agento11y-key", "GF_PLUGIN_AGENTO11Y_TOKEN",
         "backend-private", fake.url, observer.url, TEST_TOKEN, "private-unary-input",
         "hello from fake Anthropic", "provider-secret-response", "private-filename", "cHJpdmF0ZS1ieXRlcw==", "private-url", "private-query", "private-reference", "private-document-text", "private-file-title",
       ]) {
@@ -1744,8 +1743,7 @@ describe("authenticated Anthropic Gateway command", () => {
       "--agento11y.protocol=http",
       `--agento11y.endpoint=http://127.0.0.1:${unavailablePort}`,
       "--no-agento11y.tls",
-      "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-    ], { GATEWAY_TEST_AGENTO11Y_KEY: "outage-agento11y-key" });
+    ], { GF_PLUGIN_AGENTO11Y_TOKEN: "outage-agento11y-key" });
     try {
       const response = await rawProviderWireRequest(gateway.baseURL, "outage-private-input");
       assert.equal(response.status, 200);
@@ -1891,8 +1889,8 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
       try {
         resources = await startCloudGateway([
           "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
-          "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-        ], undefined, { GATEWAY_TEST_ANTHROPIC_KEY: configuredKey, GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+          "--no-agento11y.tls",
+        ], undefined, { GATEWAY_TEST_ANTHROPIC_KEY: configuredKey, GF_PLUGIN_AGENTO11Y_TOKEN: "integration-agento11y-key" });
         const [native, gateway] = resources;
         native.streamErrorMessage = `provider-echo request-only-key ${configuredKey} integration-agento11y-key static-gateway-key backend-private`;
         const options = { ...cloudCall("normal-stream"), providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }, { apiKey: "unused-second-key" }] } } } };
@@ -2394,8 +2392,8 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
       const mcpToken = "compatible-foreign-mcp-token";
       resources = await startCompatibleGateway([
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
-        "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
-      ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
+        "--no-agento11y.tls",
+      ], { GF_PLUGIN_AGENTO11Y_TOKEN: "integration-agento11y-key" });
       const [fake, gateway] = resources;
       for (const mode of ["generate", "stream"] as const) {
         for (const implementation of ["go", "vercel"] as const) {

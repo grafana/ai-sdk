@@ -58,7 +58,7 @@ BYOK requests SHALL use a fixed BYOK model class and, if exposed, only bounded s
 
 ### Requirement: Strict bounded Agent Observability exporter configuration
 
-Gateway-owned settings SHALL explicitly select and validate Agent Observability enablement, protocol, endpoint, transport security and authentication secret reference before client construction. Batch and queue sizes, payload bytes, retry/backoff behavior and a 10-second per-attempt HTTP/gRPC export timeout SHALL be fixed finite Gateway constants. Final flush and shutdown are bounded by the plugin's shared final-flush budget.
+Gateway-owned settings SHALL explicitly select and validate Agent Observability enablement, protocol, endpoint, transport security and bearer token before client construction. The token SHALL be read only after the other settings and the model configuration are validated. Batch and queue sizes, payload bytes, retry/backoff behavior and a 10-second per-attempt HTTP/gRPC export timeout SHALL be fixed finite Gateway constants. Final flush and shutdown are bounded by the plugin's shared final-flush budget.
 
 #### Scenario: Exporter configuration is unsafe
 - **WHEN** configuration enables an endpoint that contradicts its transport security or names an unset secret
