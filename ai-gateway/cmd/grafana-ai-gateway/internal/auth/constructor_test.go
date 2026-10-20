@@ -19,7 +19,7 @@ import (
 
 func TestNewAuthenticator_UnsafeAudiencesAndWarning(t *testing.T) {
 	warnings := 0
-	authenticator, err := NewUnsafeAuthenticator([]string{"custom-audience"}, func(message string) {
+	authenticator, err := NewUnsafeAuthenticator([]string{"ai-sdk"}, func(message string) {
 		warnings++
 		assert.Equal(t, unsafeAuthenticationWarning, message)
 	})
@@ -27,7 +27,7 @@ func TestNewAuthenticator_UnsafeAudiencesAndWarning(t *testing.T) {
 	assert.Equal(t, 1, warnings)
 
 	private := generateSigningKey(t)
-	valid := signAccessToken(t, private, "key", []string{"custom-audience"})
+	valid := signAccessToken(t, private, "key", []string{"ai-sdk"})
 	info, err := authenticator.Authenticate(context.Background(), tokenProvider{accessToken: valid})
 	require.NoError(t, err)
 	assert.Equal(t, "service", info.GetExtra()[authn.ServiceIdentityKey][0])
@@ -53,11 +53,11 @@ func TestNewAuthenticator_SharesOneKeyRetriever(t *testing.T) {
 
 	provider := tokenProvider{
 		accessToken: signAccessToken(t, private, "shared", []string{"ai-sdk"}),
-		idToken:     signIDToken(t, private, "shared", "stack-1"),
+		idToken:     signIDToken(t, private, "shared", "stacks-1"),
 	}
 	info, err := authenticator.Authenticate(context.Background(), provider)
 	require.NoError(t, err)
-	assert.Equal(t, "stack-1", info.GetNamespace())
+	assert.Equal(t, "stacks-1", info.GetNamespace())
 	assert.Equal(t, 2, keys.CallCount())
 }
 
@@ -115,7 +115,7 @@ func generateSigningKey(t *testing.T) *ecdsa.PrivateKey {
 func signAccessToken(t *testing.T, key *ecdsa.PrivateKey, keyID string, audience []string) string {
 	t.Helper()
 	return signToken(t, key, keyID, authn.TokenTypeAccess,
-		authn.AccessTokenClaims{Namespace: "stack-1", ServiceIdentity: "service"},
+		authn.AccessTokenClaims{Namespace: "stacks-1", ServiceIdentity: "service"},
 		jwt.Claims{Subject: "access-policy:1", Audience: audience, Expiry: jwt.NewNumericDate(time.Now().Add(time.Hour))},
 	)
 }

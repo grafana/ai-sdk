@@ -600,7 +600,7 @@ func serviceAuthInfo() types.AuthInfo                   { return serviceAuth{} }
 func (serviceAuth) GetUID() string                      { return "access-policy:1" }
 func (serviceAuth) GetIdentifier() string               { return "1" }
 func (serviceAuth) GetIdentityType() types.IdentityType { return types.TypeAccessPolicy }
-func (serviceAuth) GetNamespace() string                { return "stack-1" }
+func (serviceAuth) GetNamespace() string                { return "stacks-1" }
 func (serviceAuth) GetGroups() []string                 { return nil }
 func (serviceAuth) GetExtra() map[string][]string {
 	return map[string][]string{authn.ServiceIdentityKey: {"service"}}

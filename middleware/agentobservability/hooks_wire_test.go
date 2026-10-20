@@ -110,7 +110,7 @@ func TestHooksMiddleware_WireRequest(t *testing.T) {
 	client := agento11y.NewClient(agento11y.Config{
 		API:              agento11y.APIConfig{Endpoint: server.URL},
 		GenerationExport: agento11y.GenerationExportConfig{Protocol: agento11y.GenerationExportProtocolNone},
-		Hooks:            agento11y.HooksConfig{Enabled: true, FailOpen: agento11y.BoolPtr(false), Timeout: 2 * time.Second},
+		Hooks:            agento11y.HooksConfig{Enabled: true, FailOpen: new(false), Timeout: 2 * time.Second},
 	})
 	defer func() { require.NoError(t, client.Shutdown(context.Background())) }()
 	parent := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}})

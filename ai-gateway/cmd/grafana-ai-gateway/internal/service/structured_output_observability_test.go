@@ -75,7 +75,7 @@ func TestStructuredOutput_IndependentOperatorAndConsumerCapture(t *testing.T) {
 						}
 						var model provider.LanguageModel = lower
 						if observed {
-							factory, err := NewModelObservabilityFactory(telemetry, operatorLogger, &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}, 10*time.Millisecond)
+							factory, _, err := NewModelObservabilityFactories(telemetry, operatorLogger, &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}, 10*time.Millisecond)
 							require.NoError(t, err)
 							model, err = factory("public", model)
 							require.NoError(t, err)

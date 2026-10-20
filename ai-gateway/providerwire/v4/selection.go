@@ -27,6 +27,7 @@ var (
 	ErrInvalidBYOK               = errors.New("providerwire v4: invalid BYOK credentials")
 	ErrInvalidBYOKSelector       = errors.New("providerwire v4: invalid BYOK model selector")
 	ErrUnsupportedGatewayControl = errors.New("providerwire v4: unsupported gateway control")
+	ErrAccountAccess             = errors.New("providerwire v4: account access denied")
 )
 
 func CatalogSelector(resolver catalog.ModelResolver) RequestSelector {

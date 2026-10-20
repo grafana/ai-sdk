@@ -46,7 +46,7 @@ func TestApproval_IndependentConsumerAndOperatorObservation(t *testing.T) {
 			var model provider.LanguageModel = lower
 			if enabled {
 				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-				factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+				factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 				require.NoError(t, err)
 				model, err = factory("grafana/approvals", model)
 				require.NoError(t, err)

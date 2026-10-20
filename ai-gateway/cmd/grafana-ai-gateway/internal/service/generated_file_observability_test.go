@@ -35,7 +35,7 @@ func TestGeneratedFileCaptureIndependence(t *testing.T) {
 					log := slog.New(slog.NewJSONHandler(&serverLogs, nil))
 					telemetry, err := NewTelemetry(log)
 					require.NoError(t, err)
-					factory, err := NewModelObservabilityFactory(telemetry, log, &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}, 10*time.Millisecond)
+					factory, _, err := NewModelObservabilityFactories(telemetry, log, &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}, 10*time.Millisecond)
 					require.NoError(t, err)
 					original := "opaque:Original?token=application"
 					data := provider.URLDataContent("https://example.test/ordinary-media.png")

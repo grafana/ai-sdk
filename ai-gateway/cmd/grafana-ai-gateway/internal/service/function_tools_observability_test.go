@@ -28,7 +28,7 @@ func TestFunctionTools_MetadataOnlyExports(t *testing.T) {
 				telemetry, err := NewTelemetry(logger)
 				require.NoError(t, err)
 				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-				factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+				factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 				require.NoError(t, err)
 				reason := provider.FinishReason{Unified: provider.FinishReasonToolCalls}
 				if continuation {
