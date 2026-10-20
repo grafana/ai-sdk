@@ -11,13 +11,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/grafana/authlib/authn"
 	"github.com/grafana/authlib/types"
-)
-
-const (
-	// EnvSigningKeysURL names the URL of the platform's JSON Web Key Set.
-	EnvSigningKeysURL = "GRAFANA_JWKS_URL"
-	// EnvSigningKeys names an inline JSON Web Key Set of public signing keys.
-	EnvSigningKeys = "GRAFANA_JWKS"
+	"github.com/grafana/grafana-app-sdk/plugin"
 )
 
 const (
@@ -32,17 +26,17 @@ var ErrNoSigningKeys = errors.New("gateway auth: no platform signing keys config
 // SigningKeys returns the platform signing keys from exactly one of
 // GRAFANA_JWKS_URL or GRAFANA_JWKS, following the plugin host's rules.
 func SigningKeys(lookupEnv func(string) (string, bool)) (authn.KeyRetriever, error) {
-	keysURL, _ := lookupEnv(EnvSigningKeysURL)
-	keysJSON, _ := lookupEnv(EnvSigningKeys)
+	keysURL, _ := lookupEnv(plugin.EnvVarGrafanaJWKSURL)
+	keysJSON, _ := lookupEnv(plugin.EnvVarGrafanaJWKS)
 	switch {
 	case keysURL == "" && keysJSON == "":
 		return nil, ErrNoSigningKeys
 	case keysURL != "" && keysJSON != "":
-		return nil, fmt.Errorf("gateway auth: set only one of %s and %s", EnvSigningKeysURL, EnvSigningKeys)
+		return nil, fmt.Errorf("gateway auth: set only one of %s and %s", plugin.EnvVarGrafanaJWKSURL, plugin.EnvVarGrafanaJWKS)
 	case keysURL != "":
 		parsed, err := url.Parse(keysURL)
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			return nil, fmt.Errorf("gateway auth: %s must be an absolute http or https URL", EnvSigningKeysURL)
+			return nil, fmt.Errorf("gateway auth: %s must be an absolute http or https URL", plugin.EnvVarGrafanaJWKSURL)
 		}
 		return authn.NewKeyRetriever(authn.KeyRetrieverConfig{SigningKeysURL: keysURL}), nil
 	default:
@@ -62,26 +56,26 @@ func (keys staticKeys) Get(_ context.Context, keyID string) (*jose.JSONWebKey, e
 func parseSigningKeys(raw string) (staticKeys, error) {
 	var set jose.JSONWebKeySet
 	if err := json.Unmarshal([]byte(raw), &set); err != nil {
-		return nil, fmt.Errorf("gateway auth: %s is not a JSON Web Key Set", EnvSigningKeys)
+		return nil, fmt.Errorf("gateway auth: %s is not a JSON Web Key Set", plugin.EnvVarGrafanaJWKS)
 	}
 	if len(set.Keys) == 0 {
-		return nil, fmt.Errorf("gateway auth: %s has no keys", EnvSigningKeys)
+		return nil, fmt.Errorf("gateway auth: %s has no keys", plugin.EnvVarGrafanaJWKS)
 	}
 	keys := make(staticKeys, len(set.Keys))
 	for i := range set.Keys {
 		key := &set.Keys[i]
 		switch {
 		case key.KeyID == "":
-			return nil, fmt.Errorf("gateway auth: %s key %d has no key ID", EnvSigningKeys, i)
+			return nil, fmt.Errorf("gateway auth: %s key %d has no key ID", plugin.EnvVarGrafanaJWKS, i)
 		case !key.IsPublic():
-			return nil, fmt.Errorf("gateway auth: %s key %d is not a public key", EnvSigningKeys, i)
+			return nil, fmt.Errorf("gateway auth: %s key %d is not a public key", plugin.EnvVarGrafanaJWKS, i)
 		case !key.Valid():
-			return nil, fmt.Errorf("gateway auth: %s key %d is invalid", EnvSigningKeys, i)
+			return nil, fmt.Errorf("gateway auth: %s key %d is invalid", plugin.EnvVarGrafanaJWKS, i)
 		case key.Use != "" && key.Use != "sig":
-			return nil, fmt.Errorf("gateway auth: %s key %d is not a signing key", EnvSigningKeys, i)
+			return nil, fmt.Errorf("gateway auth: %s key %d is not a signing key", plugin.EnvVarGrafanaJWKS, i)
 		}
 		if _, duplicate := keys[key.KeyID]; duplicate {
-			return nil, fmt.Errorf("gateway auth: %s has duplicate key IDs", EnvSigningKeys)
+			return nil, fmt.Errorf("gateway auth: %s has duplicate key IDs", plugin.EnvVarGrafanaJWKS)
 		}
 		keys[key.KeyID] = key
 	}

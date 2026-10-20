@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/grafana-app-sdk/app"
+	"github.com/grafana/grafana-app-sdk/plugin"
 	"github.com/grafana/grafana-app-sdk/simple"
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
@@ -32,10 +33,6 @@ const PluginID = "grafana-aigateway-app"
 
 // finalFlushBudget bounds the telemetry flush after the plugin host stops the plugin.
 const finalFlushBudget = time.Second
-
-// EnvInsecureSkipAuthentication names the plugin host setting for local
-// development without platform signing keys.
-const EnvInsecureSkipAuthentication = "GF_PLUGIN_INSECURE_SKIP_AUTHENTICATION"
 
 // Options supplies the plugin host environment and process-wide sinks.
 type Options struct {
@@ -189,7 +186,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 }
 
 func newAuthenticator(mode config.DeploymentMode, lookupEnv config.LookupEnv) (authn.Authenticator, error) {
-	insecure, _ := lookupEnv(EnvInsecureSkipAuthentication)
+	insecure, _ := lookupEnv(plugin.EnvVarInsecureSkipAuthentication)
 	skip := insecure == "true"
 	if skip && mode != config.DeploymentDevelopment {
 		return nil, errors.New("config: insecure authentication skipping requires development mode")
@@ -204,7 +201,7 @@ func newAuthenticator(mode config.DeploymentMode, lookupEnv config.LookupEnv) (a
 	case skip:
 		return gatewayauth.NewPlatformAuthenticator(gatewayauth.PlatformConfig{PluginID: PluginID, Group: group, Unsafe: true})
 	default:
-		return nil, fmt.Errorf("config: set %s or %s to verify platform tokens", gatewayauth.EnvSigningKeysURL, gatewayauth.EnvSigningKeys)
+		return nil, fmt.Errorf("config: set %s or %s to verify platform tokens", plugin.EnvVarGrafanaJWKSURL, plugin.EnvVarGrafanaJWKS)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/grafana/authlib/authn"
 	"github.com/grafana/authlib/types"
+	"github.com/grafana/grafana-app-sdk/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -161,18 +162,18 @@ func TestSigningKeys(t *testing.T) {
 		env   map[string]string
 		valid bool
 	}{
-		{name: "inline keys", env: map[string]string{EnvSigningKeys: string(public)}, valid: true},
-		{name: "keys URL", env: map[string]string{EnvSigningKeysURL: "http://auth.internal/jwks"}, valid: true},
+		{name: "inline keys", env: map[string]string{plugin.EnvVarGrafanaJWKS: string(public)}, valid: true},
+		{name: "keys URL", env: map[string]string{plugin.EnvVarGrafanaJWKSURL: "http://auth.internal/jwks"}, valid: true},
 		{name: "neither"},
-		{name: "both", env: map[string]string{EnvSigningKeys: string(public), EnvSigningKeysURL: "https://auth.test/jwks"}},
-		{name: "relative URL", env: map[string]string{EnvSigningKeysURL: "/jwks"}},
-		{name: "non-http URL", env: map[string]string{EnvSigningKeysURL: "file:///jwks"}},
-		{name: "not JSON", env: map[string]string{EnvSigningKeys: "keys"}},
-		{name: "empty set", env: map[string]string{EnvSigningKeys: keySet()}},
-		{name: "private key", env: map[string]string{EnvSigningKeys: keySet(jose.JSONWebKey{Key: private, KeyID: "private", Algorithm: string(jose.ES256)})}},
-		{name: "missing key ID", env: map[string]string{EnvSigningKeys: keySet(jose.JSONWebKey{Key: &private.PublicKey, Algorithm: string(jose.ES256)})}},
-		{name: "encryption key", env: map[string]string{EnvSigningKeys: keySet(jose.JSONWebKey{Key: &private.PublicKey, KeyID: "enc", Algorithm: string(jose.ES256), Use: "enc"})}},
-		{name: "duplicate key IDs", env: map[string]string{EnvSigningKeys: keySet(jose.JSONWebKey{Key: &private.PublicKey, KeyID: "a", Algorithm: string(jose.ES256)}, jose.JSONWebKey{Key: &private.PublicKey, KeyID: "a", Algorithm: string(jose.ES256)})}},
+		{name: "both", env: map[string]string{plugin.EnvVarGrafanaJWKS: string(public), plugin.EnvVarGrafanaJWKSURL: "https://auth.test/jwks"}},
+		{name: "relative URL", env: map[string]string{plugin.EnvVarGrafanaJWKSURL: "/jwks"}},
+		{name: "non-http URL", env: map[string]string{plugin.EnvVarGrafanaJWKSURL: "file:///jwks"}},
+		{name: "not JSON", env: map[string]string{plugin.EnvVarGrafanaJWKS: "keys"}},
+		{name: "empty set", env: map[string]string{plugin.EnvVarGrafanaJWKS: keySet()}},
+		{name: "private key", env: map[string]string{plugin.EnvVarGrafanaJWKS: keySet(jose.JSONWebKey{Key: private, KeyID: "private", Algorithm: string(jose.ES256)})}},
+		{name: "missing key ID", env: map[string]string{plugin.EnvVarGrafanaJWKS: keySet(jose.JSONWebKey{Key: &private.PublicKey, Algorithm: string(jose.ES256)})}},
+		{name: "encryption key", env: map[string]string{plugin.EnvVarGrafanaJWKS: keySet(jose.JSONWebKey{Key: &private.PublicKey, KeyID: "enc", Algorithm: string(jose.ES256), Use: "enc"})}},
+		{name: "duplicate key IDs", env: map[string]string{plugin.EnvVarGrafanaJWKS: keySet(jose.JSONWebKey{Key: &private.PublicKey, KeyID: "a", Algorithm: string(jose.ES256)}, jose.JSONWebKey{Key: &private.PublicKey, KeyID: "a", Algorithm: string(jose.ES256)})}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

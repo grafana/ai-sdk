@@ -16,6 +16,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
+	"github.com/grafana/grafana-app-sdk/plugin"
 	"github.com/hashicorp/go-hclog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -101,7 +102,7 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 			env["GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES"] = "svc-a"
 		}, message: "requires cloud access mode"},
 		{name: "production without signing keys", change: func(env map[string]string) { delete(env, "GRAFANA_JWKS") }, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
-		{name: "production with insecure skip", change: func(env map[string]string) { env[EnvInsecureSkipAuthentication] = "true" }, message: "requires development mode"},
+		{name: "production with insecure skip", change: func(env map[string]string) { env[plugin.EnvVarInsecureSkipAuthentication] = "true" }, message: "requires development mode"},
 		{name: "development without keys or insecure skip", change: func(env map[string]string) {
 			delete(env, "GRAFANA_JWKS")
 			env["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development"
@@ -189,7 +190,7 @@ func TestNew_EnvironmentOnlyStartup(t *testing.T) {
 	}{
 		{name: "development with insecure skip", change: func(env map[string]string) {
 			delete(env, "GRAFANA_JWKS")
-			env[EnvInsecureSkipAuthentication] = "true"
+			env[plugin.EnvVarInsecureSkipAuthentication] = "true"
 		}},
 		{name: "keys URL", change: func(env map[string]string) {
 			delete(env, "GRAFANA_JWKS")
