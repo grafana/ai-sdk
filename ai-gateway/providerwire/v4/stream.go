@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -709,6 +710,9 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		state.activeID = ""
 		return streamPartContinue
 	case provider.PartError:
+		if part.APICallError != nil && errors.Is(part.APICallError, streamrecover.ErrPanic) {
+			return streamPartAdapterFailure
+		}
 		value := safeErrorFromStreamProvider(part.APICallError)
 		metadata := state.execution.metadata()
 		current := state.execution.current(part.APICallError)
