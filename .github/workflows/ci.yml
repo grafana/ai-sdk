@@ -46,6 +46,11 @@ jobs:
       - name: Validate release configuration
         run: mise run release-check
 
+      - name: Test locked release tooling
+        run: |
+          npm ci --prefix release/tooling --ignore-scripts
+          npm test --prefix release/tooling
+
       - name: Vet
         run: mise run vet
 

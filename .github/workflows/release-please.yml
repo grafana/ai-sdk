@@ -1,7 +1,7 @@
 name: Release
 
 # Release automation remains inactive pending #245. Pushes changing this file
-# only test broker authentication and read-only repository access.
+# test broker authentication; App PR writes require the explicit test variable.
 on:
   push:
     branches: [main]
@@ -42,6 +42,51 @@ jobs:
             jq -e '[.[].repositories[] | {id, full_name}] == [{"id": 1315458055, "full_name": "grafana/ai-sdk"}]' > /dev/null
           gh api repos/grafana/ai-sdk/git/ref/heads/main --jq '.object.sha' > /dev/null
           echo "Release App token is restricted to grafana/ai-sdk and can read main." >> "$GITHUB_STEP_SUMMARY"
+
+  app-pr-test:
+    if: ${{ github.repository == 'grafana/ai-sdk' && github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.RELEASE_APP_PR_TEST == 'root' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: "2026.5.4"
+          install_args: node
+          experimental: true
+
+      - name: Install and test locked release tooling
+        run: |
+          npm ci --prefix release/tooling --ignore-scripts
+          npm test --prefix release/tooling
+
+      - name: Mint release App token for the controlled PR test
+        id: app-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@5bbb526b1728ca57fbe1750c4c27ab6ab06171c2 # create-github-app-token/v1.0
+        with:
+          github_app: grafana-ai-sdk-release
+
+      - name: Create the root-only test PR
+        id: root-pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASE_APP_PR_TEST: ${{ vars.RELEASE_APP_PR_TEST }}
+        run: node release/tooling/root-pr-exercise.mjs
+
+      - name: Verify App identity, signature and PR-triggered checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_BASE_SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ steps.root-pr.outputs.pr_number }}
+        run: node release/tooling/verify-app-pr.mjs "$PR_NUMBER"
 
   release-please:
     if: ${{ false }} # Activation belongs to #245.
