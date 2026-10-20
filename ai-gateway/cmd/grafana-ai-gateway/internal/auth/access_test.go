@@ -16,40 +16,6 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 )
 
-type chains struct {
-	t    *testing.T
-	host *platformhost.Host
-}
-
-func (c chains) exchange(service, subject string) string {
-	c.t.Helper()
-	token, err := c.host.Exchange(context.Background(), service, authn.TokenExchangeRequest{Namespace: testNamespace, Audiences: []string{testPluginID}, SubjectToken: subject})
-	require.NoError(c.t, err)
-	return token
-}
-
-func (c chains) service(name, namespace string) string {
-	c.t.Helper()
-	token, err := c.host.ServiceToken(name, namespace)
-	require.NoError(c.t, err)
-	return token
-}
-
-func (c chains) identity(identityType types.IdentityType, uid string) string {
-	c.t.Helper()
-	token, err := c.host.IDToken(identityType, uid, testNamespace)
-	require.NoError(c.t, err)
-	return token
-}
-
-func (c chains) cloud(subject string) string {
-	return c.exchange(platformhost.RouterService, subject)
-}
-
-func (c chains) frontDoor(identityType types.IdentityType, uid string) string {
-	return c.cloud(c.exchange(platformhost.FrontDoorService, c.identity(identityType, uid)))
-}
-
 func TestAccessPolicy_Decide(t *testing.T) {
 	cloudHost := newHost(t, platformhost.TopologyCloud)
 	selfHost := newHost(t, platformhost.TopologySelfHosted)

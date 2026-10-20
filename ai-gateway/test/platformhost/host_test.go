@@ -46,7 +46,7 @@ type observed struct {
 	namespace string
 }
 
-func (o *observed) handler(next http.HandlerFunc) http.Handler {
+func (o *observed) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		o.calls.Add(1)
 		info, _ := types.AuthInfoFrom(r.Context())
@@ -54,9 +54,6 @@ func (o *observed) handler(next http.HandlerFunc) http.Handler {
 		o.token = info.GetAccessToken()
 		o.namespace = resource.RouteRequestInfoFrom(r.Context()).Namespace
 		o.mu.Unlock()
-		if next != nil {
-			next(w, r)
-		}
 	})
 }
 
@@ -179,7 +176,7 @@ func TestHost_ActorChains(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var seen observed
-			host, _, server := newTestHost(t, tc.topology, seen.handler(nil))
+			host, _, server := newTestHost(t, tc.topology, seen.handler())
 			namespace := testNamespace
 			if tc.topology == TopologySelfHosted {
 				namespace = "default"
@@ -232,7 +229,7 @@ func TestHost_RefusesBeforeHandler(t *testing.T) {
 	ctx := context.Background()
 	t.Run("access token as bearer", func(t *testing.T) {
 		var seen observed
-		host, _, server := newTestHost(t, TopologyCloud, seen.handler(nil))
+		host, _, server := newTestHost(t, TopologyCloud, seen.handler())
 		token, err := host.ServiceToken("svc-a", testNamespace)
 		require.NoError(t, err)
 		request, err := http.NewRequest(http.MethodGet, routeURL(server, testNamespace), nil)
@@ -259,7 +256,7 @@ func TestHost_RefusesBeforeHandler(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var seen observed
-			host, served, _ := newTestHost(t, TopologyCloud, seen.handler(nil))
+			host, served, _ := newTestHost(t, TopologyCloud, seen.handler())
 			subject, err := host.ServiceToken("svc-a", testNamespace)
 			require.NoError(t, err)
 			token, err := host.Exchange(ctx, RouterService, authn.TokenExchangeRequest{Namespace: testNamespace, Audiences: []string{tc.audience}, SubjectToken: subject})

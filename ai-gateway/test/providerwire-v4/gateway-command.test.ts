@@ -3012,19 +3012,19 @@ function withoutConfiguredExecution(value: unknown): unknown {
 
 function assertPrivateValuesAbsent(value: unknown, fake: FakeAnthropic, extra: string[] = [], nativeResponse = false): void {
   const serialized = JSON.stringify(value);
-  for (const secret of [TEST_TOKEN, "integration-cap", "integration-anthropic-key", "GATEWAY_TEST_ANTHROPIC_KEY", "anthropic-primary", ...(nativeResponse ? [] : ["backend-private"]), "provider-secret-response", fake.url, ...extra]) {
+  for (const secret of [TEST_TOKEN, "integration-anthropic-key", "GATEWAY_TEST_ANTHROPIC_KEY", "anthropic-primary", ...(nativeResponse ? [] : ["backend-private"]), "provider-secret-response", fake.url, ...extra]) {
     assert.ok(!serialized.includes(secret), `private test marker escaped into a client/service surface: ${secret}`);
   }
 }
 
 function assertConsumerSecretsAbsent(value: unknown, extra: string[] = []): void {
   const serialized = JSON.stringify(value);
-  for (const credential of [TEST_TOKEN, "integration-cap", "integration-anthropic-key", "integration-compatible-key", "integration-openai-key", "GATEWAY_TEST_ANTHROPIC_KEY", ...extra]) assert.ok(!serialized.includes(credential), `actual credential escaped into consumer output: ${credential}`);
+  for (const credential of [TEST_TOKEN, "integration-anthropic-key", "integration-compatible-key", "integration-openai-key", "GATEWAY_TEST_ANTHROPIC_KEY", ...extra]) assert.ok(!serialized.includes(credential), `actual credential escaped into consumer output: ${credential}`);
 }
 
 function assertDiscoverySecretsAbsent(value: unknown, fake: FakeAnthropic, extra: string[] = []): void {
   const serialized = JSON.stringify(value);
-  for (const secret of [TEST_TOKEN, "integration-cap", "integration-anthropic-key", "GATEWAY_TEST_ANTHROPIC_KEY", "provider-secret-response", fake.url, ...extra]) {
+  for (const secret of [TEST_TOKEN, "integration-anthropic-key", "GATEWAY_TEST_ANTHROPIC_KEY", "provider-secret-response", fake.url, ...extra]) {
     assert.ok(!serialized.includes(secret), "credential or unrelated configuration escaped into discovery");
   }
 }
@@ -3049,7 +3049,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
 }
 
 type Topology = "cloud" | "self-hosted";
-type CredentialRequest = { kind: "service" | "id-token" | "on-behalf-of" | "relay" | "delegated" | "service-account" | "session" | "access-policy"; service?: string; identityType?: string; uid?: string; subject?: string; namespace?: string };
+type CredentialRequest = { kind: "service" | "id-token" | "relay" | "delegated" | "session" | "access-policy"; service?: string; identityType?: string; uid?: string; subject?: string };
 
 function flagEnvironment(args: string[]): Record<string, string> {
   const environment: Record<string, string> = {};
@@ -3074,35 +3074,40 @@ async function firstLine(stream: NodeJS.ReadableStream, exited: Promise<unknown>
   return withTimeout(Promise.race([line, exited.then(() => undefined)]), timeoutMs, "timed out waiting for the plugin host");
 }
 
+type ProcessExit = { code: number | null; signal: NodeJS.Signals | null };
+
 class GatewayProcess {
   static lastFailedDirectory: string | undefined;
 
   readonly process: ChildProcess;
   readonly url: string;
   readonly baseURL: string;
-  readonly topology: Topology;
   readonly directory: string;
-  stderr = "";
   nativeProxy?: Awaited<ReturnType<typeof startNativeProviderProxy>>;
   private stopped = false;
-  private readonly exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
+  private readonly exited: Promise<ProcessExit>;
+  private readonly output: { stderr: string };
 
-  private constructor(proc: ChildProcess, directory: string, topology: Topology, exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>, url: string, routePrefix: string) {
+  private constructor(proc: ChildProcess, directory: string, exited: Promise<ProcessExit>, output: { stderr: string }, url: string, routePrefix: string) {
     this.process = proc;
     this.directory = directory;
-    this.topology = topology;
     this.exited = exited;
+    this.output = output;
     this.url = url;
     this.baseURL = `${url}${routePrefix}`;
   }
 
-  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}, mode: "access-token" | "cloud-gateway" = "access-token", configYAML?: string, fallbackURL?: string, backendModel = "backend-private", options: { deploymentMode?: "development" | "production" } = {}): Promise<GatewayProcess> {
+  get stderr(): string {
+    return this.output.stderr;
+  }
+
+  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}, mode: "access-token" | "cloud-gateway" = "access-token", configYAML?: string, fallbackURL?: string, backendModel = "backend-private"): Promise<GatewayProcess> {
     const directory = mkdtempSync(join(tmpdir(), "grafana-ai-gateway-process-"));
     this.lastFailedDirectory = undefined;
     const topology: Topology = mode === "cloud-gateway" ? "cloud" : "self-hosted";
     let proc: ChildProcess | undefined;
-    let exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | undefined;
-    let stderr = "";
+    let exited: Promise<ProcessExit> | undefined;
+    const output = { stderr: "" };
     try {
       const configPath = join(directory, "models.yaml");
       writeFileSync(configPath, fallbackURL
@@ -3114,7 +3119,7 @@ class GatewayProcess {
         env: {
           ...Object.fromEntries(Object.entries(nodeProcess.env).filter(([name]) => !name.startsWith("GRAFANA_AI_GATEWAY_") && !name.startsWith("AGENTO11Y_") && !name.startsWith("SIGIL_") && !name.startsWith("GRAFANA_JWKS") && !name.startsWith("GF_"))),
           GRAFANA_AI_GATEWAY_CONFIG_FILE: configPath,
-          GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE: options.deploymentMode ?? "development",
+          GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE: "development",
           GRAFANA_AI_GATEWAY_ACCESS_MODE: topology,
           ...(topology === "cloud" ? { GRAFANA_AI_GATEWAY_ACCESS_INTERNAL_SERVICES: INTERNAL_SERVICE } : {}),
           GATEWAY_TEST_ANTHROPIC_KEY: "integration-anthropic-key",
@@ -3124,21 +3129,18 @@ class GatewayProcess {
           ...extraEnv,
         },
       });
-      proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-      exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      proc.stderr?.on("data", (chunk: Buffer) => { output.stderr += chunk.toString(); });
+      exited = new Promise<ProcessExit>((resolve, reject) => {
         proc!.once("error", reject);
         proc!.once("close", (code, signal) => resolve({ code, signal }));
       });
       const line = await firstLine(proc.stdout!, exited, READY_TIMEOUT_MS);
       if (line == null) {
         const exit = await exited;
-        throw new Error(`gateway exited unsuccessfully: code=${exit.code} signal=${exit.signal}\n${stderr}`);
+        throw new Error(`gateway exited unsuccessfully: code=${exit.code} signal=${exit.signal}\n${output.stderr}`);
       }
       const ready = JSON.parse(line) as { url: string; routePrefix: string };
-      const gateway = new GatewayProcess(proc, directory, topology, exited, ready.url, ready.routePrefix);
-      gateway.stderr = stderr;
-      proc.stderr?.removeAllListeners("data");
-      proc.stderr?.on("data", (chunk: Buffer) => { gateway.stderr += chunk.toString(); });
+      const gateway = new GatewayProcess(proc, directory, exited, output, ready.url, ready.routePrefix);
       if (!await gateway.ready()) throw new Error(`gateway plugin is not healthy\n${gateway.stderr}`);
       return gateway;
     } catch (error) {
@@ -3203,7 +3205,7 @@ class GatewayProcess {
           this.process.kill("SIGTERM");
         }
       }
-      let exit: { code: number | null; signal: NodeJS.Signals | null };
+      let exit: ProcessExit;
       try {
         exit = await withTimeout(this.exited, 5_000, `gateway did not exit: ${this.stderr}`);
       } catch (error) {

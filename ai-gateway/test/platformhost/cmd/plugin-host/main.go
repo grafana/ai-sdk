@@ -24,6 +24,12 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 )
 
+const (
+	pluginID = "grafana-aigateway-app"
+	group    = "aigateway.ext.grafana.app"
+	version  = "v1alpha1"
+)
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "plugin-host:", err)
@@ -33,37 +39,24 @@ func main() {
 
 func run() error {
 	binary := flag.String("plugin", "", "built plugin executable")
-	topology := flag.String("topology", os.Getenv("GRAFANA_AI_GATEWAY_ACCESS_MODE"), "platform topology: cloud or self-hosted")
+	topology := flag.String("topology", "", "platform topology: cloud or self-hosted")
 	namespace := flag.String("namespace", "stacks-1", "route namespace")
 	serviceAccount := flag.String("service-account-token", "", "service account token to register")
 	logLevel := flag.String("log-level", "info", "level at which plugin log records are relayed")
-	rawStderr := flag.String("raw-stderr", "", "file receiving the plugin's raw standard error")
-	pluginID := flag.String("plugin-id", "grafana-aigateway-app", "plugin ID")
-	group := flag.String("group", "aigateway.ext.grafana.app", "API group")
-	version := flag.String("version", "v1alpha1", "API version")
 	flag.Parse()
 	if *binary == "" {
 		return errors.New("--plugin is required")
 	}
 
-	host, err := platformhost.New(platformhost.Config{Topology: platformhost.Topology(*topology), PluginID: *pluginID, Group: *group, Version: *version})
+	host, err := platformhost.New(platformhost.Config{Topology: platformhost.Topology(*topology), PluginID: pluginID, Group: group, Version: version})
 	if err != nil {
 		return err
 	}
 	if *serviceAccount != "" {
 		host.RegisterServiceAccount(*serviceAccount, "integration", *namespace)
 	}
-	var stderr io.Writer
-	if *rawStderr != "" {
-		file, err := os.Create(*rawStderr)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = file.Close() }()
-		stderr = file
-	}
 	logger := hclog.New(&hclog.LoggerOptions{Name: "plugin", Level: hclog.LevelFromString(*logLevel), Output: os.Stderr, JSONFormat: true})
-	process, err := host.LaunchPlugin(platformhost.PluginConfig{Binary: *binary, Env: os.Environ(), Logger: logger, Stderr: stderr})
+	process, err := host.LaunchPlugin(platformhost.PluginConfig{Binary: *binary, Env: os.Environ(), Logger: logger})
 	if err != nil {
 		return err
 	}
@@ -102,7 +95,8 @@ func run() error {
 	done := make(chan struct{})
 	signalDone := sync.OnceFunc(func() { close(done) })
 	mux.HandleFunc("POST /platformhost/stop", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, map[string]int64{"durationMs": stop().Milliseconds()})
+		stop()
+		w.WriteHeader(http.StatusNoContent)
 		signalDone()
 	})
 
@@ -114,7 +108,7 @@ func run() error {
 	go func() { _ = server.Serve(listener) }()
 	ready := map[string]string{
 		"url":         "http://" + listener.Addr().String(),
-		"routePrefix": "/apis/" + *group + "/" + *version + "/namespaces/" + *namespace,
+		"routePrefix": "/apis/" + group + "/" + version + "/namespaces/" + *namespace,
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(ready); err != nil {
 		return err
@@ -135,14 +129,12 @@ func run() error {
 type credentialKind string
 
 const (
-	credentialService        credentialKind = "service"
-	credentialIDToken        credentialKind = "id-token"
-	credentialOnBehalfOf     credentialKind = "on-behalf-of"
-	credentialRelay          credentialKind = "relay"
-	credentialDelegated      credentialKind = "delegated"
-	credentialServiceAccount credentialKind = "service-account"
-	credentialSession        credentialKind = "session"
-	credentialAccessPolicy   credentialKind = "access-policy"
+	credentialService      credentialKind = "service"
+	credentialIDToken      credentialKind = "id-token"
+	credentialRelay        credentialKind = "relay"
+	credentialDelegated    credentialKind = "delegated"
+	credentialSession      credentialKind = "session"
+	credentialAccessPolicy credentialKind = "access-policy"
 )
 
 type credentialRequest struct {
@@ -151,34 +143,20 @@ type credentialRequest struct {
 	IdentityType types.IdentityType `json:"identityType"`
 	UID          string             `json:"uid"`
 	Subject      string             `json:"subject"`
-	Namespace    string             `json:"namespace"`
 }
 
-func credential(ctx context.Context, host *platformhost.Host, defaultNamespace string, body io.Reader) (string, error) {
+func credential(ctx context.Context, host *platformhost.Host, namespace string, body io.Reader) (string, error) {
 	var request credentialRequest
 	if err := json.NewDecoder(body).Decode(&request); err != nil {
 		return "", err
-	}
-	namespace := request.Namespace
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-	exchange := func(service, subject string) (string, error) {
-		return host.Exchange(ctx, service, authn.TokenExchangeRequest{Namespace: namespace, Audiences: []string{host.Config().PluginID}, SubjectToken: subject})
 	}
 	switch request.Kind {
 	case credentialService:
 		return host.ServiceToken(request.Service, namespace)
 	case credentialIDToken:
 		return host.IDToken(request.IdentityType, request.UID, namespace)
-	case credentialOnBehalfOf:
-		subject, err := host.IDToken(request.IdentityType, request.UID, namespace)
-		if err != nil {
-			return "", err
-		}
-		return exchange(request.Service, subject)
 	case credentialRelay:
-		return exchange(request.Service, request.Subject)
+		return host.Exchange(ctx, request.Service, authn.TokenExchangeRequest{Namespace: namespace, Audiences: []string{pluginID}, SubjectToken: request.Subject})
 	case credentialDelegated:
 		subject, err := host.IDToken(request.IdentityType, request.UID, namespace)
 		if err != nil {
@@ -189,8 +167,6 @@ func credential(ctx context.Context, host *platformhost.Host, defaultNamespace s
 			return "", err
 		}
 		return host.Exchange(ctx, platformhost.RouterService, authn.TokenExchangeRequest{Namespace: namespace, Audiences: []string{request.Service}, SubjectToken: viaFrontDoor})
-	case credentialServiceAccount:
-		return host.AddServiceAccount(request.UID, namespace), nil
 	case credentialSession:
 		return host.AddSession(request.IdentityType, request.UID, namespace), nil
 	case credentialAccessPolicy:

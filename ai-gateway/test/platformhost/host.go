@@ -126,7 +126,7 @@ func (h *Host) Exchange(ctx context.Context, service string, request authn.Token
 // AddServiceAccount registers a Grafana service account and returns the token
 // clients send as an Authorization bearer.
 func (h *Host) AddServiceAccount(uid, namespace string) string {
-	token := serviceTokenPrefix + randomSecret()
+	token := serviceTokenPrefix + rand.Text()
 	h.RegisterServiceAccount(token, uid, namespace)
 	return token
 }
@@ -141,7 +141,7 @@ func (h *Host) RegisterServiceAccount(token, uid, namespace string) {
 // AddAccessPolicy registers an access policy token for an internal service
 // and returns the token the service presents to TokenExchangeHandler.
 func (h *Host) AddAccessPolicy(service string) string {
-	token := randomSecret()
+	token := rand.Text()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.accessPolicies[token] = service
@@ -150,14 +150,15 @@ func (h *Host) AddAccessPolicy(service string) string {
 
 // TokenExchangeHandler serves the platform token exchange for access policy
 // tokens from AddAccessPolicy: it signs an access token for the service, or
-// an on-behalf-of token when the request carries a subject token.
+// an on-behalf-of token when the request carries a subject token. Mount it
+// on a POST route.
 func (h *Host) TokenExchangeHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		policy, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		h.mu.Lock()
 		service, known := h.accessPolicies[policy]
 		h.mu.Unlock()
-		if r.Method != http.MethodPost || !ok || !known {
+		if !ok || !known {
 			http.Error(w, `{"status":"error"}`, http.StatusUnauthorized)
 			return
 		}
@@ -185,7 +186,7 @@ func (h *Host) TokenExchangeHandler() http.Handler {
 // AddSession registers a signed-in Grafana identity, such as a user or an
 // anonymous viewer, and returns its session cookie value.
 func (h *Host) AddSession(identityType types.IdentityType, uid, namespace string) string {
-	token := randomSecret()
+	token := rand.Text()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.sessions[token] = session{identityType: identityType, uid: uid, namespace: namespace}
@@ -327,5 +328,3 @@ func (h *Host) signedIn(ctx context.Context, s session) (caller, error) {
 	}
 	return caller{AuthInfo: authn.NewAccessTokenAuthInfo(*claims), accessToken: accessToken}, nil
 }
-
-func randomSecret() string { return rand.Text() }

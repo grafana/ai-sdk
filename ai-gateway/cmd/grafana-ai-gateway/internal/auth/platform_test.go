@@ -36,48 +36,63 @@ func newHost(t *testing.T, topology platformhost.Topology) *platformhost.Host {
 	return host
 }
 
-func delegate(t *testing.T, host *platformhost.Host, service, subject string) string {
-	t.Helper()
-	token, err := host.Exchange(context.Background(), service, authn.TokenExchangeRequest{Namespace: testNamespace, Audiences: []string{testPluginID}, SubjectToken: subject})
-	require.NoError(t, err)
+type chains struct {
+	t    *testing.T
+	host *platformhost.Host
+}
+
+func (c chains) exchange(service, subject string) string {
+	c.t.Helper()
+	token, err := c.host.Exchange(context.Background(), service, authn.TokenExchangeRequest{Namespace: testNamespace, Audiences: []string{testPluginID}, SubjectToken: subject})
+	require.NoError(c.t, err)
 	return token
+}
+
+func (c chains) service(name, namespace string) string {
+	c.t.Helper()
+	token, err := c.host.ServiceToken(name, namespace)
+	require.NoError(c.t, err)
+	return token
+}
+
+func (c chains) identity(identityType types.IdentityType, uid string) string {
+	c.t.Helper()
+	token, err := c.host.IDToken(identityType, uid, testNamespace)
+	require.NoError(c.t, err)
+	return token
+}
+
+func (c chains) cloud(subject string) string {
+	return c.exchange(platformhost.RouterService, subject)
+}
+
+func (c chains) frontDoor(identityType types.IdentityType, uid string) string {
+	return c.cloud(c.exchange(platformhost.FrontDoorService, c.identity(identityType, uid)))
 }
 
 func TestPlatformAuthenticator_ActorChains(t *testing.T) {
 	host := newHost(t, platformhost.TopologyCloud)
-	service := func(name string) string {
-		token, err := host.ServiceToken(name, testNamespace)
-		require.NoError(t, err)
-		return token
-	}
-	identity := func(identityType types.IdentityType, uid string) string {
-		token, err := host.IDToken(identityType, uid, testNamespace)
-		require.NoError(t, err)
-		return token
-	}
-	viaFrontDoor := func(identityType types.IdentityType, uid string) string {
-		return delegate(t, host, platformhost.FrontDoorService, identity(identityType, uid))
-	}
+	c := chains{t: t, host: host}
 	tests := []struct {
 		name    string
 		token   string
 		service string
 		actor   string
 	}{
-		{name: "direct service", token: delegate(t, host, platformhost.RouterService, service("svc-a")), service: "svc-a"},
-		{name: "on behalf of a user", token: delegate(t, host, platformhost.RouterService, delegate(t, host, "svc-a", identity(types.TypeUser, "u1"))), service: "svc-a", actor: "user:u1"},
-		{name: "plugin on behalf of a delegated user", token: delegate(t, host, platformhost.RouterService, delegate(t, host, "other-app-operator", delegate(t, host, platformhost.RouterService, viaFrontDoor(types.TypeUser, "u1")))), service: "other-app-operator", actor: "user:u1"},
-		{name: "relayed", token: delegate(t, host, platformhost.RouterService, delegate(t, host, "relay", service("svc-a"))), service: "relay"},
-		{name: "front-door user", token: delegate(t, host, platformhost.RouterService, viaFrontDoor(types.TypeUser, "u1")), service: platformhost.FrontDoorService, actor: "user:u1"},
-		{name: "front-door service account", token: delegate(t, host, platformhost.RouterService, viaFrontDoor(types.TypeServiceAccount, "sa1")), service: platformhost.FrontDoorService, actor: "service-account:sa1"},
-		{name: "front-door anonymous", token: delegate(t, host, platformhost.RouterService, viaFrontDoor(types.TypeAnonymous, "anon")), service: platformhost.FrontDoorService},
-		{name: "no actor", token: service("svc-a")},
+		{name: "direct service", token: c.cloud(c.service("svc-a", testNamespace)), service: "svc-a"},
+		{name: "on behalf of a user", token: c.cloud(c.exchange("svc-a", c.identity(types.TypeUser, "u1"))), service: "svc-a", actor: "user:u1"},
+		{name: "plugin on behalf of a delegated user", token: c.cloud(c.exchange("other-app-operator", c.frontDoor(types.TypeUser, "u1"))), service: "other-app-operator", actor: "user:u1"},
+		{name: "relayed", token: c.cloud(c.exchange("relay", c.service("svc-a", testNamespace))), service: "relay"},
+		{name: "front-door user", token: c.frontDoor(types.TypeUser, "u1"), service: platformhost.FrontDoorService, actor: "user:u1"},
+		{name: "front-door service account", token: c.frontDoor(types.TypeServiceAccount, "sa1"), service: platformhost.FrontDoorService, actor: "service-account:sa1"},
+		{name: "front-door anonymous", token: c.frontDoor(types.TypeAnonymous, "anon"), service: platformhost.FrontDoorService},
+		{name: "no actor", token: c.service("svc-a", testNamespace)},
 	}
 	authenticator, err := NewPlatformAuthenticator(PlatformConfig{PluginID: testPluginID, Group: testGroup, Keys: host.Keys()})
 	require.NoError(t, err)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			spoofed := identity(types.TypeUser, "spoofed")
+			spoofed := c.identity(types.TypeUser, "spoofed")
 			info, err := authenticator.Authenticate(context.Background(), platformTokens{access: tc.token, id: spoofed})
 			require.NoError(t, err)
 			extra := info.GetExtra()
@@ -94,7 +109,7 @@ func TestPlatformAuthenticator_SelfHostedServiceAccount(t *testing.T) {
 	require.NoError(t, err)
 	authenticator, err := NewPlatformAuthenticator(PlatformConfig{PluginID: testPluginID, Group: testGroup, Keys: host.Keys()})
 	require.NoError(t, err)
-	info, err := authenticator.Authenticate(context.Background(), platformTokens{access: delegate(t, host, platformhost.GrafanaService, account)})
+	info, err := authenticator.Authenticate(context.Background(), platformTokens{access: chains{t: t, host: host}.exchange(platformhost.GrafanaService, account)})
 	require.NoError(t, err)
 	assert.Empty(t, info.GetExtra()[DirectCallerServiceKey])
 	assert.Equal(t, "service-account:sa1", identityActor(info))
@@ -115,7 +130,7 @@ func TestPlatformAuthenticator_Refusals(t *testing.T) {
 	require.NoError(t, err)
 	for name, provider := range map[string]platformTokens{
 		"missing token":    {},
-		"foreign signer":   {access: delegate(t, other, platformhost.RouterService, foreignSubject)},
+		"foreign signer":   {access: chains{t: t, host: other}.cloud(foreignSubject)},
 		"foreign audience": {access: foreignAudience},
 		"ID token":         {access: idToken},
 		"malformed":        {access: "not-a-token"},
@@ -128,7 +143,7 @@ func TestPlatformAuthenticator_Refusals(t *testing.T) {
 
 	unsafe, err := NewPlatformAuthenticator(PlatformConfig{PluginID: testPluginID, Group: testGroup, Unsafe: true})
 	require.NoError(t, err)
-	info, err := unsafe.Authenticate(context.Background(), platformTokens{access: delegate(t, other, platformhost.RouterService, foreignSubject)})
+	info, err := unsafe.Authenticate(context.Background(), platformTokens{access: chains{t: t, host: other}.cloud(foreignSubject)})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"svc-a"}, info.GetExtra()[DirectCallerServiceKey])
 	_, err = unsafe.Authenticate(context.Background(), platformTokens{access: foreignAudience})

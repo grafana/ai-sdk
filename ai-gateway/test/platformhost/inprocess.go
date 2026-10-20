@@ -54,26 +54,24 @@ func (h *Host) ServeInProcess(opts grpcplugin.ServeOpts) (*InProcess, error) {
 		server.Stop()
 		return nil, fmt.Errorf("platformhost: dialing in-memory listener: %w", err)
 	}
-	bare, err := grpcplugin.NewClientV3FromConn(conn, grpcplugin.ClientV3Options{})
-	if err != nil {
+	fail := func(err error) (*InProcess, error) {
 		_ = conn.Close()
 		server.Stop()
 		return nil, err
 	}
+	bare, err := grpcplugin.NewClientV3FromConn(conn, grpcplugin.ClientV3Options{})
+	if err != nil {
+		return fail(err)
+	}
 	client, err := grpcplugin.WithAuthentication(bare, grpcplugin.ClientV3Options{TokenExchanger: h.Exchanger(), PluginID: h.config.PluginID})
 	if err != nil {
-		_ = conn.Close()
-		server.Stop()
-		return nil, err
+		return fail(err)
 	}
 	return &InProcess{host: h, server: server, conn: conn, client: client, bare: bare}, nil
 }
 
 // Handler serves platform API requests through the authenticated route client.
 func (p *InProcess) Handler() http.Handler { return p.host.Handler(p.client) }
-
-// RouteClient returns the route client that delegates callers as the host does.
-func (p *InProcess) RouteClient() clientv3.Client { return p.client }
 
 // BareRouteClient returns a route client that sends requests as given,
 // including credential headers and access tokens a host would never forward.
