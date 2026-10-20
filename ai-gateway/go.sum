@@ -148,8 +148,8 @@ github.com/gopherjs/gopherjs v0.0.0-20181103185306-d547d1d9531e h1:JKmoR8x90Iww1
 github.com/gopherjs/gopherjs v0.0.0-20181103185306-d547d1d9531e/go.mod h1:wJfORRmW1u3UXTncJ5qlYoELFm8eSnnEO6hX4iZ3EWY=
 github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
 github.com/gorilla/mux v1.8.1/go.mod h1:AKf9I4AEqPTmMytcMc0KkNouC66V3BtZ4qD5fmWSiMQ=
-github.com/grafana/agento11y/go v0.18.0 h1:hyEYXSGWFuZZqAs04tfyayzLyF8yrIX3jLj/ahnZzo8=
-github.com/grafana/agento11y/go v0.18.0/go.mod h1:KSNO0Z/dx7ai6JxJRLSO/XUVlw/YfAzBVEu1VgTaXus=
+github.com/grafana/agento11y/go v0.19.0 h1:dsLPNwywLjELk0xVOGx0Mm2DFbZRT6Kzq2CNPZrj3Bs=
+github.com/grafana/agento11y/go v0.19.0/go.mod h1:oA40uzxgEDgVQXSqiAyHzaaK+k6Ef8cRPqqRAhQJPsc=
 github.com/grafana/agento11y/go-providers/anthropic v0.18.0 h1:uFtbQHiAmJJboJt862GOvhGe4WWCwAkj6mwTyl64O0k=
 github.com/grafana/agento11y/go-providers/anthropic v0.18.0/go.mod h1:wBCsfCfNsZ653cTIB5Ka0L/0n8biDQohXpEPHGHTu28=
 github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058 h1:XNnu1NBOkL3iZamN5yctjNWCnrk36g9jsomTrYRVV5I=

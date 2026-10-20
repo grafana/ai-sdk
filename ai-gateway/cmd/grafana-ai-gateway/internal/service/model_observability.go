@@ -71,7 +71,7 @@ func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, lo
 			Protocol:                   protocol,
 			Endpoint:                   settings.Endpoint,
 			Auth:                       agento11y.AuthConfig{Mode: agento11y.ExportAuthModeBearer, BearerToken: secret},
-			Insecure:                   agento11y.BoolPtr(insecure),
+			Insecure:                   new(insecure),
 			GRPCMaxSendMessageBytes:    settings.PayloadMaxBytes,
 			GRPCMaxReceiveMessageBytes: settings.PayloadMaxBytes,
 			BatchSize:                  settings.BatchSize,
@@ -83,10 +83,10 @@ func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, lo
 			PayloadMaxBytes:            settings.PayloadMaxBytes,
 			ExportTimeout:              settings.ExportTimeout,
 		},
-		EnableExperimentalFeatures: agento11y.BoolPtr(false),
+		EnableExperimentalFeatures: new(false),
 		Hooks:                      agento11y.HooksConfig{Enabled: false},
 		ContentCapture:             agento11y.ContentCaptureModeMetadataOnly,
-		Debug:                      agento11y.BoolPtr(false),
+		Debug:                      new(false),
 		Logger:                     log.New(agentDiagnosticWriter{telemetry: telemetry}, "", 0),
 	}
 	defer func() {
