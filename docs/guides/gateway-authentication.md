@@ -1,31 +1,100 @@
 # Authenticate to Grafana AI Gateway
 
-The Gateway runs as the Grafana app plugin `grafana-aigateway-app`. Grafana, or
-the App Platform router in Grafana Cloud, authenticates your client before the
-Gateway sees a request. The Gateway then decides what you can use from the
-verified identity and its access mode:
+Grafana AI Gateway is a Grafana app. Your application calls it through your
+Grafana instance, with a Grafana credential. Which credential you use, and which
+models you get, depends on where Grafana runs:
 
-| Deployment | Caller | Credential | You get |
-|---|---|---|---|
-| Grafana Cloud | Internal service on the Gateway allowlist | Access policy token, exchanged by the Go client | Configured models and discovery |
-| Grafana Cloud | Application or person | Grafana service account token | Your own provider keys (BYOK) |
-| Self-hosted Grafana | Application or person | Grafana service account token | Configured models and discovery |
+| You are | Credential | You get |
+|---|---|---|
+| An application on self-hosted Grafana | Grafana service account token | The models your administrator configured |
+| An application on Grafana Cloud | Grafana service account token | Any model from your own provider account (bring your own key) |
+| A Grafana service in Grafana Cloud | Cloud access policy token | The models Grafana configured for your service |
 
-Every client uses the plugin route prefix as its base URL:
+Keep credentials on your application server. Never include them in browser
+code.
+
+## Find your Gateway URL
+
+Open **Grafana AI Gateway** in your Grafana instance. The overview page shows
+the Gateway URL for your stack and a quick start you can copy. The URL has this
+form:
 
 ```text
-https://<grafana>/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<namespace>
+https://<your-grafana>/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<namespace>
 ```
 
 The namespace is `stacks-<stack ID>` in Grafana Cloud and usually `default` in
-self-hosted Grafana. Keep all credentials on your application server; never
-include them in browser code.
+self-hosted Grafana. Use the whole URL as the client base URL.
 
-## Internal services in Grafana Cloud
+## Use the configured models in self-hosted Grafana
 
-Internal services use the Go client's token exchange. The Gateway operator must
-add your service's identity to the internal service allowlist. Exchange for the
-`grafana-aigateway-app` audience and your stack namespace:
+1. [Create a service account](https://grafana.com/docs/grafana/latest/administration/service-accounts/)
+   for your application, and add a token to it.
+2. Store the token in your server's secret store.
+3. Create a client with the token and your Gateway URL:
+
+```go
+client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
+	Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
+	BaseURL: "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/default",
+})
+if err != nil {
+	return err
+}
+models, err := client.ListModels(ctx)
+```
+
+From a server-side TypeScript application, pass the token as the Vercel
+client's API key:
+
+```ts
+import { createGateway } from '@ai-sdk/gateway';
+
+const gateway = createGateway({
+  baseURL: 'https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/default',
+  apiKey: process.env.GRAFANA_SERVICE_ACCOUNT_TOKEN,
+});
+const { models } = await gateway.getAvailableModels();
+```
+
+Each service account is a separate caller, so create one per application or
+person you want to tell apart. Your administrator decides which Grafana roles
+can use the app. If the Gateway is not available yet, ask them to set it up as
+described in the [operator guide](../../ai-gateway/README.md#self-hosted-grafana-today).
+
+In self-hosted Grafana, the Gateway uses only the provider accounts your
+administrator configured, and refuses requests that bring their own provider
+keys.
+
+## Bring your own provider key in Grafana Cloud
+
+Any user of your stack can call the Gateway with a service account token, and
+no extra role is needed. You supply your own provider key with every request,
+so the Gateway uses your provider account and the models it offers.
+
+Create the client the same way as in self-hosted Grafana, with your stack's
+Gateway URL:
+
+```go
+client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
+	Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
+	BaseURL: "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123",
+})
+```
+
+Then select a model by provider and name, such as `openai/gpt-5`, and send your
+key with the request. See
+[Use your own provider credentials](../providers/grafana-gateway.md#use-your-own-provider-credentials)
+for Go and TypeScript examples.
+
+Model listing is not available in this mode, because your provider account
+decides which models exist.
+
+## Call from a Grafana service in Grafana Cloud
+
+Grafana services use the configured models with a Cloud access policy token.
+Ask the Gateway owners to allow your service, then create a client that
+exchanges your token for one the Gateway accepts:
 
 ```go
 client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
@@ -37,116 +106,51 @@ client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
 })
 ```
 
-The client caches exchanged tokens and exchanges again before they expire; you
-own rotating the access policy token itself. Configured discovery, aliases and
-fallback work as described in the [provider guide](../providers/grafana-gateway.md).
+Set `Namespace` to the stack you call. The client renews exchanged tokens before
+they expire; you rotate the access policy token itself. Model aliases, discovery
+and fallback work as described in the [provider guide](../providers/grafana-gateway.md).
+
+This flow needs the Go client. The Vercel client cannot exchange tokens.
 
 ### Call on behalf of a user
 
-To attribute a call to a user, put a subject token in the call context. Use the
-user's Grafana ID token, or the delegated access token your plugin received for
-that user:
+When a request is made for a user, pass their token in the call context. Use
+the user's Grafana ID token, or the access token your plugin received for them:
 
 ```go
-ctx = grafana.WithOnBehalfOf(ctx, subjectToken)
+ctx = grafana.WithOnBehalfOf(ctx, userToken)
 result, err := aisdk.GenerateText(ctx, model, aisdk.WithModelMessages(provider.UserText("Summarize this incident.")))
 ```
 
-The exchange uses that token as its subject, so the Gateway receives one token
-naming your service and the user. You keep the configured models, and the
-Gateway attributes the request to your service. On-behalf-of calls need a
-concrete namespace; a client that exchanges for every namespace refuses them
-before any network request, as do the access token and service account flows.
+The call still uses your service's models, and is made on the user's behalf.
 
-The pinned Vercel client always sends its key as an `Authorization` bearer, so
-it cannot authenticate as an internal service yet. Use the Go client.
+## Troubleshoot authentication errors
 
-## Your own provider keys in Grafana Cloud
+| Response | Likely cause |
+|---|---|
+| `401 Unauthorized` | The token is missing, expired or revoked. |
+| `403 Forbidden` from Grafana | The token does not belong to the stack in the URL, or your role cannot use the app. |
+| `403` Gateway permission error | Your credential has no Gateway access, for example a Grafana service not yet allowed. |
+| `400` reserved provider option namespace | You sent your own provider key to a self-hosted Gateway. |
+| Request ends after 60 seconds | Grafana limits how long a request can run. Stream long responses. |
 
-Any stack user's application can call the Gateway with a Grafana service account
-token and supply its own provider keys with each request. No Gateway role is
-needed. Configured discovery is unavailable in this mode and returns the fixed
-BYOK unsupported error.
-
-```go
-client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
-	Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
-	BaseURL: "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123",
-})
-```
-
-From a server-side Vercel application, pass the service account token as the
-key:
-
-```ts
-import { createGateway } from '@ai-sdk/gateway';
-
-const gateway = createGateway({
-  baseURL: 'https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123',
-  apiKey: process.env.GRAFANA_SERVICE_ACCOUNT_TOKEN,
-});
-```
-
-Select the provider's native model with a `provider/model` ID and send the
-accounts in `providerOptions.gateway.byok`, as shown in
-[Use your own provider credentials](../providers/grafana-gateway.md#use-your-own-provider-credentials).
-
-### Choose provider accounts
-
-Supply credentials on each call, including follow-up conversation steps. If you
-provide multiple accounts, put them in priority order. Account fallback may
-advance after an eligible failure, but authentication failures stop the chain.
-Omit an account's `baseURL` to use the native provider endpoint; other URLs are
-rejected.
-
-## Self-hosted Grafana
-
-In self-hosted Grafana, users and service accounts use the models the operator
-configured. Create one Grafana service account per application or person you
-want to attribute usage to, since service accounts have no owner. Catalog access
-follows Grafana's plugin app access, so your operator may restrict which roles
-can use it.
-
-```go
-client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
-	Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
-	BaseURL: "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/default",
-})
-rows, err := client.ListModels(ctx)
-```
-
-The Vercel client works the same way with the service account token as
-`apiKey`, including `getAvailableModels()`. Sending BYOK provider options is
-refused in this mode. Self-hosted Grafana currently needs extra platform
-configuration to pass caller identity to the plugin; see the
-[operator guide](../../ai-gateway/README.md#self-hosted-grafana-today).
-
-## Errors from the platform
-
-Grafana or the router rejects some requests before the Gateway runs, for example
-a missing or invalid credential, a namespace your credential does not cover, or
-a call that exceeds the platform's 60-second route deadline. Those responses use
-Kubernetes `Status` JSON rather than Gateway error documents, so clients report
-them as protocol errors with the HTTP status. Gateway refusals, such as a caller
-without access, use the fixed Gateway error documents.
+Grafana answers some of these before the request reaches the Gateway, in its own
+error format rather than a Gateway error. The Go client reports them as
+protocol errors with the HTTP status.
 
 ## Keep credentials out of logs
 
-Request metadata returned by Go and Vercel clients can contain your submitted
-provider keys. Do not log request bodies or provider options directly, or send
-them to browser clients.
+Requests that bring their own provider key carry that key, and the request
+details your client returns can contain it. Do not log request bodies or
+provider options, and do not send them to browsers.
 
-Start with metadata-only logging. If you enable content capture, configure
-[structured logging redaction](../middleware/structured-logging.md) for your
-sensitive fields and review what your application and exporters collect.
-Redacting credential fields does not remove secrets echoed in provider text or
-error messages. Gateway-produced summaries replace exact configured provider-key
-and enabled exporter-credential matches, including collisions with BYOK values.
-BYOK-only echoes remain available; ordinary content and opaque native metadata
-are outside that summary policy. Returned diagnostics can still contain secrets,
-so only log or display them when your capture policy allows it. See
+Start with metadata-only logging. If you capture content, configure
+[structured logging redaction](../middleware/structured-logging.md) and review
+what your application and exporters collect. Redaction does not remove a key
+that a provider echoes in its response or error text, so treat diagnostics as
+sensitive. See
 [Inspect execution overviews and failures](../providers/grafana-gateway.md#inspect-execution-overviews-and-failures)
-for details on the diagnostics available to clients.
+for what clients can inspect.
 
 ---
 
