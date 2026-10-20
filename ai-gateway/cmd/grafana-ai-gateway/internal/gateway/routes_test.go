@@ -324,10 +324,8 @@ func TestGateway_CloudAccess(t *testing.T) {
 		}
 		assert.Equal(t, before, h.anthropic.requests.Load())
 	})
-	t.Run("route metrics and access decisions", func(t *testing.T) {
+	t.Run("access decisions", func(t *testing.T) {
 		metrics := h.metrics(t)
-		assert.Contains(t, metrics, `grafana_ai_gateway_http_requests_total{method="GET",route="config",status="2xx"}`)
-		assert.Contains(t, metrics, `grafana_ai_gateway_http_requests_total{method="POST",route="language_model",status="2xx"}`)
 		assert.Contains(t, metrics, `grafana_ai_gateway_access_decisions_total{decision="configured"}`)
 		assert.Contains(t, metrics, `grafana_ai_gateway_access_decisions_total{decision="byok"}`)
 		assert.Contains(t, metrics, `grafana_ai_gateway_access_decisions_total{decision="refused"}`)
@@ -389,7 +387,7 @@ func TestGateway_UndeclaredAndLegacyRoutesDoNoWork(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, response.Code, path)
 	}
 	assert.Equal(t, before, h.anthropic.requests.Load())
-	assert.Contains(t, h.metrics(t), `route="unmatched"`)
+	assert.Contains(t, h.logs.String(), `"route":"unmatched"`)
 	assert.NotContains(t, h.metrics(t), `decision=`)
 }
 
@@ -489,7 +487,7 @@ func TestGateway_StreamsIncrementallyAndCancels(t *testing.T) {
 		t.Fatal("provider stream ended before cancellation")
 	default:
 	}
-	assert.Contains(t, h.metrics(t), `grafana_ai_gateway_http_requests_in_flight{method="POST",route="language_model"} 1`)
+	assert.NotContains(t, h.logs.String(), `"route":"language_model"`)
 
 	cancel()
 	select {
@@ -499,7 +497,7 @@ func TestGateway_StreamsIncrementallyAndCancels(t *testing.T) {
 	}
 	close(release)
 	require.Eventually(t, func() bool {
-		return strings.Contains(h.metrics(t), `grafana_ai_gateway_http_requests_in_flight{method="POST",route="language_model"} 0`)
+		return strings.Contains(h.logs.String(), `"route":"language_model"`)
 	}, 3*time.Second, 10*time.Millisecond)
 }
 

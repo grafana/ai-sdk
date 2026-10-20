@@ -69,7 +69,7 @@
   - config tests for a missing or unknown mode, an allowlist in `self-hosted` mode, an empty allowlist, case and whitespace near-matches, and invalid entries.
 - [x] 4.3 Move startup composition from `process.Run` into the app constructor and replace `main` with `plugin.Run`, passing `plugin.WithPluginID` with a constant. The app's `RouteHandlerProvider` is a `ServeMux` dispatching the two route patterns through the access middleware, with the namespace from `RouteRequestInfo`. Also:
   - make `Telemetry` take its registerer and gatherer as options, with `main` passing the default registry and tests private ones;
-  - normalize route metric labels to `config` and `language_model`;
+  - normalize route labels to `config` and `language_model`;
   - port the `process` startup tests to the constructor;
   - delete the listener, serve and signal code and the operational router.
 

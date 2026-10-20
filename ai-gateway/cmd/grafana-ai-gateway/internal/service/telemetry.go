@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"sync/atomic"
-	"time"
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,13 +26,11 @@ type TelemetryOptions struct {
 	Registerer prometheus.Registerer
 }
 
-// Telemetry owns bounded HTTP lifecycle metrics and completion logging.
+// Telemetry owns the Gateway's access and export metrics and request
+// completion logging. Route request metrics come from the plugin host.
 type Telemetry struct {
 	logger                *slog.Logger
 	registerer            prometheus.Registerer
-	inFlight              *prometheus.GaugeVec
-	requests              *prometheus.CounterVec
-	duration              *prometheus.HistogramVec
 	accessDecisions       *prometheus.CounterVec
 	agentExportFailures   *prometheus.CounterVec
 	physicalDrops         *prometheus.CounterVec
@@ -54,21 +51,6 @@ func NewTelemetry(logger *slog.Logger, options ...TelemetryOptions) (*Telemetry,
 		logger:                logger,
 		registerer:            registerer,
 		generateCorrelationID: newRequestCorrelationID,
-		inFlight: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "grafana_ai_gateway",
-			Name:      "http_requests_in_flight",
-			Help:      "Current in-flight HTTP requests.",
-		}, []string{"route", "method"}),
-		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "grafana_ai_gateway",
-			Name:      "http_requests_total",
-			Help:      "Completed HTTP requests.",
-		}, []string{"route", "method", "status"}),
-		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "grafana_ai_gateway",
-			Name:      "http_request_duration_seconds",
-			Help:      "HTTP request duration in seconds.",
-		}, []string{"route", "method", "status"}),
 		accessDecisions: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "grafana_ai_gateway",
 			Name:      "access_decisions_total",
@@ -85,9 +67,6 @@ func NewTelemetry(logger *slog.Logger, options ...TelemetryOptions) (*Telemetry,
 		}, []string{"class"}),
 	}
 	for _, collector := range []prometheus.Collector{
-		telemetry.inFlight,
-		telemetry.requests,
-		telemetry.duration,
 		telemetry.accessDecisions,
 		telemetry.agentExportFailures,
 		telemetry.physicalDrops,
@@ -166,18 +145,12 @@ func (telemetry *Telemetry) Middleware(route func(*http.Request) string, next ht
 		state.observation.Store(&observation)
 		request = request.WithContext(context.WithValue(request.Context(), telemetryStateKey{}, state))
 		wrapped := &responseWriter{ResponseWriter: w}
-		started := time.Now()
-		telemetry.inFlight.WithLabelValues(routeName, method).Inc()
 		defer func() {
-			telemetry.inFlight.WithLabelValues(routeName, method).Dec()
 			status := wrapped.status
 			if status == 0 {
 				status = http.StatusOK
 			}
 			statusClass := normalizeStatus(status)
-			duration := time.Since(started).Seconds()
-			telemetry.requests.WithLabelValues(routeName, method, statusClass).Inc()
-			telemetry.duration.WithLabelValues(routeName, method, statusClass).Observe(duration)
 			access := "not_attempted"
 			if state.access != "" {
 				access = string(state.access)

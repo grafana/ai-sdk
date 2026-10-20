@@ -32,11 +32,11 @@ Fallback-attempt records SHALL be emitted through the host log protocol by one b
 - **THEN** enqueueing attempt records SHALL not block, records beyond the queue SHALL be dropped and counted, and close SHALL return by its deadline
 
 ### Requirement: Host-collected metrics
-In the plugin process, Gateway collectors SHALL be registered exactly once in the process default registry that the plugin host collects, with existing metric names and label bounds unchanged. Route request metrics SHALL label routes by fixed route names without namespace values. The Gateway SHALL NOT serve its own metrics endpoint or register a second process or runtime collector.
+In the plugin process, Gateway collectors SHALL be registered exactly once in the process default registry that the plugin host collects, with existing model metric names and label bounds unchanged. Route request counts, latency and in-flight requests SHALL come from the host's route metrics; the Gateway SHALL NOT duplicate them. The Gateway SHALL NOT serve its own metrics endpoint or register a second process or runtime collector.
 
 #### Scenario: Host collects plugin metrics
 - **WHEN** the host collects the plugin's metrics after unary and streaming calls
-- **THEN** the collection SHALL include the Gateway's model, route request and export-failure metrics without forbidden label values
+- **THEN** the collection SHALL include the Gateway's model, access-decision and export-failure metrics without forbidden label values, and no Gateway route request metrics
 
 ### Requirement: Access decision metrics
 The Gateway SHALL count route requests by bounded access decision: configured, BYOK or refused. Labels SHALL NOT contain caller identity, service identity, namespace or token values. Authentication outcomes owned by the platform SHALL NOT be counted as Gateway authentication metrics.

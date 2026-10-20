@@ -41,7 +41,7 @@ Relevant host facts, checked against `grafana-app-sdk` `v0.60.13` / `plugin/v0.6
 `main` calls `plugin.Run` with an app-sdk app built from the generated manifest.
 - **Composition:** the catalog, BYOK, endpoint validation and telemetry wiring move from `process.Run` into the app constructor. Its startup tests are ported; only listener, serve and signal code is deleted.
 - **Dispatch:** the app implements `RouteHandlerProvider` and returns one `http.ServeMux` with method and path patterns for the two routes. The namespace comes from `RouteRequestInfo`. The language-model handler sees `providerv4.LanguageModelPath`, as the current router does.
-- **Route labels:** HTTP request metrics label routes as `config` and `language_model` instead of matching legacy paths.
+- **Route labels:** the request completion log names routes `config` and `language_model` instead of matching legacy paths.
 - **Alternative:** per-route `CallCustomRoute` handlers on `simple.App`. Rejected because that path is deprecated in the adapter and would need a second handler signature around code that is already an `http.Handler`.
 
 ### 2. Routes-only manifest, plugin ID `grafana-aigateway-app`
@@ -86,7 +86,7 @@ The `auth` package shrinks to this authenticator and mapping. JWKS fetching, hea
 `Telemetry` takes its registerer and gatherer as construction options. `main` passes `prometheus.DefaultRegisterer` and `DefaultGatherer`; tests keep private registries, so existing service tests do not collide.
 - **Removed:** the `/metrics` handler, `authentication_total` and the `ready` gauge with `SetReady`. Go and process collectors are not re-registered.
 - **Added:** an access-decision counter.
-- **Kept:** HTTP request metrics, because route requests still pass through the Gateway handler.
+- **Removed:** the Gateway's HTTP request metrics. Grafana's router already counts and times route requests by group and verb, and the two routes differ by verb.
 
 ### 6. Tracing from the plugin SDK only
 The plugin SDK configures OpenTelemetry inside `Manage`, and `otelgrpc` already creates the server span for each route call. The Gateway adds no span middleware and no exporter; the log bridge reads trace and span IDs from the request context.

@@ -90,8 +90,11 @@ controls. See
 The plugin host collects the Gateway's metrics through the plugin protocol; the
 Gateway serves no metrics endpoint. Gateway collectors are registered once on
 the plugin's default registry when the plugin starts, and duplicate registration
-fails startup. Route metrics use the fixed route names `config`, `language_model`
-and `unmatched`, never namespaces.
+fails startup. Route request counts, latency and in-flight requests come from
+the host's router metrics (`grafana_router_http_requests_total` and related,
+labelled by API group and verb). The Gateway's per-request completion log
+names the route as `config`, `language_model` or `unmatched`, never a
+namespace.
 `grafana_ai_gateway_access_decisions_total` counts route requests by the fixed
 `decision` values `configured`, `byok` and `refused`.
 

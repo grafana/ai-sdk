@@ -326,7 +326,6 @@ func TestPluginProcess_ServesThroughThePluginProtocol(t *testing.T) {
 
 	metrics, err := p.process.CollectMetrics(ctx)
 	require.NoError(t, err)
-	assert.Contains(t, string(metrics), `grafana_ai_gateway_http_requests_total{method="POST",route="language_model",status="2xx"} 1`)
 	assert.Contains(t, string(metrics), `grafana_ai_gateway_access_decisions_total{decision="configured"} 1`)
 	assert.NotContains(t, string(metrics), providerSecret)
 
