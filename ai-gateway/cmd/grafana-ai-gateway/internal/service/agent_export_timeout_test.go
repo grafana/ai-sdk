@@ -72,7 +72,6 @@ func TestAgentObservabilityRuntime_ExportAttemptTimeout(t *testing.T) {
 				QueueSize: 4, BatchSize: 1, PayloadMaxBytes: 1 << 20, MaxRetries: 1,
 				InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond,
 				ExportTimeout: 100 * time.Millisecond, FlushInterval: time.Hour,
-				FlushTimeout: time.Second, ShutdownTimeout: time.Second,
 			}, "private-secret", telemetry)
 			require.NoError(t, err)
 			t.Cleanup(func() { runtime.Close(context.Background()) })

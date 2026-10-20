@@ -1042,7 +1042,6 @@ describe("authenticated Anthropic Gateway command", () => {
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
         "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
         "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
-        "--agento11y.flush-timeout=2s", "--agento11y.shutdown-timeout=2s",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "claude-sonnet-4-6");
       const [fake, gateway] = resources;
       fake.functionTools = true;
@@ -1137,7 +1136,6 @@ describe("authenticated Anthropic Gateway command", () => {
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
         "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
         "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
-        "--agento11y.flush-timeout=2s",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" }, "claude-sonnet-4-6");
       const [fake, gateway] = resources;
       fake.providerTools = true;
@@ -1649,8 +1647,6 @@ describe("authenticated Anthropic Gateway command", () => {
         "--agento11y.initial-backoff=1ms",
         "--agento11y.max-backoff=1ms",
         "--agento11y.flush-interval=1ms",
-        "--agento11y.flush-timeout=2s",
-        "--agento11y.shutdown-timeout=2s",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
       const [fake, gateway] = resources;
       const fileParts = [
@@ -1770,8 +1766,6 @@ describe("authenticated Anthropic Gateway command", () => {
       "--agento11y.initial-backoff=1ms",
       "--agento11y.max-backoff=1ms",
       "--agento11y.flush-interval=1ms",
-      "--agento11y.flush-timeout=100ms",
-      "--agento11y.shutdown-timeout=100ms",
     ], { GATEWAY_TEST_AGENTO11Y_KEY: "outage-agento11y-key" });
     try {
       const response = await rawProviderWireRequest(gateway.baseURL, "outage-private-input");
@@ -2444,7 +2438,6 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
         "--agento11y.enabled", "--agento11y.protocol=http", `--agento11y.endpoint=${observer.url}`,
         "--no-agento11y.tls", "--agento11y.auth-secret-env=GATEWAY_TEST_AGENTO11Y_KEY",
         "--agento11y.batch-size=1", "--agento11y.flush-interval=1ms",
-        "--agento11y.flush-timeout=2s", "--agento11y.shutdown-timeout=2s",
       ], { GATEWAY_TEST_AGENTO11Y_KEY: "integration-agento11y-key" });
       const [fake, gateway] = resources;
       for (const mode of ["generate", "stream"] as const) {

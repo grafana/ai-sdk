@@ -63,8 +63,8 @@ configuration. Callers may independently receive compact execution overviews;
 operator timing, correlation and fallback-intent records are not consumer output.
 
 Attempt records go through the same logger from one background worker with a
-256-record queue and a 4096-byte record limit, so model calls never wait for
-log output. Queue saturation, invalid records and records emitted after
+256-record queue, so model calls never wait for log output. Provider and
+model identities in a record are capped at 512 bytes each. Queue saturation, invalid records and records emitted after
 shutdown are dropped; monitor `grafana_ai_gateway_physical_attempt_dropped_total`
 before treating the logs as a complete account of provider attempts.
 
@@ -142,15 +142,12 @@ settings from its environment.
 | `GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF` | `5s`; initial–5m |
 | `GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT` | `10s`; per HTTP/gRPC export attempt, positive, at most 5m |
 | `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL` | `1s`; positive, at most 5m |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT` | `5s`; independent positive bound, at most 5m |
-| `GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT` | `5s`; independent positive bound, at most 5m |
 
 The secret reference is resolved once while the plugin starts; neither its
 name nor value is logged. Ambient `AGENTO11Y_*` and legacy `SIGIL_*` SDK
 configuration is rejected so it cannot bypass validated Gateway policy.
 
-Use `GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT` to bound each export attempt independently of
-flush and shutdown timeouts.
+Use `GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT` to bound each export attempt.
 
 Queue pressure, validation failures, exporter rejection/outage, and bounded
 flush or shutdown failure are fail-open for model traffic. Diagnostics and
@@ -158,9 +155,8 @@ metrics expose only a fixed failure class.
 
 After the plugin host stops the plugin, the Gateway flushes Agent Observability
 and attempt records concurrently within one second. Agent Observability waits
-for already-started recorders, flushes and shuts down; each step ends at the
-shared one-second deadline or its configured timeout, whichever comes first, so
-the configured timeouts can only shorten it. Records emitted after the flush
+for already-started recorders, flushes and shuts down, all within that shared
+deadline. Records emitted after the flush
 starts are dropped and counted. The host's tracer shutdown shares the same
 window before the host kills the process, so a slow trace exporter can cut the
 flush short. The `plugin_stopped` lifecycle event is logged after the flush.

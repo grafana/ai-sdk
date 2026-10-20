@@ -58,7 +58,7 @@ BYOK requests SHALL use a fixed BYOK model class and, if exposed, only bounded s
 
 ### Requirement: Strict bounded Agent Observability exporter configuration
 
-Gateway-owned settings SHALL explicitly select and validate Agent Observability enablement, protocol, endpoint, transport security, authentication secret reference, finite batch and queue sizes, finite payload bytes, finite retry/backoff behavior, a positive per-attempt HTTP/gRPC export timeout, and finite flush/shutdown durations before client construction. The export-attempt timeout SHALL default to 10 seconds and SHALL be no greater than 5 minutes, independently of flush/shutdown deadlines.
+Gateway-owned settings SHALL explicitly select and validate Agent Observability enablement, protocol, endpoint, transport security, authentication secret reference, finite batch and queue sizes, finite payload bytes, finite retry/backoff behavior, and a positive per-attempt HTTP/gRPC export timeout before client construction. The export-attempt timeout SHALL default to 10 seconds and SHALL be no greater than 5 minutes. Final flush and shutdown are bounded by the plugin's shared final-flush budget, not by separate settings.
 
 #### Scenario: Exporter configuration is unsafe
 - **WHEN** production configuration enables an insecure endpoint, names an unset secret, or provides a non-positive resource bound
@@ -74,7 +74,7 @@ Gateway-owned settings SHALL explicitly select and validate Agent Observability 
 - **WHEN** shutdown begins with Agent Observability records queued
 - **THEN** the plugin host SHALL first drain route serving
 - **AND** the process SHALL boundedly wait for already-started recorders before flushing, while refusing new recorder acquisition after close begins
-- **AND** export flush and client shutdown SHALL each use a deadline derived from the plugin's shared final-flush context and capped by its configured duration, finishing or being abandoned when it expires
+- **AND** the recorder wait, export flush and client shutdown SHALL use the plugin's shared final-flush context, finishing or being abandoned when it expires
 
 ### Requirement: Bounded exporter failure and shutdown reporting
 

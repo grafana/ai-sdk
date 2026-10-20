@@ -53,8 +53,6 @@ type AgentObservabilitySettings struct {
 	MaxBackoff      time.Duration
 	ExportTimeout   time.Duration
 	FlushInterval   time.Duration
-	FlushTimeout    time.Duration
-	ShutdownTimeout time.Duration
 }
 
 // Settings contains every scalar plugin setting.
@@ -118,8 +116,6 @@ func ParseSettings(args []string, lookupEnv LookupEnv) (Settings, error) {
 	app.Flag("agento11y.max-backoff", "Maximum Agent Observability retry backoff.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF", "5s")).DurationVar(&settings.AgentObservability.MaxBackoff)
 	app.Flag("agento11y.export-timeout", "Maximum duration of each Agent Observability HTTP or gRPC export attempt.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT", "10s")).DurationVar(&settings.AgentObservability.ExportTimeout)
 	app.Flag("agento11y.flush-interval", "Agent Observability asynchronous batch flush interval.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL", "1s")).DurationVar(&settings.AgentObservability.FlushInterval)
-	app.Flag("agento11y.flush-timeout", "Maximum Agent Observability explicit flush duration.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT", "5s")).DurationVar(&settings.AgentObservability.FlushTimeout)
-	app.Flag("agento11y.shutdown-timeout", "Maximum Agent Observability shutdown duration.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT", "5s")).DurationVar(&settings.AgentObservability.ShutdownTimeout)
 	app.Flag("anthropic.response-header-timeout", "Model provider response-header timeout (all provider types).").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_ANTHROPIC_RESPONSE_HEADER_TIMEOUT", "10s")).DurationVar(&settings.AnthropicResponseHeaderTimeout)
 	app.Flag("anthropic.response-bytes", "Maximum cumulative model provider response bytes (all provider types).").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_ANTHROPIC_RESPONSE_BYTES", "16777216")).Int64Var(&settings.AnthropicResponseBytes)
 	app.Flag("providerwire.request-bytes", "Maximum ProviderWire request bytes.").Default(envDefault(lookupEnv, "GRAFANA_AI_GATEWAY_PROVIDERWIRE_REQUEST_BYTES", "1048576")).Int64Var(&settings.ProviderWire.RequestBytes)
@@ -284,8 +280,6 @@ func (settings AgentObservabilitySettings) validate(mode DeploymentMode) error {
 		{name: "maximum backoff", value: settings.MaxBackoff},
 		{name: "export timeout", value: settings.ExportTimeout},
 		{name: "flush interval", value: settings.FlushInterval},
-		{name: "flush timeout", value: settings.FlushTimeout},
-		{name: "shutdown timeout", value: settings.ShutdownTimeout},
 	} {
 		if duration.value <= 0 || duration.value > 5*time.Minute {
 			return fmt.Errorf("config: agent observability %s must be positive and no greater than 5m", duration.name)

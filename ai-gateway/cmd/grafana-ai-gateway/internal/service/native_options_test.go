@@ -597,7 +597,7 @@ func TestNativeOptions_CaptureIndependence(t *testing.T) {
 				logger := slog.New(slog.NewJSONHandler(&logs, nil))
 				telemetry, err := NewTelemetry(logger)
 				require.NoError(t, err)
-				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 				factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 				require.NoError(t, err)
 				body := `{"providerOptions":{"myVllm":{"option_marker":{"opaque":"private-option-marker"}}},"prompt":[{"role":"user","content":[{"type":"text","text":"request","providerOptions":{"openaiCompatible":{"scope_marker":"private-scope-marker"}}}]}]}`

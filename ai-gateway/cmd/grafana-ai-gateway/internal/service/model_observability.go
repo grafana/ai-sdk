@@ -25,14 +25,12 @@ const maxAgentDiagnosticBytes = 2048
 
 // AgentObservabilityRuntime owns the optional process-wide recording client.
 type AgentObservabilityRuntime struct {
-	client          *agento11y.Client
-	telemetry       *Telemetry
-	flushTimeout    time.Duration
-	shutdownTimeout time.Duration
-	mu              sync.Mutex
-	recordings      sync.WaitGroup
-	closing         bool
-	closeOnce       sync.Once
+	client     *agento11y.Client
+	telemetry  *Telemetry
+	mu         sync.Mutex
+	recordings sync.WaitGroup
+	closing    bool
+	closeOnce  sync.Once
 }
 
 // NewAgentObservabilityRuntime consumes prevalidated settings and the
@@ -45,9 +43,7 @@ func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, se
 		return nil, fmt.Errorf("gateway service: telemetry is required")
 	}
 	runtime = &AgentObservabilityRuntime{
-		telemetry:       telemetry,
-		flushTimeout:    settings.FlushTimeout,
-		shutdownTimeout: settings.ShutdownTimeout,
+		telemetry: telemetry,
 	}
 	if !settings.Enabled {
 		return runtime, nil
@@ -105,21 +101,15 @@ func (runtime *AgentObservabilityRuntime) Close(ctx context.Context) {
 		runtime.mu.Lock()
 		runtime.closing = true
 		runtime.mu.Unlock()
-		waitCtx, cancelWait := context.WithTimeout(ctx, runtime.flushTimeout)
-		if !runtime.waitForRecordings(waitCtx) {
+		if !runtime.waitForRecordings(ctx) {
 			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		}
-		cancelWait()
-		flushCtx, cancelFlush := context.WithTimeout(ctx, runtime.flushTimeout)
-		if err := runtime.client.Flush(flushCtx); err != nil {
+		if err := runtime.client.Flush(ctx); err != nil {
 			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		}
-		cancelFlush()
-		shutdownCtx, cancelShutdown := context.WithTimeout(ctx, runtime.shutdownTimeout)
-		if err := runtime.client.Shutdown(shutdownCtx); err != nil {
+		if err := runtime.client.Shutdown(ctx); err != nil {
 			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		}
-		cancelShutdown()
 	})
 }
 

@@ -198,14 +198,12 @@ func TestNew_EnvironmentOnlyStartup(t *testing.T) {
 		{name: "self-hosted", change: func(env map[string]string) { env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "self-hosted" }},
 		{name: "grpc agent observability", change: func(env map[string]string) {
 			for name, value := range map[string]string{
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":          "true",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL":         "grpc",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":         "127.0.0.1:1",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_TLS":              "false",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV":  "AO_SECRET",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES":      "1",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT":    "10ms",
-				"GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT": "10ms",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL":        "grpc",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "127.0.0.1:1",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_TLS":             "false",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AO_SECRET",
+				"GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES":     "1",
 				"AO_SECRET": "agent-secret-value",
 			} {
 				env[name] = value

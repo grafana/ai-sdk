@@ -40,8 +40,6 @@ func TestParseSettings_Defaults(t *testing.T) {
 			MaxBackoff:      5 * time.Second,
 			ExportTimeout:   10 * time.Second,
 			FlushInterval:   time.Second,
-			FlushTimeout:    5 * time.Second,
-			ShutdownTimeout: 5 * time.Second,
 		},
 		AnthropicResponseHeaderTimeout: 10 * time.Second,
 		AnthropicResponseBytes:         16_777_216,
@@ -91,8 +89,6 @@ func TestParseSettings_ExactFlagAndEnvironmentBindings(t *testing.T) {
 		{flag: "agento11y.max-backoff", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF", value: "10s", check: func(t *testing.T, s Settings) { assert.Equal(t, 10*time.Second, s.AgentObservability.MaxBackoff) }},
 		{flag: "agento11y.export-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT", value: "3s", check: func(t *testing.T, s Settings) { assert.Equal(t, 3*time.Second, s.AgentObservability.ExportTimeout) }},
 		{flag: "agento11y.flush-interval", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL", value: "2s", check: func(t *testing.T, s Settings) { assert.Equal(t, 2*time.Second, s.AgentObservability.FlushInterval) }},
-		{flag: "agento11y.flush-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT", value: "7s", check: func(t *testing.T, s Settings) { assert.Equal(t, 7*time.Second, s.AgentObservability.FlushTimeout) }},
-		{flag: "agento11y.shutdown-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT", value: "8s", check: func(t *testing.T, s Settings) { assert.Equal(t, 8*time.Second, s.AgentObservability.ShutdownTimeout) }},
 		{flag: "anthropic.response-header-timeout", env: "GRAFANA_AI_GATEWAY_ANTHROPIC_RESPONSE_HEADER_TIMEOUT", value: "9s", check: func(t *testing.T, s Settings) { assert.Equal(t, 9*time.Second, s.AnthropicResponseHeaderTimeout) }},
 		{flag: "anthropic.response-bytes", env: "GRAFANA_AI_GATEWAY_ANTHROPIC_RESPONSE_BYTES", value: "8388608", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(8_388_608), s.AnthropicResponseBytes) }},
 		{flag: "providerwire.request-bytes", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_REQUEST_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.ProviderWire.RequestBytes) }},
@@ -168,8 +164,8 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		{name: "agento11y export timeout zero", mutate: func(s *Settings) { s.AgentObservability.ExportTimeout = 0 }},
 		{name: "agento11y export timeout negative", mutate: func(s *Settings) { s.AgentObservability.ExportTimeout = -time.Second }},
 		{name: "agento11y export timeout overflow", mutate: func(s *Settings) { s.AgentObservability.ExportTimeout = 5*time.Minute + time.Nanosecond }},
-		{name: "agento11y duration zero", mutate: func(s *Settings) { s.AgentObservability.FlushTimeout = 0 }},
-		{name: "agento11y duration overflow", mutate: func(s *Settings) { s.AgentObservability.ShutdownTimeout = 5*time.Minute + time.Nanosecond }},
+		{name: "agento11y flush interval zero", mutate: func(s *Settings) { s.AgentObservability.FlushInterval = 0 }},
+		{name: "agento11y flush interval overflow", mutate: func(s *Settings) { s.AgentObservability.FlushInterval = 5*time.Minute + time.Nanosecond }},
 		{name: "agento11y backoff order", mutate: func(s *Settings) {
 			s.AgentObservability.MaxBackoff = s.AgentObservability.InitialBackoff - time.Nanosecond
 		}},

@@ -132,7 +132,7 @@
   - access-decision labels limited to `configured`, `byok` and `refused`;
   - the existing duplicate-registration refusal still fails startup;
   - `mise run test-ai-gateway-command` passes.
-- [x] 5.4 Give the Agent Observability and attempt-sink `Close` methods a context, and run them in parallel from `main` after `plugin.Run` returns under one 1 s context. Each step's deadline derives from that context, capped by its configured duration, and records emitted after close are dropped with counters. Verify:
+- [x] 5.4 Give the Agent Observability and attempt-sink `Close` methods a context, and run them in parallel from `main` after `plugin.Run` returns under one 1 s context. Each step runs under that context, and records emitted after close are dropped with counters. Verify:
   - a unit test that undeliverable telemetry is abandoned before the budget ends;
   - a config test for production startup with export enabled and default timeouts;
   - a plugin-process test where Shutdown leads to exit before the host's kill delay.

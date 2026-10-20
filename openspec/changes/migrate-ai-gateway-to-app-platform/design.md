@@ -93,7 +93,7 @@ The plugin SDK configures OpenTelemetry inside `Manage`, and `otelgrpc` already 
 - **Alternative:** a Gateway span middleware. Rejected because it would duplicate the existing server span.
 
 ### 7. Lifecycle and health
-- **Shutdown:** `plugin.Run` returns after Shutdown and the SDK's tracer shutdown. `main` then calls `Close(ctx)` on Agent Observability and the attempt sink in parallel under one 1 s context. Each internal step (waiting for recorders, flush, client shutdown) uses a deadline derived from that context, capped by its configured duration, so default settings stay valid and never exceed the budget. Records emitted after close are dropped and counted.
+- **Shutdown:** `plugin.Run` returns after Shutdown and the SDK's tracer shutdown. `main` then calls `Close(ctx)` on Agent Observability and the attempt sink in parallel under one 1 s context. Each internal step (waiting for recorders, flush, client shutdown) runs under that context; there are no separate flush or shutdown settings. Records emitted after close are dropped and counted.
 - **Budget:** a slow tracer exporter can use the SDK's 5 s timeout and leave the Gateway's flush killed. This is accepted and documented, with a configurable tracer shutdown timeout as an upstream follow-up.
 - **Health:** the app-sdk default instance answers `CheckHealth` with a fixed healthy result. `plugin.Run` constructs the app before serving, so construction failure ends startup and no readiness flag is needed.
 - **Request bounds:** `providerwire.model-duration` remains the request bound. Operator documentation states the grace-period requirement.

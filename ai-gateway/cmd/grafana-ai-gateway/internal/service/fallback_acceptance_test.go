@@ -455,7 +455,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	sink := newPhysicalAttemptSink(hclogLogger(&output), telemetry, 8)

@@ -44,7 +44,7 @@ func TestBYOKObservability_LogicalExportAndCredentialPrivacy(t *testing.T) {
 				logger := slog.New(slog.NewJSONHandler(&logs, nil))
 				telemetry, err := NewTelemetry(logger)
 				require.NoError(t, err)
-				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 				_, observe, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 				require.NoError(t, err)
 				ctx, cancel := context.WithCancel(context.Background())
@@ -137,10 +137,8 @@ func TestAgentObservabilityRuntime_CloseWaitsForAcquiredRecordings(t *testing.T)
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{
-		client:          env.Client,
-		telemetry:       telemetry,
-		flushTimeout:    time.Second,
-		shutdownTimeout: time.Second,
+		client:    env.Client,
+		telemetry: telemetry,
 	}
 	require.Same(t, env.Client, runtime.acquireClient(context.Background()))
 	require.Same(t, env.Client, runtime.acquireClient(context.Background()))
@@ -174,35 +172,14 @@ func TestAgentObservabilityRuntime_CloseWaitsForAcquiredRecordings(t *testing.T)
 	}
 }
 
-func TestAgentObservabilityRuntime_CloseBoundsRecordingWait(t *testing.T) {
-	env := testkit.NewEnv(t)
-	var logs lockedBuffer
-	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(&logs, nil)))
-	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{
-		client:          env.Client,
-		telemetry:       telemetry,
-		flushTimeout:    10 * time.Millisecond,
-		shutdownTimeout: time.Second,
-	}
-	require.Same(t, env.Client, runtime.acquireClient(context.Background()))
-	started := time.Now()
-	runtime.Close(context.Background())
-	assert.Less(t, time.Since(started), time.Second)
-	assert.Contains(t, logs.String(), `"class":"shutdown"`)
-	runtime.recordingComplete()
-}
-
 func TestAgentObservabilityRuntime_CloseEndsAtTheSharedDeadline(t *testing.T) {
 	env := testkit.NewEnv(t)
 	var logs lockedBuffer
 	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(&logs, nil)))
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{
-		client:          env.Client,
-		telemetry:       telemetry,
-		flushTimeout:    5 * time.Second,
-		shutdownTimeout: 5 * time.Second,
+		client:    env.Client,
+		telemetry: telemetry,
 	}
 	require.Same(t, env.Client, runtime.acquireClient(context.Background()))
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -220,10 +197,8 @@ func TestAgentObservabilityRuntime_ConcurrentAcquireAndClose(t *testing.T) {
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{
-		client:          env.Client,
-		telemetry:       telemetry,
-		flushTimeout:    time.Second,
-		shutdownTimeout: time.Second,
+		client:    env.Client,
+		telemetry: telemetry,
 	}
 	start := make(chan struct{})
 	var callers sync.WaitGroup
@@ -263,10 +238,8 @@ func TestNewModelObservabilityFactory_CloseWaitsForAbandonedStreamRecording(t *t
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{
-		client:          env.Client,
-		telemetry:       telemetry,
-		flushTimeout:    time.Second,
-		shutdownTimeout: time.Second,
+		client:    env.Client,
+		telemetry: telemetry,
 	}
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
@@ -379,8 +352,6 @@ func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayl
 		InitialBackoff:  time.Millisecond,
 		MaxBackoff:      time.Millisecond,
 		FlushInterval:   time.Hour,
-		FlushTimeout:    time.Second,
-		ShutdownTimeout: time.Second,
 	}, "agent-secret", telemetry)
 	require.NoError(t, err)
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
@@ -449,8 +420,6 @@ func TestNewAgentObservabilityRuntime_RejectedHTTPBatchIsOneFailOpenFailure(t *t
 		InitialBackoff:  time.Millisecond,
 		MaxBackoff:      time.Millisecond,
 		FlushInterval:   time.Hour,
-		FlushTimeout:    time.Second,
-		ShutdownTimeout: time.Second,
 	}, "agent-secret", telemetry)
 	require.NoError(t, err)
 	defer runtime.Close(context.Background())
@@ -730,7 +699,7 @@ func TestNewModelObservabilityFactory_AgentExportIsCanonicalMetadataOnly(t *test
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 
@@ -808,7 +777,7 @@ func TestNewModelObservabilityFactory_UnaryProviderFailureIsSafeAndFailThrough(t
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	providerError := provider.NewAPICallError(provider.APICallErrorOptions{
@@ -860,7 +829,7 @@ func TestNewModelObservabilityFactory_RecorderFailureDoesNotFailModelCall(t *tes
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	expected := &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}
@@ -887,7 +856,7 @@ func TestNewModelObservabilityFactory_StreamIsObservedOnceAndPassesThrough(t *te
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 
@@ -976,7 +945,7 @@ func TestNewModelObservabilityFactory_CanceledStreamsCloseWithinBoundedDrain(t *
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
-			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 			const drainTimeout = 10 * time.Millisecond
 			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, drainTimeout)
 			require.NoError(t, err)
@@ -1057,7 +1026,7 @@ func TestNewModelObservabilityFactory_NormalAndPrematureStreamsFinalizeOnce(t *t
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
-			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 			require.NoError(t, err)
 
@@ -1221,7 +1190,7 @@ func TestCustomContentTelemetry_Disposition(t *testing.T) {
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
-			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 			require.NoError(t, err)
 			metadata := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"metadata-private"}`)}
