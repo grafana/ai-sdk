@@ -115,7 +115,7 @@ aisdk/                  root module — orchestration (StreamText, UIMessage, SS
   registry/             provider registry
   gateway/              provider-neutral model catalog
   middleware/           in-tree middleware; integrations are their own modules
-ai-gateway/             separate Gateway service module
+ai-gateway/             Gateway Grafana app plugin, a separate module
 providers/<name>/       one Go module per provider (anthropic, bedrock, openai, ...)
 docs/                   concepts, guides, providers, middleware, best practices
 examples/               outcome-oriented programs, one self-contained module each
@@ -484,7 +484,7 @@ maintainer to trigger CI.
 ## Releases and independent modules
 
 Core, providers, and middleware are released independently as Go libraries.
-Gateway is an independently versioned Docker application with workspace source.
+Gateway is an independently versioned Grafana app plugin built from workspace source.
 After #245 activates release automation, versions, changelogs, tags, and GitHub
 Releases will be produced by
 [release-please](https://github.com/googleapis/release-please) from the
@@ -544,7 +544,9 @@ SDK's Go module dependency graph.
   `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
   pushes keep the validated package, built from a clean checkout of the push
   revision, as a workflow artifact. Gateway is not published as a standalone Go
-  module.
+  module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
+  changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
+  the app manifest source for `pnpm generate:kinds`.
 
 The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
 but SDK modules must not import, require, or replace Gateway. Real published

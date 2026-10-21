@@ -1,198 +1,153 @@
 # Grafana AI Gateway
 
-Grafana AI Gateway is a Grafana app plugin, `grafana-aigateway-app`, that serves
-compatible model APIs with access policy, observability, routing and fallback.
-It is built from this directory, whose Go module path is
-`github.com/grafana/ai-sdk/ai-gateway`.
+Grafana AI Gateway is a Grafana app that gives your applications one API for
+models from Anthropic, OpenAI and OpenAI-compatible providers. You publish
+models under stable names, with aliases and fallbacks, and keep provider keys
+in Grafana's configuration. Applications call the Gateway through your Grafana
+instance with a Grafana credential, using the
+[Go client](../docs/providers/grafana-gateway.md) or the Vercel AI SDK Gateway
+client.
 
-The Gateway serves the [ProviderWire V4](providerwire/v4) protocol that the
-pinned Vercel Gateway client and the Apache-licensed
-[Go client](../docs/providers/grafana-gateway.md) speak. It forwards calls to
-Anthropic, OpenAI Responses and OpenAI-compatible providers.
+## Requirements
 
-## Hosting and routes
+- Grafana 13.3 or later.
+- The `appplugins.loadAppManifest`, `appplugins.registerAPIServer` and
+  `grafana.useRouterMiddleware` feature toggles. The last one is experimental.
+- The plugin is not in the plugin catalog yet. Build it from this directory
+  and allow it as an unsigned plugin.
 
-A Grafana App Platform plugin host runs the plugin backend: Grafana itself, or
-the App Platform router in Grafana Cloud. The app manifest declares two
-namespaced routes and no kinds:
+## Install
 
-| Method | Route |
-|---|---|
-| `GET` | `/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/{namespace}/config` |
-| `POST` | `/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/{namespace}/language-model` |
+1. From the repository root, build the plugin with
+   `mise run build-ai-gateway-plugin`, then copy `ai-gateway/dist/` to
+   `grafana-aigateway-app` in your Grafana plugins directory.
+2. Add the plugin to your Grafana configuration:
 
-Clients use `/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<namespace>` as
-their base URL. The host authenticates every caller and exchanges the caller's
-credential for a token delegated to the plugin. The Gateway verifies that
-token's signature, audience and namespace before it does any work. The plugin
-opens no listeners and serves no health or metrics routes; health and metrics
-go through the plugin protocol.
+   ```ini
+   [feature_toggles]
+   appplugins.loadAppManifest = true
+   appplugins.registerAPIServer = true
+   grafana.useRouterMiddleware = true
 
-## Access modes
+   [plugins]
+   allow_loading_unsigned_plugins = grafana-aigateway-app
 
-`access_mode` is required and has no default. The Gateway
-reads the verified token's actor chain. The direct caller is the service that
-called the host, and the identity actor is the user or service account the call
-is for, when there is one.
+   [plugin.grafana-aigateway-app]
+   config_file = /etc/grafana/aigateway/models.yaml
+   access_mode = self-hosted
+   anthropic_api_key = $__file{/run/secrets/anthropic-api-key}
+   ```
 
-| Mode | Caller | Access |
-|---|---|---|
-| `cloud` | Direct caller on the internal service allowlist | Configured models and discovery, also on behalf of a user |
-| `cloud` | Any other user or service account | Request-scoped BYOK only |
-| `self-hosted` | User or service account | Configured models and discovery; BYOK is refused |
-| either | Anything else | Refused with the permission error |
+3. Create the model catalog in `config_file`, as described in the next section.
+4. Restart Grafana and enable **Grafana AI Gateway** under
+   **Administration > Plugins and data > Plugins**.
 
-In `cloud` mode, `access_internal_services` lists the signed
-service identities allowed to use configured models, comma-separated and
-matched exactly; whitespace around entries is ignored. A service that relays another service's token is the direct
-caller, so it does not inherit that service's access. BYOK is open to every
-stack user and service account; their provider keys are used only for their
-own requests. The allowlist is rejected in `self-hosted` mode.
+The app's overview page shows the Gateway URL that applications use.
 
-Grafana admits callers to the routes by plugin app access; the plugin declares
-no roles of its own, because Grafana does not yet apply manifest roles to
-custom routes. In Cloud the router grants app access to every authenticated
-caller.
+## Configure models
 
-In `self-hosted` mode, anyone Grafana admits to the plugin can use the
-configured models. Plugin app access is part of Grafana's basic roles, so
-restrict it with role-based access control where available, or give access
-only to service accounts. Grafana tokens always belong to service accounts,
-which have no owner: create one service account per application or person you
-want to attribute usage to.
-
-### Self-hosted Grafana today
-
-Self-hosted Grafana serves App Platform plugin routes only with the experimental
-`grafana.useRouterMiddleware` feature toggle, together with
-`appplugins.loadAppManifest` and `appplugins.registerAPIServer`. With those
-toggles and no token exchange configured, Grafana 13.3 signs the tokens it
-sends to the plugin itself and passes the plugin their signing keys in
-`GRAFANA_JWKS`, so the caller's identity reaches the Gateway with no extra
-service. A Grafana configured with `[plugins] v3_token_exchange_url` uses that
-exchange instead; then set its signing keys in `GRAFANA_JWKS_URL`.
-
-## Configuration
-
-Settings go in Grafana's `[plugin.grafana-aigateway-app]` configuration
-section, and the model catalog in a YAML file that names each provider key by
-its environment variable. Keep keys in the same section, through Grafana's
-`$__file{}` or `$__env{}` expansion, and reference them as `GF_PLUGIN_<KEY>`:
-
-```ini
-[plugin.grafana-aigateway-app]
-config_file = /etc/grafana/aigateway/models.yaml
-access_mode = self-hosted
-anthropic_api_key = $__file{/run/secrets/anthropic-api-key}
-```
+The model catalog is a YAML file with the provider accounts the Gateway can
+use and the models it offers:
 
 ```yaml
 providers:
-  anthropic-primary:
+  anthropic:
     type: anthropic
     apiKeyEnv: GF_PLUGIN_ANTHROPIC_API_KEY
+  openai:
+    type: openai
+    apiKeyEnv: GF_PLUGIN_OPENAI_API_KEY
 models:
-  grafana/assistant:
-    name: Grafana Assistant
+  balanced:
+    name: Balanced
+    description: General-purpose model
+    aliases: [default]
     primary:
-      provider: anthropic-primary
+      provider: anthropic
       model: claude-sonnet-4-6
+    fallback:
+      - provider: openai
+        model: gpt-5
 ```
 
-| Setting | Purpose |
+Each provider needs a `type` (`anthropic`, `openai` or `openai-compatible`)
+and an `apiKeyEnv`. An `openai-compatible` provider also needs a `baseURL`;
+the other types use it to replace the provider's default endpoint.
+
+Each model needs a `name` and a `primary` provider and model. Applications
+select it by its ID, such as `balanced`, or by one of its `aliases`. When the
+primary model fails before it starts answering, the Gateway tries the
+`fallback` models in order.
+
+Each key of the `[plugin.grafana-aigateway-app]` section reaches the Gateway as
+an environment variable named `GF_PLUGIN_<KEY>`, so `anthropic_api_key` becomes
+`GF_PLUGIN_ANTHROPIC_API_KEY`. Keep provider keys there and read them from a
+file with `$__file{}` or from Grafana's environment with `$__env{}`.
+
+The Gateway checks its settings and the catalog when Grafana starts it. If
+something is wrong, it does not start, and Grafana's log says why.
+
+## Choose who can use it
+
+`access_mode` decides who can use the configured models:
+
+- **`self-hosted`:** every user and service account that can use the app gets
+  the configured models. Requests that bring their own provider keys are
+  refused. To limit access, restrict the app with role-based access control,
+  or give access only to service accounts.
+- **`cloud`:** for Grafana Cloud. Only the Grafana services listed in
+  `access_internal_services` get the configured models. Every other user and
+  service account brings its own provider key with each request.
+
+## Settings
+
+| Setting | Description |
 |---|---|
-| `config_file` | Model catalog file. Required. |
-| `access_mode` | `cloud` or `self-hosted`. Required. |
-| `access_internal_services` | Internal service allowlist, `cloud` mode only. |
-| `max_request_bytes` | Largest accepted request body, 1 MiB by default. Raise it for large file inputs. |
-| `max_model_duration` | Longest model call, `120s` by default and at least `30s`. |
-| `agento11y_*` | Optional Agent Observability export; see [text observability](docs/text-observability.md#agent-observability-configuration). |
+| `config_file` | Path to the model catalog. Required. |
+| `access_mode` | `self-hosted` or `cloud`. Required. |
+| `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
+| `max_request_bytes` | Largest request body. Defaults to 1 MiB; raise it for large file inputs. |
+| `max_model_duration` | Longest model call. Defaults to `120s`; at least `30s`. |
+| `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 
-Grafana passes each key to the plugin as `GF_PLUGIN_<KEY>`, for example
-`GF_PLUGIN_ACCESS_MODE`. A host that starts the plugin itself, such as the App
-Platform router, sets those variables directly. Token signing keys come from
-app-sdk's `GRAFANA_JWKS_URL` or `GRAFANA_JWKS`, and exactly one is required;
-self-hosted Grafana sets `GRAFANA_JWKS` itself.
-Other limits, such as response sizes and stream timeouts, are fixed.
+## Limits
 
-Invalid settings, or an `auth` or `server` block in the catalog file stop the
-plugin before it serves requests. The Gateway always verifies token
-signatures; app-sdk's `insecure_skip_authentication` has no effect.
+- Grafana ends a request after 60 seconds, including a streamed response.
+- Grafana rejects some requests, such as those with an invalid token, before
+  they reach the Gateway. Those errors use Grafana's error format.
 
-A catalog may also name any other variable of the plugin's environment. Grafana
-forwards its own environment only to plugins listed in `[plugins]
-forward_host_env_vars`, so keeping keys in the plugin section avoids that. The
-App Platform router passes the environment of its plugin deployment.
+## Learn more
 
-## Lifecycle and limits
+- [Authenticate to the Gateway](../docs/guides/gateway-authentication.md):
+  credentials for your applications.
+- [Call the Gateway from Go](../docs/providers/grafana-gateway.md).
+- [Monitor the Gateway](docs/text-observability.md): logs, metrics, traces and
+  Agent Observability.
+- [Sources](docs/sources.md): citations in model responses.
+- [Model catalog package](docs/model-catalog.md): build your own model catalog
+  in Go.
 
-The host drains in-flight requests when it stops the plugin, so its termination
-grace period must exceed `max_model_duration`
-(120 seconds by default) plus the stream drain time. After the host stops the
-plugin, the Gateway flushes Agent Observability and attempt records within one
-second. The host's tracer shutdown shares the same window before the host kills
-the process, so a slow trace exporter can cut the flush short.
+## Develop locally
 
-Current platform limits:
-
-- Platform routes end after 60 seconds, which also ends longer streams.
-- Errors the platform produces before the Gateway runs, such as failed
-  authentication or an exceeded deadline, use Kubernetes `Status` JSON rather
-  than ProviderWire error documents.
-
-## Build and validate
-
-```bash
-mise run test-ai-gateway-frontend    # frontend typecheck, lint and unit tests
-mise run build-ai-gateway-plugin     # frontend, Linux amd64/arm64 backends, licenses
-mise run validate-ai-gateway-plugin  # package contents and the Grafana plugin validator
-mise run test-ai-gateway             # Go tests, including the built plugin process
-mise run test-ai-gateway-command     # cross-language suites through the plugin test host
-mise run test-ai-gateway-e2e         # Playwright tests against the built plugin in Grafana
-```
-
-The package includes the Gateway and SDK licenses, every linked Go module with
-its license files per platform, bundled frontend licenses and the source
-revision. Local builds are marked as unverified development builds. CI keeps the
-validated package of eligible pushes as a workflow artifact; the plugin is not
-published yet.
-
-The plugin follows the create-plugin scaffold with its App Platform addition:
-`.config/` is scaffold-owned and changes only through `create-plugin update`,
-and `kinds/` holds the manifest source for `generate:kinds`.
-
-## Local development
-
-The local environment is the create-plugin Docker Compose setup running Grafana
-nightly. It mounts `dist/` as the plugin and loads `provisioning/grafana.ini`,
-which enables the App Platform feature toggles, selects `self-hosted` access
-and points the Gateway at the development catalog in
-`provisioning/aigateway/models.yaml`. It needs Docker and the workspace tools
-from `mise deps`.
-
-From the repository root, build the plugin once and start Grafana on
-<http://localhost:3000>:
+From the repository root, build the plugin and start Grafana on
+<http://localhost:3000> with a development catalog:
 
 ```bash
 mise run build-ai-gateway-plugin
 export ANTHROPIC_API_KEY=...        # optional; needed only to call models
-pnpm --filter ./ai-gateway server   # docker compose up --build
+pnpm --filter ./ai-gateway server
 ```
 
-Then iterate from `ai-gateway/`:
+Then work from `ai-gateway/`:
 
-| Change | Apply it with |
+| After changing | Run |
 | --- | --- |
-| Frontend (`src/`) | Keep `pnpm dev` running; it rebuilds into `dist/` and the page reloads. |
-| Backend (`cmd/`, `internal/`) or the catalog | `GOWORK=$PWD/../go.gateway.work mage -v build:linux` (`build:linuxARM64` on arm64 hosts), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin process with the new binary and catalog. |
+| The frontend | `pnpm dev`, and keep it running. The page reloads on each change. |
+| The backend or `provisioning/aigateway/models.yaml` | `GOWORK=$PWD/../go.gateway.work mage -v build:linux` (`build:linuxARM64` on arm64), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin. |
 | `provisioning/grafana.ini` | `docker compose restart grafana` |
 
-The `GOWORK` setting builds against the SDK source in this checkout rather than
-the published modules. The scaffold's `DEVELOPMENT=true` image is not used: it
-builds inside the container, which sees only `ai-gateway/`.
-
-The Gateway refuses Grafana's anonymous sign-in, so call the routes with a
-service account token. Each run creates a new service account:
+The Gateway refuses Grafana's anonymous sign-in. Create a service account token
+to call it:
 
 ```bash
 grafana=http://localhost:3000
@@ -205,27 +160,22 @@ token=$(curl -fsS -H 'Content-Type: application/json' \
 curl -H "Authorization: Bearer $token" $routes/config
 ```
 
-[Authenticate to the Gateway](../docs/guides/gateway-authentication.md) shows
-how to call models through the Go client with the same token.
+`docker compose logs -f grafana` shows the logs, and
+`docker compose down --volumes` stops Grafana and discards its data.
 
-`docker compose logs -f grafana` follows Grafana and the plugin, which logs at
-debug level. `pnpm e2e` runs the Playwright tests against the running
-environment, and `docker compose down --volumes` stops it and discards its
-data. `mise run test-ai-gateway-e2e` does all of this in one step against the
-built plugin; CI pins the Grafana nightly image by digest.
+To test your changes:
 
-## More
+```bash
+mise run test-ai-gateway             # Go tests
+mise run test-ai-gateway-frontend    # frontend checks
+mise run test-ai-gateway-command     # client compatibility tests
+mise run test-ai-gateway-e2e         # browser tests against Grafana
+mise run validate-ai-gateway-plugin  # plugin package checks
+```
 
-- [Model catalog](docs/model-catalog.md): public model identity and resolution.
-- [Text observability](docs/text-observability.md): logs, metrics, traces and
-  Agent Observability export.
-- [Authenticate to the Gateway](../docs/guides/gateway-authentication.md):
-  client credentials for both modes.
-- [Contributing](../CONTRIBUTING.md): repository-wide development guidance.
+See [Contributing](../CONTRIBUTING.md) for the rest of the development guide.
 
-Gateway code may import explicitly pinned SDK modules. SDK modules must not
-import, require, or replace the Gateway module, which stays outside the root
-`go.work`.
+## License
 
-Files under this directory are licensed under [AGPL-3.0-only](LICENSE). The
-reusable SDK remains [Apache-2.0](../LICENSE).
+Files in this directory are licensed under [AGPL-3.0-only](LICENSE). The SDK
+is licensed under [Apache-2.0](../LICENSE).

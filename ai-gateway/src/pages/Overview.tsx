@@ -17,8 +17,8 @@ const OUTCOMES = [
     title: 'Use your own provider keys',
     href: `${DOCS_URL}/docs/providers/grafana-gateway.md#use-your-own-provider-credentials`,
   },
-  { title: 'Configure the model catalog', href: `${DOCS_URL}/ai-gateway/docs/model-catalog.md` },
-  { title: 'Observe Gateway traffic', href: `${DOCS_URL}/ai-gateway/docs/text-observability.md` },
+  { title: 'Configure the model catalog', href: `${DOCS_URL}/ai-gateway/README.md#configure-models` },
+  { title: 'Monitor the Gateway', href: `${DOCS_URL}/ai-gateway/docs/text-observability.md` },
 ];
 
 const RESOURCES = [
