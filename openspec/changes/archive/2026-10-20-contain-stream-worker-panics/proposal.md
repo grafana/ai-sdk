@@ -5,7 +5,7 @@ Go recovers a panic only on the goroutine that raised it. The worker goroutines 
 ## What Changes
 
 - Add a root `internal/streamrecover` package: an `ErrPanic` sentinel, a terminal error part carrying a non-retryable status-0 `APICallError` that wraps it, and a `Recover` helper that discards the recovered value.
-- The anthropic and openai transport readers and stream adapters, and the openai-compatible stream worker, end their stream with that part when they panic, then release upstream resources through their existing ownership paths. In anthropic and openai, a panic before the first event fails `DoStream` with the plain sentinel; openai-compatible, which returns its stream first, ends that stream with the terminal part.
+- The anthropic and openai transport readers and stream adapters, and the openai-compatible stream worker, end their stream with that part when they panic, then release upstream resources through their existing ownership paths. In anthropic and openai, a panic before the first frame fails `DoStream` with the plain sentinel; openai-compatible, which returns its stream first, ends that stream with the terminal part.
 - The Gateway ends a stream with one internal error frame when it receives that part.
 - The logger, Prometheus and Agent Observability stream tees contain panics in their observation code and keep forwarding the stream. The logger reports the sentinel as `internal_error` and Prometheus as `other`.
 
