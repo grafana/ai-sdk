@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -38,6 +40,35 @@ func (b *panickingBody) Close() error {
 	return nil
 }
 
+type blockingBody struct {
+	prefix      io.Reader
+	closePanics bool
+	closing     chan struct{}
+	closeOnce   sync.Once
+	released    atomic.Bool
+}
+
+func newBlockingBody(prefix string, closePanics bool) *blockingBody {
+	return &blockingBody{prefix: strings.NewReader(prefix), closePanics: closePanics, closing: make(chan struct{})}
+}
+
+func (b *blockingBody) Read(p []byte) (int, error) {
+	if n, err := b.prefix.Read(p); n > 0 || !errors.Is(err, io.EOF) {
+		return n, err
+	}
+	<-b.closing
+	b.released.Store(true)
+	return 0, net.ErrClosed
+}
+
+func (b *blockingBody) Close() error {
+	b.closeOnce.Do(func() { close(b.closing) })
+	if b.closePanics {
+		panic("secret-panic-value")
+	}
+	return nil
+}
+
 type panicRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f panicRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
@@ -67,6 +98,7 @@ func assertSinglePanicError(t *testing.T, parts []provider.StreamPart) {
 		}
 	}
 	require.Len(t, errs, 1)
+	assert.Equal(t, provider.PartError, parts[len(parts)-1].Type, "nothing may follow the panic error")
 	require.NotNil(t, errs[0].APICallError)
 	assert.True(t, errors.Is(errs[0].APICallError, streamrecover.ErrPanic))
 	assert.False(t, errs[0].APICallError.IsRetryable)
@@ -94,13 +126,22 @@ func TestDoStream_WorkerPanic(t *testing.T) {
 
 	t.Run("stream adapter", func(t *testing.T) {
 		annotation := "data: {\"type\":\"response.output_text.annotation.added\",\"sequence_number\":2,\"output_index\":0,\"content_index\":0,\"item_id\":\"msg_1\",\"annotation_index\":0,\"annotation\":{\"type\":\"url_citation\",\"url\":\"https://example.com\",\"title\":\"Example\",\"start_index\":0,\"end_index\":2}}\n\n"
-		body := &panickingBody{prefix: strings.NewReader(panicResponseCreated + annotation)}
+		body := newBlockingBody(panicResponseCreated+annotation, false)
 		model := panicStreamModel(body, WithGenerateID(func() string { panic("secret-panic-value") }))
 		result, err := model.DoStream(context.Background(), options)
 		require.NoError(t, err)
-		parts := readPanicStream(result)
-		assertSinglePanicError(t, parts)
-		assert.Equal(t, provider.PartError, parts[len(parts)-1].Type)
-		assert.Eventually(t, func() bool { return body.closed.Load() == 1 }, time.Second, time.Millisecond)
+		assertSinglePanicError(t, readPanicStream(result))
+		assert.Eventually(t, body.released.Load, time.Second, time.Millisecond, "the reader must be released")
+	})
+
+	t.Run("body close panics on cancellation", func(t *testing.T) {
+		body := newBlockingBody(panicResponseCreated+panicTextDelta, true)
+		ctx, cancel := context.WithCancel(context.Background())
+		result, err := panicStreamModel(body).DoStream(ctx, options)
+		require.NoError(t, err)
+		<-result.Stream
+		cancel()
+		readPanicStream(result)
+		assert.Eventually(t, body.released.Load, time.Second, time.Millisecond, "the reader must be released")
 	})
 }
