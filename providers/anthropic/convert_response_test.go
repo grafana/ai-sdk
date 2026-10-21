@@ -642,6 +642,9 @@ func TestConvertResponse_TextCitations(t *testing.T) {
 
 		assert.Equal(t, provider.ContentText, result.Content[0].Type)
 		assert.Equal(t, "According to the source", result.Content[0].Text)
+		require.Len(t, result.Content[0].Citations, 1)
+		assert.Equal(t, "https://example.com", result.Content[0].Citations[0].Source.ID)
+		assert.Equal(t, "some text", *result.Content[0].Citations[0].CitedText)
 		assert.JSONEq(t, `{"citations":[{"type":"web_search_result_location","url":"https://example.com","title":"Example","cited_text":"some text","encrypted_index":"enc1"}]}`, string(result.Content[0].ProviderMetadata["anthropic"]))
 
 		src := result.Content[1]
@@ -684,7 +687,10 @@ func TestConvertResponse_TextCitations(t *testing.T) {
 		assert.NotEmpty(t, src.ID, "citation source should have non-empty ID")
 		assert.Equal(t, provider.SourceTypeDocument, src.SourceType)
 		assert.Equal(t, "application/pdf", src.MediaType)
-		assert.Equal(t, "Report", src.Title)
+		assert.Empty(t, src.Title)
+		require.Len(t, result.Content[0].Citations, 1)
+		assert.Empty(t, result.Content[0].Citations[0].Source.Title)
+		assert.Equal(t, "f1", result.Content[0].Citations[0].Source.ID)
 		assert.Empty(t, src.Text, "a source carries its title in Title, not in the text field")
 		assert.Equal(t, "report.pdf", src.Filename)
 	})

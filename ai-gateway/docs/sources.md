@@ -31,9 +31,10 @@ them visible in your UI.
 
 ## Understand the limits
 
-Some sources include page or character positions that can help readers locate
-the reference. The Gateway currently returns limited citation metadata, not all
-provider annotations or cited passages. Design your citation UI to work without
+Text can carry citations: references to the URL or document supporting that
+text, optionally with character offsets and the cited passage. Citations are
+returned separately from the complete source list, and providers supply offsets
+and cited passages inconsistently. Design your citation UI to work without
 those extra details.
 
 A citation is a model-provided reference, not verification that the answer is

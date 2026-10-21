@@ -73,7 +73,7 @@ export interface Config {
   stopWhenStepCount?: number;
   toolChoice?: ToolChoiceConfig;
   activeTools?: string[];
-  reasoning?: "provider-default" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  reasoning?: "provider-default" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   headers?: Record<string, string>;
   streamOptions?: StreamOptionsConfig;
   providerOptions?: Record<string, Record<string, unknown>>;

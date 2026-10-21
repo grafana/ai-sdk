@@ -12,6 +12,7 @@ import (
 )
 
 type inputConversionContext struct {
+	isReasoningModel        bool
 	store                   bool
 	providerOptionsName     string
 	hasConversation         bool

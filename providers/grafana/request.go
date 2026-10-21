@@ -115,7 +115,7 @@ func encodeRequest(opts provider.CallOptions) ([]byte, error) {
 	}
 	switch opts.Reasoning {
 	case provider.ReasoningProviderDefault:
-	case provider.ReasoningNone, provider.ReasoningMinimal, provider.ReasoningLow, provider.ReasoningMedium, provider.ReasoningHigh, provider.ReasoningXHigh:
+	case provider.ReasoningNone, provider.ReasoningMinimal, provider.ReasoningLow, provider.ReasoningMedium, provider.ReasoningHigh, provider.ReasoningXHigh, provider.ReasoningMax:
 		out["reasoning"] = opts.Reasoning
 	default:
 		return nil, errRequest
@@ -496,11 +496,11 @@ func validateRequestValue(v reflect.Value, depth int) error {
 			return errRequest
 		}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if v.Int() < -9007199254740991 || v.Int() > 9007199254740991 {
+		if v.Int() < -maxSafeInteger || v.Int() > maxSafeInteger {
 			return errRequest
 		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		if v.Uint() > 9007199254740991 {
+		if v.Uint() > maxSafeInteger {
 			return errRequest
 		}
 	case reflect.Struct:

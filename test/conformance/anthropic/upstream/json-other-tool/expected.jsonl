@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_01CD3XaZfhNabxRt1SG5ybtK","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":843,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":16,"service_tier":"standard"}}}}
 {"type":"tool-input-start","toolCallId":"toolu_019Zvehfe1XQWweT1pm7okyt","toolName":"weather"}
 {"type":"tool-input-delta","toolCallId":"toolu_019Zvehfe1XQWweT1pm7okyt","inputTextDelta":"{\"location\": \"San Francisco"}
 {"type":"tool-input-delta","toolCallId":"toolu_019Zvehfe1XQWweT1pm7okyt","inputTextDelta":"\"}"}

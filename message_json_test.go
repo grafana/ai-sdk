@@ -362,6 +362,28 @@ func TestPartTypeWireCompat(t *testing.T) {
 	})
 }
 
+func TestSourcePartRequiredFields(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		part Part
+		want string
+	}{
+		{"url source omits empty title", SourceURLPart{SourceID: "u", URL: ""}, `{"type":"source-url","sourceId":"u","url":""}`},
+		{"document source keeps empty title", SourceDocumentPart{SourceID: "", MediaType: ""}, `{"type":"source-document","sourceId":"","mediaType":"","title":""}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(UIMessage{ID: "m", Role: RoleAssistant, Parts: []Part{tc.part}})
+			require.NoError(t, err)
+			var message struct {
+				Parts []json.RawMessage `json:"parts"`
+			}
+			require.NoError(t, json.Unmarshal(data, &message))
+			require.Len(t, message.Parts, 1)
+			assert.JSONEq(t, tc.want, string(message.Parts[0]))
+		})
+	}
+}
+
 func extractPartType(t *testing.T, msgJSON []byte) string {
 	t.Helper()
 	var raw map[string]json.RawMessage

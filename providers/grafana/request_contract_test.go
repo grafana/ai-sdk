@@ -68,7 +68,7 @@ func TestRequestContract_FiniteDiscriminators(t *testing.T) {
 	t.Run("ReasoningEffort", func(t *testing.T) {
 		checkRequestContractArms(t, map[provider.ReasoningEffort]bool{
 			provider.ReasoningProviderDefault: false, provider.ReasoningNone: false, provider.ReasoningMinimal: false,
-			provider.ReasoningLow: false, provider.ReasoningMedium: false, provider.ReasoningHigh: false, provider.ReasoningXHigh: false,
+			provider.ReasoningLow: false, provider.ReasoningMedium: false, provider.ReasoningHigh: false, provider.ReasoningXHigh: false, provider.ReasoningMax: false,
 		}, func(arm provider.ReasoningEffort) provider.CallOptions { return provider.CallOptions{Reasoning: arm} })
 		body, err := encodeRequest(provider.CallOptions{Reasoning: provider.ReasoningProviderDefault})
 		require.NoError(t, err)
