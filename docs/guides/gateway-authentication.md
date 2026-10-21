@@ -60,7 +60,7 @@ const { models } = await gateway.getAvailableModels();
 Each service account is a separate caller, so create one per application or
 person you want to tell apart. Your administrator decides which Grafana roles
 can use the app. If the Gateway is not available yet, ask them to set it up as
-described in the [operator guide](../../ai-gateway/README.md#self-hosted-grafana-today).
+described in the [Gateway guide](../../ai-gateway/README.md#install).
 
 In self-hosted Grafana, the Gateway uses only the provider accounts your
 administrator configured, and refuses requests that bring their own provider
