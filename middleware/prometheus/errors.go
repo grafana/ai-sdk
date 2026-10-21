@@ -60,7 +60,7 @@ func classifyError(err error) outcome {
 }
 
 func classifyStreamError(apiErr *provider.APICallError) outcome {
-	if apiErr != nil && errors.Is(apiErr, streamrecover.ErrPanic) {
+	if apiErr != nil && streamrecover.Is(apiErr) {
 		return outcome{status: statusError, errorType: errorTypeOther, statusCode: statusCodeNone, finishReason: finishReasonNone}
 	}
 	if apiErr != nil {
