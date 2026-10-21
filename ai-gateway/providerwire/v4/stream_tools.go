@@ -58,8 +58,11 @@ const (
 )
 
 type toolStreamState struct {
-	name  string
-	phase toolStreamPhase
+	reemitted        bool
+	providerExecuted bool
+	approvalID       string
+	name             string
+	phase            toolStreamPhase
 }
 
 func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
@@ -73,7 +76,7 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 	current, exists := state.tools[id]
 	_, seenInHistory := state.history[id]
 	historical := false
-	if !exists && part.Type == provider.PartToolResult {
+	if !exists && (part.Type == provider.PartToolResult || part.Type == provider.PartToolCall) {
 		current, historical = state.history[id]
 		exists = historical
 	}
@@ -87,7 +90,7 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 		if exists || seenInHistory || part.ToolName == "" || (part.Preliminary != nil && *part.Preliminary) {
 			return streamPartAdapterFailure
 		}
-		next = toolStreamState{name: part.ToolName, phase: toolInputOpen}
+		next = toolStreamState{name: part.ToolName, phase: toolInputOpen, providerExecuted: part.ProviderExecuted}
 		event.providerExecuted, event.dynamic = part.ProviderExecuted, part.Dynamic
 	case provider.PartToolInputDelta, provider.PartToolInputEnd:
 		if !exists || current.phase != toolInputOpen || part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary) {
@@ -97,10 +100,10 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 			next.phase = toolInputClosed
 		}
 	case provider.PartToolCall:
-		if seenInHistory || part.ToolName == "" || (part.Preliminary != nil && *part.Preliminary) || (exists && (current.phase != toolInputClosed || current.name != part.ToolName)) {
+		if part.ToolName == "" || (part.Preliminary != nil && *part.Preliminary) || (historical && (!part.ProviderExecuted || current.phase != toolCallEmitted || current.reemitted || current.name != part.ToolName)) || (!historical && exists && (current.phase != toolInputClosed || current.name != part.ToolName)) {
 			return streamPartAdapterFailure
 		}
-		next = toolStreamState{name: part.ToolName, phase: toolCallEmitted}
+		next = toolStreamState{name: part.ToolName, phase: toolCallEmitted, providerExecuted: part.ProviderExecuted, reemitted: historical, approvalID: current.approvalID}
 		event.providerExecuted, event.dynamic = part.ProviderExecuted, part.Dynamic
 	case provider.PartToolResult:
 		if !exists || part.ToolName == "" || (current.phase != toolCallEmitted && current.phase != toolResultPreliminary) || current.name != part.ToolName {
@@ -129,6 +132,47 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 		state.history[id] = next
 	} else {
 		state.tools[id] = next
+	}
+	state.textStarted = true
+	return streamPartContinue
+}
+
+type approvalRequestEvent struct {
+	Type       string                    `json:"type"`
+	ApprovalID string                    `json:"approvalId"`
+	ToolCallID string                    `json:"toolCallId"`
+	Metadata   provider.ProviderMetadata `json:"providerMetadata,omitzero"`
+}
+
+func (h *handler) processApprovalRequest(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
+	current, exists := state.tools[part.ToolCallID]
+	historical := false
+	if !exists {
+		current, exists = state.history[part.ToolCallID]
+		historical = exists
+	}
+	if !exists || !current.providerExecuted || current.phase != toolCallEmitted || current.approvalID != "" || part.ApprovalID == "" || part.ProviderExecuted || part.Dynamic != nil || part.Preliminary != nil {
+		return streamPartAdapterFailure
+	}
+	if _, exists := state.approvalIDs[part.ApprovalID]; exists {
+		return streamPartAdapterFailure
+	}
+	event := streamEvent{typeName: part.Type, id: part.ToolCallID, approvalID: part.ApprovalID, metadata: part.ProviderMetadata}
+	switch h.emitStreamEvent(w, event) {
+	case streamWriteEncodingFailure:
+		return streamPartAdapterFailure
+	case streamWriteWriterFailure:
+		return streamPartWriterFailure
+	}
+	if state.approvalIDs == nil {
+		state.approvalIDs = make(map[string]struct{})
+	}
+	state.approvalIDs[part.ApprovalID] = struct{}{}
+	current.approvalID = part.ApprovalID
+	if historical {
+		state.history[part.ToolCallID] = current
+	} else {
+		state.tools[part.ToolCallID] = current
 	}
 	state.textStarted = true
 	return streamPartContinue

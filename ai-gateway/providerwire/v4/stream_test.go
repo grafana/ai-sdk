@@ -116,7 +116,7 @@ func TestStreamFrameEncoding(t *testing.T) {
 		invalid := string([]byte{0xff})
 		_, ok := encodeStreamFrame(streamEvent{typeName: provider.PartTextDelta, id: "a", delta: invalid}, 1<<20)
 		assert.False(t, ok)
-		_, ok = encodeStreamFrame(streamEvent{typeName: provider.PartRaw}, 1<<20)
+		_, ok = encodeStreamFrame(streamEvent{typeName: provider.PartCustom}, 1<<20)
 		assert.False(t, ok)
 	})
 
@@ -319,8 +319,9 @@ func TestStreamingRuntimeTextStateAndUnsupportedParts(t *testing.T) {
 		{name: "tool", parts: []provider.StreamPart{{Type: provider.PartToolCall, ToolName: "private"}}},
 		{name: "file", parts: []provider.StreamPart{{Type: provider.PartFile, Filename: "private"}}},
 		{name: "source", parts: []provider.StreamPart{{Type: provider.PartSource, Title: "private"}}},
-		{name: "custom", parts: []provider.StreamPart{{Type: provider.PartCustom, Kind: "private"}}},
-		{name: "raw", parts: []provider.StreamPart{{Type: provider.PartRaw, RawValue: json.RawMessage(`{"private":true}`)}}},
+		{name: "custom with undotted kind", parts: []provider.StreamPart{{Type: provider.PartCustom, Kind: "private"}}},
+		{name: "custom with empty kind", parts: []provider.StreamPart{{Type: provider.PartCustom}}},
+		{name: "custom with invalid UTF-8 kind", parts: []provider.StreamPart{{Type: provider.PartCustom, Kind: "private." + invalidUTF8}}},
 		{name: "approval", parts: []provider.StreamPart{{Type: provider.PartToolApprovalRequest, ApprovalID: "private"}}},
 	}
 	for _, tc := range tests {
@@ -1284,4 +1285,99 @@ func TestInvocation_DirectInvalidStreamSetup(t *testing.T) {
 			assert.Equal(t, 1, first.callCount())
 		})
 	}
+}
+
+func TestStreamCustomContent_Output(t *testing.T) {
+	custom := func(kind string, metadata provider.ProviderMetadata) provider.StreamPart {
+		return provider.StreamPart{Type: provider.PartCustom, Kind: kind, ProviderMetadata: metadata}
+	}
+	serve := func(t *testing.T, parts ...provider.StreamPart) string {
+		t.Helper()
+		harness := newRuntimeHarness(t, testLimits())
+		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: makeStream(parts...)}, nil
+		}
+		response := harness.serve(streamRequest(`{"prompt":[]}`))
+		require.Equal(t, http.StatusOK, response.Code)
+		return response.Body.String()
+	}
+
+	t.Run("custom between open text and tool blocks", func(t *testing.T) {
+		body := serve(t,
+			provider.StreamPart{Type: provider.PartTextStart, ID: "a"},
+			provider.StreamPart{Type: provider.PartToolInputStart, ID: "call", ToolName: "lookup"},
+			custom("openai.compaction", provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"cmp_1"}`)}),
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "a", Delta: "x"},
+			provider.StreamPart{Type: provider.PartToolInputDelta, ID: "call", Delta: "{}"},
+			custom("example.kind", nil),
+			provider.StreamPart{Type: provider.PartToolInputEnd, ID: "call"},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "a"},
+			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: "{}"},
+			finishPart(),
+		)
+		requireStreamBodyMatchesSchema(t, body)
+		assert.NotContains(t, body, `"code":"internal_error"`)
+		var types []string
+		for _, frame := range strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n") {
+			var event struct {
+				Type string `json:"type"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &event))
+			types = append(types, event.Type)
+		}
+		assert.Equal(t, []string{"stream-start", "text-start", "tool-input-start", "custom", "text-delta", "tool-input-delta", "custom", "tool-input-end", "text-end", "tool-call", "finish"}, types)
+		assert.Contains(t, body, `data: {"type":"custom","kind":"openai.compaction","providerMetadata":{"openai":{"itemId":"cmp_1"}}}`)
+		assert.Contains(t, body, `data: {"type":"custom","kind":"example.kind"}`)
+	})
+
+	t.Run("metadata presence", func(t *testing.T) {
+		body := serve(t, custom("example.empty", provider.ProviderMetadata{}), custom("example.bare", nil), finishPart())
+		requireStreamBodyMatchesSchema(t, body)
+		assert.Contains(t, body, `data: {"type":"custom","kind":"example.empty","providerMetadata":{}}`)
+		assert.Contains(t, body, `data: {"type":"custom","kind":"example.bare"}`)
+	})
+
+	t.Run("response metadata after custom fails", func(t *testing.T) {
+		body := serve(t, custom("example.kind", nil), provider.StreamPart{Type: provider.PartResponseMeta, ModelID: "m"}, finishPart())
+		assert.Equal(t, 1, strings.Count(body, `"code":"internal_error"`))
+		assert.NotContains(t, body, `"type":"response-metadata"`)
+		assert.NotContains(t, body, `"type":"finish"`)
+	})
+
+	t.Run("synthetic message_start shape after response metadata", func(t *testing.T) {
+		start := custom("anthropic.message_start", provider.ProviderMetadata{"anthropic": json.RawMessage(`{"id":"msg_1","model":"claude","usage":{"input_tokens":3}}`)})
+		body := serve(t,
+			provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "msg_1", ModelID: "claude"},
+			start,
+			provider.StreamPart{Type: provider.PartTextStart, ID: "a"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "a", Delta: "hi"},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "a"},
+			finishPart(),
+		)
+		requireStreamBodyMatchesSchema(t, body)
+		assert.NotContains(t, body, `"code":"internal_error"`)
+		metadata := strings.Index(body, `"type":"response-metadata"`)
+		message := strings.Index(body, `"kind":"anthropic.message_start"`)
+		text := strings.Index(body, `"type":"text-start"`)
+		assert.True(t, metadata >= 0 && metadata < message && message < text, body)
+		assert.Contains(t, body, `"providerMetadata":{"anthropic":{"id":"msg_1","model":"claude","usage":{"input_tokens":3}}}`)
+	})
+
+	t.Run("oversized frame produces one terminal error", func(t *testing.T) {
+		limits := testLimits()
+		limits.StreamFrameBytes = 256
+		harness := newRuntimeHarness(t, limits)
+		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: makeStream(
+				custom("example.kind", provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"` + strings.Repeat("x", 1000) + `"}`)}),
+				finishPart(),
+			)}, nil
+		}
+
+		response := harness.serve(streamRequest(`{"prompt":[]}`))
+
+		assert.Equal(t, 1, strings.Count(response.Body.String(), `"code":"internal_error"`))
+		assert.NotContains(t, response.Body.String(), "secret")
+		assert.NotContains(t, response.Body.String(), `"type":"finish"`)
+	})
 }

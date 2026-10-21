@@ -18,7 +18,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -58,6 +58,41 @@ jobs:
       - name: Test
         run: mise run test-short
 
+  race:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          version: "2026.5.4"
+          experimental: true
+
+      - name: Resolve Go cache paths
+        id: go-cache
+        run: |
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
+          path: |
+            ${{ steps.go-cache.outputs.gocache }}
+            ${{ steps.go-cache.outputs.gomodcache }}
+          key: ${{ runner.os }}-go-race-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-race-
+            ${{ runner.os }}-go-
+
+      - name: Test with the race detector
+        run: mise run test-race
+
   docs-lint:
     runs-on: ubuntu-latest
     permissions:
@@ -67,7 +102,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -85,7 +120,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -118,7 +153,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -154,7 +189,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -205,7 +240,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           cache: false
           version: "2026.5.4"
@@ -273,8 +308,11 @@ jobs:
             --mount "type=bind,source=$config,target=/etc/gateway/models.yaml,readonly" \
             --env GRAFANA_AI_GATEWAY_CONFIG_FILE=/etc/gateway/models.yaml \
             --env ANTHROPIC_API_KEY=smoke-test-not-a-secret \
-            ai-gateway:ci --deployment.mode=development --auth.mode=cloud-gateway \
-            --server.listen-address=:8080 --server.operational-listen-address=:8081)
+            ai-gateway:ci --deployment.mode=development \
+            --auth.jwks-url=https://auth.example.invalid/jwks \
+            --server.private-listen-address=127.0.0.1:8082 \
+            --server.cloud-listen-address=127.0.0.1:8080 \
+            --server.operational-listen-address=127.0.0.1:8081)
           for ((attempt = 0; attempt < 30; attempt++)); do
             if docker exec "$container" timeout 2 bash -c '
               exec 3<>/dev/tcp/127.0.0.1/8081
@@ -282,6 +320,12 @@ jobs:
               read -r status <&3
               [[ "$status" == *" 200 "* ]]
             '; then
+              docker exec "$container" timeout 2 bash -c '
+                exec 3<>/dev/tcp/127.0.0.1/8082
+                printf "GET /api/v1/aisdk/config HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3
+                read -r status <&3
+                [[ "$status" == *" 401 "* ]]
+              '
               exit 0
             fi
             if [ "$(docker inspect --format '{{.State.Running}}' "$container")" != true ]; then
@@ -302,7 +346,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
@@ -369,6 +413,7 @@ jobs:
           github.repository == 'grafana/ai-sdk' }}
     needs:
       - ci
+      - race
       - docs-lint
       - module-resolution
       - parity-baseline

@@ -815,7 +815,7 @@ func TestConvertToModelMessages_ApprovalResponses(t *testing.T) {
 				assert.Equal(t, provider.ContentPartTypeToolResult, toolMsg.Content[1].Type)
 				require.NotNil(t, toolMsg.Content[1].Output)
 				assert.Equal(t, provider.ToolOutputExecutionDenied, toolMsg.Content[1].Output.Type)
-				assert.Equal(t, "user denied", toolMsg.Content[1].Output.Reason)
+				assert.Equal(t, new("user denied"), toolMsg.Content[1].Output.Reason)
 			},
 		},
 	}

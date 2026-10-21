@@ -4,6 +4,7 @@ import { createServer, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
+import { generateText } from "ai";
 import { createGateway } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
@@ -209,10 +210,8 @@ describe("Go and exact-pinned Gateway differential", () => {
     const expected = structuredClone(original);
     const assistant = expected.prompt.find((message: any) => message.role === "assistant");
     delete assistant.content.find((part: any) => part.type === "tool-call").providerExecuted;
-    delete assistant.content.find((part: any) => part.toolCallId === "call-denied").output.reason;
     const tool = expected.prompt.find((message: any) => message.role === "tool");
     delete tool.content.find((part: any) => part.type === "tool-approval-response").reason;
-    delete expected.responseFormat.name;
     delete expected.responseFormat.description;
     delete expected.tools[0].description;
     const server = await endpoint(JSON.stringify(unary));
@@ -314,6 +313,43 @@ describe("Go and exact-pinned Gateway differential", () => {
         assert.equal(got[1].dynamic, false);
         assert.equal(got[2].dynamic, false);
         assert.equal(got[2].preliminary, false);
+      } finally { await server.stop(); }
+    }
+  });
+
+  it("matches custom unary content and stream events for known and unknown kinds", async () => {
+    const custom = [
+      { type: "custom", kind: "openai.compaction", providerMetadata: { openai: { type: "compaction", itemId: "cmp_1", encryptedContent: "ENC", nested: { none: null, no: false, zero: 0, empty: "" } } } },
+      { type: "custom", kind: "anthropic.fallback", providerMetadata: { anthropic: { type: "fallback", from: { model: "a" }, to: { model: "b" } } } },
+      { type: "custom", kind: "example.future_block" },
+      { type: "custom", kind: "example.empty", providerMetadata: {} },
+    ];
+    const project = (part: any, emptyMetadataIsAbsent = false) => part.type === "custom"
+      ? { type: part.type, kind: part.kind, metadata: part.providerMetadata === undefined || (emptyMetadataIsAbsent && Object.keys(part.providerMetadata).length === 0) ? "absent" : JSON.stringify(part.providerMetadata) }
+      : { type: part.type, id: part.id, text: part.text, delta: part.delta };
+    for (const streaming of [false, true]) {
+      const values = streaming
+        ? [{ type: "stream-start", warnings: [] }, custom[0], { type: "text-start", id: "t" }, { type: "text-delta", id: "t", delta: "hi" }, custom[1], { type: "text-end", id: "t" }, custom[2], custom[3],
+          { type: "finish", finishReason: { unified: "stop" }, usage: { inputTokens: {}, outputTokens: {} } }]
+        : [{ type: "text", text: "hi" }, ...custom];
+      const payload = streaming ? values.map(value => `data: ${JSON.stringify(value)}\n\n`).join("") : JSON.stringify({ ...unary, content: values });
+      const server = await endpoint(payload, 200, streaming ? "text/event-stream" : "application/json");
+      try {
+        const model = createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant");
+        const tsParts: any[] = [];
+        if (streaming) {
+          for await (const part of (await model.doStream({ prompt: [] })).stream) tsParts.push(part);
+        } else {
+          tsParts.push(...(await model.doGenerate({ prompt: [] })).content);
+        }
+        const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: streaming ? "stream" : "generate", options: { prompt: [] } });
+        assert.equal(go.error, undefined);
+        const goParts: any[] = streaming ? go.parts : go.result.content;
+        const isContent = (part: any) => part.type === "custom" || part.type === "text" || part.type === "text-start" || part.type === "text-delta" || part.type === "text-end";
+        const expected = tsParts.filter(isContent).map((part) => project(part));
+        assert.deepEqual(goParts.filter(isContent).map((part) => project(part, true)), tsParts.filter(isContent).map((part) => project(part, true)));
+        assert.equal(expected.find((part) => part.kind === "example.empty")?.metadata, "{}");
+        assert.deepEqual(expected.filter((part) => part.type === "custom").map((part) => part.kind), ["openai.compaction", "anthropic.fallback", "example.future_block", "example.empty"]);
       } finally { await server.stop(); }
     }
   });
@@ -448,4 +484,43 @@ describe("Go and exact-pinned Gateway differential", () => {
       } finally { await server.stop(); }
     }
   });
+});
+
+describe("approval and denial presence differential", () => {
+  for (const mode of ["generate","stream"] as const) it(`preserves approval IDs, opaque metadata and nested result options in ${mode}`,async()=>{
+    const metadata={future:{empty:{},array:[],false:false,zero:0},openai:{itemId:"item",approvalId:"native"}};
+    const approval={type:"tool-approval-request",approvalId:"native",toolCallId:"call",providerMetadata:metadata};
+    const body=mode==="generate"?JSON.stringify({...unary,content:[approval]}):`data: ${JSON.stringify(approval)}\n\n`;
+    const server=await endpoint(body,200,mode==="generate"?"application/json":"text/event-stream");
+    try {
+      const outputOptions={future:{empty:{},false:false}};
+      const outputs:any[]=[{type:"execution-denied"},{type:"execution-denied",reason:""},{type:"execution-denied",reason:"policy",providerOptions:outputOptions},{type:"text",value:"",providerOptions:outputOptions},{type:"json",value:false,providerOptions:outputOptions},{type:"error-text",value:"error",providerOptions:outputOptions},{type:"error-json",value:{error:true},providerOptions:outputOptions},{type:"content",value:[{type:"text",text:"",providerOptions:outputOptions},{type:"file",data:{type:"data",data:"AQI="},mediaType:"image/png",providerOptions:outputOptions}]}];
+      const options:LanguageModelV4CallOptions={prompt:[{role:"tool",content:[{type:"tool-approval-response",approvalId:"native",approved:false,providerOptions:outputOptions},...outputs.map((output,index)=>({type:"tool-result" as const,toolCallId:`c-${index}`,toolName:"lookup",output}))]}]};
+      const model=createGateway({apiKey:"test",baseURL:server.baseURL})("assistant");
+      let ts:any[];
+      if(mode==="generate")ts=(await model.doGenerate(options)).content;else{ts=[];for await(const part of (await model.doStream(options)).stream)ts.push(part);}
+      const go=await captureGoClient(binary,{baseURL:server.baseURL,accessToken:"token",modelID:"assistant",mode,options});
+      assert.equal(go.error,undefined);assert.deepEqual(mode==="generate"?go.result.content:go.parts,ts);
+      assert.deepEqual(server.requests[1].body,server.requests[0].body);assertValidRequest(server.requests[1].body,"approval and nested options");
+    }finally{await server.stop();}
+  });
+});
+
+// Direct V4 retains these options (above), while pinned high-level core normalizes them.
+it("pinned high-level approval normalization drops response options only", async () => {
+  const server = await endpoint(JSON.stringify(unary));
+  try {
+    await generateText({
+      model: createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant"),
+      messages: [
+        { role: "assistant", content: [
+          { type: "tool-call", toolCallId: "call", toolName: "mcp.lookup", input: {}, providerExecuted: true },
+          { type: "tool-approval-request", approvalId: "approval", toolCallId: "call" },
+        ] },
+        { role: "tool", content: [{ type: "tool-approval-response", approvalId: "approval", approved: false, providerExecuted: true, ...{ providerOptions: { future: { marker: true } } } }] },
+      ], maxRetries: 0,
+    });
+    const decision = (server.requests[0].body as any).prompt.flatMap((message: any) => message.content).find((part: any) => part.type === "tool-approval-response");
+    assert.deepEqual(decision, { type: "tool-approval-response", approvalId: "approval", approved: false });
+  } finally { await server.stop(); }
 });

@@ -496,7 +496,7 @@ func TestBuildParams_OutputSchemaTextResultsAreJSONEncoded(t *testing.T) {
 		Prompt: []provider.Message{provider.NewToolMessage(
 			provider.ToolResultPart("call_text", "search", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "The weather is sunny"}),
 			provider.ToolResultPart("call_error", "search", &provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "Error: boom"}),
-			provider.ToolResultPart("call_denied", "search", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: "User denied the tool execution"}),
+			provider.ToolResultPart("call_denied", "search", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: new("User denied the tool execution")}),
 			provider.ToolResultPart("call_without_schema", "lookup", &provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "Error: unchanged"}),
 		)},
 		Tools: []provider.Tool{
@@ -771,7 +771,7 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 				Type:       provider.ContentPartTypeToolResult,
 				ToolCallID: "denied",
 				ToolName:   "search",
-				Output:     &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: "no"},
+				Output:     &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: new("no")},
 			})},
 			Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDWebSearch, Name: "search"}},
 			ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &noStore}),
@@ -993,7 +993,7 @@ func TestBuildParams_MCPApprovalContinuation(t *testing.T) {
 	approved := provider.ToolApprovalResponsePart("approval_1", true, "")
 	deniedResult := provider.ToolResultPart("call_1", "mcp_tool", &provider.ToolResultOutput{
 		Type:            provider.ToolOutputExecutionDenied,
-		Reason:          "denied",
+		Reason:          new("denied"),
 		ProviderOptions: provider.BuildProviderOptions(OpenAIPartOptions{ApprovalID: "approval_1"}),
 	})
 	prompt := []provider.Message{provider.NewToolMessage(approved, approved, deniedResult)}
@@ -1378,7 +1378,7 @@ func TestBuildParams_JSONSchemaStructuredOutput(t *testing.T) {
 		Prompt: []provider.Message{provider.UserText("hi")},
 		ResponseFormat: &provider.ResponseFormat{
 			Type:   provider.ResponseFormatJSON,
-			Name:   "weather",
+			Name:   new("weather"),
 			Schema: json.RawMessage(`{"type":"object"}`),
 		},
 	})

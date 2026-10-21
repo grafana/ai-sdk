@@ -146,7 +146,7 @@ type toolResultBlock struct {
 // are stringified into Text to match upstream, so there is no dedicated json
 // field.
 type toolResultContent struct {
-	Text     string         `json:"text,omitempty"`
+	Text     *string        `json:"text,omitempty"`
 	Image    *imageBlock    `json:"image,omitempty"`
 	Video    *videoBlock    `json:"video,omitempty"`
 	Document *documentBlock `json:"document,omitempty"`

@@ -362,7 +362,7 @@ func TestToolResultOutput_MarshalValueUnion(t *testing.T) {
 		{"error-text", ToolResultOutput{Type: ToolOutputErrorText, Text: "boom"}, `{"type":"error-text","value":"boom"}`},
 		{"json", ToolResultOutput{Type: ToolOutputJSON, JSON: json.RawMessage(`{"a":1}`)}, `{"type":"json","value":{"a":1}}`},
 		{"content", ToolResultOutput{Type: ToolOutputContent, Content: []ToolResultContentValue{{Type: ToolContentText, Text: "hi"}}}, `{"type":"content","value":[{"type":"text","text":"hi"}]}`},
-		{"execution-denied", ToolResultOutput{Type: ToolOutputExecutionDenied, Reason: "nope"}, `{"type":"execution-denied","reason":"nope"}`},
+		{"execution-denied", ToolResultOutput{Type: ToolOutputExecutionDenied, Reason: new("nope")}, `{"type":"execution-denied","reason":"nope"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

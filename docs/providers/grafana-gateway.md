@@ -15,7 +15,11 @@ and the [glossary](../concepts/gateway-glossary.md).
 
 ## Inspect execution overviews and failures
 
-Unary results and stream finish metadata may contain `gateway.execution`.
+Private configured-model results and stream finish metadata may contain
+`gateway.execution`. Cloud BYOK calls can return available event-local SSE
+native failure summaries without configured catalog context. They do not yet
+return Gateway attempt overviews or unary/setup native summaries; absence is a
+capability gap, not a confidentiality rule or evidence that no attempts occurred.
 It identifies the requested/canonical public model and ordered observed attempts,
 including configured provider instance, provider and native model, outcome,
 and optional native failure summaries. Earlier eligible failures remain
@@ -66,12 +70,41 @@ or display of native diagnostics. These fields
 are not automatically UI message metadata or display content; map only
 deliberately selected values for your frontend.
 
+## Inspect raw provider events
+
+Pass `aisdk.WithIncludeRawChunks()` to `StreamText` (or set `IncludeRawChunks`
+on direct `DoStream` calls) to receive the selected provider's native stream
+events as `aisdk.StreamRaw` parts, in order with the normalized parts. Without
+the option, the Gateway sends no raw events. Unary calls accept the option and
+return no raw output.
+
+Raw events are diagnostic. Their shape is whatever the provider sends and can
+change without notice, so do not build application logic on them. Events keep
+their JSON values but not their exact bytes: whitespace, key order and escaping
+can differ from the provider's. A native event that is not valid UTF-8 JSON, or
+that repeats an object key, is skipped. Native provider error events pass
+through, so they can contain more detail than the Gateway's own error events.
+The Gateway does not log or export raw values.
+
+Before writing an event, the Gateway removes MCP tool credentials that OpenAI
+echoes from the request: the `headers` object becomes `null`, `authorization`
+is removed, and `server_url` loses userinfo and the `access_token`, `api_key`
+and `X-Amz-*` credential query keys, or is removed if it cannot be parsed.
+Other query keys pass through.
+
+Requesting raw output can make an otherwise successful stream fail. Raw parts
+use the stream part budget, and a raw event larger than the frame limit ends
+the stream with an error and no finish; it is never truncated. To allow larger
+events, raise the Gateway's stream frame limit and the client's
+`Limits.StreamEventBytes` together.
+
 ## Authenticate the client
 
 Ask your Gateway operator for the URL and credentials your application should
 use. Include the API prefix in the URL, for example
-`https://gateway.example.com/api/v1/aisdk`. For Grafana Cloud, create a client with
-your stack ID and Cloud Access Policy (CAP) token:
+`https://gateway.example.com/api/v1/aisdk`. Cloud access uses request-supplied
+provider keys, not configured accounts. Create its client with your stack ID and
+Cloud Access Policy (CAP) token:
 
 ```go
 client, err := grafana.NewWithCloudCredentials(grafana.CloudCredentialsConfig{
@@ -84,15 +117,20 @@ if err != nil {
 }
 ```
 
-For a separately provided JWT-enabled URL, use `NewWithTokenExchange` or
-`NewWithAccessToken`. See [Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
+For a self-hosted static-key URL, use `NewWithAccessToken` with the operator's
+opaque key from your server environment. No Cloud stack, CAP, JWT parsing or
+exchange is needed. The same client supports discovery, unary and streaming.
+For a private JWT URL, use `NewWithTokenExchange` or `NewWithAccessToken`. See [Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
 for credential setup and Go/Vercel examples. Use HTTPS and configure
 credentials through the client rather than adding authentication headers to
 individual calls.
 
 ## Generate or stream a response
 
-Choose a public model ID from your operator or the model list below:
+For private configured-account calls, choose a public model ID from your operator
+or the model list below. This example assumes a private JWT client. Cloud calls
+use a native `provider/model` ID and provider keys; see
+[Use your own provider credentials](#use-your-own-provider-credentials).
 
 ```go
 model, err := client.LanguageModel(modelID)
@@ -113,7 +151,29 @@ See [Generate text from Go](../getting-started/backend-only.md#stream-text-as-it
 for the stream-consumption pattern, or [Full-stack chat](../getting-started/full-stack-chat.md)
 to connect a streaming response to your frontend. Consume or cancel every stream.
 
+## Receive generated files
+
+When a configured model emits generated files, the Gateway transports them in
+unary and streaming responses. The low-level Grafana client preserves inline
+base64, URL strings, optional original URLs and opaque provider metadata. Inline
+bytes are encoded once. Provider-local generated filenames are omitted because
+they are not part of the registered output contract.
+
+High-level generation resolves file URLs into file bytes using the SDK's existing
+download policy. The Gateway itself does not download or rewrite media URLs.
+Response and stream-frame limits include encoded media and metadata; oversized
+output fails before a successful body or file frame is written. A selected file
+commits its fallback candidate, so later failures do not replay generation.
+
+Operator capture and application middleware capture are independently configured;
+neither setting removes files or ordinary metadata from caller responses. Capture
+formats can differ from the provider wire representation. This transport support
+does not add image, speech or video generation capabilities to native adapters.
+
 ## Discover and select public models
+
+Discovery is private configured-account functionality. Cloud/BYOK discovery
+returns an explicit HTTP 400 invalid-request error, not an empty list.
 
 Use `client.ListModels(ctx)` to build a model picker:
 
@@ -158,9 +218,10 @@ const { models } = await fetchConfiguredModels({
 const aliases = models[0]?.gateway?.aliases;
 ```
 
-For Grafana Cloud, use `headers: { Authorization: \`Bearer ${stackID}:${capToken}\` }`
-instead. Use the same Gateway URL and credentials as your client; see the
-[authentication guide](../guides/gateway-authentication.md).
+A static key or private access JWT may alternatively use bearer `Authorization`; never send
+both access headers. Use the same private Gateway URL and credentials as your
+client; see the [authentication guide](../guides/gateway-authentication.md).
+This helper does not support Cloud/BYOK discovery.
 
 ### Handle large catalogs
 
@@ -183,6 +244,27 @@ and [OpenAI](openai.md#configure-a-call) examples with your Gateway model.
 Choose a model that supports the file types, tools and reasoning settings your
 application needs. When using fallback, provide appropriate settings for each
 provider that may receive the request.
+
+## Structured output
+
+Use the SDK's [structured output helpers](../guides/structured-output.md) with
+the Gateway in unary or streaming calls. JSON mode and object schemas reach
+the selected native adapter, including configured fallback candidates. The
+Gateway returns the native text; your SDK parses and validates the final object.
+Schemas must have an object root. Their contents stay opaque until native
+provider validation, so a valid Gateway request can still be rejected by a model.
+
+Schema support remains provider-specific. OpenAI Responses and Anthropic use
+their native structured-output behavior. Configured OpenAI-compatible routes
+currently retain their default JSON-mode fallback and return a warning when a
+schema is supplied; the standalone compatible provider supports explicit schema
+opt-in. The Gateway does not force schema support for those routes.
+
+When migrating direct `provider.ResponseFormat` literals, supply a pointer for
+`Name`: `new("answer")` supplies a name and `new("")` explicitly supplies an
+empty one. Omit it to retain the native default. `output.WithName("")` also
+preserves explicit emptiness. Missing and empty descriptions are equivalent.
+See the [provider API reference](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#ResponseFormat).
 
 ## Function tools
 
@@ -207,15 +289,50 @@ For Anthropic MCP, use distinct server names and HTTPS URLs without embedded
 credentials or fragments. Include the server configuration again when continuing
 the conversation, along with prior calls, results and provider metadata.
 
-Tool approvals, custom tool-result formats and generated media responses are
-not supported.
+Provider approval requests can be approved or denied and resumed through unary
+or streaming calls, including configured fallback routes. Keep the returned
+approval ID distinct from the tool-call ID. The high-level SDK owns application
+approval history; the V4 prompt carries tool-role approval responses, with an
+explicit boolean decision. The Gateway does not execute or persist approvals.
+
+For OpenAI hosted MCP, preserve the link between the two returned IDs before
+resuming: find the provider-executed tool call with the approval's `toolCallId`
+and set that call's `providerOptions.openai.approvalRequestId` to the returned
+`approvalId`, retaining its other options. The registered native adapter uses
+this option to associate the later result with the original tool call. Apply
+this step to high-level response messages as well as direct provider prompts;
+the registered high-level SDK does not add it automatically. Send the decision
+with the same approval ID and retain the provider ownership marker in
+application history.
+
+Execution-denied results preserve an absent reason separately from an explicitly
+empty reason. In Go, `ToolResultOutput.Reason` is now `*string`: use nil for an
+absent reason and `new("")` to preserve empty text. Existing string-valued
+constructors must be migrated to pointers. Approval-response reasons remain
+strings; empty and absent both mean no reason.
+
+Registered output options and nested text/file result options reach native
+adapters. The `content` output wrapper has no `providerOptions` field. Generated
+file transport is described in [Receive generated files](#receive-generated-files).
+
+## Preserve custom content
+
+Some providers return content that has no standard type, such as OpenAI
+compaction items. The Gateway returns it as custom content with a `kind`, for
+example `openai.compaction`, and provider metadata. Keep these parts in the
+history you send back, with the metadata as their provider options, so the same
+provider can continue the conversation. Other providers ignore custom content
+they do not recognize, so it is safe to use with fallback chains.
+
+If no model in the chain can accept the custom content in a tool result, the
+Gateway returns a non-retryable invalid-request error.
 
 ## Use your own provider credentials
 
-Bring your own key (BYOK) requires a deployment that accepts request-supplied
-provider credentials. The bundled Gateway currently accepts configured models
-only. Confirm BYOK availability with your operator before using these examples;
-Gateway authentication is still required.
+Cloud calls use bring your own key (BYOK): send your provider credentials with
+each request. Confirm the Cloud/BYOK URL and availability with your operator;
+Gateway authentication is still required. These calls never use configured
+accounts, aliases or discovery; native providers decide model availability.
 
 For BYOK, select the provider's native model using a `provider/model` ID rather
 than a configured model or alias. For example, pass an OpenAI key with an
@@ -268,9 +385,9 @@ Supply credentials on each call, including follow-up conversation steps. If you
 provide multiple accounts, put them in priority order. Account fallback may
 advance after an eligible failure, but authentication failures stop the chain.
 
-Omit an account's `baseURL` to use the native provider endpoint. If you need a
-custom endpoint, ask your operator to approve the exact URL before adding it to
-the account. This is separate from the client URL, which points to your Gateway.
+Omit an account's `baseURL` to use the native provider endpoint. The bundled
+service does not configure custom endpoint approvals, so other URLs are rejected.
+This is separate from the client URL, which points to your Gateway.
 OpenAI accounts can also specify `organization` and `project`; leave them out
 when you do not need them. Anthropic accounts use the key and optional base URL.
 
@@ -290,9 +407,9 @@ Start with metadata-only logs and avoid unnecessary payload/error-message captur
 
 ## Configure fallback
 
-Your Gateway operator can configure a primary model and ordered backups behind
-one public model ID. Your application keeps using that ID; it does not need to
-select backups itself.
+For private configured-account calls, your Gateway operator can configure a
+primary model and ordered backups behind one public model ID. Your application
+keeps using that ID; it does not need to select backups itself.
 
 Choose backups that support your required tools, file types, reasoning settings
 and conversation history. Each call starts with the primary again, including

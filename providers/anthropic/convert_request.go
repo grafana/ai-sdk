@@ -15,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/grafana/ai-sdk/internal/jsonschema"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -78,8 +79,8 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 		}
 	}
 
-	var schemaMap map[string]any
-	if err := json.Unmarshal(rf.Schema, &schemaMap); err != nil {
+	schemaMap, err := jsonschema.DecodeObject(rf.Schema)
+	if err != nil {
 		return buildResult{
 			warnings: []provider.Warning{{
 				Type:    provider.WarnUnsupported,
@@ -1206,13 +1207,7 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 					continue
 				}
 				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{OfFallback: fallback})
-				continue
 			}
-			*warnings = append(*warnings, provider.Warning{
-				Type:    provider.WarnUnsupported,
-				Feature: "customContent",
-				Details: fmt.Sprintf("Anthropic does not support custom content part kind %q", p.Kind),
-			})
 		case provider.ContentPartTypeReasoningFile:
 			*warnings = append(*warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
@@ -2007,6 +2002,21 @@ func appendToolResultBlock(
 	})
 }
 
+func customToolReference(opts provider.ProviderOptions) (anthropic.BetaToolResultBlockParamContentUnion, bool) {
+	var options struct {
+		Type     string          `json:"type"`
+		ToolName json.RawMessage `json:"toolName"`
+	}
+	if raw := extractRawJSON(opts); raw == nil || json.Unmarshal(raw, &options) != nil || options.Type != "tool-reference" {
+		return anthropic.BetaToolResultBlockParamContentUnion{}, false
+	}
+	block := map[string]any{"type": "tool_reference"}
+	if len(options.ToolName) > 0 {
+		block["tool_name"] = options.ToolName
+	}
+	return param.Override[anthropic.BetaToolResultBlockParamContentUnion](block), true
+}
+
 func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) []anthropic.BetaToolResultBlockParamContentUnion {
 	if output == nil {
 		return []anthropic.BetaToolResultBlockParamContentUnion{
@@ -2023,9 +2033,9 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 			{OfText: &anthropic.BetaTextBlockParam{Text: string(output.JSON)}},
 		}
 	case provider.ToolOutputExecutionDenied:
-		reason := output.Reason
-		if reason == "" {
-			reason = "tool execution was denied"
+		reason := "Tool call execution denied."
+		if output.Reason != nil {
+			reason = *output.Reason
 		}
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: reason}},
@@ -2058,12 +2068,24 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 						}
 					}
 				}
+			case provider.ToolContentCustom:
+				if reference, ok := customToolReference(v.ProviderOptions); ok {
+					blocks = append(blocks, reference)
+				} else if warnings != nil {
+					*warnings = append(*warnings, provider.Warning{
+						Type:    provider.WarnOther,
+						Message: "unsupported custom tool content part",
+					})
+				}
 			}
 		}
 		if len(blocks) == 0 {
-			return []anthropic.BetaToolResultBlockParamContentUnion{
-				{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
+			if len(output.Content) == 0 {
+				return []anthropic.BetaToolResultBlockParamContentUnion{
+					{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
+				}
 			}
+			return []anthropic.BetaToolResultBlockParamContentUnion{}
 		}
 		return blocks
 	default:

@@ -1,8 +1,8 @@
 ## Purpose
 
 Define the production ProviderWire V4 unary text and client-executed function-tool runtime and the observable contract proven against the registered Gateway client.
-## Requirements
 
+## Requirements
 ### Requirement: Constructed language-model handler
 
 The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for relative `POST /language-model` unary and streaming requests. Construction SHALL require a non-nil host-owned request selector independent of catalog interfaces and positive limits for request bytes, unary response bytes, provider stream-part count, complete SSE frame bytes, total model duration, stream idle duration, and bounded post-cancellation drain duration.
@@ -111,8 +111,12 @@ The handler SHALL map call-level, message-level and text-part provider options t
 Namespace names SHALL be compared exactly, because provider-option namespaces are case-significant. Provider options carried by a message role or part type the runtime does not support SHALL NOT be inspected, so such a request SHALL report the family of that role or part type. The handler SHALL map body-carried call headers to provider call headers, preserving each key's original case.
 
 #### Scenario: Unsupported custom-part options are not interpreted during mapping
-- **WHEN** a schema-valid request has no unsupported features except a `custom` content part of kind `example.custom` carrying an object-valued opaque provider-options namespace
-- **THEN** complete schema validation SHALL succeed before supported-subset mapping reports the `custom-content` family without interpreting that part's provider options
+- **WHEN** a schema-valid request has an assistant `custom` content part of kind `example.custom` carrying an object-valued opaque provider-options namespace
+- **THEN** complete schema validation SHALL succeed and, because custom content is now supported under gateway-custom-content, the part's options SHALL reach the model unchanged without a `custom-content` refusal
+
+#### Scenario: Options on a still-unsupported part type are not interpreted
+- **WHEN** a schema-valid request has no unsupported features except a tool-approval response carrying an object-valued opaque provider-options namespace
+- **THEN** supported-subset mapping SHALL report the `tool-approvals` family without interpreting that part's provider options
 
 #### Scenario: Supported namespace and header case is preserved
 - **WHEN** a supported text request carries distinct `anthropic` and `Anthropic` provider-option namespaces and a body header named `X-Request-ID`
@@ -136,7 +140,7 @@ A body-carried header whose name belongs to the runtime's own protocol namespace
 
 ### Requirement: Unsupported capability families
 
-Schema-valid custom content, provider tools and tool approvals, structured output, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers.
+Schema-valid provider tools and tool approvals SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Structured output SHALL execute within gateway-structured-output. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers. Requested raw output SHALL follow gateway-raw-output.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family
@@ -150,17 +154,25 @@ Schema-valid custom content, provider tools and tool approvals, structured outpu
 - **WHEN** a valid assistant reasoning part carries supported scoped continuation options
 - **THEN** the model SHALL receive them without enabling deferred capability families
 
+#### Scenario: Custom content is supported
+- **WHEN** a valid request carries assistant custom history or custom tool-result content
+- **THEN** it SHALL execute within gateway-custom-content without a blanket unsupported-family failure
+
 #### Scenario: Ordinary files no longer trigger blanket rejection
 - **WHEN** a schema-valid unary or streaming request contains only supported text, ordinary files, supported tool history, and permitted message/file options
 - **THEN** it SHALL map without a blanket files or provider-options failure and continue through the existing execution boundary
 
+#### Scenario: Custom content no longer triggers rejection
+- **WHEN** a schema-valid unary or streaming request contains assistant custom history or custom tool-result content
+- **THEN** it SHALL map without a `custom-content` or `tools` refusal and continue through the existing execution boundary
+
 ### Requirement: Supported function continuation and deferred result option scopes
 
-Function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools and gateway-streaming-function-tools subsets, including the ordinary file-result extension. Function-tool and ordinary file-entry provider options SHALL be supported within those subsets; deferred output-level and non-file nested result options SHALL remain unsupported.
+Function definitions/choices and assistant-call/tool-result history SHALL execute only within the gateway-unary-function-tools and gateway-streaming-function-tools subsets, including the ordinary file-result and custom-result extensions. Function-tool, ordinary file-entry and custom-entry provider options SHALL be supported within those subsets; deferred output-level and text-entry nested result options SHALL remain unsupported.
 
 #### Scenario: Supported function continuation and deferred result option scopes
-- **WHEN** a request carries function definitions and file-bearing tool history with file-entry options
-- **THEN** it SHALL execute only in the unary/streaming function subsets without enabling deferred output-level or non-file nested options
+- **WHEN** a request carries function definitions and tool history whose content has file entries with options and custom entries with options
+- **THEN** it SHALL execute only in the unary/streaming function subsets without enabling deferred output-level or text-entry nested options
 
 ### Requirement: Reasoning history options and unsupported-family precedence boundary
 
@@ -306,24 +318,48 @@ A child goroutine with panic recovery and buffered completion SHALL bound handle
 - **THEN** panic-recovered buffered completion SHALL keep handler latency bounded, while the permanently blocked model may retain its child goroutine
 
 ### Requirement: Fixed privacy-safe errors
-
 Every runtime error response SHALL retain fixed classified status, message, type, code, and `param: null` fields from protocol-owned definitions.
 
 #### Scenario: Fixed privacy-safe errors policy
 - **WHEN** the runtime encodes the corresponding response or stream event
 - **THEN** Typed standard JSON encoding SHALL preserve the canonical base response bytes. Invalid request, model-not-found, rate-limit, overload, failed-dependency, upstream, timeout, cancellation, and internal categories SHALL use Gateway-recognized error types and status-derived retryability. Unknown or invalid internal categories SHALL fall back to the fixed internal-error document.
 
+#### Scenario: Authenticated fixed error policy
+- **WHEN** configured or BYOK invocation produces a classified failure
+- **THEN** Every runtime error response SHALL retain fixed classified status, message, type, code, and `param: null` fields from protocol-owned definitions.
+- **AND** Typed standard JSON encoding SHALL preserve the canonical base response bytes.
+- **AND** Invalid request, model-not-found, rate-limit, overload, failed-dependency, upstream, timeout, cancellation, and internal categories SHALL use Gateway-recognized error types and status-derived retryability.
+- **AND** Unknown or invalid internal categories SHALL fall back to the fixed internal-error document.
+- **AND** Arbitrary aggregate/configuration/cause trees and raw bodies/headers SHALL NOT be attached as diagnostic shortcuts. Gateway-produced native summary fields SHALL protect exact configured provider/exporter keys under gateway-attempt-failure-evidence, preserving unrelated BYOK echoes and source data.
+- **AND** Optional native candidate-local summaries and observed configured identity MAY accompany the base error under gateway-attempt-failure-evidence, within complete-response limits; they SHALL NOT change classification or retryability.
+- **AND** Host-owned BYOK validation and unsupported-operation failures SHALL use fixed approved messages without copying rejected values or private diagnostics.
+- **AND** Stopped or exhausted credential fallback SHALL retain existing fallback error propagation and safe runtime classification rather than use a blanket exhaustion status.
+- **AND** Request-only selections SHALL remain eligible for available event-local SSE native summaries. Their current missing unary/setup summary and overview capabilities SHALL be tracked under #317, not treated as a confidentiality policy.
+
+#### Scenario: Actionable credential shape failure
+- **WHEN** a credential entry is missing apiKey or a supplied provider array exceeds the account count
+- **THEN** the invalid-request response SHALL identify the known field/capability without copying the entry or value
+
+#### Scenario: Discovery unsupported for BYOK
+- **WHEN** authenticated BYOK access requests catalog discovery
+- **THEN** the host SHALL emit HTTP 400, invalid_request_error, invalid_request, param null and a fixed unsupported-discovery message
+
 #### Scenario: Provider API failure
 - **WHEN** `DoGenerate` returns an API, transport, timeout, cancellation, or arbitrary internal error
-- **THEN** the handler SHALL retain the corresponding fixed safe fields without serializing arbitrary causes; optional execution attribution SHALL follow gateway-attempt-failure-evidence
+- **THEN** the handler SHALL retain the corresponding fixed safe fields without serializing arbitrary causes; optional native configured execution attribution SHALL follow gateway-attempt-failure-evidence
 
 #### Scenario: Unknown model
-- **WHEN** catalog resolution reports an unknown public model
+- **WHEN** configured catalog resolution reports an unknown public model
 - **THEN** the handler SHALL return the fixed model-not-found document
 
 #### Scenario: Client classification
-- **WHEN** the registered Gateway client consumes a fixed error document
-- **THEN** its status, type, and retryability SHALL map to the expected client class
+- **WHEN** Go and pinned Vercel consume BYOK validation, exhaustion or discovery failures
+- **THEN** status/type/retryability SHALL match the existing client categories without misclassifying provider rejection as failed Gateway authentication
+
+#### Scenario: BYOK provider echoes request accounts
+- **WHEN** authenticated request-only selection receives a native failure containing request-account keys or identifiers before or after stream commitment
+- **THEN** fixed classified error fields SHALL remain unchanged, and existing SSE native summaries SHALL preserve unrelated BYOK echoes and protect exact configured provider/exporter-key matches independently of catalog attribution
+- **AND** absent BYOK unary/setup summaries and attempt overviews SHALL reflect today's missing capability, not a permanent output-suppression rule
 
 ### Requirement: Runtime error detail exclusions
 
@@ -335,7 +371,7 @@ Arbitrary cause trees and raw bodies/headers SHALL NOT be serialized by failure 
 
 ### Requirement: Minimal unary success response
 
-A successful response SHALL contain ordered supported text, function-tool-call, source, reasoning and reasoning-file content, finishReason, usage and a warnings array. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Supported result/content providerMetadata SHALL retain opaque namespace objects and represented presence under gateway-provider-metadata.
+A successful response SHALL contain ordered supported text, function-tool-call, source, reasoning, reasoning-file and custom content, finishReason, usage and a warnings array. The handler SHALL accept only registered finish reasons and non-negative usage counts no greater than JavaScript's maximum safe integer. Supported result/content providerMetadata SHALL retain opaque namespace objects and represented presence under gateway-provider-metadata.
 
 #### Scenario: Reasoning-only paid success
 - **WHEN** a provider returns a valid reasoning-only result
@@ -345,6 +381,10 @@ A successful response SHALL contain ordered supported text, function-tool-call, 
 #### Scenario: Valid text result
 - **WHEN** the model returns text, a registered finish reason and valid usage without warnings or Response
 - **THEN** the handler SHALL preserve those values, emit warnings as an empty array and omit response
+
+#### Scenario: Valid custom result
+- **WHEN** the model returns text followed by custom content with a dotted kind and metadata
+- **THEN** the handler SHALL preserve both parts in order with the kind and metadata unchanged
 
 #### Scenario: Unsupported provider result
 - **WHEN** the model returns unsupported content, an unknown finish reason or warning type, invalid usage, nil result or panics
@@ -500,8 +540,17 @@ Raw Go/HTTP tests and local schemas SHALL independently verify active union fiel
 - **THEN** raw/schema/lifecycle/bounds tests SHALL independently verify it, authenticated command/frontend assembly evidence SHALL accompany behavior changes and synthetic responses SHALL NOT become recorded inputs
 
 ### Requirement: Host-safe ProviderWire error writer
+The ProviderWire package SHALL expose a non-fallible, unconfigured host error writer for fixed authentication, permission, internal and unsupported-BYOK-discovery failures. Caller messages, causes or arbitrary fields SHALL NOT cross that API.
 
-The `ai-gateway/providerwire/v4` package SHALL expose a narrow host-composition error writer for failures outside the language-model handler, including service authentication, permission, and discovery failures. Construction SHALL be non-fallible and SHALL accept no configuration.
+#### Scenario: Authenticated host error policy
+- **WHEN** host middleware selects a closed error category
+- **THEN** The `ai-gateway/providerwire/v4` package SHALL expose a narrow host-composition error writer for failures outside the language-model handler, including service authentication, permission, and discovery failures.
+- **AND** Construction SHALL be non-fallible and SHALL accept no configuration.
+- **AND** Callers SHALL select only closed authentication, permission, internal or unsupported-BYOK-discovery categories; they SHALL NOT supply public messages, causes, arbitrary status codes, error types, error codes, retryability, or byte limits.
+- **AND** The writer SHALL use the same protocol-owned public error definitions and typed HTTP encoder as the language-model handler, without optional execution metadata.
+- **AND** It SHALL perform no runtime schema compilation or validation; encoding SHALL use only fixed package-owned values.
+- **AND** Authentication SHALL emit the package's exact fixed 401 document, permission SHALL emit the exact fixed 403 document, internal SHALL emit the exact fixed 500 document, and an invalid category SHALL select that same internal document.
+- **AND** The API SHALL not expose private DTOs or weaken the strict handler's existing failure bytes.
 
 #### Scenario: Host emits authentication failure
 - **WHEN** authenticated service middleware selects the closed authentication category
@@ -522,13 +571,20 @@ The `ai-gateway/providerwire/v4` package SHALL expose a narrow host-composition 
 - **THEN** it SHALL emit the same fixed canonical internal-error document
 - **AND** it SHALL not serialize the invalid value
 
-### Requirement: Closed host error categories and fixed document reuse
+#### Scenario: Host refuses BYOK discovery
+- **WHEN** authenticated BYOK discovery selects the closed unsupported category
+- **THEN** the writer SHALL emit the fixed HTTP 400 invalid-request discovery document without catalog access or caller-supplied prose
 
-Callers SHALL select only an exported closed authentication, permission, or internal category; they SHALL NOT supply public messages, causes, arbitrary status codes, error types, error codes, retryability, or byte limits. The writer SHALL use the same protocol-owned public error definitions and typed HTTP encoder as the language-model handler, without optional execution metadata. It SHALL perform no runtime schema compilation or validation; encoding SHALL use only fixed package-owned values.
+### Requirement: Closed host error categories and fixed document reuse
+Callers SHALL select only closed authentication, permission, internal or unsupported-BYOK-discovery categories, never public messages, causes, arbitrary statuses/types/codes, retryability or byte limits. Encoding SHALL use the handler's typed fixed definitions without schema compilation/validation or optional execution metadata.
 
 #### Scenario: Closed host error categories and fixed document reuse
 - **WHEN** host middleware selects authentication rather than providing its own error message
 - **THEN** the writer SHALL encode the shared fixed public definitions without accepting caller-controlled fields, compiling schemas or attaching optional execution metadata
+
+#### Scenario: Unsupported discovery uses a closed category
+- **WHEN** an authenticated BYOK caller requests discovery
+- **THEN** the host SHALL select the fixed unsupported-discovery category without catalog access
 
 ### Requirement: Host error status bytes and private API boundary
 
@@ -553,3 +609,26 @@ The handler SHALL use synchronized request-local observation to optionally enric
 #### Scenario: Owned cancellation and late native result
 - **WHEN** cancellation wins invocation ownership before a late native result
 - **THEN** the existing context error SHALL be returned and published attribution SHALL NOT capture the unowned late native failure
+
+### Requirement: Unsupported-functionality rejection classification
+When unary invocation or stream setup fails with the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline, API-call-error and transport classification SHALL take precedence.
+
+#### Scenario: Direct rejection
+- **WHEN** a direct route's adapter returns a wrapped unsupported-functionality rejection before any I/O, in unary or streaming setup
+- **THEN** the handler SHALL return the fixed invalid-request document and neither registered client SHALL retry the request
+
+#### Scenario: All candidates reject
+- **WHEN** every configured-fallback candidate returns the rejection
+- **THEN** the handler SHALL return the fixed invalid-request document
+
+#### Scenario: Operational failures keep existing classification
+- **WHEN** fallback attempts end with the rejection and a retryable 503, in either order
+- **THEN** the handler SHALL keep the existing 503 classification
+
+#### Scenario: API call error wrapping the sentinel
+- **WHEN** an API call error's cause wraps the sentinel
+- **THEN** the handler SHALL keep the existing API-call-error classification
+
+#### Scenario: Cancellation wins
+- **WHEN** the request is canceled after a candidate rejected
+- **THEN** the handler SHALL keep the existing cancellation classification

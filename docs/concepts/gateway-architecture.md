@@ -3,8 +3,10 @@
 Suppose your application asks the public model `assistant` to summarize an
 incident. The application knows the Gateway URL and its own access credentials.
 The operator decides whether `assistant` calls Anthropic, OpenAI Responses, or
-an OpenAI-compatible service, and whether it has backup models. The application
-does not need the operator's provider API keys.
+an OpenAI-compatible service, and whether it has backup models. On this private,
+configured-account path, the application does not need the operator's provider
+API keys. The separate Cloud path accepts caller-supplied Anthropic or OpenAI
+credentials for each request (BYOK).
 
 The protocol the client speaks and the provider the Gateway calls are separate
 choices. They still need compatible capabilities: translating a request does
@@ -36,7 +38,9 @@ flowchart LR
       pw[ProviderWire V4 decoder and response encoder]
     end
     subgraph shared[Model selection and execution]
+      select[Account-access selection]
       catalog[Public model catalog]
+      byok[Cloud request accounts: Anthropic or OpenAI]
       logical[Logical model observation]
       routing[Configured primary and ordered fallback]
     end
@@ -50,16 +54,21 @@ flowchart LR
   go --> host
   ts --> host
   host --> pw
-  pw --> catalog --> logical --> routing
+  pw --> select
+  select -->|private| catalog --> logical --> routing
+  select -->|Cloud| byok
+  byok --> anthropic
+  byok --> openai
   routing --> anthropic --> apis
   routing --> openai --> apis
   routing --> compatible --> apis
 ```
 
-The two protected API routes are `GET /api/v1/aisdk/config` for discovery and
-`POST /api/v1/aisdk/language-model` for generation and streaming. `/live`,
-`/ready`, and `/metrics` are operational routes. Cloud proxy mode uses separate
-API and operational listeners. See the
+Both API listeners register `GET /api/v1/aisdk/config` and
+`POST /api/v1/aisdk/language-model`. Private discovery lists configured models;
+Cloud discovery returns an unsupported-discovery error rather than exposing the
+private catalog. The private API, optional Cloud API, and operational endpoints
+use separate listeners. `/live`, `/ready`, and `/metrics` are operational routes. See the
 [router](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/router.go) and
 [process composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/process/process.go).
 
@@ -75,7 +84,8 @@ is separate work, not an additional path in the diagram.
 
 Imagine `assistant` has an Anthropic primary and an OpenAI backup. The catalog
 and wrapped model objects are built at startup; selection below looks up those
-objects rather than constructing the whole chain for every request.
+objects rather than constructing the whole chain for every request. This sequence
+follows the private configured-account path; Cloud selection is described below.
 
 ```mermaid
 sequenceDiagram
@@ -100,7 +110,8 @@ sequenceDiagram
 
 1. **The host identifies and authenticates the caller.** HTTP telemetry wraps
    dispatch. Route and method checks happen before authentication; authentication
-   happens before body decoding. JWT mode verifies access tokens. Cloud mode
+   happens before body decoding. Private access uses JWT verification or
+   configured static keys (with a separate unsafe development mode). Cloud mode
    trusts identity from an authenticating proxy and requires network isolation
    so callers cannot forge that identity directly. Gateway credentials identify
    the caller; provider credentials authorize the later native API call. See
@@ -114,11 +125,12 @@ sequenceDiagram
    [handler](../../ai-gateway/providerwire/v4/handler.go) and
    [request mapper](../../ai-gateway/providerwire/v4/request.go).
 3. **Selection resolves a public name.** A model deadline begins after request
-   validation and covers selection plus model execution. `CatalogSelector`
-   resolves `assistant` or an alias to its canonical model. The command uses
-   operator-configured routes and rejects reserved Gateway controls; the caller
-   cannot use those controls to select arbitrary providers or accounts. See
-   [selection](../../ai-gateway/providerwire/v4/selection.go) and the
+   validation and covers selection plus model execution. `NewConfiguredSelector`
+   checks configured-account access, then delegates to `CatalogSelector` to
+   resolve `assistant` or an alias to its canonical model. This private path
+   rejects reserved Gateway controls; its caller cannot switch to request
+   accounts. See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go),
+   [catalog selection](../../ai-gateway/providerwire/v4/selection.go), and the
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** Logical observation surrounds the
    configured primary/fallback chain. Candidate-specific option checks and
@@ -211,12 +223,25 @@ summary redaction is not a general filter for generated content or secrets.
 
 ## Existing code versus deployed capabilities
 
-The reusable [request-only BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
-can construct models from request accounts. The command's process composition
-still installs `CatalogSelector`, so that engine's existence does not establish
-authenticated BYOK service support. Similarly, reusable middleware supports
-policy hooks, but this command does not install every available SDK policy or
-an aggregate admission controller.
+The command wires two account paths, selected by the authenticated listener,
+not by a caller choosing a different model name:
+
+- **Private:** JWT or static-key callers use configured models and server-held
+  provider credentials. They cannot use Cloud request accounts.
+- **Cloud:** the trusted proxy supplies caller identity; `NewBYOKSelector`
+  checks request-account access and decodes the provider/model destination and
+  credentials. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
+  constructs an Anthropic or OpenAI model with request-local accounts and
+  observation. It does not consult the configured catalog or fall back to
+  server-held keys. This host supplies no custom base-URL approval map.
+
+See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go)
+and [authentication configuration](../guides/gateway-authentication.md).
+The Cloud listener must be reachable only through its authenticating proxy,
+including isolation from private JWT clients. Source and synthetic tests establish
+service wiring, not production network isolation or live-provider acceptance.
+Reusable middleware supports policy hooks, but this command does not install
+every available SDK policy or an aggregate admission controller.
 
 This walkthrough is grounded in the router, process composition, handler, and
 catalog linked above. Useful regression evidence includes

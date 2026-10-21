@@ -183,7 +183,7 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 		{name: "duplicate historical call", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"f","input":{}},{"type":"tool-call","toolCallId":"call","toolName":"f","input":{}}]}]}`, status: http.StatusBadRequest},
 		{name: "mismatched history result", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"f","input":{},"providerExecuted":true},{"type":"tool-result","toolCallId":"call","toolName":"other","output":{"type":"text","value":"result"}}]}]}`, status: http.StatusBadRequest},
 		{name: "reserved part options", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"f","input":{},"providerOptions":{"gateway":{}}}]}]}`, status: http.StatusBadRequest},
-		{name: "nested output options deferred", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-result","toolCallId":"call","toolName":"f","output":{"type":"json","value":false,"providerOptions":{"anthropic":{"private":true}}}}]}]}`, status: http.StatusBadRequest},
+		{name: "nested output options", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-result","toolCallId":"call","toolName":"f","output":{"type":"json","value":false,"providerOptions":{"anthropic":{"private":true}}}}]}]}`, pending: map[string]string{}, status: http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())
@@ -234,9 +234,6 @@ func TestRuntimeFunctionTools_Boundaries(t *testing.T) {
 		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"providerOptions":{"grafana":{"secret":"private"}}}]}`,
 		`{"prompt":[{"role":"user","content":[{"type":"tool-call","toolCallId":"a","toolName":"f","input":{}}]}]}`,
 		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"a","toolName":"f","output":{"type":"text"}}]}]}`,
-		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"a","toolName":"f","output":{"type":"text","value":"","providerOptions":{"anthropic":{"private":true}}}}]}]}`,
-		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"a","toolName":"f","output":{"type":"execution-denied","reason":""}}]}]}`,
-		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"a","toolName":"f","output":{"type":"content","value":[{"type":"text","text":"","providerOptions":{"p":{"x":1}}}]}}]}]}`,
 	} {
 		t.Run(body, func(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())

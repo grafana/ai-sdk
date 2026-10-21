@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const mappedFallbackBody = `{"maxOutputTokens":64,"tools":[{"type":"function","name":"lookup","inputSchema":{}}],"toolChoice":{"type":"required"},"reasoning":"high","headers":{"x-ordinary":"value"},"providerOptions":{"vendor":{"nested":[null,false,0,"",[],{}]}},"prompt":[{"role":"user","content":[{"type":"text","text":"private-prompt"},{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","filename":""}]}]}`
+const mappedFallbackBody = `{"responseFormat":{"type":"json","name":"","schema":{"type":"object"}},"maxOutputTokens":64,"tools":[{"type":"function","name":"lookup","inputSchema":{}}],"toolChoice":{"type":"required"},"reasoning":"high","headers":{"x-ordinary":"value"},"providerOptions":{"vendor":{"nested":[null,false,0,"",[],{}]}},"prompt":[{"role":"user","content":[{"type":"text","text":"private-prompt"},{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","filename":""}]}]}`
 
 func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 	finish := provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}}
@@ -60,6 +60,7 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			h := newFallbackAcceptance(t, &observabilityTestModel{stream: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+				assert.Equal(t, &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: new(""), Schema: json.RawMessage(`{"type":"object"}`)}, opts.ResponseFormat)
 				assert.Len(t, opts.Tools, 1)
 				assert.Equal(t, provider.ReasoningHigh, opts.Reasoning)
 				assert.Equal(t, "value", opts.Headers["x-ordinary"])
@@ -156,6 +157,7 @@ func TestFallbackAcceptance_MappedSelection(t *testing.T) {
 				defer cancel()
 				candidate := func(err error) *observabilityTestModel {
 					invoke := func(opts provider.CallOptions) error {
+						assert.Equal(t, &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: new(""), Schema: json.RawMessage(`{"type":"object"}`)}, opts.ResponseFormat)
 						assert.Len(t, opts.Tools, 1)
 						assert.Equal(t, provider.ToolChoiceRequired, opts.ToolChoice.Type)
 						assert.Equal(t, provider.ReasoningHigh, opts.Reasoning)
@@ -208,6 +210,7 @@ func TestFallbackAcceptance_MappedUnaryEncodingDoesNotReplay(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newFallbackAcceptance(t, &observabilityTestModel{generate: func(_ context.Context, opts provider.CallOptions) (*provider.GenerateResult, error) {
+				assert.Equal(t, &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: new(""), Schema: json.RawMessage(`{"type":"object"}`)}, opts.ResponseFormat)
 				assert.Len(t, opts.Tools, 1)
 				return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: tc.contentType, ToolCallID: "call", ToolName: "lookup", Input: tc.input}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
 			}}, &observabilityTestModel{})
@@ -453,7 +456,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	sink := newPhysicalAttemptSink(&output, telemetry, 8, time.Second, time.Second)
 	t.Cleanup(sink.Close)
@@ -648,4 +651,45 @@ func TestFallbackAcceptance_MetadataFailureDoesNotReplay(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestFallbackAcceptance_CustomContentCommitsCandidate(t *testing.T) {
+	t.Run("stream first part", func(t *testing.T) {
+		errorPart := provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}
+		h := newFallbackAcceptance(t,
+			&observabilityTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return fallbackParts(provider.StreamPart{Type: provider.PartCustom, Kind: "example.kind"}, errorPart), nil
+			}},
+			&observabilityTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return fallbackParts(hostileFallbackParts()...), nil
+			}},
+		)
+		response := httptest.NewRecorder()
+
+		h.handler.ServeHTTP(response, h.request(context.Background(), true))
+
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.Contains(t, response.Body.String(), `"kind":"example.kind"`)
+		assert.EqualValues(t, 1, h.calls[0].Load())
+		assert.Zero(t, h.calls[1].Load(), "a candidate that emitted custom content stays selected")
+		assert.NotContains(t, response.Body.String(), "public-answer")
+	})
+
+	t.Run("unary success with an unencodable custom part", func(t *testing.T) {
+		h := newFallbackAcceptance(t,
+			&observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "undotted"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+			}},
+			&observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return &provider.GenerateResult{}, nil
+			}},
+		)
+		response := httptest.NewRecorder()
+
+		h.handler.ServeHTTP(response, h.request(context.Background(), false))
+
+		assert.Equal(t, http.StatusInternalServerError, response.Code)
+		assert.EqualValues(t, 1, h.calls[0].Load())
+		assert.Zero(t, h.calls[1].Load())
+	})
 }

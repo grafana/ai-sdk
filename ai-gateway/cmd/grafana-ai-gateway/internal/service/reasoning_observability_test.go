@@ -26,7 +26,7 @@ func TestReasoningMetadataOnlyPrivacy(t *testing.T) {
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
-			factory, err := NewModelObservabilityFactory(telemetry, logger, &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}, 10*time.Millisecond)
+			factory, _, err := NewModelObservabilityFactories(telemetry, logger, &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}, 10*time.Millisecond)
 			require.NoError(t, err)
 			metadata := provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"private-signature","redactedData":"private-redacted"}`), "openai": json.RawMessage(`{"itemId":"private-id","reasoningEncryptedContent":"private-encrypted"}`)}
 			finish := provider.FinishReason{Unified: provider.FinishReasonStop}

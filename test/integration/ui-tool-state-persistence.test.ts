@@ -423,3 +423,22 @@ describe("pinned UI tool state persistence", () => {
     expect(message).toEqual(original);
   });
 });
+
+describe("provider approval resume boundary",()=>{
+ it.each([true,false])("normalizes application bookkeeping on copied history, approved=%s",async approved=>{
+  const initial=stateMessage(approved?"approval-responded":"output-denied",true,{providerExecuted:true});
+  const original=json(initial);
+  const response=await fetchScenario("ui-tool-state-agent",{headers:{"content-type":"application/json"},body:JSON.stringify({messages:[initial]})});
+  const parsed=await readToolStateStream(response,json(initial));
+  const finish=parsed.chunks.find(chunk=>chunk.type==="finish");
+  expect(finish?.type).toBe("finish");
+  const metadata=(finish as any).messageMetadata;
+  expect(metadata.providerCalls).toBe(1);
+  const parts=metadata.modelMessages.flatMap((message:any)=>Array.isArray(message.content)?message.content:[]);
+  const decision=parts.find((part:any)=>part.type==="tool-approval-response");
+  expect(decision).toMatchObject({approvalId:"a",approved});
+  for(const field of ["providerExecuted","toolCallId","toolName","signature","isAutomatic"])expect(decision).not.toHaveProperty(field);
+  expect(parts.some((part:any)=>part.type==="tool-approval-request")).toBe(false);
+  expect(initial).toEqual(original);
+ });
+});

@@ -1,6 +1,6 @@
 module github.com/grafana/ai-sdk/providers/bedrock
 
-go 1.26.3
+go 1.27.3
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.3
@@ -28,7 +28,7 @@ require (
 	github.com/buger/jsonparser v1.6.1 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
-	github.com/pb33f/go-yaml v0.1.0 // indirect
+	github.com/pb33f/go-yaml v0.1.1 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.2 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/tidwall/gjson v1.20.0 // indirect

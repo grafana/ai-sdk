@@ -242,10 +242,10 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			}
 			switch {
 			case p.Data.IsReference():
-				return nil, fmt.Errorf("bedrock: file parts with provider references are not supported")
+				return nil, unsupportedFunctionality("bedrock: file parts with provider references are not supported")
 			case p.Data.IsURL():
 				if !isS3URL(p.Data.URL) {
-					return nil, fmt.Errorf("bedrock: file URL data is not supported")
+					return nil, unsupportedFunctionality("bedrock: file URL data is not supported")
 				}
 				mediaType := p.MediaType
 				if !isFullMediaType(mediaType) {
@@ -255,7 +255,7 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 				case "image":
 					format, ok := imageMediaTypeFormat[mediaType]
 					if !ok {
-						return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
+						return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
 					}
 					out = append(out, contentBlock{Image: &imageBlock{
 						Format: format,
@@ -264,14 +264,14 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 				case "video":
 					format, ok := videoMediaTypeFormat[mediaType]
 					if !ok {
-						return nil, fmt.Errorf("bedrock: video media type %q is not supported", mediaType)
+						return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
 					}
 					out = append(out, contentBlock{Video: &videoBlock{
 						Format: format,
 						Source: videoSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
 					}})
 				default:
-					return nil, fmt.Errorf("bedrock: file URL data is only supported for images and videos")
+					return nil, unsupportedFunctionality("bedrock: file URL data is only supported for images and videos")
 				}
 				continue
 			case p.Data.IsText():
@@ -302,7 +302,7 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			case "image":
 				format, ok := imageMediaTypeFormat[mediaType]
 				if !ok {
-					return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
+					return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
 				}
 				image := &imageBlock{Format: format, Source: imageSource{Bytes: b64}}
 				guarded, err := readImageGuardContent(p.ProviderOptions)
@@ -318,7 +318,7 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			case "video":
 				format, ok := videoMediaTypeFormat[mediaType]
 				if !ok {
-					return nil, fmt.Errorf("bedrock: video media type %q is not supported", mediaType)
+					return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
 				}
 				out = append(out, contentBlock{
 					Video: &videoBlock{Format: format, Source: videoSource{Bytes: b64}},
@@ -347,6 +347,10 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 	return out, nil
 }
 
+func unsupportedFunctionality(format string, args ...any) error {
+	return fmt.Errorf(format+": %w", append(args, provider.ErrUnsupportedFunctionality)...)
+}
+
 func buildDocumentContentBlock(p provider.ContentPart, mediaType, b64 string, documentCounter *int) (contentBlock, error) {
 	document, err := buildDocumentBlock(mediaType, filenameValue(p.Filename), b64, p.ProviderOptions, documentCounter)
 	if err != nil {
@@ -369,7 +373,7 @@ func buildDocumentBlock(mediaType, filename, b64 string, providerOptions provide
 	}
 	format, ok := documentMediaTypeFormat[mediaType]
 	if !ok {
-		return nil, fmt.Errorf("bedrock: file media type %q is not supported", mediaType)
+		return nil, unsupportedFunctionality("bedrock: file media type %q is not supported", mediaType)
 	}
 	name := sanitizeDocumentName(filename)
 	if name == "" {
@@ -577,6 +581,10 @@ func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.
 			// Tool approval requests are local conversation bookkeeping.
 			// Bedrock does not accept them; skip silently.
 
+		case provider.ContentPartTypeCustom:
+			// Custom parts are provider-owned history markers; upstream skips
+			// them for Converse.
+
 		default:
 			*warnings = append(*warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
@@ -634,25 +642,25 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 		ToolUseID: normalizeToolCallID(p.ToolCallID, isMistral),
 	}
 	if p.Output == nil {
-		out.Content = []toolResultContent{{Text: ""}}
+		out.Content = []toolResultContent{{Text: new("")}}
 		return out, nil
 	}
 	switch p.Output.Type {
 	case provider.ToolOutputText, provider.ToolOutputErrorText:
-		out.Content = []toolResultContent{{Text: p.Output.Text}}
+		out.Content = []toolResultContent{{Text: new(p.Output.Text)}}
 	case provider.ToolOutputJSON, provider.ToolOutputErrorJSON:
-		out.Content = []toolResultContent{{Text: string(p.Output.JSON)}}
+		out.Content = []toolResultContent{{Text: new(string(p.Output.JSON))}}
 	case provider.ToolOutputExecutionDenied:
-		reason := p.Output.Reason
-		if reason == "" {
-			reason = "Tool call execution denied."
+		reason := "Tool call execution denied."
+		if p.Output.Reason != nil {
+			reason = *p.Output.Reason
 		}
-		out.Content = []toolResultContent{{Text: reason}}
+		out.Content = []toolResultContent{{Text: new(reason)}}
 	case provider.ToolOutputContent:
 		for _, c := range p.Output.Content {
 			switch c.Type {
 			case provider.ToolContentText:
-				out.Content = append(out.Content, toolResultContent{Text: c.Text})
+				out.Content = append(out.Content, toolResultContent{Text: new(c.Text)})
 			case provider.ToolContentFile:
 				if c.Data == nil {
 					*warnings = append(*warnings, provider.Warning{
@@ -715,7 +723,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 				case "image":
 					format, ok := imageMediaTypeFormat[mediaType]
 					if !ok {
-						return nil, fmt.Errorf("bedrock: image media type %q is not supported", mediaType)
+						return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
 					}
 					out.Content = append(out.Content, toolResultContent{
 						Image: &imageBlock{Format: format, Source: imageSource{Bytes: base64Data}},
@@ -724,7 +732,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 				case "video":
 					format, ok := videoMediaTypeFormat[mediaType]
 					if !ok {
-						return nil, fmt.Errorf("bedrock: video media type %q is not supported", mediaType)
+						return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
 					}
 					out.Content = append(out.Content, toolResultContent{
 						Video: &videoBlock{Format: format, Source: videoSource{Bytes: base64Data}},
@@ -736,6 +744,11 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 					return nil, err
 				}
 				out.Content = append(out.Content, toolResultContent{Document: document})
+			case provider.ToolContentCustom:
+				// Deliberate exception to the warning convention: upstream throws
+				// UnsupportedFunctionalityError, and silently dropping the entry
+				// would change continuation semantics.
+				return nil, unsupportedFunctionality("bedrock: unsupported tool content part type: %s", provider.ToolContentCustom)
 			default:
 				*warnings = append(*warnings, provider.Warning{
 					Type:    provider.WarnUnsupported,
@@ -745,7 +758,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 			}
 		}
 		if len(out.Content) == 0 {
-			out.Content = []toolResultContent{{Text: ""}}
+			out.Content = []toolResultContent{{Text: new("")}}
 		}
 	default:
 		*warnings = append(*warnings, provider.Warning{
@@ -753,7 +766,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 			Feature: "toolResultOutputType",
 			Details: fmt.Sprintf("Bedrock tool results do not support %q", p.Output.Type),
 		})
-		out.Content = []toolResultContent{{Text: ""}}
+		out.Content = []toolResultContent{{Text: new("")}}
 	}
 	return out, nil
 }

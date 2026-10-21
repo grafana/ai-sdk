@@ -153,7 +153,7 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 							ProviderOptions: providerMetadataToOptions(tp.CallProviderMetadata),
 							Output: &provider.ToolResultOutput{
 								Type:   provider.ToolOutputExecutionDenied,
-								Reason: stringValue(tp.Approval.Reason),
+								Reason: denialReason(stringValue(tp.Approval.Reason)),
 							},
 						})
 					}

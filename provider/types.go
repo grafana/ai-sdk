@@ -115,13 +115,14 @@ const (
 // ToolResultOutput carries the output of a tool execution. The Type field
 // determines which value fields are populated. The Go representation uses
 // split Text/JSON/Content/Reason fields while its JSON codec emits and accepts
-// upstream's single `value` union.
+// upstream's single `value` union. Reason is nil when absent; a pointer to an
+// empty string preserves an explicitly supplied empty denial reason.
 type ToolResultOutput struct {
 	Type            ToolResultOutputType     `json:"type"`
 	Text            string                   `json:"text,omitempty"`
 	JSON            json.RawMessage          `json:"json,omitempty"`
 	Content         []ToolResultContentValue `json:"content,omitempty"`
-	Reason          string                   `json:"reason,omitempty"`
+	Reason          *string                  `json:"reason,omitempty"`
 	ProviderOptions ProviderOptions          `json:"providerOptions,omitempty"`
 }
 
@@ -158,7 +159,7 @@ func (t ToolResultOutput) MarshalJSON() ([]byte, error) {
 		}
 		out["value"] = b
 	case ToolOutputExecutionDenied:
-		if t.Reason != "" {
+		if t.Reason != nil {
 			b, err := json.Marshal(t.Reason)
 			if err != nil {
 				return nil, err
@@ -196,7 +197,7 @@ func (t *ToolResultOutput) UnmarshalJSON(data []byte) error {
 		Text            string                   `json:"text"`
 		JSON            json.RawMessage          `json:"json"`
 		Content         []ToolResultContentValue `json:"content"`
-		Reason          string                   `json:"reason"`
+		Reason          *string                  `json:"reason"`
 		Value           json.RawMessage          `json:"value"`
 		ProviderOptions ProviderOptions          `json:"providerOptions"`
 	}

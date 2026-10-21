@@ -15,7 +15,7 @@ import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 import { fileInputGoldenCase } from "./request-cases";
 import { validateStreamEvent, validateUnarySuccess } from "./schema";
-import { generateText, jsonSchema, stepCountIs, streamText, tool, wrapLanguageModel } from "ai";
+import { generateText, Output, jsonSchema, stepCountIs, streamText, tool, wrapLanguageModel } from "ai";
 import packageManifest from "./package.json" with { type: "json" };
 import { buildTools, loadConfig, mockId, normalizeRequestSnapshot, writeRequestSnapshots } from "../../../test/conformance/tools/common.mts";
 
@@ -281,6 +281,31 @@ describe("opaque native options through the production handler", () => {
   });
 });
 
+describe("synthetic generated media through the authenticated real handler", () => {
+  it("preserves files in both registered clients and strict raw schemas", async () => {
+    const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })("generated-files");
+    const config = { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "generated-files", options: { prompt: [] } };
+    const first = await client.doGenerate({ prompt: [] });
+    const goFirst = await captureGoClient(goClientBinary, { ...config, mode: "generate" });
+    assert.equal(goFirst.error, undefined);
+    const content = goFirst.result.content.map((part: any, i: number) => goFirst.contentMetadata[i] === null ? part : { ...part, providerMetadata: goFirst.contentMetadata[i] });
+    assert.deepEqual(content, first.content);
+    assert.deepEqual(first.content.map((part: any) => part.data), [
+      { type: "data", data: "" }, { type: "data", data: "AQID" },
+      { type: "url", url: "opaque:generated", originalUrl: "opaque:Original?token=application" },
+    ]);
+    assert.equal(validateUnarySuccess(first.response!.body), true, JSON.stringify(validateUnarySuccess.errors));
+    const streamed = await client.doStream({ prompt: [] });
+    const parts = await collect(streamed.stream);
+    const goStream = await captureGoClient(goClientBinary, { ...config, mode: "stream" });
+    assert.equal(goStream.error, undefined);
+    const goParts = goStream.parts.map((part: any, i: number) => goStream.partMetadata[i] === null ? part : { ...part, providerMetadata: goStream.partMetadata[i] });
+    assert.deepEqual(goParts.slice(1), parts.slice(1));
+    assert.deepEqual(parts.filter(part => part.type === "file"), first.content);
+    for (const part of parts) assert.equal(validateStreamEvent(part), true, JSON.stringify(validateStreamEvent.errors));
+  });
+});
+
 describe("reasoning continuation through the authenticated real handler", () => {
   it("admits pinned-client reasoning history and matches independent file data/URL/usage in both modes", async () => {
     const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } });
@@ -374,6 +399,61 @@ describe("sources through the authenticated handler", () => {
     assert.equal(stream.error,undefined);
     const sources=stream.parts.filter((p:any)=>p.type==="source").map((p:any)=>({...p,title:p.title??""}));
     assert.deepEqual(sources,expected);
+  });
+});
+
+describe("custom content through the authenticated handler", () => {
+  const expected = [
+    { type: "custom", kind: "openai.compaction", providerMetadata: { openai: { type: "compaction", itemId: "cmp_1", encryptedContent: "ENC", nested: { none: null, no: false, zero: 0, empty: "" } } } },
+    { type: "custom", kind: "anthropic.fallback", providerMetadata: { anthropic: { type: "fallback", from: { model: "a" }, to: { model: "b" } } } },
+    { type: "custom", kind: "example.future_block" },
+    { type: "custom", kind: "example.empty", providerMetadata: {} },
+  ];
+  const gateway = (modelID: string) => createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })(modelID);
+  const normalize = (part: any) => ({ type: part.type, kind: part.kind, providerMetadata: part.providerMetadata === undefined || Object.keys(part.providerMetadata).length === 0 ? undefined : part.providerMetadata });
+
+  it("delivers unary and streamed custom content to both clients unchanged", async () => {
+    const wire = (streaming: boolean) => fetch(`${baseURL}/function-tools/language-model`, { method: "POST", headers: { "content-type": "application/json", "x-access-token": "function-test-token", "ai-language-model-specification-version": "4", "ai-language-model-id": "custom", "ai-language-model-streaming": String(streaming) }, body: JSON.stringify({ prompt: [] }) });
+    const rawUnary = await (await wire(false)).json();
+    assert.equal(validateUnarySuccess(rawUnary), true, JSON.stringify(validateUnarySuccess.errors));
+    assert.deepEqual(rawUnary.content.filter((part: any) => part.type === "custom"), expected);
+    const rawFrames = (await (await wire(true)).text()).split("\n\n").filter(Boolean).map((frame) => JSON.parse(frame.slice("data: ".length)));
+    for (const frame of rawFrames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
+    assert.deepEqual(rawFrames.filter((part: any) => part.type === "custom"), expected);
+    const responseMetadata = rawFrames.findIndex((part: any) => part.type === "response-metadata");
+    assert.equal(rawFrames[responseMetadata + 1].kind, "openai.compaction");
+
+    const config = { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "custom", options: { prompt: [] } };
+    const tsUnary = (await gateway("custom").doGenerate({ prompt: [] })).content.filter((part) => part.type === "custom");
+    const tsStream = (await collect((await gateway("custom").doStream({ prompt: [] })).stream)).filter((part) => part.type === "custom");
+    const goUnary = (await captureGoClient(goClientBinary, { ...config, mode: "generate" })).result.content.filter((part: any) => part.type === "custom");
+    const goStream = (await captureGoClient(goClientBinary, { ...config, mode: "stream" })).parts.filter((part: any) => part.type === "custom");
+    const want = expected.map(normalize);
+    for (const got of [tsUnary, tsStream, goUnary, goStream]) assert.deepEqual(got.map(normalize), want);
+    assert.deepEqual(tsUnary, expected);
+    assert.deepEqual(tsStream, expected);
+  });
+
+  it("does not retry a paid custom success or an unsupported-functionality rejection", async () => {
+    const before = await stats();
+    const success = await generateText({ model: gateway("custom"), prompt: "hello" });
+    assert.equal(success.text, "answer");
+    assert.equal((await stats()).successCalls - before.successCalls, 1);
+
+    const rejectedBefore = await stats();
+    await assert.rejects(generateText({ model: gateway("unsupported-functionality"), prompt: "hello", maxRetries: 2 }), (error: unknown) => {
+      const cause = (error as { lastError?: unknown }).lastError ?? error;
+      assert.equal(GatewayInvalidRequestError.isInstance(cause), true);
+      return true;
+    });
+    assert.equal((await stats()).successCalls - rejectedBefore.successCalls, 1);
+
+    for (const mode of ["generate", "stream"]) {
+      const goBefore = await stats();
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "unsupported-functionality", mode, options: { prompt: [] } });
+      assert.ok(go.error !== undefined || (go.parts ?? []).some((part: any) => part.type === "error"), mode);
+      assert.equal((await stats()).successCalls - goBefore.successCalls, 1);
+    }
   });
 });
 
@@ -601,6 +681,48 @@ describe("bounded provider raw usage through the real handler", () => {
       assert.deepEqual(frames.at(-1)?.usage?.raw, raw);
     });
   }
+});
+
+describe("explicit raw output through the real handler", () => {
+  const projectedEcho = { type: "response.created", response: { id: "resp_1", tools: [{ type: "mcp", server_label: "docs", headers: null, server_url: "https://mcp.example/mcp?region=eu" }] } };
+
+  for (const includeRawChunks of [undefined, false, true]) {
+    it(`streams raw parts to both clients only when requested (includeRawChunks: ${includeRawChunks})`, async () => {
+      const options: LanguageModelV4CallOptions = { prompt: [], ...(includeRawChunks === undefined ? {} : { includeRawChunks }) };
+      const ts = await collect((await model("raw").doStream(options)).stream);
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "raw", mode: "stream", options });
+      assert.equal(go.error, undefined);
+      const expectedTypes = includeRawChunks
+        ? ["stream-start", "raw", "text-start", "text-delta", "raw", "text-end", "finish"]
+        : ["stream-start", "text-start", "text-delta", "text-end", "finish"];
+      assert.deepEqual(ts.map(part => part.type), expectedTypes);
+      assert.deepEqual(go.parts.map((part: { type: string }) => part.type), expectedTypes);
+      const tsRaw = ts.flatMap(part => part.type === "raw" ? [part.rawValue] : []);
+      const goRaw = go.parts.flatMap((part: { type: string; rawValue?: unknown }) => part.type === "raw" ? [part.rawValue] : []);
+      assert.deepEqual(tsRaw, includeRawChunks ? [projectedEcho, { type: "message_stop" }] : []);
+      assert.deepEqual(goRaw, tsRaw);
+
+      const http = await fetch(`${baseURL}/providerwire-v4/language-model`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "ai-language-model-specification-version": "4", "ai-language-model-id": "raw", "ai-language-model-streaming": "true" },
+        body: JSON.stringify(options),
+      });
+      assert.equal(http.status, 200);
+      const text = await http.text();
+      assert.doesNotMatch(text, /private-/);
+      const frames = text.trim().split("\n\n").map(frame => JSON.parse(frame.slice("data: ".length)));
+      for (const frame of frames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
+      assert.equal(frames.filter(frame => frame.type === "raw").length, includeRawChunks ? 2 : 0);
+    });
+  }
+
+  it("accepts the flag on unary calls in both clients without raw output", async () => {
+    const ts = await model("raw").doGenerate({ prompt: [], includeRawChunks: true });
+    const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "raw", mode: "generate", options: { prompt: [], includeRawChunks: true } });
+    assert.equal(go.error, undefined);
+    assert.deepEqual(ts.content, [{ type: "text", text: "hello" }]);
+    assert.deepEqual(go.result.content, ts.content);
+  });
 });
 
 describe("authentic metadata replay with unchanged direct expectations", () => {
@@ -948,4 +1070,165 @@ describe("real ProviderWire V4 unary runtime", () => {
     await assert.rejects(async () => await pending);
     await waitFor(async () => (await stats()).cancellations > initial.cancellations ? true : undefined, 2_000);
   });
+});
+
+describe("structured output through both Gateway clients", () => {
+  const schema = {
+    type: "object",
+    properties: { value: { type: "string" } },
+    required: ["value"],
+    additionalProperties: false,
+    "x-extra": [null, false, "☃", 9007199254740992],
+  };
+
+  it("preserves JSON mode, schemas and name presence on direct and mapped fallback routes", async () => {
+    for (const modelID of ["structured", "structured-fallback"]) {
+      const client = createGateway({
+        apiKey: "test", baseURL: `${baseURL}/function-tools`,
+        headers: { "x-access-token": "function-test-token" },
+      })(modelID);
+      for (const mode of ["generate", "stream"] as const) {
+        for (const responseSchema of [undefined, schema]) {
+          for (const name of [undefined, "", "answer"]) {
+            for (const description of [undefined, "", "description ☃"]) {
+              const responseFormat = { type: "json" as const, schema: responseSchema, name, description };
+              const options = { prompt: [], responseFormat };
+              for (const language of ["typescript", "go"]) {
+                if (language === "go") {
+                  const result = await captureGoClient(goClientBinary, {
+                    baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token",
+                    modelID, mode, options,
+                  });
+                  assert.equal(result.error, undefined);
+                  if (mode === "generate") {
+                    assert.equal(result.result.content[0].text, '{"value":"ok"}');
+                  } else {
+                    assert.equal(result.parts.filter((part: any) => part.type === "text-delta")
+                      .map((part: any) => part.delta).join(""), '{"value":"ok"}');
+                  }
+                } else if (mode === "generate") {
+                  const result = await client.doGenerate(options);
+                  assert.equal((result.content[0] as any).text, '{"value":"ok"}');
+                  assert.equal(result.finishReason.unified, "stop");
+                } else {
+                  const parts = await collect((await client.doStream(options)).stream);
+                  assert.equal(parts.filter((part: any) => part.type === "text-delta")
+                    .map((part: any) => part.delta).join(""), '{"value":"ok"}');
+                  assert.equal(parts.at(-1)?.type, "finish");
+                }
+                const captured = await (await fetch(`${baseURL}/providerwire-v4/options`)).json();
+                assert.deepEqual(captured.responseFormat, JSON.parse(JSON.stringify({
+                  ...responseFormat, description: description || undefined,
+                })), `${language}/${modelID}/${mode}`);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("leaves final validation with high-level clients", async () => {
+    for (const modelID of ["structured", "structured-fallback", "structured-invalid"]) {
+      const client = createGateway({
+        apiKey: "test", baseURL: `${baseURL}/function-tools`,
+        headers: { "x-access-token": "function-test-token" },
+      })(modelID);
+      const output = Output.object({
+        schema: jsonSchema<{ value: string }>(schema, {
+          validate: value => typeof (value as any)?.value === "string"
+            ? { success: true, value: value as { value: string } }
+            : { success: false, error: new Error("invalid value") },
+        }),
+        name: "",
+      });
+      if (modelID === "structured-invalid") {
+        await assert.rejects(generateText({ model: client, prompt: "object", output, maxRetries: 0 }));
+        const result = streamText({ model: client, prompt: "object", output, maxRetries: 0 });
+        await assert.rejects(Promise.resolve(result.output));
+      } else {
+        const unary = await generateText({ model: client, prompt: "object", output, maxRetries: 0 });
+        assert.deepEqual(unary.output, { value: "ok" });
+        const streaming = streamText({ model: client, prompt: "object", output, maxRetries: 0 });
+        assert.deepEqual(await streaming.output, { value: "ok" });
+      }
+    }
+  });
+});
+
+it("both clients reach native Responses with structured names, schemas and fallback", async () => {
+  for (const modelID of ["native", "native-fallback", "native-invalid"]) {
+    const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/native-structured` })(modelID);
+    for (const mode of ["generate", "stream"] as const) {
+      for (const name of [undefined, "", "answer"]) {
+        for (const language of ["typescript", "go"]) {
+          const responseFormat = {
+            type: "json" as const, name,
+            schema: {
+              type: "object", properties: { value: { type: "string" } },
+              required: ["value"], additionalProperties: false,
+            },
+          };
+          const options = { prompt: [], responseFormat, providerOptions: { openai: { strictJsonSchema: false } } };
+          if (language === "go") {
+            const result = await captureGoClient(goClientBinary, {
+              baseURL: `${baseURL}/native-structured`, accessToken: "test", modelID, mode, options,
+            });
+            if (modelID === "native-invalid") {
+              assert.ok(result.error);
+            } else {
+              assert.equal(result.error, undefined);
+              if (mode === "stream") assert.equal(result.parts.at(-1).type, "finish");
+              else assert.equal(result.result.content[0].text, '{"value":"ok"}');
+            }
+          } else {
+            const invoke = async () => mode === "generate"
+              ? client.doGenerate(options)
+              : collect((await client.doStream(options)).stream);
+            if (modelID === "native-invalid") await assert.rejects(invoke);
+            else await invoke();
+          }
+          const requests = await (await fetch(`${baseURL}/native-structured/requests`)).json();
+          assert.equal(requests.length, modelID === "native-fallback" ? 2 : 1);
+          for (const request of requests) {
+            assert.deepEqual(request.text.format, {
+              type: "json_schema", name: name ?? "response", schema: responseFormat.schema, strict: false,
+            });
+          }
+        }
+      }
+    }
+  }
+});
+
+
+it("both clients retain event-local structured errors without replay or lost continuation", async () => {
+  const before = await stats();
+  const options = { prompt: [], responseFormat: { type: "json" as const, name: "" } };
+  const client = model("structured-committed");
+  const parts = await collect((await client.doStream(options)).stream);
+  for (const part of parts) assert.equal(validateStreamEvent(part), true, JSON.stringify(validateStreamEvent.errors));
+  assert.deepEqual(parts.map(part => part.type), ["stream-start", "text-start", "text-delta", "error", "text-delta", "text-end", "finish"]);
+  const event = parts[3] as any;
+  assert.equal(event.error.statusCode, 424);
+  const execution = event.error.data.providerMetadata.gateway.execution;
+  assert.deepEqual(execution.attempts, [{ providerInstance: "selected", provider: "test", modelId: "private-structured-committed", outcome: "selected" }]);
+  assert.deepEqual(event.error.data.nativeError, { message: "event detail", type: "schema_error", code: 17, statusCode: 400 });
+  assert.deepEqual((parts.at(-1) as any).providerMetadata.gateway.execution, execution);
+  const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "test", modelID: "structured-committed", mode: "stream", options });
+  assert.equal(go.error, undefined);
+  assert.deepEqual(go.parts.map((part: any) => part.type), parts.map(part => part.type));
+  const goError = go.parts[3].error;
+  assert.equal(goError.statusCode, 424);
+  assert.deepEqual(goError.data, event.error.data);
+  assert.equal(go.parts.filter((part: any) => part.type === "text-delta").map((part: any) => part.delta).join(""), '{"value":"ok"}');
+  assert.deepEqual(go.partMetadata.at(-1).gateway.execution, execution);
+  const high = streamText({ model: client, prompt: "structured", output: Output.json(), maxRetries: 0, onError: () => {} });
+  const highParts = [];
+  for await (const part of high.fullStream) highParts.push(part);
+  const highError = highParts.find(part => part.type === "error") as any;
+  assert.deepEqual(highError.error.data.data, event.error.data);
+  assert.deepEqual(await high.output, { value: "ok" });
+  const after = await stats();
+  assert.equal(after.streamCalls - before.streamCalls, 3, "one selected physical invocation per client call, no fallback replay");
 });

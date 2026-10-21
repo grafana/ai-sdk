@@ -11,12 +11,10 @@ import (
 type requestFailureReason string
 
 const (
-	capabilityCustomContent       requestFailureReason = "custom-content"
 	capabilityTools               requestFailureReason = "tools"
 	capabilityToolApprovals       requestFailureReason = "tool-approvals"
 	capabilityStructuredOutput    requestFailureReason = "structured-output"
 	capabilityProviderOptions     requestFailureReason = "provider-options"
-	capabilityRawOutput           requestFailureReason = "raw-output"
 	policyReservedProviderOptions requestFailureReason = "reserved-provider-options"
 	policyProtectedCallHeader     requestFailureReason = "protected-call-header"
 )
@@ -47,7 +45,11 @@ type wireMessage struct {
 }
 
 type wirePart struct {
+	ApprovalID       string                     `json:"approvalId"`
+	Approved         *bool                      `json:"approved"`
+	Reason           string                     `json:"reason"`
 	Type             provider.ContentPartType   `json:"type"`
+	Kind             string                     `json:"kind"`
 	Text             string                     `json:"text"`
 	Data             json.RawMessage            `json:"data"`
 	MediaType        string                     `json:"mediaType"`
@@ -61,7 +63,10 @@ type wirePart struct {
 }
 
 type wireResponseFormat struct {
-	Type provider.ResponseFormatType `json:"type"`
+	Type        provider.ResponseFormatType `json:"type"`
+	Schema      json.RawMessage             `json:"schema"`
+	Name        *string                     `json:"name"`
+	Description string                      `json:"description"`
 }
 
 type wireReasoning string
@@ -120,7 +125,7 @@ func mapRequest(request wireRequest) (provider.CallOptions, *requestFailure) {
 		switch request.ResponseFormat.Type {
 		case provider.ResponseFormatText:
 		case provider.ResponseFormatJSON:
-			return provider.CallOptions{}, rejectedMappingFailure(capabilityStructuredOutput)
+			options.ResponseFormat = &provider.ResponseFormat{Type: request.ResponseFormat.Type, Schema: request.ResponseFormat.Schema, Name: request.ResponseFormat.Name, Description: request.ResponseFormat.Description}
 		default:
 			return provider.CallOptions{}, invalidMappingFailure()
 		}
@@ -130,9 +135,7 @@ func mapRequest(request wireRequest) (provider.CallOptions, *requestFailure) {
 		return provider.CallOptions{}, failure
 	}
 	options.ProviderOptions = rootOptions
-	if request.IncludeRawChunks {
-		return provider.CallOptions{}, rejectedMappingFailure(capabilityRawOutput)
-	}
+	options.IncludeRawChunks = request.IncludeRawChunks
 	if request.Reasoning != nil {
 		reasoning, err := mapWireReasoning(*request.Reasoning)
 		if err != nil {
@@ -144,6 +147,7 @@ func mapRequest(request wireRequest) (provider.CallOptions, *requestFailure) {
 }
 
 type historicalToolCall struct {
+	reemitted        bool
 	name             string
 	providerExecuted bool
 	completed        bool
@@ -156,8 +160,13 @@ func unresolvedProviderCalls(prompt []provider.Message) (map[string]string, *req
 		for _, part := range message.Content {
 			switch part.Type {
 			case provider.ContentPartTypeToolCall:
-				if _, exists := calls[part.ToolCallID]; exists {
-					return nil, invalidMappingFailure()
+				if previous, exists := calls[part.ToolCallID]; exists {
+					if previous.completed || previous.reemitted || !previous.providerExecuted || !part.ProviderExecuted || previous.name != part.ToolName {
+						return nil, invalidMappingFailure()
+					}
+					previous.reemitted = true
+					calls[part.ToolCallID] = previous
+					continue
 				}
 				if _, exists := orphanResults[part.ToolCallID]; exists {
 					return nil, invalidMappingFailure()
@@ -273,7 +282,16 @@ func mapWirePart(part wirePart, role provider.Role) (provider.ContentPart, *requ
 		mapped.ProviderOptions = options
 		return mapped, nil
 	case provider.ContentPartTypeCustom:
-		return provider.ContentPart{}, rejectedMappingFailure(capabilityCustomContent)
+		if role != provider.RoleAssistant || !validCustomKind(part.Kind) {
+			return provider.ContentPart{}, invalidMappingFailure()
+		}
+		options, failure := mapWireProviderOptions(part.ProviderOptions)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		custom := provider.CustomPart(part.Kind)
+		custom.ProviderOptions = options
+		return custom, nil
 	case provider.ContentPartTypeToolCall:
 		if role != provider.RoleAssistant {
 			return provider.ContentPart{}, invalidMappingFailure()
@@ -300,7 +318,18 @@ func mapWirePart(part wirePart, role provider.Role) (provider.ContentPart, *requ
 		result := provider.ToolResultPart(part.ToolCallID, part.ToolName, output)
 		result.ProviderOptions = options
 		return result, nil
-	case provider.ContentPartTypeToolApprovalResponse, provider.ContentPartTypeToolApprovalRequest:
+	case provider.ContentPartTypeToolApprovalResponse:
+		if role != provider.RoleTool || part.Approved == nil || part.ApprovalID == "" {
+			return provider.ContentPart{}, invalidMappingFailure()
+		}
+		options, failure := mapWireProviderOptions(part.ProviderOptions)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		result := provider.ToolApprovalResponsePart(part.ApprovalID, *part.Approved, part.Reason)
+		result.ProviderOptions = options
+		return result, nil
+	case provider.ContentPartTypeToolApprovalRequest:
 		return provider.ContentPart{}, rejectedMappingFailure(capabilityToolApprovals)
 	default:
 		return provider.ContentPart{}, invalidMappingFailure()

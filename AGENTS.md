@@ -77,8 +77,8 @@ Parity-sensitive work includes stream parts, UI chunks, SSE framing, provider
 messages, provider request conversion, tool orchestration, output behavior,
 provider options, frontend interop, and conformance fixtures.
 
-- **Coverage map first**: Use `test/conformance/PARITY.md` to classify the
-  work by layer: core orchestration, provider contract, provider implementation,
+- **Coverage map first**: Use `test/conformance/PARITY.md` to find the surface
+  and layer: core orchestration, provider contract, provider implementation,
   frontend interop, or conformance harness. The required proof differs by layer;
   provider work usually needs request snapshots, while core stream work usually
   needs UI chunk snapshots.
@@ -124,14 +124,12 @@ can support a parity claim.
 - **Divergence classification**: Every observed upstream difference must be
   classified as parity-preserving Go adaptation, intentional deviation,
   implementation bug, or coverage gap.
-- **Record ownership**: `upstream-sync` issues are authoritative for actionable
-  deferred work. `PARITY.md` records stable coverage status, confidence sources,
-  supported boundaries and accepted deviations; do not add dated upgrade assessments,
-  issue catalogs or copies of issue details. The upgrade PR owns its run-specific
-  target, validation and compact issue list.
-- **Documented gaps**: Durable intentional deviations and accepted coverage or
-  support boundaries must be recorded in `test/conformance/upstream.yaml` or
-  `test/conformance/PARITY.md`. Actionable gaps belong in `upstream-sync` issues.
+- **Record ownership**: Accepted deviations and support boundaries go in
+  `test/conformance/upstream.yaml` `knownGaps` (or the owning capability spec);
+  actionable gaps go in `upstream-sync` issues; the upgrade PR owns run-specific
+  results. `PARITY.md` changes only when a surface is added or removed or its
+  status or evidence location changes. Adding tests does not require editing it.
+  See [the coverage map and the layers](CONTRIBUTING.md#the-coverage-map-and-the-layers).
 - **Pinned-version upgrades**: Use the `ai-sdk-parity-upgrade` skill to update a
   fixed coherent reference, validate it and comprehensively assess current Go
   behavior against that target, not only the release delta. The upgrade PR must
@@ -142,9 +140,8 @@ can support a parity claim.
   registered upstream baseline. If a change needs a newer baseline, include the
   pins, lockfile, expectations and reviewed evidence in the same PR.
 - **Parity matching**: Process registered behavioral work packages independently
-  after the pinned-version upgrade, with their own acceptance tests. Update the
-  coverage map only when stable status, evidence, support boundaries or accepted
-  deviations change. Separate missing implementation from missing proof. Registration
+  after the pinned-version upgrade, with their own acceptance tests. Separate
+  missing implementation from missing proof. Registration
   is not API approval or acceptance of a permanent deviation, and an upgrade-blocking
   incompatibility cannot be silently deferred.
 
@@ -231,6 +228,9 @@ Three event layers: `provider.StreamPart` (raw) -> `TextStreamPart`
 (orchestration) -> `UIMessageChunk` (SSE wire format).
 
 ## Documentation Strategy
+
+This repository is public. Describe deployment contracts generically; do not name
+or link private infrastructure repositories in specs, docs or GitHub content.
 
 Docs live in three surfaces, each with one job. Keep content in the right place
 to avoid README bloat and godoc drift. Full rules: [CONTRIBUTING.md](CONTRIBUTING.md).

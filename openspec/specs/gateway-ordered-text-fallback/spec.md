@@ -3,9 +3,7 @@
 ## Purpose
 
 Define configured fallback for mapped Gateway capabilities beneath one logical observation chain, with first-part commitment, bounded lifecycle ownership and existing physical-attempt attribution.
-
 ## Requirements
-
 ### Requirement: Ordered direct text routes
 The Gateway SHALL construct each public route from one required primary and zero or more ordered direct provider/backend candidates. Every invocation SHALL begin at the primary and consider later candidates only in configured order; no prior winner, request value, health signal, or concurrent call SHALL reorder or skip candidates.
 
@@ -162,10 +160,10 @@ Tests SHALL use deterministic fake models/transports and focused race tests; the
 - **THEN** it SHALL use deterministic focused tests without presenting synthetic inputs as recorded evidence, live acceptance or full continuation
 
 ### Requirement: Mapped capability fallback boundary
-Configured candidates SHALL compose directly through reusable fallback beneath the single logical middleware chain. Every attempted candidate SHALL receive the same supported mapped CallOptions, retaining function definitions/history/choices, ordinary file selections and filename presence, reasoning content/controls, ordinary headers and opaque options at their original supported scopes.
+Configured candidates SHALL compose directly through reusable fallback beneath the single logical middleware chain. Every attempted candidate SHALL receive the same supported mapped CallOptions, retaining function definitions/history/choices, ordinary file selections and filename presence, reasoning content/controls, custom history and custom tool-result content, ordinary headers and opaque options at their original supported scopes.
 
 #### Scenario: Scoped native options reach all attempts
-- **WHEN** a mapped request carries options for multiple ordinary native namespaces at supported call/message/content/function-tool/file-result scopes and a primary fails eligibly before commitment
+- **WHEN** a mapped request carries options for multiple ordinary native namespaces at supported call/message/content/function-tool/file-result/custom scopes and a primary fails eligibly before commitment
 - **THEN** each attempted candidate SHALL receive those options unchanged at the same scopes and consume only according to its existing native namespace rules
 
 #### Scenario: Empty and active ordinary namespaces remain eligible
@@ -175,6 +173,10 @@ Configured candidates SHALL compose directly through reusable fallback beneath t
 #### Scenario: Setup failure and empty pre-part EOF
 - **WHEN** setup fails eligibly or a candidate channel closes before any part while the request remains live
 - **THEN** reusable fallback SHALL evaluate the failure using its existing decider and advance only to the next configured candidate when eligible
+
+#### Scenario: Candidate rejects unsupported custom content
+- **WHEN** a candidate rejects mapped custom content with the unsupported-functionality sentinel before any I/O and a later candidate accepts it
+- **THEN** the default decider SHALL advance and the later candidate's result SHALL be returned
 
 #### Scenario: Noneligible failure or cancellation
 - **WHEN** a mapped request encounters a noneligible failure or cancellation before selection
@@ -189,13 +191,17 @@ Configured candidates SHALL compose directly through reusable fallback beneath t
 - **THEN** configured fallback SHALL NOT re-enter selection or replay the call on another candidate
 
 #### Scenario: Deferred or protected request remains refused
-- **WHEN** a request activates an unsupported provider-tool, provider-executed history, approval, raw/custom/generated/structured codec, unconsumed host control or concrete native bypass
+- **WHEN** a request activates an unsupported provider-tool, provider-executed history, approval, raw/generated codec, unconsumed host control or concrete native bypass
 - **THEN** its existing owning validation/protection boundary SHALL remain effective before prohibited native I/O
 - **AND** removal of the text guard SHALL NOT enable the deferred feature
 
 #### Scenario: Capture policy does not govern admission
-- **WHEN** a supported tool/file/reasoning/options request runs through configured fallback under metadata-only operator capture
+- **WHEN** a supported tool/file/reasoning/custom/options request runs through configured fallback under metadata-only operator capture
 - **THEN** capture policy SHALL NOT reject the mapped content or alter supported responses and one logical observation SHALL cover the physical attempts
+
+#### Scenario: Structured output is mapped
+- **WHEN** a valid JSON response format is supplied on a configured fallback route
+- **THEN** it SHALL remain eligible under gateway-structured-output with candidate-native validation and existing commitment rules
 
 ### Requirement: Ordinary namespace values do not narrow fallback
 Empty namespace objects and active members including null, false, zero, empty strings, arrays and nested objects SHALL NOT create a separate fallback restriction. Native adapters SHALL retain their own namespace interpretation and concrete consumption-backed protections; mapped eligibility SHALL NOT imply acceptance by every backend. The Gateway SHALL NOT filter to a candidate intersection, translate native options or replace option loss with blanket refusal.

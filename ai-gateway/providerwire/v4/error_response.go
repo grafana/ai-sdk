@@ -47,6 +47,12 @@ type errorDefinition struct {
 }
 
 var publicErrors = [...]errorDefinition{
+	safeBYOKDiscovery: {
+		status:  http.StatusBadRequest,
+		message: "catalog discovery is unsupported for BYOK",
+		kind:    errorInvalidRequest,
+		code:    codeInvalidRequest,
+	},
 	safeBYOKCredentials: {
 		status:  http.StatusBadRequest,
 		message: "providerOptions.gateway.byok requires supported provider arrays with valid accounts",
@@ -180,16 +186,12 @@ func definitionForError(value safeError) errorDefinition {
 
 func requestFailureMessage(reason requestFailureReason) string {
 	switch reason {
-	case capabilityCustomContent:
-		return "unsupported capability: custom-content"
 	case capabilityTools:
 		return "unsupported capability: tools"
 	case capabilityToolApprovals:
 		return "unsupported capability: tool-approvals"
 	case capabilityStructuredOutput:
 		return "unsupported capability: structured-output"
-	case capabilityRawOutput:
-		return "unsupported capability: raw-output"
 	case capabilityProviderOptions:
 		return "unsupported capability: provider-options"
 	case policyReservedProviderOptions:

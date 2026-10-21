@@ -113,7 +113,7 @@ state. Tool `ErrorText` and `ToolApproval.Reason` are now string pointers: nil i
 absent; `new("")` is explicitly empty. Output errors require a non-nil error;
 denials use `Tool call execution denied.` only when the reason is absent.
 See the [tool part API](https://pkg.go.dev/github.com/grafana/ai-sdk#ToolInvocationPart)
-for field semantics and [parity boundaries](../../test/conformance/PARITY.md#retained-deviations-without-issue-ownership)
+for field semantics and [`ui-optional-presence`](../../test/conformance/upstream.yaml)
 for the remaining scalar/optional-value normalization.
 
 ## Continue Go-only model conversations

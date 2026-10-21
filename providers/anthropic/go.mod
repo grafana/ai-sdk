@@ -1,6 +1,6 @@
 module github.com/grafana/ai-sdk/providers/anthropic
 
-go 1.26.3
+go 1.27.3
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.80.0
@@ -46,7 +46,7 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/api v0.301.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941 // indirect
 	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )

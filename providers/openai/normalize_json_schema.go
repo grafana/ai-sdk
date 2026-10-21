@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/grafana/ai-sdk/internal/jsonschema"
 	"github.com/grafana/ai-sdk/provider"
 )
 
 const propertyNamesWarningDetails = "OpenAI does not support JSON Schema propertyNames. It was removed before sending the schema, so OpenAI will not enforce property-name constraints."
 
 func normalizeOpenAIJSONSchema(raw json.RawMessage) (map[string]any, []provider.Warning, error) {
-	var schema map[string]any
-	if err := json.Unmarshal(raw, &schema); err != nil {
+	schema, err := jsonschema.DecodeObject(raw)
+	if err != nil {
 		return nil, nil, fmt.Errorf("openai: decoding JSON schema: %w", err)
 	}
 	if schema == nil {
