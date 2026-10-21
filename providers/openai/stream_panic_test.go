@@ -24,8 +24,9 @@ const panicResponseCreated = "data: {\"type\":\"response.created\",\"sequence_nu
 const panicTextDelta = "data: {\"type\":\"response.output_text.delta\",\"sequence_number\":1,\"output_index\":0,\"content_index\":0,\"item_id\":\"msg_1\",\"delta\":\"hi\"}\n\n"
 
 type panickingBody struct {
-	prefix io.Reader
-	closed atomic.Int32
+	prefix      io.Reader
+	closePanics bool
+	closed      atomic.Int32
 }
 
 func (b *panickingBody) Read(p []byte) (int, error) {
@@ -37,7 +38,20 @@ func (b *panickingBody) Read(p []byte) (int, error) {
 
 func (b *panickingBody) Close() error {
 	b.closed.Add(1)
+	if b.closePanics {
+		panic("secret-panic-value")
+	}
 	return nil
+}
+
+type closePanickingBody struct {
+	io.Reader
+	closed atomic.Int32
+}
+
+func (b *closePanickingBody) Close() error {
+	b.closed.Add(1)
+	panic("secret-panic-value")
 }
 
 type blockingBody struct {
@@ -132,6 +146,28 @@ func TestDoStream_WorkerPanic(t *testing.T) {
 		require.NoError(t, err)
 		assertSinglePanicError(t, readPanicStream(result))
 		assert.Eventually(t, body.released.Load, time.Second, time.Millisecond, "the reader must be released")
+	})
+
+	t.Run("body close panics after a reader panic", func(t *testing.T) {
+		body := &panickingBody{prefix: strings.NewReader(panicResponseCreated + panicTextDelta), closePanics: true}
+		result, err := panicStreamModel(body).DoStream(context.Background(), options)
+		require.NoError(t, err)
+		assertSinglePanicError(t, readPanicStream(result))
+		assert.Equal(t, int32(1), body.closed.Load())
+	})
+
+	t.Run("body close panics after the stream finishes", func(t *testing.T) {
+		completed := "data: {\"type\":\"response.completed\",\"sequence_number\":2,\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"model\":\"gpt-4o\",\"object\":\"response\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n"
+		body := &closePanickingBody{Reader: strings.NewReader(panicResponseCreated + panicTextDelta + completed)}
+		result, err := panicStreamModel(body).DoStream(context.Background(), options)
+		require.NoError(t, err)
+		parts := readPanicStream(result)
+		require.NotEmpty(t, parts)
+		assert.Equal(t, provider.PartFinish, parts[len(parts)-1].Type)
+		for _, part := range parts {
+			assert.NotEqual(t, provider.PartError, part.Type)
+		}
+		assert.Eventually(t, func() bool { return body.closed.Load() > 0 }, time.Second, time.Millisecond)
 	})
 
 	t.Run("body close panics on cancellation", func(t *testing.T) {
