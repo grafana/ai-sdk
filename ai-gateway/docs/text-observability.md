@@ -1,186 +1,100 @@
-# Text observability
+# Monitor the Gateway
 
-The Gateway emits one logical observation for each authenticated unary or
-streaming text-model call. Logs, Prometheus, and Agent Observability identify
-the call as provider `grafana` and the canonical public catalog model ID. An
-alias therefore has the same telemetry identity as its canonical model.
+The Gateway reports every request through Grafana's logs, metrics and traces,
+and can also export model calls to Agent Observability. It records which model
+was called, how the call went, how long it took and how many tokens it used.
+It never records prompts, responses or credentials.
 
-A request produces one logical observation even when fallback tries several
-models. Use the public model ID to monitor application traffic and private
-fallback logs to investigate individual provider attempts.
+## Logs
 
-## Logs and traces through the plugin host
+Gateway logs appear in Grafana's log with `logger=plugin.grafana-aigateway-app`.
+Each request writes one `http request completed` line:
 
-The Gateway writes every log record through the plugin SDK logger, which the
-plugin host relays as structured records at their own level. Nested attributes
-appear as dotted keys, and records stay below the host's 64 KiB line limit. The
-plugin writes nothing else to its standard streams.
+| Field | Value |
+|---|---|
+| `route` | `config` for model listing, `language_model` for model calls |
+| `status` | Status class, such as `2xx` or `4xx` |
+| `access` | `configured`, `byok` (bring your own key) or `refused` |
+| `correlation_id` | ID that links the request to its attempt logs |
 
-Tracing comes from the plugin host. When the host configures it through
-`GF_INSTANCE_OTLP_*`, the plugin SDK instruments the route call and exports
-spans; the Gateway adds no exporter or span attributes of its own. Request log
-records carry the `traceID` and `spanID` of the incoming trace context.
+Each model the Gateway tries for a request writes a `gateway_physical_attempt`
+line with the same `correlation_id`, the provider and model it tried, the
+outcome and whether a fallback followed. Use these lines to see which provider
+answered a request. They reveal your provider configuration, so limit who can
+read them.
 
-## Trusted metadata and privacy
+Under heavy load the Gateway drops attempt lines rather than slow down model
+calls. `grafana_ai_gateway_physical_attempt_dropped_total` counts the dropped
+lines.
 
-The Gateway generates a new bounded correlation ID for the HTTP request. Only
-these additional values may enter logical logs and Agent Observability
-metadata:
+## Metrics
 
-| Field | Trusted source |
-| --- | --- |
-| `gateway.correlation_id` | Gateway-generated opaque request ID |
-| `gateway.caller_service` | successfully verified service identity |
-| `gateway.namespace` | successfully verified authentication namespace |
+Grafana serves the Gateway's metrics at
+`/metrics/plugins/grafana-aigateway-app`. Model metrics use the model ID that
+applications select, so calls through an alias count under their model.
 
-Missing values are omitted. Incoming headers, raw claims, acting-user values,
-arbitrary context, and provider response metadata are not trusted sources.
-Observation metadata is never copied into provider headers or provider
-options, and none of these request-scoped fields becomes a metric label.
+| Metric | Measures |
+|---|---|
+| `aisdk_model_requests_total` | Model calls, by model, status, error type and finish reason |
+| `aisdk_model_request_duration_seconds` | Model call duration |
+| `aisdk_model_time_to_first_output_seconds` | Time until the model starts answering |
+| `aisdk_model_tokens_total` | Tokens, by model and token type |
+| `aisdk_model_inflight_requests` | Model calls in progress |
+| `aisdk_model_stream_chunks_total` | Streamed parts, by type |
+| `aisdk_model_inter_chunk_delay_seconds` | Time between streamed parts |
+| `grafana_ai_gateway_access_decisions_total` | Requests, by access decision |
+| `grafana_ai_gateway_agento11y_export_failures_total` | Failed Agent Observability exports, by cause |
 
-Model logging disables prompt, output, and per-stream-part capture and applies
-a fixed attribute allowlist followed by the default secret redactor. Agent
-Observability always uses metadata-only content capture, provided-only context,
-requested identity, a final Gateway allowlist, and no hooks. It retains
-lifecycle, structural part types, normalized usage and unified finish/error
-classes, but not text, detailed errors, credentials, response IDs, backend
-model IDs, provider topology, arbitrary tags, or request controls. The client
-may add its fixed `agento11y.sdk.*` metadata markers and a closed `call_error`
-category after the Gateway filter; no arbitrary exporter or provider error is
-exported.
+Grafana's own request metrics, such as `grafana_router_http_requests_total`,
+count requests to the Gateway and their latency.
 
-## Inspect fallback attempts
+## Traces
 
-Use the Gateway's relayed logs to investigate which models were attempted for a request.
-Each `gateway_physical_attempt` record includes the request correlation ID when
-available, candidate index, configured provider and backend model, timing,
-outcome, and whether fallback was planned. These records are separate from the
-logical generation observation and exclude payloads, credentials, headers,
-endpoint URLs, and raw errors. Restrict access because they reveal provider
-configuration. Callers may independently receive compact execution overviews;
-operator timing, correlation and fallback-intent records are not consumer output.
+When Grafana exports traces, it also traces requests to the Gateway, and the
+Gateway's log lines include their `traceID` and `spanID`.
 
-Attempt records go through the same logger from one background worker with a
-256-record queue, so model calls never wait for log output. Provider and
-model identities in a record are capped at 512 bytes each. Queue saturation, invalid records and records emitted after
-shutdown are dropped; monitor `grafana_ai_gateway_physical_attempt_dropped_total`
-before treating the logs as a complete account of provider attempts.
+## Export to Agent Observability
 
-## Caller execution overviews
+The Gateway can send each model call to Agent Observability. Add these settings to the `[plugin.grafana-aigateway-app]` section:
 
-Configured direct and fallback routes return best-effort `gateway.execution`
-metadata on unary results, stream finishes and failure carriers. It contains
-requested/canonical identity and ordered observed attempts, not a trace or
-completion/replay claim. Current committed error summaries remain event-local
-and do not require configured catalog attribution. The handler replaces exact
-configured provider-key and enabled exporter-credential matches in summary
-message, type and string code for all callers. Static Gateway access keys remain
-outside this policy and retain hash-only authentication storage. Other provider-originated values, including BYOK-only echoes, remain
-unchanged. This policy is independent of logger field redaction and does not
-scan native metadata, generated text or stream fragments.
+```ini
+agento11y_enabled = true
+agento11y_endpoint = otlp.example.com:443
+agento11y_token = $__file{/run/secrets/agento11y-token}
+```
 
-Execution metadata is added directly to responses, not reconstructed from
-Gateway logs. Disabling telemetry or dropping log records does not suppress it.
-If your application records this metadata, apply its own access and retention
-controls. See
-[consumer access and omission semantics](../../docs/providers/grafana-gateway.md#inspect-execution-overviews-and-failures).
+| Setting | Description |
+|---|---|
+| `agento11y_enabled` | `true` to export. Defaults to `false`. |
+| `agento11y_protocol` | `grpc` (default) or `http`. |
+| `agento11y_endpoint` | Collector address: `host:port` for gRPC, or a URL for HTTP. |
+| `agento11y_tls` | Defaults to `true`. Set `false` only for a collector without TLS. |
+| `agento11y_token` | Token for the collector. Required when exporting. |
 
-## Prometheus
+The export includes the model, timing, token usage and how the call ended, but
+no content. If the collector is slow or unavailable, model calls continue and
+the export failure metric counts the lost records.
 
-The plugin host collects the Gateway's metrics through the plugin protocol; the
-Gateway serves no metrics endpoint. Gateway collectors are registered once on
-the plugin's default registry when the plugin starts, and duplicate registration
-fails startup. Route request counts, latency and in-flight requests come from
-the host's router metrics (`grafana_router_http_requests_total` and related,
-labelled by API group and verb). The Gateway's per-request completion log
-names the route as `config`, `language_model` or `unmatched`, never a
-namespace.
-`grafana_ai_gateway_access_decisions_total` counts route requests by the fixed
-`decision` values `configured`, `byok` and `refused`.
+Configure the export only through these settings. If Grafana's environment
+has `AGENTO11Y_*` or `SIGIL_*` variables, the Gateway does not start.
 
-The `aisdk_model_*` families use only the following bounded labels:
+## What the Gateway does not record
 
-| Family | Labels |
-| --- | --- |
-| `requests_total` | operation, provider, model, status, error type, status code, finish reason |
-| `inflight_requests` | operation, provider, model |
-| `request_duration_seconds` | operation, provider, model, status |
-| `tokens_total` | operation, provider, model, token type |
-| `time_to_first_output_seconds` | operation, provider, model, status |
-| `stream_chunks_total` | operation, provider, model, closed chunk type |
-| `inter_chunk_delay_seconds` | operation, provider, model, closed chunk type |
+The Gateway's logs, metrics and exports never include:
 
-Provider is always `grafana`, model is always the canonical public ID, and
-operation/status/error/finish/chunk values come from finite classifications;
-unknown stream-part values are bucketed as `other`.
-Status-code labels use `100`–`599`, `none` when absent, and `other` for every
-out-of-range provider value.
-Caller, namespace, correlation, aliases, backend identity,
-URLs, and content are never labels. `grafana_ai_gateway_agento11y_export_failures_total`
-uses only the fixed `class` values `queue_full`, `serialization`, `transport`,
-`rejected`, `shutdown`, and `unknown`.
+- prompts, responses, generated files, tool calls or citations;
+- provider keys, Grafana tokens or request headers;
+- user or service account IDs.
 
-## Agent Observability configuration
+In `cloud` mode, records of configured-model calls also name the Grafana
+service that made the call.
 
-Agent Observability export is optional. When enabled, it needs a credential,
-and its endpoint must match `agento11y_tls`, which defaults to `true`. The
-plugin reads these settings:
+Your application still receives everything the model returns, including
+warnings, citations and response details. If you log those in your
+application, apply your own access and retention rules; the
+[structured logging guide](../../docs/middleware/structured-logging.md) shows
+how to capture and redact them.
 
-| Setting | Default / constraint |
-| --- | --- |
-| `agento11y_enabled` | `false` |
-| `agento11y_protocol` | `grpc`; `grpc` or `http` |
-| `agento11y_endpoint` | required when enabled; credential-free absolute HTTP(S) URL for HTTP, host:port for gRPC |
-| `agento11y_tls` | `true`; `false` allows a cleartext endpoint |
-| `agento11y_token` | bearer token, required when enabled; use `$__file{}` to keep it out of the configuration file |
+---
 
-These are keys of the `[plugin.grafana-aigateway-app]` section, passed to the
-plugin as `GF_PLUGIN_AGENTO11Y_*`. Queueing, batching, retries and the 10-second
-per-attempt export timeout are fixed.
-
-The token is read once while the plugin starts, after the other settings and
-the model catalog are validated, and is never logged. Ambient `AGENTO11Y_*` and legacy `SIGIL_*` SDK
-configuration is rejected so it cannot bypass validated Gateway policy.
-
-Queue pressure, validation failures, exporter rejection/outage, and bounded
-flush or shutdown failure are fail-open for model traffic. Diagnostics and
-metrics expose only a fixed failure class.
-
-After the plugin host stops the plugin, the Gateway flushes Agent Observability
-and attempt records concurrently within one second. Agent Observability waits
-for already-started recorders, flushes and shuts down, all within that shared
-deadline. Records emitted after the flush
-starts are dropped and counted. The host's tracer shutdown shares the same
-window before the host kills the process, so a slow trace exporter can cut the
-flush short. The `plugin_stopped` lifecycle event is logged after the flush.
-
-## Returned values and consumer observation
-
-Gateway telemetry helps you monitor usage, latency and failures without
-collecting response content. Your application can still receive model warnings,
-citations and response details; making those available to the caller does not
-add them to Gateway logs or metrics.
-
-The model named in a response may differ from the public model you selected.
-Gateway telemetry continues to identify calls by their configured public model,
-so aliases share the same operational view. Use response details for inspecting
-a particular generation, not as a replacement for the model ID your application
-uses to select a model. See the [Go client guide](../../docs/providers/grafana-gateway.md#native-response-values)
-for accessing those details in generated and streamed responses.
-
-If you need response content for application diagnostics, configure logging in
-your application separately. This does not enable content capture on the
-Gateway. Capture only what you need, restrict access and retention, and account
-for sensitive content in warnings, citations and response bodies. The
-[structured logging guide](../../docs/middleware/structured-logging.md)
-explains how to choose capture settings and redact application logs.
-
-## Source and tool privacy
-
-Sources and tool calls remain available in model responses, but their content
-is not captured in logs, metrics or Agent Observability. Source identifiers,
-URLs, titles, filenames and metadata are omitted, as are tool names, IDs,
-arguments, results and provider metadata. Returning provider metadata to an
-application does not authorize telemetry capture.
-
-See the [source guide](sources.md) for the public response privacy policy.
+← [Sources](sources.md) · [Docs index](../../docs/README.md) · [AI Gateway](../README.md)
