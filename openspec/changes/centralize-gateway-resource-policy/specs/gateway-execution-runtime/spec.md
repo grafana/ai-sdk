@@ -102,6 +102,10 @@ The runtime SHALL classify selection, provider, transport and context failures i
 - **WHEN** the failure is a transport timeout, another transport error, context cancellation or deadline expiry
 - **THEN** the category SHALL be timeout, upstream, cancellation or timeout respectively
 
+#### Scenario: Invalid provider output
+- **WHEN** a provider result or stream fails lifecycle validation
+- **THEN** the category SHALL be internal
+
 #### Scenario: Same failure across adapters
 - **WHEN** ProviderWire and the test adapter receive the same provider failure
 - **THEN** both SHALL observe the same category
@@ -122,7 +126,7 @@ The runtime SHALL observe fallback attempts for every selection, configured or B
 - **THEN** each request's captured attempts SHALL contain only its own
 
 ### Requirement: Per-attempt native option translation
-An adapter SHALL be able to supply, with its request, a translator that maps its API's request semantics to native options for one physical attempt, given that attempt's provider type and provider-option namespace. The runtime SHALL apply it at every configured candidate and BYOK account attempt, to a copy of the call options, and SHALL apply host request policy to the result. Without a translator, every attempt SHALL receive the mapped options unchanged.
+An adapter SHALL be able to supply, with its request, a translator that maps its API's request semantics to native options for one physical attempt, given that attempt's provider type and provider-option namespace. The runtime SHALL apply it at every configured candidate and BYOK account attempt, to a copy of the call options. The result SHALL pass host request policy and the candidate's native option validation. Without a translator, every attempt SHALL receive the mapped options unchanged.
 
 #### Scenario: Heterogeneous fallback chain
 - **WHEN** an adapter supplies a translator and a configured route falls back from an Anthropic candidate to an OpenAI candidate

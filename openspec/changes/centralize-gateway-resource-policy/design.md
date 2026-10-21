@@ -223,7 +223,7 @@ Some API semantics map to different native options per backend. #248 shows the n
 Fallback picks the backend inside the logical model, so the adapter cannot know it while mapping.
 - **The translator:** the adapter passes `Translate func(execution.Target, provider.CallOptions) provider.CallOptions` in `Begin`. `Target{Provider, Namespace}` is the attempt's provider type and native option namespace (the compatible `providerName`, or the type for Anthropic and OpenAI).
 - **Where it runs:** the host wraps every configured candidate and every BYOK account model once, at construction, with `execution.AttemptModel(model, target)`. It reads the request's translator from a runtime-owned context key, applies it to a copy of the options, re-checks host policy, and contains panics as non-retryable internal failures. Without a translator it is a pass-through.
-- **Placement:** the wrapper sits below the observability middleware and inside fallback, so each physical attempt is translated and observed as it is sent.
+- **Placement:** the wrapper sits directly outside each candidate's native option validation (`nativeoptions.Model`), and inside fallback when the route has more than one candidate. Translated options therefore pass the same native validation as mapped ones, and each physical attempt is translated as it is sent. Today BYOK validates Anthropic options around the whole fallback chain, so `byok.New` moves that validation onto each account candidate to match configured routes.
 
 - *Alternative:* adapter-specific model wrappers at catalog build, as in #248. Rejected: it couples the catalog to every adapter and leaks a private context key per adapter.
 - *Alternative:* translate once before selection, for all candidates. Rejected: candidates in one route can differ in provider type.
@@ -240,7 +240,7 @@ The rules stay exactly as ProviderWire enforces them today, and its existing lif
 - *Alternative:* each adapter validates in its own state machine. Rejected: #248 already re-implements the same text-ID and tool-phase rules, and protocol drift on provider correctness would be silent.
 
 ### D19. Attempt capture for every selection
-`Begin` installs `fallback.WithAttemptObserver` for every selection. BYOK account models are already `fallback.New` chains, so they report attempts too. `Call.View` projects a configured overview only when the selection carries catalog candidates, exactly as today; BYOK attempts are captured but not published until #420.
+`Begin` installs `fallback.WithAttemptObserver` for every selection. BYOK account models are already `fallback.New` chains, so they report attempts too. A single-candidate configured route has no fallback chain; the runtime keeps today's synthesized single attempt for it. The request-scoped observer is independent of the model-level physical attempt observer, so operator telemetry is unchanged. `Call.View` projects a configured overview only when the selection carries catalog candidates, exactly as today; BYOK attempts are captured but not published until #420.
 
 ### D20. One PR with ordered commits
 Everything lands in one PR on #428. Commits follow the task groups in tasks.md, and each leaves `mise run test-ai-gateway` and `mise run test-grafana` passing:

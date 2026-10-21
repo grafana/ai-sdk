@@ -88,12 +88,14 @@ Delivered as one PR on `nrbrd/app-platform` (#428). Each group below is one comm
   - `internal/execution` policy tests: controls removed from model options and passed to the selector; reserved namespaces and protected headers refused with their reasons;
   - the existing ProviderWire tests, which still return the same `reserved provider option namespace` and `protected call header` documents;
   - the test adapter receiving the same policy outcomes.
-- [ ] 7.2 Add `execution.Target`, the `Request.Translate` field and `execution.AttemptModel`. Wrap every configured candidate in `service.BuildCatalog` and every BYOK account model in `byok.New` once, below observability and inside fallback. Verify with tests:
+- [ ] 7.2 Add `execution.Target`, the `Request.Translate` field and `execution.AttemptModel`. Wrap every configured candidate in `service.BuildCatalog` and every BYOK account model in `byok.New` once, directly outside its native option validation and inside fallback. Move BYOK's Anthropic option validation from around the fallback chain onto each account candidate. Verify with tests:
   - a heterogeneous Anthropic→OpenAI fallback chain where each attempt sees only its own translation;
   - BYOK accounts translated per attempt;
   - concurrent requests isolated;
   - a translator that adds a reserved namespace or protected header, or panics, failing that attempt non-retryably with zero provider requests;
-  - no translator passing options through unchanged.
+  - no translator passing options through unchanged;
+  - translated Anthropic options going through native option validation on configured and BYOK routes;
+  - single-candidate configured routes translated without a fallback chain.
 
 ## 8. Host composition and adapter contract
 
