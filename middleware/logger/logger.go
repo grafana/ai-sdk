@@ -485,7 +485,7 @@ func errorClass(err error) string {
 	if err == nil {
 		return ""
 	}
-	if errors.Is(err, streamrecover.ErrPanic) {
+	if streamrecover.Is(err) {
 		return "internal_error"
 	}
 	var apiErr *provider.APICallError
