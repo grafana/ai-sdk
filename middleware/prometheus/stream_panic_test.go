@@ -56,3 +56,18 @@ func TestDoStream_RecoveredPanicErrorType(t *testing.T) {
 	}
 	assertCounter(t, reg, metricRequestsTotal, map[string]string{"operation": operationStream, "error_type": errorTypeOther}, 1)
 }
+
+func TestDoStream_MalformedErrorChain(t *testing.T) {
+	reg := promclient.NewRegistry()
+	part := provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Cause: (*provider.APICallError)(nil)})}
+	wrapped, err := Wrap(panicTestStream(part), Options{Registerer: reg})
+	require.NoError(t, err)
+	result, err := wrapped.DoStream(context.Background(), provider.CallOptions{})
+	require.NoError(t, err)
+	var got []provider.StreamPart
+	for part := range result.Stream {
+		got = append(got, part)
+	}
+	assert.Equal(t, []provider.StreamPart{part}, got)
+	assertCounter(t, reg, metricRequestsTotal, map[string]string{"operation": operationStream, "error_type": errorTypeAPICallError}, 1)
+}
