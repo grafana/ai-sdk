@@ -85,7 +85,7 @@ Protocol adapters SHALL NOT impose response, SSE-frame, per-field, string, metad
 - **THEN** the adapter SHALL fail it through its existing safe error path, independently of size
 
 ### Requirement: Execution deadlines remain shared runtime policy
-The total model duration (`max_model_duration`) and the fixed stream idle and drain durations SHALL remain positive validated values that bound selection, attempts, stream consumption and post-terminal cleanup. These deadlines SHALL NOT be replaced by byte or count budgets. Documentation SHALL state that the platform route deadline can end a request before the model duration.
+The total model duration (`max_model_duration`) and the fixed stream idle and drain durations SHALL remain positive validated values, owned by the shared execution runtime under gateway-execution-runtime, that bound selection, attempts, stream consumption and post-terminal cleanup for every adapter. These deadlines SHALL NOT be replaced by byte or count budgets. Documentation SHALL state that the platform route deadline can end a request before the model duration.
 
 #### Scenario: Continuously ready provider after termination
 - **WHEN** a canceled provider channel remains permanently ready

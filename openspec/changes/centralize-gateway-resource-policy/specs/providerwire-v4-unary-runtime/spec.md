@@ -4,14 +4,14 @@
 
 ### Requirement: Constructed language-model handler
 
-The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for relative `POST /language-model` unary and streaming requests. Construction SHALL require a non-nil host-owned request selector independent of catalog interfaces and positive total model duration, stream idle duration and bounded post-cancellation drain duration. The handler SHALL NOT accept request, response, frame or stream-part byte/count limits; request-body and upstream bounds SHALL be owned by the host under gateway-resource-policy.
+The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for relative `POST /language-model` unary and streaming requests. Construction SHALL require the shared execution runtime under gateway-execution-runtime, which supplies selection, durations and configured-key summary protection. The handler SHALL NOT accept request, response, frame or stream-part byte/count limits; request-body and upstream bounds SHALL be owned by the host under gateway-resource-policy.
 
 #### Scenario: Valid construction
-- **WHEN** a caller supplies a request selector and positive durations
+- **WHEN** a caller supplies a valid shared execution runtime
 - **THEN** construction SHALL return an immutable handler
 
 #### Scenario: Invalid construction
-- **WHEN** the selector is nil or a duration is non-positive
+- **WHEN** the runtime is missing or invalid
 - **THEN** construction SHALL fail before serving traffic
 
 ### Requirement: Bounded complete request validation
