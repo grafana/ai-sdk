@@ -15,7 +15,6 @@ const (
 	capabilityToolApprovals       requestFailureReason = "tool-approvals"
 	capabilityStructuredOutput    requestFailureReason = "structured-output"
 	capabilityProviderOptions     requestFailureReason = "provider-options"
-	capabilityRawOutput           requestFailureReason = "raw-output"
 	policyReservedProviderOptions requestFailureReason = "reserved-provider-options"
 	policyProtectedCallHeader     requestFailureReason = "protected-call-header"
 )
@@ -136,9 +135,7 @@ func mapRequest(request wireRequest) (provider.CallOptions, *requestFailure) {
 		return provider.CallOptions{}, failure
 	}
 	options.ProviderOptions = rootOptions
-	if request.IncludeRawChunks {
-		return provider.CallOptions{}, rejectedMappingFailure(capabilityRawOutput)
-	}
+	options.IncludeRawChunks = request.IncludeRawChunks
 	if request.Reasoning != nil {
 		reasoning, err := mapWireReasoning(*request.Reasoning)
 		if err != nil {

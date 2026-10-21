@@ -116,7 +116,7 @@ func TestStreamFrameEncoding(t *testing.T) {
 		invalid := string([]byte{0xff})
 		_, ok := encodeStreamFrame(streamEvent{typeName: provider.PartTextDelta, id: "a", delta: invalid}, 1<<20)
 		assert.False(t, ok)
-		_, ok = encodeStreamFrame(streamEvent{typeName: provider.PartRaw}, 1<<20)
+		_, ok = encodeStreamFrame(streamEvent{typeName: provider.PartCustom}, 1<<20)
 		assert.False(t, ok)
 	})
 
@@ -322,7 +322,6 @@ func TestStreamingRuntimeTextStateAndUnsupportedParts(t *testing.T) {
 		{name: "custom with undotted kind", parts: []provider.StreamPart{{Type: provider.PartCustom, Kind: "private"}}},
 		{name: "custom with empty kind", parts: []provider.StreamPart{{Type: provider.PartCustom}}},
 		{name: "custom with invalid UTF-8 kind", parts: []provider.StreamPart{{Type: provider.PartCustom, Kind: "private." + invalidUTF8}}},
-		{name: "raw", parts: []provider.StreamPart{{Type: provider.PartRaw, RawValue: json.RawMessage(`{"private":true}`)}}},
 		{name: "approval", parts: []provider.StreamPart{{Type: provider.PartToolApprovalRequest, ApprovalID: "private"}}},
 	}
 	for _, tc := range tests {

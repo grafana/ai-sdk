@@ -365,7 +365,6 @@ func TestRuntimeRequestRejections(t *testing.T) {
 		body string
 		want []byte
 	}{
-		{name: "capability/raw output", body: `{"prompt":[],"includeRawChunks":true}`, want: unsupportedRawOutputError},
 		{name: "policy/reserved provider namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, want: reservedProviderOptionsError},
 		{name: "policy/protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, want: protectedCallHeaderError},
 		{name: "policy/protected call header case", body: `{"prompt":[],"headers":{"X-ACCESS-TOKEN":"caller"}}`, want: protectedCallHeaderError},
@@ -434,7 +433,7 @@ func TestRuntimeGoldenReplay(t *testing.T) {
 		{file: "headers.json", index: 1, status: http.StatusOK, modelCalls: 1},
 		{file: "custom-content.json", status: http.StatusOK, modelCalls: 1},
 		{file: "custom-content.json", index: 1, status: http.StatusOK, modelCalls: 1},
-		{file: "comprehensive-unions.json", status: http.StatusBadRequest},
+		{file: "comprehensive-unions.json", status: http.StatusOK, modelCalls: 1},
 		{file: "provider-tools.json", status: http.StatusOK, modelCalls: 1},
 		{file: "provider-tools.json", index: 1, status: http.StatusOK, modelCalls: 1},
 	}
@@ -928,7 +927,6 @@ func TestPublicError_FixedBytes(t *testing.T) {
 		{"tools", safeError{category: safeInvalidRequest, reason: capabilityTools}, 400, unsupportedToolsError, canonicalInternalStreamErrorFrame},
 		{"approval", safeError{category: safeInvalidRequest, reason: capabilityToolApprovals}, 400, unsupportedToolApprovalsError, canonicalInternalStreamErrorFrame},
 		{"output", safeError{category: safeInvalidRequest, reason: capabilityStructuredOutput}, 400, unsupportedStructuredOutputError, canonicalInternalStreamErrorFrame},
-		{"raw", safeError{category: safeInvalidRequest, reason: capabilityRawOutput}, 400, unsupportedRawOutputError, canonicalInternalStreamErrorFrame},
 		{"options", safeError{category: safeInvalidRequest, reason: capabilityProviderOptions}, 400, unsupportedProviderOptionsError, canonicalInternalStreamErrorFrame},
 		{"reserved", safeError{category: safeInvalidRequest, reason: policyReservedProviderOptions}, 400, reservedProviderOptionsError, canonicalInternalStreamErrorFrame},
 		{"header", safeError{category: safeInvalidRequest, reason: policyProtectedCallHeader}, 400, protectedCallHeaderError, canonicalInternalStreamErrorFrame},

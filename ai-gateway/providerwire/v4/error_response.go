@@ -192,8 +192,6 @@ func requestFailureMessage(reason requestFailureReason) string {
 		return "unsupported capability: tool-approvals"
 	case capabilityStructuredOutput:
 		return "unsupported capability: structured-output"
-	case capabilityRawOutput:
-		return "unsupported capability: raw-output"
 	case capabilityProviderOptions:
 		return "unsupported capability: provider-options"
 	case policyReservedProviderOptions:
