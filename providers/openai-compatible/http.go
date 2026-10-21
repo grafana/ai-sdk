@@ -89,7 +89,7 @@ func (m *model) doStream(ctx context.Context, params provider.CallOptions) (*pro
 	ch := make(chan provider.StreamPart, streamBufferSize)
 	go func() {
 		defer close(ch)
-		defer func() { _ = resp.Body.Close() }()
+		defer streamrecover.Close(resp.Body)
 		defer streamrecover.Recover(func() { sendStreamPart(ctx, ch, streamrecover.Part()) })
 		m.runStream(ctx, endpoint, bodyBytes, resp.Body, resp.Header, warnings, params.IncludeRawChunks, metadataKey, ch)
 	}()
