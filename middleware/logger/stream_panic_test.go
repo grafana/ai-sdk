@@ -54,3 +54,56 @@ func TestDoStream_RecoveredPanicErrorClass(t *testing.T) {
 	attrs := records[len(records)-1].AttrsMap()
 	assertAttr(t, attrs, "ai_sdk.error.type", "internal_error")
 }
+
+func TestDoStream_ObservationPanicKeepsOutcome(t *testing.T) {
+	var calls atomic.Int32
+	clock := func() time.Time {
+		if calls.Add(1) == 2 {
+			panic("secret-panic-value")
+		}
+		return time.Unix(0, 0)
+	}
+	failure := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 500, Message: "upstream failed"})
+	handler := newTestHandler()
+	wrapped := Wrap(streamOf(
+		provider.StreamPart{Type: provider.PartTextDelta, ID: "txt", Delta: "hello"},
+		provider.StreamPart{Type: provider.PartError, APICallError: failure},
+	), Options{Logger: slog.New(handler), Clock: clock})
+	result, err := wrapped.DoStream(context.Background(), provider.CallOptions{})
+	require.NoError(t, err)
+	drainStream(result.Stream)
+	records := handler.Records()
+	require.NotEmpty(t, records)
+	last := records[len(records)-1]
+	assert.Equal(t, string(EventStreamError), last.Message)
+	assertAttr(t, last.AttrsMap(), "ai_sdk.outcome", outcomeError)
+}
+
+func TestDoStream_MalformedErrorChain(t *testing.T) {
+	malformed := provider.NewAPICallError(provider.APICallErrorOptions{Cause: (*provider.APICallError)(nil)})
+
+	t.Run("stream setup", func(t *testing.T) {
+		handler := newTestHandler()
+		model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return nil, malformed
+		}}
+		_, err := Wrap(model, Options{Logger: slog.New(handler)}).DoStream(context.Background(), provider.CallOptions{})
+		assert.Same(t, malformed, err)
+		records := handler.Records()
+		require.NotEmpty(t, records)
+		assertAttr(t, records[len(records)-1].AttrsMap(), "ai_sdk.error.type", "api_call_error")
+	})
+
+	t.Run("stream error part", func(t *testing.T) {
+		handler := newTestHandler()
+		part := provider.StreamPart{Type: provider.PartError, APICallError: malformed}
+		result, err := Wrap(streamOf(part), Options{Logger: slog.New(handler)}).DoStream(context.Background(), provider.CallOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, []provider.StreamPart{part}, drainStream(result.Stream))
+		records := handler.Records()
+		require.NotEmpty(t, records)
+		last := records[len(records)-1]
+		assert.Equal(t, string(EventStreamError), last.Message)
+		assertAttr(t, last.AttrsMap(), "ai_sdk.error.type", "api_call_error")
+	})
+}

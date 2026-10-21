@@ -86,9 +86,7 @@ streamLoop:
 				cancelled = ctx.Err() != nil
 				break streamLoop
 			}
-			if observing {
-				observing = l.observeStreamPart(ctx, input, &summary, part)
-			}
+			observing = l.observeStreamPart(ctx, input, &summary, part, observing)
 
 			select {
 			case input.tee <- part:
@@ -106,11 +104,21 @@ streamLoop:
 	l.logStreamEnd(ctx, input, &summary, cancelled)
 }
 
-// observeStreamPart reports false when observation panicked; the caller then
-// stops observing and keeps forwarding.
-func (l *modelLogger) observeStreamPart(ctx context.Context, input streamTeeInput, summary *streamSummary, part provider.StreamPart) (ok bool) {
+// observeStreamPart adds part to the summary, then, while observing, times
+// and logs it through the configured clock and handler. It reports false when
+// that panicked. The caller keeps forwarding and passes the result back, so
+// later parts still reach the summary and the stream's outcome stays correct.
+func (l *modelLogger) observeStreamPart(ctx context.Context, input streamTeeInput, summary *streamSummary, part provider.StreamPart, observing bool) (ok bool) {
 	defer streamrecover.Recover(func() { ok = false })
-	summary.Observe(part, input.started, l.opts.clock())
+	summary.observe(part)
+	if !observing {
+		return false
+	}
+	observedAt := l.opts.clock()
+	if summary.firstContentLatency == nil && isFirstContentPart(part) {
+		latency := observedAt.Sub(input.started)
+		summary.firstContentLatency = &latency
+	}
 	if l.opts.logStreamParts {
 		l.logStreamPart(ctx, input.callID, input.model, part, summary.total)
 	}
@@ -232,14 +240,6 @@ type streamSummary struct {
 	firstContentLatency *time.Duration
 	firstErr            *provider.APICallError
 	firstErrSet         bool
-}
-
-func (s *streamSummary) Observe(part provider.StreamPart, started, observedAt time.Time) {
-	s.observe(part)
-	if s.firstContentLatency == nil && isFirstContentPart(part) {
-		latency := observedAt.Sub(started)
-		s.firstContentLatency = &latency
-	}
 }
 
 func (s *streamSummary) ObserveDrained(part provider.StreamPart) {
