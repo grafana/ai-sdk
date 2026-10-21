@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,6 +35,35 @@ func (b *panickingBody) Read(p []byte) (int, error) {
 
 func (b *panickingBody) Close() error {
 	b.closed.Add(1)
+	return nil
+}
+
+type blockingBody struct {
+	prefix      io.Reader
+	closePanics bool
+	closing     chan struct{}
+	closeOnce   sync.Once
+	released    atomic.Bool
+}
+
+func newBlockingBody(prefix string, closePanics bool) *blockingBody {
+	return &blockingBody{prefix: strings.NewReader(prefix), closePanics: closePanics, closing: make(chan struct{})}
+}
+
+func (b *blockingBody) Read(p []byte) (int, error) {
+	if n, err := b.prefix.Read(p); n > 0 || !errors.Is(err, io.EOF) {
+		return n, err
+	}
+	<-b.closing
+	b.released.Store(true)
+	return 0, net.ErrClosed
+}
+
+func (b *blockingBody) Close() error {
+	b.closeOnce.Do(func() { close(b.closing) })
+	if b.closePanics {
+		panic("secret-panic-value")
+	}
 	return nil
 }
 
@@ -91,7 +122,7 @@ func TestDoStream_WorkerPanic(t *testing.T) {
 	t.Run("stream adapter", func(t *testing.T) {
 		events := panicMessageStart +
 			"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"web_search_tool_result\",\"tool_use_id\":\"stu_1\",\"content\":[{\"type\":\"web_search_result\",\"title\":\"Page\",\"url\":\"https://example.com\",\"page_age\":\"2d\",\"encrypted_content\":\"abc\"}]}}\n\n"
-		body := &panickingBody{prefix: strings.NewReader(events)}
+		body := newBlockingBody(events, false)
 		model := panicStreamModel(body)
 		model.generateID = func() string { panic("secret-panic-value") }
 		result, err := model.DoStream(context.Background(), options)
@@ -99,6 +130,17 @@ func TestDoStream_WorkerPanic(t *testing.T) {
 		parts := readPanicStream(result)
 		assertPanicPart(t, parts)
 		assert.Equal(t, provider.PartToolResult, parts[len(parts)-2].Type)
-		assert.Eventually(t, func() bool { return body.closed.Load() == 1 }, time.Second, time.Millisecond)
+		assert.Eventually(t, body.released.Load, time.Second, time.Millisecond, "the reader must be released")
+	})
+
+	t.Run("body close panics on cancellation", func(t *testing.T) {
+		body := newBlockingBody(panicMessageStart, true)
+		ctx, cancel := context.WithCancel(context.Background())
+		result, err := panicStreamModel(body).DoStream(ctx, options)
+		require.NoError(t, err)
+		<-result.Stream
+		cancel()
+		readPanicStream(result)
+		assert.Eventually(t, body.released.Load, time.Second, time.Millisecond, "the reader must be released")
 	})
 }

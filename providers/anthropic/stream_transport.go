@@ -60,7 +60,7 @@ func pumpMessageStream(ctx context.Context, response *http.Response, includeRaw 
 			return
 		}
 		var closeOnce sync.Once
-		closeDecoder := func() { closeOnce.Do(func() { _ = decoder.Close() }) }
+		closeDecoder := func() { closeOnce.Do(func() { streamrecover.Close(decoder) }) }
 		stopClose := context.AfterFunc(ctx, closeDecoder)
 		defer func() { stopClose(); closeDecoder() }()
 		for decoder.Next() {
