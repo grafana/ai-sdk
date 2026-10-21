@@ -1,6 +1,6 @@
 module github.com/grafana/ai-sdk/test/conformance
 
-go 1.26.3
+go 1.27.3
 
 replace (
 	github.com/grafana/ai-sdk => ../../

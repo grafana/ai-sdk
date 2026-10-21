@@ -5,7 +5,7 @@ first model call.
 
 ## Requirements
 
-- Go 1.26.3 or newer
+- Go 1.27.3 or newer
 - Credentials for your chosen model provider
 
 ## Create a project
