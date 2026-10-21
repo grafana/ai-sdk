@@ -10,6 +10,9 @@ go get github.com/grafana/ai-sdk github.com/grafana/ai-sdk/providers/grafana
 
 Keep Gateway and model-provider credentials on your server, not in browser code.
 
+For the server-side flow, see [Gateway architecture](../concepts/gateway-architecture.md)
+and the [glossary](../concepts/gateway-glossary.md).
+
 ## Inspect execution overviews and failures
 
 Unary results and stream finish metadata may contain `gateway.execution`.

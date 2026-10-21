@@ -12,7 +12,8 @@ service under `cmd/grafana-ai-gateway`, and its container packaging. The service
 by a trusted authenticating reverse proxy. Provider credentials come from server
 configuration in both modes. The reverse-proxy mode requires a separate listener
 for operational routes and deployment network controls that allow only the proxy
-to reach the API listener. A reusable Go Gateway client remains future work.
+to reach the API listener. Applications can use the
+[Go Gateway client](../docs/providers/grafana-gateway.md).
 
 Gateway code may import explicitly pinned SDK modules. SDK modules must not
 import, require, or replace the Gateway module, which remains outside the root
@@ -21,6 +22,10 @@ import, require, or replace the Gateway module, which remains outside the root
 Run `mise run test-providerwire-v4` for the contract and
 `mise run verify-ai-gateway-boundary` for the module boundary. Repository-wide
 development guidance is in [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
+
+Start with the [architecture walkthrough](../docs/concepts/gateway-architecture.md)
+and [glossary](../docs/concepts/gateway-glossary.md) for the request path and
+component boundaries.
 
 See the [model catalog guide](docs/model-catalog.md) for public model identity
 and resolution behavior, the [Cloud authentication guide](docs/cloud-authentication.md)

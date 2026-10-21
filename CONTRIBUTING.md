@@ -408,6 +408,24 @@ Conventions:
   note, "what this will cover", "see also", nav footer) so the structure reads
   as intentional.
 
+### Keep architecture and terminology current
+
+When a change affects Gateway components, request ordering, authentication,
+routing, protocol boundaries, streaming/failure behavior, or supported capabilities,
+update the affected [architecture walkthrough and Mermaid diagrams](docs/concepts/gateway-architecture.md)
+in the same change. Update the [glossary](docs/concepts/gateway-glossary.md) when
+terms, aliases, code names, or their meanings change. Ground both in the resulting
+implementation and keep proposed capabilities clearly separate. Changes that leave
+these descriptions accurate do not require cosmetic documentation edits.
+
+Reviews should check these documents for drift and provide before/after Mermaid
+comparisons and a glossary to help reviewers understand the diff. Those comparisons
+are reviewer artifacts: save them outside the repository (for example, in external
+Hive context or a temporary directory), and do not commit them. The maintained
+architecture diagrams describe the current system, without PR-specific change
+highlighting. Validate changed documentation links and Mermaid syntax/rendering
+with the available tools, recording any validation limits.
+
 ### Linting the docs
 
 ```bash
