@@ -52,6 +52,8 @@ the source and cannot drift.
 
 - Read the [Code of Conduct](CODE_OF_CONDUCT.md). All contributors are expected
   to follow it.
+- Read the [Grafana Labs Contributor License Agreement](https://grafana.com/docs/grafana/latest/developer-resources/contribute/cla/)
+  before submitting a pull request.
 - Search [existing issues](https://github.com/grafana/ai-sdk/issues) so you
   don't duplicate work already in flight.
 - **Sign your commits.** All Grafana Labs repositories
