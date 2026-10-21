@@ -19,14 +19,14 @@ The stream worker goroutines that produce or forward provider stream parts on th
 
 ### Requirement: Contained panics fail setup with the sentinel and discard the value
 
-In a provider that reads the first event before returning a stream (Anthropic and OpenAI Responses), a worker panic before the first event SHALL fail stream setup with the plain `ErrPanic` sentinel. A provider that returns its stream before reading the body (OpenAI-compatible) SHALL instead end that stream with the terminal error part. The recovered value SHALL NOT be retained, formatted or logged.
+In a provider that reads the response before returning a stream (Anthropic and OpenAI Responses), a worker panic before the first frame SHALL fail stream setup with the plain `ErrPanic` sentinel. OpenAI Responses also returns its stream at a frame it cannot decode, so a panic after that frame arrives as the terminal error part. A provider that returns its stream before reading the body (OpenAI-compatible) SHALL instead end that stream with the terminal error part. The recovered value SHALL NOT be retained, formatted or logged.
 
-#### Scenario: Panic before the first event
-- **WHEN** the Anthropic or OpenAI Responses transport reader panics before any event arrives
+#### Scenario: Panic before the first frame
+- **WHEN** the Anthropic or OpenAI Responses transport reader panics before any frame arrives
 - **THEN** `DoStream` SHALL return the `ErrPanic` sentinel without a stream, and no error SHALL contain the recovered value
 
-#### Scenario: Panic before the first event in an eager stream
-- **WHEN** the OpenAI-compatible stream worker panics before any event arrives
+#### Scenario: Panic before the first frame in an eager stream
+- **WHEN** the OpenAI-compatible stream worker panics before any frame arrives
 - **THEN** `DoStream` SHALL succeed and its stream SHALL contain a stream start followed by the terminal error part matching `ErrPanic`
 
 ### Requirement: Gateway reports a contained panic as an internal error
