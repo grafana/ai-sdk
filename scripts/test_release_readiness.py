@@ -116,9 +116,6 @@ class ReleaseReadinessTest(unittest.TestCase):
         workflow = (root / ".github/workflows/release-please.yml").read_text()
         self.assertTrue(readiness.release_automation_disabled(workflow))
         self.assertFalse(readiness.release_automation_disabled(workflow.replace(
-            "  workflow_dispatch:", "  push:\n    branches: [main]",
-        )))
-        self.assertFalse(readiness.release_automation_disabled(workflow.replace(
             "    if: ${{ false }}", "    if: ${{ true }}",
         )))
         self.assertTrue(readiness.release_publication_disabled(workflow))
@@ -133,6 +130,19 @@ class ReleaseReadinessTest(unittest.TestCase):
         ))
         self.assertIn("googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7", workflow)
         self.assertIn("release-please@17.6.0", (root / "mise.toml").read_text())
+
+    def test_token_smoke_test_is_separate_from_release_automation(self):
+        root = Path(__file__).resolve().parent.parent
+        workflow = (root / ".github/workflows/release-please.yml").read_text()
+        smoke = workflow.split("  token-smoke-test:\n", 1)[1].split("  release-please:\n", 1)[0]
+        self.assertIn("github.event_name == 'push'", smoke)
+        self.assertIn("github.ref == 'refs/heads/main'", smoke)
+        self.assertIn("github.repository == 'grafana/ai-sdk'", smoke)
+        self.assertIn("gh api --paginate --slurp installation/repositories", smoke)
+        self.assertNotIn("release-please-action", smoke)
+        self.assertNotIn("actions/checkout", smoke)
+        self.assertNotIn("contents: write", smoke)
+        self.assertTrue(readiness.release_automation_disabled(workflow))
 
 
 if __name__ == "__main__":

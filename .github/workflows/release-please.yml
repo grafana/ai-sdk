@@ -1,9 +1,12 @@
 name: Release
 
-# Inactive scaffold. #245 will complete artifact readiness and Gateway release
-# attribution before enabling this workflow on main. A manual dispatch also
-# skips the job, so merging #21 cannot create release PRs, tags, or releases.
+# Release automation remains inactive pending #245. Pushes changing this file
+# only test broker authentication and read-only repository access.
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/release-please.yml
   workflow_dispatch:
 
 permissions: {}
@@ -16,6 +19,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  token-smoke-test:
+    if: ${{ github.repository == 'grafana/ai-sdk' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    steps:
+      - name: Mint release app token
+        id: app-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@5bbb526b1728ca57fbe1750c4c27ab6ab06171c2 # create-github-app-token/v1.0
+        with:
+          github_app: grafana-ai-sdk-release
+
+      - name: Verify token repository scope and read access
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          gh api --paginate --slurp installation/repositories |
+            jq -e '[.[].repositories[] | {id, full_name}] == [{"id": 1315458055, "full_name": "grafana/ai-sdk"}]' > /dev/null
+          gh api repos/grafana/ai-sdk/git/ref/heads/main --jq '.object.sha' > /dev/null
+          echo "Release App token is restricted to grafana/ai-sdk and can read main." >> "$GITHUB_STEP_SUMMARY"
+
   release-please:
     if: ${{ false }} # Activation belongs to #245.
     runs-on: ubuntu-latest

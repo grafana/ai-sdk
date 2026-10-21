@@ -83,12 +83,21 @@ configuration change before it merges, push the branch and add
 
 ## Publication status and readiness
 
-Release automation is inactive pending #245 activation. The workflow has only a
-manual trigger and its job is unconditionally skipped: merging this scaffold
-cannot prepare release PRs, create tags, or publish GitHub Releases. The pinned
+Release automation is inactive pending #245 activation. The release-please job
+is unconditionally skipped and cannot prepare release PRs, create tags, or
+publish GitHub Releases. A separate token smoke test runs on main pushes changing
+`.github/workflows/release-please.yml`. It mints a brokered token, checks that its
+repository scope is exactly `grafana/ai-sdk`, and reads the main branch reference.
+It performs no repository writes and does not check out repository code. The
+pinned token action attempts token revocation during post-job cleanup; inspect
+that step for confirmation or warnings. Successful read access does not prove
+write permissions or signed release-PR creation.
+
+The broker only authorizes main push events. Manual dispatch skips both jobs;
+rerun the eligible push run to repeat the smoke test. The pinned
 action also retains `skip-github-release: true` as a second guard. #245 must
-complete Gateway attribution and artifact readiness before enabling the main
-trigger or job. Review pending release PRs and already-merged candidates before
+complete Gateway attribution and artifact readiness before enabling the
+release-please job. Review pending release PRs and already-merged candidates before
 removing the publication guard; activation must not publish an unvalidated version.
 
 The `release-readiness` check runs as an informational scaffold; it is not a
