@@ -22,8 +22,9 @@ import (
 const panicMessageStart = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-6\",\"content\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n"
 
 type panickingBody struct {
-	prefix io.Reader
-	closed atomic.Int32
+	prefix      io.Reader
+	closePanics bool
+	closed      atomic.Int32
 }
 
 func (b *panickingBody) Read(p []byte) (int, error) {
@@ -35,7 +36,20 @@ func (b *panickingBody) Read(p []byte) (int, error) {
 
 func (b *panickingBody) Close() error {
 	b.closed.Add(1)
+	if b.closePanics {
+		panic("secret-panic-value")
+	}
 	return nil
+}
+
+type closePanickingBody struct {
+	io.Reader
+	closed atomic.Int32
+}
+
+func (b *closePanickingBody) Close() error {
+	b.closed.Add(1)
+	panic("secret-panic-value")
 }
 
 type blockingBody struct {
@@ -131,6 +145,27 @@ func TestDoStream_WorkerPanic(t *testing.T) {
 		assertPanicPart(t, parts)
 		assert.Equal(t, provider.PartToolResult, parts[len(parts)-2].Type)
 		assert.Eventually(t, body.released.Load, time.Second, time.Millisecond, "the reader must be released")
+	})
+
+	t.Run("body close panics after a reader panic", func(t *testing.T) {
+		body := &panickingBody{prefix: strings.NewReader(panicMessageStart), closePanics: true}
+		result, err := panicStreamModel(body).DoStream(context.Background(), options)
+		require.NoError(t, err)
+		assertPanicPart(t, readPanicStream(result))
+		assert.Equal(t, int32(1), body.closed.Load())
+	})
+
+	t.Run("body close panics after the stream finishes", func(t *testing.T) {
+		body := &closePanickingBody{Reader: strings.NewReader(transportSSE(transportEvents))}
+		result, err := panicStreamModel(body).DoStream(context.Background(), options)
+		require.NoError(t, err)
+		parts := readPanicStream(result)
+		require.NotEmpty(t, parts)
+		assert.Equal(t, provider.PartFinish, parts[len(parts)-1].Type)
+		for _, part := range parts {
+			assert.NotEqual(t, provider.PartError, part.Type)
+		}
+		assert.Eventually(t, func() bool { return body.closed.Load() > 0 }, time.Second, time.Millisecond)
 	})
 
 	t.Run("body close panics on cancellation", func(t *testing.T) {
