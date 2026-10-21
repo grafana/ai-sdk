@@ -1,6 +1,6 @@
 module github.com/grafana/ai-sdk/providers/openai-compatible
 
-go 1.26.3
+go 1.27.3
 
 require (
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058
