@@ -710,7 +710,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		state.activeID = ""
 		return streamPartContinue
 	case provider.PartError:
-		if part.APICallError != nil && errors.Is(part.APICallError, streamrecover.ErrPanic) {
+		if part.APICallError != nil && streamrecover.Is(part.APICallError) {
 			return streamPartAdapterFailure
 		}
 		value := safeErrorFromStreamProvider(part.APICallError)

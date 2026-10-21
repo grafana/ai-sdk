@@ -32,12 +32,14 @@ func TestRuntimeStreamWorkerPanic(t *testing.T) {
 	harness := newRuntimeHarness(t, testLimits())
 	panicking := openaicompatible.New("model", openaicompatible.WithBaseURL("http://provider.invalid/v1"), openaicompatible.WithHTTPClient(&http.Client{Transport: panicTransport{}}))
 	panicDone := make(chan struct{})
+	normalEntered := make(chan struct{})
 	harness.model.stream = func(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
 		prompt, err := json.Marshal(options.Prompt)
 		require.NoError(t, err)
 		if bytes.Contains(prompt, []byte("panic")) {
 			return panicking.DoStream(ctx, options)
 		}
+		close(normalEntered)
 		parts := make(chan provider.StreamPart)
 		go func() {
 			defer close(parts)
@@ -65,6 +67,7 @@ func TestRuntimeStreamWorkerPanic(t *testing.T) {
 	var wg sync.WaitGroup
 	var concurrent string
 	wg.Go(func() { concurrent = stream("hello") })
+	<-normalEntered
 	panicked := stream("panic")
 	close(panicDone)
 	wg.Wait()
@@ -74,4 +77,16 @@ func TestRuntimeStreamWorkerPanic(t *testing.T) {
 	assert.NotContains(t, panicked, "private-panic-value")
 	assert.Contains(t, concurrent, `"type":"finish"`)
 	assert.NotContains(t, concurrent, `"type":"error"`)
+}
+
+func TestRuntimeStreamMalformedErrorChain(t *testing.T) {
+	harness := newRuntimeHarness(t, testLimits())
+	malformed := provider.NewAPICallError(provider.APICallErrorOptions{Cause: (*provider.APICallError)(nil)})
+	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartError, APICallError: malformed}, finishPart())}, nil
+	}
+	body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+	requireStreamBodyMatchesSchema(t, body)
+	assert.Equal(t, 1, strings.Count(body, `"type":"error"`))
+	assert.Contains(t, body, `"type":"finish"`)
 }
