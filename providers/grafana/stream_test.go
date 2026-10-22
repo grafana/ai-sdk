@@ -30,7 +30,12 @@ const finishEvent = `{"type":"finish","finishReason":{"unified":"stop"},"usage":
 
 func collectParts(t *testing.T, result *provider.StreamResult) []provider.StreamPart {
 	t.Helper()
-	done := time.NewTimer(3 * time.Second)
+	return collectPartsWithin(t, result, 3*time.Second)
+}
+
+func collectPartsWithin(t *testing.T, result *provider.StreamResult, timeout time.Duration) []provider.StreamPart {
+	t.Helper()
+	done := time.NewTimer(timeout)
 	defer done.Stop()
 	var parts []provider.StreamPart
 	for {
@@ -357,7 +362,6 @@ func TestModel_StreamInvalidEvents(t *testing.T) {
 		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":[]`, 1),
 		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"nested":"`+string([]byte{0xff})+`"}`, 1),
 		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"private":`, 1),
-		strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":{"private":"`+strings.Repeat("x", 1<<20)+`"}`, 1),
 		`{"type":"stream-start","warnings":[{"Type":"other","message":"safe"}]}`,
 		`{"type":"stream-start","warnings":[{"type":"other","Message":"safe"}]}`,
 		`{"type":"custom"}`, `{"type":"custom","kind":null}`, `{"type":"custom","kind":7}`, `{"type":"custom","kind":"x.y","providerMetadata":{"x":null}}`,
@@ -384,38 +388,57 @@ func TestModel_StreamInvalidEvents(t *testing.T) {
 	}
 }
 
-func TestModel_StreamBounds(t *testing.T) {
-	frame := sseFrame(`{"type":"text-start","id":"a"}`)
+type generatedFrames struct {
+	frame  func(index int) string
+	count  int
+	buffer string
+	next   int
+}
+
+func (g *generatedFrames) Read(p []byte) (int, error) {
+	if g.buffer == "" {
+		if g.next == g.count {
+			return 0, io.EOF
+		}
+		g.buffer = g.frame(g.next)
+		g.next++
+	}
+	n := copy(p, g.buffer)
+	g.buffer = g.buffer[n:]
+	return n, nil
+}
+
+func TestModel_StreamAcceptsLargeStreams(t *testing.T) {
+	const oneMiB = 1 << 20
+	smallDelta := sseFrame(`{"type":"text-delta","id":"a","delta":"x"}`)
+	largeDelta := sseFrame(`{"type":"text-delta","id":"a","delta":"` + strings.Repeat("x", oneMiB) + `"}`)
+	comment := ":" + strings.Repeat("x", oneMiB) + "\n"
 	for _, tc := range []struct {
 		name      string
-		configure func(*Limits)
-		payload   string
+		frame     func(index int) string
 		count     int
-		lastError bool
+		wantParts int
 	}{
-		{"exact total", func(l *Limits) { l.StreamBytes = int64(len(frame)); l.StreamEventBytes = l.StreamBytes }, frame, 1, false},
-		{"one over total", func(l *Limits) { l.StreamBytes = int64(len(frame) - 1); l.StreamEventBytes = l.StreamBytes }, frame, 1, true},
-		{"exact event", func(l *Limits) { l.StreamEventBytes = int64(len(frame)) }, frame, 1, false},
-		{"one over event", func(l *Limits) { l.StreamEventBytes = int64(len(frame) - 1) }, frame, 1, true},
-		{"long line", func(l *Limits) { l.StreamEventBytes = 16 }, "data:" + strings.Repeat("x", 100000), 1, true},
-		{"exact count", func(l *Limits) { l.StreamEvents = 2 }, frame + frame, 2, false},
-		{"one over count", func(l *Limits) { l.StreamEvents = 1 }, frame + frame, 2, true},
+		{"more than 100000 events", func(int) string { return smallDelta }, 100001, 100001},
+		{"single event above 1 MiB", func(int) string { return largeDelta }, 1, 1},
+		{"cumulative bytes above 64 MiB", func(index int) string {
+			if index < 65 {
+				return comment
+			}
+			return smallDelta
+		}, 66, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			limits := DefaultLimits()
-			tc.configure(&limits)
-			body := &trackedBody{Reader: strings.NewReader(tc.payload)}
-			m := streamFromBody(t, body, &limits)
+			body := &trackedBody{Reader: &generatedFrames{frame: tc.frame, count: tc.count}}
+			m := streamFromBody(t, body, nil)
 			result, err := m.DoStream(context.Background(), provider.CallOptions{})
 			require.NoError(t, err)
-			parts := collectParts(t, result)
-			require.Len(t, parts, tc.count)
-			assert.Equal(t, tc.lastError, parts[len(parts)-1].Type == provider.PartError)
-			if tc.lastError {
-				assert.False(t, parts[len(parts)-1].APICallError.IsRetryable)
+			parts := collectPartsWithin(t, result, time.Minute)
+			require.Len(t, parts, tc.wantParts)
+			for _, part := range parts {
+				require.Equal(t, provider.PartTextDelta, part.Type)
 			}
 			assert.True(t, body.closed)
-			assert.LessOrEqual(t, int64(body.read), limits.StreamBytes+1)
 		})
 	}
 }
