@@ -44,6 +44,7 @@ jobs:
           echo "Release App token is restricted to grafana/ai-sdk and can read main." >> "$GITHUB_STEP_SUMMARY"
 
   app-pr-test:
+    name: Controlled root release PR exercise
     if: ${{ github.repository == 'grafana/ai-sdk' && github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.RELEASE_APP_PR_TEST == 'root' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
