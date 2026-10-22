@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/grafana/ai-sdk/provider"
 	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
@@ -35,12 +36,14 @@ func TestRuntimeStreamWorkerPanic(t *testing.T) {
 	normalEntered := make(chan struct{})
 	harness.model.stream = func(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
 		prompt, err := json.Marshal(options.Prompt)
-		require.NoError(t, err)
+		if err != nil {
+			return nil, err
+		}
 		if bytes.Contains(prompt, []byte("panic")) {
 			return panicking.DoStream(ctx, options)
 		}
 		close(normalEntered)
-		parts := make(chan provider.StreamPart)
+		parts := make(chan provider.StreamPart, 1)
 		go func() {
 			defer close(parts)
 			<-panicDone
@@ -51,26 +54,36 @@ func TestRuntimeStreamWorkerPanic(t *testing.T) {
 	server := httptest.NewServer(harness.handler)
 	defer server.Close()
 
-	stream := func(text string) string {
-		req := streamRequest(`{"prompt":[{"role":"user","content":[{"type":"text","text":"` + text + `"}]}]}`).WithContext(t.Context())
+	stream := func(text string) (string, error) {
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancel()
+		req := streamRequest(`{"prompt":[{"role":"user","content":[{"type":"text","text":"` + text + `"}]}]}`).WithContext(ctx)
 		req.URL.Scheme = "http"
 		req.URL.Host = strings.TrimPrefix(server.URL, "http://")
 		req.RequestURI = ""
 		response, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		defer func() { require.NoError(t, response.Body.Close()) }()
+		if err != nil {
+			return "", err
+		}
+		defer func() { _ = response.Body.Close() }()
 		body, err := io.ReadAll(response.Body)
-		require.NoError(t, err)
-		return string(body)
+		return string(body), err
 	}
 
 	var wg sync.WaitGroup
 	var concurrent string
-	wg.Go(func() { concurrent = stream("hello") })
-	<-normalEntered
-	panicked := stream("panic")
+	var concurrentErr error
+	wg.Go(func() { concurrent, concurrentErr = stream("hello") })
+	select {
+	case <-normalEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("normal request never reached the model")
+	}
+	panicked, err := stream("panic")
 	close(panicDone)
 	wg.Wait()
+	require.NoError(t, err)
+	require.NoError(t, concurrentErr)
 
 	assert.Equal(t, 1, strings.Count(panicked, `"type":"error"`))
 	assert.True(t, strings.HasSuffix(panicked, string(canonicalInternalStreamErrorFrame)), panicked)
