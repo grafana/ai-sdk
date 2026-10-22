@@ -38,6 +38,9 @@ Omit `.` to inventory all configured components. The credential needs repository
 Actions and PR read access. The API transport permits only reads; artifact download
 uses a separate bounded GET from a GitHub-issued storage URL without forwarding the
 API credential. No token is passed to candidate build/test processes.
+GitHub API reads request connection closure: synchronous library validation can
+otherwise leave a server-closed pooled socket pending in the client event loop,
+causing the final metadata reread to fail. This adds no retries or write access.
 
 Discovery uses release-please **17.6.0** `Manifest.buildReleases()` with a frozen,
 fully paginated merged-PR iterator. It does not inherit the upstream 200-PR scan

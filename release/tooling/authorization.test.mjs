@@ -180,7 +180,7 @@ test('artifact downloader follows only a bounded trusted storage GET without cre
   };
   assert.equal((await downloadArtifact(77, 'secret', fetch)).toString(), 'zip');
   assert.equal(requests[0].options.headers.authorization, 'Bearer secret');
-  assert.equal(requests[1].options.headers, undefined);
+  assert.deepEqual(requests[1].options.headers, { connection: 'close' });
   assert.equal(requests[1].options.redirect, 'error');
   for (const url of ['http://example.blob.core.windows.net/x', 'https://evil.test/x',
     'https://user:password@example.blob.core.windows.net/x', 'https://example.blob.core.windows.net:8443/x']) {
