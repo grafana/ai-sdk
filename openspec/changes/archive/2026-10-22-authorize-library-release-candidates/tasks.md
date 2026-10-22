@@ -20,13 +20,13 @@
 
 - [x] 4.1 Run shared selected-library checks in a clean detached candidate checkout using trusted tool/harness paths and a restricted child environment; test candidate-side tool substitution and dirty checkout rejection while existing 24 readiness regressions remain green.
 - [x] 4.2 Bind prerequisite freshness and ancestry to the immutable squash parent and rerun standalone/consumer validation; use local Git/proxy fixtures to reject stale tags, replacements, pseudo-versions, wrong origins and proxy failures, while later unrelated main commits do not invalidate the old candidate. Document delayed-run semantics.
-- [ ] 4.3 Prove independent outcomes with ready root and blocked downstream candidates: run the real selected-root validation path against deliberately unready downstream source, assert downstream standalone commands are never invoked for root, and distinguish actual library validation from mocked GitHub provenance evidence.
+- [x] 4.3 Prove independent outcomes with ready root and blocked downstream candidates: run the real selected-root validation path against deliberately unready downstream source, assert downstream standalone commands are never invoked for root, and distinguish actual library validation from mocked GitHub provenance evidence.
 
 ## 5. Final decisions and integration
 
 - [x] 5.1 Emit per-candidate approved/blocked reports with frozen identity, tooling revision and exact evidence IDs; test independent outcomes, nonzero status for blocked selections, no approved subset on inventory failure, and empty-inventory behavior. Document that the report is not persistent publication permission.
 - [x] 5.2 Add final metadata/run-attempt/tag/ancestry rechecks; test mid-run edits, reruns and tag appearance, block both same-target and conflicting existing tags, and assert every attempted GitHub mutation is rejected by the read-only transport. Document retry versus deferred recovery.
-- [ ] 5.3 Run integrated release-tooling, Python readiness, Go release-configuration, workflow and docs checks plus strict OpenSpec validation; verify source CI tests the new tooling, normal release guards remain intact, no publication path is invoked, and every delta scenario maps to executable evidence.
+- [x] 5.3 Run integrated release-tooling, Python readiness, Go release-configuration, workflow and docs checks plus strict OpenSpec validation; verify source CI tests the new tooling, normal release guards remain intact, no publication path is invoked, and every delta scenario maps to executable evidence.
 
 ## Workflow follow-up
 

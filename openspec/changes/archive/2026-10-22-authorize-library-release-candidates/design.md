@@ -10,7 +10,7 @@ still pending. #468 records merged implementation separately from that evidence.
 
 ### Archived plan disposition
 
-The archive at `../archive/2026-10-20-activate-artifact-release-readiness/` is a
+The archive at `../2026-10-20-activate-artifact-release-readiness/` is a
 historical partial delivery record, not an active checklist to mechanically apply.
 Its six checked tasks were accurate at archive time; later work is tracked in #468.
 Do not rewrite the archived checkboxes to imply all of #245 is complete.
@@ -228,3 +228,18 @@ and does not by itself supply the new merged-release evidence contract.
 4. A later reviewed publication/recovery change consumes equivalent frozen records,
    with live rechecks and immutable-tag behavior. Protection migration and final
    activation require their own disposition; this report is insufficient approval.
+
+## Verification results
+
+All 13 tasks completed. JavaScript tooling: 26 passing tests. Python release
+checks: 32 tests, 31 passing and the explicit integration test skipped in the
+fast run. The separate integration run passed all seven authorization tests,
+including real root standalone and pinned ai@7.0.127 frontend consumer validation
+with deliberately broken downstream provider tests. Go release configuration,
+workflow lint and documentation checks passed. Two independent reviewers found
+no actionable issues.
+
+Live read-only discovery against main e9d676b90b7369debb26aa423ddb97ed9f98f4c5
+returned an empty inventory. Positive authorization and rejection provenance are
+covered by Git fixtures and mocked GitHub responses, not a live merged release.
+No tags, releases, activation settings or repository protections were changed.

@@ -12,6 +12,7 @@ from unittest.mock import patch
 import zipfile
 
 import release_authorization as authorization
+import release_consumer
 import release_readiness as readiness
 
 
@@ -138,7 +139,7 @@ class MergedAuthorizationTest(unittest.TestCase):
         trusted = Path(__file__).resolve().parent.parent
         graph = json.dumps({"Path": readiness.PREFIX, "Main": True})
         with patch.object(readiness, "run", return_value=graph), \
-             patch("release_consumer.verify_consumer") as consumer, \
+             patch.object(release_consumer, "verify_consumer") as consumer, \
              patch.object(readiness.subprocess, "run") as execute:
             readiness.verify_library(".", self.base, set(self.config["packages"]), tooling_root=trusted)
         self.assertEqual(execute.call_args.args[0], ["bash", str(trusted / "scripts/module-policy.sh"), "standalone", "."])
