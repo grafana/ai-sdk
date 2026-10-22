@@ -100,7 +100,7 @@ func (o *ArrayOutput[T]) setMaxItems(n int)          { o.maxItems = &n }
 
 // MaxItems returns the maximum set with WithMaxItems, and false when the array
 // has no maximum. It implements [aisdk.BoundedArrayOutput].
-func (o *ArrayOutput[T]) MaxItems() (max int, ok bool) {
+func (o *ArrayOutput[T]) MaxItems() (n int, ok bool) {
 	if o.maxItems == nil {
 		return 0, false
 	}

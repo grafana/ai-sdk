@@ -3,7 +3,8 @@
 - [x] 1.1 Add bound options, constructor validation and request schema keywords to `output.Array`.
 - [x] 1.2 Check complete array length before element validation.
 - [x] 1.3 Cap `ElementStream` at the maximum, close it at overflow and leave partial snapshots uncapped.
-- [x] 1.4 Record the overflow and repair differences in `test/conformance/upstream.yaml`.
+- [x] 1.4 Add `ElementStreamErr` and treat a negative custom maximum as zero.
+- [x] 1.5 Record the overflow and repair differences in `test/conformance/upstream.yaml`.
 
 ## 2. Validation
 

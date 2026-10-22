@@ -54,6 +54,7 @@ type StreamTextResult struct {
 	elementStream       *losslessStream[json.RawMessage]
 	lastPartialJSON     string
 	emittedElementCount int
+	elementStreamErr    error
 	usedTextIDs         map[string]struct{}
 	usedReasoningIDs    map[string]struct{}
 }
@@ -2098,18 +2099,26 @@ func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
 		return ""
 	}
 	if elements, isSlice := v.([]json.RawMessage); isSlice {
-		overflow := false
+		var overflow error
 		if bounded, ok := out.(BoundedArrayOutput); ok {
-			if limit, ok := bounded.MaxItems(); ok && len(elements) > limit {
-				elements = elements[:limit]
-				overflow = true
+			if limit, ok := bounded.MaxItems(); ok {
+				limit = max(limit, 0)
+				if len(elements) > limit {
+					elements = elements[:limit]
+					overflow = fmt.Errorf("%w: elements array must contain at most %d items", ErrInvalidOutputText, limit)
+				}
 			}
 		}
 		for i := r.emittedElementCount; i < len(elements); i++ {
 			r.elementStream.send(elements[i])
 		}
 		r.emittedElementCount = len(elements)
-		if overflow {
+		if overflow != nil {
+			r.mu.Lock()
+			if r.elementStreamErr == nil {
+				r.elementStreamErr = overflow
+			}
+			r.mu.Unlock()
 			r.elementStream.close()
 		}
 	}
@@ -2721,12 +2730,22 @@ func (r *StreamTextResult) PartialOutputStream() <-chan json.RawMessage {
 // ElementStream returns a channel of complete validated array elements
 // during streaming. Only produces values when the Output is in array mode.
 // Elements are delivered exactly once and in order. The channel is closed after
-// the stream finishes and all elements are delivered. When the Output is a
-// BoundedArrayOutput, the channel closes as soon as the model produces an
-// element past the maximum. A closed channel does not mean the array was
-// valid; check OutputError after the stream finishes.
+// the stream finishes and all elements are delivered. When the Output reports a
+// maximum through BoundedArrayOutput, the channel closes as soon as the model
+// produces an element past it, in any step, and ElementStreamErr reports why.
 func (r *StreamTextResult) ElementStream() <-chan json.RawMessage {
 	return r.elementStream.stream()
+}
+
+// ElementStreamErr reports why ElementStream closed early: an error wrapping
+// ErrInvalidOutputText when the model produced more elements than the
+// maximum. It returns nil after a normal close. Call it once the ElementStream
+// channel is closed; it does not wait for the full stream. The final output is
+// validated separately and reported by OutputError.
+func (r *StreamTextResult) ElementStreamErr() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.elementStreamErr
 }
 
 // Err returns the first error encountered during streaming, or nil.

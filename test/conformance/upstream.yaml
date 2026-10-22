@@ -104,11 +104,11 @@ knownGaps:
     status: documented-deviation
     description: Upstream errors the array element stream when the model
       produces an element past maxItems. A Go channel carries no error, so
-      ElementStream closes at that point, stays closed for later steps, and
-      OutputError reports the overflow when the final step's array is too long.
-      Upstream streamText has no output repair; when
-      Go WithRepairText accepts a repaired array within the bounds, OutputError
-      is nil although the element stream stopped at the maximum.
+      ElementStream closes at that point and stays closed for later steps, and
+      StreamTextResult.ElementStreamErr reports the overflow. Upstream
+      streamText has no output repair; when Go WithRepairText accepts a
+      repaired array within the bounds, OutputError is nil although
+      ElementStreamErr reports the overflow.
   - id: astra-model-catalog
     surface: provider-openai
     status: gap

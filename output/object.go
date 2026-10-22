@@ -90,8 +90,9 @@ func (n arrayMaxItems) applyObject(o any) {
 }
 
 // WithMaxItems sets the maxItems keyword on the elements array sent to the
-// provider, ParseComplete rejects a longer array, and
-// [aisdk.StreamTextResult.ElementStream] stops after n elements. Zero is a
+// provider, and ParseComplete rejects a longer array.
+// [aisdk.StreamTextResult.ElementStream] delivers at most n elements and closes
+// early if the model produces more. Zero is a
 // valid bound. Array returns an error if n is negative or below WithMinItems.
 // Outputs other than Array ignore it.
 func WithMaxItems(n int) ObjectOption { return arrayMaxItems(n) }

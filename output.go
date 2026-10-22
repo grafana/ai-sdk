@@ -23,8 +23,7 @@ type RepairTextFunc func(text string, parseErr error) (repaired string, accepted
 // LLM responses are formatted, parsed, and validated.
 //
 // Implementations are provided by the output package: Object[T], Array[T],
-// Choice, JSON, and Text. An array Output with a maximum element count also
-// implements BoundedArrayOutput.
+// Choice, JSON, and Text. Array also implements BoundedArrayOutput.
 type Output interface {
 	// ResponseFormat returns the provider response format configuration
 	// to be sent with the LLM request.
@@ -41,10 +40,11 @@ type Output interface {
 	ParsePartial(text string) (any, bool)
 }
 
-// BoundedArrayOutput is implemented by an array Output that limits its element
-// count. When MaxItems reports ok, StreamTextResult.ElementStream delivers at
-// most max elements and ParseComplete rejects a longer array.
+// BoundedArrayOutput is implemented by an array Output that may limit its
+// element count. MaxItems reports ok=false when no maximum is set. When it
+// reports ok, StreamTextResult.ElementStream delivers at most n elements; a
+// negative n is treated as zero.
 type BoundedArrayOutput interface {
 	Output
-	MaxItems() (max int, ok bool)
+	MaxItems() (n int, ok bool)
 }

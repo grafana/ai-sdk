@@ -42,7 +42,7 @@ The system SHALL provide ArrayOutput[T] accepting element schema.Schema. Its JSO
 
 ### Requirement: Array element streaming
 
-The system SHALL provide an `ElementStream()` method on `StreamTextResult` that returns a channel of `json.RawMessage` values, where each value is a complete validated array element. This SHALL only emit elements for array output mode. Every completed element SHALL be delivered exactly once and in array order. The stream SHALL remain lossless when consumption starts after generation, and SHALL close only after generation finishes and all queued elements are delivered, except that for a `BoundedArrayOutput` with a maximum the stream SHALL deliver at most that many elements and SHALL close as soon as an element past the maximum is parsed.
+The system SHALL provide an `ElementStream()` method on `StreamTextResult` that returns a channel of `json.RawMessage` values, where each value is a complete validated array element. This SHALL only emit elements for array output mode. Every completed element SHALL be delivered exactly once and in array order. The stream SHALL remain lossless when consumption starts after generation, and SHALL close only after generation finishes and all queued elements are delivered, except that for a `BoundedArrayOutput` with a maximum the stream SHALL deliver at most that many elements and SHALL close as soon as an element past the maximum is parsed in any step, and `ElementStreamErr()` SHALL then return an error wrapping `ErrInvalidOutputText`. A negative maximum reported by a custom `BoundedArrayOutput` SHALL be treated as zero.
 
 #### Scenario: Receive validated elements during array streaming
 
@@ -68,6 +68,7 @@ The system SHALL provide an `ElementStream()` method on `StreamTextResult` that 
 - **WHEN** the array output sets `WithMaxItems(2)` and the LLM streams four elements
 - **THEN** `ElementStream()` SHALL deliver only the first two elements
 - **AND** the channel SHALL close once the third element is parsed, before generation finishes
+- **AND** `ElementStreamErr()` SHALL report the overflow once the channel is closed
 - **AND** `PartialOutputStream()` SHALL still include all four elements
 - **AND** `OutputError()` SHALL wrap `ErrNoObjectGenerated` and report the maximum when this is the final step
 
@@ -75,9 +76,11 @@ The system SHALL provide an `ElementStream()` method on `StreamTextResult` that 
 
 - **WHEN** an earlier step overflowed the maximum and a later step streams a new array
 - **THEN** `ElementStream()` SHALL deliver no further elements
+- **AND** `ElementStreamErr()` SHALL report the overflow even when `OutputError()` is nil
 
 #### Scenario: Repair accepts an array within the bounds
 
 - **WHEN** the LLM streams more elements than the maximum and `WithRepairText` accepts text whose array is within the bounds
 - **THEN** `OutputError()` SHALL be nil and the output SHALL be the repaired array
 - **AND** `ElementStream()` SHALL still have delivered only elements from the original text, up to the maximum
+- **AND** `ElementStreamErr()` SHALL report the overflow

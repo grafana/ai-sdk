@@ -122,11 +122,9 @@ also needs a concurrent `FullStream` consumer.
 `output.WithMinItems` and `output.WithMaxItems` bound an array. The bounds are
 sent to the provider in the schema and checked on the final result. With a
 maximum, the element stream closes as soon as the model produces one element
-too many, and stays closed for later steps. `OutputError` reports the overflow
-when the final step's array is too long. A closed element stream does not mean
-the array was valid, so check `OutputError`. When `WithRepairText` accepts a repaired array within the
-bounds, the repaired value replaces the error, but the elements already
-streamed came from the original text.
+too many in any step, and `ElementStreamErr` reports the overflow. The final
+result is checked separately: `OutputError` reports a final array outside the
+bounds, and is nil when `WithRepairText` accepts a repaired array within them.
 
 ## Stream JSON to `useObject`
 
