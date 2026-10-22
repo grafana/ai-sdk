@@ -26,18 +26,19 @@ type RouterDependencies struct {
 	Telemetry     *Telemetry
 	Authenticator gatewayauth.RequestAuthenticator
 	// AuthSource is the configured authentication mode, including for failed requests.
-	AuthSource    gatewayauth.Source
-	ErrorWriter   *providerv4.HostErrorWriter
-	Discovery     http.Handler
-	LanguageModel http.Handler
+	AuthSource        gatewayauth.Source
+	ErrorWriter       *providerv4.HostErrorWriter
+	Discovery         http.Handler
+	LanguageModel     http.Handler
+	AnthropicMessages http.Handler
 }
 
-// NewRouter combines the two API routes and three operational routes.
+// NewRouter combines the configured API routes and three operational routes.
 func NewRouter(deps RouterDependencies) http.Handler {
 	return newRouter(deps, true, true)
 }
 
-// NewAPIRouter exposes only the two protected API routes.
+// NewAPIRouter exposes only the configured protected API routes.
 func NewAPIRouter(deps RouterDependencies) http.Handler {
 	return newRouter(deps, true, false)
 }
@@ -86,6 +87,24 @@ func newRouter(deps RouterDependencies, api, operational bool) http.Handler {
 		}))
 		routes["/api/v1/aisdk/config"] = route{http.MethodGet, protectedDiscovery.ServeHTTP}
 		routes["/api/v1/aisdk/language-model"] = route{http.MethodPost, protectedLanguageModel.ServeHTTP}
+		if deps.AnthropicMessages != nil {
+			anthropicAuthFailure := func(w http.ResponseWriter) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"type":"error","error":{"type":"authentication_error","message":"Authentication failed"}}`))
+			}
+			configuredMessages := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				if !hasAccountAccess(request.Context(), gatewayauth.ConfiguredAccounts) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					_, _ = w.Write([]byte(`{"type":"error","error":{"type":"permission_error","message":"Access denied"}}`))
+					return
+				}
+				deps.AnthropicMessages.ServeHTTP(w, request)
+			})
+			protected := gatewayauth.Middleware(gatewayauth.NewAnthropicMessagesAuthenticator(deps.Authenticator), anthropicAuthFailure, observe, configuredMessages)
+			routes["/v1/messages"] = route{http.MethodPost, protected.ServeHTTP}
+		}
 	}
 
 	dispatch := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {

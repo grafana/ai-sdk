@@ -296,6 +296,8 @@ func normalizeRoute(path string) string {
 		return "config"
 	case "/api/v1/aisdk/language-model":
 		return "language_model"
+	case "/v1/messages":
+		return "anthropic_messages"
 	default:
 		return "unmatched"
 	}

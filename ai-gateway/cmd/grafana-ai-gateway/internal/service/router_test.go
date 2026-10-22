@@ -160,6 +160,7 @@ func TestTelemetry_NormalizationMetricsAndPrivacy(t *testing.T) {
 		{input: "/metrics", output: "metrics"},
 		{input: "/api/v1/aisdk/config", output: "config"},
 		{input: "/api/v1/aisdk/language-model", output: "language_model"},
+		{input: "/v1/messages", output: "anthropic_messages"},
 		{input: "/arbitrary/private/model", output: "unmatched"},
 	} {
 		assert.Equal(t, tc.output, normalizeRoute(tc.input))
@@ -545,6 +546,45 @@ type requestAuthenticatorFunc func(context.Context, http.Header) (gatewayauth.Ca
 
 func (authenticate requestAuthenticatorFunc) Authenticate(ctx context.Context, headers http.Header) (gatewayauth.Caller, error) {
 	return authenticate(ctx, headers)
+}
+
+func TestRouter_AnthropicMessagesAccountAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		source gatewayauth.Source
+		status int
+	}{
+		{name: "configured accounts", source: gatewayauth.SourceAccessToken, status: http.StatusOK},
+		{name: "request BYOK denied", source: gatewayauth.SourceCloudGateway, status: http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(io.Discard, nil)))
+			require.NoError(t, err)
+			authenticator, headers := serviceModeAuthentication(tc.source)
+			calls := 0
+			handler := NewAPIRouter(RouterDependencies{
+				Telemetry:     telemetry,
+				Authenticator: authenticator,
+				AuthSource:    tc.source,
+				ErrorWriter:   providerv4.NewHostErrorWriter(),
+				AnthropicMessages: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					calls++
+					w.WriteHeader(http.StatusOK)
+				}),
+			})
+			request := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			request.Header = headers
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			assert.Equal(t, tc.status, response.Code)
+			if tc.status == http.StatusOK {
+				assert.Equal(t, 1, calls)
+			} else {
+				assert.Zero(t, calls)
+				assert.Contains(t, response.Body.String(), `"type":"permission_error"`)
+			}
+		})
+	}
 }
 
 func serviceModeAuthentication(source gatewayauth.Source) (gatewayauth.RequestAuthenticator, http.Header) {

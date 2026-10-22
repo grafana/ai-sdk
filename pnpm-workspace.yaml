@@ -3,6 +3,7 @@ packages:
   - test/cli
   - test/conformance/tools
   - ai-gateway/test/providerwire-v4
+  - ai-gateway/test/anthropic-messages
 
 # Supply-chain hardening
 blockExoticSubdeps: true
