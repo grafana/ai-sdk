@@ -562,10 +562,6 @@ SDK's Go module dependency graph.
   selected-consumer regressions; see the [release runbook](release/README.md).
   Publication automation remains disabled pending #245. For a broader diagnostic,
   `mise run verify-module-resolution` checks all published modules.
-- **Gateway images:** Gateway uses the separate `go.gateway.work` to build from
-  same-revision local source. Push-only image validation checks the Gateway
-  artifact at the checkout revision before publication or deployment. Gateway
-  is not published as a standalone Go module.
 
 The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
 but SDK modules must not import, require, or replace Gateway. Real published

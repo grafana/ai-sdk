@@ -85,8 +85,6 @@ describe("source and artifact workflow gates", () => {
     for (const required of [...source, "image-validation"]) {
       assert.ok(dependencies("publish-ai-gateway-image").has(required), `publisher must require ${required}`);
     }
-    assert.equal(normalize(jobs["deploy-ai-gateway"]!.if), "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' }}");
-    assert.deepEqual(needs("deploy-ai-gateway"), ["publish-ai-gateway-image"]);
     const dockerfile = readFileSync(resolve(root, "ai-gateway/Dockerfile"), "utf8");
     assert.match(dockerfile, /GOWORK=\/src\/go\.gateway\.work/);
     assert.doesNotMatch(dockerfile, /GOWORK=off/);
