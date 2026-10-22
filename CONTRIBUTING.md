@@ -507,7 +507,7 @@ maintainer to trigger CI.
 ## Releases and independent modules
 
 Core, providers, and middleware are released independently as Go libraries.
-Gateway is an independently versioned Docker application with workspace source.
+Gateway application delivery is separate from library release automation.
 After #245 activates release automation, versions, changelogs, tags, and GitHub
 Releases will be produced by
 [release-please](https://github.com/googleapis/release-please) from the
@@ -521,9 +521,8 @@ using the right type in its title:
 - `chore:`, `ci:`, `docs:`, `refactor:`, `test:`, and `build:` produce no
   release.
 
-A library change is attributed to its module by the files it touches. #245 will
-also attribute relevant SDK, provider, and middleware changes to the
-workspace-built Gateway image release. While the modules are in the `alpha`
+A library change is attributed to its module by the files it touches. Gateway
+image delivery is outside this library release path. While the modules are in the `alpha`
 channel, each release advances the prerelease counter
 (`v0.1.0-alpha.1` to `v0.1.0-alpha.2`).
 
@@ -534,8 +533,9 @@ mise run release-check      # configuration and readiness policy tests
 mise run release-preview    # dry-run of the next release pull request
 ```
 
-Release automation is inactive until #245 readiness and Gateway attribution/image
-gates are implemented and reviewed. No release PRs or tags are created by #21 alone.
+Library automation defaults off and requires the reviewed settings and explicit
+mode in the [activation rollout](release/tooling/ACTIVATION.md). Gateway work does
+not gate library activation.
 After activation, each library gets its own release pull request. Maintainers merge the root one
 first, let Renovate carry the new core version into the nested `go.mod` files,
 then merge the rest. The complete workflow is in the
@@ -562,7 +562,7 @@ SDK's Go module dependency graph.
   (substitute the module being released). Release PR readiness additionally checks
   current-base metadata, canonical tagged prerequisite freshness, and isolated
   selected-consumer regressions; see the [release runbook](release/README.md).
-  Publication automation remains disabled pending #245. For a broader diagnostic,
+  Publication requires explicit activation under #245. For a broader diagnostic,
   `mise run verify-module-resolution` checks all published modules.
 
 The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,

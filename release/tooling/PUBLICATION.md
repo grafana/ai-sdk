@@ -1,7 +1,7 @@
 # Library publication integration
 
-Publication is disabled. `node release/tooling/publish.mjs` refuses before reading
-credentials or making requests, and the release workflow does not invoke it.
+Publication defaults to disabled. The command and workflow require an explicit
+`RELEASE_LIBRARY_MODE`; see [activation and completion](ACTIVATION.md).
 This slice tests publication with mocked GitHub writes through the pinned
 release-please 17.6.0 writer. It does not establish live publication evidence.
 
@@ -72,11 +72,10 @@ Its previous read-only authorization is historical evidence, not permission for 
 later write. Before activation, discover again and revalidate the current canonical
 inventory, artifacts, source checks, tag/release state and selected library.
 
-A separate reviewed activation change must connect the disabled entrypoint to the
-canonical serialized workflow, establish its App credential/permission boundary,
-and perform the explicitly approved live publication exercise. Do not switch to
-stock `Manifest.createReleases()`, which rescans candidates. Do not reactivate the
-controlled App PR exercise to publish an already merged candidate.
+The [activation rollout](ACTIVATION.md) connects the entrypoint to the canonical
+serialized workflow with separate read and App write credentials. Live settings
+and publication still require explicit approval. Do not switch to stock
+`Manifest.createReleases()`, which rescans candidates.
 
 The remaining live proof is exact root tag/release creation, lifecycle completion
 and downstream consumption of the published root version. Provider publication

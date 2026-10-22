@@ -98,7 +98,7 @@ are not automatically grandfathered into authorization.
 
 An approved result is not standing permission to publish. The publisher must
 revalidate and use the same frozen candidate; a handwritten report, a later rescan
-or the stock unrestricted publication action cannot replace that boundary. The separate publication command remains hard-disabled. #245 and #468 remain open.
+or the stock unrestricted publication action cannot replace that boundary. The separate publication command defaults off and requires explicit activation. #245 and #468 remain open.
 
 ## Regression evidence
 

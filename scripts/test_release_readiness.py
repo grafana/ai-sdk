@@ -362,9 +362,14 @@ class ReleaseReadinessTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify_graph(graph, path, expected, Path(directory))
 
-    def test_release_automation_is_disabled_until_activation_review(self):
+    def test_initial_adoption_requires_disabled_automation(self):
         root = Path(__file__).resolve().parent.parent
-        workflow = (root / ".github/workflows/release-please.yml").read_text()
+        workflow = """  release-please:
+    if: ${{ false }}
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7
+        with:
+          skip-github-release: true
+"""
         self.assertTrue(readiness.release_automation_disabled(workflow))
         self.assertFalse(readiness.release_automation_disabled(workflow.replace(
             "    if: ${{ false }}", "    if: ${{ true }}",
@@ -399,18 +404,18 @@ class ReleaseReadinessTest(unittest.TestCase):
         self.assertEqual(record["runAttempt"], "2")
         self.assertNotIn("do-not-retain", json.dumps(record))
 
-    def test_token_smoke_test_is_separate_from_release_automation(self):
+    def test_library_activation_keeps_workflow_permissions_and_mode_explicit(self):
         root = Path(__file__).resolve().parent.parent
         workflow = (root / ".github/workflows/release-please.yml").read_text()
-        smoke = re.split(r"(?m)^  [a-z][a-z-]*:\n", workflow.split("  token-smoke-test:\n", 1)[1], maxsplit=1)[0]
-        self.assertIn("github.event_name == 'push'", smoke)
-        self.assertIn("github.ref == 'refs/heads/main'", smoke)
-        self.assertIn("github.repository == 'grafana/ai-sdk'", smoke)
-        self.assertIn("gh api --paginate --slurp installation/repositories", smoke)
-        self.assertNotIn("release-please-action", smoke)
-        self.assertNotIn("actions/checkout", smoke)
-        self.assertNotIn("contents: write", smoke)
-        self.assertTrue(readiness.release_automation_disabled(workflow))
+        for expected in ["github.event_name == 'push'", "github.ref == 'refs/heads/main'",
+                         "github.repository == 'grafana/ai-sdk'", "vars.RELEASE_LIBRARY_MODE == 'root'",
+                         "vars.RELEASE_LIBRARY_MODE == 'libraries'", "cancel-in-progress: false",
+                         "GH_READ_TOKEN: ${{ github.token }}", "persist-credentials: false",
+                         "checks: read", "actions: read", "node release/tooling/publish.mjs"]:
+            self.assertIn(expected, workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("token-smoke-test:", workflow)
+        self.assertNotIn("app-pr-test:", workflow)
 
 
 if __name__ == "__main__":

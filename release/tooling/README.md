@@ -56,4 +56,4 @@ For read-only decisions about already merged library candidates, see
 and selected readiness without creating tags or releases.
 
 For the disabled writer and partial-failure recovery contract, see
-[library publication integration](PUBLICATION.md). Live activation remains separate.
+[library publication integration](PUBLICATION.md). See the [activation rollout](ACTIVATION.md) for the explicit mode and settings.

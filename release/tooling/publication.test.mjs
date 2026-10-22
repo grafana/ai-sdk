@@ -155,12 +155,13 @@ test('frozen batch excludes arrivals and overlapping invocations fail without wr
   assert.equal(status(result), 'published', result.candidates[0].reason);
 });
 
-test('CLI stays disabled before credentials or networking and workflow stays inactive', async () => {
+test('CLI and workflow require explicit activation before credentials or networking', async () => {
   await assert.rejects(main([], {}), /disabled/);
   const workflow = readFileSync(new URL('../../.github/workflows/release-please.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /release-please:\n    if: \$\{\{ false \}\}/);
+  assert.match(workflow, /vars\.RELEASE_LIBRARY_MODE == 'root'/);
+  assert.match(workflow, /vars\.RELEASE_LIBRARY_MODE == 'libraries'/);
   assert.match(workflow, /cancel-in-progress: false/);
-  assert.doesNotMatch(workflow, /publish\.mjs/);
+  assert.match(workflow, /node release\/tooling\/publish\.mjs/);
 });
 
 test('root publishes independently of blocked provider and unsupported Gateway', async () => {
