@@ -86,11 +86,12 @@ Selected SDK/provider/middleware standalone validation SHALL be required before 
 
 ### Requirement: No premature source-gate switch
 
-Required source checks MAY activate candidate integration only together with a blocking workspace-source Gateway production image-validation path for eligible main/tag publication. Boundary, parity, integration and merged-pin checks SHALL remain blocking source checks; all-module standalone compilation SHALL not block an otherwise valid source PR. Gateway standalone compilation SHALL NOT become an image publication prerequisite.
+Boundary, parity, integration and merged-pin checks SHALL remain blocking candidate-source checks. All-module standalone compilation SHALL NOT block an otherwise valid source PR. Source checks SHALL NOT require a Gateway image build or publisher. Independent library publication SHALL retain its separate standalone validation and authorization requirements.
 
 #### Scenario: Source PR with incomplete standalone dependencies
 - **WHEN** a source PR passes required candidate-source checks but cannot build against its older merged published pins
-- **THEN** it SHALL remain mergeable, while publication SHALL require successful same-revision workspace-source image validation and native smoke rather than standalone Gateway readiness
+- **THEN** it SHALL remain mergeable without Gateway image validation or native smoke
+- **AND** source success SHALL NOT authorize independent library publication
 
 ### Requirement: Selected consumer regression evidence
 

@@ -7,11 +7,9 @@ import { parseAllDocuments, parseDocument } from "yaml";
 const root = resolve(import.meta.dirname, "../../..");
 const document = parseDocument(readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8"));
 assert.deepEqual(document.errors, []);
-const workflow = document.toJS() as { jobs: Record<string, { if?: string; needs?: string | string[]; steps: Array<{ name?: string; run?: string; uses?: string; with?: { "persist-credentials"?: boolean }; "continue-on-error"?: boolean }> }> };
+const workflow = document.toJS() as { on: { push: { branches: string[]; tags?: string[] }; pull_request: unknown }; jobs: Record<string, { if?: string; needs?: string | string[]; permissions?: Record<string, string>; "continue-on-error"?: boolean; steps: Array<{ name?: string; run?: string; uses?: string; with?: { "persist-credentials"?: boolean }; "continue-on-error"?: boolean }> }> };
 const jobs = workflow.jobs;
 const source = ["ci", "race", "docs-lint", "module-resolution", "parity-baseline", "integration-test", "conformance-test"];
-const pushGuard = "${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) && github.repository == 'grafana/ai-sdk' }}";
-const normalize = (value: string | undefined) => value?.replace(/\s+/g, " ").trim();
 const needs = (job: string) => [jobs[job]!.needs ?? []].flat();
 const commands = (job: string) => jobs[job]!.steps.map((step) => step.run ?? "").join("\n");
 const dependencies = (job: string) => {
@@ -27,7 +25,7 @@ const dependencies = (job: string) => {
   return seen;
 };
 
-describe("source and artifact workflow gates", () => {
+describe("candidate-source workflow gates", () => {
   it("keeps pnpm packages under the shared lockfile root", () => {
     const workspace = parseDocument(readFileSync(resolve(root, "pnpm-workspace.yaml"), "utf8")).toJS() as { packages: string[] };
     const lockfile = parseAllDocuments(readFileSync(resolve(root, "pnpm-lock.yaml"), "utf8")).at(-1)?.toJS() as { importers: Record<string, unknown> };
@@ -42,7 +40,8 @@ describe("source and artifact workflow gates", () => {
       assert.ok(jobs[job], `missing source check ${job}`);
       assert.equal(jobs[job]!.if, undefined, `${job} must run on PR and push`);
       const required = dependencies(job);
-      assert.ok(!required.has("image-validation"), `${job} depends on the artifact gate`);
+      assert.notEqual(jobs[job]!["continue-on-error"], true, `${job} must block on failure`);
+      assert.ok(jobs[job]!.steps.every((step) => step["continue-on-error"] !== true));
       for (const path of [job, ...required]) {
         assert.doesNotMatch(commands(path), /verify-module-resolution|verify-published-module|test-candidate-source|test-go-client-standalone/);
       }
@@ -57,34 +56,20 @@ describe("source and artifact workflow gates", () => {
     assert.match(commands("race"), /mise run test-race/);
   });
 
-  it("builds workspace-source images at the push SHA and gates publication on source and image checks", () => {
-    assert.equal(normalize(jobs["image-validation"]!.if), pushGuard);
-    assert.equal(normalize(jobs["publish-ai-gateway-image"]!.if), pushGuard);
-    for (const job of ["image-validation", "publish-ai-gateway-image"]) {
-      const steps = jobs[job]!.steps;
-      assert.ok(steps.some((step) => step.uses?.startsWith("actions/checkout@") && step.with?.["persist-credentials"] === false));
-      assert.match(commands(job), /git rev-parse HEAD/);
-      assert.match(commands(job), /GITHUB_SHA/);
-      assert.match(commands(job), /git status --porcelain/);
-      assert.doesNotMatch(commands(job), /verify-published-module|GOWORK=off/);
-      assert.ok(steps.every((step) => step["continue-on-error"] !== true));
+  it("runs only the seven source checks on PRs and main pushes without image automation", () => {
+    assert.deepEqual(Object.keys(jobs).sort(), [...source].sort());
+    assert.deepEqual(workflow.on.push, { branches: ["main"] });
+    assert.ok(Object.hasOwn(workflow.on, "pull_request"));
+    assert.deepEqual(Object.keys(workflow.on).sort(), ["pull_request", "push"]);
+    for (const job of source) {
+      dependencies(job);
+      assert.notEqual(jobs[job]!.permissions?.packages, "write");
+      assert.doesNotMatch(commands(job), /docker (build|buildx|run|login|push)|build-ai-gateway-image|test-ai-gateway-image-source/);
+      assert.ok(jobs[job]!.steps.every((step) => !step.uses?.startsWith("docker/")));
     }
-    assert.match(commands("image-validation"), /--platform linux\/amd64,linux\/arm64/);
-    assert.match(commands("image-validation"), /-f ai-gateway\/Dockerfile/);
-    assert.match(commands("image-validation"), /build-ai-gateway-image/);
-    const smoke = jobs["image-validation"]!.steps.find((step) => step.name === "Smoke test native image with IPv6 disabled")!.run!;
-    assert.match(smoke, /--network none/);
-    assert.doesNotMatch(smoke, /--auth\.unsafe/);
-    assert.match(smoke, /--auth\.jwks-url=https:\/\/auth\.example\.invalid\/jwks/);
-    assert.match(smoke, /GET \/ready/);
-    assert.match(smoke, /GET \/api\/v1\/aisdk\/config/);
-    assert.match(smoke, /" 200 "/);
-    assert.match(smoke, /" 401 "/);
-    assert.match(commands("publish-ai-gateway-image"), /-f ai-gateway\/Dockerfile/);
-    assert.match(commands("publish-ai-gateway-image"), /VCS_REF=\$GITHUB_SHA/);
-    for (const required of [...source, "image-validation"]) {
-      assert.ok(dependencies("publish-ai-gateway-image").has(required), `publisher must require ${required}`);
-    }
+  });
+
+  it("preserves the local workspace image recipe independently of CI", () => {
     const dockerfile = readFileSync(resolve(root, "ai-gateway/Dockerfile"), "utf8");
     assert.match(dockerfile, /GOWORK=\/src\/go\.gateway\.work/);
     assert.doesNotMatch(dockerfile, /GOWORK=off/);
