@@ -52,6 +52,10 @@ the source and cannot drift.
 
 - Read the [Code of Conduct](CODE_OF_CONDUCT.md). All contributors are expected
   to follow it.
+- **Sign the Contributor License Agreement (CLA).** Before we can accept your
+  pull request, you must sign the
+  [Grafana Labs CLA](https://grafana.com/docs/grafana/latest/developer-resources/contribute/cla/).
+  Follow the CLA Assistant prompt on your pull request if you haven't signed it.
 - Search [existing issues](https://github.com/grafana/ai-sdk/issues) so you
   don't duplicate work already in flight.
 - **Sign your commits.** All Grafana Labs repositories
