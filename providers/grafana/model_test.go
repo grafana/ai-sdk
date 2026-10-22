@@ -264,18 +264,20 @@ func TestModel_UnaryRawUsage(t *testing.T) {
 	}
 }
 
+const formerRawUsageCap = 1 << 20
+
 func TestModel_UnaryRawUsageSize(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		raw      string
 		wantSize int
 	}{
-		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, wantSize: maxRawUsageBytes},
-		{name: "one over", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes+1-len(`{"large":""}`)) + `"}`},
-		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, wantSize: 2},
-		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`, wantSize: 2},
-		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1), wantSize: 2},
-		{name: "interior whitespace", raw: `{"x":` + strings.Repeat(" ", maxRawUsageBytes) + `0}`, wantSize: len(`{"x":0}`)},
+		{name: "at former cap", raw: `{"large":"` + strings.Repeat("x", formerRawUsageCap-len(`{"large":""}`)) + `"}`, wantSize: formerRawUsageCap},
+		{name: "above former cap", raw: `{"large":"` + strings.Repeat("x", formerRawUsageCap+1-len(`{"large":""}`)) + `"}`, wantSize: formerRawUsageCap + 1},
+		{name: "whitespace exact", raw: strings.Repeat(" ", formerRawUsageCap-2) + `{}`, wantSize: 2},
+		{name: "leading whitespace", raw: strings.Repeat(" ", formerRawUsageCap-1) + `{}`, wantSize: 2},
+		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", formerRawUsageCap-1), wantSize: 2},
+		{name: "interior whitespace", raw: `{"x":` + strings.Repeat(" ", formerRawUsageCap) + `0}`, wantSize: len(`{"x":0}`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":`+tc.raw, 1)
@@ -286,14 +288,9 @@ func TestModel_UnaryRawUsageSize(t *testing.T) {
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
-			if tc.wantSize != 0 {
-				require.NoError(t, err)
-				assert.Len(t, result.Usage.Raw, tc.wantSize)
-				assert.JSONEq(t, tc.raw, string(result.Usage.Raw))
-			} else {
-				require.Error(t, err)
-				assert.Nil(t, result)
-			}
+			require.NoError(t, err)
+			assert.Len(t, result.Usage.Raw, tc.wantSize)
+			assert.JSONEq(t, tc.raw, string(result.Usage.Raw))
 		})
 	}
 }
@@ -325,7 +322,6 @@ func TestModel_UnaryFailures(t *testing.T) {
 		{"scalar raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":1`, 1)},
 		{"invalid UTF-8 raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"nested":"`+string([]byte{0xff})+`"}`, 1)},
 		{"malformed raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"private":`, 1)},
-		{"oversized raw", strings.Replace(unaryFixture, `"outputTokens":{"total":1,"text":1,"reasoning":0}`, `"outputTokens":{"total":1,"text":1,"reasoning":0},"raw":{"private":"`+strings.Repeat("x", 1<<20)+`"}`, 1)},
 		{"trailing", unaryFixture + `{}`},
 		{"malformed", `{"content":`},
 	} {

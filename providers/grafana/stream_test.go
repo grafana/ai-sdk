@@ -162,12 +162,12 @@ func TestModel_StreamRawUsageSize(t *testing.T) {
 		raw      string
 		wantSize int
 	}{
-		{name: "exact", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"large":""}`)) + `"}`, wantSize: maxRawUsageBytes},
-		{name: "one over", raw: `{"large":"` + strings.Repeat("x", maxRawUsageBytes+1-len(`{"large":""}`)) + `"}`},
-		{name: "whitespace exact", raw: strings.Repeat(" ", maxRawUsageBytes-2) + `{}`, wantSize: 2},
-		{name: "leading whitespace", raw: strings.Repeat(" ", maxRawUsageBytes-1) + `{}`, wantSize: 2},
-		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", maxRawUsageBytes-1), wantSize: 2},
-		{name: "interior whitespace", raw: `{"x":` + strings.Repeat(" ", maxRawUsageBytes) + `0}`, wantSize: len(`{"x":0}`)},
+		{name: "at former cap", raw: `{"large":"` + strings.Repeat("x", formerRawUsageCap-len(`{"large":""}`)) + `"}`, wantSize: formerRawUsageCap},
+		{name: "above former cap", raw: `{"large":"` + strings.Repeat("x", formerRawUsageCap+1-len(`{"large":""}`)) + `"}`, wantSize: formerRawUsageCap + 1},
+		{name: "whitespace exact", raw: strings.Repeat(" ", formerRawUsageCap-2) + `{}`, wantSize: 2},
+		{name: "leading whitespace", raw: strings.Repeat(" ", formerRawUsageCap-1) + `{}`, wantSize: 2},
+		{name: "trailing whitespace", raw: `{}` + strings.Repeat(" ", formerRawUsageCap-1), wantSize: 2},
+		{name: "interior whitespace", raw: `{"x":` + strings.Repeat(" ", formerRawUsageCap) + `0}`, wantSize: len(`{"x":0}`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			finish := strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":`+tc.raw, 1)
@@ -178,16 +178,10 @@ func TestModel_StreamRawUsageSize(t *testing.T) {
 			require.NoError(t, err)
 			parts := collectParts(t, result)
 			require.Len(t, parts, 1)
-			if tc.wantSize != 0 {
-				require.Equal(t, provider.PartFinish, parts[0].Type)
-				require.NotNil(t, parts[0].Usage)
-				assert.Len(t, parts[0].Usage.Raw, tc.wantSize)
-				assert.JSONEq(t, tc.raw, string(parts[0].Usage.Raw))
-			} else {
-				if assert.Equal(t, provider.PartError, parts[0].Type) && assert.NotNil(t, parts[0].APICallError) {
-					assert.False(t, parts[0].APICallError.IsRetryable)
-				}
-			}
+			require.Equal(t, provider.PartFinish, parts[0].Type)
+			require.NotNil(t, parts[0].Usage)
+			assert.Len(t, parts[0].Usage.Raw, tc.wantSize)
+			assert.JSONEq(t, tc.raw, string(parts[0].Usage.Raw))
 		})
 	}
 }
