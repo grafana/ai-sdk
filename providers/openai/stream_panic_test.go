@@ -130,6 +130,13 @@ func TestDoStream_WorkerPanic(t *testing.T) {
 		assert.Equal(t, int32(1), body.closed.Load())
 	})
 
+	t.Run("transport reader during preflight", func(t *testing.T) {
+		body := &panickingBody{prefix: strings.NewReader(panicResponseCreated)}
+		_, err := panicStreamModel(body).DoStream(context.Background(), options)
+		assert.Equal(t, streamrecover.ErrPanic, err)
+		assert.Equal(t, int32(1), body.closed.Load())
+	})
+
 	t.Run("transport reader after the first event", func(t *testing.T) {
 		body := &panickingBody{prefix: strings.NewReader(panicResponseCreated + panicTextDelta)}
 		result, err := panicStreamModel(body).DoStream(context.Background(), options)
