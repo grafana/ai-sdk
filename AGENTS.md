@@ -246,6 +246,12 @@ The drift boundary: "what's the signature / options?" -> godoc; "why/how?" ->
 `docs/`; "convince me + run once" -> README. `docs/` pages link to pkg.go.dev
 rather than reproducing signatures or option tables.
 
+Keep the [Gateway architecture walkthrough and diagrams](docs/concepts/gateway-architecture.md)
+and [glossary with aliases](docs/concepts/gateway-glossary.md) aligned with code
+changes in the same PR when their descriptions are affected. See
+[documentation maintenance](CONTRIBUTING.md#keep-architecture-and-terminology-current)
+for scope and validation.
+
 User-facing docs are centralized in `docs/` -- avoid per-module `README.md`
 files for user-facing setup/behavior; fold that content into the right `docs/`
 page (`doc.go` stays as the godoc API reference). Non-user-facing tooling
@@ -253,6 +259,38 @@ READMEs (e.g. under `test/`) may stay co-located. Runnable examples go under
 `examples/` as self-contained, outcome-oriented modules. They must `go build`
 and include deterministic credential-free tests
 (CI: `mise run build-examples` and `mise run test-examples`).
+
+## Review Walkthroughs
+
+When reviewing a branch, PR, or local diff, include a human-first walkthrough
+alongside the findings. These requirements apply regardless of the agent or
+review skill used:
+
+- Generate two Mermaid diagrams: **Before**, grounded in the reviewed base,
+  and **After**, grounded in the reviewed head plus any included local changes.
+  Record those revisions and the local scope. Use consistent node names,
+  direction, and boundaries so readers can compare the same flow.
+- Highlight actual additions, removals, and modifications with explicit labels
+  and a legend; color may supplement labels. Explain what changed and why,
+  using one concrete request or example. For documentation-only or
+  behavior-preserving changes, show the relevant documentation or structural
+  change without inventing a runtime difference.
+- Include a concise glossary of terms used in the walkthrough, with useful
+  aliases, synonyms, and code names. Reuse or link maintained definitions and
+  explain each term's role in the change.
+- Check the maintained architecture walkthrough, diagrams, and glossary against
+  the resulting code. Report concrete drift and the updates needed in the same
+  change; do not require cosmetic edits when the descriptions remain accurate.
+- Present the diagrams and glossary to the reviewer in the review response or
+  an external review document. Save any review files or rendered previews
+  outside the repository, such as an external context directory or temporary
+  directory; verify the resolved destination if using a symlink. Do not stage
+  or commit these reviewer-only artifacts. Maintained architecture docs describe
+  the resulting system and belong in the repository; before/after comparisons
+  and PR-specific highlighting belong only in the review.
+
+Validate Mermaid syntax and rendering with available tools and state any
+validation limitations. Keep the walkthrough proportional to the change.
 
 ## Code Style
 

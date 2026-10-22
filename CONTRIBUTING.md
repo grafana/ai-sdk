@@ -52,6 +52,10 @@ the source and cannot drift.
 
 - Read the [Code of Conduct](CODE_OF_CONDUCT.md). All contributors are expected
   to follow it.
+- **Sign the Contributor License Agreement (CLA).** Before we can accept your
+  pull request, you must sign the
+  [Grafana Labs CLA](https://grafana.com/docs/grafana/latest/developer-resources/contribute/cla/).
+  Follow the CLA Assistant prompt on your pull request if you haven't signed it.
 - Search [existing issues](https://github.com/grafana/ai-sdk/issues) so you
   don't duplicate work already in flight.
 - **Sign your commits.** All Grafana Labs repositories
@@ -417,6 +421,24 @@ Conventions:
   note, "what this will cover", "see also", nav footer) so the structure reads
   as intentional.
 
+### Keep architecture and terminology current
+
+When a change affects Gateway components, request ordering, authentication,
+routing, protocol boundaries, streaming/failure behavior, or supported capabilities,
+update the affected [architecture walkthrough and Mermaid diagrams](docs/concepts/gateway-architecture.md)
+in the same change. Update the [glossary](docs/concepts/gateway-glossary.md) when
+terms, aliases, code names, or their meanings change. Ground both in the resulting
+implementation and keep proposed capabilities clearly separate. Changes that leave
+these descriptions accurate do not require cosmetic documentation edits.
+
+Reviews should check these documents for drift and provide before/after Mermaid
+comparisons and a glossary to help reviewers understand the diff. Those comparisons
+are reviewer artifacts: save them outside the repository (for example, in external
+Hive context or a temporary directory), and do not commit them. The maintained
+architecture diagrams describe the current system, without PR-specific change
+highlighting. Validate changed documentation links and Mermaid syntax/rendering
+with the available tools, recording any validation limits.
+
 ### Linting the docs
 
 ```bash
@@ -535,8 +557,10 @@ SDK's Go module dependency graph.
 - **Go module releases:** Before tagging an SDK, provider, or middleware version
   for external Go consumers, validate that module against its declared `go.mod`
   dependencies with `MODULE=providers/anthropic mise run verify-published-module`
-  (substitute the module being released). This check remains manual pending
-  release automation (#245/#21). For a broader diagnostic,
+  (substitute the module being released). Release PR readiness additionally checks
+  current-base metadata, canonical tagged prerequisite freshness, and isolated
+  selected-consumer regressions; see the [release runbook](release/README.md).
+  Publication automation remains disabled pending #245. For a broader diagnostic,
   `mise run verify-module-resolution` checks all published modules.
 - **Gateway plugin:** Gateway uses the separate `go.gateway.work` to build the
   plugin backend from same-revision local source. Plugin validation runs on pull

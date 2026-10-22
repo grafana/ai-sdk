@@ -67,6 +67,10 @@ provider package. Add focused packages when the application needs them:
 
 ## When internals matter
 
+When the selected provider is Grafana AI Gateway, continue with
+[How a request crosses AI Gateway](gateway-architecture.md) for the server-side
+path and [Gateway glossary](gateway-glossary.md) for terminology.
+
 You need the lower-level event and wire representations when you are:
 
 - filtering or composing UI streams;

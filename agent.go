@@ -406,6 +406,9 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 	if call.toolApproval.generic != nil || call.toolApproval.tools != nil {
 		dst.toolApproval = cloneToolApprovalConfig(call.toolApproval)
 	}
+	if len(call.toolApprovalSecret) > 0 {
+		dst.toolApprovalSecret = append([]byte(nil), call.toolApprovalSecret...)
+	}
 	if call.maxRetries != nil {
 		v := *call.maxRetries
 		dst.maxRetries = &v
@@ -473,6 +476,9 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 	}
 	if call.output != nil {
 		dst.output = call.output
+	}
+	if call.repairText != nil {
+		dst.repairText = call.repairText
 	}
 
 	dst.onStart = mergeCallbacks1(settingsCallbacks.onStart, call.onStart)

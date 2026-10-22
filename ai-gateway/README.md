@@ -118,6 +118,9 @@ something is wrong, it does not start, and Grafana's log says why.
 
 ## Learn more
 
+- [Gateway architecture](../docs/concepts/gateway-architecture.md) and
+  [glossary](../docs/concepts/gateway-glossary.md): the request path and
+  component boundaries.
 - [Authenticate to the Gateway](../docs/guides/gateway-authentication.md):
   credentials for your applications.
 - [Call the Gateway from Go](../docs/providers/grafana-gateway.md).
