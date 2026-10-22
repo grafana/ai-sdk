@@ -54,3 +54,6 @@ For the opt-in App write test and its approval boundary, see the
 For read-only decisions about already merged library candidates, see
 [merged library authorization](AUTHORIZATION.md). It verifies exact revision evidence
 and selected readiness without creating tags or releases.
+
+For the disabled writer and partial-failure recovery contract, see
+[library publication integration](PUBLICATION.md). See the [activation rollout](ACTIVATION.md) for the explicit mode and settings.

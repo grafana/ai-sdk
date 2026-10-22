@@ -206,8 +206,9 @@ is tracked separately in #428.
 
 For release intent, use the PR title rules in
 [Releases and independent modules](CONTRIBUTING.md#releases-and-independent-modules).
-Release automation remains inactive until #245; do not manually edit generated
-versions or changelogs, create tags, or publish a release while preparing a PR.
+Release writes require the explicit mode and protection checks in
+[the activation runbook](release/tooling/ACTIVATION.md). Do not manually edit
+generated versions/changelogs, create tags, or publish while preparing a PR.
 
 ## Project Structure
 

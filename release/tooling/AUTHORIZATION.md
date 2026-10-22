@@ -91,14 +91,14 @@ variables. Normal prerequisite downloads still use the public Go proxy.
 Missing/expired artifacts, skipped or failed required jobs, proxy outages, unsigned
 heads, edited release metadata and unsupported merge history block the affected
 candidate. Retrying is read-only. If a tag or GitHub Release already exists, even
-at the expected revision, this slice blocks and leaves recovery to a later change.
+at the expected revision, this command blocks. The disabled [publication integration](PUBLICATION.md) has
+a separate matching-state recovery path.
 Gateway is explicitly unsupported. Historical candidates without retained evidence
 are not automatically grandfathered into authorization.
 
-An approved result is not standing permission to publish. The future publisher must
+An approved result is not standing permission to publish. The publisher must
 revalidate and use the same frozen candidate; a handwritten report, a later rescan
-or the stock unrestricted publication action cannot replace that boundary. No
-publication command is introduced here. #245 and #468 remain open.
+or the stock unrestricted publication action cannot replace that boundary. The separate publication command defaults off and requires explicit activation. #245 and #468 remain open.
 
 ## Regression evidence
 
