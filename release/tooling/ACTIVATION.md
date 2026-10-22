@@ -7,9 +7,10 @@ accounted for.
 
 ## Review and merge order
 
-Merge the transport prerequisite #492, then publication integration #493, then this
-activation PR after reviewing the settings below. Retarget/rebase stacked PRs after
-each squash merge so required checks test the real main base. Do not bypass checks.
+The transport prerequisite #492 is merged. PR #493 combines publication integration
+and this final activation rollout; the separate #494 draft was consolidated into it.
+Review the settings below and merge #493 only after its required checks pass against
+main. Do not bypass checks.
 
 The activation PR introduces `RELEASE_LIBRARY_MODE`:
 
