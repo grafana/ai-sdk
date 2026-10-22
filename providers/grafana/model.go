@@ -96,7 +96,7 @@ func (m *model) DoStream(ctx context.Context, opts provider.CallOptions) (*provi
 		return nil, protocolError("grafana: expected SSE media type", resp.StatusCode, nil)
 	}
 	parts := make(chan provider.StreamPart, 64)
-	go consumeStream(ctx, resp.Body, parts, m.provider.limits, opts.IncludeRawChunks)
+	go consumeStream(ctx, resp.Body, parts, opts.IncludeRawChunks)
 	return &provider.StreamResult{Stream: parts, Request: &provider.RequestMetadata{Body: requestBody}, Response: &provider.ResponseHeaders{Headers: responseHeaders(resp.Header)}}, nil
 }
 

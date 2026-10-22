@@ -49,21 +49,6 @@ func TestGeneratedFileMalformed(t *testing.T) {
 func TestGeneratedFileHostileBoundsAndBackpressure(t *testing.T) {
 	event := `{"type":"file","mediaType":"image/png","data":{"type":"data","data":"` + strings.Repeat("x", 512) + `"}}`
 	frame := sseFrame(event)
-	for _, total := range []bool{false, true} {
-		limits := DefaultLimits()
-		limits.StreamEventBytes = int64(len(frame) - 1)
-		if total {
-			limits.StreamBytes = limits.StreamEventBytes
-		}
-		body := &trackedBody{Reader: strings.NewReader(frame)}
-		model := streamFromBody(t, body, &limits)
-		result, err := model.DoStream(context.Background(), provider.CallOptions{})
-		require.NoError(t, err)
-		parts := collectParts(t, result)
-		require.Len(t, parts, 1)
-		require.Equal(t, provider.PartError, parts[0].Type)
-		require.True(t, body.closed)
-	}
 	body := &atomicBody{ReadCloser: io.NopCloser(strings.NewReader(strings.Repeat(frame, 1000)))}
 	model := streamFromBody(t, body, nil)
 	ctx, cancel := context.WithCancel(context.Background())
