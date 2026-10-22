@@ -452,15 +452,14 @@ func TestModel_UnaryProtocolFailures(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls atomic.Int32
-			limits := DefaultLimits()
-			if tc.limit != 0 {
-				limits.UnaryBytes = tc.limit
-			}
 			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
 				w.Header().Set("Content-Type", tc.media)
 				_, _ = io.WriteString(w, tc.body)
-			}, &limits)
+			}, nil)
+			if tc.limit != 0 {
+				p.bufferedReadLimit = tc.limit
+			}
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
@@ -494,17 +493,16 @@ func TestModel_UnaryReadPrecedence(t *testing.T) {
 				reader.onRead = cancel
 			}
 			body := &trackedBody{Reader: reader}
-			limits := DefaultLimits()
-			limits.UnaryBytes = 4
 			var calls atomic.Int32
 			p, err := NewWithAccessToken(AccessTokenConfig{
-				AccessToken: "token", BaseURL: "https://example.test", Limits: &limits,
+				AccessToken: "token", BaseURL: "https://example.test",
 				HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 					calls.Add(1)
 					return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: body, Request: req}, nil
 				})},
 			})
 			require.NoError(t, err)
+			p.bufferedReadLimit = 4
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			result, err := m.DoGenerate(ctx, provider.CallOptions{Prompt: []provider.Message{}})
@@ -591,12 +589,11 @@ func TestModel_UnaryReadCancellation(t *testing.T) {
 func TestModel_UnaryBoundsAndTransport(t *testing.T) {
 	for _, delta := range []int64{0, -1} {
 		t.Run(string(rune('a'-delta)), func(t *testing.T) {
-			limits := DefaultLimits()
-			limits.UnaryBytes = int64(len(unaryFixture)) + delta
 			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, unaryFixture)
-			}, &limits)
+			}, nil)
+			p.bufferedReadLimit = int64(len(unaryFixture)) + delta
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})

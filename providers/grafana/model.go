@@ -49,7 +49,7 @@ func (m *model) doRequest(ctx context.Context, opts provider.CallOptions, stream
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer func() { _ = resp.Body.Close() }()
-		return nil, nil, readGatewayError(ctx, resp, m.provider.limits.ErrorBytes)
+		return nil, nil, readGatewayError(ctx, resp, m.provider.bufferedReadLimit)
 	}
 	return resp, body, nil
 }
@@ -60,13 +60,13 @@ func (m *model) DoGenerate(ctx context.Context, opts provider.CallOptions) (*pro
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, transportFailure, err := readJSON(ctx, resp, m.provider.limits.UnaryBytes)
+	body, transportFailure, err := readJSON(ctx, resp, m.provider.bufferedReadLimit)
 	if err != nil {
 		if transportFailure {
 			switch {
 			case ctx.Err() != nil:
 				err = ctx.Err()
-			case int64(len(body)) > m.provider.limits.UnaryBytes:
+			case int64(len(body)) > m.provider.bufferedReadLimit:
 				err = errors.New("grafana: response byte limit exceeded")
 			default:
 				return nil, provider.NewAPICallError(provider.APICallErrorOptions{

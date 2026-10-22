@@ -15,8 +15,8 @@ Each group is one self-contained commit that keeps `cd providers/grafana && go t
 
 ## 3. Introduce the buffered-read backstop
 
-- [ ] 3.1 Add the unexported `maxBufferedResponseBytes` (2 GiB) constant and the `Provider.bufferedReadLimit` field, set in `newProvider`. Route discovery (`discovery.go`), unary success and the over-limit precedence check (`model.go`), and all `readGatewayError` call sites through it, keeping the error messages and precedence. Verify with `go build ./...`.
-- [ ] 3.2 Move the over-limit tests to the seam by setting `p.bufferedReadLimit` on the test provider:
+- [x] 3.1 Add the unexported `maxBufferedResponseBytes` (2 GiB) constant and the `Provider.bufferedReadLimit` field, set in `newProvider`. Route discovery (`discovery.go`), unary success and the over-limit precedence check (`model.go`), and all `readGatewayError` call sites through it, keeping the error messages and precedence. Verify with `go build ./...`.
+- [x] 3.2 Move the over-limit tests to the seam by setting `p.bufferedReadLimit` on the test provider:
   - `TestModel_UnaryReadPrecedence`, `TestModel_UnaryBoundsAndTransport` and the byte-limit case of `TestModel_UnaryProtocolFailures`;
   - `TestListModels_BoundsAndCleanup`, including the error-body case and a non-2xx stream setup case;
   - the unary part of `TestGeneratedFileHostileBoundsAndBackpressure`;

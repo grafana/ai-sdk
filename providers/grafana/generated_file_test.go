@@ -60,12 +60,11 @@ func TestGeneratedFileHostileBoundsAndBackpressure(t *testing.T) {
 	collectParts(t, result)
 	require.Equal(t, int32(1), body.closed.Load())
 	unary := `{"content":[` + event + `],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`
-	limits := DefaultLimits()
-	limits.UnaryBytes = int64(len(unary) - 1)
 	p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, unary)
-	}, &limits)
+	}, nil)
+	p.bufferedReadLimit = int64(len(unary) - 1)
 	m, err := p.LanguageModel("files")
 	require.NoError(t, err)
 	_, err = m.DoGenerate(context.Background(), provider.CallOptions{})

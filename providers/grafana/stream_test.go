@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -556,6 +557,38 @@ func TestModel_StreamSetupFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestModel_StreamSetupErrorBackstop(t *testing.T) {
+	const errorBody = `{"error":{"message":"private-message","type":"internal_server_error","code":"internal_error","param":null}}`
+	for _, delta := range []int64{0, -1} {
+		t.Run(fmt.Sprintf("delta=%d", delta), func(t *testing.T) {
+			body := &trackedBody{Reader: strings.NewReader(errorBody)}
+			p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test", HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 500, Header: http.Header{"Content-Type": {"application/json"}}, Body: body, Request: req}, nil
+			})}})
+			require.NoError(t, err)
+			p.bufferedReadLimit = int64(len(errorBody)) + delta
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+			result, err := m.DoStream(context.Background(), provider.CallOptions{})
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.True(t, body.closed)
+			var gatewayErr *GatewayError
+			if delta == 0 {
+				require.ErrorAs(t, err, &gatewayErr)
+				return
+			}
+			assert.False(t, errors.As(err, &gatewayErr))
+			var api *provider.APICallError
+			require.ErrorAs(t, err, &api)
+			assert.False(t, api.IsRetryable)
+			assert.NotContains(t, err.Error(), "private-message")
+			assert.LessOrEqual(t, body.read, len(errorBody))
+		})
+	}
+}
+
 func TestDecodeStreamPart_FunctionTools(t *testing.T) {
 	for _, raw := range []string{
 		`{"type":"tool-input-start","id":"a","toolName":"f"}`,

@@ -247,7 +247,7 @@ func TestDeveloperEvidenceAccess_CurrentBaseline(t *testing.T) {
 		assert.Equal(t, "public", rows[0].ID)
 		assert.Equal(t, "native-primary", rows[0].Gateway.Primary.ProviderModelID)
 		assert.JSONEq(t, body, `{"models":`+string(stock)+`}`)
-		p.limits.DiscoveryBytes = int64(len(body) - 1)
+		p.bufferedReadLimit = int64(len(body) - 1)
 		rows, err = p.ListModels(context.Background())
 		require.Error(t, err)
 		assert.Nil(t, rows)

@@ -100,13 +100,11 @@ func TestListModels_BoundsAndCleanup(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := &trackedBody{Reader: strings.NewReader(tc.body)}
-			limits := DefaultLimits()
-			limits.DiscoveryBytes = tc.limit
-			limits.ErrorBytes = tc.limit
-			p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test", Limits: &limits, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test", HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: tc.status, Header: http.Header{"Content-Type": {"application/json"}}, Body: body, Request: req}, nil
 			})}})
 			require.NoError(t, err)
+			p.bufferedReadLimit = tc.limit
 			rows, err := p.ListModels(context.Background())
 			if tc.valid {
 				require.NoError(t, err)
@@ -286,7 +284,7 @@ func TestListModels_ConfiguredUnknownAdditionsAreNotPromoted(t *testing.T) {
 	assert.NotContains(t, string(encoded), "ignored-dummy-secret")
 }
 
-func TestListModels_LargeCatalogReadAllowance(t *testing.T) {
+func TestListModels_LargeCatalogBackstop(t *testing.T) {
 	candidates := make([]ConfiguredCandidate, 16)
 	for i := range candidates {
 		candidates[i] = ConfiguredCandidate{ProviderInstance: "instance", Provider: "anthropic", ProviderModelID: fmt.Sprintf("%d-", i) + strings.Repeat(`"`, 512)}
@@ -299,7 +297,6 @@ func TestListModels_LargeCatalogReadAllowance(t *testing.T) {
 	}
 	body := discoveryBody(t, models)
 	require.Greater(t, len(body), 1<<20)
-	require.Less(t, len(body), 4<<20)
 	p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, body)
@@ -307,7 +304,7 @@ func TestListModels_LargeCatalogReadAllowance(t *testing.T) {
 	rows, err := p.ListModels(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, rows, len(models))
-	p.limits.DiscoveryBytes = 1 << 20
+	p.bufferedReadLimit = 1 << 20
 	rows, err = p.ListModels(context.Background())
 	require.Error(t, err)
 	assert.Nil(t, rows)
