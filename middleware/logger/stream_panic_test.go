@@ -2,6 +2,7 @@ package logger
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync/atomic"
 	"testing"
@@ -56,27 +57,43 @@ func TestDoStream_RecoveredPanicErrorClass(t *testing.T) {
 }
 
 func TestDoStream_ObservationPanicKeepsOutcome(t *testing.T) {
-	var calls atomic.Int32
-	clock := func() time.Time {
-		if calls.Add(1) == 2 {
-			panic("secret-panic-value")
-		}
-		return time.Unix(0, 0)
-	}
 	failure := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 500, Message: "upstream failed"})
-	handler := newTestHandler()
-	wrapped := Wrap(streamOf(
-		provider.StreamPart{Type: provider.PartTextDelta, ID: "txt", Delta: "hello"},
-		provider.StreamPart{Type: provider.PartError, APICallError: failure},
-	), Options{Logger: slog.New(handler), Clock: clock})
-	result, err := wrapped.DoStream(context.Background(), provider.CallOptions{})
-	require.NoError(t, err)
-	drainStream(result.Stream)
-	records := handler.Records()
-	require.NotEmpty(t, records)
-	last := records[len(records)-1]
-	assert.Equal(t, string(EventStreamError), last.Message)
-	assertAttr(t, last.AttrsMap(), "ai_sdk.outcome", outcomeError)
+	for _, tc := range []struct {
+		name    string
+		panicOn int32
+	}{
+		{name: "panic observing the text delta", panicOn: 2},
+		{name: "panic observing the error part", panicOn: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			clock := func() time.Time {
+				if calls.Add(1) == tc.panicOn {
+					panic("secret-panic-value")
+				}
+				return time.Unix(0, 0)
+			}
+			handler := newTestHandler()
+			wrapped := Wrap(streamOf(
+				provider.StreamPart{Type: provider.PartTextDelta, ID: "txt", Delta: "hello"},
+				provider.StreamPart{Type: provider.PartError, APICallError: failure},
+			), Options{Logger: slog.New(handler), Clock: clock, LogStreamParts: true})
+			result, err := wrapped.DoStream(context.Background(), provider.CallOptions{})
+			require.NoError(t, err)
+			drainStream(result.Stream)
+			records := handler.Records()
+			require.NotEmpty(t, records)
+			last := records[len(records)-1]
+			assert.Equal(t, string(EventStreamError), last.Message)
+			attrs := last.AttrsMap()
+			assertAttr(t, attrs, "ai_sdk.outcome", outcomeError)
+			assertAttr(t, attrs, "ai_sdk.stream.parts.count", int64(2))
+			assertAttr(t, attrs, streamPartCountKey(provider.PartError), int64(1))
+			for _, record := range records {
+				assert.NotContains(t, fmt.Sprint(record.Message, record.AttrsMap()), "secret-panic-value")
+			}
+		})
+	}
 }
 
 func TestDoStream_MalformedErrorChain(t *testing.T) {
