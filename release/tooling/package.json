@@ -1,0 +1,12 @@
+{
+  "name": "ai-sdk-release-tooling",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "preview": "node preview.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "release-please": "17.6.0"
+  }
+}

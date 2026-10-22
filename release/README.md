@@ -81,6 +81,10 @@ working tree, so the preview reflects the configuration on `main`. To preview a
 configuration change before it merges, push the branch and add
 `--target-branch=<branch>` to the command.
 
+For a locked preview of one component, including generated file contents and
+the inspected source revision, use the [release proposal preview tool](tooling/README.md).
+It rejects write requests and does not authorize publication.
+
 ## Publication status and readiness
 
 Release automation is inactive pending #245 activation. The release-please job
