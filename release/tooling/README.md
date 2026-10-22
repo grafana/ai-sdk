@@ -47,3 +47,6 @@ The tests exercise the supported override against the pinned parser.
 
 Dependency resolution for this isolated tool is captured in `package-lock.json`.
 Use `npm ci --ignore-scripts`, not an unpinned installation or lifecycle scripts.
+
+For the opt-in App write test and its approval boundary, see the
+[controlled PR exercise](APP-PR-EXERCISE.md). The preview command remains read-only.
