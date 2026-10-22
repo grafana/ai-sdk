@@ -106,3 +106,18 @@ The adapter SHALL use fixed Anthropic-shaped public errors that do not disclose 
 - **WHEN** a shared Gateway request or upstream response resource limit applies
 - **THEN** the shared boundary SHALL enforce it using the Gateway's existing failure handling
 - **AND** any missing shared limit relevant to this endpoint SHALL be documented
+
+### Requirement: Official-client protocol conformance evidence
+
+The Gateway SHALL have protocol conformance checks using pinned official Anthropic Go and TypeScript clients against the real local command. Replayed provider inputs SHALL retain their provenance. Synthetic boundary cases SHALL be identified separately.
+
+#### Scenario: Recorded and imported fixture replay
+
+- **WHEN** each official SDK consumes the same existing provider fixture directly and through the Gateway
+- **THEN** the supported message content, identity, stop reason and token usage SHALL agree
+- **AND** Gateway SSE events SHALL obey the message/content lifecycle
+
+#### Scenario: Synthetic boundary behavior
+
+- **WHEN** a controlled provider delays completion or fails before or after response commitment
+- **THEN** tests SHALL verify incremental delivery and fixed errors without falsely successful completion

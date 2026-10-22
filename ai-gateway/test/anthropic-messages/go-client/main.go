@@ -30,6 +30,9 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) == 4 && os.Args[3] == "conformance" {
+		return conformance()
+	}
 	if len(os.Args) != 3 {
 		return fmt.Errorf("usage: anthropic-messages-go <base-url> <gateway-token>")
 	}

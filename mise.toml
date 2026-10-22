@@ -415,6 +415,16 @@ export GATEWAY_TEST_GOWORK="$workspace_file"
 (cd ai-gateway/test/anthropic-messages && pnpm test)
 """
 
+[tasks.test-anthropic-messages-conformance]
+description = "Replay Anthropic fixtures through the Gateway and pinned official clients"
+run = """
+export GATEWAY_TEST_GOWORK="$PWD/go.gateway.work"
+mise run verify-gateway-workspace
+mise deps install --only test
+pnpm --filter @grafana/ai-gateway-anthropic-messages-test typecheck
+pnpm --filter @grafana/ai-gateway-anthropic-messages-test test:conformance
+"""
+
 [tasks.test-ai-gateway-source-integration]
 description = "Run Gateway command and ProviderWire integration against candidate SDK source"
 run = """

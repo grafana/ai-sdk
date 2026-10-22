@@ -43,6 +43,7 @@ Other records have their own homes:
 | Buffered model fallback | Go extension | mixed | `fallback/` tests, `test/integration` |
 | Fallback observation | Go extension | mixed | `fallback/` and root tests |
 | Agent Observability integration | Go extension | mixed | `middleware/agentobservability` tests, Gateway export tests |
+| Anthropic Messages ingress | Go extension | mixed | Gateway-owned official-SDK fixture replay and synthetic boundary checks in `ai-gateway/test/anthropic-messages` (`mise run test-anthropic-messages-conformance`) |
 | AI Gateway | Go extension | mixed | `openspec/specs/gateway-*` and `grafana-gateway-client` specs, `ai-gateway/` tests |
 | Baseline and fixture inventory | Conformance harness | automated | `mise run validate-parity-baseline`, `mise run parity-coverage` |
 | Published module dependencies | Conformance harness | automated | `mise run verify-module-resolution` |
