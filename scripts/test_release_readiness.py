@@ -3,6 +3,7 @@ from contextlib import chdir
 import subprocess
 import tempfile
 import json
+import re
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -369,7 +370,7 @@ class ReleaseReadinessTest(unittest.TestCase):
     def test_token_smoke_test_is_separate_from_release_automation(self):
         root = Path(__file__).resolve().parent.parent
         workflow = (root / ".github/workflows/release-please.yml").read_text()
-        smoke = workflow.split("  token-smoke-test:\n", 1)[1].split("  release-please:\n", 1)[0]
+        smoke = re.split(r"(?m)^  [a-z][a-z-]*:\n", workflow.split("  token-smoke-test:\n", 1)[1], maxsplit=1)[0]
         self.assertIn("github.event_name == 'push'", smoke)
         self.assertIn("github.ref == 'refs/heads/main'", smoke)
         self.assertIn("github.repository == 'grafana/ai-sdk'", smoke)
