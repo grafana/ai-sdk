@@ -18,7 +18,8 @@ follows the runnable `grafana-ai-gateway` command. For setup, see
 
 ## The pieces and their boundaries
 
-The shipped command accepts **ProviderWire V4**, the model-call protocol used by
+The shipped command accepts a private [Anthropic Messages subset](../../ai-gateway/docs/anthropic-messages-api.md)
+and **ProviderWire V4**, the model-call protocol used by
 the Go Grafana provider and the server-side Vercel Gateway client. It is not the
 browser UI message stream protocol. A Go application can consume Gateway output
 and then produce a separate [UI message stream](wire-protocol.md) for React.
@@ -31,14 +32,17 @@ flowchart LR
   subgraph clients[Application servers]
     go[Go Grafana provider]
     ts[Vercel Gateway client]
+    sdk[Official Anthropic SDK clients]
   end
   subgraph gateway[Grafana AI Gateway command]
     host[HTTP routing and authentication]
     subgraph ingress[Inbound protocol]
       pw[ProviderWire V4 decoder and response encoder]
+      messages[Private Anthropic Messages adapter]
     end
     subgraph shared[Model selection and execution]
       select[Account-access selection]
+      configured[Configured-account access check]
       catalog[Public model catalog]
       byok[Cloud request accounts: Anthropic or OpenAI]
       logical[Logical model observation]
@@ -53,6 +57,8 @@ flowchart LR
   apis[Upstream model APIs]
   go --> host
   ts --> host
+  sdk --> host
+  host -->|private only| configured --> messages --> catalog
   host --> pw
   pw --> select
   select -->|private| catalog --> logical --> routing
@@ -68,24 +74,26 @@ Both API listeners register `GET /api/v1/aisdk/config` and
 `POST /api/v1/aisdk/language-model`. Private discovery lists configured models;
 Cloud discovery returns an unsupported-discovery error rather than exposing the
 private catalog. The private API, optional Cloud API, and operational endpoints
-use separate listeners. `/live`, `/ready`, and `/metrics` are operational routes. See the
+use separate listeners. Only the private listener also registers `POST /v1/messages`.
+`/live`, `/ready`, and `/metrics` are operational routes. See the
 [router](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/router.go) and
 [process composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/process/process.go).
 
-**Other inbound protocols are not wired into this command.** In particular,
-`/v1/chat/completions`, `/v1/messages`, and `/v1/responses` are not registered
-routes. An outbound Anthropic provider does not establish Claude Code support;
-an outbound Responses provider does not establish Codex support. Those clients
-need their own compatible ingress and end-to-end evidence. The
-[Chat Completions adapter proposal](https://github.com/grafana/ai-sdk/pull/248)
-is separate work, not an additional path in the diagram.
+The Messages adapter supports text, client-executed tools, unary responses, and
+incremental Anthropic SSE. Its [guide](../../ai-gateway/docs/anthropic-messages-api.md)
+describes the supported subset and shared resource-policy gaps. Official SDK
+command tests use synthetic providers; they do not establish Claude Code support.
+`/v1/chat/completions` and `/v1/responses` are not registered inbound routes.
+An outbound Responses provider does not establish Codex support.
 
 ## Follow one request
 
 Imagine `assistant` has an Anthropic primary and an OpenAI backup. The catalog
 and wrapped model objects are built at startup; selection below looks up those
 objects rather than constructing the whole chain for every request. This sequence
-follows the private configured-account path; Cloud selection is described below.
+follows the ProviderWire private configured-account path; Cloud selection is described below.
+Messages uses its own request mapping and response encoding over the same catalog
+and wrapped models; ProviderWire-specific budgets below do not apply to Messages.
 
 ```mermaid
 sequenceDiagram

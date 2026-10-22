@@ -29,8 +29,9 @@ component boundaries.
 See the [model catalog guide](docs/model-catalog.md) for public model identity
 and resolution behavior, the [Cloud authentication guide](docs/cloud-authentication.md)
 for identity headers, proxy isolation, and supported client calls, and the
-[container guide](../docs/guides/ai-gateway-container.md) for image builds,
-runtime configuration, and publication status. See the
+[Anthropic Messages guide](docs/anthropic-messages-api.md) for the inbound
+Anthropic SDK subset. The [container guide](../docs/guides/ai-gateway-container.md)
+covers image builds, runtime configuration, and publication status. See the
 [text observability guide](docs/text-observability.md) for the logical telemetry
 contract, privacy boundary, metrics, and exporter configuration.
 
