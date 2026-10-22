@@ -24,3 +24,5 @@ The Gateway currently exposes its ProviderWire API but cannot serve clients buil
 ## Impact
 
 The adapter and command composition live in the AGPL Gateway module under `ai-gateway/`. Runtime dependencies remain unchanged; official SDK versions are pinned in integration test manifests. It uses existing auth middleware, model catalog/resolver, provider execution and telemetry. Shared transport resource policy remains owned by the current Gateway policy and #394; this change adds no adapter-local body or output budgets. Request checks are limited to ordinary JSON decoding and information needed for safe canonical mapping, consistent with #395.
+
+This implementation uses the command host present on current main for local SDK acceptance tests. The retired Gateway image deployment is not a rollout path. Deployment requires integration with the App Platform plugin host in #428, including its route manifest, delegated identity and plugin-host SDK tests.

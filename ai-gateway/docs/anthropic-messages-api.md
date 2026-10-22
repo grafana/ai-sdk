@@ -5,6 +5,15 @@ The Gateway accepts authenticated Anthropic Messages requests at
 catalog and invokes the selected provider model. Client credentials are checked
 by the Gateway's configured authenticator and are never sent to the provider.
 
+## Host and deployment status
+
+This guide describes the standalone command used for local SDK acceptance tests.
+The old Gateway deployment has been retired. The planned deployment host is the
+Grafana App Platform plugin in [PR #428](https://github.com/grafana/ai-sdk/pull/428).
+This adapter still needs integration with its route manifest, delegated identity
+and plugin test host. The private-listener URL and credentials below have not
+been validated through that platform boundary.
+
 ## Supported request subset
 
 The initial adapter supports:
