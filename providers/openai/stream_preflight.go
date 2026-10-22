@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/ssestream"
 	"github.com/openai/openai-go/v3/responses"
@@ -45,6 +46,7 @@ func pumpResponseStream(ctx context.Context, response *http.Response, requestErr
 				return false
 			}
 		}
+		defer streamrecover.Recover(func() { send(responseStreamItem{err: streamrecover.ErrPanic}) })
 		if requestErr != nil {
 			send(responseStreamItem{err: requestErr})
 			return
@@ -55,7 +57,7 @@ func pumpResponseStream(ctx context.Context, response *http.Response, requestErr
 			return
 		}
 		var closeOnce sync.Once
-		closeDecoder := func() { closeOnce.Do(func() { _ = decoder.Close() }) }
+		closeDecoder := func() { closeOnce.Do(func() { streamrecover.Close(decoder) }) }
 		stopClose := context.AfterFunc(ctx, closeDecoder)
 		defer func() { stopClose(); closeDecoder() }()
 		for decoder.Next() {
@@ -172,7 +174,7 @@ func preflightResponseStream(ctx context.Context, items <-chan responseStreamIte
 			return append(buffered, item), nil
 		}
 		if item.err != nil {
-			if errors.Is(item.err, context.Canceled) || errors.Is(item.err, context.DeadlineExceeded) {
+			if errors.Is(item.err, context.Canceled) || errors.Is(item.err, context.DeadlineExceeded) || errors.Is(item.err, streamrecover.ErrPanic) {
 				return nil, item.err
 			}
 			return nil, wrapStreamTransportError(item.err, requestBody, response)
@@ -207,6 +209,9 @@ func drainResponseStream(items <-chan responseStreamItem) {
 }
 
 func wrapStreamTransportError(err error, requestBody responses.ResponseNewParams, response *http.Response) error {
+	if errors.Is(err, streamrecover.ErrPanic) {
+		return streamrecover.Error()
+	}
 	var streamErr *ssestream.StreamError
 	if errors.As(err, &streamErr) {
 		if apiErr := openAIStreamRawError(streamErr.Event.Data, "error", requestBody, response); apiErr != nil {

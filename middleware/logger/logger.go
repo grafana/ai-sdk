@@ -13,6 +13,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -483,6 +484,9 @@ func streamPartErrorAttrs(err *provider.APICallError, capture CaptureOptions) []
 func errorClass(err error) string {
 	if err == nil {
 		return ""
+	}
+	if streamrecover.Is(err) {
+		return "internal_error"
 	}
 	var apiErr *provider.APICallError
 	if errors.As(err, &apiErr) {
