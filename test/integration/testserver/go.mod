@@ -11,7 +11,7 @@ replace (
 require (
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20261007173843-8d36b82dfd52
 	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20261007173843-8d36b82dfd52
-	github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260921202550-3dff0f7087dc
+	github.com/grafana/ai-sdk/providers/grafana v0.1.0-alpha.1
 	github.com/stretchr/testify v1.12.1
 )
 
