@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -59,7 +60,7 @@ def verify_changelog(before, after, notes):
         raise ValueError("changelog must prepend exactly the release body notes and preserve history")
 
 
-def verify_release(pr, before, after, config):
+def verify_release_metadata(pr, before, after, config):
     component = changed_component(before, after)
     if component not in config["packages"]:
         raise ValueError("release component is not registered")
@@ -72,8 +73,6 @@ def verify_release(pr, before, after, config):
         raise ValueError("release branch must belong to the canonical repository")
     if any(pr[side]["repo"].get("id") != REPOSITORY_ID for side in ("base", "head")):
         raise ValueError("release must belong to the immutable canonical repository")
-    if pr.get("state") != "open" or pr.get("draft") is not False:
-        raise ValueError("release candidate must be an open non-draft PR")
     package = config["packages"][component]
     branch = "release-please--branches--main"
     branch_component = package.get("component") or package.get("package-name")
@@ -87,6 +86,13 @@ def verify_release(pr, before, after, config):
     if pr.get("title") != f"chore(main): release{name} {after[component]}":
         raise ValueError("release title does not match component and manifest version")
     release_notes(pr, after[component])
+    return component
+
+
+def verify_release(pr, before, after, config):
+    component = verify_release_metadata(pr, before, after, config)
+    if pr.get("state") != "open" or pr.get("draft") is not False:
+        raise ValueError("release candidate must be an open non-draft PR")
     return component
 
 
@@ -183,7 +189,7 @@ def source_snapshot(ref, root, roots):
     return owned_snapshot(entries, root, roots, embedded_directories(ref, entries, root, roots))
 
 
-def verify_library(root, base, roots):
+def verify_library(root, base, roots, tooling_root=None):
     if root == "ai-gateway":
         raise ValueError("Gateway application readiness and workspace release attribution remain pending; publication remains disabled")
     with tempfile.TemporaryDirectory(prefix="release-readiness-") as cache:
@@ -214,13 +220,17 @@ def verify_library(root, base, roots):
                     or origin.get("VCS") != "git" or origin.get("URL", "").removesuffix(".git") != CANONICAL.removesuffix(".git")
                     or origin.get("Subdir", "") != subdir or not re.fullmatch(r"[0-9a-f]{40}", commit)):
                 raise ValueError(f"unverified canonical prerequisite: {path}@{version}")
+            module["Origin"] = origin
             verify_tag(dependency, version, commit)
             subprocess.run(["git", "merge-base", "--is-ancestor", commit, base], check=True)
             if source_snapshot(commit, dependency, roots) != source_snapshot(base, dependency, roots):
                 raise ValueError(f"prerequisite snapshot is stale: {path}@{version}; release its current owned source first")
-        subprocess.run(["bash", "scripts/module-policy.sh", "standalone", root], check=True, env=env)
+        policy = str(Path(tooling_root) / "scripts/module-policy.sh") if tooling_root else "scripts/module-policy.sh"
+        subprocess.run(["bash", policy, "standalone", root], check=True, env=env)
         from release_consumer import verify_consumer
-        verify_consumer(root, env, graph)
+        verify_consumer(root, env, graph, tooling_root=tooling_root)
+        return [{"path": m["Path"], "version": m.get("Version"), "origin": m.get("Origin")}
+                for m in graph if not m.get("Main")]
 
 
 def release_publication_disabled(workflow):
@@ -253,11 +263,35 @@ def verify_live_candidate(pr, before, after, config):
     verify_candidate(live, run("git", "rev-parse", "FETCH_HEAD"), "HEAD")
 
 
+def readiness_record(pr, component, version):
+    return {
+        "schemaVersion": 1,
+        "repositoryId": REPOSITORY_ID,
+        "repository": "grafana/ai-sdk",
+        "prNumber": pr["number"],
+        "component": component,
+        "version": version,
+        "headSha": pr["head"]["sha"],
+        "baseSha": pr["base"]["sha"],
+        "mergeSha": run("git", "rev-parse", "HEAD"),
+        "treeSha": run("git", "rev-parse", "HEAD^{tree}"),
+        "titleDigest": hashlib.sha256(pr["title"].encode()).hexdigest(),
+        "bodyDigest": hashlib.sha256(pr["body"].encode()).hexdigest(),
+        "toolingRevision": pr["base"]["sha"],
+        "workflowBlob": run("git", "rev-parse", "HEAD:.github/workflows/release-readiness.yml"),
+        "runId": os.environ.get("GITHUB_RUN_ID"),
+        "runAttempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+    }
+
+
 def main():
     sys.dont_write_bytecode = True
     parser = argparse.ArgumentParser()
     parser.add_argument("--pull-request", required=True)
+    parser.add_argument("--evidence", type=Path)
     args = parser.parse_args()
+    if args.evidence:
+        args.evidence.unlink(missing_ok=True)
     pr = json.loads(Path(args.pull_request).read_text())
     base = pr["base"]["sha"]
     after = json.loads(Path(MANIFEST).read_text())
@@ -286,6 +320,8 @@ def main():
     verify_library(component, canonical, roots)
     verify_clean_checkout()
     verify_live_candidate(pr, before, after, config)
+    if args.evidence:
+        args.evidence.write_text(json.dumps(readiness_record(pr, component, after[component]), sort_keys=True) + "\n")
     print(f"Release readiness passed: {component} at {run('git', 'rev-parse', 'HEAD')}")
 
 

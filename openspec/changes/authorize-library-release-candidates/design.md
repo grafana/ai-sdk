@@ -145,8 +145,10 @@ creates distinct objects. Display-name-only checks cannot establish tree identit
 
 ### 3. Require exact-merge source checks and rerun library readiness
 
-Require a successful canonical `ci.yml` push-main run whose head is exactly M,
-plus successful conclusions for all seven source jobs listed above. Bind workflow
+Require a completed canonical `ci.yml` push-main run whose head is exactly M,
+with successful conclusions for all seven source jobs listed above. A failed
+image/publication job in that same run is not library evidence and does not block
+a library whose required source jobs succeeded; cancelled runs remain unusable. Bind workflow
 ID/path and GitHub Actions provenance; paginate run/job lookups and use the newest
 applicable run attempt. A skipped job, pending rerun, cancelled run or success on a
 later main revision does not substitute. The merge pusher may be a maintainer;

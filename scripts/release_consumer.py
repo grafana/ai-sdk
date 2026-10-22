@@ -42,10 +42,11 @@ def verify_graph(graph, path, expected, cache):
         raise ValueError(f"consumer dependency graph differs: {set(actual.items()) ^ set(expected.items())}")
 
 
-def verify_consumer(root, env, graph):
+def verify_consumer(root, env, graph, tooling_root=None):
     if root != "." and root not in SCENARIOS:
         raise ValueError(f"no consumer regression registered for {root}")
     repo = Path.cwd()
+    harness = Path(tooling_root) if tooling_root else repo
     path = PREFIX if root == "." else f"{PREFIX}/{root}"
     expected = {m["Path"]: m["Version"] for m in graph if not m.get("Main")}
     files = run("git", "ls-files", "-z").split("\0")
@@ -91,7 +92,7 @@ def verify_consumer(root, env, graph):
                 raise ValueError(f"consumer regression did not run: {scenario}")
             print(f"Consumer regression passed: {root}/{scenario}")
         if root == ".":
-            scenario = (repo / "test/integration/testserver/scenario_simple_text.go").read_text()
+            scenario = (harness / "test/integration/testserver/scenario_simple_text.go").read_text()
             scenario = scenario.replace('func init() {\n\tregisterScenario("simple-text", handleSimpleText)\n}', '')
             (consumer / "consumer_test.go").unlink()
             (consumer / "scenario.go").write_text(scenario)
@@ -105,8 +106,8 @@ func main() {
 }
 ''')
             wire = subprocess.check_output(["go", "run", "."], cwd=consumer, env=consumer_env)
-            subprocess.run(["pnpm", "install", "--frozen-lockfile", "--filter", "@ai-sdk/test-integration"], cwd=repo, check=True)
-            subprocess.run(["node", "test/integration/release-consumer.mjs"], input=wire, cwd=repo, check=True)
+            subprocess.run(["pnpm", "install", "--frozen-lockfile", "--filter", "@ai-sdk/test-integration"], cwd=harness, env=env, check=True)
+            subprocess.run(["node", "test/integration/release-consumer.mjs"], input=wire, cwd=harness, env=env, check=True)
     print(f"Consumer verified: {path}; archived candidate and {len(expected)} pinned dependencies")
 
 
