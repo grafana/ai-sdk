@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	testPluginID  = "grafana-aigateway-app"
-	testGroup     = "aigateway.ext.grafana.app"
-	testNamespace = "stacks-1"
+	testPluginID   = "grafana-aigateway-app"
+	testGroup      = "aigateway.ext.grafana.app"
+	testNamespace  = "stacks-1"
+	otherNamespace = "stacks-2"
 )
 
 type platformTokens struct{ access, id string }

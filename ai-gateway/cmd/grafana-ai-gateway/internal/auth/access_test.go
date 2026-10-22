@@ -54,6 +54,9 @@ func TestAccessPolicy_Decide(t *testing.T) {
 		{name: "self-hosted anonymous", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeAnonymous, "anon")), access: Refused},
 		{name: "self-hosted service without a user", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.service("svc-a", testNamespace)), access: Refused},
 		{name: "missing route namespace", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), namespace: "-", access: Refused},
+		{name: "cloud allowlisted service for another namespace", policy: allowlisted, token: cloud.cloud(cloud.service("svc-a", testNamespace)), namespace: otherNamespace, access: Refused},
+		{name: "cloud front-door user for another namespace", policy: allowlisted, token: cloud.frontDoor(types.TypeUser, "u1"), namespace: otherNamespace, access: Refused},
+		{name: "self-hosted user for another namespace", policy: selfHosted, keys: selfHost, token: self.exchange(platformhost.GrafanaService, self.identity(types.TypeUser, "u1")), namespace: otherNamespace, access: Refused},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,8 +68,11 @@ func TestAccessPolicy_Decide(t *testing.T) {
 			require.NoError(t, err)
 			info, err := authenticator.Authenticate(context.Background(), platformTokens{access: tc.token})
 			require.NoError(t, err)
-			namespace := testNamespace
-			if tc.namespace == "-" {
+			namespace := tc.namespace
+			switch tc.namespace {
+			case "":
+				namespace = testNamespace
+			case "-":
 				namespace = ""
 			}
 			caller := tc.policy.Decide(info, namespace)
@@ -75,7 +81,7 @@ func TestAccessPolicy_Decide(t *testing.T) {
 				return
 			}
 			assert.Equal(t, tc.access, caller.AccountAccess())
-			assert.Equal(t, testNamespace, caller.Namespace)
+			assert.Equal(t, namespace, caller.Namespace)
 			assert.Equal(t, tc.identity, caller.Identity)
 			assert.Equal(t, tc.attributed, caller.AttributedService())
 		})
@@ -86,6 +92,7 @@ func TestAccessMiddleware(t *testing.T) {
 	policy := AccessPolicy{Mode: AccessModeCloud, InternalServices: []string{"svc-a"}}
 	extra := func(service, identity string) types.AuthInfo {
 		var claims authn.Claims[authn.AccessTokenClaims]
+		claims.Rest.Namespace = testNamespace
 		if identity != "" {
 			typ, uid, err := types.ParseTypeID(identity)
 			require.NoError(t, err)

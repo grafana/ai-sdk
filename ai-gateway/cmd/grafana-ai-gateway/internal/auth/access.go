@@ -89,11 +89,12 @@ func (caller Caller) AccountAccess() AccountAccess { return caller.access }
 // attribute, which is set only for configured access in cloud mode.
 func (caller Caller) AttributedService() string { return caller.attributedService }
 
-// Decide maps the verified caller and route namespace to account access. A
-// refused caller carries no other values.
+// Decide maps the verified caller and route namespace to account access. The
+// token namespace must cover the route namespace. A refused caller carries no
+// other values.
 func (policy AccessPolicy) Decide(info types.AuthInfo, namespace string) Caller {
 	refused := Caller{access: Refused}
-	if info == nil || namespace == "" {
+	if info == nil || namespace == "" || !types.NamespaceMatches(info.GetNamespace(), namespace) {
 		return refused
 	}
 	service := single(info.GetExtra()[DirectCallerServiceKey])

@@ -241,6 +241,7 @@ func verifiedContext(ctx context.Context, service, identity, namespace string) c
 		extra[gatewayauth.DirectCallerServiceKey] = []string{service}
 	}
 	var claims authn.Claims[authn.AccessTokenClaims]
+	claims.Rest.Namespace = namespace
 	if typ, uid, err := types.ParseTypeID(identity); err == nil {
 		claims.Rest.Actor = &authn.ActorClaims{IDTokenClaims: authn.IDTokenClaims{Type: typ, Identifier: uid}}
 	}
