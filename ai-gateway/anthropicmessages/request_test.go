@@ -79,7 +79,7 @@ func TestResponseMessage_StopReasonsAndUsage(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "public-name", message.Model)
 	assert.Equal(t, "end_turn", *message.StopReason)
-	assert.Equal(t, usage{InputTokens: 11, OutputTokens: 5, CacheReadInputTokens: 2, CacheCreationInputTokens: 1}, message.Usage)
+	assert.Equal(t, usage{InputTokens: 8, OutputTokens: 5, CacheReadInputTokens: 2, CacheCreationInputTokens: 1}, message.Usage)
 
 	for _, tc := range []struct {
 		reason provider.FinishReason
@@ -101,4 +101,29 @@ func TestHasUnsupportedHeaders(t *testing.T) {
 		assert.True(t, hasUnsupportedHeaders(map[string][]string{header: {"requested"}}))
 	}
 	assert.False(t, hasUnsupportedHeaders(map[string][]string{"Anthropic-Version": {"2023-06-01"}}))
+}
+
+func TestMapRequest_NativeToolExamplesAndEmptyResults(t *testing.T) {
+	_, options, err := mapRequest([]byte(`{"model":"m","max_tokens":10,"tools":[{"name":"weather","input_schema":{"type":"object"},"input_examples":[{"city":"Oslo"},{"input":123}]}],"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"call","name":"weather","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call"}]}]}`))
+	require.NoError(t, err)
+	require.Len(t, options.Tools, 1)
+	require.Len(t, options.Tools[0].InputExamples, 2)
+	assert.JSONEq(t, `{"city":"Oslo"}`, string(options.Tools[0].InputExamples[0].Input))
+	assert.JSONEq(t, `{"input":123}`, string(options.Tools[0].InputExamples[1].Input))
+	assert.Empty(t, options.Prompt[1].Content[0].Output.Text)
+}
+
+func TestResponseMessage_PreservesToolNumbers(t *testing.T) {
+	for _, input := range []string{`{"id":9007199254740993}`, `{"value":1e400}`} {
+		t.Run(input, func(t *testing.T) {
+			message, ok := responseMessage("m", &provider.GenerateResult{
+				Content:      []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "lookup", Input: json.RawMessage(input)}},
+				FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls},
+			})
+			require.True(t, ok)
+			encoded, err := json.Marshal(message)
+			require.NoError(t, err)
+			assert.Contains(t, string(encoded), `"input":`+input)
+		})
+	}
 }

@@ -41,6 +41,11 @@ The endpoint SHALL map system text, ordered user/assistant text turns, function 
 - **WHEN** a request uses a content block or capability outside the documented subset
 - **THEN** the Gateway SHALL return a fixed unsupported-request error without invoking a provider
 
+#### Scenario: Native tool examples and empty results
+
+- **WHEN** a client supplies native tool input examples or a tool result with omitted content
+- **THEN** the mapper SHALL preserve each complete example object and represent the omitted result as empty text
+
 ### Requirement: Unary response semantics
 
 For non-streaming requests, the Gateway SHALL return an Anthropic message response with assistant text and client tool-use content blocks, truthful provider stop reason, and provider-reported input/output usage. It SHALL NOT infer nonzero usage when the provider does not supply it.
@@ -50,6 +55,16 @@ For non-streaming requests, the Gateway SHALL return an Anthropic message respon
 - **WHEN** provider execution returns one or more client function calls
 - **THEN** the response SHALL represent them as Anthropic `tool_use` blocks with their IDs, names, and JSON inputs
 - **AND** the stop reason SHALL be `tool_use`
+
+#### Scenario: Precise tool input
+
+- **WHEN** the provider returns a valid tool input object containing JSON numbers
+- **THEN** the unary response SHALL preserve the raw numeric values without converting them through floating-point values
+
+#### Scenario: Cached input usage
+
+- **WHEN** the provider reports uncached and cached input counts
+- **THEN** Anthropic `input_tokens` SHALL contain the uncached count and cache counts SHALL be reported separately
 
 #### Scenario: Provider usage unavailable
 
@@ -65,6 +80,11 @@ For streaming requests, the Gateway SHALL emit valid Anthropic SSE events increm
 - **WHEN** provider text parts arrive over time
 - **THEN** corresponding Anthropic content deltas SHALL be flushed as they arrive
 - **AND** successful completion SHALL emit message delta and message stop in protocol order
+
+#### Scenario: Stream metadata and final usage
+
+- **WHEN** a stream-start marker precedes response metadata or usage is supplied only at completion
+- **THEN** the adapter SHALL preserve the available response identity before content and include final cumulative input, output, and cache counts in the message delta
 
 #### Scenario: Error after commitment
 

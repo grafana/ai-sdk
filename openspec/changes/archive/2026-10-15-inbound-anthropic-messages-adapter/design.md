@@ -22,9 +22,9 @@ Request mapping uses ordinary `encoding/json` typed decoding. The adapter maps s
 
 The HTTP adapter resolves models through `catalog.ModelResolver` and executes the selected `provider.LanguageModel`. It never executes client tools. Anthropic credentials are adapted only for the shared Gateway verifier and are not passed to model options. Authentication observation remains in shared middleware.
 
-Unary output maps canonical text/tool calls to Anthropic message content and returns the catalog's canonical public model ID, not the backend model ID. Provider stop reason `tool-calls` maps to `tool_use`, `length` maps to `max_tokens`, and successful stop maps to `end_turn`. Token values come only from provider usage; unavailable counts become zero. The canonical provider contract does not carry the matched text for a stop sequence, so that response field stays null.
+Unary output maps canonical text/tool calls to Anthropic message content and returns the catalog's canonical public model ID, not the backend model ID. Provider stop reason `tool-calls` maps to `tool_use`, `length` maps to `max_tokens`, and successful stop maps to `end_turn`. Token values come only from provider usage; unavailable counts become zero. Native input tokens exclude cache reads/writes. Tool input JSON retains its raw numeric values, and native input examples are wrapped into the canonical example type. The canonical provider contract does not carry the matched text for a stop sequence, so that response field stays null.
 
-Streaming maps provider text/tool input parts incrementally to Anthropic SSE events and flushes writes. Errors after commitment emit an Anthropic error event and do not emit `message_stop` or retry. Request cancellation cancels provider execution.
+Streaming maps provider text/tool input parts incrementally to Anthropic SSE events and flushes writes. Errors after commitment emit an Anthropic error event and do not emit `message_stop` or retry. Stream-start/raw markers do not force an early message start before response metadata. The final message delta carries cumulative input/output/cache usage. Request cancellation cancels provider execution.
 
 Public errors use fixed type and message strings and do not expose provider or routing data.
 

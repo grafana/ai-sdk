@@ -11,13 +11,15 @@ import (
 )
 
 type result struct {
-	UnaryText         string   `json:"unary_text"`
-	UnaryStopReason   string   `json:"unary_stop_reason"`
-	UnaryInputTokens  int64    `json:"unary_input_tokens"`
-	UnaryOutputTokens int64    `json:"unary_output_tokens"`
-	ToolText          string   `json:"tool_text"`
-	StreamText        string   `json:"stream_text"`
-	Stream            []string `json:"stream_events"`
+	UnaryText         string          `json:"unary_text"`
+	UnaryStopReason   string          `json:"unary_stop_reason"`
+	UnaryInputTokens  int64           `json:"unary_input_tokens"`
+	UnaryOutputTokens int64           `json:"unary_output_tokens"`
+	ToolText          string          `json:"tool_text"`
+	StreamID          string          `json:"stream_id"`
+	StreamUsage       anthropic.Usage `json:"stream_usage"`
+	StreamText        string          `json:"stream_text"`
+	Stream            []string        `json:"stream_events"`
 }
 
 func main() {
@@ -78,7 +80,11 @@ func run() error {
 		Model: anthropic.Model("assistant"), MaxTokens: 64,
 		Messages: []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock("go incremental stream"))},
 	})
+	var streamed anthropic.Message
 	for stream.Next() {
+		if err := streamed.Accumulate(stream.Current()); err != nil {
+			return fmt.Errorf("anthropic Go SDK accumulating stream: %w", err)
+		}
 		part := stream.Current().AsAny()
 		output.Stream = append(output.Stream, fmt.Sprintf("%T", part))
 		if textDelta, ok := part.(anthropic.ContentBlockDeltaEvent); ok && textDelta.Delta.Type == "text_delta" {
@@ -88,6 +94,8 @@ func run() error {
 	if err := stream.Err(); err != nil {
 		return fmt.Errorf("anthropic Go SDK streaming request: %w", err)
 	}
+	output.StreamID = streamed.ID
+	output.StreamUsage = streamed.Usage
 	if output.UnaryText == "" || output.ToolText == "" || output.UnaryStopReason != "end_turn" || output.UnaryInputTokens != 7 || output.UnaryOutputTokens != 3 || output.StreamText != "synthetic stream" || len(output.Stream) == 0 {
 		return fmt.Errorf("anthropic Go SDK received an incomplete response")
 	}

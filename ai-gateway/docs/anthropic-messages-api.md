@@ -11,14 +11,17 @@ The initial adapter supports:
 
 - A model name, required `max_tokens`, optional system text, and ordered user
   and assistant text history.
-- Function tools with JSON input schemas, tool choice, assistant `tool_use`
+- Function tools with JSON input schemas and examples, tool choice, assistant `tool_use`
   blocks, and user `tool_result` blocks. Tools run in the client; the Gateway
-  passes calls and results through without executing them.
+  passes calls and results through without executing them. A tool result may omit
+  its content to represent an empty result.
 - `temperature`, `top_p`, `top_k`, and `stop_sequences` where the selected
   provider supports them.
 - Unary JSON replies and `stream: true` incremental Anthropic SSE events.
 - Provider-reported stop reasons and token usage. If a provider does not report
-  a token count, the response uses zero for that count.
+  a token count, the response uses zero for that count. Input tokens exclude cache
+  reads and writes, which are reported separately. Stream completion carries
+  cumulative usage, including counts only available at the end.
 - `disable_parallel_tool_use` is passed through the existing Anthropic provider
   option when supplied with `tool_choice`.
 

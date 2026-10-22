@@ -132,11 +132,7 @@ func responseMessage(model string, result *provider.GenerateResult) (messageResp
 			if part.ToolCallID == "" || part.ToolName == "" || !isJSONObject(part.Input) {
 				return messageResponse{}, false
 			}
-			var input map[string]any
-			if err := json.Unmarshal(part.Input, &input); err != nil || input == nil {
-				return messageResponse{}, false
-			}
-			content = append(content, map[string]any{"type": "tool_use", "id": part.ToolCallID, "name": part.ToolName, "input": input})
+			content = append(content, map[string]any{"type": "tool_use", "id": part.ToolCallID, "name": part.ToolName, "input": part.Input})
 		default:
 			return messageResponse{}, false
 		}
@@ -157,10 +153,21 @@ func responseID(response *provider.GenerateResponse) string {
 
 func usageFromProvider(value provider.Usage) usage {
 	out := usage{}
-	if value.InputTokens.Total != nil {
+	out.update(value)
+	return out
+}
+
+func (out *usage) update(value provider.Usage) {
+	if value.InputTokens.NoCache != nil {
+		out.InputTokens = *value.InputTokens.NoCache
+	} else if value.InputTokens.Total != nil {
 		out.InputTokens = *value.InputTokens.Total
-	} else if value.InputTokens.NoCache != nil && value.InputTokens.CacheRead != nil && value.InputTokens.CacheWrite != nil {
-		out.InputTokens = *value.InputTokens.NoCache + *value.InputTokens.CacheRead + *value.InputTokens.CacheWrite
+		if value.InputTokens.CacheRead != nil {
+			out.InputTokens -= *value.InputTokens.CacheRead
+		}
+		if value.InputTokens.CacheWrite != nil {
+			out.InputTokens -= *value.InputTokens.CacheWrite
+		}
 	}
 	if value.OutputTokens.Total != nil {
 		out.OutputTokens = *value.OutputTokens.Total
@@ -173,7 +180,6 @@ func usageFromProvider(value provider.Usage) usage {
 	if value.InputTokens.CacheWrite != nil {
 		out.CacheCreationInputTokens = *value.InputTokens.CacheWrite
 	}
-	return out
 }
 
 func stopReason(reason provider.FinishReason) (string, bool) {
@@ -243,6 +249,9 @@ func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, model 
 				goto streamComplete
 			}
 		}
+		if part.Type == provider.PartStreamStart || part.Type == provider.PartRaw {
+			continue
+		}
 		if part.Type == provider.PartError {
 			s.event("error", map[string]any{"type": "error", "error": map[string]string{"type": "api_error", "message": "Provider request failed"}})
 			return
@@ -252,16 +261,16 @@ func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, model 
 				msgID = part.ResponseID
 			}
 			if part.Usage != nil {
-				totalUsage = usageFromProvider(*part.Usage)
+				totalUsage.update(*part.Usage)
 			}
 			if !messageStarted {
-				s.event("message_start", map[string]any{"type": "message_start", "message": messageResponse{ID: msgID, Type: "message", Role: "assistant", Model: responseModel, Content: []map[string]any{}, Usage: usage{InputTokens: totalUsage.InputTokens}}})
+				s.event("message_start", map[string]any{"type": "message_start", "message": messageResponse{ID: msgID, Type: "message", Role: "assistant", Model: responseModel, Content: []map[string]any{}, Usage: totalUsage}})
 				messageStarted = true
 			}
 			continue
 		}
 		if !messageStarted {
-			s.event("message_start", map[string]any{"type": "message_start", "message": messageResponse{ID: msgID, Type: "message", Role: "assistant", Model: responseModel, Content: []map[string]any{}, Usage: usage{InputTokens: totalUsage.InputTokens}}})
+			s.event("message_start", map[string]any{"type": "message_start", "message": messageResponse{ID: msgID, Type: "message", Role: "assistant", Model: responseModel, Content: []map[string]any{}, Usage: totalUsage}})
 			messageStarted = true
 		}
 		switch part.Type {
@@ -317,10 +326,8 @@ func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, model 
 				finish = *part.FinishReason
 			}
 			if part.Usage != nil {
-				totalUsage = usageFromProvider(*part.Usage)
+				totalUsage.update(*part.Usage)
 			}
-		case provider.PartStreamStart, provider.PartRaw:
-			continue
 		default:
 			s.event("error", map[string]any{"type": "error", "error": map[string]string{"type": "api_error", "message": "Provider response is unsupported"}})
 			return
@@ -334,10 +341,10 @@ streamComplete:
 	}
 	closeCurrent()
 	if !messageStarted {
-		s.event("message_start", map[string]any{"type": "message_start", "message": messageResponse{ID: msgID, Type: "message", Role: "assistant", Model: responseModel, Content: []map[string]any{}, Usage: usage{InputTokens: totalUsage.InputTokens}}})
+		s.event("message_start", map[string]any{"type": "message_start", "message": messageResponse{ID: msgID, Type: "message", Role: "assistant", Model: responseModel, Content: []map[string]any{}, Usage: totalUsage}})
 	}
 	reason, _ := stopReason(finish)
-	s.event("message_delta", map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": reason, "stop_sequence": nil}, "usage": map[string]int{"output_tokens": totalUsage.OutputTokens}})
+	s.event("message_delta", map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": reason, "stop_sequence": nil}, "usage": totalUsage})
 	s.event("message_stop", map[string]string{"type": "message_stop"})
 }
 

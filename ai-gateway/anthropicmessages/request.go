@@ -70,15 +70,15 @@ const (
 )
 
 type tool struct {
-	Type           serverToolType          `json:"type"`
-	Name           string                  `json:"name"`
-	Description    string                  `json:"description"`
-	InputSchema    json.RawMessage         `json:"input_schema"`
-	Strict         *bool                   `json:"strict"`
-	InputExamples  []provider.InputExample `json:"input_examples"`
-	DeferLoading   json.RawMessage         `json:"defer_loading"`
-	AllowedCallers json.RawMessage         `json:"allowed_callers"`
-	CacheControl   json.RawMessage         `json:"cache_control"`
+	Type           serverToolType    `json:"type"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description"`
+	InputSchema    json.RawMessage   `json:"input_schema"`
+	Strict         *bool             `json:"strict"`
+	InputExamples  []json.RawMessage `json:"input_examples"`
+	DeferLoading   json.RawMessage   `json:"defer_loading"`
+	AllowedCallers json.RawMessage   `json:"allowed_callers"`
+	CacheControl   json.RawMessage   `json:"cache_control"`
 }
 
 type serverToolType string
@@ -134,7 +134,7 @@ func mapRequest(body []byte) (request, provider.CallOptions, error) {
 			if err := json.Unmarshal(msg.Content, &text); err != nil {
 				return input, provider.CallOptions{}, errUnsupportedRequest
 			}
-			blocks = []block{{Type: "text", Text: text}}
+			blocks = []block{{Type: blockTypeText, Text: text}}
 		}
 		if len(blocks) == 0 {
 			return input, provider.CallOptions{}, errInvalidRequest
@@ -198,7 +198,14 @@ func mapRequest(body []byte) (request, provider.CallOptions, error) {
 		if inputTool.Name == "" || !json.Valid(inputTool.InputSchema) {
 			return input, provider.CallOptions{}, errInvalidRequest
 		}
-		options.Tools = append(options.Tools, provider.Tool{Type: provider.ToolTypeFunction, Name: inputTool.Name, Description: inputTool.Description, InputSchema: inputTool.InputSchema, Strict: inputTool.Strict, InputExamples: inputTool.InputExamples})
+		var examples []provider.InputExample
+		for _, example := range inputTool.InputExamples {
+			if !isJSONObject(example) {
+				return input, provider.CallOptions{}, errInvalidRequest
+			}
+			examples = append(examples, provider.InputExample{Input: example})
+		}
+		options.Tools = append(options.Tools, provider.Tool{Type: provider.ToolTypeFunction, Name: inputTool.Name, Description: inputTool.Description, InputSchema: inputTool.InputSchema, Strict: inputTool.Strict, InputExamples: examples})
 	}
 	if input.ToolChoice != nil {
 		choice := &provider.ToolChoice{}
@@ -245,6 +252,9 @@ func isJSONObject(value json.RawMessage) bool {
 }
 
 func textContent(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", nil
+	}
 	var text string
 	if err := json.Unmarshal(raw, &text); err == nil {
 		return text, nil
@@ -255,7 +265,7 @@ func textContent(raw json.RawMessage) (string, error) {
 	}
 	var parts []string
 	for _, item := range items {
-		if item.Type != "text" || anyPresent(item.CacheControl, item.Thinking, item.Signature, item.Source, item.Caller) {
+		if item.Type != blockTypeText || anyPresent(item.CacheControl, item.Thinking, item.Signature, item.Source, item.Caller) {
 			return "", errUnsupportedRequest
 		}
 		parts = append(parts, item.Text)

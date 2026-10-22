@@ -44,12 +44,15 @@ describe("official Anthropic SDKs against the local Gateway command", () => {
 			assert.equal(unary.model, "grafana/assistant");
 			assert.equal(unary.usage.input_tokens, 7);
 			assert.equal(unary.usage.output_tokens, 3);
+			assert.equal(unary.usage.cache_read_input_tokens, 2);
+			assert.equal(unary.usage.cache_creation_input_tokens, 1);
 
-			const tools = [{ name: "weather", description: "Get weather", input_schema: { type: "object" as const, properties: { city: { type: "string" } }, required: ["city"] } }];
+			const tools = [{ name: "weather", description: "Get weather", input_schema: { type: "object" as const, properties: { city: { type: "string" } }, required: ["city"] }, input_examples: [{ city: "Oslo" }] }];
 			const first = await client.messages.create({ model: "assistant", max_tokens: 64, tools, messages: [{ role: "user", content: "typescript tool" }] });
 			const call = first.content.find((part) => part.type === "tool_use");
 			assert.ok(call && call.type === "tool_use");
 			assert.deepEqual(call.input, { city: "Oslo" });
+			assert.deepEqual(upstream.requests[1]?.body.tools[0]?.input_examples, [{ city: "Oslo" }]);
 			const continued = await client.messages.create({ model: "assistant", max_tokens: 64, tools, messages: [
 				{ role: "user", content: "typescript tool" },
 				{ role: "assistant", content: [{ type: "tool_use", id: call.id, name: call.name, input: call.input }] },
@@ -57,6 +60,13 @@ describe("official Anthropic SDKs against the local Gateway command", () => {
 			] });
 			assert.equal(continued.content[0]?.type, "text");
 			assert.equal(continued.content[0]?.text, "tool result received");
+			const emptyResult = await client.messages.create({ model: "assistant", max_tokens: 64, tools, messages: [
+				{ role: "user", content: "typescript tool" },
+				{ role: "assistant", content: [{ type: "tool_use", id: call.id, name: call.name, input: call.input }] },
+				{ role: "user", content: [{ type: "tool_result", tool_use_id: call.id }] },
+			] });
+			assert.equal(emptyResult.content[0]?.type, "text");
+			assert.equal(emptyResult.content[0]?.text, "tool result received");
 
 			const toolStream = client.messages.stream({ model: "assistant", max_tokens: 64, tools, messages: [{ role: "user", content: "typescript stream tool" }] });
 			for await (const _event of toolStream) {}
@@ -82,6 +92,11 @@ describe("official Anthropic SDKs against the local Gateway command", () => {
 			const streamed = await stream.finalMessage();
 			assert.equal(streamed.content[0]?.type, "text");
 			assert.equal(streamed.content[0]?.text, "synthetic stream");
+			assert.equal(streamed.id, "msg_synthetic");
+			assert.equal(streamed.usage.input_tokens, 7);
+			assert.equal(streamed.usage.output_tokens, 3);
+			assert.equal(streamed.usage.cache_read_input_tokens, 2);
+			assert.equal(streamed.usage.cache_creation_input_tokens, 1);
 
 			await assert.rejects(client.messages.create({ model: "assistant", max_tokens: 64, messages: [{ role: "user", content: "provider failure" }] }), (error: unknown) => {
 				assert.equal((error as { status?: number }).status, 502);
@@ -113,13 +128,18 @@ describe("official Anthropic SDKs against the local Gateway command", () => {
 		const gateway = await Gateway.start(upstream.url);
 		try {
 			const { stdout: output } = await execFileAsync(goClientBinary, [gateway.url, TOKEN], { encoding: "utf8", timeout: 30_000 });
-			const summary = JSON.parse(output) as { unary_text: string; unary_stop_reason: string; unary_input_tokens: number; unary_output_tokens: number; tool_text: string; stream_text: string; stream_events: string[] };
+			const summary = JSON.parse(output) as { unary_text: string; unary_stop_reason: string; unary_input_tokens: number; unary_output_tokens: number; tool_text: string; stream_text: string; stream_id: string; stream_usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number }; stream_events: string[] };
 			assert.equal(summary.unary_text, "synthetic answer");
 			assert.equal(summary.unary_stop_reason, "end_turn");
 			assert.equal(summary.unary_input_tokens, 7);
 			assert.equal(summary.unary_output_tokens, 3);
 			assert.equal(summary.tool_text, "tool result received");
 			assert.equal(summary.stream_text, "synthetic stream");
+			assert.equal(summary.stream_id, "msg_synthetic");
+			assert.equal(summary.stream_usage.input_tokens, 7);
+			assert.equal(summary.stream_usage.output_tokens, 3);
+			assert.equal(summary.stream_usage.cache_read_input_tokens, 2);
+			assert.equal(summary.stream_usage.cache_creation_input_tokens, 1);
 			assert.equal(summary.stream_events.length, 6);
 			assert.ok(summary.stream_events[0]?.includes("MessageStartEvent"));
 			assert.ok(summary.stream_events.at(-1)?.includes("MessageStopEvent"));
@@ -212,7 +232,7 @@ class SyntheticAnthropic {
 		if (body.stream === true) {
 			response.writeHead(200, { "Content-Type": "text/event-stream" });
 			const send = (event: Record<string, unknown>) => response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-			send({ type: "message_start", message: { id: "msg_synthetic", type: "message", role: "assistant", model: "backend-model", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 7, output_tokens: 0 } } });
+			send({ type: "message_start", message: { id: "msg_synthetic", type: "message", role: "assistant", model: "backend-model", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 7, cache_read_input_tokens: 2, cache_creation_input_tokens: 1, output_tokens: 0 } } });
 			if (this.holdStream) {
 				send({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
 				send({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "partial" } });
@@ -255,7 +275,7 @@ class SyntheticAnthropic {
 			? [{ type: "tool_use", id: "toolu_synthetic", name: "weather", input: { city: "Oslo" } }]
 			: [{ type: "text", text: continued ? "tool result received" : "synthetic answer" }];
 		response.writeHead(200, { "Content-Type": "application/json" });
-		response.end(JSON.stringify({ id: "msg_synthetic", type: "message", role: "assistant", model: "backend-model", content, stop_reason: wantsTools && !continued ? "tool_use" : "end_turn", stop_sequence: null, usage: { input_tokens: 7, output_tokens: 3 } }));
+		response.end(JSON.stringify({ id: "msg_synthetic", type: "message", role: "assistant", model: "backend-model", content, stop_reason: wantsTools && !continued ? "tool_use" : "end_turn", stop_sequence: null, usage: { input_tokens: 7, cache_read_input_tokens: 2, cache_creation_input_tokens: 1, output_tokens: 3 } }));
 	}
 }
 
