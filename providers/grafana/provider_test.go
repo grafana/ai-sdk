@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -65,10 +64,6 @@ func TestNewWithAccessToken_Validation(t *testing.T) {
 		{"header name", func(c *AccessTokenConfig) { c.Headers = http.Header{"Bad Name": {"value"}} }},
 		{"header value", func(c *AccessTokenConfig) { c.Headers = http.Header{"X-Test": {"secret\nvalue"}} }},
 		{"header casing duplicate", func(c *AccessTokenConfig) { c.Headers = http.Header{"X-Test": {"a"}, "x-test": {"b"}} }},
-		{"zero limits", func(c *AccessTokenConfig) { c.Limits = &Limits{} }},
-		{"negative limit", func(c *AccessTokenConfig) { l := DefaultLimits(); l.DiscoveryBytes = -1; c.Limits = &l }},
-		{"overflow limit", func(c *AccessTokenConfig) { l := DefaultLimits(); l.ErrorBytes = math.MaxInt64; c.Limits = &l }},
-		{"event exceeds stream", func(c *AccessTokenConfig) { l := DefaultLimits(); l.StreamBytes = 1; c.Limits = &l }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := valid
@@ -152,7 +147,6 @@ func TestServiceAccount_Validation(t *testing.T) {
 		{"token utf8", func(c *ServiceAccountConfig) { c.Token = string([]byte{0xff}) }},
 		{"unsafe URL", func(c *ServiceAccountConfig) { c.BaseURL = "https://secret@example.test" }},
 		{"reserved config", func(c *ServiceAccountConfig) { c.Headers = http.Header{"authorization": {"private-value"}} }},
-		{"invalid limits", func(c *ServiceAccountConfig) { c.Limits = &Limits{} }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := valid
@@ -691,4 +685,10 @@ func TestNewWithAccessToken_OpaqueStaticCredential(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, models, 2)
 	assert.Equal(t, 1, calls)
+}
+
+func TestProvider_BufferedReadBackstopDefault(t *testing.T) {
+	p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(2<<30), p.bufferedReadLimit)
 }

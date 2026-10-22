@@ -34,6 +34,8 @@ func DefaultLimits() Limits {
 	return Limits{DiscoveryBytes: 4 << 20, UnaryBytes: 16 << 20, ErrorBytes: 64 << 10, StreamBytes: 64 << 20, StreamEventBytes: 1 << 20, StreamEvents: 100000}
 }
 
+const maxBufferedResponseBytes int64 = 2 << 30
+
 // TokenExchangeConfig configures CAP exchange for an internally provisioned service.
 // Audience is required and names the Gateway plugin, grafana-aigateway-app.
 type TokenExchangeConfig struct {
@@ -76,15 +78,17 @@ func WithHTTPClient(client *http.Client) Option {
 
 // Provider creates models and discovers the Gateway's public catalog.
 type Provider struct {
-	baseURL   string
-	client    *http.Client
-	headers   http.Header
-	limits    Limits
-	exchanger authn.TokenExchanger
-	namespace string
-	audience  string
-	bearer    string
-	exchanges singleflight.Group
+	baseURL string
+	client  *http.Client
+	headers http.Header
+	limits  Limits
+
+	bufferedReadLimit int64
+	exchanger         authn.TokenExchanger
+	namespace         string
+	audience          string
+	bearer            string
+	exchanges         singleflight.Group
 }
 
 // NewWithServiceAccountToken constructs a provider that sends a Grafana
@@ -211,7 +215,7 @@ func newProvider(rawURL string, client *http.Client, headers http.Header, limits
 			}
 		}
 	}
-	return &Provider{baseURL: baseURL, client: &ownedClient, headers: canonical, limits: selectedLimits}, nil
+	return &Provider{baseURL: baseURL, client: &ownedClient, headers: canonical, limits: selectedLimits, bufferedReadLimit: maxBufferedResponseBytes}, nil
 }
 
 func normalizeURL(raw string) (string, error) {
