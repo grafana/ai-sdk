@@ -120,8 +120,6 @@ func (w *wireFinish) UnmarshalJSON(data []byte) error {
 	return decodeFields(data, (*plain)(w), "unified", "raw")
 }
 
-const maxRawUsageBytes = 1 << 20
-
 type wireUsage struct {
 	Raw         json.RawMessage `json:"raw"`
 	InputTokens *struct {
@@ -161,7 +159,7 @@ func (w *wireUsage) UnmarshalJSON(data []byte) error {
 		}
 	}
 	raw, present := groups["raw"]
-	if present && (len(raw) > maxRawUsageBytes || len(raw) == 0 || raw[0] != '{') {
+	if present && (len(raw) == 0 || raw[0] != '{') {
 		return errors.New("grafana: invalid raw usage")
 	}
 	encoded, err := json.Marshal(filtered)
