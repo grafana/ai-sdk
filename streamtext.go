@@ -2217,7 +2217,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	resumeStep := &StepResult{StepNumber: 0, Model: StepModel{}}
 	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index, emit)
+		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, cfg.runtimeContext, msgs, outcomes, et.index, emit)
 	})
 
 	approvedToolParts := make([]provider.ContentPart, 0, len(executable))
@@ -2288,6 +2288,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 			}, ToolExecutionOptions{
 				ToolCallID: approval.toolCall.ToolCallID,
 				Messages:   msgs,
+				Context:    cfg.runtimeContext,
 			})
 			if err != nil {
 				return nil, nil, err

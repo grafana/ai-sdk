@@ -375,6 +375,51 @@ func TestToolLoopAgent_PerCallApprovalSecret(t *testing.T) {
 	}
 }
 
+func TestToolLoopAgent_RuntimeContextOnApprovalResume(t *testing.T) {
+	for _, mode := range []string{"stream", "generate"} {
+		t.Run(mode, func(t *testing.T) {
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+			}}
+			var policyContext, executeContext any
+			agent := NewToolLoopAgent(model,
+				WithToolLoopAgentRuntimeContext("agent-context"),
+				WithToolLoopAgentOptions(
+					WithToolApproval(ToolApprovalFunc(func(opts ToolApprovalOptions) (ToolApprovalDecision, error) {
+						policyContext = opts.Context
+						return ToolApprovalDecision{Status: ToolApprovalUserApproval}, nil
+					})),
+					WithTools(ToolSet{"transfer": Tool{
+						Execute: func(_ context.Context, _ json.RawMessage, opts ToolExecutionOptions) (json.RawMessage, error) {
+							executeContext = opts.Context
+							return json.RawMessage(`{"ok":true}`), nil
+						},
+					}}),
+				))
+			approved := WithAgentModelMessages(
+				provider.NewAssistantMessage(
+					provider.ToolCallPart("c1", "transfer", json.RawMessage(`{"amount":1}`)),
+					provider.ContentPart{Type: provider.ContentPartTypeToolApprovalRequest, ApprovalID: "apr_1", ToolCallID: "c1", ToolName: "transfer"},
+				),
+				provider.NewToolMessage(provider.ToolApprovalResponsePart("apr_1", true, "")),
+			)
+
+			if mode == "stream" {
+				result := agent.Stream(t.Context(), approved, WithAgentRuntimeContext("call-context"))
+				for range result.FullStream() {
+				}
+				require.NoError(t, result.Err())
+			} else {
+				_, err := agent.Generate(t.Context(), approved, WithAgentRuntimeContext("call-context"))
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, "call-context", policyContext)
+			assert.Equal(t, "call-context", executeContext)
+		})
+	}
+}
+
 func TestToolLoopAgent_PerCallRepairText(t *testing.T) {
 	model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: textStreamParts(`{"name":`)}, nil
