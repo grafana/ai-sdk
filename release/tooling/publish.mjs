@@ -27,21 +27,21 @@ export async function main(args, env = process.env) {
     }]));
   setLogger(logger);
   const github = await GitHub.create({ ...REPO, defaultBranch: 'main', token: env.GH_READ_TOKEN, logger, fetch: readOnlyFetch() });
-  await verifyProtections(github, approval);
-  await waitForToolingCI(github, toolingRevision);
   const app = await GitHub.create({ ...REPO, defaultBranch: 'main', token: env.GH_TOKEN, logger, fetch: readOnlyFetch() });
   const { data: scope } = await app.octokit.request('GET /installation/repositories');
   assert.equal(scope.total_count, 1);
   assert.deepEqual(scope.repositories.map(repo => [repo.id, repo.full_name]), [[REPOSITORY_ID, 'grafana/ai-sdk']]);
+  await verifyProtections(github, approval, app);
+  await waitForToolingCI(github, toolingRevision);
   const inventory = selectInventory(await discoverMerged(github, mode === 'root' ? '.' : undefined), mode);
   const report = await publishInventory({ github, inventory, toolingRevision, token: env.GH_TOKEN,
     validate: libraryValidator(inventory, env.GH_READ_TOKEN),
-    fetchImpl: async (url, options) => { await verifyProtections(github, approval); return fetch(url, options); } });
+    fetchImpl: async (url, options) => { await verifyProtections(github, approval, app); return fetch(url, options); } });
   console.log(JSON.stringify(report, null, 2));
   if (mode === 'libraries') {
     const beforeWrite = async () => {
       assert.equal(diagnostics.length, 0, 'resolve commit parsing diagnostics before preparation writes');
-      await verifyProtections(github, approval);
+      await verifyProtections(github, approval, app);
       const { data: main } = await github.octokit.repos.getCommit({ ...REPO, ref: 'main' });
       assert.equal(main.sha, toolingRevision, 'main advanced; preparation requires a new run');
     };

@@ -53,6 +53,10 @@ changes, not settings applied by this PR:
    uses the separate read-only workflow token; no new App Actions permission or
    broker binding is needed.
 
+The CLI reads repository merge settings with the existing release App token through
+a read-only transport; the workflow token can omit those fields. Effective main
+rules, tag rules and Actions evidence use the read-only workflow token. Missing or
+incorrect merge settings block publication; no new token permissions are required.
 The CLI reads effective main rules and the approved tag ruleset revision and
 refuses before writes if its observable settings or revision differ. GitHub hides
 `bypass_actors` from read-only callers, so the maintainer approval records the
