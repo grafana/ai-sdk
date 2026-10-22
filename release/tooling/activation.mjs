@@ -26,17 +26,17 @@ export function selectInventory(inventory, mode) {
   }) };
 }
 
-export async function verifyProtections(github, approval) {
+export async function verifyProtections(github, approval, repositoryReader = github) {
   assert.ok(approval && Number.isSafeInteger(approval.id) && approval.id > 0 &&
     typeof approval.updatedAt === 'string' && Number.isFinite(Date.parse(approval.updatedAt)),
   'maintainer-approved tag ruleset ID and revision are required');
-  const { data: repository } = await github.octokit.repos.get(REPO);
+  const { data: repository } = await repositoryReader.octokit.repos.get(REPO);
   assert.equal(repository.id, REPOSITORY_ID);
-  assert.equal(repository.allow_squash_merge, true);
-  assert.equal(repository.allow_merge_commit, false);
-  assert.equal(repository.allow_rebase_merge, false);
-  assert.equal(repository.squash_merge_commit_title, 'PR_TITLE');
-  assert.equal(repository.squash_merge_commit_message, 'PR_BODY');
+  assert.equal(repository.allow_squash_merge, true, 'repository allow_squash_merge must be observable and match the release policy');
+  assert.equal(repository.allow_merge_commit, false, 'repository allow_merge_commit must be observable and match the release policy');
+  assert.equal(repository.allow_rebase_merge, false, 'repository allow_rebase_merge must be observable and match the release policy');
+  assert.equal(repository.squash_merge_commit_title, 'PR_TITLE', 'repository squash_merge_commit_title must be observable and match the release policy');
+  assert.equal(repository.squash_merge_commit_message, 'PR_BODY', 'repository squash_merge_commit_message must be observable and match the release policy');
   const rules = await github.octokit.paginate('GET /repos/{owner}/{repo}/rules/branches/{branch}', { ...REPO, branch: 'main' });
   assert.ok(rules.some(rule => rule.type === 'pull_request' && rule.parameters.required_approving_review_count >= 1),
     'main must require PR approval');

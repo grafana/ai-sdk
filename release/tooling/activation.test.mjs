@@ -55,6 +55,33 @@ test('activation requires strict source/readiness checks and immutable tags', as
   ]) { const f = protectionFixture(); mutate(f); await assert.rejects(verifyProtections(f.github, approval)); }
 });
 
+test('repository settings use the App reader while rules use the workflow reader', async () => {
+  const f = protectionFixture();
+  const settings = { ...f.repository };
+  for (const key of Object.keys(f.repository)) if (key !== 'id') delete f.repository[key];
+  let reads = 0;
+  const app = { octokit: { repos: { get: async () => { reads++; return { data: settings }; } } } };
+  await assert.rejects(verifyProtections(f.github, approval));
+  await verifyProtections(f.github, approval, app);
+  await verifyProtections(f.github, approval, app);
+  assert.equal(reads, 2);
+  for (const key of ['allow_squash_merge', 'allow_merge_commit', 'allow_rebase_merge',
+    'squash_merge_commit_title', 'squash_merge_commit_message']) {
+    const value = settings[key];
+    delete settings[key];
+    await assert.rejects(verifyProtections(f.github, approval, app));
+    settings[key] = value;
+  }
+  settings.allow_merge_commit = true;
+  await assert.rejects(verifyProtections(f.github, approval, app));
+  settings.allow_merge_commit = false;
+  settings.id = 1;
+  await assert.rejects(verifyProtections(f.github, approval, app));
+  settings.id = 1315458055;
+  f.rules[1].parameters.strict_required_status_checks_policy = false;
+  await assert.rejects(verifyProtections(f.github, approval, app));
+});
+
 test('redacted bypass lists require exact maintainer approval rather than admin credentials', async () => {
   const f = protectionFixture(); delete f.tag.bypass_actors;
   await assert.rejects(verifyProtections(f.github));
