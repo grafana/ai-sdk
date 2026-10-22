@@ -22,6 +22,10 @@ Run `mise run test-providerwire-v4` for the contract and
 `mise run verify-ai-gateway-boundary` for the module boundary. Repository-wide
 development guidance is in [`../CONTRIBUTING.md`](../CONTRIBUTING.md).
 
+Start with the [architecture walkthrough](../docs/concepts/gateway-architecture.md)
+and [glossary](../docs/concepts/gateway-glossary.md) for the request path and
+component boundaries.
+
 See the [model catalog guide](docs/model-catalog.md) for public model identity
 and resolution behavior, the [Cloud authentication guide](docs/cloud-authentication.md)
 for identity headers, proxy isolation, and supported client calls, and the

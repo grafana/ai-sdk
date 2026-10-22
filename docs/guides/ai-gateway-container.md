@@ -10,6 +10,10 @@ After all required CI checks pass, pushes to `grafana/ai-sdk` publish Linux AMD6
 
 The workflow does not publish moving `main` or `latest` tags.
 
+For the request path and component boundaries, see
+[Gateway architecture](../concepts/gateway-architecture.md) and the
+[glossary](../concepts/gateway-glossary.md).
+
 ## Build the image
 
 Run the build task from the repository root:
