@@ -9,7 +9,9 @@ adapter; no library source change is needed. Runtime upstream remains ai@7.0.127
 
 ## Decisions
 
-Set Connection: close in readOnlyFetch after its existing host/method policy.
+Set Connection: close in readOnlyFetch after its existing host/method policy,
+and in both artifact-download GETs. The authenticated artifact redirect otherwise
+leaves a reusable API connection in the same global pool before validation.
 Preserve credentials and caller headers, timeout composition and redirect rejection.
 Do not add retry behavior, including to write transports. A worker-hosted local
 HTTP server closes its socket while the test client is synchronously blocked;

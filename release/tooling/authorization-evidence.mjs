@@ -80,7 +80,7 @@ export async function readinessArtifact(github, run) {
 export async function downloadArtifact(id, token, fetchImpl = globalThis.fetch) {
   assert.ok(Number.isSafeInteger(id) && id > 0);
   const response = await fetchImpl(`https://api.github.com/repos/grafana/ai-sdk/actions/artifacts/${id}/zip`, {
-    headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json' },
+    headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', connection: 'close' },
     redirect: 'manual', signal: AbortSignal.timeout(30_000),
   });
   assert.equal(response.status, 302, 'expected authenticated artifact download redirect');
@@ -91,7 +91,9 @@ export async function downloadArtifact(id, token, fetchImpl = globalThis.fetch) 
   assert.equal(destination.port, '');
   assert.ok(destination.hostname.endsWith('.blob.core.windows.net') ||
     destination.hostname.endsWith('.actions.githubusercontent.com'), 'unexpected artifact storage host');
-  const download = await fetchImpl(destination.href, { redirect: 'error', signal: AbortSignal.timeout(30_000) });
+  const download = await fetchImpl(destination.href, {
+    headers: { connection: 'close' }, redirect: 'error', signal: AbortSignal.timeout(30_000),
+  });
   assert.equal(download.status, 200, 'artifact download failed');
   const chunks = [];
   let size = 0;
