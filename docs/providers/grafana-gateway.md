@@ -14,63 +14,6 @@ Keep Gateway and model-provider credentials on your server, not in browser code.
 For the server-side flow, see [Gateway architecture](../concepts/gateway-architecture.md)
 and the [glossary](../concepts/gateway-glossary.md).
 
-## Inspect execution overviews and failures
-
-Private configured-model results and stream finish metadata may contain
-`gateway.execution`. Cloud BYOK calls can return available event-local SSE
-native failure summaries without configured catalog context. They do not yet
-return Gateway attempt overviews or unary/setup native summaries; absence is a
-capability gap, not a confidentiality rule or evidence that no attempts occurred.
-It identifies the requested/canonical public model and ordered observed attempts,
-including configured provider instance, provider and native model, outcome,
-and optional native failure summaries. Earlier eligible failures remain
-visible when a later candidate is selected. Selection commits a stream at its
-first accepted part; it does not mean completion or replay safety.
-
-Go applications can inspect result/finish `ProviderMetadata`, including through
-consumer middleware. TypeScript applications can inspect result or awaited
-stream `providerMetadata`. Each invocation has its own overview; application
-retries and tool continuations start new invocations.
-
-HTTP setup/unary errors carry optional top-level `providerMetadata` in the
-bounded error body. Go exposes it through `*provider.APICallError.Data`;
-the TypeScript Gateway error exposes the API cause's `data`.
-Committed stream errors carry `error.data.providerMetadata` and an optional
-current `error.data.nativeError` summary. Go exposes that payload through
-the part's `APICallError.Data`; TypeScript low-level parts expose `error.data`
-and high-level error parts wrap the Gateway error. Later content/finish parts
-remain ordered and readable. Current errors are not accumulated into finish
-metadata or used to restart fallback. Current native summaries do not require
-configured catalog attribution; a plain request selection can return them
-without a configured execution overview. Plain selections currently lack
-request-account attempt overviews and unary/setup native summaries; this is an
-[observation capability gap](https://github.com/grafana/ai-sdk/issues/317), not a
-confidentiality rule or a permanent restriction.
-
-These extensions are best-effort, independent of Gateway operator observation,
-and do not change public error classification or retryability. Complete
-response/frame bounds still apply as transitional transport policy; an overview
-can be omitted rather than
-invalidate fitting original output. Native `gateway` metadata moves under
-`gateway.nativeMetadata` only when enrichment fits. Otherwise it stays opaque,
-so namespace presence alone does not establish provenance, and an absent
-overview does not imply no provider attempts.
-
-Summaries select native message, type, string-or-number code and status, not
-raw bodies, headers or arbitrary cause trees. Gateway-produced summaries replace
-exact configured server API-key matches with `[REDACTED]` in message, type and
-string code, including after successful fallback. This covers configured provider
-keys and the enabled exporter credential, not static Gateway access keys; those
-retain hash-only authentication storage. Caller-owned BYOK echoes remain
-unchanged unless they also match a configured key. Numeric code and status are
-unchanged. This is not general output filtering: native metadata, generated text,
-tool output and arbitrarily encoded secrets are outside this protection.
-Account authorization and request isolation still apply. Logger field policy
-remains separate; independently authorize logging
-or display of native diagnostics. These fields
-are not automatically UI message metadata or display content; map only
-deliberately selected values for your frontend.
-
 ## Inspect raw provider events
 
 Pass `aisdk.WithIncludeRawChunks()` to `StreamText` (or set `IncludeRawChunks`
