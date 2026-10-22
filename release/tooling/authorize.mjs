@@ -23,7 +23,22 @@ function git(args, cwd = tooling) {
   return execFileSync('git', args, { cwd, env: childEnvironment(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-export async function authorizeInventory(github, inventory, validate, toolingRevision) {
+export async function recheckCandidate(github, candidate, { source, readiness, artifactId }) {
+  const { data: current } = await github.octokit.pulls.get({ ...REPO, pull_number: candidate.prNumber });
+  sameCandidate(candidate.pr, current);
+  assert.deepEqual(await successfulRun(github, 'ci.yml', 'push', candidate.mergeSha, 'main', SOURCE_JOBS), source,
+    'source evidence changed during validation');
+  assert.deepEqual(await successfulRun(github, 'release-readiness.yml', 'pull_request',
+    candidate.headSha, candidate.pr.head.ref, ['release-readiness']), readiness, 'readiness evidence changed');
+  assert.equal(await readinessArtifact(github, readiness), artifactId, 'readiness artifact changed');
+  const { data: main } = await github.octokit.repos.getCommit({ ...REPO, ref: 'main' });
+  const { data: comparison } = await github.octokit.repos.compareCommits({
+    ...REPO, base: candidate.mergeSha, head: main.sha,
+  });
+  assert.ok(['ahead', 'identical'].includes(comparison.status), 'merge no longer belongs to canonical main');
+}
+
+export async function authorizeInventory(github, inventory, validate, toolingRevision, publicationState = assertUnpublished) {
   const report = { schemaVersion: 1, publicationEnabled: false, mainSha: inventory.mainSha,
     toolingRevision, candidates: [] };
   const duplicates = duplicateCandidates(inventory.candidates);
@@ -35,7 +50,7 @@ export async function authorizeInventory(github, inventory, validate, toolingRev
     try {
       assert.equal(duplicates.has(candidate.prNumber), false, 'ambiguous component or tag in frozen inventory');
       assert.notEqual(candidate.component, 'ai-gateway', 'Gateway is unsupported by library authorization');
-      await assertUnpublished(github, candidate.tag);
+      const initialState = await publicationState(github, candidate.tag, candidate);
       const { data: head } = await github.octokit.repos.getCommit({ ...REPO, ref: candidate.headSha });
       verifyMergedIdentity(candidate, head);
       const source = await successfulRun(github, 'ci.yml', 'push', candidate.mergeSha, 'main', SOURCE_JOBS);
@@ -43,19 +58,9 @@ export async function authorizeInventory(github, inventory, validate, toolingRev
         candidate.headSha, candidate.pr.head.ref, ['release-readiness']);
       const artifactId = await readinessArtifact(github, readiness);
       const library = await validate(candidate, readiness, artifactId);
-      const { data: current } = await github.octokit.pulls.get({ ...REPO, pull_number: candidate.prNumber });
-      sameCandidate(candidate.pr, current);
-      assert.deepEqual(await successfulRun(github, 'ci.yml', 'push', candidate.mergeSha, 'main', SOURCE_JOBS), source,
-        'source evidence changed during validation');
-      assert.deepEqual(await successfulRun(github, 'release-readiness.yml', 'pull_request',
-        candidate.headSha, candidate.pr.head.ref, ['release-readiness']), readiness, 'readiness evidence changed');
-      assert.equal(await readinessArtifact(github, readiness), artifactId, 'readiness artifact changed');
-      await assertUnpublished(github, candidate.tag);
-      const { data: main } = await github.octokit.repos.getCommit({ ...REPO, ref: 'main' });
-      const { data: comparison } = await github.octokit.repos.compareCommits({
-        ...REPO, base: candidate.mergeSha, head: main.sha,
-      });
-      assert.ok(['ahead', 'identical'].includes(comparison.status), 'merge no longer belongs to canonical main');
+      await recheckCandidate(github, candidate, { source, readiness, artifactId });
+      assert.deepEqual(await publicationState(github, candidate.tag, candidate), initialState,
+        'publication state changed during validation');
       report.candidates.push({ ...identity, status: 'approved', source, readiness, artifactId, library });
     } catch (error) {
       report.candidates.push({ ...identity, status: 'blocked', reason: error.message });
@@ -64,23 +69,14 @@ export async function authorizeInventory(github, inventory, validate, toolingRev
   return report;
 }
 
-async function main(args) {
-  assert.ok(args.length <= 1 && args.every(arg => !arg.startsWith('-')), 'usage: node authorize.mjs [component]');
-  assert.ok(process.env.GH_TOKEN, 'GH_TOKEN is required (read-only access is sufficient)');
-  assert.equal(git(['status', '--porcelain', '--untracked-files=normal']), '', 'trusted tooling checkout must be clean');
-  const toolingRevision = git(['rev-parse', 'HEAD']);
-  const logger = Object.fromEntries(['debug', 'info', 'warn', 'error', 'trace'].map(level => [level, (...values) => console.error(...values)]));
-  setLogger(logger);
-  const github = await GitHub.create({ ...REPO, defaultBranch: 'main', token: process.env.GH_TOKEN,
-    logger, fetch: readOnlyFetch() });
-  const inventory = await discoverMerged(github, args[0]);
-  const validate = async (candidate, run, artifactId) => {
+export function libraryValidator(inventory, token) {
+  return async (candidate, run, artifactId) => {
     const temp = mkdtempSync(join(tmpdir(), 'library-authorization-'));
     const checkout = join(temp, 'candidate');
     let added = false;
     try {
       const archive = join(temp, 'evidence.zip');
-      writeFileSync(archive, await downloadArtifact(artifactId, process.env.GH_TOKEN));
+      writeFileSync(archive, await downloadArtifact(artifactId, token));
       const helper = join(tooling, 'scripts/release_authorization.py');
       const record = JSON.parse(execFileSync('python3', [helper, 'record', archive], {
         env: childEnvironment(), encoding: 'utf8', maxBuffer: 1024 * 1024,
@@ -111,7 +107,19 @@ async function main(args) {
       rmSync(temp, { recursive: true, force: true });
     }
   };
-  const report = await authorizeInventory(github, inventory, validate, toolingRevision);
+}
+
+async function main(args) {
+  assert.ok(args.length <= 1 && args.every(arg => !arg.startsWith('-')), 'usage: node authorize.mjs [component]');
+  assert.ok(process.env.GH_TOKEN, 'GH_TOKEN is required (read-only access is sufficient)');
+  assert.equal(git(['status', '--porcelain', '--untracked-files=normal']), '', 'trusted tooling checkout must be clean');
+  const toolingRevision = git(['rev-parse', 'HEAD']);
+  const logger = Object.fromEntries(['debug', 'info', 'warn', 'error', 'trace'].map(level => [level, (...values) => console.error(...values)]));
+  setLogger(logger);
+  const github = await GitHub.create({ ...REPO, defaultBranch: 'main', token: process.env.GH_TOKEN,
+    logger, fetch: readOnlyFetch() });
+  const inventory = await discoverMerged(github, args[0]);
+  const report = await authorizeInventory(github, inventory, libraryValidator(inventory, process.env.GH_TOKEN), toolingRevision);
   console.log(JSON.stringify(report, null, 2));
   if (report.candidates.some(candidate => candidate.status !== 'approved')) process.exitCode = 1;
 }

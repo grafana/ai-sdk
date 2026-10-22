@@ -36,6 +36,7 @@ export async function discoverMerged(github, component) {
     candidates.push({
       repositoryId: REPOSITORY_ID, component: release.path, version: release.tag.version.toString(),
       tag: release.tag.toString(), notes: release.notes, name: release.name,
+      draft: !!release.draft, prerelease: !!release.prerelease,
       prNumber: pr.number, headSha: pr.head.sha, mergeSha: release.sha,
       parents: commit.parents.map(parent => parent.sha), treeSha: commit.commit.tree.sha,
       config, pr,
