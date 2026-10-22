@@ -84,7 +84,7 @@ export function preparationTransport(beforeWrite, fetchImpl = globalThis.fetch) 
     if (method === 'PATCH' && route.startsWith('/git/refs/')) allowed = branch.test('refs/' + route.slice('/git/refs/'.length));
     if (method === 'PATCH' && /^\/pulls\/\d+$/.test(route)) allowed = true;
     if (method === 'POST' && /^\/issues\/\d+\/labels$/.test(route)) allowed = true;
-    if (method === 'DELETE' && /^\/issues\/\d+\/labels\/autorelease: (?:pending|snoozed)$/.test(route)) allowed = true;
+    if (method === 'DELETE' && /^\/issues\/\d+\/labels\/autorelease: (?:pending|snooze)$/.test(route)) allowed = true;
     assert.ok(allowed, `preparation refused write: ${method} ${route}`);
     if (method === 'POST' && route === '/pulls') {
       assert.equal(body.base, 'main');
@@ -113,13 +113,13 @@ export async function prepareLibraries(github, expectedSha) {
     const manifest = await Manifest.fromManifest(github, 'main', 'release-please-config.json',
       '.release-please-manifest.json', {}, component);
     manifest.lastReleaseSha = undefined;
-    manifest.alwaysUpdate = true;
     const candidates = await manifest.buildPullRequests();
     const open = await manifest.findOpenReleasePullRequests();
     const snoozed = await manifest.findSnoozedReleasePullRequests();
     for (const candidate of candidates) {
       const changelog = component === '.' ? 'CHANGELOG.md' : `${component}/CHANGELOG.md`;
       assert.deepEqual(candidate.updates.map(update => update.path).sort(), ['.release-please-manifest.json', changelog].sort());
+      manifest.alwaysUpdate = open.some(pr => pr.headBranchName === candidate.headRefName);
       const result = await manifest.createOrUpdatePullRequest(candidate, open, snoozed);
       if (result) results.push({ component, prNumber: result.number });
     }

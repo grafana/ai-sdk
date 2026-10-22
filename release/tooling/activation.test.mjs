@@ -154,4 +154,27 @@ test('pinned preparation refreshes an unchanged open release against the current
   };
   await prepareLibraries(github, base);
   assert.equal(updated, 1);
+  openPR.labels = ['autorelease: snooze'];
+  github.pullRequestIterator = async function* (branch, state) { if (state === 'CLOSED') yield openPR; };
+  await prepareLibraries(github, base);
+  assert.equal(updated, 1, 'unchanged closed snoozed PR must stay snoozed');
+  github.mergeCommitIterator = async function* () {
+    yield { sha: 'f'.repeat(40), message: 'fix: new root change', files: ['stream.go'] };
+  };
+  github.updatePullRequest = async number => { updated++; return { number }; };
+  github.removeIssueLabels = async (labels, number) => {
+    assert.deepEqual(labels, ['autorelease: snooze']); assert.equal(number, 99);
+  };
+  await prepareLibraries(github, base);
+  assert.equal(updated, 2, 'new notes use the pinned snoozed update behavior');
+});
+
+
+test('preparation permits the exact pinned snooze lifecycle label', async () => {
+  const requests = [];
+  const send = preparationTransport(async () => {}, async (url, options) => {
+    requests.push([url, options.method]); return new Response('[]');
+  });
+  await send('https://api.github.com/repos/grafana/ai-sdk/issues/99/labels/autorelease%3A%20snooze', { method: 'DELETE' });
+  assert.equal(requests.length, 1);
 });
