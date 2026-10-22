@@ -40,6 +40,8 @@ func Value[T any](result OutputAccessor) (T, error) {
 
 // TypedElementStream wraps ElementStream() with per-element json.Unmarshal
 // into the target type T. Elements that fail to unmarshal are silently skipped.
+// It stops at the WithMaxItems bound like ElementStream, and an overflow is
+// reported only through OutputError.
 func TypedElementStream[T any](result *aisdk.StreamTextResult) <-chan T {
 	out := make(chan T, 64)
 	go func() {

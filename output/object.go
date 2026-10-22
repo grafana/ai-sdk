@@ -34,7 +34,9 @@ func Object[T any](s schema.Schema, opts ...ObjectOption) (*ObjectOutput[T], err
 	return o, nil
 }
 
-// ObjectOption configures optional parameters for Object.
+// ObjectOption configures Object, Array, ChoiceWithOptions and JSON.
+// WithName and WithDescription apply to all of them; WithMinItems and
+// WithMaxItems apply only to Array.
 type ObjectOption interface {
 	applyObject(o any)
 }
@@ -62,6 +64,37 @@ func (d objectDescription) applyObject(o any) {
 
 // WithDescription sets the schema description passed to the provider.
 func WithDescription(desc string) ObjectOption { return objectDescription(desc) }
+
+type arrayMinItems int
+
+func (n arrayMinItems) applyObject(o any) {
+	switch v := o.(type) {
+	case interface{ setMinItems(int) }:
+		v.setMinItems(int(n))
+	}
+}
+
+// WithMinItems sets the minItems keyword on the elements array sent to the
+// provider, and ParseComplete rejects a shorter array. Zero is a valid bound.
+// Array returns an error if n is negative or above WithMaxItems. Outputs other
+// than Array ignore it.
+func WithMinItems(n int) ObjectOption { return arrayMinItems(n) }
+
+type arrayMaxItems int
+
+func (n arrayMaxItems) applyObject(o any) {
+	switch v := o.(type) {
+	case interface{ setMaxItems(int) }:
+		v.setMaxItems(int(n))
+	}
+}
+
+// WithMaxItems sets the maxItems keyword on the elements array sent to the
+// provider, ParseComplete rejects a longer array, and
+// [aisdk.StreamTextResult.ElementStream] stops after n elements. Zero is a
+// valid bound. Array returns an error if n is negative or below WithMinItems.
+// Outputs other than Array ignore it.
+func WithMaxItems(n int) ObjectOption { return arrayMaxItems(n) }
 
 func (o *ObjectOutput[T]) setName(name string)        { o.name = &name }
 func (o *ObjectOutput[T]) setDescription(desc string) { o.desc = desc }

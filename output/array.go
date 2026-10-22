@@ -2,6 +2,7 @@ package output
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	aisdk "github.com/grafana/ai-sdk"
@@ -17,35 +18,50 @@ type ArrayOutput[T any] struct {
 	wrappedSchema schema.Schema
 	name          *string
 	desc          string
+	minItems      *int
+	maxItems      *int
 }
 
 // Array creates an ArrayOutput that generates an array of typed elements
-// matching the given element schema.
+// matching the given element schema. It returns an error when a bound set with
+// WithMinItems or WithMaxItems is negative or the minimum exceeds the maximum.
 func Array[T any](elementSchema schema.Schema, opts ...ObjectOption) (*ArrayOutput[T], error) {
-	wrappedRaw, err := buildArrayWrapperSchema(elementSchema.JSON())
+	o := &ArrayOutput[T]{elementSchema: elementSchema}
+	for _, opt := range opts {
+		opt.applyObject(o)
+	}
+	if o.minItems != nil && *o.minItems < 0 {
+		return nil, errors.New("output.Array: minItems must be greater than or equal to 0")
+	}
+	if o.maxItems != nil && *o.maxItems < 0 {
+		return nil, errors.New("output.Array: maxItems must be greater than or equal to 0")
+	}
+	if o.minItems != nil && o.maxItems != nil && *o.minItems > *o.maxItems {
+		return nil, errors.New("output.Array: minItems must be less than or equal to maxItems")
+	}
+
+	wrappedRaw, err := buildArrayWrapperSchema(elementSchema.JSON(), o.minItems, o.maxItems)
 	if err != nil {
 		return nil, fmt.Errorf("output.Array: building wrapper schema: %w", err)
 	}
 
-	wrappedSchema, err := schema.SchemaFromJSON(wrappedRaw)
+	o.wrappedSchema, err = schema.SchemaFromJSON(wrappedRaw)
 	if err != nil {
 		return nil, fmt.Errorf("output.Array: %w", err)
-	}
-
-	o := &ArrayOutput[T]{
-		elementSchema: elementSchema,
-		wrappedSchema: wrappedSchema,
-	}
-	for _, opt := range opts {
-		opt.applyObject(o)
 	}
 	return o, nil
 }
 
-func buildArrayWrapperSchema(elementSchema json.RawMessage) (json.RawMessage, error) {
+func buildArrayWrapperSchema(elementSchema json.RawMessage, minItems, maxItems *int) (json.RawMessage, error) {
 	elements := map[string]any{
 		"type":  "array",
 		"items": json.RawMessage(elementSchema),
+	}
+	if minItems != nil {
+		elements["minItems"] = *minItems
+	}
+	if maxItems != nil {
+		elements["maxItems"] = *maxItems
 	}
 	wrapper := map[string]any{
 		"$schema": "http://json-schema.org/draft-07/schema#",
@@ -79,6 +95,17 @@ func buildArrayWrapperSchema(elementSchema json.RawMessage) (json.RawMessage, er
 
 func (o *ArrayOutput[T]) setName(name string)        { o.name = &name }
 func (o *ArrayOutput[T]) setDescription(desc string) { o.desc = desc }
+func (o *ArrayOutput[T]) setMinItems(n int)          { o.minItems = &n }
+func (o *ArrayOutput[T]) setMaxItems(n int)          { o.maxItems = &n }
+
+// MaxItems returns the maximum set with WithMaxItems, and false when the array
+// has no maximum. It implements [aisdk.BoundedArrayOutput].
+func (o *ArrayOutput[T]) MaxItems() (max int, ok bool) {
+	if o.maxItems == nil {
+		return 0, false
+	}
+	return *o.maxItems, true
+}
 func (o *ArrayOutput[T]) ResponseFormat() *provider.ResponseFormat {
 	return &provider.ResponseFormat{
 		Type:        provider.ResponseFormatJSON,
@@ -102,6 +129,12 @@ func (o *ArrayOutput[T]) ParseComplete(text string) (any, error) {
 	var rawElements []json.RawMessage
 	if !ok || json.Unmarshal(raw, &rawElements) != nil || rawElements == nil {
 		return nil, fmt.Errorf("%w: %w: response must be an object with an elements array: %w", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, o.wrappedSchema.Validate(json.RawMessage(text)))
+	}
+	if o.minItems != nil && len(rawElements) < *o.minItems {
+		return nil, fmt.Errorf("%w: %w: elements array must contain at least %d items", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, *o.minItems)
+	}
+	if o.maxItems != nil && len(rawElements) > *o.maxItems {
+		return nil, fmt.Errorf("%w: %w: elements array must contain at most %d items", aisdk.ErrNoObjectGenerated, aisdk.ErrInvalidOutputText, *o.maxItems)
 	}
 
 	elements := make([]T, 0, len(rawElements))

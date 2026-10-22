@@ -47,7 +47,7 @@ The system SHALL provide an `ObjectOutput[T]` implementation that accepts a `sch
 
 ### Requirement: Array output mode
 
-The system SHALL provide ArrayOutput[T] accepting element schema.Schema. Its JSON SHALL be wrapped as {"elements": [...]} in a new schema.Schema via schema.SchemaFromJSON. This SHALL remain the strict provider format with additionalProperties false and elements required.
+The system SHALL provide ArrayOutput[T] accepting element schema.Schema. Its JSON SHALL be wrapped as {"elements": [...]} in a new schema.Schema via schema.SchemaFromJSON. This SHALL remain the strict provider format with additionalProperties false and elements required. `WithMinItems` and `WithMaxItems` SHALL set optional `minItems` and `maxItems` keywords on the `elements` property; an unset bound SHALL be omitted and zero SHALL be sent as an explicit bound. `Array` SHALL return an error, before any model call, when a bound is negative or the minimum exceeds the maximum.
 
 #### Scenario: Generate an array of typed elements
 
@@ -68,6 +68,22 @@ The system SHALL provide ArrayOutput[T] accepting element schema.Schema. Its JSO
 
 - **WHEN** the LLM returns `{}`, `{"elements":null}`, `{"elements":{"name":"Paris"}}` or a document that is not a JSON object
 - **THEN** the result SHALL return an error wrapping `ErrNoObjectGenerated`
+
+#### Scenario: Bounds reach the request schema
+
+- **WHEN** `output.Array[City](elementSchema, output.WithMinItems(1), output.WithMaxItems(2))` is used
+- **THEN** the response format's `elements` property SHALL contain `"minItems":1` and `"maxItems":2`
+
+#### Scenario: Invalid bounds
+
+- **WHEN** a bound is negative or `WithMinItems` exceeds `WithMaxItems`
+- **THEN** `output.Array` SHALL return a nil output and an error
+
+#### Scenario: Final array outside the bounds
+
+- **WHEN** the LLM returns an elements array shorter than the minimum or longer than the maximum
+- **THEN** the result SHALL return an error wrapping `ErrNoObjectGenerated` and `ErrInvalidOutputText` that names the violated bound
+- **AND** the length SHALL be checked before element validation
 
 ### Requirement: Complete array parsing validates elements not the wrapper
 
@@ -240,7 +256,7 @@ StreamTextResult SHALL expose PartialOutputStream() as a channel of json.RawMess
 
 ### Requirement: Array element streaming
 
-The system SHALL provide an `ElementStream()` method on `StreamTextResult` that returns a channel of `json.RawMessage` values, where each value is a complete validated array element. This SHALL only emit elements for array output mode. Every completed element SHALL be delivered exactly once and in array order. The stream SHALL remain lossless when consumption starts after generation, and SHALL close only after generation finishes and all queued elements are delivered.
+The system SHALL provide an `ElementStream()` method on `StreamTextResult` that returns a channel of `json.RawMessage` values, where each value is a complete validated array element. This SHALL only emit elements for array output mode. Every completed element SHALL be delivered exactly once and in array order. The stream SHALL remain lossless when consumption starts after generation, and SHALL close only after generation finishes and all queued elements are delivered, except that for a `BoundedArrayOutput` with a maximum the stream SHALL deliver at most that many elements and SHALL close as soon as an element past the maximum is parsed.
 
 #### Scenario: Receive validated elements during array streaming
 
@@ -260,6 +276,25 @@ The system SHALL provide an `ElementStream()` method on `StreamTextResult` that 
 - **WHEN** `Output` is set to object, choice, or json mode
 - **THEN** `ElementStream()` SHALL emit no values
 - **AND** the channel SHALL close when generation finishes
+
+#### Scenario: Model streams more elements than the maximum
+
+- **WHEN** the array output sets `WithMaxItems(2)` and the LLM streams four elements
+- **THEN** `ElementStream()` SHALL deliver only the first two elements
+- **AND** the channel SHALL close once the third element is parsed, before generation finishes
+- **AND** `PartialOutputStream()` SHALL still include all four elements
+- **AND** `OutputError()` SHALL wrap `ErrNoObjectGenerated` and report the maximum when this is the final step
+
+#### Scenario: Later step after an overflow
+
+- **WHEN** an earlier step overflowed the maximum and a later step streams a new array
+- **THEN** `ElementStream()` SHALL deliver no further elements
+
+#### Scenario: Repair accepts an array within the bounds
+
+- **WHEN** the LLM streams more elements than the maximum and `WithRepairText` accepts text whose array is within the bounds
+- **THEN** `OutputError()` SHALL be nil and the output SHALL be the repaired array
+- **AND** `ElementStream()` SHALL still have delivered only elements from the original text, up to the maximum
 
 ### Requirement: Typed result access via generic functions
 

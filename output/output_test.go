@@ -169,6 +169,107 @@ func TestArrayOutput_ParsePartial(t *testing.T) {
 	require.Len(t, v.([]json.RawMessage), 1, "repaired partial drops the final element")
 }
 
+func TestArrayOutput_Bounds(t *testing.T) {
+	elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]}`)
+
+	t.Run("request schema", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			opts []ObjectOption
+			want string
+		}{
+			{name: "unset", want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]}}`},
+			{name: "zero", opts: []ObjectOption{WithMinItems(0), WithMaxItems(0)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":0,"maxItems":0}`},
+			{name: "minimum only", opts: []ObjectOption{WithMinItems(1)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":1}`},
+			{name: "maximum only", opts: []ObjectOption{WithMaxItems(2)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"maxItems":2}`},
+			{name: "paired", opts: []ObjectOption{WithMinItems(1), WithMaxItems(2)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":1,"maxItems":2}`},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				out, err := Array[city](elemSchema, tc.opts...)
+				require.NoError(t, err)
+				var wrapped struct {
+					Properties struct {
+						Elements json.RawMessage `json:"elements"`
+					} `json:"properties"`
+				}
+				require.NoError(t, json.Unmarshal(out.ResponseFormat().Schema, &wrapped))
+				assert.JSONEq(t, tc.want, string(wrapped.Properties.Elements))
+			})
+		}
+	})
+
+	t.Run("invalid bounds", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			opts []ObjectOption
+			want string
+		}{
+			{name: "negative minimum", opts: []ObjectOption{WithMinItems(-1)}, want: "output.Array: minItems must be greater than or equal to 0"},
+			{name: "negative maximum", opts: []ObjectOption{WithMaxItems(-1)}, want: "output.Array: maxItems must be greater than or equal to 0"},
+			{name: "minimum above maximum", opts: []ObjectOption{WithMinItems(3), WithMaxItems(2)}, want: "output.Array: minItems must be less than or equal to maxItems"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				out, err := Array[city](elemSchema, tc.opts...)
+				assert.Nil(t, out)
+				assert.EqualError(t, err, tc.want)
+			})
+		}
+	})
+
+	t.Run("complete length", func(t *testing.T) {
+		out, err := Array[city](elemSchema, WithMinItems(1), WithMaxItems(2))
+		require.NoError(t, err)
+		for _, tc := range []struct {
+			name    string
+			text    string
+			wantLen int
+			wantErr string
+		}{
+			{name: "empty", text: `{"elements":[]}`, wantErr: "elements array must contain at least 1 items"},
+			{name: "minimum", text: `{"elements":[{"name":"Paris","population":1}]}`, wantLen: 1},
+			{name: "maximum", text: `{"elements":[{"name":"Paris","population":1},{"name":"Rome","population":2}]}`, wantLen: 2},
+			{name: "above maximum", text: `{"elements":[{"name":"Paris","population":1},{"name":"Rome","population":2},{"name":"Oslo","population":3}]}`, wantErr: "elements array must contain at most 2 items"},
+			{name: "length checked before elements", text: `{"elements":[{"name":"Paris"},{"name":"Rome"},{"name":"Oslo"}]}`, wantErr: "elements array must contain at most 2 items"},
+			{name: "elements still validated", text: `{"elements":[{"name":"Paris"}]}`, wantErr: "population"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				v, err := out.ParseComplete(tc.text)
+				if tc.wantErr != "" {
+					require.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+					assert.ErrorIs(t, err, aisdk.ErrInvalidOutputText)
+					assert.ErrorContains(t, err, tc.wantErr)
+					return
+				}
+				require.NoError(t, err)
+				assert.Len(t, v.([]city), tc.wantLen)
+			})
+		}
+	})
+
+	t.Run("max items", func(t *testing.T) {
+		var _ aisdk.BoundedArrayOutput = (*ArrayOutput[city])(nil)
+
+		unbounded, err := Array[city](elemSchema, WithMinItems(1))
+		require.NoError(t, err)
+		_, ok := unbounded.MaxItems()
+		assert.False(t, ok)
+
+		zero, err := Array[city](elemSchema, WithMaxItems(0))
+		require.NoError(t, err)
+		limit, ok := zero.MaxItems()
+		assert.True(t, ok)
+		assert.Equal(t, 0, limit)
+	})
+
+	t.Run("partial snapshots are not capped", func(t *testing.T) {
+		out, err := Array[city](elemSchema, WithMinItems(1), WithMaxItems(1))
+		require.NoError(t, err)
+		v, ok := out.ParsePartial(`{"elements":[{"name":"Paris","population":1},{"name":"Rome","population":2}]}`)
+		require.True(t, ok)
+		assert.Len(t, v.([]json.RawMessage), 2)
+	})
+}
+
 func TestChoiceOutput_ParseComplete_Valid(t *testing.T) {
 	out, err := Choice("sunny", "rainy", "snowy")
 	require.NoError(t, err)

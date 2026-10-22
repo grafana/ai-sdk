@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/output"
@@ -862,6 +863,205 @@ func TestStreamText_ElementStream(t *testing.T) {
 		expectedPartial, err := json.Marshal(elements)
 		require.NoError(t, err)
 		assert.JSONEq(t, string(expectedPartial), string(partials[len(partials)-1]))
+	})
+
+	t.Run("caps elements at the maximum", func(t *testing.T) {
+		type item struct {
+			Name string `json:"name"`
+		}
+		elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
+		out, err := output.Array[item](elemSchema, output.WithMaxItems(2))
+		require.NoError(t, err)
+
+		deltas := []string{`{"elements":[{"name":"a"},`, `{"name":"b"},`, `{"name":"c"},`, `{"name":"d"}]}`}
+		var requestSchema json.RawMessage
+		model := &testModel{
+			streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+				requestSchema = opts.ResponseFormat.Schema
+				ch := make(chan provider.StreamPart, len(deltas)+3)
+				ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+				for _, delta := range deltas {
+					ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: delta}
+				}
+				ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+				ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+				close(ch)
+				return &provider.StreamResult{Stream: ch}, nil
+			},
+		}
+		result := aisdk.StreamText(context.Background(), model,
+			aisdk.WithModelMessages(provider.UserText("test")),
+			aisdk.WithOutput(out),
+		)
+		for range result.FullStream() {
+		}
+
+		var elements []string
+		for raw := range result.ElementStream() {
+			elements = append(elements, string(raw))
+		}
+		assert.Equal(t, []string{`{"name":"a"}`, `{"name":"b"}`}, elements)
+
+		var partials []json.RawMessage
+		for partial := range result.PartialOutputStream() {
+			partials = append(partials, partial)
+		}
+		require.NotEmpty(t, partials)
+		assert.JSONEq(t, `[{"name":"a"},{"name":"b"},{"name":"c"},{"name":"d"}]`, string(partials[len(partials)-1]))
+
+		require.ErrorIs(t, result.OutputError(), aisdk.ErrNoObjectGenerated)
+		assert.ErrorContains(t, result.OutputError(), "elements array must contain at most 2 items")
+		assert.Nil(t, result.OutputValue())
+		assert.Contains(t, string(requestSchema), `"maxItems":2`)
+	})
+
+	t.Run("closes at overflow before generation finishes", func(t *testing.T) {
+		type item struct {
+			Name string `json:"name"`
+		}
+		elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
+		out, err := output.Array[item](elemSchema, output.WithMaxItems(2))
+		require.NoError(t, err)
+
+		release := make(chan struct{})
+		model := &testModel{
+			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				ch := make(chan provider.StreamPart)
+				go func() {
+					defer close(ch)
+					ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+					for _, delta := range []string{`{"elements":[{"name":"a"},`, `{"name":"b"},`, `{"name":"c"},`, `{"name":"d"`} {
+						ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: delta}
+					}
+					<-release
+					ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `}]}`}
+					ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+					ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+				}()
+				return &provider.StreamResult{Stream: ch}, nil
+			},
+		}
+		result := aisdk.StreamText(context.Background(), model,
+			aisdk.WithModelMessages(provider.UserText("test")),
+			aisdk.WithOutput(out),
+		)
+		drained := make(chan struct{})
+		go func() {
+			defer close(drained)
+			for range result.FullStream() {
+			}
+		}()
+
+		var elements []string
+		closed := make(chan struct{})
+		go func() {
+			defer close(closed)
+			for raw := range result.ElementStream() {
+				elements = append(elements, string(raw))
+			}
+		}()
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			close(release)
+			require.FailNow(t, "element stream stayed open after overflow")
+		}
+		assert.Equal(t, []string{`{"name":"a"}`, `{"name":"b"}`}, elements)
+
+		close(release)
+		<-drained
+		assert.ErrorContains(t, result.OutputError(), "elements array must contain at most 2 items")
+	})
+
+	t.Run("later step does not reopen a capped stream", func(t *testing.T) {
+		type item struct {
+			Name string `json:"name"`
+		}
+		elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
+		out, err := output.Array[item](elemSchema, output.WithMaxItems(2))
+		require.NoError(t, err)
+		callNum := 0
+		model := &testModel{
+			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				callNum++
+				if callNum > 1 {
+					ch := make(chan provider.StreamPart, 6)
+					ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t2"}
+					for _, delta := range []string{`{"elements":[`, `{"name":"x"},`, `{"name":"y"}]}`} {
+						ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t2", Delta: delta}
+					}
+					ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t2"}
+					ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+					close(ch)
+					return &provider.StreamResult{Stream: ch}, nil
+				}
+				ch := make(chan provider.StreamPart, 6)
+				ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+				ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `{"elements":[{"name":"a"},{"name":"b"},{"name":"c"}]}`}
+				ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+				ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "lookup", Input: `{}`}
+				ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}}
+				close(ch)
+				return &provider.StreamResult{Stream: ch}, nil
+			},
+		}
+		result := aisdk.StreamText(context.Background(), model,
+			aisdk.WithModelMessages(provider.UserText("test")),
+			aisdk.WithOutput(out),
+			aisdk.WithTools(aisdk.ToolSet{
+				"lookup": aisdk.Tool{
+					InputSchema: mustSchema(t, `{"type":"object"}`),
+					Execute: func(_ context.Context, _ json.RawMessage, _ aisdk.ToolExecutionOptions) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					},
+				},
+			}),
+			aisdk.WithStopWhen(aisdk.StepCountIs(3)),
+		)
+		for range result.FullStream() {
+		}
+
+		require.Equal(t, 2, callNum)
+		var elements []string
+		for raw := range result.ElementStream() {
+			elements = append(elements, string(raw))
+		}
+		assert.Equal(t, []string{`{"name":"a"}`, `{"name":"b"}`}, elements)
+		assert.NoError(t, result.OutputError(), "only the final step is parsed")
+	})
+
+	t.Run("accepted repair replaces the overflow error", func(t *testing.T) {
+		type item struct {
+			Name string `json:"name"`
+		}
+		elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
+		out, err := output.Array[item](elemSchema, output.WithMaxItems(2))
+		require.NoError(t, err)
+		model := &testModel{
+			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: textStream(`{"elements":[{"name":"a"},{"name":"b"},{"name":"c"}]}`)}, nil
+			},
+		}
+		var repairErr error
+		result := aisdk.StreamText(context.Background(), model,
+			aisdk.WithModelMessages(provider.UserText("test")),
+			aisdk.WithOutput(out),
+			aisdk.WithRepairText(func(_ string, parseErr error) (string, bool, error) {
+				repairErr = parseErr
+				return `{"elements":[{"name":"c"}]}`, true, nil
+			}),
+		)
+		for range result.FullStream() {
+		}
+
+		var elements []string
+		for raw := range result.ElementStream() {
+			elements = append(elements, string(raw))
+		}
+		assert.Equal(t, []string{`{"name":"a"}`, `{"name":"b"}`}, elements)
+		assert.ErrorContains(t, repairErr, "elements array must contain at most 2 items")
+		require.NoError(t, result.OutputError())
+		assert.Equal(t, []item{{Name: "c"}}, result.OutputValue())
 	})
 
 	t.Run("nil output closes channel immediately", func(t *testing.T) {

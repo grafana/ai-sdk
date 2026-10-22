@@ -106,6 +106,10 @@ func newLosslessStream[T any]() *losslessStream[T] {
 
 func (s *losslessStream[T]) send(value T) {
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	s.queue = append(s.queue, value)
 	s.ready.Signal()
 	s.mu.Unlock()
@@ -2094,10 +2098,20 @@ func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
 		return ""
 	}
 	if elements, isSlice := v.([]json.RawMessage); isSlice {
+		overflow := false
+		if bounded, ok := out.(BoundedArrayOutput); ok {
+			if limit, ok := bounded.MaxItems(); ok && len(elements) > limit {
+				elements = elements[:limit]
+				overflow = true
+			}
+		}
 		for i := r.emittedElementCount; i < len(elements); i++ {
 			r.elementStream.send(elements[i])
 		}
 		r.emittedElementCount = len(elements)
+		if overflow {
+			r.elementStream.close()
+		}
 	}
 
 	var data json.RawMessage
@@ -2707,7 +2721,10 @@ func (r *StreamTextResult) PartialOutputStream() <-chan json.RawMessage {
 // ElementStream returns a channel of complete validated array elements
 // during streaming. Only produces values when the Output is in array mode.
 // Elements are delivered exactly once and in order. The channel is closed after
-// the stream finishes and all elements are delivered.
+// the stream finishes and all elements are delivered. When the Output is a
+// BoundedArrayOutput, the channel closes as soon as the model produces an
+// element past the maximum. A closed channel does not mean the array was
+// valid; check OutputError after the stream finishes.
 func (r *StreamTextResult) ElementStream() <-chan json.RawMessage {
 	return r.elementStream.stream()
 }
