@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { GitHub } from 'release-please';
 import { readFileSync } from 'node:fs';
 import { fixture, base } from './authorization-fixture.mjs';
 import { SOURCE_JOBS } from './authorization-evidence.mjs';
@@ -158,15 +159,7 @@ test('pinned preparation refreshes an unchanged open release against the current
   github.pullRequestIterator = async function* (branch, state) { if (state === 'CLOSED') yield openPR; };
   await prepareLibraries(github, base);
   assert.equal(updated, 1, 'unchanged closed snoozed PR must stay snoozed');
-  github.mergeCommitIterator = async function* () {
-    yield { sha: 'f'.repeat(40), message: 'fix: new root change', files: ['stream.go'] };
-  };
-  github.updatePullRequest = async number => { updated++; return { number }; };
-  github.removeIssueLabels = async (labels, number) => {
-    assert.deepEqual(labels, ['autorelease: snooze']); assert.equal(number, 99);
-  };
-  await prepareLibraries(github, base);
-  assert.equal(updated, 2, 'new notes use the pinned snoozed update behavior');
+
 });
 
 
@@ -177,4 +170,57 @@ test('preparation permits the exact pinned snooze lifecycle label', async () => 
   });
   await send('https://api.github.com/repos/grafana/ai-sdk/issues/99/labels/autorelease%3A%20snooze', { method: 'DELETE' });
   assert.equal(requests.length, 1);
+});
+
+
+test('changed snoozed release uses the pinned labeled creation path and actual replacement number', async () => {
+  const source = fixture();
+  const branch = source.candidate.pr.head.ref;
+  const closed = { number: 99, headBranchName: branch, baseBranchName: 'main',
+    labels: ['autorelease: snooze'], title: source.candidate.pr.title, body: source.candidate.pr.body };
+  const requests = [];
+  let replacement;
+  const transport = preparationTransport(async () => {}, async (url, options = {}) => {
+    const path = decodeURIComponent(new URL(url).pathname), method = options.method ?? 'GET';
+    const body = options.body ? JSON.parse(options.body) : undefined;
+    requests.push({ method, path, body });
+    let data, status = 200;
+    if (method === 'GET' && path.endsWith('/branches/main')) data = { commit: { sha: base } };
+    else if (method === 'GET' && path.includes('/git/ref/')) data = { object: { sha: base } };
+    else if (method === 'GET' && path.endsWith(`/git/commits/${base}`)) data = { tree: { sha: 'd'.repeat(40) } };
+    else if (method === 'POST' && path.endsWith('/git/refs')) data = { ref: body.ref };
+    else if (method === 'POST' && path.endsWith('/git/trees')) data = { sha: 'e'.repeat(40) };
+    else if (method === 'POST' && path.endsWith('/git/commits')) data = { sha: 'f'.repeat(40), verification: { verified: true, reason: 'valid' } };
+    else if (method === 'PATCH' && path.includes('/git/refs/')) data = {};
+    else if (method === 'GET' && path.endsWith('/pulls')) data = replacement ? [replacement] : [];
+    else if (method === 'POST' && path.endsWith('/pulls')) {
+      replacement = { number: 100, title: body.title, body: body.body, state: 'open',
+        head: { ref: branch }, base: { ref: 'main' }, labels: [] };
+      data = replacement;
+    } else if (method === 'POST' && path.endsWith('/issues/100/labels')) {
+      replacement.labels = body.labels.map(name => ({ name })); data = replacement.labels;
+    } else if (method === 'GET' && path.endsWith('/pulls/100')) data = replacement;
+    else if (method === 'PATCH' && path.endsWith('/pulls/99')) {
+      data = { ...body, number: 99, state: 'closed', head: { ref: branch }, base: { ref: 'main' }, labels: closed.labels.map(name => ({ name })) };
+    } else if (method === 'DELETE' && path.endsWith('/issues/99/labels/autorelease: snooze')) data = [];
+    else throw new Error(`unexpected pinned request: ${method} ${path}`);
+    return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+  });
+  const github = await GitHub.create({ owner: 'grafana', repo: 'ai-sdk', defaultBranch: 'main', fetch: transport });
+  github.getFileJson = source.github.getFileJson;
+  github.octokit.repos.getCommit = source.github.octokit.repos.getCommit;
+  github.releaseIterator = async function* () {};
+  github.tagIterator = async function* () {};
+  github.pullRequestIterator = async function* (target, state) { if (state === 'CLOSED') yield closed; };
+  github.mergeCommitIterator = async function* () {
+    yield { sha: 'e'.repeat(40), message: 'fix: new root change', files: ['stream.go'] };
+  };
+  github.buildChangeSet = async updates => new Map(updates.map(update => [update.path, { content: 'generated content' }]));
+  const result = await prepareLibraries(github, base);
+  assert.deepEqual(result, [{ component: '.', prNumber: 100 }]);
+  assert.deepEqual(replacement.labels, [{ name: 'autorelease: pending' }]);
+  assert.equal(requests.some(r => r.method === 'PATCH' && r.path.endsWith('/pulls/99')), false);
+  const label = requests.findIndex(r => r.method === 'POST' && r.path.endsWith('/issues/100/labels'));
+  const unsnooze = requests.findIndex(r => r.method === 'DELETE');
+  assert.ok(label >= 0 && unsnooze > label, 'retire old snooze only after labeling the replacement');
 });

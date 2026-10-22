@@ -120,8 +120,13 @@ export async function prepareLibraries(github, expectedSha) {
       const changelog = component === '.' ? 'CHANGELOG.md' : `${component}/CHANGELOG.md`;
       assert.deepEqual(candidate.updates.map(update => update.path).sort(), ['.release-please-manifest.json', changelog].sort());
       manifest.alwaysUpdate = open.some(pr => pr.headBranchName === candidate.headRefName);
-      const result = await manifest.createOrUpdatePullRequest(candidate, open, snoozed);
-      if (result) results.push({ component, prNumber: result.number });
+      const previous = !manifest.alwaysUpdate && snoozed.find(pr => pr.headBranchName === candidate.headRefName);
+      if (previous && previous.body === candidate.body.toString()) continue;
+      const result = await manifest.createOrUpdatePullRequest(candidate, open, []);
+      if (result?.number > 0) {
+        if (previous) await github.removeIssueLabels(['autorelease: snooze'], previous.number);
+        results.push({ component, prNumber: result.number });
+      }
     }
   }
   return results;
