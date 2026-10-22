@@ -200,8 +200,9 @@ The Anthropic provider module is a separate `go.mod`. Run its tests from the
 Bedrock provider module under `providers/bedrock/`.
 
 PRs must pass candidate-source CI. See
-[What to validate](CONTRIBUTING.md#what-to-validate) for PR checks, Go module
-releases, and Gateway image checks.
+[What to validate](CONTRIBUTING.md#what-to-validate) for PR checks and Go module
+releases. CI no longer builds or publishes Gateway images; App Platform work
+is tracked separately in #428.
 
 For release intent, use the PR title rules in
 [Releases and independent modules](CONTRIBUTING.md#releases-and-independent-modules).

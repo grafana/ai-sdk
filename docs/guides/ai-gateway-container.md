@@ -1,7 +1,9 @@
 # Run AI Gateway in a container
 
-Published `grafana-ai-gateway` images build Gateway and SDK source from the
-same repository revision. Gateway is distributed as a container image.
+The local container recipe builds Gateway and SDK source from the same
+repository revision. CI no longer builds or publishes these images.
+The [App Platform migration](https://github.com/grafana/ai-sdk/pull/428) owns
+the transition to plugin packaging and validation.
 
 For the request path and component boundaries, see
 [Gateway architecture](../concepts/gateway-architecture.md) and the
