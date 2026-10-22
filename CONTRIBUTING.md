@@ -340,6 +340,7 @@ no mocking framework. See [AGENTS.md](AGENTS.md) for the full conventions.
 ```bash
 mise run test              # all Go tests, all modules
 mise run test-short        # skip integration/E2E
+mise run test-race         # short tests with the race detector, Gateway and stream-path modules
 mise run test-integration  # cross-language integration tests (Go server, Vitest client)
 mise run test-conformance  # replay upstream-recorded fixtures
 ```

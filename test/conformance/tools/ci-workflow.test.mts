@@ -9,7 +9,7 @@ const document = parseDocument(readFileSync(resolve(root, ".github/workflows/ci.
 assert.deepEqual(document.errors, []);
 const workflow = document.toJS() as { jobs: Record<string, { if?: string; needs?: string | string[]; steps: Array<{ name?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown>; "continue-on-error"?: boolean }> }> };
 const jobs = workflow.jobs;
-const source = ["ci", "docs-lint", "module-resolution", "parity-baseline", "integration-test", "conformance-test"];
+const source = ["ci", "race", "docs-lint", "module-resolution", "parity-baseline", "integration-test", "conformance-test"];
 const pushGuard = "${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) && github.repository == 'grafana/ai-sdk' }}";
 const normalize = (value: string | undefined) => value?.replace(/\s+/g, " ").trim();
 const needs = (job: string) => [jobs[job]!.needs ?? []].flat();
@@ -54,6 +54,7 @@ describe("source and artifact workflow gates", () => {
     assert.match(commands("conformance-test"), /test-conformance/);
     assert.match(commands("integration-test"), /test-integration/);
     assert.match(commands("ci"), /mise run (build|test-short|vet|lint)/);
+    assert.match(commands("race"), /mise run test-race/);
   });
 
   it("validates the plugin package on pull requests and keeps it only for eligible pushes", () => {

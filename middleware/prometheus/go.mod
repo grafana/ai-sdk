@@ -1,6 +1,6 @@
 module github.com/grafana/ai-sdk/middleware/prometheus
 
-go 1.26.3
+go 1.27.3
 
 require (
 	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc

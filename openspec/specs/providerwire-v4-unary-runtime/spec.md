@@ -140,7 +140,7 @@ A body-carried header whose name belongs to the runtime's own protocol namespace
 
 ### Requirement: Unsupported capability families
 
-Schema-valid provider tools and tool approvals, and raw output SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Structured output SHALL execute within gateway-structured-output. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers.
+Schema-valid provider tools and tool approvals SHALL return a stable invalid-request document naming the unsupported family before resolution or model invocation. Structured output SHALL execute within gateway-structured-output. Ordinary file inputs and message/file-part options SHALL execute within gateway-file-inputs, alongside existing call-level options and body-carried headers. Requested raw output SHALL follow gateway-raw-output.
 
 #### Scenario: One unsupported family
 - **WHEN** a request activates one unsupported family
