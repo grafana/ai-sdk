@@ -50,3 +50,7 @@ Use `npm ci --ignore-scripts`, not an unpinned installation or lifecycle scripts
 
 For the opt-in App write test and its approval boundary, see the
 [controlled PR exercise](APP-PR-EXERCISE.md). The preview command remains read-only.
+
+For read-only decisions about already merged library candidates, see
+[merged library authorization](AUTHORIZATION.md). It verifies exact revision evidence
+and selected readiness without creating tags or releases.
