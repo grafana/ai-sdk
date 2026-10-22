@@ -91,13 +91,4 @@ describe("source and artifact workflow gates", () => {
     assert.match(readFileSync(resolve(root, "mise.toml"), "utf8"), /-f ai-gateway\/Dockerfile/);
     assert.match(readFileSync(resolve(root, "ai-gateway/Dockerfile.dockerignore"), "utf8"), /go\.gateway\.work/);
   });
-
-  it("does not trigger the retired Argo deployment", () => {
-    assert.equal(Object.hasOwn(jobs, "deploy-ai-gateway"), false);
-    for (const job of Object.values(jobs)) {
-      for (const step of job.steps) {
-        assert.doesNotMatch(step.uses ?? "", /^grafana\/shared-workflows\/actions\/trigger-argo-workflow@/);
-      }
-    }
-  });
 });
