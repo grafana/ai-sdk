@@ -564,7 +564,7 @@ SDK's Go module dependency graph.
   `mise run verify-module-resolution` checks all published modules.
 - **Gateway images:** Gateway uses the separate `go.gateway.work` to build from
   same-revision local source. Push-only image validation checks the Gateway
-  artifact at the checkout revision before publication or deployment. Gateway
+  artifact at the checkout revision before publication. Gateway
   is not published as a standalone Go module.
 
 The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,

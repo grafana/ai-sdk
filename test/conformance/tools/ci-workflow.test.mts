@@ -85,12 +85,19 @@ describe("source and artifact workflow gates", () => {
     for (const required of [...source, "image-validation"]) {
       assert.ok(dependencies("publish-ai-gateway-image").has(required), `publisher must require ${required}`);
     }
-    assert.equal(normalize(jobs["deploy-ai-gateway"]!.if), "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' }}");
-    assert.deepEqual(needs("deploy-ai-gateway"), ["publish-ai-gateway-image"]);
     const dockerfile = readFileSync(resolve(root, "ai-gateway/Dockerfile"), "utf8");
     assert.match(dockerfile, /GOWORK=\/src\/go\.gateway\.work/);
     assert.doesNotMatch(dockerfile, /GOWORK=off/);
     assert.match(readFileSync(resolve(root, "mise.toml"), "utf8"), /-f ai-gateway\/Dockerfile/);
     assert.match(readFileSync(resolve(root, "ai-gateway/Dockerfile.dockerignore"), "utf8"), /go\.gateway\.work/);
+  });
+
+  it("does not trigger the retired Argo deployment", () => {
+    assert.equal(Object.hasOwn(jobs, "deploy-ai-gateway"), false);
+    for (const job of Object.values(jobs)) {
+      for (const step of job.steps) {
+        assert.doesNotMatch(step.uses ?? "", /^grafana\/shared-workflows\/actions\/trigger-argo-workflow@/);
+      }
+    }
   });
 });

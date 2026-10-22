@@ -8,7 +8,8 @@ After all required CI checks pass, pushes to `grafana/ai-sdk` publish Linux AMD6
 - Pushes to `main` publish `ghcr.io/grafana/ai-gateway:sha-<full-commit-sha>` for the pushed HEAD commit.
 - Git tags matching `ai-gateway/v*` publish release images. For example, `ai-gateway/v0.1.0` publishes `ghcr.io/grafana/ai-gateway:v0.1.0`.
 
-The workflow does not publish moving `main` or `latest` tags.
+The workflow does not publish moving `main` or `latest` tags. CI publishes
+images; deployment is managed separately and is not triggered by this workflow.
 
 For the request path and component boundaries, see
 [Gateway architecture](../concepts/gateway-architecture.md) and the
