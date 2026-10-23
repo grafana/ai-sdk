@@ -151,7 +151,7 @@ func (s sinks) close() {
 }
 
 func newRouteHandler(settings config.Settings, file config.File, providers map[string]config.ResolvedProvider, secrets []string, sinks sinks, logger *slog.Logger) (http.Handler, error) {
-	nativeClient, err := outbound.NewAnthropicClient(config.ProviderResponseHeaderTimeout, config.ProviderResponseBytes)
+	nativeClient, err := outbound.NewModelClient(config.ProviderResponseHeaderTimeout, config.ProviderResponseBytes)
 	if err != nil {
 		return nil, err
 	}

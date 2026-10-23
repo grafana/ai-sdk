@@ -104,7 +104,7 @@ func TestAnthropicModel_HardenedTimeoutAndCumulativeStreamBound(t *testing.T) {
 
 func hardenedTestModel(t *testing.T, server *httptest.Server, limit int64, headerTimeout time.Duration, providerType string) provider.LanguageModel {
 	t.Helper()
-	client, err := outbound.NewAnthropicClient(headerTimeout, limit)
+	client, err := outbound.NewModelClient(headerTimeout, limit)
 	require.NoError(t, err)
 	file := config.File{
 		Models: map[string]config.Model{"public": {Name: "Public", Primary: config.Primary{Provider: "provider", Model: "backend-private"}}},

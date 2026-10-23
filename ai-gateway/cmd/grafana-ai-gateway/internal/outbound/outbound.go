@@ -26,8 +26,10 @@ var (
 	ErrResponseTooLarge = errors.New("gateway outbound: response exceeds byte limit")
 )
 
-// NewAnthropicClient returns a streaming client that rejects redirects and limits response bytes and response-header wait time.
-func NewAnthropicClient(headerTimeout time.Duration, responseBytes int64) (*http.Client, error) {
+// NewModelClient returns the streaming client shared by every provider type.
+// It rejects redirects, bounds the wait for response headers, and bounds the
+// decompressed body of each response independently.
+func NewModelClient(headerTimeout time.Duration, responseBytes int64) (*http.Client, error) {
 	if headerTimeout <= 0 {
 		return nil, fmt.Errorf("gateway outbound: timeout must be positive")
 	}

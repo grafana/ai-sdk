@@ -4,12 +4,12 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 1. Outbound model client
 
-- [ ] 1.1 Rename `outbound.NewAnthropicClient` to `NewModelClient` and update its godoc to "every provider type", the call in `gateway.go`, and `outbound_test.go`, including the renamed invalid-limits test. In `outbound_test.go`, add two tests:
+- [x] 1.1 Rename `outbound.NewAnthropicClient` to `NewModelClient` and update its godoc to "every provider type", the call in `gateway.go`, and `outbound_test.go`, including the renamed invalid-limits test. In `outbound_test.go`, add two tests:
   - a gzip response that is within 16 MiB compressed and above it decompressed fails with `ErrResponseTooLarge`;
   - two sequential responses through one client, each just under the limit, both succeed.
 
   Verify with `go test -race ./cmd/grafana-ai-gateway/internal/outbound/...`, and confirm `rg NewAnthropicClient ai-gateway docs` finds nothing.
-- [ ] 1.2 Turn the "Limits" section of `ai-gateway/README.md` into the ledger from design D8. Add the plugin-host and outbound-transport rows plus the trade-off paragraph. Verify with `mise run lint-docs`.
+- [x] 1.2 Turn the "Limits" section of `ai-gateway/README.md` into the ledger from design D8. Add the plugin-host and outbound-transport rows plus the trade-off paragraph. Verify with `mise run lint-docs`.
 
 ## 2. BYOK selected-provider account bound
 
