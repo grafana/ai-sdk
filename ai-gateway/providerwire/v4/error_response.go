@@ -236,11 +236,6 @@ func encodeErrorFrame(response errorResponse) ([]byte, error) {
 	return append(append([]byte("data: "), body...), '\n', '\n'), nil
 }
 
-func streamErrorFrameForSafeError(value safeError) []byte {
-	frame, _ := encodeErrorFrame(streamErrorResponse(value))
-	return frame
-}
-
 func encodeStreamError(value safeError, metadata provider.ProviderMetadata, current *execution.Failure) []byte {
 	response := streamErrorResponse(value)
 	if len(metadata) != 0 || current != nil {

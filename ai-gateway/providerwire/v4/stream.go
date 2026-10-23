@@ -13,10 +13,6 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-var (
-	canonicalEmptyStartFrame = []byte("data: {\"type\":\"stream-start\",\"warnings\":[]}\n\n")
-)
-
 type streamEvent struct {
 	approvalID       string
 	typeName         provider.StreamPartType
@@ -396,15 +392,11 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 	state.execution = view
 	state.includeRaw = includeRaw
 	if part.Type == provider.PartStreamStart {
-		warnings, err := mapWarnings(part.Warnings)
-		if err != nil {
-			cancel()
-			if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) == streamWriteSuccess {
-				h.writeStreamTerminalError(w, safeError{category: safeInternal}, view.metadata())
-			}
-			return
+		result := streamWriteEncodingFailure
+		if warnings, err := mapWarnings(part.Warnings); err == nil {
+			result = h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart, warnings: warnings})
 		}
-		switch h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart, warnings: warnings}) {
+		switch result {
 		case streamWriteSuccess:
 			idleTimer.Reset(h.limits.StreamIdleDuration)
 		case streamWriteEncodingFailure:
@@ -599,10 +591,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		value := safeErrorFromStreamProvider(part.APICallError)
 		metadata := state.execution.metadata()
 		current := state.execution.current(part.APICallError)
-		if result := h.emitSafeStreamError(w, value, metadata, current); result != streamWriteSuccess {
-			if result == streamWriteEncodingFailure {
-				return streamPartAdapterFailure
-			}
+		if !h.emitSafeStreamError(w, value, metadata, current) {
 			return streamPartWriterFailure
 		}
 		return streamPartContinue
@@ -705,11 +694,8 @@ func (h *handler) emitStreamEvent(w http.ResponseWriter, event streamEvent) stre
 	return streamWriteSuccess
 }
 
-func (h *handler) emitSafeStreamError(w http.ResponseWriter, value safeError, metadata provider.ProviderMetadata, current *execution.Failure) streamWriteResult {
-	if !writeCompleteStreamFrame(w, encodeStreamError(value, metadata, current)) {
-		return streamWriteWriterFailure
-	}
-	return streamWriteSuccess
+func (h *handler) emitSafeStreamError(w http.ResponseWriter, value safeError, metadata provider.ProviderMetadata, current *execution.Failure) bool {
+	return writeCompleteStreamFrame(w, encodeStreamError(value, metadata, current))
 }
 
 func (h *handler) writeStreamTerminalForWait(w http.ResponseWriter, result streamWaitResult, view executionView) {

@@ -71,7 +71,7 @@ func TestStreamFrameEncoding(t *testing.T) {
 			{value: safeError{category: safeCancellation}, frame: canonicalCancellationStreamErrorFrame},
 			{value: safeError{category: safeInternal}, frame: canonicalInternalStreamErrorFrame},
 		} {
-			assert.Equal(t, tc.frame, streamErrorFrameForSafeError(tc.value))
+			assert.Equal(t, tc.frame, encodeStreamError(tc.value, nil, nil))
 		}
 	})
 
@@ -205,7 +205,7 @@ func TestStreamingRuntimeStartNormalization(t *testing.T) {
 		assert.Contains(t, response.Body.String(), `"type":"finish"`)
 	})
 
-	t.Run("late duplicate unknown and oversized warnings fail safely", func(t *testing.T) {
+	t.Run("late duplicate and unknown warnings fail while many warnings succeed", func(t *testing.T) {
 		tests := []struct {
 			name  string
 			parts []provider.StreamPart

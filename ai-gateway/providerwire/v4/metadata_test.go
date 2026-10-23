@@ -150,7 +150,7 @@ func TestToolMetadata_OpaqueSemanticFields(t *testing.T) {
 	}
 }
 
-func TestToolMetadata_StructuralAndEncodingBounds(t *testing.T) {
+func TestToolMetadata_StructuralAndEncodingValidity(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		metadata provider.ProviderMetadata
@@ -335,7 +335,7 @@ func TestProviderMetadata_OriginalBytesAndCardinality(t *testing.T) {
 	}
 }
 
-func TestProviderMetadata_AggregateAndEncodingBounds(t *testing.T) {
+func TestProviderMetadata_LargeAndEncodedValues(t *testing.T) {
 	raw := json.RawMessage(`{"value":"` + strings.Repeat("x", 300) + `"}`)
 	metadata := provider.ProviderMetadata{"future": raw}
 	result := validGenerateResult()

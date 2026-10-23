@@ -55,7 +55,7 @@ type Config struct {
 	Selector RequestSelector
 	// ConfiguredAPIKeys are provider/exporter credentials redacted only from native error summaries.
 	ConfiguredAPIKeys []string `json:"-"`
-	// Limits bounds request processing, responses, and model execution.
+	// Limits bounds the model, stream idle and drain durations.
 	Limits Limits
 }
 

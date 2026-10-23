@@ -586,7 +586,7 @@ func TestStreamingTools_InvalidUTF8(t *testing.T) {
 	}
 }
 
-func TestStreamingTools_FrameBoundsAndNonterminalErrors(t *testing.T) {
+func TestStreamingTools_FrameEncodingAndNonterminalErrors(t *testing.T) {
 	for _, event := range []streamEvent{
 		{typeName: provider.PartToolInputStart, id: "a", toolName: "f"},
 		{typeName: provider.PartToolInputDelta, id: "a", delta: ""},

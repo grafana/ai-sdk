@@ -50,6 +50,7 @@ var (
 )
 
 var (
+	canonicalEmptyStartFrame              = []byte("data: {\"type\":\"stream-start\",\"warnings\":[]}\n\n")
 	canonicalRateLimitStreamErrorFrame    = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"rate limit exceeded\",\"type\":\"rate_limit_exceeded\",\"param\":null,\"code\":\"rate_limit_exceeded\",\"statusCode\":429,\"retryable\":true}}\n\n")
 	canonicalOverloadStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"service overloaded\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"overloaded\",\"statusCode\":503,\"retryable\":true}}\n\n")
 	canonicalDependencyStreamErrorFrame   = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"failed dependency\",\"type\":\"failed_dependency\",\"param\":null,\"code\":\"failed_dependency\",\"statusCode\":424,\"retryable\":false}}\n\n")
