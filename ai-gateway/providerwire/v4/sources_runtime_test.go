@@ -117,7 +117,7 @@ func TestSourcesStreamingLifecycle(t *testing.T) {
 	}
 }
 
-func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
+func TestSourcesCompleteFrameAndLargeValues(t *testing.T) {
 	source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: strings.Repeat("<", 80)}
 	mapped, err := mapSource(source)
 	require.NoError(t, err)

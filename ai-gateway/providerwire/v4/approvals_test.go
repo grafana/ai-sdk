@@ -102,7 +102,7 @@ func TestRuntimeApproval_DenialAndNestedOptions(t *testing.T) {
 	}
 }
 
-func TestRuntimeApproval_StreamCorrelationAndBounds(t *testing.T) {
+func TestRuntimeApproval_StreamCorrelationAndValidity(t *testing.T) {
 	call := provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "mcp", Input: `{}`, ProviderExecuted: true}
 	approval := provider.StreamPart{Type: provider.PartToolApprovalRequest, ToolCallID: "call", ApprovalID: "native", ProviderMetadata: provider.ProviderMetadata{"future": json.RawMessage(`{"empty":{},"false":false}`)}}
 	local := call

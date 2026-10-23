@@ -149,7 +149,7 @@ func TestReasoningMetadata_Opaque(t *testing.T) {
 	assert.Contains(t, string(frame), large)
 }
 
-func TestReasoningFrameBoundsAndLifecycle(t *testing.T) {
+func TestReasoningFrameEncodingAndLifecycle(t *testing.T) {
 	for _, part := range []provider.StreamPart{
 		{Type: provider.PartReasoningDelta, ID: "r", Delta: "\"<>&☃", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"signed"}`)}},
 		{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Bytes: []byte{1, 2, 3}}},

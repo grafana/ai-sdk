@@ -149,7 +149,7 @@ func TestNativeResponse_Identity(t *testing.T) {
 	}
 }
 
-func TestNativeResponse_CompleteBounds(t *testing.T) {
+func TestNativeResponse_CompleteEncoding(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		result *provider.GenerateResult
@@ -169,19 +169,14 @@ func TestNativeResponse_CompleteBounds(t *testing.T) {
 			harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 				return &provider.StreamResult{Stream: makeStream(tc.part, finishPart())}, nil
 			}
-			frames := strings.Split(harness.serve(streamRequest(`{"prompt":[]}`)).Body.String(), "\n\n")
-			i := 1
-			if tc.part.Type == provider.PartStreamStart {
-				i = 0
-			}
-			frame := frames[i] + "\n\n"
+			got := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
 			w := httptest.NewRecorder()
 			assert.True(t, newTestHandler(t, testLimits()).writeUnarySuccess(w, tc.result))
 			assert.Equal(t, body, w.Body.Bytes())
-			got := strings.Join(frames, "\n\n")
 			requireStreamBodyMatchesSchema(t, got)
-			assert.Contains(t, got, frame)
+			assert.Contains(t, got, `"type":"`+string(tc.part.Type)+`"`)
 			assert.Contains(t, got, `"type":"finish"`)
+			assert.NotContains(t, got, `"code":"internal_error"`)
 		})
 	}
 }

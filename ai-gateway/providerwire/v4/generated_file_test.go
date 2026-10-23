@@ -15,7 +15,7 @@ import (
 )
 
 // Synthetic provider values exercise the public transport, not a native media producer.
-func TestGeneratedFileProjectionAndExactBounds(t *testing.T) {
+func TestGeneratedFileProjectionAndValidity(t *testing.T) {
 	original := "opaque:Original?token=application\"<&"
 	for _, data := range []provider.DataContent{provider.BytesDataContent([]byte{1, 2, 3}), provider.Base64DataContent(""), provider.Base64DataContent("opaque-base64"), {URL: "opaque:URL", OriginalURL: &original}} {
 		result := validGenerateResult()

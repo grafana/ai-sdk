@@ -922,7 +922,7 @@ func TestPublicError_FixedBytes(t *testing.T) {
 			h.writeSafeError(response, tc.value, nil)
 			assert.Equal(t, tc.status, response.Code)
 			assert.Equal(t, tc.body, response.Body.Bytes())
-			assert.Equal(t, tc.frame, streamErrorFrameForSafeError(tc.value))
+			assert.Equal(t, tc.frame, encodeStreamError(tc.value, nil, nil))
 		})
 	}
 }
@@ -1174,7 +1174,7 @@ func TestInvocation_Unary(t *testing.T) {
 	}
 }
 
-func TestInvocation_NativeEchoAndErrorLimit(t *testing.T) {
+func TestInvocation_NativeEchoAndLargeError(t *testing.T) {
 	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "native rejected actual-source", StatusCode: 401})
 	}}
