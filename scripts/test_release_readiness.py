@@ -148,6 +148,13 @@ class ReleaseReadinessTest(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 readiness.verify_release_files("providers/openai", [readiness.MANIFEST, path])
 
+    def test_gateway_release_may_update_the_plugin_version(self):
+        readiness.verify_release_files("ai-gateway", [readiness.MANIFEST, "ai-gateway/CHANGELOG.md", "ai-gateway/package.json"])
+        with self.assertRaises(ValueError):
+            readiness.verify_release_files("providers/openai", [readiness.MANIFEST, "ai-gateway/package.json"])
+        with self.assertRaises(ValueError):
+            readiness.verify_release_files("ai-gateway", [readiness.MANIFEST, "ai-gateway/go.mod"])
+
     def test_generated_release_files_cannot_change_file_kind(self):
         files = [readiness.MANIFEST, "CHANGELOG.md"]
         for mode in ["120000", "100755", "160000"]:

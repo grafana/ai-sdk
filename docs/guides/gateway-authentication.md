@@ -1,289 +1,157 @@
 # Authenticate to Grafana AI Gateway
 
-Choose your credentials based on the Gateway URL you are connecting to:
+Grafana AI Gateway is a Grafana app. Your application calls it through your
+Grafana instance, with a Grafana credential. Which credential you use, and which
+models you get, depends on where Grafana runs:
 
-- **Self-hosted Gateway:** use a static key supplied by your operator to access
-  the models they have configured. You do not need a Grafana Cloud account.
-- **Private Gateway with JWT authentication:** use an access token from your
-  organization's token issuer to access configured models.
-- **Grafana Cloud Gateway:** use a Cloud Access Policy (CAP) token and supply
-  your own Anthropic or OpenAI key with each request.
+| You are | Credential | You get |
+|---|---|---|
+| An application on self-hosted Grafana | Grafana service account token | The models your administrator configured |
+| An application on Grafana Cloud | Grafana service account token | Any model from your own provider account (bring your own key) |
+| A Grafana service in Grafana Cloud | Cloud access policy token | The models Grafana configured for your service |
 
-Ask your operator for the API URL, ending in `/api/v1/aisdk`, and which
-credentials it accepts. Keep all credentials on your application server;
-never include them in browser code.
+Keep credentials on your application server. Never include them in browser
+code.
 
-## Set up a self-hosted Gateway with a static key
+## Find your Gateway URL
 
-Add `auth` and `server` to your provider/model configuration. The example below
-makes an Anthropic model available as `assistant` and disables Cloud access.
-For container startup commands, see [Run AI Gateway in a container](ai-gateway-container.md).
+Open **Grafana AI Gateway** in your Grafana instance. The overview page shows
+the Gateway URL for your stack and a quick start you can copy. The URL has this
+form:
 
-```yaml
-providers:
-  anthropic-primary:
-    type: anthropic
-    apiKeyEnv: ANTHROPIC_API_KEY
-models:
-  assistant:
-    name: Assistant
-    primary:
-      provider: anthropic-primary
-      model: claude-sonnet-4-6
-auth:
-  type: static-key
-  staticKey:
-    identities:
-      deployment:
-        keyEnv: AI_GATEWAY_KEY
-server:
-  cloud:
-    enabled: false
+```text
+https://<your-grafana>/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<namespace>
 ```
 
-Generate a Gateway key with at least 32 random bytes, for example:
+The namespace is `stacks-<stack ID>` in Grafana Cloud and usually `default` in
+self-hosted Grafana. Use the whole URL as the client base URL.
 
-```sh
-openssl rand -hex 32
-```
+## Use the configured models in self-hosted Grafana
 
-Provide the generated value as `AI_GATEWAY_KEY` to both the Gateway and your
-application. Provide `ANTHROPIC_API_KEY` only to the Gateway. Load these values
-from your secret manager at runtime; keep them out of YAML, images and source
-control. Static keys do not expire automatically, even if you use a JWT as the
-key value. The Gateway treats the entire value as a secret; it does not verify
-JWT signatures or claims in static-key mode.
-
-This configuration can run in production without a token issuer or Agent
-Observability export. If you enable Cloud access or choose JWT authentication,
-production also requires Agent Observability. See the
-[Agent Observability configuration](../../ai-gateway/docs/text-observability.md#agent-observability-configuration)
-for exporter settings.
-
-### Connect your application
-
-In Go, pass the Gateway key and URL to `NewWithAccessToken`:
+1. [Create a service account](https://grafana.com/docs/grafana/latest/administration/service-accounts/)
+   for your application, and add a token to it.
+2. Store the token in your server's secret store.
+3. Create a client with the token and your Gateway URL:
 
 ```go
-client, err := grafana.NewWithAccessToken(grafana.AccessTokenConfig{
-    AccessToken: os.Getenv("AI_GATEWAY_KEY"),
-    BaseURL: "https://gateway.example.com/api/v1/aisdk",
+client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
+	Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
+	BaseURL: "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/default",
 })
 if err != nil {
-    return err
+	return err
 }
-rows, err := client.ListModels(ctx)
+models, err := client.ListModels(ctx)
 ```
 
-In a server-side TypeScript application, pass the same key to the Vercel client:
+From a server-side TypeScript application, pass the token as the Vercel
+client's API key:
 
 ```ts
 import { createGateway } from '@ai-sdk/gateway';
 
 const gateway = createGateway({
-  baseURL: 'https://gateway.example.com/api/v1/aisdk',
-  apiKey: process.env.AI_GATEWAY_KEY,
+  baseURL: 'https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/default',
+  apiKey: process.env.GRAFANA_SERVICE_ACCOUNT_TOKEN,
 });
-const catalog = await gateway.getAvailableModels();
-const model = gateway('assistant'); // use with generateText or streamText
+const { models } = await gateway.getAvailableModels();
 ```
 
-Use either client to list available models, generate a response or stream it.
-See the [Grafana Gateway provider guide](../providers/grafana-gateway.md) for
-inference examples.
+Each service account is a separate caller, so create one per application or
+person you want to tell apart. Your administrator decides which Grafana roles
+can use the app. If the Gateway is not available yet, ask them to set it up as
+described in the [Gateway guide](../../ai-gateway/README.md#install).
 
-You can add named entries under `identities` to give applications separate
-keys. Every key has access to the same configured models; the names help
-attribute requests and do not provide separate permissions or tenant isolation.
-Static keys cannot be used for Cloud BYOK requests.
+In self-hosted Grafana, the Gateway uses only the provider accounts your
+administrator configured, and refuses requests that bring their own provider
+keys.
 
-### Put the Gateway behind your ingress
+## Bring your own provider key in Grafana Cloud
 
-Use HTTPS for client connections, protect the connection from your ingress to
-the Gateway, and keep the private API on private networking. Restrict the
-unauthenticated operational port to your monitoring and infrastructure services.
+Any user of your stack can call the Gateway with a service account token, and
+no extra role is needed. You supply your own provider key with every request,
+so the Gateway uses your provider account and the models it offers.
 
-The clients set authentication headers for you. For direct HTTP requests, send
-one of `Authorization: Bearer <key>` or `X-Access-Token: <key>`, never both.
-Keys in query parameters or request bodies are not accepted.
-
-If your proxy authenticates end users, have it replace incoming authentication
-headers with one Gateway credential and remove `X-Grafana-Id`, `X-Scope-OrgID`,
-`X-Cloud-Org-ID` and `X-Access-Policy-ID`. These identity headers are not accepted
-with static keys, even when empty. The Gateway attributes requests to the
-proxy's configured identity. Prevent clients from bypassing the proxy if you
-rely on it for per-user permissions.
-
-### Rotate by restarting
-
-To rotate or revoke a static key, update the secret supplied to the Gateway
-and restart every replica. Coordinate the change with your applications:
-restarted replicas accept the new key and reject the old one, while replicas
-that have not restarted still accept the old key. Calls can fail during this
-transition because each identity accepts only one key per replica.
-
-Changing an environment variable or YAML file does not update a running
-Gateway. Already authenticated requests can continue until completion or
-shutdown. Provision and rotate keys through your secret manager; the Gateway
-has no key-management API.
-
-### Use JWT authentication or local development mode
-
-For JWT authentication, configure your issuer's JWKS endpoint:
-
-```yaml
-auth:
-  type: jwt
-  jwt:
-    jwksURL: https://identity.example.com/jwks
-```
-
-Then follow [Private configured-account calls](#private-configured-account-calls)
-to connect. If you already configure authentication through command-line flags
-or environment variables, you can continue to do so by leaving `auth` out of
-the YAML. When switching to YAML, remove the legacy JWKS URL and unsafe-auth
-settings to avoid a startup conflict. Use an explicit `auth.type`; an empty or
-null `auth` block is invalid. Write auth settings directly, without YAML aliases
-or merge keys.
-
-For local development only, `auth: {type: unsafe}` requires development mode
-and loopback addresses for every enabled listener. Use static-key or JWT
-authentication in production. Cloud access is enabled by default; set
-`server.cloud.enabled: false` when you do not need it.
-
-## Connect to Grafana Cloud with your own provider keys
-
-Create a CAP token with `ai-gateway:write` for your target stack, and obtain
-the Cloud Gateway URL. You also need an Anthropic or OpenAI API key. Keep both
-tokens on your application server. Use HTTPS for Cloud Gateway connections and
-rotate both CAP tokens and provider keys through their respective services.
-
-Choose a model ID such as `anthropic/claude-sonnet-4-6` or
-`openai/<native-model>`. OpenAI requests use the Responses API. Cloud BYOK does
-not offer model discovery: `ListModels` and `getAvailableModels` return HTTP
-400. Use the model name from your provider rather than a configured Gateway alias.
-
-### Go
+Create the client the same way as in self-hosted Grafana, with your stack's
+Gateway URL:
 
 ```go
-client, err := grafana.NewWithCloudCredentials(grafana.CloudCredentialsConfig{
-    StackID: stackID, CAPToken: capToken, BaseURL: cloudGatewayURL,
+client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
+	Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
+	BaseURL: "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123",
 })
-if err != nil {
-    return err
-}
-model, err := client.LanguageModel("anthropic/claude-sonnet-4-6")
-if err != nil {
-    return err
-}
-credentials, err := json.Marshal(map[string]any{
-    "byok": map[string]any{
-        "anthropic": []map[string]string{{"apiKey": providerKey}},
-    },
-})
-if err != nil {
-    return err
-}
-maxTokens := 32
-result, err := model.DoGenerate(ctx, provider.CallOptions{
-    Prompt: []provider.Message{provider.UserText("Summarize this incident.")},
-    MaxOutputTokens: &maxTokens,
-    ProviderOptions: provider.ProviderOptions{
-        "gateway": provider.RawProviderOption{Key: "gateway", Raw: credentials},
-    },
-})
-if err != nil {
-    return err
-}
-_ = result
 ```
 
-For high-level Go calls, pass the same `RawProviderOption` through
-`aisdk.WithProviderOptions`. See the [package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana)
-for client options.
+Then select a model by provider and name, such as `openai/gpt-5`, and send your
+key with the request. See
+[Use your own provider credentials](../providers/grafana-gateway.md#use-your-own-provider-credentials)
+for Go and TypeScript examples.
 
-### Server-side Vercel client
+Model listing is not available in this mode, because your provider account
+decides which models exist.
 
-```ts
-import { createGateway } from '@ai-sdk/gateway';
+## Call from a Grafana service in Grafana Cloud
 
-const gateway = createGateway({
-  baseURL: cloudGatewayURL,
-  apiKey: `${stackID}:${capToken}`,
-});
-const result = await gateway('anthropic/claude-sonnet-4-6').doGenerate({
-  prompt: [{ role: 'user', content: [{ type: 'text', text: 'Summarize this incident.' }] }],
-  maxOutputTokens: 32,
-  providerOptions: { gateway: { byok: { anthropic: [{ apiKey: providerKey }] } } },
-});
+Grafana services use the configured models with a Cloud access policy token.
+Ask the Gateway owners to allow your service, then create a client that
+exchanges your token for one the Gateway accepts:
+
+```go
+client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
+	CAPToken:         os.Getenv("GRAFANA_CAP_TOKEN"),
+	TokenExchangeURL: tokenExchangeURL,
+	Namespace:        "stacks-123",
+	Audience:         "grafana-aigateway-app",
+	BaseURL:          "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123",
+})
 ```
 
-Include the same `gateway.byok` credentials with streaming requests and every
-subsequent tool or conversation request.
+Set `Namespace` to the stack you call. The client renews exchanged tokens before
+they expire; you rotate the access policy token itself. Model aliases, discovery
+and fallback work as described in the [provider guide](../providers/grafana-gateway.md).
 
-### Choose provider accounts
+This flow needs the Go client. The Vercel client cannot exchange tokens.
 
-Cloud BYOK supports Anthropic and OpenAI API keys. OpenAI accounts can also
-include `organization` and `project`. Use the field names shown in the examples
-and leave `baseURL` unset to use the provider's native endpoint. The bundled
-Gateway does not support custom BYOK endpoints, model mappings or alternate
-credential types.
+### Call on behalf of a user
 
-You can supply up to eight accounts per provider in the order you want them
-tried. The Gateway may try the next account after an eligible failure, such as
-a rate limit or temporary server error. Authentication failures typically stop
-the request. It never falls back to an operator's configured provider account.
+When a request is made for a user, pass their token in the call context. Use
+the user's Grafana ID token, or the access token your plugin received for them:
 
-Once a stream starts emitting events, the Gateway does not switch accounts or
-replay the request. A failed attempt may still have performed work at the
-provider, so fallback or application retries can result in duplicate work or
-charges. See [Fallback and registry](fallback-and-registry.md) before adding
-application-level retries.
-
-## Private configured-account calls
-
-Ask your operator for the private Gateway URL and an access JWT for the
-`ai-sdk` audience. Use `NewWithAccessToken` when you already have a token, or
-`NewWithTokenExchange` when your application is authorized to obtain one.
-Token exchange requires `access-token:sign` permission for the target namespace;
-your operator supplies the regional exchange endpoint. Refresh short-lived
-tokens before they expire.
-
-The Go client sets the authentication header for you. With Vercel, pass the JWT
-as `apiKey`:
-
-```ts
-const privateGateway = createGateway({ baseURL: privateGatewayURL, apiKey: accessJWT });
-const catalog = await privateGateway.getAvailableModels();
+```go
+ctx = grafana.WithOnBehalfOf(ctx, userToken)
+result, err := aisdk.GenerateText(ctx, model, aisdk.WithModelMessages(provider.UserText("Summarize this incident.")))
 ```
 
-Use configured model IDs or aliases for private calls; do not supply
-`gateway.byok`. If your application needs to act on behalf of a user, ask your
-operator about acting-user tokens. Go's `grafana.WithUserIDToken` sends that
-additional token alongside the access JWT. A user ID token alone cannot
-authenticate a request, and this option is not available with static keys.
+The call still uses your service's models, and is made on the user's behalf.
+
+## Troubleshoot authentication errors
+
+| Response | Likely cause |
+|---|---|
+| `401 Unauthorized` | The token is missing, expired or revoked. |
+| `403 Forbidden` from Grafana | The token does not belong to the stack in the URL, or your role cannot use the app. |
+| `403` Gateway permission error | Your credential has no Gateway access, for example a Grafana service not yet allowed. |
+| `400` reserved provider option namespace | You sent your own provider key to a self-hosted Gateway. |
+| Request ends after 60 seconds | Grafana limits how long a request can run. Stream long responses. |
+
+Grafana answers some of these before the request reaches the Gateway, in its own
+error format rather than a Gateway error. The Go client reports them as
+protocol errors with the HTTP status.
 
 ## Keep credentials out of logs
 
-Request metadata returned by Go and Vercel clients can contain your submitted
-provider keys. Do not log request bodies or provider options directly, or send
-them to browser clients.
+Requests that bring their own provider key carry that key, and the request
+details your client returns can contain it. Do not log request bodies or
+provider options, and do not send them to browsers.
 
-Start with metadata-only logging. If you enable content capture, configure
-[structured logging redaction](../middleware/structured-logging.md) for your
-sensitive fields and review what your application and exporters collect.
-Redacting credential fields does not remove secrets echoed in provider text or
-error messages. Gateway-produced summaries replace exact configured provider-key
-and enabled exporter-credential matches, including collisions with BYOK values.
-BYOK-only echoes remain available; static access keys, ordinary content and opaque
-native metadata are outside that summary policy. Returned diagnostics can still
-contain secrets, so only log or display them when your capture policy allows it. See
+Start with metadata-only logging. If you capture content, configure
+[structured logging redaction](../middleware/structured-logging.md) and review
+what your application and exporters collect. Redaction does not remove a key
+that a provider echoes in its response or error text, so treat diagnostics as
+sensitive. See
 [Inspect execution overviews and failures](../providers/grafana-gateway.md#inspect-execution-overviews-and-failures)
-for details on the diagnostics available to clients.
-
-Gateway operators enabling Cloud access should also follow the
-[listener and network-isolation requirements](../../ai-gateway/docs/cloud-authentication.md).
+for what clients can inspect.
 
 ---
 
-← [Fallback and registry](fallback-and-registry.md) · [Docs index](../README.md) · [Run AI Gateway in a container →](ai-gateway-container.md)
+← [Call Grafana AI Gateway from Go](../providers/grafana-gateway.md) · [Docs index](../README.md) · [Production checklist →](../best-practices/production.md)

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -58,9 +57,7 @@ func TestBYOKSelection_NativeOptionGuards(t *testing.T) {
 				factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
 				language, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
 				require.NoError(t, err)
-				writer := providerv4.NewHostErrorWriter()
-				authenticator, headers := serviceModeAuthentication(gatewayauth.SourceCloudGateway)
-				handler := gatewayauth.Middleware(authenticator, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorAuthentication) }, func(context.Context, gatewayauth.Observation) {}, language)
+				handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, language)
 				var options map[string]json.RawMessage
 				require.NoError(t, json.Unmarshal([]byte(tc.options), &options))
 				options["gateway"] = json.RawMessage(`{"byok":{"anthropic":[{"apiKey":"dummy-request-key"},{"apiKey":"unused-key"}]}}`)
@@ -600,7 +597,7 @@ func TestNativeOptions_CaptureIndependence(t *testing.T) {
 				logger := slog.New(slog.NewJSONHandler(&logs, nil))
 				telemetry, err := NewTelemetry(logger)
 				require.NoError(t, err)
-				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 				factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 				require.NoError(t, err)
 				body := `{"providerOptions":{"myVllm":{"option_marker":{"opaque":"private-option-marker"}}},"prompt":[{"role":"user","content":[{"type":"text","text":"request","providerOptions":{"openaiCompatible":{"scope_marker":"private-scope-marker"}}}]}]}`

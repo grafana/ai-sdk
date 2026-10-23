@@ -119,7 +119,7 @@ aisdk/                  root module — orchestration (StreamText, UIMessage, SS
   registry/             provider registry
   gateway/              provider-neutral model catalog
   middleware/           in-tree middleware; integrations are their own modules
-ai-gateway/             separate Gateway service module
+ai-gateway/             Gateway Grafana app plugin, a separate module
 providers/<name>/       one Go module per provider (anthropic, bedrock, openai, ...)
 docs/                   concepts, guides, providers, middleware, best practices
 examples/               outcome-oriented programs, one self-contained module each
@@ -507,7 +507,7 @@ maintainer to trigger CI.
 ## Releases and independent modules
 
 Core, providers, and middleware are released independently as Go libraries.
-Gateway application delivery is separate from library release automation.
+Gateway is an independently versioned Grafana app plugin built from workspace source.
 After #245 activates release automation, versions, changelogs, tags, and GitHub
 Releases will be produced by
 [release-please](https://github.com/googleapis/release-please) from the
@@ -521,8 +521,9 @@ using the right type in its title:
 - `chore:`, `ci:`, `docs:`, `refactor:`, `test:`, and `build:` produce no
   release.
 
-A library change is attributed to its module by the files it touches. Gateway
-image delivery is outside this library release path. While the modules are in the `alpha`
+A library change is attributed to its module by the files it touches. #245 will
+also attribute relevant SDK, provider, and middleware changes to the
+workspace-built Gateway plugin release. While the modules are in the `alpha`
 channel, each release advances the prerelease counter
 (`v0.1.0-alpha.1` to `v0.1.0-alpha.2`).
 
@@ -564,6 +565,16 @@ SDK's Go module dependency graph.
   selected-consumer regressions; see the [release runbook](release/README.md).
   Publication requires explicit activation under #245. For a broader diagnostic,
   `mise run verify-module-resolution` checks all published modules.
+- **Gateway plugin:** Gateway uses the separate `go.gateway.work` to build the
+  plugin backend from same-revision local source. Plugin validation runs on pull
+  requests and pushes: manifest regeneration, `mise run test-ai-gateway-frontend`,
+  `mise run build-ai-gateway-plugin`, `mise run test-ai-gateway-e2e`,
+  `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
+  pushes keep the validated package, built from a clean checkout of the push
+  revision, as a workflow artifact. Gateway is not published as a standalone Go
+  module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
+  changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
+  the app manifest source for `pnpm generate:kinds`.
 
 The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
 but SDK modules must not import, require, or replace Gateway. Real published

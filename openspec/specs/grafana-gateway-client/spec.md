@@ -21,108 +21,13 @@ The repository SHALL expose `github.com/grafana/ai-sdk/providers/grafana` as a s
 - **WHEN** exported declarations in the module are enumerated
 - **THEN** no low-level ProviderWire transport, legacy mode, server DTO, or server validator SHALL be public
 
-### Requirement: Validated provider construction
-
-The client SHALL support direct Cloud Access Policy authentication, CAP-to-access-token exchange, and caller-managed short-lived access tokens through distinct typed constructors. `NewWithCloudCredentials` SHALL accept `CloudCredentialsConfig` containing `StackID int64` and `CAPToken`; `NewWithTokenExchange` SHALL accept `TokenExchangeConfig`; `NewWithAccessToken` SHALL retain `AccessTokenConfig`. The public API SHALL remove `NewWithCloudAuth` and `CloudAuthConfig` without compatibility aliases.
-
-#### Scenario: Cloud credential provider is constructed
-- **WHEN** valid stack ID, CAP token and base URL are supplied to `NewWithCloudCredentials`
-- **THEN** the client SHALL be ready for direct Cloud authentication without an audience, namespace, exchange URL or token exchanger
-
-#### Scenario: Token-exchange provider is constructed
-- **WHEN** valid token-exchange configuration omits the audience
-- **THEN** the provider SHALL construct an authlib token exchanger that requests audience `ai-sdk` for the configured namespace
-
-#### Scenario: Pre-minted token provider is constructed
-- **WHEN** valid direct access-token configuration is supplied
-- **THEN** model and discovery calls SHALL use that token without making a token-exchange request
-
-#### Scenario: Configuration is invalid
-- **WHEN** a required credential, namespace, endpoint, or model ID is empty or invalid, the Cloud stack ID is non-positive, a URL is unsafe, or a configured limit is non-positive or cannot be represented safely
-- **THEN** construction or model resolution SHALL fail before authentication or Gateway network I/O
-
-#### Scenario: Exchange API migration
-- **WHEN** the public API and repository-owned token-exchange call sites are inspected
-- **THEN** they SHALL use `NewWithTokenExchange` and `TokenExchangeConfig`, with no old-name aliases
-- **AND** exchange caching, audience defaults, cancellation and sanitized failures SHALL retain their existing behavior
-
-### Requirement: Gateway constructor URL and Cloud credential validation
-
-Each constructor SHALL require a valid HTTP(S) ProviderWire API-prefix base URL, SHALL reject user info, query, and fragment components, and SHALL accept optional configured outer headers, HTTP client, and positive client-processing limits. Direct Cloud credentials SHALL require a positive stack ID and a nonempty, valid-UTF-8 CAP token without whitespace or control characters, without parsing the opaque token or requiring a token prefix.
-
-#### Scenario: Gateway constructor URL and Cloud credential validation
-- **WHEN** Cloud construction receives user info in its base URL or whitespace in CAPToken
-- **THEN** construction SHALL fail before authentication or Gateway I/O without parsing the opaque token or discovering defaults from environment
-
 ### Requirement: Exchange and token constructor defaults and immutability
 
-Token exchange SHALL require CAP token, token-exchange URL, and namespace and SHALL default an omitted audience to `ai-sdk`; direct access-token authentication SHALL require a non-empty access token. Construction SHALL not discover credentials or endpoints from ambient environment variables. Constructors SHALL preserve immutable client/header configuration and refusal to follow redirects.
+Token exchange SHALL require CAP token, token-exchange URL, namespace and audience, with no default audience; direct access-token authentication SHALL require a non-empty access token, and service-account authentication SHALL require a non-empty service-account token. Construction SHALL not discover credentials or endpoints from ambient environment variables. Constructors SHALL preserve immutable client/header configuration and refusal to follow redirects.
 
 #### Scenario: Exchange and token constructor defaults and immutability
-- **WHEN** token-exchange construction omits audience and later caller code mutates its header map
-- **THEN** audience SHALL default to ai-sdk and client/header configuration SHALL remain immutable with redirects refused
-
-### Requirement: Context-aware Grafana authentication
-Each request SHALL use only its constructor-selected flow, without credential fallback. Cloud credentials SHALL use one outer stack/CAP bearer header; JWT flows SHALL use the context-aware token source and optional bound acting-user header. Preparation failure/cancellation SHALL occur before Gateway I/O.
-
-#### Scenario: Context-aware Grafana authentication policy
-- **WHEN** the activated Gateway enforces this contract
-- **THEN** Every Gateway request SHALL authenticate using only the flow selected at construction against the corresponding public Cloud or private JWT endpoint; the client SHALL NOT detect token types, fall back between flows, or retry with another credential after rejection.
-- **AND** The Cloud-credential flow SHALL send exactly one outer `Authorization: Bearer <stack-id>:<CAP-token>` header with the stack ID formatted as decimal digits. It SHALL NOT perform token exchange, construct an authlib exchanger, send `X-Access-Token` or `X-Grafana-Id`, or emit trusted stack/policy assertions. Constructor-supplied credentials SHALL NOT be inserted into ProviderWire request bodies or client-generated diagnostics. A nonempty context-carried acting-user token SHALL cause an error before Gateway network I/O for this flow.
-- **AND** The token-exchange and pre-minted access-token flows SHALL obtain one access token using the constructor's context-aware token source and place it in `X-Access-Token`. For these JWT flows, `WithUserIDToken` SHALL attach an optional acting-user token to a context and the client SHALL place a non-empty attached token in `X-Grafana-Id`. The Go token source SHALL remain authoritative; unrelated caller-supplied Authorization SHALL NOT replace it. The client MUST NOT mint tokens locally or implement an additional CAP-token cache. Authentication failures and cancellation SHALL occur before Gateway network I/O when detected during request preparation.
-
-#### Scenario: CAP authenticates every supported operation
-- **WHEN** `ListModels`, `DoGenerate` or `DoStream` is invoked with Cloud credentials
-- **THEN** the request SHALL carry the same configured stack/CAP bearer credential only in the outer Authorization header; inference SHALL require BYOK and authenticated discovery SHALL return the unsupported-operation error
-- **AND** no token-exchange request SHALL occur
-
-#### Scenario: Cloud token is exchanged
-- **WHEN** a model or discovery call uses the token-exchange constructor
-- **THEN** the configured CAP token SHALL be exchanged through authlib using the call context and the returned access token SHALL be sent as `X-Access-Token`
-
-#### Scenario: Acting user is present
-- **WHEN** a JWT-flow call context contains a non-empty token from `WithUserIDToken`
-- **THEN** the Gateway request SHALL contain that token once as `X-Grafana-Id`
-
-#### Scenario: Acting user is absent
-- **WHEN** the call context has no acting-user token or an empty token
-- **THEN** the request SHALL omit `X-Grafana-Id`
-
-#### Scenario: Acting user is incompatible with Cloud credentials
-- **WHEN** a Cloud-credential call context contains a nonempty token from `WithUserIDToken`
-- **THEN** the call SHALL fail before network I/O without silently discarding the acting-user intent
-
-#### Scenario: Exchange is canceled or fails
-- **WHEN** token exchange returns an error or its context is canceled
-- **THEN** the client SHALL retain existing sanitized exchange errors and recognizable context cancellation and SHALL not issue the Gateway request
-
-#### Scenario: Cloud call is already canceled
-- **WHEN** a Cloud discovery or model call begins with a canceled context
-- **THEN** the client SHALL return a recognizable context error without network I/O
-
-#### Scenario: Cloud credential is rejected
-- **WHEN** the edge rejects the CAP credential or its authorization
-- **THEN** the client SHALL use existing bounded error handling without trying exchange, JWT headers or another endpoint
-
-#### Scenario: Redirect attempts to forward CAP
-- **WHEN** the endpoint responds with a redirect
-- **THEN** the client SHALL not follow it or send credentials to the redirect target
-
-### Requirement: Cloud authentication isolation and acting-user refusal
-
-The Cloud-credential flow SHALL NOT perform token exchange, construct an authlib exchanger, send `X-Access-Token` or `X-Grafana-Id`, or emit trusted stack/policy assertions. Constructor-supplied credentials SHALL NOT be inserted into ProviderWire request bodies or client-generated diagnostics. A nonempty context-carried acting-user token SHALL cause an error before Gateway network I/O for the Cloud-credential flow.
-
-#### Scenario: Cloud authentication isolation and acting-user refusal
-- **WHEN** a Cloud call carries a nonempty context acting-user token
-- **THEN** it SHALL fail before Gateway I/O rather than exchanging tokens, emitting JWT/assertion headers or leaking constructor credentials into body/diagnostics
-
-### Requirement: Context-aware JWT headers and token ownership
-
-The token-exchange and pre-minted access-token flows SHALL obtain one access token using the constructor's context-aware token source and place it in `X-Access-Token`. For these JWT flows, `WithUserIDToken` SHALL attach an optional acting-user token to a context and the client SHALL place a non-empty attached token in `X-Grafana-Id`. Authorization alone SHALL NOT replace JWT authentication for those flows. The client MUST NOT mint tokens locally or implement an additional CAP-token cache.
-
-#### Scenario: Context-aware JWT headers and token ownership
-- **WHEN** a token-exchange call supplies a nonempty WithUserIDToken token
-- **THEN** the request SHALL use X-Access-Token and X-Grafana-Id without substituting Authorization, local minting or a second CAP cache
+- **WHEN** token-exchange construction omits audience, or valid construction is followed by caller code mutating its header map
+- **THEN** construction without an audience SHALL fail before I/O, and valid client/header configuration SHALL remain immutable with redirects refused
 
 ### Requirement: Authentication preparation failure boundary
 
@@ -134,11 +39,11 @@ Authentication failures and cancellation SHALL occur before Gateway network I/O 
 
 ### Requirement: Exact ProviderWire routes and protected headers
 
-The configured base URL SHALL be treated as the ProviderWire API prefix and the client SHALL append exactly `/config` for discovery and `/language-model` for calls without discarding an existing path prefix. Every model call SHALL use `POST`, JSON content type, the requested model ID, specification version `4`, exact streaming value `true` or `false`, and the matching JSON or SSE accept type.
+The configured base URL SHALL be the ProviderWire API prefix, `/apis/<group>/<version>/namespaces/<namespace>` on the platform origin for a platform-hosted Gateway, and the client SHALL append exactly `/config` for discovery and `/language-model` for calls without discarding an existing path prefix. Every model call SHALL use `POST`, JSON content type, the requested model ID, specification version `4`, exact streaming value `true` or `false`, and the matching JSON or SSE accept type.
 
 #### Scenario: Header ownership applies to every authentication flow
 - **WHEN** constructor or call-level authentication headers are supplied
-- **THEN** For every authentication flow, `Authorization`, `X-Access-Token`, `X-Grafana-Id`, `X-Scope-OrgID`, `X-Cloud-Org-ID`, and `X-Access-Policy-ID` SHALL be reserved case-insensitively. Supplying any reserved name in configured headers SHALL fail construction. Supplying any reserved name in call-level headers SHALL fail before request serialization and network I/O, including when its value is empty. JWT constructors SHALL own X-Access-Token and optional acting-user header composition; unrelated configured/call headers SHALL NOT add a competing Authorization credential or trusted Cloud assertion.
+- **THEN** For every authentication flow, `Authorization`, `X-Access-Token` and `X-Grafana-Id` SHALL be reserved case-insensitively. Supplying any reserved name in configured headers SHALL fail construction. Supplying any reserved name in call-level headers SHALL fail before request serialization and network I/O, including when its value is empty. Each constructor SHALL own its single credential header; configured and call headers SHALL NOT add a competing credential.
 
 #### Scenario: Unary request is emitted
 - **WHEN** `DoGenerate` is invoked for model `assistant`
@@ -164,95 +69,13 @@ The configured base URL SHALL be treated as the ProviderWire API prefix and the 
 - **WHEN** `CallOptions.Headers` contains a representable header entry accepted by the selected authentication flow
 - **THEN** it SHALL participate in outer-header composition and remain present in the serialized `headers` body member for the server to accept or reject
 
-### Requirement: Client header precedence and Cloud reserved names
-
-Configured headers SHALL be applied before call-level headers, followed by client-owned content negotiation, selected authentication, acting-user, and protocol headers so client-owned values each have one effective value and cannot be overridden. Accepted call-level headers SHALL also remain in the JSON request body. For the Cloud-credential flow, `Authorization`, `X-Access-Token`, `X-Grafana-Id`, `X-Scope-OrgID`, `X-Cloud-Org-ID`, and `X-Access-Policy-ID` SHALL be reserved case-insensitively.
-
-#### Scenario: Client header precedence and Cloud reserved names
-- **WHEN** configured and call headers collide with client-owned protocol values
-- **THEN** client-owned values SHALL have one effective value, accepted call headers SHALL remain in the body and Cloud credential/identity names SHALL remain reserved case-insensitively
-
-### Requirement: Cloud reserved-header refusal timing
-
-Supplying any Cloud reserved header name in configured headers SHALL fail construction. Supplying any Cloud reserved header name in call-level headers SHALL fail before request serialization and network I/O, including when its value is empty. JWT flows SHALL retain existing header ownership behavior.
-
-#### Scenario: Cloud reserved-header refusal timing
-- **WHEN** a call-level Authorization header has an empty value
-- **THEN** the Cloud flow SHALL fail before serialization/network I/O, while configured reserved names SHALL fail construction and JWT ownership SHALL remain unchanged
-
-### Requirement: Cloud credential client evidence
-Go and registered Vercel clients SHALL prove equivalent Cloud/BYOK requests through a dummy authenticating edge and a unified command concurrently serving private JWT requests. Configured discovery SHALL be private; Cloud discovery SHALL prove authenticated unsupported handling, without claiming real CAP authorization.
-
-#### Scenario: Cloud credential client evidence policy
-- **WHEN** the activated Gateway enforces this contract
-- **THEN** Automated tests SHALL compare the Go Cloud flow with the exact registered Vercel client configured with apiKey "<stack-id>:<CAP-token>". Both SHALL issue catalog-independent BYOK unary/streaming requests through a deterministic dummy authenticating edge and one unified command also serving private JWT requests. Successful configured discovery SHALL use private JWT access; Cloud discovery SHALL prove authenticated unsupported-operation handling. Dummy edges SHALL NOT be described as production CAP verification.
-
-#### Scenario: Both clients use the Cloud edge contract
-- **WHEN** Go and pinned Vercel send equivalent supported BYOK calls
-- **THEN** the edge SHALL observe equivalent Cloud bearer credentials and standard providerOptions.gateway.byok bodies
-- **AND** the application SHALL receive the edge's stack assertion without Gateway auth credentials
-- **AND** native providers SHALL receive only selected BYOK authentication and matching content/options
-
-#### Scenario: Edge rejects credentials or scope
-- **WHEN** the test edge rejects Cloud credentials or inference scope
-- **THEN** no application/provider work SHALL occur and neither client SHALL switch authentication methods
-
-#### Scenario: Two populations share one command
-- **WHEN** private JWT and Cloud clients concurrently call the same process
-- **THEN** their configured and BYOK accounts SHALL remain isolated and only the private clients SHALL receive configured discovery
-
-#### Scenario: Privacy and isolation remain intact
-- **WHEN** request emission and capture are inspected
-- **THEN** Gateway authentication credentials SHALL be absent from request bodies, provider requests and automatic server capture
-- **AND** local BYOK request metadata SHALL retain its submitted subtree while consumer logger capture applies configured sensitive-field redaction without censoring ordinary fields or returned provider data
-- **AND** synthetic edge/provider evidence SHALL not establish live policy or network isolation
-
-#### Scenario: Evidence is described accurately
-- **WHEN** client compatibility is documented
-- **THEN** exact-client captures and dummy edge/provider tests SHALL be distinguished from deployed CAP enforcement, network isolation and live provider acceptance
-
-### Requirement: Renamed JWT and exchange regression evidence
-
-Existing JWT and exchange evidence SHALL remain passing under the renamed API.
-
-#### Scenario: Renamed JWT and exchange regression evidence
-- **WHEN** JWT and token-exchange tests run using the renamed API
-- **THEN** their existing evidence SHALL remain passing
-
-### Requirement: Shared Go and Vercel authentication guidance
-The shared user-facing guide under docs SHALL explain the public Cloud/BYOK endpoint and private JWT/configured endpoint of one deployment. It SHALL distinguish application-user identity, Gateway authentication and provider credentials, with tested Go and exact-pinned Vercel examples and no legacy-mode or migration guidance. Exhaustive API reference SHALL remain in godoc; network/JWKS/listener configuration SHALL remain in operator guidance.
-
-#### Scenario: User chooses a Cloud client
-- **WHEN** a Go or server-side Vercel caller follows the public setup
-- **THEN** the example SHALL use stack/CAP Gateway credentials, inference scope, provider/model selection and request-scoped API keys
-- **AND** it SHALL explicitly state that configured discovery and configured-account fallback are unavailable
-
-#### Scenario: User chooses a separately provided JWT-enabled URL
-- **WHEN** an internal caller follows the private setup
-- **THEN** Go SHALL use its access-token or token-exchange constructor and Vercel SHALL use apiKey with an explicit short-lived JWT
-- **AND** the example SHALL use configured discovery/model names without BYOK
-- **AND** audience ai-sdk, concrete/wildcard namespace context and caller-owned token refresh SHALL be explained
-
-#### Scenario: User provisions least privilege
-- **WHEN** guidance describes token/key handling and telemetry
-- **THEN** it SHALL require appropriate trusted execution, HTTPS or the documented protected internal transport, least privilege and rotation
-- **AND** it SHALL explain that caller-owned request metadata contains BYOK and demonstrate configured field-aware capture redaction
-
-#### Scenario: Guide remains external-facing
-- **WHEN** the shared guide describes client setup
-- **THEN** it SHALL use public client APIs and documentation links, leaving internal deployment/JWKS/listener configuration in operator guidance
-
-#### Scenario: Documentation examples are verified
-- **WHEN** documentation examples are accepted
-- **THEN** Go examples SHALL build, TypeScript examples SHALL typecheck against the registered baseline, demonstrated behavior SHALL have deterministic tests and documentation navigation SHALL remain valid
-
 ### Requirement: Public authentication guide security and reference boundaries
 
-The shared guide SHALL cover URL and credential selection, least-privilege CAP scopes and stack access, HTTPS, secure storage and rotation without exposing internal proxy names, backend listener configuration or test-harness details. Exhaustive Go API reference SHALL remain in godoc.
+The shared guide SHALL cover URL and credential selection, least-privilege service account roles, access policy scopes and namespace access, HTTPS, secure storage and rotation without exposing internal deployment names, host configuration or test-harness details. Exhaustive Go API reference SHALL remain in godoc.
 
 #### Scenario: Public authentication guide security and reference boundaries
-- **WHEN** a user reads Cloud credential provisioning instructions
-- **THEN** the guide SHALL cover least privilege, HTTPS, storage and rotation without internal proxy/listener/harness details, leaving exhaustive API reference in godoc
+- **WHEN** a user reads credential provisioning instructions
+- **THEN** the guide SHALL cover least privilege, HTTPS, storage and rotation without internal deployment/host/harness details, leaving exhaustive API reference in godoc
 
 ### Requirement: Explicit request projection and presence
 
@@ -606,7 +429,7 @@ Opaque raw data SHALL remain unmodified by that typed decoding.
 - **THEN** retained opaque data SHALL preserve the original bytes
 
 ### Requirement: Authenticated public discovery
-ListModels SHALL read authenticated bounded /config into public typed rows and optional configured-route facts using ordinary Go decoding. It SHALL preserve order, ignore additive fields and avoid server-policy revalidation or inferred configuration. Cloud/BYOK discovery SHALL report its fixed unsupported-operation error.
+ListModels SHALL read authenticated bounded /config into public typed rows and optional configured-route facts using ordinary Go decoding. It SHALL preserve order, ignore additive fields and avoid server-policy revalidation or inferred configuration. Discovery by a BYOK caller SHALL report its fixed unsupported-operation error.
 
 #### Scenario: Authenticated public discovery policy
 - **WHEN** the activated Gateway enforces this contract
@@ -636,9 +459,9 @@ ListModels SHALL read authenticated bounded /config into public typed rows and o
 - **THEN** configured order and provider-instance/provider/model facts SHALL be available without any model or inventory request
 
 #### Scenario: BYOK endpoint does not provide discovery
-- **WHEN** ListModels authenticates through the public Cloud/BYOK endpoint
+- **WHEN** ListModels authenticates as a caller with BYOK access
 - **THEN** it SHALL surface the bounded invalid-request error stating discovery is unsupported for BYOK
-- **AND** it SHALL NOT return an empty catalog, try the private endpoint or use discovery as a prerequisite for inference
+- **AND** it SHALL NOT return an empty catalog, try another credential or use discovery as a prerequisite for inference
 
 ### Requirement: Independent ordinary typed discovery decoding
 
@@ -705,9 +528,9 @@ Tests SHALL compare Go and the exact Gateway version registered in test/conforma
 - **THEN** tests SHALL prove bounded allocation/read behavior, body closure, channel closure, and absence of retained client goroutines
 
 #### Scenario: Authenticated command is exercised
-- **WHEN** the repository integration suite starts the command with deterministic auth and provider fakes serving supported native values
+- **WHEN** the repository integration suite runs the protocol test host with test-signed platform tokens and provider fakes serving supported native values
 - **THEN** both clients SHALL preserve contracted values while configured credentials and cross-tenant state remain absent
-- **AND** the Go client SHALL complete discovery, unary text, streaming text, acting-user propagation, cancellation and registered errors
+- **AND** the Go client SHALL complete discovery, unary text, streaming text, cancellation and registered errors, and pinned TS configured discovery SHALL run as a self-hosted service account
 - **AND** canonical operator identity and metadata-only capture SHALL remain independent of returned native values and authorized configured discovery
 
 #### Scenario: Configured discovery consumers are compared
@@ -724,10 +547,10 @@ Unary tests SHALL prove warning preservation, raw native response identity and t
 
 ### Requirement: Authenticated client evidence provenance and discovery comparison
 
-Authenticated black-box command tests SHALL run over HTTP without Apache production imports of Gateway code. Synthetic responses SHALL NOT establish live provider or private Vercel-service parity, and authentic provider fixture inputs SHALL NOT be rewritten. Configured-discovery tests SHALL additionally prove Go typed retention and the approved TS helper against the same command, while explicitly preserving stock normalized TS extension loss.
+Authenticated black-box protocol-test-host tests SHALL run over HTTP without Apache production imports of Gateway code. Synthetic responses SHALL NOT establish live provider or private Vercel-service parity, and authentic provider fixture inputs SHALL NOT be rewritten. Configured-discovery tests SHALL additionally prove Go typed retention and the approved TS helper against the same protocol test host, while explicitly preserving stock normalized TS extension loss.
 
 #### Scenario: Authenticated client evidence provenance and discovery comparison
-- **WHEN** Go and the approved TS helper inspect configured discovery through the command
+- **WHEN** Go and the approved TS helper inspect configured discovery through the protocol test host
 - **THEN** both SHALL retain matching configured facts while stock normalized TS loses the extension, with no Apache production Gateway import or synthetic live-parity claim
 
 ### Requirement: Configured discovery privacy and inference boundary
@@ -871,3 +694,102 @@ The client SHALL continue projecting assistant custom parts with dotted kinds an
 #### Scenario: Custom request bodies match
 - **WHEN** equivalent custom history and custom tool-result content are sent through both clients
 - **THEN** their semantic request bodies SHALL be equal
+
+### Requirement: Validated platform credential constructors
+The client SHALL provide distinct typed constructors for CAP-to-access-token exchange (`NewWithTokenExchange`), caller-managed access tokens (`NewWithAccessToken`) and Grafana service account tokens (`NewWithServiceAccountToken`). The token-exchange flow SHALL support a per-call on-behalf-of user. The public API SHALL remove `NewWithCloudCredentials`, `CloudCredentialsConfig` and `WithUserIDToken` without compatibility aliases.
+
+#### Scenario: Token-exchange provider is constructed
+- **WHEN** valid token-exchange configuration with an explicit audience is supplied
+- **THEN** the provider SHALL construct an authlib token exchanger for that audience and namespace
+
+#### Scenario: Pre-minted token provider is constructed
+- **WHEN** valid direct access-token configuration is supplied
+- **THEN** model and discovery calls SHALL use that token without making a token-exchange request
+
+#### Scenario: Service account provider is constructed
+- **WHEN** a valid service account token and base URL are supplied to `NewWithServiceAccountToken`
+- **THEN** the client SHALL be ready without an audience, namespace, exchange URL or token exchanger
+
+#### Scenario: Removed API is absent
+- **WHEN** exported declarations are enumerated
+- **THEN** no Cloud stack/CAP constructor, Cloud credential configuration type or acting-user context helper SHALL exist
+
+### Requirement: Platform route base URL and credential validation
+Each constructor SHALL require a valid HTTP(S) ProviderWire API-prefix base URL and reject user info, query and fragment components. It SHALL accept optional configured outer headers, HTTP client and positive client-processing limits. Credentials SHALL be nonempty valid UTF-8 without whitespace or control characters and SHALL NOT be parsed or prefix-checked.
+
+#### Scenario: Unsafe constructor input
+- **WHEN** construction receives user info in its base URL or whitespace in a token
+- **THEN** construction SHALL fail before authentication or Gateway I/O without parsing the token or reading defaults from the environment
+
+### Requirement: Selected platform credential flows
+Each request SHALL use only its constructor-selected credential flow, without detection, fallback or retry with another credential. Exchange and access-token flows SHALL send exactly one `X-Access-Token`. A call context MAY carry an on-behalf-of subject token for the exchange flow. The service account flow SHALL send exactly one `Authorization: Bearer <token>`. No flow SHALL send `X-Grafana-Id`, and preparation failures or cancellation SHALL occur before Gateway I/O.
+
+#### Scenario: Token is exchanged
+- **WHEN** a model or discovery call uses the token-exchange constructor
+- **THEN** the configured CAP token SHALL be exchanged through authlib using the call context and the returned token SHALL be sent once as `X-Access-Token`
+
+#### Scenario: Call on behalf of a user
+- **WHEN** a token-exchange call context carries a user ID token or a delegated access token received from the platform
+- **THEN** the exchange SHALL use that token as its subject for the configured namespace, and the request SHALL send only the returned on-behalf-of token as `X-Access-Token`
+
+#### Scenario: On-behalf-of user with another flow
+- **WHEN** a service-account or access-token call context carries an on-behalf-of subject token, or the exchange namespace is a wildcard
+- **THEN** the call SHALL fail before token exchange or Gateway I/O
+
+#### Scenario: Service account authenticates every operation
+- **WHEN** `ListModels`, `DoGenerate` or `DoStream` is invoked with a service account token
+- **THEN** the request SHALL carry that token only in one outer `Authorization` bearer header and no token exchange SHALL occur
+
+#### Scenario: Exchange is canceled or fails
+- **WHEN** token exchange returns an error or its context is canceled
+- **THEN** the client SHALL return a sanitized exchange error or recognizable context error and SHALL NOT issue the Gateway request
+
+#### Scenario: Credential is rejected
+- **WHEN** the platform rejects the credential
+- **THEN** the client SHALL use existing bounded error handling without trying another flow
+
+#### Scenario: Redirect attempts to forward credentials
+- **WHEN** the endpoint responds with a redirect
+- **THEN** the client SHALL NOT follow it or send credentials to the redirect target
+
+### Requirement: Platform credential client evidence
+Client credential evidence SHALL use the protocol test host's platform header shapes and actor chains. The pinned Vercel client SHALL use a service account token as `apiKey`, and its internal-caller access SHALL be described as unverified until checked against the platform. Test-signed tokens SHALL NOT be described as production platform authorization.
+
+#### Scenario: Both clients as a service account
+- **WHEN** Go `NewWithServiceAccountToken` and pinned Vercel `createGateway` send equivalent BYOK unary and streaming calls in `cloud` mode
+- **THEN** the test host SHALL observe equivalent bearer credentials and standard `providerOptions.gateway.byok` bodies, and native providers SHALL receive only the selected BYOK credentials
+
+#### Scenario: Go as an internal service
+- **WHEN** Go exchange or access-token clients call configured models in `cloud` mode, directly or on behalf of a user
+- **THEN** the test host SHALL observe the access token only in `X-Access-Token`, and configured discovery, unary and streaming calls SHALL succeed without BYOK
+
+#### Scenario: Both clients as a self-hosted service account
+- **WHEN** Go `NewWithServiceAccountToken` and pinned Vercel `createGateway` call configured models in `self-hosted` mode
+- **THEN** configured discovery, unary and streaming calls SHALL succeed without BYOK
+
+#### Scenario: Evidence is described accurately
+- **WHEN** client compatibility is documented
+- **THEN** exact-client captures and test-host results SHALL be distinguished from deployed platform authentication, network isolation and live provider acceptance
+
+### Requirement: Platform-hosted authentication guidance
+The shared guide under docs SHALL explain the plugin route prefix URL and both access modes. It SHALL include tested Go examples and an exact-pinned Vercel service-account example, with no legacy-mode or migration guidance. Deployment configuration SHALL remain in operator guidance.
+
+#### Scenario: External caller follows the guide
+- **WHEN** a Go or server-side Vercel caller follows the service account setup
+- **THEN** the example SHALL use the route prefix, a service account token, provider/model selection and request-scoped API keys, and SHALL state that configured discovery is unavailable in `cloud` mode
+
+#### Scenario: Internal caller follows the guide
+- **WHEN** an internal service follows the token-exchange setup
+- **THEN** the example SHALL use configured model names without BYOK and explain the audience `grafana-aigateway-app`, namespace, caller-owned token refresh and on-behalf-of calls with a user ID token or delegated access token
+
+#### Scenario: Self-hosted caller follows the guide
+- **WHEN** an application follows the self-hosted setup
+- **THEN** the example SHALL use a Grafana service account token per application or person to attribute, and configured model names without BYOK, and SHALL state that catalog access follows Grafana's plugin app access
+
+#### Scenario: Platform error responses are explained
+- **WHEN** the guide describes failures
+- **THEN** it SHALL state that platform-produced errors are not ProviderWire error documents and are classified as protocol errors by the clients
+
+#### Scenario: Documentation examples are verified
+- **WHEN** documentation examples are accepted
+- **THEN** Go examples SHALL build, TypeScript examples SHALL typecheck against the registered baseline and documentation navigation SHALL remain valid

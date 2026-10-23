@@ -17,24 +17,24 @@ import (
 
 func main() {
 	var input struct {
-		BaseURL           string                          `json:"baseURL"`
-		AccessToken       string                          `json:"accessToken"`
-		UserIDToken       string                          `json:"userIDToken"`
-		TokenExchange     *grafana.TokenExchangeConfig    `json:"tokenExchange"`
-		CloudCredentials  *grafana.CloudCredentialsConfig `json:"cloudCredentials"`
-		Decisions         []bool                          `json:"decisions"`
-		Mode              string                          `json:"mode"`
-		ModelID           string                          `json:"modelID"`
-		Options           provider.CallOptions            `json:"options"`
-		Headers           map[string][]string             `json:"headers"`
-		AbortAfterParts   int                             `json:"abortAfterParts"`
-		AbortBefore       bool                            `json:"abortBefore"`
-		AbortBetweenSteps bool                            `json:"abortBetweenSteps"`
-		CancelAfterMS     int                             `json:"cancelAfterMs"`
-		PreferBytes       bool                            `json:"preferBytes"`
-		ToolResults       map[string][]json.RawMessage    `json:"toolResults"`
-		Steps             int                             `json:"steps"`
-		Instructions      string                          `json:"instructions"`
+		BaseURL           string                       `json:"baseURL"`
+		AccessToken       string                       `json:"accessToken"`
+		ServiceAccount    string                       `json:"serviceAccountToken"`
+		OnBehalfOf        string                       `json:"onBehalfOf"`
+		TokenExchange     *grafana.TokenExchangeConfig `json:"tokenExchange"`
+		Decisions         []bool                       `json:"decisions"`
+		Mode              string                       `json:"mode"`
+		ModelID           string                       `json:"modelID"`
+		Options           provider.CallOptions         `json:"options"`
+		Headers           map[string][]string          `json:"headers"`
+		AbortAfterParts   int                          `json:"abortAfterParts"`
+		AbortBefore       bool                         `json:"abortBefore"`
+		AbortBetweenSteps bool                         `json:"abortBetweenSteps"`
+		CancelAfterMS     int                          `json:"cancelAfterMs"`
+		PreferBytes       bool                         `json:"preferBytes"`
+		ToolResults       map[string][]json.RawMessage `json:"toolResults"`
+		Steps             int                          `json:"steps"`
+		Instructions      string                       `json:"instructions"`
 	}
 	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&input); err != nil {
 		emit(map[string]any{"error": map[string]any{"message": "invalid capture input"}})
@@ -64,8 +64,8 @@ func main() {
 		stop := time.AfterFunc(time.Duration(input.CancelAfterMS)*time.Millisecond, cancel)
 		defer stop.Stop()
 	}
-	if input.UserIDToken != "" {
-		ctx = grafana.WithUserIDToken(ctx, input.UserIDToken)
+	if input.OnBehalfOf != "" {
+		ctx = grafana.WithOnBehalfOf(ctx, input.OnBehalfOf)
 	}
 	var client *grafana.Provider
 	var err error
@@ -73,7 +73,7 @@ func main() {
 	if input.TokenExchange != nil {
 		selected++
 	}
-	if input.CloudCredentials != nil {
+	if input.ServiceAccount != "" {
 		selected++
 	}
 	if input.AccessToken != "" {
@@ -86,8 +86,8 @@ func main() {
 	switch {
 	case input.TokenExchange != nil:
 		client, err = grafana.NewWithTokenExchange(*input.TokenExchange)
-	case input.CloudCredentials != nil:
-		client, err = grafana.NewWithCloudCredentials(*input.CloudCredentials)
+	case input.ServiceAccount != "":
+		client, err = grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{Token: input.ServiceAccount, BaseURL: input.BaseURL, Headers: input.Headers})
 	default:
 		client, err = grafana.NewWithAccessToken(grafana.AccessTokenConfig{AccessToken: input.AccessToken, BaseURL: input.BaseURL, Headers: input.Headers})
 	}

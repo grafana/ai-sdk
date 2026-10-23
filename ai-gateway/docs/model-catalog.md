@@ -157,49 +157,28 @@ Catalog constructors validate:
 A registry-backed catalog resolves its configured provider model ID when
 `ResolveModel` is called, so provider lookup errors occur at request time.
 
-## Connect the catalog to a host transport
+## Connect the catalog to a transport
 
-A host-owned transport adapter can pass its request context and public model ID
-to `ResolveModel`, execute the returned `ResolvedModel.Model`, and retain
-`ResolvedModel.ID` as the canonical public identity for policy and logging.
+Your service passes the request context and the requested model ID to
+`ResolveModel`, calls the returned model, and uses `ResolvedModel.ID` in its
+policy checks and logs. Map errors matching `catalog.ErrUnknownModel` to your
+not-found response, and handle other errors as usual. The catalog does not
+produce HTTP responses itself.
 
-When resolution returns an error matching `catalog.ErrUnknownModel`, map it to
-the transport's not-found response. Other catalog or registry failures pass
-through to the host's normal error handling. The catalog does not own HTTP
-status codes, response envelopes, or another transport's lifecycle.
+## Let clients see provider choices
 
-## Let users inspect provider choices
+A catalog can describe which providers and models stand behind each public
+model. For example, `balanced` might use an Anthropic model first and an OpenAI
+model as a fallback. Supply this candidate metadata when you create the
+catalog; models without it can still be listed and selected.
 
-The Gateway command lets authenticated clients inspect the providers and models
-configured behind a public name without generating a response. For example,
-`balanced` might use an Anthropic model first and an OpenAI model as a fallback.
-Clients still select `balanced` or one of its aliases, not a candidate's model ID.
-
-Discovery returns one row per configured model. Its `gateway` metadata lists
-`aliases`, a `primary` destination and ordered `fallbacks`. Each destination's
-`providerModelId` is the native invocation ID, not a public selection ID. Aliases
-remain callable but do not create duplicate discovery rows.
-These choices describe what the Gateway can try, not which provider handled a
-previous request. Listing models does not check provider availability or verify
-that provider credentials work, and it never returns those credentials.
-
-If you build your own catalog, provide candidate metadata explicitly to make
-these details available. Models without that metadata can still be discovered
-and selected; clients should handle missing candidate information. See
+Grafana AI Gateway returns these choices when clients list models. Clients
+still select `balanced` or one of its aliases, not a candidate's model. The
+list describes what the Gateway can try, not which provider answered a past
+request, and it does not check that providers are available. Every client that
+can list models sees these choices, so check that they may. See
 [discovering models from Go and TypeScript](../../docs/providers/grafana-gateway.md#discover-and-select-public-models)
 for client examples.
-
-The command shares its configured model list with all authenticated callers.
-Before exposing it, check that those callers may see the provider choices. For
-request-specific visibility, apply the same access rules to listing and resolution
-as described above.
-
-The command validates route configuration at startup, before accepting requests.
-Discovery then returns the complete visible configured catalog; it does not
-revalidate routes or impose a response-size cap. Ensure your clients' read limits
-accommodate the resulting document. Stock TypeScript discovery discards the
-`gateway` metadata, so use the companion helper to discover aliases and provider
-choices.
 
 ## Reference
 

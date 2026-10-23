@@ -1074,8 +1074,8 @@ describe("real ProviderWire V4 unary runtime", () => {
 
 describe("structured output through both Gateway clients", () => {
   const schema = {
-    type: "object",
-    properties: { value: { type: "string" } },
+    type: "object" as const,
+    properties: { value: { type: "string" as const } },
     required: ["value"],
     additionalProperties: false,
     "x-extra": [null, false, "☃", 9007199254740992],
@@ -1165,7 +1165,7 @@ it("both clients reach native Responses with structured names, schemas and fallb
           const responseFormat = {
             type: "json" as const, name,
             schema: {
-              type: "object", properties: { value: { type: "string" } },
+              type: "object" as const, properties: { value: { type: "string" as const } },
               required: ["value"], additionalProperties: false,
             },
           };

@@ -43,7 +43,7 @@ reads. Nothing else is needed in a feature pull request:
 A change is attributed to a module by the files it touches, not by its scope.
 Library attribution follows actual module ownership: root-owned files such as
 `middleware/extract_json.go` release core; nested `middleware/logger/` files release
-Logger. A provider-only change can also affect a workspace-built Gateway package.
+Logger. A provider-only change can also affect a workspace-built Gateway plugin package.
 Gateway attribution and delivery are separate from library activation; do not
 manufacture dependency bumps or assume path-only attribution is enough. Scopes are still worth
 writing because they appear in the changelog.
@@ -188,10 +188,16 @@ dependent library releases -> Renovate provider updates -> Bedrock readiness. Th
 root release needs no internal prerequisite tags; nested first releases wait for tagged
 prerequisites. Already-merged pseudo-versions remain valid for ordinary source PRs.
 
-Gateway has a separate application contract. Its plugin package uses the selected
-workspace revision; library readiness does not substitute for application/package
-readiness. Gateway integration is separate. Library protection settings and live publication
-follow the activation rollout under #245.
+Gateway has a separate application contract: main and versioned plugin packages build
+from the same-revision workspace and pass plugin build, licensing and validator checks,
+with no dependency on prior SDK tags or standalone Gateway compilation. CI keeps the
+validated package of eligible pushes as a workflow artifact; this repository does not
+publish the plugin yet. Its release also updates `ai-gateway/package.json`, the plugin's
+version source. Gateway release readiness fails closed pending a plugin publication
+workflow. Gateway integration is separate: library readiness does not substitute for
+application/package readiness, and Gateway attribution and delivery do not gate library
+activation. Library protection settings and live publication follow the activation
+rollout under #245.
 
 Never move or delete published tags. Correct a bad release with a new version.
 

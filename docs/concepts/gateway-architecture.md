@@ -13,7 +13,7 @@ choices. They still need compatible capabilities: translating a request does
 not make a provider support another provider's tools or options. This walkthrough
 follows the runnable `grafana-ai-gateway` command. For setup, see
 [calling Gateway](../providers/grafana-gateway.md) and
-[running the container](../guides/ai-gateway-container.md). Unfamiliar terms have
+[installing the plugin](../../ai-gateway/README.md). Unfamiliar terms have
 [definitions and aliases in the glossary](gateway-glossary.md).
 
 ## The pieces and their boundaries
@@ -69,8 +69,8 @@ Both API listeners register `GET /api/v1/aisdk/config` and
 Cloud discovery returns an unsupported-discovery error rather than exposing the
 private catalog. The private API, optional Cloud API, and operational endpoints
 use separate listeners. `/live`, `/ready`, and `/metrics` are operational routes. See the
-[router](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/router.go) and
-[process composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/process/process.go).
+[routes](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/routes.go) and
+[plugin composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/gateway.go).
 
 **Other inbound protocols are not wired into this command.** In particular,
 `/v1/chat/completions`, `/v1/messages`, and `/v1/responses` are not registered
@@ -116,7 +116,7 @@ sequenceDiagram
    so callers cannot forge that identity directly. Gateway credentials identify
    the caller; provider credentials authorize the later native API call. See
    [authentication](../guides/gateway-authentication.md) and the
-   [authentication middleware](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/auth.go).
+   [access decision](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access.go).
 2. **ProviderWire translates the request.** The handler validates protocol
    headers, reads a bounded body, checks UTF-8 and the request schema, and maps
    the body to `provider.CallOptions`. It separates the reserved `gateway`
@@ -245,7 +245,7 @@ every available SDK policy or an aggregate admission controller.
 
 This walkthrough is grounded in the router, process composition, handler, and
 catalog linked above. Useful regression evidence includes
-[authentication ordering tests](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/auth_test.go),
+[access decision tests](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access_test.go),
 [configured fallback tests](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/fallback_acceptance_test.go),
 and [stream lifecycle tests](../../ai-gateway/providerwire/v4/stream_test.go).
 The [parity coverage map](../../test/conformance/PARITY.md) distinguishes client

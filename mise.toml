@@ -10,6 +10,7 @@ node = "24"
 pnpm = "12.11.2"
 python = "3.15.0"
 golangci-lint = "2.15.0"
+mage = "1.17.2"
 "npm:@fission-ai/openspec" = "1.14.1"
 "npm:markdownlint-cli2" = "0.23.3"
 
@@ -22,6 +23,7 @@ sources = [
   "test/cli/package.json",
   "test/conformance/tools/package.json",
   "test/integration/package.json",
+  "ai-gateway/package.json",
   "ai-gateway/test/providerwire-v4/package.json",
 ]
 outputs = ["node_modules/.modules.yaml"]
@@ -70,20 +72,37 @@ mise run verify-gateway-workspace
 (cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./...)
 """
 
-[tasks.build-ai-gateway-image]
-description = "Build and load the AI Gateway image for the local architecture"
+[tasks.build-ai-gateway-plugin]
+description = "Build the AI Gateway plugin package from candidate SDK source"
 run = """
-image=${AI_GATEWAY_IMAGE:-ai-gateway:local}
-revision=${AI_GATEWAY_VCS_REF:-local-unverified}
-docker build -f ai-gateway/Dockerfile --build-arg "VCS_REF=$revision" --tag "$image" .
+workspace_file="$PWD/go.gateway.work"
+mise run verify-gateway-workspace
+mise deps install --only test
+rm -rf ai-gateway/dist
+pnpm --filter ./ai-gateway build
+(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly -trimpath" mage -v build:linux build:linuxARM64)
+GOWORK="$workspace_file" bash ai-gateway/scripts/package-licenses.sh
 """
 
-[tasks.test-ai-gateway-image-source]
-description = "Prove the Gateway image uses local SDK/provider source and packages its dependency evidence"
+[tasks.test-ai-gateway-frontend]
+description = "Typecheck, lint and unit test the AI Gateway plugin frontend"
 run = """
 mise deps install --only test
-cd test/conformance/tools && pnpm exec tsx --test gateway-image-source.test.mts
+pnpm --filter ./ai-gateway typecheck
+pnpm --filter ./ai-gateway lint
+pnpm --filter ./ai-gateway test:ci
 """
+
+[tasks.test-ai-gateway-e2e]
+description = "Run the AI Gateway plugin Playwright tests against the built plugin in Grafana"
+run = """
+mise deps install --only test
+bash ai-gateway/scripts/e2e.sh
+"""
+
+[tasks.validate-ai-gateway-plugin]
+description = "Validate the built AI Gateway plugin package"
+run = "bash ai-gateway/scripts/validate-plugin.sh"
 
 [tasks.test-anthropic]
 description = "Run Anthropic provider tests"

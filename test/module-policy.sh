@@ -233,5 +233,7 @@ for root in ai-gateway/cmd/grafana-ai-gateway ai-gateway/test/providerwire-v4/te
   assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOWORK="$2" GOFLAGS=-mod=readonly go build -overlay "$3" -o "$4" .' \
     bash "$repo_root/$root" "$repo_root/go.gateway.work" "$overlay" "$fixture/gateway"
 done
+assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOWORK="$2" GOFLAGS="-mod=readonly -overlay=$3" mage build:linux build:linuxARM64' \
+  bash "$repo_root/ai-gateway" "$repo_root/go.gateway.work" "$overlay"
 
 echo 'module policy fixtures: OK'

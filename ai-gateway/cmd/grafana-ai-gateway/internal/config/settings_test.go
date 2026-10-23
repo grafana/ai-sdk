@@ -2,65 +2,32 @@ package config
 
 import (
 	"math"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestParseSettings_Defaults(t *testing.T) {
-	settings, err := ParseSettings(nil, mapLookup(map[string]string{
-		"GRAFANA_AI_GATEWAY_CONFIG_FILE":               "/tmp/models.yaml",
-		"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL":             "https://auth.example/jwks",
-		"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
-		"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.example:4317",
-		"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AGENTO11Y_SECRET",
+	settings, err := ParseSettings(mapLookup(map[string]string{
+		"GF_PLUGIN_CONFIG_FILE":        "/tmp/models.yaml",
+		"GF_PLUGIN_ACCESS_MODE":        "cloud",
+		"GF_PLUGIN_AGENTO11Y_ENABLED":  "true",
+		"GF_PLUGIN_AGENTO11Y_ENDPOINT": "collector.example:4317",
 	}))
 	require.NoError(t, err)
 	assert.Equal(t, Settings{
-		ConfigFile:               "/tmp/models.yaml",
-		ConfigMaxBytes:           1_048_576,
-		DeploymentMode:           DeploymentProduction,
-		PrivateListenAddress:     ":8082",
-		CloudListenAddress:       ":8080",
-		OperationalListenAddress: ":8081",
-		ReadHeaderTimeout:        5 * time.Second,
-		ReadTimeout:              30 * time.Second,
-		WriteTimeout:             165 * time.Second,
-		IdleTimeout:              120 * time.Second,
-		MaxHeaderBytes:           65_536,
-		ResponseGrace:            5 * time.Second,
-		ShutdownTimeout:          15 * time.Second,
+		ConfigFile: "/tmp/models.yaml",
+		Access:     auth.AccessPolicy{Mode: auth.AccessModeCloud},
 		AgentObservability: AgentObservabilitySettings{
-			Enabled:         true,
-			Protocol:        AgentObservabilityGRPC,
-			Endpoint:        "collector.example:4317",
-			TLS:             true,
-			AuthSecretEnv:   "AGENTO11Y_SECRET",
-			QueueSize:       2000,
-			BatchSize:       100,
-			PayloadMaxBytes: 16_777_216,
-			MaxRetries:      5,
-			InitialBackoff:  100 * time.Millisecond,
-			MaxBackoff:      5 * time.Second,
-			ExportTimeout:   10 * time.Second,
-			FlushInterval:   time.Second,
-			FlushTimeout:    5 * time.Second,
-			ShutdownTimeout: 5 * time.Second,
+			Enabled:  true,
+			Protocol: AgentObservabilityGRPC,
+			Endpoint: "collector.example:4317",
+			TLS:      true,
 		},
-		AuthUnsafe:                     false,
-		JWKSURL:                        "https://auth.example/jwks",
-		Audiences:                      []string{"ai-sdk"},
-		JWKSRequestTimeout:             5 * time.Second,
-		JWKSResponseBytes:              1_048_576,
-		JWKSMaxKeys:                    128,
-		JWKSRefreshInterval:            5 * time.Minute,
-		JWKSMaxAge:                     15 * time.Minute,
-		AnthropicResponseHeaderTimeout: 10 * time.Second,
-		AnthropicResponseBytes:         16_777_216,
 		ProviderWire: providerv4.Limits{
 			RequestBytes:        1_048_576,
 			UnaryResponseBytes:  8_388_608,
@@ -73,218 +40,116 @@ func TestParseSettings_Defaults(t *testing.T) {
 	}, settings)
 }
 
-func TestParseSettings_ExactFlagAndEnvironmentBindings(t *testing.T) {
+func TestParseSettings_EnvironmentBindings(t *testing.T) {
 	tests := []struct {
-		flag    string
-		env     string
-		value   string
-		prepare func(map[string]string)
-		check   func(*testing.T, Settings)
+		env   string
+		value string
+		check func(*testing.T, Settings)
 	}{
-		{flag: "config.file", env: "GRAFANA_AI_GATEWAY_CONFIG_FILE", value: "/other/models.yaml", check: func(t *testing.T, s Settings) { assert.Equal(t, "/other/models.yaml", s.ConfigFile) }},
-		{flag: "config.max-bytes", env: "GRAFANA_AI_GATEWAY_CONFIG_MAX_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.ConfigMaxBytes) }},
-		{flag: "deployment.mode", env: "GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE", value: "development", check: func(t *testing.T, s Settings) { assert.Equal(t, DeploymentDevelopment, s.DeploymentMode) }},
-		{flag: "server.private-listen-address", env: "GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS", value: "127.0.0.1:9000", check: func(t *testing.T, s Settings) { assert.Equal(t, "127.0.0.1:9000", s.PrivateListenAddress) }},
-		{flag: "server.cloud-listen-address", env: "GRAFANA_AI_GATEWAY_SERVER_CLOUD_LISTEN_ADDRESS", value: "127.0.0.1:9002", check: func(t *testing.T, s Settings) { assert.Equal(t, "127.0.0.1:9002", s.CloudListenAddress) }},
-		{flag: "server.operational-listen-address", env: "GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS", value: "127.0.0.1:9001", check: func(t *testing.T, s Settings) { assert.Equal(t, "127.0.0.1:9001", s.OperationalListenAddress) }},
-		{flag: "server.read-header-timeout", env: "GRAFANA_AI_GATEWAY_SERVER_READ_HEADER_TIMEOUT", value: "4s", check: func(t *testing.T, s Settings) { assert.Equal(t, 4*time.Second, s.ReadHeaderTimeout) }},
-		{flag: "server.read-timeout", env: "GRAFANA_AI_GATEWAY_SERVER_READ_TIMEOUT", value: "20s", check: func(t *testing.T, s Settings) { assert.Equal(t, 20*time.Second, s.ReadTimeout) }},
-		{flag: "server.write-timeout", env: "GRAFANA_AI_GATEWAY_SERVER_WRITE_TIMEOUT", value: "200s", check: func(t *testing.T, s Settings) { assert.Equal(t, 200*time.Second, s.WriteTimeout) }},
-		{flag: "server.idle-timeout", env: "GRAFANA_AI_GATEWAY_SERVER_IDLE_TIMEOUT", value: "60s", check: func(t *testing.T, s Settings) { assert.Equal(t, 60*time.Second, s.IdleTimeout) }},
-		{flag: "server.max-header-bytes", env: "GRAFANA_AI_GATEWAY_SERVER_MAX_HEADER_BYTES", value: "32768", check: func(t *testing.T, s Settings) { assert.Equal(t, 32768, s.MaxHeaderBytes) }},
-		{flag: "server.response-grace", env: "GRAFANA_AI_GATEWAY_SERVER_RESPONSE_GRACE", value: "4s", check: func(t *testing.T, s Settings) { assert.Equal(t, 4*time.Second, s.ResponseGrace) }},
-		{flag: "server.shutdown-timeout", env: "GRAFANA_AI_GATEWAY_SERVER_SHUTDOWN_TIMEOUT", value: "10s", check: func(t *testing.T, s Settings) { assert.Equal(t, 10*time.Second, s.ShutdownTimeout) }},
-		{flag: "observation.region", env: "GRAFANA_AI_GATEWAY_OBSERVATION_REGION", value: "us-central1", check: func(t *testing.T, s Settings) { assert.Equal(t, "us-central1", s.ObservationRegion) }},
-		{flag: "observation.application", env: "GRAFANA_AI_GATEWAY_OBSERVATION_APPLICATION", value: "ai-gateway", check: func(t *testing.T, s Settings) { assert.Equal(t, "ai-gateway", s.ObservationApplication) }},
-		{flag: "agento11y.enabled", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED", value: "true", prepare: func(environment map[string]string) { environment["GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED"] = "false" }, check: func(t *testing.T, s Settings) { assert.True(t, s.AgentObservability.Enabled) }},
-		{flag: "agento11y.protocol", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_PROTOCOL", value: "http", prepare: func(environment map[string]string) {
-			environment["GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT"] = "https://collector.example/export"
-		}, check: func(t *testing.T, s Settings) { assert.Equal(t, AgentObservabilityHTTP, s.AgentObservability.Protocol) }},
-		{flag: "agento11y.endpoint", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT", value: "other.example:4317", check: func(t *testing.T, s Settings) { assert.Equal(t, "other.example:4317", s.AgentObservability.Endpoint) }},
-		{flag: "agento11y.tls", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_TLS", value: "false", prepare: func(environment map[string]string) { environment["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development" }, check: func(t *testing.T, s Settings) { assert.False(t, s.AgentObservability.TLS) }},
-		{flag: "agento11y.auth-secret-env", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV", value: "OTHER_SECRET", check: func(t *testing.T, s Settings) { assert.Equal(t, "OTHER_SECRET", s.AgentObservability.AuthSecretEnv) }},
-		{flag: "agento11y.queue-size", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_QUEUE_SIZE", value: "3000", check: func(t *testing.T, s Settings) { assert.Equal(t, 3000, s.AgentObservability.QueueSize) }},
-		{flag: "agento11y.batch-size", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_BATCH_SIZE", value: "200", check: func(t *testing.T, s Settings) { assert.Equal(t, 200, s.AgentObservability.BatchSize) }},
-		{flag: "agento11y.payload-max-bytes", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_PAYLOAD_MAX_BYTES", value: "8388608", check: func(t *testing.T, s Settings) { assert.Equal(t, 8_388_608, s.AgentObservability.PayloadMaxBytes) }},
-		{flag: "agento11y.max-retries", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_RETRIES", value: "3", check: func(t *testing.T, s Settings) { assert.Equal(t, 3, s.AgentObservability.MaxRetries) }},
-		{flag: "agento11y.initial-backoff", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_INITIAL_BACKOFF", value: "200ms", check: func(t *testing.T, s Settings) {
-			assert.Equal(t, 200*time.Millisecond, s.AgentObservability.InitialBackoff)
+		{env: "GF_PLUGIN_CONFIG_FILE", value: "/etc/models.yaml", check: func(t *testing.T, s Settings) { assert.Equal(t, "/etc/models.yaml", s.ConfigFile) }},
+		{env: "GF_PLUGIN_ACCESS_MODE", value: "self-hosted", check: func(t *testing.T, s Settings) { assert.Equal(t, auth.AccessModeSelfHosted, s.Access.Mode) }},
+		{env: "GF_PLUGIN_AGENTO11Y_PROTOCOL", value: "http", check: func(t *testing.T, s Settings) {
+			assert.Equal(t, AgentObservabilityHTTP, s.AgentObservability.Protocol)
 		}},
-		{flag: "agento11y.max-backoff", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_MAX_BACKOFF", value: "10s", check: func(t *testing.T, s Settings) { assert.Equal(t, 10*time.Second, s.AgentObservability.MaxBackoff) }},
-		{flag: "agento11y.export-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_EXPORT_TIMEOUT", value: "3s", check: func(t *testing.T, s Settings) { assert.Equal(t, 3*time.Second, s.AgentObservability.ExportTimeout) }},
-		{flag: "agento11y.flush-interval", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_INTERVAL", value: "2s", check: func(t *testing.T, s Settings) { assert.Equal(t, 2*time.Second, s.AgentObservability.FlushInterval) }},
-		{flag: "agento11y.flush-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_FLUSH_TIMEOUT", value: "7s", check: func(t *testing.T, s Settings) { assert.Equal(t, 7*time.Second, s.AgentObservability.FlushTimeout) }},
-		{flag: "agento11y.shutdown-timeout", env: "GRAFANA_AI_GATEWAY_AGENTO11Y_SHUTDOWN_TIMEOUT", value: "8s", check: func(t *testing.T, s Settings) { assert.Equal(t, 8*time.Second, s.AgentObservability.ShutdownTimeout) }},
-		{flag: "auth.unsafe", env: "GRAFANA_AI_GATEWAY_AUTH_UNSAFE", value: "true", prepare: unsafeAuthEnvironment, check: func(t *testing.T, s Settings) { assert.True(t, s.AuthUnsafe) }},
-		{flag: "auth.jwks-url", env: "GRAFANA_AI_GATEWAY_AUTH_JWKS_URL", value: "https://other.example/jwks", check: func(t *testing.T, s Settings) { assert.Equal(t, "https://other.example/jwks", s.JWKSURL) }},
-		{flag: "auth.audiences", env: "GRAFANA_AI_GATEWAY_AUTH_AUDIENCES", value: "ai-sdk", check: func(t *testing.T, s Settings) { assert.Equal(t, []string{"ai-sdk"}, s.Audiences) }},
-		{flag: "auth.jwks-timeout", env: "GRAFANA_AI_GATEWAY_AUTH_JWKS_TIMEOUT", value: "4s", check: func(t *testing.T, s Settings) { assert.Equal(t, 4*time.Second, s.JWKSRequestTimeout) }},
-		{flag: "auth.jwks-response-bytes", env: "GRAFANA_AI_GATEWAY_AUTH_JWKS_RESPONSE_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.JWKSResponseBytes) }},
-		{flag: "auth.jwks-max-keys", env: "GRAFANA_AI_GATEWAY_AUTH_JWKS_MAX_KEYS", value: "64", check: func(t *testing.T, s Settings) { assert.Equal(t, 64, s.JWKSMaxKeys) }},
-		{flag: "auth.jwks-refresh-interval", env: "GRAFANA_AI_GATEWAY_AUTH_JWKS_REFRESH_INTERVAL", value: "4m", check: func(t *testing.T, s Settings) { assert.Equal(t, 4*time.Minute, s.JWKSRefreshInterval) }},
-		{flag: "auth.jwks-max-age", env: "GRAFANA_AI_GATEWAY_AUTH_JWKS_MAX_AGE", value: "20m", check: func(t *testing.T, s Settings) { assert.Equal(t, 20*time.Minute, s.JWKSMaxAge) }},
-		{flag: "anthropic.response-header-timeout", env: "GRAFANA_AI_GATEWAY_ANTHROPIC_RESPONSE_HEADER_TIMEOUT", value: "9s", check: func(t *testing.T, s Settings) { assert.Equal(t, 9*time.Second, s.AnthropicResponseHeaderTimeout) }},
-		{flag: "anthropic.response-bytes", env: "GRAFANA_AI_GATEWAY_ANTHROPIC_RESPONSE_BYTES", value: "8388608", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(8_388_608), s.AnthropicResponseBytes) }},
-		{flag: "providerwire.request-bytes", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_REQUEST_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.ProviderWire.RequestBytes) }},
-		{flag: "providerwire.unary-response-bytes", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_UNARY_RESPONSE_BYTES", value: "4194304", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(4_194_304), s.ProviderWire.UnaryResponseBytes) }},
-		{flag: "providerwire.stream-parts", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_STREAM_PARTS", value: "50000", check: func(t *testing.T, s Settings) { assert.Equal(t, 50000, s.ProviderWire.StreamParts) }},
-		{flag: "providerwire.stream-frame-bytes", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_STREAM_FRAME_BYTES", value: "524288", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(524288), s.ProviderWire.StreamFrameBytes) }},
-		{flag: "providerwire.model-duration", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_MODEL_DURATION", value: "100s", check: func(t *testing.T, s Settings) { assert.Equal(t, 100*time.Second, s.ProviderWire.ModelDuration) }},
-		{flag: "providerwire.stream-idle-duration", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_STREAM_IDLE_DURATION", value: "20s", check: func(t *testing.T, s Settings) { assert.Equal(t, 20*time.Second, s.ProviderWire.StreamIdleDuration) }},
-		{flag: "providerwire.stream-drain-duration", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_STREAM_DRAIN_DURATION", value: "2s", check: func(t *testing.T, s Settings) { assert.Equal(t, 2*time.Second, s.ProviderWire.StreamDrainDuration) }},
+		{env: "GF_PLUGIN_AGENTO11Y_ENDPOINT", value: "other.example:4317", check: func(t *testing.T, s Settings) {
+			assert.Equal(t, "other.example:4317", s.AgentObservability.Endpoint)
+		}},
+		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.ProviderWire.RequestBytes) }},
+		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "45s", check: func(t *testing.T, s Settings) { assert.Equal(t, 45*time.Second, s.ProviderWire.ModelDuration) }},
 	}
-
 	for _, tc := range tests {
-		t.Run(tc.flag, func(t *testing.T) {
-			for _, source := range []string{"environment", "flag"} {
-				t.Run(source, func(t *testing.T) {
-					environment := baseSettingsEnvironment()
-					if tc.prepare != nil {
-						tc.prepare(environment)
-					}
-					var args []string
-					if source == "environment" {
-						environment[tc.env] = tc.value
-					} else if tc.flag == "auth.unsafe" || tc.flag == "agento11y.enabled" || tc.flag == "agento11y.tls" {
-						if tc.value == "true" {
-							args = []string{"--" + tc.flag}
-						} else {
-							args = []string{"--no-" + tc.flag}
-						}
-					} else {
-						args = []string{"--" + tc.flag + "=" + tc.value}
-					}
-					settings, err := ParseSettings(args, mapLookup(environment))
-					require.NoError(t, err)
-					tc.check(t, settings)
-				})
+		t.Run(tc.env, func(t *testing.T) {
+			environment := baseSettingsEnvironment()
+			environment[tc.env] = tc.value
+			if tc.env == "GF_PLUGIN_ACCESS_MODE" {
+				delete(environment, "GF_PLUGIN_ACCESS_INTERNAL_SERVICES")
 			}
+			if tc.env == "GF_PLUGIN_AGENTO11Y_PROTOCOL" {
+				environment["GF_PLUGIN_AGENTO11Y_ENDPOINT"] = "https://collector.example/export"
+			}
+			settings, err := ParseSettings(mapLookup(environment))
+			require.NoError(t, err)
+			tc.check(t, settings)
 		})
 	}
 }
 
+func TestParseSettings_InvalidValuesNameTheSetting(t *testing.T) {
+	for _, tc := range []struct{ env, value string }{
+		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "private-value"},
+		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "private-value"},
+		{env: "GF_PLUGIN_AGENTO11Y_ENABLED", value: "private-value"},
+		{env: "GF_PLUGIN_AGENTO11Y_TLS", value: "private-value"},
+	} {
+		t.Run(tc.env, func(t *testing.T) {
+			environment := baseSettingsEnvironment()
+			environment[tc.env] = tc.value
+			_, err := ParseSettings(mapLookup(environment))
+			require.EqualError(t, err, "config: "+tc.env+" has an invalid value")
+		})
+	}
+}
+
+func TestParseSettings_EmptyValuesSelectDefaults(t *testing.T) {
+	environment := baseSettingsEnvironment()
+	environment["GF_PLUGIN_MAX_REQUEST_BYTES"] = ""
+	settings, err := ParseSettings(mapLookup(environment))
+	require.NoError(t, err)
+	assert.Equal(t, int64(defaultRequestBytes), settings.ProviderWire.RequestBytes)
+}
+
 func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
-	valid, err := ParseSettings(nil, mapLookup(baseSettingsEnvironment()))
+	valid, err := ParseSettings(mapLookup(baseSettingsEnvironment()))
 	require.NoError(t, err)
 
 	tests := []struct {
 		name   string
 		mutate func(*Settings)
 	}{
-		{name: "write budget", mutate: func(s *Settings) { s.WriteTimeout = 159 * time.Second }},
-		{name: "write budget overflow", mutate: func(s *Settings) {
-			s.ReadTimeout = time.Duration(math.MaxInt64)
-			s.WriteTimeout = time.Duration(math.MaxInt64)
-		}},
-		{name: "jwks age", mutate: func(s *Settings) { s.JWKSMaxAge = s.JWKSRefreshInterval - time.Second }},
-		{name: "anthropic header exceeds model", mutate: func(s *Settings) { s.AnthropicResponseHeaderTimeout = s.ProviderWire.ModelDuration + time.Second }},
-		{name: "stream idle exceeds model", mutate: func(s *Settings) { s.ProviderWire.StreamIdleDuration = s.ProviderWire.ModelDuration + time.Second }},
-		{name: "anthropic scanner bound", mutate: func(s *Settings) { s.AnthropicResponseBytes = 32 << 20 }},
-		{name: "byte zero", mutate: func(s *Settings) { s.ConfigMaxBytes = 0 }},
-		{name: "byte limit+1 overflow", mutate: func(s *Settings) { s.ConfigMaxBytes = math.MaxInt64 }},
-		{name: "integer zero", mutate: func(s *Settings) { s.JWKSMaxKeys = 0 }},
-		{name: "integer limit+1 overflow", mutate: func(s *Settings) { s.ProviderWire.StreamParts = math.MaxInt }},
-		{name: "header parser slop overflow", mutate: func(s *Settings) { s.MaxHeaderBytes = math.MaxInt }},
-		{name: "listen address missing port", mutate: func(s *Settings) { s.PrivateListenAddress = "127.0.0.1" }},
-		{name: "listen address nonnumeric port", mutate: func(s *Settings) { s.PrivateListenAddress = "127.0.0.1:http" }},
-		{name: "listen address invalid host", mutate: func(s *Settings) { s.PrivateListenAddress = "bad host:8080" }},
-		{name: "duration zero", mutate: func(s *Settings) { s.ShutdownTimeout = 0 }},
-		{name: "unsafe production", mutate: func(s *Settings) { s.AuthUnsafe = true; s.JWKSURL = "" }},
-		{name: "unsafe with jwks", mutate: func(s *Settings) {
-			s.DeploymentMode = DeploymentDevelopment
-			s.AuthUnsafe = true
-			s.PrivateListenAddress = "127.0.0.1:8080"
-		}},
-		{name: "unsafe wildcard listener", mutate: func(s *Settings) {
-			s.DeploymentMode = DeploymentDevelopment
-			s.AuthUnsafe = true
-			s.JWKSURL = ""
-			s.PrivateListenAddress = ":8080"
-		}},
-		{name: "unsafe non-loopback listener", mutate: func(s *Settings) {
-			s.DeploymentMode = DeploymentDevelopment
-			s.AuthUnsafe = true
-			s.JWKSURL = ""
-			s.PrivateListenAddress = "192.0.2.1:8080"
-		}},
-		{name: "safe without jwks", mutate: func(s *Settings) { s.JWKSURL = "" }},
-		{name: "observation region whitespace", mutate: func(s *Settings) { s.ObservationRegion = " bad" }},
-		{name: "observation application over limit", mutate: func(s *Settings) { s.ObservationApplication = strings.Repeat("x", 129) }},
-		{name: "agento11y disabled production", mutate: func(s *Settings) { s.AgentObservability.Enabled = false }},
+		{name: "config file", mutate: func(s *Settings) { s.ConfigFile = " " }},
+		{name: "model duration below provider and idle timeouts", mutate: func(s *Settings) { s.ProviderWire.ModelDuration = 29 * time.Second }},
+		{name: "request bytes zero", mutate: func(s *Settings) { s.ProviderWire.RequestBytes = 0 }},
+		{name: "request bytes limit+1 overflow", mutate: func(s *Settings) { s.ProviderWire.RequestBytes = math.MaxInt64 }},
 		{name: "agento11y protocol", mutate: func(s *Settings) { s.AgentObservability.Protocol = "other" }},
 		{name: "agento11y endpoint", mutate: func(s *Settings) { s.AgentObservability.Endpoint = "" }},
 		{name: "agento11y endpoint credentials", mutate: func(s *Settings) {
 			s.AgentObservability.Protocol = AgentObservabilityHTTP
 			s.AgentObservability.Endpoint = "https://user:secret@collector.example/export"
 		}},
-		{name: "agento11y production cleartext", mutate: func(s *Settings) { s.AgentObservability.TLS = false }},
-		{name: "agento11y secret reference", mutate: func(s *Settings) { s.AgentObservability.AuthSecretEnv = "literal secret" }},
-		{name: "agento11y queue zero", mutate: func(s *Settings) { s.AgentObservability.QueueSize = 0 }},
-		{name: "agento11y batch exceeds queue", mutate: func(s *Settings) { s.AgentObservability.BatchSize = s.AgentObservability.QueueSize + 1 }},
-		{name: "agento11y payload overflow", mutate: func(s *Settings) { s.AgentObservability.PayloadMaxBytes = 64<<20 + 1 }},
-		{name: "agento11y retry overflow", mutate: func(s *Settings) { s.AgentObservability.MaxRetries = 11 }},
-		{name: "agento11y retries disabled", mutate: func(s *Settings) { s.AgentObservability.MaxRetries = 0 }},
-		{name: "agento11y reserved secret reference", mutate: func(s *Settings) { s.AgentObservability.AuthSecretEnv = "AGENTO11Y_AUTH_TOKEN" }},
-		{name: "agento11y export timeout zero", mutate: func(s *Settings) { s.AgentObservability.ExportTimeout = 0 }},
-		{name: "agento11y export timeout negative", mutate: func(s *Settings) { s.AgentObservability.ExportTimeout = -time.Second }},
-		{name: "agento11y export timeout overflow", mutate: func(s *Settings) { s.AgentObservability.ExportTimeout = 5*time.Minute + time.Nanosecond }},
-		{name: "agento11y duration zero", mutate: func(s *Settings) { s.AgentObservability.FlushTimeout = 0 }},
-		{name: "agento11y duration overflow", mutate: func(s *Settings) { s.AgentObservability.ShutdownTimeout = 5*time.Minute + time.Nanosecond }},
-		{name: "agento11y backoff order", mutate: func(s *Settings) {
-			s.AgentObservability.MaxBackoff = s.AgentObservability.InitialBackoff - time.Nanosecond
+		{name: "agento11y cleartext with a TLS endpoint", mutate: func(s *Settings) {
+			s.AgentObservability.Protocol = AgentObservabilityHTTP
+			s.AgentObservability.Endpoint = "https://collector.example/export"
+			s.AgentObservability.TLS = false
 		}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			settings := valid
 			tc.mutate(&settings)
-			require.Error(t, validateLegacyRuntime(settings))
+			require.Error(t, settings.Validate())
 		})
 	}
 }
 
-func TestParseSettings_RejectsUnknownAndInvalidValues(t *testing.T) {
-	environment := mapLookup(baseSettingsEnvironment())
-	_, err := ParseSettings([]string{"--unknown=true"}, environment)
-	require.Error(t, err)
-	_, err = ParseSettings([]string{"--deployment.mode=other"}, environment)
-	require.Error(t, err)
-	_, err = ParseSettings([]string{"--auth.audiences=one,,two"}, environment)
-	require.Error(t, err)
-	_, err = ParseSettings([]string{"--auth.audiences=one,one"}, environment)
-	require.Error(t, err)
-
-	removed := []struct {
-		flag string
-		env  string
-	}{
-		{flag: "providerwire.json-depth", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_JSON_DEPTH"},
-		{flag: "providerwire.json-tokens", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_JSON_TOKENS"},
-		{flag: "providerwire.number-bytes", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_NUMBER_BYTES"},
-		{flag: "providerwire.error-response-bytes", env: "GRAFANA_AI_GATEWAY_PROVIDERWIRE_ERROR_RESPONSE_BYTES"},
+func TestParseSettings_IgnoresRemovedSettings(t *testing.T) {
+	values := baseSettingsEnvironment()
+	for _, name := range []string{
+		"GRAFANA_AI_GATEWAY_CONFIG_FILE", "GRAFANA_AI_GATEWAY_ACCESS_MODE",
+		"GF_PLUGIN_CONFIG_MAX_BYTES", "GF_PLUGIN_AGENTO11Y_QUEUE_SIZE", "GF_PLUGIN_PROVIDERWIRE_STREAM_PARTS",
+		"GF_PLUGIN_OBSERVATION_REGION",
+	} {
+		values[name] = "not-a-valid-value"
 	}
-	for _, setting := range removed {
-		t.Run("removed flag "+setting.flag, func(t *testing.T) {
-			_, err := ParseSettings([]string{"--" + setting.flag + "=1"}, environment)
-			require.Error(t, err)
-		})
-		t.Run("removed environment "+setting.flag, func(t *testing.T) {
-			values := baseSettingsEnvironment()
-			values[setting.env] = "not-a-valid-value"
-			_, err := ParseSettings(nil, mapLookup(values))
-			require.NoError(t, err)
-		})
-	}
+	_, err := ParseSettings(mapLookup(values))
+	require.NoError(t, err)
 }
 
-func TestAgentObservabilitySettings_DevelopmentDisablement(t *testing.T) {
+func TestAgentObservabilitySettings_Disabled(t *testing.T) {
 	environment := baseSettingsEnvironment()
-	environment["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development"
-	environment["GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED"] = "false"
-	delete(environment, "GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT")
-	delete(environment, "GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV")
+	environment["GF_PLUGIN_AGENTO11Y_ENABLED"] = "false"
+	delete(environment, "GF_PLUGIN_AGENTO11Y_ENDPOINT")
 
-	settings, err := ParseSettings(nil, mapLookup(environment))
+	settings, err := ParseSettings(mapLookup(environment))
 	require.NoError(t, err)
 	assert.False(t, settings.AgentObservability.Enabled)
 	secret, err := settings.AgentObservability.ResolveAuthSecret(nil)
@@ -293,13 +158,13 @@ func TestAgentObservabilitySettings_DevelopmentDisablement(t *testing.T) {
 }
 
 func TestAgentObservabilitySettings_ResolveAuthSecretOnceAndKeepFailuresSecretFree(t *testing.T) {
-	settings, err := ParseSettings(nil, mapLookup(baseSettingsEnvironment()))
+	settings, err := ParseSettings(mapLookup(baseSettingsEnvironment()))
 	require.NoError(t, err)
 
 	calls := 0
 	secret, err := settings.AgentObservability.ResolveAuthSecret(func(name string) (string, bool) {
 		calls++
-		assert.Equal(t, "AGENTO11Y_SECRET", name)
+		assert.Equal(t, "GF_PLUGIN_AGENTO11Y_TOKEN", name)
 		return "private-bearer-value", true
 	})
 	require.NoError(t, err)
@@ -319,7 +184,6 @@ func TestAgentObservabilitySettings_ResolveAuthSecretOnceAndKeepFailuresSecretFr
 		t.Run(test.name, func(t *testing.T) {
 			_, err := settings.AgentObservability.ResolveAuthSecret(test.lookup)
 			require.Error(t, err)
-			assert.NotContains(t, err.Error(), "AGENTO11Y_SECRET")
 			assert.NotContains(t, err.Error(), "private-bearer-value")
 		})
 	}
@@ -362,7 +226,7 @@ func TestAgentObservabilitySettings_EndpointTransportMatrix(t *testing.T) {
 func TestParseSettings_QueriesOnlyExplicitEnvironmentBindings(t *testing.T) {
 	queried := make(map[string]struct{})
 	values := baseSettingsEnvironment()
-	_, err := ParseSettings(nil, func(name string) (string, bool) {
+	_, err := ParseSettings(func(name string) (string, bool) {
 		queried[name] = struct{}{}
 		value, ok := values[name]
 		return value, ok
@@ -375,7 +239,7 @@ func TestParseSettings_QueriesOnlyExplicitEnvironmentBindings(t *testing.T) {
 }
 
 func TestAgentObservabilitySettings_RejectsEveryAmbientSDKEnvironmentKey(t *testing.T) {
-	settings, err := ParseSettings(nil, mapLookup(baseSettingsEnvironment()))
+	settings, err := ParseSettings(mapLookup(baseSettingsEnvironment()))
 	require.NoError(t, err)
 	for _, name := range ambientAgentObservabilityEnvironment {
 		t.Run(name, func(t *testing.T) {
@@ -406,7 +270,7 @@ func TestAgentObservabilitySettings_RejectsEveryAmbientSDKEnvironmentKey(t *test
 }
 
 func TestAgentObservabilitySettings_RejectsNewSDKEnvironmentKeys(t *testing.T) {
-	settings, err := ParseSettings(nil, mapLookup(baseSettingsEnvironment()))
+	settings, err := ParseSettings(mapLookup(baseSettingsEnvironment()))
 	require.NoError(t, err)
 	for _, name := range []string{
 		"AGENTO11Y_EXPORT_TIMEOUT_MS", "SIGIL_EXPORT_TIMEOUT_MS",
@@ -418,75 +282,63 @@ func TestAgentObservabilitySettings_RejectsNewSDKEnvironmentKeys(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			err := settings.AgentObservability.ValidateAmbientEnvironment(mapLookup(map[string]string{name: "private-invalid-value"}))
 			require.EqualError(t, err, "config: ambient agent observability SDK environment is not allowed")
-			_, err = ParseSettings([]string{"--agento11y.auth-secret-env=" + name}, mapLookup(baseSettingsEnvironment()))
-			require.ErrorContains(t, err, "SDK-reserved")
 		})
 	}
 }
 
-func TestParseSettings_IsolatedListeners(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		args    []string
-		wantErr string
+func TestParseSettings_AccessPolicy(t *testing.T) {
+	tests := []struct {
+		name     string
+		mode     string
+		services string
+		want     auth.AccessPolicy
+		wantErr  string
 	}{
-		{name: "three listeners"},
-		{name: "missing operational", args: []string{"--server.operational-listen-address="}, wantErr: "TCP"},
-		{name: "missing cloud", args: []string{"--server.cloud-listen-address="}, wantErr: "TCP"},
-		{name: "shared port", args: []string{"--server.private-listen-address=:8080"}, wantErr: "differ"},
-		{name: "invalid cloud address", args: []string{"--server.cloud-listen-address=bad"}, wantErr: "TCP"},
-		{name: "legacy mode", args: []string{"--auth.mode=cloud-gateway"}, wantErr: "unknown long flag"},
-		{name: "legacy listener", args: []string{"--server.listen-address=:8080"}, wantErr: "unknown long flag"},
-		{name: "missing JWT trust", args: []string{"--auth.jwks-url="}, wantErr: "jwks URL is required"},
-		{name: "wrong audience", args: []string{"--auth.audiences=other"}, wantErr: "audience must be ai-sdk"},
-		{name: "extra audience", args: []string{"--auth.audiences=ai-sdk,other"}, wantErr: "audience must be ai-sdk"},
-		{name: "JWKS limits apply", args: []string{"--auth.jwks-timeout=-1s"}, wantErr: "positive"},
-		{name: "write boundary", args: []string{"--server.write-timeout=160s"}},
-		{name: "write includes JWT", args: []string{"--server.write-timeout=159s"}, wantErr: "write timeout"},
-	} {
+		{name: "cloud without allowlist", mode: "cloud", want: auth.AccessPolicy{Mode: auth.AccessModeCloud}},
+		{name: "cloud allowlist", mode: "cloud", services: "svc-a,other-app-operator", want: auth.AccessPolicy{Mode: auth.AccessModeCloud, InternalServices: []string{"svc-a", "other-app-operator"}}},
+		{name: "self-hosted", mode: "self-hosted", want: auth.AccessPolicy{Mode: auth.AccessModeSelfHosted}},
+		{name: "missing mode", wantErr: "access mode is required"},
+		{name: "unknown mode", mode: "hybrid", wantErr: "cloud or self-hosted"},
+		{name: "mode case", mode: "Cloud", wantErr: "cloud or self-hosted"},
+		{name: "allowlist in self-hosted", mode: "self-hosted", services: "svc-a", wantErr: "requires cloud access mode"},
+		{name: "surrounding whitespace is trimmed", mode: "cloud", services: " svc-a , svc-b ", want: auth.AccessPolicy{Mode: auth.AccessModeCloud, InternalServices: []string{"svc-a", "svc-b"}}},
+		{name: "empty entry", mode: "cloud", services: "svc-a,,svc-b", wantErr: "must not be empty"},
+		{name: "trailing comma", mode: "cloud", services: "svc-a,", wantErr: "must not be empty"},
+		{name: "blank entry", mode: "cloud", services: "svc-a, ", wantErr: "must not be empty"},
+		{name: "duplicate after trimming", mode: "cloud", services: "svc-a, svc-a", wantErr: "unique"},
+	}
+	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			settings, err := ParseSettings(tc.args, mapLookup(baseSettingsEnvironment()))
-			if err == nil {
-				err = validateLegacyRuntime(settings)
-			}
+			environment := baseSettingsEnvironment()
+			environment["GF_PLUGIN_ACCESS_MODE"] = tc.mode
+			environment["GF_PLUGIN_ACCESS_INTERNAL_SERVICES"] = tc.services
+			settings, err := ParseSettings(mapLookup(environment))
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
-			} else {
-				require.NoError(t, err)
+				assert.NotContains(t, err.Error(), "svc-a")
+				return
 			}
-		})
-	}
-	for _, flag := range []string{"private", "cloud", "operational"} {
-		t.Run("unsafe/"+flag, func(t *testing.T) {
-			environment := baseSettingsEnvironment()
-			unsafeAuthEnvironment(environment)
-			_, err := ParseSettings([]string{"--auth.unsafe"}, mapLookup(environment))
 			require.NoError(t, err)
-			settings, err := ParseSettings([]string{"--auth.unsafe", "--server." + flag + "-listen-address=:9090"}, mapLookup(environment))
-			if err == nil {
-				err = validateLegacyRuntime(settings)
-			}
-			require.ErrorContains(t, err, "loopback")
+			assert.Equal(t, tc.want, settings.Access)
 		})
 	}
+}
+
+func TestParseSettings_AgentObservabilityTransportSecurityIsExplicit(t *testing.T) {
+	environment := baseSettingsEnvironment()
+	environment["GF_PLUGIN_AGENTO11Y_TLS"] = "false"
+	settings, err := ParseSettings(mapLookup(environment))
+	require.NoError(t, err)
+	assert.False(t, settings.AgentObservability.TLS)
 }
 
 func baseSettingsEnvironment() map[string]string {
 	return map[string]string{
-		"GRAFANA_AI_GATEWAY_CONFIG_FILE":               "/tmp/models.yaml",
-		"GRAFANA_AI_GATEWAY_AUTH_JWKS_URL":             "https://auth.example/jwks",
-		"GRAFANA_AI_GATEWAY_AGENTO11Y_ENABLED":         "true",
-		"GRAFANA_AI_GATEWAY_AGENTO11Y_ENDPOINT":        "collector.example:4317",
-		"GRAFANA_AI_GATEWAY_AGENTO11Y_AUTH_SECRET_ENV": "AGENTO11Y_SECRET",
+		"GF_PLUGIN_CONFIG_FILE":        "/tmp/models.yaml",
+		"GF_PLUGIN_ACCESS_MODE":        "cloud",
+		"GF_PLUGIN_AGENTO11Y_ENABLED":  "true",
+		"GF_PLUGIN_AGENTO11Y_ENDPOINT": "collector.example:4317",
 	}
-}
-
-func unsafeAuthEnvironment(environment map[string]string) {
-	environment["GRAFANA_AI_GATEWAY_DEPLOYMENT_MODE"] = "development"
-	environment["GRAFANA_AI_GATEWAY_AUTH_JWKS_URL"] = ""
-	environment["GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS"] = "127.0.0.1:8082"
-	environment["GRAFANA_AI_GATEWAY_SERVER_CLOUD_LISTEN_ADDRESS"] = "127.0.0.1:8080"
-	environment["GRAFANA_AI_GATEWAY_SERVER_OPERATIONAL_LISTEN_ADDRESS"] = "127.0.0.1:8081"
 }
 
 func mapLookup(values map[string]string) LookupEnv {
@@ -494,12 +346,4 @@ func mapLookup(values map[string]string) LookupEnv {
 		value, ok := values[name]
 		return value, ok
 	}
-}
-
-func validateLegacyRuntime(settings Settings) error {
-	auth, err := ResolveAuthConfig(settings, File{})
-	if err != nil {
-		return err
-	}
-	return settings.ValidateRuntime(auth, true)
 }

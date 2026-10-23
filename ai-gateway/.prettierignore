@@ -1,0 +1,7 @@
+/*
+!/src/
+!/tests/
+!/*.ts
+!/*.js
+!/*.mjs
+/src/app-sdk-manifest.json

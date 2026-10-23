@@ -12,22 +12,18 @@ import (
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
-	"github.com/grafana/authlib/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRequestObservation_AuthenticatedTrustBoundary(t *testing.T) {
 	var logs bytes.Buffer
-	telemetry, err := NewTelemetry(
-		slog.New(slog.NewJSONHandler(&logs, nil)),
-		TelemetryOptions{Region: "us-central1", Application: "ai-gateway"},
-	)
+	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(&logs, nil)))
 	require.NoError(t, err)
 	telemetry.generateCorrelationID = func() string { return "generated-correlation" }
 
 	untrusted := []string{
-		"header-correlation", "header-region", "header-application", "header-user",
+		"header-correlation", "header-region", "header-user",
 		"arbitrary-context", "acting-user", "raw-claim", "access-secret",
 	}
 	type arbitraryContextKey struct{}
@@ -42,18 +38,8 @@ func TestRequestObservation_AuthenticatedTrustBoundary(t *testing.T) {
 	originalHeaders := options.Headers["X-Existing"]
 	originalOption := append([]byte(nil), options.ProviderOptions["provider"].(provider.RawProviderOption).Raw...)
 
-	handler := telemetry.Middleware(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		telemetry.ObserveAuthentication(request.Context(), gatewayauth.Observation{
-			Outcome: gatewayauth.OutcomeAuthenticated,
-			Caller: &gatewayauth.Caller{
-				Service:   "verified-service",
-				Namespace: "verified-namespace",
-				ActingUser: &gatewayauth.ActingUser{
-					Subject: "acting-user",
-					Type:    types.TypeUser,
-				},
-			},
-		})
+	handler := telemetry.Middleware(fixedRoute("language_model"), http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		telemetry.ObserveAccess(request.Context(), verifiedCaller(gatewayauth.AccessModeCloud, []string{"verified-service"}, "verified-service", "user:acting-user", "verified-namespace"))
 		retained = observationFromContext(request.Context())
 		metadata = observationMetadata(request.Context())
 		w.WriteHeader(http.StatusNoContent)
@@ -61,7 +47,6 @@ func TestRequestObservation_AuthenticatedTrustBoundary(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/aisdk/language-model", nil)
 	request.Header.Set("X-Request-ID", "header-correlation")
 	request.Header.Set("X-Region", "header-region")
-	request.Header.Set("X-Application", "header-application")
 	request.Header.Set("X-User", "header-user")
 	request.Header.Set("Authorization", "access-secret")
 	request = request.WithContext(context.WithValue(request.Context(), arbitraryContextKey{}, "arbitrary-context"))
@@ -71,35 +56,28 @@ func TestRequestObservation_AuthenticatedTrustBoundary(t *testing.T) {
 		correlationID: "generated-correlation",
 		callerService: "verified-service",
 		namespace:     "verified-namespace",
-		region:        "us-central1",
-		application:   "ai-gateway",
 	}, retained)
 	assert.Equal(t, map[string]any{
 		"gateway.correlation_id": "generated-correlation",
 		"gateway.caller_service": "verified-service",
 		"gateway.namespace":      "verified-namespace",
-		"gateway.region":         "us-central1",
-		"gateway.application":    "ai-gateway",
 	}, metadata)
 	assert.Equal(t, originalHeaders, options.Headers["X-Existing"])
 	assert.Equal(t, originalOption, []byte(options.ProviderOptions["provider"].(provider.RawProviderOption).Raw))
 
 	serialized := logs.String()
-	for _, expected := range []string{"generated-correlation", "verified-service", "verified-namespace", "us-central1", "ai-gateway"} {
+	for _, expected := range []string{"generated-correlation", "verified-service", "verified-namespace"} {
 		assert.Contains(t, serialized, expected)
 	}
 	for _, value := range untrusted {
-		assert.NotContains(t, retained.correlationID+retained.callerService+retained.namespace+retained.region+retained.application, value)
+		assert.NotContains(t, retained.correlationID+retained.callerService+retained.namespace, value)
 		assert.NotContains(t, serialized, value)
 	}
 }
 
 func TestRequestObservation_OptionalAndInvalidValuesAreOmitted(t *testing.T) {
 	tooLong := strings.Repeat("x", maxObservationValueLen+1)
-	telemetry, err := NewTelemetry(
-		slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
-		TelemetryOptions{Region: "bad\nregion", Application: tooLong},
-	)
+	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	require.NoError(t, err)
 	telemetry.generateCorrelationID = func() string { return "correlation" }
 
@@ -115,41 +93,72 @@ func TestRequestObservation_OptionalAndInvalidValuesAreOmitted(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var got requestObservation
-			handler := telemetry.Middleware(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-				telemetry.ObserveAuthentication(request.Context(), gatewayauth.Observation{
-					Outcome: gatewayauth.OutcomeAuthenticated,
-					Caller:  &gatewayauth.Caller{Service: test.service, Namespace: test.namespace},
-				})
+			handler := telemetry.Middleware(fixedRoute("config"), http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				telemetry.ObserveAccess(request.Context(), verifiedCaller(gatewayauth.AccessModeCloud, []string{test.service}, test.service, "", test.namespace))
 				got = observationFromContext(request.Context())
 			}))
 			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/live", nil))
 			assert.Equal(t, "correlation", got.correlationID)
 			assert.Empty(t, got.callerService)
 			assert.Empty(t, got.namespace)
-			assert.Empty(t, got.region)
-			assert.Empty(t, got.application)
 		})
 	}
 }
 
-func TestRequestObservation_FailedAuthenticationCannotProjectCaller(t *testing.T) {
+func TestRequestObservation_RefusedAccessCannotProjectCaller(t *testing.T) {
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	require.NoError(t, err)
 	telemetry.generateCorrelationID = func() string { return "correlation" }
 
 	var got requestObservation
-	handler := telemetry.Middleware(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		telemetry.ObserveAuthentication(request.Context(), gatewayauth.Observation{
-			Outcome: gatewayauth.OutcomeFailed,
-			Caller:  &gatewayauth.Caller{Service: "must-not-project", Namespace: "must-not-project"},
-		})
+	handler := telemetry.Middleware(fixedRoute("config"), http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		caller := verifiedCaller(gatewayauth.AccessModeCloud, nil, "must-not-project", "", "must-not-project")
+		require.Equal(t, gatewayauth.Refused, caller.AccountAccess())
+		telemetry.ObserveAccess(request.Context(), caller)
 		got = observationFromContext(request.Context())
 	}))
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/live", nil))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 
 	assert.Equal(t, "correlation", got.correlationID)
 	assert.Empty(t, got.callerService)
 	assert.Empty(t, got.namespace)
+}
+
+func TestRequestObservation_NonConfiguredCallsCarryNoCallerService(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mode     gatewayauth.AccessMode
+		internal []string
+		service  string
+		identity string
+		access   gatewayauth.AccountAccess
+	}{
+		{name: "cloud BYOK through the front door", mode: gatewayauth.AccessModeCloud, internal: []string{"internal-service"}, service: "front-door", identity: "user:u1", access: gatewayauth.RequestBYOK},
+		{name: "cloud relayed user", mode: gatewayauth.AccessModeCloud, internal: []string{"internal-service"}, service: "relay", identity: "user:u1", access: gatewayauth.RequestBYOK},
+		{name: "self-hosted with a direct service", mode: gatewayauth.AccessModeSelfHosted, service: "internal-service", identity: "service-account:sa1", access: gatewayauth.ConfiguredAccounts},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(&logs, nil)))
+			require.NoError(t, err)
+			var got requestObservation
+			var metadata map[string]any
+			handler := telemetry.Middleware(fixedRoute("language_model"), http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				caller := verifiedCaller(tc.mode, tc.internal, tc.service, tc.identity, "stacks-1")
+				require.Equal(t, tc.access, caller.AccountAccess())
+				telemetry.ObserveAccess(request.Context(), caller)
+				got = observationFromContext(request.Context())
+				metadata = observationMetadata(request.Context())
+			}))
+			handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
+			assert.Empty(t, got.callerService)
+			assert.Equal(t, "stacks-1", got.namespace)
+			assert.NotContains(t, metadata, "gateway.caller_service")
+			assert.NotContains(t, logs.String(), tc.service)
+			assert.NotContains(t, logs.String(), "u1")
+			assert.NotContains(t, logs.String(), "sa1")
+		})
+	}
 }
 
 func TestRequestObservation_MetadataIsDefensivelyCopied(t *testing.T) {

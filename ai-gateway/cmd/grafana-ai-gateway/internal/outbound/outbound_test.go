@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,58 +21,57 @@ func TestValidateEndpoint(t *testing.T) {
 	tests := []struct {
 		name  string
 		raw   string
-		mode  config.DeploymentMode
 		valid bool
 	}{
-		{name: "production https", raw: "https://auth.example/jwks", mode: config.DeploymentProduction, valid: true},
-		{name: "development https", raw: "https://provider.example/prefix", mode: config.DeploymentDevelopment, valid: true},
-		{name: "development http", raw: "http://127.0.0.1:8080/prefix", mode: config.DeploymentDevelopment, valid: true},
-		{name: "production http", raw: "http://auth.example/jwks", mode: config.DeploymentProduction},
-		{name: "relative", raw: "/jwks", mode: config.DeploymentDevelopment},
-		{name: "empty host", raw: "https:///jwks", mode: config.DeploymentDevelopment},
-		{name: "userinfo", raw: "https://user:password@auth.example/jwks", mode: config.DeploymentDevelopment},
-		{name: "opaque", raw: "https:opaque", mode: config.DeploymentDevelopment},
-		{name: "query", raw: "https://auth.example/jwks?secret=value", mode: config.DeploymentDevelopment},
-		{name: "forced query", raw: "https://auth.example/jwks?", mode: config.DeploymentDevelopment},
-		{name: "fragment", raw: "https://auth.example/jwks#fragment", mode: config.DeploymentDevelopment},
-		{name: "unsupported scheme", raw: "ftp://auth.example/jwks", mode: config.DeploymentDevelopment},
-		{name: "invalid mode", raw: "https://auth.example/jwks", mode: config.DeploymentMode("other")},
+		{name: "https", raw: "https://auth.example/jwks", valid: true},
+		{name: "https with a path", raw: "https://provider.example/prefix", valid: true},
+		{name: "http", raw: "http://127.0.0.1:8080/prefix", valid: true},
+		{name: "relative", raw: "/jwks"},
+		{name: "empty host", raw: "https:///jwks"},
+		{name: "userinfo", raw: "https://user:password@auth.example/jwks"},
+		{name: "malformed with userinfo", raw: "https://user:password@auth.example:port/jwks"},
+		{name: "opaque", raw: "https:opaque"},
+		{name: "query", raw: "https://auth.example/jwks?secret=value"},
+		{name: "forced query", raw: "https://auth.example/jwks?"},
+		{name: "fragment", raw: "https://auth.example/jwks#fragment"},
+		{name: "unsupported scheme", raw: "ftp://auth.example/jwks"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			parsed, err := ValidateEndpoint(tc.raw, tc.mode)
+			parsed, err := ValidateEndpoint(tc.raw)
 			if tc.valid {
 				require.NoError(t, err)
 				assert.Equal(t, tc.raw, parsed.String())
 			} else {
 				require.Error(t, err)
 				assert.Nil(t, parsed)
+				assert.NotContains(t, err.Error(), "password")
 			}
 		})
 	}
 }
 
 func TestNewClients_IndependentExactTransports(t *testing.T) {
-	jwks, err := NewJWKSClient(5*time.Second, 1024)
+	first, err := NewAnthropicClient(5*time.Second, 1024)
 	require.NoError(t, err)
-	anthropic, err := NewAnthropicClient(10*time.Second, 2048)
+	second, err := NewAnthropicClient(10*time.Second, 2048)
 	require.NoError(t, err)
-	jwksBounded := requireBoundedTransport(t, jwks)
-	anthropicBounded := requireBoundedTransport(t, anthropic)
-	assert.NotSame(t, jwksBounded, anthropicBounded)
-	assert.NotSame(t, jwksBounded.base, anthropicBounded.base)
-	assert.Equal(t, int64(1024), jwksBounded.limit)
-	assert.Equal(t, int64(2048), anthropicBounded.limit)
-	assert.Equal(t, 5*time.Second, jwks.Timeout)
-	assert.Zero(t, anthropic.Timeout)
+	firstBounded := requireBoundedTransport(t, first)
+	secondBounded := requireBoundedTransport(t, second)
+	assert.NotSame(t, firstBounded, secondBounded)
+	assert.NotSame(t, firstBounded.base, secondBounded.base)
+	assert.Equal(t, int64(1024), firstBounded.limit)
+	assert.Equal(t, int64(2048), secondBounded.limit)
+	assert.Zero(t, first.Timeout)
+	assert.Zero(t, second.Timeout)
 
 	for _, tc := range []struct {
 		name      string
 		transport *http.Transport
 		header    time.Duration
 	}{
-		{name: "jwks", transport: jwksBounded.base.(*http.Transport), header: 5 * time.Second},
-		{name: "anthropic", transport: anthropicBounded.base.(*http.Transport), header: 10 * time.Second},
+		{name: "first", transport: firstBounded.base.(*http.Transport), header: 5 * time.Second},
+		{name: "second", transport: secondBounded.base.(*http.Transport), header: 10 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.NotNil(t, tc.transport.Proxy)
@@ -118,21 +116,17 @@ func TestClients_RejectRedirectsBeforeCredentialForwarding(t *testing.T) {
 			}))
 			defer source.Close()
 
-			jwks, err := NewJWKSClient(time.Second, 1024)
+			client, err := NewAnthropicClient(time.Second, 1024)
 			require.NoError(t, err)
-			anthropic, err := NewAnthropicClient(time.Second, 1024)
+			request, err := http.NewRequest(http.MethodGet, source.URL, nil)
 			require.NoError(t, err)
-			for _, client := range []*http.Client{jwks, anthropic} {
-				request, err := http.NewRequest(http.MethodGet, source.URL, nil)
-				require.NoError(t, err)
-				request.Header.Set("X-Access-Token", "secret-access")
-				request.Header.Set("Authorization", "Bearer secret")
-				request.Header.Set("X-Api-Key", "secret-api-key")
-				response, err := client.Do(request)
-				require.NoError(t, err)
-				assert.Equal(t, http.StatusTemporaryRedirect, response.StatusCode)
-				require.NoError(t, response.Body.Close())
-			}
+			request.Header.Set("X-Access-Token", "secret-access")
+			request.Header.Set("Authorization", "Bearer secret")
+			request.Header.Set("X-Api-Key", "secret-api-key")
+			response, err := client.Do(request)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusTemporaryRedirect, response.StatusCode)
+			require.NoError(t, response.Body.Close())
 		})
 	}
 	assert.Zero(t, targetCalls.Load())
@@ -173,20 +167,18 @@ func TestBoundedTransport_DecompressedResponseBoundaries(t *testing.T) {
 
 				for _, delta := range []int64{1, 0, -1} {
 					limit := int64(len(payload.payload)) + delta
-					for _, newClient := range []func(time.Duration, int64) (*http.Client, error){NewJWKSClient, NewAnthropicClient} {
-						client, err := newClient(time.Second, limit)
-						require.NoError(t, err)
-						response, err := client.Get(server.URL)
-						require.NoError(t, err)
-						body, readErr := io.ReadAll(response.Body)
-						_ = response.Body.Close()
-						if delta >= 0 {
-							require.NoError(t, readErr)
-							assert.Equal(t, payload.payload, string(body))
-						} else {
-							require.ErrorIs(t, readErr, ErrResponseTooLarge)
-							assert.Len(t, body, int(limit))
-						}
+					client, err := NewAnthropicClient(time.Second, limit)
+					require.NoError(t, err)
+					response, err := client.Get(server.URL)
+					require.NoError(t, err)
+					body, readErr := io.ReadAll(response.Body)
+					_ = response.Body.Close()
+					if delta >= 0 {
+						require.NoError(t, readErr)
+						assert.Equal(t, payload.payload, string(body))
+					} else {
+						require.ErrorIs(t, readErr, ErrResponseTooLarge)
+						assert.Len(t, body, int(limit))
 					}
 				}
 			})
@@ -243,47 +235,21 @@ func TestClients_HostileServersTerminateWithinBounds(t *testing.T) {
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled))
 	})
-
-	t.Run("JWKS stalled body timeout", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			assert.NoError(t, http.NewResponseController(w).Flush())
-			<-request.Context().Done()
-		}))
-		defer server.Close()
-		client, err := NewJWKSClient(50*time.Millisecond, 1024)
-		require.NoError(t, err)
-		response, err := client.Get(server.URL)
-		require.NoError(t, err)
-		defer func() { _ = response.Body.Close() }()
-		_, err = io.ReadAll(response.Body)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-	})
 }
 
-func TestNewClients_InvalidLimits(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		newClient func(time.Duration, int64) (*http.Client, error)
+func TestNewAnthropicClient_InvalidLimits(t *testing.T) {
+	for _, limits := range []struct {
+		timeout time.Duration
+		bytes   int64
 	}{
-		{name: "jwks", newClient: NewJWKSClient},
-		{name: "anthropic", newClient: NewAnthropicClient},
+		{timeout: 0, bytes: 1},
+		{timeout: -time.Second, bytes: 1},
+		{timeout: time.Second, bytes: 0},
+		{timeout: time.Second, bytes: -1},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			for _, limits := range []struct {
-				timeout time.Duration
-				bytes   int64
-			}{
-				{timeout: 0, bytes: 1},
-				{timeout: -time.Second, bytes: 1},
-				{timeout: time.Second, bytes: 0},
-				{timeout: time.Second, bytes: -1},
-			} {
-				client, err := tc.newClient(limits.timeout, limits.bytes)
-				require.Error(t, err)
-				assert.Nil(t, client)
-			}
-		})
+		client, err := NewAnthropicClient(limits.timeout, limits.bytes)
+		require.Error(t, err)
+		assert.Nil(t, client)
 	}
 }
 

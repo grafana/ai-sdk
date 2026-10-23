@@ -111,7 +111,7 @@ base; old dependency compilation alone SHALL NOT establish readiness.
 ### Requirement: Gateway application release
 
 Gateway SHALL remain independently versioned with changelogs, release pull requests,
-and `ai-gateway/vX.Y.Z` application tags. Its main and versioned images SHALL use the
+and `ai-gateway/vX.Y.Z` application tags. Its main and versioned plugin packages SHALL use the
 workspace at the selected revision. Gateway SHALL NOT wait for library tags, repins,
 or standalone Go compilation. Relevant linked workspace changes SHALL contribute
 Gateway release intent using release-please mechanisms, without a competing version
@@ -119,13 +119,13 @@ calculator or manufactured dependency changes.
 
 #### Scenario: Linked SDK change changes the Gateway image
 
-- **WHEN** a relevant SDK, provider or middleware change affects workspace-built Gateway behavior
+- **WHEN** a relevant SDK, provider or middleware change affects workspace-built Gateway plugin behavior
 - **THEN** Gateway can receive application release intent without requiring an ai-gateway path change
 
 #### Scenario: Application release validation
 
 - **WHEN** a Gateway release candidate is prepared
-- **THEN** same-revision application tests, image builds and runtime smoke validation precede publication
+- **THEN** same-revision application tests, plugin builds, plugin validation and protocol test host suites precede any publication
 - **AND** library standalone readiness cannot substitute for that evidence
 
 ### Requirement: Fail-closed activation

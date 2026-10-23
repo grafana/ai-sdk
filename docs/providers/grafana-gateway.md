@@ -1,8 +1,9 @@
 # Call Grafana AI Gateway from Go
 
-Use the Grafana provider to call your Gateway from an application server. Select
-a model, then use the same generation, streaming and tool APIs as other Go
-providers. Available models and features depend on your deployment.
+Use the Grafana provider to call Grafana AI Gateway from your application
+server. You select a model, then use the same generation, streaming and tool
+APIs as with any other provider. Which models and features you get depends on
+how your Gateway is configured.
 
 ```bash
 go get github.com/grafana/ai-sdk github.com/grafana/ai-sdk/providers/grafana
@@ -12,63 +13,6 @@ Keep Gateway and model-provider credentials on your server, not in browser code.
 
 For the server-side flow, see [Gateway architecture](../concepts/gateway-architecture.md)
 and the [glossary](../concepts/gateway-glossary.md).
-
-## Inspect execution overviews and failures
-
-Private configured-model results and stream finish metadata may contain
-`gateway.execution`. Cloud BYOK calls can return available event-local SSE
-native failure summaries without configured catalog context. They do not yet
-return Gateway attempt overviews or unary/setup native summaries; absence is a
-capability gap, not a confidentiality rule or evidence that no attempts occurred.
-It identifies the requested/canonical public model and ordered observed attempts,
-including configured provider instance, provider and native model, outcome,
-and optional native failure summaries. Earlier eligible failures remain
-visible when a later candidate is selected. Selection commits a stream at its
-first accepted part; it does not mean completion or replay safety.
-
-Go applications can inspect result/finish `ProviderMetadata`, including through
-consumer middleware. TypeScript applications can inspect result or awaited
-stream `providerMetadata`. Each invocation has its own overview; application
-retries and tool continuations start new invocations.
-
-HTTP setup/unary errors carry optional top-level `providerMetadata` in the
-bounded error body. Go exposes it through `*provider.APICallError.Data`;
-the TypeScript Gateway error exposes the API cause's `data`.
-Committed stream errors carry `error.data.providerMetadata` and an optional
-current `error.data.nativeError` summary. Go exposes that payload through
-the part's `APICallError.Data`; TypeScript low-level parts expose `error.data`
-and high-level error parts wrap the Gateway error. Later content/finish parts
-remain ordered and readable. Current errors are not accumulated into finish
-metadata or used to restart fallback. Current native summaries do not require
-configured catalog attribution; a plain request selection can return them
-without a configured execution overview. Plain selections currently lack
-request-account attempt overviews and unary/setup native summaries; this is an
-[observation capability gap](https://github.com/grafana/ai-sdk/issues/317), not a
-confidentiality rule or a permanent restriction.
-
-These extensions are best-effort, independent of Gateway operator observation,
-and do not change public error classification or retryability. Complete
-response/frame bounds still apply as transitional transport policy; an overview
-can be omitted rather than
-invalidate fitting original output. Native `gateway` metadata moves under
-`gateway.nativeMetadata` only when enrichment fits. Otherwise it stays opaque,
-so namespace presence alone does not establish provenance, and an absent
-overview does not imply no provider attempts.
-
-Summaries select native message, type, string-or-number code and status, not
-raw bodies, headers or arbitrary cause trees. Gateway-produced summaries replace
-exact configured server API-key matches with `[REDACTED]` in message, type and
-string code, including after successful fallback. This covers configured provider
-keys and the enabled exporter credential, not static Gateway access keys; those
-retain hash-only authentication storage. Caller-owned BYOK echoes remain
-unchanged unless they also match a configured key. Numeric code and status are
-unchanged. This is not general output filtering: native metadata, generated text,
-tool output and arbitrarily encoded secrets are outside this protection.
-Account authorization and request isolation still apply. Logger field policy
-remains separate; independently authorize logging
-or display of native diagnostics. These fields
-are not automatically UI message metadata or display content; map only
-deliberately selected values for your frontend.
 
 ## Inspect raw provider events
 
@@ -100,37 +44,35 @@ events, raise the Gateway's stream frame limit and the client's
 
 ## Authenticate the client
 
-Ask your Gateway operator for the URL and credentials your application should
-use. Include the API prefix in the URL, for example
-`https://gateway.example.com/api/v1/aisdk`. Cloud access uses request-supplied
-provider keys, not configured accounts. Create its client with your stack ID and
-Cloud Access Policy (CAP) token:
+Use your Gateway URL as the base URL. The Gateway's overview page in Grafana
+shows it, for example
+`https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123`.
+Then choose the constructor for your credential:
+
+- `NewWithServiceAccountToken` for a Grafana service account token.
+- `NewWithTokenExchange` for a Grafana service with a Cloud access policy
+  token. Add `WithOnBehalfOf` to a call's context to make it on behalf of a
+  user.
+- `NewWithAccessToken` for an access token you obtain and refresh yourself.
 
 ```go
-client, err := grafana.NewWithCloudCredentials(grafana.CloudCredentialsConfig{
-	StackID:  stackID,
-	CAPToken: capToken,
-	BaseURL:  gatewayURL,
+client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
+	Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
+	BaseURL: gatewayURL,
 })
 if err != nil {
 	return err
 }
 ```
 
-For a self-hosted static-key URL, use `NewWithAccessToken` with the operator's
-opaque key from your server environment. No Cloud stack, CAP, JWT parsing or
-exchange is needed. The same client supports discovery, unary and streaming.
-For a private JWT URL, use `NewWithTokenExchange` or `NewWithAccessToken`. See [Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
-for credential setup and Go/Vercel examples. Use HTTPS and configure
-credentials through the client rather than adding authentication headers to
-individual calls.
+[Authenticate to Grafana AI Gateway](../guides/gateway-authentication.md)
+explains which credential to use and what access it gets, with Go and
+TypeScript examples. Use HTTPS, and let the client add authentication rather
+than setting headers on individual calls.
 
 ## Generate or stream a response
 
-For private configured-account calls, choose a public model ID from your operator
-or the model list below. This example assumes a private JWT client. Cloud calls
-use a native `provider/model` ID and provider keys; see
-[Use your own provider credentials](#use-your-own-provider-credentials).
+Pass a model ID from your Gateway's model list to `client.LanguageModel`:
 
 ```go
 model, err := client.LanguageModel(modelID)
@@ -146,36 +88,17 @@ if err != nil {
 fmt.Println(result.Text)
 ```
 
-Use `aisdk.StreamText` when your application should receive text as it arrives.
-See [Generate text from Go](../getting-started/backend-only.md#stream-text-as-it-arrives)
-for the stream-consumption pattern, or [Full-stack chat](../getting-started/full-stack-chat.md)
-to connect a streaming response to your frontend. Consume or cancel every stream.
+Use `aisdk.StreamText` to receive text as it arrives. See
+[Generate text from Go](../getting-started/backend-only.md#stream-text-as-it-arrives)
+for how to consume a stream, or [Full-stack chat](../getting-started/full-stack-chat.md)
+to stream a response to your frontend. Always consume or cancel a stream.
 
-## Receive generated files
-
-When a configured model emits generated files, the Gateway transports them in
-unary and streaming responses. The low-level Grafana client preserves inline
-base64, URL strings, optional original URLs and opaque provider metadata. Inline
-bytes are encoded once. Provider-local generated filenames are omitted because
-they are not part of the registered output contract.
-
-High-level generation resolves file URLs into file bytes using the SDK's existing
-download policy. The Gateway itself does not download or rewrite media URLs.
-Response and stream-frame limits include encoded media and metadata; oversized
-output fails before a successful body or file frame is written. A selected file
-commits its fallback candidate, so later failures do not replay generation.
-
-Operator capture and application middleware capture are independently configured;
-neither setting removes files or ordinary metadata from caller responses. Capture
-formats can differ from the provider wire representation. This transport support
-does not add image, speech or video generation capabilities to native adapters.
+If you bring your own provider key, select models differently; see
+[Use your own provider credentials](#use-your-own-provider-credentials).
 
 ## Discover and select public models
 
-Discovery is private configured-account functionality. Cloud/BYOK discovery
-returns an explicit HTTP 400 invalid-request error, not an empty list.
-
-Use `client.ListModels(ctx)` to build a model picker:
+List the configured models to build a model picker:
 
 ```go
 rows, err := client.ListModels(ctx)
@@ -190,20 +113,22 @@ for _, row := range rows {
 }
 ```
 
-Pass a row's ID or a known alias to `client.LanguageModel`. Aliases are other
-names for the same configured model, not separate model-list entries. You can
-also use an ID supplied by your operator without listing models first.
+Pass a row's ID or one of its aliases to `client.LanguageModel`. An alias is
+another name for the same model, so it has no row of its own.
 
-Some deployments include provider choices in `row.Gateway`: the primary model
-and ordered fallbacks. Check for nil before using them. These describe the
-configuration, not which provider served a previous call. Do not substitute a
-candidate's provider-model ID for the public ID when calling a configured model.
-Listing models does not check whether the providers are currently available.
+`row.Gateway` can also list the model's primary provider and its fallbacks.
+Check for nil before using it. It describes the configuration, not which
+provider answered a past call, and it does not mean the providers are
+available. Always call the model by its ID, not by a provider's model name.
 
-### Access from TypeScript
+Callers that can only bring their own provider key, such as users in Grafana
+Cloud, get an invalid request error instead, because their provider account
+decides which models exist.
 
-Use `getAvailableModels()` on the Vercel Gateway client to list public model IDs.
-If your application also needs aliases and configured provider choices, copy
+### List models from TypeScript
+
+Use `getAvailableModels()` on the Vercel Gateway client to list model IDs. To
+also get aliases and provider choices, copy
 [`configured-discovery.ts`](../../ai-gateway/examples/configured-discovery.ts)
 into your server application:
 
@@ -212,131 +137,49 @@ import { fetchConfiguredModels } from "./configured-discovery";
 
 const { models } = await fetchConfiguredModels({
   baseURL,
-  headers: { "X-Access-Token": accessToken },
+  headers: { Authorization: `Bearer ${serviceAccountToken}` },
   signal,
 });
 const aliases = models[0]?.gateway?.aliases;
 ```
 
-A static key or private access JWT may alternatively use bearer `Authorization`; never send
-both access headers. Use the same private Gateway URL and credentials as your
-client; see the [authentication guide](../guides/gateway-authentication.md).
-This helper does not support Cloud/BYOK discovery.
+A Grafana service can send its exchanged token in `X-Access-Token` instead of
+`Authorization`, but never both.
 
 ### Handle large catalogs
 
-Discovery returns a complete model list or an error, never a partial list. If
-large catalogs exceed your Go client's limit, adjust `DiscoveryBytes` in a copy
-of `grafana.DefaultLimits()` and supply it when creating the client. See the
-[client reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana#Limits).
-The TypeScript helper's `maxBytes` setting can lower its default limit, not raise
-it; ask your operator for a smaller visible catalog if that limit is exceeded.
+Listing returns the whole catalog or an error, never part of it. If a catalog
+is larger than the Go client accepts, raise `DiscoveryBytes` in a copy of
+[`grafana.DefaultLimits()`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana#Limits)
+and pass it to the client. The TypeScript helper's `maxBytes` can only lower
+its limit; for a larger catalog, ask your Gateway administrator to publish
+fewer models.
 
-To combine the Gateway with other providers in your application, see
+To combine the Gateway with other providers, see
 [Fallback and registry](../guides/fallback-and-registry.md).
 
-## Configure provider-specific settings
+## Configure fallback
 
-Use `aisdk.WithProviderOptions` for settings such as Claude thinking or OpenAI
-reasoning effort. Follow the [Anthropic](anthropic.md#enable-reasoning-deliberately)
-and [OpenAI](openai.md#configure-a-call) examples with your Gateway model.
+Your Gateway administrator can put a primary model and ordered backups behind
+one model ID. Your application keeps using that ID, and the Gateway tries the
+backups when the primary fails. Each call starts with the primary again,
+including follow-up calls in a tool loop.
 
-Choose a model that supports the file types, tools and reasoning settings your
-application needs. When using fallback, provide appropriate settings for each
-provider that may receive the request.
+Once a provider has started answering, the Gateway does not switch providers
+for that call. A stream can therefore fail without trying a backup. A failed
+attempt may already have cost money or run a provider-hosted tool, so fallback
+and your own retries can repeat work. Avoid automatic retries for operations
+that must not run twice.
 
-## Structured output
-
-Use the SDK's [structured output helpers](../guides/structured-output.md) with
-the Gateway in unary or streaming calls. JSON mode and object schemas reach
-the selected native adapter, including configured fallback candidates. The
-Gateway returns the native text; your SDK parses and validates the final object.
-Schemas must have an object root. Their contents stay opaque until native
-provider validation, so a valid Gateway request can still be rejected by a model.
-
-Schema support remains provider-specific. OpenAI Responses and Anthropic use
-their native structured-output behavior. Configured OpenAI-compatible routes
-currently retain their default JSON-mode fallback and return a warning when a
-schema is supplied; the standalone compatible provider supports explicit schema
-opt-in. The Gateway does not force schema support for those routes.
-
-When migrating direct `provider.ResponseFormat` literals, supply a pointer for
-`Name`: `new("answer")` supplies a name and `new("")` explicitly supplies an
-empty one. Omit it to retain the native default. `output.WithName("")` also
-preserves explicit emptiness. Missing and empty descriptions are equivalent.
-See the [provider API reference](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#ResponseFormat).
-
-## Function tools
-
-Define tools in your application to let the model request actions such as
-looking up data or calling an API. Your application executes these functions
-and returns their results to the model.
-
-See [Tools](../guides/tools.md) to define a tool and [Agent loops](../guides/agent-loops.md)
-to let the SDK manage multiple steps. The Gateway does not retain conversation
-state; include the history needed for each subsequent call.
-
-## Provider-defined tools
-
-Some tools run on the model provider; others ask your application to perform an
-action. Check `providerExecuted` on returned calls: do not execute a call in your
-application when the provider has already executed it. A preliminary tool
-result is a preview; wait for the final result before treating it as complete.
-
-Provider-hosted MCP tools use the selected provider's tool or call settings;
-see the [Anthropic](anthropic.md) and [OpenAI](openai.md#use-built-in-tools) guides.
-For Anthropic MCP, use distinct server names and HTTPS URLs without embedded
-credentials or fragments. Include the server configuration again when continuing
-the conversation, along with prior calls, results and provider metadata.
-
-Provider approval requests can be approved or denied and resumed through unary
-or streaming calls, including configured fallback routes. Keep the returned
-approval ID distinct from the tool-call ID. The high-level SDK owns application
-approval history; the V4 prompt carries tool-role approval responses, with an
-explicit boolean decision. The Gateway does not execute or persist approvals.
-
-For OpenAI hosted MCP, preserve the link between the two returned IDs before
-resuming: find the provider-executed tool call with the approval's `toolCallId`
-and set that call's `providerOptions.openai.approvalRequestId` to the returned
-`approvalId`, retaining its other options. The registered native adapter uses
-this option to associate the later result with the original tool call. Apply
-this step to high-level response messages as well as direct provider prompts;
-the registered high-level SDK does not add it automatically. Send the decision
-with the same approval ID and retain the provider ownership marker in
-application history.
-
-Execution-denied results preserve an absent reason separately from an explicitly
-empty reason. In Go, `ToolResultOutput.Reason` is now `*string`: use nil for an
-absent reason and `new("")` to preserve empty text. Existing string-valued
-constructors must be migrated to pointers. Approval-response reasons remain
-strings; empty and absent both mean no reason.
-
-Registered output options and nested text/file result options reach native
-adapters. The `content` output wrapper has no `providerOptions` field. Generated
-file transport is described in [Receive generated files](#receive-generated-files).
-
-## Preserve custom content
-
-Some providers return content that has no standard type, such as OpenAI
-compaction items. The Gateway returns it as custom content with a `kind`, for
-example `openai.compaction`, and provider metadata. Keep these parts in the
-history you send back, with the metadata as their provider options, so the same
-provider can continue the conversation. Other providers ignore custom content
-they do not recognize, so it is safe to use with fallback chains.
-
-If no model in the chain can accept the custom content in a tool result, the
-Gateway returns a non-retryable invalid-request error.
+To see which models were tried, read the
+[execution overview](#inspect-execution-overviews-and-failures).
 
 ## Use your own provider credentials
 
-Cloud calls use bring your own key (BYOK): send your provider credentials with
-each request. Confirm the Cloud/BYOK URL and availability with your operator;
-Gateway authentication is still required. These calls never use configured
-accounts, aliases or discovery; native providers decide model availability.
-
-For BYOK, select the provider's native model using a `provider/model` ID rather
-than a configured model or alias. For example, pass an OpenAI key with an
-`openai/gpt-5` selection:
+When you bring your own key (BYOK), the Gateway calls the provider with your
+provider account. This is how users and service accounts call the Gateway in
+Grafana Cloud. Select the provider's own model as `provider/model`, such as
+`openai/gpt-5`, and send your key with every call:
 
 ```go
 credentials, err := json.Marshal(map[string]any{
@@ -364,9 +207,7 @@ if err != nil {
 fmt.Println(result.Text)
 ```
 
-Read `apiKey` from your server's secret store. The `gateway.byok` account list
-contains provider credentials; ordinary inference settings still belong in the
-selected provider's options. From a Vercel server, pass the same account data:
+From a Vercel server, pass the same data:
 
 ```ts
 import { generateText } from "ai";
@@ -381,104 +222,163 @@ const result = await generateText({
 });
 ```
 
-Supply credentials on each call, including follow-up conversation steps. If you
-provide multiple accounts, put them in priority order. Account fallback may
-advance after an eligible failure, but authentication failures stop the chain.
+Read `apiKey` from your server's secret store. Other provider settings still go
+under the provider's own options, such as `openai`.
 
-Omit an account's `baseURL` to use the native provider endpoint. The bundled
-service does not configure custom endpoint approvals, so other URLs are rejected.
-This is separate from the client URL, which points to your Gateway.
-OpenAI accounts can also specify `organization` and `project`; leave them out
-when you do not need them. Anthropic accounts use the key and optional base URL.
+- Send the key on every call, including follow-up calls in a conversation.
+- List several accounts in priority order to fall back between them. An
+  authentication failure stops the fallback.
+- Leave out `baseURL` to use the provider's own endpoint; other endpoints are
+  refused.
+- OpenAI accounts can also set `organization` and `project`.
+
+Calls with your own key do not use the Gateway's configured models or aliases.
 
 ## Keep credentials out of logs
 
-Call options and returned request metadata can contain submitted provider keys.
-Do not log them directly or send them to browser clients or telemetry. Remove
-credentials from a copy before adding your own diagnostics.
+Call options and request details can contain the provider keys you send. Do
+not log them, and do not send them to browsers or telemetry.
 
-Go's [structured logging middleware](../middleware/structured-logging.md) applies
-its existing Redactor policy to fields such as apiKey and authentication headers
-in structured capture copies. Use DefaultRedactorWithExtraKeys or RedactorFunc
-for other sensitive fields; the complete BYOK object is not replaced. Ordinary
-fields, timeout settings and provider text remain unchanged, including echoes.
-TypeScript/application logging and other exporters need independent capture policy.
-Start with metadata-only logs and avoid unnecessary payload/error-message capture.
+The [structured logging middleware](../middleware/structured-logging.md)
+redacts fields such as `apiKey` and authentication headers. Add your own
+sensitive fields with `DefaultRedactorWithExtraKeys` or `RedactorFunc`.
+Redaction does not catch a key that a provider repeats in its response text,
+so start with metadata-only logging.
 
-## Configure fallback
+## Configure provider-specific settings
 
-For private configured-account calls, your Gateway operator can configure a
-primary model and ordered backups behind one public model ID. Your application
-keeps using that ID; it does not need to select backups itself.
+Use `aisdk.WithProviderOptions` for settings such as Claude thinking or OpenAI
+reasoning effort; see the [Anthropic](anthropic.md#enable-reasoning-deliberately)
+and [OpenAI](openai.md#configure-a-call) examples. Choose a model that supports
+the files, tools and settings your application needs. With fallback, include
+settings for each provider that may receive the call.
 
-Choose backups that support your required tools, file types, reasoning settings
-and conversation history. Each call starts with the primary again, including
-follow-up calls in a tool loop.
+## Structured output
 
-Once a provider returns a result or sends a stream event, the Gateway does not
-switch providers for that call. A stream can therefore fail before visible text
-arrives without trying a backup. A failed attempt may also have incurred charges
-or performed a provider-hosted action, so fallback and application retries can
-repeat work. Use idempotency where possible and avoid automatic replay for
-operations that cannot tolerate duplication.
+The SDK's [structured output helpers](../guides/structured-output.md) work with
+the Gateway in generated and streamed calls. Schemas need an object at the
+root. The model returns JSON text, and the SDK parses and validates it.
 
-For troubleshooting, ask your operator to inspect private attempt logs. Public
-model names and configured candidate lists do not identify which backend served
-a particular request. See [Gateway observability](../../ai-gateway/docs/text-observability.md#inspect-fallback-attempts)
-for operator diagnostics.
+Schema support depends on the provider. OpenAI and Anthropic models follow the
+schema natively. Models from OpenAI-compatible providers use JSON mode and
+return a warning when you supply a schema.
+
+`provider.ResponseFormat.Name` is a pointer: use `new("answer")` to set a name.
+See the [provider reference](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#ResponseFormat).
+
+## Function tools
+
+Define tools in your application to let the model look up data or call APIs.
+Your application runs them and returns their results to the model. See
+[Tools](../guides/tools.md) and [Agent loops](../guides/agent-loops.md). The
+Gateway keeps no conversation state, so send the history each call needs.
+
+## Provider-defined tools
+
+Some tools run on the provider. Check `providerExecuted` on returned tool
+calls, and do not run a call your application received already executed. A
+preliminary tool result is a preview; wait for the final result.
+
+Configure provider-hosted MCP tools through the provider's options; see the
+[Anthropic](anthropic.md) and [OpenAI](openai.md#use-built-in-tools) guides.
+For Anthropic MCP, give each server a distinct name and an HTTPS URL without
+credentials. Send the server configuration again on each follow-up call,
+together with earlier calls, results and provider metadata.
+
+When a provider asks for approval, approve or deny it and continue the
+conversation, in generated or streamed calls. The approval ID is different
+from the tool call ID. The Gateway does not store approvals.
+
+For OpenAI hosted MCP, link the approval to its tool call before you continue:
+find the provider-executed tool call whose ID matches the approval's
+`toolCallId`, and set that call's `providerOptions.openai.approvalRequestId` to
+the `approvalId`. The SDK does not do this for you.
+
+`ToolResultOutput.Reason` is a pointer, so a denied tool call can tell an
+absent reason (nil) from an empty one (`new("")`).
 
 ## Continue conversations with provider metadata
 
-Models may return data they need on later calls, such as Claude thinking
-signatures or OpenAI encrypted reasoning. Preserve that metadata with its
-content when sending the next request; rebuilding history from text alone can
-lose information the model needs.
+Models can return data they need on later calls, such as Claude thinking
+signatures or OpenAI encrypted reasoning. Keep that metadata with its content
+when you send the next request; history rebuilt from text alone loses it.
 
-Use the SDK's [agent loops](../guides/agent-loops.md) to manage history and tool
-results. If you build messages yourself, retain previous calls and results,
-including unresolved provider-executed calls. Choose fallback models that can
-understand this history; the Gateway does not translate metadata between
-providers.
+[Agent loops](../guides/agent-loops.md) manage this for you. If you build
+messages yourself, keep earlier tool calls and results, including
+provider-executed calls. With fallback, choose models that understand each
+other's history; the Gateway does not translate metadata between providers.
+
+### Preserve custom content
+
+Some providers return content without a standard type, such as OpenAI
+compaction items. It arrives as custom content with a `kind`, such as
+`openai.compaction`, and provider metadata. Send these parts back in the
+history, with the metadata as their provider options, so the provider can
+continue the conversation. Other providers ignore custom content they don't
+recognize, so it is safe with fallback. If no model can accept custom content
+in a tool result, the call fails with an invalid request error.
+
+## Receive generated files
+
+When a model generates files, the Gateway returns them in generated and
+streamed responses. The SDK downloads files that arrive as URLs; the Gateway
+does not. Generated files count toward the response size limits. Once a model
+has returned a file, the Gateway does not fall back for that call.
 
 ## Native response values
 
-Use returned sources to display citations and warnings to identify unsupported
-settings. See the [source guide](../../ai-gateway/docs/sources.md) for citation
-handling. Keep sensitive warning text and response details out of public logs.
+Use returned sources to show citations, and warnings to find settings the model
+did not support. See the [source guide](../../ai-gateway/docs/sources.md).
 
-Response IDs and model names describe the provider's generation and may differ
-from the public model you requested. Use them for diagnostics, not to choose the
-model for your next call. Some providers omit these details.
+Response IDs and model names come from the provider and can differ from the
+model you selected. Use them to diagnose a call, not to pick the next model.
+Some providers leave them out. With `GenerateText` and `StreamText`, read them
+from the response metadata after the call. With `model.DoGenerate`, they are in
+`Response.Body`. Treat response details as sensitive.
 
-With `GenerateText` and `StreamText`, inspect response metadata after the call
-finishes. If you call `model.DoGenerate` directly, native response identity is
-available in `Response.Body` rather than its typed ID/model fields. Treat raw
-response bodies as sensitive. Reading response details does not enable Gateway
-content logging; configure application diagnostics separately.
+## Inspect execution overviews and failures
+
+Calls to configured models return a `gateway.execution` entry in the provider
+metadata of the result or the stream's finish. It names the model you selected
+and lists each attempt in order, with its provider, model, outcome and, for a
+failure, the provider's error message, type, code and status. In Go, read it
+from `ProviderMetadata`; in TypeScript, from `providerMetadata`. Each call has
+its own overview, so retries and tool loop steps start new ones.
+
+Errors carry the same information:
+
+- An HTTP error has it in `providerMetadata` in the error body. In Go, read
+  `*provider.APICallError.Data`.
+- A stream error has `error.data.providerMetadata` and, when available, the
+  provider's error in `error.data.nativeError`. In Go, read the part's
+  `APICallError.Data`. The stream's later parts remain readable.
+
+Overviews are best-effort. One may be missing, for example when a response is
+close to its size limit, and a missing overview does not mean no provider was
+tried. Calls with your own provider key don't return overviews yet, only
+provider errors on streams
+([#317](https://github.com/grafana/ai-sdk/issues/317)).
+
+The Gateway replaces its own configured provider keys with `[REDACTED]` in
+error summaries. It does not change your own provider key if a provider repeats
+it in an error, or any other content. Treat these details as sensitive, and
+choose deliberately which ones your frontend shows.
 
 ## Bound work and handle errors
 
-Set a deadline on the context for each generation or stream, and cancel it when
-a consumer stops reading. See [Production practices](../best-practices/production.md)
-for timeout, retry and stream-ownership patterns.
+Set a deadline on each call's context, and cancel it when nobody reads the
+stream anymore. See [Production practices](../best-practices/production.md).
 
-Use `errors.Is` to recognize cancellation and deadlines. Use `errors.As` with
-`*grafana.GatewayError` to inspect the public error category/code, or with
-`*provider.APICallError` for retryability. The client does not retry Gateway
-requests itself; configure retries deliberately in your application or SDK.
+Use `errors.Is` to detect cancellation and deadlines. Use `errors.As` with
+`*grafana.GatewayError` for the Gateway's error category and code, or with
+`*provider.APICallError` to check whether a call can be retried. The client
+does not retry on its own; configure retries in your application.
 
-For oversized responses or streams, adjust the client limits for your expected
-workload rather than consuming a partial result. Use
+If responses or streams exceed the client's size limits, raise them from
 [`grafana.DefaultLimits`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana#DefaultLimits)
-as the starting point. Call headers are for application metadata, not overriding
-Gateway authentication.
-
-For HTTP errors, `APICallError.Data` and `ResponseBody` retain the complete bounded
-response, including server-supplied diagnostics. Stream errors retain the
-supplied `error.data` in `APICallError.Data`; their `ResponseBody` is empty.
-These opaque extensions do not change classification or retryability, and later
-valid stream parts remain consumable. Treat diagnostic payloads as sensitive
-and keep them out of public logs.
+instead of using a partial result. `APICallError.Data` and `ResponseBody`
+contain the error response, which can include provider details; keep it out of
+public logs.
 
 ## Reference
 
