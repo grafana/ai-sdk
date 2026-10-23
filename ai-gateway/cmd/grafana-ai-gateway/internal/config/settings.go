@@ -70,7 +70,9 @@ type Settings struct {
 	ConfigFile         string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
-	ProviderWire       providerv4.Limits
+	// MaxRequestBytes bounds the body of every plugin route request.
+	MaxRequestBytes int64
+	ProviderWire    providerv4.Limits
 }
 
 // SettingName returns the environment variable of a plugin setting key, as
@@ -152,8 +154,8 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 			Endpoint: env.string("agento11y_endpoint", ""),
 			TLS:      env.bool("agento11y_tls", true),
 		},
+		MaxRequestBytes: env.int64("max_request_bytes", defaultRequestBytes),
 		ProviderWire: providerv4.Limits{
-			RequestBytes:        env.int64("max_request_bytes", defaultRequestBytes),
 			UnaryResponseBytes:  unaryResponseBytes,
 			StreamParts:         streamParts,
 			StreamFrameBytes:    streamFrameBytes,
@@ -183,6 +185,9 @@ func (settings Settings) Validate() error {
 	}
 	if err := settings.AgentObservability.validate(); err != nil {
 		return err
+	}
+	if settings.MaxRequestBytes <= 0 {
+		return fmt.Errorf("config: max request bytes must be positive")
 	}
 	if settings.ProviderWire.ModelDuration < ProviderResponseHeaderTimeout || settings.ProviderWire.ModelDuration < streamIdleDuration {
 		return fmt.Errorf("config: max model duration must be at least %s", max(ProviderResponseHeaderTimeout, streamIdleDuration))

@@ -33,7 +33,6 @@ func (r *resolverStub) ResolveModel(context.Context, string) (catalog.ResolvedMo
 
 func testLimits() Limits {
 	return Limits{
-		RequestBytes:        1 << 20,
 		UnaryResponseBytes:  1 << 20,
 		StreamParts:         1_000,
 		StreamFrameBytes:    1 << 20,
@@ -68,8 +67,8 @@ func TestNew(t *testing.T) {
 		require.NoError(t, err)
 		h := created.(*handler)
 		require.NotNil(t, h.requestSchema)
-		limits.RequestBytes = 1
-		assert.Equal(t, int64(1<<20), h.limits.RequestBytes)
+		limits.ModelDuration = time.Hour
+		assert.Equal(t, time.Second, h.limits.ModelDuration)
 	})
 
 	t.Run("maximum fixed stream frame boundary", func(t *testing.T) {
@@ -111,9 +110,6 @@ func TestNew(t *testing.T) {
 			name   string
 			mutate func(*Limits)
 		}{
-			{name: "request zero", mutate: func(l *Limits) { l.RequestBytes = 0 }},
-			{name: "request negative", mutate: func(l *Limits) { l.RequestBytes = -1 }},
-			{name: "request overflow", mutate: func(l *Limits) { l.RequestBytes = math.MaxInt64 }},
 			{name: "response zero", mutate: func(l *Limits) { l.UnaryResponseBytes = 0 }},
 			{name: "response overflow", mutate: func(l *Limits) { l.UnaryResponseBytes = math.MaxInt64 }},
 			{name: "stream parts zero", mutate: func(l *Limits) { l.StreamParts = 0 }},
@@ -195,11 +191,10 @@ func TestHandlerEnvelope(t *testing.T) {
 }
 
 func TestHandlerBodyProcessing(t *testing.T) {
-	t.Run("byte boundary and close", func(t *testing.T) {
+	t.Run("host byte boundary and close", func(t *testing.T) {
 		base := `{"prompt":[]}`
-		limits := testLimits()
-		limits.RequestBytes = int64(len(base) + 1)
-		h := newTestHandler(t, limits)
+		limit := len(base) + 1
+		h := newTestHandler(t, testLimits())
 		for _, tc := range []struct {
 			name    string
 			body    string
@@ -213,10 +208,15 @@ func TestHandlerBodyProcessing(t *testing.T) {
 				req := validRequest(tc.body)
 				body := &trackingReadCloser{Reader: bytes.NewBufferString(tc.body)}
 				req.Body = body
-				_, failure := h.validateRequest(req)
+				_, failure := h.validateRequest(withBodyLimit(req, limit))
 				assert.True(t, body.closed)
-				assert.Equal(t, tc.invalid, failure != nil)
-				assert.LessOrEqual(t, body.read, int(limits.RequestBytes+1))
+				if tc.invalid {
+					require.NotNil(t, failure)
+					assert.Equal(t, safeErrorCategory(0), failure.safe.category)
+				} else {
+					assert.Nil(t, failure)
+				}
+				assert.LessOrEqual(t, body.read, limit+1)
 			})
 		}
 	})
@@ -255,6 +255,11 @@ func TestHandlerBodyProcessing(t *testing.T) {
 			}
 		}
 	})
+}
+
+func withBodyLimit(r *http.Request, limit int) *http.Request {
+	r.Body = http.MaxBytesReader(nil, r.Body, int64(limit))
+	return r
 }
 
 type trackingReadCloser struct {
@@ -359,17 +364,15 @@ func TestRequestSelection_RequestByteLimit(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		for _, delta := range []int{0, 1} {
 			t.Run(fmt.Sprintf("streaming=%t/bytes+%d", streaming, delta), func(t *testing.T) {
-				limits := testLimits()
-				limits.RequestBytes = int64(len(body))
 				model := &recordingModel{}
 				var selections atomic.Int32
-				h, err := New(Config{Limits: limits, Selector: func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (Selection, error) {
+				h, err := New(Config{Limits: testLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (Selection, error) {
 					selections.Add(1)
 					assert.Contains(t, string(gateway), key)
 					return Selection{ID: id, Model: model}, nil
 				}})
 				require.NoError(t, err)
-				r := validRequest(body + strings.Repeat(" ", delta))
+				r := withBodyLimit(validRequest(body+strings.Repeat(" ", delta)), len(body))
 				r.Header.Set(HeaderModelID, "openai/native-model")
 				r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
 				w := httptest.NewRecorder()

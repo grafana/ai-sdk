@@ -1,7 +1,6 @@
 package config
 
 import (
-	"math"
 	"testing"
 	"time"
 
@@ -28,8 +27,8 @@ func TestParseSettings_Defaults(t *testing.T) {
 			Endpoint: "collector.example:4317",
 			TLS:      true,
 		},
+		MaxRequestBytes: 1_048_576,
 		ProviderWire: providerv4.Limits{
-			RequestBytes:        1_048_576,
 			UnaryResponseBytes:  8_388_608,
 			StreamParts:         100_000,
 			StreamFrameBytes:    1_048_576,
@@ -54,7 +53,7 @@ func TestParseSettings_EnvironmentBindings(t *testing.T) {
 		{env: "GF_PLUGIN_AGENTO11Y_ENDPOINT", value: "other.example:4317", check: func(t *testing.T, s Settings) {
 			assert.Equal(t, "other.example:4317", s.AgentObservability.Endpoint)
 		}},
-		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.ProviderWire.RequestBytes) }},
+		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.MaxRequestBytes) }},
 		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "45s", check: func(t *testing.T, s Settings) { assert.Equal(t, 45*time.Second, s.ProviderWire.ModelDuration) }},
 	}
 	for _, tc := range tests {
@@ -95,7 +94,7 @@ func TestParseSettings_EmptyValuesSelectDefaults(t *testing.T) {
 	environment["GF_PLUGIN_MAX_REQUEST_BYTES"] = ""
 	settings, err := ParseSettings(mapLookup(environment))
 	require.NoError(t, err)
-	assert.Equal(t, int64(defaultRequestBytes), settings.ProviderWire.RequestBytes)
+	assert.Equal(t, int64(defaultRequestBytes), settings.MaxRequestBytes)
 }
 
 func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
@@ -108,8 +107,8 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 	}{
 		{name: "config file", mutate: func(s *Settings) { s.ConfigFile = " " }},
 		{name: "model duration below provider and idle timeouts", mutate: func(s *Settings) { s.ProviderWire.ModelDuration = 29 * time.Second }},
-		{name: "request bytes zero", mutate: func(s *Settings) { s.ProviderWire.RequestBytes = 0 }},
-		{name: "request bytes limit+1 overflow", mutate: func(s *Settings) { s.ProviderWire.RequestBytes = math.MaxInt64 }},
+		{name: "request bytes zero", mutate: func(s *Settings) { s.MaxRequestBytes = 0 }},
+		{name: "request bytes negative", mutate: func(s *Settings) { s.MaxRequestBytes = -1 }},
 		{name: "agento11y protocol", mutate: func(s *Settings) { s.AgentObservability.Protocol = "other" }},
 		{name: "agento11y endpoint", mutate: func(s *Settings) { s.AgentObservability.Endpoint = "" }},
 		{name: "agento11y endpoint credentials", mutate: func(s *Settings) {
