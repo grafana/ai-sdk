@@ -7,14 +7,14 @@ Define the production strict, bounded ProviderWire V4 streaming text runtime and
 ## Requirements
 
 ### Requirement: Constructed streaming limits
-The strict ProviderWire V4 handler SHALL require positive limits for provider stream-part count, complete SSE frame bytes, stream idle duration, and post-cancellation drain duration in addition to the existing request, unary, and total model-duration limits. Construction SHALL reject a frame limit that cannot contain the canonical empty `stream-start` frame and every fixed stream-error frame. Complete frame size SHALL include the `data: ` prefix, JSON payload, and terminating `\n\n`.
+The strict ProviderWire V4 handler SHALL require a positive stream idle duration and a positive post-cancellation drain duration in addition to the total model duration. It SHALL NOT take a provider stream-part count or complete SSE frame byte limit. Complete frames SHALL consist of the `data: ` prefix, JSON payload, and terminating `\n\n`.
 
 #### Scenario: Valid streaming limits
-- **WHEN** a caller supplies positive part-count, safe frame, idle, and drain limits whose frame limit contains the canonical empty start and every fixed stream-error frame
+- **WHEN** a caller supplies positive idle and drain durations
 - **THEN** handler construction SHALL succeed and runtime streaming behavior SHALL be fixed by those values
 
 #### Scenario: Invalid streaming limits
-- **WHEN** a streaming limit is zero or negative or the frame limit cannot contain the canonical empty start or any fixed stream-error frame
+- **WHEN** a streaming duration is zero or negative
 - **THEN** construction SHALL fail before the handler serves a request
 
 ### Requirement: Shared strict streaming request pipeline
@@ -95,34 +95,6 @@ After the valid-result logical SSE commitment boundary every failure SHALL remai
 - **WHEN** a committed stream fails while its writer is usable and StreamResult has native headers
 - **THEN** failure SHALL remain SSE and private setup metadata/headers SHALL NOT cross the public boundary
 
-### Requirement: Bounded provider-part cardinality
-
-The runtime SHALL use one request-scoped counter for every value received from the provider stream before interpreting it, including provider start, metadata, text, errors, finish, and values consumed during terminal drain. It SHALL accept at most the configured `StreamParts` count.
-
-#### Scenario: Provider parts are below or at the limit
-- **WHEN** a valid stream contains fewer than or exactly `StreamParts` provider values including finish
-- **THEN** every value SHALL be processed normally
-
-#### Scenario: First excess provider part is rejected
-- **WHEN** a provider produces `StreamParts + 1` values before terminal handling
-- **THEN** the first excess value SHALL be consumed only for counting, SHALL not affect state or output, and SHALL cause one terminal internal error when writable
-
-#### Scenario: Continuously ready provider floods parts
-- **WHEN** a provider channel remains continuously ready with small sequential text blocks
-- **THEN** processing and retained text-ID cardinality SHALL stop at `StreamParts` without depending on total-timeout scheduling
-
-#### Scenario: Warning count cannot fit the start budget
-- **WHEN** a provider start carries more warnings than the complete frame can minimally represent
-- **THEN** mapping SHALL reject the warning list before allocating a same-sized output slice
-
-### Requirement: Excess provider parts and warning allocation preflight
-
-The first excess part SHALL not mutate lifecycle state, grow the retained text-ID set, or produce its provider-derived output; before finish it SHALL cause at most one synthetic terminal internal error, and after an authoritative terminal event it SHALL end drain without another public event. Warning cardinality SHALL be checked against the maximum warnings that can fit the complete start-frame budget before allocating the mapped warning slice.
-
-#### Scenario: Excess provider parts and warning allocation preflight
-- **WHEN** an extra part arrives after StreamParts or a warning list cannot fit a start frame
-- **THEN** excess parts SHALL NOT mutate state or generate provider output, and oversized warning cardinality SHALL fail before mapped-slice allocation
-
 ### Requirement: Normalized stream start and value-safe warnings
 
 Every committed writable stream SHALL emit exactly one public stream-start as its first JSON event. The handler SHALL read the first provider part before selecting it: a provider stream-start is valid only as the first provider part and SHALL be consumed with its warnings mapped through the same explicit registered warning union used by unary output.
@@ -140,7 +112,7 @@ Every committed writable stream SHALL emit exactly one public stream-start as it
 - **THEN** its registered value SHALL survive unchanged without enabling operator payload capture
 
 #### Scenario: Warning cannot be represented safely
-- **WHEN** the start contains an unknown warning type, invalid UTF-8, excessive warning count, aggregate string bytes or escaping-expanded frame size
+- **WHEN** the start contains an unknown warning type or invalid UTF-8
 - **THEN** no partial provider start SHALL be written and the handler SHALL emit one empty start and at most one safe terminal error when writable
 
 #### Scenario: Provider omits start
@@ -169,19 +141,11 @@ Unsupported/compatibility SHALL preserve required feature and optional nonempty 
 
 ### Requirement: Uncensored warning values and invalid-start fallback
 
-Native backend names and ordinary application strings SHALL NOT be replaced with generic prose or heuristically censored. Unknown warning discriminators, invalid represented strings or over-budget starts SHALL cause one empty public start followed by at most one synthetic terminal internal error when writable.
+Native backend names and ordinary application strings SHALL NOT be replaced with generic prose or heuristically censored. Unknown warning discriminators or invalid represented strings SHALL cause one empty public start followed by at most one synthetic terminal internal error when writable.
 
 #### Scenario: Uncensored warning values and invalid-start fallback
 - **WHEN** a valid warning includes a backend-looking string, or a start has an unknown warning type
 - **THEN** the valid string SHALL remain unchanged and the invalid start SHALL yield one empty start and at most one safe terminal internal error
-
-### Requirement: Start preflight omitted-start normalization and Anthropic pre-read ordering
-
-Cardinality and aggregate active string bytes SHALL be bounded before mapped allocation and UTF-8 validation; standard JSON encoding and complete-frame limits SHALL still govern the final write. When the provider omits start, warnings SHALL be an empty array and the first part SHALL then be processed. Built-in Anthropic SHALL retain initial upstream-event error preflight, emit its start with conversion warnings before processing the pre-read event, and attach no warnings to finish.
-
-#### Scenario: Start preflight omitted-start normalization and Anthropic pre-read ordering
-- **WHEN** Anthropic conversion produces warnings before a successfully pre-read event
-- **THEN** its start SHALL precede handling that event and finish SHALL have no warnings, with bounded start encoding and omitted-start normalization intact
 
 ### Requirement: Duplicate and late provider-start refusal
 
@@ -196,8 +160,8 @@ Streaming SHALL preserve represented native identity and sequential text-block s
 
 #### Scenario: Native response metadata and text block state policy
 - **WHEN** the activated Gateway enforces this contract
-- **THEN** After public start and within the provider-part limit, the state machine SHALL accept at most one response-metadata part before payload output, sequential text blocks, independent tool events under gateway-streaming-function-tools, supported reasoning/sources/custom under their capabilities, non-terminal provider errors and exactly one finish. Response metadata SHALL copy representable native ResponseID, ModelID and Timestamp at registered id, modelId and timestamp fields. Nonempty native strings SHALL remain unchanged; optional empty Go strings and zero timestamps SHALL be omitted as documented unrepresentable-presence adaptations. A nonzero timestamp SHALL encode a validated UTC RFC3339Nano instant. A provider metadata part with no identity SHALL contain only its type. The runtime SHALL NOT synthesize missing metadata or substitute requested/canonical route identity. Provider identity, headers and opaque metadata remain outside this scoped identity change.
-- **AND** Configured canonical identity SHALL remain authoritative for configured resolution and operator logical metrics, separately from returned identity. BYOK selection and observation SHALL instead follow the request-scoped identity and bounded-cardinality rules in gateway-text-observability, without catalog lookup or response-derived logical identity. Each text-start ID SHALL remain nonempty, valid UTF-8 and globally unique within its stream, opening the only active text block. Deltas/ends SHALL use its active ID and required empty deltas SHALL survive. Provider errors SHALL not change text/metadata state. Existing reasoning/source/tool first-output placement rules SHALL remain effective. New native identity strings and timestamp bytes SHALL participate in preflight and complete-frame bounds before any write.
+- **THEN** After public start, the state machine SHALL accept at most one response-metadata part before payload output, sequential text blocks, independent tool events under gateway-streaming-function-tools, supported reasoning/sources/custom under their capabilities, non-terminal provider errors and exactly one finish. Response metadata SHALL copy representable native ResponseID, ModelID and Timestamp at registered id, modelId and timestamp fields. Nonempty native strings SHALL remain unchanged; optional empty Go strings and zero timestamps SHALL be omitted as documented unrepresentable-presence adaptations. A nonzero timestamp SHALL encode a validated UTC RFC3339Nano instant. A provider metadata part with no identity SHALL contain only its type. The runtime SHALL NOT synthesize missing metadata or substitute requested/canonical route identity. Provider identity, headers and opaque metadata remain outside this scoped identity change.
+- **AND** Configured canonical identity SHALL remain authoritative for configured resolution and operator logical metrics, separately from returned identity. BYOK selection and observation SHALL instead follow the request-scoped identity and bounded-cardinality rules in gateway-text-observability, without catalog lookup or response-derived logical identity. Each text-start ID SHALL remain nonempty, valid UTF-8 and globally unique within its stream, opening the only active text block. Deltas/ends SHALL use its active ID and required empty deltas SHALL survive. Provider errors SHALL not change text/metadata state. Existing reasoning/source/tool first-output placement rules SHALL remain effective. New native identity strings and timestamps SHALL be validated before any write.
 
 #### Scenario: Native metadata precedes output
 - **WHEN** a configured provider emits native response identity different from requested alias and canonical route before payload output
@@ -215,7 +179,7 @@ Streaming SHALL preserve represented native identity and sequential text-block s
 
 #### Scenario: Native model ID is not a public route
 - **WHEN** modelId contains valid native Unicode, spaces or punctuation outside public route syntax
-- **THEN** the native modelId SHALL remain unchanged within the complete-frame budget
+- **THEN** the native modelId SHALL remain unchanged
 
 Each text-start, text-delta and text-end SHALL preserve supported opaque providerMetadata at its original event position under gateway-provider-metadata, including absent versus explicit empty presence. Content metadata SHALL NOT be moved into response-metadata.
 
@@ -232,8 +196,10 @@ Each text-start, text-delta and text-end SHALL preserve supported opaque provide
 - **THEN** it SHALL not be forwarded and the existing safe terminal behavior SHALL apply
 
 #### Scenario: Metadata representation exceeds bounds
-- **WHEN** native identity contains invalid UTF-8, an invalid timestamp or yields an over-limit complete frame
+- **WHEN** native identity contains invalid UTF-8 or an invalid timestamp
 - **THEN** no metadata bytes SHALL be written and at most one safe terminal error SHALL be attempted
+- **WHEN** valid native identity strings encode to a frame above the former 1 MiB limit
+- **THEN** the complete metadata event SHALL be written
 
 #### Scenario: Text metadata changes at end
 - **WHEN** text-start supplies an object, text-delta omits metadata and text-end supplies an empty or replacement object
@@ -255,14 +221,6 @@ Canonical identity SHALL remain authoritative for resolution and operator logica
 - **WHEN** a provider error interleaves with a text block whose ID differs from native model identity
 - **THEN** canonical telemetry SHALL stay separate, the active nonempty UTF-8 text ID SHALL remain unique, and errors SHALL NOT change text/metadata state
 
-### Requirement: Native stream identity complete-frame preflight
-
-New native identity strings and timestamp bytes SHALL participate in preflight and complete-frame bounds before any write.
-
-#### Scenario: Native stream identity complete-frame preflight
-- **WHEN** native identity strings individually fit but their encoded metadata frame exceeds the limit
-- **THEN** no metadata bytes SHALL be written before complete-frame bounds are checked
-
 ### Requirement: Finish validation and terminal authority
 
 A finish part SHALL be valid only when no text or tool-input block is active, its warnings are empty, and it contains a non-nil registered finish reason and non-nil usage.
@@ -272,7 +230,7 @@ A finish part SHALL be valid only when no text or tool-input block is active, it
 - **THEN** the finish SHALL preserve normalized usage, finish reason and supplied ordinary providerMetadata, unrelated transport fields SHALL remain omitted, and the response SHALL end at clean EOF without `[DONE]`
 
 #### Scenario: Finish is invalid
-- **WHEN** finish arrives with an active block, warnings, nil or invalid usage, nil or invalid finish reason, unsafe token counts, invalid or over-limit supplied raw usage, or invalid or over-limit finish metadata
+- **WHEN** finish arrives with an active block, warnings, nil or invalid usage, nil or invalid finish reason, unsafe token counts, invalid supplied raw usage, or invalid finish metadata
 - **THEN** finish SHALL not be written and the handler SHALL attempt at most one synthetic terminal internal error
 
 #### Scenario: Provider emits after finish
@@ -280,7 +238,7 @@ A finish part SHALL be valid only when no text or tool-input block is active, it
 - **THEN** finish SHALL remain the final public event and the later part SHALL be suppressed while cancellation and bounded drain complete
 
 #### Scenario: Native raw object survives finish
-- **WHEN** a valid finish contains normalized usage and a supplied in-limit raw JSON object including nested provider-native keys or `{}`
+- **WHEN** a valid finish contains normalized usage and a supplied raw JSON object of any size, including nested provider-native keys or `{}`
 - **THEN** its complete `usage.raw` object SHALL be emitted with the normalized counts, and a distinct `type: "raw"` stream part SHALL NOT be synthesized
 
 #### Scenario: No raw value is supplied
@@ -288,7 +246,7 @@ A finish part SHALL be valid only when no text or tool-input block is active, it
 - **THEN** the finish SHALL omit `usage.raw` and retain its normalized counts
 
 #### Scenario: Raw usage fails after stream commitment
-- **WHEN** finish usage supplies malformed, null, scalar, array, or more than 1,048,576 bytes of raw JSON, or its encoded finish exceeds the configured complete-frame limit
+- **WHEN** finish usage supplies malformed, null, scalar, array or invalid-UTF-8 raw JSON
 - **THEN** the finish SHALL NOT be written and the handler SHALL attempt at most one fixed complete terminal internal-error SSE frame, without reflecting the offending value or issuing normalized-only finish
 
 #### Scenario: Finish metadata is ordinary output
@@ -297,7 +255,7 @@ A finish part SHALL be valid only when no text or tool-input block is active, it
 
 ### Requirement: Finish usage metadata and final public authority
 
-Known usage counts SHALL be non-negative JavaScript-safe integers and SHALL use the registered input/output groups; `usage.raw` SHALL contain a supplied valid bounded provider JSON object, or be omitted when Raw is absent; finish providerMetadata SHALL be preserved as bounded opaque object-valued namespaces under gateway-provider-metadata. A valid finish SHALL be written once as the final public event and SHALL be authoritative.
+Known usage counts SHALL be non-negative JavaScript-safe integers and SHALL use the registered input/output groups; `usage.raw` SHALL contain a supplied valid provider JSON object, or be omitted when Raw is absent; finish providerMetadata SHALL be preserved as opaque object-valued namespaces under gateway-provider-metadata. A valid finish SHALL be written once as the final public event and SHALL be authoritative.
 
 #### Scenario: Finish usage metadata and final public authority
 - **WHEN** a valid finish contains normalized counts, a raw object and opaque metadata
@@ -310,32 +268,6 @@ The handler SHALL then cancel provider work, begin bounded asynchronous drain, a
 #### Scenario: Immediate EOF and post-finish provider suppression
 - **WHEN** a provider emits another part after valid finish without closing its channel
 - **THEN** the handler SHALL cancel, asynchronously bounded-drain and return clean EOF immediately without DONE or another public event, classifying later parts as lifecycle defects
-
-### Requirement: Bounded raw-usage finish representation
-
-The handler SHALL count supplied raw-usage bytes, including whitespace, before JSON validation or encoding. It SHALL reject raw usage exceeding the smaller of 1,048,576 bytes and configured `StreamFrameBytes`, validate one complete JSON object when present, and reject invalid UTF-8 in any raw string key or nested value on the original bytes. Valid JSON escapes, including lone and paired UTF-16 surrogate escapes, SHALL be preserved in the raw object.
-
-#### Scenario: Input fits but SSE framing does not
-- **WHEN** raw usage meets its input limit but JSON encoding or SSE framing makes the finish exceed `StreamFrameBytes`
-- **THEN** no finish bytes SHALL be committed and the handler SHALL attempt at most one fixed bounded terminal error frame
-
-#### Scenario: Raw UTF-8 and JSON escapes at finish
-- **WHEN** in-limit finish raw usage contains invalid UTF-8 in an object key or nested value
-- **THEN** the handler SHALL not encode or write finish and SHALL attempt at most one fixed bounded terminal error frame
-- **WHEN** in-limit raw usage contains valid JSON with lone or paired escaped surrogates
-- **THEN** the handler SHALL preserve the raw JSON escapes, with success still subject to object and complete-frame limits
-
-#### Scenario: Oversized input never reaches parser
-- **WHEN** raw usage has one byte more than its input limit, including JSON whitespace
-- **THEN** the handler SHALL reject it before parsing or encoding raw JSON
-
-### Requirement: Complete raw-usage finish frame and bounded encoding
-
-The handler SHALL only write a finish after the entire `data: <json>\n\n` frame fits `StreamFrameBytes`. Existing `StreamParts` and complete-frame limits SHALL continue to bound aggregate represented stream output; validation and encoding SHALL use memory bounded by a constant multiple of the configured frame limit.
-
-#### Scenario: Complete raw-usage finish frame and bounded encoding
-- **WHEN** raw usage passes input limits but the complete data frame exceeds StreamFrameBytes
-- **THEN** finish SHALL NOT be written and validation/encoding memory SHALL remain constant-multiple bounded with existing part/frame limits intact
 
 ### Requirement: Ordered non-terminal provider errors
 
@@ -409,7 +341,7 @@ Failure SHALL not synthesize block closures or a finish, nor emit after terminal
 Committed responses SHALL use HTTP 200, `Content-Type: text/event-stream`, and `Cache-Control: no-cache, no-transform`; connection-specific keep-alive headers SHALL not be protocol requirements. The handler SHALL flush commitment headers and every fully written event. Unsupported flushing SHALL not fail the stream; every other header or frame flush error or panic SHALL be a writer failure.
 
 #### Scenario: Event is written and flushed
-- **WHEN** a valid event fits the complete-frame limit and the writer supports flushing
+- **WHEN** a valid event is completely encoded and the writer supports flushing
 - **THEN** exactly one complete `data:` frame SHALL be fully written and flushed before the next event
 
 #### Scenario: Flushing is unsupported
@@ -421,36 +353,28 @@ Committed responses SHALL use HTTP 200, `Content-Type: text/event-stream`, and `
 - **THEN** provider work SHALL be canceled and the handler SHALL end without attempting a stream frame
 
 #### Scenario: Event exceeds its complete-frame limit
-- **WHEN** an encoded event is one byte larger than the configured complete-frame limit
-- **THEN** no bytes from that oversized event SHALL be written and one bounded terminal internal-error frame SHALL be attempted
+- **WHEN** a valid encoded event exceeds the former 1 MiB complete-frame limit
+- **THEN** the whole frame SHALL be written and flushed, and the stream SHALL continue
 
 #### Scenario: Writer fails
 - **WHEN** writing or flushing an event fails, writes short, or panics
 - **THEN** provider work SHALL be canceled and no synthetic event or second write SHALL be attempted on that writer
 
 #### Scenario: Invalid metadata cannot become partial event
-- **WHEN** registered metadata is malformed JSON, invalid UTF-8, non-object at a namespace, or passes input preflight but pushes the encoded complete frame over its limit
+- **WHEN** registered metadata is malformed JSON, invalid UTF-8, or non-object at a namespace
 - **THEN** no bytes of that event SHALL be written, existing terminal cancellation/cleanup SHALL apply and no selected fallback candidate SHALL be replayed
-
-### Requirement: Registered SSE outer fields opaque metadata and aggregate preflight
-
-Every public event SHALL contain only its registered outer fields, with supported providerMetadata treated as opaque object-valued namespaces rather than a namespace/key allowlist and SHALL be framed as exactly `data: <json>\n\n`. Aggregate metadata key/original raw bytes and cardinality SHALL participate with other event values in overflow-safe preflight before UTF-8/JSON validation or metadata allocation.
-
-#### Scenario: Registered SSE outer fields opaque metadata and aggregate preflight
-- **WHEN** a source frame carries unknown namespace objects with large original raw bytes
-- **THEN** registered outer fields and opaque metadata SHALL be preserved only within overflow-safe aggregate preflight before validation/allocation, using exact data framing
 
 ### Requirement: Complete SSE writes fixed terminal frames and writer failure
 
-Encoding work and temporary memory SHALL remain bounded by a constant multiple of the configured frame limit, and the complete frame SHALL fit that limit before any of its bytes are written.
+Each frame SHALL be completely encoded before any of its bytes are written.
 
 #### Scenario: Complete SSE writes fixed terminal frames and writer failure policy
 - **WHEN** the runtime encodes the corresponding response or stream event
-- **THEN** Synthetic terminal errors SHALL retain their fixed base fields; optional execution attribution SHALL follow gateway-attempt-failure-evidence and preserve the canonical base frame when enrichment cannot fit. The server SHALL never emit SSE `event:` fields or `[DONE]`. A write error, short write, writer panic, or supported flush failure SHALL cancel provider work and end immediately without another write.
+- **THEN** Synthetic terminal errors SHALL retain their fixed base fields; optional execution attribution SHALL follow gateway-attempt-failure-evidence and SHALL fall back to the canonical base frame only when the enriched frame cannot be encoded. The server SHALL never emit SSE `event:` fields or `[DONE]`. A write error, short write, writer panic, or supported flush failure SHALL cancel provider work and end immediately without another write.
 
 #### Scenario: Complete SSE writes fixed terminal frames and writer failure
 - **WHEN** a full-frame write is short or flushing panics
-- **THEN** provider work SHALL be canceled with no subsequent write, while complete-frame/memory bounds and prohibition of event fields/DONE SHALL remain effective
+- **THEN** provider work SHALL be canceled with no subsequent write, while complete-frame encoding before write and the prohibition of event fields/DONE SHALL remain effective
 
 ### Requirement: Cancellation and timeouts
 The total deadline SHALL cover selection, setup, attempts and streaming without resets. Idle timeout SHALL follow represented provider parts; cancellation and timeout SHALL retain terminal authority, bounded cleanup and writer-failure behavior.
@@ -505,7 +429,7 @@ A valid finish written before another terminal outcome SHALL remain authoritativ
 
 ### Requirement: Bounded stream ownership and drain
 
-Every returned stream SHALL have one receiver responsible for cleanup. A stream transferred from setup belongs to the handler; when model-context termination wins before transfer, the setup worker SHALL clean up any stream returned later. Terminal handling SHALL cancel provider work and start an asynchronous drain that reads only until channel close, the first part above the request's `StreamParts` count, or the configured drain duration.
+Every returned stream SHALL have one receiver responsible for cleanup. A stream transferred from setup belongs to the handler; when model-context termination wins before transfer, the setup worker SHALL clean up any stream returned later. Terminal handling SHALL cancel provider work and start an asynchronous drain that reads only until channel close or the configured drain duration.
 
 #### Scenario: Provider closes after cancellation
 - **WHEN** terminal handling cancels provider work and the provider closes its stream within the drain duration
@@ -517,7 +441,7 @@ Every returned stream SHALL have one receiver responsible for cleanup. A stream 
 
 #### Scenario: Continuously ready drain reaches a hard bound
 - **WHEN** a canceled provider channel remains permanently ready with values
-- **THEN** the drain SHALL stop within the configured duration or at the first excess provider part rather than consuming indefinitely
+- **THEN** the drain SHALL stop within the configured duration rather than consuming indefinitely
 
 #### Scenario: Setup returns a late stream
 - **WHEN** handler cancellation or timeout wins and `DoStream` later returns a non-nil stream
@@ -533,7 +457,7 @@ Draining SHALL not extend handler latency and SHALL remain bounded even when the
 
 ### Requirement: Streaming contract and cross-language evidence
 
-Automated evidence SHALL prove that committed streaming requests execute through the production handler, raw HTTP output satisfies the strict lifecycle, privacy, and resource bounds, and the registered Gateway client consumes normal, provider-error, timeout, cancellation, finish, and clean-EOF outcomes. Provider lifecycle and transport-failure evidence SHALL not rely on invented provider conformance input.
+Automated evidence SHALL prove that committed streaming requests execute through the production handler, raw HTTP output satisfies the strict lifecycle and privacy rules, large outputs are written whole, and the registered Gateway client consumes normal, provider-error, timeout, cancellation, finish, and clean-EOF outcomes. Provider lifecycle and transport-failure evidence SHALL not rely on invented provider conformance input.
 
 #### Scenario: Committed streaming requests execute
 - **WHEN** the phase 2 streaming golden records are replayed through the phase 4 handler
@@ -549,7 +473,7 @@ Automated evidence SHALL prove that committed streaming requests execute through
 
 #### Scenario: Raw authority catches permissive client behavior
 - **WHEN** the pinned client permissively accepts or normalizes an event
-- **THEN** local DTO schemas, state-machine tests, raw HTTP assertions, privacy tests, and frame-bound tests SHALL remain authoritative for server correctness
+- **THEN** local DTO schemas, state-machine tests, raw HTTP assertions, privacy tests, and large-output tests SHALL remain authoritative for server correctness
 
 ### Requirement: Streaming parity-map scope and deferred-family gaps
 
@@ -577,12 +501,71 @@ Streaming SHALL use the existing reader/commitment/drain ownership to optionally
 
 #### Scenario: Optional streaming execution overview and current failures policy
 - **WHEN** the runtime encodes the corresponding response or stream event
-- **THEN** First-part selection SHALL NOT claim completion. Current native summaries SHALL remain event-local and eligible without catalog provenance; finish SHALL NOT duplicate them. Existing complete-frame limits, original metadata preflight, error ordering, active-block state, authoritative finish and writer failure behavior SHALL remain unchanged. Optional enrichment failure SHALL preserve the original fitting frame, including native namespaces that cannot be relocated.
+- **THEN** First-part selection SHALL NOT claim completion. Current native summaries SHALL remain event-local and eligible without catalog provenance; finish SHALL NOT duplicate them. Original metadata validation, error ordering, active-block state, authoritative finish and writer failure behavior SHALL remain unchanged. The enriched finish or error frame SHALL be encoded once; an error frame SHALL fall back to its fixed base frame only when that encoding fails, and a native `gateway` namespace SHALL always be relocated under the overview.
 
 #### Scenario: Selected leading error followed by content
 - **WHEN** the first provider part is an error followed by valid text and finish
 - **THEN** no later candidate SHALL run, both clients SHALL consume all parts in order and finish SHALL contain only the optional compact execution overview rather than stream-error history
 
 #### Scenario: Finish fits only without overview
-- **WHEN** original finish encoding fits but enriched finish does not
-- **THEN** the original finish SHALL remain authoritative without a new terminal error or read-ahead
+- **WHEN** a valid finish would fit the former 1 MiB frame limit only without its overview
+- **THEN** the enriched finish SHALL be written whole and remain authoritative, without a new terminal error or read-ahead
+
+### Requirement: Stream output validity without size accounting
+Before writing an event, the runtime SHALL validate the part's represented strings as UTF-8, its discriminators, identity timestamp, metadata namespaces, raw usage shape, token ranges and lifecycle state. It SHALL NOT count provider parts, preflight sizes or cardinality, or limit complete frame bytes; time and size are owned by gateway-resource-policy.
+
+#### Scenario: Many provider parts
+- **WHEN** a provider emits more than 100,000 valid parts before a valid finish
+- **THEN** every part SHALL be represented in order and the finish SHALL be written
+
+#### Scenario: Large frames
+- **WHEN** a valid text delta, tool input, tool result, source, reasoning file, custom part, raw event or finish encodes to a complete frame above 1 MiB
+- **THEN** that complete frame SHALL be written and the stream SHALL continue
+
+#### Scenario: Many start warnings
+- **WHEN** the provider start carries more valid warnings than a 1 MiB frame could hold
+- **THEN** one public start SHALL carry every warning in order
+
+#### Scenario: Invalid output still fails
+- **WHEN** an event of any size contains invalid UTF-8, an unknown discriminator, a non-object metadata namespace, an invalid timestamp or a lifecycle violation
+- **THEN** no bytes of that event SHALL be written and the handler SHALL attempt at most one synthetic terminal internal error
+
+### Requirement: Raw-usage finish validity
+When finish usage supplies Raw, the runtime SHALL require one complete JSON object, SHALL reject invalid UTF-8 in any key or nested value on the original bytes, and SHALL preserve valid JSON escapes, including lone and paired UTF-16 surrogate escapes. It SHALL NOT impose a byte cap on raw usage.
+
+#### Scenario: Raw usage above the former cap
+- **WHEN** finish raw usage is a valid object above 1,048,576 bytes, including JSON whitespace
+- **THEN** the finish SHALL carry it unchanged in `usage.raw`
+
+#### Scenario: Raw UTF-8 and JSON escapes at finish
+- **WHEN** finish raw usage contains invalid UTF-8 in an object key or nested value
+- **THEN** the handler SHALL not encode or write finish and SHALL attempt at most one fixed terminal error frame
+- **WHEN** raw usage contains valid JSON with lone or paired escaped surrogates
+- **THEN** the handler SHALL preserve the raw JSON escapes
+
+### Requirement: Start validation omitted-start normalization and Anthropic pre-read ordering
+
+Start warnings SHALL be validated for registered type and UTF-8, then encoded once into the start frame. When the provider omits start, warnings SHALL be an empty array and the first part SHALL then be processed. Built-in Anthropic SHALL retain initial upstream-event error preflight, emit its start with conversion warnings before processing the pre-read event, and attach no warnings to finish.
+
+#### Scenario: Start validation omitted-start normalization and Anthropic pre-read ordering
+- **WHEN** Anthropic conversion produces warnings before a successfully pre-read event
+- **THEN** its start SHALL precede handling that event and finish SHALL have no warnings, with omitted-start normalization intact
+
+### Requirement: Registered SSE outer fields and opaque metadata
+
+Every public event SHALL contain only its registered outer fields, with supported providerMetadata treated as opaque object-valued namespaces rather than a namespace/key allowlist, and SHALL be framed as exactly `data: <json>\n\n`. Namespace names and values SHALL be validated as UTF-8 and object-shaped before the event is encoded.
+
+#### Scenario: Registered SSE outer fields and opaque metadata
+- **WHEN** a source frame carries unknown namespace objects with large original raw bytes
+- **THEN** registered outer fields and the opaque metadata SHALL be preserved unchanged, using exact data framing
+
+### Requirement: Single SSE frame encoding
+Each finish and error frame SHALL be encoded once together with its optional execution metadata and current native summary. When an error frame's encoding fails, the handler SHALL write the fixed base error frame for the same category. When a finish frame's encoding fails, the handler SHALL attempt one terminal internal error. Frames SHALL NOT be size-limited or truncated.
+
+#### Scenario: Large enriched error frame
+- **WHEN** a provider error carries a current native summary and an execution overview whose frame exceeds 64 KiB
+- **THEN** the complete frame with both SHALL be written in order and the stream SHALL continue
+
+#### Scenario: Optional error data cannot be encoded
+- **WHEN** encoding an error frame with its optional data fails
+- **THEN** the fixed base frame with the same classification SHALL be written

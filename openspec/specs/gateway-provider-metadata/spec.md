@@ -52,27 +52,6 @@ Strict server encoding and independent client decoding SHALL reject present top-
 - **WHEN** metadata is present as top-level null, a namespace array, malformed JSON or invalid original UTF-8
 - **THEN** strict server/Go decoding SHALL reject it explicitly without omission; permissive TS parsing SHALL NOT establish strict output-shape proof
 
-### Requirement: Aggregate bounded metadata processing
-Server preflight SHALL account for namespace key bytes, original namespace JSON bytes including whitespace, collection cardinality and other content/event values using overflow-safe aggregate accounting before scanning, decoding or copying metadata. Preflight SHALL charge one budget unit per namespace alongside original namespace key/value bytes; JSON punctuation SHALL be bounded by the final encoded-size check rather than estimated in preflight.
-
-#### Scenario: Small objects collectively overflow
-- **WHEN** multiple namespace/content metadata objects fit individually but their original bytes or cardinality collectively cannot fit the unary or event budget
-- **THEN** preflight SHALL reject them before JSON parsing or mapped allocation rather than using a separate allowance for each metadata object
-
-#### Scenario: Whitespace and escaping cannot evade limits
-- **WHEN** whitespace-heavy original metadata exceeds preflight or valid metadata escaping pushes final unary/SSE bytes above the complete limit
-- **THEN** only complete fitting documents/events SHALL be committed, without compacting input first to evade preflight
-
-#### Scenario: Exact resource boundaries
-- **WHEN** original-byte/cardinality or complete encoded responses/frames are below, at or one unit above their accepted bounds
-- **THEN** focused tests SHALL prove in-limit acceptance and explicit over-limit failure without partial writes
-
-#### Scenario: Invalid original UTF-8 is not repaired
-- **WHEN** an in-limit namespace name or raw JSON key/value contains invalid UTF-8
-- **THEN** validation SHALL fail before Go decoding/encoding can replace it
-- **WHEN** a namespace object instead contains valid JSON lone or paired surrogate escapes
-- **THEN** it SHALL remain valid under the same aggregate and final-byte limits
-
 ### Requirement: Metadata codec licensing and nil-sensitive JSON transport
 AGPL-owned service DTOs SHALL transport provider metadata directly through standard JSON encoding with nil-sensitive omission, and Apache client decoding SHALL remain independent of Gateway implementation imports.
 
@@ -80,42 +59,35 @@ AGPL-owned service DTOs SHALL transport provider metadata directly through stand
 - **WHEN** service encoding receives absent metadata and an explicit empty object
 - **THEN** standard service JSON SHALL retain nil-sensitive presence and Apache decoding SHALL remain independent of AGPL implementation imports
 
-### Requirement: Shared metadata budgets and bounded temporary work
-Unary result and all content scopes SHALL share one UnaryResponseBytes budget; each stream event SHALL share its complete StreamFrameBytes budget. Metadata validation/temporary allocation SHALL remain bounded by accepted original bytes/cardinality. Existing client response/event/cumulative/count bounds SHALL apply independently. Existing usage.raw limits SHALL remain unchanged.
-
-#### Scenario: Shared metadata budgets and bounded temporary work
-- **WHEN** several unary content metadata objects collectively exceed UnaryResponseBytes
-- **THEN** shared aggregate bounds SHALL reject them rather than allocate per-object allowances; independent client and existing usage.raw limits SHALL remain
-
 ### Requirement: Complete encoded metadata envelopes before commitment
-Complete standard-encoded unary bytes and SSE bytes including data prefix and suffix SHALL fit their final configured limits before any success document/event is written.
+Complete standard-encoded unary bytes and SSE bytes including data prefix and suffix SHALL be fully encoded, with their metadata, before any success document/event is written. Escaping expansion SHALL NOT cause a valid document or event to fail.
 
 #### Scenario: Complete encoded metadata envelopes before commitment
-- **WHEN** accepted raw metadata expands through escaping beyond a complete unary/SSE limit
-- **THEN** the document or event SHALL NOT be written, with SSE data prefix and suffix included in the final bound
+- **WHEN** valid raw metadata expands through escaping beyond the former unary or frame limit
+- **THEN** the complete document or event SHALL be written with the metadata, and no partial bytes SHALL be written if encoding fails
 
 ### Requirement: Metadata adaptation preserves commitment and ownership
 
-Invalid or oversized original unary metadata SHALL fail the whole response before HTTP 200 through the existing adaptation error.
+Invalid original unary metadata SHALL fail the whole response before HTTP 200 through the existing adaptation error.
 
 #### Scenario: Metadata adaptation preserves commitment and ownership policy
 - **WHEN** the runtime adapts native metadata and considers optional enrichment
-- **THEN** Invalid committed stream metadata SHALL prevent writing that event, cancel provider work, and use the existing bounded terminal error when the writer is usable. Optional Gateway overview enrichment that cannot fit SHALL preserve the original fitting response/event. Native namespace relocation SHALL NOT repair primary-invalid output. The service SHALL NOT silently omit native metadata, return normalized-only success, read ahead for selection, restart fallback after a selected result/part, or introduce another cleanup owner.
+- **THEN** Invalid committed stream metadata SHALL prevent writing that event, cancel provider work, and use the existing bounded terminal error when the writer is usable. Optional Gateway overview enrichment SHALL be encoded together with the response/event. Native namespace relocation SHALL NOT repair primary-invalid output. The service SHALL NOT silently omit native metadata, return normalized-only success, read ahead for selection, restart fallback after a selected result/part, or introduce another cleanup owner.
 
 #### Scenario: Selected result cannot replay after adaptation
-- **WHEN** a selected direct/fallback unary result or committed stream has invalid or oversized metadata
+- **WHEN** a selected direct/fallback unary result or committed stream has invalid metadata
 - **THEN** the existing failure path SHALL apply and no later candidate SHALL be invoked to hide metadata loss or replay generation
 
 #### Scenario: Finish remains authoritative
-- **WHEN** an in-limit finish carrying metadata is written and a later provider part is available
+- **WHEN** a valid finish carrying metadata is written and a later provider part is available
 - **THEN** finish and its metadata SHALL remain final, later output SHALL be suppressed and existing bounded cleanup SHALL occur
 
 ### Requirement: Metadata processing retains delivered stream lifecycle
-Part budgets, IDs, non-terminal provider errors, cancellation, deadlines, authoritative finish and bounded drain SHALL retain their delivered semantics.
+IDs, non-terminal provider errors, cancellation, deadlines, authoritative finish and bounded drain SHALL retain their delivered semantics.
 
 #### Scenario: Metadata processing retains delivered stream lifecycle
-- **WHEN** an in-limit metadata-bearing finish is followed by a provider error or later content
-- **THEN** finish SHALL remain authoritative with existing IDs, part budgets, non-terminal error behavior, cancellation/deadlines and bounded drain
+- **WHEN** a valid metadata-bearing finish is followed by a provider error or later content
+- **THEN** finish SHALL remain authoritative with existing IDs, non-terminal error behavior, cancellation/deadlines and bounded drain
 
 ### Requirement: Actual two-client native continuation
 Both clients' real first-output-derived unary and streaming history SHALL produce correct subsequent native requests for supported Anthropic/OpenAI/compatible continuation through direct and configured-fallback routes. Acceptance SHALL distinguish TS high-level unary/streaming, Go direct unary DoGenerate with a labeled independently tested consumer adaptation using only actual returned content/metadata and public ToResponseMessages, and Go high-level streaming assembly.
@@ -176,14 +148,14 @@ Concrete credential-source and tenant boundaries SHALL remain protected, while a
 - **THEN** it SHALL remain opaque without authorization/routing effects or synthesized credential/configuration/transport dumps, while concrete credentials and tenant boundaries remain protected
 
 ### Requirement: Evidence provenance and licensing
-Gateway codecs/schemas/contract/native-command test sources SHALL remain under the AGPL ai-gateway boundary; independent client and generic core/UI evidence SHALL remain Apache. Available authentic recorded/imported simple-text/tool/reasoning inputs SHALL replay against unchanged direct UI/native-request expectations where supported. Provider inputs SHALL NOT be invented, rewritten or normalized to hide metadata loss. Synthetic malformed/resource/transport witnesses SHALL remain focused tests.
+Gateway codecs/schemas/contract/native-command test sources SHALL remain under the AGPL ai-gateway boundary; independent client and generic core/UI evidence SHALL remain Apache. Available authentic recorded/imported simple-text/tool/reasoning inputs SHALL replay against unchanged direct UI/native-request expectations where supported. Provider inputs SHALL NOT be invented, rewritten or normalized to hide metadata loss. Synthetic malformed/large-output/transport witnesses SHALL remain focused tests.
 
 #### Scenario: Authentic replay retains the direct contract
 - **WHEN** an available authentic fixture exercises supported metadata through the Gateway
 - **THEN** its direct expectations SHALL remain the comparison contract without modifying provider input or normalizing missing metadata away
 
 #### Scenario: Synthetic cases remain focused tests
-- **WHEN** a malformed namespace, transport fault or extreme resource boundary is locally constructed
+- **WHEN** a malformed namespace, transport fault or large output is locally constructed
 - **THEN** it SHALL be tested outside recorded/upstream provider input directories and SHALL NOT support a live-provider parity claim
 
 ### Requirement: Metadata frontend evidence and remaining native coverage gaps
@@ -192,3 +164,16 @@ Any affected frontend wire behavior SHALL include schema-parsed cross-language a
 #### Scenario: Metadata frontend evidence and remaining native coverage gaps
 - **WHEN** metadata behavior affects frontend assembly but a native adapter or #201 matrix case remains uncovered
 - **THEN** schema-parsed cross-language evidence SHALL cover affected behavior and remaining gaps SHALL be reported separately
+
+### Requirement: Metadata validity on original bytes
+The server SHALL validate each supplied namespace name as UTF-8 and each namespace value as a UTF-8 JSON object on its original bytes, before Go decoding or encoding could replace invalid sequences. It SHALL NOT budget metadata by namespace count, key bytes or value bytes, alone or together with other content.
+
+#### Scenario: Many or large namespaces
+- **WHEN** a unary result or a stream event carries many namespaces or whitespace-heavy objects whose original bytes exceed the former unary or frame budget
+- **THEN** every namespace SHALL be returned unchanged in its registered scope
+
+#### Scenario: Invalid original UTF-8 is not repaired
+- **WHEN** a namespace name or raw JSON key/value contains invalid UTF-8
+- **THEN** validation SHALL fail before Go decoding/encoding can replace it
+- **WHEN** a namespace object instead contains valid JSON lone or paired surrogate escapes
+- **THEN** it SHALL remain valid and its escapes SHALL be preserved
