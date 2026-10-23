@@ -14,7 +14,7 @@ require (
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260928202004-dd43c6dff058
-	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260928202004-dd43c6dff058
+	github.com/grafana/ai-sdk/providers/openai-compatible v0.1.0-alpha.1
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815
 	github.com/openai/openai-go/v3 v3.76.0
