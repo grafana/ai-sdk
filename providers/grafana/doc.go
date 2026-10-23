@@ -13,11 +13,9 @@
 // provider.LanguageModel contract. The client has no dependency on the Gateway
 // service module and never retries Gateway requests itself.
 //
-// The Gateway owns resource bounds, so the client has no configurable response
-// limits. Callers bound requests through their http.Client and the call
-// context. Only buffered reads (discovery, unary and error bodies) share one
-// fixed backstop, which fails without truncating; streams are not bounded by
-// the client.
+// The Gateway owns response and stream size limits, so the client has no
+// configurable limits. Callers bound requests through their http.Client and the
+// call context.
 //
 // SPDX-License-Identifier: Apache-2.0
 package grafana
