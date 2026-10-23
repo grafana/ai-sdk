@@ -232,7 +232,7 @@ run = "bash scripts/module-policy.sh pins"
 description = "Validate the release-please configuration against published modules"
 run = """
 go test ./internal/releasecheck
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_release_readiness.py'
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_release_*.py'
 """
 
 [tasks.release-preview]

@@ -16,7 +16,9 @@ export function readOnlyFetch(fetchImpl = globalThis.fetch) {
     }
     const timeout = AbortSignal.timeout(30_000);
     const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
-    return fetchImpl(url, { ...options, redirect: 'error', signal });
+    const headers = new Headers(options.headers);
+    headers.set('connection', 'close');
+    return fetchImpl(url, { ...options, headers, redirect: 'error', signal });
   };
 }
 

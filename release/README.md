@@ -18,8 +18,9 @@ boundary the repository used merge commits, so scanning the old history would
 attribute both branch commits and their merge commits to the first generated
 changelogs. `bootstrap-sha` applies that boundary to modules without a release;
 the temporary `last-release-sha` applies it to the already-tagged root module.
-Remove `last-release-sha` after the first release pull requests have merged and
-the manifest and tags provide a clean release boundary for every module.
+The activated preparation driver ignores `last-release-sha` in memory and uses
+actual releases as its boundary, retaining `bootstrap-sha` for never-released modules.
+The committed config is retained for bootstrap candidate evidence.
 
 Root releases are tagged `vX.Y.Z`; nested releases are tagged
 `<module-directory>/vX.Y.Z`, which is what the Go tool requires to resolve a
@@ -43,8 +44,8 @@ A change is attributed to a module by the files it touches, not by its scope.
 Library attribution follows actual module ownership: root-owned files such as
 `middleware/extract_json.go` release core; nested `middleware/logger/` files release
 Logger. A provider-only change can also affect a workspace-built Gateway plugin package.
-Automatic Gateway attribution for these linked changes remains an activation blocker
-in #245; do not manufacture dependency bumps or assume path-only attribution is enough. Scopes are still worth
+Gateway attribution and delivery are separate from library activation; do not
+manufacture dependency bumps or assume path-only attribution is enough. Scopes are still worth
 writing because they appear in the changelog.
 
 Squash merging is load-bearing. Under merge commits both the branch commit and
@@ -176,33 +177,27 @@ the release readiness entry point performs those checks first. Root's frontend
 check installs the locked integration dependencies with pnpm. The candidate source
 and registered Vercel baseline are unchanged by this governance slice.
 
-This slice proves the library checks can accept root independently of unready
-provider/Bedrock source. It does not prove live App-generated release PR writes,
-publication retries/concurrency, required-check protection, dependency-update
-progression, or Gateway application readiness. Those remain activation work;
-release automation and publication guards stay disabled.
+Library verification, App-signed PR creation and read-only merged-root authorization
+have live evidence in #468. Publication/recovery tooling is tested with mocked writes.
+The [activation rollout](tooling/ACTIVATION.md) records the remaining settings, root
+publication, external consumption and dependency progression evidence. Gateway image
+work is excluded. Release writes default off until explicit activation.
 
 The normal library progression is root release -> Renovate root updates -> directly
 dependent library releases -> Renovate provider updates -> Bedrock readiness. The first
 root release needs no internal prerequisite tags; nested first releases wait for tagged
 prerequisites. Already-merged pseudo-versions remain valid for ordinary source PRs.
 
-Gateway has a separate application contract: main and versioned plugin packages must
-build from the same-revision workspace and pass plugin build, licensing and validator
-checks, with no dependency on prior SDK tags or standalone Gateway compilation. CI keeps
-the validated package of eligible pushes as a workflow artifact; this repository does not
+Gateway has a separate application contract: main and versioned plugin packages build
+from the same-revision workspace and pass plugin build, licensing and validator checks,
+with no dependency on prior SDK tags or standalone Gateway compilation. CI keeps the
+validated package of eligible pushes as a workflow artifact; this repository does not
 publish the plugin yet. Its release also updates `ai-gateway/package.json`, the plugin's
-version source. Gateway release readiness currently fails closed pending a plugin
-publication workflow and #245's linked workspace release attribution. It remains
-registered and independently versioned. Library readiness does not substitute for
-application readiness.
-
-Before activation, complete Gateway attribution and plugin publication; register the
-release readiness check as required; enforce up-to-date bases or equivalent merge-queue
-validation; confirm App/broker prerequisites; and review exact-candidate publication,
-bootstrap boundaries, retry behavior, and pending release PRs. The new check rejects a
-stale base at execution time, but repository protection must prevent merging an old green
-result after main advances. These administrative and application gates remain unfinished.
+version source. Gateway release readiness fails closed pending a plugin publication
+workflow. Gateway integration is separate: library readiness does not substitute for
+application/package readiness, and Gateway attribution and delivery do not gate library
+activation. Library protection settings and live publication follow the activation
+rollout under #245.
 
 Never move or delete published tags. Correct a bad release with a new version.
 
@@ -212,13 +207,10 @@ The requirement bump cannot live in a release pull request, because the
 first-party version it would point at is not published until its own release
 pull request merges.
 
-Renovate will own the bump after the release path is activated. Current
-[`renovate.json`](../renovate.json) deliberately disables root and internal
-module version updates while source PRs use merged pseudo-versions. Before
-enabling publication, add and test a narrowly scoped first-party release rule
-that overrides those disables, the weekly schedule and the 14-day
-`minimumReleaseAge` for tagged prerequisite updates. Do not activate it while
-publication remains disabled.
+The final first-party rule in [`renovate.json`](../renovate.json) enables independent
+tagged prerequisite updates, including prereleases, without the generic weekly
+schedule or 14-day delay. These PRs require human review and candidate-source CI.
+See the [activation rollout](tooling/ACTIVATION.md) before enabling publication.
 
 Two consequences are worth knowing. Renovate commits through the GitHub API, so
 its commits are signed and satisfy the organization's signed-commit ruleset,
@@ -296,8 +288,8 @@ release-worthy changes in dependency order rather than trying to reconstruct
 historical changelogs: core first, then the directly dependent modules, then
 Bedrock after Renovate has published its prerequisite bumps. Gateway uses its
 independent workspace application contract.
-Once every module has its first release tag, remove the temporary
-`last-release-sha` setting in a normal reviewed pull request.
+Preparation ignores the temporary `last-release-sha` setting in memory so published
+modules advance independently of modules that have no first tag.
 
 **A release app token.** release-please needs a token that can open pull
 requests which then trigger the required CI checks. The default `GITHUB_TOKEN`
@@ -313,7 +305,8 @@ The dedicated App is `grafana-ai-sdk-release`, owned by the AI SDK maintainers
 and installed only on `grafana/ai-sdk`. Its broker authorization is restricted to
 this workflow on main push events, with contents, pull-request and issue write
 permissions. PR #465's smoke run verified token issuance, repository read scope,
-and revocation. Write operations and signed release-PR creation remain untested.
+and revocation. The controlled exercise also proved signed App PR creation and triggered readiness
+checks through merged root PR #490. Live publication proof remains pending.
 
 The broker binds issuance to the workflow's file path, so renaming or moving
 `.github/workflows/release-please.yml` breaks token minting until that config is
@@ -325,6 +318,5 @@ the repository's squash defaults must be `PR_TITLE` for the commit title and
 `COMMIT_OR_PR_TITLE` default makes the release subject depend on how many
 commits a branch happened to have.
 
-**Renovate.** Add and validate the first-party tagged-prerequisite rule before
-activation. The current internal-module rules intentionally prevent version
-updates, and a new rule must explicitly override them and the generic Go delay.
+**Renovate.** The final first-party tagged-prerequisite rule overrides the earlier
+internal-module disables and generic Go delay. Its PRs require human review.

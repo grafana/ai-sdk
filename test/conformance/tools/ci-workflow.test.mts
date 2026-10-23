@@ -27,7 +27,7 @@ const dependencies = (job: string) => {
   return seen;
 };
 
-describe("source and artifact workflow gates", () => {
+describe("candidate-source workflow gates", () => {
   it("keeps pnpm packages under the shared lockfile root", () => {
     const workspace = parseDocument(readFileSync(resolve(root, "pnpm-workspace.yaml"), "utf8")).toJS() as { packages: string[] };
     const lockfile = parseAllDocuments(readFileSync(resolve(root, "pnpm-lock.yaml"), "utf8")).at(-1)?.toJS() as { importers: Record<string, unknown> };

@@ -534,8 +534,9 @@ mise run release-check      # configuration and readiness policy tests
 mise run release-preview    # dry-run of the next release pull request
 ```
 
-Release automation is inactive until #245 readiness and Gateway attribution/plugin
-publication gates are implemented and reviewed. No release PRs or tags are created by #21 alone.
+Library automation defaults off and requires the reviewed settings and explicit
+mode in the [activation rollout](release/tooling/ACTIVATION.md). Gateway work does
+not gate library activation.
 After activation, each library gets its own release pull request. Maintainers merge the root one
 first, let Renovate carry the new core version into the nested `go.mod` files,
 then merge the rest. The complete workflow is in the
@@ -553,14 +554,16 @@ SDK's Go module dependency graph.
 - **Source PRs:** CI builds and tests the SDK, providers, middleware, Grafana
   client, and Gateway from the proposed source. It also verifies module-pin
   ancestry and dependency and license boundaries. See
-  [CI](.github/workflows/ci.yml) for the required checks.
+  [CI](.github/workflows/ci.yml) for the seven required source checks. CI no
+  longer builds or publishes Gateway container images. The App Platform migration
+  and its plugin validation are tracked separately in #428.
 - **Go module releases:** Before tagging an SDK, provider, or middleware version
   for external Go consumers, validate that module against its declared `go.mod`
   dependencies with `MODULE=providers/anthropic mise run verify-published-module`
   (substitute the module being released). Release PR readiness additionally checks
   current-base metadata, canonical tagged prerequisite freshness, and isolated
   selected-consumer regressions; see the [release runbook](release/README.md).
-  Publication automation remains disabled pending #245. For a broader diagnostic,
+  Publication requires explicit activation under #245. For a broader diagnostic,
   `mise run verify-module-resolution` checks all published modules.
 - **Gateway plugin:** Gateway uses the separate `go.gateway.work` to build the
   plugin backend from same-revision local source. Plugin validation runs on pull

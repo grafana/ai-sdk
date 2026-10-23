@@ -3,6 +3,7 @@ from contextlib import chdir
 import subprocess
 import tempfile
 import json
+import hashlib
 import re
 from pathlib import Path
 import unittest
@@ -90,7 +91,8 @@ class ReleaseReadinessTest(unittest.TestCase):
             for release in [False, True]:
                 pr = self.pr if release else {"user": {"id": 1}, "base": {"sha": "base"}, "head": {"ref": "fix"}, "title": "fix: bug"}
                 Path("pr.json").write_text(json.dumps(pr))
-                with patch("sys.argv", ["readiness", "--pull-request", "pr.json"]), \
+                Path("evidence.json").write_text("stale evidence")
+                with patch("sys.argv", ["readiness", "--pull-request", "pr.json", "--evidence", "evidence.json"]), \
                      patch.object(readiness, "tree", return_value={readiness.MANIFEST: "blob"}), \
                      patch.object(readiness, "run", side_effect=['{".": "0.1.0"}', json.dumps(self.config)]), \
                      patch.object(readiness, "verify_library") as library:
@@ -100,6 +102,7 @@ class ReleaseReadinessTest(unittest.TestCase):
                     else:
                         readiness.main()
                     library.assert_not_called()
+                    self.assertFalse(Path("evidence.json").exists())
 
     def test_generated_changelog_preserves_history(self):
         notes = "## 0.2.0 (2026-10-20)\n\n* Fix"
@@ -271,6 +274,8 @@ class ReleaseReadinessTest(unittest.TestCase):
                 git("config", "user.name", "Test")
                 Path(readiness.MANIFEST).write_text('{".": "0.1.0"}')
                 Path("release-please-config.json").write_text(json.dumps(self.config))
+                Path(".github/workflows").mkdir(parents=True)
+                Path(".github/workflows/release-readiness.yml").write_text("name: readiness\n")
                 git("add", ".")
                 git("commit", "-qm", "base")
                 base = git("rev-parse", "HEAD")
@@ -297,11 +302,28 @@ class ReleaseReadinessTest(unittest.TestCase):
                     if args[0] == "gh":
                         return json.dumps(pr)
                     return real_run(*args, **kwargs)
-                with patch("sys.argv", ["readiness", "--pull-request", str(metadata)]), \
+                evidence = Path(directory, "library-readiness.json")
+                with patch("sys.argv", ["readiness", "--pull-request", str(metadata), "--evidence", str(evidence)]), \
                      patch.object(readiness, "run", side_effect=command), \
                      patch.object(readiness, "verify_library") as library:
                     readiness.main()
                     library.assert_called_once_with(".", base, set(self.config["packages"]))
+                    record = json.loads(evidence.read_text())
+                    self.assertEqual(record["schemaVersion"], 1)
+                    self.assertEqual(record["headSha"], head)
+                    self.assertEqual(record["baseSha"], base)
+                    self.assertEqual(record["mergeSha"], git("rev-parse", "HEAD"))
+                    self.assertEqual(record["treeSha"], git("rev-parse", "HEAD^{tree}"))
+                    self.assertEqual(record["toolingRevision"], base)
+                    self.assertEqual(record["bodyDigest"], hashlib.sha256(pr["body"].encode()).hexdigest())
+                    self.assertEqual(record["version"], "0.2.0")
+                    for failure in ["library", "live"]:
+                        with self.subTest(failure=failure):
+                            target = "verify_library" if failure == "library" else "verify_live_candidate"
+                            with patch.object(readiness, target, side_effect=ValueError("failed")):
+                                with self.assertRaisesRegex(ValueError, "failed"):
+                                    readiness.main()
+                            self.assertFalse(evidence.exists())
 
     def test_selected_standalone_ignores_broken_downstream(self):
         policy = Path(__file__).resolve().parent / "module-policy.sh"
@@ -347,9 +369,14 @@ class ReleaseReadinessTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify_graph(graph, path, expected, Path(directory))
 
-    def test_release_automation_is_disabled_until_activation_review(self):
+    def test_initial_adoption_requires_disabled_automation(self):
         root = Path(__file__).resolve().parent.parent
-        workflow = (root / ".github/workflows/release-please.yml").read_text()
+        workflow = """  release-please:
+    if: ${{ false }}
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7
+        with:
+          skip-github-release: true
+"""
         self.assertTrue(readiness.release_automation_disabled(workflow))
         self.assertFalse(readiness.release_automation_disabled(workflow.replace(
             "    if: ${{ false }}", "    if: ${{ true }}",
@@ -367,18 +394,35 @@ class ReleaseReadinessTest(unittest.TestCase):
         self.assertIn("googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7", workflow)
         self.assertIn("release-please@17.6.0", (root / "mise.toml").read_text())
 
-    def test_token_smoke_test_is_separate_from_release_automation(self):
+    def test_readiness_evidence_upload_is_success_only_and_attempt_scoped(self):
+        root = Path(__file__).resolve().parent.parent
+        workflow = (root / ".github/workflows/release-readiness.yml").read_text()
+        upload = workflow.split("      - name: Retain validated library candidate evidence", 1)[1]
+        self.assertNotIn("always()", upload)
+        self.assertNotIn("continue-on-error", workflow)
+        self.assertIn("library-readiness-${{ github.run_id }}-${{ github.run_attempt }}", upload)
+        self.assertIn("retention-days: 90", upload)
+        self.assertIn("path: ${{ runner.temp }}/library-readiness.json", upload)
+        self.assertNotIn("contents: write", workflow)
+        with patch.dict("os.environ", {"GH_TOKEN": "do-not-retain", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2"}), \
+             patch.object(readiness, "run", return_value="a" * 40):
+            record = readiness.readiness_record(dict(self.pr, number=123), ".", "0.2.0")
+        self.assertEqual(record["runId"], "123")
+        self.assertEqual(record["runAttempt"], "2")
+        self.assertNotIn("do-not-retain", json.dumps(record))
+
+    def test_library_activation_keeps_workflow_permissions_and_mode_explicit(self):
         root = Path(__file__).resolve().parent.parent
         workflow = (root / ".github/workflows/release-please.yml").read_text()
-        smoke = re.split(r"(?m)^  [a-z][a-z-]*:\n", workflow.split("  token-smoke-test:\n", 1)[1], maxsplit=1)[0]
-        self.assertIn("github.event_name == 'push'", smoke)
-        self.assertIn("github.ref == 'refs/heads/main'", smoke)
-        self.assertIn("github.repository == 'grafana/ai-sdk'", smoke)
-        self.assertIn("gh api --paginate --slurp installation/repositories", smoke)
-        self.assertNotIn("release-please-action", smoke)
-        self.assertNotIn("actions/checkout", smoke)
-        self.assertNotIn("contents: write", smoke)
-        self.assertTrue(readiness.release_automation_disabled(workflow))
+        for expected in ["github.event_name == 'push'", "github.ref == 'refs/heads/main'",
+                         "github.repository == 'grafana/ai-sdk'", "vars.RELEASE_LIBRARY_MODE == 'root'",
+                         "vars.RELEASE_LIBRARY_MODE == 'libraries'", "cancel-in-progress: false",
+                         "GH_READ_TOKEN: ${{ github.token }}", "persist-credentials: false",
+                         "checks: read", "actions: read", "node release/tooling/publish.mjs"]:
+            self.assertIn(expected, workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("token-smoke-test:", workflow)
+        self.assertNotIn("app-pr-test:", workflow)
 
 
 if __name__ == "__main__":
