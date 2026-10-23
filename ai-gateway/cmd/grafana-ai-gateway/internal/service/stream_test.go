@@ -18,8 +18,6 @@ import (
 
 func serviceTestLimits() providerv4.Limits {
 	return providerv4.Limits{
-		StreamParts:         1000,
-		StreamFrameBytes:    1 << 20,
 		ModelDuration:       5 * time.Second,
 		StreamIdleDuration:  5 * time.Second,
 		StreamDrainDuration: 100 * time.Millisecond,

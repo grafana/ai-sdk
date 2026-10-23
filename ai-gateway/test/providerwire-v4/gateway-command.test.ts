@@ -1441,6 +1441,26 @@ describe("authenticated Anthropic Gateway command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
+  it("streams frames, raw events and raw usage above the former frame limit to both clients", async () => {
+    const [fake, gateway] = await startGateway();
+    const options = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "large-output" }] }], maxOutputTokens: 32, includeRawChunks: true };
+    const assertLargeStream = (parts: Array<Record<string, any>>) => {
+      assert.equal(parts.filter((part) => part.type === "text-delta").map((part) => part.delta).join(""), largeDelta);
+      assert.ok(parts.some((part) => part.type === "raw" && JSON.stringify(part.rawValue).includes(largeDelta)));
+      const finish = parts.find((part) => part.type === "finish");
+      assert.equal(finish?.usage.raw.native_padding, largeUsagePadding);
+      assert.ok(parts.every((part) => part.type !== "error"));
+    };
+    try {
+      const result = await gateway.client()("assistant").doStream(options);
+      assertLargeStream(await collectGatewayStream(result.stream));
+      const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, mode: "stream", modelID: "assistant", options });
+      assert.equal(go.error, undefined);
+      assertLargeStream(go.parts);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
   it("maps file inputs and file-result continuation through authenticated native calls", async () => {
     const [fake, gateway] = await startGateway();
     const client = gateway.client();

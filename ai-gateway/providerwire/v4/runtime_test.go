@@ -847,57 +847,39 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 				before := append(json.RawMessage(nil), metadata["gateway"]...)
 				value := safeError{category: safeOverload}
 				current := &execution.Failure{StatusCode: 503, Message: "current failure"}
-				encode := func(limit int64) []byte {
-					if streaming {
-						frame, ok := encodeStreamError(value, metadata, current, limit)
-						require.True(t, ok)
-						return frame
-					}
-					status, body := encodeHTTPError(value, metadata)
-					assert.Equal(t, 503, status)
-					return body
-				}
 				original := canonicalOverloadError
+				body := original
 				if streaming {
 					original = canonicalOverloadStreamErrorFrame
+					body = encodeStreamError(value, metadata, current)
+				} else {
+					var status int
+					status, body = encodeHTTPError(value, metadata)
+					assert.Equal(t, 503, status)
 				}
-				full := encode(1 << 20)
-				candidates := []int{len(full)}
-				if streaming {
-					candidates = append(candidates, max(len(original), len(full)-1), len(original))
+				decode := func(body []byte) errorResponse {
+					if streaming {
+						body = body[len("data: ") : len(body)-len("\n\n")]
+					}
+					var response errorResponse
+					require.NoError(t, json.Unmarshal(body, &response))
+					return response
 				}
-				for _, limit := range candidates {
-					body := encode(int64(limit))
-					assert.LessOrEqual(t, len(body), limit)
-					decode := func(body []byte) errorResponse {
-						if streaming {
-							body = body[len("data: ") : len(body)-len("\n\n")]
-						}
-						var response errorResponse
-						require.NoError(t, json.Unmarshal(body, &response))
-						return response
-					}
-					decoded, baseline := decode(body), decode(original)
-					classified := decoded
-					classified.Metadata, classified.Error.Data = nil, nil
-					assert.Equal(t, baseline, classified)
-					if limit == len(full) {
-						assert.Equal(t, full, body)
-						if streaming {
-							require.NotNil(t, decoded.Error.Data)
-							assert.Equal(t, "current failure", decoded.Error.Data.NativeError.Message)
-							if attribution == "selected" {
-								assert.NotEmpty(t, decoded.Error.Data.Metadata)
-							}
-						} else if attribution == "selected" {
-							assert.NotEmpty(t, decoded.Metadata)
-						} else {
-							assert.Equal(t, original, body)
-						}
-					}
-					if limit == len(original) {
-						assert.Equal(t, original, body)
-					}
+				decoded, baseline := decode(body), decode(original)
+				classified := decoded
+				classified.Metadata, classified.Error.Data = nil, nil
+				assert.Equal(t, baseline, classified)
+				switch {
+				case attribution == "malformed":
+					assert.Equal(t, original, body)
+				case streaming:
+					require.NotNil(t, decoded.Error.Data)
+					assert.Equal(t, "current failure", decoded.Error.Data.NativeError.Message)
+					assert.Equal(t, attribution == "selected", len(decoded.Error.Data.Metadata) != 0)
+				case attribution == "selected":
+					assert.NotEmpty(t, decoded.Metadata)
+				default:
+					assert.Equal(t, original, body)
 				}
 				assert.Equal(t, before, metadata["gateway"])
 			})
@@ -950,31 +932,29 @@ func TestPublicError_InvalidOptionalFields(t *testing.T) {
 	validMetadata := provider.ProviderMetadata{"gateway": json.RawMessage(`{"execution":{"requestedModelId":"alias"}}`)}
 	malformedMetadata := provider.ProviderMetadata{"gateway": json.RawMessage("invalid")}
 	current := &execution.Failure{Message: "current failure", StatusCode: 503}
-	currentOnly, ok := encodeStreamError(value, nil, current, 1<<20)
-	require.True(t, ok)
 	for _, tc := range []struct {
 		name     string
 		metadata provider.ProviderMetadata
 		current  *execution.Failure
-		expected []byte
 	}{
-		{"malformed metadata", malformedMetadata, nil, canonicalOverloadStreamErrorFrame},
-		{"current survives malformed metadata", malformedMetadata, current, currentOnly},
-		{"malformed current does not publish overview", validMetadata, &execution.Failure{Code: json.RawMessage("invalid")}, canonicalOverloadStreamErrorFrame},
-		{"oversized current does not publish overview", validMetadata, &execution.Failure{Message: strings.Repeat("x", 1<<20)}, canonicalOverloadStreamErrorFrame},
+		{"malformed metadata", malformedMetadata, nil},
+		{"malformed metadata with current", malformedMetadata, current},
+		{"malformed current", validMetadata, &execution.Failure{Code: json.RawMessage("invalid")}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			frame, ok := encodeStreamError(value, tc.metadata, tc.current, 1024)
-			require.True(t, ok)
-			assert.Equal(t, tc.expected, frame)
+			frame := encodeStreamError(value, tc.metadata, tc.current)
+			assert.Equal(t, canonicalOverloadStreamErrorFrame, frame)
 			requireStreamBodyMatchesSchema(t, string(frame))
 		})
 	}
+	large := &execution.Failure{Message: strings.Repeat("x", 1<<20), StatusCode: 503}
+	frame := encodeStreamError(value, validMetadata, large)
+	assert.Greater(t, len(frame), 1<<20)
+	assert.Contains(t, string(frame), `"requestedModelId":"alias"`)
+	requireStreamBodyMatchesSchema(t, string(frame))
 	status, body := encodeHTTPError(value, malformedMetadata)
 	assert.Equal(t, 503, status)
 	assert.Equal(t, canonicalOverloadError, body)
-	_, ok = encodeStreamError(value, validMetadata, current, int64(len(canonicalOverloadStreamErrorFrame)-1))
-	assert.False(t, ok)
 }
 
 func TestPublicError_ClassificationBoundaries(t *testing.T) {

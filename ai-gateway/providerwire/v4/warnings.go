@@ -6,8 +6,6 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const minimumWarningBytes = int64(len(`{"type":"other","message":""}`))
-
 type responseWarning struct {
 	Type    provider.WarningType `json:"type"`
 	Feature *string              `json:"feature,omitempty"`
@@ -27,20 +25,6 @@ func warningValues(warning provider.Warning) ([2]string, bool) {
 	default:
 		return [2]string{}, false
 	}
-}
-
-func warningsPreflight(warnings []provider.Warning, remaining *int64) bool {
-	if *remaining < 0 || int64(len(warnings)) > *remaining/minimumWarningBytes {
-		return false
-	}
-	*remaining -= int64(len(warnings)) * minimumWarningBytes
-	for _, warning := range warnings {
-		values, ok := warningValues(warning)
-		if !ok || !responseStringsFit(remaining, values[:]...) {
-			return false
-		}
-	}
-	return true
 }
 
 func mapWarnings(warnings []provider.Warning) ([]responseWarning, error) {

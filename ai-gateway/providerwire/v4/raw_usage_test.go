@@ -81,47 +81,31 @@ func TestRawUsageResponses(t *testing.T) {
 	}
 }
 
-func TestRawUsageBoundaries(t *testing.T) {
-	payload := `{"x":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"x":""}`)) + `"}`
-	require.Len(t, payload, maxRawUsageBytes)
-	assert.True(t, validRawUsage(json.RawMessage(payload)))
-	for _, raw := range []string{payload + " ", `{"large":"` + strings.Repeat("x", 9<<20) + `"}`} {
+func TestRawUsageHasNoSizeLimit(t *testing.T) {
+	raws := []string{`{"large":"` + strings.Repeat("x", 9<<20) + `"}`, strings.Repeat(" ", 2<<20) + `{"spaced":true}`}
+	for _, raw := range raws {
 		large := validGenerateResult()
 		large.Usage.Raw = json.RawMessage(raw)
 		mapped, err := mapUnarySuccess(large)
 		require.NoError(t, err)
 		assert.Equal(t, raw, string(mapped.Usage.Raw))
+		_, ok := marshalUnarySuccess(mapped)
+		require.True(t, ok)
+
+		part := finishPart()
+		part.Usage.Raw = json.RawMessage(raw)
+		harness := newRuntimeHarness(t, testLimits())
+		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: makeStream(part)}, nil
+		}
+		response := harness.serve(streamRequest(`{"prompt":[]}`))
+		require.Contains(t, response.Body.String(), `"type":"finish"`)
+		assert.NotContains(t, response.Body.String(), `"code":"internal_error"`)
 	}
-
-	result := validGenerateResult()
-	result.Usage.Raw = json.RawMessage(payload)
-	mapped, err := mapUnarySuccess(result)
-	require.NoError(t, err)
-	_, ok := marshalUnarySuccess(mapped)
-	require.True(t, ok)
-
-	part := finishPart()
-	part.Usage.Raw = json.RawMessage(payload)
-	harness := newRuntimeHarness(t, func() Limits {
-		limits := testLimits()
-		limits.StreamFrameBytes = 2 << 20
-		return limits
-	}())
-	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-		return &provider.StreamResult{Stream: makeStream(part)}, nil
-	}
-	response := harness.serve(streamRequest(`{"prompt":[]}`))
-	require.Contains(t, response.Body.String(), `"type":"finish"`)
-	assert.NotContains(t, response.Body.String(), `"code":"internal_error"`)
-
-	frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartFinish, finishReason: *part.FinishReason, rawUsage: part.Usage.Raw}, 2<<20)
-	require.True(t, ok)
-	_, ok = encodeStreamFrame(streamEvent{typeName: provider.PartFinish, finishReason: *part.FinishReason, rawUsage: part.Usage.Raw}, int64(len(frame)-1))
-	assert.False(t, ok)
 
 	escaped := validGenerateResult()
 	escaped.Usage.Raw = json.RawMessage(`{"html":"<>&"}`)
-	mapped, err = mapUnarySuccess(escaped)
+	mapped, err := mapUnarySuccess(escaped)
 	require.NoError(t, err)
 	encoded, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)

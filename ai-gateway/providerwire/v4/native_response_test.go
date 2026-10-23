@@ -178,23 +178,10 @@ func TestNativeResponse_CompleteBounds(t *testing.T) {
 			w := httptest.NewRecorder()
 			assert.True(t, newTestHandler(t, testLimits()).writeUnarySuccess(w, tc.result))
 			assert.Equal(t, body, w.Body.Bytes())
-			for _, delta := range []int64{-1, 0, 1} {
-				limits := testLimits()
-				limits.StreamFrameBytes = int64(len(frame)) + delta
-				harness := newRuntimeHarness(t, limits)
-				harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-					return &provider.StreamResult{Stream: makeStream(tc.part, finishPart())}, nil
-				}
-				got := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
-				requireStreamBodyMatchesSchema(t, got)
-				if delta < 0 {
-					assert.NotContains(t, got, frame)
-					assert.Equal(t, 1, strings.Count(got, `"code":"internal_error"`))
-				} else {
-					assert.Contains(t, got, frame)
-					assert.Contains(t, got, `"type":"finish"`)
-				}
-			}
+			got := strings.Join(frames, "\n\n")
+			requireStreamBodyMatchesSchema(t, got)
+			assert.Contains(t, got, frame)
+			assert.Contains(t, got, `"type":"finish"`)
 		})
 	}
 }
@@ -226,7 +213,7 @@ func TestNativeResponse_SourceUTF8(t *testing.T) {
 	}
 }
 
-func TestNativeResponse_LargeUnaryAndStreamPreflight(t *testing.T) {
+func TestNativeResponse_LargeValues(t *testing.T) {
 	result := validGenerateResult()
 	result.Content[0].Text = strings.Repeat("c", 80)
 	result.Warnings = []provider.Warning{{Type: provider.WarnOther, Message: strings.Repeat("w", 80)}}
@@ -245,10 +232,7 @@ func TestNativeResponse_LargeUnaryAndStreamPreflight(t *testing.T) {
 	result.Warnings = make([]provider.Warning, 1)
 	_, err = mapUnarySuccess(result)
 	require.Error(t, err)
-	warnings := []provider.Warning{{Type: provider.WarnOther, Message: string([]byte{255})}, {Type: provider.WarnOther, Message: strings.Repeat("x", 1000)}}
-	remaining := int64(400)
-	assert.False(t, warningsPreflight(warnings, &remaining))
-	_, err = mapStreamWarnings(warnings, 400)
+	_, err = mapWarnings([]provider.Warning{{Type: provider.WarnOther, Message: string([]byte{255})}})
 	require.Error(t, err)
 }
 

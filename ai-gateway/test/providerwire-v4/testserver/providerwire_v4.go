@@ -513,8 +513,6 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 			return configured(ctx, id, options, gateway)
 		},
 		Limits: providerwirev4.Limits{
-			StreamParts:         1_000,
-			StreamFrameBytes:    1 << 20,
 			ModelDuration:       5 * time.Second,
 			StreamIdleDuration:  200 * time.Millisecond,
 			StreamDrainDuration: 100 * time.Millisecond,

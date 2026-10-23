@@ -79,8 +79,8 @@ func TestProviderMetadata_StreamScopes(t *testing.T) {
 			{Type: provider.PartToolResult, ToolCallID: "call", ToolName: "weather", Result: json.RawMessage(`{}`), ProviderMetadata: metadata},
 			finish,
 		}
-		h := &handler{limits: Limits{StreamFrameBytes: 1 << 20, StreamParts: 100}}
-		state := newStreamState(100, nil)
+		h := &handler{}
+		state := newStreamState(nil)
 		w := httptest.NewRecorder()
 		for i, part := range parts {
 			before := w.Body.Len()
@@ -319,33 +319,20 @@ func TestProviderMetadata_OriginalBytesAndCardinality(t *testing.T) {
 		{name: "many namespaces", metadata: many},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			budget := int64(len(tc.metadata))
-			for key, raw := range tc.metadata {
-				budget += int64(len(key)) + int64(len(raw))
-			}
-			for _, delta := range []int64{-1, 0, 1} {
-				limit := budget + delta + int64(len("native"))
-				result := validGenerateResult()
-				result.Content = nil
-				result.FinishReason.Raw = "native"
-				result.ProviderMetadata = tc.metadata
-				_, err := mapUnarySuccess(result)
-				assert.NoError(t, err)
+			result := validGenerateResult()
+			result.Content = nil
+			result.FinishReason.Raw = "native"
+			result.ProviderMetadata = tc.metadata
+			_, err := mapUnarySuccess(result)
+			assert.NoError(t, err)
 
-				event := streamEvent{typeName: provider.PartTextStart, id: "native", metadata: tc.metadata}
-				assert.Equal(t, delta >= 0, streamEventPreflight(event, limit+int64(len(provider.PartTextStart))))
+			_, ok := encodeStreamFrame(streamEvent{typeName: provider.PartTextStart, id: "native", metadata: tc.metadata})
+			assert.True(t, ok)
 
-				source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "native", ProviderMetadata: tc.metadata}
-				assert.Equal(t, delta >= 0, sourcePreflight(source, limit))
-			}
+			_, err = mapSource(provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "native", ProviderMetadata: tc.metadata})
+			assert.NoError(t, err)
 		})
 	}
-	result := validGenerateResult()
-	result.ProviderMetadata = many
-	_, err := mapUnarySuccess(result)
-	assert.NoError(t, err)
-	assert.False(t, streamEventPreflight(streamEvent{typeName: provider.PartTextStart, metadata: many}, 1))
-	assert.False(t, sourcePreflight(provider.SourceInfo{ID: "native", ProviderMetadata: many}, 1))
 }
 
 func TestProviderMetadata_AggregateAndEncodingBounds(t *testing.T) {
@@ -365,18 +352,14 @@ func TestProviderMetadata_AggregateAndEncodingBounds(t *testing.T) {
 	body, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
 	assert.Contains(t, string(body), `"future":{}`)
-	event := streamEvent{typeName: provider.PartToolResult, id: "call", toolName: "weather", result: json.RawMessage(`{"value":"` + strings.Repeat("x", 300) + `"}`), metadata: metadata}
-	assert.False(t, streamEventPreflight(event, 500))
-	event = streamEvent{typeName: provider.PartTextDelta, id: "text", delta: "<>&", metadata: provider.ProviderMetadata{"<future>": json.RawMessage(`{"value":"<>&","surrogate":"\ud800"}`)}}
-	frame, ok := encodeStreamFrame(event, 4096)
+	event := streamEvent{typeName: provider.PartToolResult, id: "call", toolName: "weather", result: json.RawMessage(`{"value":"` + strings.Repeat("x", 2<<20) + `"}`), metadata: metadata}
+	frame, ok := encodeStreamFrame(event)
 	require.True(t, ok)
-	for _, delta := range []int64{-1, 0, 1} {
-		got, ok := encodeStreamFrame(event, int64(len(frame))+delta)
-		assert.Equal(t, delta >= 0, ok)
-		if delta < 0 {
-			assert.Empty(t, got)
-		}
-	}
+	assert.Greater(t, len(frame), 2<<20)
+	event = streamEvent{typeName: provider.PartTextDelta, id: "text", delta: "<>&", metadata: provider.ProviderMetadata{"<future>": json.RawMessage(`{"value":"<>&","surrogate":"\ud800"}`)}}
+	frame, ok = encodeStreamFrame(event)
+	require.True(t, ok)
+	assert.Contains(t, string(frame), `\ud800`)
 	source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "native", URL: "https://example.test", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"opaque":"` + strings.Repeat("x", 8193) + `"}`)}}
 	_, err = mapSource(source)
 	require.NoError(t, err)
@@ -392,7 +375,7 @@ func TestProviderMetadata_UTF8AndSurrogates(t *testing.T) {
 		result.ProviderMetadata = metadata
 		_, err := mapUnarySuccess(result)
 		require.Error(t, err)
-		frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartTextStart, id: "text", metadata: metadata}, 4096)
+		frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartTextStart, id: "text", metadata: metadata})
 		assert.False(t, ok)
 		assert.Empty(t, frame)
 	}
@@ -432,7 +415,24 @@ func TestInvocation_LargeEnrichedUnarySuccess(t *testing.T) {
 	require.NotNil(t, readOverview(t, response.Body.Bytes()))
 }
 
-func TestInvocation_OptionalLimitsAndNamespace(t *testing.T) {
+func TestInvocation_LargeEnrichedFinish(t *testing.T) {
+	native := json.RawMessage(`{"opaque":"` + strings.Repeat("n", 2<<20) + `"}`)
+	first := &recordingModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		finish := finishPart()
+		finish.ProviderMetadata = provider.ProviderMetadata{"gateway": native}
+		return &provider.StreamResult{Stream: makeStream(finish)}, nil
+	}}
+	body := invocationHarness(t, testLimits(), first).serve(streamRequest(`{"prompt":[]}`)).Body.String()
+	frames := strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n")
+	finish := frames[len(frames)-1]
+	assert.Contains(t, finish, `"type":"finish"`)
+	assert.Greater(t, len(finish), 2<<20)
+	assert.Contains(t, finish, `"nativeMetadata":`+string(native))
+	assert.Contains(t, finish, `"execution":`)
+	assert.NotContains(t, body, `"code":"internal_error"`)
+}
+
+func TestInvocation_NamespaceRelocation(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unary", true: "finish"}[streaming], func(t *testing.T) {
 			native := provider.ProviderMetadata{"gateway": json.RawMessage(`{"opaque":"native namespace","padding":"` + strings.Repeat("x", 128) + `"}`)}
@@ -454,33 +454,12 @@ func TestInvocation_OptionalLimitsAndNamespace(t *testing.T) {
 				}
 				return validRequest(`{"prompt":[]}`)
 			}
-			original := baseline.serve(request()).Body.Bytes()
-			full := invocationHarness(t, testLimits(), first).serve(request()).Body.Bytes()
-			size, originalSize := len(full), len(original)
-			if streaming {
-				frames := strings.Split(strings.TrimSuffix(string(full), "\n\n"), "\n\n")
-				size = len(frames[len(frames)-1]) + 2
-				frames = strings.Split(strings.TrimSuffix(string(original), "\n\n"), "\n\n")
-				originalSize = len(frames[len(frames)-1]) + 2
-			}
-			candidates := []int{size}
-			if streaming {
-				candidates = append(candidates, size-1, originalSize)
-			}
-			for _, limit := range candidates {
-				limits := testLimits()
-				if streaming {
-					limits.StreamFrameBytes = int64(limit)
-				}
-				response := invocationHarness(t, limits, first).serve(request())
-				assert.Equal(t, 200, response.Code)
-				if limit == size {
-					assert.Equal(t, full, response.Body.Bytes())
-					assert.Contains(t, response.Body.String(), `"nativeMetadata":`+string(before))
-				} else {
-					assert.Equal(t, original, response.Body.Bytes())
-				}
-			}
+			original := baseline.serve(request())
+			assert.Equal(t, 200, original.Code)
+			assert.NotContains(t, original.Body.String(), "nativeMetadata")
+			response := invocationHarness(t, testLimits(), first).serve(request())
+			assert.Equal(t, 200, response.Code)
+			assert.Contains(t, response.Body.String(), `"nativeMetadata":`+string(before))
 			assert.Equal(t, before, native["gateway"])
 		})
 	}
@@ -514,11 +493,10 @@ func TestInvocation_PrimaryEncodingFailure(t *testing.T) {
 	assert.Equal(t, 500, response.Code)
 	assert.NotContains(t, response.Body.String(), `"content"`)
 	finish := finishPart()
-	finish.FinishReason.Raw = strings.Repeat("<", 80)
+	finish.ProviderMetadata = provider.ProviderMetadata{"future": json.RawMessage(`{"incomplete":`)}
 	first.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: makeStream(finish)}, nil
 	}
-	limits.StreamFrameBytes = 400
 	response = invocationHarness(t, limits, first).serve(streamRequest(`{"prompt":[]}`))
 	assert.Contains(t, response.Body.String(), `"code":"internal_error"`)
 	assert.NotContains(t, response.Body.String(), `"type":"finish"`)

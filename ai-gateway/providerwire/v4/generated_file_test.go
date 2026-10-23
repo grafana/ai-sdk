@@ -27,14 +27,10 @@ func TestGeneratedFileProjectionAndExactBounds(t *testing.T) {
 		require.NotContains(t, string(body), "filename")
 		require.NoError(t, compileWireSchema(t, unarySuccessSchemaJSON).Validate(body))
 		event := streamEvent{typeName: provider.PartFile, mediaType: "image/png", fileData: unaryReasoningFile(&data), metadata: result.Content[0].ProviderMetadata}
-		frame, ok := encodeStreamFrame(event, 1<<20)
+		_, ok = encodeStreamFrame(event)
 		require.True(t, ok)
-		for _, delta := range []int64{-1, 0, 1} {
-			_, ok = encodeStreamFrame(event, int64(len(frame))+delta)
-			require.Equal(t, delta >= 0, ok)
-		}
-		h := &handler{limits: Limits{StreamFrameBytes: 1 << 20}}
-		state := newStreamState(100, nil)
+		h := &handler{}
+		state := newStreamState(nil)
 		w := httptest.NewRecorder()
 		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: event.fileData, ProviderMetadata: event.metadata}))
 		require.Equal(t, streamPartFinished, h.processStreamPart(w, state, finishPart()))
@@ -58,11 +54,11 @@ func TestGeneratedFileInvalidAndAggregate(t *testing.T) {
 	body, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
 	require.Greater(t, len(body), 8<<20)
-	huge := &provider.StreamFileData{Bytes: make([]byte, 1024)}
+	large := &provider.StreamFileData{Bytes: make([]byte, 2<<20)}
 	w := httptest.NewRecorder()
-	h := &handler{limits: Limits{StreamFrameBytes: 256}}
-	require.Equal(t, streamPartAdapterFailure, h.processStreamPart(w, newStreamState(100, nil), provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: huge}))
-	require.Empty(t, w.Body.String())
+	h := &handler{}
+	require.Equal(t, streamPartContinue, h.processStreamPart(w, newStreamState(nil), provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: large}))
+	require.Greater(t, w.Body.Len(), 2<<20)
 }
 
 func TestReasoningOriginalURLHasNoSizeLimit(t *testing.T) {

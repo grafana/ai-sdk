@@ -65,7 +65,7 @@ func registerNativeStructured(mux *http.ServeMux) (func(), error) {
 		native.Close()
 		return nil, err
 	}
-	runtime, err := v4.New(v4.Config{Selector: v4.CatalogSelector(resolver), Limits: v4.Limits{StreamFrameBytes: 1 << 20, StreamParts: 100, ModelDuration: time.Second * 5, StreamIdleDuration: time.Second, StreamDrainDuration: time.Second}})
+	runtime, err := v4.New(v4.Config{Selector: v4.CatalogSelector(resolver), Limits: v4.Limits{ModelDuration: time.Second * 5, StreamIdleDuration: time.Second, StreamDrainDuration: time.Second}})
 	if err != nil {
 		native.Close()
 		return nil, err

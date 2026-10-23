@@ -14,7 +14,6 @@ import (
 
 const (
 	maxJavaScriptSafeInteger = 9007199254740991
-	maxRawUsageBytes         = 1 << 20
 )
 
 var errInvalidUnarySuccess = errors.New("providerwire v4: invalid unary success")

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -79,8 +78,8 @@ type streamFinishEvent struct {
 	Metadata     provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
-func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
-	if !validStreamEvent(value) || !streamEventPreflight(value, limit) {
+func encodeStreamFrame(value streamEvent) ([]byte, bool) {
+	if !validStreamEvent(value) {
 		return nil, false
 	}
 
@@ -163,7 +162,7 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 	default:
 		return nil, false
 	}
-	if err != nil || int64(len(payload)) > limit-int64(len("data: ")+len("\n\n")) {
+	if err != nil {
 		return nil, false
 	}
 
@@ -192,134 +191,10 @@ func validStreamEvent(value streamEvent) bool {
 	}
 }
 
-func streamEventPreflight(value streamEvent, limit int64) bool {
-	if limit < int64(len("data: ")+len("{}\n\n")) {
-		return false
-	}
-	remaining := limit
-	if int64(len(value.metadata)) > remaining {
-		return false
-	}
-	remaining -= int64(len(value.metadata))
-	for key, raw := range value.metadata {
-		for _, size := range []int{len(key), len(raw)} {
-			if int64(size) > remaining {
-				return false
-			}
-			remaining -= int64(size)
-		}
-	}
-	check := func(values ...string) bool {
-		for _, value := range values {
-			if int64(len(value)) > remaining {
-				return false
-			}
-			remaining -= int64(len(value))
-		}
-		return true
-	}
-
-	if !check(string(value.typeName)) {
-		return false
-	}
-	var fits bool
-	switch value.typeName {
-	case provider.PartReasoningStart, provider.PartReasoningEnd, provider.PartReasoningDelta:
-		fits = check(value.id, value.delta)
-	case provider.PartReasoningFile, provider.PartFile:
-		fits = reasoningFileFits(value.fileData, value.mediaType, &remaining)
-	case provider.PartSource:
-		fits = true
-	case provider.PartCustom:
-		fits = check(value.kind)
-	case provider.PartStreamStart:
-		if !streamWarningCountFits(len(value.warnings), limit) {
-			return false
-		}
-		for _, warning := range value.warnings {
-			if !responseStringsFit(&remaining, string(warning.Type), warning.Details) {
-				return false
-			}
-			for _, field := range []*string{warning.Feature, warning.Setting, warning.Message} {
-				if field != nil && !responseStringsFit(&remaining, *field) {
-					return false
-				}
-			}
-		}
-		for _, warning := range value.warnings {
-			if !utf8.ValidString(warning.Details) {
-				return false
-			}
-			for _, field := range []*string{warning.Feature, warning.Setting, warning.Message} {
-				if field != nil && !utf8.ValidString(*field) {
-					return false
-				}
-			}
-		}
-		fits = true
-	case provider.PartResponseMeta:
-		fits = responseIdentityFits(value.id, value.modelID, value.timestamp, &remaining) && utf8.ValidString(value.id) && utf8.ValidString(value.modelID)
-	case provider.PartTextStart, provider.PartTextEnd:
-		fits = check(value.id)
-	case provider.PartTextDelta:
-		fits = check(value.id, value.delta)
-	case provider.PartToolInputStart:
-		fits = check(value.id, value.toolName)
-	case provider.PartToolInputDelta:
-		fits = check(value.id, value.delta)
-	case provider.PartToolInputEnd:
-		fits = check(value.id)
-	case provider.PartToolApprovalRequest:
-		fits = check(value.id, value.approvalID)
-	case provider.PartToolCall:
-		fits = check(value.id, value.toolName, value.input)
-	case provider.PartToolResult:
-		fits = check(value.id, value.toolName) && int64(len(value.result)) <= remaining
-	case provider.PartRaw:
-		fits = int64(len(value.rawValue)) <= remaining
-	case provider.PartFinish:
-		fits = check(string(value.finishReason.Unified), value.finishReason.Raw) && int64(len(value.rawUsage)) <= remaining && len(value.rawUsage) <= maxRawUsageBytes
-	default:
-		return false
-	}
-	return fits
-}
-
-func streamWarningCountFits(count int, limit int64) bool {
-	if count == 0 {
-		return int64(len(canonicalEmptyStartFrame)) <= limit
-	}
-	available := limit - int64(len(canonicalEmptyStartFrame))
-	if available < minimumWarningBytes {
-		return false
-	}
-	return int64(count) <= (available+1)/(minimumWarningBytes+1)
-}
-
-func mapStreamWarnings(warnings []provider.Warning, limit int64) ([]responseWarning, error) {
-	remaining := limit - int64(len(canonicalEmptyStartFrame))
-	if !streamWarningCountFits(len(warnings), limit) || !warningsPreflight(warnings, &remaining) {
-		return nil, errInvalidUnarySuccess
-	}
-	return mapWarnings(warnings)
-}
-
 type streamOutcome struct {
 	result *provider.StreamResult
 	err    error
 }
-
-type streamPartCounter struct {
-	count atomic.Int64
-	limit int64
-}
-
-func newStreamPartCounter(limit int) *streamPartCounter {
-	return &streamPartCounter{limit: int64(limit)}
-}
-
-func (c *streamPartCounter) take() bool     { return c.count.Add(1) <= c.limit }
-func (c *streamPartCounter) exceeded() bool { return c.count.Load() > c.limit }
 
 func (h *handler) serveStream(w http.ResponseWriter, requestContext, executionContext context.Context, model provider.LanguageModel, options provider.CallOptions, history map[string]string, request executionRequest, capture *attemptCapture) {
 	if err := requestContext.Err(); err != nil {
@@ -328,7 +203,6 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext, executionCo
 	}
 
 	modelContext, cancel := context.WithCancel(executionContext)
-	counter := newStreamPartCounter(h.limits.StreamParts)
 	outcomes := make(chan streamOutcome)
 	go func() {
 		outcome := callStream(modelContext, model, options, capture)
@@ -336,7 +210,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext, executionCo
 		case outcomes <- outcome:
 		case <-modelContext.Done():
 			if outcome.result != nil {
-				h.startStreamDrain(outcome.result.Stream, counter)
+				h.startStreamDrain(outcome.result.Stream)
 			}
 		}
 	}()
@@ -355,7 +229,7 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext, executionCo
 	if !isNilInterface(outcome.err) || outcome.result == nil || outcome.result.Stream == nil {
 		cancel()
 		if outcome.result != nil {
-			h.startStreamDrain(outcome.result.Stream, counter)
+			h.startStreamDrain(outcome.result.Stream)
 		}
 		if !isNilInterface(outcome.err) {
 			value := safeErrorFromProvider(outcome.err)
@@ -370,14 +244,14 @@ func (h *handler) serveStream(w http.ResponseWriter, requestContext, executionCo
 
 	defer func() {
 		cancel()
-		h.startStreamDrain(outcome.result.Stream, counter)
+		h.startStreamDrain(outcome.result.Stream)
 	}()
 	idleTimer := time.NewTimer(h.limits.StreamIdleDuration)
 	defer idleTimer.Stop()
 	if !commitStreamResponse(w) {
 		return
 	}
-	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, counter, idleTimer, history, request, capture, options.IncludeRawChunks)
+	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, idleTimer, history, request, capture, options.IncludeRawChunks)
 }
 
 func callStream(ctx context.Context, model provider.LanguageModel, options provider.CallOptions, capture *attemptCapture) (outcome streamOutcome) {
@@ -444,17 +318,13 @@ const (
 	streamWaitCanceled
 	streamWaitTotalTimeout
 	streamWaitIdleTimeout
-	streamWaitPartLimit
 )
 
-func waitStreamPart(requestContext, modelContext context.Context, stream <-chan provider.StreamPart, counter *streamPartCounter, idle <-chan time.Time) (provider.StreamPart, streamWaitResult) {
+func waitStreamPart(requestContext, modelContext context.Context, stream <-chan provider.StreamPart, idle <-chan time.Time) (provider.StreamPart, streamWaitResult) {
 	select {
 	case part, ok := <-stream:
 		if !ok {
 			return provider.StreamPart{}, streamWaitClosed
-		}
-		if !counter.take() {
-			return provider.StreamPart{}, streamWaitPartLimit
 		}
 		return part, streamWaitPart
 	case <-modelContext.Done():
@@ -492,11 +362,8 @@ type streamState struct {
 	includeRaw bool
 }
 
-func newStreamState(limit int, history map[string]string) *streamState {
-	capacity := limit
-	if capacity > 64 {
-		capacity = 64
-	}
+func newStreamState(history map[string]string) *streamState {
+	const capacity = 64
 	state := &streamState{usedIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), history: make(map[string]toolStreamState, len(history)), reasoningIDs: make(map[string]struct{}, capacity), usedReasoningIDs: make(map[string]struct{}, capacity)}
 	for id, name := range history {
 		state.history[id] = toolStreamState{name: name, phase: toolCallEmitted, providerExecuted: true}
@@ -504,8 +371,8 @@ func newStreamState(limit int, history map[string]string) *streamState {
 	return state
 }
 
-func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, history map[string]string, request executionRequest, capture *attemptCapture, includeRaw bool) {
-	part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
+func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, idleTimer *time.Timer, history map[string]string, request executionRequest, capture *attemptCapture, includeRaw bool) {
+	part, waitResult := waitStreamPart(requestContext, modelContext, stream, idleTimer.C)
 	if waitResult != streamWaitPart {
 		view := request.snapshot(capture, errorForStreamWait(waitResult))
 		cancel()
@@ -517,11 +384,11 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 	}
 
 	view := request.snapshot(capture, nil)
-	state := newStreamState(h.limits.StreamParts, history)
+	state := newStreamState(history)
 	state.execution = view
 	state.includeRaw = includeRaw
 	if part.Type == provider.PartStreamStart {
-		warnings, err := mapStreamWarnings(part.Warnings, h.limits.StreamFrameBytes)
+		warnings, err := mapWarnings(part.Warnings)
 		if err != nil {
 			cancel()
 			if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) == streamWriteSuccess {
@@ -550,16 +417,16 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 			return
 		}
 		idleTimer.Reset(h.limits.StreamIdleDuration)
-		h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, state)
+		h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, idleTimer, state)
 		return
 	}
 
-	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, counter, idleTimer, state)
+	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, idleTimer, state)
 }
 
-func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, counter *streamPartCounter, idleTimer *time.Timer, state *streamState) {
+func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, idleTimer *time.Timer, state *streamState) {
 	for {
-		part, waitResult := waitStreamPart(requestContext, modelContext, stream, counter, idleTimer.C)
+		part, waitResult := waitStreamPart(requestContext, modelContext, stream, idleTimer.C)
 		if waitResult != streamWaitPart {
 			cancel()
 			h.writeStreamTerminalForWait(w, waitResult, state.execution)
@@ -639,9 +506,6 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		return h.processReasoningPart(w, state, part)
 	case provider.PartSource:
 		if part.Source == nil {
-			return streamPartAdapterFailure
-		}
-		if !sourcePreflight(*part.Source, h.limits.StreamFrameBytes-int64(len("data: \n\n"))) {
 			return streamPartAdapterFailure
 		}
 		source, err := mapSource(*part.Source)
@@ -757,15 +621,15 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			return streamPartAdapterFailure
 		}
 		event := streamEvent{typeName: provider.PartFinish, finishReason: *part.FinishReason, inputUsage: inputUsage, outputUsage: outputUsage, rawUsage: part.Usage.Raw, metadata: part.ProviderMetadata}
-		frame, ok := encodeStreamFrame(event, h.limits.StreamFrameBytes)
-		if !ok {
+		if !validMetadata(event.metadata) {
 			return streamPartAdapterFailure
 		}
 		if metadata := execution.Metadata(state.execution.overview, event.metadata); metadata != nil {
 			event.metadata = metadata
-			if enriched, fits := encodeStreamFrame(event, h.limits.StreamFrameBytes); fits {
-				frame = enriched
-			}
+		}
+		frame, ok := encodeStreamFrame(event)
+		if !ok {
+			return streamPartAdapterFailure
 		}
 		if !writeCompleteStreamFrame(w, frame) {
 			return streamPartWriterFailure
@@ -820,7 +684,7 @@ const (
 )
 
 func (h *handler) emitStreamEvent(w http.ResponseWriter, event streamEvent) streamWriteResult {
-	frame, ok := encodeStreamFrame(event, h.limits.StreamFrameBytes)
+	frame, ok := encodeStreamFrame(event)
 	if !ok {
 		return streamWriteEncodingFailure
 	}
@@ -831,11 +695,7 @@ func (h *handler) emitStreamEvent(w http.ResponseWriter, event streamEvent) stre
 }
 
 func (h *handler) emitSafeStreamError(w http.ResponseWriter, value safeError, metadata provider.ProviderMetadata, current *execution.Failure) streamWriteResult {
-	frame, ok := encodeStreamError(value, metadata, current, h.limits.StreamFrameBytes)
-	if !ok {
-		return streamWriteEncodingFailure
-	}
-	if !writeCompleteStreamFrame(w, frame) {
+	if !writeCompleteStreamFrame(w, encodeStreamError(value, metadata, current)) {
 		return streamWriteWriterFailure
 	}
 	return streamWriteSuccess
@@ -867,21 +727,20 @@ func (h *handler) writeStreamTerminalError(w http.ResponseWriter, value safeErro
 	h.emitSafeStreamError(w, value, metadata, nil)
 }
 
-func (h *handler) startStreamDrain(stream <-chan provider.StreamPart, counter *streamPartCounter) {
+func (h *handler) startStreamDrain(stream <-chan provider.StreamPart) {
 	if stream == nil {
 		return
 	}
-	go h.drainStream(stream, counter)
+	go h.drainStream(stream)
 }
 
-func (h *handler) drainStream(stream <-chan provider.StreamPart, counter *streamPartCounter) {
-	deadline := time.Now().Add(h.limits.StreamDrainDuration)
+func (h *handler) drainStream(stream <-chan provider.StreamPart) {
 	timer := time.NewTimer(h.limits.StreamDrainDuration)
 	defer timer.Stop()
-	for !counter.exceeded() && time.Now().Before(deadline) {
+	for {
 		select {
 		case _, ok := <-stream:
-			if !ok || !counter.take() {
+			if !ok {
 				return
 			}
 		case <-timer.C:
