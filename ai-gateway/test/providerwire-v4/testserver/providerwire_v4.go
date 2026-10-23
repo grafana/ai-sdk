@@ -517,7 +517,6 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 			return configured(ctx, id, options, gateway)
 		},
 		Limits: providerwirev4.Limits{
-			RequestBytes:        1 << 20,
 			UnaryResponseBytes:  1 << 20,
 			StreamParts:         1_000,
 			StreamFrameBytes:    1 << 20,

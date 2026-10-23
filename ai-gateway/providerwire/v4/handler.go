@@ -39,11 +39,9 @@ var (
 	requestSchemaJSON []byte
 )
 
-// Limits bounds every untrusted request, response, and model-duration resource
-// used by the unary and streaming handler.
+// Limits bounds the response and model-duration resources used by the unary
+// and streaming handler. The host bounds the request body.
 type Limits struct {
-	// RequestBytes is the maximum raw request body size.
-	RequestBytes int64
 	// UnaryResponseBytes is the maximum encoded successful response size.
 	UnaryResponseBytes int64
 	// StreamParts is the maximum number of provider stream values received.
@@ -101,7 +99,6 @@ func validateLimits(limits Limits) error {
 		value         int64
 		requiresExtra bool
 	}{
-		{name: "request bytes", value: limits.RequestBytes, requiresExtra: true},
 		{name: "unary response bytes", value: limits.UnaryResponseBytes, requiresExtra: true},
 		{name: "stream frame bytes", value: limits.StreamFrameBytes},
 	}
@@ -300,13 +297,14 @@ func (h *handler) readBody(body io.ReadCloser) ([]byte, *requestFailure) {
 	if body == nil {
 		return nil, &requestFailure{}
 	}
-	data, readErr := io.ReadAll(io.LimitReader(body, h.limits.RequestBytes+1))
+	data, readErr := io.ReadAll(body)
 	closeErr := body.Close()
+	var tooLarge *http.MaxBytesError
+	if errors.As(readErr, &tooLarge) {
+		return nil, &requestFailure{}
+	}
 	if readErr != nil || closeErr != nil {
 		return nil, &requestFailure{safe: safeError{category: safeInternal}}
-	}
-	if int64(len(data)) > h.limits.RequestBytes {
-		return nil, &requestFailure{}
 	}
 	return data, nil
 }

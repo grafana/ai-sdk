@@ -22,16 +22,16 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 3. Route-owned request-body bound
 
-- [ ] 3.1 Add `Settings.MaxRequestBytes`, parsed from `max_request_bytes` with the 1 MiB default and required to be positive, and remove `RequestBytes` from `v4.Limits` and `validateLimits`. Update `settings_test.go`: defaults, environment binding, and an invalid value that names the setting. Verify with `go test ./cmd/grafana-ai-gateway/internal/config/...`.
-- [ ] 3.2 In `gateway.newHandler`, wrap the route mux once in `http.MaxBytesHandler(mux, MaxRequestBytes)` inside the telemetry middleware. In `routes_test.go`, add three tests:
+- [x] 3.1 Add `Settings.MaxRequestBytes`, parsed from `max_request_bytes` with the 1 MiB default and required to be positive, and remove `RequestBytes` from `v4.Limits` and `validateLimits`. Update `settings_test.go`: defaults, environment binding, and an invalid value that names the setting. Verify with `go test ./cmd/grafana-ai-gateway/internal/config/...`.
+- [x] 3.2 In `gateway.newHandler`, wrap the route mux once in `http.MaxBytesHandler(mux, MaxRequestBytes)` inside the telemetry middleware. In `routes_test.go`, add three tests:
   - language-model bodies one byte below, at and above the bound, where the over-limit body returns the fixed invalid-request document with zero selector and model calls;
   - a non-ProviderWire body-reading handler, installed through `routeHandlers`, that sees the same bound for configured and BYOK callers;
   - a refused caller whose body reader records zero reads.
 
   Verify with `go test -race ./cmd/grafana-ai-gateway/internal/gateway/...`.
-- [ ] 3.3 In `providerwire/v4`, change `readBody` to `io.ReadAll` plus `Close`. Map `*http.MaxBytesError` to the fixed invalid request and any other read or close error to internal. Move the body-boundary tests in `handler_test.go` behind an `http.MaxBytesHandler` wrapper, and add a failing-reader case that expects internal. State in `doc.go` that hosts own the request-body bound. Verify with `go test -race ./providerwire/v4/...`.
-- [ ] 3.4 In `test/providerwire-v4/testserver`, wrap the mux in `main.go` and in the testserver tests with `http.MaxBytesHandler` and a local 1 MiB constant. Drop `RequestBytes` from its three `v4.Limits` literals. Verify with `mise run test-providerwire-v4`.
-- [ ] 3.5 Add the route-wrapper ledger row and keep the README settings row for `max_request_bytes` accurate. Verify with `mise run lint-docs`.
+- [x] 3.3 In `providerwire/v4`, change `readBody` to `io.ReadAll` plus `Close`. Map `*http.MaxBytesError` to the fixed invalid request and any other read or close error to internal. Move the body-boundary tests in `handler_test.go` behind an `http.MaxBytesHandler` wrapper, and add a failing-reader case that expects internal. State in `doc.go` that hosts own the request-body bound. Verify with `go test -race ./providerwire/v4/...`.
+- [x] 3.4 In `test/providerwire-v4/testserver`, wrap the mux in `main.go` and in the testserver tests with `http.MaxBytesHandler` and a local 1 MiB constant. Drop `RequestBytes` from its three `v4.Limits` literals. Verify with `mise run test-providerwire-v4`.
+- [x] 3.5 Add the route-wrapper ledger row and keep the README settings row for `max_request_bytes` accurate. Verify with `mise run lint-docs`.
 
 ## 4. Execution summaries without a source limit
 

@@ -493,10 +493,8 @@ func TestRuntimeFileRequestByteBoundary(t *testing.T) {
 		{name: "above", body: body + "  ", want: http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			limits := testLimits()
-			limits.RequestBytes = int64(len(body) + 1)
-			harness := newRuntimeHarness(t, limits)
-			response := harness.serve(validRequest(tc.body))
+			harness := newRuntimeHarness(t, testLimits())
+			response := harness.serve(withBodyLimit(validRequest(tc.body), len(body)+1))
 			assert.Equal(t, tc.want, response.Code)
 			if tc.want == http.StatusBadRequest {
 				assert.Zero(t, harness.resolver.callCount())
