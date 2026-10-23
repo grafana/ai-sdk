@@ -107,6 +107,11 @@ func TestNormalizeOpenAIJSONSchema_SingletonReferences(t *testing.T) {
 			`{"type":"object","description":"root","additionalProperties":false,"$defs":{"a/b~c~1":{"type":"object","description":"definition","additionalProperties":false}}}`,
 		},
 		{
+			"root expansion retains definition intersection",
+			`{"allOf":[{"$ref":"#/$defs/person"}],"description":"root","$defs":{"person":{"description":"definition","allOf":[{"type":"object"},{"required":["name"]}]}}}`,
+			`{"description":"root","allOf":[{"type":"object"},{"required":["name"]}],"$defs":{"person":{"description":"definition","allOf":[{"type":"object"},{"required":["name"]}]}}}`,
+		},
+		{
 			"nested unresolved and external references",
 			`{"properties":{"a":{"allOf":[{"$ref":"#/missing"}]},"b":{"allOf":[{"$ref":"https://example.com/schema"}]}}}`,
 			`{"properties":{"a":{"$ref":"#/missing"},"b":{"$ref":"https://example.com/schema"}}}`,
