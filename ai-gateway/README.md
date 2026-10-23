@@ -123,7 +123,7 @@ format.
 | 16 MiB per provider response, counted after decompression; 10 seconds to receive response headers; no redirects | Model transport, shared by every provider and provider key |
 | `max_model_duration`; 30 seconds without stream activity; 1 second of cleanup after a stream ends | Language-model handler |
 | 8 provider keys for the selected provider in a request that brings its own keys | Request key selection |
-| 1 MiB model catalog file; 1,024 model names and aliases in total, 128 aliases and 15 fallbacks per model | Model catalog loader, at startup |
+| 1 MiB model catalog file; 1,024 model names and aliases in total, 128 aliases and 15 fallbacks per model; 2,048 bytes per model name, description and provider identity | Model catalog loader, at startup |
 
 The Gateway no longer limits the size of a generated response, a stream event,
 the number of stream events, the provider's raw usage, an error response, or

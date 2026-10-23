@@ -122,7 +122,7 @@ The existing "Limits" section becomes the ledger:
 | BYOK accounts (8, selected provider) | BYOK selection |
 | Model file size (1 MiB), catalog entries, aliases and fallbacks | model catalog loader |
 
-Telemetry sink caps stay out of the ledger, because the #394 track excludes them.
+The ledger lists the catalog limits without changing them, because operators meet them when writing the catalog. Telemetry sink caps stay out, because they bound asynchronous export rather than a request or the catalog.
 
 It then names each removed limit (generated response size, stream event size, stream event count, raw usage, error response and error summary sizes) and states that the outbound bound and the durations replace them. It also states the trade-offs (see Risks).
 
