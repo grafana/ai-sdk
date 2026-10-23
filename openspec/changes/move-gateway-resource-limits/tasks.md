@@ -44,7 +44,7 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 5. Validity helpers
 
-- [ ] 5.1 Without changing behavior, extract the validity parts of the preflights into helpers:
+- [x] 5.1 Without changing behavior, extract the validity parts of the preflights into helpers:
   - metadata: UTF-8 key, UTF-8 value and object prefix;
   - raw usage: UTF-8, JSON and object;
   - warning types and fields;

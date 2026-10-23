@@ -102,8 +102,13 @@ type unarySuccess struct {
 }
 
 func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...unaryMappingContext) (unarySuccess, error) {
-	if !unarySuccessPreflight(result, limit) {
+	if result == nil || !unarySuccessPreflight(result, limit) || !validMetadata(result.ProviderMetadata) {
 		return unarySuccess{}, errInvalidUnarySuccess
+	}
+	for _, part := range result.Content {
+		if !validMetadata(part.ProviderMetadata) {
+			return unarySuccess{}, errInvalidUnarySuccess
+		}
 	}
 
 	mapped := unarySuccess{
@@ -147,7 +152,7 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 			}
 			mapped.Content = append(mapped.Content, source)
 		case provider.ContentText:
-			if !utf8.ValidString(part.Text) {
+			if !utf8.ValidString(part.Text) || !validCitations(part.Citations) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
 			mapped.Content = append(mapped.Content, unaryTextPart{Type: provider.ContentText, Text: part.Text, Citations: part.Citations, Metadata: part.ProviderMetadata})
@@ -229,7 +234,7 @@ func mapUnarySuccess(result *provider.GenerateResult, limit int64, contexts ...u
 	if err != nil {
 		return unarySuccess{}, err
 	}
-	if !validRawUsage(result.Usage.Raw, limit) {
+	if !validRawUsage(result.Usage.Raw) {
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
 	mapped.Usage = unaryUsage{InputTokens: inputUsage, OutputTokens: outputUsage, Raw: result.Usage.Raw}
@@ -293,18 +298,13 @@ func unarySuccessPreflight(result *provider.GenerateResult, limit int64) bool {
 		return false
 	}
 	remaining -= int64(len(result.FinishReason.Raw))
-	if int64(len(result.Usage.Raw)) > remaining || len(result.Usage.Raw) > maxRawUsageBytes {
-		return false
-	}
-	for scope := range len(result.Content) + 1 {
-		metadata := result.ProviderMetadata
-		if scope > 0 {
-			metadata = result.Content[scope-1].ProviderMetadata
-		}
-		for key, raw := range metadata {
-			if !utf8.ValidString(key) || !utf8.Valid(raw) || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
-				return false
-			}
+	return int64(len(result.Usage.Raw)) <= remaining && len(result.Usage.Raw) <= maxRawUsageBytes
+}
+
+func validMetadata(metadata provider.ProviderMetadata) bool {
+	for key, raw := range metadata {
+		if !utf8.ValidString(key) || !utf8.Valid(raw) || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
+			return false
 		}
 	}
 	return true
@@ -344,11 +344,11 @@ func validTokenCounts(values ...*int) bool {
 	return true
 }
 
-func validRawUsage(raw json.RawMessage, limit int64) bool {
+func validRawUsage(raw json.RawMessage) bool {
 	if len(raw) == 0 {
 		return true
 	}
-	if int64(len(raw)) > limit || len(raw) > maxRawUsageBytes || !utf8.Valid(raw) || !json.Valid(raw) {
+	if !utf8.Valid(raw) || !json.Valid(raw) {
 		return false
 	}
 	trimmed := bytes.TrimSpace(raw)

@@ -84,9 +84,19 @@ func TestRawUsageResponses(t *testing.T) {
 func TestRawUsageBoundaries(t *testing.T) {
 	payload := `{"x":"` + strings.Repeat("x", maxRawUsageBytes-len(`{"x":""}`)) + `"}`
 	require.Len(t, payload, maxRawUsageBytes)
-	assert.True(t, validRawUsage(json.RawMessage(payload), 2<<20))
-	assert.False(t, validRawUsage(json.RawMessage(payload+" "), 2<<20))
-	assert.False(t, validRawUsage(json.RawMessage(payload), int64(len(payload)-1)))
+	assert.True(t, validRawUsage(json.RawMessage(payload)))
+	for _, tc := range []struct {
+		raw   string
+		limit int64
+	}{
+		{raw: payload + " ", limit: 2 << 20},
+		{raw: payload, limit: int64(len(payload) - 1)},
+	} {
+		oversized := validGenerateResult()
+		oversized.Usage.Raw = json.RawMessage(tc.raw)
+		_, err := mapUnarySuccess(oversized, tc.limit)
+		require.Error(t, err)
+	}
 
 	result := validGenerateResult()
 	result.Usage.Raw = json.RawMessage(payload)

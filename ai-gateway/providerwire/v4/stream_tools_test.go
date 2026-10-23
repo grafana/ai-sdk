@@ -622,3 +622,21 @@ func TestStreamingTools_FrameBoundsAndNonterminalErrors(t *testing.T) {
 	assert.Contains(t, body, `"type":"finish"`)
 	requireStreamBodyMatchesSchema(t, body)
 }
+
+func TestStreamToolInputEncoding_Validity(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		encoding provider.ToolInputEncoding
+		ok       bool
+	}{
+		{"omitted", "", true},
+		{"json", provider.ToolInputEncodingJSON, true},
+		{"text", provider.ToolInputEncodingText, true},
+		{"unknown", provider.ToolInputEncoding("binary"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ok := encodeStreamFrame(streamEvent{typeName: provider.PartToolInputStart, id: "call", toolName: "weather", inputEncoding: tc.encoding}, 1<<20)
+			assert.Equal(t, tc.ok, ok)
+		})
+	}
+}

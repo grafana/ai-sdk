@@ -14,10 +14,16 @@ func citationsPreflight(citations []provider.Citation, remaining *int64) bool {
 	}
 	*remaining -= int64(len(citations)) * minimumCitationBytes
 	for _, citation := range citations {
-		if !sourcePreflightBudget(citation.Source, remaining) || !validTokenCounts(citation.StartIndex, citation.EndIndex) || !validSourceFields(citation.Source) {
+		if !sourcePreflightBudget(citation.Source, remaining) || citation.CitedText != nil && !responseStringsFit(remaining, *citation.CitedText) {
 			return false
 		}
-		if citation.CitedText != nil && (!responseStringsFit(remaining, *citation.CitedText) || !utf8.ValidString(*citation.CitedText)) {
+	}
+	return true
+}
+
+func validCitations(citations []provider.Citation) bool {
+	for _, citation := range citations {
+		if !validTokenCounts(citation.StartIndex, citation.EndIndex) || !validSourceFields(citation.Source) || citation.CitedText != nil && !utf8.ValidString(*citation.CitedText) {
 			return false
 		}
 	}

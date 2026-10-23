@@ -1,7 +1,6 @@
 package v4
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -85,7 +84,7 @@ type streamFinishEvent struct {
 }
 
 func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
-	if !streamEventPreflight(value, limit) {
+	if !validStreamEvent(value) || !streamEventPreflight(value, limit) {
 		return nil, false
 	}
 
@@ -179,6 +178,28 @@ func encodeStreamFrame(value streamEvent, limit int64) ([]byte, bool) {
 	return frame, true
 }
 
+func validStreamEvent(value streamEvent) bool {
+	if !validMetadata(value.metadata) {
+		return false
+	}
+	switch value.typeName {
+	case provider.PartTextStart, provider.PartTextEnd:
+		return validCitations(value.citations)
+	case provider.PartToolInputStart:
+		return value.inputEncoding == "" || value.inputEncoding == provider.ToolInputEncodingJSON || value.inputEncoding == provider.ToolInputEncodingText
+	case provider.PartSource:
+		return value.source != nil
+	case provider.PartToolApprovalRequest:
+		return value.id != "" && value.approvalID != ""
+	case provider.PartRaw:
+		return len(value.rawValue) > 0
+	case provider.PartFinish:
+		return validRawUsage(value.rawUsage)
+	default:
+		return true
+	}
+}
+
 func streamEventPreflight(value streamEvent, limit int64) bool {
 	if limit < int64(len("data: ")+len("{}\n\n")) {
 		return false
@@ -216,7 +237,7 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 	case provider.PartReasoningFile, provider.PartFile:
 		fits = reasoningFileFits(value.fileData, value.mediaType, &remaining)
 	case provider.PartSource:
-		fits = value.source != nil
+		fits = true
 	case provider.PartCustom:
 		fits = check(value.kind)
 	case provider.PartStreamStart:
@@ -251,33 +272,25 @@ func streamEventPreflight(value streamEvent, limit int64) bool {
 	case provider.PartTextDelta:
 		fits = check(value.id, value.delta)
 	case provider.PartToolInputStart:
-		fits = check(value.id, value.toolName) && (value.inputEncoding == "" || value.inputEncoding == provider.ToolInputEncodingJSON || value.inputEncoding == provider.ToolInputEncodingText)
+		fits = check(value.id, value.toolName)
 	case provider.PartToolInputDelta:
 		fits = check(value.id, value.delta)
 	case provider.PartToolInputEnd:
 		fits = check(value.id)
 	case provider.PartToolApprovalRequest:
-		fits = value.id != "" && value.approvalID != "" && check(value.id, value.approvalID)
+		fits = check(value.id, value.approvalID)
 	case provider.PartToolCall:
 		fits = check(value.id, value.toolName, value.input)
 	case provider.PartToolResult:
 		fits = check(value.id, value.toolName) && int64(len(value.result)) <= remaining
 	case provider.PartRaw:
-		fits = len(value.rawValue) > 0 && int64(len(value.rawValue)) <= remaining
+		fits = int64(len(value.rawValue)) <= remaining
 	case provider.PartFinish:
-		fits = check(string(value.finishReason.Unified), value.finishReason.Raw) && validRawUsage(value.rawUsage, remaining)
+		fits = check(string(value.finishReason.Unified), value.finishReason.Raw) && int64(len(value.rawUsage)) <= remaining && len(value.rawUsage) <= maxRawUsageBytes
 	default:
 		return false
 	}
-	if !fits {
-		return false
-	}
-	for key, raw := range value.metadata {
-		if !utf8.ValidString(key) || !utf8.Valid(raw) || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
-			return false
-		}
-	}
-	return true
+	return fits
 }
 
 func streamWarningCountFits(count int, limit int64) bool {

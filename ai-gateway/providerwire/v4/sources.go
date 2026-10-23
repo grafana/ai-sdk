@@ -1,7 +1,6 @@
 package v4
 
 import (
-	"bytes"
 	"encoding/json"
 	"unicode/utf8"
 
@@ -58,16 +57,11 @@ func sourcePreflightBudget(source provider.SourceInfo, limit *int64) bool {
 			*limit -= int64(size)
 		}
 	}
-	for key, raw := range source.ProviderMetadata {
-		if !utf8.ValidString(key) || !utf8.Valid(raw) || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
-			return false
-		}
-	}
 	return true
 }
 
 func validSourceFields(source provider.SourceInfo) bool {
-	if source.SourceType != provider.SourceTypeURL && source.SourceType != provider.SourceTypeDocument {
+	if source.SourceType != provider.SourceTypeURL && source.SourceType != provider.SourceTypeDocument || !validMetadata(source.ProviderMetadata) {
 		return false
 	}
 	for _, value := range []string{source.ID, source.URL, source.Title, source.MediaType, source.Filename} {
