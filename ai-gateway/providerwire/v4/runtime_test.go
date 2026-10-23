@@ -1427,7 +1427,7 @@ func TestInvocation_RejectedUnaryOutcomeBeforePublication(t *testing.T) {
 	}
 	parent, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved), h.handler.limits.UnaryResponseBytes)
+	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved))
 	capture := &attemptCapture{}
 	ctx := fallback.WithAttemptObserver(parent, capture.observe)
 	results := make(chan error, 1)
@@ -1476,7 +1476,7 @@ func TestInvocation_RejectRecordedFallbackOutcome(t *testing.T) {
 	}}
 	second := &recordingModel{}
 	h := invocationHarness(t, testLimits(), first, second)
-	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved), h.handler.limits.UnaryResponseBytes)
+	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved))
 	capture := &attemptCapture{}
 	ctx := fallback.WithAttemptObserver(parent, capture.observe)
 	_, err := h.resolver.resolved.Model.DoGenerate(ctx, provider.CallOptions{})
@@ -1506,7 +1506,7 @@ func TestRequestSelection_ConfiguredExecution(t *testing.T) {
 	}
 	selected := selectConfiguredModel(t, resolved)
 	resolved.Candidates[0].ModelID = "mutated"
-	request := newExecutionRequest("alias", selected, 4096)
+	request := newExecutionRequest("alias", selected)
 	selected.configured.candidates[0].ModelID = "mutated-again"
 	assert.Equal(t, "canonical", request.canonical)
 	assert.Equal(t, "backend", request.candidates[0].ModelID)
@@ -1624,7 +1624,7 @@ func TestExecutionRequest_Snapshot(t *testing.T) {
 			for i := range tc.candidates {
 				resolved.Candidates = append(resolved.Candidates, catalog.ConfiguredCandidate{Provider: "native", ModelID: fmt.Sprint(i)})
 			}
-			request := newExecutionRequest("alias", selectConfiguredModel(t, resolved), 4096)
+			request := newExecutionRequest("alias", selectConfiguredModel(t, resolved))
 			resolved.Candidates[0].ModelID = "mutated"
 			capture := &attemptCapture{}
 			if tc.entered {
@@ -1681,7 +1681,7 @@ func (err projectionError) Error() string {
 func TestExecutionRequest_ProjectionAfterSeal(t *testing.T) {
 	for _, panics := range []bool{false, true} {
 		t.Run(fmt.Sprint(panics), func(t *testing.T) {
-			request := newExecutionRequest("alias", selectConfiguredModel(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}), 4096)
+			request := newExecutionRequest("alias", selectConfiguredModel(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}))
 			capture := &attemptCapture{}
 			capture.enter()
 			inspected := make(chan struct{})

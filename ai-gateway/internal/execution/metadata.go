@@ -13,9 +13,10 @@ type namespace struct {
 }
 
 // Metadata builds optional execution attribution without changing native inputs.
-// It returns nil when attribution is absent or cannot be encoded. The caller
-// must validate the original output and accept the candidate only when its
-// complete response or SSE frame remains valid and within existing limits.
+// It places the overview under gateway.execution and always relocates a native
+// gateway value under gateway.nativeMetadata. It returns nil when attribution is
+// absent or cannot be encoded. The caller validates the original output first
+// and encodes the enriched output once.
 func Metadata(overview *Overview, original provider.ProviderMetadata) provider.ProviderMetadata {
 	if overview == nil {
 		return nil

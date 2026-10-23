@@ -254,7 +254,7 @@ func TestExecutionSchema_ProducedNamespace(t *testing.T) {
 			overview := execution.Project("alias", "public", []fallback.Attempt{
 				{Index: 1, Provider: "native", ModelID: "first", Outcome: fallback.AttemptFailed, SourceErr: failure, WillFallback: true},
 				{Index: 2, Provider: "native", ModelID: "second", Outcome: outcome},
-			}, nil, 4096)
+			}, nil)
 			require.NotNil(t, overview)
 			metadata := execution.Metadata(overview, provider.ProviderMetadata{"gateway": json.RawMessage(`{"execution":{"native":true},"null":null}`)})
 			require.NoError(t, compiled.Validate(metadata["gateway"]))
