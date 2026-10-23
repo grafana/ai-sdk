@@ -1,3 +1,4 @@
 {
-  ".": "0.1.0-alpha.2"
+  ".": "0.1.0-alpha.2",
+  "middleware/logger": "0.1.0-alpha.1"
 }
