@@ -157,7 +157,7 @@ func TestProviderMetadata_ProtocolFailures(t *testing.T) {
 						_, err := fmt.Fprint(w, `{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"providerMetadata":`+metadata+`}`)
 						assert.NoError(t, err)
 					}
-				}, nil)
+				})
 				model, err := p.LanguageModel("assistant")
 				require.NoError(t, err)
 				if streaming {

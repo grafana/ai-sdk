@@ -38,7 +38,7 @@ func TestReasoningHighLevelTwoRequestReplay(t *testing.T) {
 				} {
 					_, _ = fmt.Fprint(w, sseFrame(event))
 				}
-			}, nil)
+			})
 			model, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			// Use default retries: valid paid reasoning-only output must succeed

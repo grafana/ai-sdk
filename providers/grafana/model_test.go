@@ -163,7 +163,7 @@ func TestDecodeGenerate_FunctionCallRequiredFields(t *testing.T) {
 
 func TestModel_InvalidProviderToolDoesNotSendRequest(t *testing.T) {
 	var calls atomic.Int32
-	p := testProvider(t, func(http.ResponseWriter, *http.Request) { calls.Add(1) }, nil)
+	p := testProvider(t, func(http.ResponseWriter, *http.Request) { calls.Add(1) })
 	m, err := p.LanguageModel("assistant")
 	require.NoError(t, err)
 	options := provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: "anthropic.web_search", Name: "search", ProviderOptions: provider.ProviderOptions{}}}}
@@ -197,7 +197,7 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 		w.Header().Add("X-Multi", "one")
 		w.Header().Add("X-Multi", "two")
 		_, _ = io.WriteString(w, strings.TrimSuffix(unaryFixture, "}")+`,"warnings":[{"type":"other","message":"private-warning"}],"request":{"body":"private-request"},"response":{"modelId":"private-backend","id":"private-id","headers":{"X-Server":"fake"}},"providerMetadata":{"private":{"value":"application-data"}}}`)
-	}, nil)
+	})
 	p.headers.Set("X-Custom", "configured")
 	p.headers.Set("Ai-Language-Model-Id", "configured-model")
 	m, err := p.LanguageModel("assistant")
@@ -246,7 +246,7 @@ func TestModel_UnaryRawUsage(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, body)
-			}, nil)
+			})
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
@@ -284,7 +284,7 @@ func TestModel_UnaryRawUsageSize(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, body)
-			}, nil)
+			})
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			result, err := m.DoGenerate(context.Background(), provider.CallOptions{})
@@ -329,7 +329,7 @@ func TestModel_UnaryFailures(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, tc.body)
-			}, nil)
+			})
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
@@ -369,7 +369,7 @@ func TestModel_PostHeaderTransportFailure(t *testing.T) {
 			return
 		}
 		_ = conn.Close()
-	}, nil)
+	})
 	var body *observedResponseBody
 	p.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		resp, err := http.DefaultTransport.RoundTrip(req)
@@ -456,7 +456,7 @@ func TestModel_UnaryProtocolFailures(t *testing.T) {
 				calls.Add(1)
 				w.Header().Set("Content-Type", tc.media)
 				_, _ = io.WriteString(w, tc.body)
-			}, nil)
+			})
 			if tc.limit != 0 {
 				p.bufferedReadLimit = tc.limit
 			}
@@ -541,7 +541,7 @@ func TestModel_UnaryReadCancellation(t *testing.T) {
 				w.(http.Flusher).Flush()
 				close(started)
 				<-r.Context().Done()
-			}, nil)
+			})
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 			var ctx context.Context
@@ -592,7 +592,7 @@ func TestModel_UnaryBoundsAndTransport(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, unaryFixture)
-			}, nil)
+			})
 			p.bufferedReadLimit = int64(len(unaryFixture)) + delta
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
@@ -693,7 +693,7 @@ func TestModel_UnaryCustomContent(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, body)
-			}, nil)
+			})
 			m, err := p.LanguageModel("assistant")
 			require.NoError(t, err)
 

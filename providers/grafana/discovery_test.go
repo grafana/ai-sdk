@@ -55,7 +55,7 @@ func TestListModels_AtomicValidation(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Header()["Content-Type"] = []string{tc.media}
 				_, _ = io.WriteString(w, tc.body)
-			}, nil)
+			})
 			rows, err := p.ListModels(context.Background())
 			if tc.valid {
 				require.NoError(t, err)
@@ -167,7 +167,7 @@ func TestListModels_ConfiguredRetention(t *testing.T) {
 		assert.Equal(t, "/api/v1/aisdk/config", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, configuredDiscoveryFixture(t))
-	}, nil)
+	})
 	rows, err := p.ListModels(context.Background())
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
@@ -181,7 +181,6 @@ func TestListModels_ConfiguredRetention(t *testing.T) {
 	assert.Equal(t, []string{"alias"}, rows[0].Gateway.Aliases)
 	assert.Equal(t, ConfiguredCandidate{ProviderInstance: "primary", Provider: "anthropic", ProviderModelID: "native-primary"}, rows[0].Gateway.Primary)
 	assert.Equal(t, []ConfiguredCandidate{{ProviderInstance: "backup", Provider: "openai", ProviderModelID: "native-backup"}}, rows[0].Gateway.Fallbacks)
-	assert.EqualValues(t, 4<<20, DefaultLimits().DiscoveryBytes)
 }
 
 func TestListModels_ServerOwnsRouteSemantics(t *testing.T) {
@@ -227,7 +226,7 @@ func TestListModels_ServerOwnsRouteSemantics(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, body)
-			}, nil)
+			})
 			rows, err := p.ListModels(context.Background())
 			require.NoError(t, err)
 			assert.Equal(t, expected, rows)
@@ -255,7 +254,7 @@ func TestListModels_ServerOwnsRouteSemantics(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, changed)
-			}, nil)
+			})
 			rows, err := p.ListModels(context.Background())
 			require.NoError(t, err)
 			var expected struct {
@@ -275,7 +274,7 @@ func TestListModels_ConfiguredUnknownAdditionsAreNotPromoted(t *testing.T) {
 	p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, body)
-	}, nil)
+	})
 	rows, err := p.ListModels(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, configuredRows(t), rows)
@@ -300,7 +299,7 @@ func TestListModels_LargeCatalogBackstop(t *testing.T) {
 	p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, body)
-	}, nil)
+	})
 	rows, err := p.ListModels(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, rows, len(models))
@@ -348,7 +347,7 @@ func TestListModels_ClientDoesNotDuplicateServerPolicy(t *testing.T) {
 				p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					_, _ = io.WriteString(w, body)
-				}, nil)
+				})
 				got, err := p.ListModels(context.Background())
 				require.NoError(t, err)
 				assert.Equal(t, rows, got)
