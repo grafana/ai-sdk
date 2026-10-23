@@ -26,14 +26,14 @@ Each group is one self-contained commit that keeps `cd providers/grafana && go t
 
 ## 4. Remove the public limits API
 
-- [ ] 4.1 Delete `Limits`, `DefaultLimits`, the `Limits` fields on `TokenExchangeConfig`, `ServiceAccountConfig` and `AccessTokenConfig`, the `limits` parameter of `newProvider` and its validation, the `Provider.limits` field and the `math` import in `providers/grafana/provider.go`. Verify with `go build ./...`.
-- [ ] 4.2 Update the test helpers and call sites:
+- [x] 4.1 Delete `Limits`, `DefaultLimits`, the `Limits` fields on `TokenExchangeConfig`, `ServiceAccountConfig` and `AccessTokenConfig`, the `limits` parameter of `newProvider` and its validation, the `Provider.limits` field and the `math` import in `providers/grafana/provider.go`. Verify with `go build ./...`.
+- [x] 4.2 Update the test helpers and call sites:
   - `testProvider` and `streamFromBody` drop their `*Limits` parameter;
   - remove the invalid-limit cases in `provider_test.go`;
   - remove the remaining `DefaultLimits()` uses in `provider_test.go` and `discovery_test.go`, including the `DiscoveryBytes` default assertion.
 
   Verify with `go vet ./...` and the tests.
-- [ ] 4.3 Extend `public_surface_test.go` to assert by name that there is no exported `Limits` type, no `DefaultLimits` function and no `Limits` field on the three config structs. Verify that the test passes and fails when a `Limits` field is temporarily reintroduced.
+- [x] 4.3 Extend `public_surface_test.go` to assert by name that there is no exported `Limits` type, no `DefaultLimits` function and no `Limits` field on the three config structs. Verify that the test passes and fails when a `Limits` field is temporarily reintroduced.
 
 ## 5. Update godoc and guide
 

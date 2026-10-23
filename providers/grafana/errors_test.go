@@ -29,7 +29,7 @@ func TestGatewayError_RegisteredMatrix(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tc.status)
 				_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "safe message", "type": tc.category, "param": nil, "code": tc.code, "private": "private-backend"}, "generationId": "private-generation", "private": "private-topology"})
-			}, nil)
+			})
 			rows, err := p.ListModels(context.Background())
 			assert.Nil(t, rows)
 			require.Error(t, err)
@@ -150,7 +150,7 @@ func TestGatewayError_InvalidEnvelopes(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tc.status)
 				_, _ = io.WriteString(w, tc.body)
-			}, nil)
+			})
 			_, err := p.ListModels(context.Background())
 			require.Error(t, err)
 			var gateway *GatewayError

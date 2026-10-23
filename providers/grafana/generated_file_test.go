@@ -50,7 +50,7 @@ func TestGeneratedFileHostileBoundsAndBackpressure(t *testing.T) {
 	event := `{"type":"file","mediaType":"image/png","data":{"type":"data","data":"` + strings.Repeat("x", 512) + `"}}`
 	frame := sseFrame(event)
 	body := &atomicBody{ReadCloser: io.NopCloser(strings.NewReader(strings.Repeat(frame, 1000)))}
-	model := streamFromBody(t, body, nil)
+	model := streamFromBody(t, body)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	result, err := model.DoStream(ctx, provider.CallOptions{})
@@ -63,7 +63,7 @@ func TestGeneratedFileHostileBoundsAndBackpressure(t *testing.T) {
 	p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, unary)
-	}, nil)
+	})
 	p.bufferedReadLimit = int64(len(unary) - 1)
 	m, err := p.LanguageModel("files")
 	require.NoError(t, err)

@@ -53,9 +53,9 @@ func collectPartsWithin(t *testing.T, result *provider.StreamResult, timeout tim
 	}
 }
 
-func streamFromBody(t *testing.T, body io.ReadCloser, limits *Limits) provider.LanguageModel {
+func streamFromBody(t *testing.T, body io.ReadCloser) provider.LanguageModel {
 	t.Helper()
-	p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test/api/prefix", Limits: limits, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test/api/prefix", HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		assert.Equal(t, "/api/prefix/language-model", req.URL.Path)
 		assert.Equal(t, "true", req.Header.Get("Ai-Language-Model-Streaming"))
 		assert.Equal(t, "text/event-stream", req.Header.Get("Accept"))
@@ -88,7 +88,7 @@ func TestModel_StreamNormalization(t *testing.T) {
 				payload.WriteString(sseFrame(frame))
 			}
 			body := &trackedBody{Reader: strings.NewReader(strings.ReplaceAll(payload.String(), "\n", "\r\n"))}
-			m := streamFromBody(t, body, nil)
+			m := streamFromBody(t, body)
 			result, err := m.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}, IncludeRawChunks: includeRaw})
 			require.NoError(t, err)
 			require.NotNil(t, result.Request)
@@ -143,7 +143,7 @@ func TestModel_StreamRawUsage(t *testing.T) {
 			if tc.raw != "" {
 				finish = strings.Replace(finish, `"outputTokens":{}`, `"outputTokens":{},"raw":`+tc.raw, 1)
 			}
-			m := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(`{"type":"raw","rawValue":{}}`)+sseFrame(finish))), nil)
+			m := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(`{"type":"raw","rawValue":{}}`)+sseFrame(finish))))
 			result, err := m.DoStream(context.Background(), provider.CallOptions{IncludeRawChunks: false})
 			require.NoError(t, err)
 			parts := collectParts(t, result)
@@ -177,9 +177,7 @@ func TestModel_StreamRawUsageSize(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			finish := strings.Replace(finishEvent, `"outputTokens":{}`, `"outputTokens":{},"raw":`+tc.raw, 1)
-			limits := DefaultLimits()
-			limits.StreamEventBytes = 2 << 20
-			m := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(finish))), &limits)
+			m := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(finish))))
 			result, err := m.DoStream(context.Background(), provider.CallOptions{})
 			require.NoError(t, err)
 			parts := collectParts(t, result)
@@ -206,7 +204,7 @@ func TestModel_StreamProviderToolParts(t *testing.T) {
 	for _, frame := range frames {
 		payload.WriteString(sseFrame(frame))
 	}
-	model := streamFromBody(t, io.NopCloser(strings.NewReader(payload.String())), nil)
+	model := streamFromBody(t, io.NopCloser(strings.NewReader(payload.String())))
 	stream, err := model.DoStream(context.Background(), provider.CallOptions{})
 	require.NoError(t, err)
 	parts := collectParts(t, stream)
@@ -312,7 +310,7 @@ func TestModel_StreamEOF(t *testing.T) {
 		{"empty", "", 0}, {"DONE", sseFrame("[DONE]"), 0}, {"finish", sseFrame(finishEvent), 1}, {"without finish", sseFrame(`{"type":"text-start","id":"a"}`), 1}, {"unterminated event", "data: {\"type\":\"text-start\",\"id\":\"a\"}", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := streamFromBody(t, io.NopCloser(strings.NewReader(tc.payload)), nil)
+			m := streamFromBody(t, io.NopCloser(strings.NewReader(tc.payload)))
 			result, err := m.DoStream(context.Background(), provider.CallOptions{})
 			require.NoError(t, err)
 			parts := collectParts(t, result)
@@ -337,7 +335,7 @@ func TestModel_StreamFramingAndWarnings(t *testing.T) {
 	for _, ending := range []string{"\n", "\r\n", "\r"} {
 		t.Run(strings.ReplaceAll(strings.ReplaceAll(ending, "\r", "CR"), "\n", "LF"), func(t *testing.T) {
 			payload := "\ufeff" + strings.Join([]string{":comment", "id: event-1", "event: message", "retry: 1000", `data: {"type":"text-start",`, `data: "id":"a"}`, "", ""}, ending)
-			m := streamFromBody(t, io.NopCloser(fragmentedReader{strings.NewReader(payload)}), nil)
+			m := streamFromBody(t, io.NopCloser(fragmentedReader{strings.NewReader(payload)}))
 			result, err := m.DoStream(context.Background(), provider.CallOptions{})
 			require.NoError(t, err)
 			parts := collectParts(t, result)
@@ -375,7 +373,7 @@ func TestModel_StreamInvalidEvents(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			payload := sseFrame(event) + sseFrame(finishEvent)
 			body := &trackedBody{Reader: strings.NewReader(payload)}
-			m := streamFromBody(t, body, nil)
+			m := streamFromBody(t, body)
 			result, err := m.DoStream(context.Background(), provider.CallOptions{})
 			require.NoError(t, err)
 			parts := collectParts(t, result)
@@ -431,7 +429,7 @@ func TestModel_StreamAcceptsLargeStreams(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := &trackedBody{Reader: &generatedFrames{frame: tc.frame, count: tc.count}}
-			m := streamFromBody(t, body, nil)
+			m := streamFromBody(t, body)
 			result, err := m.DoStream(context.Background(), provider.CallOptions{})
 			require.NoError(t, err)
 			parts := collectPartsWithin(t, result, time.Minute)
@@ -455,7 +453,7 @@ func TestModel_StreamCancellationAndTransport(t *testing.T) {
 	t.Run("ready send cancellation race", func(t *testing.T) {
 		for range 50 {
 			body := &atomicBody{ReadCloser: io.NopCloser(strings.NewReader(strings.Repeat(sseFrame(`{"type":"text-start","id":"a"}`), 10)))}
-			m := streamFromBody(t, body, nil)
+			m := streamFromBody(t, body)
 			ctx, cancel := context.WithCancel(context.Background())
 			result, err := m.DoStream(ctx, provider.CallOptions{})
 			require.NoError(t, err)
@@ -471,7 +469,7 @@ func TestModel_StreamCancellationAndTransport(t *testing.T) {
 		reader, writer := io.Pipe()
 		defer func() { _ = writer.Close() }()
 		body := &atomicBody{ReadCloser: reader}
-		m := streamFromBody(t, body, nil)
+		m := streamFromBody(t, body)
 		ctx, cancel := context.WithCancel(context.Background())
 		result, err := m.DoStream(ctx, provider.CallOptions{})
 		require.NoError(t, err)
@@ -483,7 +481,7 @@ func TestModel_StreamCancellationAndTransport(t *testing.T) {
 	t.Run("blocked delivery", func(t *testing.T) {
 		payload := strings.Repeat(sseFrame(`{"type":"text-delta","id":"a","delta":"hello"}`), 1000)
 		body := &atomicBody{ReadCloser: io.NopCloser(strings.NewReader(payload))}
-		m := streamFromBody(t, body, nil)
+		m := streamFromBody(t, body)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		result, err := m.DoStream(ctx, provider.CallOptions{})
@@ -499,7 +497,7 @@ func TestModel_StreamCancellationAndTransport(t *testing.T) {
 	t.Run("transport after output", func(t *testing.T) {
 		cause := errors.New("private transport error")
 		body := &trackedBody{Reader: io.MultiReader(strings.NewReader(sseFrame(`{"type":"text-start","id":"a"}`)), errorReader{cause})}
-		m := streamFromBody(t, body, nil)
+		m := streamFromBody(t, body)
 		result, err := m.DoStream(context.Background(), provider.CallOptions{})
 		require.NoError(t, err)
 		parts := collectParts(t, result)
@@ -525,7 +523,7 @@ func TestModel_StreamCancellationAndTransport(t *testing.T) {
 				return
 			}
 			_ = conn.Close()
-		}, nil)
+		})
 		m, err := p.LanguageModel("assistant")
 		require.NoError(t, err)
 		result, err := m.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
@@ -634,7 +632,7 @@ func TestModel_StreamCustomParts(t *testing.T) {
 	for _, frame := range frames {
 		payload.WriteString(sseFrame(frame))
 	}
-	model := streamFromBody(t, io.NopCloser(strings.NewReader(payload.String())), nil)
+	model := streamFromBody(t, io.NopCloser(strings.NewReader(payload.String())))
 	stream, err := model.DoStream(context.Background(), provider.CallOptions{})
 	require.NoError(t, err)
 
