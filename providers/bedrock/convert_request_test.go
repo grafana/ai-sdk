@@ -527,6 +527,86 @@ func TestBuildRequest_TopLevelReasoningNonAnthropicEffort(t *testing.T) {
 	assert.Equal(t, map[string]any{"type": "enabled", "maxReasoningEffort": "medium"}, rc)
 }
 
+func TestBuildRequest_NovaHighReasoningMaxTokens(t *testing.T) {
+	const novaModel = "us.amazon.nova-2-lite-v1:0"
+	maxTokens := 1024
+	temperature := 0.5
+	for _, tc := range []struct {
+		name        string
+		modelID     string
+		reasoning   provider.ReasoningEffort
+		explicit    *ReasoningConfig
+		maxTokens   *int
+		temperature *float64
+		wantOmitted bool
+		wantEffort  string
+	}{
+		{name: "portable high", modelID: novaModel, reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "portable xhigh maps to max", modelID: novaModel, reasoning: provider.ReasoningXHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "max"},
+		{name: "explicit high", modelID: novaModel, explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "explicit xhigh", modelID: novaModel, explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "xhigh"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "xhigh"},
+		{name: "explicit max", modelID: novaModel, explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "max"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "max"},
+		{name: "explicit high overrides portable low", modelID: novaModel, reasoning: provider.ReasoningLow, explicit: &ReasoningConfig{MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "unprefixed model", modelID: "amazon.nova-2-lite-v1:0", reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "global profile", modelID: "global.amazon.nova-2-lite-v1:0", reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "inference profile ARN", modelID: "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.amazon.nova-2-lite-v1:0", reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "other inference fields kept", modelID: novaModel, reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, temperature: &temperature, wantOmitted: true, wantEffort: "high"},
+		{name: "omitted limit", modelID: novaModel, reasoning: provider.ReasoningHigh, wantEffort: "high"},
+		{name: "portable medium", modelID: novaModel, reasoning: provider.ReasoningMedium, maxTokens: &maxTokens, wantEffort: "medium"},
+		{name: "portable low", modelID: novaModel, reasoning: provider.ReasoningLow, maxTokens: &maxTokens, wantEffort: "low"},
+		{name: "explicit low overrides portable high", modelID: novaModel, reasoning: provider.ReasoningHigh, explicit: &ReasoningConfig{MaxReasoningEffort: "low"}, maxTokens: &maxTokens, wantEffort: "low"},
+		{name: "explicit disabled overrides portable high", modelID: novaModel, reasoning: provider.ReasoningHigh, explicit: &ReasoningConfig{Type: "disabled"}, maxTokens: &maxTokens},
+		{name: "explicit adaptive high", modelID: novaModel, explicit: &ReasoningConfig{Type: "adaptive", MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantEffort: "high"},
+		{name: "explicit high without enabled type", modelID: novaModel, explicit: &ReasoningConfig{MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantEffort: "high"},
+		{name: "other Nova model", modelID: "amazon.nova-micro-v1:0", explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantEffort: "high"},
+		{name: "OpenAI model", modelID: testOpenAIModel, reasoning: provider.ReasoningHigh, maxTokens: &maxTokens},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := provider.CallOptions{
+				Prompt:          []provider.Message{provider.UserText("x")},
+				Reasoning:       tc.reasoning,
+				MaxOutputTokens: tc.maxTokens,
+				Temperature:     tc.temperature,
+			}
+			if tc.explicit != nil {
+				call.ProviderOptions = provider.ProviderOptions{"amazonBedrock": BedrockOptions{ReasoningConfig: tc.explicit}}
+			}
+			req, warnings, _ := mustBuildRequest(t, tc.modelID, call)
+
+			maxTokensWarning := provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "maxOutputTokens",
+				Details: "maxOutputTokens is not supported by " + tc.modelID + " when high reasoning is enabled and will be ignored",
+			}
+			if tc.wantOmitted {
+				assert.Contains(t, warnings, maxTokensWarning)
+				if tc.temperature == nil {
+					assert.Nil(t, req.InferenceConfig)
+				} else {
+					require.NotNil(t, req.InferenceConfig)
+					assert.Nil(t, req.InferenceConfig.MaxTokens)
+					assert.Equal(t, tc.temperature, req.InferenceConfig.Temperature)
+				}
+			} else {
+				for _, w := range warnings {
+					assert.NotEqual(t, "maxOutputTokens", w.Feature)
+				}
+				if tc.maxTokens == nil {
+					assert.Nil(t, req.InferenceConfig)
+				} else {
+					require.NotNil(t, req.InferenceConfig)
+					assert.Equal(t, tc.maxTokens, req.InferenceConfig.MaxTokens)
+				}
+			}
+			if tc.wantEffort != "" {
+				rc, ok := req.AdditionalModelRequestFields["reasoningConfig"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, tc.wantEffort, rc["maxReasoningEffort"])
+			}
+		})
+	}
+}
+
 func TestBuildRequest_TopLevelReasoningUnknownModel(t *testing.T) {
 	const unsupported = "Portable reasoning is not supported for this model and will be ignored. If the model supports a provider-specific reasoning configuration, use providerOptions.amazonBedrock.reasoningConfig."
 	for _, tc := range []struct {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"strings"
 
 	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/internal/jsonschema"
@@ -138,6 +137,7 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 
 	// OpenAI / Nova effort routing (non-Anthropic, model-prefix gated).
 	applyNonAnthropicEffort(addRequestFields, modelID, isAnthropic, bo)
+	warnings = append(warnings, omitNovaHighReasoningMaxTokens(modelID, bo, &inf)...)
 
 	// Native structured output goes through additionalModelRequestFields.
 	if useNativeStructuredOutput {
@@ -354,7 +354,7 @@ func buildInferenceConfig(modelID string, opts provider.CallOptions, isAnthropic
 	}
 
 	// Treat empty inferenceConfig as nil so it doesn't serialize.
-	if inf.MaxTokens == nil && inf.Temperature == nil && inf.TopP == nil && inf.TopK == nil && len(inf.StopSequences) == 0 {
+	if inf.empty() {
 		return nil, warnings
 	}
 	return inf, warnings
@@ -439,7 +439,7 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 			resolved = cloneReasoningConfig(explicit)
 		}
 	} else {
-		if !isAnthropic && !isOpenAIModel(modelID) && !strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && explicit == nil {
+		if !isAnthropic && !isOpenAIModel(modelID) && !isNova2ReasoningModel(modelID) && explicit == nil {
 			*warnings = append(*warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "reasoning",
@@ -448,7 +448,7 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 			return nil
 		}
 		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, isAnthropic, reasoning, warnings), explicit)
-		if !isAnthropic && strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && resolved != nil && resolved.Type == "" {
+		if !isAnthropic && isNova2ReasoningModel(modelID) && resolved != nil && resolved.Type == "" {
 			resolved.Type = "enabled"
 		}
 	}
@@ -635,6 +635,29 @@ func applyNonAnthropicEffort(addFields map[string]any, modelID string, isAnthrop
 		reasoningConfig["budgetTokens"] = bo.ReasoningConfig.BudgetTokens
 	}
 	addFields["reasoningConfig"] = reasoningConfig
+}
+
+// omitNovaHighReasoningMaxTokens drops maxTokens for Nova 2 Lite with enabled
+// high, xhigh, or max reasoning, which the model does not accept together.
+func omitNovaHighReasoningMaxTokens(modelID string, bo BedrockOptions, inf **inferenceConfig) []provider.Warning {
+	rc := bo.ReasoningConfig
+	if !isNova2ReasoningModel(modelID) || rc == nil || rc.Type != "enabled" || *inf == nil || (*inf).MaxTokens == nil {
+		return nil
+	}
+	switch rc.MaxReasoningEffort {
+	case "high", "xhigh", "max":
+	default:
+		return nil
+	}
+	(*inf).MaxTokens = nil
+	if (*inf).empty() {
+		*inf = nil
+	}
+	return []provider.Warning{{
+		Type:    provider.WarnUnsupported,
+		Feature: "maxOutputTokens",
+		Details: fmt.Sprintf("maxOutputTokens is not supported by %s when high reasoning is enabled and will be ignored", modelID),
+	}}
 }
 
 func ensureMap(m map[string]any, key string) map[string]any {
