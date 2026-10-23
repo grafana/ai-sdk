@@ -33,7 +33,6 @@ func (r *resolverStub) ResolveModel(context.Context, string) (catalog.ResolvedMo
 
 func testLimits() Limits {
 	return Limits{
-		UnaryResponseBytes:  1 << 20,
 		StreamParts:         1_000,
 		StreamFrameBytes:    1 << 20,
 		ModelDuration:       time.Second,
@@ -110,8 +109,6 @@ func TestNew(t *testing.T) {
 			name   string
 			mutate func(*Limits)
 		}{
-			{name: "response zero", mutate: func(l *Limits) { l.UnaryResponseBytes = 0 }},
-			{name: "response overflow", mutate: func(l *Limits) { l.UnaryResponseBytes = math.MaxInt64 }},
 			{name: "stream parts zero", mutate: func(l *Limits) { l.StreamParts = 0 }},
 			{name: "stream parts overflow", mutate: func(l *Limits) { l.StreamParts = int(^uint(0) >> 1) }},
 			{name: "stream frame zero", mutate: func(l *Limits) { l.StreamFrameBytes = 0 }},

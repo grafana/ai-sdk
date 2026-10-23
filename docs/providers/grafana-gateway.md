@@ -316,7 +316,7 @@ in a tool result, the call fails with an invalid request error.
 
 When a model generates files, the Gateway returns them in generated and
 streamed responses. The SDK downloads files that arrive as URLs; the Gateway
-does not. Generated files count toward the Gateway's response size limits. Once a model
+does not. A streamed file must fit the Gateway's stream frame limit. Once a model
 has returned a file, the Gateway does not fall back for that call.
 
 ## Native response values
@@ -348,9 +348,9 @@ Errors carry the same information:
   provider's error in `error.data.nativeError`. In Go, read the part's
   `APICallError.Data`. The stream's later parts remain readable.
 
-Overviews are best-effort. One may be missing, for example when a response is
-close to its size limit, and a missing overview does not mean no provider was
-tried. Calls with your own provider key don't return overviews yet, only
+Overviews are best-effort. A stream's finish may lack one when the finish is
+close to the stream frame limit, and a missing overview does not mean no
+provider was tried. Calls with your own provider key don't return overviews yet, only
 provider errors on streams
 ([#317](https://github.com/grafana/ai-sdk/issues/317)).
 

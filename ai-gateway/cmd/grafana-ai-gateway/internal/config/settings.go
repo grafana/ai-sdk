@@ -45,7 +45,6 @@ const (
 const (
 	defaultRequestBytes  = 1 << 20
 	defaultModelDuration = 120 * time.Second
-	unaryResponseBytes   = 8 << 20
 	streamParts          = 100_000
 	streamFrameBytes     = 1 << 20
 	streamIdleDuration   = 30 * time.Second
@@ -156,7 +155,6 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 		},
 		MaxRequestBytes: env.int64("max_request_bytes", defaultRequestBytes),
 		ProviderWire: providerv4.Limits{
-			UnaryResponseBytes:  unaryResponseBytes,
 			StreamParts:         streamParts,
 			StreamFrameBytes:    streamFrameBytes,
 			ModelDuration:       env.duration("max_model_duration", defaultModelDuration),

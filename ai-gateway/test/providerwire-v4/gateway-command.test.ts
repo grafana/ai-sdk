@@ -1426,6 +1426,21 @@ describe("authenticated Anthropic Gateway command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
+  it("returns unary outputs above the former response limits to both clients", async () => {
+    const [fake, gateway] = await startGateway();
+    const options = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "large-output" }] }], maxOutputTokens: 32 };
+    try {
+      const vercel = await gateway.client()("assistant").doGenerate(options);
+      assert.deepEqual(vercel.content, [{ type: "text", text: largeText }]);
+      assert.equal((vercel.usage.raw as { native_padding?: string }).native_padding, largeUsagePadding);
+      const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, mode: "generate", modelID: "assistant", options });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(go.result.content, [{ type: "text", text: largeText }]);
+      assert.equal(go.result.usage.raw.native_padding, largeUsagePadding);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
   it("maps file inputs and file-result continuation through authenticated native calls", async () => {
     const [fake, gateway] = await startGateway();
     const client = gateway.client();
@@ -3186,6 +3201,28 @@ class GatewayProcess {
 
 type FakeRequest = { path: string; apiKey?: string; headers: IncomingMessage["headers"]; body: Record<string, unknown> };
 
+const largeText = "x".repeat(9 << 20);
+const largeDelta = "d".repeat(1536 << 10);
+const largeUsagePadding = "u".repeat(1536 << 10);
+
+function writeLargeAnthropicOutput(streaming: boolean, response: ServerResponse): void {
+  const usage = { input_tokens: 2, output_tokens: 3, native_padding: largeUsagePadding };
+  if (!streaming) {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ id: "msg_large", type: "message", role: "assistant", model: "backend-private", content: [{ type: "text", text: largeText }], stop_reason: "end_turn", stop_sequence: null, usage }));
+    return;
+  }
+  response.writeHead(200, { "Content-Type": "text/event-stream" });
+  const event = (value: { type: string; [key: string]: unknown }) => response.write(`event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`);
+  event({ type: "message_start", message: { id: "msg_large", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } });
+  event({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
+  event({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: largeDelta } });
+  event({ type: "content_block_stop", index: 0 });
+  event({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage });
+  event({ type: "message_stop" });
+  response.end();
+}
+
 class FakeAnthropic {
   metadata = false;
   readonly url: string;
@@ -3285,6 +3322,10 @@ class FakeAnthropic {
     }
     if (marker === "silent-unary-shutdown") {
       response.once("close", () => this.canceled.add(marker));
+      return;
+    }
+    if (serialized.includes("large-output")) {
+      writeLargeAnthropicOutput(body.stream === true, response);
       return;
     }
 

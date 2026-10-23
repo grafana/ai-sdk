@@ -649,7 +649,10 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if part.Source == nil {
 			return streamPartAdapterFailure
 		}
-		source, err := mapSource(*part.Source, h.limits.StreamFrameBytes-int64(len("data: \n\n")))
+		if !sourcePreflight(*part.Source, h.limits.StreamFrameBytes-int64(len("data: \n\n"))) {
+			return streamPartAdapterFailure
+		}
+		source, err := mapSource(*part.Source)
 		if err != nil {
 			return streamPartAdapterFailure
 		}

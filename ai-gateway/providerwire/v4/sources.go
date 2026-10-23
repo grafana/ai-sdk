@@ -1,7 +1,6 @@
 package v4
 
 import (
-	"encoding/json"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/provider"
@@ -72,19 +71,12 @@ func validSourceFields(source provider.SourceInfo) bool {
 	return true
 }
 
-func mapSource(source provider.SourceInfo, limit int64) (any, error) {
-	if !sourcePreflight(source, limit) || !validSourceFields(source) {
+func mapSource(source provider.SourceInfo) (any, error) {
+	if !validSourceFields(source) {
 		return nil, errInvalidUnarySuccess
 	}
-	var mapped any
 	if source.SourceType == provider.SourceTypeURL {
-		mapped = urlSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, ProviderMetadata: source.ProviderMetadata}
-	} else {
-		mapped = documentSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, MediaType: source.MediaType, Title: source.Title, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata}
+		return urlSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, ProviderMetadata: source.ProviderMetadata}, nil
 	}
-	encoded, err := json.Marshal(mapped)
-	if err != nil || int64(len(encoded)) > limit {
-		return nil, errInvalidUnarySuccess
-	}
-	return mapped, nil
+	return documentSource{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, MediaType: source.MediaType, Title: source.Title, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata}, nil
 }

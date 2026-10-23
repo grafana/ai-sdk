@@ -42,8 +42,6 @@ var (
 // Limits bounds the response and model-duration resources used by the unary
 // and streaming handler. The host bounds the request body.
 type Limits struct {
-	// UnaryResponseBytes is the maximum encoded successful response size.
-	UnaryResponseBytes int64
 	// StreamParts is the maximum number of provider stream values received.
 	StreamParts int
 	// StreamFrameBytes is the maximum complete SSE frame size.
@@ -99,7 +97,6 @@ func validateLimits(limits Limits) error {
 		value         int64
 		requiresExtra bool
 	}{
-		{name: "unary response bytes", value: limits.UnaryResponseBytes, requiresExtra: true},
 		{name: "stream frame bytes", value: limits.StreamFrameBytes},
 	}
 	for _, limit := range byteLimits {

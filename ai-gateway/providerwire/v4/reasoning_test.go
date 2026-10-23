@@ -41,9 +41,9 @@ func TestReasoningUnary(t *testing.T) {
 		{Type: provider.ContentReasoning, Text: "", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"r1","reasoningEncryptedContent":null,"backend":"secret"}`)}},
 		{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &data},
 	}
-	mapped, err := mapUnarySuccess(result, 1<<20)
+	mapped, err := mapUnarySuccess(result)
 	require.NoError(t, err)
-	body, ok := encodeUnarySuccess(mapped, 1<<20)
+	body, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
 	assert.Contains(t, string(body), `"text":""`)
 	assert.Contains(t, string(body), `"reasoningEncryptedContent":null`)

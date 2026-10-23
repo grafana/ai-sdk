@@ -35,9 +35,9 @@ func TestNativeResponse_Warnings(t *testing.T) {
 	t.Run("unary", func(t *testing.T) {
 		result := validGenerateResult()
 		result.Warnings = nativeWarnings()
-		mapped, err := mapUnarySuccess(result, 4096)
+		mapped, err := mapUnarySuccess(result)
 		require.NoError(t, err)
-		body, ok := encodeUnarySuccess(mapped, 4096)
+		body, ok := marshalUnarySuccess(mapped)
 		require.True(t, ok)
 		var value map[string]json.RawMessage
 		require.NoError(t, json.Unmarshal(body, &value))
@@ -65,9 +65,9 @@ func TestNativeResponse_Sources(t *testing.T) {
 			}
 			result := validGenerateResult()
 			result.Content = parts
-			mapped, err := mapUnarySuccess(result, 16384)
+			mapped, err := mapUnarySuccess(result)
 			require.NoError(t, err)
-			body, ok := encodeUnarySuccess(mapped, 16384)
+			body, ok := marshalUnarySuccess(mapped)
 			require.True(t, ok)
 			var value struct {
 				Content []map[string]any `json:"content"`
@@ -117,9 +117,9 @@ func TestNativeResponse_Identity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result := validGenerateResult()
 			result.Response = tc.response
-			mapped, err := mapUnarySuccess(result, 4096)
+			mapped, err := mapUnarySuccess(result)
 			require.NoError(t, err)
-			body, ok := encodeUnarySuccess(mapped, 4096)
+			body, ok := marshalUnarySuccess(mapped)
 			require.True(t, ok)
 			var value map[string]json.RawMessage
 			require.NoError(t, json.Unmarshal(body, &value))
@@ -161,9 +161,9 @@ func TestNativeResponse_CompleteBounds(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.result.FinishReason.Unified = provider.FinishReasonStop
-			mapped, err := mapUnarySuccess(tc.result, 16384)
+			mapped, err := mapUnarySuccess(tc.result)
 			require.NoError(t, err)
-			body, ok := encodeUnarySuccess(mapped, 16384)
+			body, ok := marshalUnarySuccess(mapped)
 			require.True(t, ok)
 			harness := newRuntimeHarness(t, testLimits())
 			harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
@@ -175,17 +175,11 @@ func TestNativeResponse_CompleteBounds(t *testing.T) {
 				i = 0
 			}
 			frame := frames[i] + "\n\n"
+			w := httptest.NewRecorder()
+			assert.True(t, newTestHandler(t, testLimits()).writeUnarySuccess(w, tc.result))
+			assert.Equal(t, body, w.Body.Bytes())
 			for _, delta := range []int64{-1, 0, 1} {
 				limits := testLimits()
-				limits.UnaryResponseBytes = int64(len(body)) + delta
-				h := newTestHandler(t, limits)
-				w := httptest.NewRecorder()
-				assert.Equal(t, delta >= 0, h.writeUnarySuccess(w, tc.result))
-				if delta < 0 {
-					assert.Empty(t, w.Body.String())
-				} else {
-					assert.Equal(t, body, w.Body.Bytes())
-				}
 				limits.StreamFrameBytes = int64(len(frame)) + delta
 				harness := newRuntimeHarness(t, limits)
 				harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
@@ -221,7 +215,7 @@ func TestNativeResponse_SourceUTF8(t *testing.T) {
 			tc.mutate(&source)
 			result := validGenerateResult()
 			result.Content = []provider.GenerateContentPart{{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, MediaType: source.MediaType, Filename: source.Filename}}
-			_, err := mapUnarySuccess(result, 4096)
+			_, err := mapUnarySuccess(result)
 			require.Error(t, err)
 			harness := newRuntimeHarness(t, testLimits())
 			harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
@@ -232,23 +226,25 @@ func TestNativeResponse_SourceUTF8(t *testing.T) {
 	}
 }
 
-func TestNativeResponse_AggregatePreflight(t *testing.T) {
+func TestNativeResponse_LargeUnaryAndStreamPreflight(t *testing.T) {
 	result := validGenerateResult()
 	result.Content[0].Text = strings.Repeat("c", 80)
 	result.Warnings = []provider.Warning{{Type: provider.WarnOther, Message: strings.Repeat("w", 80)}}
 	result.Response = &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{ID: strings.Repeat("i", 80)}}
-	assert.False(t, unarySuccessPreflight(result, 200))
-	assert.True(t, unarySuccessPreflight(result, 400))
-	mapped, err := mapUnarySuccess(result, 4096)
+	mapped, err := mapUnarySuccess(result)
 	require.NoError(t, err)
-	body, ok := encodeUnarySuccess(mapped, 4096)
+	_, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
-	for _, delta := range []int64{-1, 0, 1} {
-		_, ok := encodeUnarySuccess(mapped, int64(len(body))+delta)
-		assert.Equal(t, delta >= 0, ok)
+	result.Warnings = make([]provider.Warning, 100_001)
+	for i := range result.Warnings {
+		result.Warnings[i] = provider.Warning{Type: provider.WarnOther, Message: "w"}
 	}
-	result.Warnings = make([]provider.Warning, 1000)
-	assert.False(t, unarySuccessPreflight(result, 400))
+	mapped, err = mapUnarySuccess(result)
+	require.NoError(t, err)
+	assert.Len(t, mapped.Warnings, 100_001)
+	result.Warnings = make([]provider.Warning, 1)
+	_, err = mapUnarySuccess(result)
+	require.Error(t, err)
 	warnings := []provider.Warning{{Type: provider.WarnOther, Message: string([]byte{255})}, {Type: provider.WarnOther, Message: strings.Repeat("x", 1000)}}
 	remaining := int64(400)
 	assert.False(t, warningsPreflight(warnings, &remaining))
@@ -291,7 +287,7 @@ func TestNativeResponse_InvalidValues(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result := validGenerateResult()
 			tc.mutate(result)
-			_, err := mapUnarySuccess(result, 4096)
+			_, err := mapUnarySuccess(result)
 			require.Error(t, err)
 			h := newTestHandler(t, testLimits())
 			w := httptest.NewRecorder()

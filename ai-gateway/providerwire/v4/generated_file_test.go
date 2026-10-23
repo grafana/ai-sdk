@@ -20,19 +20,12 @@ func TestGeneratedFileProjectionAndExactBounds(t *testing.T) {
 	for _, data := range []provider.DataContent{provider.BytesDataContent([]byte{1, 2, 3}), provider.Base64DataContent(""), provider.Base64DataContent("opaque-base64"), {URL: "opaque:URL", OriginalURL: &original}} {
 		result := validGenerateResult()
 		result.Content = []provider.GenerateContentPart{{Type: provider.ContentFile, MediaType: "image/png", Data: &data, Filename: strings.Repeat("x", 1<<20) + string([]byte{255}), ProviderMetadata: provider.ProviderMetadata{"app": json.RawMessage(`{"token":"ordinary", "nested":{"value":"<&"}}`)}}}
-		mapped, err := mapUnarySuccess(result, 1<<20)
+		mapped, err := mapUnarySuccess(result)
 		require.NoError(t, err)
-		body, ok := encodeUnarySuccess(mapped, 1<<20)
+		body, ok := marshalUnarySuccess(mapped)
 		require.True(t, ok)
 		require.NotContains(t, string(body), "filename")
 		require.NoError(t, compileWireSchema(t, unarySuccessSchemaJSON).Validate(body))
-		for _, delta := range []int64{-1, 0, 1} {
-			limit := int64(len(body)) + delta
-			bounded, err := mapUnarySuccess(result, limit)
-			require.NoError(t, err)
-			_, ok = encodeUnarySuccess(bounded, limit)
-			require.Equal(t, delta >= 0, ok)
-		}
 		event := streamEvent{typeName: provider.PartFile, mediaType: "image/png", fileData: unaryReasoningFile(&data), metadata: result.Content[0].ProviderMetadata}
 		frame, ok := encodeStreamFrame(event, 1<<20)
 		require.True(t, ok)
@@ -54,22 +47,17 @@ func TestGeneratedFileInvalidAndAggregate(t *testing.T) {
 	for _, data := range []*provider.DataContent{nil, {}, {Bytes: []byte{1}, URL: "opaque:x"}, {Text: "x"}, {Reference: json.RawMessage(`{}`)}, {Base64: "x", OriginalURL: &original}, {URL: string([]byte{255})}} {
 		result := validGenerateResult()
 		result.Content = []provider.GenerateContentPart{{Type: provider.ContentFile, MediaType: "image/png", Data: data}}
-		_, err := mapUnarySuccess(result, 1<<20)
+		_, err := mapUnarySuccess(result)
 		require.Error(t, err)
 	}
-	data := provider.BytesDataContent(make([]byte, 128))
+	data := provider.BytesDataContent(make([]byte, 7<<20))
 	result := validGenerateResult()
-	result.Content = []provider.GenerateContentPart{{Type: provider.ContentFile, MediaType: "image/png", Data: &data}}
-	mapped, err := mapUnarySuccess(result, 1<<20)
+	result.Content = []provider.GenerateContentPart{{Type: provider.ContentFile, MediaType: "image/png", Data: &data}, {Type: provider.ContentFile, MediaType: "image/png", Data: &data}}
+	mapped, err := mapUnarySuccess(result)
 	require.NoError(t, err)
-	body, ok := encodeUnarySuccess(mapped, 1<<20)
+	body, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
-	result.Content = append(result.Content, result.Content[0])
-	mapped, err = mapUnarySuccess(result, int64(len(body)))
-	if err == nil {
-		_, ok = encodeUnarySuccess(mapped, int64(len(body)))
-		require.False(t, ok)
-	}
+	require.Greater(t, len(body), 8<<20)
 	huge := &provider.StreamFileData{Bytes: make([]byte, 1024)}
 	w := httptest.NewRecorder()
 	h := &handler{limits: Limits{StreamFrameBytes: 256}}
@@ -77,13 +65,14 @@ func TestGeneratedFileInvalidAndAggregate(t *testing.T) {
 	require.Empty(t, w.Body.String())
 }
 
-func TestReasoningOriginalURLPreflight(t *testing.T) {
-	original := strings.Repeat("x", 1024)
+func TestReasoningOriginalURLHasNoSizeLimit(t *testing.T) {
+	original := strings.Repeat("x", 9<<20)
 	data := provider.URLDataContent("opaque:x")
 	data.OriginalURL = &original
 	result := validGenerateResult()
 	result.Content = []provider.GenerateContentPart{{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &data}}
-	require.False(t, unarySuccessPreflight(result, 512))
+	_, err := mapUnarySuccess(result)
+	require.NoError(t, err)
 }
 
 func TestGeneratedFileSchemaRejectsMalformedArms(t *testing.T) {
