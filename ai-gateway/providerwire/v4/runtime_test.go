@@ -853,7 +853,7 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 						require.True(t, ok)
 						return frame
 					}
-					status, body := encodeHTTPError(value, metadata, limit)
+					status, body := encodeHTTPError(value, metadata)
 					assert.Equal(t, 503, status)
 					return body
 				}
@@ -861,8 +861,12 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 				if streaming {
 					original = canonicalOverloadStreamErrorFrame
 				}
-				full := encode(testLimits().UnaryResponseBytes)
-				for _, limit := range []int{len(full), max(len(original), len(full)-1), len(original)} {
+				full := encode(1 << 20)
+				candidates := []int{len(full)}
+				if streaming {
+					candidates = append(candidates, max(len(original), len(full)-1), len(original))
+				}
+				for _, limit := range candidates {
 					body := encode(int64(limit))
 					assert.LessOrEqual(t, len(body), limit)
 					decode := func(body []byte) errorResponse {
@@ -966,7 +970,7 @@ func TestPublicError_InvalidOptionalFields(t *testing.T) {
 			requireStreamBodyMatchesSchema(t, string(frame))
 		})
 	}
-	status, body := encodeHTTPError(value, malformedMetadata, 1024)
+	status, body := encodeHTTPError(value, malformedMetadata)
 	assert.Equal(t, 503, status)
 	assert.Equal(t, canonicalOverloadError, body)
 	_, ok = encodeStreamError(value, validMetadata, current, int64(len(canonicalOverloadStreamErrorFrame)-1))
@@ -1060,7 +1064,7 @@ func TestSafeErrorReduction(t *testing.T) {
 }
 
 func TestProviderMetadata_RuntimeFailureAndFinishAuthority(t *testing.T) {
-	for _, metadata := range []provider.ProviderMetadata{{"future": json.RawMessage(`null`)}, {"future": json.RawMessage(`{"incomplete":`)}, {"future": json.RawMessage(strings.Repeat(" ", 1<<20) + `{}`)}} {
+	for _, metadata := range []provider.ProviderMetadata{{"future": json.RawMessage(`null`)}, {"future": json.RawMessage(`{"incomplete":`)}} {
 		h := newRuntimeHarness(t, testLimits())
 		h.model.generate = func(_ context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
 			result := validGenerateResult()
@@ -1202,11 +1206,14 @@ func TestInvocation_NativeEchoAndErrorLimit(t *testing.T) {
 	require.NotNil(t, overview)
 	assert.Equal(t, 401, overview.Attempts[0].Error.StatusCode)
 	first.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: strings.Repeat("x", maxErrorResponseBytes), StatusCode: 401})
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: strings.Repeat("x", 64<<10), StatusCode: 401})
 	}
 	response = h.serve(validRequest(`{"prompt":[]}`))
 	assert.Equal(t, 424, response.Code)
-	assert.Equal(t, canonicalDependencyError, response.Body.Bytes())
+	assert.Greater(t, response.Body.Len(), 64<<10)
+	overview = readOverview(t, response.Body.Bytes())
+	require.NotNil(t, overview)
+	assert.Equal(t, strings.Repeat("x", 64<<10), overview.Attempts[0].Error.Message)
 }
 
 func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
@@ -1873,7 +1880,7 @@ type expectedDocument struct {
 }
 
 func documentForSafeError(value safeError) expectedDocument {
-	status, body := encodeHTTPError(value, nil, maxErrorResponseBytes)
+	status, body := encodeHTTPError(value, nil)
 	return expectedDocument{status: status, body: body}
 }
 

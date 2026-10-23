@@ -32,6 +32,6 @@ func (*HostErrorWriter) Write(w http.ResponseWriter, category HostErrorCategory)
 	case HostErrorBYOKDiscovery:
 		value.category = safeBYOKDiscovery
 	}
-	status, body := encodeHTTPError(value, nil, maxErrorResponseBytes)
+	status, body := encodeHTTPError(value, nil)
 	writeErrorResponse(w, status, body)
 }

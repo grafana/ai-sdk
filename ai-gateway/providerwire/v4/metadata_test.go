@@ -28,9 +28,9 @@ func TestProviderMetadata_UnaryScopes(t *testing.T) {
 			{Type: provider.ContentSource, SourceType: provider.SourceTypeURL, ID: "native", URL: "https://example.test", ProviderMetadata: metadata},
 			{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(`{}`), ProviderMetadata: metadata},
 		}
-		mapped, err := mapUnarySuccess(result, 1<<20)
+		mapped, err := mapUnarySuccess(result)
 		require.NoError(t, err)
-		body, ok := encodeUnarySuccess(mapped, 1<<20)
+		body, ok := marshalUnarySuccess(mapped)
 		require.True(t, ok)
 		compiled, err := schema.CompileSchema(unarySuccessSchemaJSON)
 		require.NoError(t, err)
@@ -103,7 +103,7 @@ func TestToolMetadata_OpaqueTransport(t *testing.T) {
 		"openai":    json.RawMessage(`{"itemId":"item-1","namespace":"tools","caller":{"type":"program","callerId":"parent","private":"hidden"},"backendModel":"private"}`),
 		"private":   json.RawMessage(`{"credential":"private"}`),
 	}
-	mapped, err := mapToolMetadataForTest(metadata, 1024)
+	mapped, err := mapToolMetadataForTest(metadata)
 	require.NoError(t, err)
 	require.Len(t, mapped, 3)
 	assert.Equal(t, metadata, mapped)
@@ -115,7 +115,7 @@ func TestToolMetadata_OptionalFieldsAndExtensions(t *testing.T) {
 		"openai":    json.RawMessage(`{"itemId":"","namespace":"","caller":{"type":"direct","toolId":"private"},"credential":"private"}`),
 		"azure":     json.RawMessage(`{"private":"hidden"}`),
 	}
-	mapped, err := mapToolMetadataForTest(metadata, 1024)
+	mapped, err := mapToolMetadataForTest(metadata)
 	require.NoError(t, err)
 	require.Len(t, mapped, 3)
 	assert.Equal(t, metadata, mapped)
@@ -125,24 +125,25 @@ func TestToolMetadata_OpaqueSemanticFields(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		metadata provider.ProviderMetadata
-		limit    int64
 	}{
-		{name: "opaque MCP metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"other"}`)}, limit: 1024},
-		{name: "unsupported caller", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"unknown"}}`)}, limit: 1024},
-		{name: "null caller", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":null}`)}, limit: 1024},
-		{name: "null type", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":null}`)}, limit: 1024},
-		{name: "missing anthropic tool id", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"code_execution_20260120"}}`)}, limit: 1024},
-		{name: "null anthropic tool id", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"code_execution_20260120","toolId":null}}`)}, limit: 1024},
-		{name: "direct caller with null id", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct","toolId":null}}`)}, limit: 1024},
-		{name: "empty anthropic tool id", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"code_execution_20260120","toolId":""}}`)}, limit: 1024},
-		{name: "missing openai caller id", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"caller":{"type":"program"}}`)}, limit: 1024},
-		{name: "empty azure caller id", metadata: provider.ProviderMetadata{"azure": json.RawMessage(`{"caller":{"type":"program","callerId":""}}`)}, limit: 1024},
-		{name: "wrong item id type", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":42}`)}, limit: 1024},
-		{name: "null item id", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":null}`)}, limit: 1024},
-		{name: "null namespace", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"namespace":null}`)}, limit: 1024},
+		{name: "opaque MCP metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"other"}`)}},
+		{name: "unsupported caller", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"unknown"}}`)}},
+		{name: "null caller", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":null}`)}},
+		{name: "null type", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":null}`)}},
+		{name: "missing anthropic tool id", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"code_execution_20260120"}}`)}},
+		{name: "null anthropic tool id", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"code_execution_20260120","toolId":null}}`)}},
+		{name: "direct caller with null id", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"direct","toolId":null}}`)}},
+		{name: "empty anthropic tool id", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"caller":{"type":"code_execution_20260120","toolId":""}}`)}},
+		{name: "missing openai caller id", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"caller":{"type":"program"}}`)}},
+		{name: "empty azure caller id", metadata: provider.ProviderMetadata{"azure": json.RawMessage(`{"caller":{"type":"program","callerId":""}}`)}},
+		{name: "wrong item id type", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":42}`)}},
+		{name: "null item id", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":null}`)}},
+		{name: "null namespace", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"namespace":null}`)}},
+		{name: "large known field", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"` + strings.Repeat("x", 9<<20) + `"}`)}},
+		{name: "large unknown namespace", metadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"` + strings.Repeat("x", 9<<20) + `"}`)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			mapped, err := mapToolMetadataForTest(tc.metadata, tc.limit)
+			mapped, err := mapToolMetadataForTest(tc.metadata)
 			require.NoError(t, err)
 			assert.Equal(t, tc.metadata, mapped)
 		})
@@ -153,32 +154,28 @@ func TestToolMetadata_StructuralAndEncodingBounds(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		metadata provider.ProviderMetadata
-		limit    int64
 	}{
-		{name: "null known namespace", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`null`)}, limit: 1024},
-		{name: "encoded response exceeds limit", metadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"<&>"}`)}, limit: 25},
-		{name: "malformed metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{`)}, limit: 1024},
-		{name: "oversized known field", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"` + strings.Repeat("x", 200) + `"}`)}, limit: 128},
-		{name: "oversized unknown namespace", metadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"` + strings.Repeat("x", 200) + `"}`)}, limit: 128},
-		{name: "excess cardinality", metadata: provider.ProviderMetadata{"one": nil, "two": nil}, limit: 1},
-		{name: "array namespace", metadata: provider.ProviderMetadata{"future": json.RawMessage(`[]`)}, limit: 1024},
-		{name: "invalid UTF-8 namespace", metadata: provider.ProviderMetadata{"future": json.RawMessage([]byte{'{', '"', 0xff, '"', ':', '0', '}'})}, limit: 1024},
+		{name: "null known namespace", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`null`)}},
+		{name: "malformed metadata", metadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{`)}},
+		{name: "excess cardinality", metadata: provider.ProviderMetadata{"one": nil, "two": nil}},
+		{name: "array namespace", metadata: provider.ProviderMetadata{"future": json.RawMessage(`[]`)}},
+		{name: "invalid UTF-8 namespace", metadata: provider.ProviderMetadata{"future": json.RawMessage([]byte{'{', '"', 0xff, '"', ':', '0', '}'})}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := mapToolMetadataForTest(tc.metadata, tc.limit)
+			_, err := mapToolMetadataForTest(tc.metadata)
 			require.Error(t, err)
 		})
 	}
 }
 
-func mapToolMetadataForTest(metadata provider.ProviderMetadata, limit int64) (provider.ProviderMetadata, error) {
+func mapToolMetadataForTest(metadata provider.ProviderMetadata) (provider.ProviderMetadata, error) {
 	result := validGenerateResult()
 	result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage("{}"), ProviderMetadata: metadata}}
-	mapped, err := mapUnarySuccess(result, limit)
+	mapped, err := mapUnarySuccess(result)
 	if err != nil {
 		return nil, err
 	}
-	body, ok := encodeUnarySuccess(mapped, limit)
+	body, ok := marshalUnarySuccess(mapped)
 	if !ok {
 		return nil, errInvalidUnarySuccess
 	}
@@ -298,7 +295,7 @@ func TestProviderMetadata_InvalidUnary(t *testing.T) {
 					result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(`{}`), ProviderMetadata: metadata}}
 				}
 				w := httptest.NewRecorder()
-				h := &handler{limits: Limits{UnaryResponseBytes: 1 << 20}}
+				h := &handler{}
 				assert.False(t, h.writeUnarySuccess(w, result))
 				assert.Empty(t, w.Body.String())
 			})
@@ -332,7 +329,8 @@ func TestProviderMetadata_OriginalBytesAndCardinality(t *testing.T) {
 				result.Content = nil
 				result.FinishReason.Raw = "native"
 				result.ProviderMetadata = tc.metadata
-				assert.Equal(t, delta >= 0, unarySuccessPreflight(result, limit))
+				_, err := mapUnarySuccess(result)
+				assert.NoError(t, err)
 
 				event := streamEvent{typeName: provider.PartTextStart, id: "native", metadata: tc.metadata}
 				assert.Equal(t, delta >= 0, streamEventPreflight(event, limit+int64(len(provider.PartTextStart))))
@@ -344,7 +342,8 @@ func TestProviderMetadata_OriginalBytesAndCardinality(t *testing.T) {
 	}
 	result := validGenerateResult()
 	result.ProviderMetadata = many
-	assert.False(t, unarySuccessPreflight(result, 1))
+	_, err := mapUnarySuccess(result)
+	assert.NoError(t, err)
 	assert.False(t, streamEventPreflight(streamEvent{typeName: provider.PartTextStart, metadata: many}, 1))
 	assert.False(t, sourcePreflight(provider.SourceInfo{ID: "native", ProviderMetadata: many}, 1))
 }
@@ -355,22 +354,17 @@ func TestProviderMetadata_AggregateAndEncodingBounds(t *testing.T) {
 	result := validGenerateResult()
 	result.Content[0].ProviderMetadata = metadata
 	result.ProviderMetadata = metadata
-	_, err := mapUnarySuccess(result, 500)
-	require.Error(t, err)
-	result.ProviderMetadata = nil
-	mapped, err := mapUnarySuccess(result, 500)
+	mapped, err := mapUnarySuccess(result)
 	require.NoError(t, err)
-	body, ok := encodeUnarySuccess(mapped, 1<<20)
+	_, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
-	for _, delta := range []int64{-1, 0, 1} {
-		mapped, err := mapUnarySuccess(result, int64(len(body))+delta)
-		require.NoError(t, err)
-		_, ok := encodeUnarySuccess(mapped, int64(len(body))+delta)
-		assert.Equal(t, delta >= 0, ok)
-	}
 	whitespace := validGenerateResult()
-	whitespace.ProviderMetadata = provider.ProviderMetadata{"future": json.RawMessage(strings.Repeat(" ", 501) + `{}`)}
-	assert.False(t, unarySuccessPreflight(whitespace, 500))
+	whitespace.ProviderMetadata = provider.ProviderMetadata{"future": json.RawMessage(strings.Repeat(" ", 9<<20) + `{}`)}
+	mapped, err = mapUnarySuccess(whitespace)
+	require.NoError(t, err)
+	body, ok := marshalUnarySuccess(mapped)
+	require.True(t, ok)
+	assert.Contains(t, string(body), `"future":{}`)
 	event := streamEvent{typeName: provider.PartToolResult, id: "call", toolName: "weather", result: json.RawMessage(`{"value":"` + strings.Repeat("x", 300) + `"}`), metadata: metadata}
 	assert.False(t, streamEventPreflight(event, 500))
 	event = streamEvent{typeName: provider.PartTextDelta, id: "text", delta: "<>&", metadata: provider.ProviderMetadata{"<future>": json.RawMessage(`{"value":"<>&","surrogate":"\ud800"}`)}}
@@ -384,7 +378,7 @@ func TestProviderMetadata_AggregateAndEncodingBounds(t *testing.T) {
 		}
 	}
 	source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "native", URL: "https://example.test", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"opaque":"` + strings.Repeat("x", 8193) + `"}`)}}
-	_, err = mapSource(source, 1<<16)
+	_, err = mapSource(source)
 	require.NoError(t, err)
 }
 
@@ -396,7 +390,7 @@ func TestProviderMetadata_UTF8AndSurrogates(t *testing.T) {
 	} {
 		result := validGenerateResult()
 		result.ProviderMetadata = metadata
-		_, err := mapUnarySuccess(result, 4096)
+		_, err := mapUnarySuccess(result)
 		require.Error(t, err)
 		frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartTextStart, id: "text", metadata: metadata}, 4096)
 		assert.False(t, ok)
@@ -404,9 +398,9 @@ func TestProviderMetadata_UTF8AndSurrogates(t *testing.T) {
 	}
 	result := validGenerateResult()
 	result.ProviderMetadata = provider.ProviderMetadata{"future": json.RawMessage(`{"lone":"\ud800","paired":"\ud83d\ude00"}`)}
-	mapped, err := mapUnarySuccess(result, 4096)
+	mapped, err := mapUnarySuccess(result)
 	require.NoError(t, err)
-	body, ok := encodeUnarySuccess(mapped, 4096)
+	body, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
 	assert.Contains(t, string(body), `\ud800`)
 	assert.Contains(t, string(body), `\ud83d\ude00`)
@@ -421,6 +415,21 @@ func readOverview(t *testing.T, body []byte) *execution.Overview {
 	}
 	require.NoError(t, json.Unmarshal(body, &value))
 	return value.Metadata["gateway"].Overview
+}
+
+func TestInvocation_LargeEnrichedUnarySuccess(t *testing.T) {
+	native := json.RawMessage(`{"opaque":"` + strings.Repeat("n", 1<<20) + `"}`)
+	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		result := validGenerateResult()
+		result.Content[0].Text = strings.Repeat("x", 9<<20)
+		result.ProviderMetadata = provider.ProviderMetadata{"gateway": native}
+		return result, nil
+	}}
+	response := invocationHarness(t, testLimits(), first).serve(validRequest(`{"prompt":[]}`))
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Greater(t, response.Body.Len(), 10<<20)
+	assert.Contains(t, response.Body.String(), `"nativeMetadata":`+string(native))
+	require.NotNil(t, readOverview(t, response.Body.Bytes()))
 }
 
 func TestInvocation_OptionalLimitsAndNamespace(t *testing.T) {
@@ -454,12 +463,14 @@ func TestInvocation_OptionalLimitsAndNamespace(t *testing.T) {
 				frames = strings.Split(strings.TrimSuffix(string(original), "\n\n"), "\n\n")
 				originalSize = len(frames[len(frames)-1]) + 2
 			}
-			for _, limit := range []int{size, size - 1, originalSize} {
+			candidates := []int{size}
+			if streaming {
+				candidates = append(candidates, size-1, originalSize)
+			}
+			for _, limit := range candidates {
 				limits := testLimits()
 				if streaming {
 					limits.StreamFrameBytes = int64(limit)
-				} else {
-					limits.UnaryResponseBytes = int64(limit)
 				}
 				response := invocationHarness(t, limits, first).serve(request())
 				assert.Equal(t, 200, response.Code)
@@ -495,11 +506,10 @@ func TestInvocation_OptionalLimitsAndNamespace(t *testing.T) {
 func TestInvocation_PrimaryEncodingFailure(t *testing.T) {
 	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 		result := validGenerateResult()
-		result.Content = []provider.GenerateContentPart{{Type: provider.ContentText, Text: strings.Repeat("<", 80)}}
+		result.ProviderMetadata = provider.ProviderMetadata{"future": json.RawMessage(`{"incomplete":`)}
 		return result, nil
 	}}
 	limits := testLimits()
-	limits.UnaryResponseBytes = 400
 	response := invocationHarness(t, limits, first).serve(validRequest(`{"prompt":[]}`))
 	assert.Equal(t, 500, response.Code)
 	assert.NotContains(t, response.Body.String(), `"content"`)

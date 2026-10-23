@@ -141,9 +141,9 @@ func TestMapFunctionTools_PreservesExplicitEmptyInputExamples(t *testing.T) {
 func TestUnaryFunctionOutput(t *testing.T) {
 	result := validGenerateResult()
 	result.Content = append(result.Content, provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "weather", Input: json.RawMessage(`{"city":"Rio"}`), ProviderMetadata: provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"hidden"}`)}})
-	mapped, err := mapUnarySuccess(result, 1<<20)
+	mapped, err := mapUnarySuccess(result)
 	require.NoError(t, err)
-	body, ok := encodeUnarySuccess(mapped, 1<<20)
+	body, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
 	assert.Contains(t, string(body), `"input":"{\"city\":\"Rio\"}"`)
 	assert.Contains(t, string(body), `"providerMetadata":{"private":{"secret":"hidden"}}`)
@@ -157,9 +157,9 @@ func TestUnaryFunctionOutput(t *testing.T) {
 				yes := true
 				copyResult.Content[1].Dynamic = &yes
 			}
-			mapped, err := mapUnarySuccess(&copyResult, 1<<20)
+			mapped, err := mapUnarySuccess(&copyResult)
 			require.NoError(t, err)
-			body, ok := encodeUnarySuccess(mapped, 1<<20)
+			body, ok := marshalUnarySuccess(mapped)
 			require.True(t, ok)
 			assert.Contains(t, string(body), `"`+marker+`":true`)
 		})
@@ -303,30 +303,26 @@ func TestRuntimeUnaryFunctionOutput_SupportsExecutionMarkers(t *testing.T) {
 	}
 }
 
-func TestUnaryFunctionOutput_CompleteBounds(t *testing.T) {
-	result := validGenerateResult()
-	result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "a", ToolName: "f", Input: json.RawMessage(strings.Repeat("\x00", 32))}}
-	mapped, err := mapUnarySuccess(result, 1<<20)
-	require.NoError(t, err)
-	body, ok := encodeUnarySuccess(mapped, 1<<20)
-	require.True(t, ok)
-	_, ok = encodeUnarySuccess(mapped, int64(len(body)))
-	assert.True(t, ok)
-	_, ok = encodeUnarySuccess(mapped, int64(len(body)-1))
-	assert.False(t, ok)
+func TestUnaryFunctionOutput_LargeValues(t *testing.T) {
+	large := strings.Repeat("x", 9<<20)
 	for _, field := range []string{"id", "name", "input"} {
-		copyResult := *result
-		copyResult.Content = append([]provider.GenerateContentPart(nil), result.Content...)
-		switch field {
-		case "id":
-			copyResult.Content[0].ToolCallID = strings.Repeat("x", 2048)
-		case "name":
-			copyResult.Content[0].ToolName = strings.Repeat("x", 2048)
-		case "input":
-			copyResult.Content[0].Input = json.RawMessage(strings.Repeat("x", 2048))
-		}
-		_, err := mapUnarySuccess(&copyResult, 1024)
-		assert.Error(t, err)
+		t.Run(field, func(t *testing.T) {
+			result := validGenerateResult()
+			result.Content = []provider.GenerateContentPart{{Type: provider.ContentToolCall, ToolCallID: "a", ToolName: "f", Input: json.RawMessage(`{}`)}}
+			switch field {
+			case "id":
+				result.Content[0].ToolCallID = large
+			case "name":
+				result.Content[0].ToolName = large
+			case "input":
+				result.Content[0].Input = json.RawMessage(`{"value":"` + large + `"}`)
+			}
+			mapped, err := mapUnarySuccess(result)
+			require.NoError(t, err)
+			body, ok := marshalUnarySuccess(mapped)
+			require.True(t, ok)
+			assert.Greater(t, len(body), 9<<20)
+		})
 	}
 }
 

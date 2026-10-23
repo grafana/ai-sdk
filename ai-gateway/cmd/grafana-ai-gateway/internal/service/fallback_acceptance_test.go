@@ -206,7 +206,7 @@ func TestFallbackAcceptance_MappedUnaryEncodingDoesNotReplay(t *testing.T) {
 	}{
 		{"selected call", provider.ContentToolCall, json.RawMessage(`{}`), http.StatusOK},
 		{"unsupported output", provider.ContentFile, json.RawMessage(`{}`), http.StatusInternalServerError},
-		{"oversized selected call", provider.ContentToolCall, json.RawMessage(`{"payload":"` + strings.Repeat("x", 1<<20) + `"}`), http.StatusInternalServerError},
+		{"large selected call", provider.ContentToolCall, json.RawMessage(`{"payload":"` + strings.Repeat("x", 9<<20) + `"}`), http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newFallbackAcceptance(t, &observabilityTestModel{generate: func(_ context.Context, opts provider.CallOptions) (*provider.GenerateResult, error) {

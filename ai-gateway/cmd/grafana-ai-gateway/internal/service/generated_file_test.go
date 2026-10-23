@@ -54,8 +54,8 @@ func TestGeneratedFileFallbackCommitment(t *testing.T) {
 	}
 }
 
-func TestGeneratedFileUnaryFailureBeforeWrite(t *testing.T) {
-	for _, size := range []int{0, 1 << 20} {
+func TestGeneratedFileUnaryAnySize(t *testing.T) {
+	for _, size := range []int{0, 7 << 20} {
 		t.Run(fmt.Sprintf("bytes=%d", size), func(t *testing.T) {
 			data := provider.BytesDataContent(make([]byte, size))
 			h := newFallbackAcceptance(t, &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
@@ -63,13 +63,8 @@ func TestGeneratedFileUnaryFailureBeforeWrite(t *testing.T) {
 			}}, &observabilityTestModel{})
 			w := httptest.NewRecorder()
 			h.handler.ServeHTTP(w, h.request(t.Context(), false, mappedFallbackBody))
-			if size == 0 {
-				require.Equal(t, 200, w.Code)
-				require.Contains(t, w.Body.String(), `"type":"file"`)
-			} else {
-				require.Equal(t, 500, w.Code)
-				require.NotContains(t, w.Body.String(), `"type":"file"`)
-			}
+			require.Equal(t, 200, w.Code)
+			require.Contains(t, w.Body.String(), `"type":"file"`)
 			h.verify(t, "generate", w.Body.String(), []fallback.AttemptOutcome{fallback.AttemptSelected})
 		})
 	}

@@ -81,7 +81,6 @@ func TestRequestBound_LanguageModelBoundary(t *testing.T) {
 			return providerv4.Selection{}, catalog.ErrUnknownModel
 		},
 		Limits: providerv4.Limits{
-			UnaryResponseBytes:  1 << 20,
 			StreamParts:         1_000,
 			StreamFrameBytes:    1 << 20,
 			ModelDuration:       time.Second,

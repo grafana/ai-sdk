@@ -17,7 +17,7 @@ func TestSourcesMetadataAndBounds(t *testing.T) {
 		"openai":    json.RawMessage(`{"type":"file_citation","fileId":"secret","index":3}`),
 		"private":   json.RawMessage(`{"token":"secret"}`),
 	}}
-	mapped, err := mapSource(base, 4096)
+	mapped, err := mapSource(base)
 	require.NoError(t, err)
 	encoded, err := json.Marshal(mapped)
 	require.NoError(t, err)
@@ -28,15 +28,9 @@ func TestSourcesMetadataAndBounds(t *testing.T) {
 	assert.Equal(t, base.ProviderMetadata, decoded.Metadata)
 	assert.Contains(t, string(encoded), `"id":"native-id"`)
 	assert.NotContains(t, string(encoded), `"citation"`)
-	for _, delta := range []int64{-1, 0, 1} {
-		source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: strings.Repeat("<", 80)}
-		mapped, err := mapSource(source, 4096)
-		require.NoError(t, err)
-		b, err := json.Marshal(mapped)
-		require.NoError(t, err)
-		_, err = mapSource(source, int64(len(b))+delta)
-		assert.Equal(t, delta < 0, err != nil)
-	}
+	large := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: strings.Repeat("i", 9<<20), URL: strings.Repeat("<", 9<<20)}
+	_, err = mapSource(large)
+	require.NoError(t, err)
 	for _, tc := range []struct {
 		name   string
 		mutate func(*provider.SourceInfo)
@@ -50,7 +44,7 @@ func TestSourcesMetadataAndBounds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			source := base
 			tc.mutate(&source)
-			_, err := mapSource(source, 16384)
+			_, err := mapSource(source)
 			require.Error(t, err)
 		})
 	}
@@ -67,7 +61,7 @@ func TestSourcesOpenAIAndAzureMetadata(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source := provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "native-id", Title: "Native title", Filename: "native.txt", MediaType: "text/plain", ProviderMetadata: provider.ProviderMetadata{tc.namespace: json.RawMessage(tc.metadata)}}
-			mapped, err := mapSource(source, 4096)
+			mapped, err := mapSource(source)
 			require.NoError(t, err)
 			encoded, err := json.Marshal(mapped)
 			require.NoError(t, err)
@@ -82,9 +76,9 @@ func TestSourcesOpenAIAndAzureMetadata(t *testing.T) {
 			assert.NotContains(t, string(encoded), `"citation"`)
 		})
 	}
-	oversize := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: "https://example.com", ProviderMetadata: provider.ProviderMetadata{"azure": json.RawMessage(strings.Repeat(" ", 16385) + `{}`)}}
-	_, err := mapSource(oversize, 16384)
-	require.ErrorIs(t, err, errInvalidUnarySuccess)
+	whitespace := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: "https://example.com", ProviderMetadata: provider.ProviderMetadata{"azure": json.RawMessage(strings.Repeat(" ", 16385) + `{}`)}}
+	_, err := mapSource(whitespace)
+	require.NoError(t, err)
 }
 
 func TestSourcesStreamingLifecycle(t *testing.T) {
@@ -125,7 +119,7 @@ func TestSourcesStreamingLifecycle(t *testing.T) {
 
 func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
 	source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: strings.Repeat("<", 80)}
-	mapped, err := mapSource(source, 4096)
+	mapped, err := mapSource(source)
 	require.NoError(t, err)
 	frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartSource, source: mapped}, 4096)
 	require.True(t, ok)
@@ -135,10 +129,7 @@ func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
 	}
 	part := provider.GenerateContentPart{Type: provider.ContentSource, SourceType: provider.SourceTypeURL, ID: "id", URL: "url", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"ignored":"` + strings.Repeat("x", 400) + `"}`)}}
 	result := &provider.GenerateResult{Content: []provider.GenerateContentPart{part, part, part}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}
-	_, err = mapUnarySuccess(result, 1024)
-	require.Error(t, err)
-	result.Content = result.Content[:1]
-	_, err = mapUnarySuccess(result, 1024)
+	_, err = mapUnarySuccess(result)
 	require.NoError(t, err)
 	for _, raw := range []string{`{"type":"source","sourceType":"document","id":"","mediaType":"","title":""}`, `{"type":"source","sourceType":"url","id":"","url":""}`} {
 		for _, schemaJSON := range [][]byte{streamEventSchemaJSON, unarySuccessSchemaJSON} {

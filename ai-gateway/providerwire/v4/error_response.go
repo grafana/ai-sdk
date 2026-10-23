@@ -8,10 +8,7 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const (
-	maxErrorResponseBytes     = 64 << 10
-	statusClientClosedRequest = 499
-)
+const statusClientClosedRequest = 499
 
 type errorType string
 type errorCode string
@@ -207,19 +204,15 @@ func (definition errorDefinition) fields() publicError {
 	return publicError{Message: definition.message, Type: definition.kind, Code: definition.code}
 }
 
-func encodeHTTPError(value safeError, metadata provider.ProviderMetadata, limit int64) (int, []byte) {
+func encodeHTTPError(value safeError, metadata provider.ProviderMetadata) (int, []byte) {
 	definition := definitionForError(value)
-	response := errorResponse{Error: definition.fields()}
-	original, _ := json.Marshal(response)
-	if len(metadata) == 0 || int64(len(original)) > limit {
-		return definition.status, original
+	response := errorResponse{Error: definition.fields(), Metadata: metadata}
+	body, err := json.Marshal(response)
+	if err != nil {
+		response.Metadata = nil
+		body, _ = json.Marshal(response)
 	}
-	response.Metadata = metadata
-	enriched, err := json.Marshal(response)
-	if err != nil || int64(len(enriched)) > limit {
-		return definition.status, original
-	}
-	return definition.status, enriched
+	return definition.status, body
 }
 
 func streamErrorResponse(value safeError) errorResponse {
@@ -273,7 +266,7 @@ func encodeStreamError(value safeError, metadata provider.ProviderMetadata, curr
 }
 
 func (h *handler) writeSafeError(w http.ResponseWriter, value safeError, metadata provider.ProviderMetadata) {
-	status, body := encodeHTTPError(value, metadata, min(h.limits.UnaryResponseBytes, maxErrorResponseBytes))
+	status, body := encodeHTTPError(value, metadata)
 	writeErrorResponse(w, status, body)
 }
 

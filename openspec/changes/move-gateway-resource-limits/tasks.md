@@ -54,7 +54,7 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 6. Unary and HTTP error budgets
 
-- [ ] 6.1 Remove `UnaryResponseBytes`, `unarySuccessPreflight` and `minimumTextPartBytes`, and drop the `limit` parameters of `mapUnarySuccess`, `mapSource` and `validRawUsage`. Until group 7, the stream path keeps its current behavior:
+- [x] 6.1 Remove `UnaryResponseBytes`, `unarySuccessPreflight` and `minimumTextPartBytes`, and drop the `limit` parameters of `mapUnarySuccess`, `mapSource` and `validRawUsage`. Until group 7, the stream path keeps its current behavior:
   - `streamEventPreflight` inlines its raw-usage size check, and `maxRawUsageBytes` stays in use only there;
   - source frames stay bounded by the final frame check in `encodeStreamFrame`;
   - the shared helpers `warningsPreflight`, `responseIdentityFits`, `responseStringsFit`, `reasoningFileFits`, `minimumWarningBytes` and `sourcePreflight` stay in use on the stream path only.
@@ -69,13 +69,13 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
   - large generated media.
 
   Verify with `go test -race ./providerwire/v4/...`.
-- [ ] 6.2 Make `writeUnarySuccess` attach `execution.Metadata` and marshal once. On failure, it writes the fixed internal error with the overview. Remove `maxErrorResponseBytes`. `encodeHTTPError(value, metadata)` encodes once and falls back to the base document only if that fails, and `HostErrorWriter` uses it without a limit. Add tests:
+- [x] 6.2 Make `writeUnarySuccess` attach `execution.Metadata` and marshal once. On failure, it writes the fixed internal error with the overview. Remove `maxErrorResponseBytes`. `encodeHTTPError(value, metadata)` encodes once and falls back to the base document only if that fails, and `HostErrorWriter` uses it without a limit. Add tests:
   - a success with an overview above 8 MiB keeps the overview and relocates a native `gateway`;
   - an HTTP failure whose overview is above 64 KiB is written whole;
   - unencodable error metadata falls back to the base document with the same status.
 
   Update the unary docs in `docs/providers/grafana-gateway.md`: generated files and overview availability. Add the removed unary and error-document rows to the ledger. Verify with `go test -race ./providerwire/v4/...` and `mise run lint-docs`.
-- [ ] 6.3 In `test/providerwire-v4/gateway-command.test.ts`, add a configured fake native backend that returns a unary result above 8 MiB and raw usage above 1 MiB, within 16 MiB. Assert that the pinned TS client and the Go client from #479 both receive the complete values through the plugin test host. Verify with `mise run test-ai-gateway-command`.
+- [x] 6.3 In `test/providerwire-v4/gateway-command.test.ts`, add a configured fake native backend that returns a unary result above 8 MiB and raw usage above 1 MiB, within 16 MiB. Assert that the pinned TS client and the Go client from #479 both receive the complete values through the plugin test host. Verify with `mise run test-ai-gateway-command`.
 
 ## 7. Streaming and SSE error budgets
 
