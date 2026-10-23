@@ -49,7 +49,7 @@ type ModelInfo struct {
 }
 
 // ListModels returns the authenticated catalog in server order, without caching.
-// The complete document must fit Limits.DiscoveryBytes and decode into ModelInfo.
+// The complete document must fit the client's fixed buffered-read backstop and decode into ModelInfo.
 // Catalog policy and route consistency belong to server startup validation.
 // Malformed or oversized catalogs return no partial results.
 func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
@@ -67,9 +67,9 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, readGatewayError(ctx, resp, p.limits.ErrorBytes)
+		return nil, readGatewayError(ctx, resp, p.bufferedReadLimit)
 	}
-	body, _, err := readJSON(ctx, resp, p.limits.DiscoveryBytes)
+	body, _, err := readJSON(ctx, resp, p.bufferedReadLimit)
 	if err != nil {
 		return nil, protocolError("grafana: invalid discovery response", resp.StatusCode, err)
 	}
@@ -90,6 +90,9 @@ func readJSON(ctx context.Context, resp *http.Response, limit int64) (body []byt
 	media, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil || media != "application/json" && (!strings.HasPrefix(media, "application/") || !strings.HasSuffix(media, "+json")) {
 		return nil, false, errors.New("grafana: expected JSON media type")
+	}
+	if resp.ContentLength > limit {
+		return nil, false, errors.New("grafana: response byte limit exceeded")
 	}
 	body, err = io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if ctx.Err() != nil {

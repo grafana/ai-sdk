@@ -49,7 +49,7 @@ func (m *model) doRequest(ctx context.Context, opts provider.CallOptions, stream
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer func() { _ = resp.Body.Close() }()
-		return nil, nil, readGatewayError(ctx, resp, m.provider.limits.ErrorBytes)
+		return nil, nil, readGatewayError(ctx, resp, m.provider.bufferedReadLimit)
 	}
 	return resp, body, nil
 }
@@ -60,13 +60,13 @@ func (m *model) DoGenerate(ctx context.Context, opts provider.CallOptions) (*pro
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, transportFailure, err := readJSON(ctx, resp, m.provider.limits.UnaryBytes)
+	body, transportFailure, err := readJSON(ctx, resp, m.provider.bufferedReadLimit)
 	if err != nil {
 		if transportFailure {
 			switch {
 			case ctx.Err() != nil:
 				err = ctx.Err()
-			case int64(len(body)) > m.provider.limits.UnaryBytes:
+			case int64(len(body)) > m.provider.bufferedReadLimit:
 				err = errors.New("grafana: response byte limit exceeded")
 			default:
 				return nil, provider.NewAPICallError(provider.APICallErrorOptions{
@@ -96,7 +96,7 @@ func (m *model) DoStream(ctx context.Context, opts provider.CallOptions) (*provi
 		return nil, protocolError("grafana: expected SSE media type", resp.StatusCode, nil)
 	}
 	parts := make(chan provider.StreamPart, 64)
-	go consumeStream(ctx, resp.Body, parts, m.provider.limits, opts.IncludeRawChunks)
+	go consumeStream(ctx, resp.Body, parts, opts.IncludeRawChunks)
 	return &provider.StreamResult{Stream: parts, Request: &provider.RequestMetadata{Body: requestBody}, Response: &provider.ResponseHeaders{Headers: responseHeaders(resp.Header)}}, nil
 }
 
@@ -119,8 +119,6 @@ func (w *wireFinish) UnmarshalJSON(data []byte) error {
 	type plain wireFinish
 	return decodeFields(data, (*plain)(w), "unified", "raw")
 }
-
-const maxRawUsageBytes = 1 << 20
 
 type wireUsage struct {
 	Raw         json.RawMessage `json:"raw"`
@@ -161,7 +159,7 @@ func (w *wireUsage) UnmarshalJSON(data []byte) error {
 		}
 	}
 	raw, present := groups["raw"]
-	if present && (len(raw) > maxRawUsageBytes || len(raw) == 0 || raw[0] != '{') {
+	if present && (len(raw) == 0 || raw[0] != '{') {
 		return errors.New("grafana: invalid raw usage")
 	}
 	encoded, err := json.Marshal(filtered)

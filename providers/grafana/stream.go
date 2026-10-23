@@ -16,47 +16,29 @@ import (
 
 type eventReader struct {
 	reader  *bufio.Reader
-	limits  Limits
-	total   int64
-	count   int64
 	skipLF  bool
 	started bool
 }
-
-var errStreamLimit = errors.New("grafana: stream processing limit exceeded")
 
 func (r *eventReader) next() ([]byte, error) {
 	if !r.started {
 		r.started = true
 		if prefix, _ := r.reader.Peek(3); bytes.Equal(prefix, []byte{0xef, 0xbb, 0xbf}) {
 			_, _ = r.reader.Discard(3)
-			r.total += 3
-			if r.total > r.limits.StreamBytes {
-				return nil, errStreamLimit
-			}
 		}
 	}
 	var event, line []byte
-	var eventBytes int64
 	dataPresent := false
 	for {
 		b, err := r.reader.ReadByte()
 		if err != nil {
 			return nil, err
 		}
-		r.total++
-		if r.total > r.limits.StreamBytes {
-			return nil, errStreamLimit
-		}
 		if r.skipLF {
 			r.skipLF = false
 			if b == '\n' {
 				continue
 			}
-		}
-		eventBytes++
-		if eventBytes > r.limits.StreamEventBytes {
-			return nil, errStreamLimit
 		}
 		if b != '\n' && b != '\r' {
 			line = append(line, b)
@@ -67,13 +49,8 @@ func (r *eventReader) next() ([]byte, error) {
 		}
 		if len(line) == 0 {
 			if dataPresent {
-				r.count++
-				if r.count > r.limits.StreamEvents {
-					return nil, errStreamLimit
-				}
 				return bytes.TrimSuffix(event, []byte{'\n'}), nil
 			}
-			eventBytes = 0
 		} else if bytes.Equal(line, []byte("data")) || bytes.HasPrefix(line, []byte("data:")) {
 			data := line[4:]
 			if len(data) > 0 {
@@ -90,14 +67,14 @@ func (r *eventReader) next() ([]byte, error) {
 	}
 }
 
-func consumeStream(ctx context.Context, body io.ReadCloser, parts chan<- provider.StreamPart, limits Limits, includeRaw bool) {
+func consumeStream(ctx context.Context, body io.ReadCloser, parts chan<- provider.StreamPart, includeRaw bool) {
 	defer close(parts)
 	var closeOnce sync.Once
 	closeBody := func() { closeOnce.Do(func() { _ = body.Close() }) }
 	stop := context.AfterFunc(ctx, closeBody)
 	defer stop()
 	defer closeBody()
-	reader := eventReader{reader: bufio.NewReader(io.LimitReader(body, limits.StreamBytes+1)), limits: limits}
+	reader := eventReader{reader: bufio.NewReader(body)}
 	send := func(part provider.StreamPart) bool {
 		if ctx.Err() != nil {
 			return false
@@ -118,7 +95,7 @@ func consumeStream(ctx context.Context, body io.ReadCloser, parts chan<- provide
 			return
 		}
 		if err != nil {
-			retryable := !errors.Is(err, errStreamLimit)
+			retryable := true
 			api := provider.NewAPICallError(provider.APICallErrorOptions{Message: "grafana: stream read failed", StatusCode: 200, Cause: err, IsRetryable: &retryable})
 			send(provider.StreamPart{Type: provider.PartError, APICallError: api})
 			return

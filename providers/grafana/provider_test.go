@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,11 +30,11 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func testProvider(t *testing.T, handler http.HandlerFunc, limits *Limits) *Provider {
+func testProvider(t *testing.T, handler http.HandlerFunc) *Provider {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "access-token", BaseURL: srv.URL + "/api/v1/aisdk/", Limits: limits})
+	p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "access-token", BaseURL: srv.URL + "/api/v1/aisdk/"})
 	require.NoError(t, err)
 	return p
 }
@@ -65,10 +64,6 @@ func TestNewWithAccessToken_Validation(t *testing.T) {
 		{"header name", func(c *AccessTokenConfig) { c.Headers = http.Header{"Bad Name": {"value"}} }},
 		{"header value", func(c *AccessTokenConfig) { c.Headers = http.Header{"X-Test": {"secret\nvalue"}} }},
 		{"header casing duplicate", func(c *AccessTokenConfig) { c.Headers = http.Header{"X-Test": {"a"}, "x-test": {"b"}} }},
-		{"zero limits", func(c *AccessTokenConfig) { c.Limits = &Limits{} }},
-		{"negative limit", func(c *AccessTokenConfig) { l := DefaultLimits(); l.DiscoveryBytes = -1; c.Limits = &l }},
-		{"overflow limit", func(c *AccessTokenConfig) { l := DefaultLimits(); l.ErrorBytes = math.MaxInt64; c.Limits = &l }},
-		{"event exceeds stream", func(c *AccessTokenConfig) { l := DefaultLimits(); l.StreamBytes = 1; c.Limits = &l }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := valid
@@ -152,7 +147,6 @@ func TestServiceAccount_Validation(t *testing.T) {
 		{"token utf8", func(c *ServiceAccountConfig) { c.Token = string([]byte{0xff}) }},
 		{"unsafe URL", func(c *ServiceAccountConfig) { c.BaseURL = "https://secret@example.test" }},
 		{"reserved config", func(c *ServiceAccountConfig) { c.Headers = http.Header{"authorization": {"private-value"}} }},
-		{"invalid limits", func(c *ServiceAccountConfig) { c.Limits = &Limits{} }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := valid
@@ -189,7 +183,6 @@ func TestServiceAccount_ConcurrentAndRedirect(t *testing.T) {
 }
 
 func TestProvider_ImmutableConfigurationAndRegistry(t *testing.T) {
-	limits := DefaultLimits()
 	headers := http.Header{"x-config": {"original"}}
 	var calls atomic.Int32
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -204,10 +197,9 @@ func TestProvider_ImmutableConfigurationAndRegistry(t *testing.T) {
 		t.Error("option transport unexpectedly selected")
 		return nil, errors.New("unexpected")
 	})}
-	p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test/prefix%2Fsegment///", HTTPClient: client, Headers: headers, Limits: &limits}, WithHTTPClient(other))
+	p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test/prefix%2Fsegment///", HTTPClient: client, Headers: headers}, WithHTTPClient(other))
 	require.NoError(t, err)
 	headers.Set("x-config", "mutated")
-	limits.DiscoveryBytes = 1
 	rows, err := p.ListModels(context.Background())
 	require.NoError(t, err)
 	require.Len(t, rows, 2)
@@ -238,7 +230,7 @@ func TestProvider_DiscoveryConcurrency(t *testing.T) {
 		assert.Empty(t, r.Header.Values("X-Grafana-Id"))
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = io.WriteString(w, discoveryFixture)
-	}, nil)
+	})
 	var wg sync.WaitGroup
 	for range 32 {
 		wg.Go(func() {
@@ -329,7 +321,7 @@ func TestCloudAuth_InvalidFileNeverAuthenticatesOrSends(t *testing.T) {
 
 func TestProvider_CancellationAndRedirect(t *testing.T) {
 	t.Run("pre-canceled and invalid on-behalf-of never exchange", func(t *testing.T) {
-		p := testProvider(t, func(http.ResponseWriter, *http.Request) { t.Error("unexpected network request") }, nil)
+		p := testProvider(t, func(http.ResponseWriter, *http.Request) { t.Error("unexpected network request") })
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		_, err := p.ListModels(ctx)
@@ -345,7 +337,7 @@ func TestProvider_CancellationAndRedirect(t *testing.T) {
 			w.(http.Flusher).Flush()
 			close(started)
 			<-r.Context().Done()
-		}, nil)
+		})
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		done := make(chan error, 1)
@@ -363,7 +355,7 @@ func TestProvider_CancellationAndRedirect(t *testing.T) {
 		var received atomic.Int32
 		target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { received.Add(1) }))
 		defer target.Close()
-		p := testProvider(t, func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) }, nil)
+		p := testProvider(t, func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, http.StatusFound) })
 		_, err := p.ListModels(context.Background())
 		require.Error(t, err)
 		assert.Zero(t, received.Load())
@@ -385,7 +377,7 @@ func TestTokenExchange_FailureAndCancellation(t *testing.T) {
 		{"failure", nil, errors.New("private exchange response")}, {"nil response", nil, nil}, {"empty token", &authn.TokenExchangeResponse{}, nil}, {"unsafe token", &authn.TokenExchangeResponse{Token: "private\r\ninjection"}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p := testProvider(t, func(http.ResponseWriter, *http.Request) { t.Error("Gateway request after failed auth") }, nil)
+			p := testProvider(t, func(http.ResponseWriter, *http.Request) { t.Error("Gateway request after failed auth") })
 			p.exchanger = exchangeFunc(func(context.Context, authn.TokenExchangeRequest) (*authn.TokenExchangeResponse, error) {
 				return tc.response, tc.err
 			})
@@ -399,7 +391,7 @@ func TestTokenExchange_FailureAndCancellation(t *testing.T) {
 		})
 	}
 	t.Run("canceled waiter does not wait for a shared exchange", func(t *testing.T) {
-		p := testProvider(t, func(http.ResponseWriter, *http.Request) { t.Error("Gateway request after cancellation") }, nil)
+		p := testProvider(t, func(http.ResponseWriter, *http.Request) { t.Error("Gateway request after cancellation") })
 		started, finish := make(chan struct{}), make(chan struct{})
 		p.exchanger = exchangeFunc(func(context.Context, authn.TokenExchangeRequest) (*authn.TokenExchangeResponse, error) {
 			close(started)
@@ -423,7 +415,7 @@ func TestTokenExchange_FailureAndCancellation(t *testing.T) {
 		p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, discoveryFixture)
-		}, nil)
+		})
 		exchangeCtx, finish := make(chan context.Context, 1), make(chan struct{})
 		p.exchanger = exchangeFunc(func(ctx context.Context, _ authn.TokenExchangeRequest) (*authn.TokenExchangeResponse, error) {
 			select {
@@ -691,4 +683,10 @@ func TestNewWithAccessToken_OpaqueStaticCredential(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, models, 2)
 	assert.Equal(t, 1, calls)
+}
+
+func TestProvider_BufferedReadBackstopDefault(t *testing.T) {
+	p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(2<<30), p.bufferedReadLimit)
 }

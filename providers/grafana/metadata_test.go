@@ -144,12 +144,9 @@ func TestProviderMetadata_ProtocolFailures(t *testing.T) {
 		`null`, `{"future":null}`, `{"future":[]}`, `{"future":false}`, `{"future":`,
 		"{\"future\":{\"offending-value\":\"" + string([]byte{255}) + "\"}}",
 		"{\"" + string([]byte{255}) + "\":{\"value\":0}}",
-		strings.Repeat(" ", 1025) + `{}`,
 	} {
 		for _, streaming := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%d/stream=%v", i, streaming), func(t *testing.T) {
-				limits := DefaultLimits()
-				limits.UnaryBytes, limits.StreamEventBytes = 1024, 1024
 				p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 					if streaming {
 						w.Header().Set("Content-Type", "text/event-stream")
@@ -160,7 +157,7 @@ func TestProviderMetadata_ProtocolFailures(t *testing.T) {
 						_, err := fmt.Fprint(w, `{"content":[],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"providerMetadata":`+metadata+`}`)
 						assert.NoError(t, err)
 					}
-				}, &limits)
+				})
 				model, err := p.LanguageModel("assistant")
 				require.NoError(t, err)
 				if streaming {
