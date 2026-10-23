@@ -127,3 +127,63 @@ func TestConverseParity_ProfileFamilyRequestCapture(t *testing.T) {
 		})
 	}
 }
+
+func TestConverseParity_NovaHighReasoningMaxTokensRequestCapture(t *testing.T) {
+	const modelID = "us.amazon.nova-2-lite-v1:0"
+	want := provider.Warning{
+		Type:    provider.WarnUnsupported,
+		Feature: "maxOutputTokens",
+		Details: "maxOutputTokens is not supported by " + modelID + " when high reasoning is enabled and will be ignored",
+	}
+	for _, tc := range []struct {
+		name      string
+		streaming bool
+		explicit  bool
+	}{
+		{name: "generate portable"},
+		{name: "stream portable", streaming: true},
+		{name: "generate explicit", explicit: true},
+		{name: "stream explicit", streaming: true, explicit: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req map[string]json.RawMessage
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+				assert.NotContains(t, req, "inferenceConfig")
+				assert.JSONEq(t, `{"reasoningConfig":{"type":"enabled","maxReasoningEffort":"high"}}`, string(req["additionalModelRequestFields"]))
+				var err error
+				if tc.streaming {
+					w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
+					_, err = w.Write(encodeFixtures(t, `{"messageStart":{"role":"assistant"}}`, `{"messageStop":{"stopReason":"end_turn"}}`, `{"metadata":{"usage":{"inputTokens":1,"outputTokens":1}}}`))
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_, err = w.Write([]byte(`{"output":{"message":{"role":"assistant","content":[{"text":"ok"}]}} ,"stopReason":"end_turn","usage":{"inputTokens":1,"outputTokens":1}}`))
+				}
+				require.NoError(t, err)
+			}))
+			defer server.Close()
+			model := New(modelID, WithBaseURL(server.URL), WithCredentials(credentials.NewStaticCredentialsProvider("AKID", "SECRET", "")))
+			maxTokens := 1024
+			opts := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: provider.ReasoningHigh, MaxOutputTokens: &maxTokens}
+			if tc.explicit {
+				opts.Reasoning = provider.ReasoningProviderDefault
+				opts.ProviderOptions = provider.BuildProviderOptions(BedrockOptions{ReasoningConfig: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "high"}})
+			}
+			var warnings []provider.Warning
+			if tc.streaming {
+				result, err := model.DoStream(context.Background(), opts)
+				require.NoError(t, err)
+				for part := range result.Stream {
+					if part.Type == provider.PartStreamStart {
+						warnings = part.Warnings
+					}
+				}
+			} else {
+				result, err := model.DoGenerate(context.Background(), opts)
+				require.NoError(t, err)
+				warnings = result.Warnings
+			}
+			assert.Contains(t, warnings, want)
+		})
+	}
+}

@@ -223,6 +223,10 @@ type inferenceConfig struct {
 	StopSequences []string `json:"stopSequences,omitempty"`
 }
 
+func (c *inferenceConfig) empty() bool {
+	return c.MaxTokens == nil && c.Temperature == nil && c.TopP == nil && c.TopK == nil && len(c.StopSequences) == 0
+}
+
 // serviceTier optionally pins the Bedrock service tier (priority/standard).
 type serviceTier struct {
 	Type string `json:"type"`

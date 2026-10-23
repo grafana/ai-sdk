@@ -589,6 +589,20 @@ The provider SHALL classify OpenAI IDs by anchored `openai.` with optional regio
 - **WHEN** `amazon.nova-micro-v1:0` receives portable reasoning `high` without an explicit `reasoningConfig`
 - **THEN** no reasoning field is sent and an unsupported warning is returned; with an explicit config its fields are forwarded and merged
 
+### Requirement: Converse Nova 2 Lite high reasoning omits token limits
+
+When a model ID containing `amazon.nova-2-lite-v1:0`, including regional prefixes and system inference-profile ARNs, resolves to `reasoningConfig.type: enabled` with effort `high`, `xhigh`, or `max`, the provider SHALL omit `inferenceConfig.maxTokens` and return an unsupported `maxOutputTokens` warning. Explicit provider `reasoningConfig` fields SHALL take precedence over portable reasoning when resolving that combination. Lower efforts, other reasoning types, and other models SHALL keep the caller's token limit.
+
+#### Scenario: High Nova 2 Lite reasoning drops the token limit
+
+- **WHEN** `us.amazon.nova-2-lite-v1:0` receives `maxOutputTokens` with enabled reasoning at effort `high`, `xhigh`, or `max` from portable reasoning or explicit provider `reasoningConfig`
+- **THEN** unary and streaming requests omit `inferenceConfig.maxTokens` and return an unsupported `maxOutputTokens` warning
+
+#### Scenario: Lower effort or other models keep the token limit
+
+- **WHEN** Nova 2 Lite resolves to effort `low` or `medium` or to non-enabled reasoning, or another model receives high reasoning
+- **THEN** `inferenceConfig.maxTokens` is preserved and no `maxOutputTokens` warning is returned
+
 ### Requirement: Converse option merge preserves cache and beta precedence
 
 Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks only when the source message emits native content. A marker SHALL NOT survive solely because another source in the same merged block emits content. Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
