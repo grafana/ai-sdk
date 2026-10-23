@@ -148,7 +148,7 @@ Concrete credential-source and tenant boundaries SHALL remain protected, while a
 - **THEN** it SHALL remain opaque without authorization/routing effects or synthesized credential/configuration/transport dumps, while concrete credentials and tenant boundaries remain protected
 
 ### Requirement: Evidence provenance and licensing
-Gateway codecs/schemas/contract/native-command test sources SHALL remain under the AGPL ai-gateway boundary; independent client and generic core/UI evidence SHALL remain Apache. Available authentic recorded/imported simple-text/tool/reasoning inputs SHALL replay against unchanged direct UI/native-request expectations where supported. Provider inputs SHALL NOT be invented, rewritten or normalized to hide metadata loss. Synthetic malformed/large-output/transport witnesses SHALL remain focused tests.
+Gateway codecs/schemas/contract/native-command test sources SHALL remain under the AGPL ai-gateway boundary; independent client and generic core/UI evidence SHALL remain Apache. Available authentic recorded/imported simple-text/tool/reasoning inputs SHALL replay against unchanged direct UI/native-request expectations where supported. Provider inputs SHALL NOT be invented, rewritten or normalized to hide metadata loss.
 
 #### Scenario: Authentic replay retains the direct contract
 - **WHEN** an available authentic fixture exercises supported metadata through the Gateway

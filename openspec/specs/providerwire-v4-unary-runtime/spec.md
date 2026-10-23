@@ -37,7 +37,7 @@ The handler SHALL accept only `POST /language-model` with JSON content and exact
 
 ### Requirement: Bounded complete request validation
 
-After envelope validation, the handler SHALL read the request body to EOF and close it. The host SHALL own the body byte bound under gateway-resource-policy. A read that fails because the host bound was exceeded SHALL return the fixed invalid-request document, and any other read or close failure SHALL return the fixed internal error. The handler SHALL reject invalid UTF-8 input and SHALL validate the complete document against the embedded draft 2020-12 ProviderWire request schema before supported-subset mapping. Malformed JSON and schema-invalid input SHALL fail before resolution or model invocation.
+After envelope validation, the handler SHALL read the request body to EOF and close it. The host SHALL own the body byte bound under gateway-resource-policy. The handler SHALL reject invalid UTF-8 input and SHALL validate the complete document against the embedded draft 2020-12 ProviderWire request schema before supported-subset mapping. Malformed JSON and schema-invalid input SHALL fail before resolution or model invocation.
 
 #### Scenario: Request byte boundary
 - **WHEN** a request served behind the host bound is below, exactly at, or one byte above that bound
