@@ -115,15 +115,16 @@ The existing "Limits" section becomes the ledger:
 
 | Retained limit | Owner |
 | --- | --- |
-| Front door, route RPC message size (16 MiB receive), 60s route deadline, admission and concurrency | plugin host |
+| 60s route deadline, route message size, admission and concurrency | plugin host |
 | `max_request_bytes` (1 MiB default) | route wrapper |
 | Provider response bytes (16 MiB, decompressed, per response), header timeout (10s), redirect rejection | outbound model transport |
 | `max_model_duration`, stream idle (30s) and drain (1s) durations | language-model handler |
 | BYOK accounts (8, selected provider) | BYOK selection |
-| Model file size (1 MiB), catalog route ceilings | configuration loader and discovery |
-| Telemetry queue, batch and record caps | telemetry sinks |
+| Model file size (1 MiB), catalog entries, aliases and fallbacks | model catalog loader |
 
-It then lists each removed limit and its replacement: the unary 8 MiB, frame 1 MiB, 100,000 parts, raw usage 1 MiB, error document 64 KiB and summary source limits, replaced by the outbound bound and the durations. It also states the trade-offs (see Risks).
+Telemetry sink caps stay out of the ledger, because the #394 track excludes them.
+
+It then names each removed limit (generated response size, stream event size, stream event count, raw usage, error response and error summary sizes) and states that the outbound bound and the durations replace them. It also states the trade-offs (see Risks).
 
 Every task group that changes a limit updates its ledger row in the same commit.
 
