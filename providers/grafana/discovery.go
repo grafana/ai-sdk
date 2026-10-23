@@ -91,6 +91,9 @@ func readJSON(ctx context.Context, resp *http.Response, limit int64) (body []byt
 	if err != nil || media != "application/json" && (!strings.HasPrefix(media, "application/") || !strings.HasSuffix(media, "+json")) {
 		return nil, false, errors.New("grafana: expected JSON media type")
 	}
+	if resp.ContentLength > limit {
+		return nil, false, errors.New("grafana: response byte limit exceeded")
+	}
 	body, err = io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if ctx.Err() != nil {
 		return nil, false, ctx.Err()

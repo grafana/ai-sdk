@@ -159,6 +159,39 @@ func discoveryBody(t *testing.T, rows []ModelInfo) string {
 	return string(data)
 }
 
+func TestReadJSON_DeclaredLengthBackstop(t *testing.T) {
+	const document = `{"a":"bcd"}`
+	for _, tc := range []struct {
+		name          string
+		contentLength int64
+		limit         int64
+		wantRead      int
+		wantErr       bool
+	}{
+		{"declared at limit", int64(len(document)), int64(len(document)), len(document), false},
+		{"declared one over", int64(len(document)), int64(len(document)) - 1, 0, true},
+		{"declared far over", 1 << 40, int64(len(document)), 0, true},
+		{"unknown length at limit", -1, int64(len(document)), len(document), false},
+		{"unknown length one over", -1, int64(len(document)) - 1, len(document), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &trackedBody{Reader: strings.NewReader(document)}
+			resp := &http.Response{Header: http.Header{"Content-Type": {"application/json"}}, ContentLength: tc.contentLength, Body: body}
+			got, transportFailure, err := readJSON(context.Background(), resp, tc.limit)
+			assert.False(t, transportFailure)
+			assert.Equal(t, tc.wantRead, body.read)
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Nil(t, got)
+				assert.ErrorContains(t, err, "response byte limit exceeded")
+				return
+			}
+			require.NoError(t, err)
+			assert.JSONEq(t, document, string(got))
+		})
+	}
+}
+
 func TestListModels_ConfiguredRetention(t *testing.T) {
 	calls := 0
 	p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {

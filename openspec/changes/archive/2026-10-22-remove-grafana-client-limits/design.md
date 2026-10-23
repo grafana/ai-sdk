@@ -35,8 +35,8 @@ Upstream reference, `@ai-sdk/gateway@4.0.103` (provider-utils is a workspace dep
 
 2. **Keep the backstop failure as the current non-retryable protocol error** (`grafana: response byte limit exceeded`, wrapped by the existing path messages). Keep the `DoGenerate` precedence: context error, then backstop, then read error. Upstream also fails with an error instead of truncating, so this is a parity-preserving Go adaptation and needs no `knownGaps` entry. Upstream's retry classification of `DownloadError` was not re-verified.
 
-3. **No `Content-Length` early rejection.** Upstream rejects early when the declared length exceeds the limit. The incremental `io.LimitReader(limit+1)` check gives the same observable result (an error and no truncation). The only difference is that a server declaring an oversized body fails before it is read. Given a 2 GiB backstop and server-owned bounds, the extra branch isn't worth it. This is recorded as a parity-preserving adaptation.
-   - *Alternative:* mirror the early check. It costs a few lines plus a test, and it would make the backstop observable through the public path. Revisit if reviewers want strict mechanism parity.
+3. **Early `Content-Length` rejection, as upstream.** `readJSON` fails before reading when `resp.ContentLength` exceeds the limit, as `readResponseWithSizeLimit` does, so a server declaring an oversized body costs no read or buffering. An unknown length is still bounded by `io.LimitReader(limit+1)`. This was first left out as redundant, then added in a follow-up commit for mechanism parity and to avoid buffering up to the backstop for a declared oversized body.
+   - *Alternative:* rely only on the incremental check. It gives the same observable error but reads and buffers up to the backstop first.
 
 4. **Error bodies share the backstop (64 KiB becomes 2 GiB).** This matches `createJsonErrorResponseHandler`. Retained `Data`/`ResponseBody` behavior is unchanged.
 
