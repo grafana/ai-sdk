@@ -63,8 +63,8 @@ func DecodeRequest(selector string, gateway json.RawMessage, approvedBaseURLs ma
 		default:
 			return Request{}, fmt.Errorf("%w: unsupported gateway.byok provider", ErrInvalidRequest)
 		}
-		if len(accounts) == 0 || len(accounts) > maxCredentials {
-			return Request{}, fmt.Errorf("%w: gateway.byok requires 1 to %d accounts per provider", ErrInvalidRequest, maxCredentials)
+		if len(accounts) == 0 {
+			return Request{}, fmt.Errorf("%w: gateway.byok requires at least one account per provider", ErrInvalidRequest)
 		}
 		for _, account := range accounts {
 			if len(account.ModelMappings) != 0 {
@@ -83,6 +83,9 @@ func DecodeRequest(selector string, gateway json.RawMessage, approvedBaseURLs ma
 	}
 	if len(accountsByProvider[selected]) == 0 {
 		return Request{}, fmt.Errorf("%w: gateway.byok requires accounts for selected provider", ErrInvalidRequest)
+	}
+	if len(accountsByProvider[selected]) > maxCredentials {
+		return Request{}, fmt.Errorf("%w: gateway.byok allows at most %d accounts for the selected provider", ErrInvalidRequest, maxCredentials)
 	}
 	accounts := make([]nativemodel.Config, len(accountsByProvider[selected]))
 	for i, account := range accountsByProvider[selected] {

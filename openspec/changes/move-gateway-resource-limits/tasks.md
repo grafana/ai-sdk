@@ -13,7 +13,7 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 2. BYOK selected-provider account bound
 
-- [ ] 2.1 In `byok.DecodeRequest`, keep the non-empty and per-account checks for every supplied array, and apply `maxCredentials` only to the selected provider's array. Keep `byok.New`'s check. Update `TestDecodeRequest_AccountCount` to cover:
+- [x] 2.1 In `byok.DecodeRequest`, keep the non-empty and per-account checks for every supplied array, and apply `maxCredentials` only to the selected provider's array. Keep `byok.New`'s check. Update `TestDecodeRequest_AccountCount` to cover:
   - 8 and 9 accounts on the selected provider;
   - 9 valid accounts on an unused provider;
   - an empty unused array.

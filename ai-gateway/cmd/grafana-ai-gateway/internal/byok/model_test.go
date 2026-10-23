@@ -419,7 +419,12 @@ func TestDecodeRequest_AccountCount(t *testing.T) {
 				raw, err := json.Marshal(map[string]any{"byok": accounts})
 				require.NoError(t, err)
 				_, err = DecodeRequest("openai/model", raw, nil)
-				assert.Equal(t, count == 0 || count > maxCredentials, err != nil)
+				selected := name == OpenAI
+				if count == 0 || (selected && count > maxCredentials) {
+					require.ErrorIs(t, err, ErrInvalidRequest)
+				} else {
+					require.NoError(t, err)
+				}
 			})
 		}
 	}

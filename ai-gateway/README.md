@@ -121,6 +121,7 @@ format.
 | 60 seconds per request, including a streamed response; route message size; how many requests run at once | Grafana's plugin host |
 | 16 MiB per provider response, counted after decompression; 10 seconds to receive response headers; no redirects | Model transport, shared by every provider and provider key |
 | `max_model_duration`; 30 seconds without stream activity; 1 second of cleanup after a stream ends | Language-model handler |
+| 8 provider keys for the selected provider in a request that brings its own keys | Request key selection |
 
 Memory per request grows with the size of the provider response, because
 encoding it as JSON can expand it several times, and with the number of
