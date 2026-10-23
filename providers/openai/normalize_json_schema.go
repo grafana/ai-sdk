@@ -3,6 +3,7 @@ package openai
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/grafana/ai-sdk/internal/jsonschema"
@@ -32,20 +33,7 @@ func normalizeOpenAIJSONSchema(raw json.RawMessage) (map[string]any, []provider.
 	if err := normalizeOpenAISchemaNode(schema, &removed); err != nil {
 		return nil, nil, err
 	}
-	if reference, ok := singletonOpenAIReference(schema); ok {
-		if definition := localOpenAIReferenceSchema(reference, schema); definition != nil {
-			expanded := make(map[string]any, len(definition)+len(schema))
-			for key, value := range definition {
-				expanded[key] = value
-			}
-			for key, value := range schema {
-				if key != "allOf" {
-					expanded[key] = value
-				}
-			}
-			schema = expanded
-		}
-	}
+	schema = expandOpenAIRootReference(schema)
 
 	var warnings []provider.Warning
 	if removed.propertyNames {
@@ -165,22 +153,36 @@ func singletonOpenAIReference(schema map[string]any) (string, bool) {
 	return reference, ok
 }
 
+func expandOpenAIRootReference(schema map[string]any) map[string]any {
+	reference, ok := singletonOpenAIReference(schema)
+	if !ok {
+		return schema
+	}
+	definition := localOpenAIReferenceSchema(reference, schema)
+	if definition == nil {
+		return schema
+	}
+
+	siblings := maps.Clone(schema)
+	delete(siblings, "allOf")
+	expanded := maps.Clone(definition)
+	maps.Copy(expanded, siblings)
+	return expanded
+}
+
 func localOpenAIReferenceSchema(reference string, schema map[string]any) map[string]any {
-	pointer, ok := strings.CutPrefix(reference, "#/")
-	if !ok {
-		return nil
+	for _, keyword := range []string{"definitions", "$defs"} {
+		name, ok := strings.CutPrefix(reference, "#/"+keyword+"/")
+		if !ok || name == "" {
+			continue
+		}
+		name = strings.ReplaceAll(name, "~1", "/")
+		name = strings.ReplaceAll(name, "~0", "~")
+		definitions, _ := schema[keyword].(map[string]any)
+		definition, _ := definitions[name].(map[string]any)
+		return definition
 	}
-	keyword, name, ok := strings.Cut(pointer, "/")
-	if !ok || name == "" || (keyword != "definitions" && keyword != "$defs") {
-		return nil
-	}
-	names, ok := schema[keyword].(map[string]any)
-	if !ok {
-		return nil
-	}
-	name = strings.ReplaceAll(strings.ReplaceAll(name, "~1", "/"), "~0", "~")
-	definition, _ := names[name].(map[string]any)
-	return definition
+	return nil
 }
 
 func containsRegexLookaround(pattern string) bool {
@@ -199,14 +201,12 @@ func containsRegexLookaround(pattern string) bool {
 		case ']':
 			inCharacterClass = false
 		case '(':
-			if inCharacterClass || index+2 >= len(pattern) || pattern[index+1] != '?' {
+			if inCharacterClass {
 				continue
 			}
-			prefix := pattern[index+2]
-			if prefix == '=' || prefix == '!' {
-				return true
-			}
-			if prefix == '<' && index+3 < len(pattern) && (pattern[index+3] == '=' || pattern[index+3] == '!') {
+			suffix := pattern[index:]
+			if strings.HasPrefix(suffix, "(?=") || strings.HasPrefix(suffix, "(?!") ||
+				strings.HasPrefix(suffix, "(?<=") || strings.HasPrefix(suffix, "(?<!") {
 				return true
 			}
 		}
