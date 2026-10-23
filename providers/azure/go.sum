@@ -40,8 +40,8 @@ github.com/googleapis/enterprise-certificate-proxy v0.3.23 h1:J+VGF1wjAM2dU2kKUX
 github.com/googleapis/enterprise-certificate-proxy v0.3.23/go.mod h1:Y8NO/15GNLkrXI3OR5xOFmeU3XLX1sLSdtlXgJ0zmIw=
 github.com/googleapis/gax-go/v2 v2.26.2 h1:ydkmNXxj7bEmmeK5AihkKnWxyOyBR9TDebvp5L5izk8=
 github.com/googleapis/gax-go/v2 v2.26.2/go.mod h1:sMKqnMesnKH+3wiRJROcttA+cJoZoGbZl1vDQ8XYtGk=
-github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260825181821-1f7f7ef4a4c8 h1:qTjZWbHkQotquMDOjT3wovrU7SBZgClXkolm2NxOwB8=
-github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260825181821-1f7f7ef4a4c8/go.mod h1:/8lZqngK7ivjXEVnULMc4Tp28mL07t4JwK22tsfseEA=
+github.com/grafana/ai-sdk v0.1.0-alpha.2 h1:jWONlSI4Q+i6gqEvGZ6yOv77071ecTai8l9utjMN2E0=
+github.com/grafana/ai-sdk v0.1.0-alpha.2/go.mod h1:2D9ae2gO9kFiNY21V+4g3/+dQtVIkDXvY7dlKr8Cn1Y=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260825181821-1f7f7ef4a4c8 h1:1ilNzkrhrpXgshx3NjKIZmBLtaA4UTv8Yn/SIp+HZpk=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260825181821-1f7f7ef4a4c8/go.mod h1:oPr4AxlYjk49sbciMnT7lYG6sJvuLurx0xwyXYfdo9M=
 github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8iyZjg=
