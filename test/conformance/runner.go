@@ -320,7 +320,11 @@ func (cfg *Config) BuildOutput() (aisdk.Output, error) {
 		if err != nil {
 			return nil, err
 		}
-		return output.Array[any](s, opts...)
+		arrayOpts := make([]output.ArrayOption, len(opts))
+		for i, opt := range opts {
+			arrayOpts[i] = opt
+		}
+		return output.Array[any](s, arrayOpts...)
 	case "choice":
 		return output.ChoiceWithOptions(cfg.ResponseFormat.Choices, opts...)
 	case "json":

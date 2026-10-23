@@ -34,10 +34,15 @@ func Object[T any](s schema.Schema, opts ...ObjectOption) (*ObjectOutput[T], err
 	return o, nil
 }
 
+// ArrayOption configures Array. Every ObjectOption is also an ArrayOption;
+// WithMinItems and WithMaxItems are ArrayOptions only.
+type ArrayOption interface {
+	applyArray(o any)
+}
+
 // ObjectOption configures Object, Array, ChoiceWithOptions and JSON.
-// WithName and WithDescription apply to all of them; WithMinItems and
-// WithMaxItems apply only to Array.
 type ObjectOption interface {
+	ArrayOption
 	applyObject(o any)
 }
 
@@ -49,6 +54,8 @@ func (n objectName) applyObject(o any) {
 		v.setName(string(n))
 	}
 }
+
+func (n objectName) applyArray(o any) { n.applyObject(o) }
 
 // WithName sets the schema name passed to the provider in ResponseFormat.
 func WithName(name string) ObjectOption { return objectName(name) }
@@ -62,12 +69,14 @@ func (d objectDescription) applyObject(o any) {
 	}
 }
 
+func (d objectDescription) applyArray(o any) { d.applyObject(o) }
+
 // WithDescription sets the schema description passed to the provider.
 func WithDescription(desc string) ObjectOption { return objectDescription(desc) }
 
 type arrayMinItems int
 
-func (n arrayMinItems) applyObject(o any) {
+func (n arrayMinItems) applyArray(o any) {
 	switch v := o.(type) {
 	case interface{ setMinItems(int) }:
 		v.setMinItems(int(n))
@@ -76,13 +85,12 @@ func (n arrayMinItems) applyObject(o any) {
 
 // WithMinItems sets the minItems keyword on the elements array sent to the
 // provider, and ParseComplete rejects a shorter array. Zero is a valid bound.
-// Array returns an error if n is negative or above WithMaxItems. Outputs other
-// than Array ignore it.
-func WithMinItems(n int) ObjectOption { return arrayMinItems(n) }
+// Array returns an error if n is negative or above WithMaxItems.
+func WithMinItems(n int) ArrayOption { return arrayMinItems(n) }
 
 type arrayMaxItems int
 
-func (n arrayMaxItems) applyObject(o any) {
+func (n arrayMaxItems) applyArray(o any) {
 	switch v := o.(type) {
 	case interface{ setMaxItems(int) }:
 		v.setMaxItems(int(n))
@@ -94,8 +102,7 @@ func (n arrayMaxItems) applyObject(o any) {
 // [aisdk.StreamTextResult.ElementStream] delivers at most n elements and closes
 // early if the model produces more. Zero is a
 // valid bound. Array returns an error if n is negative or below WithMinItems.
-// Outputs other than Array ignore it.
-func WithMaxItems(n int) ObjectOption { return arrayMaxItems(n) }
+func WithMaxItems(n int) ArrayOption { return arrayMaxItems(n) }
 
 func (o *ObjectOutput[T]) setName(name string)        { o.name = &name }
 func (o *ObjectOutput[T]) setDescription(desc string) { o.desc = desc }

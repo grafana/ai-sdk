@@ -175,14 +175,14 @@ func TestArrayOutput_Bounds(t *testing.T) {
 	t.Run("request schema", func(t *testing.T) {
 		for _, tc := range []struct {
 			name string
-			opts []ObjectOption
+			opts []ArrayOption
 			want string
 		}{
 			{name: "unset", want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]}}`},
-			{name: "zero", opts: []ObjectOption{WithMinItems(0), WithMaxItems(0)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":0,"maxItems":0}`},
-			{name: "minimum only", opts: []ObjectOption{WithMinItems(1)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":1}`},
-			{name: "maximum only", opts: []ObjectOption{WithMaxItems(2)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"maxItems":2}`},
-			{name: "paired", opts: []ObjectOption{WithMinItems(1), WithMaxItems(2)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":1,"maxItems":2}`},
+			{name: "zero", opts: []ArrayOption{WithMinItems(0), WithMaxItems(0)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":0,"maxItems":0}`},
+			{name: "minimum only", opts: []ArrayOption{WithMinItems(1)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":1}`},
+			{name: "maximum only", opts: []ArrayOption{WithMaxItems(2)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"maxItems":2}`},
+			{name: "paired", opts: []ArrayOption{WithMinItems(1), WithMaxItems(2)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":1,"maxItems":2}`},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				out, err := Array[city](elemSchema, tc.opts...)
@@ -201,12 +201,12 @@ func TestArrayOutput_Bounds(t *testing.T) {
 	t.Run("invalid bounds", func(t *testing.T) {
 		for _, tc := range []struct {
 			name string
-			opts []ObjectOption
+			opts []ArrayOption
 			want string
 		}{
-			{name: "negative minimum", opts: []ObjectOption{WithMinItems(-1)}, want: "output.Array: minItems must be greater than or equal to 0"},
-			{name: "negative maximum", opts: []ObjectOption{WithMaxItems(-1)}, want: "output.Array: maxItems must be greater than or equal to 0"},
-			{name: "minimum above maximum", opts: []ObjectOption{WithMinItems(3), WithMaxItems(2)}, want: "output.Array: minItems must be less than or equal to maxItems"},
+			{name: "negative minimum", opts: []ArrayOption{WithMinItems(-1)}, want: "output.Array: minItems must be greater than or equal to 0"},
+			{name: "negative maximum", opts: []ArrayOption{WithMaxItems(-1)}, want: "output.Array: maxItems must be greater than or equal to 0"},
+			{name: "minimum above maximum", opts: []ArrayOption{WithMinItems(3), WithMaxItems(2)}, want: "output.Array: minItems must be less than or equal to maxItems"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				out, err := Array[city](elemSchema, tc.opts...)
@@ -563,7 +563,11 @@ func TestOutputNamePresence(t *testing.T) {
 		}
 		object, err := Object[recipe](s, opts...)
 		require.NoError(t, err)
-		array, err := Array[recipe](s, opts...)
+		var arrayOpts []ArrayOption
+		for _, opt := range opts {
+			arrayOpts = append(arrayOpts, opt)
+		}
+		array, err := Array[recipe](s, arrayOpts...)
 		require.NoError(t, err)
 		choice, err := ChoiceWithOptions([]string{"yes", "no"}, opts...)
 		require.NoError(t, err)

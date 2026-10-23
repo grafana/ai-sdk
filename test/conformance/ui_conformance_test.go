@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/grafana/ai-sdk"
@@ -18,7 +19,8 @@ import (
 )
 
 type uiFixtureModel struct {
-	parts []provider.StreamPart
+	parts   []provider.StreamPart
+	request *provider.CallOptions
 }
 
 func (m uiFixtureModel) SpecificationVersion() string { return "v4" }
@@ -27,7 +29,10 @@ func (m uiFixtureModel) ModelID() string              { return "test-model" }
 func (m uiFixtureModel) SupportedURLs() map[string][]*regexp.Regexp {
 	return nil
 }
-func (m uiFixtureModel) DoStream(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+func (m uiFixtureModel) DoStream(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+	if m.request != nil {
+		*m.request = opts
+	}
 	stream := make(chan provider.StreamPart, len(m.parts))
 	for _, part := range m.parts {
 		stream <- part
@@ -218,6 +223,82 @@ func TestUIConformance_EffectiveToolChoice(t *testing.T) {
 			require.Zero(t, executions)
 		})
 	}
+}
+
+func TestUIConformance_BoundedArrayOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts []output.ArrayOption
+	}{
+		{"within", []output.ArrayOption{output.WithMinItems(1), output.WithMaxItems(2)}},
+		{"overflow", []output.ArrayOption{output.WithMaxItems(2)}},
+		{"below-minimum", []output.ArrayOption{output.WithMinItems(2)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixtureDir := filepath.Join("ui", "bounded-array-output", tc.name)
+			parts := loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))
+			expectedChunks := loadUIExpected(t, filepath.Join(fixtureDir, "expected.jsonl"))
+			data, err := os.ReadFile(filepath.Join(fixtureDir, "expected-output.json"))
+			require.NoError(t, err)
+			var expected struct {
+				ResponseFormat     json.RawMessage   `json:"responseFormat"`
+				Elements           []json.RawMessage `json:"elements"`
+				ElementStreamError *string           `json:"elementStreamError"`
+				OutputError        *string           `json:"outputError"`
+			}
+			require.NoError(t, json.Unmarshal(data, &expected))
+
+			elementSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}`))
+			require.NoError(t, err)
+			out, err := output.Array[any](elementSchema, tc.opts...)
+			require.NoError(t, err)
+			var request provider.CallOptions
+			result := aisdk.StreamText(t.Context(), uiFixtureModel{parts: parts, request: &request},
+				aisdk.WithModelMessages(provider.UserText("test")),
+				aisdk.WithOutput(out),
+			)
+			var elements []json.RawMessage
+			elementsDone := make(chan struct{})
+			go func() {
+				defer close(elementsDone)
+				for element := range result.ElementStream() {
+					elements = append(elements, element)
+				}
+			}()
+			var actualChunks []map[string]any
+			for chunk := range result.ToUIMessageStream(aisdk.WithUIMessageStreamGenerateID(func() string { return "message-1" })) {
+				data, err := json.Marshal(chunk)
+				require.NoError(t, err)
+				var decoded map[string]any
+				require.NoError(t, json.Unmarshal(data, &decoded))
+				actualChunks = append(actualChunks, decoded)
+			}
+			<-elementsDone
+
+			require.Equal(t, expectedChunks, actualChunks)
+			requestFormat, err := json.Marshal(request.ResponseFormat)
+			require.NoError(t, err)
+			require.JSONEq(t, string(expected.ResponseFormat), string(requestFormat))
+			require.Len(t, elements, len(expected.Elements))
+			for i := range elements {
+				require.JSONEq(t, string(expected.Elements[i]), string(elements[i]))
+			}
+			requireErrorCause(t, expected.ElementStreamError, result.ElementStreamError())
+			requireErrorCause(t, expected.OutputError, result.OutputError())
+		})
+	}
+}
+
+// requireErrorCause compares a Go error with the innermost upstream
+// TypeValidationError cause, since the wrapping messages differ by runtime.
+func requireErrorCause(t *testing.T, cause *string, err error) {
+	t.Helper()
+	if cause == nil {
+		require.NoError(t, err)
+		return
+	}
+	require.Error(t, err)
+	require.True(t, strings.HasSuffix(err.Error(), ": "+*cause), "error %q does not end with upstream cause %q", err, *cause)
 }
 
 func loadUIExpected(t *testing.T, path string) []map[string]any {

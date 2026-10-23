@@ -25,10 +25,10 @@ type ArrayOutput[T any] struct {
 // Array creates an ArrayOutput that generates an array of typed elements
 // matching the given element schema. It returns an error when a bound set with
 // WithMinItems or WithMaxItems is negative or the minimum exceeds the maximum.
-func Array[T any](elementSchema schema.Schema, opts ...ObjectOption) (*ArrayOutput[T], error) {
+func Array[T any](elementSchema schema.Schema, opts ...ArrayOption) (*ArrayOutput[T], error) {
 	o := &ArrayOutput[T]{elementSchema: elementSchema}
 	for _, opt := range opts {
-		opt.applyObject(o)
+		opt.applyArray(o)
 	}
 	if o.minItems != nil && *o.minItems < 0 {
 		return nil, errors.New("output.Array: minItems must be greater than or equal to 0")

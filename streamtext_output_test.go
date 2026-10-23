@@ -855,7 +855,7 @@ func TestStreamText_ElementStream(t *testing.T) {
 			actual = append(actual, element)
 		}
 		require.Len(t, actual, len(elements))
-		assert.NoError(t, result.ElementStreamErr())
+		assert.NoError(t, result.ElementStreamError())
 		for i := range elements {
 			assert.Equal(t, elements[i], actual[i], "element %d", i)
 		}
@@ -906,8 +906,8 @@ func TestStreamText_ElementStream(t *testing.T) {
 			elements = append(elements, string(raw))
 		}
 		assert.Equal(t, []string{`{"name":"a"}`, `{"name":"b"}`}, elements)
-		require.ErrorIs(t, result.ElementStreamErr(), aisdk.ErrInvalidOutputText)
-		assert.EqualError(t, result.ElementStreamErr(), "aisdk: invalid output text: elements array must contain at most 2 items")
+		require.ErrorIs(t, result.ElementStreamError(), aisdk.ErrInvalidOutputText)
+		assert.EqualError(t, result.ElementStreamError(), "aisdk: invalid output text: elements array must contain at most 2 items")
 
 		var partials []json.RawMessage
 		for partial := range result.PartialOutputStream() {
@@ -974,11 +974,61 @@ func TestStreamText_ElementStream(t *testing.T) {
 			require.FailNow(t, "element stream stayed open after overflow")
 		}
 		assert.Equal(t, []string{`{"name":"a"}`, `{"name":"b"}`}, elements)
-		assert.ErrorIs(t, result.ElementStreamErr(), aisdk.ErrInvalidOutputText)
+		assert.ErrorIs(t, result.ElementStreamError(), aisdk.ErrInvalidOutputText)
 
 		close(release)
 		<-drained
 		assert.ErrorContains(t, result.OutputError(), "elements array must contain at most 2 items")
+	})
+
+	t.Run("error waits for the element stream to close", func(t *testing.T) {
+		type item struct {
+			Name string `json:"name"`
+		}
+		elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
+		out, err := output.Array[item](elemSchema, output.WithMaxItems(1))
+		require.NoError(t, err)
+
+		release := make(chan struct{})
+		model := &testModel{
+			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				ch := make(chan provider.StreamPart)
+				go func() {
+					defer close(ch)
+					ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+					ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `{"elements":[{"name":"a"},`}
+					<-release
+					ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `{"name":"b"},{"name":"c"}]}`}
+					ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+					ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+				}()
+				return &provider.StreamResult{Stream: ch}, nil
+			},
+		}
+		result := aisdk.StreamText(context.Background(), model,
+			aisdk.WithModelMessages(provider.UserText("test")),
+			aisdk.WithOutput(out),
+		)
+		go func() {
+			for range result.FullStream() {
+			}
+		}()
+
+		errCh := make(chan error, 1)
+		go func() { errCh <- result.ElementStreamError() }()
+		select {
+		case err := <-errCh:
+			close(release)
+			require.FailNow(t, "ElementStreamError returned before the element stream closed", "got %v", err)
+		case <-time.After(50 * time.Millisecond):
+		}
+		close(release)
+		select {
+		case err := <-errCh:
+			assert.ErrorIs(t, err, aisdk.ErrInvalidOutputText)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "ElementStreamError did not return after overflow")
+		}
 	})
 
 	t.Run("later step does not reopen a capped stream", func(t *testing.T) {
@@ -1035,7 +1085,7 @@ func TestStreamText_ElementStream(t *testing.T) {
 			elements = append(elements, string(raw))
 		}
 		assert.Equal(t, []string{`{"name":"a"}`, `{"name":"b"}`}, elements)
-		assert.ErrorIs(t, result.ElementStreamErr(), aisdk.ErrInvalidOutputText)
+		assert.ErrorIs(t, result.ElementStreamError(), aisdk.ErrInvalidOutputText)
 		assert.NoError(t, result.OutputError(), "only the final step is parsed")
 	})
 
@@ -1060,7 +1110,7 @@ func TestStreamText_ElementStream(t *testing.T) {
 			count++
 		}
 		assert.Zero(t, count)
-		assert.EqualError(t, result.ElementStreamErr(), "aisdk: invalid output text: elements array must contain at most 0 items")
+		assert.EqualError(t, result.ElementStreamError(), "aisdk: invalid output text: elements array must contain at most 0 items")
 	})
 
 	t.Run("accepted repair replaces the overflow error", func(t *testing.T) {
@@ -1093,7 +1143,7 @@ func TestStreamText_ElementStream(t *testing.T) {
 		}
 		assert.Equal(t, []string{`{"name":"a"}`, `{"name":"b"}`}, elements)
 		assert.ErrorContains(t, repairErr, "elements array must contain at most 2 items")
-		assert.ErrorIs(t, result.ElementStreamErr(), aisdk.ErrInvalidOutputText)
+		assert.ErrorIs(t, result.ElementStreamError(), aisdk.ErrInvalidOutputText)
 		require.NoError(t, result.OutputError())
 		assert.Equal(t, []item{{Name: "c"}}, result.OutputValue())
 	})

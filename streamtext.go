@@ -96,11 +96,12 @@ type losslessStream[T any] struct {
 	queue  []T
 	output chan T
 	closed bool
+	done   chan struct{}
 	start  sync.Once
 }
 
 func newLosslessStream[T any]() *losslessStream[T] {
-	stream := &losslessStream[T]{output: make(chan T, defaultStreamBuffer)}
+	stream := &losslessStream[T]{output: make(chan T, defaultStreamBuffer), done: make(chan struct{})}
 	stream.ready = sync.NewCond(&stream.mu)
 	return stream
 }
@@ -118,7 +119,10 @@ func (s *losslessStream[T]) send(value T) {
 
 func (s *losslessStream[T]) close() {
 	s.mu.Lock()
-	s.closed = true
+	if !s.closed {
+		s.closed = true
+		close(s.done)
+	}
 	s.ready.Broadcast()
 	s.mu.Unlock()
 }
@@ -2732,17 +2736,19 @@ func (r *StreamTextResult) PartialOutputStream() <-chan json.RawMessage {
 // Elements are delivered exactly once and in order. The channel is closed after
 // the stream finishes and all elements are delivered. When the Output reports a
 // maximum through BoundedArrayOutput, the channel closes as soon as the model
-// produces an element past it, in any step, and ElementStreamErr reports why.
+// produces an element past it, in any step, and ElementStreamError reports why.
 func (r *StreamTextResult) ElementStream() <-chan json.RawMessage {
 	return r.elementStream.stream()
 }
 
-// ElementStreamErr reports why ElementStream closed early: an error wrapping
+// ElementStreamError reports why ElementStream closed: an error wrapping
 // ErrInvalidOutputText when the model produced more elements than the
-// maximum. It returns nil after a normal close. Call it once the ElementStream
-// channel is closed; it does not wait for the full stream. The final output is
-// validated separately and reported by OutputError.
-func (r *StreamTextResult) ElementStreamErr() error {
+// maximum, or nil after a normal close. It blocks until the element stream
+// closes, which happens at the overflow or when the stream finishes. Like
+// ElementStream, it needs a concurrent FullStream consumer. The final output
+// is validated separately and reported by OutputError.
+func (r *StreamTextResult) ElementStreamError() error {
+	<-r.elementStream.done
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.elementStreamErr
