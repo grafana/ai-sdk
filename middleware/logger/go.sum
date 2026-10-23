@@ -1,5 +1,5 @@
-github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058 h1:XNnu1NBOkL3iZamN5yctjNWCnrk36g9jsomTrYRVV5I=
-github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058/go.mod h1:lZ5jHMgw468oEci9F4bPrQLMZp3a11AyBtTLzv92MP8=
+github.com/grafana/ai-sdk v0.1.0-alpha.2 h1:jWONlSI4Q+i6gqEvGZ6yOv77071ecTai8l9utjMN2E0=
+github.com/grafana/ai-sdk v0.1.0-alpha.2/go.mod h1:2D9ae2gO9kFiNY21V+4g3/+dQtVIkDXvY7dlKr8Cn1Y=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
