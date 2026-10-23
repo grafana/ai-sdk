@@ -3263,8 +3263,8 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 
 		assistantBlocks := p.Messages[0].Content
 		require.Len(t, assistantBlocks, 2)
-		assert.NotNil(t, assistantBlocks[0].OfToolUse)
-		assert.NotNil(t, assistantBlocks[1].OfMCPToolUse)
+		assert.NotNil(t, assistantBlocks[0].OfMCPToolUse)
+		assert.NotNil(t, assistantBlocks[1].OfToolUse)
 
 		toolBlocks := p.Messages[1].Content
 		require.Len(t, toolBlocks, 2)

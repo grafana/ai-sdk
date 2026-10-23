@@ -106,7 +106,7 @@ When the last content part in a message does not have its own `cache_control` an
 
 #### Scenario: cascade applies to assistant messages
 - **WHEN** an `AssistantMessage` has message-level cache control and the last content part has no part-level cache control
-- **THEN** the last block in the Anthropic API assistant message SHALL include the message-level cache control
+- **THEN** the block converted from the last content part SHALL include the message-level cache control, even when client tool-use normalization changes its position
 
 #### Scenario: cascade applies to tool messages
 - **WHEN** a `ToolMessage` has message-level cache control and the last `ToolResultContentPart` has no part-level cache control
