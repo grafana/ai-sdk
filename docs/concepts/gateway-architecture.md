@@ -99,15 +99,15 @@ sequenceDiagram
   participant P as Native provider API
   C->>H: POST model call with Gateway credentials
   H->>H: Match route and method, authenticate
-  H->>W: Authenticated request and caller context
-  W->>W: Bound body, validate and map protocol
+  H->>W: Authenticated request, bounded body and caller context
+  W->>W: Validate and map protocol
   W->>M: Resolve public model under model deadline
   M-->>W: Canonical model and configured candidates
   W->>M: DoGenerate or DoStream
   M->>P: Provider-specific authenticated request
   P-->>M: Native result or native stream
   M-->>W: GenerateResult or StreamPart values
-  W-->>C: Bounded JSON result or ProviderWire SSE
+  W-->>C: JSON result or ProviderWire SSE
   Note over H,M: HTTP and model observations have different scopes
 ```
 
@@ -124,7 +124,7 @@ sequenceDiagram
    [authentication](../guides/gateway-authentication.md) and the
    [access decision](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access.go).
 2. **ProviderWire translates the request.** The handler validates protocol
-   headers, reads a bounded body, checks UTF-8 and the request schema, and maps
+   headers, reads the body the routes have bounded, checks UTF-8 and the request schema, and maps
    the body to `provider.CallOptions`. It separates the reserved `gateway`
    options from native provider options and checks tool-call history. Invalid
    input can fail before model selection. See the
@@ -147,8 +147,7 @@ sequenceDiagram
    [catalog construction](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/catalog.go)
    and [model observation](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/model_observability.go).
 5. **ProviderWire returns the result.** Unary calls use `DoGenerate`, then map
-   and encode the complete response within its byte limit before writing
-   success. Streaming calls use `DoStream` and the lifecycle below. This handler
+   and encode the complete response once before writing success. Streaming calls use `DoStream` and the lifecycle below. This handler
    does not run the SDK's application tool loop: consumer-owned function calls
    return to the application for execution and a subsequent request. Provider
    tools may execute remotely. See the
@@ -181,7 +180,7 @@ flowchart TD
   setup -->|usable stream returned| commit[Commit HTTP 200 and SSE headers]
   commit --> read[Read and validate provider parts]
   commit -->|flush failure| cleanup
-  read -->|valid part| frame[Encode bounded complete SSE frame and flush]
+  read -->|valid part| frame[Encode complete SSE frame and flush]
   frame -->|continue| read
   frame -->|valid finish| cleanup[Cancel model context and bounded drain]
   read -->|terminal failure or cancellation| terminal[Attempt terminal SSE error]
@@ -193,24 +192,24 @@ For configured fallback, `DoStream` waits for candidate selection before
 returning the usable stream. For a direct model, the handler may commit HTTP
 success before the first provider part arrives. The
 [stream runtime](../../ai-gateway/providerwire/v4/stream.go) supplies an empty
-`stream-start` when needed, checks event ordering and bounds, and writes
+`stream-start` when needed, checks event ordering and validity, and writes
 complete `data: <JSON>` frames separated by a blank line.
 
 A provider error event can be followed by more content and a valid finish. It
 is different from a handler-terminal failure such as invalid ordering,
-premature EOF, an oversized frame, or a deadline. After commitment, failures
+premature EOF, an invalid value, or a deadline. After commitment, failures
 must be represented in the stream if the writer is still usable; they cannot
 change the HTTP status. A disconnected client may receive no final error at all.
 Cancellation propagates through contexts, and cleanup drains remaining parts
-only within configured time and count bounds. It cannot undo work already
+only within a configured duration. It cannot undo work already
 performed by a remote provider or tool.
 
-The handler bounds request bytes, encoded unary responses, stream frame bytes,
-part counts, model duration, idle time, and cleanup. These checks live at
-specific boundaries, including adapter-local encoding preflights. They are not
-a single aggregate admission controller or a universal bound on decompressed
-native HTTP bodies. Centralizing resource policy is a
-[separate proposal](https://github.com/grafana/ai-sdk/issues/394).
+Each resource limit has one owner. The plugin routes bound every request body
+with `max_request_bytes`, and the model transport bounds each decompressed
+provider response to 16 MiB. The handler bounds only model duration, stream
+idle time and cleanup; it never rejects or truncates output because of its
+size. Grafana's plugin host owns the route deadline and admission. See the
+[limits](../../ai-gateway/README.md#limits) for the full list.
 
 ## What the observations tell you
 

@@ -33,32 +33,6 @@ func unarySource(part provider.GenerateContentPart) provider.SourceInfo {
 	return provider.SourceInfo{SourceType: part.SourceType, ID: part.ID, URL: part.URL, Title: title, MediaType: part.MediaType, Filename: part.Filename, ProviderMetadata: part.ProviderMetadata}
 }
 
-func sourcePreflight(source provider.SourceInfo, limit int64) bool {
-	return sourcePreflightBudget(source, &limit)
-}
-
-func sourcePreflightBudget(source provider.SourceInfo, limit *int64) bool {
-	for _, value := range []string{source.ID, source.URL, source.Title, source.MediaType, source.Filename} {
-		if int64(len(value)) > *limit {
-			return false
-		}
-		*limit -= int64(len(value))
-	}
-	if int64(len(source.ProviderMetadata)) > *limit {
-		return false
-	}
-	*limit -= int64(len(source.ProviderMetadata))
-	for key, raw := range source.ProviderMetadata {
-		for _, size := range []int{len(key), len(raw)} {
-			if int64(size) > *limit {
-				return false
-			}
-			*limit -= int64(size)
-		}
-	}
-	return true
-}
-
 func validSourceFields(source provider.SourceInfo) bool {
 	if source.SourceType != provider.SourceTypeURL && source.SourceType != provider.SourceTypeDocument || !validMetadata(source.ProviderMetadata) {
 		return false

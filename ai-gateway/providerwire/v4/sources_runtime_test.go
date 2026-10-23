@@ -121,12 +121,8 @@ func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
 	source := provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "id", URL: strings.Repeat("<", 80)}
 	mapped, err := mapSource(source)
 	require.NoError(t, err)
-	frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartSource, source: mapped}, 4096)
+	_, ok := encodeStreamFrame(streamEvent{typeName: provider.PartSource, source: mapped})
 	require.True(t, ok)
-	for _, delta := range []int64{-1, 0, 1} {
-		_, ok := encodeStreamFrame(streamEvent{typeName: provider.PartSource, source: mapped}, int64(len(frame))+delta)
-		assert.Equal(t, delta >= 0, ok)
-	}
 	part := provider.GenerateContentPart{Type: provider.ContentSource, SourceType: provider.SourceTypeURL, ID: "id", URL: "url", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"ignored":"` + strings.Repeat("x", 400) + `"}`)}}
 	result := &provider.GenerateResult{Content: []provider.GenerateContentPart{part, part, part}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}
 	_, err = mapUnarySuccess(result)
@@ -147,4 +143,19 @@ func TestSourcesCompleteFrameAndAggregateBounds(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSourcesStreamLargeFrame(t *testing.T) {
+	url := "https://example.test/" + strings.Repeat("p", 2<<20)
+	harness := newRuntimeHarness(t, testLimits())
+	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: makeStream(
+			provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "large", URL: url}},
+			finishPart(),
+		)}, nil
+	}
+	body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+	assert.Contains(t, body, `"url":"`+url+`"`)
+	assert.Contains(t, body, `"type":"finish"`)
+	assert.NotContains(t, body, `"code":"internal_error"`)
 }

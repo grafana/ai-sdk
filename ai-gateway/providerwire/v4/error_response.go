@@ -241,28 +241,17 @@ func streamErrorFrameForSafeError(value safeError) []byte {
 	return frame
 }
 
-func encodeStreamError(value safeError, metadata provider.ProviderMetadata, current *execution.Failure, limit int64) ([]byte, bool) {
+func encodeStreamError(value safeError, metadata provider.ProviderMetadata, current *execution.Failure) []byte {
 	response := streamErrorResponse(value)
-	original, _ := encodeErrorFrame(response)
-	if int64(len(original)) > limit {
-		return nil, false
-	}
-	accepted := original
-	if current != nil {
-		response.Error.Data = &errorData{NativeError: current}
-		frame, err := encodeErrorFrame(response)
-		if err != nil || int64(len(frame)) > limit {
-			return original, true
-		}
-		accepted = frame
-	}
-	if len(metadata) != 0 {
+	if len(metadata) != 0 || current != nil {
 		response.Error.Data = &errorData{Metadata: metadata, NativeError: current}
-		if frame, err := encodeErrorFrame(response); err == nil && int64(len(frame)) <= limit {
-			accepted = frame
+		if frame, err := encodeErrorFrame(response); err == nil {
+			return frame
 		}
+		response.Error.Data = nil
 	}
-	return accepted, true
+	frame, _ := encodeErrorFrame(response)
+	return frame
 }
 
 func (h *handler) writeSafeError(w http.ResponseWriter, value safeError, metadata provider.ProviderMetadata) {

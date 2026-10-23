@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"mime"
 	"net/http"
 	"reflect"
@@ -39,13 +38,10 @@ var (
 	requestSchemaJSON []byte
 )
 
-// Limits bounds the response and model-duration resources used by the unary
-// and streaming handler. The host bounds the request body.
+// Limits bounds the time the unary and streaming handler spends on a request.
+// The host bounds the request body, and the outbound transport bounds each
+// provider response.
 type Limits struct {
-	// StreamParts is the maximum number of provider stream values received.
-	StreamParts int
-	// StreamFrameBytes is the maximum complete SSE frame size.
-	StreamFrameBytes int64
 	// ModelDuration bounds selection and the complete logical model call.
 	ModelDuration time.Duration
 	// StreamIdleDuration is the maximum time between represented provider parts.
@@ -92,27 +88,6 @@ func New(config Config) (http.Handler, error) {
 }
 
 func validateLimits(limits Limits) error {
-	byteLimits := []struct {
-		name          string
-		value         int64
-		requiresExtra bool
-	}{
-		{name: "stream frame bytes", value: limits.StreamFrameBytes},
-	}
-	for _, limit := range byteLimits {
-		if limit.value <= 0 {
-			return fmt.Errorf("providerwire v4: %s must be positive", limit.name)
-		}
-		if limit.requiresExtra && limit.value == math.MaxInt64 {
-			return fmt.Errorf("providerwire v4: %s cannot safely use limit+1", limit.name)
-		}
-	}
-	if limits.StreamParts <= 0 {
-		return fmt.Errorf("providerwire v4: stream parts must be positive")
-	}
-	if limits.StreamParts == int(^uint(0)>>1) {
-		return fmt.Errorf("providerwire v4: stream parts cannot safely use limit+1")
-	}
 	if limits.ModelDuration <= 0 {
 		return fmt.Errorf("providerwire v4: model duration must be positive")
 	}
@@ -121,20 +96,6 @@ func validateLimits(limits Limits) error {
 	}
 	if limits.StreamDrainDuration <= 0 {
 		return fmt.Errorf("providerwire v4: stream drain duration must be positive")
-	}
-	for name, frame := range map[string][]byte{
-		"empty stream start":        canonicalEmptyStartFrame,
-		"rate-limit stream error":   streamErrorFrameForSafeError(safeError{category: safeRateLimit}),
-		"overload stream error":     streamErrorFrameForSafeError(safeError{category: safeOverload}),
-		"dependency stream error":   streamErrorFrameForSafeError(safeError{category: safeFailedDependency}),
-		"upstream stream error":     streamErrorFrameForSafeError(safeError{category: safeUpstream}),
-		"internal stream error":     streamErrorFrameForSafeError(safeError{category: safeInternal}),
-		"timeout stream error":      streamErrorFrameForSafeError(safeError{category: safeTimeout}),
-		"cancellation stream error": streamErrorFrameForSafeError(safeError{category: safeCancellation}),
-	} {
-		if int64(len(frame)) > limits.StreamFrameBytes {
-			return fmt.Errorf("providerwire v4: stream frame bytes cannot contain canonical %s", name)
-		}
 	}
 	return nil
 }

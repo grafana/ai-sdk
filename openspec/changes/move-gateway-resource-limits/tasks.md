@@ -79,15 +79,15 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 7. Streaming and SSE error budgets
 
-- [ ] 7.1 Remove:
+- [x] 7.1 Remove:
   - `StreamFrameBytes`, `StreamParts`, `streamPartCounter` and `streamWaitPartLimit`;
   - `streamEventPreflight`, `streamWarningCountFits`, `warningsPreflight`, `responseIdentityFits`, `responseStringsFit`, `reasoningFileFits`, `sourcePreflight` and `minimumWarningBytes`;
   - the canonical-frame check in `validateLimits`, and `maxRawUsageBytes`;
   - the tool ID length and tool map size checks in `stream_tools.go`.
 
   `drainStream` ends only on close or its timer, and `newStreamState` uses a constant initial capacity. Update the testserver and `cmd` `v4.Limits` literals, and the `settings.go` constants. Verify with `go build ./...` in `ai-gateway`.
-- [ ] 7.2 Make `encodeStreamFrame` encode once with no size check. The finish attaches `execution.Metadata` before its single encode, and an encoding failure attempts one terminal internal error. `encodeStreamError` builds `error.data` with `providerMetadata` and `nativeError` together, marshals it once, and falls back to the fixed base frame only if that fails. Verify with `go test -race ./providerwire/v4/...`.
-- [ ] 7.3 Convert the streaming over-limit and part-count tests in `stream_test.go`, `stream_tools_test.go`, `raw_test.go`, `reasoning_test.go`, `sources_runtime_test.go`, `runtime_test.go` and the `cmd/.../service` tests into acceptance tests:
+- [x] 7.2 Make `encodeStreamFrame` encode once with no size check. The finish attaches `execution.Metadata` before its single encode, and an encoding failure attempts one terminal internal error. `encodeStreamError` builds `error.data` with `providerMetadata` and `nativeError` together, marshals it once, and falls back to the fixed base frame only if that fails. Verify with `go test -race ./providerwire/v4/...`.
+- [x] 7.3 Convert the streaming over-limit and part-count tests in `stream_test.go`, `stream_tools_test.go`, `raw_test.go`, `reasoning_test.go`, `sources_runtime_test.go`, `runtime_test.go` and the `cmd/.../service` tests into acceptance tests:
   - 100,001 tiny parts before finish;
   - a single frame above 1 MiB for text, tool result, source, raw, generated file and finish;
   - a start with many warnings;
@@ -96,7 +96,7 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
   - an enriched finish above 1 MiB.
 
   Add a drain test where a continuously ready channel stops at the drain duration. Keep the invalid-value and lifecycle tests. Verify with `go test -race ./...` in `ai-gateway`.
-- [ ] 7.4 Extend the command test from 6.3 with a stream that has a frame above 1 MiB, finish raw usage above 1 MiB and a requested raw event above 1 MiB, and assert both clients receive them through the test host. Update the streaming docs:
+- [x] 7.4 Extend the command test from 6.3 with a stream that has a frame above 1 MiB, finish raw usage above 1 MiB and a requested raw event above 1 MiB, and assert both clients receive them through the test host. Update the streaming docs:
   - in `docs/providers/grafana-gateway.md`, the raw-events paragraph, and the "Bound work and handle errors" paragraph, which must no longer say that the Gateway caps stream frames;
   - the handler-bounds paragraph and the SSE wording in `docs/concepts/gateway-architecture.md`;
   - `docs/concepts/gateway-glossary.md`, only where it describes handler byte limits;

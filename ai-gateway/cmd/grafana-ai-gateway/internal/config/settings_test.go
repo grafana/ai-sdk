@@ -29,8 +29,6 @@ func TestParseSettings_Defaults(t *testing.T) {
 		},
 		MaxRequestBytes: 1_048_576,
 		ProviderWire: providerv4.Limits{
-			StreamParts:         100_000,
-			StreamFrameBytes:    1_048_576,
 			ModelDuration:       120 * time.Second,
 			StreamIdleDuration:  30 * time.Second,
 			StreamDrainDuration: time.Second,

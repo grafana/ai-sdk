@@ -477,7 +477,7 @@ func TestNew_HTTPTransportRejectsInvalidHeaders(t *testing.T) {
 	}
 }
 
-func TestNew_OpenAIStreamPreflightAndCommitment(t *testing.T) {
+func TestNew_OpenAIStreamInitialEventsAndCommitment(t *testing.T) {
 	const created = "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"model\":\"native-model\",\"output\":[]}}\n\n"
 	const added = "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"role\":\"assistant\",\"content\":[]}}\n\n"
 	const completed = "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"

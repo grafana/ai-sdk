@@ -41,12 +41,10 @@ const (
 	ProviderResponseBytes = 16 << 20
 )
 
-// Defaults of the configurable ProviderWire limits, and the fixed ones.
+// Defaults of the configurable request and model limits, and the fixed stream durations.
 const (
 	defaultRequestBytes  = 1 << 20
 	defaultModelDuration = 120 * time.Second
-	streamParts          = 100_000
-	streamFrameBytes     = 1 << 20
 	streamIdleDuration   = 30 * time.Second
 	streamDrainDuration  = time.Second
 )
@@ -155,8 +153,6 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 		},
 		MaxRequestBytes: env.int64("max_request_bytes", defaultRequestBytes),
 		ProviderWire: providerv4.Limits{
-			StreamParts:         streamParts,
-			StreamFrameBytes:    streamFrameBytes,
 			ModelDuration:       env.duration("max_model_duration", defaultModelDuration),
 			StreamIdleDuration:  streamIdleDuration,
 			StreamDrainDuration: streamDrainDuration,

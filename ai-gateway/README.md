@@ -124,9 +124,10 @@ format.
 | `max_model_duration`; 30 seconds without stream activity; 1 second of cleanup after a stream ends | Language-model handler |
 | 8 provider keys for the selected provider in a request that brings its own keys | Request key selection |
 
-The Gateway no longer limits the size of a generated response, an error
-response, or the provider error summaries it returns. The 16 MiB model
-transport limit and the time limits bound them instead.
+The Gateway no longer limits the size of a generated response, a stream event,
+the number of stream events, the provider's raw usage, an error response, or
+the provider error summaries it returns. The 16 MiB model transport limit and
+the time limits bound them instead.
 
 Memory per request grows with the size of the provider response, because
 encoding it as JSON can expand it several times, and with the number of

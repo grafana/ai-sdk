@@ -149,12 +149,10 @@ func TestRuntimeRawOutput(t *testing.T) {
 		}
 	})
 
-	t.Run("an oversized raw event ends the stream like any oversized frame", func(t *testing.T) {
-		limits := testLimits()
-		limits.StreamFrameBytes = int64(minimumStreamFrameBytes()) + 64
-		harness := newRuntimeHarness(t, limits)
+	t.Run("a raw event above 1 MiB is written whole", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
+		large := json.RawMessage(`{"text":"` + strings.Repeat("x", 2<<20) + `"}`)
 		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			large := json.RawMessage(`{"text":"` + strings.Repeat("x", int(limits.StreamFrameBytes)) + `"}`)
 			return &provider.StreamResult{Stream: makeStream(
 				provider.StreamPart{Type: provider.PartRaw, RawValue: large},
 				finishPart(),
@@ -163,9 +161,9 @@ func TestRuntimeRawOutput(t *testing.T) {
 		response := harness.serve(rawRequest(true, `,"includeRawChunks":true`))
 		require.Equal(t, http.StatusOK, response.Code)
 		body := response.Body.String()
-		assert.Equal(t, 1, strings.Count(body, `"code":"internal_error"`))
-		assert.NotContains(t, body, `"type":"raw"`)
-		assert.NotContains(t, body, `"type":"finish"`)
+		assert.Contains(t, body, `{"type":"raw","rawValue":`+string(large)+`}`)
+		assert.Contains(t, body, `"type":"finish"`)
+		assert.NotContains(t, body, `"code":"internal_error"`)
 	})
 }
 

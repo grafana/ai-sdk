@@ -54,7 +54,7 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 		{"tool call then error", fallbackParts(toolCall, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolCall, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
 		{"reasoning then malformed finish", fallbackParts(provider.StreamPart{Type: provider.PartReasoningStart, ID: "r"}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartReasoningStart, provider.PartError}, []string{"internal_error"}},
 		{"unsupported selected output", fallbackParts(provider.StreamPart{Type: provider.PartFile}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, failed, []string{"internal_error"}},
-		{"oversized selected call", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: strings.Repeat("x", 1<<20)}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, failed, []string{"internal_error"}},
+		{"invalid selected call", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: string([]byte{0xff})}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, failed, []string{"internal_error"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())

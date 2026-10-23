@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -33,8 +32,6 @@ func (r *resolverStub) ResolveModel(context.Context, string) (catalog.ResolvedMo
 
 func testLimits() Limits {
 	return Limits{
-		StreamParts:         1_000,
-		StreamFrameBytes:    1 << 20,
 		ModelDuration:       time.Second,
 		StreamIdleDuration:  time.Second,
 		StreamDrainDuration: time.Second,
@@ -70,32 +67,6 @@ func TestNew(t *testing.T) {
 		assert.Equal(t, time.Second, h.limits.ModelDuration)
 	})
 
-	t.Run("maximum fixed stream frame boundary", func(t *testing.T) {
-		largest := 0
-		for _, frame := range [][]byte{
-			canonicalEmptyStartFrame,
-			canonicalRateLimitStreamErrorFrame,
-			canonicalOverloadStreamErrorFrame,
-			canonicalDependencyStreamErrorFrame,
-			canonicalUpstreamStreamErrorFrame,
-			canonicalTimeoutStreamErrorFrame,
-			canonicalCancellationStreamErrorFrame,
-			canonicalInternalStreamErrorFrame,
-		} {
-			largest = max(largest, len(frame))
-		}
-		limits := testLimits()
-		limits.StreamFrameBytes = int64(largest)
-		_, err := New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
-		require.NoError(t, err)
-		limits.StreamFrameBytes--
-		_, err = New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
-		require.Error(t, err)
-		limits.StreamFrameBytes = math.MaxInt64
-		_, err = New(Config{Selector: CatalogSelector(&resolverStub{}), Limits: limits})
-		require.NoError(t, err)
-	})
-
 	t.Run("nil resolver", func(t *testing.T) {
 		_, err := New(Config{Limits: testLimits()})
 		require.Error(t, err)
@@ -109,10 +80,6 @@ func TestNew(t *testing.T) {
 			name   string
 			mutate func(*Limits)
 		}{
-			{name: "stream parts zero", mutate: func(l *Limits) { l.StreamParts = 0 }},
-			{name: "stream parts overflow", mutate: func(l *Limits) { l.StreamParts = int(^uint(0) >> 1) }},
-			{name: "stream frame zero", mutate: func(l *Limits) { l.StreamFrameBytes = 0 }},
-			{name: "stream frame fallback", mutate: func(l *Limits) { l.StreamFrameBytes = int64(len(canonicalTimeoutStreamErrorFrame) - 1) }},
 			{name: "duration zero", mutate: func(l *Limits) { l.ModelDuration = 0 }},
 			{name: "duration negative", mutate: func(l *Limits) { l.ModelDuration = -time.Second }},
 			{name: "idle zero", mutate: func(l *Limits) { l.StreamIdleDuration = 0 }},
