@@ -1,7 +1,6 @@
 package v4
 
 import (
-	"bytes"
 	"encoding/json"
 	"unicode/utf8"
 
@@ -54,16 +53,11 @@ func sourcePreflight(source provider.SourceInfo, limit int64) bool {
 			limit -= int64(size)
 		}
 	}
-	for key, raw := range source.ProviderMetadata {
-		if !utf8.ValidString(key) || !utf8.Valid(raw) || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
-			return false
-		}
-	}
 	return true
 }
 
 func mapSource(source provider.SourceInfo, limit int64) (any, error) {
-	if !sourcePreflight(source, limit) {
+	if !sourcePreflight(source, limit) || !validMetadata(source.ProviderMetadata) {
 		return nil, errInvalidUnarySuccess
 	}
 	for _, value := range []string{source.ID, source.URL, source.Title, source.MediaType, source.Filename} {
