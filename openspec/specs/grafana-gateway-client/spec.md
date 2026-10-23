@@ -762,6 +762,10 @@ The client SHALL expose no configurable response-processing limits. The Gateway 
 - **WHEN** a unary, error or discovery body is exactly at the backstop or one byte above it
 - **THEN** the body at the backstop SHALL be accepted, and the body above it SHALL fail with a non-retryable bounded protocol error that returns no partial or truncated result
 
+#### Scenario: Declared length crosses the backstop
+- **WHEN** a response to a unary, error or discovery read declares a `Content-Length` above the backstop
+- **THEN** the client SHALL fail with the same non-retryable bounded protocol error before reading any of the body, and a declared length at or below the backstop, or an unknown length, SHALL be bounded while reading
+
 #### Scenario: Caller bounds a request
 - **WHEN** a caller supplies an `http.Client` with its own transport or timeout, or a call context with a deadline
 - **THEN** the client SHALL apply those bounds to discovery, unary and streaming calls
