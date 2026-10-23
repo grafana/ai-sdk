@@ -35,12 +35,12 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 4. Execution summaries without a source limit
 
-- [ ] 4.1 Remove `sourceBytes` from `execution.Summary` and `execution.Project`, along with `boundedText` and the oversized-body branches. Update `internal/execution` tests:
+- [x] 4.1 Remove `sourceBytes` from `execution.Summary` and `execution.Project`, along with `boundedText` and the oversized-body branches. Update `internal/execution` tests:
   - a native message and an error body above 8 MiB keep their message, type, code and status;
   - the malformed and unavailable cases still degrade gracefully.
 
   Verify with `go test -race ./internal/execution/...`.
-- [ ] 4.2 Remove `sourceBytes` from `executionRequest`, `executionView` and `newExecutionRequest` in `execution_capture.go`, together with the `sourceBytes == 0` branch in `current()`. Update `execution.Metadata`'s godoc: it returns nil only for an absent or unencodable overview, and always relocates a native `gateway` value. Rename the unrelated local `sourceBytes` constant in `ai-gateway/test/providerwire-v4/developer-evidence-bounds.test.ts` to `witnessSourceBytes`, leaving its witnesses unchanged. Verify with `go test -race ./providerwire/v4/...` and `mise run test-providerwire-v4`, and confirm `rg sourceBytes ai-gateway` finds nothing.
+- [x] 4.2 Remove `sourceBytes` from `executionRequest`, `executionView` and `newExecutionRequest` in `execution_capture.go`, together with the `sourceBytes == 0` branch in `current()`. Update `execution.Metadata`'s godoc: it returns nil only for an absent or unencodable overview, and always relocates a native `gateway` value. Rename the unrelated local `sourceBytes` constant in `ai-gateway/test/providerwire-v4/developer-evidence-bounds.test.ts` to `witnessSourceBytes`, leaving its witnesses unchanged, including the closed reason identifier `"sourceBytes"` that the archived #321 decision defines. Verify with `go test -race ./providerwire/v4/...` and `mise run test-providerwire-v4`, and confirm `rg sourceBytes ai-gateway` finds only that reason identifier.
 
 ## 5. Validity helpers
 
@@ -107,7 +107,7 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 ## 8. Integration checks
 
 - [ ] 8.1 Run `mise run test-ai-gateway`, `mise run test-ai-gateway-command`, `mise run test-providerwire-v4`, `mise run test-grafana`, `mise run lint`, `mise run lint-docs`, `mise run validate-parity-baseline`, Gateway `go test -race ./...` and `openspec validate move-gateway-resource-limits --strict`. All must pass.
-- [ ] 8.2 Run `rg -n 'Preflight|UnaryResponseBytes|StreamFrameBytes|StreamParts|maxRawUsageBytes|maxErrorResponseBytes|sourceBytes|NewAnthropicClient' ai-gateway docs --glob '!**/CHANGELOG.md'`. It must find nothing. Then confirm that `git diff --stat nrbrd/gateway-client-limits -- test/conformance` shows no change to recorded or upstream fixture inputs.
+- [ ] 8.2 Run `rg -n 'Preflight|UnaryResponseBytes|StreamFrameBytes|StreamParts|maxRawUsageBytes|maxErrorResponseBytes|sourceBytes|NewAnthropicClient' ai-gateway docs --glob '!**/CHANGELOG.md'`. It must find only the #321 closed reason identifier `"sourceBytes"` in `developer-evidence-bounds.test.ts`. Then confirm that `git diff --stat nrbrd/gateway-client-limits -- test/conformance` shows no change to recorded or upstream fixture inputs.
 
 ## Workflow follow-up
 

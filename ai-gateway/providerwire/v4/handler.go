@@ -202,7 +202,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeErrorFromResolution(err), nil)
 		return
 	}
-	request := newExecutionRequest(validated.modelID, resolved, h.limits.UnaryResponseBytes)
+	request := newExecutionRequest(validated.modelID, resolved)
 	request.summaryRedactor = h.summaryRedactor
 	capture := &attemptCapture{sealed: resolved.configured == nil}
 	if resolved.configured != nil {

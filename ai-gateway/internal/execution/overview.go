@@ -33,10 +33,9 @@ type Failure struct {
 }
 
 // Project converts one invocation's decisions into an optional overview.
-// Configured descriptors supply identity when present. sourceBytes is the
-// caller's existing source/read bound, not a separate diagnostic allocation.
-// Mixed or unfinished observation is omitted rather than treated as complete.
-func Project(requested, canonical string, decisions []fallback.Attempt, candidates []catalog.ConfiguredCandidate, sourceBytes int64) *Overview {
+// Configured descriptors supply identity when present. Native error bodies are
+// bounded by the transport that read them. Mixed or unfinished observation is omitted rather than treated as complete.
+func Project(requested, canonical string, decisions []fallback.Attempt, candidates []catalog.ConfiguredCandidate) *Overview {
 	if requested == "" || canonical == "" || !utf8.ValidString(requested) || !utf8.ValidString(canonical) || len(decisions) == 0 {
 		return nil
 	}
@@ -69,7 +68,7 @@ func Project(requested, canonical string, decisions []fallback.Attempt, candidat
 			return nil
 		}
 		if decision.Outcome != fallback.AttemptSelected {
-			attempt.Error = summarize(decision.SourceErr, sourceBytes)
+			attempt.Error = summarize(decision.SourceErr)
 		}
 		overview.Attempts = append(overview.Attempts, attempt)
 	}
