@@ -11,7 +11,7 @@ See proposal.md for the motivation. Current state in `providers/grafana`:
 
 Upstream reference, `@ai-sdk/gateway@4.0.103` (provider-utils is a workspace dependency at the same tag):
 
-- `createJsonResponseHandler` and `createJsonErrorResponseHandler` read through `readResponseWithSizeLimit`, with `DEFAULT_MAX_DOWNLOAD_SIZE = 2 * 1024 * 1024 * 1024`. Exceeding it throws `DownloadError`, which is not an `APICallError` and is never retried.
+- `createJsonResponseHandler` and `createJsonErrorResponseHandler` read through `readResponseWithSizeLimit`, with `DEFAULT_MAX_DOWNLOAD_SIZE = 2 * 1024 * 1024 * 1024`. Exceeding it throws `DownloadError` rather than truncating.
 - `createEventSourceResponseHandler` parses the stream with no size or count limit.
 
 ## Goals / Non-Goals
@@ -33,7 +33,7 @@ Upstream reference, `@ai-sdk/gateway@4.0.103` (provider-utils is a workspace dep
    - *Alternative:* a mutable package variable. Rejected: it adds global mutable state and is unsafe with parallel tests.
    - *Alternative:* test with a real 2 GiB body. Rejected by the acceptance criteria.
 
-2. **Keep the backstop failure as the current non-retryable protocol error** (`grafana: response byte limit exceeded`, wrapped by the existing path messages). Keep the `DoGenerate` precedence: context error, then backstop, then read error. Upstream's `DownloadError` is also terminal and never retried, so this is a parity-preserving Go adaptation and needs no `knownGaps` entry.
+2. **Keep the backstop failure as the current non-retryable protocol error** (`grafana: response byte limit exceeded`, wrapped by the existing path messages). Keep the `DoGenerate` precedence: context error, then backstop, then read error. Upstream also fails with an error instead of truncating, so this is a parity-preserving Go adaptation and needs no `knownGaps` entry. Upstream's retry classification of `DownloadError` was not re-verified.
 
 3. **No `Content-Length` early rejection.** Upstream rejects early when the declared length exceeds the limit. The incremental `io.LimitReader(limit+1)` check gives the same observable result (an error and no truncation). The only difference is that a server declaring an oversized body fails before it is read. Given a 2 GiB backstop and server-owned bounds, the extra branch isn't worth it. This is recorded as a parity-preserving adaptation.
    - *Alternative:* mirror the early check. It costs a few lines plus a test, and it would make the backstop observable through the public path. Revisit if reviewers want strict mechanism parity.
