@@ -29,7 +29,7 @@ func RoutePrefix() string {
 	return "/apis/" + data.Group + "/" + data.PreferredVersion + "/namespaces/{namespace}"
 }
 
-func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, errorWriter *providerv4.HostErrorWriter, routes routeHandlers) http.Handler {
+func newHandler(policy gatewayauth.AccessPolicy, maxRequestBytes int64, telemetry *service.Telemetry, errorWriter *providerv4.HostErrorWriter, routes routeHandlers) http.Handler {
 	refuse := func(w http.ResponseWriter) { errorWriter.Write(w, providerv4.HostErrorPermission) }
 	protect := func(next http.Handler) http.Handler {
 		return gatewayauth.AccessMiddleware(policy, refuse, telemetry.ObserveAccess, next)
@@ -53,7 +53,7 @@ func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, e
 			return routeUnmatched
 		}
 	}
-	return telemetry.Middleware(label, mux)
+	return telemetry.Middleware(label, http.MaxBytesHandler(mux, maxRequestBytes))
 }
 
 func byAccess(configured, byok http.Handler, refuse func(http.ResponseWriter)) http.Handler {

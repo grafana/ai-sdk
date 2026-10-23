@@ -151,7 +151,7 @@ func (s sinks) close() {
 }
 
 func newRouteHandler(settings config.Settings, file config.File, providers map[string]config.ResolvedProvider, secrets []string, sinks sinks, logger *slog.Logger) (http.Handler, error) {
-	nativeClient, err := outbound.NewAnthropicClient(config.ProviderResponseHeaderTimeout, config.ProviderResponseBytes)
+	nativeClient, err := outbound.NewModelClient(config.ProviderResponseHeaderTimeout, config.ProviderResponseBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 		routes.byokDiscovery = service.BYOKDiscovery(errorWriter)
 		routes.byokLanguage = byokLanguage
 	}
-	return newHandler(settings.Access, sinks.telemetry, errorWriter, routes), nil
+	return newHandler(settings.Access, settings.MaxRequestBytes, sinks.telemetry, errorWriter, routes), nil
 }
 
 func newAuthenticator(lookupEnv config.LookupEnv) (authn.Authenticator, error) {

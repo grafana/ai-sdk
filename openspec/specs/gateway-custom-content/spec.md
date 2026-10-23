@@ -32,15 +32,19 @@ The service SHALL map tool-result `content` output entries of type `custom` to p
 - **THEN** it SHALL map to a custom entry with no options rather than a refusal
 
 ### Requirement: Unary custom content output
-Unary success SHALL encode provider custom content as `{type: "custom", kind, providerMetadata?}` in original content order under explicit private DTOs. The kind SHALL be non-empty valid UTF-8 containing a dot. Metadata SHALL follow gateway-provider-metadata presence and bounds. Invalid custom output SHALL fail before HTTP 200.
+Unary success SHALL encode provider custom content as `{type: "custom", kind, providerMetadata?}` in original content order under explicit private DTOs. The kind SHALL be non-empty valid UTF-8 containing a dot. Metadata SHALL follow gateway-provider-metadata presence and validity. Invalid custom output SHALL fail before HTTP 200.
 
 #### Scenario: Custom-only paid response
 - **WHEN** a provider returns only `anthropic.fallback` custom content with metadata
 - **THEN** both registered clients SHALL consume success with the same kind and metadata, and default high-level retries SHALL NOT invoke the provider again
 
 #### Scenario: Invalid custom output
-- **WHEN** a provider returns custom content with an empty, undotted or invalid-UTF-8 kind, or metadata that exceeds the unary budget
+- **WHEN** a provider returns custom content with an empty, undotted or invalid-UTF-8 kind, or invalid metadata
 - **THEN** the handler SHALL return the fixed internal-error document before committing HTTP 200
+
+#### Scenario: Large custom metadata
+- **WHEN** valid custom content carries metadata larger than the former unary budget
+- **THEN** the handler SHALL return success with the kind and metadata unchanged
 
 ### Requirement: Streamed custom content events
 The stream SHALL encode each provider custom part as one atomic `{type: "custom", kind, providerMetadata?}` event in provider order. Custom events SHALL be valid between stream start and finish, SHALL count as started content so later response metadata is rejected, and SHALL NOT open, close or alter text, reasoning or tool state.
@@ -54,8 +58,12 @@ The stream SHALL encode each provider custom part as one atomic `{type: "custom"
 - **THEN** the handler SHALL emit at most one safe terminal error and no synthetic finish
 
 #### Scenario: Invalid custom stream part
-- **WHEN** a custom part has an invalid kind or metadata that cannot fit the complete frame budget
+- **WHEN** a custom part has an invalid kind or invalid metadata
 - **THEN** the handler SHALL emit at most one safe terminal error without serializing the provider-domain part
+
+#### Scenario: Large custom event
+- **WHEN** a valid custom part encodes to a frame larger than the former 1 MiB limit
+- **THEN** the complete custom event SHALL be written and the stream SHALL continue
 
 ### Requirement: Generic custom kinds without inventory
 The service and both clients SHALL transport any well-formed custom kind, including kinds introduced by later native adapters, without an allowlist, a per-kind codec or silent filtering.

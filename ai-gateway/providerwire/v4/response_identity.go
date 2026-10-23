@@ -11,16 +11,6 @@ type responseIdentity struct {
 	Timestamp string `json:"timestamp,omitempty"`
 }
 
-func responseStringsFit(remaining *int64, values ...string) bool {
-	for _, value := range values {
-		if int64(len(value)) > *remaining {
-			return false
-		}
-		*remaining -= int64(len(value))
-	}
-	return true
-}
-
 func validResponseTimestamp(value time.Time) bool {
 	if value.IsZero() {
 		return true
@@ -34,10 +24,6 @@ func responseTimestamp(value time.Time) string {
 		return ""
 	}
 	return value.UTC().Format(time.RFC3339Nano)
-}
-
-func responseIdentityFits(id, modelID string, timestamp time.Time, remaining *int64) bool {
-	return validResponseTimestamp(timestamp) && responseStringsFit(remaining, id, modelID, responseTimestamp(timestamp))
 }
 
 func mapResponseIdentity(id, modelID string, timestamp time.Time) (responseIdentity, error) {

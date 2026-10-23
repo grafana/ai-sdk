@@ -52,12 +52,11 @@ type executionRequest struct {
 	requested       string
 	canonical       string
 	candidates      []catalog.ConfiguredCandidate
-	sourceBytes     int64
 	summaryRedactor execution.SummaryRedactor
 }
 
-func newExecutionRequest(requested string, selected Selection, sourceBytes int64) executionRequest {
-	request := executionRequest{sourceBytes: sourceBytes}
+func newExecutionRequest(requested string, selected Selection) executionRequest {
+	request := executionRequest{}
 	if selected.configured != nil {
 		request.requested = requested
 		request.canonical = selected.ID
@@ -68,7 +67,7 @@ func newExecutionRequest(requested string, selected Selection, sourceBytes int64
 
 func (request executionRequest) snapshot(capture *attemptCapture, err error) (view executionView) {
 	entered, attempts := capture.seal()
-	view = executionView{sourceBytes: request.sourceBytes, summaryRedactor: request.summaryRedactor}
+	view = executionView{summaryRedactor: request.summaryRedactor}
 	defer func() {
 		if recover() != nil {
 			view.overview = nil
@@ -84,7 +83,7 @@ func (request executionRequest) snapshot(capture *attemptCapture, err error) (vi
 		}
 		attempts = []fallback.Attempt{{Index: 1, Outcome: outcome, SourceErr: err}}
 	}
-	view.overview = execution.Project(request.requested, request.canonical, attempts, request.candidates, request.sourceBytes)
+	view.overview = execution.Project(request.requested, request.canonical, attempts, request.candidates)
 	if view.overview != nil {
 		for i := range view.overview.Attempts {
 			attempt := &view.overview.Attempts[i]
@@ -96,15 +95,14 @@ func (request executionRequest) snapshot(capture *attemptCapture, err error) (vi
 
 type executionView struct {
 	overview        *execution.Overview
-	sourceBytes     int64
 	summaryRedactor execution.SummaryRedactor
 }
 
 func (view executionView) current(err *provider.APICallError) *execution.Failure {
-	if err == nil || view.sourceBytes == 0 {
+	if err == nil {
 		return nil
 	}
-	return view.summaryRedactor.Redact(execution.Summary(err, view.sourceBytes))
+	return view.summaryRedactor.Redact(execution.Summary(err))
 }
 
 func (view executionView) metadata() provider.ProviderMetadata {

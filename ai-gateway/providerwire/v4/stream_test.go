@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,23 +34,6 @@ func makeStream(parts ...provider.StreamPart) <-chan provider.StreamPart {
 	return stream
 }
 
-func minimumStreamFrameBytes() int {
-	largest := 0
-	for _, frame := range [][]byte{
-		canonicalEmptyStartFrame,
-		canonicalRateLimitStreamErrorFrame,
-		canonicalOverloadStreamErrorFrame,
-		canonicalDependencyStreamErrorFrame,
-		canonicalUpstreamStreamErrorFrame,
-		canonicalTimeoutStreamErrorFrame,
-		canonicalCancellationStreamErrorFrame,
-		canonicalInternalStreamErrorFrame,
-	} {
-		largest = max(largest, len(frame))
-	}
-	return largest
-}
-
 func requireStreamBodyMatchesSchema(t *testing.T, body string) {
 	t.Helper()
 	compiled := compileWireSchema(t, streamEventSchemaJSON)
@@ -72,7 +56,7 @@ func finishPart() provider.StreamPart {
 
 func TestStreamFrameEncoding(t *testing.T) {
 	t.Run("canonical fallbacks", func(t *testing.T) {
-		start, ok := encodeStreamFrame(streamEvent{typeName: provider.PartStreamStart}, 1<<20)
+		start, ok := encodeStreamFrame(streamEvent{typeName: provider.PartStreamStart})
 		require.True(t, ok)
 		assert.Equal(t, canonicalEmptyStartFrame, start)
 		for _, tc := range []struct {
@@ -87,99 +71,57 @@ func TestStreamFrameEncoding(t *testing.T) {
 			{value: safeError{category: safeCancellation}, frame: canonicalCancellationStreamErrorFrame},
 			{value: safeError{category: safeInternal}, frame: canonicalInternalStreamErrorFrame},
 		} {
-			assert.Equal(t, tc.frame, streamErrorFrameForSafeError(tc.value))
-		}
-	})
-
-	t.Run("complete frame below exact and above limits", func(t *testing.T) {
-		event := streamEvent{typeName: provider.PartTextDelta, id: "a", delta: ""}
-		frame, ok := encodeStreamFrame(event, 1<<20)
-		require.True(t, ok)
-		for _, tc := range []struct {
-			name  string
-			limit int64
-			ok    bool
-		}{
-			{name: "below", limit: int64(len(frame) + 1), ok: true},
-			{name: "exact", limit: int64(len(frame)), ok: true},
-			{name: "above", limit: int64(len(frame) - 1)},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				got, ok := encodeStreamFrame(event, tc.limit)
-				assert.Equal(t, tc.ok, ok)
-				assert.LessOrEqual(t, len(got), int(tc.limit))
-			})
+			assert.Equal(t, tc.frame, encodeStreamError(tc.value, nil, nil))
 		}
 	})
 
 	t.Run("invalid utf8 and unsupported event fail before output", func(t *testing.T) {
 		invalid := string([]byte{0xff})
-		_, ok := encodeStreamFrame(streamEvent{typeName: provider.PartTextDelta, id: "a", delta: invalid}, 1<<20)
+		_, ok := encodeStreamFrame(streamEvent{typeName: provider.PartTextDelta, id: "a", delta: invalid})
 		assert.False(t, ok)
-		_, ok = encodeStreamFrame(streamEvent{typeName: provider.PartCustom}, 1<<20)
+		_, ok = encodeStreamFrame(streamEvent{typeName: provider.PartCustom})
 		assert.False(t, ok)
 	})
 
-	t.Run("oversized string fails preflight", func(t *testing.T) {
-		_, ok := encodeStreamFrame(streamEvent{
+	t.Run("large string is encoded whole", func(t *testing.T) {
+		frame, ok := encodeStreamFrame(streamEvent{
 			typeName: provider.PartTextDelta,
 			id:       "a",
-			delta:    strings.Repeat("x", 1<<20),
-		}, 64)
-		assert.False(t, ok)
+			delta:    strings.Repeat("x", 2<<20),
+		})
+		require.True(t, ok)
+		assert.Greater(t, len(frame), 2<<20)
 	})
 
 	t.Run("normalized warnings preserve required values", func(t *testing.T) {
-		warnings, err := mapStreamWarnings([]provider.Warning{
+		warnings, err := mapWarnings([]provider.Warning{
 			{Type: provider.WarnUnsupported, Feature: "secret", Details: "secret"},
 			{Type: provider.WarnCompatibility, Feature: "secret", Details: "secret"},
 			{Type: provider.WarnDeprecated, Setting: "secret", Message: "secret"},
 			{Type: provider.WarnOther, Message: "secret"},
-		}, 1<<20)
+		})
 		require.NoError(t, err)
-		frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartStreamStart, warnings: warnings}, 1<<20)
+		frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartStreamStart, warnings: warnings})
 		require.True(t, ok)
 		assert.JSONEq(t, `{"type":"stream-start","warnings":[{"type":"unsupported","feature":"secret","details":"secret"},{"type":"compatibility","feature":"secret","details":"secret"},{"type":"deprecated","setting":"secret","message":"secret"},{"type":"other","message":"secret"}]}`, strings.TrimSuffix(strings.TrimPrefix(string(frame), "data: "), "\n\n"))
 	})
 }
 
-func TestStreamingRuntimeFrameBoundaries(t *testing.T) {
-	delta := strings.Repeat("x", 256)
-	frame, ok := encodeStreamFrame(streamEvent{typeName: provider.PartTextDelta, id: "a", delta: delta}, 1<<20)
-	require.True(t, ok)
-	require.Greater(t, len(frame), len(canonicalInternalStreamErrorFrame))
-	parts := []provider.StreamPart{
-		{Type: provider.PartTextStart, ID: "a"},
-		{Type: provider.PartTextDelta, ID: "a", Delta: delta},
-		{Type: provider.PartTextEnd, ID: "a"},
-		finishPart(),
+func TestStreamingRuntimeLargeFrames(t *testing.T) {
+	delta := strings.Repeat("x", 2<<20)
+	harness := newRuntimeHarness(t, testLimits())
+	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: makeStream(
+			provider.StreamPart{Type: provider.PartTextStart, ID: "a"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "a", Delta: delta},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "a"},
+			finishPart(),
+		)}, nil
 	}
-	for _, tc := range []struct {
-		name       string
-		limit      int64
-		wantFinish bool
-	}{
-		{name: "exact", limit: int64(len(frame)), wantFinish: true},
-		{name: "one byte above", limit: int64(len(frame) - 1)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			limits := testLimits()
-			limits.StreamFrameBytes = tc.limit
-			harness := newRuntimeHarness(t, limits)
-			harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-				return &provider.StreamResult{Stream: makeStream(parts...)}, nil
-			}
-			body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
-			assert.Equal(t, tc.wantFinish, strings.Contains(body, `"type":"finish"`))
-			if tc.wantFinish {
-				assert.Contains(t, body, delta)
-				assert.NotContains(t, body, `"code":"internal_error"`)
-			} else {
-				assert.NotContains(t, body, delta)
-				assert.Equal(t, 1, strings.Count(body, `"code":"internal_error"`))
-			}
-		})
-	}
+	body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+	assert.Contains(t, body, `{"type":"text-delta","id":"a","delta":"`+delta+`"}`)
+	assert.Contains(t, body, `"type":"finish"`)
+	assert.NotContains(t, body, `"code":"internal_error"`)
 }
 
 func TestStreamingRuntimeHappyPathPrivacyAndOrder(t *testing.T) {
@@ -263,7 +205,7 @@ func TestStreamingRuntimeStartNormalization(t *testing.T) {
 		assert.Contains(t, response.Body.String(), `"type":"finish"`)
 	})
 
-	t.Run("late duplicate unknown and oversized warnings fail safely", func(t *testing.T) {
+	t.Run("late duplicate and unknown warnings fail while many warnings succeed", func(t *testing.T) {
 		tests := []struct {
 			name  string
 			parts []provider.StreamPart
@@ -284,18 +226,18 @@ func TestStreamingRuntimeStartNormalization(t *testing.T) {
 			})
 		}
 
-		limits := testLimits()
-		warnings := make([]provider.Warning, 1_000)
+		warnings := make([]provider.Warning, 100_001)
 		for i := range warnings {
 			warnings[i].Type = provider.WarnOther
 		}
-		limits.StreamFrameBytes = int64(minimumStreamFrameBytes())
-		harness := newRuntimeHarness(t, limits)
+		harness := newRuntimeHarness(t, testLimits())
 		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings})}, nil
+			return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}, finishPart())}, nil
 		}
-		response := harness.serve(streamRequest(`{"prompt":[]}`))
-		assert.Equal(t, string(canonicalEmptyStartFrame)+string(canonicalInternalStreamErrorFrame), response.Body.String())
+		body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+		assert.Equal(t, 100_001, strings.Count(body, `{"type":"other","message":""}`))
+		assert.Contains(t, body, `"type":"finish"`)
+		assert.NotContains(t, body, `"code":"internal_error"`)
 	})
 }
 
@@ -374,57 +316,27 @@ func TestStreamingRuntimeTextStateAndUnsupportedParts(t *testing.T) {
 	})
 }
 
-func TestStreamingRuntimePartLimitAndTerminalAuthority(t *testing.T) {
-	t.Run("below and exact limits succeed while first excess is terminal", func(t *testing.T) {
-		parts := []provider.StreamPart{{Type: provider.PartStreamStart}, finishPart()}
-		for _, tc := range []struct {
-			name      string
-			limit     int
-			wantError bool
-		}{
-			{name: "below", limit: 3},
-			{name: "exact", limit: 2},
-			{name: "excess", limit: 1, wantError: true},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				limits := testLimits()
-				limits.StreamParts = tc.limit
-				harness := newRuntimeHarness(t, limits)
-				harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-					return &provider.StreamResult{Stream: makeStream(parts...)}, nil
-				}
-				response := harness.serve(streamRequest(`{"prompt":[]}`))
-				assert.Equal(t, tc.wantError, strings.Contains(response.Body.String(), `"code":"internal_error"`))
-				assert.Equal(t, !tc.wantError, strings.Contains(response.Body.String(), `"type":"finish"`))
-			})
+func TestStreamingRuntimePartVolumeAndTerminalAuthority(t *testing.T) {
+	t.Run("more than 100,000 provider parts are all represented", func(t *testing.T) {
+		const count = 100_001
+		stream := make(chan provider.StreamPart, count+3)
+		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "a"}
+		for range count {
+			stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "a", Delta: "x"}
 		}
-	})
-
-	t.Run("all accepted provider families consume the shared count", func(t *testing.T) {
-		parts := []provider.StreamPart{
-			{Type: provider.PartStreamStart},
-			{Type: provider.PartResponseMeta},
-			{Type: provider.PartError},
-			{Type: provider.PartTextStart, ID: "a"},
-			{Type: provider.PartTextDelta, ID: "a", Delta: ""},
-			{Type: provider.PartTextEnd, ID: "a"},
-			finishPart(),
+		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "a"}
+		stream <- finishPart()
+		close(stream)
+		limits := testLimits()
+		limits.ModelDuration = 30 * time.Second
+		harness := newRuntimeHarness(t, limits)
+		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: stream}, nil
 		}
-		for _, limit := range []int{len(parts), len(parts) - 1} {
-			limits := testLimits()
-			limits.StreamParts = limit
-			harness := newRuntimeHarness(t, limits)
-			harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-				return &provider.StreamResult{Stream: makeStream(parts...)}, nil
-			}
-			body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
-			assert.Equal(t, limit == len(parts), strings.Contains(body, `"type":"finish"`))
-			expectedInternalErrors := 1
-			if limit != len(parts) {
-				expectedInternalErrors = 2
-			}
-			assert.Equal(t, expectedInternalErrors, strings.Count(body, `"code":"internal_error"`))
-		}
+		body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+		assert.Equal(t, count, strings.Count(body, `"type":"text-delta"`))
+		assert.Contains(t, body, `"type":"finish"`)
+		assert.NotContains(t, body, `"code":"internal_error"`)
 	})
 
 	t.Run("finish is final without waiting for close", func(t *testing.T) {
@@ -440,24 +352,6 @@ func TestStreamingRuntimePartLimitAndTerminalAuthority(t *testing.T) {
 		assert.Less(t, time.Since(start), 500*time.Millisecond)
 		assert.True(t, strings.HasSuffix(response.Body.String(), "data: {\"type\":\"finish\",\"usage\":{\"inputTokens\":{},\"outputTokens\":{}},\"finishReason\":{\"unified\":\"stop\"}}\n\n"))
 		assert.NotContains(t, response.Body.String(), "post-finish-private")
-	})
-
-	t.Run("continuously ready flood stops at cardinality", func(t *testing.T) {
-		limits := testLimits()
-		limits.StreamParts = 8
-		stream := make(chan provider.StreamPart, 128)
-		for i := 0; i < 64; i++ {
-			id := fmt.Sprintf("id-%d", i)
-			stream <- provider.StreamPart{Type: provider.PartTextStart, ID: id}
-			stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: id}
-		}
-		harness := newRuntimeHarness(t, limits)
-		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			return &provider.StreamResult{Stream: stream}, nil
-		}
-		response := harness.serve(streamRequest(`{"prompt":[]}`))
-		assert.Equal(t, 1, strings.Count(response.Body.String(), `"code":"internal_error"`))
-		assert.NotContains(t, response.Body.String(), "id-4")
 	})
 }
 
@@ -967,15 +861,15 @@ func TestStreamingTimeouts(t *testing.T) {
 }
 
 func TestStreamDrainBounds(t *testing.T) {
-	t.Run("normal close and part bound", func(t *testing.T) {
+	t.Run("normal close consumes every part", func(t *testing.T) {
 		h := newTestHandler(t, testLimits())
 		stream := make(chan provider.StreamPart, 10)
 		for i := 0; i < 10; i++ {
 			stream <- provider.StreamPart{Type: provider.PartRaw}
 		}
-		counter := newStreamPartCounter(3)
-		h.drainStream(stream, counter)
-		assert.Equal(t, int64(4), counter.count.Load())
+		close(stream)
+		h.drainStream(stream)
+		assert.Empty(t, stream)
 	})
 
 	t.Run("delayed close exits within the drain bound", func(t *testing.T) {
@@ -983,7 +877,7 @@ func TestStreamDrainBounds(t *testing.T) {
 		stream := make(chan provider.StreamPart)
 		done := make(chan struct{})
 		go func() {
-			h.drainStream(stream, newStreamPartCounter(10))
+			h.drainStream(stream)
 			close(done)
 		}()
 		stream <- provider.StreamPart{Type: provider.PartRaw}
@@ -1002,20 +896,21 @@ func TestStreamDrainBounds(t *testing.T) {
 		stream := make(chan provider.StreamPart)
 		stopProducer := make(chan struct{})
 		producerDone := make(chan struct{})
+		var produced atomic.Int64
 		go func() {
 			defer close(producerDone)
 			for {
 				select {
 				case stream <- provider.StreamPart{Type: provider.PartRaw}:
+					produced.Add(1)
 				case <-stopProducer:
 					return
 				}
 			}
 		}()
-		counter := newStreamPartCounter(1_000_000)
 		done := make(chan struct{})
 		go func() {
-			h.drainStream(stream, counter)
+			h.drainStream(stream)
 			close(done)
 		}()
 		select {
@@ -1025,7 +920,7 @@ func TestStreamDrainBounds(t *testing.T) {
 		}
 		close(stopProducer)
 		<-producerDone
-		assert.Less(t, counter.count.Load(), int64(1_000_000))
+		assert.Positive(t, produced.Load())
 	})
 }
 
@@ -1080,7 +975,6 @@ func TestProviderMetadata_Lifecycle(t *testing.T) {
 	}
 	t.Run("bounded drain after finish", func(t *testing.T) {
 		limits := testLimits()
-		limits.StreamParts = 1_000_000
 		limits.StreamDrainDuration = 25 * time.Millisecond
 		h := newRuntimeHarness(t, limits)
 		stop := make(chan struct{})
@@ -1115,19 +1009,6 @@ func TestProviderMetadata_Lifecycle(t *testing.T) {
 		assert.Equal(t, 1, strings.Count(body, `"type":"finish"`))
 		assert.NotContains(t, body, "late-private")
 		assert.NotContains(t, body, `"type":"error"`)
-	})
-	t.Run("part limit", func(t *testing.T) {
-		limits := testLimits()
-		limits.StreamParts = 2
-		h := newRuntimeHarness(t, limits)
-		metadata := provider.ProviderMetadata{"future": json.RawMessage(`{}`)}
-		h.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			return &provider.StreamResult{Stream: makeStream(provider.StreamPart{Type: provider.PartTextStart, ID: "text", ProviderMetadata: metadata}, provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "answer", ProviderMetadata: metadata}, provider.StreamPart{Type: provider.PartTextEnd, ID: "text", ProviderMetadata: metadata}, finishPart())}, nil
-		}
-		body := h.serve(streamRequest(`{"prompt":[]}`)).Body.String()
-		assert.Contains(t, body, `"future":{}`)
-		assert.Equal(t, 1, strings.Count(body, `"type":"error"`))
-		assert.NotContains(t, body, `"type":"finish"`)
 	})
 }
 
@@ -1184,8 +1065,8 @@ func TestInvocation_CanceledLateDirectSetup(t *testing.T) {
 	assert.NotContains(t, body, "unowned late native failure")
 }
 
-func TestInvocation_CommittedErrorEnrichmentLimits(t *testing.T) {
-	native := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: strings.Repeat("detail", 128)})
+func TestInvocation_CommittedErrorEnrichment(t *testing.T) {
+	native := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: strings.Repeat("detail", 16<<10)})
 	first := &recordingModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: makeStream(
 			provider.StreamPart{Type: provider.PartError, APICallError: native},
@@ -1195,53 +1076,25 @@ func TestInvocation_CommittedErrorEnrichmentLimits(t *testing.T) {
 			finishPart(),
 		)}, nil
 	}}
-	full := invocationHarness(t, testLimits(), first).serve(streamRequest(`{"prompt":[]}`)).Body.String()
-	fullFrames := strings.Split(strings.TrimSuffix(full, "\n\n"), "\n\n")
-	require.Len(t, fullFrames, 6)
-	completeSize := len(fullFrames[1]) + len("\n\n")
-	for _, tc := range []struct {
-		name  string
-		limit int
-	}{
-		{"exact", completeSize},
-		{"one byte short", completeSize - 1},
-		{"canonical only", minimumStreamFrameBytes()},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			limits := testLimits()
-			limits.StreamFrameBytes = int64(tc.limit)
-			before := first.callCount()
-			response := invocationHarness(t, limits, first).serve(streamRequest(`{"prompt":[]}`))
-			require.Equal(t, 200, response.Code)
-			requireStreamBodyMatchesSchema(t, response.Body.String())
-			frames := strings.Split(strings.TrimSuffix(response.Body.String(), "\n\n"), "\n\n")
-			require.Len(t, frames, 6)
-			var envelope errorResponse
-			require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frames[1], "data: ")), &envelope))
-			assert.Equal(t, 503, envelope.Error.StatusCode)
-			assert.Equal(t, errorCode("overloaded"), envelope.Error.Code)
-			require.NotNil(t, envelope.Error.Retryable)
-			assert.True(t, *envelope.Error.Retryable)
-			for _, frame := range frames {
-				assert.LessOrEqual(t, len(frame)+len("\n\n"), tc.limit)
-			}
-			switch tc.name {
-			case "exact":
-				assert.Equal(t, fullFrames[1], frames[1])
-			case "one byte short":
-				assert.NotEqual(t, fullFrames[1], frames[1])
-				require.NotNil(t, envelope.Error.Data)
-				assert.Empty(t, envelope.Error.Data.Metadata)
-				require.NotNil(t, envelope.Error.Data.NativeError)
-				assert.Equal(t, native.Message, envelope.Error.Data.NativeError.Message)
-			case "canonical only":
-				assert.Equal(t, strings.TrimSuffix(string(canonicalOverloadStreamErrorFrame), "\n\n"), frames[1])
-			}
-			assert.Contains(t, frames[3], `"delta":"after"`)
-			assert.Contains(t, frames[5], `"type":"finish"`)
-			assert.Equal(t, before+1, first.callCount())
-		})
-	}
+	response := invocationHarness(t, testLimits(), first).serve(streamRequest(`{"prompt":[]}`))
+	require.Equal(t, 200, response.Code)
+	requireStreamBodyMatchesSchema(t, response.Body.String())
+	frames := strings.Split(strings.TrimSuffix(response.Body.String(), "\n\n"), "\n\n")
+	require.Len(t, frames, 6)
+	assert.Greater(t, len(frames[1]), 64<<10)
+	var envelope errorResponse
+	require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frames[1], "data: ")), &envelope))
+	assert.Equal(t, 503, envelope.Error.StatusCode)
+	assert.Equal(t, errorCode("overloaded"), envelope.Error.Code)
+	require.NotNil(t, envelope.Error.Retryable)
+	assert.True(t, *envelope.Error.Retryable)
+	require.NotNil(t, envelope.Error.Data)
+	assert.NotEmpty(t, envelope.Error.Data.Metadata)
+	require.NotNil(t, envelope.Error.Data.NativeError)
+	assert.Equal(t, native.Message, envelope.Error.Data.NativeError.Message)
+	assert.Contains(t, frames[3], `"delta":"after"`)
+	assert.Contains(t, frames[5], `"type":"finish"`)
+	assert.Equal(t, 1, first.callCount())
 }
 
 func TestInvocation_DirectInvalidStreamSetup(t *testing.T) {
@@ -1363,21 +1216,20 @@ func TestStreamCustomContent_Output(t *testing.T) {
 		assert.Contains(t, body, `"providerMetadata":{"anthropic":{"id":"msg_1","model":"claude","usage":{"input_tokens":3}}}`)
 	})
 
-	t.Run("oversized frame produces one terminal error", func(t *testing.T) {
-		limits := testLimits()
-		limits.StreamFrameBytes = 256
-		harness := newRuntimeHarness(t, limits)
+	t.Run("large custom event is written whole", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
+		secret := strings.Repeat("x", 2<<20)
 		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 			return &provider.StreamResult{Stream: makeStream(
-				custom("example.kind", provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"` + strings.Repeat("x", 1000) + `"}`)}),
+				custom("example.kind", provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"` + secret + `"}`)}),
 				finishPart(),
 			)}, nil
 		}
 
 		response := harness.serve(streamRequest(`{"prompt":[]}`))
 
-		assert.Equal(t, 1, strings.Count(response.Body.String(), `"code":"internal_error"`))
-		assert.NotContains(t, response.Body.String(), "secret")
-		assert.NotContains(t, response.Body.String(), `"type":"finish"`)
+		assert.NotContains(t, response.Body.String(), `"code":"internal_error"`)
+		assert.Contains(t, response.Body.String(), secret)
+		assert.Contains(t, response.Body.String(), `"type":"finish"`)
 	})
 }

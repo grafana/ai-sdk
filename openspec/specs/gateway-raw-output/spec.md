@@ -19,7 +19,7 @@ The ProviderWire V4 handler SHALL accept `includeRawChunks` from an authenticate
 
 ### Requirement: Raw stream events
 
-When a streaming request set `includeRawChunks` to true, the handler SHALL write each `PartRaw` with a valid JSON value as `{"type":"raw","rawValue":<value>}` in provider order, after the credential projection below. A `PartRaw` without a value, with invalid JSON or invalid UTF-8, or with an object that repeats a key after unescaping SHALL be dropped. When the request did not set `includeRawChunks` to true, every `PartRaw` SHALL be dropped. Dropped raw parts SHALL NOT end the stream. Every raw part SHALL count toward `StreamParts`, and a written raw event SHALL be bounded by `StreamFrameBytes` like any other frame: an oversized event SHALL produce one terminal internal error and no finish, and SHALL NOT be truncated.
+When a streaming request set `includeRawChunks` to true, the handler SHALL write each `PartRaw` with a valid JSON value as `{"type":"raw","rawValue":<value>}` in provider order, after the credential projection below. A `PartRaw` without a value, with invalid JSON or invalid UTF-8, or with an object that repeats a key after unescaping SHALL be dropped. When the request did not set `includeRawChunks` to true, every `PartRaw` SHALL be dropped. Dropped raw parts SHALL NOT end the stream. Raw events SHALL NOT be counted against a part limit or bounded by a frame size, and SHALL NOT be truncated.
 
 #### Scenario: Requested raw parts stream in order
 - **WHEN** the adapter emits raw parts between normalized parts and the caller requested raw output
@@ -34,8 +34,8 @@ When a streaming request set `includeRawChunks` to true, the handler SHALL write
 - **THEN** the handler SHALL drop it and continue the stream
 
 #### Scenario: Oversized raw event
-- **WHEN** an encoded raw event exceeds `StreamFrameBytes`
-- **THEN** the handler SHALL write one terminal internal error, no raw bytes for that event, and no finish
+- **WHEN** a requested raw event encodes to a frame above the former 1 MiB limit
+- **THEN** the complete raw event SHALL be written in order and the stream SHALL continue to its finish
 
 ### Requirement: Raw credential projection
 

@@ -32,7 +32,7 @@ Candidate-local projection SHALL retain available native message, type, string-o
 
 #### Scenario: Small native failure summaries policy
 - **WHEN** a candidate-local native failure is summarized
-- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Pure projection SHALL NOT extract credentials from requests or diagnostic trees. Runtime delivery SHALL redact exact configured API-key matches from summary message, type and string code under gateway-attempt-failure-evidence; other provider-originated values SHALL remain available independently of logger field policy. Inputs SHALL remain unchanged. Malformed, unavailable or oversized diagnostics under the integrator's existing source/read limit SHALL degrade optional fields without creating an error or a new quota.
+- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Pure projection SHALL NOT extract credentials from requests or diagnostic trees. Runtime delivery SHALL redact exact configured API-key matches from summary message, type and string code under gateway-attempt-failure-evidence; other provider-originated values SHALL remain available independently of logger field policy. Inputs SHALL remain unchanged. Malformed or unavailable diagnostics SHALL degrade optional fields without creating an error. Projection SHALL NOT take or apply a source byte limit; native body size is bounded by the outbound transport under gateway-resource-policy.
 
 #### Scenario: Original native failure survives cancellation
 - **WHEN** a canceled decision retains a candidate-native SourceErr
@@ -50,25 +50,9 @@ Candidate-local projection SHALL retain available native message, type, string-o
 - **WHEN** a native error supplies a large numeric code
 - **THEN** projection SHALL retain its numeric value without float conversion
 
-### Requirement: Best-effort metadata placement under existing envelope limits
-
-Metadata enrichment SHALL place the overview under gateway.execution and, when fitting, relocate the original native gateway value under gateway.nativeMetadata without merging it into trusted facts.
-
-#### Scenario: Best-effort metadata placement under existing envelope limits policy
-- **WHEN** an integrator attempts optional metadata enrichment
-- **THEN** Other namespaces SHALL remain opaque. The caller SHALL retain coherent existing source/read and complete-response or complete-frame limits, not an overview allocation, until the coordinated shared transport policy replaces them. Encoding/fit failure SHALL return the original provider metadata without truncation or a new error. When native relocation alone cannot fit, the primary response SHALL be preserved and the native namespace SHALL remain opaque. Namespace presence alone SHALL NOT establish Gateway provenance, routing authority or absence of attempts. Primary protocol encoding failures SHALL retain existing behavior.
-
-#### Scenario: Native namespace collides and enrichment fits
-- **WHEN** native metadata already has a gateway value and the enriched complete envelope fits
-- **THEN** the complete native value SHALL appear under nativeMetadata while execution facts remain separate and inputs remain unchanged
-
-#### Scenario: Relocation alone cannot fit
-- **WHEN** the original complete envelope fits but adding or relocating Gateway metadata does not
-- **THEN** enrichment SHALL preserve the original metadata and SHALL NOT fail the successful response or finish event
-
-#### Scenario: Enrichment cannot be encoded
-- **WHEN** optional overview assembly contains malformed data
-- **THEN** enrichment SHALL return the original metadata without changing existing content, error or finish behavior
+#### Scenario: Large native error body
+- **WHEN** a native error body or message exceeds the former 8 MiB source limit but is within the outbound bound
+- **THEN** projection SHALL still return its message, type, code and status
 
 ### Requirement: Dormant foundation and owned schema
 
@@ -77,3 +61,18 @@ The Gateway SHALL define and test a compact namespace schema independently of pr
 #### Scenario: Only the foundation is applied
 - **WHEN** this change is applied without the activation change
 - **THEN** existing runtime output SHALL remain unchanged while focused Go and strict TypeScript schema tests exercise the new projection
+
+### Requirement: Unconditional metadata placement
+Enrichment SHALL place the overview under `gateway.execution` and always relocate a native `gateway` value, complete, under `gateway.nativeMetadata`, without merging it into trusted facts. Other namespaces SHALL remain opaque. Enrichment SHALL have no size limit and SHALL be absent only when no overview exists or it cannot be encoded. Namespace presence SHALL NOT establish provenance, routing authority or absence of attempts.
+
+#### Scenario: Native namespace collides
+- **WHEN** native metadata already has a `gateway` value and an overview is attached
+- **THEN** the complete native value SHALL appear under `nativeMetadata` while execution facts remain separate and inputs remain unchanged
+
+#### Scenario: Large relocated namespace
+- **WHEN** the native `gateway` value or the overview is larger than the former unary or frame budget
+- **THEN** relocation SHALL still happen and the complete enriched output SHALL be written
+
+#### Scenario: Enrichment cannot be encoded
+- **WHEN** optional overview assembly contains malformed data
+- **THEN** enrichment SHALL return no metadata, without truncation or a new error, and existing content, error or finish behavior SHALL remain unchanged

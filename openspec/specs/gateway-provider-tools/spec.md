@@ -51,7 +51,7 @@ Native-consuming adapters SHALL reject tool identity, shape or authority overrid
 - **THEN** both clients and both HTTP modes SHALL preserve the options into the next native request
 
 ### Requirement: History-aware deferred result correlation
-Output results SHALL match current calls or pending provider-owned history. One matching pending native call re-emission SHALL be accepted in output and accumulated history. Unknown, mismatched, completed, client-owned or repeated duplicates and out-of-order results SHALL fail safely. Truncated unrelated results SHALL NOT seed calls. State SHALL retain only bounded identity/lifecycle data per request.
+Output results SHALL match current calls or pending provider-owned history. One matching pending native call re-emission SHALL be accepted in output and accumulated history. Unknown, mismatched, completed, client-owned or repeated duplicates and out-of-order results SHALL fail safely. Truncated unrelated results SHALL NOT seed calls. State SHALL retain only identity/lifecycle data per request.
 
 #### Scenario: Deferred success or error
 - **WHEN** a provider call finishes without a result and the next request includes it unresolved in history
@@ -66,8 +66,8 @@ Output results SHALL match current calls or pending provider-owned history. One 
 - **THEN** both that response and the next request SHALL accept the coherent single re-emission while rejecting conflicting, completed or repeated duplicate calls
 
 #### Scenario: History accounting
-- **WHEN** bounded request history seeds deferred state
-- **THEN** its entries SHALL NOT consume the current provider stream-part budget or retain history payloads
+- **WHEN** request history seeds deferred state
+- **THEN** its entries SHALL retain only identity and lifecycle, not history payloads
 
 ### Requirement: Opaque tool metadata
 Tool metadata SHALL use gateway-provider-metadata's shared bounded opaque transport, preserving unknown namespace objects, nested extension fields and omission versus explicit empty objects. Provider-specific metadata interpretation SHALL belong to the actual native consuming boundary; the codec SHALL retain generic tool ownership, ID/name, deferred-result and lifecycle checks without interpreting namespace fields as routing or execution authority.
@@ -84,13 +84,6 @@ Tool metadata SHALL use gateway-provider-metadata's shared bounded opaque transp
 #### Scenario: Foreign MCP settings are inert
 - **WHEN** compatible inference uses a configured namespace other than anthropic and receives foreign anthropic.mcpServers settings
 - **THEN** ordinary inference SHALL use the configured compatible credential without forwarding the MCP URL/token or mcp_servers to the backend, invoking the MCP endpoint or capturing those values in server observations; caller-owned request metadata MAY retain the submitted body
-
-### Requirement: Tool metadata aggregate resource and capture boundaries
-Aggregate original bytes/cardinality and complete encoded response/frame sizes SHALL remain bounded. Returned metadata SHALL NOT authorize telemetry capture.
-
-#### Scenario: Tool metadata aggregate resource and capture boundaries
-- **WHEN** tool metadata namespace objects each fit the response/frame bound individually but their aggregate exceeds it
-- **THEN** the output SHALL fail within shared aggregate/complete-envelope limits and metadata SHALL NOT authorize telemetry capture
 
 ### Requirement: Native hosted MCP and foreign namespace conversion authority
 Hosted MCP configuration, provider tool definitions and continuation metadata SHALL follow the selected native provider's existing conversion semantics without a Gateway hosted-MCP capability gate. Foreign namespaces not consumed by a native adapter SHALL retain the base runtime's forwarding semantics without gaining execution or routing authority.
@@ -141,3 +134,10 @@ Both registered clients SHALL exercise real-handler and authenticated-command sc
 #### Scenario: Intermediate PR validation
 - **WHEN** this change is validated independently of its successor change
 - **THEN** provider-tool contract, native MCP request conversion, supplied-history continuation, lifecycle, privacy and module checks SHALL pass independently; synthetic provider tests SHALL NOT claim live MCP effects or deployed readiness
+
+### Requirement: Tool metadata capture boundary
+Tool metadata SHALL NOT be bounded by aggregate original bytes, cardinality or encoded response or frame size. Returned metadata SHALL NOT authorize telemetry capture.
+
+#### Scenario: Large tool metadata
+- **WHEN** tool metadata namespace objects together exceed the former response or frame budget
+- **THEN** the output SHALL be returned with every namespace unchanged, and metadata SHALL NOT authorize telemetry capture

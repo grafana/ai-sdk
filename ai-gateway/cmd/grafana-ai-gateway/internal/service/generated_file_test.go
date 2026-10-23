@@ -27,7 +27,7 @@ func TestGeneratedFileFallbackCommitment(t *testing.T) {
 		{"preselection", nil, hostileFallbackError(503), []string{"stream-start", "file", "finish"}, []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
 		{"file only", fallbackParts(file, finish), nil, []string{"stream-start", "file", "finish"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{"file then error", fallbackParts(file, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}), nil, []string{"stream-start", "file", "error", "error"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
-		{"selected encoding", fallbackParts(provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Bytes: make([]byte, 1<<20)}}), nil, []string{"stream-start", "error"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
+		{"selected encoding", fallbackParts(provider.StreamPart{Type: provider.PartFile, MediaType: string([]byte{0xff}), Data: &provider.StreamFileData{Bytes: []byte{1}}}), nil, []string{"stream-start", "error"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{"text file ordering", fallbackParts(provider.StreamPart{Type: provider.PartTextStart, ID: "t"}, provider.StreamPart{Type: provider.PartTextDelta, ID: "t", Delta: "hello"}, file, provider.StreamPart{Type: provider.PartTextEnd, ID: "t"}, finish), nil, []string{"stream-start", "text-start", "text-delta", "file", "text-end", "finish"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -54,8 +54,8 @@ func TestGeneratedFileFallbackCommitment(t *testing.T) {
 	}
 }
 
-func TestGeneratedFileUnaryFailureBeforeWrite(t *testing.T) {
-	for _, size := range []int{0, 1 << 20} {
+func TestGeneratedFileUnaryAnySize(t *testing.T) {
+	for _, size := range []int{0, 7 << 20} {
 		t.Run(fmt.Sprintf("bytes=%d", size), func(t *testing.T) {
 			data := provider.BytesDataContent(make([]byte, size))
 			h := newFallbackAcceptance(t, &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
@@ -63,13 +63,8 @@ func TestGeneratedFileUnaryFailureBeforeWrite(t *testing.T) {
 			}}, &observabilityTestModel{})
 			w := httptest.NewRecorder()
 			h.handler.ServeHTTP(w, h.request(t.Context(), false, mappedFallbackBody))
-			if size == 0 {
-				require.Equal(t, 200, w.Code)
-				require.Contains(t, w.Body.String(), `"type":"file"`)
-			} else {
-				require.Equal(t, 500, w.Code)
-				require.NotContains(t, w.Body.String(), `"type":"file"`)
-			}
+			require.Equal(t, 200, w.Code)
+			require.Contains(t, w.Body.String(), `"type":"file"`)
 			h.verify(t, "generate", w.Body.String(), []fallback.AttemptOutcome{fallback.AttemptSelected})
 		})
 	}

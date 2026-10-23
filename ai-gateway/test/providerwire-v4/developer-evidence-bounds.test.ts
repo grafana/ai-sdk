@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-const sourceBytes = 1_048_576;
+const witnessSourceBytes = 1_048_576;
 const componentBytes = 131_072;
 const errorDiagnosticBytes = 24_576;
 const successDiagnosticBytes = 262_144;
@@ -12,7 +12,7 @@ const attemptCount = 16;
 type Diagnostic = { state: "available"; value: unknown } | { state: "malformed" | "over-limit" | "unavailable" | "redacted"; reason: string };
 
 function jsonBodyWitness(source: string, budget: number): Diagnostic {
-  if (source.length > sourceBytes || Buffer.byteLength(source) > sourceBytes) return { state: "over-limit", reason: "sourceBytes" };
+  if (source.length > witnessSourceBytes || Buffer.byteLength(source) > witnessSourceBytes) return { state: "over-limit", reason: "sourceBytes" };
   let value: unknown;
   try { value = JSON.parse(source); } catch { return { state: "malformed", reason: "invalidJSON" }; }
   const available: Diagnostic = { state: "available", value };
@@ -30,9 +30,9 @@ describe("#321 proposed budget/disposition witnesses (not a production projector
       assert.deepEqual(jsonBodyWitness(JSON.stringify("a".repeat(budget - overhead + 1)), budget), { state: "over-limit", reason: "encodedBytes" });
       assert.equal(jsonBodyWitness(JSON.stringify("\u0000".repeat(budget - overhead)), budget).state, "over-limit");
     }
-    assert.deepEqual(jsonBodyWitness("{".repeat(sourceBytes + 1), componentBytes), { state: "over-limit", reason: "sourceBytes" });
+    assert.deepEqual(jsonBodyWitness("{".repeat(witnessSourceBytes + 1), componentBytes), { state: "over-limit", reason: "sourceBytes" });
     assert.deepEqual(jsonBodyWitness("{", componentBytes), { state: "malformed", reason: "invalidJSON" });
-    assert.deepEqual(jsonBodyWitness("é".repeat(sourceBytes), componentBytes), { state: "over-limit", reason: "sourceBytes" });
+    assert.deepEqual(jsonBodyWitness("é".repeat(witnessSourceBytes), componentBytes), { state: "over-limit", reason: "sourceBytes" });
   });
 
   it("valid empty/nested values and explicit dispositions remain complete JSON", () => {

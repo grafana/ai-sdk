@@ -34,9 +34,9 @@ The Gateway removes MCP tool credentials that OpenAI echoes from your request
 before it sends an event: headers, the authorization value, and credential
 query parameters in the server URL.
 
-Raw events count toward the stream's size limits. If a raw event is too large,
-the stream ends with an error and no finish instead of being cut short. To allow
-larger events, ask your Gateway administrator to raise the stream's size limit.
+Raw events are never truncated, and their size does not end a stream. Each
+provider response is still limited to 16 MiB by the Gateway, so a large raw
+stream can reach that limit sooner.
 
 ## Authenticate the client
 
@@ -316,7 +316,7 @@ in a tool result, the call fails with an invalid request error.
 
 When a model generates files, the Gateway returns them in generated and
 streamed responses. The SDK downloads files that arrive as URLs; the Gateway
-does not. Generated files count toward the Gateway's response size limits. Once a model
+does not. Once a model
 has returned a file, the Gateway does not fall back for that call.
 
 ## Native response values
@@ -347,8 +347,7 @@ Errors carry the same information:
   provider's error in `error.data.nativeError`. In Go, read the part's
   `APICallError.Data`. The stream's later parts remain readable.
 
-Overviews are best-effort. One may be missing, for example when a response is
-close to its size limit, and a missing overview does not mean no provider was
+Overviews are best-effort: a missing overview does not mean no provider was
 tried. Calls with your own provider key don't return overviews yet, only
 provider errors on streams
 ([#317](https://github.com/grafana/ai-sdk/issues/317)).
@@ -368,9 +367,10 @@ Use `errors.Is` to detect cancellation and deadlines. Use `errors.As` with
 `*provider.APICallError` to check whether a call can be retried. The client
 does not retry on its own; configure retries in your application.
 
-The Gateway limits response and stream sizes, so the client has no size limits
-to configure. To bound a call yourself, use the context deadline above, and your
-own `http.Client` for transport-level limits such as timeouts.
+The Gateway limits request sizes, provider response sizes and model duration,
+so the client has no size limits to configure. To bound a call yourself, use the
+context deadline above, and your own `http.Client` for transport-level limits
+such as timeouts.
 
 `APICallError.Data` and `ResponseBody` contain the error response, which can
 include provider details; keep it out of public logs.

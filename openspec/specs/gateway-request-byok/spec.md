@@ -125,7 +125,7 @@ The BYOK engine SHALL select a supported native provider/model from request data
 - **THEN** the request SHALL fail with a bounded capability/field diagnostic before provider construction
 
 ### Requirement: Vercel-shaped credential ingestion
-The host SHALL validate the complete call-level gateway.byok map with ordinary typed Go decoding, including unused accounts, canonical controls, required keys and provider/count policy. Only selected-provider accounts SHALL become eligible; request and native-header bounds SHALL remain shared.
+The host SHALL validate the complete call-level gateway.byok map with ordinary typed Go decoding, including unused accounts, canonical controls, required keys and the selected provider's account count. Only selected-provider accounts SHALL become eligible; request and native-header bounds SHALL remain shared.
 
 #### Scenario: Complete credential validation policy
 - **WHEN** call-level BYOK controls are decoded before execution
@@ -139,14 +139,14 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **AND** Empty/missing BYOK or missing credentials for that provider SHALL fail before provider I/O.
 - **AND** The entire supplied BYOK map SHALL be validated before execution, including unused entries.
 - **AND** Supported provider-map keys SHALL be exactly anthropic and openai.
-- **AND** Each decoded key SHALL be nonempty. The existing eight-account bound SHALL remain temporarily as execution policy, not JSON grammar; #394/#317 own its later disposition.
+- **AND** Each decoded key SHALL be nonempty. The eight-account bound SHALL apply only to the selected provider's array, as execution attempt policy rather than JSON grammar; an unused provider array SHALL NOT be rejected for its length.
 - **AND** Decoding SHALL use provider-to-account maps and ordinary typed Go decoding without blanket unknown-field rejection.
 - **AND** The only accepted Gateway control SHALL be exactly lowercase byok, as emitted by the supported clients; BYOK and other case variants SHALL fail.
 - **AND** Account fields SHALL use the canonical client names apiKey, baseURL, organization and project.
 - **AND** Account struct fields SHALL retain standard Go case-insensitive matching; namespace/map keys and discriminator values SHALL NOT be normalized.
 - **AND** Null strings SHALL retain their ordinary Go value, and duplicate members SHALL follow ordinary Go decoding.
 - **AND** Malformed earlier duplicate members MAY fail typed decoding even when a later member is valid; no JSON normalization layer SHALL be introduced.
-- **AND** The existing complete request bound SHALL govern BYOK input without separate subtree or per-field byte ceilings.
+- **AND** The route request-body bound under gateway-resource-policy SHALL govern BYOK input without separate subtree or per-field byte ceilings.
 - **AND** Native HTTP transport SHALL enforce outgoing header validity; request decoding SHALL NOT implement an additional credential/account-header grammar.
 - **AND** Existing protected call-header and native-option controls SHALL remain unchanged.
 
@@ -177,15 +177,17 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **THEN** validation SHALL reject the request before any native call
 
 #### Scenario: Account count
-- **WHEN** a supplied provider array contains 1 to 8 accounts
+- **WHEN** the selected provider's array contains 1 to 8 accounts
 - **THEN** otherwise valid input SHALL be accepted
-- **WHEN** a supplied array is empty or contains more than 8 accounts, including an unused provider
-- **THEN** the request SHALL fail before I/O without echoing the rejected value
+- **WHEN** an unused provider's array contains 9 or more otherwise valid accounts
+- **THEN** otherwise valid input SHALL be accepted and those accounts SHALL NOT be eligible
+- **WHEN** any supplied array is empty, or the selected provider's array contains more than 8 accounts
+- **THEN** the request SHALL fail with the fixed BYOK credentials invalid-request document before I/O, with zero native calls and without echoing the rejected value
 
 #### Scenario: Shared request bound
-- **WHEN** a BYOK request reaches the configured complete request byte limit
+- **WHEN** a BYOK request reaches the route request-body bound
 - **THEN** otherwise valid input SHALL reach selection without a separate BYOK byte ceiling
-- **WHEN** that limit is exceeded by one byte
+- **WHEN** that bound is exceeded by one byte
 - **THEN** the wire handler SHALL reject the request before selection
 
 #### Scenario: Native header validity

@@ -15,6 +15,12 @@ func main() {
 	}
 }
 
+const maxRequestBytes = 1 << 20
+
+func boundRequests(handler http.Handler) http.Handler {
+	return http.MaxBytesHandler(handler, maxRequestBytes)
+}
+
 func run() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
@@ -40,7 +46,7 @@ func run() error {
 		return err
 	}
 	fmt.Printf("PORT=%d\n", listener.Addr().(*net.TCPAddr).Port)
-	server := &http.Server{Handler: mux}
+	server := &http.Server{Handler: boundRequests(mux)}
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

@@ -419,7 +419,12 @@ func TestDecodeRequest_AccountCount(t *testing.T) {
 				raw, err := json.Marshal(map[string]any{"byok": accounts})
 				require.NoError(t, err)
 				_, err = DecodeRequest("openai/model", raw, nil)
-				assert.Equal(t, count == 0 || count > maxCredentials, err != nil)
+				selected := name == OpenAI
+				if count == 0 || (selected && count > maxCredentials) {
+					require.ErrorIs(t, err, ErrInvalidRequest)
+				} else {
+					require.NoError(t, err)
+				}
 			})
 		}
 	}
@@ -472,7 +477,7 @@ func TestNew_HTTPTransportRejectsInvalidHeaders(t *testing.T) {
 	}
 }
 
-func TestNew_OpenAIStreamPreflightAndCommitment(t *testing.T) {
+func TestNew_OpenAIStreamInitialEventsAndCommitment(t *testing.T) {
 	const created = "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"created_at\":1,\"model\":\"native-model\",\"output\":[]}}\n\n"
 	const added = "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg_1\",\"role\":\"assistant\",\"content\":[]}}\n\n"
 	const completed = "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"
