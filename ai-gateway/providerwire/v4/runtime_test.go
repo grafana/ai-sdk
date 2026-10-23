@@ -848,7 +848,7 @@ func TestPublicError_OptionalEncoding(t *testing.T) {
 				value := safeError{category: safeOverload}
 				current := &execution.Failure{StatusCode: 503, Message: "current failure"}
 				original := canonicalOverloadError
-				body := original
+				var body []byte
 				if streaming {
 					original = canonicalOverloadStreamErrorFrame
 					body = encodeStreamError(value, metadata, current)

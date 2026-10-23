@@ -327,7 +327,9 @@ func TestStreamingRuntimePartVolumeAndTerminalAuthority(t *testing.T) {
 		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "a"}
 		stream <- finishPart()
 		close(stream)
-		harness := newRuntimeHarness(t, testLimits())
+		limits := testLimits()
+		limits.ModelDuration = 30 * time.Second
+		harness := newRuntimeHarness(t, limits)
 		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 			return &provider.StreamResult{Stream: stream}, nil
 		}
