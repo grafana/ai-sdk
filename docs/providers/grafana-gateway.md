@@ -39,8 +39,8 @@ Other query keys pass through.
 Requesting raw output can make an otherwise successful stream fail. Raw parts
 use the stream part budget, and a raw event larger than the frame limit ends
 the stream with an error and no finish; it is never truncated. To allow larger
-events, raise the Gateway's stream frame limit and the client's
-`Limits.StreamEventBytes` together.
+events, raise the Gateway's stream frame limit. The client does not limit
+stream sizes.
 
 ## Authenticate the client
 
@@ -148,12 +148,10 @@ A Grafana service can send its exchanged token in `X-Access-Token` instead of
 
 ### Handle large catalogs
 
-Listing returns the whole catalog or an error, never part of it. If a catalog
-is larger than the Go client accepts, raise `DiscoveryBytes` in a copy of
-[`grafana.DefaultLimits()`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana#Limits)
-and pass it to the client. The TypeScript helper's `maxBytes` can only lower
-its limit; for a larger catalog, ask your Gateway administrator to publish
-fewer models.
+Listing returns the whole catalog or an error, never part of it. The Go client
+does not limit the catalog size beyond a fixed backstop on buffered responses.
+The TypeScript helper's `maxBytes` can only lower its limit; for a larger
+catalog, ask your Gateway administrator to publish fewer models.
 
 To combine the Gateway with other providers, see
 [Fallback and registry](../guides/fallback-and-registry.md).
@@ -322,7 +320,7 @@ in a tool result, the call fails with an invalid request error.
 
 When a model generates files, the Gateway returns them in generated and
 streamed responses. The SDK downloads files that arrive as URLs; the Gateway
-does not. Generated files count toward the response size limits. Once a model
+does not. Generated files count toward the Gateway's response limits. Once a model
 has returned a file, the Gateway does not fall back for that call.
 
 ## Native response values
@@ -374,11 +372,14 @@ Use `errors.Is` to detect cancellation and deadlines. Use `errors.As` with
 `*provider.APICallError` to check whether a call can be retried. The client
 does not retry on its own; configure retries in your application.
 
-If responses or streams exceed the client's size limits, raise them from
-[`grafana.DefaultLimits`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana#DefaultLimits)
-instead of using a partial result. `APICallError.Data` and `ResponseBody`
-contain the error response, which can include provider details; keep it out of
-public logs.
+The Gateway owns resource bounds: it caps each provider response, model
+duration and stream frames. The client has no size limits to configure. It fails
+instead of truncating when a buffered response (discovery, unary or error body)
+passes a fixed backstop that the Gateway's bounds keep far out of reach, and it
+never bounds a stream. Bound requests through your own `http.Client` (its
+transport or timeout) and the call context. `APICallError.Data` and
+`ResponseBody` contain the error response, which can include provider details;
+keep it out of public logs.
 
 ## Reference
 

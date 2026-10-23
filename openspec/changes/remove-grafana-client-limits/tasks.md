@@ -37,8 +37,8 @@ Each group is one self-contained commit that keeps `cd providers/grafana && go t
 
 ## 5. Update godoc and guide
 
-- [ ] 5.1 Update `providers/grafana/doc.go`: drop "bounded" from the streaming sentence and state that the Gateway owns resource bounds and callers bound requests through `http.Client` and `context`. Verify with `go doc ./providers/grafana`.
-- [ ] 5.2 Update `docs/providers/grafana-gateway.md`:
+- [x] 5.1 Update `providers/grafana/doc.go`: drop "bounded" from the streaming sentence and state that the Gateway owns resource bounds and callers bound requests through `http.Client` and `context`. Verify with `go doc ./providers/grafana`.
+- [x] 5.2 Update `docs/providers/grafana-gateway.md`:
   - the raw-output note keeps only the Gateway frame limit;
   - "Handle large catalogs" removes the Go `DiscoveryBytes` advice and keeps the TypeScript helper note;
   - generated files count toward the Gateway's limits;
