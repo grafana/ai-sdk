@@ -378,7 +378,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			if len(content) > 0 {
 				p.Messages = append(p.Messages, anthropic.BetaMessageParam{
 					Role:    anthropic.BetaMessageParamRoleAssistant,
-					Content: content,
+					Content: moveToolUseBlocksToEnd(content),
 				})
 			}
 		}
@@ -785,6 +785,33 @@ func groupIntoBlocks(prompt []provider.Message) []promptBlock {
 		blocks = append(blocks, promptBlock{kind: kind, messages: []provider.Message{msg}})
 	}
 	return blocks
+}
+
+// moveToolUseBlocksToEnd stably moves client `tool_use` blocks after the other
+// blocks of each segment of a grouped assistant message. Thinking, redacted
+// thinking and fallback blocks bound the segments and keep their positions, so
+// tool calls never cross a reasoning signature boundary. Mirrors upstream
+// `moveToolUseBlocksToEnd` (`convert-to-anthropic-prompt.ts`).
+func moveToolUseBlocksToEnd(content []anthropic.BetaContentBlockParamUnion) []anthropic.BetaContentBlockParamUnion {
+	result := make([]anthropic.BetaContentBlockParamUnion, 0, len(content))
+	var toolUses []anthropic.BetaContentBlockParamUnion
+	flushToolUses := func() {
+		result = append(result, toolUses...)
+		toolUses = toolUses[:0]
+	}
+	for _, block := range content {
+		switch {
+		case block.OfThinking != nil || block.OfRedactedThinking != nil || block.OfFallback != nil:
+			flushToolUses()
+			result = append(result, block)
+		case block.OfToolUse != nil:
+			toolUses = append(toolUses, block)
+		default:
+			result = append(result, block)
+		}
+	}
+	flushToolUses()
+	return result
 }
 
 // convertUserContent converts a `RoleUser` provider message's content parts
