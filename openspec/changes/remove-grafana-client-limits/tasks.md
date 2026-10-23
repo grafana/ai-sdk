@@ -48,9 +48,9 @@ Each group is one self-contained commit that keeps `cd providers/grafana && go t
 
 ## 6. Integration checks
 
-- [ ] 6.1 Run `cd providers/grafana && go test -race ./...`, `mise run test-grafana` and `mise run lint` for the module, and verify they pass.
-- [ ] 6.2 Run `mise run validate-parity-baseline` and confirm `test/conformance/upstream.yaml` has no new `knownGaps` entry and `PARITY.md` needs no change. Verify that it passes.
-- [ ] 6.3 Run `openspec validate remove-grafana-client-limits --strict` and confirm that the change is valid.
+- [x] 6.1 Run `cd providers/grafana && go test -race ./...`, `mise run test-grafana` and `mise run lint` for the module, and verify they pass.
+- [x] 6.2 Run `mise run validate-parity-baseline` and confirm `test/conformance/upstream.yaml` has no new `knownGaps` entry and `PARITY.md` needs no change. Verify that it passes.
+- [x] 6.3 Run `openspec validate remove-grafana-client-limits --strict` and confirm that the change is valid.
 
 ## Workflow follow-up
 
