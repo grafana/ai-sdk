@@ -106,7 +106,7 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 8. Integration checks
 
-- [ ] 8.1 Run `mise run test-ai-gateway`, `mise run test-ai-gateway-command`, `mise run test-providerwire-v4`, `mise run test-grafana`, `mise run lint`, `mise run lint-docs`, `mise run validate-parity-baseline`, Gateway `go test -race ./...` and `openspec validate move-gateway-resource-limits --strict`. All must pass.
+- [x] 8.1 Run `mise run test-ai-gateway`, `mise run test-ai-gateway-command`, `mise run test-providerwire-v4`, `mise run test-grafana`, `mise run lint`, `mise run lint-docs`, `mise run validate-parity-baseline`, Gateway `go test -race ./...` and `openspec validate move-gateway-resource-limits --strict`. All must pass.
 - [x] 8.2 Run `rg -n -w 'Preflight|UnaryResponseBytes|StreamFrameBytes|StreamParts|maxRawUsageBytes|maxErrorResponseBytes|sourceBytes|NewAnthropicClient' ai-gateway docs --glob '!**/CHANGELOG.md'`. It must find only the #321 closed reason identifier `"sourceBytes"` in `developer-evidence-bounds.test.ts`. Then confirm that `git diff --stat nrbrd/gateway-client-limits -- test/conformance` shows no change to recorded or upstream fixture inputs.
 
 ## Workflow follow-up
