@@ -120,7 +120,7 @@ The existing "Limits" section becomes the ledger:
 | Provider response bytes (16 MiB, decompressed, per response), header timeout (10s), redirect rejection | outbound model transport |
 | `max_model_duration`, stream idle (30s) and drain (1s) durations | language-model handler |
 | BYOK accounts (8, selected provider) | BYOK selection |
-| Model file size (1 MiB), catalog entries, aliases and fallbacks | model catalog loader |
+| Model file size (1 MiB), catalog entries, aliases, fallbacks, model ID length (128) and discovery string bytes (2,048) | model catalog loader |
 
 The ledger lists the catalog limits without changing them, because operators meet them when writing the catalog. Telemetry sink caps stay out, because they bound asynchronous export rather than a request or the catalog.
 
