@@ -45,26 +45,23 @@ The Gateway SHALL preserve each native source ID exactly in its response rather 
 - **THEN** all three SHALL keep their native ID and original order without deduplication or variant-specific renaming
 
 #### Scenario: Empty or long native ID
-- **WHEN** the source ID is empty or exceeds the old 1024-byte cap while the complete document remains valid and bounded
+- **WHEN** the source ID is empty or exceeds the old 1024-byte cap while the complete document remains valid
 - **THEN** it SHALL be emitted unchanged as a required string
 
 #### Scenario: Source crosses complete bounds
-- **WHEN** raw strings exceed aggregate preflight, UTF-8 is invalid or escaping makes the complete response/frame one byte too large
-- **THEN** the existing bounded unary or streaming safe error path SHALL apply without partial source output
+- **WHEN** a valid source's strings and metadata exceed the former aggregate preflight or complete frame limit
+- **THEN** the complete source SHALL be emitted in order without a size failure
 
-### Requirement: Aggregate source envelope and mapping-work bounds
-Unary preflight SHALL bound aggregate source strings and all original metadata namespace key/value bytes with other represented values by UnaryResponseBytes; content/metadata cardinality SHALL bound mapping work. Streaming SHALL use StreamParts and complete-frame bounds, including source strings, current metadata and SSE framing. Size preflight SHALL precede UTF-8 scanning and encoding; exact final-byte checks SHALL prevent partial output.
-
-#### Scenario: Aggregate source envelope and mapping-work bounds
-- **WHEN** source strings/metadata fit independently but together exceed a unary preflight or complete SSE frame bound
-- **THEN** aggregate size/cardinality SHALL bound mapping before UTF-8/encoding and complete final-byte checks SHALL prevent partial output
+#### Scenario: Source is invalid
+- **WHEN** a source string contains invalid UTF-8 or the source has an unknown discriminator
+- **THEN** the existing unary or streaming safe error path SHALL apply without partial source output
 
 ### Requirement: No standalone source ID byte cap
-No source-specific ID cap SHALL reject a value that otherwise fits these containing-document bounds.
+No source-specific or containing-document size cap SHALL reject a valid source.
 
 #### Scenario: No standalone source ID byte cap
-- **WHEN** a valid source ID exceeds 1024 bytes but fits all containing-document bounds
-- **THEN** it SHALL remain accepted without a source-specific identity cap
+- **WHEN** a valid source ID exceeds 1024 bytes, or a source's strings exceed the former unary or frame budget
+- **THEN** it SHALL remain accepted without a size cap
 
 ### Requirement: Opaque public source metadata
 Source providerMetadata SHALL preserve all supplied native object-valued namespaces and nested JSON under gateway-provider-metadata, with no synthetic citation namespace, numeric-only projection, recognized-namespace byte cap or key inventory. Absence SHALL remain absent and an explicit empty object SHALL remain present.
@@ -77,13 +74,6 @@ Source providerMetadata SHALL preserve all supplied native object-valued namespa
 - **WHEN** a source has a previously unknown namespace with malformed or non-object JSON
 - **THEN** the unary response SHALL fail before HTTP success or the committed stream SHALL reject the event through its existing terminal adaptation path, without numeric-only or metadata-free success
 
-### Requirement: Original source metadata preflight and explicit failure
-All original namespace bytes including whitespace, namespace key bytes and cardinality SHALL participate in aggregate unary or complete-frame preflight before validation and encoding. Malformed JSON, invalid UTF-8, null/non-object namespaces or excess budget SHALL fail the response/event explicitly rather than selectively omitting fields.
-
-#### Scenario: Original source metadata preflight and explicit failure
-- **WHEN** whitespace-heavy source metadata exceeds aggregate preflight or has a malformed/non-object namespace
-- **THEN** original key/value bytes and cardinality SHALL count before validation/encoding, and the response/event SHALL fail rather than omit fields
-
 ### Requirement: Source metadata display and protection separation
 Useful native IDs, cited text and unknown fields inside ordinary provider metadata SHALL NOT be discarded merely because operator capture excludes them. Concrete credential and tenant-source protections SHALL remain independent from ordinary metadata transport. Recognized file_path metadata SHALL NOT alter native source identity, title or filename.
 
@@ -92,7 +82,7 @@ Useful native IDs, cited text and unknown fields inside ordinary provider metada
 - **THEN** ordinary metadata SHALL survive without changing identity/title/filename or discarding fields, with concrete credential/tenant-source protections remaining independent
 
 ### Requirement: Atomic source lifecycle and observation
-Sources SHALL preserve relative output order and SHALL NOT close active text or tool blocks. Accepted sources SHALL mark output as started, disallow subsequent response metadata and reset idle activity through the existing loop. Provider error parts SHALL remain non-terminal; authoritative finish SHALL suppress later sources. Sources SHALL commit fallback candidates without replay. Existing cancellation, frame bounds, timeouts, part limits and cleanup ownership SHALL remain effective.
+Sources SHALL preserve relative output order and SHALL NOT close active text or tool blocks. Accepted sources SHALL mark output as started, disallow subsequent response metadata and reset idle activity through the existing loop. Provider error parts SHALL remain non-terminal; authoritative finish SHALL suppress later sources. Sources SHALL commit fallback candidates without replay. Existing cancellation, timeouts and cleanup ownership SHALL remain effective.
 
 #### Scenario: Source interleaving
 - **WHEN** a source appears between text-start and text-end
@@ -142,3 +132,14 @@ Synthetic transports SHALL NOT be presented as provider recordings. Published de
 #### Scenario: Source transport provenance and delivery evidence separation
 - **WHEN** source acceptance uses a synthetic transport and candidate workspace build
 - **THEN** the report SHALL NOT label the transport as a recording and SHALL separate published-dependency, candidate-workspace and plugin package evidence
+
+### Requirement: Source metadata validity and explicit failure
+Each source metadata namespace SHALL be validated on its original bytes as a UTF-8 name with a UTF-8 JSON object value. Malformed JSON, invalid UTF-8 and null or non-object namespaces SHALL fail the response or event explicitly rather than selectively omit fields. Source strings and metadata SHALL NOT be budgeted by size or cardinality.
+
+#### Scenario: Large source metadata
+- **WHEN** whitespace-heavy or numerous source metadata namespaces exceed the former unary or frame budget
+- **THEN** the source SHALL be returned with all namespaces unchanged
+
+#### Scenario: Invalid source metadata
+- **WHEN** a source metadata namespace is malformed, invalid UTF-8, null or not an object
+- **THEN** the response or event SHALL fail through the existing safe error path rather than omit the namespace
