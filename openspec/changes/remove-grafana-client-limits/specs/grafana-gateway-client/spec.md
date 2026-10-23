@@ -16,7 +16,8 @@ The client SHALL expose no configurable response-processing limits. The Gateway 
 
 #### Scenario: Caller bounds a request
 - **WHEN** a caller supplies an `http.Client` with its own transport or timeout, or a call context with a deadline
-- **THEN** the client SHALL apply those bounds to discovery, unary and streaming calls, and a context deadline SHALL remain discoverable with `errors.Is`
+- **THEN** the client SHALL apply those bounds to discovery, unary and streaming calls
+- **AND** a context deadline SHALL remain discoverable with `errors.Is` for discovery, unary calls and stream setup, while an established stream SHALL end without a client-generated error
 
 #### Scenario: Guidance describes server-owned bounds
 - **WHEN** a reader consults the Grafana provider godoc or the Grafana Gateway guide
@@ -163,7 +164,7 @@ On a successful unary result and a streaming finish, the Grafana client SHALL pr
 
 #### Scenario: Large raw usage is accepted
 - **WHEN** a unary result or streaming finish contains a valid `usage.raw` object larger than 1 MiB
-- **THEN** both paths SHALL retain the complete object unchanged
+- **THEN** both paths SHALL retain the complete object without a size cap
 
 #### Scenario: Hostile unary response contains invalid raw
 - **WHEN** a successful HTTP 200 unary response contains malformed, null or non-object `usage.raw`
