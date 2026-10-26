@@ -116,6 +116,27 @@ StreamText SHALL build StepResult.Content and response content from recorded pro
 - **WHEN** content is built from manually constructed step fields without a recorded provider sequence
 - **THEN** reasoning, text, tools, sources, and files SHALL be emitted in that grouped order
 
+### Requirement: Collected results project all recorded steps
+
+StreamText, GenerateText and ToolLoopAgent results SHALL derive Content, ToolCalls, ToolResults, Files and Sources by concatenating every recorded step's values in step order, mirroring upstream `steps.flatMap`. Text, Reasoning, FinishReason, Response and ProviderMetadata SHALL describe the final recorded step. Error and cancellation results SHALL project the steps recorded before termination.
+
+#### Scenario: Multi-step collections retain earlier steps
+
+- **WHEN** a tool step emits reasoning, cited text, a source, a file and a tool call, and the next step emits reasoning, a source and final text
+- **THEN** Content, ToolCalls, ToolResults, Files and Sources SHALL contain both steps' values in order
+- **AND** aggregated content SHALL keep each part's provider metadata, including citations
+- **AND** Text and Reasoning SHALL contain only the final step's values
+
+#### Scenario: No recorded step
+
+- **WHEN** the invocation fails before recording any step
+- **THEN** the aggregated collections SHALL be empty
+
+#### Scenario: Returned collections are caller owned
+
+- **WHEN** a caller modifies an aggregated collection or `ResponseMessages` slice returned by a StreamTextResult accessor
+- **THEN** later accessor calls and recorded steps SHALL be unaffected
+
 ### Requirement: Tool execution requires an allowed finish
 
 Local executable tools SHALL dispatch only after stop/tool-calls without effective required/named choice violation. Other finish reasons SHALL retain call visibility and approval processing, except completed choice violations SHALL bypass all new local approval/execution. Continuation SHALL require matching result/denial for every client call, not merely a callback, and SHALL never follow a choice violation.
