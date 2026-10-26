@@ -149,7 +149,8 @@ knownGaps:
       from borrowing content from another source in a merged block. Tool
       filtering happens before grouping with the prepared tool set, matching
       upstream. Adjacent user messages left after an omitted unsigned-only
-      assistant message remain unchanged.
+      assistant message remain separate unless the earlier one carries tool
+      results, matching upstream.
   - id: bedrock-converse-premature-eof
     surface: provider-bedrock
     status: intentional-deviation

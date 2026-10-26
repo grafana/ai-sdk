@@ -181,6 +181,14 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 - **WHEN** the prompt contains a `ToolMessage` with a tool result for tool call id `abc`
 - **THEN** the request emits a user-role message with `{toolResult: {toolUseId: "abc", content: [...]}}` content (Converse collapses tool results into the user role)
 
+#### Scenario: Assistant-role tool results
+
+- **WHEN** an assistant message contains tool-result parts, such as provider-executed results replayed after their tool calls
+- **THEN** each run of tool results is emitted as user-role `toolResult` content between the assistant content before and after it, preserving part order
+- **AND** the results use the same output conversion, tool call ID normalization, document naming and rejection rules as tool-role results
+- **AND** user content that follows a user message carrying tool results is appended to that message, so Converse roles keep alternating
+- **AND** an assistant message cache point follows the tool results when the message ends with one, and otherwise follows that message's trailing assistant content when it emits any
+
 #### Scenario: Inference config mapping
 
 - **WHEN** the consumer sets `MaxOutputTokens=512`, `Temperature=0.5`, `TopP=0.9`, `TopK=20`, `StopSequences=["END"]`
@@ -936,7 +944,7 @@ When raw chunks are requested, each event-stream frame SHALL produce a raw part 
 - **THEN** the `tool-input-start` part SHALL carry `id` and `toolName` only
 
 ### Requirement: Custom tool-result content rejection
-When tools remain active after tool preparation, the Bedrock Converse adapter SHALL reject user- or tool-role tool-result content containing a custom entry before any HTTP request. The error SHALL wrap the provider unsupported-functionality sentinel and name the unsupported tool content type, instead of dropping the entry with a warning. Bedrock Mantle SHALL keep its existing warning.
+When tools remain active after tool preparation, the Bedrock Converse adapter SHALL reject user-, tool- or assistant-role tool-result content containing a custom entry before any HTTP request. The error SHALL wrap the provider unsupported-functionality sentinel and name the unsupported tool content type, instead of dropping the entry with a warning. Bedrock Mantle SHALL keep its existing warning.
 
 #### Scenario: Custom tool-result entry
 - **WHEN** DoGenerate or DoStream with active tools receives tool-result content with text and custom entries

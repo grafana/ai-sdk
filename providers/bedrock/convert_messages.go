@@ -166,33 +166,64 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 				}
 			}
 			if len(content) > 0 {
-				out.Messages = append(out.Messages, converseMessage{Role: "user", Content: content})
+				out.Messages = appendUserMessage(out.Messages, content)
 			}
 
 		case promptBlockAssistant:
-			var content []contentBlock
+			blockStart := len(out.Messages)
 			for messageIndex, msg := range block.messages {
 				trimLastText := blockIndex == len(blocks)-1 && messageIndex == len(block.messages)-1
-				contentBlocks, err := convertAssistantContent(msg.Content, &warnings, isMistral, trimLastText)
+				segments, err := convertAssistantContent(msg.Content, &documentCounter, &warnings, isMistral, trimLastText)
 				if err != nil {
 					return convertedPrompt{}, warnings, err
 				}
-				content = append(content, contentBlocks...)
 				cp, err := extractCachePoint(msg.ProviderOptions)
 				if err != nil {
 					return convertedPrompt{}, warnings, err
 				}
-				if cp != nil && len(contentBlocks) > 0 {
-					content = append(content, contentBlock{CachePoint: cp})
+				if last := len(segments) - 1; cp != nil && last >= 0 && segments[last].Role == assistantCachePointRole(msg.Content) {
+					segments[last].Content = append(segments[last].Content, contentBlock{CachePoint: cp})
 				}
-			}
-			if len(content) > 0 {
-				out.Messages = append(out.Messages, converseMessage{Role: "assistant", Content: content})
+				for _, segment := range segments {
+					if segment.Role == converseRoleUser {
+						out.Messages = appendUserMessage(out.Messages, segment.Content)
+						continue
+					}
+					if last := len(out.Messages) - 1; last >= blockStart && out.Messages[last].Role == converseRoleAssistant {
+						out.Messages[last].Content = append(out.Messages[last].Content, segment.Content...)
+						continue
+					}
+					out.Messages = append(out.Messages, segment)
+				}
 			}
 		}
 	}
 
 	return out, warnings, nil
+}
+
+func appendUserMessage(messages []converseMessage, content []contentBlock) []converseMessage {
+	if last := len(messages) - 1; last >= 0 && messages[last].Role == converseRoleUser && containsToolResult(messages[last].Content) {
+		messages[last].Content = append(messages[last].Content, content...)
+		return messages
+	}
+	return append(messages, converseMessage{Role: converseRoleUser, Content: content})
+}
+
+func containsToolResult(content []contentBlock) bool {
+	for _, block := range content {
+		if block.ToolResult != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func assistantCachePointRole(parts []provider.ContentPart) string {
+	if len(parts) > 0 && parts[len(parts)-1].Type == provider.ContentPartTypeToolResult {
+		return converseRoleUser
+	}
+	return converseRoleAssistant
 }
 
 func convertSystemBlock(messages []provider.Message, warnings *[]provider.Warning) ([]systemContentBlock, error) {
@@ -533,8 +564,15 @@ func convertToolContent(parts []provider.ContentPart, documentCounter *int, warn
 	return out, nil
 }
 
-func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.Warning, isMistral bool, trimLastText bool) ([]contentBlock, error) {
-	var out []contentBlock
+func convertAssistantContent(parts []provider.ContentPart, documentCounter *int, warnings *[]provider.Warning, isMistral bool, trimLastText bool) ([]converseMessage, error) {
+	var out []converseMessage
+	emit := func(role string, block contentBlock) {
+		if last := len(out) - 1; last >= 0 && out[last].Role == role {
+			out[last].Content = append(out[last].Content, block)
+			return
+		}
+		out = append(out, converseMessage{Role: role, Content: []contentBlock{block}})
+	}
 	for partIndex, p := range parts {
 		switch p.Type {
 		case provider.ContentPartTypeText:
@@ -547,7 +585,7 @@ func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.
 			if trimLastText && partIndex == len(parts)-1 {
 				text = trimECMAScriptWhitespace(text)
 			}
-			out = append(out, contentBlock{Text: text})
+			emit(converseRoleAssistant, contentBlock{Text: text})
 
 		case provider.ContentPartTypeReasoning:
 			meta, _, err := readReasoningMetadata(p.ProviderOptions)
@@ -565,17 +603,23 @@ func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.
 			default:
 				continue
 			}
-			out = append(out, contentBlock{ReasoningContent: rc})
+			emit(converseRoleAssistant, contentBlock{ReasoningContent: rc})
 
 		case provider.ContentPartTypeToolCall:
-			input := toBedrockToolInput(p.Input)
-			out = append(out, contentBlock{
+			emit(converseRoleAssistant, contentBlock{
 				ToolUse: &toolUseBlock{
 					ToolUseID: normalizeToolCallID(p.ToolCallID, isMistral),
 					Name:      sanitizeToolName(p.ToolName),
-					Input:     input,
+					Input:     toBedrockToolInput(p.Input),
 				},
 			})
+
+		case provider.ContentPartTypeToolResult:
+			toolResult, err := buildToolResult(p, documentCounter, isMistral, warnings)
+			if err != nil {
+				return nil, err
+			}
+			emit(converseRoleUser, contentBlock{ToolResult: toolResult})
 
 		case provider.ContentPartTypeToolApprovalRequest:
 			// Tool approval requests are local conversation bookkeeping.

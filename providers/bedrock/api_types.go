@@ -55,9 +55,14 @@ type systemContentBlock struct {
 	CachePoint *cachePoint `json:"cachePoint,omitempty"`
 }
 
+const (
+	converseRoleUser      = "user"
+	converseRoleAssistant = "assistant"
+)
+
 // converseMessage is a `messages` entry: a role plus content blocks.
 type converseMessage struct {
-	Role    string         `json:"role"` // "user" or "assistant"
+	Role    string         `json:"role"`
 	Content []contentBlock `json:"content"`
 }
 
