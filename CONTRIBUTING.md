@@ -554,7 +554,8 @@ SDK's Go module dependency graph.
 - **Source PRs:** CI builds and tests the SDK, providers, middleware, Grafana
   client, and Gateway from the proposed source. It also verifies module-pin
   ancestry and dependency and license boundaries. See
-  [CI](.github/workflows/ci.yml) for the seven required source checks. CI no
+  [CI](.github/workflows/ci.yml) for the seven required source checks. The `ci`
+  check requires both the parallel `build-test` and `lint` jobs to succeed. CI no
   longer builds or publishes Gateway container images. The App Platform migration
   and its plugin validation are tracked separately in #428.
 - **Go module releases:** Before tagging an SDK, provider, or middleware version
