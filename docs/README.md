@@ -82,6 +82,10 @@ the service your application calls:
 
 ## Extend model infrastructure
 
+- [How a request crosses AI Gateway](concepts/gateway-architecture.md) — follow
+  authentication, protocol translation, model routing, and streaming failures.
+- [Gateway glossary](concepts/gateway-glossary.md) — connect everyday terms,
+  aliases, and code names across the client and provider boundaries.
 - [Writing a provider](providers/writing-a-provider.md) — adapt another model
   service to the common SDK behavior.
 

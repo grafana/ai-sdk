@@ -10,6 +10,9 @@ go get github.com/grafana/ai-sdk github.com/grafana/ai-sdk/providers/grafana
 
 Keep Gateway and model-provider credentials on your server, not in browser code.
 
+For the server-side flow, see [Gateway architecture](../concepts/gateway-architecture.md)
+and the [glossary](../concepts/gateway-glossary.md).
+
 ## Inspect execution overviews and failures
 
 Private configured-model results and stream finish metadata may contain
@@ -66,6 +69,34 @@ remains separate; independently authorize logging
 or display of native diagnostics. These fields
 are not automatically UI message metadata or display content; map only
 deliberately selected values for your frontend.
+
+## Inspect raw provider events
+
+Pass `aisdk.WithIncludeRawChunks()` to `StreamText` (or set `IncludeRawChunks`
+on direct `DoStream` calls) to receive the selected provider's native stream
+events as `aisdk.StreamRaw` parts, in order with the normalized parts. Without
+the option, the Gateway sends no raw events. Unary calls accept the option and
+return no raw output.
+
+Raw events are diagnostic. Their shape is whatever the provider sends and can
+change without notice, so do not build application logic on them. Events keep
+their JSON values but not their exact bytes: whitespace, key order and escaping
+can differ from the provider's. A native event that is not valid UTF-8 JSON, or
+that repeats an object key, is skipped. Native provider error events pass
+through, so they can contain more detail than the Gateway's own error events.
+The Gateway does not log or export raw values.
+
+Before writing an event, the Gateway removes MCP tool credentials that OpenAI
+echoes from the request: the `headers` object becomes `null`, `authorization`
+is removed, and `server_url` loses userinfo and the `access_token`, `api_key`
+and `X-Amz-*` credential query keys, or is removed if it cannot be parsed.
+Other query keys pass through.
+
+Requesting raw output can make an otherwise successful stream fail. Raw parts
+use the stream part budget, and a raw event larger than the frame limit ends
+the stream with an error and no finish; it is never truncated. To allow larger
+events, raise the Gateway's stream frame limit and the client's
+`Limits.StreamEventBytes` together.
 
 ## Authenticate the client
 

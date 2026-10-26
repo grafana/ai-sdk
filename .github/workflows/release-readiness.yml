@@ -2,6 +2,7 @@ name: Release readiness
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions: {}
 
@@ -29,4 +30,15 @@ jobs:
         run: gh api "repos/grafana/ai-sdk/pulls/$PR_NUMBER" > "$RUNNER_TEMP/release-pr.json"
 
       - name: Validate selected library publication readiness
-        run: python3 scripts/release_readiness.py --pull-request "$RUNNER_TEMP/release-pr.json"
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release_readiness.py --pull-request "$RUNNER_TEMP/release-pr.json" --evidence "$RUNNER_TEMP/library-readiness.json"
+
+      - name: Retain validated library candidate evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: library-readiness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/library-readiness.json
+          if-no-files-found: ignore
+          retention-days: 90

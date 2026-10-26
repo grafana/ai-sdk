@@ -242,7 +242,7 @@ startup:
 	close(release)
 	cancelStartup()
 	for range pendingProbes {
-		<-probeErrors
+		<-probeErrors //nolint:errcheck
 	}
 	if result == nil && ctx.Err() == nil {
 		select {

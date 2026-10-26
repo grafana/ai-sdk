@@ -43,7 +43,6 @@ var (
 	unsupportedToolsError            = []byte(`{"error":{"message":"unsupported capability: tools","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedToolApprovalsError    = []byte(`{"error":{"message":"unsupported capability: tool-approvals","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedStructuredOutputError = []byte(`{"error":{"message":"unsupported capability: structured-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
-	unsupportedRawOutputError        = []byte(`{"error":{"message":"unsupported capability: raw-output","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 	unsupportedProviderOptionsError  = []byte(`{"error":{"message":"unsupported capability: provider-options","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
 
 	reservedProviderOptionsError = []byte(`{"error":{"message":"reserved provider option namespace","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)
@@ -138,6 +137,9 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"custom","kind":"example.kind","providerMetadata":{"ns":{"nested":[null,false,0,"",[],{}]}}}`,
 		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{}},"finishReason":{"unified":"stop"}}`,
 		`{"type":"finish","usage":{"inputTokens":{},"outputTokens":{},"raw":{"native":{"tokens":[1,null,true]}}},"finishReason":{"unified":"stop"}}`,
+		`{"type":"raw","rawValue":{"type":"response.created","sequence_number":0}}`,
+		`{"type":"raw","rawValue":null}`,
+		`{"type":"raw","rawValue":["native",1]}`,
 	}
 	for _, frame := range [][]byte{
 		canonicalRateLimitStreamErrorFrame,
@@ -155,6 +157,8 @@ func TestStreamEventSchema(t *testing.T) {
 	}
 	invalid := []string{
 		`{"type":"stream-start"}`,
+		`{"type":"raw"}`,
+		`{"type":"raw","rawValue":{},"extra":true}`,
 		`{"type":"stream-start","warnings":[{"type":"other"}]}`,
 		`{"type":"response-metadata","modelId":null}`,
 		`{"type":"response-metadata","modelId":"public","provider":"private"}`,
@@ -166,7 +170,6 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"error","error":{"message":"private","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true}}`,
 		`{"type":"error","error":{"message":"internal error","type":"rate_limit_exceeded","param":null,"code":"rate_limit_exceeded","statusCode":429,"retryable":true}}`,
 		`{"type":"error","error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true,"details":"private"}}`,
-		`{"type":"raw","rawValue":{}}`,
 		`{"type":"custom"}`,
 		`{"type":"custom","kind":"undotted"}`,
 		`{"type":"custom","kind":""}`,
@@ -197,7 +200,6 @@ func TestErrorSchema(t *testing.T) {
 		unsupportedToolApprovalsError,
 		reservedProviderOptionsError,
 		protectedCallHeaderError,
-		unsupportedRawOutputError,
 	}
 	for _, document := range documents {
 		require.NoError(t, compiled.Validate(json.RawMessage(document)), string(document))

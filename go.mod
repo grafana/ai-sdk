@@ -1,6 +1,6 @@
 module github.com/grafana/ai-sdk
 
-go 1.26.3
+go 1.27.3
 
 require (
 	github.com/invopop/jsonschema v0.14.0

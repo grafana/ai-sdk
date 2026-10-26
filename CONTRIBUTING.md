@@ -52,6 +52,10 @@ the source and cannot drift.
 
 - Read the [Code of Conduct](CODE_OF_CONDUCT.md). All contributors are expected
   to follow it.
+- **Sign the Contributor License Agreement (CLA).** Before we can accept your
+  pull request, you must sign the
+  [Grafana Labs CLA](https://grafana.com/docs/grafana/latest/developer-resources/contribute/cla/).
+  Follow the CLA Assistant prompt on your pull request if you haven't signed it.
 - Search [existing issues](https://github.com/grafana/ai-sdk/issues) so you
   don't duplicate work already in flight.
 - **Sign your commits.** All Grafana Labs repositories
@@ -340,6 +344,7 @@ no mocking framework. See [AGENTS.md](AGENTS.md) for the full conventions.
 ```bash
 mise run test              # all Go tests, all modules
 mise run test-short        # skip integration/E2E
+mise run test-race         # short tests with the race detector, Gateway and stream-path modules
 mise run test-integration  # cross-language integration tests (Go server, Vitest client)
 mise run test-conformance  # replay upstream-recorded fixtures
 ```
@@ -416,6 +421,24 @@ Conventions:
   note, "what this will cover", "see also", nav footer) so the structure reads
   as intentional.
 
+### Keep architecture and terminology current
+
+When a change affects Gateway components, request ordering, authentication,
+routing, protocol boundaries, streaming/failure behavior, or supported capabilities,
+update the affected [architecture walkthrough and Mermaid diagrams](docs/concepts/gateway-architecture.md)
+in the same change. Update the [glossary](docs/concepts/gateway-glossary.md) when
+terms, aliases, code names, or their meanings change. Ground both in the resulting
+implementation and keep proposed capabilities clearly separate. Changes that leave
+these descriptions accurate do not require cosmetic documentation edits.
+
+Reviews should check these documents for drift and provide before/after Mermaid
+comparisons and a glossary to help reviewers understand the diff. Those comparisons
+are reviewer artifacts: save them outside the repository (for example, in external
+Hive context or a temporary directory), and do not commit them. The maintained
+architecture diagrams describe the current system, without PR-specific change
+highlighting. Validate changed documentation links and Mermaid syntax/rendering
+with the available tools, recording any validation limits.
+
 ### Linting the docs
 
 ```bash
@@ -484,7 +507,7 @@ maintainer to trigger CI.
 ## Releases and independent modules
 
 Core, providers, and middleware are released independently as Go libraries.
-Gateway is an independently versioned Docker application with workspace source.
+Gateway application delivery is separate from library release automation.
 After #245 activates release automation, versions, changelogs, tags, and GitHub
 Releases will be produced by
 [release-please](https://github.com/googleapis/release-please) from the
@@ -498,9 +521,8 @@ using the right type in its title:
 - `chore:`, `ci:`, `docs:`, `refactor:`, `test:`, and `build:` produce no
   release.
 
-A library change is attributed to its module by the files it touches. #245 will
-also attribute relevant SDK, provider, and middleware changes to the
-workspace-built Gateway image release. While the modules are in the `alpha`
+A library change is attributed to its module by the files it touches. Gateway
+image delivery is outside this library release path. While the modules are in the `alpha`
 channel, each release advances the prerelease counter
 (`v0.1.0-alpha.1` to `v0.1.0-alpha.2`).
 
@@ -511,8 +533,9 @@ mise run release-check      # configuration and readiness policy tests
 mise run release-preview    # dry-run of the next release pull request
 ```
 
-Release automation is inactive until #245 readiness and Gateway attribution/image
-gates are implemented and reviewed. No release PRs or tags are created by #21 alone.
+Library automation defaults off and requires the reviewed settings and explicit
+mode in the [activation rollout](release/tooling/ACTIVATION.md). Gateway work does
+not gate library activation.
 After activation, each library gets its own release pull request. Maintainers merge the root one
 first, let Renovate carry the new core version into the nested `go.mod` files,
 then merge the rest. The complete workflow is in the
@@ -530,17 +553,18 @@ SDK's Go module dependency graph.
 - **Source PRs:** CI builds and tests the SDK, providers, middleware, Grafana
   client, and Gateway from the proposed source. It also verifies module-pin
   ancestry and dependency and license boundaries. See
-  [CI](.github/workflows/ci.yml) for the required checks.
+  [CI](.github/workflows/ci.yml) for the seven required source checks. The `ci`
+  check requires both the parallel `build-test` and `lint` jobs to succeed. CI no
+  longer builds or publishes Gateway container images. The App Platform migration
+  and its plugin validation are tracked separately in #428.
 - **Go module releases:** Before tagging an SDK, provider, or middleware version
   for external Go consumers, validate that module against its declared `go.mod`
   dependencies with `MODULE=providers/anthropic mise run verify-published-module`
-  (substitute the module being released). This check remains manual pending
-  release automation (#245/#21). For a broader diagnostic,
+  (substitute the module being released). Release PR readiness additionally checks
+  current-base metadata, canonical tagged prerequisite freshness, and isolated
+  selected-consumer regressions; see the [release runbook](release/README.md).
+  Publication requires explicit activation under #245. For a broader diagnostic,
   `mise run verify-module-resolution` checks all published modules.
-- **Gateway images:** Gateway uses the separate `go.gateway.work` to build from
-  same-revision local source. Push-only image validation checks the Gateway
-  artifact at the checkout revision before publication or deployment. Gateway
-  is not published as a standalone Go module.
 
 The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
 but SDK modules must not import, require, or replace Gateway. Real published

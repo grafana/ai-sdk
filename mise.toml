@@ -4,12 +4,12 @@ min_version = "2026.5.4"
 experimental = true
 
 [tools]
-go = "1.27.2"
+go = "1.27.3"
 jq = "1.8.2"
 node = "24"
 pnpm = "12.11.2"
 python = "3.15.0"
-golangci-lint = "2.14.0"
+golangci-lint = "2.15.0"
 "npm:@fission-ai/openspec" = "1.14.1"
 "npm:markdownlint-cli2" = "0.23.3"
 
@@ -150,6 +150,22 @@ go test -short ./...
 (cd middleware/prometheus && go test -short ./...)
 """
 
+[tasks.test-race]
+description = "Run short candidate-source tests with the race detector on the Gateway and its stream-path modules"
+run = """
+workspace_file="$PWD/go.gateway.work"
+export GOWORK="$PWD/go.work"
+mise run verify-gateway-workspace
+go test -race -short ./...
+(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -race -short ./...)
+(cd providers/anthropic && go test -race -short ./...)
+(cd providers/openai && go test -race -short ./...)
+(cd providers/openai-compatible && go test -race -short ./...)
+(cd middleware/logger && go test -race -short ./...)
+(cd middleware/agentobservability && go test -race -short ./...)
+(cd middleware/prometheus && go test -race -short ./...)
+"""
+
 [tasks.fmt]
 description = "Format all Go files"
 run = "gofmt -w ."
@@ -197,7 +213,7 @@ run = "bash scripts/module-policy.sh pins"
 description = "Validate the release-please configuration against published modules"
 run = """
 go test ./internal/releasecheck
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_release_readiness.py'
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_release_*.py'
 """
 
 [tasks.release-preview]
