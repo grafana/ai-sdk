@@ -47,11 +47,10 @@ const (
 	MaxProviderAttempts = 8
 )
 
-// Default of the configurable model limit, and the fixed stream durations.
+// Fixed stream durations. The request deadline belongs to the plugin host.
 const (
-	defaultModelDuration = 120 * time.Second
-	streamIdleDuration   = 30 * time.Second
-	streamDrainDuration  = time.Second
+	streamIdleDuration  = 30 * time.Second
+	streamDrainDuration = time.Second
 )
 
 // AgentObservabilityTokenSetting is the setting key of the Agent
@@ -119,18 +118,6 @@ func (e *environment) bool(key string, fallback bool) bool {
 	return parsed
 }
 
-func (e *environment) duration(key string, fallback time.Duration) time.Duration {
-	name, value, ok := e.raw(key)
-	if !ok {
-		return fallback
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		e.invalid(name)
-	}
-	return parsed
-}
-
 // ParseSettings reads and validates the plugin settings from the environment.
 func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 	env := environment{lookup: lookupEnv}
@@ -143,7 +130,6 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 			TLS:      env.bool("agento11y_tls", true),
 		},
 		ProviderWire: providerv4.Limits{
-			ModelDuration:       env.duration("max_model_duration", defaultModelDuration),
 			StreamIdleDuration:  streamIdleDuration,
 			StreamDrainDuration: streamDrainDuration,
 		},
@@ -169,9 +155,6 @@ func (settings Settings) Validate() error {
 	}
 	if err := settings.AgentObservability.validate(); err != nil {
 		return err
-	}
-	if settings.ProviderWire.ModelDuration < ProviderResponseHeaderTimeout || settings.ProviderWire.ModelDuration < streamIdleDuration {
-		return fmt.Errorf("config: max model duration must be at least %s", max(ProviderResponseHeaderTimeout, streamIdleDuration))
 	}
 	if _, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(limitValidationResolver{}), Limits: settings.ProviderWire}); err != nil {
 		return fmt.Errorf("config: providerwire limits: %w", err)

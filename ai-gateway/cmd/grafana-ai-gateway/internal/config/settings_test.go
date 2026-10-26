@@ -28,7 +28,6 @@ func TestParseSettings_Defaults(t *testing.T) {
 			TLS:      true,
 		},
 		ProviderWire: providerv4.Limits{
-			ModelDuration:       120 * time.Second,
 			StreamIdleDuration:  30 * time.Second,
 			StreamDrainDuration: time.Second,
 		},
@@ -49,7 +48,6 @@ func TestParseSettings_EnvironmentBindings(t *testing.T) {
 		{env: "GF_PLUGIN_AGENTO11Y_ENDPOINT", value: "other.example:4317", check: func(t *testing.T, s Settings) {
 			assert.Equal(t, "other.example:4317", s.AgentObservability.Endpoint)
 		}},
-		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "45s", check: func(t *testing.T, s Settings) { assert.Equal(t, 45*time.Second, s.ProviderWire.ModelDuration) }},
 	}
 	for _, tc := range tests {
 		t.Run(tc.env, func(t *testing.T) {
@@ -70,7 +68,6 @@ func TestParseSettings_EnvironmentBindings(t *testing.T) {
 
 func TestParseSettings_InvalidValuesNameTheSetting(t *testing.T) {
 	for _, tc := range []struct{ env, value string }{
-		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "private-value"},
 		{env: "GF_PLUGIN_AGENTO11Y_ENABLED", value: "private-value"},
 		{env: "GF_PLUGIN_AGENTO11Y_TLS", value: "private-value"},
 	} {
@@ -98,6 +95,8 @@ func TestParseSettings_RemovedSettingsAreIgnored(t *testing.T) {
 		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "2048"},
 		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "-1"},
 		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "private-value"},
+		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "20s"},
+		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "private-value"},
 	} {
 		t.Run(tc.env+"="+tc.value, func(t *testing.T) {
 			environment := baseSettingsEnvironment()
@@ -118,7 +117,6 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		mutate func(*Settings)
 	}{
 		{name: "config file", mutate: func(s *Settings) { s.ConfigFile = " " }},
-		{name: "model duration below provider and idle timeouts", mutate: func(s *Settings) { s.ProviderWire.ModelDuration = 29 * time.Second }},
 		{name: "agento11y protocol", mutate: func(s *Settings) { s.AgentObservability.Protocol = "other" }},
 		{name: "agento11y endpoint", mutate: func(s *Settings) { s.AgentObservability.Endpoint = "" }},
 		{name: "agento11y endpoint credentials", mutate: func(s *Settings) {

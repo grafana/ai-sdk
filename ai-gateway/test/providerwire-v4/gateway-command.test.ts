@@ -24,6 +24,7 @@ const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const COMMAND_DIR = resolve(AI_GATEWAY_ROOT, "cmd/grafana-ai-gateway");
 const HOST_DIR = resolve(AI_GATEWAY_ROOT, "test/platformhost/cmd/plugin-host");
 const READY_TIMEOUT_MS = 30_000;
+const ROUTE_DEADLINE = "60s";
 const TEST_TOKEN = "glsa_integration_service_account_token";
 const TEST_NAMESPACE = "stacks-27038";
 const INTERNAL_SERVICE = "integration-internal-service";
@@ -1923,13 +1924,14 @@ describe("authenticated Anthropic Gateway command", () => {
     try {
       let failure = "";
       try {
-        await GatewayProcess.start(binaryPath, fake.url, ["--max-model-duration=20s"]);
+        await GatewayProcess.start(binaryPath, fake.url, ["--agento11y-enabled=private-value"]);
       } catch (error) {
         failure = String(error);
       }
       assert.ok(failure.includes("gateway exited unsuccessfully"));
       assert.ok(failure.includes("gateway plugin failed to start"));
-      assert.ok(failure.includes("max model duration must be at least"));
+      assert.ok(failure.includes("GF_PLUGIN_AGENTO11Y_ENABLED has an invalid value"));
+      assert.ok(!failure.includes("private-value"));
       assert.deepEqual(processLifecycleEvents(failure), []);
       assert.notEqual(GatewayProcess.lastFailedDirectory, undefined);
       assert.equal(existsSync(GatewayProcess.lastFailedDirectory!), false);
@@ -3164,7 +3166,7 @@ class GatewayProcess {
       writeFileSync(configPath, fallbackURL
         ? anthropicFallbackConfig(anthropicURL, fallbackURL, backendModel)
         : configYAML ?? anthropicConfig(anthropicURL, backendModel));
-      proc = spawn(hostBinaryPath, ["--plugin", binary, "--topology", topology, "--namespace", TEST_NAMESPACE, "--service-account-token", TEST_TOKEN, "--log-level", "debug"], {
+      proc = spawn(hostBinaryPath, ["--plugin", binary, "--topology", topology, "--namespace", TEST_NAMESPACE, "--service-account-token", TEST_TOKEN, "--log-level", "debug", "--route-deadline", ROUTE_DEADLINE], {
         cwd: directory,
         stdio: ["ignore", "pipe", "pipe"],
         env: {

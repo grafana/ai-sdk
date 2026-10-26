@@ -368,8 +368,9 @@ Use `errors.Is` to detect cancellation and deadlines. Use `errors.As` with
 `*provider.APICallError` to check whether a call can be retried. The client
 does not retry on its own; configure retries in your application.
 
-The Gateway limits request sizes, provider response sizes and model duration,
-so the client has no size limits to configure. To bound a call yourself, use the
+The Gateway limits provider response sizes and stream idle time, and Grafana
+limits request size and duration, so the client has no size limits to
+configure. To bound a call yourself, use the
 context deadline above, and your own `http.Client` for transport-level limits
 such as timeouts.
 

@@ -106,7 +106,6 @@ something is wrong, it does not start, and Grafana's log says why.
 | `config_file` | Path to the model catalog. Required. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
-| `max_model_duration` | Longest model call. Defaults to `120s`; at least `30s`. |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 
 ## Limits
@@ -119,7 +118,7 @@ format.
 |---|---|
 | 60 seconds per request, including a streamed response; 16 MiB per request, the plugin SDK's route message size; how many requests run at once | Grafana's plugin host |
 | 16 MiB per provider response, or per event in a streamed response, counted after decompression; 10 seconds to receive response headers; no redirects | Model transport, shared by every provider and provider key |
-| `max_model_duration`; 30 seconds without stream activity; 1 second of cleanup after a stream ends | Language-model handler |
+| 30 seconds without stream activity; 1 second of cleanup after a stream ends | Language-model handler |
 | 8 provider attempts per request: a model's primary and fallbacks, or the keys for the selected provider in a request that brings its own keys | Model catalog loader, at startup, and request key selection |
 | 1 MiB model catalog file; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName` and each `provider` and `model` value | Model catalog loader, at startup |
 
@@ -130,6 +129,20 @@ the time limits bound them instead. A streamed provider response has no total
 size limit: each event is limited to 16 MiB, and time bounds the stream. The
 `max_request_bytes` setting is removed and ignored; the plugin host's route
 message size bounds each request instead.
+
+Grafana's route deadline is the only limit on a whole request, including
+selection, every provider attempt and a streamed response. The
+`max_model_duration` setting is removed and ignored. When the deadline expires,
+the Gateway sees the request as canceled, so its logs, metrics and attempt
+records show a cancellation; Grafana's own request log shows the deadline. Give
+the plugin a termination grace period longer than the route deadline plus the
+1 second of stream cleanup.
+
+Without a route deadline, a request ends only when it completes, when the caller
+disconnects, when a provider takes more than 10 seconds to send response
+headers, or when a stream is idle for 30 seconds. A non-streaming Anthropic call
+also fails before it reaches the provider when its token budget is larger than
+the Anthropic SDK allows without a deadline: set `maxOutputTokens`, or stream.
 
 Memory per request grows with the size of the provider response, because
 encoding it as JSON can expand it several times, and with the number of

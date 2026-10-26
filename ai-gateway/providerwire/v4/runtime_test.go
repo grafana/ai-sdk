@@ -771,10 +771,8 @@ func TestRuntimeModelContainment(t *testing.T) {
 		}
 	})
 
-	t.Run("timeout bounds a model that ignores context", func(t *testing.T) {
-		limits := testLimits()
-		limits.ModelDuration = 20 * time.Millisecond
-		harness := newRuntimeHarness(t, limits)
+	t.Run("request deadline bounds a model that ignores context", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
 		release := make(chan struct{})
 		returned := make(chan struct{})
 		harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
@@ -783,7 +781,7 @@ func TestRuntimeModelContainment(t *testing.T) {
 			return validGenerateResult(), nil
 		}
 		start := time.Now()
-		response := harness.serve(validRequest(`{"prompt":[]}`))
+		response := harness.serve(withRequestDeadline(t, validRequest(`{"prompt":[]}`), 20*time.Millisecond))
 		assert.Equal(t, http.StatusGatewayTimeout, response.Code)
 		assert.Less(t, time.Since(start), time.Second)
 		close(release)

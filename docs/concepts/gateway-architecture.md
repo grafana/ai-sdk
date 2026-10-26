@@ -101,7 +101,7 @@ sequenceDiagram
   H->>H: Match route and method, authenticate
   H->>W: Authenticated request, bounded body and caller context
   W->>W: Validate and map protocol
-  W->>M: Resolve public model under model deadline
+  W->>M: Resolve public model under request deadline
   M-->>W: Canonical model and configured candidates
   W->>M: DoGenerate or DoStream
   M->>P: Provider-specific authenticated request
@@ -130,8 +130,8 @@ sequenceDiagram
    input can fail before model selection. See the
    [handler](../../ai-gateway/providerwire/v4/handler.go) and
    [request mapper](../../ai-gateway/providerwire/v4/request.go).
-3. **Selection resolves a public name.** A model deadline begins after request
-   validation and covers selection plus model execution. `NewConfiguredSelector`
+3. **Selection resolves a public name.** The request deadline, which Grafana's
+   route deadline sets, covers selection plus model execution. `NewConfiguredSelector`
    checks configured-account access, then delegates to `CatalogSelector` to
    resolve `assistant` or an alias to its canonical model. This private path
    rejects reserved Gateway controls; its caller cannot switch to request
@@ -207,8 +207,8 @@ performed by a remote provider or tool.
 Each resource limit has one owner. Grafana's plugin host bounds each request by
 its route message size, and the model transport bounds each decompressed
 provider response, or each event of a streamed one, to 16 MiB. The handler
-bounds only model duration, stream idle time and cleanup; it never rejects or truncates output because of its
-size. Grafana's plugin host owns the route deadline and admission. See the
+bounds only stream idle time and cleanup; it never rejects or truncates output because of its
+size. Grafana's plugin host owns the request deadline and admission. See the
 [limits](../../ai-gateway/README.md#limits) for the full list.
 
 ## What the observations tell you

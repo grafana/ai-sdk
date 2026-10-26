@@ -53,10 +53,13 @@ Code facts that shape the approach:
   - `Validate` drops the "at least 30s" rule and still builds a throwaway handler to check the fixed durations.
   - Unknown `GF_PLUGIN_*` variables are already ignored, so a removed setting is ignored without extra code.
 - **Platform deadline disabled.** With no deadline on the request context, the call ends only at completion, caller cancellation, an attempt's 10s header timeout or the 30s stream idle duration. A unary attempt whose provider stalls after sending headers is bounded only by caller cancellation. The ledger states this.
+- **Anthropic unary calls need a deadline.** `anthropic-sdk-go` refuses a non-streaming call whose `max_tokens` it estimates above 10 minutes (about 21,333 tokens, or a lower per-model limit) unless it has a request timeout. `providers/anthropic` supplies that timeout from the context deadline (`anthropic-unary-context-deadline`), and the removed `ModelDuration` always provided one. Without a platform deadline, such a call fails with the internal error before any native request. Streaming is unaffected, and `@ai-sdk/anthropic@4.0.71` has no such guard.
+- **Test host deadline.** The command tests run the built plugin behind the test host with a 60s route deadline (`--route-deadline`), as Grafana serves it today.
 
 Alternatives:
 - *Keep `ModelDuration` with a default above the platform deadline.* Rejected: the setting can never be reached, and it would contradict the platform once #460 makes the deadline configurable.
-- *Keep a fixed internal ceiling for when the platform deadline is disabled.* Rejected: it reintroduces the owner conflict. Disabling the deadline is an operator choice that the platform owns.
+- *Keep a fixed internal ceiling for when the platform deadline is disabled.* Rejected: it reintroduces the owner conflict, and it would cut off the long streams an operator disables the deadline to allow. Disabling the deadline is an operator choice that the platform owns.
+- *Always pass the Anthropic SDK a request timeout, as `@ai-sdk/anthropic` effectively behaves.* Deferred: it reverses `anthropic-unary-context-deadline` in the Anthropic provider module and belongs in its own change.
 - *Keep today's streaming classification, where an ended request context means cancellation.* Rejected: unary and streaming would disagree for a host that delivers `DeadlineExceeded`.
 - *Report a timeout whenever a request with a deadline ends.* Rejected: it mislabels caller disconnects as timeouts.
 - *Report a timeout when the context ends close to its deadline.* Rejected: it needs an invented tolerance, and the observed cancellation can precede the plugin's copy of the deadline.
@@ -170,6 +173,8 @@ This is a Go extension with no upstream counterpart: `@ai-sdk/gateway@4.0.103` d
 
 - **Platform deadline disabled** → A unary attempt that stalls after its headers holds a goroutine and a connection until the caller disconnects.
   - Mitigation: the ledger documents it. The platform owns the deadline (#460), and streams keep the idle bound.
+- **Without a platform deadline, unary Anthropic calls with a large token budget fail** → A call that leaves `maxOutputTokens` unset on a model with a large default budget gets the internal error.
+  - Mitigation: Grafana sets a route deadline today. The ledger tells operators to set `maxOutputTokens` or stream, and the provider-level fix is deferred (D1).
 - **A platform deadline shows as a cancellation in Gateway logs, metrics and attempt records** → Operators cannot tell it from a caller disconnect in Gateway telemetry.
   - Mitigation: the caller gets the host's deadline error, not the Gateway's. The ledger states that Grafana's own request logs show the deadline.
 - **Requests up to 16 MiB reach schema validation** → More CPU and decode memory per request than with a 1 MiB bound.

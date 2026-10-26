@@ -62,6 +62,8 @@ func (b *syncBuffer) String() string {
 type fakeAnthropic struct {
 	server   *httptest.Server
 	requests atomic.Int32
+	block    atomic.Bool
+	blocked  chan error
 	release  chan struct{}
 	canceled chan struct{}
 	mu       sync.Mutex
@@ -71,7 +73,7 @@ type fakeAnthropic struct {
 
 func newFakeAnthropic(t *testing.T) *fakeAnthropic {
 	t.Helper()
-	fake := &fakeAnthropic{canceled: make(chan struct{})}
+	fake := &fakeAnthropic{canceled: make(chan struct{}), blocked: make(chan error, 8)}
 	fake.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fake.requests.Add(1)
 		body, _ := io.ReadAll(r.Body)
@@ -80,6 +82,11 @@ func newFakeAnthropic(t *testing.T) *fakeAnthropic {
 		fake.headers = append(fake.headers, r.Header.Clone())
 		release := fake.release
 		fake.mu.Unlock()
+		if fake.block.Load() {
+			<-r.Context().Done()
+			fake.blocked <- r.Context().Err()
+			return
+		}
 		if !strings.Contains(string(body), `"stream":true`) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, unaryMessage)
@@ -129,7 +136,7 @@ func (f *fakeAnthropic) recorded() []string {
 	return values
 }
 
-func writeModelConfig(t *testing.T, baseURL string) string {
+func writeModelConfig(t *testing.T, baseURL string, fallback bool) string {
 	t.Helper()
 	contents := fmt.Sprintf(`providers:
   anthropic-primary:
@@ -143,6 +150,12 @@ models:
       provider: anthropic-primary
       model: backend-private
 `, baseURL)
+	if fallback {
+		contents += `    fallback:
+      - provider: anthropic-primary
+        model: backend-fallback
+`
+	}
 	path := filepath.Join(t.TempDir(), "models.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
 	return path
@@ -165,16 +178,26 @@ func lookup(values map[string]string) func(string) (string, bool) {
 	}
 }
 
+type harnessOptions struct {
+	routeDeadline time.Duration
+	fallback      bool
+}
+
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
 	t.Helper()
+	return newHarnessWithOptions(t, topology, harnessOptions{})
+}
+
+func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options harnessOptions) *harness {
+	t.Helper()
 	data := manifestdata.LocalManifest().ManifestData
-	host, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion})
+	host, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline})
 	require.NoError(t, err)
 	keys, err := host.JWKS()
 	require.NoError(t, err)
 	anthropic := newFakeAnthropic(t)
 	env := map[string]string{
-		"GF_PLUGIN_CONFIG_FILE": writeModelConfig(t, anthropic.server.URL),
+		"GF_PLUGIN_CONFIG_FILE": writeModelConfig(t, anthropic.server.URL, options.fallback),
 		"GRAFANA_JWKS":          string(keys),
 		"ANTHROPIC_SECRET":      providerSecret,
 	}
@@ -514,6 +537,52 @@ func TestGateway_AcceptsRequestsAboveTheFormerBodyBound(t *testing.T) {
 	assert.Contains(t, response, "hello")
 	require.Equal(t, int32(1), h.anthropic.requests.Load())
 	assert.Contains(t, h.anthropic.recorded()[0], data)
+}
+
+func TestGateway_RouteDeadlineEndsTheModelCall(t *testing.T) {
+	const routeDeadline = 200 * time.Millisecond
+	for _, streaming := range []bool{false, true} {
+		t.Run("deadline/streaming="+strconv.FormatBool(streaming), func(t *testing.T) {
+			h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{routeDeadline: routeDeadline, fallback: true})
+			internal := accessToken(h.serviceToken(t, testInternalService))
+			h.anthropic.block.Store(true)
+			start := time.Now()
+			_, _ = do(t, languageRequest(t, context.Background(), h.url("language-model"), unaryBody, streaming, internal))
+			select {
+			case err := <-h.anthropic.blocked:
+				require.Error(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("route deadline did not cancel the native request")
+			}
+			assert.GreaterOrEqual(t, time.Since(start), routeDeadline)
+			assert.Less(t, time.Since(start), 5*time.Second)
+			time.Sleep(100 * time.Millisecond)
+			assert.Equal(t, int32(1), h.anthropic.requests.Load())
+		})
+		t.Run("caller cancellation without a deadline/streaming="+strconv.FormatBool(streaming), func(t *testing.T) {
+			h := newHarness(t, platformhost.TopologyCloud)
+			internal := accessToken(h.serviceToken(t, testInternalService))
+			h.anthropic.block.Store(true)
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				response, err := http.DefaultClient.Do(languageRequest(t, ctx, h.url("language-model"), unaryBody, streaming, internal))
+				if err == nil {
+					_ = response.Body.Close()
+				}
+			}()
+			require.Eventually(t, func() bool { return h.anthropic.requests.Load() == 1 }, 3*time.Second, 10*time.Millisecond)
+			cancel()
+			select {
+			case err := <-h.anthropic.blocked:
+				require.Error(t, err)
+			case <-time.After(3 * time.Second):
+				t.Fatal("caller cancellation did not cancel the native request")
+			}
+			<-done
+		})
+	}
 }
 
 const unaryBody = `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]}],"maxOutputTokens":16}`

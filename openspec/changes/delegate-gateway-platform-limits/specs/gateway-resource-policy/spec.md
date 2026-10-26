@@ -74,6 +74,7 @@ The language-model handler SHALL bound selection and the logical model call by t
 #### Scenario: No platform deadline
 - **WHEN** the request context carries no deadline
 - **THEN** the handler SHALL apply no total deadline, and the call SHALL end only at completion, caller cancellation, an attempt's response-header timeout or the stream idle duration
+- **AND** a unary Anthropic attempt whose token budget the Anthropic SDK estimates above 10 minutes SHALL fail before any native request, as `anthropic-unary-context-deadline` specifies for a call without a deadline
 
 #### Scenario: Continuously ready provider during drain
 - **WHEN** a canceled provider channel stays ready with parts after terminal handling
@@ -110,7 +111,7 @@ The "Limits" section of `ai-gateway/README.md` SHALL list each retained Gateway 
 - **THEN** it SHALL name the Gateway owner of the provider attempt bound, the outbound response and event bytes, the header timeout and redirect rejection, and the idle and drain durations
 - **AND** it SHALL name the platform as the owner of the request deadline, the request message size, admission, concurrency and process memory, with the source of each
 - **AND** it SHALL list the removed `max_request_bytes` and `max_model_duration` settings, the former per-response stream bound, and the former unary, frame, part-count, raw-usage, error-document and summary-source limits, with their replacements
-- **AND** it SHALL state what bounds a call when the platform deadline is disabled, and that a platform deadline appears as a cancellation in Gateway telemetry
+- **AND** it SHALL state what bounds a call when the platform deadline is disabled, that unary Anthropic calls with a large token budget then fail unless they set `maxOutputTokens` or stream, and that a platform deadline appears as a cancellation in Gateway telemetry
 - **AND** it SHALL state that per-request memory grows with response size, JSON encoding expansion and concurrency, and recommend setting `GOMEMLIMIT` to about 85–90% of the container memory limit
 
 ### Requirement: Large-output client evidence

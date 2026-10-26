@@ -38,12 +38,11 @@ var (
 	requestSchemaJSON []byte
 )
 
-// Limits bounds the time the unary and streaming handler spends on a request.
-// The host bounds the request body, and the outbound transport bounds each
+// Limits bounds stream idle and drain time. Selection and the logical model
+// call end at the request context's deadline, which the host sets. The host
+// also bounds the request body, and the outbound transport bounds each
 // provider response.
 type Limits struct {
-	// ModelDuration bounds selection and the complete logical model call.
-	ModelDuration time.Duration
 	// StreamIdleDuration is the maximum time between represented provider parts.
 	StreamIdleDuration time.Duration
 	// StreamDrainDuration bounds asynchronous post-terminal channel draining.
@@ -55,7 +54,7 @@ type Config struct {
 	Selector RequestSelector
 	// ConfiguredAPIKeys are provider/exporter credentials redacted only from native error summaries.
 	ConfiguredAPIKeys []string `json:"-"`
-	// Limits bounds the model, stream idle and drain durations.
+	// Limits bounds the stream idle and drain durations.
 	Limits Limits
 }
 
@@ -88,9 +87,6 @@ func New(config Config) (http.Handler, error) {
 }
 
 func validateLimits(limits Limits) error {
-	if limits.ModelDuration <= 0 {
-		return fmt.Errorf("providerwire v4: model duration must be positive")
-	}
 	if limits.StreamIdleDuration <= 0 {
 		return fmt.Errorf("providerwire v4: stream idle duration must be positive")
 	}
@@ -153,8 +149,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeFailure(w, failure)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), h.limits.ModelDuration)
-	defer cancel()
+	ctx := r.Context()
 	resolved, err := h.selectModel(ctx, validated.modelID, options, gateway)
 	if err != nil {
 		h.writeSafeError(w, safeErrorFromResolution(err), nil)

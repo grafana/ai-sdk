@@ -132,7 +132,7 @@ The call still uses your service's models, and is made on the user's behalf.
 | `403 Forbidden` from Grafana | The token does not belong to the stack in the URL, or your role cannot use the app. |
 | `403` Gateway permission error | Your credential has no Gateway access, for example a Grafana service not yet allowed. |
 | `400` reserved provider option namespace | You sent your own provider key to a self-hosted Gateway. |
-| Request ends after 60 seconds | Grafana limits how long a request can run. Stream long responses. |
+| Request ends after 60 seconds | Grafana limits how long a request can run, including a streamed response. |
 
 Grafana answers some of these before the request reaches the Gateway, in its own
 error format rather than a Gateway error. The Go client reports them as

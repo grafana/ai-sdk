@@ -35,22 +35,22 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 4. Platform request deadline
 
-- [ ] 4.1 Add `RouteDeadline` to `platformhost.Config`, applied in `Host.Handler` before `CallRoute` (design D5). Thread it through the in-process and process hosts. In `host_test.go`, add stub-handler cases for a deadline carried no later than `RouteDeadline`, and for no deadline when it is zero. Verify with `go test -race ./test/platformhost/...`.
-- [ ] 4.2 Remove `Limits.ModelDuration` and its validation. Make `ServeHTTP` use the request context without a derived timeout. Classify an ended request context by its error in `waitStreamPart` and `streamContextErrorCategory` (design D1). Rewrite the `ModelDuration`-based tests in `handler_test.go`, `stream_test.go`, `stream_tools_test.go` and `runtime_test.go` to put the deadline on the request context, and add cases for:
+- [x] 4.1 Add `RouteDeadline` to `platformhost.Config`, applied in `Host.Handler` before `CallRoute` (design D5). Thread it through the in-process and process hosts. In `host_test.go`, add stub-handler cases for a deadline carried no later than `RouteDeadline`, and for no deadline when it is zero. Verify with `go test -race ./test/platformhost/...`.
+- [x] 4.2 Remove `Limits.ModelDuration` and its validation. Make `ServeHTTP` use the request context without a derived timeout. Classify an ended request context by its error (`DeadlineExceeded` timeout, `Canceled` cancellation) in `waitStreamPart` and `streamContextErrorCategory`, matching unary (design D1). Rewrite the `ModelDuration`-based tests in `handler_test.go`, `stream_test.go`, `stream_tools_test.go` and `runtime_test.go` to put the deadline on the request context, and add cases for:
   - deadline expiry giving the timeout category, and cancellation giving the cancellation category, in unary and streaming, before and after commitment;
   - a request without a deadline that runs until finish;
   - selection that consumes part of the deadline, leaving only the remaining time.
 
   Verify with `go test -race ./providerwire/v4/...`.
-- [ ] 4.3 Remove `max_model_duration`, `defaultModelDuration` and the "at least 30s" rule from `config`. Assert that `GF_PLUGIN_MAX_MODEL_DURATION`, set to a valid or an invalid value, is ignored. Drop `ModelDuration` from the `Limits` literals in `service`, `gateway` and the testserver. Verify with `go test ./cmd/grafana-ai-gateway/internal/...` and `mise run test-providerwire-v4`.
-- [ ] 4.4 In the gateway route tests, add cases with a fake native provider that blocks until canceled:
-  - with `RouteDeadline`, in unary and streaming mode, the native request is canceled at the deadline, and a two-candidate chain starts no second attempt;
+- [x] 4.3 Remove `max_model_duration`, `defaultModelDuration` and the "at least 30s" rule from `config`. Assert that `GF_PLUGIN_MAX_MODEL_DURATION`, set to a valid or an invalid value, is ignored. Drop `ModelDuration` from the `Limits` literals in `service`, `gateway` and the testserver. Verify with `go test ./cmd/grafana-ai-gateway/internal/...` and `mise run test-providerwire-v4`.
+- [x] 4.4 In the gateway route tests, add cases with a fake native provider that blocks until canceled:
+  - with `RouteDeadline`, in unary and streaming mode, the native request is canceled at the deadline, and a two-candidate chain starts no second attempt. Assert only that the call ends, not its timeout or cancellation category;
   - without a deadline, cancelling the caller cancels the native request.
 
   Verify with `go test -race ./cmd/grafana-ai-gateway/internal/gateway/...`.
-- [ ] 4.5 In `gateway-command.test.ts`, switch the malformed-startup test from `--max-model-duration` to a malformed `agento11y_enabled`, keeping its secret-safety assertions. Verify with `mise run test-ai-gateway-command`.
-- [ ] 4.6 Update the docs:
-  - in the ledger, add the platform request-deadline row (Grafana's route deadline, 60s today, #460), the disabled-deadline paragraph and the termination grace-period guidance, and drop the `max_model_duration` settings row;
+- [x] 4.5 Add a `--route-deadline` flag to the test plugin host, and start it with 60s in `gateway-command.test.ts`, as Grafana serves the plugin. Switch the malformed-startup test from `--max-model-duration` to a malformed `agento11y_enabled`, keeping its secret-safety assertions. Verify with `mise run test-ai-gateway-command`.
+- [x] 4.6 Update the docs:
+  - in the ledger, add the platform request-deadline row (Grafana's route deadline, 60s today, #460), the disabled-deadline paragraph including the unary Anthropic token-budget failure, the note that a platform deadline appears as a cancellation in Gateway telemetry, and the termination grace-period guidance, and drop the `max_model_duration` settings row;
   - in `docs/guides/gateway-authentication.md`, say the 60s deadline includes streams;
   - change "model deadline" to "request deadline" in `docs/concepts/gateway-architecture.md` and `docs/concepts/gateway-glossary.md`;
   - update "Bound work and handle errors" in `docs/providers/grafana-gateway.md`;
