@@ -204,11 +204,13 @@ Cancellation propagates through contexts, and cleanup drains remaining parts
 only within a configured duration. It cannot undo work already
 performed by a remote provider or tool.
 
-Each resource limit has one owner. Grafana's plugin host bounds each request by
-its route message size, and the model transport bounds each decompressed
-provider response, or each event of a streamed one, to 16 MiB. The handler
-bounds only stream idle time and cleanup; it never rejects or truncates output because of its
-size. Grafana's plugin host owns the request deadline and admission. See the
+Each resource limit has one owner. Grafana's plugin host owns the request
+deadline, the request size, admission and, through the container, process
+memory. The Gateway keeps only what it owns: 8 provider attempts per request,
+checked when the catalog loads and when request keys are decoded; 16 MiB per
+decompressed provider response, or per event of a streamed one, in the model
+transport; and stream idle time and cleanup in the handler, which never rejects
+or truncates output because of its size. See the
 [limits](../../ai-gateway/README.md#limits) for the full list.
 
 ## What the observations tell you

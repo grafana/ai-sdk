@@ -60,13 +60,13 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 5. Memory owner and ledger completeness
 
-- [ ] 5.1 Finish the ledger from design D7:
+- [x] 5.1 Finish the ledger from design D7:
   - the platform rows for admission, concurrency and process memory, with their sources;
   - the `GOMEMLIMIT` guidance (about 85–90% of the container memory limit);
   - the removed-limits list with replacements.
 
   Confirm that every retained limit has one owner and every platform limit has a source. Verify with `mise run lint-docs`.
-- [ ] 5.2 Check `docs/concepts/gateway-architecture.md`, its diagrams and `docs/concepts/gateway-glossary.md` against the resulting code, and fix any remaining drift in limit ownership or deadline wording. Verify with `mise run lint-docs`.
+- [x] 5.2 Check `docs/concepts/gateway-architecture.md`, its diagrams and `docs/concepts/gateway-glossary.md` against the resulting code, and fix any remaining drift in limit ownership or deadline wording. Verify with `mise run lint-docs`.
 
 ## 6. Integration checks
 

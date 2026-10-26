@@ -110,33 +110,49 @@ something is wrong, it does not start, and Grafana's log says why.
 
 ## Limits
 
-Each limit has one owner. Grafana rejects some requests, such as those with an
-invalid token, before they reach the Gateway; those errors use Grafana's error
-format.
+Each limit has one owner. The Gateway keeps only the limits that protect
+something it owns; Grafana owns the rest. Grafana rejects some requests, such
+as those with an invalid token or above its size limit, before they reach the
+Gateway; those errors use Grafana's error format.
+
+Gateway limits:
 
 | Limit | Owner |
 |---|---|
-| 60 seconds per request, including a streamed response; 16 MiB per request, the plugin SDK's route message size; how many requests run at once | Grafana's plugin host |
+| 8 provider attempts per request: a model's primary and fallbacks, or the keys for the selected provider in a request that brings its own keys | Model catalog loader, at startup, and request key selection |
 | 16 MiB per provider response, or per event in a streamed response, counted after decompression; 10 seconds to receive response headers; no redirects | Model transport, shared by every provider and provider key |
 | 30 seconds without stream activity; 1 second of cleanup after a stream ends | Language-model handler |
-| 8 provider attempts per request: a model's primary and fallbacks, or the keys for the selected provider in a request that brings its own keys | Model catalog loader, at startup, and request key selection |
 | 1 MiB model catalog file; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName` and each `provider` and `model` value | Model catalog loader, at startup |
 
-The Gateway no longer limits the size of a generated response, a stream event,
-the number of stream events, the provider's raw usage, an error response, or
-the provider error summaries it returns. The 16 MiB model transport limit and
-the time limits bound them instead. A streamed provider response has no total
-size limit: each event is limited to 16 MiB, and time bounds the stream. The
-`max_request_bytes` setting is removed and ignored; the plugin host's route
-message size bounds each request instead.
+Platform limits:
+
+| Limit | Owner and source |
+|---|---|
+| Request duration, including a streamed response | Grafana's route deadline: 60 seconds today, configurable in a later Grafana release |
+| Request size | The plugin route message size: 16 MiB, the Grafana plugin SDK default |
+| Admission and how many requests run at once | Grafana |
+| Process memory | The container memory limit. Set `GOMEMLIMIT` to about 85–90% of it. |
+
+### Removed limits
+
+| Removed | Replaced by |
+|---|---|
+| `max_request_bytes` setting | The plugin route message size |
+| `max_model_duration` setting | Grafana's route deadline |
+| 16 MiB per streamed provider response in total | 16 MiB per event, and the time limits |
+| 16 candidates per model; 8 keys per request | 8 provider attempts per request |
+| Sizes of a generated response, a stream event, the provider's raw usage, an error response and the provider error summaries; the number of stream events | The model transport limit and the time limits |
+
+Both removed settings are ignored if they are still set.
+
+### Request duration
 
 Grafana's route deadline is the only limit on a whole request, including
-selection, every provider attempt and a streamed response. The
-`max_model_duration` setting is removed and ignored. When the deadline expires,
-the Gateway sees the request as canceled, so its logs, metrics and attempt
-records show a cancellation; Grafana's own request log shows the deadline. Give
-the plugin a termination grace period longer than the route deadline plus the
-1 second of stream cleanup.
+selection, every provider attempt and a streamed response. When the deadline
+expires, the Gateway sees the request as canceled, so its logs, metrics and
+attempt records show a cancellation; Grafana's own request log shows the
+deadline. Give the plugin a termination grace period longer than the route
+deadline plus the 1 second of stream cleanup.
 
 Without a route deadline, a request ends only when it completes, when the caller
 disconnects, when a provider takes more than 10 seconds to send response
@@ -144,10 +160,14 @@ headers, or when a stream is idle for 30 seconds. A non-streaming Anthropic call
 also fails before it reaches the provider when its token budget is larger than
 the Anthropic SDK allows without a deadline: set `maxOutputTokens`, or stream.
 
-Memory per request grows with the size of the provider response, because
-encoding it as JSON can expand it several times, and with the number of
-requests running at once. Grafana, not the Gateway, decides how many requests
-run at once.
+### Memory
+
+Memory per request grows with the request size, with the size of each provider
+response or stream event, because encoding it as JSON can expand it several
+times, and with the number of requests running at once. Grafana, not the
+Gateway, decides how many requests run at once, and the container memory limit
+bounds the process. Setting `GOMEMLIMIT` below that limit makes the Go runtime
+collect garbage before the container runs out of memory.
 
 ## Learn more
 
