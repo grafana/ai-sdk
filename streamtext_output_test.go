@@ -817,6 +817,17 @@ type negativeMaxOutput struct{ aisdk.Output }
 
 func (negativeMaxOutput) MaxItems() (int, bool) { return -1, true }
 
+// liftedMaxOutput reports a maximum of 1 on the first call and none after.
+type liftedMaxOutput struct {
+	aisdk.Output
+	calls *int
+}
+
+func (o liftedMaxOutput) MaxItems() (int, bool) {
+	*o.calls++
+	return 1, *o.calls == 1
+}
+
 func TestStreamText_ElementStream(t *testing.T) {
 	t.Run("delivers more elements than the channel buffer", func(t *testing.T) {
 		type item struct {
@@ -1031,62 +1042,92 @@ func TestStreamText_ElementStream(t *testing.T) {
 		}
 	})
 
-	t.Run("later step does not reopen a capped stream", func(t *testing.T) {
+	t.Run("element count spans steps", func(t *testing.T) {
 		type item struct {
 			Name string `json:"name"`
 		}
 		elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
-		out, err := output.Array[item](elemSchema, output.WithMaxItems(2))
-		require.NoError(t, err)
-		callNum := 0
-		model := &testModel{
-			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-				callNum++
-				if callNum > 1 {
-					ch := make(chan provider.StreamPart, 6)
-					ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t2"}
-					for _, delta := range []string{`{"elements":[`, `{"name":"x"},`, `{"name":"y"}]}`} {
-						ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t2", Delta: delta}
+		for _, tc := range []struct {
+			name     string
+			opts     []output.ArrayOption
+			step1    []string
+			step2    []string
+			want     []string
+			overflow bool
+		}{
+			{name: "capped stream stays closed", opts: []output.ArrayOption{output.WithMaxItems(2)}, step1: []string{"a", "b", "c"}, step2: []string{"x", "y"}, want: []string{"a", "b"}, overflow: true},
+			{name: "later step within the maximum", opts: []output.ArrayOption{output.WithMaxItems(2)}, step1: []string{"a", "b"}, step2: []string{"x", "y"}, want: []string{"a", "b"}},
+			{name: "later step past the maximum", opts: []output.ArrayOption{output.WithMaxItems(2)}, step1: []string{"a", "b"}, step2: []string{"x", "y", "z"}, want: []string{"a", "b"}, overflow: true},
+			{name: "later step fills the remaining count", opts: []output.ArrayOption{output.WithMaxItems(2)}, step1: []string{"a"}, step2: []string{"x", "y", "z"}, want: []string{"a", "y"}, overflow: true},
+			{name: "unbounded later step continues from the count", step1: []string{"a", "b"}, step2: []string{"x", "y", "z"}, want: []string{"a", "b", "z"}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				out, err := output.Array[item](elemSchema, tc.opts...)
+				require.NoError(t, err)
+				deltas := func(names []string) []string {
+					parts := []string{`{"elements":[`}
+					for i, name := range names {
+						sep := ","
+						if i == len(names)-1 {
+							sep = "]}"
+						}
+						parts = append(parts, `{"name":"`+name+`"}`+sep)
 					}
-					ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t2"}
-					ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
-					close(ch)
-					return &provider.StreamResult{Stream: ch}, nil
+					return parts
 				}
-				ch := make(chan provider.StreamPart, 6)
-				ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
-				ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `{"elements":[{"name":"a"},{"name":"b"},{"name":"c"}]}`}
-				ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
-				ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "lookup", Input: `{}`}
-				ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}}
-				close(ch)
-				return &provider.StreamResult{Stream: ch}, nil
-			},
-		}
-		result := aisdk.StreamText(context.Background(), model,
-			aisdk.WithModelMessages(provider.UserText("test")),
-			aisdk.WithOutput(out),
-			aisdk.WithTools(aisdk.ToolSet{
-				"lookup": aisdk.Tool{
-					InputSchema: mustSchema(t, `{"type":"object"}`),
-					Execute: func(_ context.Context, _ json.RawMessage, _ aisdk.ToolExecutionOptions) (json.RawMessage, error) {
-						return json.RawMessage(`{}`), nil
+				callNum := 0
+				model := &testModel{
+					streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+						callNum++
+						names, finish := tc.step1, provider.FinishReasonToolCalls
+						if callNum > 1 {
+							names, finish = tc.step2, provider.FinishReasonStop
+						}
+						ch := make(chan provider.StreamPart, len(names)+5)
+						ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+						for _, delta := range deltas(names) {
+							ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: delta}
+						}
+						ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+						if callNum == 1 {
+							ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "lookup", Input: `{}`}
+						}
+						ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: finish}}
+						close(ch)
+						return &provider.StreamResult{Stream: ch}, nil
 					},
-				},
-			}),
-			aisdk.WithStopWhen(aisdk.StepCountIs(3)),
-		)
-		for range result.FullStream() {
-		}
+				}
+				result := aisdk.StreamText(context.Background(), model,
+					aisdk.WithModelMessages(provider.UserText("test")),
+					aisdk.WithOutput(out),
+					aisdk.WithTools(aisdk.ToolSet{
+						"lookup": aisdk.Tool{
+							InputSchema: mustSchema(t, `{"type":"object"}`),
+							Execute: func(_ context.Context, _ json.RawMessage, _ aisdk.ToolExecutionOptions) (json.RawMessage, error) {
+								return json.RawMessage(`{}`), nil
+							},
+						},
+					}),
+					aisdk.WithStopWhen(aisdk.StepCountIs(3)),
+				)
+				for range result.FullStream() {
+				}
 
-		require.Equal(t, 2, callNum)
-		var elements []string
-		for raw := range result.ElementStream() {
-			elements = append(elements, string(raw))
+				require.Equal(t, 2, callNum)
+				var elements []string
+				for raw := range result.ElementStream() {
+					var got item
+					require.NoError(t, json.Unmarshal(raw, &got))
+					elements = append(elements, got.Name)
+				}
+				assert.Equal(t, tc.want, elements)
+				if tc.overflow {
+					assert.ErrorIs(t, result.ElementStreamError(), aisdk.ErrInvalidOutputText)
+				} else {
+					assert.NoError(t, result.ElementStreamError())
+				}
+			})
 		}
-		assert.Equal(t, []string{`{"name":"a"}`, `{"name":"b"}`}, elements)
-		assert.ErrorIs(t, result.ElementStreamError(), aisdk.ErrInvalidOutputText)
-		assert.NoError(t, result.OutputError(), "only the final step is parsed")
 	})
 
 	t.Run("negative custom maximum is treated as zero", func(t *testing.T) {
@@ -1111,6 +1152,37 @@ func TestStreamText_ElementStream(t *testing.T) {
 		}
 		assert.Zero(t, count)
 		assert.EqualError(t, result.ElementStreamError(), "aisdk: invalid output text: elements array must contain at most 0 items")
+	})
+
+	t.Run("closed stream ignores a lifted custom maximum", func(t *testing.T) {
+		elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
+		inner, err := output.Array[any](elemSchema)
+		require.NoError(t, err)
+		model := &testModel{
+			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				ch := make(chan provider.StreamPart, 5)
+				ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+				ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `{"elements":[{"name":"a"},{"name":"b"},{"name":"c"},`}
+				ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: `{"name":"d"}]}`}
+				ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+				ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+				close(ch)
+				return &provider.StreamResult{Stream: ch}, nil
+			},
+		}
+		result := aisdk.StreamText(context.Background(), model,
+			aisdk.WithModelMessages(provider.UserText("test")),
+			aisdk.WithOutput(liftedMaxOutput{Output: inner, calls: new(int)}),
+		)
+		for range result.FullStream() {
+		}
+
+		var elements []string
+		for raw := range result.ElementStream() {
+			elements = append(elements, string(raw))
+		}
+		assert.Equal(t, []string{`{"name":"a"}`}, elements)
+		assert.ErrorIs(t, result.ElementStreamError(), aisdk.ErrInvalidOutputText)
 	})
 
 	t.Run("accepted repair replaces the overflow error", func(t *testing.T) {

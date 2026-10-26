@@ -16,6 +16,11 @@ provider recording. `generate.mts` replays it through `streamText` from the
 | `within` | min 1, max 2 | 2 |
 | `overflow` | max 2 | 3 |
 | `below-minimum` | min 2 | 1 |
+| `multi-step-capped` | max 2 | 2, then 3 after a tool call |
+| `multi-step-unbounded` | none | 2, then 3 after a tool call |
+
+The multi-step cases read `input-1.jsonl` and `input-2.jsonl`, one per model
+call, and register a `lookup` tool that returns `{}`.
 
 Go compares the UI chunks and the request format exactly, the elements in
 order, and checks that each Go error ends with the upstream cause; the

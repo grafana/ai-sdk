@@ -21,6 +21,9 @@ import (
 type uiFixtureModel struct {
 	parts   []provider.StreamPart
 	request *provider.CallOptions
+	// steps, when set, replaces parts with one input per model call.
+	steps [][]provider.StreamPart
+	calls *int
 }
 
 func (m uiFixtureModel) SpecificationVersion() string { return "v4" }
@@ -33,8 +36,13 @@ func (m uiFixtureModel) DoStream(_ context.Context, opts provider.CallOptions) (
 	if m.request != nil {
 		*m.request = opts
 	}
-	stream := make(chan provider.StreamPart, len(m.parts))
-	for _, part := range m.parts {
+	parts := m.parts
+	if m.steps != nil {
+		parts = m.steps[*m.calls]
+		*m.calls++
+	}
+	stream := make(chan provider.StreamPart, len(parts))
+	for _, part := range parts {
 		stream <- part
 	}
 	close(stream)
@@ -233,10 +241,31 @@ func TestUIConformance_BoundedArrayOutput(t *testing.T) {
 		{"within", []output.ArrayOption{output.WithMinItems(1), output.WithMaxItems(2)}},
 		{"overflow", []output.ArrayOption{output.WithMaxItems(2)}},
 		{"below-minimum", []output.ArrayOption{output.WithMinItems(2)}},
+		{"multi-step-capped", []output.ArrayOption{output.WithMaxItems(2)}},
+		{"multi-step-unbounded", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixtureDir := filepath.Join("ui", "bounded-array-output", tc.name)
-			parts := loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))
+			var request provider.CallOptions
+			model := uiFixtureModel{request: &request}
+			var opts []aisdk.StreamOption
+			if _, err := os.Stat(filepath.Join(fixtureDir, "input-1.jsonl")); err == nil {
+				model.calls = new(int)
+				model.steps = [][]provider.StreamPart{
+					loadUIFixtureParts(t, filepath.Join(fixtureDir, "input-1.jsonl")),
+					loadUIFixtureParts(t, filepath.Join(fixtureDir, "input-2.jsonl")),
+				}
+				lookupSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object"}`))
+				require.NoError(t, err)
+				opts = append(opts,
+					aisdk.WithTools(aisdk.ToolSet{"lookup": {InputSchema: lookupSchema, Execute: func(context.Context, json.RawMessage, aisdk.ToolExecutionOptions) (json.RawMessage, error) {
+						return json.RawMessage(`{}`), nil
+					}}}),
+					aisdk.WithStopWhen(aisdk.StepCountIs(3)),
+				)
+			} else {
+				model.parts = loadUIFixtureParts(t, filepath.Join(fixtureDir, "input.jsonl"))
+			}
 			expectedChunks := loadUIExpected(t, filepath.Join(fixtureDir, "expected.jsonl"))
 			data, err := os.ReadFile(filepath.Join(fixtureDir, "expected-output.json"))
 			require.NoError(t, err)
@@ -252,11 +281,8 @@ func TestUIConformance_BoundedArrayOutput(t *testing.T) {
 			require.NoError(t, err)
 			out, err := output.Array[any](elementSchema, tc.opts...)
 			require.NoError(t, err)
-			var request provider.CallOptions
-			result := aisdk.StreamText(t.Context(), uiFixtureModel{parts: parts, request: &request},
-				aisdk.WithModelMessages(provider.UserText("test")),
-				aisdk.WithOutput(out),
-			)
+			opts = append(opts, aisdk.WithModelMessages(provider.UserText("test")), aisdk.WithOutput(out))
+			result := aisdk.StreamText(t.Context(), model, opts...)
 			var elements []json.RawMessage
 			elementsDone := make(chan struct{})
 			go func() {

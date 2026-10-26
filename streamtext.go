@@ -2116,7 +2116,7 @@ func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
 		for i := r.emittedElementCount; i < len(elements); i++ {
 			r.elementStream.send(elements[i])
 		}
-		r.emittedElementCount = len(elements)
+		r.emittedElementCount = max(r.emittedElementCount, len(elements))
 		if overflow != nil {
 			r.mu.Lock()
 			if r.elementStreamErr == nil {
@@ -2733,7 +2733,9 @@ func (r *StreamTextResult) PartialOutputStream() <-chan json.RawMessage {
 
 // ElementStream returns a channel of complete validated array elements
 // during streaming. Only produces values when the Output is in array mode.
-// Elements are delivered exactly once and in order. The channel is closed after
+// Elements are delivered exactly once and in order. The count carries over
+// between steps: a later step delivers only the elements of its array past the
+// number already delivered, as upstream does. The channel is closed after
 // the stream finishes and all elements are delivered. When the Output reports a
 // maximum through BoundedArrayOutput, the channel closes as soon as the model
 // produces an element past it, in any step, and ElementStreamError reports why.

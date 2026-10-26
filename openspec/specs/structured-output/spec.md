@@ -256,7 +256,7 @@ StreamTextResult SHALL expose PartialOutputStream() as a channel of json.RawMess
 
 ### Requirement: Array element streaming
 
-The system SHALL provide an `ElementStream()` method on `StreamTextResult` that returns a channel of `json.RawMessage` values, where each value is a complete validated array element. This SHALL only emit elements for array output mode. Every completed element SHALL be delivered exactly once and in array order. The stream SHALL remain lossless when consumption starts after generation, and SHALL close only after generation finishes and all queued elements are delivered, except that for a `BoundedArrayOutput` with a maximum the stream SHALL deliver at most that many elements and SHALL close as soon as an element past the maximum is parsed in any step, and `ElementStreamError()` SHALL then return an error wrapping `ErrInvalidOutputText`. A negative maximum reported by a custom `BoundedArrayOutput` SHALL be treated as zero.
+The system SHALL provide an `ElementStream()` method on `StreamTextResult` that returns a channel of `json.RawMessage` values, where each value is a complete validated array element. This SHALL only emit elements for array output mode. Every completed element SHALL be delivered exactly once and in array order. The delivered count SHALL carry over between steps, as upstream's single element transform does: a later step's array SHALL deliver only its elements past the number already delivered. The stream SHALL remain lossless when consumption starts after generation, and SHALL close only after generation finishes and all queued elements are delivered, except that for a `BoundedArrayOutput` with a maximum the stream SHALL deliver at most that many elements and SHALL close as soon as an element past the maximum is parsed in any step, and `ElementStreamError()` SHALL then return an error wrapping `ErrInvalidOutputText`. A negative maximum reported by a custom `BoundedArrayOutput` SHALL be treated as zero.
 
 #### Scenario: Receive validated elements during array streaming
 
@@ -285,6 +285,13 @@ The system SHALL provide an `ElementStream()` method on `StreamTextResult` that 
 - **AND** `ElementStreamError()` SHALL report the overflow once the channel is closed
 - **AND** `PartialOutputStream()` SHALL still include all four elements
 - **AND** `OutputError()` SHALL wrap `ErrNoObjectGenerated` and report the maximum when this is the final step
+
+#### Scenario: Element count carries over between steps
+
+- **WHEN** step 1 streams the elements a and b, makes a tool call, and step 2 streams x, y and z
+- **THEN** an unbounded `ElementStream()` SHALL deliver a, b and z
+- **AND** with `WithMaxItems(2)` it SHALL deliver a and b, and `ElementStreamError()` SHALL report the overflow
+- **AND** with `WithMaxItems(2)` and a step 2 that streams only x and y, it SHALL deliver a and b, and `ElementStreamError()` SHALL be nil
 
 #### Scenario: Later step after an overflow
 

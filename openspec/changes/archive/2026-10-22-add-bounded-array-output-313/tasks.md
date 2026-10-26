@@ -6,6 +6,7 @@
 - [x] 1.4 Add `ElementStreamError` and treat a negative custom maximum as zero.
 - [x] 1.5 Record the overflow and repair differences in `test/conformance/upstream.yaml`.
 - [x] 1.6 Add `output.ArrayOption` so the bounds only compile with `Array`.
+- [x] 1.7 Carry the `ElementStream` count over between steps.
 
 ## 2. Validation
 

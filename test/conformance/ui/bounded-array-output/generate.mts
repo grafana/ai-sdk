@@ -1,13 +1,28 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { jsonSchema, Output, streamText } from "../../tools/node_modules/ai/src/index.ts";
+import {
+  jsonSchema,
+  Output,
+  stepCountIs,
+  streamText,
+  tool,
+} from "../../tools/node_modules/ai/src/index.ts";
 
 const cases: Record<string, { minItems?: number; maxItems?: number }> = {
   within: { minItems: 1, maxItems: 2 },
   overflow: { maxItems: 2 },
   "below-minimum": { minItems: 2 },
+  "multi-step-capped": { maxItems: 2 },
+  "multi-step-unbounded": {},
 };
+
+function readParts(path: string) {
+  return readFileSync(path, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+}
 
 function innermostCause(error: unknown): string {
   let current = error as { cause?: unknown; message?: string };
@@ -21,10 +36,11 @@ function innermostCause(error: unknown): string {
 const fixtureDir = dirname(fileURLToPath(import.meta.url));
 for (const [name, bounds] of Object.entries(cases)) {
   const caseDir = join(fixtureDir, name);
-  const chunks = readFileSync(join(caseDir, "input.jsonl"), "utf8")
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
+  const multiStep = existsSync(join(caseDir, "input-1.jsonl"));
+  const steps = multiStep
+    ? [readParts(join(caseDir, "input-1.jsonl")), readParts(join(caseDir, "input-2.jsonl"))]
+    : [readParts(join(caseDir, "input.jsonl"))];
+  let call = 0;
   let responseFormat: unknown;
   const result = streamText({
     model: {
@@ -34,6 +50,7 @@ for (const [name, bounds] of Object.entries(cases)) {
       supportedUrls: {},
       doStream: async (options: { responseFormat: unknown }) => {
         responseFormat = options.responseFormat;
+        const chunks = steps[call++];
         return {
           stream: new ReadableStream({
             start(controller) {
@@ -46,6 +63,15 @@ for (const [name, bounds] of Object.entries(cases)) {
     } as never,
     prompt: "test",
     maxRetries: 0,
+    ...(multiStep && {
+      tools: {
+        lookup: tool({
+          inputSchema: jsonSchema({ type: "object" }),
+          execute: async () => ({}),
+        }),
+      },
+      stopWhen: stepCountIs(3),
+    }),
     output: Output.array({
       element: jsonSchema({
         type: "object",
