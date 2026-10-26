@@ -131,18 +131,34 @@ The Anthropic response converter SHALL handle `mcp_tool_result` content blocks i
 
 ### Requirement: MCP tool call round-trip in prompt conversion
 
-The Anthropic request builder SHALL convert MCP tool calls and results back to their correct API block types when they appear in multi-step prompts. `ToolCallContentPart` entries with `ProviderOptions` containing `anthropic.type == "mcp-tool-use"` SHALL be emitted as `BetaMCPToolUseBlockParam`. `ToolResultContentPart` entries whose `ToolCallID` matches a tracked MCP tool call SHALL be emitted as `BetaRequestMCPToolResultBlockParam`.
+The Anthropic request builder SHALL emit `ToolCallContentPart` entries whose options contain `anthropic.type == "mcp-tool-use"` as `BetaMCPToolUseBlockParam`. Matching upstream `convert-to-anthropic-prompt.ts`, it SHALL track their IDs within one merged assistant block, including when a missing server name omits the tool use, and emit a matching result in that block as `BetaRequestMCPToolResultBlockParam`. Other results SHALL follow ordinary routing.
 
 #### Scenario: MCP tool call in assistant message
 
 - **WHEN** `convertAssistantContent()` encounters a `ToolCallContentPart` with `ProviderOptions` containing `{"anthropic": {"type": "mcp-tool-use", "serverName": "my-server"}}`
 - **THEN** it emits a `BetaContentBlockParamUnion` with `OfMCPToolUse` set, containing the tool call ID, name, input, and server name
-- **AND** the tool call ID is added to a `mcpToolUseIDs` set
+- **AND** the tool call ID is added to the assistant block's `mcpToolUseIDs` set
 
-#### Scenario: MCP tool result in tool message
+#### Scenario: MCP tool result in the same assistant block
 
-- **WHEN** `convertToolContent()` encounters a `ToolResultContentPart` whose `ToolCallID` is in the `mcpToolUseIDs` set
-- **THEN** it emits a `BetaContentBlockParamUnion` with `OfMCPToolResult` set, containing the tool use ID, is_error flag, and content
+- **WHEN** an assistant block contains an MCP tool call and a later `ToolResultContentPart` with the same `ToolCallID` and a `json` or `error-json` output
+- **THEN** it emits `OfMCPToolResult` with the tool use ID, `is_error` true only for `error-json`, and the output value passed through unchanged as `content`
+
+#### Scenario: MCP tool result with a non-JSON output
+
+- **WHEN** the matching assistant-block result has a `text`, `error-text`, `execution-denied` or `content` output
+- **THEN** the result SHALL be omitted with the `other` warning `provider executed tool result output type <type> for tool <toolName> is not supported`
+- **AND** Go SHALL NOT add upstream's follow-on `provider executed tool result for tool <toolName> is not supported` warning after a converted MCP result, per the `anthropic-mcp-result-fallthrough-warning` deviation
+
+#### Scenario: MCP tool result in a tool message
+
+- **WHEN** `convertToolContent()` encounters a `ToolResultContentPart` whose `ToolCallID` matches an earlier MCP tool call
+- **THEN** it emits a regular `BetaToolResultBlockParam` that carries the serialized output
+
+#### Scenario: MCP tool result in a later assistant block
+
+- **WHEN** an assistant block contains a result whose `ToolCallID` matches an MCP tool call from an earlier assistant block
+- **THEN** the result SHALL be routed by tool name, and an unknown provider-executed tool SHALL be omitted with the `other` warning `provider executed tool result for tool <toolName> is not supported`
 
 #### Scenario: Regular tool call not converted to MCP
 

@@ -63,6 +63,15 @@ knownGaps:
       Go stream at the offending event, where upstream reports the invalid chunk
       and keeps reading. Go unit tests cover this; no golden can, because the two
       differ by design.
+  - id: anthropic-mcp-result-fallthrough-warning
+    surface: provider-anthropic
+    status: intentional-deviation
+    description: After converting a hosted-MCP result to mcp_tool_result,
+      registered @ai-sdk/anthropic 4.0.71 falls through to the provider-executed
+      routing and also warns that the tool result is not supported. Go emits the
+      same mcp_tool_result without that contradictory warning. The synthetic
+      cases under testdata/anthropic-prompt-conversion verify the upstream
+      warning is present and compare everything else unchanged.
   - id: anthropic-restricted-access-recordings
     surface: provider-anthropic
     status: gap
