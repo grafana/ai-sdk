@@ -119,12 +119,12 @@ func projectGenerate(result *GenerateTextResult) projectedResult {
 func TestStreamTextResult_AllStepProjection(t *testing.T) {
 	tests := []struct {
 		name string
-		run  func(t *testing.T) projectedResult
+		run  func(t *testing.T, onFinish Option) projectedResult
 	}{
 		{
 			name: "stream text",
-			run: func(t *testing.T) projectedResult {
-				result := StreamText(t.Context(), projectionModel(), WithModelMessages(provider.UserText("weather?")), WithTools(projectionTools(t)), WithStopWhen(StepCountIs(3)))
+			run: func(t *testing.T, onFinish Option) projectedResult {
+				result := StreamText(t.Context(), projectionModel(), WithModelMessages(provider.UserText("weather?")), WithTools(projectionTools(t)), WithStopWhen(StepCountIs(3)), onFinish)
 				for range result.FullStream() {
 				}
 				require.NoError(t, result.Err())
@@ -133,16 +133,16 @@ func TestStreamTextResult_AllStepProjection(t *testing.T) {
 		},
 		{
 			name: "generate text",
-			run: func(t *testing.T) projectedResult {
-				result, err := GenerateText(t.Context(), projectionModel(), WithModelMessages(provider.UserText("weather?")), WithTools(projectionTools(t)), WithStopWhen(StepCountIs(3)))
+			run: func(t *testing.T, onFinish Option) projectedResult {
+				result, err := GenerateText(t.Context(), projectionModel(), WithModelMessages(provider.UserText("weather?")), WithTools(projectionTools(t)), WithStopWhen(StepCountIs(3)), onFinish)
 				require.NoError(t, err)
 				return projectGenerate(result)
 			},
 		},
 		{
 			name: "agent stream",
-			run: func(t *testing.T) projectedResult {
-				agent := NewToolLoopAgent(projectionModel(), WithToolLoopAgentOptions(WithTools(projectionTools(t))))
+			run: func(t *testing.T, onFinish Option) projectedResult {
+				agent := NewToolLoopAgent(projectionModel(), WithToolLoopAgentOptions(WithTools(projectionTools(t)), onFinish))
 				result := agent.Stream(t.Context(), WithAgentPrompt("weather?"))
 				for range result.FullStream() {
 				}
@@ -152,8 +152,8 @@ func TestStreamTextResult_AllStepProjection(t *testing.T) {
 		},
 		{
 			name: "agent generate",
-			run: func(t *testing.T) projectedResult {
-				agent := NewToolLoopAgent(projectionModel(), WithToolLoopAgentOptions(WithTools(projectionTools(t))))
+			run: func(t *testing.T, onFinish Option) projectedResult {
+				agent := NewToolLoopAgent(projectionModel(), WithToolLoopAgentOptions(WithTools(projectionTools(t)), onFinish))
 				result, err := agent.Generate(t.Context(), WithAgentPrompt("weather?"))
 				require.NoError(t, err)
 				return projectGenerate(result)
@@ -163,7 +163,12 @@ func TestStreamTextResult_AllStepProjection(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tc.run(t)
+			var finish OnFinishState
+			finishes := 0
+			got := tc.run(t, OnFinish(func(state OnFinishState) {
+				finishes++
+				finish = state
+			}))
 			require.Len(t, got.steps, 2)
 			first, final := got.steps[0], got.steps[1]
 
@@ -190,6 +195,24 @@ func TestStreamTextResult_AllStepProjection(t *testing.T) {
 			assert.Equal(t, provider.RoleAssistant, got.responseMessages[0].Role)
 			assert.Equal(t, provider.RoleTool, got.responseMessages[1].Role)
 			assert.Equal(t, provider.RoleAssistant, got.responseMessages[2].Role)
+
+			require.Equal(t, 1, finishes)
+			assert.Equal(t, got.steps, finish.Steps)
+			assert.Equal(t, got.content, finish.Content)
+			assert.Equal(t, got.toolCalls, finish.ToolCalls)
+			assert.Equal(t, got.toolResults, finish.ToolResults)
+			assert.Equal(t, got.files, finish.Files)
+			assert.Equal(t, got.sources, finish.Sources)
+			assert.Equal(t, got.responseMessages, finish.ResponseMessages)
+			assert.Equal(t, final.Text, finish.Text)
+			assert.Equal(t, final.Reasoning, finish.Reasoning)
+			assert.Equal(t, final.StepNumber, finish.StepNumber)
+			assert.Equal(t, final.FinishReason, finish.FinishReason)
+			assert.Equal(t, final.Response, finish.Response)
+			assert.Equal(t, final.ProviderMetadata, finish.ProviderMetadata)
+			assert.Equal(t, finish.TotalUsage, finish.Usage)
+			assert.Equal(t, aggregateUsage(got.steps), finish.TotalUsage)
+			assert.NotEqual(t, final.Usage, finish.Usage)
 		})
 	}
 }
@@ -245,16 +268,22 @@ func TestStreamTextResult_ResponseMessagesIncludeApprovalResults(t *testing.T) {
 	}
 
 	t.Run("stream text", func(t *testing.T) {
-		result := StreamText(t.Context(), newModel(), WithModelMessages(msgs...), WithTools(tools), WithStopWhen(StepCountIs(3)))
+		var finish OnFinishState
+		result := StreamText(t.Context(), newModel(), WithModelMessages(msgs...), WithTools(tools), WithStopWhen(StepCountIs(3)), OnFinish(func(state OnFinishState) { finish = state }))
 		for range result.FullStream() {
 		}
 		require.NoError(t, result.Err())
-		check(t, projectStream(result))
+		got := projectStream(result)
+		check(t, got)
+		assert.Equal(t, got.responseMessages, finish.ResponseMessages)
 	})
 	t.Run("generate text", func(t *testing.T) {
-		result, err := GenerateText(t.Context(), newModel(), WithModelMessages(msgs...), WithTools(tools), WithStopWhen(StepCountIs(3)))
+		var finish OnFinishState
+		result, err := GenerateText(t.Context(), newModel(), WithModelMessages(msgs...), WithTools(tools), WithStopWhen(StepCountIs(3)), OnFinish(func(state OnFinishState) { finish = state }))
 		require.NoError(t, err)
-		check(t, projectGenerate(result))
+		got := projectGenerate(result)
+		check(t, got)
+		assert.Equal(t, got.responseMessages, finish.ResponseMessages)
 	})
 }
 
@@ -314,6 +343,36 @@ func TestStreamTextResult_ProjectionEdgeCases(t *testing.T) {
 		assert.Equal(t, steps[0].Sources, result.Sources())
 		assert.Equal(t, steps[0].ToolResults, result.ToolResults())
 		assert.Equal(t, steps[0].Response.Messages, result.ResponseMessages())
+	})
+
+	t.Run("mid-stream cancellation finish state projects completed steps", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		pending := make(chan provider.StreamPart)
+		model := &mockModel{}
+		model.streamFunc = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			if model.callCount == 1 {
+				return &provider.StreamResult{Stream: projectionToolStepParts()}, nil
+			}
+			return &provider.StreamResult{Stream: pending}, nil
+		}
+		var finish OnFinishState
+		finishes := 0
+		result := StreamText(ctx, model, WithModelMessages(provider.UserText("hi")), WithTools(projectionTools(t)), WithStopWhen(StepCountIs(3)), OnFinish(func(state OnFinishState) {
+			finishes++
+			finish = state
+		}))
+		pending <- provider.StreamPart{Type: provider.PartTextStart, ID: "t2"}
+		cancel()
+		for range result.FullStream() {
+		}
+		require.Equal(t, 1, finishes)
+		require.Len(t, finish.Steps, 1)
+		assert.Equal(t, result.Content(), finish.Content)
+		assert.Equal(t, result.ToolCalls(), finish.ToolCalls)
+		assert.Equal(t, result.Sources(), finish.Sources)
+		assert.Equal(t, result.ResponseMessages(), finish.ResponseMessages)
+		assert.Equal(t, result.TotalUsage(), finish.Usage)
 	})
 
 	t.Run("returned collections are caller owned", func(t *testing.T) {

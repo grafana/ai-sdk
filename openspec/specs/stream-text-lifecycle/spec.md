@@ -137,6 +137,17 @@ StreamText, GenerateText and ToolLoopAgent results SHALL derive Content, ToolCal
 - **WHEN** a caller replaces elements of, or appends to, an aggregated collection or `ResponseMessages` slice returned by a StreamTextResult accessor
 - **THEN** later accessor calls and recorded steps SHALL be unaffected
 
+### Requirement: Finish callback state follows the result projection
+
+OnFinishState SHALL mirror the upstream end event. Its embedded StepResult SHALL hold the final recorded step with Content, ToolCalls, ToolResults, Files and Sources replaced by the all-step projection, Warnings by the result's accumulated warnings and Usage by total usage. ResponseMessages SHALL equal the result's full response-message history; Steps SHALL hold every recorded step.
+
+#### Scenario: Multi-step finish callback aggregates
+
+- **WHEN** OnFinish runs after a tool step and a final text step
+- **THEN** its Content, ToolCalls, ToolResults, Files, Sources and ResponseMessages SHALL equal the corresponding result accessors
+- **AND** Text, Reasoning, StepNumber, FinishReason, Response and ProviderMetadata SHALL describe the final step
+- **AND** Usage SHALL equal TotalUsage
+
 ### Requirement: Tool execution requires an allowed finish
 
 Local executable tools SHALL dispatch only after stop/tool-calls without effective required/named choice violation. Other finish reasons SHALL retain call visibility and approval processing, except completed choice violations SHALL bypass all new local approval/execution. Continuation SHALL require matching result/denial for every client call, not merely a callback, and SHALL never follow a choice violation.
