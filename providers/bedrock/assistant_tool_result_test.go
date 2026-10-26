@@ -93,6 +93,30 @@ func TestConvertPrompt_AssistantToolResults(t *testing.T) {
 			},
 		},
 		{
+			name: "later assistant message in the block follows a trailing result",
+			prompt: []provider.Message{
+				provider.NewAssistantMessage(providerExecutedCall("call-1", `{}`), jsonToolResult("call-1", `{"sum":4}`)),
+				provider.NewAssistantMessage(provider.TextPart("done")),
+			},
+			want: []converseMessage{
+				{Role: converseRoleAssistant, Content: []contentBlock{toolUseContent("call-1", `{}`)}},
+				{Role: converseRoleUser, Content: []contentBlock{toolResultContentBlock("call-1", `{"sum":4}`)}},
+				{Role: converseRoleAssistant, Content: []contentBlock{{Text: "done"}}},
+			},
+		},
+		{
+			name: "assistant blocks stay separate when the source between them emits nothing",
+			prompt: []provider.Message{
+				provider.NewAssistantMessage(provider.TextPart("first")),
+				provider.NewToolMessage(provider.ToolApprovalResponsePart("approval-1", true, "")),
+				provider.NewAssistantMessage(provider.TextPart("second")),
+			},
+			want: []converseMessage{
+				{Role: converseRoleAssistant, Content: []contentBlock{{Text: "first"}}},
+				{Role: converseRoleAssistant, Content: []contentBlock{{Text: "second"}}},
+			},
+		},
+		{
 			name: "user content after omitted assistant joins previous tool results",
 			prompt: []provider.Message{
 				provider.NewToolMessage(jsonToolResult("call-0", `{"sum":1}`)),

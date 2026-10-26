@@ -219,7 +219,7 @@ func containsToolResult(content []contentBlock) bool {
 	return false
 }
 
-func assistantCachePointRole(parts []provider.ContentPart) string {
+func assistantCachePointRole(parts []provider.ContentPart) converseRole {
 	if len(parts) > 0 && parts[len(parts)-1].Type == provider.ContentPartTypeToolResult {
 		return converseRoleUser
 	}
@@ -566,11 +566,7 @@ func convertToolContent(parts []provider.ContentPart, documentCounter *int, warn
 
 func convertAssistantContent(parts []provider.ContentPart, documentCounter *int, warnings *[]provider.Warning, isMistral bool, trimLastText bool) ([]converseMessage, error) {
 	var out []converseMessage
-	emit := func(role string, block contentBlock) {
-		if last := len(out) - 1; last >= 0 && out[last].Role == role {
-			out[last].Content = append(out[last].Content, block)
-			return
-		}
+	emit := func(role converseRole, block contentBlock) {
 		out = append(out, converseMessage{Role: role, Content: []contentBlock{block}})
 	}
 	for partIndex, p := range parts {

@@ -186,7 +186,7 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 - **WHEN** an assistant message contains tool-result parts, such as provider-executed results replayed after their tool calls
 - **THEN** each run of tool results is emitted as user-role `toolResult` content between the assistant content before and after it, preserving part order
 - **AND** the results use the same output conversion, tool call ID normalization, document naming and rejection rules as tool-role results
-- **AND** user content that follows a user message carrying tool results is appended to that message, so Converse roles keep alternating
+- **AND** user content that follows a user message carrying tool results is appended to that message, while a leading tool result after plain user content still starts a separate user message, matching upstream
 - **AND** an assistant message cache point follows the tool results when the message ends with one, and otherwise follows that message's trailing assistant content when it emits any
 
 #### Scenario: Inference config mapping

@@ -55,7 +55,7 @@ func TestBuildRequest_SystemMessage(t *testing.T) {
 	require.Len(t, req.System, 1)
 	assert.Equal(t, "you are a helpful assistant", req.System[0].Text)
 	require.Len(t, req.Messages, 1)
-	assert.Equal(t, "user", req.Messages[0].Role)
+	assert.Equal(t, converseRoleUser, req.Messages[0].Role)
 	require.Len(t, req.Messages[0].Content, 1)
 	assert.Equal(t, "hi", req.Messages[0].Content[0].Text)
 }
@@ -844,12 +844,12 @@ func TestBuildRequest_ToolResultMessageCollapsedToUserRole(t *testing.T) {
 	})
 	require.Len(t, req.Messages, 3)
 	// 0: original user; 1: assistant (tool call); 2: user (tool result).
-	assert.Equal(t, "user", req.Messages[0].Role)
-	assert.Equal(t, "assistant", req.Messages[1].Role)
+	assert.Equal(t, converseRoleUser, req.Messages[0].Role)
+	assert.Equal(t, converseRoleAssistant, req.Messages[1].Role)
 	require.NotNil(t, req.Messages[1].Content[0].ToolUse)
 	assert.Equal(t, "weather", req.Messages[1].Content[0].ToolUse.Name)
 	// Tool message collapses to user role with toolResult content.
-	assert.Equal(t, "user", req.Messages[2].Role)
+	assert.Equal(t, converseRoleUser, req.Messages[2].Role)
 	require.NotNil(t, req.Messages[2].Content[0].ToolResult)
 	assert.Equal(t, "call-1", req.Messages[2].Content[0].ToolResult.ToolUseID)
 	assert.Equal(t, new("Sunny, 22C"), req.Messages[2].Content[0].ToolResult.Content[0].Text)
@@ -1501,7 +1501,7 @@ func TestBuildRequest_FilterToolContentWhenNoTools(t *testing.T) {
 	})
 	// Only the user message survives.
 	require.Len(t, req.Messages, 1)
-	assert.Equal(t, "user", req.Messages[0].Role)
+	assert.Equal(t, converseRoleUser, req.Messages[0].Role)
 	found := false
 	for _, w := range warnings {
 		if w.Feature == "toolContent" {
@@ -1526,7 +1526,7 @@ func TestBuildRequest_FilterToolContentAfterToolChoiceNone(t *testing.T) {
 	})
 	assert.Nil(t, req.ToolConfig)
 	require.Len(t, req.Messages, 1)
-	assert.Equal(t, "user", req.Messages[0].Role)
+	assert.Equal(t, converseRoleUser, req.Messages[0].Role)
 	assert.Contains(t, warningFeatures(warnings), "toolContent")
 }
 
@@ -1613,9 +1613,9 @@ func TestBuildRequest_OmitsUnsignedReasoningOnlyAssistantMessage(t *testing.T) {
 	})
 
 	require.Len(t, req.Messages, 2)
-	assert.Equal(t, "user", req.Messages[0].Role)
+	assert.Equal(t, converseRoleUser, req.Messages[0].Role)
 	assert.Equal(t, "think hard", req.Messages[0].Content[0].Text)
-	assert.Equal(t, "user", req.Messages[1].Role)
+	assert.Equal(t, converseRoleUser, req.Messages[1].Role)
 	assert.Equal(t, "hello?", req.Messages[1].Content[0].Text)
 }
 
