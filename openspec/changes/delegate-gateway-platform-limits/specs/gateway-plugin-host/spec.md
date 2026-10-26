@@ -37,7 +37,7 @@ Deterministic tests SHALL serve the Gateway through the real plugin route protoc
 ## ADDED Requirements
 
 ### Requirement: Host deadline reaches the plugin
-A deadline the host sets on a route RPC SHALL reach the Gateway as the deadline of the route request's context, and its expiry SHALL cancel selection and the model call. Without a host deadline, the request context SHALL carry none, and the Gateway SHALL NOT add one.
+A deadline the host sets on a route RPC SHALL reach the Gateway as the deadline of the route request's context, and its expiry SHALL cancel selection and the model call. The Gateway SHALL classify the outcome from the request context's error, which the route RPC reports as a cancellation. Without a host deadline, the request context SHALL carry none, and the Gateway SHALL NOT add one.
 
 #### Scenario: Route deadline carried into the plugin
 - **WHEN** the test host forwards a language-model request with a route deadline
@@ -46,6 +46,7 @@ A deadline the host sets on a route RPC SHALL reach the Gateway as the deadline 
 #### Scenario: Route deadline ends a blocked call
 - **WHEN** a fake native provider blocks past the route deadline, in unary and streaming mode
 - **THEN** the native request SHALL be canceled once the deadline expires, and the plugin SHALL start no further attempt
+- **AND** the Gateway SHALL record the outcome as the request context's error reports it, without inferring a timeout from the deadline
 
 #### Scenario: Route without a deadline
 - **WHEN** the test host forwards a request without a route deadline

@@ -19,6 +19,7 @@ Code facts that shape the approach:
   - `plugin.Run` serves with the plugin SDK's default `MaxRecvMsgSize` of 16 MiB (`defaultServerMaxReceiveMessageSize`), because the Gateway sets no `GRPCSettings`.
   - A larger message fails with gRPC `ResourceExhausted` before any Gateway code runs.
 - **Deadlines and cancellation cross the RPC.** `httpadapter.HandlerFunc` passes `r.Context()` to `CallRoute`, and gRPC carries a context deadline as `grpc-timeout`. The plugin's `stream.Context()`, and therefore `r.Context()`, gets that deadline. Caller cancellation also reaches it.
+- **Expiry arrives as a cancellation.** When the route deadline expires, the caller's gRPC client cancels the stream before the plugin's own deadline timer fires. In the test host, the plugin's request context ended with `context.Canceled` in 20 of 20 runs, once before its copy of the deadline had passed. The plugin cannot tell a platform deadline from a caller disconnect.
 - **The in-process test host** (`platformhost.ServeInProcess`) uses `grpc.NewServer()` with gRPC's 4 MiB receive default. Only the built plugin, launched through the process host, has the production 16 MiB limit.
 - **Streaming classifies termination by which context ended.** `serveStream` receives `requestContext` and `executionContext`. When the model context ends, `waitStreamPart` and `streamContextErrorCategory` report cancellation if `requestContext.Err() != nil`, and a timeout otherwise. Today, then, an earlier request deadline is reported as cancellation. The unary path already maps `context.DeadlineExceeded` to timeout in `safeErrorFromProvider`.
 - **SDK decoders are looser than the bound.** The Anthropic and OpenAI SDK SSE decoders cap a line at 32 MiB (`bufio.MaxScanTokenSize<<9`), and the openai-compatible reader uses an unbounded `bufio.Reader`. A 16 MiB per-event bound in the transport therefore fires first.
@@ -43,11 +44,10 @@ Code facts that shape the approach:
 ### D1. The request context's deadline is the execution deadline
 - `v4.Limits` keeps `StreamIdleDuration` and `StreamDrainDuration`. `ServeHTTP` derives no timeout: selection and invocation use `r.Context()`, which still carries the attempt observer as today.
 - `validateLimits` checks only the two durations.
-- **Classification.** When the model context ends, streaming checks `errors.Is(requestContext.Err(), context.DeadlineExceeded)`:
-  - a deadline is reported as `streamWaitTotalTimeout` and the timeout category;
-  - a cancellation is reported as `streamWaitCanceled` and the cancellation category.
-
-  `streamContextErrorCategory` uses the same rule, so unary and streaming agree.
+- **Classification follows the request context's error.** `context.DeadlineExceeded` is a timeout and `context.Canceled` is a cancellation, on both paths.
+  - Unary already does this through `safeErrorFromProvider`.
+  - Streaming checks `errors.Is(requestContext.Err(), context.DeadlineExceeded)` in `waitStreamPart` and `streamContextErrorCategory`. Without the check, an expired deadline that a host delivers as `DeadlineExceeded` would be reported as a cancellation in streaming only.
+  - Through the plugin host, a platform deadline arrives as a cancellation (see Context), so the Gateway reports it as one. The ledger states this.
 - **Settings.**
   - `config.ParseSettings` stops reading `max_model_duration` and `max_request_bytes`. `Settings.MaxRequestBytes`, `defaultRequestBytes` and `defaultModelDuration` go.
   - `Validate` drops the "at least 30s" rule and still builds a throwaway handler to check the fixed durations.
@@ -57,7 +57,9 @@ Code facts that shape the approach:
 Alternatives:
 - *Keep `ModelDuration` with a default above the platform deadline.* Rejected: the setting can never be reached, and it would contradict the platform once #460 makes the deadline configurable.
 - *Keep a fixed internal ceiling for when the platform deadline is disabled.* Rejected: it reintroduces the owner conflict. Disabling the deadline is an operator choice that the platform owns.
-- *Keep today's classification, where an ended request context means cancellation.* Rejected: once no Gateway timeout exists, every timeout would be reported as a cancellation in errors, overviews and telemetry.
+- *Keep today's streaming classification, where an ended request context means cancellation.* Rejected: unary and streaming would disagree for a host that delivers `DeadlineExceeded`.
+- *Report a timeout whenever a request with a deadline ends.* Rejected: it mislabels caller disconnects as timeouts.
+- *Report a timeout when the context ends close to its deadline.* Rejected: it needs an invented tolerance, and the observed cancellation can precede the plugin's copy of the deadline.
 
 ### D2. Request size is the host's route message size (reverses #518 D1)
 Remove the `http.MaxBytesHandler` wrapper and the `maxRequestBytes` parameter of `gateway.newHandler`. ProviderWire's `readBody` still maps `*http.MaxBytesError` to the fixed invalid request, so a host that applies its own bound keeps today's document. The ProviderWire testserver keeps `http.MaxBytesHandler` with its local 1 MiB constant.
@@ -168,8 +170,8 @@ This is a Go extension with no upstream counterpart: `@ai-sdk/gateway@4.0.103` d
 
 - **Platform deadline disabled** → A unary attempt that stalls after its headers holds a goroutine and a connection until the caller disconnects.
   - Mitigation: the ledger documents it. The platform owns the deadline (#460), and streams keep the idle bound.
-- **Grafana may end a request by canceling it, without a deadline** → The outcome is classified as a cancellation, not a timeout. The approach is unchanged, because the context still ends the call.
-  - Mitigation: the response is not delivered in either case. The ledger describes the deadline as Grafana's, and #460 tracks the mechanism.
+- **A platform deadline shows as a cancellation in Gateway logs, metrics and attempt records** → Operators cannot tell it from a caller disconnect in Gateway telemetry.
+  - Mitigation: the caller gets the host's deadline error, not the Gateway's. The ledger states that Grafana's own request logs show the deadline.
 - **Requests up to 16 MiB reach schema validation** → More CPU and decode memory per request than with a 1 MiB bound.
   - Mitigation: the ledger's memory section, the `GOMEMLIMIT` guidance and platform admission (#104).
 - **Catalogs with 8 to 15 fallbacks stop loading** → A breaking change for those operators, with today's generic cardinality error.
@@ -186,6 +188,3 @@ This is a Go extension with no upstream counterpart: `@ai-sdk/gateway@4.0.103` d
 3. Go code that builds `v4.Limits` drops `ModelDuration` and applies a deadline on the request context instead.
 4. Rollback is a revert of this PR. There is no persisted state.
 
-## Open Questions
-
-- Does Grafana's route abort reach the plugin as a gRPC deadline or as a cancellation? This changes only the classification in telemetry, not the design. It is answered with the App Platform owners under #460.

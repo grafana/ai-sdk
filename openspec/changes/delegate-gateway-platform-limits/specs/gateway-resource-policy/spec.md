@@ -68,7 +68,8 @@ The language-model handler SHALL bound selection and the logical model call by t
 
 #### Scenario: Request deadline ends the call
 - **WHEN** the request context's deadline expires during selection, an attempt or stream consumption
-- **THEN** the model context SHALL be canceled, no later attempt SHALL begin, and the handler SHALL write the timeout error before commitment or the timeout terminal event after it, if the writer is still usable
+- **THEN** the model context SHALL be canceled, no later attempt SHALL begin, and the handler SHALL write an error before commitment or a terminal event after it, if the writer is still usable
+- **AND** its category SHALL follow the request context's error: timeout for `DeadlineExceeded`, cancellation for `Canceled`
 
 #### Scenario: No platform deadline
 - **WHEN** the request context carries no deadline
@@ -109,7 +110,7 @@ The "Limits" section of `ai-gateway/README.md` SHALL list each retained Gateway 
 - **THEN** it SHALL name the Gateway owner of the provider attempt bound, the outbound response and event bytes, the header timeout and redirect rejection, and the idle and drain durations
 - **AND** it SHALL name the platform as the owner of the request deadline, the request message size, admission, concurrency and process memory, with the source of each
 - **AND** it SHALL list the removed `max_request_bytes` and `max_model_duration` settings, the former per-response stream bound, and the former unary, frame, part-count, raw-usage, error-document and summary-source limits, with their replacements
-- **AND** it SHALL state what bounds a call when the platform deadline is disabled
+- **AND** it SHALL state what bounds a call when the platform deadline is disabled, and that a platform deadline appears as a cancellation in Gateway telemetry
 - **AND** it SHALL state that per-request memory grows with response size, JSON encoding expansion and concurrency, and recommend setting `GOMEMLIMIT` to about 85–90% of the container memory limit
 
 ### Requirement: Large-output client evidence
