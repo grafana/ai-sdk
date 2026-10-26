@@ -2784,7 +2784,8 @@ func flattenSteps[T any](steps []StepResult, pick func(StepResult) []T) []T {
 }
 
 func collectResponseMessages(initial []provider.Message, steps []StepResult) []provider.Message {
-	messages := slices.Clone(initial)
+	var messages []provider.Message
+	messages = append(messages, initial...)
 	for _, step := range steps {
 		messages = append(messages, step.Response.Messages...)
 	}

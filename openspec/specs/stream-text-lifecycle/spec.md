@@ -118,7 +118,7 @@ StreamText SHALL build StepResult.Content and response content from recorded pro
 
 ### Requirement: Collected results project all recorded steps
 
-StreamText, GenerateText and ToolLoopAgent results SHALL derive Content, ToolCalls, ToolResults, Files and Sources by concatenating every recorded step's values in step order, mirroring upstream `steps.flatMap`. Text, Reasoning, FinishReason, Response and ProviderMetadata SHALL describe the final recorded step. Error and cancellation results SHALL project the steps recorded before termination.
+StreamText, GenerateText and ToolLoopAgent results SHALL derive Content, ToolCalls, ToolResults, Files and Sources by concatenating every recorded step's values in step order, mirroring upstream `steps.flatMap`. Text, Reasoning, FinishReason, Response and ProviderMetadata SHALL describe the final recorded step. StreamTextResult accessors on error and cancellation SHALL project the steps recorded before termination.
 
 #### Scenario: Multi-step collections retain earlier steps
 
@@ -130,11 +130,11 @@ StreamText, GenerateText and ToolLoopAgent results SHALL derive Content, ToolCal
 #### Scenario: No recorded step
 
 - **WHEN** the invocation fails before recording any step
-- **THEN** the aggregated collections SHALL be empty
+- **THEN** the aggregated collections and `ResponseMessages` SHALL be nil
 
 #### Scenario: Returned collections are caller owned
 
-- **WHEN** a caller modifies an aggregated collection or `ResponseMessages` slice returned by a StreamTextResult accessor
+- **WHEN** a caller replaces elements of, or appends to, an aggregated collection or `ResponseMessages` slice returned by a StreamTextResult accessor
 - **THEN** later accessor calls and recorded steps SHALL be unaffected
 
 ### Requirement: Tool execution requires an allowed finish

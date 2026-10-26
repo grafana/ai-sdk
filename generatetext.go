@@ -52,12 +52,10 @@ func GenerateText(ctx context.Context, model provider.LanguageModel, opts ...Gen
 		return nil, err
 	}
 
-	gen := streamResultToGenerateResult(result)
-	gen.Warnings = append(timeoutWarnings, gen.Warnings...)
-	return gen, nil
+	return streamResultToGenerateResult(result, timeoutWarnings), nil
 }
 
-func streamResultToGenerateResult(result *StreamTextResult) *GenerateTextResult {
+func streamResultToGenerateResult(result *StreamTextResult, timeoutWarnings []provider.Warning) *GenerateTextResult {
 	return &GenerateTextResult{
 		Text:             result.Text(),
 		Reasoning:        result.Reasoning(),
@@ -69,7 +67,7 @@ func streamResultToGenerateResult(result *StreamTextResult) *GenerateTextResult 
 		Usage:            result.Usage(),
 		TotalUsage:       result.TotalUsage(),
 		Steps:            result.Steps(),
-		Warnings:         result.Warnings(),
+		Warnings:         append(timeoutWarnings, result.Warnings()...),
 		Content:          result.Content(),
 		Response:         result.Response(),
 		ResponseMessages: result.ResponseMessages(),

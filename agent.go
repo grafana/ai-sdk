@@ -285,9 +285,7 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts ...AgentGenerateOptio
 	if err := result.abortError(); err != nil {
 		return nil, err
 	}
-	generateResult := streamResultToGenerateResult(result)
-	generateResult.Warnings = append(timeoutWarnings, generateResult.Warnings...)
-	return generateResult, nil
+	return streamResultToGenerateResult(result, timeoutWarnings), nil
 }
 
 func buildAgentStreamCall(opts []AgentStreamOption) agentCallConfig {

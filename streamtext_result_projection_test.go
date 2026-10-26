@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,38 +15,41 @@ import (
 
 var projectionCitation = provider.ProviderMetadata{"anthropic": json.RawMessage(`{"citations":[{"url":"https://a.test"}]}`)}
 
-func projectionToolStepParts() <-chan provider.StreamPart {
-	ch := make(chan provider.StreamPart, 16)
-	go func() {
-		defer close(ch)
-		ch <- provider.StreamPart{Type: provider.PartReasoningStart, ID: "r1"}
-		ch <- provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r1", Delta: "plan"}
-		ch <- provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r1"}
-		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
-		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: "checking"}
-		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1", ProviderMetadata: projectionCitation}
-		ch <- provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "s1", URL: "https://a.test"}}
-		ch <- provider.StreamPart{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: []byte("chart")}, MediaType: "text/plain"}
-		ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "weather", Input: `{"city":"NYC"}`}
-		ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: intPtr(10)}, OutputTokens: provider.OutputTokenUsage{Total: intPtr(3)}}}
-	}()
+func projectionParts(parts ...provider.StreamPart) <-chan provider.StreamPart {
+	ch := make(chan provider.StreamPart, len(parts))
+	for _, part := range parts {
+		ch <- part
+	}
+	close(ch)
 	return ch
 }
 
+func projectionToolStepParts() <-chan provider.StreamPart {
+	return projectionParts(
+		provider.StreamPart{Type: provider.PartReasoningStart, ID: "r1"},
+		provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r1", Delta: "plan"},
+		provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r1"},
+		provider.StreamPart{Type: provider.PartTextStart, ID: "t1"},
+		provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: "checking"},
+		provider.StreamPart{Type: provider.PartTextEnd, ID: "t1", ProviderMetadata: projectionCitation},
+		provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "s1", URL: "https://a.test"}},
+		provider.StreamPart{Type: provider.PartFile, Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: []byte("chart")}, MediaType: "text/plain"},
+		provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "weather", Input: `{"city":"NYC"}`},
+		provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: intPtr(10)}, OutputTokens: provider.OutputTokenUsage{Total: intPtr(3)}}},
+	)
+}
+
 func projectionFinalStepParts() <-chan provider.StreamPart {
-	ch := make(chan provider.StreamPart, 16)
-	go func() {
-		defer close(ch)
-		ch <- provider.StreamPart{Type: provider.PartReasoningStart, ID: "r2"}
-		ch <- provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r2", Delta: "answer"}
-		ch <- provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r2"}
-		ch <- provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "s2", URL: "https://b.test"}}
-		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t2"}
-		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t2", Delta: "sunny"}
-		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t2"}
-		ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: intPtr(10)}, OutputTokens: provider.OutputTokenUsage{Total: intPtr(5)}}}
-	}()
-	return ch
+	return projectionParts(
+		provider.StreamPart{Type: provider.PartReasoningStart, ID: "r2"},
+		provider.StreamPart{Type: provider.PartReasoningDelta, ID: "r2", Delta: "answer"},
+		provider.StreamPart{Type: provider.PartReasoningEnd, ID: "r2"},
+		provider.StreamPart{Type: provider.PartSource, Source: &provider.SourceInfo{SourceType: provider.SourceTypeURL, ID: "s2", URL: "https://b.test"}},
+		provider.StreamPart{Type: provider.PartTextStart, ID: "t2"},
+		provider.StreamPart{Type: provider.PartTextDelta, ID: "t2", Delta: "sunny"},
+		provider.StreamPart{Type: provider.PartTextEnd, ID: "t2"},
+		provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: intPtr(10)}, OutputTokens: provider.OutputTokenUsage{Total: intPtr(5)}}},
+	)
 }
 
 func projectionModel() *mockModel {
@@ -168,7 +172,7 @@ func TestStreamTextResult_AllStepProjection(t *testing.T) {
 			assert.Equal(t, ReasoningTextOutput{Text: "answer"}, got.reasoning[0])
 			assert.Equal(t, final.Response, got.response)
 
-			assert.Equal(t, append(append([]ContentPart{}, first.Content...), final.Content...), got.content)
+			assert.Equal(t, slices.Concat(first.Content, final.Content), got.content)
 			assert.Contains(t, got.content, ContentPart(TextContent{Text: "checking", ProviderMetadata: projectionCitation}))
 
 			require.Len(t, got.toolCalls, 1)
@@ -181,7 +185,7 @@ func TestStreamTextResult_AllStepProjection(t *testing.T) {
 			assert.Equal(t, "s1", got.sources[0].ID)
 			assert.Equal(t, "s2", got.sources[1].ID)
 
-			assert.Equal(t, append(cloneMessages(first.Response.Messages), final.Response.Messages...), got.responseMessages)
+			assert.Equal(t, slices.Concat(first.Response.Messages, final.Response.Messages), got.responseMessages)
 			require.Len(t, got.responseMessages, 3)
 			assert.Equal(t, provider.RoleAssistant, got.responseMessages[0].Role)
 			assert.Equal(t, provider.RoleTool, got.responseMessages[1].Role)
@@ -194,52 +198,61 @@ func TestStreamTextResult_ResponseMessagesIncludeApprovalResults(t *testing.T) {
 	msgs := []provider.Message{
 		provider.UserText("transfer"),
 		provider.NewAssistantMessage(
-			provider.ToolCallPart("c1", "transfer", json.RawMessage(`{"amount":1}`)),
-			provider.ToolApprovalRequestPart("apr_1", "c1", false),
-			provider.ToolCallPart("c2", "transfer", json.RawMessage(`{"amount":2}`)),
-			provider.ToolApprovalRequestPart("apr_2", "c2", false),
+			provider.ToolCallPart("a1", "transfer", json.RawMessage(`{"amount":1}`)),
+			provider.ToolApprovalRequestPart("apr_1", "a1", false),
+			provider.ToolCallPart("a2", "transfer", json.RawMessage(`{"amount":2}`)),
+			provider.ToolApprovalRequestPart("apr_2", "a2", false),
 		),
 		provider.NewToolMessage(
 			provider.ToolApprovalResponsePart("apr_1", true, "ok"),
 			provider.ToolApprovalResponsePart("apr_2", false, "too much"),
 		),
 	}
-	tools := ToolSet{"transfer": {Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+	tools := projectionTools(t)
+	tools["transfer"] = Tool{Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
 		return json.RawMessage(`{"ok":true}`), nil
-	}}}
+	}}
 	newModel := func() *mockModel {
-		return &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		model := &mockModel{}
+		model.streamFunc = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			if model.callCount == 1 {
+				return &provider.StreamResult{Stream: toolCallStreamParts("weather", `{"city":"NYC"}`)}, nil
+			}
 			return &provider.StreamResult{Stream: textStreamParts("done")}, nil
-		}}
+		}
+		return model
 	}
 
 	check := func(t *testing.T, got projectedResult) {
 		t.Helper()
-		require.Len(t, got.steps, 1)
-		require.Len(t, got.responseMessages, 2)
+		require.Len(t, got.steps, 2)
+		require.Len(t, got.responseMessages, 4)
 		initial := got.responseMessages[0]
 		assert.Equal(t, provider.RoleTool, initial.Role)
 		require.Len(t, initial.Content, 2)
 		assert.Equal(t, provider.ContentPartTypeToolResult, initial.Content[0].Type)
-		assert.Equal(t, "c1", initial.Content[0].ToolCallID)
+		assert.Equal(t, "a1", initial.Content[0].ToolCallID)
 		assert.Equal(t, provider.ContentPartTypeToolResult, initial.Content[1].Type)
-		assert.Equal(t, "c2", initial.Content[1].ToolCallID)
+		assert.Equal(t, "a2", initial.Content[1].ToolCallID)
 		require.NotNil(t, initial.Content[1].Output)
 		assert.Equal(t, provider.ToolOutputExecutionDenied, initial.Content[1].Output.Type)
-		assert.Equal(t, got.steps[0].Response.Messages, got.responseMessages[1:])
+		assert.Equal(t, slices.Concat(got.steps[0].Response.Messages, got.steps[1].Response.Messages), got.responseMessages[1:])
+		assert.Equal(t, got.steps[1].Response, got.response)
 		assert.Equal(t, "done", got.text)
-		assert.Empty(t, got.toolResults)
+		require.Len(t, got.toolResults, 1)
+		assert.Equal(t, "c1", got.toolResults[0].ToolCallID)
+		assert.Equal(t, "weather", got.toolResults[0].ToolName)
 	}
 
 	t.Run("stream text", func(t *testing.T) {
-		result := StreamText(t.Context(), newModel(), WithModelMessages(msgs...), WithTools(tools))
+		result := StreamText(t.Context(), newModel(), WithModelMessages(msgs...), WithTools(tools), WithStopWhen(StepCountIs(3)))
 		for range result.FullStream() {
 		}
 		require.NoError(t, result.Err())
 		check(t, projectStream(result))
 	})
 	t.Run("generate text", func(t *testing.T) {
-		result, err := GenerateText(t.Context(), newModel(), WithModelMessages(msgs...), WithTools(tools))
+		result, err := GenerateText(t.Context(), newModel(), WithModelMessages(msgs...), WithTools(tools), WithStopWhen(StepCountIs(3)))
 		require.NoError(t, err)
 		check(t, projectGenerate(result))
 	})
@@ -260,7 +273,7 @@ func TestStreamTextResult_ProjectionEdgeCases(t *testing.T) {
 		assert.Nil(t, result.ToolResults())
 		assert.Nil(t, result.Files())
 		assert.Nil(t, result.Sources())
-		assert.Empty(t, result.ResponseMessages())
+		assert.Nil(t, result.ResponseMessages())
 	})
 
 	t.Run("error after completed step retains earlier steps", func(t *testing.T) {
@@ -319,7 +332,7 @@ func TestStreamTextResult_ProjectionEdgeCases(t *testing.T) {
 		messages[0] = provider.UserText("mutated")
 		_ = append(messages[:1], provider.UserText("appended"))
 
-		assert.NotEqual(t, content, result.Content())
+		assert.Equal(t, result.Steps()[0].Content[0], result.Content()[0])
 		assert.Equal(t, "c1", result.ToolCalls()[0].ToolCallID)
 		assert.Equal(t, "s1", result.Sources()[0].ID)
 		assert.Equal(t, provider.RoleAssistant, result.ResponseMessages()[0].Role)
