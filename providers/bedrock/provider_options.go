@@ -87,8 +87,8 @@ func readAnthropicCallOptions(opts provider.ProviderOptions) (anthropicCallOptio
 	return value, nil
 }
 
-// extractCachePoint reads a cache-point configuration from a message or
-// content-part's ProviderOptions. Returns nil when no cache point is
+// extractCachePoint reads a cache-point configuration from a message's
+// ProviderOptions. Returns nil when no cache point is
 // configured, and an error when the option is present but malformed.
 func extractCachePoint(opts provider.ProviderOptions) (*cachePoint, error) {
 	bo, ok, err := readBedrockOptions(opts)
@@ -98,11 +98,37 @@ func extractCachePoint(opts provider.ProviderOptions) (*cachePoint, error) {
 	if !ok || bo.CachePoint == nil {
 		return nil, nil
 	}
-	typ := bo.CachePoint.Type
+	return newCachePoint(*bo.CachePoint), nil
+}
+
+func extractPartCachePoint(opts provider.ProviderOptions) (*cachePoint, error) {
+	for _, key := range providerOptionKeys {
+		fields, err := readPartOptions[cachePointFields](provider.ProviderOptions{key: opts[key]})
+		if err != nil {
+			return nil, err
+		}
+		if fields.CachePoint == nil || bytes.Equal(bytes.TrimSpace(fields.CachePoint), []byte("null")) {
+			continue
+		}
+		var value CachePoint
+		if err := json.Unmarshal(fields.CachePoint, &value); err != nil {
+			return nil, fmt.Errorf("bedrock: invalid cachePoint for %q: %w", key, err)
+		}
+		return newCachePoint(value), nil
+	}
+	return nil, nil
+}
+
+func newCachePoint(value CachePoint) *cachePoint {
+	typ := value.Type
 	if typ == "" {
 		typ = "default"
 	}
-	return &cachePoint{Type: typ, TTL: bo.CachePoint.TTL}, nil
+	return &cachePoint{Type: typ, TTL: value.TTL}
+}
+
+type cachePointFields struct {
+	CachePoint json.RawMessage `json:"cachePoint"`
 }
 
 type textPartFields struct {

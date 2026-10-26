@@ -121,8 +121,9 @@ routing accounts for Bedrock's model-specific native-output reliability.
 Reasoning, structured output, cache controls, and other provider options may be
 supported by one family and ignored with a warning by another.
 
-Cache points remain attached only when their source message contributes content
-to the Converse request. When no prepared tools are active, tool calls and results
+Cache points can be set on a message or on a single content part, and remain
+attached only when that message or part contributes content to the Converse
+request. When no prepared tools are active, tool calls and results
 are removed before message grouping, together with cache points on messages that
 become empty; the result includes a `toolContent` warning. Approval bookkeeping
 and unsigned reasoning also cannot create cache-only messages. A synthetic JSON

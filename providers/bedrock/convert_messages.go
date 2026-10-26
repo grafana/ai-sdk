@@ -255,6 +255,7 @@ func convertSystemBlock(messages []provider.Message, warnings *[]provider.Warnin
 func convertUserContent(parts []provider.ContentPart, documentCounter *int, warnings *[]provider.Warning, isMistral bool) ([]contentBlock, error) {
 	var out []contentBlock
 	for _, p := range parts {
+		start := len(out)
 		switch p.Type {
 		case provider.ContentPartTypeText:
 			guarded, qualifiers, err := readTextGuardContent(p.ProviderOptions)
@@ -268,99 +269,11 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			}
 
 		case provider.ContentPartTypeFile:
-			if p.Data == nil {
-				continue
-			}
-			switch {
-			case p.Data.IsReference():
-				return nil, unsupportedFunctionality("bedrock: file parts with provider references are not supported")
-			case p.Data.IsURL():
-				if !isS3URL(p.Data.URL) {
-					return nil, unsupportedFunctionality("bedrock: file URL data is not supported")
-				}
-				mediaType := p.MediaType
-				if !isFullMediaType(mediaType) {
-					return nil, fmt.Errorf("bedrock: file URL data requires a full media type")
-				}
-				switch topLevelMediaType(mediaType) {
-				case "image":
-					format, ok := imageMediaTypeFormat[mediaType]
-					if !ok {
-						return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
-					}
-					out = append(out, contentBlock{Image: &imageBlock{
-						Format: format,
-						Source: imageSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
-					}})
-				case "video":
-					format, ok := videoMediaTypeFormat[mediaType]
-					if !ok {
-						return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
-					}
-					out = append(out, contentBlock{Video: &videoBlock{
-						Format: format,
-						Source: videoSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
-					}})
-				default:
-					return nil, unsupportedFunctionality("bedrock: file URL data is only supported for images and videos")
-				}
-				continue
-			case p.Data.IsText():
-				mediaType := p.MediaType
-				if !isFullMediaType(mediaType) {
-					mediaType = "text/plain"
-				}
-				block, err := buildDocumentContentBlock(p, mediaType, base64.StdEncoding.EncodeToString([]byte(p.Data.Text)), documentCounter)
-				if err != nil {
-					return nil, err
-				}
-				out = append(out, block)
-				continue
-			}
-
-			b64 := p.Data.Base64
-			if p.Data.Bytes != nil {
-				b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
-			}
-			if !p.Data.IsData() {
-				continue
-			}
-			mediaType, err := resolveFullMediaType(p)
+			blocks, err := convertUserFilePart(p, documentCounter)
 			if err != nil {
 				return nil, err
 			}
-			switch topLevelMediaType(mediaType) {
-			case "image":
-				format, ok := imageMediaTypeFormat[mediaType]
-				if !ok {
-					return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
-				}
-				image := &imageBlock{Format: format, Source: imageSource{Bytes: b64}}
-				guarded, err := readImageGuardContent(p.ProviderOptions)
-				if err != nil {
-					return nil, err
-				}
-				if guarded {
-					out = append(out, contentBlock{GuardContent: &guardContentBlock{Image: image}})
-				} else {
-					out = append(out, contentBlock{Image: image})
-				}
-				continue
-			case "video":
-				format, ok := videoMediaTypeFormat[mediaType]
-				if !ok {
-					return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
-				}
-				out = append(out, contentBlock{
-					Video: &videoBlock{Format: format, Source: videoSource{Bytes: b64}},
-				})
-				continue
-			}
-			block, err := buildDocumentContentBlock(p, mediaType, b64, documentCounter)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, block)
+			out = append(out, blocks...)
 
 		case provider.ContentPartTypeToolResult:
 			toolResult, err := buildToolResult(p, documentCounter, isMistral, warnings)
@@ -374,8 +287,122 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			// silently, matching upstream behavior for user-role approval
 			// responses.
 		}
+		if len(out) > start {
+			var err error
+			if out, err = appendPartCachePoint(out, p.ProviderOptions); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return out, nil
+}
+
+func appendPartCachePoint(content []contentBlock, opts provider.ProviderOptions) ([]contentBlock, error) {
+	cp, err := extractPartCachePoint(opts)
+	if err != nil {
+		return nil, err
+	}
+	if cp != nil {
+		content = append(content, contentBlock{CachePoint: cp})
+	}
+	return content, nil
+}
+
+func convertUserFilePart(p provider.ContentPart, documentCounter *int) ([]contentBlock, error) {
+	var out []contentBlock
+	if p.Data == nil {
+		return out, nil
+	}
+	switch {
+	case p.Data.IsReference():
+		return nil, unsupportedFunctionality("bedrock: file parts with provider references are not supported")
+	case p.Data.IsURL():
+		if !isS3URL(p.Data.URL) {
+			return nil, unsupportedFunctionality("bedrock: file URL data is not supported")
+		}
+		mediaType := p.MediaType
+		if !isFullMediaType(mediaType) {
+			return nil, fmt.Errorf("bedrock: file URL data requires a full media type")
+		}
+		switch topLevelMediaType(mediaType) {
+		case "image":
+			format, ok := imageMediaTypeFormat[mediaType]
+			if !ok {
+				return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
+			}
+			out = append(out, contentBlock{Image: &imageBlock{
+				Format: format,
+				Source: imageSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
+			}})
+		case "video":
+			format, ok := videoMediaTypeFormat[mediaType]
+			if !ok {
+				return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
+			}
+			out = append(out, contentBlock{Video: &videoBlock{
+				Format: format,
+				Source: videoSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
+			}})
+		default:
+			return nil, unsupportedFunctionality("bedrock: file URL data is only supported for images and videos")
+		}
+		return out, nil
+	case p.Data.IsText():
+		mediaType := p.MediaType
+		if !isFullMediaType(mediaType) {
+			mediaType = "text/plain"
+		}
+		block, err := buildDocumentContentBlock(p, mediaType, base64.StdEncoding.EncodeToString([]byte(p.Data.Text)), documentCounter)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, block)
+		return out, nil
+	}
+
+	b64 := p.Data.Base64
+	if p.Data.Bytes != nil {
+		b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
+	}
+	if !p.Data.IsData() {
+		return out, nil
+	}
+	mediaType, err := resolveFullMediaType(p)
+	if err != nil {
+		return nil, err
+	}
+	switch topLevelMediaType(mediaType) {
+	case "image":
+		format, ok := imageMediaTypeFormat[mediaType]
+		if !ok {
+			return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
+		}
+		image := &imageBlock{Format: format, Source: imageSource{Bytes: b64}}
+		guarded, err := readImageGuardContent(p.ProviderOptions)
+		if err != nil {
+			return nil, err
+		}
+		if guarded {
+			out = append(out, contentBlock{GuardContent: &guardContentBlock{Image: image}})
+		} else {
+			out = append(out, contentBlock{Image: image})
+		}
+		return out, nil
+	case "video":
+		format, ok := videoMediaTypeFormat[mediaType]
+		if !ok {
+			return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
+		}
+		out = append(out, contentBlock{
+			Video: &videoBlock{Format: format, Source: videoSource{Bytes: b64}},
+		})
+		return out, nil
+	}
+	block, err := buildDocumentContentBlock(p, mediaType, b64, documentCounter)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, block), nil
 }
 
 func unsupportedFunctionality(format string, args ...any) error {
@@ -556,7 +583,9 @@ func convertToolContent(parts []provider.ContentPart, documentCounter *int, warn
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, contentBlock{ToolResult: toolResult})
+			if out, err = appendPartCachePoint(append(out, contentBlock{ToolResult: toolResult}), p.ProviderOptions); err != nil {
+				return nil, err
+			}
 		case provider.ContentPartTypeToolApprovalResponse:
 			// Same skip behavior as in user-role conversion.
 		}
@@ -570,6 +599,7 @@ func convertAssistantContent(parts []provider.ContentPart, documentCounter *int,
 		out = append(out, converseMessage{Role: role, Content: []contentBlock{block}})
 	}
 	for partIndex, p := range parts {
+		start := len(out)
 		switch p.Type {
 		case provider.ContentPartTypeText:
 			// Skip empty text parts unless they coexist with reasoning blocks
@@ -631,6 +661,14 @@ func convertAssistantContent(parts []provider.ContentPart, documentCounter *int,
 				Feature: "assistantContentPart",
 				Details: fmt.Sprintf("Bedrock assistant messages do not support %q", p.Type),
 			})
+		}
+		if len(out) > start {
+			last := len(out) - 1
+			content, err := appendPartCachePoint(out[last].Content, p.ProviderOptions)
+			if err != nil {
+				return nil, err
+			}
+			out[last].Content = content
 		}
 	}
 	return out, nil

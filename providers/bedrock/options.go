@@ -116,8 +116,8 @@ type BedrockOptions struct {
 	// additionalModelRequestFields.anthropic_beta. Only meaningful for
 	// Anthropic models on Bedrock.
 	AnthropicBeta []string `json:"anthropicBeta,omitempty"`
-	// CachePoint configures Bedrock prompt caching for the system messages or
-	// the message it is attached to.
+	// CachePoint configures Bedrock prompt caching for the system messages, or
+	// for the message or content part it is attached to.
 	CachePoint *CachePoint `json:"cachePoint,omitempty"`
 	// ServiceTier optionally pins the Bedrock service tier (e.g., "priority").
 	ServiceTier string `json:"serviceTier,omitempty"`

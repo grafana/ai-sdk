@@ -599,12 +599,18 @@ The provider SHALL classify OpenAI IDs by anchored `openai.` with optional regio
 
 ### Requirement: Converse option merge preserves cache and beta precedence
 
-Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks only when the source message emits native content. A marker SHALL NOT survive solely because another source in the same merged block emits content. Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
+Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks only when the source message emits native content, and on user, tool-result and assistant content parts only when the source part emits native content. A marker SHALL NOT survive solely because another source in the same merged block emits content. Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
 
 #### Scenario: Cache point remains at selected message boundary
 
 - **WHEN** a system block and a user or assistant message have cache-point options under `amazonBedrock` or legacy `bedrock`
 - **THEN** their cache points remain at the corresponding Converse content boundaries after structured-output and tool routing
+
+#### Scenario: Content part cache point
+
+- **WHEN** a user part, a tool-result part in a tool or assistant message, or an assistant part has cache-point options under `amazonBedrock` or legacy `bedrock`
+- **THEN** the cache point immediately follows that part's Converse block, before any message cache point, using `amazonBedrock` when both namespaces set one
+- **AND** a part that emits no block, such as unsigned reasoning, empty assistant text or an approval response, contributes no cache point and its options are not parsed
 
 #### Scenario: Explicit beta and tool-required beta win over raw pass-through
 

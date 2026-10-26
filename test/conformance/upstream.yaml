@@ -142,11 +142,12 @@ knownGaps:
   - id: bedrock-cache-point-ownership
     surface: provider-bedrock
     status: intentional-deviation
-    description: Cache points are retained only when their source message emits
-      native content, including user/tool approval-only messages and system
-      messages with only unsupported parts. This goes beyond the registered
+    description: Cache points are retained only when their source message or
+      content part emits native content, including user/tool approval-only
+      messages and system messages with only unsupported parts. This goes beyond the registered
       upstream's assistant cache-only suppression and prevents orphaned markers
-      from borrowing content from another source in a merged block. Tool
+      from borrowing content from another source in a merged block; upstream
+      attaches a non-emitting part's marker to the preceding content. Tool
       filtering happens before grouping with the prepared tool set, matching
       upstream. Adjacent user messages left after an omitted unsigned-only
       assistant message remain separate unless the earlier one carries tool
@@ -160,13 +161,6 @@ knownGaps:
       no raw reason instead. EOF after messageStop remains valid without
       metadata, including empty or unmapped stop reasons. Synthetic HTTP and
       frame tests cover this transport failure; no provider recording is claimed.
-  - id: bedrock-part-cache-points
-    surface: provider-bedrock
-    status: gap
-    description: Upstream @ai-sdk/amazon-bedrock appends a cache point after any user
-      content part, tool-role tool-result part, or assistant content part, including
-      assistant-role tool results, whose provider options set one. The Go Converse adapter reads cache points only
-      from message and system provider options and ignores part-level settings.
   - id: bedrock-mantle-chat-provider
     surface: provider-bedrock
     status: gap
