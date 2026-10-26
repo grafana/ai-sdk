@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/examples/structured-extraction
 go 1.27.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058
+	github.com/grafana/ai-sdk v0.1.0-alpha.2
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0
 	github.com/stretchr/testify v1.12.1
 )
