@@ -1,5 +1,6 @@
 {
   ".": "0.1.0-alpha.2",
   "providers/openai": "0.1.0-alpha.1",
-  "middleware/logger": "0.1.0-alpha.1"
+  "middleware/logger": "0.1.0-alpha.1",
+  "providers/anthropic": "0.1.0-alpha.1"
 }
