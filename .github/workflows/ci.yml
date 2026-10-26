@@ -7,8 +7,23 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ci:
+    runs-on: ubuntu-latest
+    needs: [build-test, lint]
+    if: ${{ always() }}
+    steps:
+      - name: Require build, tests, and lint
+        env:
+          BUILD_TEST_RESULT: ${{ needs.build-test.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+        run: test "$BUILD_TEST_RESULT" = success && test "$LINT_RESULT" = success
+
+  build-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,21 +38,7 @@ jobs:
           version: "2026.5.4"
           experimental: true
 
-      - name: Resolve Go cache paths
-        id: go-cache
-        run: |
-          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
-          path: |
-            ${{ steps.go-cache.outputs.gocache }}
-            ${{ steps.go-cache.outputs.gomodcache }}
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+      - uses: ./.github/actions/cache-go
 
       - name: Check formatting
         run: mise run fmt-check
@@ -53,14 +54,40 @@ jobs:
       - name: Vet
         run: mise run vet
 
-      - name: Lint
-        run: mise run lint
-
       - name: Build
         run: mise run build
 
       - name: Test
         run: mise run test-short
+
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          version: "2026.5.4"
+          experimental: true
+
+      - uses: ./.github/actions/cache-go
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/golangci-lint
+          key: ${{ runner.os }}-${{ runner.arch }}-golangci-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum', 'go*.work*') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-golangci-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum', 'go*.work*') }}-
+
+      - name: Lint
+        env:
+          GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint
+        run: mise run lint
 
   race:
     runs-on: ubuntu-latest
@@ -77,22 +104,7 @@ jobs:
           version: "2026.5.4"
           experimental: true
 
-      - name: Resolve Go cache paths
-        id: go-cache
-        run: |
-          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
-          path: |
-            ${{ steps.go-cache.outputs.gocache }}
-            ${{ steps.go-cache.outputs.gomodcache }}
-          key: ${{ runner.os }}-go-race-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-race-
-            ${{ runner.os }}-go-
+      - uses: ./.github/actions/cache-go
 
       - name: Test with the race detector
         run: mise run test-race
@@ -130,6 +142,8 @@ jobs:
           version: "2026.5.4"
           experimental: true
 
+      - uses: ./.github/actions/cache-go
+
       - name: Test module policy fixtures
         run: mise run test-module-policy
 
@@ -162,6 +176,8 @@ jobs:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
+
+      - uses: ./.github/actions/cache-go
 
       - name: Validate parity baseline
         run: mise run validate-parity-baseline
@@ -199,21 +215,7 @@ jobs:
           version: "2026.5.4"
           experimental: true
 
-      - name: Resolve Go cache paths
-        id: go-cache
-        run: |
-          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
-          path: |
-            ${{ steps.go-cache.outputs.gocache }}
-            ${{ steps.go-cache.outputs.gomodcache }}
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+      - uses: ./.github/actions/cache-go
 
       - name: Resolve pnpm store path
         id: pnpm-store
@@ -245,21 +247,7 @@ jobs:
           version: "2026.5.4"
           experimental: true
 
-      - name: Resolve Go cache paths
-        id: go-cache
-        run: |
-          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
-          path: |
-            ${{ steps.go-cache.outputs.gocache }}
-            ${{ steps.go-cache.outputs.gomodcache }}
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+      - uses: ./.github/actions/cache-go
 
       - name: Resolve pnpm store path
         id: pnpm-store

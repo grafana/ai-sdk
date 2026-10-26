@@ -1,0 +1,29 @@
+name: Cache Go
+description: Cache module downloads and refresh each job's compiled packages per revision
+runs:
+  using: composite
+  steps:
+    - name: Resolve Go cache paths
+      id: paths
+      shell: bash
+      run: |
+        echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+        echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+        echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Go modules
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.paths.outputs.modules }}
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-modules-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum', 'go*.work*') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-modules-v2-${{ github.job }}-
+
+    - name: Cache Go build results
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.paths.outputs.build }}
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum', 'go*.work*') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum', 'go*.work*') }}-
+          ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-
