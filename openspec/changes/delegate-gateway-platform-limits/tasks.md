@@ -70,9 +70,9 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 6. Integration checks
 
-- [ ] 6.1 Run `mise run test-ai-gateway`, `mise run test-ai-gateway-command`, `mise run test-providerwire-v4`, `mise run test-grafana`, `mise run lint-docs`, `mise run validate-parity-baseline`, and `go test -race ./...` in `ai-gateway`. All pass.
-- [ ] 6.2 Run `rg -w 'ModelDuration|max_model_duration|MaxRequestBytes|max_request_bytes|maxCandidates|maxCredentials' ai-gateway docs --glob '!CHANGELOG.md'`. It finds only the ledger's removed-limits row. Confirm that `git diff --stat nrbrd/gateway-resource-policy -- 'test/conformance/*/recorded/'` is empty.
-- [ ] 6.3 Run `openspec validate delegate-gateway-platform-limits --strict`. It passes.
+- [x] 6.1 Run `mise run test-ai-gateway`, `mise run test-ai-gateway-command`, `mise run test-providerwire-v4`, `mise run test-grafana`, `mise run lint-docs`, `mise run validate-parity-baseline`, and `go test -race ./...` in `ai-gateway`. All pass.
+- [x] 6.2 Run `rg -w 'ModelDuration|max_model_duration|MaxRequestBytes|max_request_bytes|maxCandidates|maxCredentials' ai-gateway docs --glob '!CHANGELOG.md'`. It finds only the ledger's two removed-setting rows. Confirm that `git diff --stat nrbrd/gateway-resource-policy -- 'test/conformance/*/recorded/'` is empty.
+- [x] 6.3 Run `openspec validate delegate-gateway-platform-limits --strict`. It passes.
 
 ## Workflow follow-up
 
