@@ -106,7 +106,6 @@ something is wrong, it does not start, and Grafana's log says why.
 | `config_file` | Path to the model catalog. Required. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
-| `max_request_bytes` | Largest request body. Defaults to 1 MiB; raise it for large file inputs. |
 | `max_model_duration` | Longest model call. Defaults to `120s`; at least `30s`. |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 
@@ -118,8 +117,7 @@ format.
 
 | Limit | Owner |
 |---|---|
-| 60 seconds per request, including a streamed response; route message size; how many requests run at once | Grafana's plugin host |
-| `max_request_bytes` per request body, on every route | Plugin routes, shared by every API |
+| 60 seconds per request, including a streamed response; 16 MiB per request, the plugin SDK's route message size; how many requests run at once | Grafana's plugin host |
 | 16 MiB per provider response, or per event in a streamed response, counted after decompression; 10 seconds to receive response headers; no redirects | Model transport, shared by every provider and provider key |
 | `max_model_duration`; 30 seconds without stream activity; 1 second of cleanup after a stream ends | Language-model handler |
 | 8 provider attempts per request: a model's primary and fallbacks, or the keys for the selected provider in a request that brings its own keys | Model catalog loader, at startup, and request key selection |
@@ -129,7 +127,9 @@ The Gateway no longer limits the size of a generated response, a stream event,
 the number of stream events, the provider's raw usage, an error response, or
 the provider error summaries it returns. The 16 MiB model transport limit and
 the time limits bound them instead. A streamed provider response has no total
-size limit: each event is limited to 16 MiB, and time bounds the stream.
+size limit: each event is limited to 16 MiB, and time bounds the stream. The
+`max_request_bytes` setting is removed and ignored; the plugin host's route
+message size bounds each request instead.
 
 Memory per request grows with the size of the provider response, because
 encoding it as JSON can expand it several times, and with the number of

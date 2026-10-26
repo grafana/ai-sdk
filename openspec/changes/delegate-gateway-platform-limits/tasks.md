@@ -23,15 +23,15 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 3. Platform-owned request size
 
-- [ ] 3.1 Remove `Settings.MaxRequestBytes`, `defaultRequestBytes`, the `max_request_bytes` parsing and its validation. In `settings_test.go`, assert that `GF_PLUGIN_MAX_REQUEST_BYTES`, set to a valid or an invalid value, is ignored and startup succeeds. Verify with `go test ./cmd/grafana-ai-gateway/internal/config/...`.
-- [ ] 3.2 Remove the `http.MaxBytesHandler` wrapper and the `maxRequestBytes` parameter from `gateway.newHandler`, and its call in `gateway.go`. Delete the body-bound cases in `request_bound_test.go`, and keep the refused-caller zero-reads test, moving it if the file empties. Add an in-process route test where a request of about 2 MiB with an inline file reaches the fake native provider. Verify with `go test -race ./cmd/grafana-ai-gateway/internal/gateway/...`.
-- [ ] 3.3 In `gateway-command.test.ts`, test both registered clients through the built plugin:
+- [x] 3.1 Remove `Settings.MaxRequestBytes`, `defaultRequestBytes`, the `max_request_bytes` parsing and its validation. In `settings_test.go`, assert that `GF_PLUGIN_MAX_REQUEST_BYTES`, set to a valid or an invalid value, is ignored and startup succeeds. Verify with `go test ./cmd/grafana-ai-gateway/internal/config/...`.
+- [x] 3.2 Remove the `http.MaxBytesHandler` wrapper and the `maxRequestBytes` parameter from `gateway.newHandler`, and its call in `gateway.go`. Delete the body-bound cases in `request_bound_test.go`, and keep the refused-caller zero-reads test, moving it if the file empties. Add an in-process route test where a request of about 2 MiB with an inline file reaches the fake native provider. Verify with `go test -race ./cmd/grafana-ai-gateway/internal/gateway/...`.
+- [x] 3.3 In `gateway-command.test.ts`, test both registered clients through the built plugin:
   - a request of about 2 MiB with an inline file succeeds;
   - a request above 16 MiB fails with a non-ProviderWire host error, and the fake native provider records zero calls.
 
   Verify with `mise run test-ai-gateway-command`.
-- [ ] 3.4 Keep `readBody`'s `*http.MaxBytesError` mapping and the testserver's own 1 MiB `MaxBytesHandler`. Update the `providerwire/v4` godoc: a host bounds the body, and the Gateway plugin relies on the route message size. Verify with `go test ./providerwire/v4/...` and `mise run test-providerwire-v4`.
-- [ ] 3.5 In the ledger, replace the route-wrapper row with the platform request-size row (source: the plugin SDK's 16 MiB receive default) and drop the `max_request_bytes` settings row. In `docs/concepts/gateway-architecture.md`, replace the `max_request_bytes` sentence in the limits paragraph. Verify with `mise run lint-docs`.
+- [x] 3.4 Keep `readBody`'s `*http.MaxBytesError` mapping and the testserver's own 1 MiB `MaxBytesHandler`. Update the `providerwire/v4` godoc: a host bounds the body, and the Gateway plugin relies on the route message size. Verify with `go test ./providerwire/v4/...` and `mise run test-providerwire-v4`.
+- [x] 3.5 In the ledger, replace the route-wrapper row with the platform request-size row (source: the plugin SDK's 16 MiB receive default) and drop the `max_request_bytes` settings row. In `docs/concepts/gateway-architecture.md`, replace the `max_request_bytes` sentence in the limits paragraph. Verify with `mise run lint-docs`.
 
 ## 4. Platform request deadline
 

@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"time"
 
@@ -36,7 +35,7 @@ func main() {
 		Steps             int                          `json:"steps"`
 		Instructions      string                       `json:"instructions"`
 	}
-	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&input); err != nil {
+	if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
 		emit(map[string]any{"error": map[string]any{"message": "invalid capture input"}})
 		return
 	}

@@ -1482,6 +1482,41 @@ describe("authenticated Anthropic Gateway command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
+  it("accepts requests above the former body bound and leaves larger ones to the host", async () => {
+    const [fake, gateway] = await startGateway();
+    const base = { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "assistant" };
+    const fileData = (bytes: number) => Buffer.alloc(bytes, 0x89).toString("base64");
+    const fileOptions = (data: string) => ({
+      prompt: [{ role: "user" as const, content: [
+        { type: "text" as const, text: "normal-unary" },
+        { type: "file" as const, data: { type: "data" as const, data }, mediaType: "image/png" },
+      ] }],
+    });
+    try {
+      const data = fileData(3 << 19);
+      const accepted = fileOptions(data);
+      assert.ok(JSON.stringify(accepted).length > 2 << 20);
+      const vercel = await gateway.client()("assistant").doGenerate(accepted);
+      assert.ok(JSON.stringify(vercel.content).includes("hello from fake Anthropic"));
+      const go = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", options: accepted });
+      assert.equal(go.error, undefined);
+      for (const request of fake.requests.slice(-2)) assert.equal((request.body as any).messages[0].content[1].source.data, data);
+
+      const oversized = fileOptions(fileData(13 << 20));
+      assert.ok(JSON.stringify(oversized).length > 16 << 20);
+      const before = fake.requests.length;
+      const rejected = await gateway.client()("assistant").doGenerate(oversized).then(() => undefined, (error: unknown) => error as { statusCode?: number; responseBody?: string });
+      assert.notEqual(rejected, undefined);
+      assert.ok(rejected!.statusCode! >= 400);
+      assert.ok(!String(rejected!.responseBody).includes("invalid_request_error"));
+      const goRejected = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", options: oversized });
+      assert.notEqual(goRejected.error, undefined);
+      assert.ok(goRejected.error.statusCode >= 400);
+      assert.equal(fake.requests.length, before);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
   it("maps file inputs and file-result continuation through authenticated native calls", async () => {
     const [fake, gateway] = await startGateway();
     const client = gateway.client();

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -499,6 +500,20 @@ func TestGateway_StreamsIncrementallyAndCancels(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return strings.Contains(h.logs.String(), `"route":"language_model"`)
 	}, 3*time.Second, 10*time.Millisecond)
+}
+
+func TestGateway_AcceptsRequestsAboveTheFormerBodyBound(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	internal := accessToken(h.serviceToken(t, testInternalService))
+	data := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x89, 'P', 'N', 'G'}, 384<<10))
+	body := `{"prompt":[{"role":"user","content":[{"type":"text","text":"describe"},{"type":"file","mediaType":"image/png","data":{"type":"data","data":"` + data + `"}}]}],"maxOutputTokens":16}`
+	require.Greater(t, len(body), 2<<20)
+
+	status, response := do(t, languageRequest(t, context.Background(), h.url("language-model"), body, false, internal))
+	assert.Equal(t, http.StatusOK, status, response)
+	assert.Contains(t, response, "hello")
+	require.Equal(t, int32(1), h.anthropic.requests.Load())
+	assert.Contains(t, h.anthropic.recorded()[0], data)
 }
 
 const unaryBody = `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]}],"maxOutputTokens":16}`

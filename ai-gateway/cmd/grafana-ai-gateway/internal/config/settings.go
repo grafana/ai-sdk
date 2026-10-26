@@ -47,9 +47,8 @@ const (
 	MaxProviderAttempts = 8
 )
 
-// Defaults of the configurable request and model limits, and the fixed stream durations.
+// Default of the configurable model limit, and the fixed stream durations.
 const (
-	defaultRequestBytes  = 1 << 20
 	defaultModelDuration = 120 * time.Second
 	streamIdleDuration   = 30 * time.Second
 	streamDrainDuration  = time.Second
@@ -73,9 +72,7 @@ type Settings struct {
 	ConfigFile         string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
-	// MaxRequestBytes bounds the body of every plugin route request.
-	MaxRequestBytes int64
-	ProviderWire    providerv4.Limits
+	ProviderWire       providerv4.Limits
 }
 
 // SettingName returns the environment variable of a plugin setting key, as
@@ -122,18 +119,6 @@ func (e *environment) bool(key string, fallback bool) bool {
 	return parsed
 }
 
-func (e *environment) int64(key string, fallback int64) int64 {
-	name, value, ok := e.raw(key)
-	if !ok {
-		return fallback
-	}
-	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		e.invalid(name)
-	}
-	return parsed
-}
-
 func (e *environment) duration(key string, fallback time.Duration) time.Duration {
 	name, value, ok := e.raw(key)
 	if !ok {
@@ -157,7 +142,6 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 			Endpoint: env.string("agento11y_endpoint", ""),
 			TLS:      env.bool("agento11y_tls", true),
 		},
-		MaxRequestBytes: env.int64("max_request_bytes", defaultRequestBytes),
 		ProviderWire: providerv4.Limits{
 			ModelDuration:       env.duration("max_model_duration", defaultModelDuration),
 			StreamIdleDuration:  streamIdleDuration,
@@ -185,9 +169,6 @@ func (settings Settings) Validate() error {
 	}
 	if err := settings.AgentObservability.validate(); err != nil {
 		return err
-	}
-	if settings.MaxRequestBytes <= 0 {
-		return fmt.Errorf("config: max request bytes must be positive")
 	}
 	if settings.ProviderWire.ModelDuration < ProviderResponseHeaderTimeout || settings.ProviderWire.ModelDuration < streamIdleDuration {
 		return fmt.Errorf("config: max model duration must be at least %s", max(ProviderResponseHeaderTimeout, streamIdleDuration))

@@ -27,7 +27,6 @@ func TestParseSettings_Defaults(t *testing.T) {
 			Endpoint: "collector.example:4317",
 			TLS:      true,
 		},
-		MaxRequestBytes: 1_048_576,
 		ProviderWire: providerv4.Limits{
 			ModelDuration:       120 * time.Second,
 			StreamIdleDuration:  30 * time.Second,
@@ -50,7 +49,6 @@ func TestParseSettings_EnvironmentBindings(t *testing.T) {
 		{env: "GF_PLUGIN_AGENTO11Y_ENDPOINT", value: "other.example:4317", check: func(t *testing.T, s Settings) {
 			assert.Equal(t, "other.example:4317", s.AgentObservability.Endpoint)
 		}},
-		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "2048", check: func(t *testing.T, s Settings) { assert.Equal(t, int64(2048), s.MaxRequestBytes) }},
 		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "45s", check: func(t *testing.T, s Settings) { assert.Equal(t, 45*time.Second, s.ProviderWire.ModelDuration) }},
 	}
 	for _, tc := range tests {
@@ -72,7 +70,6 @@ func TestParseSettings_EnvironmentBindings(t *testing.T) {
 
 func TestParseSettings_InvalidValuesNameTheSetting(t *testing.T) {
 	for _, tc := range []struct{ env, value string }{
-		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "private-value"},
 		{env: "GF_PLUGIN_MAX_MODEL_DURATION", value: "private-value"},
 		{env: "GF_PLUGIN_AGENTO11Y_ENABLED", value: "private-value"},
 		{env: "GF_PLUGIN_AGENTO11Y_TLS", value: "private-value"},
@@ -88,10 +85,28 @@ func TestParseSettings_InvalidValuesNameTheSetting(t *testing.T) {
 
 func TestParseSettings_EmptyValuesSelectDefaults(t *testing.T) {
 	environment := baseSettingsEnvironment()
-	environment["GF_PLUGIN_MAX_REQUEST_BYTES"] = ""
+	environment["GF_PLUGIN_AGENTO11Y_TLS"] = ""
 	settings, err := ParseSettings(mapLookup(environment))
 	require.NoError(t, err)
-	assert.Equal(t, int64(defaultRequestBytes), settings.MaxRequestBytes)
+	assert.True(t, settings.AgentObservability.TLS)
+}
+
+func TestParseSettings_RemovedSettingsAreIgnored(t *testing.T) {
+	want, err := ParseSettings(mapLookup(baseSettingsEnvironment()))
+	require.NoError(t, err)
+	for _, tc := range []struct{ env, value string }{
+		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "2048"},
+		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "-1"},
+		{env: "GF_PLUGIN_MAX_REQUEST_BYTES", value: "private-value"},
+	} {
+		t.Run(tc.env+"="+tc.value, func(t *testing.T) {
+			environment := baseSettingsEnvironment()
+			environment[tc.env] = tc.value
+			settings, err := ParseSettings(mapLookup(environment))
+			require.NoError(t, err)
+			assert.Equal(t, want, settings)
+		})
+	}
 }
 
 func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
@@ -104,8 +119,6 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 	}{
 		{name: "config file", mutate: func(s *Settings) { s.ConfigFile = " " }},
 		{name: "model duration below provider and idle timeouts", mutate: func(s *Settings) { s.ProviderWire.ModelDuration = 29 * time.Second }},
-		{name: "request bytes zero", mutate: func(s *Settings) { s.MaxRequestBytes = 0 }},
-		{name: "request bytes negative", mutate: func(s *Settings) { s.MaxRequestBytes = -1 }},
 		{name: "agento11y protocol", mutate: func(s *Settings) { s.AgentObservability.Protocol = "other" }},
 		{name: "agento11y endpoint", mutate: func(s *Settings) { s.AgentObservability.Endpoint = "" }},
 		{name: "agento11y endpoint credentials", mutate: func(s *Settings) {
