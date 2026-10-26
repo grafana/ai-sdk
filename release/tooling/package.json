@@ -7,6 +7,6 @@
     "test": "node --test"
   },
   "dependencies": {
-    "release-please": "17.6.0"
+    "release-please": "17.11.2"
   }
 }
