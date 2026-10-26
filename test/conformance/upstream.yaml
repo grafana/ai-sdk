@@ -147,7 +147,8 @@ knownGaps:
       messages and system messages with only unsupported parts. This goes beyond the registered
       upstream's assistant cache-only suppression and prevents orphaned markers
       from borrowing content from another source in a merged block; upstream
-      attaches a non-emitting part's marker to the preceding content. Tool
+      keeps a non-emitting part's marker at its position in the current Converse
+      message, dropping it only when that message would be cache-only. Tool
       filtering happens before grouping with the prepared tool set, matching
       upstream. Adjacent user messages left after an omitted unsigned-only
       assistant message remain separate unless the earlier one carries tool

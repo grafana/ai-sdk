@@ -65,6 +65,21 @@ func TestConvertPrompt_PartCachePoints(t *testing.T) {
 			want:   `[{"role":"user","content":[{"text":"a"},{"cachePoint":{"type":"default","ttl":"1h"}}]}]`,
 		},
 		{
+			name:   "user file part",
+			prompt: []provider.Message{provider.NewUserMessage(cachedPart(provider.FilePart("image/png", provider.DataContent{Base64: "aGVsbG8="}), "5m"))},
+			want:   `[{"role":"user","content":[{"image":{"format":"png","source":{"bytes":"aGVsbG8="}}},{"cachePoint":{"type":"default","ttl":"5m"}}]}]`,
+		},
+		{
+			name:   "user file part without data emits no cache point",
+			prompt: []provider.Message{provider.NewUserMessage(provider.TextPart("a"), cachedPart(provider.ContentPart{Type: provider.ContentPartTypeFile, MediaType: "image/png"}, "5m"))},
+			want:   `[{"role":"user","content":[{"text":"a"}]}]`,
+		},
+		{
+			name:   "null modern cache point falls back to legacy namespace",
+			prompt: []provider.Message{provider.NewUserMessage(withOptions(provider.TextPart("a"), bothNamespaceOptions(`{"cachePoint":null}`, `{"cachePoint":{"type":"default","ttl":"5m"}}`)))},
+			want:   `[{"role":"user","content":[{"text":"a"},{"cachePoint":{"type":"default","ttl":"5m"}}]}]`,
+		},
+		{
 			name:   "signed reasoning part",
 			prompt: []provider.Message{provider.NewAssistantMessage(withOptions(provider.ReasoningPart("r"), rawPartOptions("bedrock", `{"signature":"sig","cachePoint":{"type":"default"}}`))), provider.UserText("next")},
 			want:   `[{"role":"assistant","content":[{"reasoningContent":{"reasoningText":{"text":"r","signature":"sig"}}},{"cachePoint":{"type":"default"}}]},{"role":"user","content":[{"text":"next"}]}]`,

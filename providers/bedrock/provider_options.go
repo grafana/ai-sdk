@@ -107,14 +107,9 @@ func extractPartCachePoint(opts provider.ProviderOptions) (*cachePoint, error) {
 		if err != nil {
 			return nil, err
 		}
-		if fields.CachePoint == nil || bytes.Equal(bytes.TrimSpace(fields.CachePoint), []byte("null")) {
-			continue
+		if fields.CachePoint != nil {
+			return newCachePoint(*fields.CachePoint), nil
 		}
-		var value CachePoint
-		if err := json.Unmarshal(fields.CachePoint, &value); err != nil {
-			return nil, fmt.Errorf("bedrock: invalid cachePoint for %q: %w", key, err)
-		}
-		return newCachePoint(value), nil
 	}
 	return nil, nil
 }
@@ -128,7 +123,7 @@ func newCachePoint(value CachePoint) *cachePoint {
 }
 
 type cachePointFields struct {
-	CachePoint json.RawMessage `json:"cachePoint"`
+	CachePoint *CachePoint `json:"cachePoint"`
 }
 
 type textPartFields struct {

@@ -309,9 +309,8 @@ func appendPartCachePoint(content []contentBlock, opts provider.ProviderOptions)
 }
 
 func convertUserFilePart(p provider.ContentPart, documentCounter *int) ([]contentBlock, error) {
-	var out []contentBlock
 	if p.Data == nil {
-		return out, nil
+		return nil, nil
 	}
 	switch {
 	case p.Data.IsReference():
@@ -330,23 +329,22 @@ func convertUserFilePart(p provider.ContentPart, documentCounter *int) ([]conten
 			if !ok {
 				return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
 			}
-			out = append(out, contentBlock{Image: &imageBlock{
+			return []contentBlock{{Image: &imageBlock{
 				Format: format,
 				Source: imageSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
-			}})
+			}}}, nil
 		case "video":
 			format, ok := videoMediaTypeFormat[mediaType]
 			if !ok {
 				return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
 			}
-			out = append(out, contentBlock{Video: &videoBlock{
+			return []contentBlock{{Video: &videoBlock{
 				Format: format,
 				Source: videoSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
-			}})
+			}}}, nil
 		default:
 			return nil, unsupportedFunctionality("bedrock: file URL data is only supported for images and videos")
 		}
-		return out, nil
 	case p.Data.IsText():
 		mediaType := p.MediaType
 		if !isFullMediaType(mediaType) {
@@ -356,8 +354,7 @@ func convertUserFilePart(p provider.ContentPart, documentCounter *int) ([]conten
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, block)
-		return out, nil
+		return []contentBlock{block}, nil
 	}
 
 	b64 := p.Data.Base64
@@ -365,7 +362,7 @@ func convertUserFilePart(p provider.ContentPart, documentCounter *int) ([]conten
 		b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
 	}
 	if !p.Data.IsData() {
-		return out, nil
+		return nil, nil
 	}
 	mediaType, err := resolveFullMediaType(p)
 	if err != nil {
@@ -383,26 +380,23 @@ func convertUserFilePart(p provider.ContentPart, documentCounter *int) ([]conten
 			return nil, err
 		}
 		if guarded {
-			out = append(out, contentBlock{GuardContent: &guardContentBlock{Image: image}})
-		} else {
-			out = append(out, contentBlock{Image: image})
+			return []contentBlock{{GuardContent: &guardContentBlock{Image: image}}}, nil
 		}
-		return out, nil
+		return []contentBlock{{Image: image}}, nil
 	case "video":
 		format, ok := videoMediaTypeFormat[mediaType]
 		if !ok {
 			return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
 		}
-		out = append(out, contentBlock{
+		return []contentBlock{{
 			Video: &videoBlock{Format: format, Source: videoSource{Bytes: b64}},
-		})
-		return out, nil
+		}}, nil
 	}
 	block, err := buildDocumentContentBlock(p, mediaType, b64, documentCounter)
 	if err != nil {
 		return nil, err
 	}
-	return append(out, block), nil
+	return []contentBlock{block}, nil
 }
 
 func unsupportedFunctionality(format string, args ...any) error {
