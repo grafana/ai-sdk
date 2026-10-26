@@ -206,7 +206,7 @@ performed by a remote provider or tool.
 
 Each resource limit has one owner. The plugin routes bound every request body
 with `max_request_bytes`, and the model transport bounds each decompressed
-provider response to 16 MiB. The handler bounds only model duration, stream
+provider response, or each event of a streamed one, to 16 MiB. The handler bounds only model duration, stream
 idle time and cleanup; it never rejects or truncates output because of its
 size. Grafana's plugin host owns the route deadline and admission. See the
 [limits](../../ai-gateway/README.md#limits) for the full list.

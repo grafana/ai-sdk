@@ -120,7 +120,7 @@ format.
 |---|---|
 | 60 seconds per request, including a streamed response; route message size; how many requests run at once | Grafana's plugin host |
 | `max_request_bytes` per request body, on every route | Plugin routes, shared by every API |
-| 16 MiB per provider response, counted after decompression; 10 seconds to receive response headers; no redirects | Model transport, shared by every provider and provider key |
+| 16 MiB per provider response, or per event in a streamed response, counted after decompression; 10 seconds to receive response headers; no redirects | Model transport, shared by every provider and provider key |
 | `max_model_duration`; 30 seconds without stream activity; 1 second of cleanup after a stream ends | Language-model handler |
 | 8 provider keys for the selected provider in a request that brings its own keys | Request key selection |
 | 1 MiB model catalog file; 1,024 model IDs and aliases in total, 128 aliases and 15 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName` and each `provider` and `model` value | Model catalog loader, at startup |
@@ -128,7 +128,8 @@ format.
 The Gateway no longer limits the size of a generated response, a stream event,
 the number of stream events, the provider's raw usage, an error response, or
 the provider error summaries it returns. The 16 MiB model transport limit and
-the time limits bound them instead.
+the time limits bound them instead. A streamed provider response has no total
+size limit: each event is limited to 16 MiB, and time bounds the stream.
 
 Memory per request grows with the size of the provider response, because
 encoding it as JSON can expand it several times, and with the number of

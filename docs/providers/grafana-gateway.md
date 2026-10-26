@@ -34,9 +34,9 @@ The Gateway removes MCP tool credentials that OpenAI echoes from your request
 before it sends an event: headers, the authorization value, and credential
 query parameters in the server URL.
 
-Raw events are never truncated, and their size does not end a stream. Each
-provider response is still limited to 16 MiB by the Gateway, so a large raw
-stream can reach that limit sooner.
+Raw events are never truncated, and their size does not end a stream. The
+Gateway limits each provider stream event to 16 MiB, so a single raw event
+larger than that ends the stream with an error.
 
 ## Authenticate the client
 

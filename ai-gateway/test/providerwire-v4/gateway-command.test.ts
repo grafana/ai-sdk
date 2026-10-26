@@ -1461,6 +1461,27 @@ describe("authenticated Anthropic Gateway command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
+  it("streams a provider response above 16 MiB in total, with every event within the bound, to both clients", async () => {
+    const [fake, gateway] = await startGateway();
+    const options = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "long-output" }] }], maxOutputTokens: 32 };
+    const expected = longDelta.repeat(longDeltaCount);
+    const assertLongStream = (parts: Array<Record<string, any>>) => {
+      const text = parts.filter((part) => part.type === "text-delta").map((part) => part.delta).join("");
+      assert.equal(text.length, expected.length);
+      assert.ok(text === expected, "streamed text differs from the provider deltas");
+      assert.equal(parts.find((part) => part.type === "finish")?.finishReason.unified, "stop");
+      assert.ok(parts.every((part) => part.type !== "error"));
+    };
+    try {
+      const result = await gateway.client()("assistant").doStream(options);
+      assertLongStream(await collectGatewayStream(result.stream));
+      const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, mode: "stream", modelID: "assistant", options });
+      assert.equal(go.error, undefined);
+      assertLongStream(go.parts);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
   it("maps file inputs and file-result continuation through authenticated native calls", async () => {
     const [fake, gateway] = await startGateway();
     const client = gateway.client();
@@ -3225,6 +3246,21 @@ const largeText = "x".repeat(9 << 20);
 const largeDelta = "d".repeat(1536 << 10);
 const largeUsagePadding = "u".repeat(1536 << 10);
 
+const longDelta = "l".repeat(1 << 20);
+const longDeltaCount = 20;
+
+function writeLongAnthropicStream(response: ServerResponse): void {
+  response.writeHead(200, { "Content-Type": "text/event-stream" });
+  const event = (value: { type: string; [key: string]: unknown }) => response.write(`event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`);
+  event({ type: "message_start", message: { id: "msg_long", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } });
+  event({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
+  for (let i = 0; i < longDeltaCount; i++) event({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: longDelta } });
+  event({ type: "content_block_stop", index: 0 });
+  event({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 3 } });
+  event({ type: "message_stop" });
+  response.end();
+}
+
 function writeLargeAnthropicOutput(streaming: boolean, response: ServerResponse): void {
   const usage = { input_tokens: 2, output_tokens: 3, native_padding: largeUsagePadding };
   if (!streaming) {
@@ -3342,6 +3378,10 @@ class FakeAnthropic {
     }
     if (marker === "silent-unary-shutdown") {
       response.once("close", () => this.canceled.add(marker));
+      return;
+    }
+    if (serialized.includes("long-output") && body.stream === true) {
+      writeLongAnthropicStream(response);
       return;
     }
     if (serialized.includes("large-output")) {

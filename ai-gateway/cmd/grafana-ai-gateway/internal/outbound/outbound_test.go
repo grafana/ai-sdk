@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -231,6 +232,103 @@ func TestBoundedTransport_BoundsEachResponseIndependently(t *testing.T) {
 		_ = response.Body.Close()
 		require.NoError(t, err)
 		assert.Len(t, body, limit)
+	}
+}
+
+func TestEventBoundedBody_BoundsEachEvent(t *testing.T) {
+	const limit = 64
+	event := func(terminator string, size int) string {
+		return "data: " + strings.Repeat("x", size-len("data: ")-len(terminator)) + terminator
+	}
+	type eventCase struct {
+		name     string
+		payload  string
+		accepted int
+	}
+	var tests []eventCase
+	for _, terminator := range []struct{ name, value string }{{"LF", "\n"}, {"CRLF", "\r\n"}, {"CR", "\r"}} {
+		atLimit := event(terminator.value, limit) + terminator.value
+		tests = append(tests,
+			eventCase{name: terminator.name + "/many events at the limit", payload: strings.Repeat(atLimit, 8), accepted: -1},
+			eventCase{name: terminator.name + "/event above the limit", payload: atLimit + event(terminator.value, limit+1) + terminator.value, accepted: len(atLimit) + limit},
+			eventCase{name: terminator.name + "/multi-line event above the limit", payload: event(terminator.value, limit/2) + event(terminator.value, limit/2+1) + terminator.value, accepted: limit},
+		)
+	}
+	for _, tc := range tests {
+		for _, split := range []bool{false, true} {
+			name := tc.name
+			if split {
+				name += "/one byte per read"
+			}
+			t.Run(name, func(t *testing.T) {
+				var reader io.Reader = strings.NewReader(tc.payload)
+				if split {
+					reader = iotest.OneByteReader(reader)
+				}
+				body := &eventBoundedBody{body: io.NopCloser(reader), limit: limit, lineStart: true}
+				read, err := io.ReadAll(body)
+				if tc.accepted < 0 {
+					require.NoError(t, err)
+					assert.Equal(t, tc.payload, string(read))
+					return
+				}
+				require.ErrorIs(t, err, ErrResponseTooLarge)
+				assert.Equal(t, tc.payload[:tc.accepted], string(read))
+				_, err = body.Read(make([]byte, 1))
+				require.ErrorIs(t, err, ErrResponseTooLarge)
+			})
+		}
+	}
+}
+
+func TestBoundedTransport_SelectsBoundByMediaType(t *testing.T) {
+	const limit = 64 << 10
+	events := strings.Repeat("data: "+strings.Repeat("e", limit/2)+"\n\n", 4)
+	oversizedEvent := "data: " + strings.Repeat("e", limit) + "\n\n"
+	tests := []struct {
+		name        string
+		contentType string
+		payload     string
+		compressed  bool
+		tooLarge    bool
+	}{
+		{name: "stream above the total within the event bound", contentType: "text/event-stream", payload: events},
+		{name: "stream with parameters", contentType: "text/event-stream; charset=utf-8", payload: events},
+		{name: "stream with mixed case", contentType: "Text/Event-Stream", payload: events},
+		{name: "compressed stream", contentType: "text/event-stream", payload: events, compressed: true},
+		{name: "single event above the bound", contentType: "text/event-stream", payload: oversizedEvent, tooLarge: true},
+		{name: "compressed event above the bound", contentType: "text/event-stream", payload: oversizedEvent, compressed: true, tooLarge: true},
+		{name: "JSON above the total", contentType: "application/json", payload: events, tooLarge: true},
+		{name: "unparsable media type", contentType: "text/event-stream; =", payload: events, tooLarge: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				if !tc.compressed {
+					_, _ = io.WriteString(w, tc.payload)
+					return
+				}
+				w.Header().Set("Content-Encoding", "gzip")
+				writer := gzip.NewWriter(w)
+				_, _ = io.WriteString(writer, tc.payload)
+				_ = writer.Close()
+			}))
+			defer server.Close()
+
+			client, err := NewModelClient(time.Second, limit)
+			require.NoError(t, err)
+			response, err := client.Get(server.URL)
+			require.NoError(t, err)
+			body, err := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if tc.tooLarge {
+				require.ErrorIs(t, err, ErrResponseTooLarge)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.payload, string(body))
+		})
 	}
 }
 
