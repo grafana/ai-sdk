@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -372,7 +373,7 @@ func TestNew_PlainAccounts(t *testing.T) {
 		{name: "unsupported provider"},
 		{name: "missing model", provider: OpenAI, accounts: []nativemodel.Config{{APIKey: "key"}}},
 		{name: "missing accounts", provider: OpenAI, model: "model"},
-		{name: "too many accounts", provider: OpenAI, model: "model", accounts: make([]nativemodel.Config, maxCredentials+1)},
+		{name: "too many accounts", provider: OpenAI, model: "model", accounts: make([]nativemodel.Config, config.MaxProviderAttempts+1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			model, err := New(tc.provider, tc.model, tc.accounts, http.DefaultClient)
@@ -409,7 +410,7 @@ func TestNew_PlainAccounts(t *testing.T) {
 
 func TestDecodeRequest_AccountCount(t *testing.T) {
 	for _, name := range []Provider{OpenAI, Anthropic} {
-		for _, count := range []int{0, maxCredentials, maxCredentials + 1} {
+		for _, count := range []int{0, config.MaxProviderAttempts, config.MaxProviderAttempts + 1} {
 			t.Run(fmt.Sprintf("%s/%d", name, count), func(t *testing.T) {
 				accounts := map[Provider][]nativemodel.Config{OpenAI: {{APIKey: "selected"}}}
 				accounts[name] = make([]nativemodel.Config, count)
@@ -420,7 +421,7 @@ func TestDecodeRequest_AccountCount(t *testing.T) {
 				require.NoError(t, err)
 				_, err = DecodeRequest("openai/model", raw, nil)
 				selected := name == OpenAI
-				if count == 0 || (selected && count > maxCredentials) {
+				if count == 0 || (selected && count > config.MaxProviderAttempts) {
 					require.ErrorIs(t, err, ErrInvalidRequest)
 				} else {
 					require.NoError(t, err)

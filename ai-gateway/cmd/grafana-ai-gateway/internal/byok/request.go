@@ -10,10 +10,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 )
-
-const maxCredentials = 8
 
 var (
 	ErrInvalidRequest  = errors.New("gateway byok: invalid request")
@@ -84,8 +83,8 @@ func DecodeRequest(selector string, gateway json.RawMessage, approvedBaseURLs ma
 	if len(accountsByProvider[selected]) == 0 {
 		return Request{}, fmt.Errorf("%w: gateway.byok requires accounts for selected provider", ErrInvalidRequest)
 	}
-	if len(accountsByProvider[selected]) > maxCredentials {
-		return Request{}, fmt.Errorf("%w: gateway.byok allows at most %d accounts for the selected provider", ErrInvalidRequest, maxCredentials)
+	if len(accountsByProvider[selected]) > config.MaxProviderAttempts {
+		return Request{}, fmt.Errorf("%w: gateway.byok allows at most %d accounts for the selected provider", ErrInvalidRequest, config.MaxProviderAttempts)
 	}
 	accounts := make([]nativemodel.Config, len(accountsByProvider[selected]))
 	for i, account := range accountsByProvider[selected] {

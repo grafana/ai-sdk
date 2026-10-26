@@ -17,9 +17,9 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 2. One provider attempt bound
 
-- [ ] 2.1 Add `config.MaxProviderAttempts = 8`. Replace `maxCandidates` with a primary-plus-fallbacks check against it, keeping today's error. Update `file_test.go` so a chain of 8 candidates loads and 9 fails. Verify with `go test ./cmd/grafana-ai-gateway/internal/config/...`.
-- [ ] 2.2 In `byok`, replace `maxCredentials` with `config.MaxProviderAttempts` in `DecodeRequest` and `New`. Keep the existing tests for 8 and 9 selected accounts, 9 unused accounts, and the handler-level fixed 400 with zero native calls, now against the shared constant. Verify with `go test -race ./cmd/grafana-ai-gateway/internal/byok/... ./cmd/grafana-ai-gateway/internal/service/...`.
-- [ ] 2.3 Replace the BYOK ledger row with the shared 8-attempt row, and change the catalog row from 15 fallbacks to 7. Verify with `mise run lint-docs`.
+- [x] 2.1 Add `config.MaxProviderAttempts = 8`. Replace `maxCandidates` with a primary-plus-fallbacks check against it, keeping today's error. Update `file_test.go` so a chain of 8 candidates loads and 9 fails. Verify with `go test ./cmd/grafana-ai-gateway/internal/config/...`.
+- [x] 2.2 In `byok`, replace `maxCredentials` with `config.MaxProviderAttempts` in `DecodeRequest` and `New`. Keep the existing tests for 8 and 9 selected accounts, 9 unused accounts, and the handler-level fixed 400 with zero native calls, now against the shared constant. Verify with `go test -race ./cmd/grafana-ai-gateway/internal/byok/... ./cmd/grafana-ai-gateway/internal/service/...`.
+- [x] 2.3 Replace the BYOK ledger row with the shared 8-attempt row, and change the catalog row from 15 fallbacks to 7. Verify with `mise run lint-docs`.
 
 ## 3. Platform-owned request size
 

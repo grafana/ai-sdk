@@ -40,6 +40,11 @@ const (
 	// event of a streamed one. It stays below the 32 MiB line limit of the
 	// Anthropic and OpenAI SDK stream scanners.
 	ProviderResponseBytes = 16 << 20
+	// MaxProviderAttempts bounds the provider attempts of one request: a
+	// configured model's primary and fallbacks, or the request's BYOK accounts
+	// for the selected provider. Each attempt is one outbound request, so the
+	// bound limits how far fast failures amplify.
+	MaxProviderAttempts = 8
 )
 
 // Defaults of the configurable request and model limits, and the fixed stream durations.

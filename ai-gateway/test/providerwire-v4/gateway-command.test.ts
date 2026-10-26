@@ -821,8 +821,8 @@ describe("authenticated Anthropic Gateway command", () => {
     const fake = await FakeAnthropic.start();
     let gateway: GatewayProcess | undefined;
     try {
-      const candidates = Array.from({ length: 16 }, (_, i) => ({ providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: `${i}-` + '"'.repeat(512) }));
-      const routes = Array.from({ length: 65 }, (_, i) => ({ id: `public-${String(i).padStart(3, "0")}`, aliases: [`alias-${i}`] }));
+      const candidates = Array.from({ length: 8 }, (_, i) => ({ providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: `${i}-` + '"'.repeat(512) }));
+      const routes = Array.from({ length: 140 }, (_, i) => ({ id: `public-${String(i).padStart(3, "0")}`, aliases: [`alias-${i}`] }));
       const config = `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fake.url}\nmodels:\n` + routes.map(route => `  ${route.id}:\n    name: Model\n    primary:\n      provider: anthropic-primary\n      model: '${candidates[0].providerModelId}'\n    fallback:\n${candidates.slice(1).map(candidate => `      - provider: anthropic-primary\n        model: '${candidate.providerModelId}'\n`).join("")}    aliases: [${route.aliases[0]}]\n`).join("");
       gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "access-token", config);
       const baseURL = gateway.baseURL;
@@ -832,7 +832,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const body = await response.text();
       assert.ok(Buffer.byteLength(body) > 1_048_576);
       const document = JSON.parse(body);
-      assert.equal(document.models.length, 65);
+      assert.equal(document.models.length, 140);
       assert.deepEqual(document.models.map((model: { id: string }) => model.id), routes.map(route => route.id));
       for (const [i, model] of document.models.entries()) assert.deepEqual(model.gateway, { aliases: routes[i].aliases, primary: candidates[0], fallbacks: candidates.slice(1) });
       assert.deepEqual(await fetchConfiguredModels({ baseURL, headers }), document);
