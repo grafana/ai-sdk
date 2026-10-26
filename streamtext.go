@@ -725,8 +725,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Mid-stream cancellation: the context was canceled while reading
-		// the provider stream. Fire onAbort, and only fire onFinish if
-		// earlier steps completed (matching upstream recordedSteps semantics).
+		// the provider stream. Fire onAbort but not onFinish, matching
+		// upstream, while keeping completed steps and their usage on the result.
 		if ctx.Err() != nil {
 			if outcome.completed {
 				r.mu.Lock()
@@ -740,11 +740,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					cfg.onStepFinish(OnStepFinishState{StepResult: step})
 				}
 			}
+			r.totalUsage = aggregateUsage(r.steps)
 			r.abort(ctx, cfg)
-			if len(r.steps) > 0 && cfg.onFinish != nil {
-				r.totalUsage = aggregateUsage(r.steps)
-				cfg.onFinish(r.finishState())
-			}
 			return
 		}
 

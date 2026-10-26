@@ -90,6 +90,16 @@ Context cancellation while reading a provider stream SHALL use abort behavior ra
 - **AND** no `finish-step` is emitted for the canceled step
 - **AND** the canceled step is not recorded
 
+### Requirement: Cancellation skips the finish callback
+
+Matching upstream, which skips `onEnd` when aborted, cancellation SHALL call OnAbort with the completed steps and SHALL NOT call OnFinish, even when earlier steps completed. The StreamTextResult SHALL still retain those steps, their all-step projection and their total usage.
+
+#### Scenario: Cancellation after a completed step
+
+- **WHEN** the context is canceled while a later step's provider stream is being read
+- **THEN** OnAbort SHALL receive the completed steps and OnFinish SHALL NOT be called
+- **AND** result accessors SHALL project the completed steps and TotalUsage SHALL aggregate their usage
+
 ### Requirement: Step content preserves provider order
 
 StreamText SHALL build StepResult.Content and response content from recorded provider sequence. Text/reasoning/sources/regular files/tool calls/tool results/approval requests SHALL retain relative provider order and metadata. Locally created post-stream approvals/results SHALL append exactly once. Manually constructed state without recorded content SHALL use deterministic grouped fallback.

@@ -345,7 +345,7 @@ func TestStreamTextResult_ProjectionEdgeCases(t *testing.T) {
 		assert.Equal(t, steps[0].Response.Messages, result.ResponseMessages())
 	})
 
-	t.Run("mid-stream cancellation finish state projects completed steps", func(t *testing.T) {
+	t.Run("mid-stream cancellation skips OnFinish and projects completed steps", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		pending := make(chan provider.StreamPart)
@@ -356,23 +356,24 @@ func TestStreamTextResult_ProjectionEdgeCases(t *testing.T) {
 			}
 			return &provider.StreamResult{Stream: pending}, nil
 		}
-		var finish OnFinishState
 		finishes := 0
-		result := StreamText(ctx, model, WithModelMessages(provider.UserText("hi")), WithTools(projectionTools(t)), WithStopWhen(StepCountIs(3)), OnFinish(func(state OnFinishState) {
-			finishes++
-			finish = state
-		}))
+		var aborted OnAbortState
+		result := StreamText(ctx, model, WithModelMessages(provider.UserText("hi")), WithTools(projectionTools(t)), WithStopWhen(StepCountIs(3)),
+			OnFinish(func(OnFinishState) { finishes++ }),
+			OnAbort(func(state OnAbortState) { aborted = state }),
+		)
 		pending <- provider.StreamPart{Type: provider.PartTextStart, ID: "t2"}
 		cancel()
 		for range result.FullStream() {
 		}
-		require.Equal(t, 1, finishes)
-		require.Len(t, finish.Steps, 1)
-		assert.Equal(t, result.Content(), finish.Content)
-		assert.Equal(t, result.ToolCalls(), finish.ToolCalls)
-		assert.Equal(t, result.Sources(), finish.Sources)
-		assert.Equal(t, result.ResponseMessages(), finish.ResponseMessages)
-		assert.Equal(t, result.TotalUsage(), finish.Usage)
+		assert.Zero(t, finishes)
+		require.Len(t, aborted.Steps, 1)
+		steps := result.Steps()
+		require.Len(t, steps, 1)
+		assert.Equal(t, steps[0].Content, result.Content())
+		assert.Equal(t, steps[0].ToolCalls, result.ToolCalls())
+		assert.Equal(t, steps[0].Response.Messages, result.ResponseMessages())
+		assert.Equal(t, aggregateUsage(steps), result.TotalUsage())
 	})
 
 	t.Run("returned collections are caller owned", func(t *testing.T) {
