@@ -163,9 +163,9 @@ knownGaps:
   - id: bedrock-part-cache-points
     surface: provider-bedrock
     status: gap
-    description: Upstream @ai-sdk/amazon-bedrock appends a cache point after any user,
-      tool, or assistant content part whose provider options set one, including
-      assistant-role tool results. The Go Converse adapter reads cache points only
+    description: Upstream @ai-sdk/amazon-bedrock appends a cache point after any user
+      content part, tool-role tool-result part, or assistant content part, including
+      assistant-role tool results, whose provider options set one. The Go Converse adapter reads cache points only
       from message and system provider options and ignores part-level settings.
   - id: bedrock-mantle-chat-provider
     surface: provider-bedrock

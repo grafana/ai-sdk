@@ -70,6 +70,21 @@ func TestConvertPrompt_AssistantToolResults(t *testing.T) {
 			},
 		},
 		{
+			name: "adjacent results share one user message",
+			prompt: []provider.Message{
+				provider.NewAssistantMessage(
+					providerExecutedCall("call-1", `{}`),
+					providerExecutedCall("call-2", `{}`),
+					jsonToolResult("call-1", `{"sum":4}`),
+					jsonToolResult("call-2", `{"sum":6}`),
+				),
+			},
+			want: []converseMessage{
+				{Role: converseRoleAssistant, Content: []contentBlock{toolUseContent("call-1", `{}`), toolUseContent("call-2", `{}`)}},
+				{Role: converseRoleUser, Content: []contentBlock{toolResultContentBlock("call-1", `{"sum":4}`), toolResultContentBlock("call-2", `{"sum":6}`)}},
+			},
+		},
+		{
 			name: "leading result joins previous tool results",
 			prompt: []provider.Message{
 				provider.NewToolMessage(jsonToolResult("call-0", `{"sum":1}`)),
