@@ -7,6 +7,11 @@ import (
 )
 
 // GenerateTextResult holds the complete result of a non-streaming LLM call.
+// Text, Reasoning, FinishReason, Response and ProviderMetadata describe the
+// final step. Content, ToolCalls, ToolResults, Files, Sources and Warnings
+// collect every step in order. ResponseMessages holds the full generated
+// message history, including approval-generated tool messages produced before
+// the first model call.
 type GenerateTextResult struct {
 	Text             string
 	Reasoning        []ReasoningOutput
@@ -21,6 +26,7 @@ type GenerateTextResult struct {
 	Warnings         []provider.Warning
 	Content          []ContentPart
 	Response         ResponseMetadata
+	ResponseMessages []provider.Message
 	ProviderMetadata provider.ProviderMetadata
 	Output           any
 	OutputError      error
@@ -46,7 +52,13 @@ func GenerateText(ctx context.Context, model provider.LanguageModel, opts ...Gen
 		return nil, err
 	}
 
-	gen := &GenerateTextResult{
+	gen := streamResultToGenerateResult(result)
+	gen.Warnings = append(timeoutWarnings, gen.Warnings...)
+	return gen, nil
+}
+
+func streamResultToGenerateResult(result *StreamTextResult) *GenerateTextResult {
+	return &GenerateTextResult{
 		Text:             result.Text(),
 		Reasoning:        result.Reasoning(),
 		ToolCalls:        result.ToolCalls(),
@@ -57,13 +69,12 @@ func GenerateText(ctx context.Context, model provider.LanguageModel, opts ...Gen
 		Usage:            result.Usage(),
 		TotalUsage:       result.TotalUsage(),
 		Steps:            result.Steps(),
-		Warnings:         append(timeoutWarnings, result.Warnings()...),
+		Warnings:         result.Warnings(),
 		Content:          result.Content(),
 		Response:         result.Response(),
+		ResponseMessages: result.ResponseMessages(),
 		ProviderMetadata: result.ProviderMetadata(),
 		Output:           result.OutputValue(),
 		OutputError:      result.OutputError(),
 	}
-
-	return gen, nil
 }

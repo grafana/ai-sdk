@@ -327,27 +327,6 @@ func (a *ToolLoopAgent) finalizeConfig(cfg *streamConfig, callRuntimeContext any
 	}
 }
 
-func streamResultToGenerateResult(result *StreamTextResult) *GenerateTextResult {
-	return &GenerateTextResult{
-		Text:             result.Text(),
-		Reasoning:        result.Reasoning(),
-		ToolCalls:        result.ToolCalls(),
-		ToolResults:      result.ToolResults(),
-		Files:            result.Files(),
-		Sources:          result.Sources(),
-		FinishReason:     result.FinishReason(),
-		Usage:            result.Usage(),
-		TotalUsage:       result.TotalUsage(),
-		Steps:            result.Steps(),
-		Warnings:         result.Warnings(),
-		Content:          result.Content(),
-		Response:         result.Response(),
-		ProviderMetadata: result.ProviderMetadata(),
-		Output:           result.OutputValue(),
-		OutputError:      result.OutputError(),
-	}
-}
-
 func mergeStreamConfig(settings *streamConfig, call *streamConfig) *streamConfig {
 	cfg := cloneStreamConfig(settings)
 	mergeBaseConfig(&cfg.baseConfig, &call.baseConfig)

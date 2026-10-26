@@ -38,14 +38,15 @@ type StreamTextResult struct {
 	mu        sync.Mutex
 	toolTypes map[string]UserToolType
 
-	steps        []StepResult
-	totalUsage   provider.Usage
-	lastStep     *StepResult
-	allWarnings  []provider.Warning
-	provMeta     provider.ProviderMetadata
-	lastResponse ResponseMetadata
-	firstError   error
-	abortCause   error
+	steps                   []StepResult
+	initialResponseMessages []provider.Message
+	totalUsage              provider.Usage
+	lastStep                *StepResult
+	allWarnings             []provider.Warning
+	provMeta                provider.ProviderMetadata
+	lastResponse            ResponseMetadata
+	firstError              error
+	abortCause              error
 
 	outputValue any
 	outputErr   error
@@ -506,7 +507,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		r.emitError(err, cfg.onError)
 		return
 	}
-	responseMessages := cloneMessages(msgs[preApprovalMessageCount:])
+	r.mu.Lock()
+	r.initialResponseMessages = cloneMessages(msgs[preApprovalMessageCount:])
+	r.mu.Unlock()
 
 	// Stop conditions default
 	stopWhen := cfg.stopWhen
@@ -548,7 +551,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				Model:            currentModel,
 				Messages:         currentMsgs,
 				InitialMessages:  initialMessages,
-				ResponseMessages: responseMessages,
+				ResponseMessages: collectResponseMessages(r.initialResponseMessages, r.steps),
 				Context:          currentRuntimeContext,
 			})
 			if err != nil {
@@ -831,11 +834,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Append tool results to messages for next step
-		stepResponseMessages := step.Response.Messages
 		msgs = appendToolResults(currentMsgs, step)
-		nextResponseMessages := make([]provider.Message, 0, len(responseMessages)+len(stepResponseMessages))
-		nextResponseMessages = append(nextResponseMessages, responseMessages...)
-		responseMessages = append(nextResponseMessages, stepResponseMessages...)
 	}
 }
 
@@ -2600,44 +2599,32 @@ func (r *StreamTextResult) Reasoning() []ReasoningOutput {
 	return nil
 }
 
-// ToolCalls returns the tool calls from the last step.
-// Blocks until the stream completes.
+// ToolCalls returns the tool calls from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) ToolCalls() []ToolCall {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.ToolCalls
-	}
-	return nil
+	return flattenSteps(r.steps, func(step StepResult) []ToolCall { return step.ToolCalls })
 }
 
-// ToolResults returns the tool results from the last step.
-// Blocks until the stream completes.
+// ToolResults returns the tool results from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) ToolResults() []ToolResult {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.ToolResults
-	}
-	return nil
+	return flattenSteps(r.steps, func(step StepResult) []ToolResult { return step.ToolResults })
 }
 
-// Files returns the generated files from the last step.
-// Blocks until the stream completes.
+// Files returns the generated files from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) Files() []GeneratedFile {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.Files
-	}
-	return nil
+	return flattenSteps(r.steps, func(step StepResult) []GeneratedFile { return step.Files })
 }
 
-// Sources returns the sources from the last step.
-// Blocks until the stream completes.
+// Sources returns the sources from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) Sources() []Source {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.Sources
-	}
-	return nil
+	return flattenSteps(r.steps, func(step StepResult) []Source { return step.Sources })
 }
 
 // FinishReason returns the finish reason from the last step.
@@ -2683,14 +2670,23 @@ func (r *StreamTextResult) Warnings() []provider.Warning {
 	return r.allWarnings
 }
 
-// Content returns the structured content from the last step.
-// Blocks until the stream completes.
+// Content returns the structured content from all recorded steps in step
+// order. The returned slice is newly allocated. Blocks until the stream
+// completes.
 func (r *StreamTextResult) Content() []ContentPart {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.Content
-	}
-	return nil
+	return flattenSteps(r.steps, func(step StepResult) []ContentPart { return step.Content })
+}
+
+// ResponseMessages returns the full generated message history: tool messages
+// produced by resolving approval responses before the first model call,
+// followed by every recorded step's Response.Messages in step order. Unlike
+// Response().Messages, which holds only the last step's messages, the result
+// can be appended to the input messages to continue the conversation. The
+// returned slice is newly allocated. Blocks until the stream completes.
+func (r *StreamTextResult) ResponseMessages() []provider.Message {
+	r.Wait()
+	return collectResponseMessages(r.initialResponseMessages, r.steps)
 }
 
 // Response returns the response metadata from the last step.
@@ -2771,6 +2767,29 @@ func (r *StreamTextResult) abortError() error {
 }
 
 // Helpers
+
+func flattenSteps[T any](steps []StepResult, pick func(StepResult) []T) []T {
+	count := 0
+	for _, step := range steps {
+		count += len(pick(step))
+	}
+	if count == 0 {
+		return nil
+	}
+	flattened := make([]T, 0, count)
+	for _, step := range steps {
+		flattened = append(flattened, pick(step)...)
+	}
+	return flattened
+}
+
+func collectResponseMessages(initial []provider.Message, steps []StepResult) []provider.Message {
+	messages := slices.Clone(initial)
+	for _, step := range steps {
+		messages = append(messages, step.Response.Messages...)
+	}
+	return messages
+}
 
 func filterProviderTools(tools []provider.Tool, activeNames []string) []provider.Tool {
 	nameSet := make(map[string]bool, len(activeNames))

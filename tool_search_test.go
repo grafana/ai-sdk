@@ -540,8 +540,10 @@ func TestToolSearch_ProviderLifecycle(t *testing.T) {
 	assert.Equal(t, "test.web", seen[1][1].ID)
 	assert.Equal(t, tools["web"].Args, seen[1][1].Args)
 	assert.False(t, executed)
-	require.Len(t, result.ToolCalls(), 2)
-	assert.Equal(t, new(true), result.ToolCalls()[1].Dynamic)
+	steps := result.Steps()
+	require.Len(t, steps, 2)
+	require.Len(t, steps[1].ToolCalls, 2)
+	assert.Equal(t, new(true), steps[1].ToolCalls[1].Dynamic)
 }
 
 func TestToolSearch_IndependentGenerations(t *testing.T) {
