@@ -139,7 +139,7 @@ StreamText, GenerateText and ToolLoopAgent results SHALL derive Content, ToolCal
 
 ### Requirement: Finish callback state follows the result projection
 
-OnFinishState SHALL mirror the upstream end event. Its embedded StepResult SHALL hold the final recorded step with Content, ToolCalls, ToolResults, Files and Sources replaced by the all-step projection, Warnings by the result's accumulated warnings and Usage by total usage. ResponseMessages SHALL equal the result's full response-message history; Steps SHALL hold every recorded step.
+OnFinishState SHALL mirror the upstream end event. Its embedded StepResult SHALL hold the final recorded step with Content, ToolCalls, ToolResults, Files and Sources replaced by the all-step projection, Warnings by the StreamTextResult's accumulated warnings and Usage by total usage. ResponseMessages SHALL equal the result's full response-message history; Steps SHALL hold every recorded step.
 
 #### Scenario: Multi-step finish callback aggregates
 
