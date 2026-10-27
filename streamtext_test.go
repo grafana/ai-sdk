@@ -1720,7 +1720,7 @@ func TestStreamTextToolApproval_ProviderRequestSurfaced(t *testing.T) {
 		},
 	}
 
-	result := StreamText(context.Background(), model, WithModelMessages(provider.UserText("run server tool")))
+	result := StreamText(context.Background(), model, WithModelMessages(provider.UserText("run server tool")), WithToolApprovalSecret("secret"))
 	var approval StreamToolApprovalRequest
 	for part := range result.FullStream() {
 		if p, ok := part.(StreamToolApprovalRequest); ok {
@@ -1731,9 +1731,11 @@ func TestStreamTextToolApproval_ProviderRequestSurfaced(t *testing.T) {
 	assert.Equal(t, "apr_1", approval.ApprovalID)
 	assert.Equal(t, "c1", approval.ToolCallID)
 	assert.True(t, approval.ProviderExecuted)
+	assert.Empty(t, approval.Signature)
 	steps := result.Steps()
 	require.Len(t, steps, 1)
 	require.Len(t, steps[0].ToolApprovalRequests, 1)
+	assert.Empty(t, steps[0].ToolApprovalRequests[0].Signature)
 	require.Len(t, steps[0].Content, 3)
 	assert.IsType(t, ToolCallContent{}, steps[0].Content[0])
 	assert.IsType(t, ToolApprovalRequestContent{}, steps[0].Content[1])
@@ -1745,6 +1747,7 @@ func TestStreamTextToolApproval_ProviderRequestSurfaced(t *testing.T) {
 	assert.Equal(t, provider.ContentPartTypeToolCall, responseContent[0].Type)
 	assert.Equal(t, provider.ContentPartTypeToolApprovalRequest, responseContent[1].Type)
 	assert.Equal(t, "apr_1", responseContent[1].ApprovalID)
+	assert.Empty(t, responseContent[1].Signature)
 	assert.Equal(t, provider.ContentPartTypeText, responseContent[2].Type)
 }
 

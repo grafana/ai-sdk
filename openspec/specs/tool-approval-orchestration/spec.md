@@ -127,12 +127,16 @@ At StreamText start, orchestration SHALL inspect the last tool-role message for 
 
 ### Requirement: Provider-executed approvals resume without local revalidation
 
-Approved provider-executed approvals SHALL skip local signature, input and call-level policy revalidation, as upstream does, and SHALL produce no client result. Their approval response SHALL reach the provider as an approved response. Resume SHALL emit tool output denied events for local denials, including revalidation denials, before provider-executed denials.
+Provider-originated approval requests SHALL NOT be signed, even with a configured secret. Approved provider-executed approvals SHALL skip local signature, input and call-level policy revalidation, as upstream does, and SHALL produce no client result. Their approval response SHALL reach the provider as an approved response. Resume SHALL emit tool output denied events for local denials, including revalidation denials, before provider-executed denials.
 
 #### Scenario: Approved provider-executed approval is not re-checked
 - **WHEN** a resumed approved provider-executed approval has a missing or invalid signature with a configured secret, or a call-level policy that would deny it
 - **THEN** orchestration SHALL NOT surface a signature error, consult the policy or emit a tool output denied event
 - **AND** the next prompt SHALL carry the approved response
+
+#### Scenario: Provider approval request stays unsigned
+- **WHEN** a provider emits an approval request while a tool approval secret is configured
+- **THEN** the request part, step result and response content SHALL carry no signature
 
 #### Scenario: Local denials are reported first
 - **WHEN** a resumed tool message denies a provider-executed call before a local call
@@ -299,7 +303,7 @@ Completed effective required/named violations SHALL bypass the new local approva
 
 ### Requirement: Choice gates do not undo provider or historical approval effects
 
-Received provider calls/results/approval events SHALL retain stream/content handling including provider-event signing. The choice gate SHALL NOT undo provider effects or alter prior-input approval resolution/execution before the current model call. Choice-satisfying steps and other disallowed-finish approval behavior SHALL retain existing semantics.
+Received provider calls/results/approval events SHALL retain stream/content handling; provider-originated approval requests SHALL remain unsigned. The choice gate SHALL NOT undo provider effects or alter prior-input approval resolution/execution before the current model call. Choice-satisfying steps and other disallowed-finish approval behavior SHALL retain existing semantics.
 
 #### Scenario: Historical execution remains before a violating model call
 - **WHEN** a prior approved tool executes before a model call that later violates choice

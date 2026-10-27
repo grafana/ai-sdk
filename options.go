@@ -289,8 +289,9 @@ func WithToolApproval(policy ToolApprovalPolicyConfig) Option {
 }
 
 // WithToolApprovalSecret sets the secret used to sign and verify tool approval requests.
-// Resume verifies signatures only for locally executed tools; approvals for
-// provider-executed tools are passed to the provider unchecked, as upstream does.
+// Only approvals for locally executed tools are signed and verified; approvals
+// for provider-executed tools are unsigned and passed to the provider unchecked,
+// as upstream does.
 func WithToolApprovalSecret(secret string) Option {
 	return sharedOption{fn: func(c *baseConfig) {
 		if secret != "" {
@@ -300,8 +301,9 @@ func WithToolApprovalSecret(secret string) Option {
 }
 
 // WithToolApprovalSecretBytes sets the byte secret used to sign and verify tool approval requests.
-// Resume verifies signatures only for locally executed tools; approvals for
-// provider-executed tools are passed to the provider unchecked, as upstream does.
+// Only approvals for locally executed tools are signed and verified; approvals
+// for provider-executed tools are unsigned and passed to the provider unchecked,
+// as upstream does.
 func WithToolApprovalSecretBytes(secret []byte) Option {
 	return sharedOption{fn: func(c *baseConfig) {
 		if len(secret) > 0 {

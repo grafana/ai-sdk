@@ -1281,11 +1281,6 @@ loop:
 					break
 				}
 			}
-			if req.Signature == "" {
-				if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
-					return step, stepStreamOutcome{hasOutput: hasOutput}, err
-				}
-			}
 			step.ToolApprovalRequests = append(step.ToolApprovalRequests, req)
 			step.responseContent = append(step.responseContent, provider.ContentPart{
 				Type:            provider.ContentPartTypeToolApprovalRequest,
