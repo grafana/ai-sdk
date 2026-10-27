@@ -153,7 +153,8 @@ function fakeGenerate(calls) {
 
 test('combined preparation requires the combined release configuration', async () => {
   const { github } = combinedFixture();
-  github.getFileJson = async path => path === 'release-please-config.json' ? config : { '.': '0.1.0-alpha.1' };
+  const separateConfig = { ...combined, 'separate-pull-requests': true };
+  github.getFileJson = async path => path === 'release-please-config.json' ? separateConfig : { '.': '0.1.0-alpha.1' };
   await assert.rejects(prepareLibraries(github, base, { generate: fakeGenerate([]) }), /share one release pull request/);
   const separateLibrary = structuredClone(combined);
   separateLibrary.packages['providers/openai']['separate-pull-requests'] = true;

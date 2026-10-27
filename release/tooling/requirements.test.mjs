@@ -27,7 +27,8 @@ function repository() {
 }
 
 test('combined configuration shape', () => {
-  assert.throws(() => assertCombinedConfig(config), /share one release pull request/);
+  assertCombinedConfig(config);
+  assert.throws(() => assertCombinedConfig({ ...config, 'separate-pull-requests': true }), /share one release pull request/);
   assertCombinedConfig(combined);
   assert.throws(() => assertCombinedConfig({ ...combined, packages: { ...combined.packages, 'ai-gateway': { component: 'ai-gateway' } } }),
     /Gateway must keep its own/);

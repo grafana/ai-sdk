@@ -29,6 +29,7 @@ type Config struct {
 	TagSeparator          string                   `json:"tag-separator"`
 	Versioning            string                   `json:"versioning"`
 	Prerelease            *bool                    `json:"prerelease"`
+	SeparatePullRequests  *bool                    `json:"separate-pull-requests"`
 	Packages              map[string]PackageConfig `json:"packages"`
 }
 
@@ -40,6 +41,7 @@ type PackageConfig struct {
 	InitialVersion        string      `json:"initial-version"`
 	ExcludePaths          []string    `json:"exclude-paths"`
 	ExtraFiles            []ExtraFile `json:"extra-files"`
+	SeparatePullRequests  *bool       `json:"separate-pull-requests"`
 }
 
 // ExtraFile is a release-please file whose version field follows the component.

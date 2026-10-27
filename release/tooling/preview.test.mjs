@@ -40,12 +40,12 @@ test('pinned release-please selects root without downstream proposals', async ()
   assert.doesNotMatch(candidates[0].body.toString(), /provider behavior|middleware behavior/);
 });
 
-test('default preview preserves independent component proposals', async () => {
+test('default preview combines library proposals into one release pull request', async () => {
   const candidates = await prepareCandidates(repository());
-  assert.deepEqual(candidates.map(candidate => candidate.headRefName), [
-    'release-please--branches--main',
-    'release-please--branches--main--components--providers/openai',
-    'release-please--branches--main--components--middleware/logger',
+  assert.deepEqual(candidates.map(candidate => candidate.headRefName), ['release-please--branches--main']);
+  assert.equal(candidates[0].title.toString(), 'chore: release main');
+  assert.deepEqual(candidates[0].updates.map(update => update.path).sort(), [
+    '.release-please-manifest.json', 'CHANGELOG.md', 'middleware/logger/CHANGELOG.md', 'providers/openai/CHANGELOG.md',
   ]);
 });
 

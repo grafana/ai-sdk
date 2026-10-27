@@ -23,10 +23,10 @@ export function readOnlyFetch(fetchImpl = globalThis.fetch) {
   };
 }
 
-export async function prepareCandidates(github, { branch = 'main', path } = {}) {
+export async function prepareCandidates(github, { branch = 'main', path, manifestOptions = {} } = {}) {
   const manifest = await Manifest.fromManifest(
     github, branch, 'release-please-config.json',
-    '.release-please-manifest.json', {}, path,
+    '.release-please-manifest.json', manifestOptions, path,
   );
   if (path !== undefined && !Object.hasOwn(manifest.repositoryConfig, path)) {
     throw new Error(`unregistered release component: ${path}`);
