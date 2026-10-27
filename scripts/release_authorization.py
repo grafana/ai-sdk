@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import sys
 import subprocess
+import tempfile
 import zipfile
 
 import release_readiness as readiness
@@ -15,7 +16,7 @@ import release_readiness as readiness
 
 SHA = r"[0-9a-f]{40}"
 RECORD_KEYS = {
-    "schemaVersion", "repositoryId", "repository", "prNumber", "component", "version",
+    "schemaVersion", "repositoryId", "repository", "prNumber", "components",
     "headSha", "baseSha", "mergeSha", "treeSha", "titleDigest", "bodyDigest",
     "toolingRevision", "workflowBlob", "runId", "runAttempt",
 }
@@ -29,8 +30,13 @@ def read_record(archive):
         if len(files) != 1 or files[0].filename != "library-readiness.json" or files[0].file_size > 65536:
             raise ValueError("readiness artifact must contain one bounded library-readiness.json")
         record = json.loads(bundle.read(files[0]))
-    if not isinstance(record, dict) or set(record) != RECORD_KEYS or record["schemaVersion"] != 1:
+    if not isinstance(record, dict) or set(record) != RECORD_KEYS or record["schemaVersion"] != 2:
         raise ValueError("unsupported readiness record schema")
+    components = record["components"]
+    if (not isinstance(components, dict) or not components
+            or not all(isinstance(key, str) and isinstance(value, str) and re.fullmatch(readiness.VERSION, value)
+                       for key, value in components.items())):
+        raise ValueError("invalid readiness components")
     for field in ("headSha", "baseSha", "mergeSha", "treeSha", "toolingRevision", "workflowBlob"):
         if not isinstance(record[field], str) or not re.fullmatch(SHA, record[field]):
             raise ValueError(f"invalid readiness revision: {field}")
@@ -63,17 +69,18 @@ def verify_merged(candidate, pr, record):
         raise ValueError("release config differs from the merge parent")
     if candidate["parents"] != parents or candidate["treeSha"] != record["treeSha"]:
         raise ValueError("frozen commit identity differs from evidence")
-    component = readiness.verify_release_metadata(pr, before, after, config)
-    if component == "ai-gateway":
+    components = readiness.verify_release_metadata(pr, before, after, config)
+    component = candidate["component"]
+    if component == readiness.GATEWAY or readiness.GATEWAY in components:
         raise ValueError("Gateway is unsupported by library authorization")
-    if candidate["component"] != component or candidate["version"] != after[component]:
+    if component not in components or candidate["version"] != after[component]:
         raise ValueError("frozen release differs from merged component/version")
     expected_tag = ("" if component == "." else component + "/") + "v" + after[component]
     if candidate["tag"] != expected_tag:
         raise ValueError("frozen tag differs from the library version")
     expected = {
         "repositoryId": readiness.REPOSITORY_ID, "repository": "grafana/ai-sdk",
-        "prNumber": pr["number"], "component": component, "version": after[component],
+        "prNumber": pr["number"], "components": {c: after[c] for c in components},
         "headSha": pr["head"]["sha"], "toolingRevision": base,
         "treeSha": readiness.run("git", "rev-parse", "HEAD^{tree}"),
         "workflowBlob": readiness.run("git", "rev-parse", f"{base}:.github/workflows/release-readiness.yml"),
@@ -86,14 +93,17 @@ def verify_merged(candidate, pr, record):
     reconstructed = readiness.run("git", "merge-tree", "--write-tree", base, pr["head"]["sha"])
     if reconstructed != record["treeSha"]:
         raise ValueError("squash tree differs from reconstructed candidate")
-    readiness.verify_release_files(component, readiness.run("git", "diff", "--name-only", base, merge).splitlines(), readiness.tree(merge))
-    changelog = "CHANGELOG.md" if component == "." else f"{component}/CHANGELOG.md"
+    together = readiness.combined(config, components)
+    readiness.verify_release_files(components, readiness.run("git", "diff", "--name-only", base, merge).splitlines(),
+                                   readiness.tree(merge), requirements=together)
+    changelog = readiness.changelog_path(component)
     old = subprocess.check_output(["git", "show", f"{base}:{changelog}"], text=True) if changelog in readiness.tree(base) else ""
-    notes = readiness.release_notes(pr, after[component])
+    notes = readiness.component_notes(pr, config, components, after)[component]
     if candidate["notes"].strip() != notes:
         raise ValueError("frozen notes differ from validated release body")
     readiness.verify_changelog(old, Path(changelog).read_text(), notes)
-    return component, base, set(config["packages"])
+    co_released = {readiness.module_path(c): "v" + after[c] for c in components} if together else {}
+    return component, base, set(config["packages"]), co_released
 
 
 def main():
@@ -107,9 +117,13 @@ def main():
         print(json.dumps(read_record(args.input.read_bytes())))
         return
     payload = json.loads(args.input.read_text())
-    with redirect_stdout(sys.stderr):
-        component, base, roots = verify_merged(payload["candidate"], payload["pr"], payload["record"])
-        graph = readiness.verify_library(component, base, roots, tooling_root=Path(__file__).resolve().parent.parent)
+    tooling = Path(__file__).resolve().parent.parent
+    with redirect_stdout(sys.stderr), tempfile.TemporaryDirectory(prefix="release-candidate-proxy-") as proxy:
+        component, base, roots, co_released = verify_merged(payload["candidate"], payload["pr"], payload["record"])
+        if co_released:
+            readiness.candidate_check(base, readiness.run("git", "rev-parse", "HEAD"), proxy, tooling_root=tooling)
+        graph = readiness.verify_library(component, base, roots, tooling_root=tooling,
+                                         co_released=co_released, proxy=proxy if co_released else None)
         readiness.verify_clean_checkout()
     if not args.result:
         raise ValueError("validation requires a result path")

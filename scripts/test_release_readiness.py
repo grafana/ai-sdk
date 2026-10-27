@@ -14,7 +14,7 @@ import release_readiness as readiness
 
 class ReleaseReadinessTest(unittest.TestCase):
     def setUp(self):
-        self.config = {"packages": {".": {}, "providers/openai": {"component": "providers/openai"}, "ai-gateway": {"component": "ai-gateway"}}}
+        self.config = {"separate-pull-requests": True, "packages": {".": {}, "providers/openai": {"component": "providers/openai"}, "ai-gateway": {"component": "ai-gateway"}}}
         self.pr = {
             "state": "open", "draft": False,
             "title": "chore(main): release 0.2.0",
@@ -26,7 +26,7 @@ class ReleaseReadinessTest(unittest.TestCase):
         }
 
     def test_identifies_one_component_without_labels(self):
-        self.assertEqual(readiness.verify_release(self.pr, {".": "0.1.0"}, {".": "0.2.0"}, self.config), ".")
+        self.assertEqual(readiness.verify_release(self.pr, {".": "0.1.0"}, {".": "0.2.0"}, self.config), ["."])
         with self.assertRaises(ValueError):
             readiness.changed_component({".": "0.1.0"}, {".": "0.2.0", "providers/openai": "0.1.0"})
         with self.assertRaises(ValueError):
@@ -34,7 +34,86 @@ class ReleaseReadinessTest(unittest.TestCase):
         self.pr["head"]["ref"] += "--components--providers/openai"
         self.pr["title"] = "chore(main): release providers/openai 0.1.0"
         self.pr["body"] = self.pr["body"].replace("0.2.0", "0.1.0")
-        self.assertEqual(readiness.verify_release(self.pr, {}, {"providers/openai": "0.1.0"}, self.config), "providers/openai")
+        self.assertEqual(readiness.verify_release(self.pr, {}, {"providers/openai": "0.1.0"}, self.config), ["providers/openai"])
+
+    def combined_release(self):
+        config = {"separate-pull-requests": False, "packages": {
+            ".": {}, "providers/openai": {"component": "providers/openai"}, "providers/bedrock": {"component": "providers/bedrock"},
+            "ai-gateway": {"component": "ai-gateway", "separate-pull-requests": True}}}
+        root = "## [0.2.0](https://example.com) (2026-10-27)\n\n\n### Bug Fixes\n\n* root"
+        openai = "## [0.1.1](https://example.com) (2026-10-27)\n\n\n### Bug Fixes\n\n* openai"
+        body = ("Header\n---\n\n\n<details><summary>0.2.0</summary>\n\n" + root + "\n</details>\n\n"
+                "<details><summary>providers/openai: 0.1.1</summary>\n\n" + openai + "\n</details>\n\n---\nFooter")
+        pr = dict(copy.deepcopy(self.pr), title=readiness.COMBINED_TITLE, body=body)
+        return config, pr, {".": "0.1.0", "providers/openai": "0.1.0"}, {".": "0.2.0", "providers/openai": "0.1.1"}, {".": root, "providers/openai": openai}
+
+    def test_combined_release_metadata(self):
+        config, pr, before, after, notes = self.combined_release()
+        self.assertEqual(readiness.verify_release(pr, before, after, config), [".", "providers/openai"])
+        self.assertEqual(readiness.component_notes(pr, config, [".", "providers/openai"], after), notes)
+        single = dict(pr, body=pr["body"].replace(pr["body"][pr["body"].index("\n\n<details><summary>providers"):pr["body"].index("\n\n---\nFooter")], ""))
+        self.assertEqual(readiness.verify_release(single, {".": "0.1.0"}, {".": "0.2.0"}, config), ["."])
+        for name, edit, manifest, message in [
+            ("title", {"title": "chore(main): release 0.2.0"}, after, "combined release title"),
+            ("branch", {"head": dict(pr["head"], ref=pr["head"]["ref"] + "--components--providers/openai")}, after, "release branch"),
+            ("missing component", {"body": single["body"]}, after, "does not match the manifest versions"),
+            ("version", {"body": pr["body"].replace("providers/openai: 0.1.1", "providers/openai: 0.1.2")}, after, "summary"),
+            ("extra text", {"body": pr["body"].replace("Header\n---\n\n", "Header\n---\n\ninjected\n\n")}, after, "only component release sections"),
+            ("unknown component", {"body": pr["body"].replace("providers/openai: ", "providers/other: ")}, after, "unknown or repeated"),
+            ("gateway", {}, dict(after, **{"ai-gateway": "0.2.0"}), "cannot share a release pull request"),
+        ]:
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, message):
+                readiness.verify_release(dict(pr, **edit), before, manifest, config)
+
+    def test_combined_release_files_allow_released_and_gateway_requirements(self):
+        components = [".", "providers/openai"]
+        allowed = [readiness.MANIFEST, "CHANGELOG.md", "providers/openai/CHANGELOG.md", "go.mod", "go.sum",
+                   "providers/openai/go.mod", "providers/openai/go.sum", "ai-gateway/go.mod", "ai-gateway/go.sum"]
+        readiness.verify_release_files(components, allowed, requirements=True)
+        for path in ["providers/bedrock/go.mod", "providers/openai/model.go", "ai-gateway/package.json", "go.work"]:
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                readiness.verify_release_files(components, [readiness.MANIFEST, path], requirements=True)
+        with self.assertRaises(ValueError):
+            readiness.verify_release_files(components, [readiness.MANIFEST, "go.mod"])
+
+    def test_co_released_prerequisite_resolves_from_candidate_archives(self):
+        dependency = {"Path": readiness.PREFIX, "Version": "v0.2.0"}
+        def command(*args, **kwargs):
+            if args[1:3] == ("mod", "edit"):
+                return json.dumps({})
+            if args[1] == "list":
+                return json.dumps(dependency)
+            raise AssertionError(f"co-released prerequisite must not be resolved upstream: {args}")
+        with tempfile.TemporaryDirectory() as proxy, \
+             patch.object(readiness, "run", side_effect=command), \
+             patch.object(readiness, "verify_tag") as tag, \
+             patch("release_consumer.verify_consumer") as consumer, \
+             patch.object(readiness.subprocess, "run") as execute:
+            readiness.verify_library("providers/openai", "base", self.config["packages"],
+                                     co_released={readiness.PREFIX: "v0.2.0"}, proxy=proxy)
+            tag.assert_not_called()
+            env = execute.call_args.kwargs["env"]
+            self.assertEqual(env["GOPROXY"], Path(proxy).resolve().as_uri() + ",https://proxy.golang.org")
+            self.assertEqual(env["GONOSUMDB"], readiness.PREFIX)
+            self.assertEqual(env["CANDIDATE_PROXY"], str(Path(proxy).resolve()))
+            self.assertEqual(consumer.call_args.args[1]["GOPROXY"], env["GOPROXY"])
+            with self.assertRaisesRegex(ValueError, "must select its released version"):
+                readiness.verify_library("providers/openai", "base", self.config["packages"],
+                                         co_released={readiness.PREFIX: "v0.3.0"}, proxy=proxy)
+        with self.assertRaisesRegex(ValueError, "require the candidate proxy"):
+            readiness.verify_library("providers/openai", "base", self.config["packages"], co_released={readiness.PREFIX: "v0.2.0"})
+
+    def test_candidate_check_runs_the_trusted_generator_without_ambient_go_settings(self):
+        with patch.dict("os.environ", {"GOFLAGS": "-mod=mod", "GOPROXY": "https://evil.example", "GOCACHE": "/cache"}), \
+             patch.object(readiness, "run", return_value='{"Checksums": {}}') as execute:
+            self.assertEqual(readiness.candidate_check("base", "head", "/proxy", tooling_root="/trusted"), {"Checksums": {}})
+        args, kwargs = execute.call_args.args, execute.call_args.kwargs
+        self.assertEqual(args[:5], ("go", "-C", "/trusted/release/candidate", "run", "./cmd/candidate"))
+        self.assertEqual(args[5:], ("check", "-repo", str(Path.cwd()), "-base", "base", "-candidate", "head", "-proxy", "/proxy"))
+        self.assertEqual(kwargs["env"]["GOFLAGS"], "-mod=readonly")
+        self.assertEqual(kwargs["env"]["GOWORK"], "off")
+        self.assertEqual(kwargs["env"]["GOCACHE"], "/cache")
+        self.assertNotIn("GOPROXY", kwargs["env"])
 
     def test_rejects_spoofed_release_metadata(self):
         for position, field, value in [
@@ -97,7 +176,7 @@ class ReleaseReadinessTest(unittest.TestCase):
                      patch.object(readiness, "run", side_effect=['{".": "0.1.0"}', json.dumps(self.config)]), \
                      patch.object(readiness, "verify_library") as library:
                     if release:
-                        with self.assertRaisesRegex(ValueError, "exactly one component"):
+                        with self.assertRaisesRegex(ValueError, "release must change component versions"):
                             readiness.main()
                     else:
                         readiness.main()
@@ -143,23 +222,23 @@ class ReleaseReadinessTest(unittest.TestCase):
             self.assertIn("refs/tags/providers/openai/v0.1.0", command.call_args_list[0].args)
 
     def test_release_cannot_smuggle_dependency_or_workflow_edits(self):
-        readiness.verify_release_files("providers/openai", [readiness.MANIFEST, "providers/openai/CHANGELOG.md"])
+        readiness.verify_release_files(["providers/openai"], [readiness.MANIFEST, "providers/openai/CHANGELOG.md"])
         for path in ["providers/openai/go.mod", ".github/workflows/release-please.yml", "core.go"]:
             with self.subTest(path=path), self.assertRaises(ValueError):
-                readiness.verify_release_files("providers/openai", [readiness.MANIFEST, path])
+                readiness.verify_release_files(["providers/openai"], [readiness.MANIFEST, path])
 
     def test_gateway_release_may_update_the_plugin_version(self):
-        readiness.verify_release_files("ai-gateway", [readiness.MANIFEST, "ai-gateway/CHANGELOG.md", "ai-gateway/package.json"])
+        readiness.verify_release_files(["ai-gateway"], [readiness.MANIFEST, "ai-gateway/CHANGELOG.md", "ai-gateway/package.json"])
         with self.assertRaises(ValueError):
-            readiness.verify_release_files("providers/openai", [readiness.MANIFEST, "ai-gateway/package.json"])
+            readiness.verify_release_files(["providers/openai"], [readiness.MANIFEST, "ai-gateway/package.json"])
         with self.assertRaises(ValueError):
-            readiness.verify_release_files("ai-gateway", [readiness.MANIFEST, "ai-gateway/go.mod"])
+            readiness.verify_release_files(["ai-gateway"], [readiness.MANIFEST, "ai-gateway/go.mod"])
 
     def test_generated_release_files_cannot_change_file_kind(self):
         files = [readiness.MANIFEST, "CHANGELOG.md"]
         for mode in ["120000", "100755", "160000"]:
             with self.subTest(mode=mode), self.assertRaises(ValueError):
-                readiness.verify_release_files(".", files, {
+                readiness.verify_release_files(["."], files, {
                     readiness.MANIFEST: "100644 blob manifest", "CHANGELOG.md": f"{mode} blob notes"})
 
     def test_gateway_is_an_application_not_a_standalone_library(self):
@@ -307,16 +386,16 @@ class ReleaseReadinessTest(unittest.TestCase):
                      patch.object(readiness, "run", side_effect=command), \
                      patch.object(readiness, "verify_library") as library:
                     readiness.main()
-                    library.assert_called_once_with(".", base, set(self.config["packages"]))
+                    library.assert_called_once_with(".", base, set(self.config["packages"]), co_released={}, proxy=None)
                     record = json.loads(evidence.read_text())
-                    self.assertEqual(record["schemaVersion"], 1)
+                    self.assertEqual(record["schemaVersion"], 2)
                     self.assertEqual(record["headSha"], head)
                     self.assertEqual(record["baseSha"], base)
                     self.assertEqual(record["mergeSha"], git("rev-parse", "HEAD"))
                     self.assertEqual(record["treeSha"], git("rev-parse", "HEAD^{tree}"))
                     self.assertEqual(record["toolingRevision"], base)
                     self.assertEqual(record["bodyDigest"], hashlib.sha256(pr["body"].encode()).hexdigest())
-                    self.assertEqual(record["version"], "0.2.0")
+                    self.assertEqual(record["components"], {".": "0.2.0"})
                     for failure in ["library", "live"]:
                         with self.subTest(failure=failure):
                             target = "verify_library" if failure == "library" else "verify_live_candidate"
@@ -324,6 +403,68 @@ class ReleaseReadinessTest(unittest.TestCase):
                                 with self.assertRaisesRegex(ValueError, "failed"):
                                     readiness.main()
                             self.assertFalse(evidence.exists())
+
+    def test_release_entry_point_validates_combined_candidate(self):
+        config, pr, before, after, notes = self.combined_release()
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory, "repo")
+            repo.mkdir()
+            with chdir(repo):
+                def git(*args):
+                    return subprocess.check_output(["git", "-c", "commit.gpgsign=false", *args], text=True, stderr=subprocess.PIPE).strip()
+                git("init", "-q")
+                git("config", "user.email", "test@example.com")
+                git("config", "user.name", "Test")
+                Path(readiness.MANIFEST).write_text(json.dumps(before))
+                Path("release-please-config.json").write_text(json.dumps(config))
+                Path("providers/openai").mkdir(parents=True)
+                Path("providers/openai/go.mod").write_text("module openai\n")
+                Path(".github/workflows").mkdir(parents=True)
+                Path(".github/workflows/release-readiness.yml").write_text("name: readiness\n")
+                git("add", ".")
+                git("commit", "-qm", "base")
+                base = git("rev-parse", "HEAD")
+                git("checkout", "-qb", "candidate")
+                Path(readiness.MANIFEST).write_text(json.dumps(after))
+                Path("CHANGELOG.md").write_text("# Changelog\n\n" + notes["."] + "\n")
+                Path("providers/openai/CHANGELOG.md").write_text("# Changelog\n\n" + notes["providers/openai"] + "\n")
+                Path("providers/openai/go.mod").write_text("module openai\n\nrequire root v0.2.0\n")
+                git("add", ".")
+                git("commit", "-qm", "release")
+                head = git("rev-parse", "HEAD")
+                git("checkout", "--detach", base)
+                git("merge", "--no-ff", "-m", "merge", head)
+                pr["number"] = 124
+                pr["base"]["sha"], pr["head"]["sha"] = base, head
+                metadata = Path(directory, "pr.json")
+                metadata.write_text(json.dumps(pr))
+                real_run = readiness.run
+                def command(*args, **kwargs):
+                    if args[:2] == ("git", "fetch"):
+                        return ""
+                    if args == ("git", "rev-parse", "FETCH_HEAD"):
+                        return base
+                    if args[0] == "gh":
+                        return json.dumps(pr)
+                    return real_run(*args, **kwargs)
+                evidence = Path(directory, "library-readiness.json")
+                co_released = {readiness.PREFIX: "v0.2.0", readiness.PREFIX + "/providers/openai": "v0.1.1"}
+                with patch("sys.argv", ["readiness", "--pull-request", str(metadata), "--evidence", str(evidence)]), \
+                     patch.object(readiness, "run", side_effect=command), \
+                     patch.object(readiness, "candidate_check") as check, \
+                     patch.object(readiness, "verify_library") as library:
+                    readiness.main()
+                    self.assertEqual(check.call_args.args[:2], (base, git("rev-parse", "HEAD")))
+                    proxy = check.call_args.args[2]
+                    self.assertEqual([call.args[0] for call in library.call_args_list], [".", "providers/openai"])
+                    for call in library.call_args_list:
+                        self.assertEqual(call.kwargs, {"co_released": co_released, "proxy": proxy})
+                    record = json.loads(evidence.read_text())
+                    self.assertEqual(record["components"], after)
+                    with patch.object(readiness, "candidate_check", side_effect=ValueError("differ from generation")):
+                        with self.assertRaisesRegex(ValueError, "differ from generation"):
+                            readiness.main()
+                    self.assertFalse(evidence.exists())
 
     def test_selected_standalone_ignores_broken_downstream(self):
         policy = Path(__file__).resolve().parent / "module-policy.sh"
@@ -406,7 +547,7 @@ class ReleaseReadinessTest(unittest.TestCase):
         self.assertNotIn("contents: write", workflow)
         with patch.dict("os.environ", {"GH_TOKEN": "do-not-retain", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "2"}), \
              patch.object(readiness, "run", return_value="a" * 40):
-            record = readiness.readiness_record(dict(self.pr, number=123), ".", "0.2.0")
+            record = readiness.readiness_record(dict(self.pr, number=123), {".": "0.2.0"})
         self.assertEqual(record["runId"], "123")
         self.assertEqual(record["runAttempt"], "2")
         self.assertNotIn("do-not-retain", json.dumps(record))

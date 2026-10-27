@@ -31,6 +31,9 @@ type Options struct {
 	// SumDB verifies upstream first-party checksums. Empty uses the Go default;
 	// "off" disables verification, which is only meant for offline fixtures.
 	SumDB string
+	// ProxyDir keeps the candidate proxy of co-released archives in this
+	// directory instead of a temporary one, for later readonly validation.
+	ProxyDir string
 }
 
 // Result reports the files a generation changed and the checksums of every
@@ -84,6 +87,9 @@ func Generate(dir string, plan Plan, options Options) (Result, error) {
 	}
 	defer func() { _ = removeAll(work) }()
 	proxy := Proxy{Dir: filepath.Join(work, "proxy")}
+	if options.ProxyDir != "" {
+		proxy.Dir = options.ProxyDir
+	}
 	env := goEnv(work, proxy, options)
 
 	original, err := requirementFiles(dir, plan.Targets)

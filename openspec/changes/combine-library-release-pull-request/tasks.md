@@ -23,10 +23,10 @@
 
 ## 4. Readiness and source checks
 
-- [ ] 4.1 Update `release_readiness.py` to accept several released components, derive the allowed footprint (manifest, released changelogs, released modules' and Gateway's requirement files) and run the generator check mode; verify `scripts/test_release_readiness.py` covers multi-component success, a requirement change outside the release and a missing manifest update
-- [ ] 4.2 Resolve co-released prerequisites from candidate archives of the PR-head-plus-base tree, keep public-proxy and tag checks for tagged prerequisites, and treat co-released prerequisites as fresh; verify tests cover co-released success, archive mismatch and a stale non-released prerequisite
-- [ ] 4.3 Add a candidate mode to `module-policy.sh standalone` used only by readiness and consumer checks in `release_consumer.py`, leaving the on-demand public-proxy commands unchanged; verify module-policy fixtures cover both modes
-- [ ] 4.4 Update `merged_pins` to accept an untagged first-party version only when it equals the candidate manifest version and its candidate archive matches the recorded checksum; verify fixtures cover a release PR pin, an ordinary PR with an untagged pin and a manifest-matching pin with a wrong checksum
+- [x] 4.1 Update `release_readiness.py` to accept several released components, derive the allowed footprint (manifest, released changelogs, released modules' and Gateway's requirement files) and run the generator check mode; verify `scripts/test_release_readiness.py` covers multi-component success, a requirement change outside the release and a missing manifest update
+- [x] 4.2 Resolve co-released prerequisites from candidate archives of the PR-head-plus-base tree, keep public-proxy and tag checks for tagged prerequisites, and treat co-released prerequisites as fresh; verify tests cover co-released success, archive mismatch and a stale non-released prerequisite
+- [x] 4.3 Add a candidate mode to `module-policy.sh standalone` used only by readiness and consumer checks in `release_consumer.py`, leaving the on-demand public-proxy commands unchanged; verify module-policy fixtures cover both modes
+- [x] 4.4 Update `merged_pins` to accept an untagged first-party version only when it equals the candidate manifest version and its candidate archive matches the recorded checksum; verify fixtures cover a release PR pin, an ordinary PR with an untagged pin and a manifest-matching pin with a wrong checksum
 
 ## 5. Authorization and publication
 

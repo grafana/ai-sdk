@@ -2,6 +2,7 @@ package candidate
 
 import (
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -96,5 +97,17 @@ func TestCheck(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, result.Checksums, 3)
 		})
+	}
+}
+
+func TestCheck_KeepsCandidateProxy(t *testing.T) {
+	repo, base, candidate := releaseFixture(t, nil)
+	proxyDir := t.TempDir()
+	options := offline
+	options.ProxyDir = proxyDir
+	_, err := Check(repo.dir, base, candidate, options)
+	require.NoError(t, err)
+	for _, name := range []string{"@v/v0.2.0.zip", "providers/openai/@v/v0.2.0.zip", "providers/bedrock/@v/v0.2.0.mod"} {
+		assert.FileExists(t, filepath.Join(proxyDir, "github.com", "grafana", "ai-sdk", filepath.FromSlash(name)))
 	}
 }

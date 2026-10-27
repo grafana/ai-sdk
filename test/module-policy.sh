@@ -146,6 +146,34 @@ done
     graph_extra=$module_prefix/providers/unknown
     assert_fails 'unknown internal module' merged_pins
   )
+  (
+    printf 'module %s\n\ngo 1.27.3\nrequire %s/providers/openai v0.2.0\n' "$gateway_module" "$module_prefix" >ai-gateway/go.mod
+    printf '%s v0.2.0 h1:zip=\n%s v0.2.0/go.mod h1:mod=\n' "$module_prefix/providers/openai" "$module_prefix/providers/openai" >ai-gateway/go.sum
+    printf '{".": "0.1.0", "providers/openai": "0.2.0"}\n' >.release-please-manifest.json
+    canonical_tags() { printf 'v0.1.0\nproviders/openai/v0.1.0\n'; }
+    candidate_proxy() {
+      [[ "$2" == "$module_prefix/providers/openai"$'\t'v0.2.0$'\t'providers/openai ]] || fail "unexpected co-released set: $2"
+      printf '{"Checksums": {"%s@v0.2.0": {"Zip": "h1:zip=", "GoMod": "h1:mod="}}}\n' "$module_prefix/providers/openai"
+    }
+    go() {
+      if [[ "$1 $2 $3" == 'list -m -json' ]]; then
+        printf '{"Path":"%s","Main":true}\n' "$(command go mod edit -json | jq -r '.Module.Path')"
+        [[ "$PWD" != */ai-gateway ]] || printf '{"Path":"%s","Version":"v0.2.0"}\n' "$module_prefix/providers/openai"
+      elif [[ "$1 $2 $3" == 'mod download -json' ]]; then
+        fail "co-released version queried upstream: $4"
+      else
+        command go "$@"
+      fi
+    }
+    verify_history() { printf '%s' "$2" >"$fixture/co-released-records"; }
+    merged_pins >/dev/null
+    [[ ! -s "$fixture/co-released-records" ]] || fail 'co-released pin entered canonical history verification'
+    [[ "$GOPROXY" == file://* && "$GONOSUMDB" == "$module_prefix" ]] || fail 'co-released pins did not resolve from the candidate proxy'
+    printf '%s v0.2.0/go.mod h1:other=\n' "$module_prefix/providers/openai" >ai-gateway/go.sum
+    assert_fails 'differs from its candidate archive' merged_pins
+    rm ai-gateway/go.sum
+    assert_fails 'without a recorded checksum' merged_pins
+  )
   printf 'module example.com/wrong\n' >providers/openai/go.mod
   assert_fails 'declares example.com/wrong' modules
   printf 'module %s\n\ngo 1.27.3\n' "$module_prefix/providers/openai" >providers/openai/go.mod

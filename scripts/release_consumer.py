@@ -73,7 +73,8 @@ def verify_consumer(root, env, graph, tooling_root=None):
             f"module releasecheck.local/consumer\n\ngo {manifest['Go']}\n\nrequire (\n"
             + "".join(f"\t{p} {v}\n" for p, v in sorted(requirements.items())) + ")\n")
         (consumer / "go.sum").write_bytes((source / "go.sum").read_bytes())
-        consumer_env = dict(env, GOPROXY=f"{proxy.as_uri()},https://proxy.golang.org", GONOSUMDB=path)
+        consumer_env = dict(env, GOPROXY=f"{proxy.as_uri()},{env['GOPROXY']}",
+                            GONOSUMDB=",".join(filter(None, [env.get("GONOSUMDB"), path])))
         packages = list(json_stream(run("go", "list", "-json", "./...", cwd=source, env=env)))
         imports = [p["ImportPath"] for p in packages
                    if p.get("Name") != "main" and "internal" not in p["ImportPath"].split("/")]

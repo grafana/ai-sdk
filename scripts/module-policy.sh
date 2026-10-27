@@ -4,9 +4,14 @@
 # release/ and test/; declared module paths must match their repository locations.
 # Pins: declared and selected internal versions must resolve to commits on an
 # independently fetched canonical grafana/ai-sdk main, not merely download.
+# Manifest versions without a canonical tag are co-released by a combined
+# release pull request: they resolve from archives of HEAD and must match the
+# recorded checksums, without querying the public proxy before tagging.
 # Standalone: published modules have no replacements and must download, verify,
 # build, and test with a fresh public-proxy cache, readonly manifests, and no
 # workspace substitutions. One module may be selected by root or module path.
+# Release readiness sets CANDIDATE_PROXY to resolve co-released versions from
+# archives of the candidate tree before the public proxy.
 # Boundary: the AGPL Gateway stays under ai-gateway/; Apache SDK modules must
 # not reference it; root go.work and the SDK/Grafana graphs exclude it.
 # Workspace: go.gateway.work explicitly selects local candidate source; the
@@ -57,6 +62,11 @@ standalone() (
     [[ -n "$list" ]] || fail "unknown or local-only published module: $selection"
   fi
   export GOPROXY=https://proxy.golang.org GOPRIVATE='' GONOPROXY='' GONOSUMDB='' GOWORK=off GOFLAGS="$readonly_flags"
+  if [[ -n "${CANDIDATE_PROXY:-}" ]]; then
+    [[ -d "$CANDIDATE_PROXY" ]] || fail "candidate proxy $CANDIDATE_PROXY is missing"
+    GOPROXY="file://$CANDIDATE_PROXY,https://proxy.golang.org"
+    GONOSUMDB=$module_prefix
+  fi
   cache=$(mktemp -d)
   trap 'chmod -R u+w "$cache" 2>/dev/null || true; rm -rf "$cache"' EXIT
   export GOMODCACHE=$cache
@@ -107,10 +117,58 @@ verify_history() (
   done <<<"$records"
 )
 
+canonical_tags() {
+  git ls-remote --tags --refs "$canonical_url" | awk '{ sub("^refs/tags/", "", $2); print $2 }'
+}
+
+# Prints module path, version and root of every manifest version without a
+# canonical tag: the versions a combined release pull request co-releases.
+co_released() {
+  local list=$1 tags root version path tag
+  [[ -f .release-please-manifest.json ]] || return 0
+  tags=$(canonical_tags) || fail 'cannot list canonical tags'
+  while IFS=$'\t' read -r root version; do
+    path=$(awk -F '\t' -v root="$root" '$1 == root {print $2}' <<<"$list")
+    [[ -n "$path" && "$path" != "$gateway_module" ]] || continue
+    tag=v$version
+    [[ "$root" == . ]] || tag=$root/$tag
+    grep -Fxq "$tag" <<<"$tags" || printf '%s\tv%s\t%s\n' "$path" "$version" "$root"
+  done < <(jq -r 'to_entries[] | [.key, .value] | @tsv' .release-please-manifest.json)
+}
+
+candidate_proxy() {
+  local proxy=$1 releases=$2 args=() path version root
+  while IFS=$'\t' read -r path version root; do
+    args+=("$root@$version")
+  done <<<"$releases"
+  GOWORK=off GOFLAGS=-mod=readonly go -C "$repo_root/release/candidate" run ./cmd/candidate \
+    proxy -repo "$repo_root" -rev HEAD -out "$proxy" "${args[@]}"
+}
+
+verify_candidate_sum() {
+  local consumer=$1 root=$2 path=$3 version=$4 sums=$5 expected recorded
+  expected=$(jq -r --arg key "$path@$version" '.Checksums[$key] | "\(.Zip)\n\(.GoMod)"' <<<"$sums")
+  recorded=$(awk -v path="$path" -v version="$version" '$1 == path && $2 == version {print "zip\t" $3} $1 == path && $2 == version "/go.mod" {print "mod\t" $3}' "$root/go.sum" 2>/dev/null)
+  [[ -n "$recorded" ]] || fail "$consumer requires $path@$version without a recorded checksum"
+  while IFS=$'\t' read -r kind hash; do
+    if [[ "$kind" == zip && "$hash" != "$(sed -n 1p <<<"$expected")" ]] ||
+       [[ "$kind" == mod && "$hash" != "$(sed -n 2p <<<"$expected")" ]]; then
+      fail "$consumer requires $path@$version with a checksum that differs from its candidate archive"
+    fi
+  done <<<"$recorded"
+}
+
 merged_pins() {
-  local list root consumer manifest graph declared selected versions path version selected_root hash replacements records=
+  local list root consumer manifest graph declared selected versions path version selected_root hash replacements records= releases sums=
   list=$(modules)
   export GOPROXY=https://proxy.golang.org GOPRIVATE='' GONOPROXY='' GONOSUMDB='' GOWORK=off GOFLAGS="$readonly_flags"
+  releases=$(co_released "$list")
+  if [[ -n "$releases" ]]; then
+    proxy_dir=$(mktemp -d)
+    trap 'rm -rf "$proxy_dir"' EXIT
+    sums=$(candidate_proxy "$proxy_dir" "$releases") || fail 'cannot build candidate archives for co-released versions'
+    export GOPROXY="file://$proxy_dir,https://proxy.golang.org" GONOSUMDB=$module_prefix
+  fi
   while IFS=$'\t' read -r root consumer; do
     [[ -n "$root" ]] || continue
     manifest=$(cd "$root" && go mod edit -json)
@@ -124,6 +182,10 @@ merged_pins() {
       [[ "$path" == "$module_prefix" || "$path" == "$module_prefix/"* ]] || continue
       selected_root=$(awk -F '\t' -v path="$path" '$2 == path {print $1}' <<<"$list")
       [[ -n "$selected_root" ]] || fail "$consumer references unknown internal module $path"
+      if [[ -n "$releases" ]] && awk -F '\t' -v path="$path" -v version="$version" '$1 == path && $2 == version {found=1} END {exit !found}' <<<"$releases"; then
+        verify_candidate_sum "$consumer" "$root" "$path" "$version" "$sums"
+        continue
+      fi
       hash=$(pin_commit "$path" "$version" "$selected_root") || fail "$consumer requires $path@$version: cannot resolve canonical origin"
       records+="$consumer"$'\t'"$path"$'\t'"$version"$'\t'"$hash"$'\n'
     done <<<"$versions"
