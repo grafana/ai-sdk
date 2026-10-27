@@ -1,0 +1,43 @@
+{
+  "responseFormat": {
+    "type": "json",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "elements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "elements"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "elements": [
+    {
+      "name": "a"
+    },
+    {
+      "name": "b"
+    },
+    {
+      "name": "z"
+    }
+  ],
+  "elementStreamError": null,
+  "outputError": null
+}

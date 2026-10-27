@@ -1,0 +1,41 @@
+{
+  "responseFormat": {
+    "type": "json",
+    "schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {
+        "elements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "elements"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "elements": [
+    {
+      "name": "a"
+    },
+    {
+      "name": "b"
+    }
+  ],
+  "elementStreamError": "elements array must contain at most 2 items",
+  "outputError": "elements array must contain at most 2 items"
+}
