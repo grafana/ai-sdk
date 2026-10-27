@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/middleware/prometheus
 go 1.27.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.2
+	github.com/grafana/ai-sdk v0.1.0-alpha.3
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/stretchr/testify v1.12.1
