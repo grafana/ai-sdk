@@ -47,7 +47,7 @@ export async function main(args, env = process.env) {
     };
     const writer = await GitHub.create({ ...REPO, defaultBranch: 'main', token: env.GH_TOKEN, logger,
       fetch: preparationTransport(beforeWrite) });
-    console.log(JSON.stringify({ prepared: await prepareLibraries(writer, toolingRevision) }, null, 2));
+    console.log(JSON.stringify(await prepareLibraries(writer, toolingRevision), null, 2));
   }
   if (report.candidates.some(candidate => candidate.status === 'blocked')) process.exitCode = 1;
 }

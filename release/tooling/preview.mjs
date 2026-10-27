@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import { GitHub, Manifest, setLogger } from 'release-please';
+import { LIBRARY_BRANCH, generateRequirements, withRequirements } from './requirements.mjs';
 
 export function readOnlyFetch(fetchImpl = globalThis.fetch) {
   return async (url, options = {}) => {
@@ -40,6 +41,10 @@ export async function preview(github, options = {}) {
   const candidates = await prepareCandidates(github, options);
   const proposals = [];
   for (const candidate of candidates) {
+    if (candidate.headRefName === LIBRARY_BRANCH) {
+      const config = await github.getFileJson('release-please-config.json', branch);
+      await withRequirements(github, candidate, { sha: before, config, generate: options.generate ?? generateRequirements });
+    }
     const changes = await github.buildChangeSet(candidate.updates, branch);
     proposals.push({
       title: candidate.title.toString(),

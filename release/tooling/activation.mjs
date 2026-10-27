@@ -4,6 +4,7 @@ import { Manifest } from 'release-please';
 import { SOURCE_JOBS, successfulRun } from './authorization-evidence.mjs';
 import { REPO, REPOSITORY_ID, SHA, discoverMerged } from './merged-candidates.mjs';
 import { readOnlyFetch } from './preview.mjs';
+import { GATEWAY_BRANCH, LIBRARY_BRANCH, assertCombinedConfig, generateRequirements, withRequirements } from './requirements.mjs';
 
 export function activationContext(env) {
   assert.ok(['root', 'libraries'].includes(env.RELEASE_LIBRARY_MODE), 'library publication is disabled');
@@ -103,31 +104,38 @@ export function preparationTransport(beforeWrite, fetchImpl = globalThis.fetch) 
   };
 }
 
-export async function prepareLibraries(github, expectedSha) {
+const COMPONENT_BRANCH = /^release-please--branches--main--components--(?:providers|middleware)\/[a-z-]+$/;
+
+export async function prepareLibraries(github, expectedSha, { generate = generateRequirements } = {}) {
   const inventory = await discoverMerged(github);
   assert.equal(inventory.mainSha, expectedSha, 'main advanced before preparation');
   const pending = new Set(inventory.candidates.map(candidate => candidate.component));
   const config = await github.getFileJson('release-please-config.json', 'main');
-  const results = [];
-  for (const component of Object.keys(config.packages).filter(path => path !== 'ai-gateway' && !pending.has(path))) {
-    const manifest = await Manifest.fromManifest(github, 'main', 'release-please-config.json',
-      '.release-please-manifest.json', {}, component);
-    manifest.lastReleaseSha = undefined;
-    const candidates = await manifest.buildPullRequests();
-    const open = await manifest.findOpenReleasePullRequests();
-    const snoozed = await manifest.findSnoozedReleasePullRequests();
-    for (const candidate of candidates) {
-      const changelog = component === '.' ? 'CHANGELOG.md' : `${component}/CHANGELOG.md`;
-      assert.deepEqual(candidate.updates.map(update => update.path).sort(), ['.release-please-manifest.json', changelog].sort());
-      manifest.alwaysUpdate = open.some(pr => pr.headBranchName === candidate.headRefName);
-      const previous = !manifest.alwaysUpdate && snoozed.find(pr => pr.headBranchName === candidate.headRefName);
-      if (previous && previous.body === candidate.body.toString()) continue;
-      const result = await manifest.createOrUpdatePullRequest(candidate, open, []);
-      if (result?.number > 0) {
-        if (previous) await github.removeIssueLabels(['autorelease: snooze'], previous.number);
-        results.push({ component, prNumber: result.number });
-      }
+  assertCombinedConfig(config);
+  const manifest = await Manifest.fromManifest(github, 'main', 'release-please-config.json',
+    '.release-please-manifest.json', {});
+  manifest.lastReleaseSha = undefined;
+  for (const component of pending) delete manifest.repositoryConfig[component];
+  const candidates = (await manifest.buildPullRequests()).filter(candidate => candidate.headRefName !== GATEWAY_BRANCH);
+  assert.ok(candidates.every(candidate => candidate.headRefName === LIBRARY_BRANCH), 'unexpected release pull request shape');
+  assert.ok(candidates.length <= 1, 'libraries must share one release pull request');
+  const open = await manifest.findOpenReleasePullRequests();
+  const snoozed = await manifest.findSnoozedReleasePullRequests();
+  const results = { prepared: [], superseded: [] };
+  for (const candidate of candidates) {
+    const { components, files } = await withRequirements(github, candidate, { sha: expectedSha, config, generate });
+    manifest.alwaysUpdate = open.some(pr => pr.headBranchName === candidate.headRefName);
+    const previous = !manifest.alwaysUpdate && snoozed.find(pr => pr.headBranchName === candidate.headRefName);
+    if (previous && previous.body === candidate.body.toString()) continue;
+    const result = await manifest.createOrUpdatePullRequest(candidate, open, []);
+    if (result?.number > 0) {
+      if (previous) await github.removeIssueLabels(['autorelease: snooze'], previous.number);
+      results.prepared.push({ components, files, prNumber: result.number });
     }
+  }
+  for (const pr of open.filter(pr => COMPONENT_BRANCH.test(pr.headBranchName))) {
+    await github.octokit.pulls.update({ ...REPO, pull_number: pr.number, state: 'closed' });
+    results.superseded.push(pr.number);
   }
   return results;
 }

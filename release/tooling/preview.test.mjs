@@ -9,6 +9,8 @@ const config = JSON.parse(readFileSync(new URL('../../release-please-config.json
 const silent = Object.fromEntries(['debug', 'info', 'warn', 'error', 'trace'].map(level => [level, () => {}]));
 setLogger(silent);
 
+const generate = async () => ({ files: new Map([['providers/openai/go.mod', 'module openai\n']]), checksums: {} });
+
 function repository() {
   return {
     repository: { owner: 'grafana', repo: 'ai-sdk', defaultBranch: 'main' },
@@ -55,16 +57,39 @@ test('preview refuses a branch that advances while candidates are built', async 
   const github = repository();
   let reads = 0;
   github.octokit.repos.getCommit = async () => ({ data: { sha: String(reads++) } });
-  await assert.rejects(preview(github, { path: '.' }), /advanced/);
+  await assert.rejects(preview(github, { path: '.', generate }), /advanced/);
 });
 
 test('preview reports source revision and generated contents', async () => {
-  const result = await preview(repository(), { path: '.' });
+  const result = await preview(repository(), { path: '.', generate });
   assert.equal(result.sha, 'base');
   assert.equal(result.proposals.length, 1);
   assert.deepEqual(result.proposals[0].changes.map(change => change.path), [
-    'CHANGELOG.md', '.release-please-manifest.json',
+    'CHANGELOG.md', '.release-please-manifest.json', 'providers/openai/go.mod',
   ]);
+  assert.equal(result.proposals[0].changes.at(-1).after, 'generated');
+});
+
+test('combined preview shows one library release with generated requirement files and a separate Gateway release', async () => {
+  const combined = { ...config, 'separate-pull-requests': false, packages: { ...config.packages,
+    'ai-gateway': { ...config.packages['ai-gateway'], 'separate-pull-requests': true } } };
+  const github = repository();
+  github.getFileJson = async path => path === 'release-please-config.json' ? combined : {};
+  const iterator = github.mergeCommitIterator;
+  github.mergeCommitIterator = async function* () {
+    yield* iterator();
+    yield { sha: 'e'.repeat(40), message: 'fix: gateway behavior', files: ['ai-gateway/main.go'] };
+  };
+  const calls = [];
+  const result = await preview(github, { generate: async options => { calls.push(options.sha); return generate(); } });
+  assert.deepEqual(result.proposals.map(proposal => proposal.branch), [
+    'release-please--branches--main', 'release-please--branches--main--components--ai-gateway',
+  ]);
+  assert.deepEqual(calls, ['base']);
+  assert.ok(result.proposals[0].changes.some(change => change.path === 'providers/openai/go.mod'));
+  assert.ok(result.proposals[1].changes.every(change => !change.path.endsWith('go.mod')));
+  assert.match(result.proposals[0].body, /provider behavior/);
+  assert.doesNotMatch(result.proposals[0].body, /gateway behavior/);
 });
 
 test('read-only transport blocks writes, GraphQL mutations, and other hosts', async () => {

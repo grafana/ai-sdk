@@ -17,9 +17,9 @@
 
 ## 3. Release preparation
 
-- [ ] 3.1 Set `separate-pull-requests: false` with a per-package `true` for `ai-gateway` only in test fixtures first, and update `prepareLibraries` to build one combined candidate plus the Gateway candidate; verify `activation.test.mjs` covers both shapes and Gateway stays excluded from library writes
-- [ ] 3.2 Materialize the candidate tree (main plus release-please updates), run the generator, append its files to the combined candidate before `createOrUpdatePullRequest`, and verify a test asserts one App-created commit containing manifest, changelogs and generated requirement files, with the preparation transport still refusing other writes
-- [ ] 3.3 Update `preview.mjs` to show the generated requirement files and verify `preview.test.mjs` covers a combined preview
+- [x] 3.1 Set `separate-pull-requests: false` with a per-package `true` for `ai-gateway` only in test fixtures first, and update `prepareLibraries` to build one combined candidate plus the Gateway candidate; verify `activation.test.mjs` covers both shapes and Gateway stays excluded from library writes
+- [x] 3.2 Materialize the candidate tree (main plus release-please updates), run the generator, append its files to the combined candidate before `createOrUpdatePullRequest`, and verify a test asserts one App-created commit containing manifest, changelogs and generated requirement files, with the preparation transport still refusing other writes
+- [x] 3.3 Update `preview.mjs` to show the generated requirement files and verify `preview.test.mjs` covers a combined preview
 
 ## 4. Readiness and source checks
 

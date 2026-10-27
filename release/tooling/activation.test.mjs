@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { GitHub } from 'release-please';
+import { GitHub, Manifest } from 'release-please';
 import { readFileSync } from 'node:fs';
-import { fixture, base } from './authorization-fixture.mjs';
+import { fixture, base, config } from './authorization-fixture.mjs';
 import { SOURCE_JOBS } from './authorization-evidence.mjs';
 import { activationContext, selectInventory, verifyProtections, waitForToolingCI, preparationTransport, prepareLibraries } from './activation.mjs';
 
@@ -138,34 +138,65 @@ test('Renovate final rule selects only registered libraries and tagged prereleas
   assert.equal(rule.enabled, true);
 });
 
-test('pinned preparation skips pending components and Gateway without a global veto', async () => {
-  const { github } = fixture();
+const combined = { ...config, 'separate-pull-requests': false, packages: { ...config.packages,
+  'ai-gateway': { ...config.packages['ai-gateway'], 'separate-pull-requests': true } } };
+
+function combinedFixture() {
+  const source = fixture();
+  const { github } = source;
+  github.getFileJson = async path => path === 'release-please-config.json' ? structuredClone(combined) : { '.': '0.1.0-alpha.1' };
   github.releaseIterator = async function* () {};
   github.tagIterator = async function* () {};
+  github.buildChangeSet = async updates => new Map(updates.map(update => [update.path, { content: `generated ${update.path}` }]));
+  return source;
+}
+
+function fakeGenerate(calls) {
+  return async ({ sha, changes }) => {
+    calls.push({ sha, paths: [...changes.keys()].sort() });
+    return { files: new Map([['providers/bedrock/go.mod', 'module bedrock\n'], ['providers/bedrock/go.sum', 'sum\n']]), checksums: {} };
+  };
+}
+
+test('combined preparation requires the combined release configuration', async () => {
+  const { github } = combinedFixture();
+  github.getFileJson = async path => path === 'release-please-config.json' ? config : { '.': '0.1.0-alpha.1' };
+  await assert.rejects(prepareLibraries(github, base, { generate: fakeGenerate([]) }), /share one release pull request/);
+  const separateLibrary = structuredClone(combined);
+  separateLibrary.packages['providers/openai']['separate-pull-requests'] = true;
+  github.getFileJson = async path => path === 'release-please-config.json' ? separateLibrary : { '.': '0.1.0-alpha.1' };
+  await assert.rejects(prepareLibraries(github, base, { generate: fakeGenerate([]) }), /providers\/openai must join/);
+});
+
+test('combined preparation skips pending components and Gateway and appends generated requirement files', async () => {
+  const { github } = combinedFixture();
   github.mergeCommitIterator = async function* () {
     yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
     yield { sha: 'f'.repeat(40), message: 'fix: provider change', files: ['providers/openai/model.go'] };
-    yield { sha: '1'.repeat(40), message: 'fix: gateway change', files: ['ai-gateway/main.go'] };
+    yield { sha: '1'.repeat(40), message: 'fix: logger change', files: ['middleware/logger/logger.go'] };
+    yield { sha: '2'.repeat(40), message: 'fix: gateway change', files: ['ai-gateway/main.go'] };
   };
   const iterator = github.pullRequestIterator;
   github.pullRequestIterator = async function* (branch, state, ...args) {
     if (state === 'MERGED') yield* iterator(branch, state, ...args);
   };
-  const created = [];
-  github.createPullRequest = async pr => { created.push(pr); return { number: 999 }; };
-  const result = await prepareLibraries(github, base);
-  assert.deepEqual(result, [{ component: 'providers/openai', prNumber: 999 }]);
+  const created = [], calls = [];
+  github.createPullRequest = async (pr, target, message, updates) => { created.push({ pr, updates }); return { number: 999 }; };
+  const result = await prepareLibraries(github, base, { generate: fakeGenerate(calls) });
+  assert.deepEqual(result, { prepared: [{ components: ['middleware/logger', 'providers/openai'],
+    files: ['providers/bedrock/go.mod', 'providers/bedrock/go.sum'], prNumber: 999 }], superseded: [] });
   assert.equal(created.length, 1);
-  assert.match(created[0].headBranchName, /components--providers\/openai$/);
-  assert.doesNotMatch(created[0].body, /gateway change|root change/);
-  await assert.rejects(prepareLibraries(github, 'e'.repeat(40)), /advanced/);
+  assert.equal(created[0].pr.headBranchName, 'release-please--branches--main');
+  assert.doesNotMatch(created[0].pr.body, /gateway change|root change/);
+  assert.deepEqual(calls, [{ sha: base, paths: ['.release-please-manifest.json', 'middleware/logger/CHANGELOG.md', 'providers/openai/CHANGELOG.md'] }]);
+  assert.deepEqual(created[0].updates.map(update => update.path).sort(), ['.release-please-manifest.json',
+    'middleware/logger/CHANGELOG.md', 'providers/bedrock/go.mod', 'providers/bedrock/go.sum', 'providers/openai/CHANGELOG.md']);
+  assert.equal(created[0].updates.find(update => update.path === 'providers/bedrock/go.sum').updater.updateContent('old'), 'sum\n');
+  await assert.rejects(prepareLibraries(github, 'e'.repeat(40), { generate: fakeGenerate([]) }), /advanced/);
 });
 
-
-test('pinned preparation refreshes an unchanged open release against the current base', async () => {
-  const { github } = fixture();
-  github.releaseIterator = async function* () {};
-  github.tagIterator = async function* () {};
+test('combined preparation refreshes an unchanged open release against the current base', async () => {
+  const { github } = combinedFixture();
   github.mergeCommitIterator = async function* () {
     yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
   };
@@ -175,21 +206,57 @@ test('pinned preparation refreshes an unchanged open release against the current
     openPR = { ...pr, number: 99 };
     return { number: 99 };
   };
-  await prepareLibraries(github, base);
+  await prepareLibraries(github, base, { generate: fakeGenerate([]) });
   let updated = 0;
   github.updatePullRequest = async (number, candidate) => {
     assert.equal(number, 99);
     assert.equal(candidate.body.toString(), openPR.body);
+    assert.ok(candidate.updates.some(update => update.path === 'providers/bedrock/go.sum'));
     updated++;
     return { number };
   };
-  await prepareLibraries(github, base);
+  await prepareLibraries(github, base, { generate: fakeGenerate([]) });
   assert.equal(updated, 1);
   openPR.labels = ['autorelease: snooze'];
   github.pullRequestIterator = async function* (branch, state) { if (state === 'CLOSED') yield openPR; };
-  await prepareLibraries(github, base);
+  await prepareLibraries(github, base, { generate: fakeGenerate([]) });
   assert.equal(updated, 1, 'unchanged closed snoozed PR must stay snoozed');
+});
 
+test('combined preparation closes superseded per-component library release pull requests', async () => {
+  const { github } = combinedFixture();
+  github.mergeCommitIterator = async function* () {
+    yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
+  };
+  const stale = ['providers/openai', 'middleware/logger', 'ai-gateway'].map((component, index) => ({
+    number: 200 + index, headBranchName: `release-please--branches--main--components--${component}`, baseBranchName: 'main',
+    labels: ['autorelease: pending'], title: `chore(main): release ${component}`, body: 'Header\n---\n\nnotes\n\n---\nFooter' }));
+  github.pullRequestIterator = async function* (branch, state) { if (state === 'OPEN') yield* stale; };
+  github.createPullRequest = async () => ({ number: 300 });
+  const closed = [];
+  github.octokit.pulls.update = async params => { closed.push(params); return { data: {} }; };
+  const result = await prepareLibraries(github, base, { generate: fakeGenerate([]) });
+  assert.deepEqual(result.superseded, [200, 201]);
+  assert.deepEqual(closed.map(params => [params.pull_number, params.state]), [[200, 'closed'], [201, 'closed']]);
+});
+
+test('combined preparation rejects candidate files outside the manifest and library changelogs', async () => {
+  const { github } = combinedFixture();
+  github.mergeCommitIterator = async function* () {
+    yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
+  };
+  github.pullRequestIterator = async function* () {};
+  const original = Manifest.prototype.buildPullRequests;
+  Manifest.prototype.buildPullRequests = async function () {
+    const candidates = await original.call(this);
+    candidates[0].updates.push({ path: 'ai-gateway/package.json', createIfMissing: false, updater: { updateContent: () => '{}' } });
+    return candidates;
+  };
+  try {
+    await assert.rejects(prepareLibraries(github, base, { generate: fakeGenerate([]) }), /only update the manifest and library changelogs: ai-gateway\/package.json/);
+  } finally {
+    Manifest.prototype.buildPullRequests = original;
+  }
 });
 
 
@@ -205,7 +272,7 @@ test('preparation permits the exact pinned snooze lifecycle label', async () => 
 
 test('changed snoozed release uses the pinned labeled creation path and actual replacement number', async () => {
   const source = fixture();
-  const branch = source.candidate.pr.head.ref;
+  const branch = 'release-please--branches--main';
   const closed = { number: 99, headBranchName: branch, baseBranchName: 'main',
     labels: ['autorelease: snooze'], title: source.candidate.pr.title, body: source.candidate.pr.body };
   const requests = [];
@@ -237,7 +304,7 @@ test('changed snoozed release uses the pinned labeled creation path and actual r
     return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
   });
   const github = await GitHub.create({ owner: 'grafana', repo: 'ai-sdk', defaultBranch: 'main', fetch: transport });
-  github.getFileJson = source.github.getFileJson;
+  github.getFileJson = async path => path === 'release-please-config.json' ? structuredClone(combined) : { '.': '0.1.0-alpha.1' };
   github.octokit.repos.getCommit = source.github.octokit.repos.getCommit;
   github.releaseIterator = async function* () {};
   github.tagIterator = async function* () {};
@@ -246,8 +313,12 @@ test('changed snoozed release uses the pinned labeled creation path and actual r
     yield { sha: 'e'.repeat(40), message: 'fix: new root change', files: ['stream.go'] };
   };
   github.buildChangeSet = async updates => new Map(updates.map(update => [update.path, { content: 'generated content' }]));
-  const result = await prepareLibraries(github, base);
-  assert.deepEqual(result, [{ component: '.', prNumber: 100 }]);
+  const result = await prepareLibraries(github, base, { generate: fakeGenerate([]) });
+  assert.deepEqual(result, { prepared: [{ components: ['.'], files: ['providers/bedrock/go.mod', 'providers/bedrock/go.sum'], prNumber: 100 }], superseded: [] });
+  const tree = requests.find(r => r.method === 'POST' && r.path.endsWith('/git/trees'));
+  assert.deepEqual(tree.body.tree.map(entry => entry.path).sort(),
+    ['.release-please-manifest.json', 'CHANGELOG.md', 'providers/bedrock/go.mod', 'providers/bedrock/go.sum']);
+  assert.equal(requests.filter(r => r.method === 'POST' && r.path.endsWith('/git/commits')).length, 1);
   assert.deepEqual(replacement.labels, [{ name: 'autorelease: pending' }]);
   assert.equal(requests.some(r => r.method === 'PATCH' && r.path.endsWith('/pulls/99')), false);
   const label = requests.findIndex(r => r.method === 'POST' && r.path.endsWith('/issues/100/labels'));
