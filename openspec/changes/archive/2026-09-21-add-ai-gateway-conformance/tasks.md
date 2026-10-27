@@ -11,17 +11,17 @@
 - [x] 2.3 Share or reuse established normalization/comparison behavior for both client results; add positive and negative unit controls for UI, request, usage, object, and unary mismatches.
 - [x] 2.4 Verify the refactor leaves direct fixture results unchanged and gateway execution never writes inputs or goldens.
 
-## 3. Add container-backed replay orchestration
+## 3. Add Grafana-backed replay orchestration
 
-- [x] 3.1 Add production-image build/reuse selection and run metadata capture, retaining pinned gateway dependencies and the module/license boundary.
+- [x] 3.1 Add plugin package build/reuse selection and run metadata capture (Grafana image digest, plugin revision and backend modules), retaining the module/license boundary.
 - [x] 3.2 Add isolated test networking, replay framing for existing provider operations, test-only authentication/credentials, and per-attempt public-model to backend-model configuration.
 - [x] 3.3 Add provider-isolated startup and readiness handling; preserve actual unsupported-provider setup evidence in every affected row without blocking other providers or substituting protocols.
-- [x] 3.4 Add bounded execution and cleanup for containers, processes, listeners, and temporary configuration; test startup failure, scenario timeout, cancellation, and fresh multi-step state for each client.
+- [x] 3.4 Add bounded execution and cleanup for the Grafana container, processes, listeners, and temporary configuration; test startup failure, scenario timeout, cancellation, and fresh multi-step state for each client.
 
 ## 4. Execute both gateway clients
 
-- [x] 4.1 Add the pinned `@ai-sdk/gateway` executor against the container API prefix, using the shared high-level streaming and existing unary scenario paths without request rewriting.
-- [x] 4.2 Add the `providers/grafana` executor against the same image with independent replay/tool state and no gateway implementation import.
+- [x] 4.1 Add the pinned `@ai-sdk/gateway` executor against the plugin App Platform route, using the shared high-level streaming and existing unary scenario paths without request rewriting.
+- [x] 4.2 Add the `providers/grafana` executor against the same stack with independent replay/tool state and no gateway implementation import.
 - [x] 4.3 Update only necessary test dependency pins/lockfile entries and baseline validation coverage for the new consumers, preserving the registered package versions.
 - [x] 4.4 Run all discovered provider fixtures through both paths without fail-fast; retain current unsupported features and providers as real failures.
 
@@ -29,12 +29,12 @@
 
 - [x] 5.1 Produce machine-readable results, provider/client summaries, stage-specific errors, applicable assertion diffs, and bounded credential-redacted artifacts; include missing backend request evidence after early rejection.
 - [x] 5.2 Add harness tests proving one failed row does not hide later rows, global failures mark unexecuted rows honestly, and incomplete reports or failed assertions produce nonzero exit status.
-- [x] 5.3 Add `mise run test-conformance-gateway` with full-matrix defaults and explicit local image/scenario/client selection for reproduction.
+- [x] 5.3 Add `mise run test-conformance-gateway` with full-matrix defaults and explicit local plugin directory/scenario/client selection for reproduction.
 
-## 6. Add advisory CI and contributor guidance
+## 6. Add required CI and contributor guidance
 
-- [x] 6.1 Add a separate full-matrix CI job that builds the current image, publishes available reports after failure, and retains a failing conclusion without `continue-on-error` success conversion.
-- [x] 6.2 Verify existing direct/parity checks and publication/deployment dependencies remain unchanged; document maintainer verification that repository rules leave the gateway check non-required.
+- [x] 6.1 Add a separate full-matrix CI job that builds the current plugin package, publishes available reports after failure, and retains a failing conclusion without `continue-on-error` success conversion.
+- [x] 6.2 Verify existing direct/parity checks and plugin package validation remain independent of the gateway job, and that the required `conformance-test` status aggregates both suites.
 - [x] 6.3 Update the conformance README and `PARITY.md` with architecture, local reproduction, report interpretation, current coverage limitations, advisory status, and later promotion to required enforcement.
 
 ## 7. Validate the harness without requiring gateway parity

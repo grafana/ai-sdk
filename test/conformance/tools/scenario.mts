@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { convertToModelMessages, streamText, stepCountIs, type LanguageModelUsage } from "ai";
+import { normalizeCall, PROVIDER_PARTS_PROVIDERS, recordProviderParts } from "./provider-parts.mts";
 import { buildMessages, buildOutput, buildStreamTextOptions, buildTools, createSourceIdNormalizer, loadConfig, mockId, unsupportedGenerateFields, type TestCase } from "./common.mts";
 
 export interface ScenarioResult {
@@ -11,6 +12,7 @@ export interface ScenarioResult {
   generate?: unknown;
   error?: string;
   outputError?: string;
+  providerParts?: unknown[][];
 }
 
 export function generateResultSnapshot(result: LanguageModelV4GenerateResult) {
@@ -92,6 +94,8 @@ export async function executeScenario(tc: TestCase, model: LanguageModelV4, sign
     }
     return capture;
   }
+  const providerParts = PROVIDER_PARTS_PROVIDERS.has(tc.provider) ? recordProviderParts(model) : undefined;
+  model = providerParts?.model ?? model;
   const tools = buildTools(cfg.tools, cfg.providerTools);
   const prompt = cfg.prompt ?? "test";
   const messages = cfg.uiMessages ? await convertToModelMessages(cfg.uiMessages, { tools }) : buildMessages(cfg, prompt);
@@ -118,5 +122,6 @@ export async function executeScenario(tc: TestCase, model: LanguageModelV4, sign
   }
   await Promise.all([outputPromise, usagePromise]);
   capture.chunks = normalizeOpenAIApprovalToolCallIds(tc.provider, capture.chunks);
+  if (providerParts) capture.providerParts = providerParts.recorder.calls.map(parts => normalizeCall(parts, tc.provider));
   return capture;
 }

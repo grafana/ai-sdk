@@ -83,21 +83,24 @@ func (m *recordingModel) recordedCalls() [][]provider.StreamPart {
 	return calls
 }
 
-func normalizeProviderCalls(t *testing.T, providerName string, calls [][]provider.StreamPart) []providerPartsCall {
-	t.Helper()
+func normalizeProviderCalls(providerName string, calls [][]provider.StreamPart) ([]providerPartsCall, error) {
 	normalized := make([]providerPartsCall, len(calls))
 	for i, call := range calls {
 		parts := make(providerPartsCall, 0, len(call))
 		for _, part := range call {
 			data, err := json.Marshal(part)
-			require.NoError(t, err, "marshaling provider part")
+			if err != nil {
+				return nil, fmt.Errorf("marshaling provider part: %w", err)
+			}
 			var generic map[string]any
-			require.NoError(t, json.Unmarshal(data, &generic), "parsing provider part")
+			if err := json.Unmarshal(data, &generic); err != nil {
+				return nil, fmt.Errorf("parsing provider part: %w", err)
+			}
 			parts = append(parts, normalizeProviderPart(providerName, generic))
 		}
 		normalized[i] = normalizeGeneratedIDs(parts)
 	}
-	return normalized
+	return normalized, nil
 }
 
 // normalizeGeneratedIDs replaces IDs the providers generate themselves: source
@@ -230,7 +233,7 @@ func mustJSON(value any) string {
 	return string(data)
 }
 
-func assertProviderParts(t *testing.T, tc TestCase, recorder *recordingModel) {
+func assertProviderParts(t *testing.T, tc TestCase, actual []providerPartsCall) {
 	t.Helper()
 	t.Run("provider-parts", func(t *testing.T) {
 		if issue, ok := providerPartsAllowlist[tc.Name]; ok {
@@ -238,7 +241,6 @@ func assertProviderParts(t *testing.T, tc TestCase, recorder *recordingModel) {
 		}
 		expected, err := loadExpectedProviderParts(filepath.Join(tc.Dir, providerPartsFile))
 		require.NoError(t, err, "loading %s", providerPartsFile)
-		actual := normalizeProviderCalls(t, tc.Provider, recorder.recordedCalls())
 		if mismatch := providerPartsMismatch(expected, actual); mismatch != "" {
 			require.Fail(t, "provider parts differ from upstream", mismatch)
 		}

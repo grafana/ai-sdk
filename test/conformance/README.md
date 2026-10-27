@@ -127,79 +127,83 @@ cd .. && go test -run TestUIConformance_ReasoningFiles ./...
 
 ## Gateway compatibility matrix (required for merging)
 
-The same provider fixtures also run through two clients against the production
-AI Gateway image:
+The same provider fixtures also run through two clients against the AI Gateway
+plugin, loaded by one Grafana instance:
 
 ```text
-TypeScript ai + @ai-sdk/gateway -> gateway image -> provider replay
-Go aisdk + providers/grafana    -> gateway image -> provider replay
+TypeScript ai + @ai-sdk/gateway -> Grafana App Platform route -> plugin -> provider replay
+Go aisdk + providers/grafana    -> Grafana App Platform route -> plugin -> provider replay
 ```
 
-Both paths compare against the existing direct upstream goldens, including
-backend requests and applicable usage, object, and unary expectations. Tools and
-multi-step orchestration run in the calling SDK. Gateway runs never record inputs
-or update expectations. Provider-independent `ui/` mock-model cases remain in the
-direct suite, not the gateway matrix.
+Both paths compare against the existing direct upstream goldens: UI chunks,
+backend requests, provider stream parts at the client model boundary, and
+applicable usage, object, and unary expectations. Tools and multi-step
+orchestration run in the calling SDK. Gateway runs never record inputs or update
+expectations. Provider-independent `ui/` mock-model cases remain in the direct
+suite, not the gateway matrix.
 
-Run on Linux with a local Docker daemon, Go, and the workspace Node dependencies:
+Run on Linux with a local Docker daemon, Go, and the workspace Node dependencies.
+`GRAFANA_VERSION` selects the Grafana image; CI uses the digest pinned for the
+plugin end-to-end tests in `.github/workflows/ci.yml`:
 
 ```bash
 mise run test-conformance-gateway-harness # deterministic harness tests, no Docker
-mise run test-conformance-gateway         # build current production image; all cases, both clients
+GRAFANA_VERSION=nightly@sha256:... mise run test-conformance-gateway # build the plugin; all cases, both clients
 
-# Reuse an explicitly selected image and reproduce a subset:
-AI_GATEWAY_IMAGE=ai-gateway:local SCENARIO=anthropic/recorded/simple-text \
-  CLIENT=typescript mise run test-conformance-gateway
+# Reuse a built plugin package and reproduce a subset:
+AI_GATEWAY_PLUGIN_DIR=ai-gateway/dist SCENARIO=anthropic/recorded/simple-text \
+  CLIENT=typescript GRAFANA_VERSION=nightly@sha256:... mise run test-conformance-gateway
 ```
 
 `CLIENT` accepts `typescript` or `go`; omit selectors for the full matrix.
-The runner uses a dedicated Docker internal network without published ports,
-local replay/JWKS listeners on the bridge, ephemeral signed test tokens, and dummy
-backend credentials. It does not contact live model APIs. Image builds and
-dependency installation still require registry access unless cached. Remote
-Docker daemons and Docker Desktop networking are not supported by this harness.
+
+How a run works:
+
+1. Every row (fixture and client) gets its own replay server on the Docker
+   bridge, provider instance and public model in one generated catalog. Rows
+   share no replay or tool state.
+2. One Grafana container loads the plugin package with that catalog, the
+   feature toggles from `ai-gateway/provisioning/grafana.ini`, a dummy backend
+   key and `access_mode = self-hosted`. Plugin preinstallation and update checks
+   are disabled; replay is reached through `host.docker.internal`. No live model
+   API is contacted.
+3. If the plugin rejects a provider type at startup (Grafana then exits), every
+   row of that provider fails at `provider-setup` with the logged reason, and the
+   stack boots again without it. Any other startup exit fails the run as a
+   `harness` failure with container state and logs.
+4. The harness creates a Grafana service account token, waits until the
+   catalog lists every admitted model, then runs the rows one at a time.
 
 Results are written to the ignored `test/conformance/gateway-results/` directory:
 
 - `summary.md`: per-provider/client totals, invocation counts, and evidence filenames.
-- `report.json`: every fixture/client row, scope, source/workspace and
-  image/dependency identity, stages, outcomes, and infrastructure errors.
-- `row-*.json`: configuration, client capture, backend requests, comparison diffs,
-  and bounded, credential-redacted gateway logs for an attempted row.
+- `report.json`: every fixture/client row, scope, source revision, Grafana
+  image digest, plugin revision and backend modules, stack boots, rejected
+  providers, stages, outcomes, and infrastructure errors.
+- `row-*.json`: route, client capture, backend requests, comparison diffs, and
+  bounded, credential-redacted plugin logs for the row's time window.
+- `stack-startup.json`: only when the stack failed to start.
 
 A complete default run has two rows per discovered provider fixture. It does not
 skip unsupported capabilities, treat known failures as passes, or stop after the
 first incompatibility. An early rejection also reports missing expected backend
-requests. Rows blocked by startup are explicitly not client executions. Explicit
-provider-configuration rejections are `provider-setup` failures; opaque exits,
-OOMs, missing replay adapters, and infrastructure problems are `harness` failures.
-The current gateway sanitizes startup errors, so unsupported provider attempts
-can only be reported as unclassified startup failures with their configuration
-and Docker evidence—not verified provider rejection messages.
+requests. Rows blocked at startup are explicitly not client executions. If the
+stack stops during the run, the remaining rows are reported as not executed.
 
-The current image routes Anthropic, OpenAI Responses, and OpenAI-compatible
-backends; Bedrock configuration remains unsupported. Supported request and
-response families are narrower than the full fixture corpus. The matrix is an
-executable compatibility backlog: a red row blocks this PR until the underlying
-compatibility work lands. Intentional security/metadata policy differences remain
-visible and require a separate reviewed contract decision rather than broad
-normalization or new gateway-specific goldens.
-
-The harness builds the production Dockerfile with the repository-root context
-and the explicit `go.gateway.work` workspace, just like the production image
-build. Internal SDK/provider/middleware source comes from the checked-out
-revision rather than the older published versions in `ai-gateway/go.mod`;
-external dependencies remain pinned. Reports include the checkout workspace,
-image build mode, source revision and the image's actual module inventory.
-An explicitly supplied image may have a different revision; its labels and
-inventory remain visible in the report.
+The plugin currently routes Anthropic, OpenAI Responses, and OpenAI-compatible
+backends; Bedrock rows fail at provider setup. The gateway also adds
+`providerMetadata.gateway.execution` to finish parts, which the provider-parts
+comparison reports. The matrix is an executable compatibility backlog: a red row
+blocks merging until the underlying compatibility work lands or a reviewed
+contract decision defines an equivalence. Intentional metadata or privacy
+differences are not normalized away by the harness.
 
 CI runs direct and gateway conformance independently. The existing required
 `conformance-test` status aggregates both: it fails unless both jobs succeed,
-even if one was skipped or failed. The direct conformance job remains a separate
-publication/deployment prerequisite; the gateway job is not one. The required
-status blocks merging while the matrix is red. Existing direct parity commands
-remain unchanged.
+even if one was skipped or failed. The gateway job builds the plugin package
+from the checkout and uses the same pinned Grafana image as the plugin
+end-to-end tests; it is not a prerequisite of plugin package validation.
+Existing direct parity commands remain unchanged.
 
 ## Structure
 

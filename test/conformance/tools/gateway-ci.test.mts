@@ -15,7 +15,11 @@ test("gateway CI blocks the required conformance check without gating the plugin
   assert.equal(job.needs, undefined);
   const mise = job.steps.find((step: { uses?: string }) => step.uses?.startsWith("jdx/mise-action@"));
   assert.equal(mise?.with?.cache, "${{ !startsWith(github.ref, 'refs/tags/') }}");
-  assert.ok(job.steps.some((step: { run?: string }) => step.run === "mise run test-conformance-gateway"));
+  const matrix = job.steps.find((step: { run?: string }) => step.run === "mise run test-conformance-gateway");
+  assert.ok(matrix, "gateway job runs the full matrix");
+  assert.equal(matrix.env?.AI_GATEWAY_VCS_REF, "${{ github.sha }}");
+  const e2e = workflow.jobs["plugin-validation"].steps.find((step: { run?: string }) => step.run === "mise run test-ai-gateway-e2e");
+  assert.equal(matrix.env?.GRAFANA_VERSION, e2e.env.GRAFANA_VERSION, "gateway conformance and plugin e2e use the same Grafana");
   assert.ok(job.steps.some((step: { uses?: string; if?: string }) => step.uses?.startsWith("actions/upload-artifact@") && step.if === "always()"));
   for (const step of job.steps) assert.equal(step["continue-on-error"], undefined);
   const required = workflow.jobs["conformance-test"];

@@ -422,6 +422,9 @@ jobs:
 
       - name: Full gateway conformance matrix
         if: ${{ !cancelled() }}
+        env:
+          AI_GATEWAY_VCS_REF: ${{ github.sha }}
+          GRAFANA_VERSION: nightly@sha256:5d4bd69f298a7d45b3e14e93d65cd4636cc77619eea120bc1d065662c1b1ceb3
         run: mise run test-conformance-gateway
 
       - name: Gateway conformance artifacts

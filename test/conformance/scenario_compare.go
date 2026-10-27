@@ -42,6 +42,9 @@ func CompareScenario(dir string, result ScenarioResult, requests []RequestSnapsh
 			return nil, err
 		}
 		CompareChunks(log, expected, result.Chunks)
+		if err := compareProviderParts(log, filepath.Join(dir, providerPartsFile), result.ProviderParts); err != nil {
+			return nil, err
+		}
 	}
 	expectedRequests, err := LoadExpectedRequests(filepath.Join(dir, "expected-requests.jsonl"))
 	if err != nil {
@@ -89,6 +92,22 @@ func CompareScenario(dir string, result ScenarioResult, requests []RequestSnapsh
 		}
 	}
 	return log.errors, nil
+}
+
+func compareProviderParts(log *comparisonLog, path string, actual []providerPartsCall) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	expected, err := loadExpectedProviderParts(path)
+	if err != nil {
+		return err
+	}
+	if mismatch := providerPartsMismatch(expected, actual); mismatch != "" {
+		log.Errorf("provider parts differ from upstream: %s", mismatch)
+	}
+	return nil
 }
 
 func compareJSONArtifact(log *comparisonLog, path string, value any) error {

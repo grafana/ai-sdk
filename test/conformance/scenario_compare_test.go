@@ -26,6 +26,8 @@ func TestCompareScenario_Artifacts(t *testing.T) {
 		{"object", func(r *ScenarioResult, _ []RequestSnapshot) { r.Object = nil }, "expected-object.json"},
 		{"usage", func(r *ScenarioResult, _ []RequestSnapshot) { r.Usage = nil }, "expected-usage.json"},
 		{"error", func(r *ScenarioResult, _ []RequestSnapshot) { r.Error = "rejected" }, "unexpected execution error"},
+		{"provider parts", func(r *ScenarioResult, _ []RequestSnapshot) { r.ProviderParts[0][0]["type"] = "text-start" }, "provider parts differ"},
+		{"missing provider parts", func(r *ScenarioResult, _ []RequestSnapshot) { r.ProviderParts = nil }, "model call count"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -35,10 +37,11 @@ func TestCompareScenario_Artifacts(t *testing.T) {
 				"expected-requests.jsonl": "{\"method\":\"POST\",\"path\":\"/v1\",\"headers\":{},\"body\":{\"count\":1}}\n",
 				"expected-object.json":    "{\"value\":true}",
 				"expected-usage.json":     "[]",
+				providerPartsFile:         "{\"parts\":[{\"type\":\"stream-start\"}]}\n",
 			} {
 				require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte(body), 0o600))
 			}
-			result := ScenarioResult{Chunks: []map[string]any{{"type": "start"}}, Object: map[string]any{"value": true}, Usage: []provider.Usage{}}
+			result := ScenarioResult{Chunks: []map[string]any{{"type": "start"}}, Object: map[string]any{"value": true}, Usage: []provider.Usage{}, ProviderParts: []providerPartsCall{{{"type": "stream-start"}}}}
 			requests := []RequestSnapshot{{Method: "POST", Path: "/v1", Headers: map[string]string{}, Body: map[string]any{"count": float64(1)}}}
 			tc.mutate(&result, requests)
 			errors, err := CompareScenario(dir, result, requests)

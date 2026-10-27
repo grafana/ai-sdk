@@ -490,11 +490,16 @@ cd test && pnpm --filter @ai-sdk/conformance-tools test:gateway
 """
 
 [tasks.test-conformance-gateway]
-description = "Run the full advisory conformance matrix against the AI Gateway image"
+description = "Run the full conformance matrix through the AI Gateway plugin in one Grafana stack"
 run = """
+: "${GRAFANA_VERSION:?set GRAFANA_VERSION to the Grafana image tag pinned for the plugin end-to-end tests}"
 mise deps install --only test
-set --
-if [ -n "${AI_GATEWAY_IMAGE:-}" ]; then set -- "$@" --image "$AI_GATEWAY_IMAGE"; fi
+plugin_dir="${AI_GATEWAY_PLUGIN_DIR:-}"
+if [ -z "$plugin_dir" ]; then
+  mise run build-ai-gateway-plugin
+  plugin_dir=ai-gateway/dist
+fi
+set -- --plugin-dir "$(cd "$plugin_dir" && pwd)" --grafana-image "grafana/${GRAFANA_IMAGE:-grafana}:$GRAFANA_VERSION"
 if [ -n "${SCENARIO:-}" ]; then set -- "$@" --scenario "$SCENARIO"; fi
 if [ -n "${CLIENT:-}" ]; then set -- "$@" --client "$CLIENT"; fi
 cd test && pnpm --filter @ai-sdk/conformance-tools gateway "$@"

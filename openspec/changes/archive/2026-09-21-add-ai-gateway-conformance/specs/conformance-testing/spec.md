@@ -38,35 +38,44 @@ Gateway streaming scenarios SHALL execute the calling SDK's high-level text stre
 - **THEN** both gateway client rows exercise generation rather than substituting streaming
 - **AND** applicable unary and request expectations are checked
 
-### Requirement: Gateway replay uses the production container boundary
+### Requirement: Gateway replay runs the plugin package in one Grafana stack
 
-Gateway conformance SHALL target the actual production gateway image and its real provider adapters, with provider responses supplied by deterministic local replay servers. CI SHALL build the image from the checked-out source using the production Dockerfile and pinned gateway module dependencies. The harness SHALL use isolated test credentials and networking, SHALL NOT require live provider credentials or send model requests to live providers, and SHALL NOT import the gateway implementation into reusable SDK or conformance modules. Reports SHALL identify the image, source, dependency pins, client versions, and registered upstream baseline.
+Gateway conformance SHALL target the AI Gateway plugin package built from the checked-out revision, loaded by one Grafana instance at the Grafana image pinned for the plugin end-to-end tests, and reached through Grafana's App Platform route with a Grafana service account token. Provider responses SHALL come from deterministic replay servers reachable only from the local Docker host. Plugin settings SHALL use the plugin's Grafana settings section and the repository's development feature toggles. The harness SHALL disable plugin preinstallation and update checks, SHALL NOT require live provider credentials or send model requests to live providers, and SHALL NOT import the gateway implementation into reusable SDK or conformance modules. Reports SHALL identify the Grafana image digest, plugin source revision and backend module inventory, client versions, registered upstream baseline, and every stack boot.
 
-#### Scenario: Offline image execution
+#### Scenario: Offline plugin execution
 - **WHEN** gateway conformance runs without provider credentials
-- **THEN** clients call the gateway container and the gateway calls only configured replay backends for model operations
-- **AND** production provider conversion and gateway wire handling execute without fabricated provider input files
+- **THEN** clients call the plugin route through Grafana and the plugin calls only configured replay backends for model operations
+- **AND** production provider conversion and ProviderWire handling execute without fabricated provider input files
 
-#### Scenario: Image and checkout provider versions differ
-- **WHEN** the gateway module pins older providers than the direct checkout
-- **THEN** the image retains its pinned dependencies
-- **AND** the report preserves the version distinction for diagnosis
+#### Scenario: Plugin uses the same-revision package
+- **WHEN** the harness runs without an explicit plugin directory
+- **THEN** it builds the plugin package from the checkout with the repository's plugin build task
+- **AND** the report records the package source revision and the backend's module inventory
+
+#### Scenario: One stack serves every row
+- **WHEN** the full matrix runs
+- **THEN** a single Grafana stack serves all admitted rows after at most one boot per rejected provider type
+- **AND** each row has its own configured provider instance, public model and replay server
 
 ### Requirement: Independent bounded gateway attempts
 
-The harness SHALL isolate replay counters, request capture, tool mock state, and provider configuration between fixture/client attempts. It SHALL bound startup, readiness, execution, and teardown and release owned resources on success, failure, timeout, and cancellation. A provider setup failure or scenario failure SHALL NOT terminate unrelated rows. A provider unavailable before client invocation SHALL remain a failed row with explicit setup-stage evidence, not a claimed client execution.
+The harness SHALL isolate replay counters, request capture, tool mock state, and provider configuration between fixture/client attempts by giving each row its own provider instance, public model and replay server in the shared catalog. It SHALL bound startup, readiness, execution, and teardown and release owned containers, listeners, processes and staging files on success, failure, timeout, and cancellation, including after ambiguous container creation failures. A provider setup failure or scenario failure SHALL NOT terminate unrelated rows. A provider unavailable before client invocation SHALL remain a failed row with explicit setup-stage evidence, not a claimed client execution.
 
 #### Scenario: Missing backend support
-- **WHEN** production gateway setup reports an explicit rejection of a fixture's backend provider configuration
-- **THEN** both affected client rows fail at provider setup with the reported cause recorded
+- **WHEN** the plugin exits at startup with an explicit unsupported-type reason for a configured provider instance
+- **THEN** every row of that provider fails at provider setup with the logged reason recorded
 - **AND** the report states that client invocation did not occur
-- **AND** other provider scenarios continue
+- **AND** the stack boots again without that provider so other provider scenarios continue
 
-#### Scenario: Startup cause is not exposed
-- **WHEN** the gateway exits before readiness without exposing a verifiable provider-configuration rejection
-- **THEN** affected rows fail as unclassified harness startup failures
-- **AND** the report retains Docker state, logs, attempted configuration, and the fact that client invocation did not occur
+#### Scenario: Startup cause is not explicit
+- **WHEN** Grafana exits before readiness without an explicit provider-configuration rejection
+- **THEN** the run fails as an unclassified harness startup failure and every row is reported as not executed
+- **AND** the report retains container state, bounded logs and the attempted catalog
 - **AND** it does not infer provider incompatibility from an opaque process failure
+
+#### Scenario: Stack stops during the run
+- **WHEN** Grafana or the plugin stops responding after a failed row
+- **THEN** remaining rows are reported as not executed due to the stopped stack
 
 #### Scenario: Separate client replay state
 - **WHEN** both clients run the same multi-step fixture
@@ -80,7 +89,7 @@ The harness SHALL isolate replay counters, request capture, tool mock state, and
 
 ### Requirement: Shared upstream conformance oracle
 
-Both gateway clients SHALL be checked against the existing direct upstream expectations for UI chunks, backend provider requests, and applicable structured-output, usage, and unary artifacts. Gateway replay SHALL NOT write fixture inputs or expectations. Comparisons SHALL preserve the established direct conformance normalization rules and SHALL NOT introduce gateway-specific suppression to obtain passing results. Agreement between the two gateway clients alone SHALL NOT establish conformance. Intentional gateway differences SHALL remain reported discrepancies unless a separate reviewed contract change defines an equivalence.
+Both gateway clients SHALL be checked against the existing direct upstream expectations for UI chunks, backend provider requests, provider stream parts observed at the client model boundary, and applicable structured-output, usage, and unary artifacts. Gateway replay SHALL NOT write fixture inputs or expectations. Comparisons SHALL preserve the established direct conformance normalization rules and SHALL NOT introduce gateway-specific suppression to obtain passing results. Agreement between the two gateway clients alone SHALL NOT establish conformance. Intentional gateway differences SHALL remain reported discrepancies unless a separate reviewed contract change defines an equivalence.
 
 #### Scenario: Provider request differs despite matching text
 - **WHEN** emitted UI chunks match but the gateway changes a behavior-affecting backend request field
@@ -110,7 +119,7 @@ The gateway suite SHALL produce a machine-readable report and human-readable sum
 - **AND** reports totals and per-provider/per-client results with available diffs
 
 #### Scenario: Global infrastructure failure
-- **WHEN** image startup infrastructure or the runner fails before all rows can execute
+- **WHEN** stack startup infrastructure or the runner fails before all rows can execute
 - **THEN** the report identifies the infrastructure failure and affected unexecuted rows
 - **AND** the command exits nonzero without claiming provider compatibility results for those rows
 
@@ -118,14 +127,14 @@ The gateway suite SHALL produce a machine-readable report and human-readable sum
 - **WHEN** a discovered fixture/client pair has no result record
 - **THEN** inventory reconciliation fails the run as incomplete
 
-### Requirement: Independent advisory gateway CI
+### Requirement: Required gateway conformance for merging
 
-The repository SHALL provide `mise run test-conformance-gateway` and an independent gateway CI job that runs the full two-client provider matrix. Initially the gateway check SHALL remain non-required for merging while retaining a failing conclusion when the suite fails. It SHALL NOT be a prerequisite of required direct checks or image publication/deployment. Existing required direct conformance and parity commands SHALL retain their enforcement and SHALL NOT gain a dependency on gateway conformance. CI SHALL publish available summaries and diagnostics after failures. Promotion to a required check SHALL be an explicit later policy change.
+The repository SHALL provide `mise run test-conformance-gateway` and an independent gateway CI job that runs the full two-client provider matrix. The existing required `conformance-test` status SHALL succeed only when both direct conformance and gateway conformance succeed. The direct conformance job SHALL run independently and retain its own failing status. Gateway conformance SHALL NOT be a prerequisite of plugin package validation or retention. The gateway job SHALL use the same pinned Grafana image as the plugin end-to-end tests. CI SHALL publish available summaries and diagnostics after failures.
 
 #### Scenario: Direct conformance passes and gateway conformance fails
 - **WHEN** the required direct suite passes and gateway rows fail
 - **THEN** the gateway check is visibly unsuccessful with its report available
-- **AND** its advisory status does not independently block merging or existing image publication/deployment prerequisites
+- **AND** the required `conformance-test` status fails, blocking merging but not independently blocking plugin package validation
 
 #### Scenario: Gateway failure is not disguised
 - **WHEN** the gateway suite exits nonzero
@@ -134,4 +143,4 @@ The repository SHALL provide `mise run test-conformance-gateway` and an independ
 
 #### Scenario: Direct regression remains blocking
 - **WHEN** an existing direct conformance scenario regresses
-- **THEN** the existing required check fails regardless of the advisory gateway result
+- **THEN** the existing required check fails regardless of the gateway result

@@ -1,5 +1,3 @@
-import { writeFileSync } from "node:fs";
-
 export const PROVIDER_PARTS_FILE = "expected-provider-parts.jsonl";
 
 export const PROVIDER_PARTS_PROVIDERS = new Set(["anthropic", "openai", "bedrock", "openai-compatible"]);
@@ -87,10 +85,6 @@ export function normalizeCall(parts: Part[], providerName: string): Part[] {
   });
 }
 
-export function serializeProviderParts(calls: Part[][], providerName: string): string {
-  return calls.map(parts => JSON.stringify({ parts: normalizeCall(parts, providerName) })).join("\n") + "\n";
-}
-
-export function writeProviderParts(path: string, calls: Part[][], providerName: string): void {
-  writeFileSync(path, serializeProviderParts(calls, providerName));
+export function formatProviderParts(normalizedCalls: unknown[][]): string {
+  return normalizedCalls.map(parts => JSON.stringify({ parts })).join("\n") + "\n";
 }

@@ -23,6 +23,7 @@ const (
 type request struct {
 	Operation operation                     `json:"operation"`
 	Directory string                        `json:"directory"`
+	TestCase  conformance.TestCase          `json:"testCase"`
 	BaseURL   string                        `json:"baseURL"`
 	Token     string                        `json:"token"`
 	ModelID   string                        `json:"modelID"`
@@ -48,7 +49,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		client, err := grafana.NewWithAccessToken(grafana.AccessTokenConfig{BaseURL: input.BaseURL, AccessToken: input.Token})
+		client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{BaseURL: input.BaseURL, Token: input.Token})
 		if err != nil {
 			return err
 		}
@@ -58,7 +59,7 @@ func run() error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		value, err = conformance.ExecuteScenario(ctx, cfg, model)
+		value, err = conformance.ExecuteScenario(ctx, cfg, input.TestCase.Provider, model)
 		if err != nil {
 			return err
 		}

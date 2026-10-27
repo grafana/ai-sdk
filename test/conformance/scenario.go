@@ -17,9 +17,12 @@ type ScenarioResult struct {
 	Object   any              `json:"object"`
 	Generate any              `json:"generate,omitempty"`
 	Error    string           `json:"error,omitempty"`
+	// ProviderParts holds the normalized stream parts of each model call when
+	// the fixture provider has a provider-parts golden.
+	ProviderParts []providerPartsCall `json:"providerParts,omitempty"`
 }
 
-func ExecuteScenario(ctx context.Context, cfg *Config, model provider.LanguageModel) (ScenarioResult, error) {
+func ExecuteScenario(ctx context.Context, cfg *Config, providerName string, model provider.LanguageModel) (ScenarioResult, error) {
 	capture := ScenarioResult{Chunks: []map[string]any{}, Usage: []provider.Usage{}}
 	tools, err := cfg.BuildToolSet()
 	if err != nil {
@@ -80,6 +83,11 @@ func ExecuteScenario(ctx context.Context, cfg *Config, model provider.LanguageMo
 	if cfg.MaxRetries != nil {
 		opts = append(opts, aisdk.WithMaxRetries(*cfg.MaxRetries))
 	}
+	var recorder *recordingModel
+	if providerPartsProviders[providerName] {
+		recorder = newRecordingModel(model)
+		model = recorder
+	}
 	result := aisdk.StreamText(ctx, model, opts...)
 	for chunk := range result.ToUIMessageStream(cfg.BuildUIMessageStreamOptions()...) {
 		data, err := json.Marshal(chunk)
@@ -98,6 +106,12 @@ func ExecuteScenario(ctx context.Context, cfg *Config, model provider.LanguageMo
 	capture.Object = result.OutputValue()
 	if err := result.Err(); err != nil {
 		capture.Error = err.Error()
+	}
+	if recorder != nil {
+		capture.ProviderParts, err = normalizeProviderCalls(providerName, recorder.recordedCalls())
+		if err != nil {
+			return capture, err
+		}
 	}
 	return capture, nil
 }

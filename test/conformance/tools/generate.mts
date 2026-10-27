@@ -12,7 +12,7 @@ import { generateAnthropicUnary } from "./anthropic-unary.mts";
 import { generateAnthropicPromptConversion } from "./anthropic-prompt-conversion.mts";
 import { loadConfig, writeRequestSnapshots, type TestCase } from "./common.mts";
 import { discoverCases } from "./gateway-matrix.mts";
-import { PROVIDER_PARTS_FILE, PROVIDER_PARTS_PROVIDERS, recordProviderParts, writeProviderParts } from "./provider-parts.mts";
+import { formatProviderParts, PROVIDER_PARTS_FILE } from "./provider-parts.mts";
 import { startReplay } from "./replay.mts";
 import { executeScenario } from "./scenario.mts";
 
@@ -37,15 +37,13 @@ async function generateExpected(tc: TestCase) {
   const cfg = loadConfig(tc.dir);
   const replay = await startReplay(tc);
   try {
-    const baseModel = createModel(tc.provider, cfg.model, replay.url);
-    const providerParts = cfg.operation !== "generate" && PROVIDER_PARTS_PROVIDERS.has(tc.provider) ? recordProviderParts(baseModel) : undefined;
-    const result = await executeScenario(tc, providerParts?.model ?? baseModel);
+    const result = await executeScenario(tc, createModel(tc.provider, cfg.model, replay.url));
     if (cfg.operation === "generate") {
       if (result.error) throw new Error(result.error);
       writeFileSync(join(tc.dir, "expected-generate.json"), JSON.stringify(result.generate, null, 2) + "\n");
     } else {
       writeFileSync(join(tc.dir, "expected.jsonl"), result.chunks.map(chunk => JSON.stringify(chunk)).join("\n") + "\n");
-      if (providerParts) writeProviderParts(join(tc.dir, PROVIDER_PARTS_FILE), providerParts.recorder.calls, tc.provider);
+      if (result.providerParts) writeFileSync(join(tc.dir, PROVIDER_PARTS_FILE), formatProviderParts(result.providerParts));
       if (existsSync(join(tc.dir, "expected-usage.json"))) writeFileSync(join(tc.dir, "expected-usage.json"), JSON.stringify(result.usage, null, 2) + "\n");
       if (result.outputError) console.log(`  output validation failed: ${result.outputError}`);
       else if (cfg.responseFormat) writeFileSync(join(tc.dir, "expected-object.json"), JSON.stringify(result.object, null, 2) + "\n");

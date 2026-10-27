@@ -1081,9 +1081,9 @@ func normalizeBetaHeader(value string) string {
 // --- Test Case Discovery ---
 
 type TestCase struct {
-	Name     string
-	Dir      string
-	Provider string
+	Name     string `json:"name"`
+	Dir      string `json:"dir"`
+	Provider string `json:"provider"`
 }
 
 func conformanceIDGenerator(prefix string) func() string {
@@ -1168,12 +1168,7 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	model, err := factory(ts.BaseURL, cfg)
 	require.NoError(t, err, "creating provider")
 
-	var recorder *recordingModel
-	if cfg.Operation != OperationGenerate && providerPartsProviders[tc.Provider] {
-		recorder = newRecordingModel(model)
-		model = recorder
-	}
-	result, err := ExecuteScenario(t.Context(), cfg, model)
+	result, err := ExecuteScenario(t.Context(), cfg, tc.Provider, model)
 	require.NoError(t, err, "executing scenario")
 	if cfg.Operation == OperationGenerate {
 		require.Equal(t, "bedrock", tc.Provider, "operation generate is currently supported only for Bedrock")
@@ -1228,8 +1223,8 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 		compareOutputObject(t, expectedObjectPath, result.Object, actual, cfg.AssertOutputValue)
 	}
 
-	if recorder != nil {
-		assertProviderParts(t, tc, recorder)
+	if providerPartsProviders[tc.Provider] {
+		assertProviderParts(t, tc, result.ProviderParts)
 	}
 }
 
