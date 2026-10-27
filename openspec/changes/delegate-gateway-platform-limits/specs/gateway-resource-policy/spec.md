@@ -100,15 +100,14 @@ A Gateway API adapter SHALL NOT reject, omit or truncate a request-valid or outp
 - **THEN** the existing safe error behavior SHALL apply, without partial output
 
 ### Requirement: Documented limit ownership
-The "Limits" section of `ai-gateway/README.md` SHALL list each retained Gateway limit with exactly one owning boundary, and each platform limit with its source. It SHALL also list each removed limit with the bound that replaces it, and the trade-offs of this placement.
+The "Limits" section of `ai-gateway/README.md` SHALL list, for operators, each limit a request can meet and whether Grafana or the Gateway sets it. It SHALL describe current behavior only, without internal component names, removed limits or planned work.
 
 #### Scenario: Ledger content
 - **WHEN** an operator reads the Limits section
-- **THEN** it SHALL name the Gateway owner of the provider attempt bound, the outbound non-stream response bytes, the header timeout and redirect rejection, and the idle and drain durations
-- **AND** it SHALL name the platform as the owner of the request deadline, the request message size, admission, concurrency and process memory, with the source of each
-- **AND** it SHALL list the removed `max_request_bytes` and `max_model_duration` settings, the former per-response stream bound, and the former unary, frame, part-count, raw-usage, error-document and summary-source limits, with their replacements
-- **AND** it SHALL state what bounds a call when the platform deadline is disabled, that unary Anthropic calls with a large token budget then fail unless they set `maxOutputTokens` or stream, and that a platform deadline appears as a cancellation in Gateway telemetry
-- **AND** it SHALL state that per-request memory grows with response and stream event size, JSON encoding expansion and concurrency, that the Gateway does not bound a single stream event, and recommend setting `GOMEMLIMIT` to about 85–90% of the container memory limit
+- **THEN** it SHALL list the Gateway's provider attempt bound, non-streamed response size, response-header timeout, redirect rejection, stream idle limit and model catalog limits
+- **AND** it SHALL list Grafana's request duration, request size and concurrency, and the container memory limit
+- **AND** it SHALL state that a request reaching Grafana's route timeout is recorded as canceled in Gateway logs and metrics, and that the termination grace period must exceed the route timeout
+- **AND** it SHALL state that memory per request grows with the request and response size and JSON encoding, that total memory grows with concurrency, and recommend setting `GOMEMLIMIT` to about 85–90% of the container memory limit
 
 ### Requirement: Large-output client evidence
 Automated tests SHALL prove that both registered clients (the pinned TypeScript Gateway client and the Go `providers/grafana` client) send large requests and consume large outputs through the real plugin route host. They SHALL NOT add or modify recorded provider fixtures.

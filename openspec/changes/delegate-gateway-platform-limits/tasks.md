@@ -59,18 +59,13 @@ Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise 
 
 ## 5. Memory owner and ledger completeness
 
-- [x] 5.1 Finish the ledger from design D7:
-  - the platform rows for admission, concurrency and process memory, with their sources;
-  - the `GOMEMLIMIT` guidance (about 85–90% of the container memory limit);
-  - the removed-limits list with replacements.
-
-  Confirm that every retained limit has one owner and every platform limit has a source. Verify with `mise run lint-docs`.
+- [x] 5.1 Rewrite the README Limits section for operators, as design D7 describes: one table of the limits a request can meet and who sets them, then short request-duration and memory sections with the `GOMEMLIMIT` guidance. Leave out internal component names, removed limits and planned work. Verify with `mise run lint-docs`.
 - [x] 5.2 Check `docs/concepts/gateway-architecture.md`, its diagrams and `docs/concepts/gateway-glossary.md` against the resulting code, and fix any remaining drift in limit ownership or deadline wording. Verify with `mise run lint-docs`.
 
 ## 6. Integration checks
 
 - [x] 6.1 Run `mise run test-ai-gateway`, `mise run test-ai-gateway-command`, `mise run test-providerwire-v4`, `mise run test-grafana`, `mise run lint-docs`, `mise run validate-parity-baseline`, and `go test -race ./...` in `ai-gateway`. All pass.
-- [x] 6.2 Run `rg -w 'ModelDuration|max_model_duration|MaxRequestBytes|max_request_bytes|maxCandidates|maxCredentials' ai-gateway docs --glob '!CHANGELOG.md'`. It finds only the ledger's two removed-setting rows. Confirm that `git diff --stat nrbrd/gateway-resource-policy -- 'test/conformance/*/recorded/'` is empty.
+- [x] 6.2 Run `rg -w 'ModelDuration|max_model_duration|MaxRequestBytes|max_request_bytes|maxCandidates|maxCredentials' ai-gateway docs --glob '!CHANGELOG.md'`. It finds nothing. Confirm that `git diff --stat nrbrd/gateway-resource-policy -- 'test/conformance/*/recorded/'` is empty.
 - [x] 6.3 Run `openspec validate delegate-gateway-platform-limits --strict`. It passes.
 
 ## Workflow follow-up

@@ -47,12 +47,12 @@ Code facts that shape the approach:
 - **Classification follows the request context's error.** `context.DeadlineExceeded` is a timeout and `context.Canceled` is a cancellation, on both paths.
   - Unary already does this through `safeErrorFromProvider`.
   - Streaming checks `errors.Is(requestContext.Err(), context.DeadlineExceeded)` in `waitStreamPart` and `streamContextErrorCategory`. Without the check, an expired deadline that a host delivers as `DeadlineExceeded` would be reported as a cancellation in streaming only.
-  - Through the plugin host, a platform deadline arrives as a cancellation (see Context), so the Gateway reports it as one. The ledger states this.
+  - Through the plugin host, a platform deadline arrives as a cancellation (see Context), so the Gateway reports it as one. The README states this.
 - **Settings.**
   - `config.ParseSettings` stops reading `max_model_duration` and `max_request_bytes`. `Settings.MaxRequestBytes`, `defaultRequestBytes` and `defaultModelDuration` go.
   - `Validate` drops the "at least 30s" rule and still builds a throwaway handler to check the fixed durations.
   - Unknown `GF_PLUGIN_*` variables are already ignored, so a removed setting is ignored without extra code.
-- **Platform deadline disabled.** With no deadline on the request context, the call ends only at completion, caller cancellation, an attempt's 10s header timeout or the 30s stream idle duration. A unary attempt whose provider stalls after sending headers is bounded only by caller cancellation. The ledger states this.
+- **Platform deadline disabled.** With no deadline on the request context, the call ends only at completion, caller cancellation, an attempt's 10s header timeout or the 30s stream idle duration. A unary attempt whose provider stalls after sending headers is bounded only by caller cancellation. Grafana does not offer this configuration today, so the README does not describe it.
 - **Anthropic unary calls need a deadline.** `anthropic-sdk-go` refuses a non-streaming call whose `max_tokens` it estimates above 10 minutes (about 21,333 tokens, or a lower per-model limit) unless it has a request timeout. `providers/anthropic` supplies that timeout from the context deadline (`anthropic-unary-context-deadline`), and the removed `ModelDuration` always provided one. Without a platform deadline, such a call fails with the internal error before any native request. Streaming is unaffected, and `@ai-sdk/anthropic@4.0.71` has no such guard.
 - **Test host deadline.** The command tests run the built plugin behind the test host with a 60s route deadline (`--route-deadline`), as Grafana serves it today.
 
@@ -126,30 +126,16 @@ The in-process host's 4 MiB gRPC default differs from the production 16 MiB, so 
 The stream pass-through and non-stream overflow cases are `outbound` unit tests. The existing large-output test keeps its values.
 
 ### D7. Ledger and docs
-The `ai-gateway/README.md` Limits table becomes two groups.
+The `ai-gateway/README.md` Limits section is operator-facing. It lists each limit a request can meet and whether Grafana or the Gateway sets it, followed by short sections on request duration and memory. It describes current behavior only:
+- no internal component names, such as the model transport or the language-model handler;
+- no removed limits or settings, which the changelog and the `!` PR title carry;
+- no planned platform work, and no behavior that needs a configuration Grafana does not offer, such as a disabled route deadline. D1 and the risks below record that case.
 
-**Gateway:**
-
-| Limit | Owner |
-| --- | --- |
-| 8 provider attempts per request: a model's primary and fallbacks, or a request's keys for the selected provider | Catalog loader and request key selection |
-| 16 MiB per provider response that is not a stream, counted after decompression; 10s to receive headers; no redirects | Model transport |
-| 30s without stream activity; 1s of cleanup after a stream ends | Language-model handler |
-| Catalog file, IDs, aliases, 7 fallbacks, string lengths | Model catalog loader (unchanged, fallback count updated) |
-
-**Platform:**
-
-| Limit | Owner and source |
-| --- | --- |
-| Request deadline, streams included | Grafana's route deadline: 60s today, configurable with #460 |
-| Request size | Plugin route message size: 16 MiB, the plugin SDK default |
-| Admission and concurrency | Grafana (#104) |
-| Process memory | The container memory limit. Set `GOMEMLIMIT` to about 85–90% of it. |
-
-Then:
-- **Removed limits:** `max_request_bytes`, `max_model_duration`, the total size of a streamed response, and the #518 list, each with its replacement.
-- **Disabled platform deadline:** what still bounds a call (D1).
-- **Deployment:** the termination grace period must exceed the platform request deadline plus the 1s drain.
+Its content:
+- **Grafana:** request duration (the 60s route timeout, streams included), request size (16 MiB), requests running at once, and the container memory limit.
+- **Gateway:** 8 provider attempts, 16 MiB per non-streamed response, the 10s header timeout, no redirects, 30s stream idle, and the model catalog limits.
+- **Request duration:** a timed-out request shows as canceled in Gateway logs and metrics, and the termination grace period must exceed the route timeout.
+- **Memory:** per-request memory and the `GOMEMLIMIT` guidance.
 
 The Settings table drops both rows. Other docs:
 - **`docs/guides/gateway-authentication.md`:** the 60s row says the deadline includes streams, and drops "Stream long responses".
@@ -161,7 +147,7 @@ The Settings table drops both rows. Other docs:
 ### D8. Removed-identifier check
 `rg -w 'ModelDuration|max_model_duration|MaxRequestBytes|max_request_bytes|maxCandidates|maxCredentials'` runs over `ai-gateway/`, `docs/` and `openspec/specs/` after the change is archived. `CHANGELOG.md` and archived changes are excluded.
 
-The ledger's removed-limit row is the one intended historical reference to the two setting names. The command test that rejects a malformed setting switches from `--max-model-duration` to another typed setting, `agento11y_enabled`.
+The check finds no references. The command test that rejects a malformed setting switches from `--max-model-duration` to another typed setting, `agento11y_enabled`.
 
 ### D9. Parity
 This is a Go extension with no upstream counterpart: `@ai-sdk/gateway@4.0.103` defines only the client. No `knownGaps`, recorded fixtures or expectations change, and `mise run validate-parity-baseline` confirms the baseline is untouched.
@@ -169,15 +155,15 @@ This is a Go extension with no upstream counterpart: `@ai-sdk/gateway@4.0.103` d
 ## Risks / Trade-offs
 
 - **Platform deadline disabled** → A unary attempt that stalls after its headers holds a goroutine and a connection until the caller disconnects.
-  - Mitigation: the ledger documents it. The platform owns the deadline (#460), and streams keep the idle bound.
+  - Mitigation: Grafana does not offer the configuration today. The platform owns the deadline (#460), and streams keep the idle bound.
 - **Without a platform deadline, unary Anthropic calls with a large token budget fail** → A call that leaves `maxOutputTokens` unset on a model with a large default budget gets the internal error.
-  - Mitigation: Grafana sets a route deadline today. The ledger tells operators to set `maxOutputTokens` or stream, and the provider-level fix is deferred (D1).
+  - Mitigation: Grafana always sets a route deadline. The provider-level fix is deferred (D1).
 - **A platform deadline shows as a cancellation in Gateway logs, metrics and attempt records** → Operators cannot tell it from a caller disconnect in Gateway telemetry.
-  - Mitigation: the caller gets the host's deadline error, not the Gateway's. The ledger states that Grafana's own request logs show the deadline.
+  - Mitigation: the caller gets the host's deadline error, not the Gateway's. The README states that the Gateway records a timed-out request as canceled.
 - **Requests up to 16 MiB reach schema validation** → More CPU and decode memory per request than with a 1 MiB bound.
-  - Mitigation: the ledger's memory section, the `GOMEMLIMIT` guidance and platform admission (#104).
+  - Mitigation: the README's memory section, the `GOMEMLIMIT` guidance and platform admission (#104).
 - **Catalogs with 8 to 15 fallbacks stop loading** → A breaking change for those operators, with today's generic cardinality error.
-  - Mitigation: the `!` PR title, the ledger row and the migration step below.
+  - Mitigation: the `!` PR title, the README's catalog row and the migration step below.
 - **A streaming provider that sends the wrong media type** → The total bound applies, and a long stream fails as it does today.
   - Mitigation: Anthropic, OpenAI and common compatible backends send `text/event-stream`. The outcome is fail-safe and no worse than today.
 - **The in-process host's receive limit differs from production** → In-process tests cannot show the 16 MiB rejection.
