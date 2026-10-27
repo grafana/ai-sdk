@@ -2,32 +2,49 @@
 
 ## Why
 
-One logical library release never converges. Every module has its own release
-pull request, and readiness requires each pinned prerequisite tag to contain the
-prerequisite's current source on `main`. A dependent can therefore release only
-after its prerequisites are tagged and Renovate has repinned them, which takes a
-reviewed pull request and a forced three-day hold per level. Each merge to
-prerequisite source in the meantime makes the dependent stale again, so Bedrock
-and Azure have never released (#245).
+Library releases do not converge. A library may only require published tags of
+other first-party modules, so a pull request that changes root and a provider
+together, such as #531, needs three steps: release root, merge a requirement
+update, then release the provider. Each requirement update waits for the
+self-hosted Renovate's forced three-day hold and a fresh review, and further
+prerequisite changes in the meantime restart the chain. On current `main`, four
+of the nine nested libraries cannot build against any published root version.
 
-The freshness rule adds little evidence. At a release commit, readiness already
-tests each library standalone against its pinned prerequisites, and workspace CI
-tests it against the prerequisite source being tagged in the same release.
+The release process should meet four goals:
+
+1. Each Go module keeps an independent version and releases only when it changed.
+2. Pseudo-versions are not supported.
+3. A release does not wait for a minimum release age.
+4. Releasing needs no paused merges, manual steps or dependency dashboard actions.
 
 ## What Changes
 
-- Release-please proposes all pending libraries in one release pull request. Each
-  library keeps its own version, changelog, tag and GitHub Release. Gateway keeps
-  its own release pull request.
-- Readiness and post-merge authorization accept a release pull request that
-  changes several library versions, and validate every released library.
-- Readiness no longer requires a pinned prerequisite to contain the
-  prerequisite's current source. Prerequisites must still be canonical tags that
-  pass the standalone and consumer checks.
-- Publication moves a release pull request's lifecycle labels only after all of
-  its libraries are published.
-- First-party requirement updates stay with the grouped Renovate pull request;
-  they are no longer on the release path.
+- Every Go module's `go.mod` replaces each first-party module in its build graph
+  with that module's repository directory. Go applies `replace` directives only
+  in the main module, so consumers still resolve published tags, while every
+  in-repository build uses same-revision source and needs no first-party
+  `go.sum` entries. AWS SDK Go v2 and OpenTelemetry Go use the same model.
+- **BREAKING (repository):** `go.work`, `go.gateway.work` and their sum files are
+  removed. Tasks and CI run per module with `GOWORK=off`; the Gateway plugin
+  backend builds from `ai-gateway/go.mod`.
+- First-party requirements always equal the version manifest, or the registered
+  initial version of a never-released module. Pseudo-versions are rejected. This
+  replaces the merged-pin ancestry check.
+- release-please proposes all pending libraries in one release pull request;
+  Gateway keeps its own. Release preparation sets every first-party requirement
+  to the new manifest versions in the same pull request, and merging it tags
+  every released library at the merge commit.
+- Release readiness checks release metadata and an exact generated footprint:
+  the manifest, released changelogs and first-party requirement lines. Library
+  behavior is proven by the per-module CI of that pull request. Resolving
+  prerequisites through the public proxy and prerequisite freshness are removed.
+- After tagging, publication verifies each new version as an external consumer
+  through the public Go proxy. A dependent is not tagged when a co-released
+  prerequisite is blocked, and lifecycle labels move once all libraries of the
+  pull request are published.
+- `refactor` commits release, so refactors that change library source reach the
+  next release.
+- Renovate no longer updates first-party modules.
 
 ## Capabilities
 
@@ -35,20 +52,33 @@ tests it against the prerequisite source being tagged in the same release.
 
 ### Modified Capabilities
 
-- `multi-module-release-management`: one combined library release pull request,
-  multi-component readiness and authorization, no prerequisite freshness,
-  per-pull-request lifecycle labels.
-- `module-validation-modes`: remove prerequisite source ownership snapshots,
-  which existed only for the freshness rule.
+- `multi-module-release-management`: combined library release pull request,
+  requirement updates in release preparation, footprint-based readiness,
+  post-publication proxy verification, dependency-closed publication, no
+  Renovate progression, local replacements allowed.
+- `module-validation-modes`: per-module validation with local replacements
+  instead of workspaces; Gateway builds from its module; no prerequisite
+  freshness or public-proxy standalone readiness.
+- `merged-internal-pins`: replaced by the rule that first-party requirements
+  equal the version manifest.
+- `candidate-source-ci`: plugin validation builds the Gateway module without a
+  workspace.
+- `providerwire-v4-http-contract`: the Gateway boundary no longer refers to
+  workspaces; the separate integration workspace requirement is removed.
+- `gateway-sources`: evidence wording refers to same-revision source instead of
+  a candidate workspace.
+- `upstream-parity-governance`: coordinated producer and consumer changes rely on
+  local replacements; release evidence is per-module CI plus post-publication
+  verification.
 
 ## Impact
 
-- `release-please-config.json`, `scripts/release_readiness.py`,
-  `scripts/release_authorization.py`, `release/tooling` preparation and
-  publication, `internal/releasecheck`, release documentation.
-- Released `go.mod` files may declare older first-party minimum versions than
-  the libraries released alongside them.
-- A library whose source needs an unreleased prerequisite API fails readiness and
-  blocks the combined pull request. Marking that package
-  `separate-pull-requests: true` moves it to its own release pull request until
-  its prerequisite is released and repinned.
+- All `go.mod` and `go.sum` files, `go.work*`, `go.gateway.work*`, `mise.toml`,
+  CI workflows, `scripts/module-policy.sh`, release readiness and authorization,
+  `release/tooling` preparation and publication, `release-please-config.json`,
+  `renovate.json` and release documentation.
+- The first release after merge proposes all ten pending libraries in one pull
+  request. Open per-module release pull requests and the grouped first-party
+  Renovate pull request are closed.
+- Not in scope: replacing the custom release tooling with the stock
+  release-please action, and Gateway plugin publication (#459).
