@@ -62,3 +62,4 @@ Desktop.ini
 # Local Go workspaces; modules resolve first-party source through replace directives
 go.work
 go.work.sum
+__pycache__/
