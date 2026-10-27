@@ -34,8 +34,29 @@ type Checksums struct {
 	GoMod string
 }
 
+// Tree is a source of repository files for building module archives.
+type Tree interface {
+	materialize(moduleDir, destination string) error
+	readFile(name string) ([]byte, error)
+	commitTime() (string, error)
+}
+
+// Revision is a committed Git revision. Its files are read with git archive,
+// as the Go command does when it serves a tag.
+type Revision struct {
+	Repo string
+	Rev  string
+}
+
+// Worktree is the checked-out tree of a Git repository, including uncommitted
+// tracked changes and untracked files that are not ignored. It is used while
+// requirement files are generated and not yet committed.
+type Worktree struct {
+	Dir string
+}
+
 // Proxy is a file-based GOPROXY directory that serves candidate module
-// versions built from a repository revision.
+// versions built from a repository tree.
 type Proxy struct {
 	Dir string
 }
@@ -43,28 +64,28 @@ type Proxy struct {
 // URL returns the proxy as a GOPROXY list entry.
 func (p Proxy) URL() string { return "file://" + filepath.ToSlash(p.Dir) }
 
-// Add builds the module archive of m at version from revision rev of the Git
-// repository at repo, stores it in the proxy and returns its checksums. The
-// archive holds the files the Go command includes for the matching tag: tracked
-// regular files of the module directory without nested modules, plus the
-// repository root LICENSE for a nested module that has none of its own.
-func (p Proxy) Add(repo, rev string, m Module, version string) (Checksums, error) {
+// Add builds the archive of m at version from tree, stores it in the proxy and
+// returns its checksums. The archive holds the files the Go command includes for
+// the matching tag: regular files of the module directory without nested
+// modules, plus the repository root LICENSE for a nested module that has none
+// of its own.
+func (p Proxy) Add(tree Tree, m Module, version string) (Checksums, error) {
 	dir, err := os.MkdirTemp("", "candidate-module-")
 	if err != nil {
 		return Checksums{}, fmt.Errorf("candidate: creating module directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
-	if err := extract(repo, rev, m.Dir, dir); err != nil {
+	if err := tree.materialize(m.Dir, dir); err != nil {
 		return Checksums{}, err
 	}
 	moduleDir := filepath.Join(dir, filepath.FromSlash(m.Dir))
-	if err := addRootLicense(repo, rev, m.Dir, moduleDir); err != nil {
+	if err := addRootLicense(tree, m.Dir, moduleDir); err != nil {
 		return Checksums{}, err
 	}
 	goMod, err := os.ReadFile(filepath.Join(moduleDir, "go.mod"))
 	if err != nil {
-		return Checksums{}, fmt.Errorf("candidate: reading %s go.mod at %s: %w", m.Path, rev, err)
+		return Checksums{}, fmt.Errorf("candidate: reading %s go.mod: %w", m.Path, err)
 	}
 
 	versionDir, err := p.versionDir(m.Path)
@@ -78,7 +99,7 @@ func (p Proxy) Add(repo, rev string, m Module, version string) (Checksums, error
 	if err := os.WriteFile(filepath.Join(versionDir, version+".mod"), goMod, 0o644); err != nil {
 		return Checksums{}, fmt.Errorf("candidate: writing %s@%s go.mod: %w", m.Path, version, err)
 	}
-	if err := writeInfo(repo, rev, versionDir, version); err != nil {
+	if err := writeInfo(tree, versionDir, version); err != nil {
 		return Checksums{}, err
 	}
 	if err := appendVersion(filepath.Join(versionDir, "list"), version); err != nil {
@@ -110,8 +131,8 @@ func (p Proxy) versionDir(modulePath string) (string, error) {
 	return dir, nil
 }
 
-func extract(repo, rev, moduleDir, destination string) error {
-	args := []string{"-C", repo, "archive", "--format=tar", rev}
+func (r Revision) materialize(moduleDir, destination string) error {
+	args := []string{"-C", r.Repo, "archive", "--format=tar", r.Rev}
 	if moduleDir != "." {
 		args = append(args, "--", moduleDir)
 	}
@@ -120,17 +141,65 @@ func extract(repo, rev, moduleDir, destination string) error {
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("candidate: archiving %s: %w", rev, err)
+		return fmt.Errorf("candidate: archiving %s: %w", r.Rev, err)
 	}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("candidate: archiving %s: %w", rev, err)
+		return fmt.Errorf("candidate: archiving %s: %w", r.Rev, err)
 	}
 	extractErr := untarRegular(stdout, destination)
 	_, _ = io.Copy(io.Discard, stdout)
 	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("candidate: archiving %s %s: %w: %s", rev, moduleDir, err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("candidate: archiving %s %s: %w: %s", r.Rev, moduleDir, err, strings.TrimSpace(stderr.String()))
 	}
 	return extractErr
+}
+
+func (r Revision) readFile(name string) ([]byte, error) {
+	return gitOutput(r.Repo, "show", r.Rev+":"+name)
+}
+
+func (r Revision) commitTime() (string, error) {
+	out, err := gitOutput(r.Repo, "log", "-1", "--format=%cI", r.Rev)
+	return strings.TrimSpace(string(out)), err
+}
+
+func (w Worktree) materialize(moduleDir, destination string) error {
+	args := []string{"ls-files", "-z", "--cached", "--others", "--exclude-standard"}
+	if moduleDir != "." {
+		args = append(args, "--", moduleDir)
+	}
+	out, err := gitOutput(w.Dir, args...)
+	if err != nil {
+		return fmt.Errorf("candidate: listing %s files: %w", moduleDir, err)
+	}
+	for name := range strings.SplitSeq(string(out), "\x00") {
+		if name == "" {
+			continue
+		}
+		source := filepath.Join(w.Dir, filepath.FromSlash(name))
+		info, err := os.Lstat(source)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("candidate: reading %s: %w", source, err)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		if err := copyFile(source, filepath.Join(destination, filepath.FromSlash(name))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w Worktree) readFile(name string) ([]byte, error) {
+	return os.ReadFile(filepath.Join(w.Dir, filepath.FromSlash(name)))
+}
+
+func (w Worktree) commitTime() (string, error) {
+	return Revision{Repo: w.Dir, Rev: "HEAD"}.commitTime()
 }
 
 func untarRegular(r io.Reader, destination string) error {
@@ -166,7 +235,21 @@ func untarRegular(r io.Reader, destination string) error {
 	}
 }
 
-func addRootLicense(repo, rev, moduleDir, destination string) error {
+func copyFile(source, target string) error {
+	content, err := os.ReadFile(source)
+	if err != nil {
+		return fmt.Errorf("candidate: reading %s: %w", source, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return fmt.Errorf("candidate: creating %s: %w", filepath.Dir(target), err)
+	}
+	if err := os.WriteFile(target, content, 0o644); err != nil {
+		return fmt.Errorf("candidate: writing %s: %w", target, err)
+	}
+	return nil
+}
+
+func addRootLicense(tree Tree, moduleDir, destination string) error {
 	if moduleDir == "." {
 		return nil
 	}
@@ -176,9 +259,9 @@ func addRootLicense(repo, rev, moduleDir, destination string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("candidate: checking %s: %w", target, err)
 	}
-	license, err := gitOutput(repo, "show", rev+":"+licenseFile)
+	license, err := tree.readFile(licenseFile)
 	if err != nil {
-		return fmt.Errorf("candidate: reading root %s at %s: %w", licenseFile, rev, err)
+		return fmt.Errorf("candidate: reading root %s: %w", licenseFile, err)
 	}
 	if err := os.WriteFile(target, license, 0o644); err != nil {
 		return fmt.Errorf("candidate: writing %s: %w", target, err)
@@ -199,15 +282,15 @@ func writeZip(zipPath string, version module.Version, dir string) error {
 	return nil
 }
 
-func writeInfo(repo, rev, versionDir, version string) error {
-	committed, err := gitOutput(repo, "log", "-1", "--format=%cI", rev)
+func writeInfo(tree Tree, versionDir, version string) error {
+	committed, err := tree.commitTime()
 	if err != nil {
-		return fmt.Errorf("candidate: reading commit time of %s: %w", rev, err)
+		return fmt.Errorf("candidate: reading commit time: %w", err)
 	}
 	info, err := json.Marshal(struct {
 		Version string
 		Time    string
-	}{Version: version, Time: strings.TrimSpace(string(committed))})
+	}{Version: version, Time: committed})
 	if err != nil {
 		return fmt.Errorf("candidate: encoding %s info: %w", version, err)
 	}

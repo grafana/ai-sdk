@@ -64,7 +64,7 @@ func TestProxyAdd_MatchesPublishedTags(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			requireTag(t, repo, tc.tag)
-			got, err := Proxy{Dir: t.TempDir()}.Add(repo, "refs/tags/"+tc.tag, tc.module, tc.version)
+			got, err := Proxy{Dir: t.TempDir()}.Add(Revision{Repo: repo, Rev: "refs/tags/" + tc.tag}, tc.module, tc.version)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 		})
@@ -76,9 +76,9 @@ func TestProxyAdd_Layout(t *testing.T) {
 	proxy := Proxy{Dir: t.TempDir()}
 	m := Module{Dir: "middleware/logger", Path: "github.com/grafana/ai-sdk/middleware/logger"}
 
-	_, err := proxy.Add(repo, "HEAD", m, "v0.99.0")
+	_, err := proxy.Add(Revision{Repo: repo, Rev: "HEAD"}, m, "v0.99.0")
 	require.NoError(t, err)
-	_, err = proxy.Add(repo, "HEAD", m, "v0.99.0")
+	_, err = proxy.Add(Revision{Repo: repo, Rev: "HEAD"}, m, "v0.99.0")
 	require.NoError(t, err)
 
 	versionDir := filepath.Join(proxy.Dir, "github.com", "grafana", "ai-sdk", "middleware", "logger", "@v")
@@ -108,7 +108,7 @@ func TestProxyAdd_Layout(t *testing.T) {
 func TestProxyAdd_ExcludesNestedModules(t *testing.T) {
 	repo := repositoryRoot(t)
 	proxy := Proxy{Dir: t.TempDir()}
-	_, err := proxy.Add(repo, "HEAD", Module{Dir: ".", Path: "github.com/grafana/ai-sdk"}, "v0.99.0")
+	_, err := proxy.Add(Revision{Repo: repo, Rev: "HEAD"}, Module{Dir: ".", Path: "github.com/grafana/ai-sdk"}, "v0.99.0")
 	require.NoError(t, err)
 
 	archive, err := zip.OpenReader(filepath.Join(proxy.Dir, "github.com", "grafana", "ai-sdk", "@v", "v0.99.0.zip"))
@@ -123,7 +123,44 @@ func TestProxyAdd_ExcludesNestedModules(t *testing.T) {
 }
 
 func TestProxyAdd_UnknownRevision(t *testing.T) {
-	_, err := Proxy{Dir: t.TempDir()}.Add(repositoryRoot(t), "refs/tags/does-not-exist", Module{Dir: ".", Path: "github.com/grafana/ai-sdk"}, "v0.99.0")
+	_, err := Proxy{Dir: t.TempDir()}.Add(Revision{Repo: repositoryRoot(t), Rev: "refs/tags/does-not-exist"}, Module{Dir: ".", Path: "github.com/grafana/ai-sdk"}, "v0.99.0")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "archiving")
+}
+
+func TestProxyAdd_WorktreeMatchesCommittedRevision(t *testing.T) {
+	source := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", source, "-c", "user.email=t@example.com", "-c", "user.name=T", "-c", "commit.gpgsign=false"}, args...)...)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+	}
+	write := func(name, content string) {
+		t.Helper()
+		target := filepath.Join(source, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
+		require.NoError(t, os.WriteFile(target, []byte(content), 0o644))
+	}
+	git("init", "-q")
+	write("LICENSE", "license\n")
+	write("go.mod", "module example.com/m\n\ngo 1.27.3\n")
+	write("lib/go.mod", "module example.com/m/lib\n\ngo 1.27.3\n")
+	write("lib/lib.go", "package lib\n")
+	write("lib/nested/go.mod", "module example.com/m/lib/nested\n\ngo 1.27.3\n")
+	write("lib/nested/nested.go", "package nested\n")
+	write(".gitignore", "lib/ignored.go\n")
+	git("add", ".")
+	git("commit", "-qm", "base")
+	write("lib/go.sum", "example.com/dep v1.0.0 h1:x=\n")
+	write("lib/ignored.go", "package lib\n")
+	m := Module{Dir: "lib", Path: "example.com/m/lib"}
+
+	fromWorktree, err := Proxy{Dir: t.TempDir()}.Add(Worktree{Dir: source}, m, "v0.1.0")
+	require.NoError(t, err)
+	git("add", "lib/go.sum")
+	git("commit", "-qm", "generated")
+	fromRevision, err := Proxy{Dir: t.TempDir()}.Add(Revision{Repo: source, Rev: "HEAD"}, m, "v0.1.0")
+	require.NoError(t, err)
+	assert.Equal(t, fromRevision, fromWorktree)
 }
