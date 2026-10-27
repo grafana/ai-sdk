@@ -180,6 +180,33 @@ test('root publishes independently of blocked provider and unsupported Gateway',
   assert.deepEqual([...f.releases.keys()], [f.candidate.tag]);
 });
 
+test('a combined release moves its labels once after every library publishes', async () => {
+  const f = publisher();
+  const openai = { ...f.candidate, component: 'providers/openai', version: '0.1.1',
+    tag: 'providers/openai/v0.1.1', name: 'providers/openai: v0.1.1', notes: '## 0.1.1 (2026-10-27)\n\n* Fix' };
+  f.inventory.candidates.push(openai);
+  let blocked = true;
+  f.options.validate = async candidate => {
+    f.validations.push(candidate.component);
+    if (candidate.component === 'providers/openai' && blocked) throw new Error('provider validation failed');
+    return {};
+  };
+  let report = await f.run();
+  assert.deepEqual(report.candidates.map(c => c.status), ['published', 'blocked']);
+  assert.deepEqual([...f.releases.keys()], [f.candidate.tag]);
+  assert.equal(f.requests.some(r => r.path.includes('/labels')), false);
+  assert.deepEqual(f.candidate.pr.labels, [{ name: 'autorelease: pending' }]);
+  blocked = false;
+  f.requests.length = 0;
+  report = await f.run();
+  assert.deepEqual(report.candidates.map(c => c.status), ['recovered', 'published']);
+  assert.deepEqual(f.requests.map(r => `${r.method} ${r.path}`), [
+    'POST /repos/grafana/ai-sdk/git/refs', 'POST /repos/grafana/ai-sdk/releases',
+    'POST /repos/grafana/ai-sdk/issues/10/labels', 'DELETE /repos/grafana/ai-sdk/issues/10/labels/autorelease: pending',
+  ]);
+  assert.deepEqual(f.candidate.pr.labels, [{ name: 'autorelease: tagged' }]);
+});
+
 test('ambiguous component claims cannot reach validation or writes', async () => {
   const f = publisher();
   f.inventory.candidates.push({ ...f.candidate, prNumber: 11 });

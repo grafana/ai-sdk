@@ -147,10 +147,15 @@ export async function publishInventory({ github, inventory, validate, toolingRev
           await writer.createRelease({ tag, sha: candidate.mergeSha, name: candidate.name, notes: candidate.notes },
             { draft: false, prerelease: candidate.prerelease, forceTag: !state.tagObject });
         }
-        await recheck('label-add');
-        const { data: pr } = await github.octokit.pulls.get({ ...REPO, pull_number: candidate.prNumber });
-        if (!pr.labels.some(label => label.name === tagged)) await writer.addIssueLabels([tagged], candidate.prNumber);
-        if (pr.labels.some(label => label.name === pending)) await writer.removeIssueLabels([pending], candidate.prNumber);
+        const siblings = frozen.candidates.filter(other => other.prNumber === candidate.prNumber);
+        const released = siblings.at(-1) === candidate && siblings.slice(0, -1).every(other => results.some(result =>
+          result.prNumber === other.prNumber && result.component === other.component && result.status !== 'blocked'));
+        if (released) {
+          await recheck('label-add');
+          const { data: pr } = await github.octokit.pulls.get({ ...REPO, pull_number: candidate.prNumber });
+          if (!pr.labels.some(label => label.name === tagged)) await writer.addIssueLabels([tagged], candidate.prNumber);
+          if (pr.labels.some(label => label.name === pending)) await writer.removeIssueLabels([pending], candidate.prNumber);
+        }
         await recheckCandidate(github, candidate, evidence);
         assert.deepEqual(await publicationState(github, candidate.tag, candidate), state);
         results.push({ ...identity, status: initial.releaseId ? 'recovered' : 'published',

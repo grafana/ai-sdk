@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { GitHub } from 'release-please';
+import { GitHub, Manifest } from 'release-please';
 import { readFileSync } from 'node:fs';
-import { fixture, base } from './authorization-fixture.mjs';
+import { fixture, base, config } from './authorization-fixture.mjs';
 import { SOURCE_JOBS } from './authorization-evidence.mjs';
 import { activationContext, selectInventory, verifyProtections, waitForToolingCI, preparationTransport, prepareLibraries } from './activation.mjs';
 
@@ -138,34 +138,64 @@ test('Renovate final rule selects only registered libraries and tagged prereleas
   assert.equal(rule.enabled, true);
 });
 
-test('pinned preparation skips pending components and Gateway without a global veto', async () => {
-  const { github } = fixture();
+const combined = { ...config, 'separate-pull-requests': false, packages: { ...config.packages,
+  'ai-gateway': { ...config.packages['ai-gateway'], 'separate-pull-requests': true } } };
+
+function combinedFixture(settings = combined) {
+  const source = fixture();
+  const { github } = source;
+  github.getFileJson = async path => path === 'release-please-config.json' ? structuredClone(settings) : { '.': '0.1.0-alpha.1' };
   github.releaseIterator = async function* () {};
   github.tagIterator = async function* () {};
-  github.mergeCommitIterator = async function* () {
-    yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
-    yield { sha: 'f'.repeat(40), message: 'fix: provider change', files: ['providers/openai/model.go'] };
-    yield { sha: '1'.repeat(40), message: 'fix: gateway change', files: ['ai-gateway/main.go'] };
-  };
+  return source;
+}
+
+const libraryChanges = async function* () {
+  yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
+  yield { sha: 'f'.repeat(40), message: 'fix: provider change', files: ['providers/openai/model.go'] };
+  yield { sha: '1'.repeat(40), message: 'fix: logger change', files: ['middleware/logger/logger.go'] };
+  yield { sha: '2'.repeat(40), message: 'fix: gateway change', files: ['ai-gateway/main.go'] };
+};
+
+function mergedOnly(github) {
   const iterator = github.pullRequestIterator;
   github.pullRequestIterator = async function* (branch, state, ...args) {
     if (state === 'MERGED') yield* iterator(branch, state, ...args);
   };
+}
+
+test('preparation combines pending libraries and skips merged pending components and Gateway', async () => {
+  const { github } = combinedFixture();
+  github.mergeCommitIterator = libraryChanges;
+  mergedOnly(github);
   const created = [];
   github.createPullRequest = async pr => { created.push(pr); return { number: 999 }; };
   const result = await prepareLibraries(github, base);
-  assert.deepEqual(result, [{ component: 'providers/openai', prNumber: 999 }]);
+  assert.deepEqual(result, [{ components: ['middleware/logger', 'providers/openai'], prNumber: 999 }]);
   assert.equal(created.length, 1);
-  assert.match(created[0].headBranchName, /components--providers\/openai$/);
+  assert.equal(created[0].headBranchName, 'release-please--branches--main');
+  assert.equal(created[0].title, 'chore: release main');
+  assert.match(created[0].body, /provider change[\s\S]*logger change|logger change[\s\S]*provider change/);
   assert.doesNotMatch(created[0].body, /gateway change|root change/);
   await assert.rejects(prepareLibraries(github, 'e'.repeat(40)), /advanced/);
 });
 
+test('a separately configured library keeps its own release pull request', async () => {
+  const settings = structuredClone(combined);
+  settings.packages['providers/openai']['separate-pull-requests'] = true;
+  const { github } = combinedFixture(settings);
+  github.mergeCommitIterator = libraryChanges;
+  mergedOnly(github);
+  const created = [];
+  github.createPullRequest = async pr => { created.push(pr); return { number: 900 + created.length }; };
+  const result = await prepareLibraries(github, base);
+  assert.deepEqual(result.map(entry => entry.components).sort(), [['middleware/logger'], ['providers/openai']]);
+  assert.deepEqual(created.map(pr => pr.headBranchName).sort(), [
+    'release-please--branches--main', 'release-please--branches--main--components--providers/openai']);
+});
 
-test('pinned preparation refreshes an unchanged open release against the current base', async () => {
-  const { github } = fixture();
-  github.releaseIterator = async function* () {};
-  github.tagIterator = async function* () {};
+test('preparation refreshes an unchanged open release against the current base', async () => {
+  const { github } = combinedFixture();
   github.mergeCommitIterator = async function* () {
     yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
   };
@@ -189,7 +219,25 @@ test('pinned preparation refreshes an unchanged open release against the current
   github.pullRequestIterator = async function* (branch, state) { if (state === 'CLOSED') yield openPR; };
   await prepareLibraries(github, base);
   assert.equal(updated, 1, 'unchanged closed snoozed PR must stay snoozed');
+});
 
+test('preparation rejects candidate files outside the manifest and library changelogs', async () => {
+  const { github } = combinedFixture();
+  github.mergeCommitIterator = async function* () {
+    yield { sha: 'e'.repeat(40), message: 'fix: root change', files: ['stream.go'] };
+  };
+  github.pullRequestIterator = async function* () {};
+  const original = Manifest.prototype.buildPullRequests;
+  Manifest.prototype.buildPullRequests = async function () {
+    const candidates = await original.call(this);
+    candidates[0].updates.push({ path: 'providers/openai/go.mod', createIfMissing: false, updater: { updateContent: () => '' } });
+    return candidates;
+  };
+  try {
+    await assert.rejects(prepareLibraries(github, base), /only update the manifest and library changelogs: providers\/openai\/go.mod/);
+  } finally {
+    Manifest.prototype.buildPullRequests = original;
+  }
 });
 
 
@@ -247,7 +295,7 @@ test('changed snoozed release uses the pinned labeled creation path and actual r
   };
   github.buildChangeSet = async updates => new Map(updates.map(update => [update.path, { content: 'generated content' }]));
   const result = await prepareLibraries(github, base);
-  assert.deepEqual(result, [{ component: '.', prNumber: 100 }]);
+  assert.deepEqual(result, [{ components: ['.'], prNumber: 100 }]);
   assert.deepEqual(replacement.labels, [{ name: 'autorelease: pending' }]);
   assert.equal(requests.some(r => r.method === 'PATCH' && r.path.endsWith('/pulls/99')), false);
   const label = requests.findIndex(r => r.method === 'POST' && r.path.endsWith('/issues/100/labels'));

@@ -8,8 +8,8 @@
 
 ## 2. Release tooling
 
-- [ ] 2.1 Prepare one combined library release pull request in `release/tooling/activation.mjs`
-- [ ] 2.2 Move lifecycle labels once per pull request after all its libraries publish in `release/tooling/publication.mjs`
+- [x] 2.1 Prepare one combined library release pull request in `release/tooling/activation.mjs`
+- [x] 2.2 Move lifecycle labels once per pull request after all its libraries publish in `release/tooling/publication.mjs`
 - [ ] 2.3 Keep the root bootstrap exercise on its single-root shape
 
 ## 3. Configuration and documentation
