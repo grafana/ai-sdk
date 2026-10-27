@@ -451,53 +451,6 @@ func (h *handler) handleStreamPartResult(w http.ResponseWriter, cancel context.C
 	return true
 }
 
-func safeErrorFromStreamProvider(err error) (result safeError) {
-	result = safeError{category: safeInternal}
-	defer func() {
-		if recover() != nil {
-			result = safeError{category: safeInternal}
-		}
-	}()
-	if isNilInterface(err) {
-		return result
-	}
-
-	var apiError *provider.APICallError
-	if errors.As(err, &apiError) {
-		if isNilInterface(apiError) {
-			return result
-		}
-		if apiError.StatusCode == 0 {
-			switch {
-			case errors.Is(err, context.Canceled):
-				return safeError{category: safeCancellation}
-			case errors.Is(err, context.DeadlineExceeded):
-				return safeError{category: safeTimeout}
-			}
-			if transportError, ok := safeErrorFromTransport(err); ok {
-				return transportError
-			}
-			return safeError{category: safeUpstream}
-		}
-		if apiError.StatusCode < 100 || apiError.StatusCode > 599 {
-			return result
-		}
-		switch apiError.StatusCode {
-		case http.StatusRequestTimeout, http.StatusGatewayTimeout:
-			return safeError{category: safeTimeout}
-		case http.StatusTooManyRequests:
-			return safeError{category: safeRateLimit}
-		case http.StatusServiceUnavailable, 529:
-			return safeError{category: safeOverload}
-		}
-		if apiError.StatusCode >= 400 && apiError.StatusCode < 500 {
-			return safeError{category: safeFailedDependency}
-		}
-		return safeError{category: safeUpstream}
-	}
-	return safeErrorFromProvider(err)
-}
-
 func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
 	switch part.Type {
 	case provider.PartToolApprovalRequest:

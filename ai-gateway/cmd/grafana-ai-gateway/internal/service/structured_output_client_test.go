@@ -10,6 +10,7 @@ import (
 
 	aisdk "github.com/grafana/ai-sdk"
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/output"
 	"github.com/grafana/ai-sdk/provider"
@@ -63,7 +64,7 @@ func TestStructuredOutput_GoHighLevelClient(t *testing.T) {
 				}
 				models, err := catalog.NewStatic([]catalog.StaticEntry{{Info: catalog.ModelInfo{ID: "public"}, Model: lower}})
 				require.NoError(t, err)
-				handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(models), Limits: serviceTestLimits()})
+				handler, err := providerv4.New(providerv4.Config{Selector: execution.CatalogSelector(models), Limits: serviceTestLimits()})
 				require.NoError(t, err)
 				server := httptest.NewServer(handler)
 				defer server.Close()

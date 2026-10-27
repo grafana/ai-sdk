@@ -55,12 +55,12 @@ type executionRequest struct {
 	summaryRedactor execution.SummaryRedactor
 }
 
-func newExecutionRequest(requested string, selected Selection) executionRequest {
+func newExecutionRequest(requested string, selected execution.Selection) executionRequest {
 	request := executionRequest{}
-	if selected.configured != nil {
+	if candidates, configured := selected.ConfiguredCandidates(); configured {
 		request.requested = requested
 		request.canonical = selected.ID
-		request.candidates = slices.Clone(selected.configured.candidates)
+		request.candidates = slices.Clone(candidates)
 	}
 	return request
 }

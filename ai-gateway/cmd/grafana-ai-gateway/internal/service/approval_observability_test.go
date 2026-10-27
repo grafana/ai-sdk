@@ -10,6 +10,7 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/middleware"
 	logmiddleware "github.com/grafana/ai-sdk/middleware/logger"
@@ -52,8 +53,8 @@ func TestApproval_IndependentConsumerAndOperatorObservation(t *testing.T) {
 				require.NoError(t, err)
 			}
 			serverModel := model
-			handler, err := providerv4.New(providerv4.Config{Limits: serviceTestLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (providerv4.Selection, error) {
-				return providerv4.Selection{ID: "grafana/approvals", Model: serverModel}, nil
+			handler, err := providerv4.New(providerv4.Config{Limits: serviceTestLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+				return execution.Selection{ID: "grafana/approvals", Model: serverModel}, nil
 			}})
 			require.NoError(t, err)
 			server := httptest.NewServer(handler)

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
-	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +27,7 @@ func TestParseSettings_Defaults(t *testing.T) {
 			Endpoint: "collector.example:4317",
 			TLS:      true,
 		},
-		ProviderWire: providerv4.Limits{
+		ProviderWire: execution.Limits{
 			StreamIdleDuration:  30 * time.Second,
 			StreamDrainDuration: time.Second,
 		},

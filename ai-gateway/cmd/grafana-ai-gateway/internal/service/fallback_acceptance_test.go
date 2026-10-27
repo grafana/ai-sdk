@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -488,7 +489,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	resolved, err := catalog.ResolveModel(context.Background(), "alias")
 	require.NoError(t, err)
 	h.model = resolved.Model
-	h.handler, err = providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(catalog), Limits: serviceTestLimits()})
+	h.handler, err = providerv4.New(providerv4.Config{Selector: execution.CatalogSelector(catalog), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	h.context = func(ctx context.Context) context.Context {
 		state := &telemetryState{}

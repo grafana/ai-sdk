@@ -136,7 +136,7 @@ sequenceDiagram
    resolve `assistant` or an alias to its canonical model. This private path
    rejects reserved Gateway controls; its caller cannot switch to request
    accounts. See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go),
-   [catalog selection](../../ai-gateway/providerwire/v4/selection.go), and the
+   [catalog selection](../../ai-gateway/internal/execution/selection.go), and the
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** Logical observation surrounds the
    configured primary/fallback chain. Candidate-specific option checks and

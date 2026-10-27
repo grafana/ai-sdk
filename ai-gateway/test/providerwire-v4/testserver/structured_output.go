@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	v4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -65,7 +66,7 @@ func registerNativeStructured(mux *http.ServeMux) (func(), error) {
 		native.Close()
 		return nil, err
 	}
-	runtime, err := v4.New(v4.Config{Selector: v4.CatalogSelector(resolver), Limits: v4.Limits{StreamIdleDuration: time.Second, StreamDrainDuration: time.Second}})
+	runtime, err := v4.New(v4.Config{Selector: execution.CatalogSelector(resolver), Limits: execution.Limits{StreamIdleDuration: time.Second, StreamDrainDuration: time.Second}})
 	if err != nil {
 		native.Close()
 		return nil, err

@@ -6,10 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -132,11 +130,11 @@ type runtimeHarness struct {
 	model    *recordingModel
 }
 
-func newRuntimeHarness(t *testing.T, limits Limits) *runtimeHarness {
+func newRuntimeHarness(t *testing.T, limits execution.Limits) *runtimeHarness {
 	t.Helper()
 	model := &recordingModel{}
 	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model}}
-	created, err := New(Config{Selector: CatalogSelector(resolver), Limits: limits})
+	created, err := New(Config{Selector: execution.CatalogSelector(resolver), Limits: limits})
 	require.NoError(t, err)
 	return &runtimeHarness{handler: created.(*handler), resolver: resolver, model: model}
 }
@@ -826,11 +824,6 @@ func (e testNetError) Error() string   { return "private transport details" }
 func (e testNetError) Timeout() bool   { return e.timeout }
 func (e testNetError) Temporary() bool { return false }
 
-type testAddr string
-
-func (a testAddr) Network() string { return "tcp" }
-func (a testAddr) String() string  { return string(a) }
-
 func TestPublicError_OptionalEncoding(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		for _, attribution := range []string{"none", "selected", "malformed"} {
@@ -955,27 +948,6 @@ func TestPublicError_InvalidOptionalFields(t *testing.T) {
 	assert.Equal(t, canonicalOverloadError, body)
 }
 
-func TestPublicError_ClassificationBoundaries(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		err    error
-		unary  safeErrorCategory
-		stream safeErrorCategory
-	}{
-		{"wrapped cancellation", provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Cause: context.Canceled}), safeCancellation, safeFailedDependency},
-		{"wrapped timeout", provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Cause: context.DeadlineExceeded}), safeTimeout, safeFailedDependency},
-		{"invalid status", provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 700}), safeUpstream, safeInternal},
-		{"zero status", provider.NewAPICallError(provider.APICallErrorOptions{}), safeUpstream, safeUpstream},
-		{"zero canceled status", provider.NewAPICallError(provider.APICallErrorOptions{Cause: context.Canceled}), safeCancellation, safeCancellation},
-		{"nil API error", (*provider.APICallError)(nil), safeInternal, safeInternal},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.unary, safeErrorFromProvider(tc.err).category)
-			assert.Equal(t, tc.stream, safeErrorFromStreamProvider(tc.err).category)
-		})
-	}
-}
-
 func TestSafeErrorReduction(t *testing.T) {
 	t.Run("fixed documents", func(t *testing.T) {
 		for _, tc := range []struct {
@@ -998,27 +970,6 @@ func TestSafeErrorReduction(t *testing.T) {
 			h.writeSafeError(response, tc.value, nil)
 			assert.Equal(t, tc.status, response.Code)
 			require.NoError(t, compileWireSchema(t, errorSchemaJSON).Validate(response.Body.Bytes()))
-		}
-	})
-
-	t.Run("provider status and transport reduction", func(t *testing.T) {
-		for _, tc := range []struct {
-			err      error
-			category safeErrorCategory
-		}{
-			{err: context.Canceled, category: safeCancellation},
-			{err: context.DeadlineExceeded, category: safeTimeout},
-			{err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 408}), category: safeTimeout},
-			{err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 429}), category: safeRateLimit},
-			{err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503}), category: safeOverload},
-			{err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400}), category: safeFailedDependency},
-			{err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 500}), category: safeUpstream},
-			{err: testNetError{timeout: true}, category: safeTimeout},
-			{err: &url.Error{Op: "Post", URL: "https://private", Err: testNetError{}}, category: safeUpstream},
-			{err: &net.OpError{Op: "dial", Net: "tcp", Addr: testAddr("private:443"), Err: errors.New("refused")}, category: safeUpstream},
-			{err: errors.New("private internal"), category: safeInternal},
-		} {
-			assert.Equal(t, tc.category, safeErrorFromProvider(tc.err).category)
 		}
 	})
 
@@ -1108,7 +1059,7 @@ func TestProviderMetadata_SharedModelIsolation(t *testing.T) {
 	assert.Equal(t, requests, h.resolver.callCount())
 }
 
-func invocationHarness(t *testing.T, limits Limits, models ...*recordingModel) *runtimeHarness {
+func invocationHarness(t *testing.T, limits execution.Limits, models ...*recordingModel) *runtimeHarness {
 	t.Helper()
 	h := newRuntimeHarness(t, limits)
 	candidates := make([]provider.LanguageModel, len(models))
@@ -1229,10 +1180,10 @@ func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 				models = append(models, second)
 			}
 			h := invocationHarness(t, testLimits(), models...)
-			selector := CatalogSelector(h.resolver)
+			selector := execution.CatalogSelector(h.resolver)
 			if tc.plain {
-				selector = func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
-					return Selection{ID: "request/model", Model: first}, nil
+				selector = func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+					return execution.Selection{ID: "request/model", Model: first}, nil
 				}
 			}
 			keys := []string{"server-key", "unused-key"}
@@ -1476,9 +1427,9 @@ func TestInvocation_RejectRecordedFallbackOutcome(t *testing.T) {
 	assert.Zero(t, second.callCount())
 }
 
-func selectConfiguredModel(t *testing.T, resolved catalog.ResolvedModel) Selection {
+func selectConfiguredModel(t *testing.T, resolved catalog.ResolvedModel) execution.Selection {
 	t.Helper()
-	selected, err := CatalogSelector(&recordingResolver{resolved: resolved})(t.Context(), "alias", provider.CallOptions{}, nil)
+	selected, err := execution.CatalogSelector(&recordingResolver{resolved: resolved})(t.Context(), "alias", provider.CallOptions{}, nil)
 	require.NoError(t, err)
 	return selected
 }
@@ -1492,7 +1443,9 @@ func TestRequestSelection_ConfiguredExecution(t *testing.T) {
 	selected := selectConfiguredModel(t, resolved)
 	resolved.Candidates[0].ModelID = "mutated"
 	request := newExecutionRequest("alias", selected)
-	selected.configured.candidates[0].ModelID = "mutated-again"
+	candidates, configured := selected.ConfiguredCandidates()
+	require.True(t, configured)
+	candidates[0].ModelID = "mutated-again"
 	assert.Equal(t, "canonical", request.canonical)
 	assert.Equal(t, "backend", request.candidates[0].ModelID)
 	encoded, err := json.Marshal(selected)
@@ -1546,8 +1499,8 @@ func TestRequestSelection_UnconfiguredNativeSummary(t *testing.T) {
 			}
 			ordered, err := fallback.New(model)
 			require.NoError(t, err)
-			h, err := New(Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
-				return Selection{ID: "request/model", Model: ordered}, nil
+			h, err := New(Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+				return execution.Selection{ID: "request/model", Model: ordered}, nil
 			}})
 			require.NoError(t, err)
 			var observed int

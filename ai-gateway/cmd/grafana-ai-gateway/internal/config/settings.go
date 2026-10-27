@@ -11,6 +11,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
@@ -70,7 +71,7 @@ type Settings struct {
 	ConfigFile         string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
-	ProviderWire       providerv4.Limits
+	ProviderWire       execution.Limits
 }
 
 // SettingName returns the environment variable of a plugin setting key, as
@@ -128,7 +129,7 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 			Endpoint: env.string("agento11y_endpoint", ""),
 			TLS:      env.bool("agento11y_tls", true),
 		},
-		ProviderWire: providerv4.Limits{
+		ProviderWire: execution.Limits{
 			StreamIdleDuration:  streamIdleDuration,
 			StreamDrainDuration: streamDrainDuration,
 		},
@@ -155,7 +156,7 @@ func (settings Settings) Validate() error {
 	if err := settings.AgentObservability.validate(); err != nil {
 		return err
 	}
-	if _, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(limitValidationResolver{}), Limits: settings.ProviderWire}); err != nil {
+	if _, err := providerv4.New(providerv4.Config{Selector: execution.CatalogSelector(limitValidationResolver{}), Limits: settings.ProviderWire}); err != nil {
 		return fmt.Errorf("config: providerwire limits: %w", err)
 	}
 	return nil

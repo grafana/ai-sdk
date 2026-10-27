@@ -19,6 +19,7 @@ import (
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
@@ -473,7 +474,7 @@ func TestNativeMCP_ActualCandidateConsumption(t *testing.T) {
 					"anthropic":  {Type: "anthropic", APIKey: "anthropic-key", BaseURL: anthropic.URL},
 				}, http.DefaultClient, identityModelFactory)
 				require.NoError(t, err)
-				handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(catalog), Limits: serviceTestLimits()})
+				handler, err := providerv4.New(providerv4.Config{Selector: execution.CatalogSelector(catalog), Limits: serviceTestLimits()})
 				require.NoError(t, err)
 				request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[],"providerOptions":{"anthropic":`+tc.options+`}}`))
 				request.Header.Set("Content-Type", "application/json")
@@ -536,7 +537,7 @@ func nativeOptionsRequest(t *testing.T, backend, body string, streaming, configu
 		"primary": {Type: backend, APIKey: "native-key", BaseURL: server.URL + "/primary", ProviderName: "my-vllm.chat"},
 	}, server.Client(), factory)
 	require.NoError(t, err)
-	handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(created), Limits: serviceTestLimits()})
+	handler, err := providerv4.New(providerv4.Config{Selector: execution.CatalogSelector(created), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")

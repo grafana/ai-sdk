@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
@@ -38,29 +37,18 @@ var (
 	requestSchemaJSON []byte
 )
 
-// Limits bounds stream idle and drain time. Selection and the logical model
-// call end at the request context's deadline, which the host sets. The host
-// also bounds the request body, and the outbound transport bounds each
-// provider response.
-type Limits struct {
-	// StreamIdleDuration is the maximum time between represented provider parts.
-	StreamIdleDuration time.Duration
-	// StreamDrainDuration bounds asynchronous post-terminal channel draining.
-	StreamDrainDuration time.Duration
-}
-
 // Config configures an immutable ProviderWire V4 language-model handler.
 type Config struct {
-	Selector RequestSelector
+	Selector execution.RequestSelector
 	// ConfiguredAPIKeys are provider/exporter credentials redacted only from native error summaries.
 	ConfiguredAPIKeys []string `json:"-"`
 	// Limits bounds the stream idle and drain durations.
-	Limits Limits
+	Limits execution.Limits
 }
 
 type handler struct {
-	selector        RequestSelector
-	limits          Limits
+	selector        execution.RequestSelector
+	limits          execution.Limits
 	requestSchema   *schema.CompiledSchema
 	summaryRedactor execution.SummaryRedactor
 }
@@ -70,8 +58,8 @@ func New(config Config) (http.Handler, error) {
 	if config.Selector == nil {
 		return nil, fmt.Errorf("providerwire v4: selector is nil")
 	}
-	if err := validateLimits(config.Limits); err != nil {
-		return nil, err
+	if err := config.Limits.Validate(); err != nil {
+		return nil, fmt.Errorf("providerwire v4: %w", err)
 	}
 
 	requestSchema, err := schema.CompileSchema(requestSchemaJSON)
@@ -84,16 +72,6 @@ func New(config Config) (http.Handler, error) {
 		requestSchema:   requestSchema,
 		summaryRedactor: execution.NewSummaryRedactor(config.ConfiguredAPIKeys),
 	}, nil
-}
-
-func validateLimits(limits Limits) error {
-	if limits.StreamIdleDuration <= 0 {
-		return fmt.Errorf("providerwire v4: stream idle duration must be positive")
-	}
-	if limits.StreamDrainDuration <= 0 {
-		return fmt.Errorf("providerwire v4: stream drain duration must be positive")
-	}
-	return nil
 }
 
 func isNilInterface(value any) bool {
@@ -157,8 +135,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	request := newExecutionRequest(validated.modelID, resolved)
 	request.summaryRedactor = h.summaryRedactor
-	capture := &attemptCapture{sealed: resolved.configured == nil}
-	if resolved.configured != nil {
+	_, configured := resolved.ConfiguredCandidates()
+	capture := &attemptCapture{sealed: !configured}
+	if configured {
 		ctx = fallback.WithAttemptObserver(ctx, capture.observe)
 	}
 	defer capture.discard()
@@ -280,7 +259,7 @@ func rejectedMappingFailure(reason requestFailureReason) *requestFailure {
 
 var errRuntimeInternal = errors.New("providerwire v4: runtime internal failure")
 
-func validSelection(resolved Selection) (valid bool) {
+func validSelection(resolved execution.Selection) (valid bool) {
 	defer func() {
 		if recover() != nil {
 			valid = false

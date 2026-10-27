@@ -10,14 +10,15 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func serviceTestLimits() providerv4.Limits {
-	return providerv4.Limits{
+func serviceTestLimits() execution.Limits {
+	return execution.Limits{
 		StreamIdleDuration:  5 * time.Second,
 		StreamDrainDuration: 100 * time.Millisecond,
 	}
@@ -60,7 +61,7 @@ func TestGatewayAnthropicStream_FinishOnMessageStop(t *testing.T) {
 				map[string]config.ResolvedProvider{"native": {Type: "anthropic", APIKey: "native-key", BaseURL: backend.URL, ProviderName: "anthropic"}},
 				backend.Client(), identityModelFactory)
 			require.NoError(t, err)
-			handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(catalog), Limits: serviceTestLimits()})
+			handler, err := providerv4.New(providerv4.Config{Selector: execution.CatalogSelector(catalog), Limits: serviceTestLimits()})
 			require.NoError(t, err)
 			request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[]}`))
 			request.Header.Set("Content-Type", "application/json")
