@@ -156,6 +156,8 @@ func (OpenAIResponsesOptions) ProviderKey() string { return "openai" }
 type OpenAIReasoningEffortUpdate string
 
 const (
+	// OpenAIReasoningEffortUpdateNone disables reasoning on models that support it, such as GPT-6 Sol and Luna.
+	OpenAIReasoningEffortUpdateNone OpenAIReasoningEffortUpdate = "none"
 	// OpenAIReasoningEffortUpdateLow selects low reasoning effort.
 	OpenAIReasoningEffortUpdateLow OpenAIReasoningEffortUpdate = "low"
 	// OpenAIReasoningEffortUpdateMedium selects medium reasoning effort.

@@ -3,8 +3,6 @@ package openai
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
-	"strings"
 
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -100,27 +98,17 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	// Input conversion.
 	inputCtx := newInputConversionContext(opts.Tools, br.toolNameMapping, store, poptsName, popts.Conversation != "", popts.PreviousResponseID != "")
 	inputCtx.isReasoningModel = isReasoning
+	updateUnsupportedReason := configurationUpdateUnsupportedReason(caps, popts)
 	input, inputWarnings, err := convertInput(opts.Prompt, systemMode, popts, inputCtx)
 	if err != nil {
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
 	warnings = append(warnings, inputWarnings...)
-	var appliedEffortUpdate OpenAIReasoningEffortUpdate
-	if popts.ReasoningEffortUpdate != "" {
-		if !caps.supportsConfigurationUpdate || popts.ReasoningMode == "pro" || popts.ContextManagement != nil || popts.Truncation == "auto" {
-			details := "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"
-			if !caps.supportsConfigurationUpdate {
-				details = "reasoningEffortUpdate is only supported by GPT-6 and later models"
-			}
-			warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffortUpdate", Details: details})
-		} else {
-			update := responses.ResponseInputItemUnionParam{OfConfigurationUpdate: &responses.ResponseConfigurationUpdateItemParam{
-				Reasoning: responses.ResponseConfigurationUpdateItemParamReasoning{Effort: shared.ReasoningEffort(popts.ReasoningEffortUpdate)},
-			}}
-			input = append(responses.ResponseInputParam{update}, input...)
-			appliedEffortUpdate = popts.ReasoningEffortUpdate
-		}
+	input, updateWarnings, err := applyConfigurationUpdates(input, modelID, caps, popts, updateUnsupportedReason)
+	if err != nil {
+		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
+	warnings = append(warnings, updateWarnings...)
 	if popts.CompactionTrigger != nil && *popts.CompactionTrigger {
 		input = append(input, responses.ResponseInputItemUnionParam{OfCompactionTrigger: &responses.ResponseInputItemCompactionTriggerParam{}})
 	}
@@ -130,19 +118,12 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	if resolvedEffort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
 		resolvedEffort = string(opts.Reasoning)
 	}
-	if resolvedEffort != "" && caps.supportedReasoningEfforts != nil && !slices.Contains(caps.supportedReasoningEfforts, resolvedEffort) {
-		warnings = append(warnings, provider.Warning{
-			Type: provider.WarnUnsupported, Feature: "reasoningEffort",
-			Details: fmt.Sprintf("%s only supports the following reasoning efforts: %s", modelID, strings.Join(caps.supportedReasoningEfforts, ", ")),
-		})
+	if reason := unsupportedReasoningEffortReason(modelID, caps, resolvedEffort); resolvedEffort != "" && reason != "" {
+		warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffort", Details: reason})
 		resolvedEffort = ""
 	}
 
-	effectiveEffort := resolvedEffort
-	if appliedEffortUpdate != "" {
-		effectiveEffort = string(appliedEffortUpdate)
-	}
-	restrictSampling := isReasoning && (effectiveEffort != "none" || !caps.supportsNonReasoningParameters)
+	restrictSampling := isReasoning && (effectiveReasoningEffort(input, resolvedEffort) != "none" || !caps.supportsNonReasoningParameters)
 	restrictLogprobs := restrictSampling && caps.supportedReasoningEfforts != nil
 
 	// Scalar params + unsupported-param warnings.
@@ -244,9 +225,7 @@ func validateOpenAIResponsesOptions(options OpenAIResponsesOptions) error {
 			return fmt.Errorf("openai: invalid reasoningSummary: %w", err)
 		}
 	}
-	switch options.ReasoningEffortUpdate {
-	case "", OpenAIReasoningEffortUpdateLow, OpenAIReasoningEffortUpdateMedium, OpenAIReasoningEffortUpdateHigh, OpenAIReasoningEffortUpdateXHigh, OpenAIReasoningEffortUpdateMax:
-	default:
+	if options.ReasoningEffortUpdate != "" && !options.ReasoningEffortUpdate.valid() {
 		return fmt.Errorf("openai: invalid reasoningEffortUpdate %q", options.ReasoningEffortUpdate)
 	}
 	switch options.ServiceTier {
