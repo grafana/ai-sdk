@@ -122,20 +122,13 @@ test('preparation cannot publish, target Gateway, or advance unsigned commits', 
   assert.equal(writes, 1); assert.equal(checks, 1);
 });
 
-test('Renovate final rule selects only registered libraries and tagged prereleases', () => {
-  const config = JSON.parse(readFileSync(new URL('../../release-please-config.json', import.meta.url)));
+test('Renovate never proposes first-party requirement updates', () => {
   const renovate = JSON.parse(readFileSync(new URL('../../renovate.json', import.meta.url)));
-  const [lookup, rule] = renovate.packageRules.slice(-2);
-  assert.deepEqual(lookup.matchPackageNames, ['github.com/grafana/ai-sdk', 'github.com/grafana/ai-sdk/**']);
-  assert.equal(lookup.ignoreUnstable, false);
-  assert.deepEqual(rule.matchPackageNames, Object.keys(config.packages).filter(p => p !== 'ai-gateway').map(p => 'github.com/grafana/ai-sdk' + (p === '.' ? '' : '/' + p)));
-  const versions = new RegExp(lookup.allowedVersions.slice(1, -1));
-  assert.ok(versions.test('v0.1.0-alpha.2'));
-  assert.ok(versions.test('v1.2.3'));
-  assert.equal(versions.test('v0.0.0-20261001000000-123456abcdef'), false);
-  assert.deepEqual(rule.matchUpdateTypes, ['major', 'minor', 'patch']);
-  assert.equal(rule.automerge, false); assert.equal(rule.groupSlug, 'ai-sdk-first-party');
-  assert.equal(rule.enabled, true);
+  const firstParty = renovate.packageRules.filter(rule => rule.matchPackageNames?.some(name => name.startsWith('github.com/grafana/ai-sdk')));
+  assert.deepEqual(firstParty.map(rule => [rule.matchManagers, rule.matchPackageNames, rule.matchUpdateTypes, rule.enabled]), [
+    [['gomod'], ['github.com/grafana/ai-sdk', 'github.com/grafana/ai-sdk/**'], undefined, false]]);
+  assert.equal(renovate.packageRules.findLastIndex(rule => rule.enabled === true && rule.matchPackageNames?.some(name =>
+    name.startsWith('github.com/grafana/ai-sdk'))), -1);
 });
 
 const combined = { ...config, 'separate-pull-requests': false, packages: { ...config.packages,

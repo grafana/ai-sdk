@@ -35,16 +35,9 @@
     "platformAutomerge": true,
     "packageRules": [
       {
-        "description": "Manage root SDK dependency pins explicitly",
+        "description": "First-party requirements change only in the combined library release pull request",
         "matchManagers": ["gomod"],
-        "matchPackageNames": ["github.com/grafana/ai-sdk"],
-        "enabled": false
-      },
-      {
-        "description": "Keep internal submodules off root release tags and unreleased main commits",
-        "matchManagers": ["gomod"],
-        "matchPackageNames": ["github.com/grafana/ai-sdk/**"],
-        "matchUpdateTypes": ["major", "minor", "patch", "digest"],
+        "matchPackageNames": ["github.com/grafana/ai-sdk", "github.com/grafana/ai-sdk/**"],
         "enabled": false
       },
       {
@@ -174,53 +167,6 @@
         "groupName": "agento11y bumps (require conformance review)",
         "automerge": false,
         "labels": ["agento11y-conformance-review"]
-      },
-      {
-        "description": "Look up first-party modules by tagged releases, including prereleases",
-        "matchManagers": [
-          "gomod"
-        ],
-        "matchPackageNames": [
-          "github.com/grafana/ai-sdk",
-          "github.com/grafana/ai-sdk/**"
-        ],
-        "ignoreUnstable": false,
-        "respectLatest": false,
-        "allowedVersions": "/^v?\\d+\\.\\d+\\.\\d+(?:-(?:alpha|beta|rc)\\.\\d+)?$/"
-      },
-      {
-        "description": "Independent tagged first-party library prerequisites",
-        "matchManagers": [
-          "gomod"
-        ],
-        "matchPackageNames": [
-          "github.com/grafana/ai-sdk",
-          "github.com/grafana/ai-sdk/providers/anthropic",
-          "github.com/grafana/ai-sdk/providers/azure",
-          "github.com/grafana/ai-sdk/providers/bedrock",
-          "github.com/grafana/ai-sdk/providers/grafana",
-          "github.com/grafana/ai-sdk/providers/openai",
-          "github.com/grafana/ai-sdk/providers/openai-compatible",
-          "github.com/grafana/ai-sdk/middleware/agentobservability",
-          "github.com/grafana/ai-sdk/middleware/enrichment",
-          "github.com/grafana/ai-sdk/middleware/logger",
-          "github.com/grafana/ai-sdk/middleware/prometheus"
-        ],
-        "matchUpdateTypes": [
-          "major",
-          "minor",
-          "patch"
-        ],
-        "enabled": true,
-        "schedule": [
-          "at any time"
-        ],
-        "groupName": "ai-sdk first-party modules",
-        "groupSlug": "ai-sdk-first-party",
-        "automerge": false,
-        "semanticCommits": "enabled",
-        "semanticCommitType": "fix",
-        "semanticCommitScope": "deps"
       }
     ]
   }
