@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 )
 
@@ -53,6 +52,8 @@ type StreamFileData struct {
 	Bytes  []byte             `json:"-"`
 	Base64 string             `json:"-"`
 	URL    string             `json:"-"`
+	// OriginalURL preserves the original opaque URI on the URL arm; nil omits it.
+	OriginalURL *string `json:"-"`
 }
 
 // MarshalJSON emits the upstream LanguageModelV4 generated-file data union.
@@ -73,39 +74,53 @@ func (d StreamFileData) MarshalJSON() ([]byte, error) {
 		}{Type: dataType, Data: data})
 	}
 	return json.Marshal(struct {
-		Type StreamFileDataType `json:"type"`
-		URL  string             `json:"url"`
-	}{Type: dataType, URL: d.URL})
+		Type        StreamFileDataType `json:"type"`
+		URL         string             `json:"url"`
+		OriginalURL *string            `json:"originalUrl,omitempty"`
+	}{Type: dataType, URL: d.URL, OriginalURL: d.OriginalURL})
 }
 
 // UnmarshalJSON decodes the upstream LanguageModelV4 generated-file data union.
 func (d *StreamFileData) UnmarshalJSON(data []byte) error {
-	var tagged struct {
-		Type StreamFileDataType `json:"type"`
-		Data *string            `json:"data"`
-		URL  string             `json:"url"`
-	}
-	if err := json.Unmarshal(data, &tagged); err != nil {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
 		return err
 	}
-
-	*d = StreamFileData{Type: tagged.Type}
-	switch tagged.Type {
-	case StreamFileDataTypeData:
-		if tagged.Data == nil {
-			return errors.New("provider: stream file data variant is missing required data")
-		}
-		d.Base64 = *tagged.Data
-	case StreamFileDataTypeURL:
-		d.URL = tagged.URL
-	default:
-		return fmt.Errorf("provider: unsupported stream file-data variant %q (supported: data, url)", tagged.Type)
+	var kind StreamFileDataType
+	if err := json.Unmarshal(fields["type"], &kind); err != nil {
+		return err
 	}
-	return d.Validate()
+	if kind != StreamFileDataTypeData && kind != StreamFileDataTypeURL {
+		return errors.New("provider: unsupported stream file-data variant")
+	}
+	if kind == StreamFileDataTypeData && (fields["data"] == nil || string(fields["data"]) == "null") {
+		return errors.New("provider: stream file data variant is missing required data")
+	}
+	var value DataContent
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	var decoded StreamFileData
+	switch {
+	case value.IsData():
+		decoded = StreamFileData{Type: StreamFileDataTypeData, Base64: value.Base64}
+	case value.IsURL():
+		decoded = StreamFileData{Type: StreamFileDataTypeURL, URL: value.URL, OriginalURL: value.OriginalURL}
+	default:
+		return errors.New("provider: unsupported stream file-data variant")
+	}
+	if err := decoded.Validate(); err != nil {
+		return err
+	}
+	*d = decoded
+	return nil
 }
 
 // Validate returns an error when generated file data sources conflict or a URL is empty.
 func (d StreamFileData) Validate() error {
+	if d.OriginalURL != nil && d.dataType() != StreamFileDataTypeURL {
+		return errors.New("provider: originalUrl requires URL arm")
+	}
 	switch d.dataType() {
 	case StreamFileDataTypeData:
 		if d.URL != "" || (d.Bytes != nil && d.Base64 != "") {
@@ -147,16 +162,17 @@ func (d StreamFileData) dataType() StreamFileDataType {
 type StreamPart struct {
 	Type StreamPartType `json:"type"`
 
-	ID               string `json:"id,omitempty"`
-	Delta            string `json:"delta,omitempty"`
-	ToolCallID       string `json:"toolCallId,omitempty"`
-	ToolName         string `json:"toolName,omitempty"`
-	Input            string `json:"input,omitempty"` // stringified JSON for tool-call
-	ProviderExecuted bool   `json:"providerExecuted,omitempty"`
-	IsError          bool   `json:"isError,omitempty"`
-	Dynamic          *bool  `json:"dynamic,omitempty"`
-	Preliminary      *bool  `json:"preliminary,omitempty"`
-	Title            string `json:"title,omitempty"`
+	ID               string            `json:"id,omitempty"`
+	Delta            string            `json:"delta,omitempty"`
+	ToolCallID       string            `json:"toolCallId,omitempty"`
+	ToolName         string            `json:"toolName,omitempty"`
+	InputEncoding    ToolInputEncoding `json:"inputEncoding,omitempty"`
+	Input            string            `json:"input,omitempty"` // stringified JSON for tool-call
+	ProviderExecuted bool              `json:"providerExecuted,omitempty"`
+	IsError          bool              `json:"isError,omitempty"`
+	Dynamic          *bool             `json:"dynamic,omitempty"`
+	Preliminary      *bool             `json:"preliminary,omitempty"`
+	Title            string            `json:"title,omitempty"`
 
 	// Result is populated for PartToolResult parts and contains the raw JSON
 	// value returned by the provider-executed tool.
@@ -184,6 +200,8 @@ type StreamPart struct {
 	Usage        *Usage        `json:"usage,omitempty"`
 	FinishReason *FinishReason `json:"finishReason,omitempty"`
 
+	Citations []Citation `json:"citations,omitzero"`
+
 	RawValue json.RawMessage `json:"rawValue,omitempty"`
 
 	// APICallError is populated when Type is PartError. Producers MUST wrap
@@ -193,6 +211,9 @@ type StreamPart struct {
 
 	ProviderMetadata ProviderMetadata `json:"providerMetadata,omitempty"`
 }
+
+// streamTimestampLayout matches JavaScript's Date#toISOString.
+const streamTimestampLayout = "2006-01-02T15:04:05.000Z"
 
 // MarshalJSON emits the upstream Vercel AI SDK LanguageModelV4 stream-part
 // JSON shape. In addition to mapping the "id" field (ResponseID for
@@ -206,7 +227,8 @@ type StreamPart struct {
 //   - tool-result: suppresses the Go-only `providerExecuted` field
 //   - source:                nested `source` -> flat `sourceType`/`id`/`url`/`title`/`mediaType`/`filename`
 //   - error:                 `apiCallError` -> `error`
-//   - all types:             zero-value `timestamp` is suppressed
+//   - stream-start:          always emits `warnings`, empty when there are none
+//   - all types:             zero-value `timestamp` is suppressed; others are UTC with milliseconds
 //
 // Every other type flows through unchanged via the base alias marshal, so a new
 // struct field with a plain json tag Just Works for non-transformed types. A
@@ -238,12 +260,23 @@ func (p StreamPart) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	// Suppress zero-value timestamps that leak from the flat struct.
+	// Suppress zero-value timestamps that leak from the flat struct and encode
+	// the rest as JavaScript's Date#toISOString does (UTC, milliseconds).
 	if p.Timestamp.IsZero() {
 		delete(m, "timestamp")
+	} else {
+		timestamp, terr := json.Marshal(p.Timestamp.UTC().Format(streamTimestampLayout))
+		if terr != nil {
+			return nil, terr
+		}
+		m["timestamp"] = timestamp
 	}
 
 	switch p.Type {
+	case PartStreamStart:
+		if len(p.Warnings) == 0 {
+			m["warnings"] = json.RawMessage("[]")
+		}
 	case PartTextDelta, PartReasoningDelta, PartToolInputDelta:
 		delta, derr := json.Marshal(p.Delta)
 		if derr != nil {
@@ -326,7 +359,12 @@ func legacyToolResult(o *ToolResultOutput) (json.RawMessage, bool) {
 		}
 		return b, false
 	case ToolOutputExecutionDenied:
-		b, _ := json.Marshal(o.Reason)
+		b, _ := json.Marshal(func() string {
+			if o.Reason != nil {
+				return *o.Reason
+			}
+			return ""
+		}())
 		return b, true
 	default:
 		return json.RawMessage("null"), false

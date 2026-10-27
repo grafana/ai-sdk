@@ -8,7 +8,7 @@ Define opt-in per-step visibility and execution of tools routed through local or
 
 ### Requirement: Caller configuration is opt-in and validated
 
-`StreamText` and `GenerateText` SHALL accept an optional `ToolRoutes` mapping keyed by callee tool name. Each `ToolRoute` SHALL separate a `Direct` flag from an ordered `Callers` list of tool names. Caller names SHALL refer to tools explicitly configured as local or provider callers in the supplied tool set. When a tool set and mapping are present, unknown callee names or names that are not configured caller tools SHALL cause a configuration error. An unlisted tool SHALL retain ordinary behavior; a listed tool with a zero-value route SHALL have no direct or provider-model visibility. A missing tool set or missing mapping SHALL retain ordinary unconfigured behavior.
+StreamText/GenerateText SHALL accept optional ToolRoutes keyed by callee, separating Direct from ordered Callers. With tools and routes present, unknown callees or callers not explicitly configured as local/provider caller tools SHALL cause configuration errors. Unlisted tools SHALL retain ordinary behavior; zero-value routes SHALL have no direct/provider-model visibility. Missing tools or mapping SHALL retain ordinary unconfigured behavior.
 
 #### Scenario: Unknown callee
 - **WHEN** a configured mapping names a callee not in the tool set
@@ -28,7 +28,7 @@ Define opt-in per-step visibility and execution of tools routed through local or
 
 ### Requirement: Separate model and execution tools per step
 
-For each model step, orchestration SHALL filter the available tools by the effective active-tools setting, then prepare distinct model-visible and execution tool sets. When deferred discovery is opted into, orchestration SHALL apply that generation's discovery eligibility after active filtering and before caller preparation; undiscovered deferred entries SHALL be absent from both prepared sets and local caller bindings/catalogs. A configured callee SHALL remain executable in the execution set when active and, if deferred, discovered at the start of that step. It SHALL appear in the model set only when the caller list includes direct access or an active provider caller, subject to discovery route validation. Local-only callees SHALL be absent from the provider tool definitions. Step preparation, tool choice, and provider calls SHALL use the effective step model set; local call parsing, approval, and execution SHALL use the effective step execution set. Caller configuration SHALL NOT introduce an independent caller-provenance rejection at local execution beyond upstream's tool-set lookup. Deferred discovery SHALL NOT change the original-registry historical approval-resume path.
+Each step SHALL filter by effective active tools, then prepare distinct model and execution sets. Active callees SHALL remain executable; deferred callees SHALL also require discovery at step start. Model visibility SHALL require direct access or an active provider caller, subject to discovery route validation; local-only callees SHALL be absent from provider definitions.
 
 #### Scenario: Local-only callee hidden from model
 - **WHEN** a caller list names only an active local caller and the callee is not deferred or was discovered before the step
@@ -49,9 +49,25 @@ For each model step, orchestration SHALL filter the available tools by the effec
 - **THEN** its current binding/catalog SHALL contain the search but not the callee
 - **AND** after matching search execution only its next-step binding/catalog SHALL include the active discovered callee while retaining its stable model definition and existing announcement deduplication
 
+### Requirement: Caller preparation follows discovery eligibility
+
+Opted-in generation discovery eligibility SHALL apply after active filtering and before caller preparation. Undiscovered deferred entries SHALL be absent from both prepared sets and local caller bindings/catalogs. Deferred discovery SHALL NOT change original-registry historical approval resume.
+
+#### Scenario: Historical resume does not use the new-call snapshot
+- **WHEN** a historical deferred call resumes after approval
+- **THEN** original-registry resume SHALL remain unchanged even when the callee is absent from the new-step prepared sets.
+
+### Requirement: Caller model and execution consumers stay separate
+
+Step preparation, tool choice and provider calls SHALL use the effective step model set. Local parsing, approval and execution SHALL use the effective step execution set. Caller configuration SHALL NOT add independent caller-provenance rejection at local execution beyond upstream tool-set lookup.
+
+#### Scenario: Local lookup uses execution tools
+- **WHEN** a local call names a callee in the effective execution set
+- **THEN** parsing, approval and execution SHALL use that set without an additional caller-provenance rejection.
+
 ### Requirement: Local caller is bound late
 
-An active local caller SHALL be bound on each step to the active tools that name it as an allowed caller and are eligible after deferred discovery preparation. When contextual descriptions are configured, caller catalog preparation SHALL receive resolved eligible tool copies for the effective step runtime context without mutating the original registry. The bound tool SHALL be used for local execution. Without a caller-message callback, the bound tool SHALL also be used as the model definition. When the caller has a caller-message callback, the original unbound tool SHALL remain the model definition, and a returned string (including an empty string) SHALL be appended as a user message after the step messages. Duplicate announcements matching the latest user text or an already-appended announcement SHALL be omitted.
+Each step SHALL bind active local callers to active routed callees eligible after discovery. Contextual catalog preparation SHALL use resolved eligible tool copies for the effective step context without mutating the registry. Execution SHALL use the bound tool; without a caller-message callback the model SHALL also use it.
 
 #### Scenario: Late binding uses step's allowed set
 - **WHEN** a model calls a local caller that has one active allowed callee
@@ -66,9 +82,17 @@ An active local caller SHALL be bound on each step to the active tools that name
 - **WHEN** the latest user text already equals a caller announcement
 - **THEN** the provider prompt SHALL not contain a duplicate announcement
 
+### Requirement: Caller announcements retain the unbound model definition
+
+With a caller-message callback, the original unbound tool SHALL remain the model definition. A returned string, including empty, SHALL be appended as a user message after step messages. Duplicate announcements matching latest user text or an already-appended announcement SHALL be omitted.
+
+#### Scenario: Empty and repeated caller announcements
+- **WHEN** a callback returns an empty string, or an announcement already appended
+- **THEN** the empty string SHALL be appended unless duplicate, and already-appended announcements SHALL be omitted while the unbound model definition remains.
+
 ### Requirement: Provider caller prepares per-tool provider options
 
-An active provider caller SHALL transform each routed callee's provider options using its configured preparation callback in caller-list order. That callee SHALL remain model-visible without requiring direct access. Explicitly supplied provider options SHALL remain unchanged in the absence of such a callback. Orchestration SHALL not itself mutate caller-owned options or impose a generic conflict or authorization rule on manually supplied `allowedCallers`; the configured callback controls its returned options and any mutation it performs.
+Active provider callers SHALL transform routed callee options via configured callbacks in caller-list order; callees SHALL remain model-visible without direct access. Without a callback, supplied options SHALL remain unchanged. Orchestration SHALL NOT mutate caller-owned options or impose generic conflict/authorization rules on manual allowedCallers; the callback SHALL control returned options and its own mutations.
 
 #### Scenario: Provider-only route
 - **WHEN** a callee lists only an active provider caller

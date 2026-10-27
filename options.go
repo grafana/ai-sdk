@@ -373,6 +373,7 @@ func OnStepEnd(fn func(OnStepFinishState)) Option {
 }
 
 // OnFinish sets a callback invoked once after the final completed step is recorded.
+// It is not invoked when the context is cancelled; use OnAbort instead.
 func OnFinish(fn func(OnFinishState)) Option {
 	return sharedOption{fn: func(c *baseConfig) { c.onFinish = fn }}
 }

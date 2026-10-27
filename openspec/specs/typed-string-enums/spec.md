@@ -54,7 +54,11 @@ The `aisdk` package SHALL define a `StepType` typed string with constants: `Step
 
 ### Requirement: ToolInvocationState typed string enum
 
-The `aisdk` package SHALL define a `ToolInvocationState` typed string with constants: `ToolStateInputStreaming` ("input-streaming"), `ToolStateInputAvailable` ("input-available"), `ToolStateApprovalRequested` ("approval-requested"), `ToolStateApprovalResponded` ("approval-responded"), `ToolStateOutputAvailable` ("output-available"), `ToolStateOutputError` ("output-error"), `ToolStateOutputDenied` ("output-denied"). The `ToolInvocationPart.State` and `DynamicToolUIPart.State` fields SHALL be typed as `ToolInvocationState`. The `ChunkToolInputError` chunk type SHALL map to `ToolStateOutputError` on the part, matching upstream behavior where `tool-input-error` chunks produce `output-error` state.
+The aisdk package SHALL define typed string `ToolInvocationState` used by `ToolInvocationPart.State` and `DynamicToolUIPart.State`. `ChunkToolInputError` SHALL map to `ToolStateOutputError`, matching upstream `tool-input-error` -> `output-error`.
+
+#### Scenario: ToolInvocationState constant values
+- **WHEN** the state enum constants are inspected
+- **THEN** they SHALL be `ToolStateInputStreaming` ("input-streaming"), `ToolStateInputAvailable` ("input-available"), `ToolStateApprovalRequested` ("approval-requested"), `ToolStateApprovalResponded` ("approval-responded"), `ToolStateOutputAvailable` ("output-available"), `ToolStateOutputError` ("output-error") and `ToolStateOutputDenied` ("output-denied")
 
 #### Scenario: Stream assigns typed state
 - **WHEN** the stream processor creates a `ToolInvocationPart` with a completed tool call
@@ -82,9 +86,11 @@ The `provider` package SHALL define a `SourceType` typed string with constants: 
 
 ### Requirement: ToolResultContentType typed string enum
 
-The `provider` package SHALL define a `ToolResultContentType` typed string with canonical constants: `ToolContentText` ("text"), `ToolContentFile` ("file"), and `ToolContentCustom` ("custom"). The `ToolResultContentValue.Type` field SHALL be typed as `ToolResultContentType`, and file values SHALL carry `Data *DataContent` using the LanguageModelV4 tagged data union.
+The provider package SHALL define typed string `ToolResultContentType` with canonical `ToolContentText` ("text"), `ToolContentFile` ("file") and `ToolContentCustom` ("custom"). `ToolResultContentValue.Type` SHALL use it and files SHALL carry `Data *DataContent` using the V4 tagged union. Legacy wire constants SHALL remain recognized, decode to `ToolContentFile` and marshal as "file".
 
-The legacy constants `ToolContentFileData` ("file-data"), `ToolContentFileURL` ("file-url"), and `ToolContentFileReference` ("file-reference") SHALL remain available to recognize legacy wire input. Decoding SHALL normalize them to `ToolContentFile`, and marshaling SHALL emit `"file"`.
+#### Scenario: Legacy tool content enum values
+- **WHEN** legacy tool content constants are inspected
+- **THEN** `ToolContentFileData` ("file-data"), `ToolContentFileURL` ("file-url") and `ToolContentFileReference` ("file-reference") SHALL remain available for recognizing legacy wire input
 
 #### Scenario: ToolResultContentValue uses typed constant
 - **WHEN** a test constructs a canonical file content value
@@ -108,7 +114,7 @@ The `provider` package SHALL define a `GenerateContentType` typed string with co
 
 ### Requirement: ReasoningEffort typed string enum
 
-The `provider` package SHALL define a `ReasoningEffort` typed string with constants `ReasoningProviderDefault`, `ReasoningNone` (`"none"`), `ReasoningMinimal` (`"minimal"`), `ReasoningLow` (`"low"`), `ReasoningMedium` (`"medium"`), `ReasoningHigh` (`"high"`), and `ReasoningXHigh` (`"xhigh"`). `ReasoningProviderDefault` SHALL have the empty-string value so it is the Go zero value. The `CallOptions.Reasoning` field SHALL be typed as `ReasoningEffort`, and the existing constant names SHALL be preserved.
+The provider package SHALL define typed string `ReasoningEffort`: `ReasoningProviderDefault` (empty-string Go zero value), `ReasoningNone` ("none"), `ReasoningMinimal` ("minimal"), `ReasoningLow` ("low"), `ReasoningMedium` ("medium"), `ReasoningHigh` ("high") and `ReasoningXHigh` ("xhigh"). `CallOptions.Reasoning` SHALL use `ReasoningEffort`; existing constant names SHALL remain unchanged.
 
 #### Scenario: Reasoning field uses typed value
 - **WHEN** a caller sets `CallOptions.Reasoning`

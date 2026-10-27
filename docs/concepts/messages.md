@@ -113,7 +113,7 @@ state. Tool `ErrorText` and `ToolApproval.Reason` are now string pointers: nil i
 absent; `new("")` is explicitly empty. Output errors require a non-nil error;
 denials use `Tool call execution denied.` only when the reason is absent.
 See the [tool part API](https://pkg.go.dev/github.com/grafana/ai-sdk#ToolInvocationPart)
-for field semantics and [parity boundaries](../../test/conformance/PARITY.md#retained-deviations-without-issue-ownership)
+for field semantics and [`ui-optional-presence`](../../test/conformance/upstream.yaml)
 for the remaining scalar/optional-value normalization.
 
 ## Continue Go-only model conversations
@@ -122,6 +122,9 @@ When building lower-level loops, `ToResponseMessages` converts collected model
 response content into assistant and tool messages suitable for a later call. It
 preserves provider information required by reasoning and tool round trips.
 `StreamText` handles this conversation loop automatically for most applications.
+To continue after a call returns, append the result's `ResponseMessages` to the
+input messages. It holds every generated message, including tool results from
+resolved approvals; the result's `Response.Messages` holds only the final step.
 Provider prompt preparation combines consecutive tool messages in order;
 direct UI-to-model conversion retains its step-block grouping.
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"regexp"
 	"strings"
@@ -61,6 +62,17 @@ type ResolvedProvider struct {
 	ProviderName string
 }
 
+// fileError reports a file operation failure by its class, without the path
+// the underlying error names.
+func fileError(operation string, err error) error {
+	for _, class := range []error{fs.ErrNotExist, fs.ErrPermission} {
+		if errors.Is(err, class) {
+			return fmt.Errorf("config: %s file: %w", operation, class)
+		}
+	}
+	return fmt.Errorf("config: %s file failed", operation)
+}
+
 // LoadFile reads and validates exactly one bounded strict YAML document.
 func LoadFile(path string, maxBytes int64) (File, error) {
 	if maxBytes <= 0 || maxBytes == int64(^uint64(0)>>1) {
@@ -68,34 +80,41 @@ func LoadFile(path string, maxBytes int64) (File, error) {
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return File{}, fmt.Errorf("config: inspecting file: %w", err)
+		return File{}, fileError("inspecting", err)
 	}
 	if !info.Mode().IsRegular() {
 		return File{}, fmt.Errorf("config: path is not a regular file")
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return File{}, fmt.Errorf("config: opening file: %w", err)
+		return File{}, fileError("opening", err)
 	}
 	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
-		return File{}, fmt.Errorf("config: reading file: %w", err)
+		return File{}, fileError("reading", err)
 	}
 	if int64(len(data)) > maxBytes {
 		return File{}, fmt.Errorf("config: file exceeds %d bytes", maxBytes)
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return File{}, fmt.Errorf("config: invalid YAML document")
+	}
+	if err := validateDocumentShape(&document); err != nil {
+		return File{}, err
 	}
 	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
 	decoder.KnownFields(true)
 	var result File
 	if err := decoder.Decode(&result); err != nil {
-		return File{}, fmt.Errorf("config: decoding YAML: %w", err)
+		return File{}, fmt.Errorf("config: invalid YAML fields or values")
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err != nil {
-			return File{}, fmt.Errorf("config: decoding trailing YAML: %w", err)
+			return File{}, fmt.Errorf("config: invalid trailing YAML document")
 		}
 		return File{}, fmt.Errorf("config: trailing YAML document is not allowed")
 	}
@@ -244,6 +263,34 @@ func validDiscoveryText(value string) bool {
 func validatePublicID(value string) error {
 	if len(value) < 1 || len(value) > 128 || !publicIDPattern.MatchString(value) {
 		return fmt.Errorf("public ID must be 1-128 ASCII bytes matching %s", publicIDPattern.String())
+	}
+	return nil
+}
+
+func validateDocumentShape(document *yaml.Node) error {
+	if err := rejectYAMLIndirection(document); err != nil {
+		return err
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("config: YAML root must be a mapping")
+	}
+	root := document.Content[0]
+	for i := 0; i < len(root.Content); i += 2 {
+		if root.Content[i].Kind != yaml.ScalarNode || root.Content[i].Tag != "!!str" {
+			return fmt.Errorf("config: YAML root mapping keys must be strings")
+		}
+	}
+	return nil
+}
+
+func rejectYAMLIndirection(node *yaml.Node) error {
+	if node.Tag == "!!merge" || node.Kind == yaml.AliasNode {
+		return fmt.Errorf("config: YAML merge keys and aliases are not supported")
+	}
+	for _, child := range node.Content {
+		if err := rejectYAMLIndirection(child); err != nil {
+			return err
+		}
 	}
 	return nil
 }

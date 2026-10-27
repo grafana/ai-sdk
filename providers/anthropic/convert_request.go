@@ -15,6 +15,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/grafana/ai-sdk/internal/jsonschema"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -78,8 +79,8 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 		}
 	}
 
-	var schemaMap map[string]any
-	if err := json.Unmarshal(rf.Schema, &schemaMap); err != nil {
+	schemaMap, err := jsonschema.DecodeObject(rf.Schema)
+	if err != nil {
 		return buildResult{
 			warnings: []provider.Warning{{
 				Type:    provider.WarnUnsupported,
@@ -260,8 +261,6 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 		warnings = append(warnings, toolWarnings...)
 	}
 
-	mcpToolUseIDs := make(map[string]bool)
-
 	// Pre-pass: merge consecutive user/tool messages into one Anthropic user
 	// block, consecutive assistant messages into one Anthropic assistant
 	// block, and consecutive system messages into a single run of system
@@ -345,13 +344,13 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			for _, msg := range block.messages {
 				switch msg.Role {
 				case provider.RoleUser:
-					converted, err := convertUserContent(v, msg.Content, msg.ProviderOptions, &p.Betas, mcpToolUseIDs, &warnings)
+					converted, err := convertUserContent(v, msg.Content, msg.ProviderOptions, &p.Betas, &warnings)
 					if err != nil {
 						return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, err
 					}
 					content = append(content, converted...)
 				case provider.RoleTool:
-					content = append(content, convertToolContent(v, msg.Content, msg.ProviderOptions, mcpToolUseIDs, &p.Betas, &warnings)...)
+					content = append(content, convertToolContent(v, msg.Content, msg.ProviderOptions, &p.Betas, &warnings)...)
 				}
 			}
 			p.Messages = append(p.Messages, anthropic.BetaMessageParam{
@@ -360,6 +359,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			})
 		case promptBlockKindAssistant:
 			var content []anthropic.BetaContentBlockParamUnion
+			mcpToolUseIDs := make(map[string]bool)
 			for messageIndex, msg := range block.messages {
 				converted := convertAssistantContent(v, mapping, msg.Content, msg.ProviderOptions, mcpToolUseIDs, &warnings)
 				isFinalAssistantText := blockIndex == len(blocks)-1 &&
@@ -377,7 +377,7 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			if len(content) > 0 {
 				p.Messages = append(p.Messages, anthropic.BetaMessageParam{
 					Role:    anthropic.BetaMessageParamRoleAssistant,
-					Content: content,
+					Content: moveToolUseBlocksToEnd(content),
 				})
 			}
 		}
@@ -391,7 +391,11 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 	var forcedToolChoice *provider.ToolChoice
 	if opts.ToolChoice != nil {
 		if opts.ToolChoice.Type == provider.ToolChoiceNone {
-			p.Tools = nil
+			// Upstream drops tools for none; sending tool_choice none keeps
+			// tool definitions in the prompt cache prefix.
+			if len(p.Tools) > 0 {
+				p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfNone: &anthropic.BetaToolChoiceNoneParam{}}
+			}
 		} else if caps.rejectsForcedToolUse && (opts.ToolChoice.Type == provider.ToolChoiceRequired || opts.ToolChoice.Type == provider.ToolChoiceTool) {
 			forcedToolChoice = opts.ToolChoice
 			p.ToolChoice = anthropic.BetaToolChoiceUnionParam{OfAuto: &anthropic.BetaToolChoiceAutoParam{}}
@@ -467,8 +471,14 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 			p.Tools = toolsNamed(p.Tools, mapping.toProviderToolName(forcedToolChoice.ToolName))
 		}
 	}
+	// The JSON response tool forces tool use, so none sends only that tool.
+	// applyResponseFormat appends it last; a caller tool may share its name.
+	noneWithJSONTool := br.usesJsonResponseTool && opts.ToolChoice != nil && opts.ToolChoice.Type == provider.ToolChoiceNone
+	if noneWithJSONTool {
+		p.Tools = p.Tools[len(p.Tools)-1:]
+	}
 	br.markCodeExecutionDynamic = hasWebTool20260209WithoutCodeExecution(opts.Tools)
-	if len(p.Tools) > 0 && (opts.ToolChoice == nil || opts.ToolChoice.Type != provider.ToolChoiceNone) {
+	if len(p.Tools) > 0 && !noneWithJSONTool {
 		br.requestOptions = append(br.requestOptions, webToolNumberOptions(opts.Tools, p.Tools)...)
 	}
 
@@ -776,13 +786,41 @@ func groupIntoBlocks(prompt []provider.Message) []promptBlock {
 	return blocks
 }
 
+// moveToolUseBlocksToEnd stably moves client `tool_use` blocks after the other
+// blocks of each segment of a grouped assistant message. Thinking, redacted
+// thinking and fallback blocks bound the segments and keep their positions, so
+// tool calls never cross a reasoning signature boundary. Mirrors upstream
+// `moveToolUseBlocksToEnd` (`convert-to-anthropic-prompt.ts`).
+func moveToolUseBlocksToEnd(content []anthropic.BetaContentBlockParamUnion) []anthropic.BetaContentBlockParamUnion {
+	result := make([]anthropic.BetaContentBlockParamUnion, 0, len(content))
+	var toolUses []anthropic.BetaContentBlockParamUnion
+	flushToolUses := func() {
+		result = append(result, toolUses...)
+		toolUses = toolUses[:0]
+	}
+	for _, block := range content {
+		switch {
+		case block.OfThinking != nil || block.OfRedactedThinking != nil || block.OfFallback != nil:
+			flushToolUses()
+			result = append(result, block)
+		case block.OfToolUse != nil:
+			toolUses = append(toolUses, block)
+		default:
+			result = append(result, block)
+		}
+	}
+	flushToolUses()
+	return result
+}
+
 // convertUserContent converts a `RoleUser` provider message's content parts
 // into Anthropic content blocks. Mirrors the `case 'user':` branch of
 // upstream `convert-to-anthropic-prompt.ts` user-block handler (line 126):
 // text + file parts become text/image/document blocks, tool-result parts
 // route through [appendToolResultBlock] (so the same logic produces a
 // `tool_result` block whether the part appears in a `RoleUser` or a
-// `RoleTool` provider message), and tool-approval-response parts are skipped
+// `RoleTool` provider message; upstream user messages carry no tool results),
+// and tool-approval-response parts are skipped
 // silently (`if (part.type === 'tool-approval-response') { continue; }`,
 // upstream line 319).
 func convertUserContent(
@@ -790,7 +828,6 @@ func convertUserContent(
 	parts []provider.ContentPart,
 	msgOpts provider.ProviderOptions,
 	betas *[]anthropic.AnthropicBeta,
-	mcpToolUseIDs map[string]bool,
 	warnings *[]provider.Warning,
 ) ([]anthropic.BetaContentBlockParamUnion, error) {
 	var blocks []anthropic.BetaContentBlockParamUnion
@@ -855,8 +892,8 @@ func convertUserContent(
 				}
 			}
 		case provider.ContentPartTypeToolResult:
-			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			blocks = appendToolResultBlock(blocks, p, cc, mcpToolUseIDs, betas, warnings)
+			cc := v.resolveToolResultCacheControl(p, msgOpts, isLast)
+			blocks = appendToolResultBlock(blocks, p, cc, betas, warnings)
 		case provider.ContentPartTypeToolApprovalResponse:
 			// Mirrors upstream user-block handler line 319: silently skip.
 			// The `RoleTool` path keeps its existing warning behavior in
@@ -1119,6 +1156,7 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 		case provider.ContentPartTypeToolCall:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
 			if p.ProviderExecuted && isMCPToolUse(p.ProviderOptions) {
+				mcpToolUseIDs[p.ToolCallID] = true
 				serverName, ok := extractMCPServerName(p.ProviderOptions)
 				if !ok {
 					*warnings = append(*warnings, provider.Warning{
@@ -1128,7 +1166,6 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 					})
 					break
 				}
-				mcpToolUseIDs[p.ToolCallID] = true
 				var input any
 				if len(p.Input) > 0 {
 					if err := json.Unmarshal(p.Input, &input); err != nil {
@@ -1187,11 +1224,16 @@ func convertAssistantContent(v *cacheControlValidator, mapping toolNameMapping, 
 			// prompt format only accepts approval responses for provider-executed tools.
 			continue
 		case provider.ContentPartTypeCustom:
-			*warnings = append(*warnings, provider.Warning{
-				Type:    provider.WarnUnsupported,
-				Feature: "customContent",
-				Details: fmt.Sprintf("Anthropic does not support custom content part kind %q", p.Kind),
-			})
+			if p.Kind == anthropicFallbackKind {
+				fallback, valid := convertFallbackContent(p.ProviderOptions)
+				if !valid {
+					*warnings = append(*warnings, provider.Warning{
+						Type: provider.WarnOther, Message: "anthropic fallback metadata must include from.model and to.model",
+					})
+					continue
+				}
+				blocks = append(blocks, anthropic.BetaContentBlockParamUnion{OfFallback: fallback})
+			}
 		case provider.ContentPartTypeReasoningFile:
 			*warnings = append(*warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
@@ -1385,13 +1427,19 @@ func convertProviderExecutedToolResult(p provider.ContentPart, mapping toolNameM
 		return nil
 	}
 	if mcpToolUseIDs[p.ToolCallID] {
-		mcpContent := serializeMCPToolResultContent(p.Output)
-		isError := p.Output.Type == provider.ToolOutputErrorJSON || p.Output.Type == provider.ToolOutputErrorText
+		if p.Output.Type != provider.ToolOutputJSON && p.Output.Type != provider.ToolOutputErrorJSON {
+			*warnings = append(*warnings, provider.Warning{
+				Type:    provider.WarnOther,
+				Feature: "providerExecutedToolResult",
+				Message: fmt.Sprintf("provider executed tool result output type %s for tool %s is not supported", p.Output.Type, p.ToolName),
+			})
+			return nil
+		}
 		block := anthropic.BetaContentBlockParamUnion{
 			OfMCPToolResult: &anthropic.BetaRequestMCPToolResultBlockParam{
 				ToolUseID:    p.ToolCallID,
-				IsError:      anthropic.Bool(isError),
-				Content:      mcpContent,
+				IsError:      anthropic.Bool(p.Output.Type == provider.ToolOutputErrorJSON),
+				Content:      serializeMCPToolResultContent(p.Output.JSON),
 				CacheControl: cc,
 			},
 		}
@@ -1920,14 +1968,14 @@ func toolOutputTypeLabel(output *provider.ToolResultOutput) string {
 	return string(output.Type)
 }
 
-func convertToolContent(v *cacheControlValidator, parts []provider.ContentPart, msgOpts provider.ProviderOptions, mcpToolUseIDs map[string]bool, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) []anthropic.BetaContentBlockParamUnion {
+func convertToolContent(v *cacheControlValidator, parts []provider.ContentPart, msgOpts provider.ProviderOptions, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) []anthropic.BetaContentBlockParamUnion {
 	var blocks []anthropic.BetaContentBlockParamUnion
 	for i, p := range parts {
 		isLast := i == len(parts)-1
 		switch p.Type {
 		case provider.ContentPartTypeToolResult:
-			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
-			blocks = appendToolResultBlock(blocks, p, cc, mcpToolUseIDs, betas, warnings)
+			cc := v.resolveToolResultCacheControl(p, msgOpts, isLast)
+			blocks = appendToolResultBlock(blocks, p, cc, betas, warnings)
 		case provider.ContentPartTypeToolApprovalResponse:
 			continue
 		}
@@ -1936,13 +1984,11 @@ func convertToolContent(v *cacheControlValidator, parts []provider.ContentPart, 
 }
 
 // appendToolResultBlock converts a [provider.ContentPart] of type
-// [provider.ContentPartTypeToolResult] into the matching Anthropic content
-// block and appends it to blocks. Mirrors the user-block tool-result branch in
-// upstream `convert-to-anthropic-prompt.ts:743` (case `'tool-result'`).
-//
-// Whether the block becomes an `OfMCPToolResult` or a plain `OfToolResult`
-// depends on whether the tool-call id was emitted by a prior `mcp_tool_use`
-// (tracked across the request via mcpToolUseIDs).
+// [provider.ContentPartTypeToolResult] into an Anthropic `tool_result` block
+// and appends it to blocks. Mirrors the user-block tool-result branch in
+// upstream `convert-to-anthropic-prompt.ts` (case `'tool'`), which never emits
+// `mcp_tool_result`; hosted-MCP results are converted only inside the
+// assistant block that carries their `mcp_tool_use`.
 //
 // Cache-control is resolved by the caller because the cascade rule depends on
 // whether the part is the last part of its *source* [provider.Message]
@@ -1953,22 +1999,9 @@ func appendToolResultBlock(
 	blocks []anthropic.BetaContentBlockParamUnion,
 	p provider.ContentPart,
 	cc anthropic.BetaCacheControlEphemeralParam,
-	mcpToolUseIDs map[string]bool,
 	betas *[]anthropic.AnthropicBeta,
 	warnings *[]provider.Warning,
 ) []anthropic.BetaContentBlockParamUnion {
-	if mcpToolUseIDs[p.ToolCallID] {
-		mcpContent := serializeMCPToolResultContent(p.Output)
-		isError := p.Output != nil && (p.Output.Type == provider.ToolOutputErrorJSON || p.Output.Type == provider.ToolOutputErrorText)
-		return append(blocks, anthropic.BetaContentBlockParamUnion{
-			OfMCPToolResult: &anthropic.BetaRequestMCPToolResultBlockParam{
-				ToolUseID:    p.ToolCallID,
-				IsError:      anthropic.Bool(isError),
-				Content:      mcpContent,
-				CacheControl: cc,
-			},
-		})
-	}
 	content := serializeToolOutput(p.Output, betas, warnings)
 	result := &anthropic.BetaToolResultBlockParam{
 		ToolUseID:    p.ToolCallID,
@@ -1984,6 +2017,21 @@ func appendToolResultBlock(
 	return append(blocks, anthropic.BetaContentBlockParamUnion{
 		OfToolResult: result,
 	})
+}
+
+func customToolReference(opts provider.ProviderOptions) (anthropic.BetaToolResultBlockParamContentUnion, bool) {
+	var options struct {
+		Type     string          `json:"type"`
+		ToolName json.RawMessage `json:"toolName"`
+	}
+	if raw := extractRawJSON(opts); raw == nil || json.Unmarshal(raw, &options) != nil || options.Type != "tool-reference" {
+		return anthropic.BetaToolResultBlockParamContentUnion{}, false
+	}
+	block := map[string]any{"type": "tool_reference"}
+	if len(options.ToolName) > 0 {
+		block["tool_name"] = options.ToolName
+	}
+	return param.Override[anthropic.BetaToolResultBlockParamContentUnion](block), true
 }
 
 func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) []anthropic.BetaToolResultBlockParamContentUnion {
@@ -2002,9 +2050,9 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 			{OfText: &anthropic.BetaTextBlockParam{Text: string(output.JSON)}},
 		}
 	case provider.ToolOutputExecutionDenied:
-		reason := output.Reason
-		if reason == "" {
-			reason = "tool execution was denied"
+		reason := "Tool call execution denied."
+		if output.Reason != nil {
+			reason = *output.Reason
 		}
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: reason}},
@@ -2021,28 +2069,33 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 					OfText: &anthropic.BetaTextBlockParam{Text: v.Text},
 				})
 			case provider.ToolContentFile:
-				if v.Data == nil || (!v.Data.IsURL() && !v.Data.IsData()) {
-					continue
+				block, unsupported := convertToolResultFileContent(v, betas)
+				if unsupported == "" {
+					blocks = append(blocks, block)
+				} else if warnings != nil {
+					*warnings = append(*warnings, provider.Warning{
+						Type:    provider.WarnOther,
+						Message: unsupported,
+					})
 				}
-				file := provider.FilePart(v.MediaType, *v.Data)
-				if strings.HasPrefix(v.MediaType, "image/") {
-					if image, ok := convertImageFileContentPart(file, anthropic.BetaCacheControlEphemeralParam{}); ok {
-						blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{OfImage: image.OfImage})
-					}
-				} else if v.Data.IsURL() || v.MediaType == "application/pdf" {
-					if document, ok := convertPDFDocumentContentPart(file, anthropic.BetaCacheControlEphemeralParam{}); ok {
-						blocks = append(blocks, anthropic.BetaToolResultBlockParamContentUnion{OfDocument: document.OfDocument})
-						if v.Data.IsData() && betas != nil {
-							*betas = appendBetaUnique(*betas, "pdfs-2024-09-25")
-						}
-					}
+			case provider.ToolContentCustom:
+				if reference, ok := customToolReference(v.ProviderOptions); ok {
+					blocks = append(blocks, reference)
+				} else if warnings != nil {
+					*warnings = append(*warnings, provider.Warning{
+						Type:    provider.WarnOther,
+						Message: "unsupported custom tool content part",
+					})
 				}
 			}
 		}
 		if len(blocks) == 0 {
-			return []anthropic.BetaToolResultBlockParamContentUnion{
-				{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
+			if len(output.Content) == 0 {
+				return []anthropic.BetaToolResultBlockParamContentUnion{
+					{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
+				}
 			}
+			return []anthropic.BetaToolResultBlockParamContentUnion{}
 		}
 		return blocks
 	default:
@@ -2056,6 +2109,40 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
 		}
+	}
+}
+
+// convertToolResultFileContent converts a tool-result file entry, or returns
+// the upstream warning message for an entry Anthropic cannot carry.
+func convertToolResultFileContent(v provider.ToolResultContentValue, betas *[]anthropic.AnthropicBeta) (anthropic.BetaToolResultBlockParamContentUnion, string) {
+	if v.Data == nil || (!v.Data.IsURL() && !v.Data.IsData()) {
+		return anthropic.BetaToolResultBlockParamContentUnion{}, fmt.Sprintf("unsupported tool content part type: %s with data type: %s", v.Type, dataContentType(v.Data))
+	}
+	file := provider.FilePart(v.MediaType, *v.Data)
+	if strings.HasPrefix(v.MediaType, "image/") {
+		image, _ := convertImageFileContentPart(file, anthropic.BetaCacheControlEphemeralParam{})
+		return anthropic.BetaToolResultBlockParamContentUnion{OfImage: image.OfImage}, ""
+	}
+	if v.Data.IsData() && v.MediaType != "application/pdf" {
+		return anthropic.BetaToolResultBlockParamContentUnion{}, fmt.Sprintf("unsupported tool content part type: %s with media type: %s", v.Type, v.MediaType)
+	}
+	document, _ := convertPDFDocumentContentPart(file, anthropic.BetaCacheControlEphemeralParam{})
+	if v.Data.IsData() && betas != nil {
+		*betas = appendBetaUnique(*betas, "pdfs-2024-09-25")
+	}
+	return anthropic.BetaToolResultBlockParamContentUnion{OfDocument: document.OfDocument}, ""
+}
+
+func dataContentType(data *provider.DataContent) string {
+	switch {
+	case data == nil:
+		return ""
+	case data.IsReference():
+		return "reference"
+	case data.IsText():
+		return "text"
+	default:
+		return ""
 	}
 }
 
@@ -2781,7 +2868,7 @@ func convertToolChoice(tc provider.ToolChoice, mapping toolNameMapping) anthropi
 }
 
 func applyDisableParallelToolUse(p *anthropic.BetaMessageNewParams, value *bool, hasTools bool) {
-	if value == nil {
+	if value == nil || p.ToolChoice.OfNone != nil {
 		return
 	}
 	if p.ToolChoice.OfAuto != nil {
@@ -3154,38 +3241,11 @@ func extractCallerMetadata(opts provider.ProviderOptions) (anthropic.BetaToolUse
 	}
 }
 
-func serializeMCPToolResultContent(output *provider.ToolResultOutput) anthropic.BetaRequestMCPToolResultBlockParamContentUnion {
-	if output == nil {
-		return anthropic.BetaRequestMCPToolResultBlockParamContentUnion{
-			OfString: anthropic.String(""),
-		}
+func serializeMCPToolResultContent(value json.RawMessage) anthropic.BetaRequestMCPToolResultBlockParamContentUnion {
+	if len(value) == 0 {
+		value = json.RawMessage("null")
 	}
-	raw := output.JSON
-	if output.Type == provider.ToolOutputText || output.Type == provider.ToolOutputErrorText {
-		return anthropic.BetaRequestMCPToolResultBlockParamContentUnion{
-			OfString: anthropic.String(output.Text),
-		}
-	}
-	if len(raw) == 0 {
-		return anthropic.BetaRequestMCPToolResultBlockParamContentUnion{
-			OfString: anthropic.String(""),
-		}
-	}
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
-		return anthropic.BetaRequestMCPToolResultBlockParamContentUnion{
-			OfString: anthropic.String(s),
-		}
-	}
-	var blocks []anthropic.BetaTextBlockParam
-	if json.Unmarshal(raw, &blocks) == nil && len(blocks) > 0 {
-		return anthropic.BetaRequestMCPToolResultBlockParamContentUnion{
-			OfBetaMCPToolResultBlockContent: blocks,
-		}
-	}
-	return anthropic.BetaRequestMCPToolResultBlockParamContentUnion{
-		OfString: anthropic.String(string(raw)),
-	}
+	return param.Override[anthropic.BetaRequestMCPToolResultBlockParamContentUnion](value)
 }
 
 func hasFunctionTools(tools []provider.Tool) bool {

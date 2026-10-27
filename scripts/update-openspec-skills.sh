@@ -59,7 +59,8 @@ printf '%s\n' "$$" > "$lock_dir/pid"
 
 project_dir="$tmp_dir/project"
 config_dir="$tmp_dir/config"
-mkdir -p "$project_dir/openspec" "$project_dir/.pi/skills" "$config_dir/openspec"
+home_dir="$tmp_dir/home"
+mkdir -p "$project_dir/openspec" "$project_dir/.pi/skills" "$config_dir/openspec" "$home_dir"
 cp openspec/config.yaml "$project_dir/openspec/config.yaml"
 
 shopt -s nullglob
@@ -80,49 +81,37 @@ JSON
 
 (
   cd "$project_dir"
-  XDG_CONFIG_HOME="$config_dir" run_openspec update --force
+  mise exec 'npm:@fission-ai/openspec' -- env \
+    HOME="$home_dir" \
+    CODEX_HOME="$home_dir/.codex" \
+    XDG_CONFIG_HOME="$config_dir" \
+    XDG_DATA_HOME="$home_dir/.local/share" \
+    OPENSPEC_TELEMETRY=0 \
+    openspec update --force
 )
 
 version=$(run_openspec --version)
 python3 - "$project_dir/.pi/skills" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 root = Path(sys.argv[1])
-replacements = {
-    "openspec-apply-change/SKILL.md": [
-        (
-            'Always announce: "Using change: <name>" and how to override (e.g., `/opsx-apply <other>`).',
-            'Always announce: "Using change: <name>" and explain that the user can name a different change to override it.',
-        ),
-    ],
-    "openspec-explore/SKILL.md": [
-        (
-            "User: /opsx-explore add-auth-system",
-            "User: Explore the OpenSpec change add-auth-system",
-        ),
-    ],
-    "openspec-propose/SKILL.md": [
-        (
-            "When ready to implement, run /opsx-apply",
-            "When ready to implement, invoke the OpenSpec apply-change workflow or ask me to implement.",
-        ),
-        (
-            '- Prompt: "Run `/opsx-apply` or ask me to implement to start working on the tasks."',
-            '- Prompt: "Invoke the OpenSpec apply-change workflow or ask me to implement to start working on the tasks."',
-        ),
-    ],
-}
-for relative_path, path_replacements in replacements.items():
-    path = root / relative_path
+
+def workflow_reference(match):
+    name, arguments = match.groups()
+    reference = f"the `{name}` workflow"
+    if arguments:
+        reference += f" with `{arguments}`"
+    return reference
+
+for path in sorted(root.glob("openspec-*/SKILL.md")):
     content = path.read_text()
-    for old, new in path_replacements:
-        count = content.count(old)
-        if count != 1:
-            raise SystemExit(
-                f"expected generated text exactly once in {relative_path}, found {count}: {old}"
-            )
-        content = content.replace(old, new, 1)
+    content = re.sub(r"`/(openspec-[a-z-]+)(?: ([^`]+))?`", workflow_reference, content)
+    content = content.replace(
+        "User: /openspec-explore add-auth-system",
+        "User: Explore the OpenSpec change add-auth-system",
+    )
     path.write_text(content)
 PY
 
@@ -150,7 +139,7 @@ for skill in "${expected_skills[@]}"; do
     exit 1
   fi
 done
-if grep -R -n -F '/opsx' "$project_dir/.pi/skills"; then
+if grep -R -n -E '/(opsx|openspec-)' "$project_dir/.pi/skills"; then
   echo "generated OpenSpec skills contain tool-specific command references" >&2
   exit 1
 fi

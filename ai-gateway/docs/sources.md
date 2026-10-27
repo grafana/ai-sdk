@@ -31,20 +31,21 @@ them visible in your UI.
 
 ## Understand the limits
 
-Some sources include page or character positions that can help readers locate
-the reference. The Gateway currently returns limited citation metadata, not all
-provider annotations or cited passages. Design your citation UI to work without
+Text can carry citations: references to the URL or document supporting that
+text, optionally with character offsets and the cited passage. Citations are
+returned separately from the complete source list, and providers supply offsets
+and cited passages inconsistently. Design your citation UI to work without
 those extra details.
 
 A citation is a model-provided reference, not verification that the answer is
 correct or that the linked content is still available. The Gateway does not
 retrieve source URLs for you.
 
-Sources returned to your application are not automatically captured in Gateway
-logs or telemetry. See [text observability](text-observability.md#returned-values-and-consumer-observation)
-for the distinction and the [Go client guide](../../docs/providers/grafana-gateway.md)
-for accessing response data.
+The Gateway does not record sources in its logs or telemetry; see
+[Monitor the Gateway](text-observability.md#what-the-gateway-does-not-record).
+The [Go client guide](../../docs/providers/grafana-gateway.md) shows how to
+read them from responses.
 
 ---
 
-← [Model catalog](model-catalog.md) · [Docs index](../../docs/README.md) · [Text observability →](text-observability.md)
+← [Model catalog](model-catalog.md) · [Docs index](../../docs/README.md) · [Monitor the Gateway →](text-observability.md)

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,27 +19,117 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
+	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
 	agentmiddleware "github.com/grafana/ai-sdk/middleware/agentobservability"
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewAgentObservabilityRuntime_DisabledDoesNotResolveSecret(t *testing.T) {
+func TestBYOKObservability_LogicalExportAndCredentialPrivacy(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, status := range []int{503, 401, -1} {
+			t.Run(strconv.FormatBool(streaming)+"/"+strconv.Itoa(status), func(t *testing.T) {
+				env := testkit.NewEnv(t, func(c *agento11y.Config) {
+					c.ContentCapture = agento11y.ContentCaptureModeMetadataOnly
+					c.Hooks = agento11y.HooksConfig{Enabled: false}
+				})
+				var logs lockedBuffer
+				logger := slog.New(slog.NewJSONHandler(&logs, nil))
+				telemetry, err := NewTelemetry(logger)
+				require.NoError(t, err)
+				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
+				_, observe, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
+				require.NoError(t, err)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				var keys []string
+				client := &http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+					keys = append(keys, r.Header.Get("X-Api-Key"))
+					if status == -1 {
+						cancel()
+						<-r.Context().Done()
+						return nil, r.Context().Err()
+					}
+					raw, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+					assert.Contains(t, string(raw), "application-content")
+					assert.NotContains(t, string(raw), "gateway")
+					assert.NotContains(t, string(raw), "dummy-")
+					code := http.StatusOK
+					contentType := "application/json"
+					body := `{"id":"msg_1","type":"message","role":"assistant","model":"backend-private","content":[{"type":"text","text":"application-output"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
+					if streaming {
+						contentType = "text/event-stream"
+						body = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"backend-private\",\"content\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+					}
+					if len(keys) == 1 {
+						code = status
+						contentType = "application/json"
+						body = `{"type":"error","error":{"type":"api_error","message":"dummy-first dummy-second"}}`
+					}
+					return &http.Response{StatusCode: code, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+				})}
+				wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, observe), Limits: serviceTestLimits()})
+				require.NoError(t, err)
+				handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
+				request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[{"role":"user","content":[{"type":"text","text":"application-content"}]}],"maxOutputTokens":32,"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}}}`))
+				requestID := "anthropic/native-" + strings.Repeat("x", 140)
+				request = request.WithContext(ctx)
+				request.Header = headers
+				request.Header.Set("Content-Type", "application/json")
+				request.Header.Set(providerv4.HeaderModelID, requestID)
+				request.Header.Set(providerv4.HeaderSpecificationVersion, "4")
+				request.Header.Set(providerv4.HeaderStreaming, strconv.FormatBool(streaming))
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, request)
+				switch status {
+				case -1:
+					assert.Equal(t, []string{"dummy-first"}, keys)
+				case 401:
+					assert.Equal(t, http.StatusFailedDependency, response.Code)
+					assert.Equal(t, []string{"dummy-first"}, keys)
+				default:
+					assert.Equal(t, http.StatusOK, response.Code)
+					assert.Equal(t, []string{"dummy-first", "dummy-second"}, keys)
+				}
+				runtime.Close(context.Background())
+				generation := env.SingleGenerationJSON(t)
+				assert.Equal(t, "anthropic", testkit.StringValue(t, generation, "model", "provider"))
+				assert.Equal(t, requestID, testkit.StringValue(t, generation, "model", "name"))
+				exported, err := json.Marshal(generation)
+				require.NoError(t, err)
+				assert.NotContains(t, response.Body.String(), `"execution"`)
+				assert.NotContains(t, response.Body.String(), `"nativeError"`)
+				metrics := testMetrics(t, telemetry)
+				assert.Contains(t, metrics, `model="byok"`)
+				assert.NotContains(t, metrics, requestID)
+				assert.Contains(t, logs.String(), requestID)
+				for _, secret := range []string{"dummy-first", "dummy-second"} {
+					assert.NotContains(t, logs.String()+metrics+string(exported), secret)
+				}
+				for _, private := range []string{"backend-private", "application-content", "application-output"} {
+					assert.NotContains(t, logs.String()+metrics+string(exported), private)
+				}
+			})
+		}
+	}
+}
+
+func TestNewAgentObservabilityRuntime_DisabledIsNoOp(t *testing.T) {
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	require.NoError(t, err)
-	calls := 0
-	runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{}, func(string) (string, bool) {
-		calls++
-		return "private", true
-	}, telemetry)
+	runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{}, "", telemetry)
 	require.NoError(t, err)
 	require.NotNil(t, runtime)
 	assert.Nil(t, runtime.client)
-	assert.Zero(t, calls)
-	runtime.Close()
+	runtime.Close(context.Background())
 }
 
 func TestAgentObservabilityRuntime_CloseWaitsForAcquiredRecordings(t *testing.T) {
@@ -46,16 +137,14 @@ func TestAgentObservabilityRuntime_CloseWaitsForAcquiredRecordings(t *testing.T)
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{
-		client:          env.Client,
-		telemetry:       telemetry,
-		flushTimeout:    time.Second,
-		shutdownTimeout: time.Second,
+		client:    env.Client,
+		telemetry: telemetry,
 	}
 	require.Same(t, env.Client, runtime.acquireClient(context.Background()))
 	require.Same(t, env.Client, runtime.acquireClient(context.Background()))
 	closed := make(chan struct{})
 	go func() {
-		runtime.Close()
+		runtime.Close(context.Background())
 		close(closed)
 	}()
 	require.Eventually(t, func() bool {
@@ -83,22 +172,23 @@ func TestAgentObservabilityRuntime_CloseWaitsForAcquiredRecordings(t *testing.T)
 	}
 }
 
-func TestAgentObservabilityRuntime_CloseBoundsRecordingWait(t *testing.T) {
+func TestAgentObservabilityRuntime_CloseEndsAtTheSharedDeadline(t *testing.T) {
 	env := testkit.NewEnv(t)
 	var logs lockedBuffer
 	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(&logs, nil)))
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{
-		client:          env.Client,
-		telemetry:       telemetry,
-		flushTimeout:    10 * time.Millisecond,
-		shutdownTimeout: time.Second,
+		client:    env.Client,
+		telemetry: telemetry,
 	}
 	require.Same(t, env.Client, runtime.acquireClient(context.Background()))
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
 	started := time.Now()
-	runtime.Close()
+	runtime.Close(ctx)
 	assert.Less(t, time.Since(started), time.Second)
-	assert.Contains(t, logs.String(), `"class":"shutdown"`)
+	assert.Nil(t, runtime.acquireClient(context.Background()))
+	assert.Contains(t, testMetrics(t, telemetry), `grafana_ai_gateway_agento11y_export_failures_total{class="shutdown"}`)
 	runtime.recordingComplete()
 }
 
@@ -107,10 +197,8 @@ func TestAgentObservabilityRuntime_ConcurrentAcquireAndClose(t *testing.T) {
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{
-		client:          env.Client,
-		telemetry:       telemetry,
-		flushTimeout:    time.Second,
-		shutdownTimeout: time.Second,
+		client:    env.Client,
+		telemetry: telemetry,
 	}
 	start := make(chan struct{})
 	var callers sync.WaitGroup
@@ -127,7 +215,7 @@ func TestAgentObservabilityRuntime_ConcurrentAcquireAndClose(t *testing.T) {
 	closed := make(chan struct{})
 	go func() {
 		<-start
-		runtime.Close()
+		runtime.Close(context.Background())
 		close(closed)
 	}()
 	close(start)
@@ -150,12 +238,10 @@ func TestNewModelObservabilityFactory_CloseWaitsForAbandonedStreamRecording(t *t
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
 	runtime := &AgentObservabilityRuntime{
-		client:          env.Client,
-		telemetry:       telemetry,
-		flushTimeout:    time.Second,
-		shutdownTimeout: time.Second,
+		client:    env.Client,
+		telemetry: telemetry,
 	}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	upstream := make(chan provider.StreamPart)
 	model, err := factory("grafana/assistant", &observabilityTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
@@ -168,7 +254,7 @@ func TestNewModelObservabilityFactory_CloseWaitsForAbandonedStreamRecording(t *t
 	cancel()
 	closed := make(chan struct{})
 	go func() {
-		runtime.Close()
+		runtime.Close(context.Background())
 		close(closed)
 	}()
 	select {
@@ -185,34 +271,6 @@ func TestNewModelObservabilityFactory_CloseWaitsForAbandonedStreamRecording(t *t
 	assert.Equal(t, 1, env.RequestCount())
 	assert.NotContains(t, logs.String(), `"msg":"agent observability export failed"`)
 	close(upstream)
-}
-
-func TestNewAgentObservabilityRuntime_RejectsActualSDKEnvironment(t *testing.T) {
-	for _, name := range []string{
-		"AGENTO11Y_TAGS", "AGENTO11Y_EXPORT_TIMEOUT_MS", "SIGIL_EXPORT_TIMEOUT_MS",
-		"AGENTO11Y_MAX_RETRIES", "SIGIL_MAX_RETRIES", "AGENTO11Y_MAX_BACKOFF_MS", "SIGIL_MAX_BACKOFF_MS",
-		"AGENTO11Y_QUEUE_SIZE", "SIGIL_QUEUE_SIZE", "AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES",
-		"AGENTO11Y_USE_EXPERIMENTAL_OTEL", "SIGIL_USE_EXPERIMENTAL_OTEL",
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Setenv(name, "private=ambient")
-			telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
-			require.NoError(t, err)
-			settings := config.AgentObservabilitySettings{Enabled: true, AuthSecretEnv: "AO_SECRET"}
-			runtime, err := NewAgentObservabilityRuntime(settings, func(name string) (string, bool) {
-				if name == "AO_SECRET" {
-					t.Error("secret resolved before ambient environment validation")
-					return "private-secret", true
-				}
-				return "", false
-			}, telemetry)
-			require.Error(t, err)
-			assert.Nil(t, runtime)
-			assert.EqualError(t, err, "config: ambient agent observability SDK environment is not allowed")
-			assert.NotContains(t, err.Error(), name)
-			assert.NotContains(t, err.Error(), "private=ambient")
-		})
-	}
 }
 
 func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayload(t *testing.T) {
@@ -259,31 +317,21 @@ func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayl
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	secretCalls := 0
-	runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{
-		Enabled:         true,
-		Protocol:        config.AgentObservabilityHTTP,
-		Endpoint:        server.URL,
-		TLS:             false,
-		AuthSecretEnv:   "AO_SECRET",
-		QueueSize:       8,
-		BatchSize:       1,
-		PayloadMaxBytes: 1 << 20,
-		MaxRetries:      1,
-		InitialBackoff:  time.Millisecond,
-		MaxBackoff:      time.Millisecond,
-		FlushInterval:   time.Hour,
-		FlushTimeout:    time.Second,
-		ShutdownTimeout: time.Second,
-	}, func(name string) (string, bool) {
-		if name == "AO_SECRET" {
-			secretCalls++
-			return "agent-secret", true
-		}
-		return "", false
-	}, telemetry)
+	runtime, err := newAgentObservabilityRuntime(config.AgentObservabilitySettings{
+		Enabled:  true,
+		Protocol: config.AgentObservabilityHTTP,
+		Endpoint: server.URL,
+	}, "agent-secret", telemetry, agentExportTuning{
+		queueSize:       8,
+		batchSize:       1,
+		payloadMaxBytes: 1 << 20,
+		maxRetries:      1,
+		initialBackoff:  time.Millisecond,
+		maxBackoff:      time.Millisecond,
+		flushInterval:   time.Hour,
+	})
 	require.NoError(t, err)
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	model, err := factory("grafana/assistant", &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
 		return &provider.GenerateResult{
@@ -297,8 +345,7 @@ func TestNewAgentObservabilityRuntime_HTTPExportUsesOneResolvedSecretAndSafePayl
 	require.NoError(t, err)
 	_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("prompt-private")}})
 	require.NoError(t, err)
-	runtime.Close()
-	assert.Equal(t, 1, secretCalls)
+	runtime.Close(context.Background())
 	request := <-captured
 	assert.Equal(t, "Bearer agent-secret", request.authorization)
 	assert.Equal(t, "/api/v1/generations:export", request.path)
@@ -337,27 +384,22 @@ func TestNewAgentObservabilityRuntime_RejectedHTTPBatchIsOneFailOpenFailure(t *t
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{
-		Enabled:         true,
-		Protocol:        config.AgentObservabilityHTTP,
-		Endpoint:        server.URL,
-		TLS:             false,
-		AuthSecretEnv:   "AO_SECRET",
-		QueueSize:       4,
-		BatchSize:       1,
-		PayloadMaxBytes: 1 << 20,
-		MaxRetries:      1,
-		InitialBackoff:  time.Millisecond,
-		MaxBackoff:      time.Millisecond,
-		FlushInterval:   time.Hour,
-		FlushTimeout:    time.Second,
-		ShutdownTimeout: time.Second,
-	}, func(name string) (string, bool) {
-		return "agent-secret", name == "AO_SECRET"
-	}, telemetry)
+	runtime, err := newAgentObservabilityRuntime(config.AgentObservabilitySettings{
+		Enabled:  true,
+		Protocol: config.AgentObservabilityHTTP,
+		Endpoint: server.URL,
+	}, "agent-secret", telemetry, agentExportTuning{
+		queueSize:       4,
+		batchSize:       1,
+		payloadMaxBytes: 1 << 20,
+		maxRetries:      1,
+		initialBackoff:  time.Millisecond,
+		maxBackoff:      time.Millisecond,
+		flushInterval:   time.Hour,
+	})
 	require.NoError(t, err)
-	defer runtime.Close()
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	defer runtime.Close(context.Background())
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	expected := &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "model-private"}}}
 	model, err := factory("grafana/assistant", &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
@@ -477,9 +519,9 @@ func TestFilterAgentGeneration_ClosedMetadataAndIdentityPolicy(t *testing.T) {
 		Tags:                map[string]string{"private": "tag-private"},
 		Metadata: map[string]any{
 			"gateway.correlation_id": "correlation",
-			"gateway.region":         "us-central1",
+			"gateway.namespace":      "verified-namespace",
 			"provider.private":       "provider-option-private",
-			"gateway.namespace":      strings.Repeat("x", maxObservationValueLen+1),
+			"gateway.caller_service": strings.Repeat("x", maxObservationValueLen+1),
 		},
 		SystemPrompt: "content preserved for metadata-only stripping",
 		Usage:        agento11y.TokenUsage{InputTokens: 2, OutputTokens: 3},
@@ -495,7 +537,7 @@ func TestFilterAgentGeneration_ClosedMetadataAndIdentityPolicy(t *testing.T) {
 	assert.Equal(t, generation.SystemPrompt, filtered.SystemPrompt)
 	assert.Equal(t, map[string]any{
 		"gateway.correlation_id": "correlation",
-		"gateway.region":         "us-central1",
+		"gateway.namespace":      "verified-namespace",
 	}, filtered.Metadata)
 	assert.Empty(t, filtered.ResponseID)
 	assert.Empty(t, filtered.ResponseModel)
@@ -513,9 +555,9 @@ func TestNewModelObservabilityFactory_SharedRegistryAndPassThrough(t *testing.T)
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	factory, err := NewModelObservabilityFactory(telemetry, logger, nil, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, nil, 10*time.Millisecond)
 	require.NoError(t, err)
-	_, err = NewModelObservabilityFactory(telemetry, logger, nil, 10*time.Millisecond)
+	_, _, err = NewModelObservabilityFactories(telemetry, logger, nil, 10*time.Millisecond)
 	require.Error(t, err, "duplicate model collector registration must fail")
 
 	result := &provider.GenerateResult{
@@ -597,7 +639,7 @@ func TestModelObservationChain_ExactRequestAndResponseOrder(t *testing.T) {
 func TestModelObservationChain_WP9LowerModelSeamStaysBelowOneLogicalWrapper(t *testing.T) {
 	telemetry, err := NewTelemetry(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	require.NoError(t, err)
-	factory, err := NewModelObservabilityFactory(telemetry, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, 10*time.Millisecond)
+	factory, _, err := NewModelObservabilityFactories(telemetry, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, 10*time.Millisecond)
 	require.NoError(t, err)
 
 	var lowerCalls atomic.Int64
@@ -633,8 +675,8 @@ func TestNewModelObservabilityFactory_AgentExportIsCanonicalMetadataOnly(t *test
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 
 	inputTokens, outputTokens := 60, 3
@@ -711,8 +753,8 @@ func TestNewModelObservabilityFactory_UnaryProviderFailureIsSafeAndFailThrough(t
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	providerError := provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:      "error-private bearer-private",
@@ -763,8 +805,8 @@ func TestNewModelObservabilityFactory_RecorderFailureDoesNotFailModelCall(t *tes
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	expected := &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}
 	model, err := factory("grafana/assistant", &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
@@ -790,8 +832,8 @@ func TestNewModelObservabilityFactory_StreamIsObservedOnceAndPassesThrough(t *te
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 
 	inputTokens, outputTokens := 60, 6
@@ -879,9 +921,9 @@ func TestNewModelObservabilityFactory_CanceledStreamsCloseWithinBoundedDrain(t *
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
-			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 			const drainTimeout = 10 * time.Millisecond
-			factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, drainTimeout)
+			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, drainTimeout)
 			require.NoError(t, err)
 
 			stream := make(chan provider.StreamPart)
@@ -960,8 +1002,8 @@ func TestNewModelObservabilityFactory_NormalAndPrematureStreamsFinalizeOnce(t *t
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
-			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-			factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
+			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 			require.NoError(t, err)
 
 			inputLow, inputHigh, outputLow, outputHigh := 2, 5, 1, 3
@@ -1019,8 +1061,10 @@ func TestNewModelObservabilityFactory_NormalAndPrematureStreamsFinalizeOnce(t *t
 
 func testMetrics(t *testing.T, telemetry *Telemetry) string {
 	t.Helper()
+	gatherer, ok := telemetry.Registerer().(prometheus.Gatherer)
+	require.True(t, ok)
 	response := httptest.NewRecorder()
-	telemetry.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	return response.Body.String()
 }
 
@@ -1074,4 +1118,101 @@ func (model *observabilityTestModel) DoStream(ctx context.Context, options provi
 		return nil, nil
 	}
 	return model.stream(ctx, options)
+}
+
+const customContentRequestBody = `{"prompt":[{"role":"user","content":[{"type":"text","text":"private-prompt"}]},{"role":"assistant","content":[{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"private-metadata-item","encryptedContent":"private-metadata-encrypted"}}}]},{"role":"user","content":[{"type":"text","text":"private-prompt"}]}]}`
+
+func TestCustomContentTelemetry_MetadataOnlyKeepsOptionsAndMetadataPrivate(t *testing.T) {
+	customMetadata := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"private-metadata-out","encryptedContent":"private-metadata-encrypted-out"}`)}
+	for _, streaming := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unary", true: "stream"}[streaming], func(t *testing.T) {
+			h := newFallbackAcceptance(t,
+				&observabilityTestModel{
+					generate: func(_ context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
+						require.Len(t, options.Prompt, 3)
+						return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "openai.compaction", ProviderMetadata: customMetadata}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+					},
+					stream: func(_ context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
+						require.Len(t, options.Prompt, 3)
+						return fallbackParts(
+							provider.StreamPart{Type: provider.PartCustom, Kind: "openai.compaction", ProviderMetadata: customMetadata},
+							provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
+						), nil
+					},
+				},
+				&observabilityTestModel{},
+			)
+			response := httptest.NewRecorder()
+
+			h.handler.ServeHTTP(response, h.request(context.Background(), streaming, customContentRequestBody))
+
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			assert.Contains(t, response.Body.String(), "private-metadata-out", "the caller keeps custom metadata")
+			assert.Contains(t, response.Body.String(), "private-metadata-encrypted-out")
+			mode := map[bool]string{false: "generate", true: "stream"}[streaming]
+			h.verify(t, mode, response.Body.String(), []fallback.AttemptOutcome{fallback.AttemptSelected})
+		})
+	}
+}
+
+func TestCustomContentTelemetry_Disposition(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unary", true: "stream"}[streaming], func(t *testing.T) {
+			env := testkit.NewEnv(t, func(c *agento11y.Config) {
+				c.ContentCapture = agento11y.ContentCaptureModeMetadataOnly
+				c.Hooks = agento11y.HooksConfig{Enabled: false}
+			})
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logs, nil))
+			telemetry, err := NewTelemetry(logger)
+			require.NoError(t, err)
+			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
+			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
+			require.NoError(t, err)
+			metadata := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"metadata-private"}`)}
+			lower := &observabilityTestModel{
+				generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+					return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "kind-private.custom", ProviderMetadata: metadata}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+				},
+				stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					parts := make(chan provider.StreamPart, 3)
+					parts <- provider.StreamPart{Type: provider.PartStreamStart}
+					parts <- provider.StreamPart{Type: provider.PartCustom, Kind: "kind-private.custom", ProviderMetadata: metadata}
+					parts <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}}
+					close(parts)
+					return &provider.StreamResult{Stream: parts}, nil
+				},
+			}
+			model, err := factory("grafana/assistant", lower)
+			require.NoError(t, err)
+			history := provider.CallOptions{Prompt: []provider.Message{provider.NewAssistantMessage(func() provider.ContentPart {
+				part := provider.CustomPart("kind-private.history")
+				part.ProviderOptions = provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: json.RawMessage(`{"itemId":"options-private"}`)}}
+				return part
+			}())}}
+			if streaming {
+				result, err := model.DoStream(context.Background(), history)
+				require.NoError(t, err)
+				for range result.Stream {
+				}
+			} else {
+				_, err := model.DoGenerate(context.Background(), history)
+				require.NoError(t, err)
+			}
+			require.Eventually(t, func() bool { return env.RequestCount() == 1 }, time.Second, time.Millisecond)
+			env.Shutdown(t)
+			generation, err := json.Marshal(env.SingleGenerationJSON(t))
+			require.NoError(t, err)
+			metrics := testMetrics(t, telemetry)
+
+			for _, private := range []string{"metadata-private", "options-private"} {
+				assert.NotContains(t, string(generation)+logs.String()+metrics, private)
+			}
+			assert.NotContains(t, string(generation), "kind-private", "Agent Observability omits custom parts")
+			assert.NotContains(t, logs.String(), "kind-private", "operator logs carry no custom kinds under metadata-only capture")
+			if streaming {
+				assert.Contains(t, metrics, "aisdk_model_time_to_first_output_seconds_count", "Prometheus counts custom as first output")
+			}
+		})
+	}
 }

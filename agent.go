@@ -285,9 +285,7 @@ func (a *ToolLoopAgent) Generate(ctx context.Context, opts ...AgentGenerateOptio
 	if err := result.abortError(); err != nil {
 		return nil, err
 	}
-	generateResult := streamResultToGenerateResult(result)
-	generateResult.Warnings = append(timeoutWarnings, generateResult.Warnings...)
-	return generateResult, nil
+	return streamResultToGenerateResult(result, timeoutWarnings), nil
 }
 
 func buildAgentStreamCall(opts []AgentStreamOption) agentCallConfig {
@@ -324,27 +322,6 @@ func (a *ToolLoopAgent) finalizeConfig(cfg *streamConfig, callRuntimeContext any
 	}
 	if runtimeContextSet {
 		cfg.runtimeContext = runtimeContext
-	}
-}
-
-func streamResultToGenerateResult(result *StreamTextResult) *GenerateTextResult {
-	return &GenerateTextResult{
-		Text:             result.Text(),
-		Reasoning:        result.Reasoning(),
-		ToolCalls:        result.ToolCalls(),
-		ToolResults:      result.ToolResults(),
-		Files:            result.Files(),
-		Sources:          result.Sources(),
-		FinishReason:     result.FinishReason(),
-		Usage:            result.Usage(),
-		TotalUsage:       result.TotalUsage(),
-		Steps:            result.Steps(),
-		Warnings:         result.Warnings(),
-		Content:          result.Content(),
-		Response:         result.Response(),
-		ProviderMetadata: result.ProviderMetadata(),
-		Output:           result.OutputValue(),
-		OutputError:      result.OutputError(),
 	}
 }
 
@@ -405,6 +382,9 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 	}
 	if call.toolApproval.generic != nil || call.toolApproval.tools != nil {
 		dst.toolApproval = cloneToolApprovalConfig(call.toolApproval)
+	}
+	if len(call.toolApprovalSecret) > 0 {
+		dst.toolApprovalSecret = append([]byte(nil), call.toolApprovalSecret...)
 	}
 	if call.maxRetries != nil {
 		v := *call.maxRetries
@@ -473,6 +453,9 @@ func mergeBaseConfig(dst *baseConfig, call *baseConfig) {
 	}
 	if call.output != nil {
 		dst.output = call.output
+	}
+	if call.repairText != nil {
+		dst.repairText = call.repairText
 	}
 
 	dst.onStart = mergeCallbacks1(settingsCallbacks.onStart, call.onStart)

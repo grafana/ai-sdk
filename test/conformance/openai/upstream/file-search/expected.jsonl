@@ -40,7 +40,6 @@
 {"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" an"}
 {"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" embedding"}
 {"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" "}
-{"type":"source-document","sourceId":"src-0","mediaType":"text/plain","title":"ai.pdf","filename":"ai.pdf","providerMetadata":{"openai":{"type":"file_citation","fileId":"file-Ebzhf8H4DPGPr9pUhr7n7v","index":154}}}
 {"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":"."}
 {"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" Unlike"}
 {"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" gener"}
@@ -82,8 +81,9 @@
 {"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" NLP"}
 {"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" tasks"}
 {"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":" "}
-{"type":"source-document","sourceId":"src-1","mediaType":"text/plain","title":"ai.pdf","filename":"ai.pdf","providerMetadata":{"openai":{"type":"file_citation","fileId":"file-Ebzhf8H4DPGPr9pUhr7n7v","index":382}}}
 {"type":"text-delta","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","delta":"."}
-{"type":"text-end","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","providerMetadata":{"openai":{"itemId":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","annotations":[{"type":"file_citation","file_id":"file-Ebzhf8H4DPGPr9pUhr7n7v","filename":"ai.pdf","index":154},{"type":"file_citation","file_id":"file-Ebzhf8H4DPGPr9pUhr7n7v","filename":"ai.pdf","index":382}]}}}
+{"type":"text-end","id":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","citations":[{"source":{"type":"source","sourceType":"document","id":"file-Ebzhf8H4DPGPr9pUhr7n7v","mediaType":"text/plain","title":"ai.pdf","filename":"ai.pdf","providerMetadata":{"openai":{"type":"file_citation","fileId":"file-Ebzhf8H4DPGPr9pUhr7n7v","index":154}}}},{"source":{"type":"source","sourceType":"document","id":"file-Ebzhf8H4DPGPr9pUhr7n7v","mediaType":"text/plain","title":"ai.pdf","filename":"ai.pdf","providerMetadata":{"openai":{"type":"file_citation","fileId":"file-Ebzhf8H4DPGPr9pUhr7n7v","index":382}}}}],"providerMetadata":{"openai":{"itemId":"msg_0459517ad68504ad0068cabfc6b5c48192a15ac773668537f1","annotations":[{"type":"file_citation","file_id":"file-Ebzhf8H4DPGPr9pUhr7n7v","filename":"ai.pdf","index":154},{"type":"file_citation","file_id":"file-Ebzhf8H4DPGPr9pUhr7n7v","filename":"ai.pdf","index":382}]}}}
+{"type":"source-document","sourceId":"src-0","mediaType":"text/plain","title":"ai.pdf","filename":"ai.pdf","providerMetadata":{"openai":{"type":"file_citation","fileId":"file-Ebzhf8H4DPGPr9pUhr7n7v","index":154}}}
+{"type":"source-document","sourceId":"src-1","mediaType":"text/plain","title":"ai.pdf","filename":"ai.pdf","providerMetadata":{"openai":{"type":"file_citation","fileId":"file-Ebzhf8H4DPGPr9pUhr7n7v","index":382}}}
 {"type":"finish-step"}
 {"type":"finish","finishReason":"stop"}

@@ -4,8 +4,8 @@ import { readUIMessageStream, uiMessageChunkSchema, type UIMessage, type UIMessa
 import { fetchScenario } from "./helpers.js";
 
 describe("generated file output", () => {
-  it("delivers resolved file bytes through SSE and message assembly", async () => {
-    const response = await fetchScenario("generated-file");
+  it.each(["generated-file", "generated-file-grafana"])("%s delivers resolved file bytes through SSE and message assembly", async (scenario) => {
+    const response = await fetchScenario(scenario);
     expect(response.status).toBe(200);
     const chunks: UIMessageChunk[] = [];
     for await (const parsed of parseJsonEventStream({ stream: response.body!, schema: uiMessageChunkSchema })) {

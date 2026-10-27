@@ -688,3 +688,45 @@ func TestHooksSpanTelemetryKeys(t *testing.T) {
 	assert.Equal(t, "aisdk.hooks.action", SpanAttrHooksAction)
 	assert.Equal(t, "aisdk.hooks.rule_id", SpanAttrHooksRuleID)
 }
+
+func TestRecordingMiddleware_StreamFinishIsRecordedBeforeDownstreamCancels(t *testing.T) {
+	for _, drainTimeout := range []time.Duration{0, 10 * time.Millisecond} {
+		t.Run(drainTimeout.String(), func(t *testing.T) {
+			env := testkit.NewEnv(t)
+			upstream := make(chan provider.StreamPart, 2)
+			stop := provider.FinishReason{Unified: provider.FinishReasonStop}
+			upstream <- provider.StreamPart{Type: provider.PartTextStart, ID: "t0"}
+			upstream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &stop}
+			t.Cleanup(func() { close(upstream) })
+			model := &mockLanguageModel{
+				provider_: "anthropic",
+				modelID:   "claude",
+				doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: upstream}, nil
+				},
+			}
+			wrapped := middleware.Wrap(middleware.WrapOptions{
+				Model: model,
+				Middleware: []middleware.Middleware{RecordingMiddleware(RecordingOptions{
+					ClientResolver:     func(context.Context) *agento11y.Client { return env.Client },
+					StreamDrainTimeout: drainTimeout,
+				})},
+			})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			result, err := wrapped.DoStream(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
+			require.NoError(t, err)
+			for part := range result.Stream {
+				if part.Type == provider.PartFinish {
+					break
+				}
+			}
+			cancel()
+			require.NoError(t, env.Client.Shutdown(context.Background()))
+
+			gen := env.SingleGenerationJSON(t)
+			assert.Nil(t, gen["call_error"])
+		})
+	}
+}

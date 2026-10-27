@@ -1492,7 +1492,7 @@ func TestStreamTextToolApproval_ApprovedReplayRechecksPolicy(t *testing.T) {
 			assert.Equal(t, provider.ContentPartTypeToolResult, last.Content[0].Type)
 			require.NotNil(t, last.Content[0].Output)
 			assert.Equal(t, provider.ToolOutputExecutionDenied, last.Content[0].Output.Type)
-			assert.Equal(t, "policy changed", last.Content[0].Output.Reason)
+			assert.Equal(t, new("policy changed"), last.Content[0].Output.Reason)
 			return &provider.StreamResult{Stream: finishStreamParts()}, nil
 		},
 	}
@@ -1860,7 +1860,7 @@ func TestStreamTextToolApproval_DeniedResponseCreatesExecutionDenied(t *testing.
 	require.Len(t, last.Content, 1)
 	require.NotNil(t, last.Content[0].Output)
 	assert.Equal(t, provider.ToolOutputExecutionDenied, last.Content[0].Output.Type)
-	assert.Equal(t, "too risky", last.Content[0].Output.Reason)
+	assert.Equal(t, new("too risky"), last.Content[0].Output.Reason)
 }
 
 func TestStreamTextToolApproval_DeniedResponseWithExistingResultEmitsOutputDenied(t *testing.T) {
@@ -1873,7 +1873,7 @@ func TestStreamTextToolApproval_DeniedResponseWithExistingResultEmitsOutputDenie
 		),
 		provider.NewToolMessage(
 			provider.ToolApprovalResponsePart("apr_1", approved, "too risky"),
-			provider.ToolResultPart("c1", "dangerous", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: "too risky"}),
+			provider.ToolResultPart("c1", "dangerous", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: new("too risky")}),
 		),
 	}
 	var capturedPrompt []provider.Message
@@ -2122,7 +2122,7 @@ func TestStreamTextToolApproval_ProviderExecutedDeniedResponseEmitsDenied(t *tes
 	require.Equal(t, provider.RoleTool, last.Role)
 	require.Len(t, last.Content, 1)
 	assert.Equal(t, provider.ContentPartTypeToolApprovalResponse, last.Content[0].Type)
-	assert.True(t, last.Content[0].ProviderExecuted)
+	assert.False(t, last.Content[0].ProviderExecuted)
 }
 
 func TestStreamTextToolApproval_ExistingResultNotDuplicated(t *testing.T) {
@@ -2443,7 +2443,7 @@ func TestStreamTextToolApproval_AutomaticDeniedPolicy(t *testing.T) {
 	require.Len(t, steps[0].ToolResults, 1)
 	require.NotNil(t, steps[0].ToolResults[0].ModelOutput)
 	assert.Equal(t, provider.ToolOutputExecutionDenied, steps[0].ToolResults[0].ModelOutput.Type)
-	assert.Equal(t, "policy denied", steps[0].ToolResults[0].ModelOutput.Reason)
+	assert.Equal(t, new("policy denied"), steps[0].ToolResults[0].ModelOutput.Reason)
 }
 
 func TestStreamTextDefaultStopCondition(t *testing.T) {
@@ -2709,6 +2709,54 @@ func TestStreamTextTotalUsage(t *testing.T) {
 	assert.Equal(t, 8, *tu.OutputTokens.Total)
 
 	assert.Equal(t, result.TotalUsage(), result.AggregateUsage())
+}
+
+func TestAggregateUsage_SumsEveryCounter(t *testing.T) {
+	step := func(u provider.Usage) StepResult { return StepResult{Usage: u} }
+	zeroTotals := provider.Usage{
+		InputTokens:  provider.InputTokenUsage{Total: intPtr(0)},
+		OutputTokens: provider.OutputTokenUsage{Total: intPtr(0)},
+	}
+
+	tests := []struct {
+		name  string
+		steps []StepResult
+		want  provider.Usage
+	}{
+		{
+			name: "no steps",
+			want: zeroTotals,
+		},
+		{
+			name:  "all steps unreported",
+			steps: []StepResult{step(provider.Usage{}), step(provider.Usage{})},
+			want:  zeroTotals,
+		},
+		{
+			name: "mixed nil and non-nil",
+			steps: []StepResult{
+				step(provider.Usage{
+					InputTokens:  provider.InputTokenUsage{Total: intPtr(10), NoCache: intPtr(4), CacheRead: intPtr(6)},
+					OutputTokens: provider.OutputTokenUsage{Total: intPtr(5), Text: intPtr(5)},
+				}),
+				step(provider.Usage{
+					InputTokens:  provider.InputTokenUsage{Total: intPtr(20), CacheRead: intPtr(12), CacheWrite: intPtr(8)},
+					OutputTokens: provider.OutputTokenUsage{Total: intPtr(7), Reasoning: intPtr(3)},
+				}),
+				step(provider.Usage{}),
+			},
+			want: provider.Usage{
+				InputTokens:  provider.InputTokenUsage{Total: intPtr(30), NoCache: intPtr(4), CacheRead: intPtr(18), CacheWrite: intPtr(8)},
+				OutputTokens: provider.OutputTokenUsage{Total: intPtr(12), Text: intPtr(5), Reasoning: intPtr(3)},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, aggregateUsage(tc.steps))
+		})
+	}
 }
 
 func TestStreamTextToUIMessageStreamReportsAssemblyError(t *testing.T) {
@@ -3352,8 +3400,9 @@ func TestStreamTextAbortCallbacks(t *testing.T) {
 
 		assert.True(t, abortCalled, "OnAbort should fire on mid-stream cancel")
 		assert.Len(t, abortSteps, 1, "abort should see the completed first step")
-		assert.True(t, finishCalled, "OnFinish should fire when completed steps exist")
-		assert.Len(t, finishSteps, 1, "OnFinish should see only completed steps")
+		assert.False(t, finishCalled, "OnFinish should not fire after cancellation")
+		assert.Empty(t, finishSteps)
+		assert.Len(t, result.Steps(), 1, "the result should retain the completed first step")
 	})
 
 	t.Run("NormalCompletion_NoAbort", func(t *testing.T) {
@@ -4485,7 +4534,8 @@ func TestSanitizePromptForProvider_ToolApprovalBookkeeping(t *testing.T) {
 	require.Equal(t, provider.RoleTool, sanitized[2].Role)
 	require.Len(t, sanitized[2].Content, 1)
 	assert.Equal(t, provider.ContentPartTypeToolApprovalResponse, sanitized[2].Content[0].Type)
-	assert.True(t, sanitized[2].Content[0].ProviderExecuted)
+	assert.False(t, sanitized[2].Content[0].ProviderExecuted)
+	assert.True(t, msgs[3].Content[0].ProviderExecuted)
 }
 
 func TestStreamTextContent_TextDeltaMetadata(t *testing.T) {
@@ -4775,7 +4825,7 @@ func TestBuildContent(t *testing.T) {
 				{ApprovalID: "apr_1", ToolCallID: "c1", ToolName: "dangerous", Approved: false, Reason: "unsafe"},
 			},
 			ToolResults: []ToolResult{
-				{ToolCallID: "c1", ToolName: "dangerous", ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: "unsafe"}},
+				{ToolCallID: "c1", ToolName: "dangerous", ModelOutput: &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: new("unsafe")}},
 				{ToolCallID: "c2", ToolName: "safe", Output: json.RawMessage(`{"ok":true}`)},
 			},
 		}

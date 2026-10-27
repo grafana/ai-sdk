@@ -60,10 +60,12 @@ const (
 )
 
 // ResponseFormat specifies the desired output format (text or JSON).
+// Name nil leaves the native default in effect; a pointer to an empty string
+// explicitly supplies an empty name. Description absence and empty are equivalent.
 type ResponseFormat struct {
 	Type        ResponseFormatType `json:"type"`
 	Schema      json.RawMessage    `json:"schema,omitempty"`
-	Name        string             `json:"name,omitempty"`
+	Name        *string            `json:"name,omitempty"`
 	Description string             `json:"description,omitempty"`
 }
 
@@ -158,6 +160,7 @@ type GenerateResult struct {
 // GenerateContentPart is a piece of content in a GenerateResult.
 // It is a flat union keyed by Type, mirroring LanguageModelV4Content.
 type GenerateContentPart struct {
+	Citations        []Citation          `json:"citations,omitzero"`
 	Type             GenerateContentType `json:"type"`
 	ID               string              `json:"id,omitempty"`
 	Kind             string              `json:"kind,omitempty"`

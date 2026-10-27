@@ -698,6 +698,7 @@ describe("React hook interop", () => {
       expect(screen.getByTestId("chat-text").textContent).toBe(text);
       if (scenario === "reconnect-stream") {
         expect(readProbe<UIMessage[]>("chat-messages")).toHaveLength(2);
+        expectOrderedSubsequence(readProbe<ChatStatus[]>("chat-status-history"), ["submitted", "streaming", "ready"]);
       } else if (scenario === "reconnect-error") {
         expect(readProbe<string[]>("chat-error-calls")).toEqual(["intentional server error"]);
       }
@@ -706,7 +707,6 @@ describe("React hook interop", () => {
     expect(messages[0].id).toBe("user-seeded");
     if (scenario === "reconnect-stream") {
       expect(messages[1].id).toBe("assistant-reconnected");
-      expectOrderedSubsequence(readProbe<ChatStatus[]>("chat-status-history"), ["submitted", "streaming", "ready"]);
       expect(readProbe<unknown[]>("chat-finish-calls")).toEqual([
         { messageId: "assistant-reconnected", isAbort: false, isError: false, finishReason: "stop" },
       ]);
@@ -731,11 +731,13 @@ describe("React hook interop", () => {
     const message = readProbe<UIMessage[]>("chat-messages")[1];
     expect(message.id).toBe("assistant-data");
     expect(message.metadata).toEqual({ phase: "updated", source: "go" });
-    const snapshots = readProbe<UIMessage[][]>("chat-message-history")
-      .map(messages => messages[1])
-      .filter(Boolean);
-    expect(snapshots.map(snapshot => snapshot.metadata)).toContainEqual({ phase: "initial" });
-    expect(snapshots.map(snapshot => snapshot.metadata)).toContainEqual({ phase: "updated", source: "go" });
+    await waitFor(() => {
+      const snapshots = readProbe<UIMessage[][]>("chat-message-history")
+        .map(messages => messages[1])
+        .filter(Boolean);
+      expect(snapshots.map(snapshot => snapshot.metadata)).toContainEqual({ phase: "initial" });
+      expect(snapshots.map(snapshot => snapshot.metadata)).toContainEqual({ phase: "updated", source: "go" });
+    });
     expect(readProbe<unknown[]>("chat-finish-calls")).toEqual([
       { messageId: "assistant-data", isAbort: false, isError: false, finishReason: "stop" },
     ]);

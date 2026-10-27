@@ -33,6 +33,7 @@
       "exclude-paths": [
         "ai-gateway",
         "providers/anthropic",
+        "providers/azure",
         "providers/bedrock",
         "providers/grafana",
         "providers/openai",
@@ -55,10 +56,22 @@
     "ai-gateway": {
       "component": "ai-gateway",
       "prerelease-type": "alpha",
-      "initial-version": "0.1.0-alpha.1"
+      "initial-version": "0.1.0-alpha.1",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "package.json",
+          "jsonpath": "$.version"
+        }
+      ]
     },
     "providers/anthropic": {
       "component": "providers/anthropic",
+      "prerelease-type": "alpha",
+      "initial-version": "0.1.0-alpha.1"
+    },
+    "providers/azure": {
+      "component": "providers/azure",
       "prerelease-type": "alpha",
       "initial-version": "0.1.0-alpha.1"
     },

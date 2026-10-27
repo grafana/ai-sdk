@@ -6,11 +6,7 @@ Define the dependency-isolated Prometheus middleware module for provider-level a
 ## Requirements
 ### Requirement: Nested Go module for Prometheus middleware
 
-`middleware/prometheus/` SHALL be a separate Go module under the ai-sdk repository, declared with `module github.com/grafana/ai-sdk/middleware/prometheus` and `replace github.com/grafana/ai-sdk => ../../`, following the existing nested middleware module convention.
-
-The module SHALL depend on the root `github.com/grafana/ai-sdk` module and the Prometheus Go client. The root ai-sdk module SHALL NOT import `middleware/prometheus` and SHALL NOT gain a dependency on `github.com/prometheus/client_golang`.
-
-The module documentation SHALL describe that the middleware records local/client-side provider-call metrics and does not configure remote hosted-service metrics controls.
+`middleware/prometheus/` SHALL be a separate module: `module github.com/grafana/ai-sdk/middleware/prometheus`, `replace github.com/grafana/ai-sdk => ../../`, following nested middleware conventions. It SHALL depend on root ai-sdk and the Prometheus Go client. Root ai-sdk SHALL NOT import it or gain `github.com/prometheus/client_golang`. Docs SHALL state that these local/client-side provider-call metrics do not configure remote hosted-service metrics controls.
 
 #### Scenario: Root module dependency isolation
 
@@ -31,22 +27,7 @@ The module documentation SHALL describe that the middleware records local/client
 
 ### Requirement: Public API surface
 
-The `middleware/prometheus` package SHALL expose direct middleware constructors and wrapping helpers. Non-`Must` APIs that construct collectors SHALL return registration errors because Prometheus registration can fail.
-
-The package SHALL export the following symbols:
-
-- `type IdentitySource string`
-- `const IdentityPreferResponse IdentitySource = "prefer_response"`
-- `const IdentityRequested IdentitySource = "requested"`
-- `type Options struct`
-- `func Middleware(opts Options) (middleware.Middleware, error)`
-- `func MustMiddleware(opts Options) middleware.Middleware`
-- `func Wrap(base provider.LanguageModel, opts Options) (provider.LanguageModel, error)`
-- `func MustWrap(base provider.LanguageModel, opts Options) provider.LanguageModel`
-
-The package SHALL NOT expose a separate `Instrumentation`, `New`, or `MustNew` API in the initial version.
-
-`Options` SHALL include these fields: `Registerer promclient.Registerer`, `ConstLabels promclient.Labels`, `IdentitySource IdentitySource`, `NormalizeProvider func(provider string) string`, `NormalizeModel func(provider, model string) string`, `DurationBuckets []float64`, `TimeToFirstOutputBuckets []float64`, `InterChunkDelayBuckets []float64`, and `DisableStreamChunkMetrics bool`.
+`middleware/prometheus` SHALL expose middleware constructors and wrappers. Non-`Must` collector constructors SHALL return registration errors. The initial API SHALL NOT expose separate `Instrumentation`, `New`, or `MustNew` APIs. It SHALL export `type IdentitySource string`, `const IdentityPreferResponse IdentitySource = "prefer_response"`, `const IdentityRequested IdentitySource = "requested"`, and `type Options struct`.
 
 #### Scenario: Middleware returns a reusable language model middleware
 
@@ -71,13 +52,14 @@ The package SHALL NOT expose a separate `Instrumentation`, `New`, or `MustNew` A
 - **WHEN** `MustMiddleware(opts)` or `MustWrap(base, opts)` encounters a collector registration error
 - **THEN** the helper SHALL panic with that error
 
+#### Scenario: Call direct constructors and wrappers
+- **WHEN** callers construct middleware or wrap models directly
+- **THEN** the package SHALL export `func Middleware(opts Options) (middleware.Middleware, error)` and `func MustMiddleware(opts Options) middleware.Middleware`
+- **AND** it SHALL export `func Wrap(base provider.LanguageModel, opts Options) (provider.LanguageModel, error)` and `func MustWrap(base provider.LanguageModel, opts Options) provider.LanguageModel`
+
 ### Requirement: Collector registration behavior
 
-`Middleware` SHALL construct all enabled collectors and register them exactly once with `Options.Registerer`. If `Options.Registerer` is nil, `Middleware` SHALL use the Prometheus default registerer. `Middleware` and `Wrap` SHALL return registration errors to the caller, including duplicate collector registration, and SHALL NOT use `promauto` internally.
-
-`MustMiddleware` and `MustWrap` SHALL panic when collector registration fails. Callers SHALL be able to construct one middleware per process/registerer and reuse the returned `middleware.Middleware` concurrently for direct wrapping or registry-wide wrapping.
-
-`ConstLabels` SHALL be attached to every collector at registration time and SHALL be documented as process-level labels only.
+`Middleware` SHALL construct all enabled collectors and register each once with `Options.Registerer`, using Prometheus's default registerer if nil. `Middleware`/`Wrap` SHALL return registration errors, including duplicates, without internal `promauto`; `MustMiddleware`/`MustWrap` SHALL panic on failure. One middleware per process/registerer SHALL support concurrent direct/registry-wide reuse. `ConstLabels` SHALL attach to every collector at registration and be documented as process-level only.
 
 #### Scenario: Registers enabled collectors against custom registry
 
@@ -98,17 +80,7 @@ The package SHALL NOT expose a separate `Instrumentation`, `New`, or `MustNew` A
 
 ### Requirement: Metric family contract
 
-The module SHALL define the following Prometheus metric families using OpenMetrics naming and base units:
-
-- `aisdk_model_requests_total`: counter with labels `operation`, `provider`, `model`, `status`, `error_type`, `status_code`, and `finish_reason`.
-- `aisdk_model_inflight_requests`: gauge with labels `operation`, `provider`, and `model`.
-- `aisdk_model_request_duration_seconds`: histogram with labels `operation`, `provider`, `model`, and `status`.
-- `aisdk_model_tokens_total`: counter with labels `operation`, `provider`, `model`, and `token_type`.
-- `aisdk_model_time_to_first_output_seconds`: histogram with labels `operation`, `provider`, `model`, and `status`.
-- `aisdk_model_stream_chunks_total`: counter with labels `operation`, `provider`, `model`, and `chunk_type`.
-- `aisdk_model_inter_chunk_delay_seconds`: histogram with labels `operation`, `provider`, `model`, and `chunk_type`.
-
-Default histogram buckets SHALL be seconds-based. Request duration default buckets SHALL be `0.025`, `0.05`, `0.1`, `0.25`, `0.5`, `1`, `2.5`, `5`, `10`, `30`, `60`, `120`, and `300`. Time-to-first-output default buckets SHALL be `0.01`, `0.025`, `0.05`, `0.1`, `0.25`, `0.5`, `1`, `2.5`, `5`, `10`, and `30`. Inter-chunk-delay default buckets SHALL be `0.001`, `0.005`, `0.01`, `0.025`, `0.05`, `0.1`, `0.25`, `0.5`, `1`, `2.5`, and `5`.
+Metric families SHALL use OpenMetrics naming and base units with exactly their specified labels plus configured const labels. Default histogram buckets SHALL be seconds-based. Non-empty duration, time-to-first-output, and inter-chunk-delay bucket overrides SHALL replace their respective defaults.
 
 #### Scenario: Metric descriptors expose expected labels
 
@@ -120,13 +92,22 @@ Default histogram buckets SHALL be seconds-based. Request duration default bucke
 - **WHEN** a caller supplies non-empty duration, time-to-first-output, or inter-chunk-delay bucket overrides in `Options`
 - **THEN** the corresponding histogram SHALL use those buckets instead of the package defaults
 
+#### Scenario: Request and usage families expose fixed descriptors
+- **WHEN** request, in-flight, duration, and token collectors are constructed
+- **THEN** `aisdk_model_requests_total` SHALL be a counter with labels `operation`, `provider`, `model`, `status`, `error_type`, `status_code`, and `finish_reason`
+- **AND** `aisdk_model_inflight_requests` SHALL be a gauge with labels `operation`, `provider`, and `model`
+- **AND** `aisdk_model_request_duration_seconds` SHALL be a histogram with labels `operation`, `provider`, `model`, and `status`
+- **AND** `aisdk_model_tokens_total` SHALL be a counter with labels `operation`, `provider`, `model`, and `token_type`
+
+#### Scenario: Stream families expose fixed descriptors
+- **WHEN** stream timing and chunk collectors are constructed
+- **THEN** `aisdk_model_time_to_first_output_seconds` SHALL be a histogram with labels `operation`, `provider`, `model`, and `status`
+- **AND** `aisdk_model_stream_chunks_total` SHALL be a counter with labels `operation`, `provider`, `model`, and `chunk_type`
+- **AND** `aisdk_model_inter_chunk_delay_seconds` SHALL be a histogram with labels `operation`, `provider`, `model`, and `chunk_type`
+
 ### Requirement: Generate call instrumentation
 
-The middleware SHALL instrument `WrapGenerate` around the inner `DoGenerate` closure. It SHALL increment the in-flight gauge before calling the inner model and decrement the same label set when the call returns. It SHALL observe request duration from immediately before the inner call until return.
-
-On success, the middleware SHALL increment `aisdk_model_requests_total` once with `operation="generate"`, `status="success"`, `error_type="none"`, `status_code="none"`, and the unified finish reason from `GenerateResult.FinishReason`. It SHALL observe duration with the final operation, provider, model, and status labels, and SHALL observe positive token usage from `GenerateResult.Usage`. It SHALL return the original result pointer unchanged.
-
-On error, the middleware SHALL classify the error using the bounded error vocabulary, increment the request counter once, observe duration, decrement in-flight, and return the original error unchanged.
+Middleware SHALL instrument `WrapGenerate` around `DoGenerate`: increment in-flight before invocation and decrement the same labels on return; duration SHALL run from immediately before invocation to return. Each call SHALL increment the request counter once and observe duration with final operation/provider/model/status labels. Success SHALL observe positive `GenerateResult.Usage` and return the original result pointer; errors SHALL use bounded classification and return the original error.
 
 #### Scenario: Generate success records one request
 
@@ -146,13 +127,15 @@ On error, the middleware SHALL classify the error using the bounded error vocabu
 - **WHEN** a generate call succeeds or fails
 - **THEN** `aisdk_model_inflight_requests` SHALL be decremented for the same requested provider/model label set that was incremented before the inner call
 
+#### Scenario: Successful generate sets neutral error labels and finish reason
+- **WHEN** the inner `DoGenerate` succeeds
+- **THEN** its request counter SHALL use `operation="generate"`, `status="success"`, `error_type="none"`, `status_code="none"`, and unified `GenerateResult.FinishReason`
+- **AND** duration SHALL use final operation, provider, model, and status labels
+- **AND** positive `GenerateResult.Usage` SHALL be observed
+
 ### Requirement: Stream call instrumentation and tee behavior
 
-The middleware SHALL instrument `WrapStream` around the inner `DoStream` closure. It SHALL increment the in-flight gauge before calling the inner model. If `DoStream` returns an error before a stream is available, the middleware SHALL record the failed request like a generate error, decrement in-flight, and return the original error unchanged.
-
-When `DoStream` returns a stream result, the middleware SHALL return a new `provider.StreamResult` that preserves the upstream request and response metadata and exposes a tee stream. The tee SHALL forward every upstream `provider.StreamPart` unchanged and in order, observe stream metrics, and close the downstream channel exactly once. The tee SHALL finalize request, duration, usage, TTFT, and in-flight metrics when the upstream stream closes or the request context is canceled. If context cancellation prevents downstream sends, the tee SHALL stop sending and continue draining upstream on a best-effort basis.
-
-A streamed `provider.PartError` SHALL make the final request status `error` unless the context was canceled first. The error part SHALL still be forwarded unchanged.
+`WrapStream` SHALL increment in-flight before inner `DoStream`. Opening errors SHALL record failure like generate errors, decrement in-flight, and return unchanged. A result SHALL be wrapped in a new `provider.StreamResult` preserving request/response metadata, with a tee forwarding every part unchanged in order, observing metrics, and closing downstream once. Request/duration/usage/TTFT/in-flight SHALL finalize on upstream close or context cancellation.
 
 #### Scenario: Stream success forwards exact parts
 
@@ -177,13 +160,18 @@ A streamed `provider.PartError` SHALL make the final request status `error` unle
 - **WHEN** the stream closes or the request context is canceled
 - **THEN** `aisdk_model_inflight_requests` SHALL be decremented for the same requested provider/model label set that was incremented before the inner call
 
+#### Scenario: Cancellation stops blocked downstream sends
+- **WHEN** context cancellation prevents downstream sends
+- **THEN** the tee SHALL stop sending and continue draining upstream on a best-effort basis
+
+#### Scenario: Stream error classification respects earlier cancellation
+- **WHEN** an upstream `provider.PartError` is observed
+- **THEN** final request status SHALL be `error` unless the context was canceled first
+- **AND** the error part SHALL still be forwarded unchanged
+
 ### Requirement: Provider and model identity labels
 
-The middleware SHALL support two provider/model identity modes. `IdentityPreferResponse` SHALL be the default and SHALL select response provider/model metadata for final metrics when both provider and model are available; otherwise it SHALL fall back to the requested model identity from `p.Model.Provider()` and `p.Model.ModelID()`. `IdentityRequested` SHALL always use the requested model identity.
-
-For generate calls, response identity SHALL come from `GenerateResult.Response.Provider` and `GenerateResult.Response.ModelID`. For stream calls, response identity SHALL come from observed `provider.PartResponseMeta` stream parts. `NormalizeProvider` and `NormalizeModel` SHALL be applied consistently after identity selection for every metric that carries provider/model labels.
-
-The in-flight gauge SHALL always use the requested identity captured at call start for both increment and decrement.
+Default `IdentityPreferResponse` SHALL select response metadata for final metrics only when both provider and model are available; otherwise use requested `p.Model.Provider()` / `p.Model.ModelID()`. `IdentityRequested` SHALL always use requested identity. `NormalizeProvider` / `NormalizeModel` SHALL apply consistently after selection to every provider/model metric. In-flight increment/decrement SHALL use requested identity captured at start.
 
 #### Scenario: Generate response identity overrides requested identity by default
 
@@ -202,13 +190,14 @@ The in-flight gauge SHALL always use the requested identity captured at call sta
 - **WHEN** `NormalizeProvider` or `NormalizeModel` is configured
 - **THEN** every emitted metric label named `provider` or `model` SHALL use the normalized value
 
+#### Scenario: Response identity comes from provider metadata
+- **WHEN** response-preferred instrumentation observes a generate result or stream response metadata
+- **THEN** generate identity SHALL come from `GenerateResult.Response.Provider` and `GenerateResult.Response.ModelID`
+- **AND** stream identity SHALL come from observed `provider.PartResponseMeta` stream parts
+
 ### Requirement: Bounded status and error classification
 
-Metric status labels SHALL be limited to `success`, `error`, and `canceled`. Metric error type labels SHALL be limited to `none`, `api_call_error`, `context_canceled`, `context_deadline_exceeded`, `provider_stream_error`, and `other`. Metric status code labels SHALL be the HTTP status code from `*provider.APICallError` as a decimal string, or `none` when unavailable.
-
-The classifier SHALL treat `context.Canceled` as `status="canceled"` and `error_type="context_canceled"`. It SHALL treat `context.DeadlineExceeded` as `status="canceled"` and `error_type="context_deadline_exceeded"`. It SHALL treat errors matching `*provider.APICallError` as `status="error"` and `error_type="api_call_error"`. It SHALL treat stream error parts without an API call error as `status="error"` and `error_type="provider_stream_error"`. All other errors SHALL use `status="error"` and `error_type="other"`.
-
-Finish reason labels SHALL use the unified finish reason values `stop`, `length`, `content-filter`, `tool-calls`, `error`, or `other`, and SHALL use `none` when unavailable.
+Status labels SHALL be `success`, `error`, or `canceled`. Error type labels SHALL be `none`, `api_call_error`, `context_canceled`, `context_deadline_exceeded`, `provider_stream_error`, or `other`. Status code SHALL be the decimal HTTP status from `*provider.APICallError`, or `none` if unavailable. Finish reason SHALL be unified `stop`, `length`, `content-filter`, `tool-calls`, `error`, or `other`, or `none` if unavailable.
 
 #### Scenario: API call error status code is recorded
 
@@ -229,21 +218,17 @@ Finish reason labels SHALL use the unified finish reason values `stop`, `length`
 - **WHEN** an error contains a URL, header value, response body, or detailed message
 - **THEN** no metric label SHALL contain those values
 
+#### Scenario: Errors map to the bounded vocabulary
+- **WHEN** an error is classified for request metrics
+- **THEN** `context.Canceled` SHALL map to `status="canceled"`, `error_type="context_canceled"`
+- **AND** `context.DeadlineExceeded` SHALL map to `status="canceled"`, `error_type="context_deadline_exceeded"`
+- **AND** errors matching `*provider.APICallError` SHALL map to `status="error"`, `error_type="api_call_error"`
+- **AND** stream error parts without an API call error SHALL map to `status="error"`, `error_type="provider_stream_error"`
+- **AND** all other errors SHALL map to `status="error"`, `error_type="other"`
+
 ### Requirement: Token usage metrics
 
-The middleware SHALL increment `aisdk_model_tokens_total` only for positive token counts present in provider usage. Generate usage SHALL come from `provider.GenerateResult.Usage`. Stream usage SHALL observe every stream part with non-nil `Usage` and use the shared streaming aggregation behavior, preserving the greatest value observed independently for each normalized counter.
-
-Token type labels SHALL be limited to:
-
-- `input` from `Usage.InputTokens.Total`
-- `input_no_cache` from `Usage.InputTokens.NoCache`
-- `input_cache_read` from `Usage.InputTokens.CacheRead`
-- `input_cache_write` from `Usage.InputTokens.CacheWrite`
-- `output` from `Usage.OutputTokens.Total`
-- `output_text` from `Usage.OutputTokens.Text`
-- `output_reasoning` from `Usage.OutputTokens.Reasoning`
-
-The middleware SHALL NOT expose `Usage.Raw` as a metric label.
+`aisdk_model_tokens_total` SHALL increment only for positive provider usage counts. Generate SHALL use `provider.GenerateResult.Usage`; stream SHALL observe every part with non-nil `Usage` and use shared aggregation, independently retaining greatest normalized values. `Usage.Raw` SHALL NOT be a metric label. Token types SHALL use only the specified normalized field mappings.
 
 #### Scenario: Stream usage preserves strongest values
 
@@ -262,15 +247,14 @@ The middleware SHALL NOT expose `Usage.Raw` as a metric label.
 - **WHEN** a usage field is nil, zero, or negative
 - **THEN** the middleware SHALL NOT increment `aisdk_model_tokens_total` for that field
 
+#### Scenario: Normalized usage fields select fixed token labels
+- **WHEN** positive normalized token fields are recorded
+- **THEN** `token_type` SHALL be limited to `input` from `Usage.InputTokens.Total`, `input_no_cache` from `Usage.InputTokens.NoCache`, `input_cache_read` from `Usage.InputTokens.CacheRead`, and `input_cache_write` from `Usage.InputTokens.CacheWrite`
+- **AND** output labels SHALL be `output` from `Usage.OutputTokens.Total`, `output_text` from `Usage.OutputTokens.Text`, and `output_reasoning` from `Usage.OutputTokens.Reasoning`
+
 ### Requirement: Stream chunk and timing metrics
 
-For streams, the middleware SHALL increment `aisdk_model_stream_chunks_total` for every upstream `provider.StreamPart` observed and forwarded. The `chunk_type` label SHALL equal a registered `provider.StreamPartType` string for known values and `other` for every unknown value. This metric SHALL be disabled when `Options.DisableStreamChunkMetrics` is true.
-
-The middleware SHALL observe `aisdk_model_time_to_first_output_seconds` once per stream when at least one payload-bearing stream part is observed. The observation SHALL use the elapsed seconds between starting the provider call and observing the first payload-bearing part, and SHALL be emitted at stream finalization with the final stream status label. Streams that finish, error, or cancel before any payload-bearing part SHALL NOT observe TTFT.
-
-The middleware SHALL observe `aisdk_model_inter_chunk_delay_seconds` for gaps between consecutive payload-bearing stream parts, labeled by the current payload-bearing part type. This metric SHALL be disabled when `Options.DisableStreamChunkMetrics` is true.
-
-Payload-bearing stream part types SHALL be `text-delta`, `reasoning-delta`, `tool-input-delta`, `tool-call`, `tool-result`, `source`, `file`, `custom`, `reasoning-file`, and `tool-approval-request`. Framing, metadata, raw, finish, and error parts SHALL NOT be payload-bearing.
+`aisdk_model_stream_chunks_total` SHALL increment for every upstream part observed and forwarded, with registered `provider.StreamPartType` strings or `other` for unknowns. Inter-chunk delay SHALL observe gaps between consecutive payload-bearing parts, labeled by the current part type. Both chunk and inter-chunk metrics SHALL be disabled by `Options.DisableStreamChunkMetrics`; TTFT SHALL remain independent.
 
 #### Scenario: Chunk counter records all parts
 
@@ -302,9 +286,7 @@ Payload-bearing stream part types SHALL be `text-delta`, `reasoning-delta`, `too
 
 ### Requirement: Privacy and cardinality guardrails
 
-Default metric labels SHALL be bounded and content-free. The middleware SHALL NOT label metrics with prompt text, output text, reasoning text, tool arguments, tool results, user IDs, tenant IDs, session IDs, request IDs, response IDs, generation IDs, HTTP headers, URLs, response bodies, raw request bodies, raw provider metadata, error messages, Go error type strings, source URLs, filenames, tool names, tool call IDs, or arbitrary per-request custom labels.
-
-Provider and model labels SHALL be the only potentially user-controlled high-cardinality labels, and the package SHALL provide normalization hooks so callers can bucket or redact those values.
+Default labels SHALL be bounded and content-free, excluding request/response content, identifying metadata, opaque errors, and arbitrary per-request labels. Provider/model SHALL be the only potentially user-controlled high-cardinality labels; normalization hooks SHALL let callers bucket or redact them.
 
 #### Scenario: Prompt and output content are absent from labels
 
@@ -316,13 +298,13 @@ Provider and model labels SHALL be the only potentially user-controlled high-car
 - **WHEN** a provider result contains response IDs, request bodies, response headers, URLs, or raw provider metadata
 - **THEN** no metric label SHALL contain those values
 
+#### Scenario: Content and identifiers cannot become metric labels
+- **WHEN** a request, response, stream, or error includes content or identifying metadata
+- **THEN** metrics SHALL NOT label prompt text, output text, reasoning text, tool arguments, tool results, user IDs, tenant IDs, session IDs, request IDs, response IDs, generation IDs, HTTP headers, URLs, response bodies, raw request bodies, raw provider metadata, error messages, Go error type strings, source URLs, filenames, tool names, tool call IDs, or arbitrary per-request custom labels
+
 ### Requirement: Documentation and validation coverage
 
-The module SHALL include package documentation describing the public API, metric contract, default buckets, provider-call scope, stream finalization behavior, privacy/cardinality guardrails, Agent Observability composition ordering, registry integration, and the boundary between local metrics and remote service controls.
-
-The implementation SHALL include tests using `prometheus.NewRegistry()` and `prometheus/testutil` that cover collector registration, duplicate registration, generate success/error/cancellation, stream success/error/cancellation, response identity preference, requested identity mode, normalizers, stream chunk/timing metrics, disabled stream chunk metrics, registry integration, privacy label exclusions, and root dependency isolation.
-
-The repository task configuration SHALL include a targeted Prometheus middleware test task and include the nested module in aggregate test, short-test, vet, tidy, and build tasks.
+Package docs SHALL describe public API, metric contract, default buckets, provider-call scope, stream finalization, privacy/cardinality, Agent Observability ordering, registry integration, and local metrics versus remote controls. Tests SHALL use `prometheus.NewRegistry()` and `prometheus/testutil`. Task configuration SHALL provide targeted Prometheus tests and include the nested module in aggregate test, short-test, vet, tidy, and build tasks.
 
 #### Scenario: Package docs cover composition order
 
@@ -340,6 +322,10 @@ The repository task configuration SHALL include a targeted Prometheus middleware
 - **WHEN** contributors run aggregate test, short-test, vet, tidy, or build tasks after implementation
 - **THEN** those tasks SHALL include `middleware/prometheus` alongside existing nested modules
 
+#### Scenario: Registry-based tests cover lifecycle and privacy
+- **WHEN** the Prometheus middleware test suite runs
+- **THEN** tests using `prometheus.NewRegistry()` and `prometheus/testutil` SHALL cover collector registration, duplicate registration, generate success/error/cancellation, stream success/error/cancellation, response identity preference, requested identity mode, normalizers, stream chunk/timing metrics, disabled stream chunk metrics, registry integration, privacy label exclusions, and root dependency isolation
+
 ### Requirement: Configurable bounded stream drain
 Prometheus middleware options SHALL provide an optional positive stream-drain duration. When configured, cancellation cleanup SHALL drain the immediate upstream only until channel close or the absolute deadline, including for a continuously ready channel. Zero SHALL preserve the existing direct-consumer drain behavior.
 
@@ -347,3 +333,40 @@ Prometheus middleware options SHALL provide an optional positive stream-drain du
 - **WHEN** downstream cancellation occurs and the immediate upstream never closes or remains continuously ready
 - **THEN** the Prometheus-owned drain goroutine SHALL exit no later than the configured absolute deadline
 - **AND** terminal metrics, in-flight decrement, and downstream channel closure SHALL each occur exactly once without waiting for the drain
+
+### Requirement: Prometheus collector configuration
+
+`Options` SHALL configure registration, constant labels, identity selection/normalization, histogram buckets, and stream chunk metrics.
+
+#### Scenario: Configure collector options
+- **WHEN** a caller constructs Prometheus `Options`
+- **THEN** fields SHALL include `Registerer promclient.Registerer`, `ConstLabels promclient.Labels`, `IdentitySource IdentitySource`, `NormalizeProvider func(provider string) string`, `NormalizeModel func(provider, model string) string`, `DurationBuckets []float64`, `TimeToFirstOutputBuckets []float64`, `InterChunkDelayBuckets []float64`, and `DisableStreamChunkMetrics bool`
+
+### Requirement: Default Prometheus histogram buckets
+
+Absent non-empty bucket overrides, request duration, time to first output, and inter-chunk delay histograms SHALL use their specified default seconds-based buckets.
+
+#### Scenario: Default request duration buckets
+- **WHEN** `DurationBuckets` is empty
+- **THEN** request duration buckets SHALL be `0.025`, `0.05`, `0.1`, `0.25`, `0.5`, `1`, `2.5`, `5`, `10`, `30`, `60`, `120`, and `300`
+
+#### Scenario: Default time to first output buckets
+- **WHEN** `TimeToFirstOutputBuckets` is empty
+- **THEN** time-to-first-output buckets SHALL be `0.01`, `0.025`, `0.05`, `0.1`, `0.25`, `0.5`, `1`, `2.5`, `5`, `10`, and `30`
+
+#### Scenario: Default inter-chunk delay buckets
+- **WHEN** `InterChunkDelayBuckets` is empty
+- **THEN** inter-chunk-delay buckets SHALL be `0.001`, `0.005`, `0.01`, `0.025`, `0.05`, `0.1`, `0.25`, `0.5`, `1`, `2.5`, and `5`
+
+### Requirement: Prometheus payload timing boundary
+
+Payload-bearing parts SHALL be `text-delta`, `reasoning-delta`, `tool-input-delta`, `tool-call`, `tool-result`, `source`, `file`, `custom`, `reasoning-file`, and `tool-approval-request`, not framing, metadata, raw, finish, or error. TTFT SHALL be observed once for streams with payload, from provider-call start to first payload, emitted at finalization with final status. Finish/error/cancel before payload SHALL NOT observe TTFT.
+
+#### Scenario: First payload determines TTFT
+- **WHEN** a stream emits its first payload-bearing part after framing, metadata, or raw parts
+- **THEN** `aisdk_model_time_to_first_output_seconds` SHALL measure elapsed seconds from provider-call start to that first payload
+- **AND** exactly one observation SHALL be emitted at finalization with the final stream status label
+
+#### Scenario: No payload means no TTFT sample
+- **WHEN** a stream finishes, errors, or cancels before any payload-bearing part
+- **THEN** it SHALL NOT observe TTFT

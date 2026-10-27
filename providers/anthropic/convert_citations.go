@@ -92,17 +92,6 @@ func hasCitationsEnabled(opts provider.ProviderOptions) bool {
 	return data.Citations.Enabled
 }
 
-func marshalWebSearchCitationMetadata(citations []json.RawMessage) (provider.ProviderMetadata, error) {
-	if len(citations) == 0 {
-		return nil, nil
-	}
-	metadata, err := json.Marshal(map[string]any{"citations": citations})
-	if err != nil {
-		return nil, fmt.Errorf("marshaling web search citation metadata: %w", err)
-	}
-	return provider.ProviderMetadata{"anthropic": metadata}, nil
-}
-
 func extractCitations(opts provider.ProviderOptions) []anthropic.BetaTextCitationParamUnion {
 	raw := extractRawJSON(opts)
 	if raw == nil {
@@ -159,7 +148,7 @@ func createCitationSource(citation any, docs []citationDocument, generateID func
 		}
 		doc := docs[c.DocumentIndex]
 		title := doc.title
-		if c.DocumentTitle != "" {
+		if c.DocumentTitle != "" || c.JSON.DocumentTitle.Valid() {
 			title = c.DocumentTitle
 		}
 		metaJSON, err := json.Marshal(map[string]any{
@@ -187,7 +176,7 @@ func createCitationSource(citation any, docs []citationDocument, generateID func
 		}
 		doc := docs[c.DocumentIndex]
 		title := doc.title
-		if c.DocumentTitle != "" {
+		if c.DocumentTitle != "" || c.JSON.DocumentTitle.Valid() {
 			title = c.DocumentTitle
 		}
 		metaJSON, err := json.Marshal(map[string]any{

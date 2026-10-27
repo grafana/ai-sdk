@@ -22,16 +22,17 @@ type reasoningFilePart struct {
 }
 
 type reasoningWireFileData struct {
-	Type string  `json:"type"`
-	Data *string `json:"data,omitempty"`
-	URL  *string `json:"url,omitempty"`
+	Type        string  `json:"type"`
+	Data        *string `json:"data,omitempty"`
+	URL         *string `json:"url,omitempty"`
+	OriginalURL *string `json:"originalUrl,omitempty"`
 }
 
 // Called only after bounded preflight and validation. Do not expose provider
 // marshalers at the strict service boundary.
 func projectReasoningFile(data *provider.StreamFileData) reasoningWireFileData {
 	if data.Type == provider.StreamFileDataTypeURL || (data.Type == "" && data.URL != "") {
-		return reasoningWireFileData{Type: "url", URL: &data.URL}
+		return reasoningWireFileData{Type: "url", URL: &data.URL, OriginalURL: data.OriginalURL}
 	}
 	encoded := data.Base64
 	if data.Bytes != nil {
@@ -49,6 +50,12 @@ func reasoningFileFits(data *provider.StreamFileData, mediaType string, remainin
 			return false
 		}
 		*remaining -= int64(size)
+	}
+	if data.OriginalURL != nil {
+		if int64(len(*data.OriginalURL)) > *remaining {
+			return false
+		}
+		*remaining -= int64(len(*data.OriginalURL))
 	}
 	if int64(len(data.Bytes)) > (*remaining/4)*3 {
 		return false
@@ -69,13 +76,13 @@ func unaryReasoningFile(data *provider.DataContent) *provider.StreamFileData {
 		return &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: data.Bytes, Base64: data.Base64}
 	}
 	if data.IsURL() {
-		return &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: data.URL}
+		return &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: data.URL, OriginalURL: data.OriginalURL}
 	}
 	return nil
 }
 
 func validReasoningFile(data *provider.StreamFileData, mediaType string) bool {
-	return data != nil && data.Validate() == nil && utf8.ValidString(mediaType) && utf8.ValidString(data.Base64) && utf8.ValidString(data.URL)
+	return data != nil && data.Validate() == nil && utf8.ValidString(mediaType) && utf8.ValidString(data.Base64) && utf8.ValidString(data.URL) && (data.OriginalURL == nil || utf8.ValidString(*data.OriginalURL))
 }
 
 func (h *handler) processReasoningPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {

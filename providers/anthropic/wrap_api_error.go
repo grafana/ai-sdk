@@ -31,12 +31,6 @@ func wrapAPIError(err error, url string, body any) error {
 		responseHeaders = apiErr.Response.Header
 	}
 
-	var isRetryable *bool
-	if apiErr.StatusCode == http.StatusOK && isRetryableAnthropicError(apiErr.Type()) {
-		retryable := true
-		isRetryable = &retryable
-	}
-
 	wrapped := provider.NewAPICallError(provider.APICallErrorOptions{
 		Message:           apiErr.Error(),
 		URL:               url,
@@ -44,30 +38,76 @@ func wrapAPIError(err error, url string, body any) error {
 		StatusCode:        apiErr.StatusCode,
 		ResponseHeaders:   responseHeaders,
 		ResponseBody:      apiErr.RawJSON(),
-		IsRetryable:       isRetryable,
 		Cause:             err,
 	})
 	wrapped.Data = structuredErrorData(apiErr.RawJSON())
 	return wrapped
 }
 
+const (
+	initialStreamErrorDefaultStatus = http.StatusInternalServerError
+	midStreamErrorDefaultStatus     = 0
+)
+
+// errorTypeRequestTooLarge is not a named constant in the SDK.
+const errorTypeRequestTooLarge shared.ErrorType = "request_too_large"
+
+type errorMetadata struct {
+	statusCode int
+	retryable  bool
+}
+
+// streamErrorMetadata mirrors upstream getAnthropicStreamErrorMetadata.
+func streamErrorMetadata(errorType shared.ErrorType) (errorMetadata, bool) {
+	switch errorType {
+	case shared.ErrorTypeAPIError:
+		return errorMetadata{statusCode: http.StatusInternalServerError, retryable: true}, true
+	case shared.ErrorTypeOverloadedError:
+		return errorMetadata{statusCode: 529, retryable: true}, true
+	case shared.ErrorTypeRateLimitError:
+		return errorMetadata{statusCode: http.StatusTooManyRequests, retryable: true}, true
+	case errorTypeRequestTooLarge:
+		return errorMetadata{statusCode: http.StatusRequestEntityTooLarge}, true
+	case shared.ErrorTypeAuthenticationError:
+		return errorMetadata{statusCode: http.StatusUnauthorized}, true
+	case shared.ErrorTypePermissionError:
+		return errorMetadata{statusCode: http.StatusForbidden}, true
+	case shared.ErrorTypeNotFoundError:
+		return errorMetadata{statusCode: http.StatusNotFound}, true
+	case shared.ErrorTypeBillingError, shared.ErrorTypeInvalidRequestError:
+		return errorMetadata{statusCode: http.StatusBadRequest}, true
+	}
+	return errorMetadata{}, false
+}
+
 func wrapInitialStreamError(err error, body any) error {
 	wrapped := wrapAPIError(err, "", body)
-
 	var callErr *provider.APICallError
 	if !errors.As(wrapped, &callErr) {
 		return wrapped
 	}
+	return wrapErrorFrame(callErr, err, initialStreamErrorDefaultStatus)
+}
 
+// wrapStreamErrorFrame wraps an error frame received after the stream started.
+func wrapStreamErrorFrame(err error) *provider.APICallError {
+	return wrapErrorFrame(wrapAsAPICallError(err, "", nil), err, midStreamErrorDefaultStatus)
+}
+
+// wrapErrorFrame gives an Anthropic error frame upstream's classification: the
+// inner error message, and the status code and retryability of its type.
+func wrapErrorFrame(callErr *provider.APICallError, err error, defaultStatus int) *provider.APICallError {
 	var anthropicErr *sdk.Error
-	if !errors.As(err, &anthropicErr) || anthropicErr.StatusCode != 200 {
+	if !errors.As(err, &anthropicErr) || anthropicErr.StatusCode != http.StatusOK {
 		return callErr
 	}
 
-	callErr.StatusCode = 500
-	callErr.IsRetryable = isRetryableAnthropicError(anthropicErr.Type())
-	if anthropicErr.Type() == shared.ErrorTypeOverloadedError {
-		callErr.StatusCode = 529
+	metadata, known := streamErrorMetadata(anthropicErr.Type())
+	callErr.StatusCode = defaultStatus
+	callErr.IsRetryable = false
+	if known {
+		callErr.StatusCode = metadata.statusCode
+		callErr.IsRetryable = metadata.retryable
 	}
 	if anthropicErr.Request != nil && anthropicErr.Request.URL != nil {
 		callErr.URL = anthropicErr.Request.URL.String()
@@ -86,10 +126,6 @@ func wrapInitialStreamError(err error, body any) error {
 		}
 	}
 	return callErr
-}
-
-func isRetryableAnthropicError(errorType shared.ErrorType) bool {
-	return errorType == shared.ErrorTypeAPIError || errorType == shared.ErrorTypeOverloadedError
 }
 
 // structuredErrorData returns the parsed structured error envelope as

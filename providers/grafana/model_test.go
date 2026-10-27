@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -179,9 +180,10 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 		calls.Add(1)
 		assert.Equal(t, "POST", r.Method)
 		assert.Equal(t, "/api/v1/aisdk/language-model", r.URL.Path)
-		for key, want := range map[string]string{"Content-Type": "application/json", "Accept": "application/json", "X-Access-Token": "access-token", "X-Grafana-Id": "user-token", "Ai-Language-Model-Id": "assistant", "Ai-Language-Model-Specification-Version": "4", "Ai-Language-Model-Streaming": "false", "X-Custom": "call"} {
+		for key, want := range map[string]string{"Content-Type": "application/json", "Accept": "application/json", "X-Access-Token": "access-token", "Ai-Language-Model-Id": "assistant", "Ai-Language-Model-Specification-Version": "4", "Ai-Language-Model-Streaming": "false", "X-Custom": "call"} {
 			assert.Equal(t, []string{want}, r.Header.Values(key), key)
 		}
+		assert.Empty(t, r.Header.Values("X-Grafana-Id"))
 		var body map[string]json.RawMessage
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		assert.JSONEq(t, `[]`, string(body["prompt"]))
@@ -189,7 +191,7 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 		var headers map[string]string
 		require.NoError(t, json.Unmarshal(body["headers"], &headers))
 		assert.Equal(t, "call", headers["x-custom"])
-		assert.Equal(t, "evil-token", headers["X-Access-Token"])
+		assert.NotContains(t, headers, "X-Access-Token")
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Server", "actual")
 		w.Header().Add("X-Multi", "one")
@@ -201,7 +203,7 @@ func TestModel_GenerateRequestAndNormalization(t *testing.T) {
 	m, err := p.LanguageModel("assistant")
 	require.NoError(t, err)
 	zero := 0
-	result, err := m.DoGenerate(WithUserIDToken(context.Background(), "user-token"), provider.CallOptions{Prompt: []provider.Message{}, MaxOutputTokens: &zero, Headers: map[string]string{"x-custom": "call", "X-Access-Token": "evil-token", "X-Grafana-Id": "evil-user", "ai-language-model-id": "evil-model", "accept": "evil-accept", "content-type": "evil-type", "ai-language-model-streaming": "true", "ai-language-model-specification-version": "3"}})
+	result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}, MaxOutputTokens: &zero, Headers: map[string]string{"x-custom": "call", "ai-language-model-id": "evil-model", "accept": "evil-accept", "content-type": "evil-type", "ai-language-model-streaming": "true", "ai-language-model-specification-version": "3"}})
 	require.NoError(t, err)
 	require.Len(t, result.Content, 2)
 	assert.Equal(t, "hello", result.Content[0].Text)
@@ -300,7 +302,11 @@ func TestModel_UnaryFailures(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"missing content", `{"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`},
 		{"null content", strings.Replace(unaryFixture, `[{"type":"text","text":"hello"},{"type":"text","text":""}]`, `null`, 1)},
-		{"unknown family", strings.Replace(unaryFixture, `"type":"text"`, `"type":"custom"`, 1)},
+		{"unknown family", strings.Replace(unaryFixture, `"type":"text"`, `"type":"file"`, 1)},
+		{"custom missing kind", strings.Replace(unaryFixture, `{"type":"text","text":""}`, `{"type":"custom"}`, 1)},
+		{"custom null kind", strings.Replace(unaryFixture, `{"type":"text","text":""}`, `{"type":"custom","kind":null}`, 1)},
+		{"custom non-string kind", strings.Replace(unaryFixture, `{"type":"text","text":""}`, `{"type":"custom","kind":7}`, 1)},
+		{"custom malformed metadata", strings.Replace(unaryFixture, `{"type":"text","text":""}`, `{"type":"custom","kind":"x.y","providerMetadata":{"x":null}}`, 1)},
 		{"missing text", strings.Replace(unaryFixture, `,"text":"hello"`, "", 1)},
 		{"null text", strings.Replace(unaryFixture, `"text":"hello"`, `"text":null`, 1)},
 		{"unknown finish", strings.Replace(unaryFixture, `"unified":"stop"`, `"unified":"unknown"`, 1)},
@@ -621,4 +627,100 @@ func TestModel_UnaryBoundsAndTransport(t *testing.T) {
 		require.ErrorAs(t, err, &api)
 		assert.True(t, api.IsRetryable)
 	})
+}
+
+func TestModel_BYOKProjection(t *testing.T) {
+	const gatewayOptions = `{"byok":{"anthropic":[{"apiKey":"dummy-anthropic","baseURL":"https://approved.example/anthropic"}],"openai":[{"apiKey":"dummy-openai-first","baseURL":"https://approved.example/v1","organization":"org-customer","project":"proj-customer"},{"apiKey":"dummy-openai-second"}]}}`
+	const expected = `{"prompt":[],"providerOptions":{"gateway":` + gatewayOptions + `,"openai":{"store":false}}}`
+	for _, streaming := range []bool{false, true} {
+		t.Run(strconv.FormatBool(streaming), func(t *testing.T) {
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Equal(t, "/api/v1/aisdk/language-model", r.URL.Path)
+				assert.Equal(t, []string{"Bearer glsa_dummy"}, r.Header.Values("Authorization"))
+				assert.Equal(t, "openai/model-not-in-catalog", r.Header.Get("Ai-Language-Model-Id"))
+				assert.Equal(t, strconv.FormatBool(streaming), r.Header.Get("Ai-Language-Model-Streaming"))
+				body, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				assert.JSONEq(t, expected, string(body))
+				assert.NotContains(t, string(body), "glsa_dummy")
+				if streaming {
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = io.WriteString(w, "data: {\"type\":\"stream-start\"}\n\ndata: [DONE]\n\n")
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(w, unaryFixture)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			p, err := NewWithServiceAccountToken(ServiceAccountConfig{Token: "glsa_dummy", BaseURL: srv.URL + "/api/v1/aisdk"})
+			require.NoError(t, err)
+			model, err := p.LanguageModel("openai/model-not-in-catalog")
+			require.NoError(t, err)
+			opts := provider.CallOptions{Prompt: []provider.Message{}, ProviderOptions: provider.ProviderOptions{
+				"gateway": provider.RawProviderOption{Raw: json.RawMessage(gatewayOptions)},
+				"openai":  provider.RawProviderOption{Raw: json.RawMessage(`{"store":false}`)},
+			}}
+			var requestBody []byte
+			if streaming {
+				result, err := model.DoStream(context.Background(), opts)
+				require.NoError(t, err)
+				for range result.Stream {
+				}
+				require.NotNil(t, result.Request)
+				requestBody = result.Request.Body
+			} else {
+				result, err := model.DoGenerate(context.Background(), opts)
+				require.NoError(t, err)
+				require.NotNil(t, result.Request)
+				requestBody = result.Request.Body
+			}
+			assert.JSONEq(t, expected, string(requestBody))
+			assert.Equal(t, int32(1), calls.Load())
+		})
+	}
+}
+
+func TestModel_UnaryCustomContent(t *testing.T) {
+	for _, tc := range []struct {
+		name, custom string
+		wantKind     string
+		wantMetadata map[string]string
+	}{
+		{"opaque metadata", `{"type":"custom","kind":"openai.compaction","providerMetadata":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC","nested":{"zero":0,"no":false,"none":null,"empty":""}}}}`, "openai.compaction", map[string]string{"openai": `{"itemId":"cmp_1","encryptedContent":"ENC","nested":{"zero":0,"no":false,"none":null,"empty":""}}`}},
+		{"absent metadata", `{"type":"custom","kind":"anthropic.fallback"}`, "anthropic.fallback", nil},
+		{"empty metadata", `{"type":"custom","kind":"example.kind","providerMetadata":{}}`, "example.kind", map[string]string{}},
+		{"empty kind is accepted", `{"type":"custom","kind":""}`, "", nil},
+		{"unrelated fields are ignored", `{"type":"custom","kind":"example.kind","text":7,"toolCallId":[]}`, "example.kind", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := strings.Replace(unaryFixture, `{"type":"text","text":""}`, tc.custom, 1)
+			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, body)
+			}, nil)
+			m, err := p.LanguageModel("assistant")
+			require.NoError(t, err)
+
+			result, err := m.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}})
+
+			require.NoError(t, err)
+			require.Len(t, result.Content, 2)
+			assert.Equal(t, provider.ContentText, result.Content[0].Type)
+			custom := result.Content[1]
+			assert.Equal(t, provider.ContentCustom, custom.Type)
+			assert.Equal(t, tc.wantKind, custom.Kind)
+			if tc.wantMetadata == nil {
+				assert.Nil(t, custom.ProviderMetadata)
+				return
+			}
+			require.NotNil(t, custom.ProviderMetadata)
+			require.Len(t, custom.ProviderMetadata, len(tc.wantMetadata))
+			for namespace, want := range tc.wantMetadata {
+				assert.JSONEq(t, want, string(custom.ProviderMetadata[namespace]))
+			}
+		})
+	}
 }

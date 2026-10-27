@@ -77,9 +77,26 @@ export function validateVerificationDate(baseline: BaselineManifest): string[] {
   return ["baseline verification date is missing or invalid; record verifiedAt only after successful reviewed verification"];
 }
 
-export function validateBaselineFiles(manifestPath: string, packagePaths: string[]): string[] {
+export function validateRenovateExclusions(
+  baseline: BaselineManifest,
+  renovateConfig: { ignoreDeps?: string[] },
+): string[] {
+  return Object.keys(baseline.packages ?? {})
+    .filter(name => !renovateConfig.ignoreDeps?.includes(name))
+    .map(name => `renovate.json ignoreDeps must include baseline-managed package ${name}`);
+}
+
+export function validateBaselineFiles(
+  manifestPath: string,
+  packagePaths: string[],
+  renovatePath = join(__dirname, "..", "..", "..", "renovate.json"),
+): string[] {
   const baseline = parseYaml(readFileSync(manifestPath, "utf8")) as BaselineManifest;
-  const errors: string[] = validateVerificationDate(baseline);
+  const renovateConfig = JSON.parse(readFileSync(renovatePath, "utf8")) as { ignoreDeps?: string[] };
+  const errors: string[] = [
+    ...validateVerificationDate(baseline),
+    ...validateRenovateExclusions(baseline, renovateConfig),
+  ];
 
   for (const packagePath of packagePaths) {
     const packageManifest = JSON.parse(readFileSync(packagePath, "utf8")) as PackageManifest;
@@ -137,7 +154,7 @@ function main(): void {
     process.exitCode = 1;
     return;
   }
-  console.log("parity baseline: package versions and reviewed Gateway client contract match");
+  console.log("parity baseline: package versions, Renovate exclusions and reviewed Gateway client contract match");
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

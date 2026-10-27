@@ -72,23 +72,25 @@ Start with [Choose a provider](providers/overview.md), then follow the setup for
 the service your application calls:
 
 - [Anthropic](providers/anthropic.md) for Claude through Anthropic or Vertex AI.
+- [Microsoft Azure](providers/azure.md)
 - [Amazon Bedrock](providers/bedrock.md) for Bedrock Converse and Mantle Responses.
 - [OpenAI](providers/openai.md) for the Responses API.
 - [OpenAI-compatible APIs](providers/openai-compatible.md) for local or hosted
   Chat Completions-compatible servers.
 - [Grafana AI Gateway](providers/grafana-gateway.md) for authenticated public-model discovery and text calls.
-- [Authenticate to Grafana AI Gateway](guides/gateway-authentication.md) to choose Cloud or JWT credentials for Go and server-side Vercel clients.
+- [Authenticate to Grafana AI Gateway](guides/gateway-authentication.md) to choose the right Grafana credential for your application, in Go or server-side TypeScript.
 
 ## Extend model infrastructure
 
+- [How a request crosses AI Gateway](concepts/gateway-architecture.md) — follow
+  authentication, protocol translation, model routing, and streaming failures.
+- [Gateway glossary](concepts/gateway-glossary.md) — connect everyday terms,
+  aliases, and code names across the client and provider boundaries.
 - [Writing a provider](providers/writing-a-provider.md) — adapt another model
   service to the common SDK behavior.
 
 ## Operate in production
 
-- [Run AI Gateway in a container](guides/ai-gateway-container.md) — build and
-  test the standalone Gateway image and configure models, secrets,
-  authentication, and network access.
 - [Production checklist](best-practices/production.md) — bound work, secure the
   request boundary, and verify the deployed streaming path.
 - [Error handling](best-practices/error-handling.md) — handle failures before,

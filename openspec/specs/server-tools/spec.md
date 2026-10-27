@@ -6,34 +6,7 @@ Support Anthropic server-executed tools (web search, web fetch, memory, tool sea
 
 ### Requirement: Provider-defined tool request building
 
-The Anthropic provider's `convertTools()` function SHALL accept `[]provider.Tool` (interface) and use a type switch to dispatch on `provider.FunctionTool` and `provider.ProviderTool`. `provider.ProviderTool` entries SHALL be converted into the corresponding Anthropic SDK tool union variants, dispatching on the tool's `ID` field. `provider.FunctionTool` entries SHALL continue to use the existing `OfTool` path.
-
-The `convertProviderTool` function SHALL return `(BetaToolUnionParam, []string, *provider.Warning)` where the `[]string` contains beta header strings required by the tool. The caller SHALL merge these betas into the request's beta set.
-
-The following tool IDs SHALL be supported:
-- `"anthropic.web_search_20250305"` -> `OfWebSearchTool20250305` with args: `maxUses`, `allowedDomains`, `blockedDomains`, `userLocation`
-- `"anthropic.web_search_20260209"` -> web search tool with type `web_search_20260209` and args: `maxUses`, `allowedDomains`, `blockedDomains`, `userLocation`, with beta `code-execution-web-tools-2026-02-09`
-- `"anthropic.web_fetch_20250910"` -> web fetch tool with type `web_fetch_20250910` and args: `maxUses`, `allowedDomains`, `blockedDomains`, `citations`, `maxContentTokens`, with beta `web-fetch-2025-09-10`
-- `"anthropic.web_fetch_20260209"` -> web fetch tool with type `web_fetch_20260209` and args: `maxUses`, `allowedDomains`, `blockedDomains`, `citations`, `maxContentTokens`, with beta `code-execution-web-tools-2026-02-09`
-- `"anthropic.memory_20250818"` -> memory tool with type `memory_20250818` and name `memory`, with beta `context-management-2025-06-27` (no args)
-- `"anthropic.tool_search_bm25_20251119"` -> `OfToolSearchToolBm25_20251119`
-- `"anthropic.tool_search_regex_20251119"` -> `OfToolSearchToolRegex20251119`
-- `"anthropic.code_execution_20250522"` -> code execution tool with beta `code-execution-2025-05-22`
-- `"anthropic.code_execution_20250825"` -> code execution tool with beta `code-execution-2025-08-25`
-- `"anthropic.code_execution_20260120"` -> code execution tool (no beta)
-- `"anthropic.computer_20241022"` -> computer tool with args and beta `computer-use-2024-10-22`
-- `"anthropic.computer_20250124"` -> computer tool with args and beta `computer-use-2025-01-24`
-- `"anthropic.computer_20251124"` -> computer tool with args and beta `computer-use-2025-11-24`
-- `"anthropic.text_editor_20241022"` -> text editor tool with beta `computer-use-2024-10-22`
-- `"anthropic.text_editor_20250124"` -> text editor tool with beta `computer-use-2025-01-24`
-- `"anthropic.text_editor_20250429"` -> text editor tool with beta `computer-use-2025-01-24`
-- `"anthropic.text_editor_20250728"` -> text editor tool with args (no beta)
-- `"anthropic.bash_20241022"` -> bash tool with beta `computer-use-2024-10-22`
-- `"anthropic.bash_20250124"` -> bash tool with beta `computer-use-2025-01-24`
-
-Unrecognized provider tool IDs SHALL produce a warning (not an error) and be skipped.
-
-Cache control for `FunctionTool` entries SHALL be read from `FunctionTool.ProviderOptions`. `ProviderTool` entries do not carry `ProviderOptions`; cache control for provider tools SHALL be handled via the provider-specific conversion path.
+Anthropic convertTools SHALL accept []provider.Tool and type-switch FunctionTool to existing OfTool and ProviderTool by ID to corresponding SDK tool unions. convertProviderTool SHALL return (BetaToolUnionParam, []string, *provider.Warning); required tool betas SHALL merge into the request beta set. Unknown provider IDs SHALL warn, not error, and be skipped.
 
 #### Scenario: Web search tool with configuration
 
@@ -112,11 +85,7 @@ Cache control for `FunctionTool` entries SHALL be read from `FunctionTool.Provid
 
 ### Requirement: web_fetch_tool_result streaming
 
-The Anthropic stream adapter SHALL handle `web_fetch_tool_result` content blocks at `content_block_start`. The handler SHALL dispatch on the inner content type to handle success and error subtypes.
-
-For success (`web_fetch_result`): The handler SHALL emit a `PartToolResult` with `ToolCallID` from the block's `tool_use_id`, `ToolName` set to `mapping.toCustomToolName("web_fetch")`, and structured JSON output containing camelCased fields: `type` (`"web_fetch_result"`), `url`, `retrievedAt`, and nested `content` with `type`, `title`, `citations`, and `source` (with `type`, `mediaType`, `data`). Before emitting, the handler SHALL push the fetched document into `citationDocuments` with `title` (falling back to `url` when title is nil) and `mediaType` from `source.media_type`.
-
-For error (`web_fetch_tool_result_error`): The handler SHALL emit a `PartToolResult` with `IsError: true`, `ToolName` set to `mapping.toCustomToolName("web_fetch")`, and JSON output `{type: "web_fetch_tool_result_error", errorCode: <error_code>}`.
+At content_block_start, web_fetch_tool_result SHALL dispatch success/error inner types. Success SHALL emit PartToolResult with ToolCallID=tool_use_id and mapped web_fetch name, camelCase JSON {type:"web_fetch_result",url,retrievedAt,content:{type,title,citations,source:{type,mediaType,data}}}. Before emission, citationDocuments SHALL receive title (URL fallback for nil) and mediaType from source.media_type.
 
 #### Scenario: Successful web fetch result with document content
 
@@ -145,11 +114,7 @@ For error (`web_fetch_tool_result_error`): The handler SHALL emit a `PartToolRes
 
 ### Requirement: web_fetch_tool_result non-streaming
 
-The Anthropic response converter SHALL handle `web_fetch_tool_result` content blocks in non-streaming responses with the same semantics as the streaming path.
-
-For success (`web_fetch_result`): Produce a `GenerateContentPart` with `Type: "tool-result"`, `ToolCallID` from `tool_use_id`, `ToolName` set to `mapping.toCustomToolName("web_fetch")`, and structured JSON `Output` with camelCased fields. Push the document into `citationDocuments` before appending the result.
-
-For error (`web_fetch_tool_result_error`): Produce a `GenerateContentPart` with `Type: "tool-result"`, `IsError: true`, `ToolName` set to `mapping.toCustomToolName("web_fetch")`, and JSON output `{type, errorCode}`.
+Unary web_fetch_tool_result SHALL match streaming semantics. Success SHALL produce GenerateContentPart Type tool-result, ToolCallID=tool_use_id, mapped web_fetch name and camelCase Output, tracking the document in citationDocuments before appending. Error SHALL produce Type tool-result, IsError:true, mapped web_fetch name and JSON {type,errorCode}.
 
 #### Scenario: web_fetch_tool_result success in non-streaming response
 
@@ -165,13 +130,7 @@ For error (`web_fetch_tool_result_error`): Produce a `GenerateContentPart` with 
 
 ### Requirement: Generic server_tool_use streaming
 
-The Anthropic stream adapter SHALL handle `server_tool_use` content blocks generically for ANY tool name. The handling SHALL follow the same start/delta/stop pattern as regular `tool_use` blocks, but with `ProviderExecuted` set to `true` on all emitted stream parts. The `ToolName` in emitted parts SHALL be resolved through the tool name mapping.
-
-When processing `input_json_delta` events, the adapter SHALL skip emitting `PartToolInputDelta` if the `PartialJSON` value is empty. Empty deltas SHALL still be accumulated in blockState.
-
-When a `content_block_start` event of type `tool_use` or `server_tool_use` includes a `caller` field, the adapter SHALL store the caller's `type` and `tool_id` in blockState. When the corresponding `content_block_stop` event is processed and a `PartToolCall` is emitted, the adapter SHALL attach `ProviderMetadata` with key `"anthropic"` containing `{"caller": {"type": <callerType>}}`. If the caller also has a `tool_id`, it SHALL be included as `"toolId"` in the caller object.
-
-The orchestration layer SHALL pass `ProviderMetadata` from `StreamToolCall` through to the `ChunkToolInputAvailable` UI chunk, and from `StreamToolResult` through to the `ChunkToolOutputAvailable` UI chunk.
+ANY server_tool_use name SHALL follow regular tool_use start/delta/stop with ProviderExecuted:true on all parts and mapped ToolName. Empty input_json_delta PartialJSON SHALL NOT emit PartToolInputDelta but SHALL still accumulate in blockState.
 
 #### Scenario: server_tool_use block start
 
@@ -339,7 +298,7 @@ The Anthropic stream adapter SHALL handle `citations_delta` events in `BetaRawCo
 
 ### Requirement: Citation document tracking
 
-The Anthropic stream adapter and response converter SHALL track citation documents extracted from the prompt's user messages. The extraction SHALL collect file content parts with `MediaType` of `application/pdf` or `text/plain` that have `providerOptions["anthropic"]["citations"]["enabled"]` set to `true`. Each tracked document SHALL record `title` (from filename, defaulting to `"Untitled Document"`), `filename`, and `mediaType`. The documents SHALL be tracked in prompt order to match Anthropic's document indexing.
+Stream adapter and response converter SHALL track prompt user `FileContentPart` entries in order for Anthropic document indexing, only application/pdf or text/plain with providerOptions["anthropic"]["citations"]["enabled"]=true. Each SHALL record title from filename (default "Untitled Document"), filename and mediaType.
 
 #### Scenario: PDF file part with citations enabled
 
@@ -395,13 +354,8 @@ Each `PartSource` (streaming) and source `GenerateContentPart` (non-streaming) e
 - **THEN** each emitted `PartSource` has a distinct `SourceInfo.ID` value
 
 ### Requirement: Versioned Anthropic web-tool request projection
-The Anthropic provider SHALL accept provider-defined IDs `anthropic.web_search_20260318` and `anthropic.web_fetch_20260318` in the same tool conversion path as previously supported web versions. Each accepted web tool SHALL emit the matching dated native tool type and fixed wire name (`web_search` or `web_fetch`) in both generate and stream requests. Only declared fields SHALL be projected from camelCase arguments to snake_case wire fields:
-- Search 20250305 and 20260209: `maxUses`, `allowedDomains`, `blockedDomains`, `userLocation`.
-- Search 20260318: the same fields plus `responseInclusion` (`full` or `excluded`).
-- Fetch 20250910 and 20260209: `maxUses`, `allowedDomains`, `blockedDomains`, `citations.enabled`, `maxContentTokens`.
-- Fetch 20260318: the same fields plus `useCache` (including explicit `false`) and `responseInclusion` (`full` or `excluded`).
 
-Web fetch 20250910 SHALL select beta `web-fetch-2025-09-10`. Web search/fetch 20260209 SHALL select beta `code-execution-web-tools-2026-02-09`. Web search/fetch 20260318 and search 20250305 SHALL select no version-specific beta; any betas from other tools or explicit Anthropic options SHALL still be merged and deduplicated as before.
+Anthropic SHALL accept anthropic.web_search_20260318 and anthropic.web_fetch_20260318 through the existing web-version conversion path. Every accepted web tool SHALL emit matching dated native type and fixed web_search/web_fetch name in generate and stream. Only declared camelCase args SHALL project to snake_case fields.
 
 #### Scenario: Every supported dated web variant
 - **WHEN** a request declares any of the six supported web search/fetch IDs with valid arguments
@@ -420,7 +374,8 @@ Web fetch 20250910 SHALL select beta `web-fetch-2025-09-10`. Web search/fetch 20
 - **THEN** that field SHALL be omitted from the resulting request, preserving the version's own beta rule
 
 ### Requirement: Validate declared web-tool arguments before a request
-For each supported web ID, the Anthropic provider SHALL validate its declared optional argument fields before HTTP on both generate and stream paths. If a present field has an invalid type, is null, or has a disallowed enum value, the provider SHALL return an error and SHALL NOT send an HTTP request. Optional omitted fields SHALL remain omitted. Valid finite numeric `maxUses` and `maxContentTokens` values, including fractions, SHALL be serialized without integer truncation; the SDK's typed integer fields SHALL NOT narrow the registered upstream `z.number()` contract. Validation SHALL include string arrays for domain lists, a `citations` object that requires boolean `enabled` when present, an approximate `userLocation` object that requires `type: "approximate"` when present and permits optional string `city`, `region`, `country`, `timezone`, boolean `useCache`, and the 20260318-only `responseInclusion` enumeration. Unknown fields SHALL be stripped rather than forwarded, matching upstream object-schema projection. Unsupported provider tool IDs SHALL retain their warning-and-skip behavior.
+
+Every supported web ID SHALL validate declared optional args before HTTP in generate/stream. Invalid present types, null or enum SHALL error without HTTP; omissions SHALL stay omitted. Unknown fields SHALL be stripped as upstream object-schema projection. Unsupported IDs SHALL retain warning-and-skip behavior.
 
 #### Scenario: Fractional and large finite web-tool numbers
 - **WHEN** a supported web tool supplies a finite fractional or out-of-int64 `maxUses` or `maxContentTokens` value
@@ -452,3 +407,147 @@ Adding versioned provider-defined tools and their validation SHALL NOT interpret
 #### Scenario: Empty tool choice
 - **WHEN** a request has no tools and an auto, required, named, or none tool choice
 - **THEN** it SHALL preserve the existing selection/omission semantics for that choice, without fabricating a web tool
+
+### Requirement: Anthropic function and provider tool cache ownership
+
+FunctionTool cache control SHALL come from FunctionTool.ProviderOptions. ProviderTool has no ProviderOptions; its cache control SHALL use provider-specific conversion.
+
+#### Scenario: Anthropic function and provider tool cache ownership
+
+- **WHEN** a request mixes function and provider-defined tools
+- **THEN** each SHALL follow its own cache-control path without attributing function ProviderOptions to provider tools
+
+### Requirement: Anthropic web-search 20250305 declaration
+
+anthropic.web_search_20250305 SHALL map to OfWebSearchTool20250305 with maxUses, allowedDomains, blockedDomains and userLocation args.
+
+#### Scenario: Anthropic web-search 20250305 declaration
+
+- **WHEN** that provider ID supplies all declared args
+- **THEN** the corresponding native variant SHALL contain the projected args, including user location
+
+### Requirement: Anthropic web-search 20260209 declaration
+
+anthropic.web_search_20260209 SHALL emit type web_search_20260209 with maxUses, allowedDomains, blockedDomains and userLocation, selecting beta code-execution-web-tools-2026-02-09.
+
+#### Scenario: Anthropic web-search 20260209 declaration
+
+- **WHEN** that provider ID supplies its configuration
+- **THEN** the matching native type, declared fields and specified beta SHALL be sent
+
+### Requirement: Anthropic web-fetch 20250910 declaration
+
+anthropic.web_fetch_20250910 SHALL emit type web_fetch_20250910 with maxUses, allowedDomains, blockedDomains, citations and maxContentTokens, selecting beta web-fetch-2025-09-10.
+
+#### Scenario: Anthropic web-fetch 20250910 declaration
+
+- **WHEN** that provider ID supplies its configuration
+- **THEN** the matching native type, declared fields and specified beta SHALL be sent
+
+### Requirement: Anthropic web-fetch 20260209 declaration
+
+anthropic.web_fetch_20260209 SHALL emit type web_fetch_20260209 with maxUses, allowedDomains, blockedDomains, citations and maxContentTokens, selecting beta code-execution-web-tools-2026-02-09.
+
+#### Scenario: Anthropic web-fetch 20260209 declaration
+
+- **WHEN** that provider ID supplies its configuration
+- **THEN** the matching native type, declared fields and specified beta SHALL be sent
+
+### Requirement: Anthropic memory and discovery declarations
+
+anthropic.memory_20250818 SHALL emit type memory_20250818, name memory, no args and beta context-management-2025-06-27. anthropic.tool_search_bm25_20251119 and anthropic.tool_search_regex_20251119 SHALL map to OfToolSearchToolBm25_20251119 and OfToolSearchToolRegex20251119 respectively.
+
+#### Scenario: Anthropic memory and discovery declarations
+
+- **WHEN** memory and both tool-search variants are declared
+- **THEN** each SHALL emit its native variant and memory SHALL select the specified beta without args
+
+### Requirement: Anthropic code-execution declaration versions
+
+`anthropic.code_execution_20250522`, `anthropic.code_execution_20250825` and `anthropic.code_execution_20260120` SHALL emit code execution tools with code-execution-2025-05-22, code-execution-2025-08-25 and no beta respectively.
+
+#### Scenario: Anthropic code-execution declaration versions
+
+- **WHEN** all three code-execution provider IDs are declared
+- **THEN** each SHALL use its dated conversion and only the first two SHALL contribute their specified betas
+
+### Requirement: Anthropic computer declaration versions
+
+`anthropic.computer_20241022`, `anthropic.computer_20250124` and `anthropic.computer_20251124` SHALL emit computer tools with args and computer-use-2024-10-22, computer-use-2025-01-24 and computer-use-2025-11-24 betas respectively.
+
+#### Scenario: Anthropic computer declaration versions
+
+- **WHEN** all three computer provider IDs are declared with valid args
+- **THEN** their corresponding computer conversions SHALL project args and merge each required beta
+
+### Requirement: Anthropic text-editor and bash declaration versions
+
+`anthropic.text_editor_20241022` SHALL select computer-use-2024-10-22; `anthropic.text_editor_20250124` and `anthropic.text_editor_20250429` SHALL select computer-use-2025-01-24; `anthropic.text_editor_20250728` SHALL accept args with no beta. `anthropic.bash_20241022` and `anthropic.bash_20250124` SHALL select computer-use-2024-10-22 and computer-use-2025-01-24 respectively.
+
+#### Scenario: Anthropic text-editor and bash declaration versions
+
+- **WHEN** these text-editor and bash provider IDs are declared
+- **THEN** their corresponding conversions SHALL produce the tools and specified beta rules, including no beta for text-editor 20250728
+
+### Requirement: Anthropic streaming web-fetch error projection
+
+Inner web_fetch_tool_result_error SHALL emit PartToolResult with IsError:true, mapping.toCustomToolName("web_fetch") and JSON {type:"web_fetch_tool_result_error",errorCode:<error_code>}.
+
+#### Scenario: Anthropic streaming web-fetch error projection
+
+- **WHEN** a streaming fetch result has error_code too_many_requests
+- **THEN** the error result SHALL use the mapped name and camelCase errorCode, without adding a citation document
+
+### Requirement: Anthropic streamed tool caller metadata
+
+At tool_use/server_tool_use content_block_start with caller, the adapter SHALL store caller.type/tool_id in blockState. On stop, PartToolCall SHALL attach ProviderMetadata["anthropic"]={caller:{type:<callerType>}}, including toolId only if supplied.
+
+#### Scenario: Anthropic streamed tool caller metadata
+
+- **WHEN** server_tool_use has caller type code_execution_20250825 and tool_id toolu_123
+- **THEN** the emitted call SHALL retain caller type and camelCase toolId in Anthropic metadata
+
+### Requirement: Anthropic tool metadata UI propagation
+
+Orchestration SHALL pass StreamToolCall.ProviderMetadata to ChunkToolInputAvailable and StreamToolResult.ProviderMetadata to ChunkToolOutputAvailable.
+
+#### Scenario: Anthropic tool metadata UI propagation
+
+- **WHEN** tool call and result stream parts carry caller metadata
+- **THEN** their respective UI input/output-available chunks SHALL carry the same metadata
+
+### Requirement: Anthropic versioned web argument fields
+
+Search 20250305/20260209 SHALL project maxUses, allowedDomains, blockedDomains, userLocation; 20260318 SHALL add responseInclusion (full|excluded). Fetch 20250910/20260209 SHALL project maxUses, allowedDomains, blockedDomains, citations.enabled, maxContentTokens; 20260318 SHALL add useCache (including false) and responseInclusion (full|excluded).
+
+#### Scenario: Anthropic versioned web argument fields
+
+- **WHEN** 20260318 search/fetch include responseInclusion and fetch useCache:false while older variants supply those extras
+- **THEN** new variants SHALL project their declared additions, while older variants SHALL omit undeclared fields
+
+### Requirement: Anthropic versioned web beta selection
+
+Fetch 20250910 SHALL select web-fetch-2025-09-10; search/fetch 20260209 SHALL select code-execution-web-tools-2026-02-09. Search/fetch 20260318 and search 20250305 SHALL select no version-specific beta. Other tool and explicit Anthropic betas SHALL still merge and deduplicate as before.
+
+#### Scenario: Anthropic versioned web beta selection
+
+- **WHEN** a 20260318 web tool is combined with a beta-requiring older web tool and duplicate explicit betas
+- **THEN** only the older version SHALL contribute a web beta, merged once with other requested betas
+
+### Requirement: Anthropic web numeric argument fidelity
+
+Valid finite numeric maxUses/maxContentTokens, including fractions, SHALL serialize without integer truncation. SDK typed integer fields SHALL NOT narrow the registered upstream z.number() contract.
+
+#### Scenario: Anthropic web numeric argument fidelity
+
+- **WHEN** web tools supply fractional or out-of-int64 finite numbers after an unsupported tool
+- **THEN** the corresponding wire numbers SHALL remain intact, without reinstating tools removed by choice none
+
+### Requirement: Anthropic web nested argument schemas
+
+Domain lists SHALL be string arrays. Present citations SHALL require boolean enabled; present userLocation SHALL require type approximate and permit optional string city/region/country/timezone. useCache SHALL be boolean; responseInclusion SHALL be the 20260318-only full|excluded enum.
+
+#### Scenario: Anthropic web nested argument schemas
+
+- **WHEN** a supported web tool has malformed citations, location, domain list, useCache or responseInclusion
+- **THEN** request preparation SHALL reject it before HTTP rather than coerce or forward invalid declared fields

@@ -11,6 +11,7 @@ import (
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -20,8 +21,11 @@ const (
 )
 
 type messageStreamItem struct {
-	event      *sdk.BetaRawMessageStreamEventUnion
-	err        error
+	event *sdk.BetaRawMessageStreamEventUnion
+	err   error
+	// errorFrame marks an Anthropic error event: it is reported and reading
+	// continues, unlike transport and decoding failures which end the stream.
+	errorFrame bool
 	rawValue   json.RawMessage
 	hasRaw     bool
 	frameBytes int
@@ -49,13 +53,14 @@ func pumpMessageStream(ctx context.Context, response *http.Response, includeRaw 
 				return false
 			}
 		}
+		defer streamrecover.Recover(func() { send(messageStreamItem{err: streamrecover.ErrPanic}) })
 		decoder := ssestream.NewDecoder(response)
 		if decoder == nil {
 			send(messageStreamItem{err: errors.New("anthropic: missing stream response")})
 			return
 		}
 		var closeOnce sync.Once
-		closeDecoder := func() { closeOnce.Do(func() { _ = decoder.Close() }) }
+		closeDecoder := func() { closeOnce.Do(func() { streamrecover.Close(decoder) }) }
 		stopClose := context.AfterFunc(ctx, closeDecoder)
 		defer func() { stopClose(); closeDecoder() }()
 		for decoder.Next() {
@@ -82,8 +87,11 @@ func pumpMessageStream(ctx context.Context, response *http.Response, includeRaw 
 						item.err = apiErr
 					}
 				}
-				send(item)
-				return
+				item.errorFrame = true
+				if !send(item) {
+					return
+				}
+				continue
 			}
 			stream := ssestream.NewStream[sdk.BetaRawMessageStreamEventUnion](&messageFrameDecoder{frame: frame, pending: true}, nil)
 			if stream.Next() {

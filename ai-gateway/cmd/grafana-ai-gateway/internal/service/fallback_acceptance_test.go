@@ -15,15 +15,15 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
-	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-const mappedFallbackBody = `{"maxOutputTokens":64,"tools":[{"type":"function","name":"lookup","inputSchema":{}}],"toolChoice":{"type":"required"},"reasoning":"high","headers":{"x-ordinary":"value"},"providerOptions":{"vendor":{"nested":[null,false,0,"",[],{}]}},"prompt":[{"role":"user","content":[{"type":"text","text":"private-prompt"},{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","filename":""}]}]}`
+const mappedFallbackBody = `{"responseFormat":{"type":"json","name":"","schema":{"type":"object"}},"maxOutputTokens":64,"tools":[{"type":"function","name":"lookup","inputSchema":{}}],"toolChoice":{"type":"required"},"reasoning":"high","headers":{"x-ordinary":"value"},"providerOptions":{"vendor":{"nested":[null,false,0,"",[],{}]}},"prompt":[{"role":"user","content":[{"type":"text","text":"private-prompt"},{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","filename":""}]}]}`
 
 func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 	finish := provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}}
@@ -60,6 +60,7 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			h := newFallbackAcceptance(t, &observabilityTestModel{stream: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+				assert.Equal(t, &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: new(""), Schema: json.RawMessage(`{"type":"object"}`)}, opts.ResponseFormat)
 				assert.Len(t, opts.Tools, 1)
 				assert.Equal(t, provider.ReasoningHigh, opts.Reasoning)
 				assert.Equal(t, "value", opts.Headers["x-ordinary"])
@@ -114,9 +115,15 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 						errorCodes = append(errorCodes, errorEvent.Error.Code)
 						switch errorEvent.Error.Code {
 						case "overloaded":
-							assert.JSONEq(t, `{"type":"error","error":{"message":"service overloaded","type":"internal_server_error","param":null,"code":"overloaded","statusCode":503,"retryable":true}}`, payload)
+							assert.Contains(t, payload, `"message":"service overloaded"`)
+							assert.Contains(t, payload, `"statusCode":503,"retryable":true`)
+							assert.Contains(t, payload, `"outcome":"selected"`)
+							assert.NotContains(t, payload, `"completion"`)
+							assert.NotContains(t, payload, `"selectedAttempt"`)
 						case "internal_error":
-							assert.JSONEq(t, `{"type":"error","error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error","statusCode":500,"retryable":true}}`, payload)
+							assert.Contains(t, payload, `"message":"internal error"`)
+							assert.Contains(t, payload, `"statusCode":500,"retryable":true`)
+							assert.Contains(t, payload, `"outcome":"selected"`)
 						}
 					}
 				}
@@ -150,6 +157,7 @@ func TestFallbackAcceptance_MappedSelection(t *testing.T) {
 				defer cancel()
 				candidate := func(err error) *observabilityTestModel {
 					invoke := func(opts provider.CallOptions) error {
+						assert.Equal(t, &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: new(""), Schema: json.RawMessage(`{"type":"object"}`)}, opts.ResponseFormat)
 						assert.Len(t, opts.Tools, 1)
 						assert.Equal(t, provider.ToolChoiceRequired, opts.ToolChoice.Type)
 						assert.Equal(t, provider.ReasoningHigh, opts.Reasoning)
@@ -202,6 +210,7 @@ func TestFallbackAcceptance_MappedUnaryEncodingDoesNotReplay(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newFallbackAcceptance(t, &observabilityTestModel{generate: func(_ context.Context, opts provider.CallOptions) (*provider.GenerateResult, error) {
+				assert.Equal(t, &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: new(""), Schema: json.RawMessage(`{"type":"object"}`)}, opts.ResponseFormat)
 				assert.Len(t, opts.Tools, 1)
 				return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: tc.contentType, ToolCallID: "call", ToolName: "lookup", Input: tc.input}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
 			}}, &observabilityTestModel{})
@@ -442,18 +451,18 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 		cfg.Hooks = agento11y.HooksConfig{Enabled: false}
 	})
 	var logs lockedBuffer
-	var output physicalBuffer
+	var output lockedBuffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-	factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
+	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
-	sink := newPhysicalAttemptSink(&output, telemetry, 8, time.Second, time.Second)
-	t.Cleanup(sink.Close)
+	sink := newPhysicalAttemptSink(hclogLogger(&output), telemetry, 8)
+	t.Cleanup(func() { sink.Close(context.Background()) })
 	h := &fallbackAcceptance{}
 	h.logText = logs.String
-	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ string, id string, _ ...anthropicprovider.Option) provider.LanguageModel {
+	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
 		index, model := 0, primary
 		if id == "backend-secondary" {
 			index, model = 1, secondary
@@ -479,7 +488,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	resolved, err := catalog.ResolveModel(context.Background(), "alias")
 	require.NoError(t, err)
 	h.model = resolved.Model
-	h.handler, err = providerv4.New(providerv4.Config{Resolver: catalog, Limits: serviceTestLimits()})
+	h.handler, err = providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(catalog), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	h.context = func(ctx context.Context) context.Context {
 		state := &telemetryState{}
@@ -489,7 +498,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	h.verify = func(t *testing.T, mode, public string, outcomes []fallback.AttemptOutcome) {
 		t.Helper()
 		require.Eventually(t, func() bool { return env.RequestCount() == 1 }, time.Second, time.Millisecond)
-		sink.Close()
+		sink.Close(context.Background())
 		env.Shutdown(t)
 		generation := env.SingleGenerationJSON(t)
 		encoded, err := json.Marshal(generation)
@@ -497,22 +506,26 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 		assert.Equal(t, "public", testkit.StringValue(t, generation, "model", "name"))
 		assert.Equal(t, "fallback-correlation", testkit.StringValue(t, generation, "metadata", "gateway.correlation_id"))
 		assert.Equal(t, 1, countModelLogEvent(t, logs.String(), "aisdk.model."+mode+".start"))
-		terminal := 0
-		for _, event := range []string{"finish", "error", "cancelled"} {
-			terminal += countModelLogEvent(t, logs.String(), "aisdk.model."+mode+"."+event)
-		}
-		assert.Equal(t, 1, terminal)
-		metrics := testMetrics(t, telemetry)
-		assert.Equal(t, 1, strings.Count(metrics, "aisdk_model_requests_total{"))
+		var metrics string
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			terminal := 0
+			logSnapshot := logs.String()
+			for _, event := range []string{"finish", "error", "cancelled"} {
+				terminal += countModelLogEvent(t, logSnapshot, "aisdk.model."+mode+"."+event)
+			}
+			assert.Equal(collect, 1, terminal)
+			metrics = testMetrics(t, telemetry)
+			assert.Equal(collect, 1, strings.Count(metrics, "aisdk_model_requests_total{"))
+		}, time.Second, time.Millisecond, "cancellation completes each observability stream independently")
 		logical := string(encoded) + logs.String() + metrics
 		for _, private := range []string{"private-prompt", "private-output", "public-answer", "primary-instance", "secondary-instance", "backend-primary", "backend-secondary", "native_usage_marker"} {
 			assert.NotContains(t, logical, private)
 		}
-		for _, private := range []string{"primary-instance", "secondary-instance"} {
-			assert.NotContains(t, public, private)
-		}
 		for _, private := range []string{"private-credential", "private.example", "private-header", "private-request-body", "private-response-body", "private-error", "private-data"} {
-			assert.NotContains(t, public+logical+output.String(), private)
+			assert.NotContains(t, logical+output.String(), private)
+		}
+		for _, private := range []string{"private.example", "private-header", "private-request-body", "private-response-body", "private-data"} {
+			assert.NotContains(t, public, private)
 		}
 		assert.NotContains(t, logical+output.String(), "private-metadata")
 		lines := strings.Split(strings.TrimSpace(output.String()), "\n")
@@ -526,7 +539,9 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 			require.NoError(t, json.Unmarshal([]byte(line), &fields))
 			var keys []string
 			for key := range fields {
-				keys = append(keys, key)
+				if !strings.HasPrefix(key, "@") {
+					keys = append(keys, key)
+				}
 			}
 			assert.ElementsMatch(t, []string{"event", "correlation_id", "candidate_index", "provider_instance", "backend_model_id", "started_at", "decided_at", "outcome", "will_fallback", "winner"}, keys)
 			assert.Equal(t, index+1, record.CandidateIndex)
@@ -638,4 +653,45 @@ func TestFallbackAcceptance_MetadataFailureDoesNotReplay(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestFallbackAcceptance_CustomContentCommitsCandidate(t *testing.T) {
+	t.Run("stream first part", func(t *testing.T) {
+		errorPart := provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}
+		h := newFallbackAcceptance(t,
+			&observabilityTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return fallbackParts(provider.StreamPart{Type: provider.PartCustom, Kind: "example.kind"}, errorPart), nil
+			}},
+			&observabilityTestModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return fallbackParts(hostileFallbackParts()...), nil
+			}},
+		)
+		response := httptest.NewRecorder()
+
+		h.handler.ServeHTTP(response, h.request(context.Background(), true))
+
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.Contains(t, response.Body.String(), `"kind":"example.kind"`)
+		assert.EqualValues(t, 1, h.calls[0].Load())
+		assert.Zero(t, h.calls[1].Load(), "a candidate that emitted custom content stays selected")
+		assert.NotContains(t, response.Body.String(), "public-answer")
+	})
+
+	t.Run("unary success with an unencodable custom part", func(t *testing.T) {
+		h := newFallbackAcceptance(t,
+			&observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "undotted"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+			}},
+			&observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return &provider.GenerateResult{}, nil
+			}},
+		)
+		response := httptest.NewRecorder()
+
+		h.handler.ServeHTTP(response, h.request(context.Background(), false))
+
+		assert.Equal(t, http.StatusInternalServerError, response.Code)
+		assert.EqualValues(t, 1, h.calls[0].Load())
+		assert.Zero(t, h.calls[1].Load())
+	})
 }

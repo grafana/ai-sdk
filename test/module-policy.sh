@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root=$(git rev-parse --show-toplevel)
 source "$repo_root/scripts/module-policy.sh"
 fixture=$(mktemp -d)
+fixture=$(cd "$fixture" && pwd -P)
 trap 'rm -rf "$fixture"' EXIT
 
 assert_fails() {
@@ -107,7 +108,7 @@ for root in . ai-gateway providers/openai examples/demo test/conformance; do
   path=$module_prefix
   [[ "$root" == . ]] || path+=/$root
   mkdir -p "$module_repo/$root"
-  printf 'module %s\n\ngo 1.26.3\n' "$path" >"$module_repo/$root/go.mod"
+  printf 'module %s\n\ngo 1.27.3\n' "$path" >"$module_repo/$root/go.mod"
 done
 (cd "$module_repo" && git init -q && git add .)
 (
@@ -115,7 +116,7 @@ done
   [[ $(modules | wc -l) -eq 3 ]] || fail 'published module selection included local-only modules'
   [[ $(modules all | wc -l) -eq 5 ]] || fail 'tracked module inventory is incomplete'
   (
-    printf 'module %s\n\ngo 1.26.3\nrequire %s v0.1.0\n' "$gateway_module" "$module_prefix" >ai-gateway/go.mod
+    printf 'module %s\n\ngo 1.27.3\nrequire %s v0.1.0\n' "$gateway_module" "$module_prefix" >ai-gateway/go.mod
     graph_extra=
     go() {
       if [[ "$1 $2 $3" == 'mod download -json' ]]; then
@@ -147,7 +148,7 @@ done
   )
   printf 'module example.com/wrong\n' >providers/openai/go.mod
   assert_fails 'declares example.com/wrong' modules
-  printf 'module %s\n\ngo 1.26.3\n' "$module_prefix/providers/openai" >providers/openai/go.mod
+  printf 'module %s\n\ngo 1.27.3\n' "$module_prefix/providers/openai" >providers/openai/go.mod
 )
 assert_fails 'unknown or local-only' standalone test/conformance
 assert_fails 'unknown or local-only' standalone nonexistent
@@ -175,11 +176,11 @@ for root in . ai-gateway providers/grafana middleware/logger; do
   path=$module_prefix
   [[ "$root" == . ]] || path+=/$root
   mkdir -p "$boundary_repo/$root"
-  printf 'module %s\n\ngo 1.26.3\n' "$path" >"$boundary_repo/$root/go.mod"
+  printf 'module %s\n\ngo 1.27.3\n' "$path" >"$boundary_repo/$root/go.mod"
 done
 cp "$repo_root/LICENSE" "$boundary_repo/LICENSE"
 cp "$repo_root/ai-gateway/LICENSE" "$boundary_repo/ai-gateway/LICENSE"
-printf 'go 1.26.3\nuse (\n .\n ./providers/grafana\n)\n' >"$boundary_repo/go.work"
+printf 'go 1.27.3\nuse (\n .\n ./providers/grafana\n)\n' >"$boundary_repo/go.work"
 printf 'package sdk\n' >"$boundary_repo/consumer.go"
 (
   cd "$boundary_repo"
@@ -192,9 +193,9 @@ printf 'package sdk\n' >"$boundary_repo/consumer.go"
   printf 'package sdk\n' >consumer.go
   printf 'require %s v0.1.0\n' "$gateway_module" >>providers/grafana/go.mod
   assert_fails 'requires or replaces Gateway' boundary
-  printf 'module %s\n\ngo 1.26.3\nreplace %s => ../../ai-gateway\n' "$module_prefix/providers/grafana" "$module_prefix" >providers/grafana/go.mod
+  printf 'module %s\n\ngo 1.27.3\nreplace %s => ../../ai-gateway\n' "$module_prefix/providers/grafana" "$module_prefix" >providers/grafana/go.mod
   assert_fails 'replaces a module with Gateway source' boundary
-  printf 'module %s\n\ngo 1.26.3\n' "$module_prefix/providers/grafana" >providers/grafana/go.mod
+  printf 'module %s\n\ngo 1.27.3\n' "$module_prefix/providers/grafana" >providers/grafana/go.mod
   printf 'package logger\nimport _ "%s"\n' "$gateway_module" >middleware/logger/consumer.go
   git add middleware/logger/consumer.go
   assert_fails 'outside ai-gateway references Gateway' boundary
@@ -206,9 +207,9 @@ printf 'package sdk\n' >"$boundary_repo/consumer.go"
 
 source_absent_repo=$fixture/source-absent
 mkdir -p "$source_absent_repo/providers/grafana" "$source_absent_repo/ai-gateway"
-printf 'module %s\n\ngo 1.26.3\n' "$module_prefix" >"$source_absent_repo/go.mod"
-printf 'module %s/providers/grafana\n\ngo 1.26.3\nrequire %s v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc\n' "$module_prefix" "$module_prefix" >"$source_absent_repo/providers/grafana/go.mod"
-printf 'go 1.26.3\nuse (\n .\n ./providers/grafana\n)\n' >"$source_absent_repo/go.work"
+printf 'module %s\n\ngo 1.27.3\n' "$module_prefix" >"$source_absent_repo/go.mod"
+printf 'module %s/providers/grafana\n\ngo 1.27.3\nrequire %s v0.1.0-alpha.1.0.20260921202550-3dff0f7087dc\n' "$module_prefix" "$module_prefix" >"$source_absent_repo/providers/grafana/go.mod"
+printf 'go 1.27.3\nuse (\n .\n ./providers/grafana\n)\n' >"$source_absent_repo/go.work"
 printf 'package aisdk\nfunc CandidateOnly() string { return "candidate" }\n' >"$source_absent_repo/candidate.go"
 printf 'package aisdk\nimport "testing"\nfunc TestCandidate(t *testing.T) { if CandidateOnly() != "candidate" { t.Fatal("candidate root not executed") } }\n' >"$source_absent_repo/candidate_test.go"
 printf 'package grafana\nimport "%s"\nfunc Candidate() string { return aisdk.CandidateOnly() }\n' "$module_prefix" >"$source_absent_repo/providers/grafana/candidate.go"
@@ -232,5 +233,7 @@ for root in ai-gateway/cmd/grafana-ai-gateway ai-gateway/test/providerwire-v4/te
   assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOWORK="$2" GOFLAGS=-mod=readonly go build -overlay "$3" -o "$4" .' \
     bash "$repo_root/$root" "$repo_root/go.gateway.work" "$overlay" "$fixture/gateway"
 done
+assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOWORK="$2" GOFLAGS="-mod=readonly -overlay=$3" mage build:linux build:linuxARM64' \
+  bash "$repo_root/ai-gateway" "$repo_root/go.gateway.work" "$overlay"
 
 echo 'module policy fixtures: OK'

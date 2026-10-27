@@ -3,9 +3,11 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,14 +17,72 @@ import (
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
 
-	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
-	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBYOKSelection_NativeOptionGuards(t *testing.T) {
+	const mcpOptions = `{"anthropic":{"mcpServers":[{"name":"external","url":"https://example.invalid"}]}}`
+	const mcpHistory = `[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"external"}}}]}]`
+	for _, streaming := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, options, prompt, nativeField string
+			allowed                            bool
+		}{
+			{"MCP servers", mcpOptions, `[]`, "mcp_servers", true},
+			{"invalid MCP destination", `{"anthropic":{"mcpServers":[{"name":"external","url":"http://example.invalid"}]}}`, `[]`, "", false},
+			{"container skills", `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`, `[]`, "", false},
+			{"native routing", `{"anthropic":{"fallbacks":"default"}}`, `[]`, "", false},
+			{"unconfigured MCP history", `{}`, mcpHistory, "", false},
+			{"configured MCP history", mcpOptions, mcpHistory, "mcp_tool_use", true},
+			{"local MCP marker", `{}`, `[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"anthropic":{"type":"mcp-tool-use"}}}]}]`, "tool_use", true},
+			{"ordinary fields and unrelated namespaces", `{"anthropic":{"model":"ignored","container":{"id":"supplied-container"},"mcp_servers":[]},"other":{"mcpServers":[{"name":"ordinary"}]}}`, `[]`, "supplied-container", true},
+		} {
+			t.Run(tc.name+"/stream="+strconv.FormatBool(streaming), func(t *testing.T) {
+				var calls atomic.Int32
+				client := &http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+					calls.Add(1)
+					data, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+					assert.NotContains(t, string(data), "dummy-request-key")
+					assert.NotContains(t, string(data), "byok")
+					assert.NotContains(t, string(data), "ignored")
+					assert.Contains(t, string(data), tc.nativeField)
+					return &http.Response{StatusCode: 401, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"authentication_error","message":"rejected"}}`)), Request: r}, nil
+				})}
+				factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
+				language, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
+				require.NoError(t, err)
+				handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, language)
+				var options map[string]json.RawMessage
+				require.NoError(t, json.Unmarshal([]byte(tc.options), &options))
+				options["gateway"] = json.RawMessage(`{"byok":{"anthropic":[{"apiKey":"dummy-request-key"},{"apiKey":"unused-key"}]}}`)
+				body, err := json.Marshal(map[string]any{"prompt": json.RawMessage(tc.prompt), "providerOptions": options, "maxOutputTokens": 64})
+				require.NoError(t, err)
+				r := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(string(body)))
+				r.Header = headers
+				r.Header.Set("Content-Type", "application/json")
+				r.Header.Set(providerv4.HeaderModelID, "anthropic/native-model")
+				r.Header.Set(providerv4.HeaderSpecificationVersion, "4")
+				r.Header.Set(providerv4.HeaderStreaming, strconv.FormatBool(streaming))
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, r)
+				if tc.allowed {
+					assert.Equal(t, http.StatusFailedDependency, w.Code, w.Body.String())
+					assert.Equal(t, int32(1), calls.Load())
+				} else {
+					assert.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+					assert.Zero(t, calls.Load())
+				}
+				assert.NotContains(t, w.Body.String(), "dummy-request-key")
+			})
+		}
+	}
+}
 
 func TestNativeOptions_ConsumedRequests(t *testing.T) {
 	for _, configuredFallback := range []bool{false, true} {
@@ -85,6 +145,93 @@ func TestNativeOptions_ConsumedRequests(t *testing.T) {
 						part := message["content"].([]any)[0].(map[string]any)
 						assert.Equal(t, "positive", part["sentiment"])
 						assert.Equal(t, map[string]any{}, part["nested"])
+					},
+				},
+				{
+					name: "anthropic custom history and tool references", backend: "anthropic",
+					body: `{"prompt":[{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}},{"type":"custom","kind":"anthropic.fallback","providerOptions":{"anthropic":{"type":"fallback","from":{"model":"claude-a"},"to":{"model":"claude-b"}}}},{"type":"custom","kind":"example.kind"},{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"content","value":[{"type":"text","text":"before"},{"type":"custom","providerOptions":{"anthropic":{"type":"tool-reference","toolName":"search"}}},{"type":"custom","providerOptions":{"anthropic":{"type":"other"}}},{"type":"custom"}]}}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						messages := body["messages"].([]any)
+						assistant := messages[0].(map[string]any)["content"].([]any)
+						require.Len(t, assistant, 3)
+						assert.Equal(t, "text", assistant[0].(map[string]any)["type"])
+						fallback := assistant[1].(map[string]any)
+						assert.Equal(t, "fallback", fallback["type"])
+						assert.Equal(t, map[string]any{"model": "claude-a"}, fallback["from"])
+						assert.Equal(t, map[string]any{"model": "claude-b"}, fallback["to"])
+						assert.Equal(t, "tool_use", assistant[2].(map[string]any)["type"])
+						result := messages[1].(map[string]any)["content"].([]any)[0].(map[string]any)
+						assert.Equal(t, []any{
+							map[string]any{"type": "text", "text": "before"},
+							map[string]any{"type": "tool_reference", "tool_name": "search"},
+						}, result["content"])
+					},
+				},
+				{
+					name: "anthropic custom scopes cannot enable guarded features", backend: "anthropic",
+					body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"anthropic.fallback","providerOptions":{"anthropic":{"type":"fallback","from":{"model":"claude-a"},"to":{"model":"claude-b"},"fallbacks":{"default":true},"container":{"skills":[{"type":"custom","skillId":"s"}]},"mcpServers":[{"type":"url","name":"n","url":"http://insecure.example.test"}]}}},{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"content","value":[{"type":"custom","providerOptions":{"anthropic":{"type":"tool-reference","toolName":"search","container":{"skills":[{"type":"custom","skillId":"s"}]},"mcpServers":[{"type":"url","name":"n","url":"http://insecure.example.test"}]}}}]}}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						for _, field := range []string{"container", "mcp_servers", "fallbacks"} {
+							assert.NotContains(t, body, field)
+						}
+						fallback := body["messages"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)
+						assert.Equal(t, map[string]any{"type": "fallback", "from": map[string]any{"model": "claude-a"}, "to": map[string]any{"model": "claude-b"}}, fallback)
+						result := body["messages"].([]any)[1].(map[string]any)["content"].([]any)[0].(map[string]any)
+						assert.Equal(t, []any{map[string]any{"type": "tool_reference", "tool_name": "search"}}, result["content"])
+					},
+				},
+				{
+					name: "openai stateless compaction history", backend: "openai",
+					body: `{"providerOptions":{"openai":{"store":false}},"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}},{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_2"}}},{"type":"custom","kind":"anthropic.fallback","providerOptions":{"anthropic":{"type":"fallback"}}}]},{"role":"user","content":[{"type":"text","text":"continue"}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						input := body["input"].([]any)
+						require.Len(t, input, 3)
+						assert.Equal(t, map[string]any{"type": "compaction", "id": "cmp_1", "encrypted_content": "ENC"}, input[0])
+						assert.Equal(t, map[string]any{"type": "compaction", "id": "cmp_2"}, input[1])
+						assert.Equal(t, "user", input[2].(map[string]any)["role"])
+					},
+				},
+				{
+					name: "openai stored compaction item reference", backend: "openai",
+					body: `{"providerOptions":{"openai":{"store":true}},"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}}]},{"role":"user","content":[{"type":"text","text":"continue"}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						input := body["input"].([]any)
+						require.Len(t, input, 2)
+						assert.Equal(t, map[string]any{"type": "item_reference", "id": "cmp_1"}, input[0])
+					},
+				},
+				{
+					name: "compatible skips custom history", backend: "openai-compatible",
+					body: `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]},{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}},{"type":"custom","kind":"anthropic.fallback","providerOptions":{"anthropic":{"type":"fallback"}}}]},{"role":"user","content":[{"type":"text","text":"next"}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						messages := body["messages"].([]any)
+						require.Len(t, messages, 3)
+						assistant := messages[1].(map[string]any)
+						assert.Equal(t, "answer", assistant["content"])
+						assert.NotContains(t, assistant, "tool_calls")
+						assert.NotContains(t, string(mustMarshal(t, body)), "ENC")
+					},
+				},
+				{
+					name: "compatible stringifies custom tool-result entries", backend: "openai-compatible",
+					body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"content","value":[{"type":"text","text":"before"},{"type":"custom","providerOptions":{"anthropic":{"type":"tool-reference","toolName":"search"}}}]}}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						messages := body["messages"].([]any)
+						require.Len(t, messages, 2)
+						tool := messages[1].(map[string]any)
+						assert.Equal(t, "tool", tool["role"])
+						assert.JSONEq(t, `[{"type":"text","text":"before"},{"type":"custom","providerOptions":{"anthropic":{"type":"tool-reference","toolName":"search"}}}]`, tool["content"].(string))
+					},
+				},
+				{
+					name: "openai drops custom tool-result entries", backend: "openai",
+					body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{}}]},{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"lookup","output":{"type":"content","value":[{"type":"text","text":"before"},{"type":"custom","providerOptions":{"openai":{"type":"secret","itemId":"item_1"}}}]}}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						assert.NotContains(t, string(mustMarshal(t, body)), "secret")
+						assert.NotContains(t, string(mustMarshal(t, body)), "item_1")
+						output := body["input"].([]any)[1].(map[string]any)
+						assert.Equal(t, "function_call_output", output["type"])
+						assert.Equal(t, []any{map[string]any{"type": "input_text", "text": "before"}}, output["output"])
 					},
 				},
 				{
@@ -326,7 +473,7 @@ func TestNativeMCP_ActualCandidateConsumption(t *testing.T) {
 					"anthropic":  {Type: "anthropic", APIKey: "anthropic-key", BaseURL: anthropic.URL},
 				}, http.DefaultClient, identityModelFactory)
 				require.NoError(t, err)
-				handler, err := providerv4.New(providerv4.Config{Resolver: catalog, Limits: serviceTestLimits()})
+				handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(catalog), Limits: serviceTestLimits()})
 				require.NoError(t, err)
 				request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[],"providerOptions":{"anthropic":`+tc.options+`}}`))
 				request.Header.Set("Content-Type", "application/json")
@@ -350,75 +497,6 @@ func TestNativeMCP_ActualCandidateConsumption(t *testing.T) {
 			})
 		}
 	}
-}
-
-func TestValidateAnthropicMCPServers_Bounds(t *testing.T) {
-	server := anthropicprovider.MCPServer{Name: "echo", URL: "https://mcp.example.test"}
-	for _, tc := range []struct {
-		name   string
-		change func(*anthropicprovider.MCPServer)
-	}{
-		{"name", func(server *anthropicprovider.MCPServer) { server.Name = strings.Repeat("x", maxMCPNameBytes+1) }},
-		{"empty name", func(server *anthropicprovider.MCPServer) { server.Name = "" }},
-		{"invalid UTF-8 name", func(server *anthropicprovider.MCPServer) { server.Name = "\xff" }},
-		{"url", func(server *anthropicprovider.MCPServer) { server.URL += strings.Repeat("x", maxMCPURLBytes) }},
-		{"token", func(server *anthropicprovider.MCPServer) {
-			token := strings.Repeat("x", maxMCPTokenBytes+1)
-			server.AuthorizationToken = &token
-		}},
-		{"invalid UTF-8 token", func(server *anthropicprovider.MCPServer) {
-			token := "\xff"
-			server.AuthorizationToken = &token
-		}},
-		{"tool count", func(server *anthropicprovider.MCPServer) {
-			server.ToolConfiguration = &anthropicprovider.MCPToolConfiguration{AllowedTools: make([]string, maxMCPAllowedTools+1)}
-		}},
-		{"tool name", func(server *anthropicprovider.MCPServer) {
-			server.ToolConfiguration = &anthropicprovider.MCPToolConfiguration{AllowedTools: []string{strings.Repeat("x", maxMCPNameBytes+1)}}
-		}},
-		{"empty tool name", func(server *anthropicprovider.MCPServer) {
-			server.ToolConfiguration = &anthropicprovider.MCPToolConfiguration{AllowedTools: []string{""}}
-		}},
-		{"invalid UTF-8 tool name", func(server *anthropicprovider.MCPServer) {
-			server.ToolConfiguration = &anthropicprovider.MCPToolConfiguration{AllowedTools: []string{"\xff"}}
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			value := server
-			tc.change(&value)
-			names, err := validateAnthropicMCPServers([]anthropicprovider.MCPServer{value})
-			assert.Nil(t, names)
-			require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
-		})
-	}
-	t.Run("server count", func(t *testing.T) {
-		_, err := validateAnthropicMCPServers(make([]anthropicprovider.MCPServer, maxMCPServers+1))
-		require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
-	})
-	t.Run("server count boundary", func(t *testing.T) {
-		servers := make([]anthropicprovider.MCPServer, maxMCPServers)
-		for i := range servers {
-			servers[i] = anthropicprovider.MCPServer{Name: fmt.Sprintf("server-%d", i), URL: server.URL}
-		}
-		names, err := validateAnthropicMCPServers(servers)
-		require.NoError(t, err)
-		assert.Len(t, names, maxMCPServers)
-	})
-	t.Run("inclusive boundaries", func(t *testing.T) {
-		server.Name = strings.Repeat("x", maxMCPNameBytes)
-		token := strings.Repeat("x", maxMCPTokenBytes)
-		server.AuthorizationToken = &token
-		prefix := "https://mcp.example.test/"
-		server.URL = prefix + strings.Repeat("x", maxMCPURLBytes-len(prefix))
-		tools := make([]string, maxMCPAllowedTools)
-		for i := range tools {
-			tools[i] = strings.Repeat("x", maxMCPNameBytes)
-		}
-		server.ToolConfiguration = &anthropicprovider.MCPToolConfiguration{AllowedTools: tools}
-		names, err := validateAnthropicMCPServers([]anthropicprovider.MCPServer{server})
-		require.NoError(t, err)
-		assert.Contains(t, names, server.Name)
-	})
 }
 
 func nativeOptionsRequest(t *testing.T, backend, body string, streaming, configuredFallback bool, factories ...ModelFactory) (*httptest.ResponseRecorder, []map[string]any) {
@@ -458,7 +536,7 @@ func nativeOptionsRequest(t *testing.T, backend, body string, streaming, configu
 		"primary": {Type: backend, APIKey: "native-key", BaseURL: server.URL + "/primary", ProviderName: "my-vllm.chat"},
 	}, server.Client(), factory)
 	require.NoError(t, err)
-	handler, err := providerv4.New(providerv4.Config{Resolver: created, Limits: serviceTestLimits()})
+	handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(created), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
@@ -519,8 +597,8 @@ func TestNativeOptions_CaptureIndependence(t *testing.T) {
 				logger := slog.New(slog.NewJSONHandler(&logs, nil))
 				telemetry, err := NewTelemetry(logger)
 				require.NoError(t, err)
-				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
-				factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, 10*time.Millisecond)
+				runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
+				factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 				require.NoError(t, err)
 				body := `{"providerOptions":{"myVllm":{"option_marker":{"opaque":"private-option-marker"}}},"prompt":[{"role":"user","content":[{"type":"text","text":"request","providerOptions":{"openaiCompatible":{"scope_marker":"private-scope-marker"}}}]}]}`
 				plain, plainRequests := nativeOptionsRequest(t, "openai-compatible", body, streaming, configuredFallback)
@@ -568,4 +646,11 @@ func writeNativeOptionsResponse(w http.ResponseWriter, backend string, streaming
 	default:
 		_, _ = fmt.Fprint(w, `{"id":"chat","model":"backend","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
 	}
+}
+
+func mustMarshal(t *testing.T, value any) []byte {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	require.NoError(t, err)
+	return encoded
 }

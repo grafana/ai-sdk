@@ -19,6 +19,7 @@ var effortMap = map[provider.ReasoningEffort]string{
 	provider.ReasoningMedium:  "medium",
 	provider.ReasoningHigh:    "high",
 	provider.ReasoningXHigh:   "max",
+	provider.ReasoningMax:     "max",
 }
 
 var budgetPercentages = map[provider.ReasoningEffort]float64{
@@ -27,6 +28,7 @@ var budgetPercentages = map[provider.ReasoningEffort]float64{
 	provider.ReasoningMedium:  0.30,
 	provider.ReasoningHigh:    0.60,
 	provider.ReasoningXHigh:   0.90,
+	provider.ReasoningMax:     0.95,
 }
 
 const minReasoningBudget = 1024

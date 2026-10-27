@@ -203,7 +203,7 @@ func TestEncodeRequest_RejectsInvalid(t *testing.T) {
 		{"invalid tool", provider.CallOptions{Tools: []provider.Tool{{Type: "alien"}}}},
 		{"inactive tool", provider.CallOptions{Tools: []provider.Tool{{Type: provider.ToolTypeProvider, InputSchema: json.RawMessage(`{}`)}}}},
 		{"invalid choice", provider.CallOptions{ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceAuto, ToolName: "lost"}}},
-		{"inactive format", provider.CallOptions{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatText, Name: "lost"}}},
+		{"inactive format", provider.CallOptions{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatText, Name: new("lost")}}},
 		{"header collision", provider.CallOptions{Headers: map[string]string{"x-test": "a", "X-Test": "b"}}},
 		{"header newline", provider.CallOptions{Headers: map[string]string{"x-test": "a\nb"}}},
 		{"header name", provider.CallOptions{Headers: map[string]string{"bad name": "x"}}},
@@ -230,4 +230,51 @@ func TestEncodeRequest_UnsafeInteger(t *testing.T) {
 	value := int(large)
 	_, err := encodeRequest(provider.CallOptions{Seed: &value})
 	require.Error(t, err)
+}
+
+func TestEncodeRequest_CustomProjection(t *testing.T) {
+	options := func(raw string) provider.ProviderOptions {
+		return provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: json.RawMessage(raw)}}
+	}
+	compaction := provider.CustomPart("openai.compaction")
+	compaction.ProviderOptions = options(`{"itemId":"cmp_1","encryptedContent":"ENC"}`)
+	result := provider.ToolResultPart("call", "tool", &provider.ToolResultOutput{
+		Type: provider.ToolOutputContent,
+		Content: []provider.ToolResultContentValue{
+			{Type: provider.ToolContentText, Text: "before"},
+			{Type: provider.ToolContentCustom, ProviderOptions: options(`{"type":"tool-reference","toolName":"search"}`)},
+			{Type: provider.ToolContentCustom},
+		},
+	})
+
+	body, err := encodeRequest(provider.CallOptions{Prompt: []provider.Message{
+		provider.NewAssistantMessage(compaction, result),
+	}})
+	require.NoError(t, err)
+
+	assert.JSONEq(t, `{"prompt":[{"role":"assistant","content":[
+		{"type":"custom","kind":"openai.compaction","providerOptions":{"openai":{"itemId":"cmp_1","encryptedContent":"ENC"}}},
+		{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[
+			{"type":"text","text":"before"},
+			{"type":"custom","providerOptions":{"openai":{"type":"tool-reference","toolName":"search"}}},
+			{"type":"custom"}
+		]}}
+	]}]}`, string(body))
+}
+
+func TestEncodeRequest_StructuredNameAndSchema(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","x-extra":[9007199254740993,null,false,"☃"]}`)
+	for _, name := range []*string{nil, new(""), new("answer")} {
+		body, err := encodeRequest(provider.CallOptions{ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: name, Schema: schema}})
+		require.NoError(t, err)
+		var request struct {
+			Format struct {
+				Name   *string         `json:"name"`
+				Schema json.RawMessage `json:"schema"`
+			} `json:"responseFormat"`
+		}
+		require.NoError(t, json.Unmarshal(body, &request))
+		assert.Equal(t, name, request.Format.Name)
+		assert.Equal(t, schema, request.Format.Schema)
+	}
 }

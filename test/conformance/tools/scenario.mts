@@ -99,12 +99,13 @@ export async function executeScenario(tc: TestCase, model: LanguageModelV4, sign
   const options = buildStreamTextOptions(cfg, {
     model, messages, prompt, tools, output,
     stopWhen: stepCountIs(cfg.stopWhenStepCount ?? 1), generateId: mockId("id"),
-  });
+  }) as Parameters<typeof streamText>[0];
   const result = streamText({
     ...options,
     ...(signal ? { abortSignal: signal } : {}),
     onError: ({ error }) => { capture.error = String(error); },
-  } as Parameters<typeof streamText>[0]);
+    experimental_lowMemory: false,
+  });
   const normalize = tc.provider === "openai" ? createSourceIdNormalizer() : (chunk: unknown) => chunk;
   const outputPromise = output ? Promise.resolve(result.output).then(value => { capture.object = value; }, error => { capture.outputError = String(error); }) : undefined;
   const usagePromise = existsSync(join(tc.dir, "expected-usage.json"))

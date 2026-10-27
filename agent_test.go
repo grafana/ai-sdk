@@ -336,6 +336,104 @@ func TestToolLoopAgent_SettingsMergeDefaultsAndHeaders(t *testing.T) {
 	})
 }
 
+func TestToolLoopAgent_PerCallApprovalSecret(t *testing.T) {
+	for _, mode := range []string{"stream", "generate"} {
+		t.Run(mode, func(t *testing.T) {
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+			}}
+			executed := false
+			agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(WithTools(ToolSet{"transfer": Tool{
+				Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+					executed = true
+					return json.RawMessage(`{"ok":true}`), nil
+				},
+			}})))
+			unsignedApproval := WithAgentModelMessages(
+				provider.NewAssistantMessage(
+					provider.ToolCallPart("c1", "transfer", json.RawMessage(`{"amount":1000000}`)),
+					provider.ContentPart{Type: provider.ContentPartTypeToolApprovalRequest, ApprovalID: "apr_1", ToolCallID: "c1", ToolName: "transfer"},
+				),
+				provider.NewToolMessage(provider.ToolApprovalResponsePart("apr_1", true, "")),
+			)
+
+			var err error
+			if mode == "stream" {
+				result := agent.Stream(t.Context(), unsignedApproval, WithAgentOptions(WithToolApprovalSecret("secret")))
+				for range result.FullStream() {
+				}
+				err = result.Err()
+			} else {
+				_, err = agent.Generate(t.Context(), unsignedApproval, WithAgentOptions(WithToolApprovalSecret("secret")))
+			}
+
+			var signatureErr *InvalidToolApprovalSignatureError
+			require.ErrorAs(t, err, &signatureErr)
+			assert.Equal(t, "missing signature", signatureErr.Reason)
+			assert.False(t, executed)
+		})
+	}
+}
+
+func TestToolLoopAgent_RuntimeContextOnApprovalResume(t *testing.T) {
+	for _, mode := range []string{"stream", "generate"} {
+		t.Run(mode, func(t *testing.T) {
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: textStreamParts("done")}, nil
+			}}
+			var policyContext, executeContext any
+			agent := NewToolLoopAgent(model,
+				WithToolLoopAgentRuntimeContext("agent-context"),
+				WithToolLoopAgentOptions(
+					WithToolApproval(ToolApprovalFunc(func(opts ToolApprovalOptions) (ToolApprovalDecision, error) {
+						policyContext = opts.Context
+						return ToolApprovalDecision{Status: ToolApprovalUserApproval}, nil
+					})),
+					WithTools(ToolSet{"transfer": Tool{
+						Execute: func(_ context.Context, _ json.RawMessage, opts ToolExecutionOptions) (json.RawMessage, error) {
+							executeContext = opts.Context
+							return json.RawMessage(`{"ok":true}`), nil
+						},
+					}}),
+				))
+			approved := WithAgentModelMessages(
+				provider.NewAssistantMessage(
+					provider.ToolCallPart("c1", "transfer", json.RawMessage(`{"amount":1}`)),
+					provider.ContentPart{Type: provider.ContentPartTypeToolApprovalRequest, ApprovalID: "apr_1", ToolCallID: "c1", ToolName: "transfer"},
+				),
+				provider.NewToolMessage(provider.ToolApprovalResponsePart("apr_1", true, "")),
+			)
+
+			if mode == "stream" {
+				result := agent.Stream(t.Context(), approved, WithAgentRuntimeContext("call-context"))
+				for range result.FullStream() {
+				}
+				require.NoError(t, result.Err())
+			} else {
+				_, err := agent.Generate(t.Context(), approved, WithAgentRuntimeContext("call-context"))
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, "call-context", policyContext)
+			assert.Equal(t, "call-context", executeContext)
+		})
+	}
+}
+
+func TestToolLoopAgent_PerCallRepairText(t *testing.T) {
+	model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: textStreamParts(`{"name":`)}, nil
+	}}
+	agent := NewToolLoopAgent(model, WithToolLoopAgentOptions(WithOutput(repairableJSONOutput{})))
+
+	result, err := agent.Generate(t.Context(), WithAgentPrompt("json"), WithAgentOptions(
+		WithRepairText(func(string, error) (string, bool, error) { return `{"name":"Ada"}`, true, nil }),
+	))
+	require.NoError(t, err)
+	require.NoError(t, result.OutputError)
+	assert.Equal(t, map[string]any{"name": "Ada"}, result.Output)
+}
+
 func TestToolLoopAgent_CallbacksAndRuntimeContext(t *testing.T) {
 	t.Run("callbacks compose in settings then call order", func(t *testing.T) {
 		var order []string
@@ -746,6 +844,16 @@ func (testJSONOutput) ParseComplete(text string) (any, error) {
 }
 
 func (testJSONOutput) ParsePartial(text string) (any, bool) { return nil, false }
+
+type repairableJSONOutput struct{ testJSONOutput }
+
+func (o repairableJSONOutput) ParseComplete(text string) (any, error) {
+	out, err := o.testJSONOutput.ParseComplete(text)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w: %w", ErrNoObjectGenerated, ErrInvalidOutputText, err)
+	}
+	return out, nil
+}
 
 func collectUIChunks(stream <-chan UIMessageChunk) []UIMessageChunk {
 	var chunks []UIMessageChunk

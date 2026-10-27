@@ -52,6 +52,10 @@ the source and cannot drift.
 
 - Read the [Code of Conduct](CODE_OF_CONDUCT.md). All contributors are expected
   to follow it.
+- **Sign the Contributor License Agreement (CLA).** Before we can accept your
+  pull request, you must sign the
+  [Grafana Labs CLA](https://grafana.com/docs/grafana/latest/developer-resources/contribute/cla/).
+  Follow the CLA Assistant prompt on your pull request if you haven't signed it.
 - Search [existing issues](https://github.com/grafana/ai-sdk/issues) so you
   don't duplicate work already in flight.
 - **Sign your commits.** All Grafana Labs repositories
@@ -115,7 +119,7 @@ aisdk/                  root module — orchestration (StreamText, UIMessage, SS
   registry/             provider registry
   gateway/              provider-neutral model catalog
   middleware/           in-tree middleware; integrations are their own modules
-ai-gateway/             separate Gateway service module
+ai-gateway/             Gateway Grafana app plugin, a separate module
 providers/<name>/       one Go module per provider (anthropic, bedrock, openai, ...)
 docs/                   concepts, guides, providers, middleware, best practices
 examples/               outcome-oriented programs, one self-contained module each
@@ -166,16 +170,25 @@ version.
 
 ### The coverage map and the layers
 
-[`test/conformance/PARITY.md`](test/conformance/PARITY.md) is the stable coverage
-map. It records, per capability, whether parity is `automated`, `manual`, a
-`documented-deviation`, or a `gap`, together with confidence sources and durable
-boundaries. Start there: it tells you what proof your change needs, because the
-required evidence differs by layer.
+[`test/conformance/PARITY.md`](test/conformance/PARITY.md) is the coverage map.
+It lists each parity surface with its layer, status (`automated`, `mixed`,
+`manual`, `documented-deviation` or `gap`) and where its evidence lives. Start
+there: it tells you what proof your change needs, because the required evidence
+differs by layer.
 
-It is not the parity backlog or an upgrade-run ledger. Actionable deferred work
-belongs in GitHub issues labeled `upstream-sync`; upgrade-specific issue lists and
-validation belong in the upgrade PR. Do not add dated target assessments, issue
-catalogs or copies of issue contents to `PARITY.md`.
+Each kind of parity record has one home:
+
+| Record | Home | Changes when |
+|---|---|---|
+| Surface, layer, status, evidence location | `PARITY.md` | A surface is added or removed, or its status or evidence location changes |
+| Accepted deviation or support boundary | `upstream.yaml` `knownGaps`, or the owning `openspec/specs/` capability | A deviation is accepted, changed or removed |
+| Actionable difference or missing evidence | `upstream-sync` issue | Work is found, refined or delivered |
+| What each kind of evidence proves | [Conformance README](test/conformance/README.md#evidence-limits) | Rarely |
+| Run-specific assessment and validation | The upgrade PR | Every upgrade |
+
+Adding tests to an existing surface does not change `PARITY.md`. Do not add test
+inventories, evidence narratives, dated assessments or copies of issue contents
+to it.
 
 | Layer | Typical proof |
 |---|---|
@@ -206,13 +219,12 @@ paths, and helpers that don't cross a provider or UI wire boundary.
 Every difference you observe against upstream must be classified as one of:
 
 1. **Parity-preserving Go adaptation** — same behavior, idiomatic Go shape. Fine.
-2. **Intentional deviation** — must be recorded in `upstream.yaml` or
-   `PARITY.md` with a rationale.
+2. **Intentional deviation** — must be recorded in `upstream.yaml` `knownGaps`
+   (or the owning capability spec) with a rationale.
 3. **Implementation bug** — fix it, with a fixture where possible, or register
    the deferred correction in an `upstream-sync` issue.
 4. **Coverage gap** — register actionable proof work in an `upstream-sync` issue;
-   update `PARITY.md` only when its stable coverage classification or evidence
-   boundary changes.
+   record an accepted boundary in `knownGaps`.
 
 Silently diverging is the one option that is not available.
 
@@ -220,7 +232,7 @@ Silently diverging is the one option that is not available.
 
 ```bash
 mise run validate-parity-baseline   # metadata-only check of upstream.yaml
-mise run parity-coverage            # validate the PARITY.md coverage map
+mise run parity-coverage            # validate fixture inventory and imports
 mise run parity-provider-shape      # report provider API shape drift
 mise run parity-check               # full check when changing committed parity behavior
 mise run test-conformance           # replay conformance fixtures
@@ -242,14 +254,14 @@ The pinned-version upgrade produces one PR: update a fixed coherent target, run
 the tests/tooling, and comprehensively compare current Go behavior against that
 reference. Include older gaps, not just the release delta. Resolve compatibility
 blockers and register remaining actionable differences in `upstream-sync` issues;
-the upgrade PR keeps the compact run-specific issue list. Update `PARITY.md` only
-for durable coverage, evidence, support-boundary or accepted-deviation changes.
+the upgrade PR keeps the compact run-specific issue list. Update the parity
+records as described in [the coverage map and the layers](#the-coverage-map-and-the-layers).
 The PR can finish with outstanding parity work; the pins are not a claim of
 exhaustive implementation.
 
 Process each registered parity work package independently afterward, with its own
 behavioral outcome, design and regression proof. Update or close its issue when
-it is delivered, and update the coverage map only when its stable facts change.
+it is delivered.
 Packages and PRs need not map one-to-one, but every PR must pass
 required checks independently against candidate source. A failing upgrade check
 or an incompatibility that prevents a supported integration from working cannot
@@ -257,7 +269,7 @@ be made acceptable merely by registering a follow-up.
 
 In CI, every retained parity job is a required status check:
 `parity-baseline`, `conformance-test`, and `integration-test` all block the
-merge, as documented in `PARITY.md`. A fixture regeneration therefore has to
+merge. A fixture regeneration therefore has to
 land in the same pull request as the behavior change it covers.
 
 ## Spec-driven development with OpenSpec
@@ -332,6 +344,7 @@ no mocking framework. See [AGENTS.md](AGENTS.md) for the full conventions.
 ```bash
 mise run test              # all Go tests, all modules
 mise run test-short        # skip integration/E2E
+mise run test-race         # short tests with the race detector, Gateway and stream-path modules
 mise run test-integration  # cross-language integration tests (Go server, Vitest client)
 mise run test-conformance  # replay upstream-recorded fixtures
 ```
@@ -408,6 +421,24 @@ Conventions:
   note, "what this will cover", "see also", nav footer) so the structure reads
   as intentional.
 
+### Keep architecture and terminology current
+
+When a change affects Gateway components, request ordering, authentication,
+routing, protocol boundaries, streaming/failure behavior, or supported capabilities,
+update the affected [architecture walkthrough and Mermaid diagrams](docs/concepts/gateway-architecture.md)
+in the same change. Update the [glossary](docs/concepts/gateway-glossary.md) when
+terms, aliases, code names, or their meanings change. Ground both in the resulting
+implementation and keep proposed capabilities clearly separate. Changes that leave
+these descriptions accurate do not require cosmetic documentation edits.
+
+Reviews should check these documents for drift and provide before/after Mermaid
+comparisons and a glossary to help reviewers understand the diff. Those comparisons
+are reviewer artifacts: save them outside the repository (for example, in external
+Hive context or a temporary directory), and do not commit them. The maintained
+architecture diagrams describe the current system, without PR-specific change
+highlighting. Validate changed documentation links and Mermaid syntax/rendering
+with the available tools, recording any validation limits.
+
 ### Linting the docs
 
 ```bash
@@ -461,8 +492,8 @@ Checklist:
 4. **Tests** are added or updated — a regression test for a bug fix, a
    conformance fixture where the behavior crosses a wire boundary.
 5. **Parity artifacts** affected by the change are updated: baseline metadata,
-   fixtures and expectations as needed; `PARITY.md` only when stable coverage,
-   evidence, support boundaries or accepted deviations change.
+   fixtures and expectations as needed; `knownGaps` for accepted deviations;
+   `PARITY.md` only when a surface or its status changes.
 6. **OpenSpec change is archived** if the pull request touches `openspec/`.
 7. **Docs** are updated for any user-visible change, in the right surface.
 8. **Release intent** is carried by the title's type, and is verifiably correct
@@ -476,7 +507,7 @@ maintainer to trigger CI.
 ## Releases and independent modules
 
 Core, providers, and middleware are released independently as Go libraries.
-Gateway is an independently versioned Docker application with workspace source.
+Gateway is an independently versioned Grafana app plugin built from workspace source.
 After #245 activates release automation, versions, changelogs, tags, and GitHub
 Releases will be produced by
 [release-please](https://github.com/googleapis/release-please) from the
@@ -492,7 +523,7 @@ using the right type in its title:
 
 A library change is attributed to its module by the files it touches. #245 will
 also attribute relevant SDK, provider, and middleware changes to the
-workspace-built Gateway image release. While the modules are in the `alpha`
+workspace-built Gateway plugin release. While the modules are in the `alpha`
 channel, each release advances the prerelease counter
 (`v0.1.0-alpha.1` to `v0.1.0-alpha.2`).
 
@@ -503,8 +534,9 @@ mise run release-check      # configuration and readiness policy tests
 mise run release-preview    # dry-run of the next release pull request
 ```
 
-Release automation is inactive until #245 readiness and Gateway attribution/image
-gates are implemented and reviewed. No release PRs or tags are created by #21 alone.
+Library automation defaults off and requires the reviewed settings and explicit
+mode in the [activation rollout](release/tooling/ACTIVATION.md). Gateway work does
+not gate library activation.
 After activation, each library gets its own release pull request. Maintainers merge the root one
 first, let Renovate carry the new core version into the nested `go.mod` files,
 then merge the rest. The complete workflow is in the
@@ -522,17 +554,28 @@ SDK's Go module dependency graph.
 - **Source PRs:** CI builds and tests the SDK, providers, middleware, Grafana
   client, and Gateway from the proposed source. It also verifies module-pin
   ancestry and dependency and license boundaries. See
-  [CI](.github/workflows/ci.yml) for the required checks.
+  [CI](.github/workflows/ci.yml) for the seven required source checks. The `ci`
+  check requires both the parallel `build-test` and `lint` jobs to succeed. CI no
+  longer builds or publishes Gateway container images. The App Platform migration
+  and its plugin validation are tracked separately in #428.
 - **Go module releases:** Before tagging an SDK, provider, or middleware version
   for external Go consumers, validate that module against its declared `go.mod`
   dependencies with `MODULE=providers/anthropic mise run verify-published-module`
-  (substitute the module being released). This check remains manual pending
-  release automation (#245/#21). For a broader diagnostic,
+  (substitute the module being released). Release PR readiness additionally checks
+  current-base metadata, canonical tagged prerequisite freshness, and isolated
+  selected-consumer regressions; see the [release runbook](release/README.md).
+  Publication requires explicit activation under #245. For a broader diagnostic,
   `mise run verify-module-resolution` checks all published modules.
-- **Gateway images:** Gateway uses the separate `go.gateway.work` to build from
-  same-revision local source. Push-only image validation checks the Gateway
-  artifact at the checkout revision before publication or deployment. Gateway
-  is not published as a standalone Go module.
+- **Gateway plugin:** Gateway uses the separate `go.gateway.work` to build the
+  plugin backend from same-revision local source. Plugin validation runs on pull
+  requests and pushes: manifest regeneration, `mise run test-ai-gateway-frontend`,
+  `mise run build-ai-gateway-plugin`, `mise run test-ai-gateway-e2e`,
+  `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
+  pushes keep the validated package, built from a clean checkout of the push
+  revision, as a workflow artifact. Gateway is not published as a standalone Go
+  module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
+  changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
+  the app manifest source for `pnpm generate:kinds`.
 
 The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
 but SDK modules must not import, require, or replace Gateway. Real published

@@ -5,7 +5,8 @@ Define Anthropic prompt-caching behavior across messages, content parts, tools, 
 ## Requirements
 
 ### Requirement: Cache control extraction from ProviderOptions
-The Anthropic provider SHALL extract `cache_control` configuration from the `"anthropic"` namespace within `ProviderOptions` on any message, content part, or tool definition. The provider SHALL use `provider.ResolveOption` to handle both typed options (direct `AnthropicOptions` or cache control option values) and round-tripped raw options (`RawProviderOption` from previous SSE responses). The provider SHALL accept both `cacheControl` (camelCase) and `cache_control` (snake_case) as key names when resolving from `RawProviderOption` JSON, with `cacheControl` taking precedence when both are present.
+
+The Anthropic provider SHALL extract cache annotations from each message, content part, or tool's `ProviderOptions["anthropic"]` using `provider.ResolveOption` for typed `AnthropicOptions`/cache-control values and round-tripped `RawProviderOption` from SSE responses. Raw JSON SHALL accept both `cacheControl` and `cache_control`, preferring `cacheControl` when both occur.
 
 #### Scenario: cache_control set on a system message
 - **WHEN** a `SystemMessage` has `ProviderOptions["anthropic"]` containing cache control type `"ephemeral"`
@@ -105,23 +106,67 @@ When the last content part in a message does not have its own `cache_control` an
 
 #### Scenario: cascade applies to assistant messages
 - **WHEN** an `AssistantMessage` has message-level cache control and the last content part has no part-level cache control
-- **THEN** the last block in the Anthropic API assistant message SHALL include the message-level cache control
+- **THEN** the block converted from the last content part SHALL include the message-level cache control, even when client tool-use normalization changes its position
 
 #### Scenario: cascade applies to tool messages
 - **WHEN** a `ToolMessage` has message-level cache control and the last `ToolResultContentPart` has no part-level cache control
 - **THEN** the last tool_result block SHALL include the message-level cache control
 
+### Requirement: Tool-result output cache control
+For `tool_result` blocks, the provider SHALL resolve cache control from the part, then the output options, then the message options for the last part, matching upstream `convert-to-anthropic-prompt.ts`. Output options SHALL be the output's own `ProviderOptions`, or for `content` outputs without them, those of the first content entry that has any.
+
+#### Scenario: Cache control from a content entry
+- **WHEN** a tool result has a `content` output whose second text entry, the first with provider options, sets cache control type `"ephemeral"`
+- **THEN** the tool_result block SHALL include `cache_control: {"type": "ephemeral"}`
+
+#### Scenario: First entry with options has no cache control
+- **WHEN** the first content entry with provider options has none for cache control and a later entry sets it
+- **THEN** the tool_result block SHALL NOT include `cache_control`
+
+#### Scenario: Output options on a JSON output
+- **WHEN** a tool result has a `json` output whose `ProviderOptions` set cache control
+- **THEN** the tool_result block SHALL include that cache control
+
+#### Scenario: Precedence
+- **WHEN** the part, output and message all set cache control with different TTLs
+- **THEN** the tool_result block SHALL use the part's value, or the output's value when the part sets none, and SHALL consume one breakpoint
+
 ### Requirement: Streaming cache usage metrics
-The Anthropic provider SHALL expose cache usage metrics in streaming responses through the `InputTokenDetails` field on `Usage`. This SHALL be consistent with the non-streaming response path.
+The Anthropic provider SHALL expose cache usage metrics through `Usage.InputTokens.CacheRead` and `Usage.InputTokens.CacheWrite`. Streaming finish usage SHALL follow the same accounting policy as non-streaming generation. `Usage.InputTokens.Total` SHALL include uncached input, cache reads and cache writes exactly once.
 
 #### Scenario: streaming response with cache hits
 - **WHEN** a streaming response includes `cache_read_input_tokens > 0` in usage data
-- **THEN** the emitted `StreamPart` usage SHALL include `InputTokenDetails` with `CacheReadTokens` populated
+- **THEN** the emitted `StreamPart` usage SHALL include `InputTokens.CacheRead` populated
 
 #### Scenario: streaming response with cache writes
 - **WHEN** a streaming response includes `cache_creation_input_tokens > 0` in usage data
-- **THEN** the emitted `StreamPart` usage SHALL include `InputTokenDetails` with `CacheWriteTokens` populated
+- **THEN** the emitted `StreamPart` usage SHALL include `InputTokens.CacheWrite` populated
 
 #### Scenario: streaming response with no cache activity
-- **WHEN** a streaming response has `cache_read_input_tokens == 0` and `cache_creation_input_tokens == 0`
-- **THEN** the emitted `StreamPart` usage SHALL NOT include `InputTokenDetails`
+- **WHEN** the selected usage source has no cache activity
+- **THEN** the emitted `StreamPart` usage SHALL report zero for both cache fields
+
+### Requirement: Executor iteration cache accounting
+When usage contains one or more `message` or `compaction` iterations and no `fallback_message`, the Anthropic provider SHALL sum uncached input, output, cache reads and cache writes from those executor iterations. Missing or null iteration cache counters SHALL contribute zero. It SHALL exclude `advisor_message` iterations and SHALL NOT add top-level usage to the iteration totals.
+
+#### Scenario: On-demand compaction with zero top-level usage
+- **WHEN** all top-level counters are zero and a `compaction` iteration has 112 input tokens, 281 output tokens and 79228 cache-read tokens
+- **THEN** generation and streaming finish usage SHALL report 112 uncached input, 79228 cache reads, 79340 total input and 281 output tokens
+
+#### Scenario: Threshold compaction replaces provisional streaming usage
+- **WHEN** `message_start` reports compaction cache activity and `message_delta` reports zero top-level cache activity with `compaction` and `message` iterations
+- **THEN** the finish usage SHALL sum the cache counters of both executor iterations
+- **AND** the earlier provisional counters SHALL NOT be added again
+
+#### Scenario: Server-tool loop already has complete top-level cache usage
+- **WHEN** the top-level cache counters equal the sum of the executor iterations
+- **THEN** the normalized cache counts SHALL remain equal to those totals
+
+#### Scenario: Advisor usage is billed separately
+- **WHEN** executor and `advisor_message` iterations both contain cache activity
+- **THEN** only executor cache activity SHALL contribute to normalized usage
+- **AND** `Usage.Raw` SHALL retain all iterations for separate attribution
+
+#### Scenario: Fallback or absent executor iterations retain top-level usage
+- **WHEN** any `fallback_message` iteration exists, or there are no executor iterations
+- **THEN** all normalized input and output counters SHALL continue to use top-level usage

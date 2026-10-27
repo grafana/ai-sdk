@@ -38,7 +38,7 @@ type streamAdapter struct {
 	isJsonResponseFromTool bool
 	usage                  anthropicUsage
 	metadataFields         map[string]json.RawMessage
-	safeguardResults       json.RawMessage
+	finishReason           provider.FinishReason
 	messageOpen            bool
 	activeMessageID        string
 	invalidMessageSequence bool
@@ -50,10 +50,19 @@ type streamAdapter struct {
 	// layer accepts them when a 20260209 web tool implicitly triggers them.
 	markCodeExecutionDynamic bool
 
-	citationDocuments []citationDocument
-	generateID        func() string
-	providerName      string
-	responseHeaders   map[string]string
+	citationDocuments    []citationDocument
+	hasWebSearchResults  bool
+	fallbackWebCitations []anthropic.BetaCitationsWebSearchResultLocation
+	generateID           func() string
+	providerName         string
+	responseHeaders      map[string]string
+}
+
+func optionalMessageString(value string, present bool) *string {
+	if !present {
+		return nil
+	}
+	return &value
 }
 
 func blockID(idx int64) string {
@@ -80,9 +89,12 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.resetUsage(msg.Usage); err != nil {
 			return err
 		}
-		a.metadataFields = messageMetadataFields(msg.RawJSON())
-		delete(a.metadataFields, "safeguard_results")
-		a.safeguardResults = nil
+		if err := a.carryMessageStartMetadata(msg.RawJSON()); err != nil {
+			return err
+		}
+		if msg.StopReason != "" {
+			a.finishReason = a.mapStopReason(msg.StopReason)
+		}
 		usage := convertAnthropicUsage(a.usage)
 		ch <- provider.StreamPart{
 			Type:            provider.PartResponseMeta,
@@ -92,6 +104,16 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 			ResponseHeaders: a.responseHeaders,
 			Usage:           &usage,
 		}
+
+		metadata, err := json.Marshal(struct {
+			ID    *string         `json:"id"`
+			Model *string         `json:"model"`
+			Usage json.RawMessage `json:"usage"`
+		}{optionalMessageString(msg.ID, msg.JSON.ID.Valid()), optionalMessageString(string(msg.Model), msg.JSON.Model.Valid()), a.usage.raw})
+		if err != nil {
+			return fmt.Errorf("marshaling message start metadata: %w", err)
+		}
+		ch <- provider.StreamPart{Type: provider.PartCustom, Kind: "anthropic.message_start", ProviderMetadata: provider.ProviderMetadata{"anthropic": metadata}}
 
 		for _, block := range msg.Content {
 			if block.Type != "tool_use" {
@@ -140,6 +162,12 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		idx := e.Index
 		cb := e.ContentBlock
 		switch cb.Type {
+		case "fallback":
+			metadata, err := marshalFallbackMetadata(cb.AsFallback())
+			if err != nil {
+				return err
+			}
+			ch <- provider.StreamPart{Type: provider.PartCustom, Kind: anthropicFallbackKind, ProviderMetadata: metadata}
 		case "text":
 			if a.usesJsonResponseTool {
 				return nil
@@ -310,10 +338,13 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 	case anthropic.BetaRawContentBlockDeltaEvent:
 		idx := e.Index
 		bs := a.blocks[idx]
+		delta := e.Delta
+		if delta.Type == "citations_delta" {
+			return a.handleCitationDelta(ch, bs, delta.AsCitationsDelta().Citation)
+		}
 		if bs == nil {
 			return nil
 		}
-		delta := e.Delta
 		switch delta.Type {
 		case "text_delta":
 			if a.usesJsonResponseTool {
@@ -383,24 +414,6 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 					Delta: partialJSON,
 				}
 			}
-		case "citations_delta":
-			cd := delta.AsCitationsDelta()
-			citation := cd.Citation.AsAny()
-			if bs.blockType == "text" {
-				if _, ok := citation.(anthropic.BetaCitationsWebSearchResultLocation); ok {
-					bs.citations = append(bs.citations, json.RawMessage(cd.Citation.RawJSON()))
-				}
-			}
-			src, err := createCitationSource(citation, a.citationDocuments, a.generateID)
-			if err != nil {
-				return fmt.Errorf("creating citation source: %w", err)
-			}
-			if src != nil {
-				ch <- provider.StreamPart{
-					Type:   provider.PartSource,
-					Source: src,
-				}
-			}
 		}
 
 	case anthropic.BetaRawContentBlockStopEvent:
@@ -411,11 +424,11 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		}
 		switch bs.blockType {
 		case "text":
-			metadata, err := marshalWebSearchCitationMetadata(bs.citations)
+			citations, metadata, err := textCitations(bs.citations, a.citationDocuments)
 			if err != nil {
 				return err
 			}
-			ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: blockID(idx), ProviderMetadata: metadata}
+			ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: blockID(idx), Citations: citations, ProviderMetadata: metadata}
 		case "thinking", "reasoning":
 			ch <- provider.StreamPart{Type: provider.PartReasoningEnd, ID: blockID(idx)}
 		case "json_response":
@@ -467,40 +480,87 @@ func (a *streamAdapter) handleEvent(event anthropic.BetaRawMessageStreamEventUni
 		if err := a.updateUsage(e.Usage); err != nil {
 			return err
 		}
-		a.metadataFields = mergeMessageDeltaMetadata(a.metadataFields, e.RawJSON())
 		var envelope struct {
-			Delta map[string]json.RawMessage `json:"delta"`
+			Delta                map[string]json.RawMessage `json:"delta"`
+			InputTransformations json.RawMessage            `json:"input_transformations"`
 		}
 		if err := json.Unmarshal([]byte(e.RawJSON()), &envelope); err != nil {
 			return fmt.Errorf("decoding safeguard delta: %w", err)
 		}
+		if !isJSONNullOrAbsent(envelope.InputTransformations) {
+			if _, err := mapInputTransformations(envelope.InputTransformations); err != nil {
+				return err
+			}
+		}
+		a.metadataFields = mergeMessageDeltaMetadata(a.metadataFields, e.RawJSON())
 		if value := envelope.Delta["safeguard_results"]; len(value) > 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			a.safeguardResults = value
+			if _, err := mapSafeguardResults(value); err != nil {
+				return err
+			}
+			a.metadataFields["safeguard_results"] = value
 		}
-		if len(a.safeguardResults) > 0 {
-			a.metadataFields["safeguard_results"] = a.safeguardResults
-		}
+		a.finishReason = a.mapStopReason(e.Delta.StopReason)
+
+	case anthropic.BetaRawMessageStopEvent:
+		a.messageOpen = false
+		a.activeMessageID = ""
 		usage := convertAnthropicUsage(a.usage)
-		fr := mapFinishReason(e.Delta.StopReason)
-		if a.isJsonResponseFromTool && e.Delta.StopReason == anthropic.BetaStopReasonToolUse {
-			fr = provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(e.Delta.StopReason)}
+		fr := a.finishReason
+		if fr.Unified == "" {
+			fr = mapFinishReason("")
 		}
-		providerMetadata, err := buildAnthropicProviderMetadata(a.metadataFields, a.usage.raw)
+		providerMetadata, err := buildAnthropicProviderMetadata(a.metadataFields, a.usage.raw, a.usage.iterationsRaw)
 		if err != nil {
 			return err
 		}
+		if !a.hasWebSearchResults {
+			for _, citation := range a.fallbackWebCitations {
+				source, err := createCitationSource(citation, a.citationDocuments, a.generateID)
+				if err != nil {
+					return err
+				}
+				if source != nil {
+					ch <- provider.StreamPart{Type: provider.PartSource, Source: source}
+				}
+			}
+		}
+		a.fallbackWebCitations = nil
 		ch <- provider.StreamPart{
 			Type:             provider.PartFinish,
 			FinishReason:     &fr,
 			Usage:            &usage,
 			ProviderMetadata: providerMetadata,
 		}
-
-	case anthropic.BetaRawMessageStopEvent:
-		a.messageOpen = false
-		a.activeMessageID = ""
 	}
 	return nil
+}
+
+// carryMessageStartMetadata applies what upstream reads from message_start
+// into metadata that lives for the whole stream: a non-null container and
+// non-null input transformations. Everything else, including a verdict, stays
+// until a later delta replaces it.
+func (a *streamAdapter) carryMessageStartMetadata(raw string) error {
+	if a.metadataFields == nil {
+		a.metadataFields = map[string]json.RawMessage{}
+	}
+	fields := messageMetadataFields(raw)
+	if container := fields["container"]; !isJSONNullOrAbsent(container) {
+		a.metadataFields["container"] = container
+	}
+	if transformations := fields["input_transformations"]; !isJSONNullOrAbsent(transformations) {
+		if _, err := mapInputTransformations(transformations); err != nil {
+			return err
+		}
+		a.metadataFields["input_transformations"] = transformations
+	}
+	return nil
+}
+
+func (a *streamAdapter) mapStopReason(reason anthropic.BetaStopReason) provider.FinishReason {
+	if a.isJsonResponseFromTool && reason == anthropic.BetaStopReasonToolUse {
+		return provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(reason)}
+	}
+	return mapFinishReason(reason)
 }
 
 func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolResultBlock, ch chan<- provider.StreamPart) error {
@@ -540,6 +600,7 @@ func (a *streamAdapter) emitWebSearchResult(block anthropic.BetaWebSearchToolRes
 	}
 
 	for _, result := range content.OfBetaWebSearchResultBlockArray {
+		a.hasWebSearchResults = true
 		pageAgeMeta, err := json.Marshal(map[string]any{"pageAge": nilIfEmpty(result.PageAge)})
 		if err != nil {
 			return fmt.Errorf("marshaling web search page age: %w", err)
@@ -884,4 +945,23 @@ type webFetchSource struct {
 	Type      string `json:"type"`
 	MediaType string `json:"mediaType"`
 	Data      string `json:"data"`
+}
+
+func (a *streamAdapter) handleCitationDelta(ch chan<- provider.StreamPart, bs *blockState, citation anthropic.BetaCitationsDeltaCitationUnion) error {
+	if bs != nil && bs.blockType == "text" {
+		bs.citations = append(bs.citations, json.RawMessage(citation.RawJSON()))
+	}
+	value := citation.AsAny()
+	if web, ok := value.(anthropic.BetaCitationsWebSearchResultLocation); ok {
+		a.fallbackWebCitations = append(a.fallbackWebCitations, web)
+		return nil
+	}
+	src, err := createCitationSource(value, a.citationDocuments, a.generateID)
+	if err != nil {
+		return fmt.Errorf("creating citation source: %w", err)
+	}
+	if src != nil {
+		ch <- provider.StreamPart{Type: provider.PartSource, Source: src}
+	}
+	return nil
 }

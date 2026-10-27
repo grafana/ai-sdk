@@ -48,7 +48,9 @@ if err := aisdk.PipeUIMessageStreamToResponse(w, stream); err != nil {
 
 Do not send internal provider errors directly to users. Decide explicitly
 whether reasoning, sources, metadata, and custom data are safe and useful for
-the frontend.
+the frontend. Disabling sources does not remove citations attached to text or
+provider custom chunks, such as Anthropic's `anthropic.message_start` usage
+metadata. Filter those chunks yourself if the frontend must not receive them.
 
 Pass original messages to preserve continuation IDs and collect the final
 history:

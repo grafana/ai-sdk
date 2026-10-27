@@ -111,7 +111,7 @@ base; old dependency compilation alone SHALL NOT establish readiness.
 ### Requirement: Gateway application release
 
 Gateway SHALL remain independently versioned with changelogs, release pull requests,
-and `ai-gateway/vX.Y.Z` application tags. Its main and versioned images SHALL use the
+and `ai-gateway/vX.Y.Z` application tags. Its main and versioned plugin packages SHALL use the
 workspace at the selected revision. Gateway SHALL NOT wait for library tags, repins,
 or standalone Go compilation. Relevant linked workspace changes SHALL contribute
 Gateway release intent using release-please mechanisms, without a competing version
@@ -119,28 +119,28 @@ calculator or manufactured dependency changes.
 
 #### Scenario: Linked SDK change changes the Gateway image
 
-- **WHEN** a relevant SDK, provider or middleware change affects workspace-built Gateway behavior
+- **WHEN** a relevant SDK, provider or middleware change affects workspace-built Gateway plugin behavior
 - **THEN** Gateway can receive application release intent without requiring an ai-gateway path change
 
 #### Scenario: Application release validation
 
 - **WHEN** a Gateway release candidate is prepared
-- **THEN** same-revision application tests, image builds and runtime smoke validation precede publication
+- **THEN** same-revision application tests, plugin builds, plugin validation and protocol test host suites precede any publication
 - **AND** library standalone readiness cannot substitute for that evidence
 
 ### Requirement: Fail-closed activation
 
-Release automation, including release PR preparation, SHALL remain disabled until
-artifact-specific readiness, required-check protection, current-candidate
-authorization, App prerequisites and Gateway release
-attribution are reviewed. The activation change SHALL account for already-merged
-pending release pull requests. Published tags SHALL remain immutable.
+Library release automation SHALL remain disabled until artifact-specific readiness,
+required-check protection, current-candidate authorization and App prerequisites are
+reviewed. Activation SHALL account for already-merged pending release pull requests.
+Published tags SHALL remain immutable. Gateway application delivery SHALL be
+activated independently and SHALL NOT gate library activation.
 
 #### Scenario: Incomplete Gateway integration
 
-- **WHEN** workspace image validation or linked release attribution is incomplete
-- **THEN** Gateway release readiness fails and release PR preparation and
-  automatic tag creation remain disabled
+- **WHEN** Gateway application delivery integration is incomplete
+- **THEN** Gateway publication remains disabled
+- **AND** independently verified libraries can activate after their prerequisites and explicit approval
 
 ### Requirement: Publishable module validation
 
@@ -177,3 +177,233 @@ SHALL graduate to stable versions only through a reviewed configuration change.
 
 - **WHEN** the prerelease setting is disabled and a release-worthy commit lands
 - **THEN** the next version drops the prerelease suffix
+
+### Requirement: Authentic library release candidate
+
+Library readiness SHALL verify immutable release bot and repository identities,
+one component version, matching title/body/manifest versions, and an exclusively
+generated regular-file footprint with preserved changelog history. Release-looking
+PRs without a manifest update SHALL fail. Ordinary source PRs SHALL retain their
+candidate-source gates without requiring publication readiness.
+
+#### Scenario: Inconsistent generated release
+
+- **WHEN** release metadata disagrees with the generated version or changelog
+- **THEN** library readiness fails without authorizing publication
+
+#### Scenario: Release without a version update
+
+- **WHEN** a release-looking PR leaves the version manifest unchanged
+- **THEN** it fails rather than being classified as an ordinary source PR
+
+### Requirement: Current library candidate validation
+
+Library readiness SHALL require a clean checkout merging the exact live release
+head and current canonical base. It SHALL recheck live metadata and canonical main
+after validation and reject changes during the run. A successful check SHALL NOT
+replace required-check/current-base protection or post-merge authorization.
+
+#### Scenario: Main advances during validation
+
+- **WHEN** canonical main advances while library readiness runs
+- **THEN** the stale candidate fails the final current-base check
+
+#### Scenario: Candidate changes during validation
+
+- **WHEN** the release head or release metadata changes while readiness runs
+- **THEN** the run fails and requires validation of the new candidate
+
+### Requirement: Canonical prerequisite tag identity
+
+Library prerequisites SHALL resolve from the public proxy without replacements,
+use tagged versions, match canonical Git origin and canonical tag targets, and
+be ancestors of the candidate base. Missing or unverifiable evidence SHALL fail
+readiness before standalone or consumer success can authorize a library.
+
+#### Scenario: Published version has the wrong tag target
+
+- **WHEN** a prerequisite download origin differs from its canonical tag target
+- **THEN** library readiness rejects the prerequisite
+
+#### Scenario: Prerequisite cannot be verified
+
+- **WHEN** a prerequisite is a pseudo-version, unmerged, replaced, unavailable,
+  or has an unverifiable origin
+- **THEN** library readiness fails closed
+
+### Requirement: Frozen merged-library candidate inventory
+
+Authorization SHALL operate on a complete, frozen inventory of pending merged library releases. Each record SHALL identify the canonical repository, component, version, tag, PR, release head, merge revision, merge parent, tree and generated metadata. Discovery failures, ambiguous candidates and unsupported components SHALL NOT yield authorization. New arrivals SHALL require a later inventory.
+
+#### Scenario: Candidate arrives during validation
+
+- **WHEN** another release PR merges after the inventory is frozen
+- **THEN** it is absent from the current authorization results and cannot enter the approved set
+
+#### Scenario: Partial discovery
+
+- **WHEN** candidate discovery fails before all requested pages are read
+- **THEN** the run fails without emitting an approved set from the partial inventory
+
+#### Scenario: Conflicting candidates
+
+- **WHEN** multiple pending candidates claim the same component or tag
+- **THEN** those candidates are blocked with an explicit ambiguity reason
+
+### Requirement: Authentic merged-library identity and tree
+
+Authorization SHALL verify immutable release App and repository identity, a signed release head, canonical main ancestry, one generated component change and consistent version/notes/tag metadata. The supported squash revision SHALL have one parent and the same complete tree as the successfully validated PR candidate; its parent SHALL match that candidate's validated base. Missing proof SHALL block authorization.
+
+#### Scenario: Merge bypass includes new source
+
+- **WHEN** a release merges after its validated base becomes stale, or its merged tree differs from the validated candidate tree
+- **THEN** authorization fails even if the old PR checks succeeded
+
+#### Scenario: Post-merge metadata edit
+
+- **WHEN** the PR title or release body no longer matches retained validated metadata and merged generated files
+- **THEN** authorization fails instead of constructing new release contents from the edited metadata
+
+#### Scenario: Delayed authorization
+
+- **WHEN** newer commits land after a valid release squash merge
+- **THEN** authorization validates the frozen merge and its parent rather than substituting current main
+- **AND** the merge must remain reachable from canonical main
+
+#### Scenario: Unsupported merge history
+
+- **WHEN** merge topology or retained evidence cannot establish the supported squash candidate identity
+- **THEN** the candidate is blocked without modifying history or repository protections
+
+### Requirement: Revision-bound source and readiness evidence
+
+Authorization SHALL require successful applicable source jobs from the expected canonical workflow at the exact merged revision, authentic PR-readiness evidence bound to the tested head/base/tree and metadata, and fresh selected-library validation at the merged revision. Missing, expired, stale, skipped, cancelled, failed or unrelated evidence SHALL NOT count as success. Candidate files SHALL NOT replace the trusted authorization tooling.
+
+#### Scenario: Check name spoofing or wrong revision
+
+- **WHEN** a successful check has the right display name but the wrong workflow, repository, event, revision or run identity
+- **THEN** it cannot authorize the candidate
+
+#### Scenario: Missing historical readiness evidence
+
+- **WHEN** a merged release has no verifiable retained readiness record
+- **THEN** it is blocked and requires an explicit later recovery disposition
+
+#### Scenario: Fresh library prerequisite validation
+
+- **WHEN** authorization evaluates a library
+- **THEN** its tagged prerequisite origins, ancestry and owned-source freshness are revalidated against its immutable merge parent
+- **AND** standalone and consumer checks use the selected merged library with published prerequisites
+
+### Requirement: Independent library authorization decisions
+
+Authorization SHALL report each unambiguous library candidate separately. A selected library's actual prerequisite failure SHALL block that candidate; unrelated downstream standalone failures SHALL NOT block a ready candidate. Existing candidate-source checks SHALL remain required. Gateway SHALL receive no library authorization.
+
+#### Scenario: Root ready and provider blocked
+
+- **WHEN** root passes its merged-source and selected-library checks while a provider requires an unreleased root prerequisite
+- **THEN** root is approved in the report and the provider is blocked with its own reason
+- **AND** root validation does not invoke the provider's standalone checks
+
+#### Scenario: Gateway is selected
+
+- **WHEN** a Gateway candidate is discovered or explicitly selected
+- **THEN** it is identified as unsupported by this library authorization mode
+
+### Requirement: Read-only authorization boundary
+
+The authorization mode SHALL perform no GitHub mutations, tag writes, release publication or activation changes. Its report SHALL identify the immutable candidates, evidence and tooling revision, and state that it grants no standing publication permission. Changed metadata, evidence or tag state SHALL invalidate a previous decision; future publication SHALL revalidate rather than trust an editable report.
+
+#### Scenario: Tag already exists
+
+- **WHEN** a candidate tag or corresponding release already exists, or its state cannot be verified
+- **THEN** this slice blocks authorization and reports that publication recovery is outside its scope
+
+#### Scenario: Evidence changes during validation
+
+- **WHEN** candidate metadata, relevant run attempt or tag state changes before the final recheck
+- **THEN** the affected candidate is not approved
+
+#### Scenario: Attempted publication
+
+- **WHEN** the authorization driver attempts a remote mutation or publication API
+- **THEN** the transport rejects it and no tag, release, label or PR mutation occurs
+
+### Requirement: Bounded library publication
+
+Publication SHALL use only freshly authorized candidates from one frozen inventory. Each mutation SHALL match the selected candidate's immutable tag, revision and generated release metadata. Publication SHALL NOT rescan for additional candidates or accept a saved report as authorization. Unrelated blocked candidates SHALL retain independent outcomes.
+
+#### Scenario: Late candidate arrival
+
+- **WHEN** another candidate arrives after discovery
+- **THEN** publication does not include it in the current batch
+
+#### Scenario: Evidence changes before a write
+
+- **WHEN** PR metadata, required evidence, ancestry or expected tag state changes
+- **THEN** the candidate's next mutation is blocked
+
+#### Scenario: Unrelated provider is blocked
+
+- **WHEN** a provider cannot validate its prerequisites but root validates
+- **THEN** only root may proceed to its bounded publication operations
+
+### Requirement: Immutable library publication recovery
+
+Publication retries SHALL revalidate the original candidate and inspect canonical tag and release state. Matching partial publication MAY finish without modifying existing tags or releases. Conflicting or unverifiable state SHALL block writes. Completed releases SHALL not be recreated; lifecycle completion SHALL remain discoverable after partial failure.
+
+#### Scenario: Tag created and release failed
+
+- **WHEN** a previous attempt created the exact candidate tag but no release
+- **THEN** retry creates only the missing release after fresh validation
+- **AND** the tag is never moved
+
+#### Scenario: Release exists with incomplete labels
+
+- **WHEN** the exact candidate release exists but lifecycle labeling failed
+- **THEN** retry completes labels without recreating or editing the release
+
+#### Scenario: Conflicting existing tag or metadata
+
+- **WHEN** a tag resolves elsewhere or release metadata disagrees with the candidate
+- **THEN** publication and recovery fail without modifying that state
+
+### Requirement: Serialized inactive publication integration
+
+The publication entrypoint SHALL remain disabled until separate activation approval. The integration SHALL serialize candidate writes, reject overlapping invocations and preserve the canonical workflow's non-cancelling concurrency boundary. The read-only authorization command SHALL retain its no-mutation behavior and existing-tag rejection.
+
+#### Scenario: Invocation before activation
+
+- **WHEN** the publication command is invoked before activation
+- **THEN** it refuses before credentials or network operations
+
+#### Scenario: Overlapping invocation
+
+- **WHEN** another publication invocation is already executing in the process
+- **THEN** the second invocation fails without writes
+
+#### Scenario: Read-only authorization sees an existing tag
+
+- **WHEN** read-only authorization sees any existing candidate tag
+- **THEN** it remains blocked regardless of publisher recovery support
+
+### Requirement: Explicit staged library activation
+
+Library automation SHALL require explicit activation on canonical main pushes and verified protection settings. Root bootstrap SHALL select only the retained initial root candidate. Library mode SHALL exclude Gateway and preserve independent component outcomes. An absent or unknown mode SHALL prevent writes. Gateway delivery SHALL NOT gate library activation.
+
+#### Scenario: Root bootstrap
+
+- **WHEN** root mode is selected
+- **THEN** only the retained bootstrap root candidate can publish
+- **AND** no additional release PR is prepared
+
+#### Scenario: Library progression
+
+- **WHEN** library mode is selected and one component remains blocked
+- **THEN** other independently valid libraries can publish and prepare releases
+- **AND** Gateway receives no writes
+
+#### Scenario: Missing protections
+
+- **WHEN** strict source/readiness checks or immutable tag protections cannot be verified
+- **THEN** activation refuses all release writes

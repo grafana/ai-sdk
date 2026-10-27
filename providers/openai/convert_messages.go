@@ -140,6 +140,8 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 	var items []responses.ResponseInputItemUnionParam
 	var warnings []provider.Warning
 
+	hasPrecedingReasoning := false
+	emittedTextIDs := make(map[string]bool)
 	for _, part := range msg.Content {
 		switch part.Type {
 		case provider.ContentPartTypeText:
@@ -147,8 +149,11 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 			if ctx.hasConversation && po.ItemID != "" {
 				continue
 			}
-			if ctx.store && po.ItemID != "" {
-				items = append(items, itemReference(po.ItemID))
+			if ctx.store && po.ItemID != "" && (!ctx.isReasoningModel || hasPrecedingReasoning) {
+				if !emittedTextIDs[po.ItemID] {
+					emittedTextIDs[po.ItemID] = true
+					items = append(items, itemReference(po.ItemID))
+				}
 				continue
 			}
 			items = append(items, assistantOutputMessage(part.Text, po))
@@ -176,6 +181,7 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 			}
 
 		case provider.ContentPartTypeReasoning:
+			hasPrecedingReasoning = true
 			po := ctx.partOptions(part)
 			if (ctx.hasConversation || ctx.hasPreviousResponseID) && po.ItemID != "" {
 				continue
@@ -199,23 +205,50 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 			if part.Kind != "openai.compaction" {
 				continue
 			}
-			po := ctx.partOptions(part)
-			if ctx.hasConversation && po.ItemID != "" {
+			id, encryptedContent, ok := ctx.compactionOptions(part)
+			if !ok {
 				continue
 			}
-			if ctx.store && po.ItemID != "" {
-				items = append(items, itemReference(po.ItemID))
+			if ctx.hasConversation {
 				continue
 			}
-			if po.ItemID != "" && po.EncryptedContent != nil {
-				item := responses.ResponseInputItemParamOfCompaction(*po.EncryptedContent)
-				item.OfCompaction.ID = param.NewOpt(po.ItemID)
-				items = append(items, item)
+			if ctx.store {
+				items = append(items, itemReference(id))
+				continue
 			}
+			items = append(items, compactionItem(id, encryptedContent))
 		}
 	}
 
 	return items, warnings, nil
+}
+
+// compactionOptions reads the compaction item ID and encrypted content from
+// the part's options. An item ID is present when supplied as a string, including
+// an empty one; absent or null means absent.
+func (c inputConversionContext) compactionOptions(part provider.ContentPart) (id string, encryptedContent *string, ok bool) {
+	var options struct {
+		ItemID           *string `json:"itemId"`
+		EncryptedContent *string `json:"encryptedContent"`
+	}
+	switch option := part.ProviderOptions[c.providerOptionsName].(type) {
+	case provider.RawProviderOption:
+		if json.Unmarshal(option.Raw, &options) != nil {
+			return "", nil, false
+		}
+	case nil:
+		return "", nil, false
+	default:
+		typed := c.partOptions(part)
+		if typed.ItemID != "" {
+			options.ItemID = &typed.ItemID
+		}
+		options.EncryptedContent = typed.EncryptedContent
+	}
+	if options.ItemID == nil {
+		return "", nil, false
+	}
+	return *options.ItemID, options.EncryptedContent, true
 }
 
 // convertToolMessage converts a tool message (results / approval responses) to
@@ -278,9 +311,9 @@ func toolResultOutputString(out *provider.ToolResultOutput, encodeTextAsJSON boo
 		}
 		return out.Text
 	case provider.ToolOutputExecutionDenied:
-		reason := out.Reason
-		if reason == "" {
-			reason = "Tool call execution denied."
+		reason := "Tool call execution denied."
+		if out.Reason != nil {
+			reason = *out.Reason
 		}
 		if encodeTextAsJSON {
 			encoded, _ := json.Marshal(reason)

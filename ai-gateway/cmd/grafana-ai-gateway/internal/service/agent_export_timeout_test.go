@@ -67,18 +67,18 @@ func TestAgentObservabilityRuntime_ExportAttemptTimeout(t *testing.T) {
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
-			runtime, err := NewAgentObservabilityRuntime(config.AgentObservabilitySettings{
-				Enabled: true, Protocol: protocol, Endpoint: endpoint, AuthSecretEnv: "AO_SECRET",
-				QueueSize: 4, BatchSize: 1, PayloadMaxBytes: 1 << 20, MaxRetries: 1,
-				InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond,
-				ExportTimeout: 100 * time.Millisecond, FlushInterval: time.Hour,
-				FlushTimeout: time.Second, ShutdownTimeout: time.Second,
-			}, func(name string) (string, bool) { return "private-secret", name == "AO_SECRET" }, telemetry)
+			runtime, err := newAgentObservabilityRuntime(config.AgentObservabilitySettings{
+				Enabled: true, Protocol: protocol, Endpoint: endpoint,
+			}, "private-secret", telemetry, agentExportTuning{
+				queueSize: 4, batchSize: 1, payloadMaxBytes: 1 << 20, maxRetries: 1,
+				initialBackoff: time.Millisecond, maxBackoff: time.Millisecond,
+				exportTimeout: 100 * time.Millisecond, flushInterval: time.Hour,
+			})
 			require.NoError(t, err)
-			t.Cleanup(runtime.Close)
+			t.Cleanup(func() { runtime.Close(context.Background()) })
 			t.Setenv("AGENTO11Y_ENABLE_EXPERIMENTAL_FEATURES", "true")
 			require.ErrorIs(t, runtime.client.RequireExperimental("test"), agento11y.ErrExperimentalFeatureDisabled)
-			factory, err := NewModelObservabilityFactory(telemetry, logger, runtime, time.Millisecond)
+			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, time.Millisecond)
 			require.NoError(t, err)
 			want := &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "private-output"}}}
 			model, err := factory("grafana/assistant", &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return want, nil }})

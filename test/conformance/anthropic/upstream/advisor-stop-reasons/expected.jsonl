@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_advisor_stop_reasons","model":"claude-sonnet-4-6","usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}}
 {"type":"tool-input-start","toolCallId":"srvtoolu_advisor_plaintext","toolName":"advisor","providerExecuted":true}
 {"type":"tool-input-available","toolCallId":"srvtoolu_advisor_plaintext","toolName":"advisor","input":{},"providerExecuted":true}
 {"type":"tool-output-available","toolCallId":"srvtoolu_advisor_plaintext","output":{"type":"advisor_result","text":"Partial plaintext advice.","stopReason":"max_tokens"},"providerExecuted":true}

@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/openai/openai-go/v3/packages/param"
@@ -50,4 +51,27 @@ func reasoningItem(id, encrypted, summary string) responses.ResponseInputItemUni
 // mcpApprovalResponse builds an mcp_approval_response input item.
 func mcpApprovalResponse(approvalRequestID string, approve bool) responses.ResponseInputItemUnionParam {
 	return responses.ResponseInputItemParamOfMcpApprovalResponse(approvalRequestID, approve)
+}
+
+// marshalToolInput encodes a tool-call input the way upstream JSON.stringify
+// does: without HTML escaping of <, > and &.
+func marshalToolInput(value any) (json.RawMessage, error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	return json.RawMessage(bytes.TrimSuffix(buf.Bytes(), []byte("\n"))), nil
+}
+
+func compactionItem(id string, encryptedContent *string) responses.ResponseInputItemUnionParam {
+	if encryptedContent != nil {
+		item := responses.ResponseInputItemParamOfCompaction(*encryptedContent)
+		item.OfCompaction.ID = param.NewOpt(id)
+		return item
+	}
+	raw, _ := json.Marshal(map[string]any{"type": "compaction", "id": id})
+	value := param.Override[responses.ResponseCompactionItemParam](json.RawMessage(raw))
+	return responses.ResponseInputItemUnionParam{OfCompaction: &value}
 }

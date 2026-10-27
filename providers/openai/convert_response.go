@@ -31,6 +31,20 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 	var logprobs [][]responseLogprob
 	hasFunctionCall := false
 	var hostedToolSearchCallIDs []string
+	hasWebSources, hasFileResults := false, false
+	retrievedFileIDs := make(map[string]bool)
+	for _, item := range resp.Output {
+		switch value := item.AsAny().(type) {
+		case responses.ResponseFunctionWebSearch:
+			if value.Action.Type == "search" {
+				for _, source := range value.Action.Sources {
+					hasWebSources = hasWebSources || source.Type == "url"
+				}
+			}
+		case responses.ResponseFileSearchToolCall:
+			hasFileResults = hasFileResults || len(value.Results) > 0
+		}
+	}
 
 	for _, item := range resp.Output {
 		switch v := item.AsAny().(type) {
@@ -44,9 +58,17 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 						content = append(content, provider.GenerateContentPart{
 							Type:             provider.ContentText,
 							Text:             ot.Text,
+							Citations:        convertCitationAnnotations(ot.Annotations, providerOptionsName),
 							ProviderMetadata: textMeta(providerOptionsName, v.ID, string(v.Phase), rawList(ot.Annotations)),
 						})
-						content = append(content, convertAnnotations(ot.Annotations, generateID, providerOptionsName)...)
+						for _, annotation := range ot.Annotations {
+							if fallbackSourceSuppressed(annotation.Type, hasWebSources, hasFileResults) {
+								continue
+							}
+							if part, ok := convertAnnotation(annotation, generateID, providerOptionsName); ok {
+								content = append(content, part)
+							}
+						}
 					}
 				}
 			}
@@ -80,7 +102,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 
 		case responses.ResponseOutputItemProgram:
 			toolName := br.toolNameMapping.toCustomToolName("programmatic_tool_calling")
-			input, _ := json.Marshal(map[string]any{"code": v.Code, "fingerprint": v.Fingerprint})
+			input, _ := marshalToolInput(map[string]any{"code": v.Code, "fingerprint": v.Fingerprint})
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentToolCall,
 				ToolCallID:       v.CallID,
@@ -110,6 +132,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolName:   toolName,
 				Result:     webSearchOutput(v.Action),
 			})
+			content = append(content, webSearchSources(v.Action, generateID)...)
 
 		case responses.ResponseFileSearchToolCall:
 			toolName := br.toolNameMapping.toCustomToolName("file_search")
@@ -120,10 +143,11 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolName:   toolName,
 				Result:     fileSearchOutput(v.Queries, v.Results),
 			})
+			content = append(content, fileSearchSources(v.Results, retrievedFileIDs, generateID, providerOptionsName)...)
 
 		case responses.ResponseCodeInterpreterToolCall:
 			toolName := br.toolNameMapping.toCustomToolName("code_interpreter")
-			input, _ := json.Marshal(map[string]any{"code": v.Code, "containerId": v.ContainerID})
+			input, _ := marshalToolInput(map[string]any{"code": v.Code, "containerId": v.ContainerID})
 			content = append(content, providerExecutedCall(v.ID, toolName, string(input))...)
 			content = append(content, provider.GenerateContentPart{
 				Type:       provider.ContentToolResult,
@@ -185,7 +209,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 
 		case responses.ResponseCustomToolCall:
 			hasFunctionCall = true
-			input, _ := json.Marshal(v.Input)
+			input, _ := marshalToolInput(v.Input)
 			content = append(content, provider.GenerateContentPart{
 				Type:             provider.ContentToolCall,
 				ToolCallID:       v.CallID,
@@ -292,7 +316,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 			if v.Execution == "server" {
 				hostedToolSearchCallIDs = append(hostedToolSearchCallIDs, toolCallID)
 			}
-			input, _ := json.Marshal(toolSearchInput(v.Arguments, v.CallID))
+			input, _ := marshalToolInput(toolSearchInput(v.Arguments, v.CallID))
 			part := provider.GenerateContentPart{
 				Type:             provider.ContentToolCall,
 				ToolCallID:       toolCallID,
@@ -377,7 +401,7 @@ func shellInput(raw string, commands []string) json.RawMessage {
 	if json.Unmarshal([]byte(raw), &value) != nil {
 		value.Commands = commands
 	}
-	input, _ := json.Marshal(map[string]any{"action": map[string]any{"commands": value.Commands}})
+	input, _ := marshalToolInput(map[string]any{"action": map[string]any{"commands": value.Commands}})
 	return input
 }
 
@@ -410,22 +434,20 @@ func shellOutput(raw string) json.RawMessage {
 }
 
 func applyPatchInput(callID string, operation responses.ResponseApplyPatchToolCallOperationUnion) json.RawMessage {
-	raw := json.RawMessage(operation.RawJSON())
-	if !json.Valid(raw) {
-		if operation.Type == "delete_file" {
-			raw, _ = json.Marshal(struct {
-				Type string `json:"type"`
-				Path string `json:"path"`
-			}{Type: operation.Type, Path: operation.Path})
-		} else {
-			raw, _ = json.Marshal(struct {
-				Type string `json:"type"`
-				Path string `json:"path"`
-				Diff string `json:"diff"`
-			}{Type: operation.Type, Path: operation.Path, Diff: operation.Diff})
-		}
+	var raw json.RawMessage
+	if operation.Type == "delete_file" {
+		raw, _ = marshalToolInput(struct {
+			Type string `json:"type"`
+			Path string `json:"path"`
+		}{Type: operation.Type, Path: operation.Path})
+	} else {
+		raw, _ = marshalToolInput(struct {
+			Type string `json:"type"`
+			Path string `json:"path"`
+			Diff string `json:"diff"`
+		}{Type: operation.Type, Path: operation.Path, Diff: operation.Diff})
 	}
-	input, _ := json.Marshal(struct {
+	input, _ := marshalToolInput(struct {
 		CallID    string          `json:"callId"`
 		Operation json.RawMessage `json:"operation"`
 	}{CallID: callID, Operation: raw})
@@ -469,23 +491,22 @@ func localShellInput(raw string) json.RawMessage {
 	if json.Unmarshal([]byte(raw), &item) != nil {
 		return json.RawMessage(`{"action":{}}`)
 	}
-	action := map[string]any{
-		"type":    item.Action.Type,
-		"command": item.Action.Command,
+	action := struct {
+		Type             string             `json:"type"`
+		Command          []string           `json:"command"`
+		Env              *map[string]string `json:"env,omitempty"`
+		TimeoutMs        *json.Number       `json:"timeoutMs,omitempty"`
+		User             *string            `json:"user,omitempty"`
+		WorkingDirectory *string            `json:"workingDirectory,omitempty"`
+	}{
+		Type:             item.Action.Type,
+		Command:          item.Action.Command,
+		Env:              item.Action.Env,
+		TimeoutMs:        item.Action.TimeoutMs,
+		User:             item.Action.User,
+		WorkingDirectory: item.Action.WorkingDirectory,
 	}
-	if item.Action.Env != nil {
-		action["env"] = *item.Action.Env
-	}
-	if item.Action.TimeoutMs != nil {
-		action["timeoutMs"] = *item.Action.TimeoutMs
-	}
-	if item.Action.User != nil {
-		action["user"] = *item.Action.User
-	}
-	if item.Action.WorkingDirectory != nil {
-		action["workingDirectory"] = *item.Action.WorkingDirectory
-	}
-	input, _ := json.Marshal(map[string]any{"action": action})
+	input, _ := marshalToolInput(map[string]any{"action": action})
 	return input
 }
 

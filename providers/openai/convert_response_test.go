@@ -84,6 +84,10 @@ func TestConvertResponse_TextAndURLCitation(t *testing.T) {
 	require.Len(t, res.Content, 2)
 	assert.Equal(t, provider.ContentText, res.Content[0].Type)
 	assert.Equal(t, "see here", res.Content[0].Text)
+	require.Len(t, res.Content[0].Citations, 1)
+	assert.Equal(t, "https://x.com", res.Content[0].Citations[0].Source.ID)
+	assert.Equal(t, 0, *res.Content[0].Citations[0].StartIndex)
+	assert.Equal(t, 3, *res.Content[0].Citations[0].EndIndex)
 	assert.Equal(t, provider.ContentSource, res.Content[1].Type)
 	assert.Equal(t, provider.SourceTypeURL, res.Content[1].SourceType)
 	assert.Equal(t, "https://x.com", res.Content[1].URL)
@@ -223,7 +227,9 @@ func TestConvertResponse_FileSearchResultFields(t *testing.T) {
 	}`)
 
 	res := mustConvertResponse(t, resp, buildResult{})
-	require.Len(t, res.Content, 2)
+	require.Len(t, res.Content, 3)
+	assert.Equal(t, provider.ContentSource, res.Content[2].Type)
+	assert.Equal(t, "guide.pdf", res.Content[2].Title)
 	assert.JSONEq(t, `{
 		"queries":["q"],
 		"results":[{
@@ -650,4 +656,29 @@ func TestMapFinishReason(t *testing.T) {
 		got := mapFinishReason(tc.reason, tc.hasFunctionCall)
 		assert.Equal(t, tc.want, got.Unified, "reason=%q hasFn=%v", tc.reason, tc.hasFunctionCall)
 	}
+}
+
+func TestMarshalToolInput_DoesNotEscapeHTML(t *testing.T) {
+	input, err := marshalToolInput(map[string]any{"code": "if a < b && c > d"})
+	require.NoError(t, err)
+	assert.Equal(t, `{"code":"if a < b && c > d"}`, string(input))
+}
+
+func TestApplyPatchInput_FieldOrder(t *testing.T) {
+	t.Run("create file keeps type, path, diff", func(t *testing.T) {
+		var operation responses.ResponseApplyPatchToolCallOperationUnion
+		require.NoError(t, json.Unmarshal([]byte(`{"diff":"+a < b","path":"a.md","type":"create_file"}`), &operation))
+		assert.Equal(t, `{"callId":"call_1","operation":{"type":"create_file","path":"a.md","diff":"+a < b"}}`, string(applyPatchInput("call_1", operation)))
+	})
+
+	t.Run("delete file has no diff", func(t *testing.T) {
+		var operation responses.ResponseApplyPatchToolCallOperationUnion
+		require.NoError(t, json.Unmarshal([]byte(`{"path":"a.md","type":"delete_file"}`), &operation))
+		assert.Equal(t, `{"callId":"call_1","operation":{"type":"delete_file","path":"a.md"}}`, string(applyPatchInput("call_1", operation)))
+	})
+}
+
+func TestLocalShellInput_FieldOrder(t *testing.T) {
+	input := localShellInput(`{"action":{"working_directory":"/tmp","user":"me","timeout_ms":5,"env":{},"command":["ls"],"type":"exec"}}`)
+	assert.Equal(t, `{"action":{"type":"exec","command":["ls"],"env":{},"timeoutMs":5,"user":"me","workingDirectory":"/tmp"}}`, string(input))
 }

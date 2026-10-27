@@ -5,6 +5,7 @@ import { createGateway } from "@ai-sdk/gateway";
 import { createCaptureFetch, drainStream } from "./capture.ts";
 import {
   comprehensiveGoldenCase,
+  customContentGoldenCase,
   fileInputGoldenCase,
   headersGoldenCase,
   providerToolsGoldenCase,
@@ -201,6 +202,24 @@ describe("registered Gateway semantic request goldens", () => {
     }
   });
 
+  it("preserves assistant custom parts and custom tool-result entries in both modes", async () => {
+    const requests = await customContentGoldenCase.capture();
+    assert.deepEqual(requests.map((request) => request.streaming), [false, true]);
+    for (const request of requests) {
+      const body = request.body as JsonObject;
+      const assistant = message(body, "assistant");
+      const custom = assistant.content.filter((part: JsonObject) => part.type === "custom");
+      assert.deepEqual(custom.map((part: JsonObject) => part.kind), ["openai.compaction", "anthropic.fallback", "example.kind"]);
+      assert.deepEqual(custom[0].providerOptions, { openai: { itemId: "cmp_1", encryptedContent: "ENC" } });
+      assert.equal("providerOptions" in custom[2], false);
+      const entries = message(body, "tool").content[0].output.value;
+      assert.deepEqual(entries.map((entry: JsonObject) => entry.type), ["text", "custom", "custom"]);
+      assert.deepEqual(entries[1].providerOptions, { anthropic: { type: "tool-reference", toolName: "search" } });
+      assert.equal("providerOptions" in entries[2], false);
+      assert.equal("kind" in entries[1], false);
+    }
+  });
+
   it("omits abortSignal from the streaming body", async () => {
     const request = (await streamingGoldenCase.capture())[0];
     assert.equal(request.streaming, true);
@@ -259,4 +278,60 @@ describe("registered Gateway semantic request goldens", () => {
       ["first", "second"],
     );
   });
+});
+
+describe("registered Gateway BYOK projection", () => {
+  for (const streaming of [false, true]) {
+    it(`preserves provider maps, credential order and caller metadata (${streaming})`, async () => {
+      const capture = createCaptureFetch({ additionalHeaderNames: ["authorization"] });
+      const model = createGateway({
+        apiKey: "123:dummy-cap",
+        baseURL: "https://contract.invalid",
+        fetch: capture.fetch,
+      })("openai/model-not-in-catalog");
+      const options = {
+        prompt: [],
+        providerOptions: {
+          gateway: {
+            byok: {
+              anthropic: [{ apiKey: "dummy-anthropic", baseURL: "https://approved.example/anthropic" }],
+              openai: [{
+                apiKey: "dummy-openai-first",
+                baseURL: "https://approved.example/v1",
+                organization: "org-customer",
+                project: "proj-customer",
+              }, { apiKey: "dummy-openai-second" }],
+            },
+          },
+          openai: { store: false },
+        },
+      };
+      const result = streaming ? await model.doStream(options) : await model.doGenerate(options);
+      if ("stream" in result) await drainStream(result.stream);
+      assert.equal(capture.requests.length, 1);
+      const request = capture.requests[0];
+      assertValidRequest(request.body, "BYOK request");
+      assert.deepEqual(request.body, options);
+      assert.equal(request.streaming, streaming);
+      assert.equal(request.headers.authorization, "Bearer 123:dummy-cap");
+      assert.equal(request.headers["ai-language-model-id"], "openai/model-not-in-catalog");
+      assert.deepEqual(result.request?.body, options);
+      assert.equal(JSON.stringify(request.body).includes("dummy-cap"), false);
+    });
+
+    it(`sends a private access JWT as bearer without BYOK (${streaming})`, async () => {
+      const capture = createCaptureFetch({ additionalHeaderNames: ["authorization", "x-access-token"] });
+      const model = createGateway({
+        apiKey: "dummy.access.jwt",
+        baseURL: "https://private.invalid",
+        fetch: capture.fetch,
+      })("configured-model");
+      const result = streaming ? await model.doStream({ prompt: [] }) : await model.doGenerate({ prompt: [] });
+      if ("stream" in result) await drainStream(result.stream);
+      assert.equal(capture.requests.length, 1);
+      assert.equal(capture.requests[0].headers.authorization, "Bearer dummy.access.jwt");
+      assert.equal(capture.requests[0].headers["x-access-token"], undefined);
+      assert.deepEqual(capture.requests[0].body, { prompt: [] });
+    });
+  }
 });

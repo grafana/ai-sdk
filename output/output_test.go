@@ -37,7 +37,7 @@ func TestObjectOutput_ResponseFormat(t *testing.T) {
 
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
-	assert.Equal(t, "recipe", rf.Name)
+	assert.Equal(t, new("recipe"), rf.Name)
 	assert.Equal(t, "A recipe", rf.Description)
 	assert.NotNil(t, rf.Schema)
 }
@@ -121,7 +121,7 @@ func TestArrayOutput_ResponseFormat(t *testing.T) {
 
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
-	assert.Equal(t, "cities", rf.Name)
+	assert.Equal(t, new("cities"), rf.Name)
 	assert.Equal(t, "City list", rf.Description)
 
 	var s map[string]any
@@ -169,6 +169,107 @@ func TestArrayOutput_ParsePartial(t *testing.T) {
 	require.Len(t, v.([]json.RawMessage), 1, "repaired partial drops the final element")
 }
 
+func TestArrayOutput_Bounds(t *testing.T) {
+	elemSchema := mustSchema(t, `{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]}`)
+
+	t.Run("request schema", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			opts []ArrayOption
+			want string
+		}{
+			{name: "unset", want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]}}`},
+			{name: "zero", opts: []ArrayOption{WithMinItems(0), WithMaxItems(0)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":0,"maxItems":0}`},
+			{name: "minimum only", opts: []ArrayOption{WithMinItems(1)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":1}`},
+			{name: "maximum only", opts: []ArrayOption{WithMaxItems(2)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"maxItems":2}`},
+			{name: "paired", opts: []ArrayOption{WithMinItems(1), WithMaxItems(2)}, want: `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"population":{"type":"integer"}},"required":["name","population"]},"minItems":1,"maxItems":2}`},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				out, err := Array[city](elemSchema, tc.opts...)
+				require.NoError(t, err)
+				var wrapped struct {
+					Properties struct {
+						Elements json.RawMessage `json:"elements"`
+					} `json:"properties"`
+				}
+				require.NoError(t, json.Unmarshal(out.ResponseFormat().Schema, &wrapped))
+				assert.JSONEq(t, tc.want, string(wrapped.Properties.Elements))
+			})
+		}
+	})
+
+	t.Run("invalid bounds", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			opts []ArrayOption
+			want string
+		}{
+			{name: "negative minimum", opts: []ArrayOption{WithMinItems(-1)}, want: "output.Array: minItems must be greater than or equal to 0"},
+			{name: "negative maximum", opts: []ArrayOption{WithMaxItems(-1)}, want: "output.Array: maxItems must be greater than or equal to 0"},
+			{name: "minimum above maximum", opts: []ArrayOption{WithMinItems(3), WithMaxItems(2)}, want: "output.Array: minItems must be less than or equal to maxItems"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				out, err := Array[city](elemSchema, tc.opts...)
+				assert.Nil(t, out)
+				assert.EqualError(t, err, tc.want)
+			})
+		}
+	})
+
+	t.Run("complete length", func(t *testing.T) {
+		out, err := Array[city](elemSchema, WithMinItems(1), WithMaxItems(2))
+		require.NoError(t, err)
+		for _, tc := range []struct {
+			name    string
+			text    string
+			wantLen int
+			wantErr string
+		}{
+			{name: "empty", text: `{"elements":[]}`, wantErr: "elements array must contain at least 1 items"},
+			{name: "minimum", text: `{"elements":[{"name":"Paris","population":1}]}`, wantLen: 1},
+			{name: "maximum", text: `{"elements":[{"name":"Paris","population":1},{"name":"Rome","population":2}]}`, wantLen: 2},
+			{name: "above maximum", text: `{"elements":[{"name":"Paris","population":1},{"name":"Rome","population":2},{"name":"Oslo","population":3}]}`, wantErr: "elements array must contain at most 2 items"},
+			{name: "length checked before elements", text: `{"elements":[{"name":"Paris"},{"name":"Rome"},{"name":"Oslo"}]}`, wantErr: "elements array must contain at most 2 items"},
+			{name: "elements still validated", text: `{"elements":[{"name":"Paris"}]}`, wantErr: "population"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				v, err := out.ParseComplete(tc.text)
+				if tc.wantErr != "" {
+					require.ErrorIs(t, err, aisdk.ErrNoObjectGenerated)
+					assert.ErrorIs(t, err, aisdk.ErrInvalidOutputText)
+					assert.ErrorContains(t, err, tc.wantErr)
+					return
+				}
+				require.NoError(t, err)
+				assert.Len(t, v.([]city), tc.wantLen)
+			})
+		}
+	})
+
+	t.Run("max items", func(t *testing.T) {
+		var _ aisdk.BoundedArrayOutput = (*ArrayOutput[city])(nil)
+
+		unbounded, err := Array[city](elemSchema, WithMinItems(1))
+		require.NoError(t, err)
+		_, ok := unbounded.MaxItems()
+		assert.False(t, ok)
+
+		zero, err := Array[city](elemSchema, WithMaxItems(0))
+		require.NoError(t, err)
+		limit, ok := zero.MaxItems()
+		assert.True(t, ok)
+		assert.Equal(t, 0, limit)
+	})
+
+	t.Run("partial snapshots are not capped", func(t *testing.T) {
+		out, err := Array[city](elemSchema, WithMinItems(1), WithMaxItems(1))
+		require.NoError(t, err)
+		v, ok := out.ParsePartial(`{"elements":[{"name":"Paris","population":1},{"name":"Rome","population":2}]}`)
+		require.True(t, ok)
+		assert.Len(t, v.([]json.RawMessage), 2)
+	})
+}
+
 func TestChoiceOutput_ParseComplete_Valid(t *testing.T) {
 	out, err := Choice("sunny", "rainy", "snowy")
 	require.NoError(t, err)
@@ -201,7 +302,7 @@ func TestChoiceOutput_ResponseFormat(t *testing.T) {
 
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
-	assert.Equal(t, "weather", rf.Name)
+	assert.Equal(t, new("weather"), rf.Name)
 	assert.Equal(t, "Weather choice", rf.Description)
 
 	var s map[string]any
@@ -249,7 +350,7 @@ func TestJSONOutput_ResponseFormat(t *testing.T) {
 	rf := out.ResponseFormat()
 	assert.Equal(t, provider.ResponseFormatJSON, rf.Type)
 	assert.Nil(t, rf.Schema)
-	assert.Equal(t, "payload", rf.Name)
+	assert.Equal(t, new("payload"), rf.Name)
 	assert.Equal(t, "Raw JSON payload", rf.Description)
 }
 
@@ -449,5 +550,29 @@ func TestWrappedOutputs_RequestSchemasStayStrict(t *testing.T) {
 			assert.Equal(t, false, s["additionalProperties"], "runtime extraction is permissive, the request is not")
 			assert.Equal(t, []any{tc.required}, s["required"])
 		})
+	}
+}
+
+func TestOutputNamePresence(t *testing.T) {
+	s, err := schema.SchemaFor[recipe]()
+	require.NoError(t, err)
+	for _, name := range []*string{nil, new(""), new("answer")} {
+		var opts []ObjectOption
+		if name != nil {
+			opts = append(opts, WithName(*name))
+		}
+		object, err := Object[recipe](s, opts...)
+		require.NoError(t, err)
+		var arrayOpts []ArrayOption
+		for _, opt := range opts {
+			arrayOpts = append(arrayOpts, opt)
+		}
+		array, err := Array[recipe](s, arrayOpts...)
+		require.NoError(t, err)
+		choice, err := ChoiceWithOptions([]string{"yes", "no"}, opts...)
+		require.NoError(t, err)
+		for _, format := range []*provider.ResponseFormat{object.ResponseFormat(), array.ResponseFormat(), choice.ResponseFormat(), JSON(opts...).ResponseFormat()} {
+			assert.Equal(t, name, format.Name)
+		}
 	}
 }

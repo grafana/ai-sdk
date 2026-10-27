@@ -13,7 +13,7 @@ import (
 )
 
 func TestAttemptDecision_CancellationDuringDecider(t *testing.T) {
-	for _, mode := range []string{"unary", "stream"} {
+	for _, mode := range []string{"unary", "stream", "buffered stream"} {
 		for _, cancellation := range []string{"cancel", "deadline"} {
 			for _, eligible := range []bool{false, true} {
 				name := mode + "/" + cancellation + "/deny"
@@ -30,7 +30,10 @@ func TestAttemptDecision_CancellationDuringDecider(t *testing.T) {
 						}
 						failure := errors.New("setup failed")
 						calls, decisions := 0, 0
-						var attempts []Attempt
+						var attempts, requestAttempts []Attempt
+						ctx = WithAttemptObserver(ctx, func(_ context.Context, attempt Attempt) {
+							requestAttempts = append(requestAttempts, attempt)
+						})
 						var child context.Context
 						producerDone := make(chan struct{})
 						candidate := &mockModel{
@@ -69,11 +72,13 @@ func TestAttemptDecision_CancellationDuringDecider(t *testing.T) {
 						assert.Equal(t, 1, calls)
 						assert.Equal(t, 1, decisions)
 						require.Len(t, attempts, 1)
+						assert.Equal(t, attempts, requestAttempts)
 						assert.Equal(t, AttemptCanceled, attempts[0].Outcome)
 						assert.ErrorIs(t, attempts[0].Err, want)
+						assert.Same(t, failure, attempts[0].SourceErr)
 						assert.False(t, attempts[0].WillFallback)
 						assert.False(t, attempts[0].FinishedAt.Before(attempts[0].StartedAt))
-						if mode == "stream" {
+						if mode != "unary" {
 							assert.Contains(t, []error{context.Canceled, want}, child.Err())
 							select {
 							case <-producerDone:
@@ -89,7 +94,7 @@ func TestAttemptDecision_CancellationDuringDecider(t *testing.T) {
 }
 
 func TestAttemptDecision_ObserverCancellationPreservesIntent(t *testing.T) {
-	for _, mode := range []string{"unary", "stream"} {
+	for _, mode := range []string{"unary", "stream", "buffered stream"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -121,6 +126,7 @@ func TestAttemptDecision_ObserverCancellationPreservesIntent(t *testing.T) {
 			require.Len(t, attempts, 1)
 			assert.Equal(t, AttemptFailed, attempts[0].Outcome)
 			assert.ErrorIs(t, attempts[0].Err, failure)
+			assert.Same(t, failure, attempts[0].SourceErr)
 			assert.True(t, attempts[0].WillFallback)
 		})
 	}
@@ -132,6 +138,10 @@ func invokeFailedDecision(t *testing.T, model *Model, ctx context.Context, mode 
 		result, err := model.DoGenerate(ctx, provider.CallOptions{})
 		assert.Nil(t, result)
 		return err
+	}
+	if mode == "buffered stream" {
+		_, err := model.WithBufferedStream(1<<20, time.Second)
+		require.NoError(t, err)
 	}
 	result, err := model.DoStream(ctx, provider.CallOptions{})
 	assert.Nil(t, result)

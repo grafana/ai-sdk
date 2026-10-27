@@ -53,6 +53,7 @@ const (
 
 // TextPart carries text content in a UIMessage.
 type TextPart struct {
+	Citations        []provider.Citation       `json:"citations,omitzero"`
 	Text             string                    `json:"text"`
 	State            string                    `json:"state,omitempty"`
 	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
@@ -107,9 +108,12 @@ const (
 // Title, ErrorText and Preliminary use nil for absence and preserve explicit
 // empty strings or false. Output-error requires a non-nil ErrorText.
 // ToolMetadata and call/result metadata preserve non-nil empty objects.
-// RawInput retains rejected or legacy input separately from Input; opaque JSON
-// fields preserve JSON null, while nil means absent.
+// RawInput stores accumulated input-streaming text as a JSON string and retains
+// legacy output-error input separately from Input. Other opaque JSON fields
+// preserve JSON null, while nil means absent.
 type ToolInvocationPart struct {
+	toolUnavailable        bool
+	InputEncoding          provider.ToolInputEncoding `json:"inputEncoding,omitempty"`
 	ToolCallID             string                     `json:"toolCallId"`
 	ToolName               string                     `json:"toolName"`
 	State                  ToolInvocationState        `json:"state"`
@@ -131,8 +135,12 @@ func (p ToolInvocationPart) PartType() string { return "tool-" + p.ToolName }
 
 // DynamicToolUIPart carries a dynamic/MCP tool invocation in a UIMessage.
 // Same shape and field-presence contracts as [ToolInvocationPart], but with
-// type "dynamic-tool" on the wire.
+// type "dynamic-tool" on the wire. Parts normalized from a static tool whose
+// definition is unavailable or incompatible persist "dynamic": false, so model
+// conversion keeps omitting their output while the tool remains unavailable.
 type DynamicToolUIPart struct {
+	toolUnavailable        bool
+	InputEncoding          provider.ToolInputEncoding `json:"inputEncoding,omitempty"`
 	ToolCallID             string                     `json:"toolCallId"`
 	ToolName               string                     `json:"toolName"`
 	State                  ToolInvocationState        `json:"state"`
@@ -220,7 +228,7 @@ func (SourceURLPart) PartType() string { return string(UIPartSourceURL) }
 type SourceDocumentPart struct {
 	SourceID         string                    `json:"sourceId"`
 	MediaType        string                    `json:"mediaType"`
-	Title            string                    `json:"title,omitempty"`
+	Title            string                    `json:"title"`
 	Filename         string                    `json:"filename,omitempty"`
 	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }

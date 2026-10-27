@@ -1,4 +1,4 @@
-go 1.26.3
+go 1.27.3
 
 use (
 	.
@@ -9,6 +9,7 @@ use (
 	./middleware/logger
 	./middleware/prometheus
 	./providers/anthropic
+	./providers/azure
 	./providers/bedrock
 	./providers/grafana
 	./providers/openai

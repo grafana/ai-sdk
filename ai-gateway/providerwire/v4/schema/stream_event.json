@@ -3,11 +3,14 @@
   "$id": "https://grafana.com/ai-sdk/providerwire/v4/stream-event.schema.json",
   "title": "ProviderWire V4 strict streaming text and function-tool event",
   "oneOf": [
-    { "$ref": "#/$defs/urlSource" },
+    { "$ref": "#/$defs/toolApprovalRequest" },
+          { "$ref": "#/$defs/urlSource" },
     { "$ref": "#/$defs/documentSource" },
     { "$ref": "#/$defs/reasoningBoundary" },
     { "$ref": "#/$defs/reasoningDelta" },
     { "$ref": "#/$defs/reasoningFile" },
+    { "$ref": "#/$defs/custom" },
+          { "$ref": "#/$defs/generatedFile" },
     { "$ref": "#/$defs/streamStart" },
     { "$ref": "#/$defs/responseMetadata" },
     { "$ref": "#/$defs/textStart" },
@@ -19,9 +22,53 @@
     { "$ref": "#/$defs/toolCall" },
     { "$ref": "#/$defs/toolResult" },
     { "$ref": "#/$defs/finish" },
+    { "$ref": "#/$defs/raw" },
     { "$ref": "#/$defs/error" }
   ],
   "$defs": {
+    "citation": {
+      "type": "object",
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/urlSource"
+            },
+            {
+              "$ref": "#/$defs/documentSource"
+            }
+          ]
+        },
+        "startIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "endIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "citedText": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "toolApprovalRequest": {
+      "type": "object",
+      "required": ["type", "approvalId", "toolCallId"],
+      "properties": {
+        "type": { "const": "tool-approval-request" },
+        "approvalId": { "type": "string", "minLength": 1 },
+        "toolCallId": { "type": "string", "minLength": 1 },
+        "providerMetadata": { "$ref": "#/$defs/providerMetadata" }
+      },
+      "additionalProperties": false
+    },
     "reasoningBoundary": {
       "type": "object", "required": ["type", "id"],
       "properties": {"type": {"enum": ["reasoning-start", "reasoning-end"]}, "id": {"type": "string", "minLength": 1}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
@@ -32,15 +79,25 @@
       "properties": {"type": {"const": "reasoning-delta"}, "id": {"type": "string", "minLength": 1}, "delta": {"type": "string"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
+    "custom": {
+      "type": "object", "required": ["type", "kind"],
+      "properties": {"type": {"const": "custom"}, "kind": {"type": "string", "pattern": "\\."}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
+      "additionalProperties": false
+    },
     "reasoningFile": {
       "type": "object", "required": ["type", "mediaType", "data"],
       "properties": {"type": {"const": "reasoning-file"}, "mediaType": {"type": "string"}, "data": {"$ref": "#/$defs/reasoningFileData"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
+    "generatedFile": {
+      "type": "object", "required": ["type", "mediaType", "data"],
+      "properties": {"type": {"const": "file"}, "mediaType": {"type": "string"}, "data": {"$ref": "#/$defs/reasoningFileData"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
+      "additionalProperties": false
+    },
     "reasoningFileData": {
       "oneOf": [
         {"type": "object", "required": ["type", "data"], "properties": {"type": {"const": "data"}, "data": {"type": "string"}}, "additionalProperties": false},
-        {"type": "object", "required": ["type", "url"], "properties": {"type": {"const": "url"}, "url": {"type": "string", "minLength": 1}}, "additionalProperties": false}
+        {"type": "object", "required": ["type", "url"], "properties": {"type": {"const": "url"}, "url": {"type": "string", "minLength": 1}, "originalUrl": {"type": "string"}}, "additionalProperties": false}
       ]
     },
     "providerMetadata": {
@@ -115,7 +172,7 @@
     },
     "toolInputStart": {
       "type": "object", "required": ["type", "id", "toolName"],
-      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "providerExecuted": {"type": "boolean"}, "dynamic": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
+      "properties": {"type": {"const": "tool-input-start"}, "id": {"type": "string", "minLength": 1}, "toolName": {"type": "string", "minLength": 1}, "inputEncoding": {"enum": ["json", "text"]}, "providerExecuted": {"type": "boolean"}, "dynamic": {"type": "boolean"}, "providerMetadata": {"$ref": "#/$defs/providerMetadata"}},
       "additionalProperties": false
     },
     "toolInputDelta": {
@@ -188,6 +245,7 @@
       "required": ["type", "id"],
       "properties": {
         "type": { "const": "text-end" },
+        "citations": { "type": "array", "items": { "$ref": "#/$defs/citation" } },
         "providerMetadata": { "$ref": "#/$defs/providerMetadata" },
         "id": { "type": "string", "minLength": 1 }
       },
@@ -213,6 +271,15 @@
       },
       "additionalProperties": false
     },
+    "raw": {
+      "type": "object",
+      "required": ["type", "rawValue"],
+      "properties": {
+        "type": { "const": "raw" },
+        "rawValue": {}
+      },
+      "additionalProperties": false
+    },
     "error": {
       "type": "object",
       "required": ["type", "error"],
@@ -227,7 +294,15 @@
             "param": { "type": "null" },
             "code": { "enum": ["invalid_request", "authentication_error", "forbidden", "model_not_found", "rate_limit_exceeded", "overloaded", "failed_dependency", "upstream_error", "timeout", "canceled", "internal_error"] },
             "statusCode": { "type": "integer", "minimum": 100, "maximum": 599 },
-            "retryable": { "type": "boolean" }
+            "retryable": { "type": "boolean" },
+            "data": {
+              "type": "object",
+              "properties": {
+                "providerMetadata": {"type":"object","additionalProperties":{"type":"object"}},
+                "nativeError": {"type":"object","properties":{"message":{"type":"string"},"type":{"type":"string"},"code":{"oneOf":[{"type":"string"},{"type":"number"}]},"statusCode":{"type":"integer"}},"additionalProperties":false}
+              },
+              "additionalProperties": false
+            }
           },
           "allOf": [
             { "if": { "properties": { "code": { "const": "invalid_request" } } }, "then": { "properties": { "message": { "const": "invalid request" }, "type": { "const": "invalid_request_error" }, "statusCode": { "const": 400 }, "retryable": { "const": false } } } },

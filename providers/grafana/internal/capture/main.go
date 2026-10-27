@@ -10,29 +10,31 @@ import (
 	"time"
 
 	aisdk "github.com/grafana/ai-sdk"
+	"github.com/grafana/ai-sdk/output"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/providers/grafana"
 )
 
 func main() {
 	var input struct {
-		BaseURL           string                          `json:"baseURL"`
-		AccessToken       string                          `json:"accessToken"`
-		UserIDToken       string                          `json:"userIDToken"`
-		TokenExchange     *grafana.TokenExchangeConfig    `json:"tokenExchange"`
-		CloudCredentials  *grafana.CloudCredentialsConfig `json:"cloudCredentials"`
-		Mode              string                          `json:"mode"`
-		ModelID           string                          `json:"modelID"`
-		Options           provider.CallOptions            `json:"options"`
-		Headers           map[string][]string             `json:"headers"`
-		AbortAfterParts   int                             `json:"abortAfterParts"`
-		AbortBefore       bool                            `json:"abortBefore"`
-		AbortBetweenSteps bool                            `json:"abortBetweenSteps"`
-		CancelAfterMS     int                             `json:"cancelAfterMs"`
-		PreferBytes       bool                            `json:"preferBytes"`
-		ToolResults       map[string][]json.RawMessage    `json:"toolResults"`
-		Steps             int                             `json:"steps"`
-		Instructions      string                          `json:"instructions"`
+		BaseURL           string                       `json:"baseURL"`
+		AccessToken       string                       `json:"accessToken"`
+		ServiceAccount    string                       `json:"serviceAccountToken"`
+		OnBehalfOf        string                       `json:"onBehalfOf"`
+		TokenExchange     *grafana.TokenExchangeConfig `json:"tokenExchange"`
+		Decisions         []bool                       `json:"decisions"`
+		Mode              string                       `json:"mode"`
+		ModelID           string                       `json:"modelID"`
+		Options           provider.CallOptions         `json:"options"`
+		Headers           map[string][]string          `json:"headers"`
+		AbortAfterParts   int                          `json:"abortAfterParts"`
+		AbortBefore       bool                         `json:"abortBefore"`
+		AbortBetweenSteps bool                         `json:"abortBetweenSteps"`
+		CancelAfterMS     int                          `json:"cancelAfterMs"`
+		PreferBytes       bool                         `json:"preferBytes"`
+		ToolResults       map[string][]json.RawMessage `json:"toolResults"`
+		Steps             int                          `json:"steps"`
+		Instructions      string                       `json:"instructions"`
 	}
 	if err := json.NewDecoder(io.LimitReader(os.Stdin, 1<<20)).Decode(&input); err != nil {
 		emit(map[string]any{"error": map[string]any{"message": "invalid capture input"}})
@@ -62,8 +64,8 @@ func main() {
 		stop := time.AfterFunc(time.Duration(input.CancelAfterMS)*time.Millisecond, cancel)
 		defer stop.Stop()
 	}
-	if input.UserIDToken != "" {
-		ctx = grafana.WithUserIDToken(ctx, input.UserIDToken)
+	if input.OnBehalfOf != "" {
+		ctx = grafana.WithOnBehalfOf(ctx, input.OnBehalfOf)
 	}
 	var client *grafana.Provider
 	var err error
@@ -71,7 +73,7 @@ func main() {
 	if input.TokenExchange != nil {
 		selected++
 	}
-	if input.CloudCredentials != nil {
+	if input.ServiceAccount != "" {
 		selected++
 	}
 	if input.AccessToken != "" {
@@ -84,8 +86,8 @@ func main() {
 	switch {
 	case input.TokenExchange != nil:
 		client, err = grafana.NewWithTokenExchange(*input.TokenExchange)
-	case input.CloudCredentials != nil:
-		client, err = grafana.NewWithCloudCredentials(*input.CloudCredentials)
+	case input.ServiceAccount != "":
+		client, err = grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{Token: input.ServiceAccount, BaseURL: input.BaseURL, Headers: input.Headers})
 	default:
 		client, err = grafana.NewWithAccessToken(grafana.AccessTokenConfig{AccessToken: input.AccessToken, BaseURL: input.BaseURL, Headers: input.Headers})
 	}
@@ -107,10 +109,20 @@ func main() {
 		emitError(err)
 		return
 	}
+	if input.Mode == "approval-unary" || input.Mode == "approval-stream" || input.Mode == "approval-high-generate" || input.Mode == "approval-high-stream" {
+		if err := captureApprovalReplay(ctx, model, input.Options, input.Mode, input.Decisions); err != nil {
+			emitError(err)
+		}
+		return
+	}
 	if input.Mode == "recorded-ui" {
 		if err := captureRecordedUI(ctx, model, input.Options, input.Instructions, input.ToolResults, input.Steps); err != nil {
 			emitError(err)
 		}
+		return
+	}
+	if input.Mode == "execution-observe" || input.Mode == "execution-generate" {
+		captureExecutionObservation(ctx, model, input.Options, input.Mode == "execution-generate")
 		return
 	}
 	if input.Mode == "metadata-observe" {
@@ -122,6 +134,34 @@ func main() {
 	if input.Mode == "metadata-unary-replay" || input.Mode == "metadata-stream-replay" {
 		if err := captureMetadataReplay(ctx, model, input.Options, input.Mode == "metadata-stream-replay"); err != nil {
 			emitError(err)
+		}
+		return
+	}
+	if input.Mode == "structured-generate" || input.Mode == "structured-stream" {
+		opts := []aisdk.GenerateOption{aisdk.WithModelMessages(input.Options.Prompt...), aisdk.WithMaxRetries(0), aisdk.WithOutput(output.JSON(output.WithName("")))}
+		if input.Options.MaxOutputTokens != nil {
+			opts = append(opts, aisdk.WithMaxOutputTokens(*input.Options.MaxOutputTokens))
+		}
+		if input.Mode == "structured-stream" {
+			streamOpts := []aisdk.StreamOption{aisdk.WithModelMessages(input.Options.Prompt...), aisdk.WithMaxRetries(0), aisdk.WithOutput(output.JSON(output.WithName("")))}
+			if input.Options.MaxOutputTokens != nil {
+				streamOpts = append(streamOpts, aisdk.WithMaxOutputTokens(*input.Options.MaxOutputTokens))
+			}
+			result := aisdk.StreamText(ctx, model, streamOpts...)
+			for range result.FullStream() {
+			}
+			if err := result.Err(); err != nil {
+				emitError(err)
+				return
+			}
+			emit(map[string]any{"text": result.Text(), "providerMetadata": result.ProviderMetadata()})
+		} else {
+			result, err := aisdk.GenerateText(ctx, model, opts...)
+			if err != nil {
+				emitError(err)
+				return
+			}
+			emit(map[string]any{"text": result.Text, "providerMetadata": result.ProviderMetadata})
 		}
 		return
 	}
@@ -147,6 +187,9 @@ func main() {
 	}
 	if input.Mode == "stream-text" {
 		opts := []aisdk.StreamOption{aisdk.WithModelMessages(input.Options.Prompt...), aisdk.WithMaxRetries(0)}
+		for _, option := range input.Options.ProviderOptions {
+			opts = append(opts, aisdk.WithProviderOptions(option))
+		}
 		if input.Options.MaxOutputTokens != nil {
 			opts = append(opts, aisdk.WithMaxOutputTokens(*input.Options.MaxOutputTokens))
 		}

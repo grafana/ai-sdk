@@ -13,6 +13,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	vertexsdk "github.com/anthropics/anthropic-sdk-go/vertex"
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -197,6 +198,7 @@ func consumeStream(ctx context.Context, items <-chan messageStreamItem, buffered
 	parts := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(parts)
+		defer streamrecover.Recover(func() { parts <- streamrecover.Part() })
 		consumeStreamParts(ctx, items, buffered, parts, mapping, warnings, usesJsonResponseTool, citDocs, generateID, providerName, markCodeExecutionDynamic, responseHeaders)
 	}()
 	for {
@@ -216,6 +218,13 @@ func consumeStream(ctx context.Context, items <-chan messageStreamItem, buffered
 			}
 		}
 	}
+}
+
+func streamItemError(item messageStreamItem) *provider.APICallError {
+	if item.errorFrame {
+		return wrapStreamErrorFrame(item.err)
+	}
+	return wrapAsAPICallError(item.err, "", nil)
 }
 
 func drainProviderStreamParts(parts <-chan provider.StreamPart) {
@@ -246,8 +255,8 @@ func consumeStreamParts(ctx context.Context, items <-chan messageStreamItem, buf
 			ch <- provider.StreamPart{Type: provider.PartRaw, RawValue: item.rawValue}
 		}
 		if item.err != nil {
-			ch <- provider.StreamPart{Type: provider.PartError, APICallError: wrapAsAPICallError(item.err, "", nil)}
-			return false
+			ch <- provider.StreamPart{Type: provider.PartError, APICallError: streamItemError(item)}
+			return item.errorFrame
 		}
 		if item.event == nil {
 			return true

@@ -108,9 +108,8 @@ If the request context ends while fallback waits for a first part, fallback SHAL
 - **THEN** one synchronization decision SHALL give the outcome a single owner and SHALL not duplicate observation, candidate invocation, relay, or cleanup
 
 ### Requirement: Closed physical attempt decisions
-The reusable fallback hook SHALL emit exactly one decision event for every candidate invocation. The event SHALL preserve one-based candidate index, provider and backend model identity, start and decision timestamps, optional error, an outcome from the closed set selected/failed/canceled, and `WillFallback` as the live decision-time intent to advance. This field SHALL be true only when the failed attempt is eligible, another candidate exists, and the request context is live in the snapshot immediately after the decider returns. Later cancellation MAY prevent that invocation without rewriting the event; subsequent attempt records SHALL establish which candidates were actually invoked. Retry SHALL NOT be a separate outcome. A streamed candidate SHALL be selected at its first received part rather than at stream completion.
 
-Cancellation observable in that post-decider snapshot SHALL normalize the event outcome to canceled, its error and the returned error to the context cause, and `WillFallback` to false, regardless of the decider's answer. A failure entered while the request is live SHALL still receive exactly one decider invocation, including on the final candidate. Cancellation after a failed decision to advance and before the next invocation SHALL stop progression and remain in the returned error chain together with earlier failures, for unary and streaming calls.
+The reusable hook SHALL emit exactly one decision event per candidate invocation: one-based candidate index, provider/backend model identity, start/decision timestamps, optional error, outcome from the closed set selected/failed/canceled and WillFallback as live decision-time advance intent. Retry SHALL NOT be a separate outcome. Stream candidates SHALL be selected at first received part, not completion.
 
 #### Scenario: Unary primary fails and secondary wins
 - **WHEN** a retry-eligible unary primary fails and the secondary succeeds
@@ -131,6 +130,22 @@ Cancellation observable in that post-decider snapshot SHALL normalize the event 
 #### Scenario: Request ends during the decider
 - **WHEN** a decider cancels the request or a deadline expires while the decider is running, and the decider then returns either true or false
 - **THEN** fallback SHALL emit one canceled event preserving the context cause with `WillFallback=false`, SHALL return that cause, and SHALL NOT invoke another candidate
+
+### Requirement: Fallback intent records the post-decider snapshot
+
+WillFallback SHALL be true only for an eligible failed attempt with another candidate and live context immediately after the decider returns. Later cancellation MAY prevent invocation without rewriting the event; subsequent attempt records SHALL establish actual invocations. A failure entered while live SHALL receive exactly one decider invocation, including on the final candidate.
+
+#### Scenario: Final failure still invokes the decider
+- **WHEN** the final candidate fails while the request is live
+- **THEN** the decider SHALL run once but WillFallback SHALL be false because no candidate remains.
+
+### Requirement: Fallback cancellation preserves decision ownership and error causes
+
+Cancellation observable immediately after the decider SHALL normalize outcome to canceled, event/returned error to context cause and WillFallback to false regardless of decider answer. Cancellation after a failed advance decision but before next invocation SHALL stop progression and remain in the returned error chain with earlier failures for unary and streaming calls.
+
+#### Scenario: Cancellation after a decision preserves earlier failure
+- **WHEN** a unary or streaming request ends between an eligible failed decision and next invocation
+- **THEN** no later candidate SHALL run, the event SHALL remain unchanged, and returned error SHALL retain earlier failures and context cause.
 
 ### Requirement: Observer isolation contract
 Fallback SHALL preserve model selection and returned errors if an observer panics. Observer callbacks SHALL be invoked synchronously at decision boundaries and SHALL be documented to return promptly; fallback SHALL NOT create an unbounded goroutine to isolate a blocking observer.

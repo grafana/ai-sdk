@@ -1,0 +1,12 @@
+services:
+  grafana:
+    extends:
+      file: .config/docker-compose-base.yaml
+      service: grafana
+    build:
+      args:
+        grafana_image: ${GRAFANA_IMAGE:-grafana}
+        grafana_version: ${GRAFANA_VERSION:-nightly}
+    environment:
+      GF_PATHS_CONFIG: /etc/grafana/provisioning/grafana.ini
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-unset-local-key}

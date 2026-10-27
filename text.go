@@ -25,6 +25,7 @@ type ContentPart interface {
 
 // TextContent represents generated text content.
 type TextContent struct {
+	Citations        []provider.Citation       `json:"citations,omitzero"`
 	Text             string                    `json:"text"`
 	ProviderMetadata provider.ProviderMetadata `json:"providerMetadata,omitempty"`
 }
@@ -165,6 +166,7 @@ type StepResult struct {
 	Reasoning             []ReasoningOutput `json:"reasoning,omitempty"`
 	Content               []ContentPart     `json:"-"`
 	responseContent       []provider.ContentPart
+	responseCitations     map[int][]provider.Citation
 	ToolCalls             []ToolCall                `json:"toolCalls,omitempty"`
 	ToolApprovalRequests  []ToolApprovalRequest     `json:"toolApprovalRequests,omitempty"`
 	ToolApprovalResponses []ToolApprovalResponse    `json:"toolApprovalResponses,omitempty"`
@@ -195,10 +197,15 @@ type OnStepFinishState struct {
 }
 
 // OnFinishState is passed to the OnFinish callback after all steps complete.
+// The embedded StepResult follows the collected result projection: Content,
+// ToolCalls, ToolResults, Files, Sources and Warnings cover every step in
+// order, Usage is the total usage, and the remaining fields describe the
+// final step. ResponseMessages holds the full generated message history.
 type OnFinishState struct {
 	StepResult
-	Steps      []StepResult
-	TotalUsage provider.Usage
+	Steps            []StepResult
+	TotalUsage       provider.Usage
+	ResponseMessages []provider.Message
 }
 
 // OnAbortState is passed to the OnAbort callback when the stream is cancelled.

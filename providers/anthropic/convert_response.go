@@ -14,6 +14,13 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 	mcpToolCalls := make(map[string]mcpToolCallInfo)
 
 	var isJsonResponseFromTool bool
+	hasWebSearchResults := false
+	for _, block := range msg.Content {
+		if block.Type == "web_search_tool_result" && len(block.AsWebSearchToolResult().Content.OfBetaWebSearchResultBlockArray) > 0 {
+			hasWebSearchResults = true
+			break
+		}
+	}
 
 	for _, block := range msg.Content {
 		callerMetadata, err := marshalCallerMetadata(block.Caller.Type, block.Caller.ToolID)
@@ -21,24 +28,44 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			return nil, err
 		}
 		switch block.Type {
+		case "fallback":
+			metadata, err := marshalFallbackMetadata(block.AsFallback())
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, provider.GenerateContentPart{
+				Type: provider.ContentCustom, Kind: anthropicFallbackKind, ProviderMetadata: metadata,
+			})
+		case "container_upload":
+			metadata, err := json.Marshal(struct {
+				FileID string `json:"fileId"`
+			}{FileID: block.AsContainerUpload().FileID})
+			if err != nil {
+				return nil, fmt.Errorf("marshaling container upload metadata: %w", err)
+			}
+			content = append(content, provider.GenerateContentPart{
+				Type: provider.ContentCustom, Kind: anthropicContainerUploadKind, ProviderMetadata: provider.ProviderMetadata{"anthropic": metadata},
+			})
 		case "text":
 			if !usesJsonResponseTool {
-				var webSearchCitations []json.RawMessage
+				var rawCitations []json.RawMessage
 				for _, citation := range block.Citations {
-					if _, ok := citation.AsAny().(anthropic.BetaCitationsWebSearchResultLocation); ok {
-						webSearchCitations = append(webSearchCitations, json.RawMessage(citation.RawJSON()))
-					}
+					rawCitations = append(rawCitations, json.RawMessage(citation.RawJSON()))
 				}
-				metadata, err := marshalWebSearchCitationMetadata(webSearchCitations)
+				citations, metadata, err := textCitations(rawCitations, citDocs)
 				if err != nil {
 					return nil, err
 				}
 				content = append(content, provider.GenerateContentPart{
 					Type:             provider.ContentText,
 					Text:             block.Text,
+					Citations:        citations,
 					ProviderMetadata: metadata,
 				})
 				for _, cit := range block.Citations {
+					if _, ok := cit.AsAny().(anthropic.BetaCitationsWebSearchResultLocation); ok && hasWebSearchResults {
+						continue
+					}
 					src, err := createCitationSource(cit.AsAny(), citDocs, generateID)
 					if err != nil {
 						return nil, fmt.Errorf("creating citation source: %w", err)
@@ -465,7 +492,7 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 	if isJsonResponseFromTool && msg.StopReason == anthropic.BetaStopReasonToolUse {
 		fr = provider.FinishReason{Unified: provider.FinishReasonStop, Raw: string(msg.StopReason)}
 	}
-	providerMetadata, err := buildAnthropicProviderMetadata(messageMetadataFields(msg.RawJSON()), json.RawMessage(msg.Usage.RawJSON()))
+	providerMetadata, err := buildAnthropicProviderMetadata(messageMetadataFields(msg.RawJSON()), json.RawMessage(msg.Usage.RawJSON()), usageIterationsField(json.RawMessage(msg.Usage.RawJSON())))
 	if err != nil {
 		return nil, err
 	}

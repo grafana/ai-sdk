@@ -8,20 +8,15 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-type unsupportedCapability string
+type requestFailureReason string
 
 const (
-	capabilityReasoningContent unsupportedCapability = "reasoning-content"
-	capabilityCustomContent    unsupportedCapability = "custom-content"
-	capabilityTools            unsupportedCapability = "tools"
-	capabilityToolApprovals    unsupportedCapability = "tool-approvals"
-	capabilityStructuredOutput unsupportedCapability = "structured-output"
-	capabilityProviderOptions  unsupportedCapability = "provider-options"
-	capabilityRawOutput        unsupportedCapability = "raw-output"
-	// Policy refusals. These are not unsupported capabilities: the runtime maps
-	// provider options and call headers, and refuses only what the host owns.
-	capabilityReservedProviderOptions unsupportedCapability = "reserved-provider-options"
-	capabilityProtectedCallHeader     unsupportedCapability = "protected-call-header"
+	capabilityTools               requestFailureReason = "tools"
+	capabilityToolApprovals       requestFailureReason = "tool-approvals"
+	capabilityStructuredOutput    requestFailureReason = "structured-output"
+	capabilityProviderOptions     requestFailureReason = "provider-options"
+	policyReservedProviderOptions requestFailureReason = "reserved-provider-options"
+	policyProtectedCallHeader     requestFailureReason = "protected-call-header"
 )
 
 type wireRequest struct {
@@ -50,7 +45,11 @@ type wireMessage struct {
 }
 
 type wirePart struct {
+	ApprovalID       string                     `json:"approvalId"`
+	Approved         *bool                      `json:"approved"`
+	Reason           string                     `json:"reason"`
 	Type             provider.ContentPartType   `json:"type"`
+	Kind             string                     `json:"kind"`
 	Text             string                     `json:"text"`
 	Data             json.RawMessage            `json:"data"`
 	MediaType        string                     `json:"mediaType"`
@@ -64,7 +63,10 @@ type wirePart struct {
 }
 
 type wireResponseFormat struct {
-	Type provider.ResponseFormatType `json:"type"`
+	Type        provider.ResponseFormatType `json:"type"`
+	Schema      json.RawMessage             `json:"schema"`
+	Name        *string                     `json:"name"`
+	Description string                      `json:"description"`
 }
 
 type wireReasoning string
@@ -77,14 +79,19 @@ const (
 	wireReasoningMedium          wireReasoning = "medium"
 	wireReasoningHigh            wireReasoning = "high"
 	wireReasoningXHigh           wireReasoning = "xhigh"
+	wireReasoningMax             wireReasoning = "max"
 )
 
-func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, *requestFailure) {
+func mapWireRequest(body []byte) (provider.CallOptions, *requestFailure) {
 	var request wireRequest
 	if err := json.Unmarshal(body, &request); err != nil {
 		return provider.CallOptions{}, invalidMappingFailure()
 	}
 
+	return mapRequest(request)
+}
+
+func mapRequest(request wireRequest) (provider.CallOptions, *requestFailure) {
 	options := provider.CallOptions{
 		MaxOutputTokens:  request.MaxOutputTokens,
 		Temperature:      request.Temperature,
@@ -95,9 +102,8 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 		StopSequences:    request.StopSequences,
 		Seed:             request.Seed,
 	}
-	toolsEnabled := len(modes) == 0 || modes[0] == executionUnary || modes[0] == executionStreaming
 	for _, wireMessage := range request.Prompt {
-		message, failure := mapWireMessage(wireMessage, toolsEnabled)
+		message, failure := mapWireMessage(wireMessage)
 		if failure != nil {
 			return provider.CallOptions{}, failure
 		}
@@ -110,9 +116,6 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 	}
 	options.Headers = headers
 	if len(request.Tools) > 0 || len(request.ToolChoice) > 0 {
-		if !toolsEnabled {
-			return provider.CallOptions{}, unsupportedMappingFailure(capabilityTools)
-		}
 		tools, choice, failure := mapFunctionTools(request.Tools, request.ToolChoice)
 		if failure != nil {
 			return provider.CallOptions{}, failure
@@ -123,7 +126,7 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 		switch request.ResponseFormat.Type {
 		case provider.ResponseFormatText:
 		case provider.ResponseFormatJSON:
-			return provider.CallOptions{}, unsupportedMappingFailure(capabilityStructuredOutput)
+			options.ResponseFormat = &provider.ResponseFormat{Type: request.ResponseFormat.Type, Schema: request.ResponseFormat.Schema, Name: request.ResponseFormat.Name, Description: request.ResponseFormat.Description}
 		default:
 			return provider.CallOptions{}, invalidMappingFailure()
 		}
@@ -133,9 +136,7 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 		return provider.CallOptions{}, failure
 	}
 	options.ProviderOptions = rootOptions
-	if request.IncludeRawChunks {
-		return provider.CallOptions{}, unsupportedMappingFailure(capabilityRawOutput)
-	}
+	options.IncludeRawChunks = request.IncludeRawChunks
 	if request.Reasoning != nil {
 		reasoning, err := mapWireReasoning(*request.Reasoning)
 		if err != nil {
@@ -147,6 +148,7 @@ func mapWireRequest(body []byte, modes ...executionMode) (provider.CallOptions, 
 }
 
 type historicalToolCall struct {
+	reemitted        bool
 	name             string
 	providerExecuted bool
 	completed        bool
@@ -159,8 +161,13 @@ func unresolvedProviderCalls(prompt []provider.Message) (map[string]string, *req
 		for _, part := range message.Content {
 			switch part.Type {
 			case provider.ContentPartTypeToolCall:
-				if _, exists := calls[part.ToolCallID]; exists {
-					return nil, invalidMappingFailure()
+				if previous, exists := calls[part.ToolCallID]; exists {
+					if previous.completed || previous.reemitted || !previous.providerExecuted || !part.ProviderExecuted || previous.name != part.ToolName {
+						return nil, invalidMappingFailure()
+					}
+					previous.reemitted = true
+					calls[part.ToolCallID] = previous
+					continue
 				}
 				if _, exists := orphanResults[part.ToolCallID]; exists {
 					return nil, invalidMappingFailure()
@@ -188,7 +195,7 @@ func unresolvedProviderCalls(prompt []provider.Message) (map[string]string, *req
 	return pending, nil
 }
 
-func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *requestFailure) {
+func mapWireMessage(message wireMessage) (provider.Message, *requestFailure) {
 	messageOptions, failure := mapWireProviderOptions(message.ProviderOptions)
 	if failure != nil {
 		return provider.Message{}, failure
@@ -210,7 +217,7 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 		}
 		parts := make([]provider.ContentPart, 0, len(wireParts))
 		for _, wirePart := range wireParts {
-			part, failure := mapWirePart(wirePart, message.Role, toolsEnabled)
+			part, failure := mapWirePart(wirePart, message.Role)
 			if failure != nil {
 				return provider.Message{}, failure
 			}
@@ -232,7 +239,7 @@ func mapWireMessage(message wireMessage, toolsEnabled bool) (provider.Message, *
 	}
 }
 
-func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider.ContentPart, *requestFailure) {
+func mapWirePart(part wirePart, role provider.Role) (provider.ContentPart, *requestFailure) {
 	// Options are mapped inside the branch that keeps them, so a part type this
 	// runtime does not support reports its own family whatever options it carries.
 	switch part.Type {
@@ -276,11 +283,17 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		mapped.ProviderOptions = options
 		return mapped, nil
 	case provider.ContentPartTypeCustom:
-		return provider.ContentPart{}, unsupportedMappingFailure(capabilityCustomContent)
-	case provider.ContentPartTypeToolCall:
-		if !toolsEnabled {
-			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
+		if role != provider.RoleAssistant || !validCustomKind(part.Kind) {
+			return provider.ContentPart{}, invalidMappingFailure()
 		}
+		options, failure := mapWireProviderOptions(part.ProviderOptions)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		custom := provider.CustomPart(part.Kind)
+		custom.ProviderOptions = options
+		return custom, nil
+	case provider.ContentPartTypeToolCall:
 		if role != provider.RoleAssistant {
 			return provider.ContentPart{}, invalidMappingFailure()
 		}
@@ -292,8 +305,8 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		call.ProviderExecuted, call.ProviderOptions = part.ProviderExecuted, options
 		return call, nil
 	case provider.ContentPartTypeToolResult:
-		if !toolsEnabled || role != provider.RoleTool && role != provider.RoleAssistant {
-			return provider.ContentPart{}, unsupportedMappingFailure(capabilityTools)
+		if role != provider.RoleTool && role != provider.RoleAssistant {
+			return provider.ContentPart{}, rejectedMappingFailure(capabilityTools)
 		}
 		output, failure := mapToolOutput(part.Output)
 		if failure != nil {
@@ -306,8 +319,19 @@ func mapWirePart(part wirePart, role provider.Role, toolsEnabled bool) (provider
 		result := provider.ToolResultPart(part.ToolCallID, part.ToolName, output)
 		result.ProviderOptions = options
 		return result, nil
-	case provider.ContentPartTypeToolApprovalResponse, provider.ContentPartTypeToolApprovalRequest:
-		return provider.ContentPart{}, unsupportedMappingFailure(capabilityToolApprovals)
+	case provider.ContentPartTypeToolApprovalResponse:
+		if role != provider.RoleTool || part.Approved == nil || part.ApprovalID == "" {
+			return provider.ContentPart{}, invalidMappingFailure()
+		}
+		options, failure := mapWireProviderOptions(part.ProviderOptions)
+		if failure != nil {
+			return provider.ContentPart{}, failure
+		}
+		result := provider.ToolApprovalResponsePart(part.ApprovalID, *part.Approved, part.Reason)
+		result.ProviderOptions = options
+		return result, nil
+	case provider.ContentPartTypeToolApprovalRequest:
+		return provider.ContentPart{}, rejectedMappingFailure(capabilityToolApprovals)
 	default:
 		return provider.ContentPart{}, invalidMappingFailure()
 	}
@@ -345,6 +369,11 @@ var protectedCallHeaders = map[string]struct{}{
 	"api-key":             {},
 	"openai-api-key":      {},
 	"anthropic-api-key":   {},
+	"openai-organization": {},
+	"openai-project":      {},
+	"x-scope-orgid":       {},
+	"x-cloud-org-id":      {},
+	"x-access-policy-id":  {},
 }
 
 // mapWireHeaders copies body-carried call headers, preserving key case because
@@ -357,7 +386,7 @@ func mapWireHeaders(headers map[string]string) (map[string]string, *requestFailu
 	seen := make(map[string]struct{}, len(headers))
 	for name, value := range headers {
 		if IsProtectedCallHeader(name) {
-			return nil, unsupportedMappingFailure(capabilityProtectedCallHeader)
+			return nil, rejectedMappingFailure(policyProtectedCallHeader)
 		}
 		// HTTP header names are case-insensitive, so two spellings of one name
 		// would reach a backend in map order, with a different value each run.
@@ -393,7 +422,7 @@ func mapWireProviderOptions(options map[string]json.RawMessage) (provider.Provid
 	// exactly, because provider-option namespaces are case-significant.
 	for _, namespace := range []string{ReservedProviderOptionNamespace, "gateway", "grafana-ai-sdk"} {
 		if _, reserved := options[namespace]; reserved {
-			return nil, unsupportedMappingFailure(capabilityReservedProviderOptions)
+			return nil, rejectedMappingFailure(policyReservedProviderOptions)
 		}
 	}
 	mapped := make(provider.ProviderOptions, len(options))
@@ -443,6 +472,8 @@ func mapWireReasoning(value wireReasoning) (provider.ReasoningEffort, error) {
 		return provider.ReasoningHigh, nil
 	case wireReasoningXHigh:
 		return provider.ReasoningXHigh, nil
+	case wireReasoningMax:
+		return provider.ReasoningMax, nil
 	default:
 		return provider.ReasoningProviderDefault, fmt.Errorf("unknown reasoning value")
 	}

@@ -19,6 +19,7 @@ anthropic-code-execution-file-upload.1: code-execution-file-upload
 anthropic-combined-context-editing.1: combined-context-editing
 anthropic-compaction.1: compaction
 anthropic-fallback: fallback
+anthropic-fallback-mid-output: fallback-mid-output
 anthropic-json-other-tool.1: json-other-tool
 anthropic-json-output-format.1: json-output-format
 anthropic-json-tool.1: json-tool-1
@@ -38,7 +39,7 @@ anthropic-web-fetch-tool-20260209.1: web-fetch-tool-20260209
 anthropic-web-search-tool.1: web-search-tool
 
 # Non-streaming fixtures not yet imported:
-evaluation: null
+decision: null
 anthropic-advisor-20260301.1: null
 anthropic-advisor-stop-reasons.json: null
 anthropic-claude-opus-5-reasoning-high.1: null

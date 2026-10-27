@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { createGateway } from "@ai-sdk/gateway";
 import { fetchConfiguredModels, type ConfiguredRoute } from "../../examples/configured-discovery";
 
-const baseURL = "https://configured.invalid/api/v1/aisdk";
+const baseURL = "https://configured.invalid/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1";
 const headers = { "x-access-token": "dummy-access-token" };
 
 function fixture(gateway: unknown = configuredRoute()) {

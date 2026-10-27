@@ -60,7 +60,7 @@ func TestCallOptions_WireRoundTrip(t *testing.T) {
 		PresencePenalty:  floatPtr(0.1),
 		FrequencyPenalty: floatPtr(0.2),
 		StopSequences:    []string{"END", "\n\n"},
-		ResponseFormat:   &ResponseFormat{Type: ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`), Name: "result", Description: "the answer"},
+		ResponseFormat:   &ResponseFormat{Type: ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`), Name: new("result"), Description: "the answer"},
 		Seed:             intPtr(42),
 		Reasoning:        ReasoningHigh,
 		IncludeRawChunks: true,

@@ -25,6 +25,50 @@ function stateMessage(state: string, dynamic: boolean, fields: Record<string, un
 }
 
 describe("pinned UI tool state persistence", () => {
+  it.each([false, true])("drops unresolved approvals superseded by a later user turn (dynamic: %s)", async dynamic => {
+    const initialMessage = { id: "m", role: "assistant", parts: [{ type: "text", text: "pending" }, { type: dynamic ? "dynamic-tool" : "tool-lookup", ...(dynamic ? { toolName: "lookup" } : {}), toolCallId: "c", state: "approval-requested", input: {}, approval: { id: "a" } }] } as UIMessage;
+    const messages: UIMessage[] = [initialMessage, { id: "u", role: "user", parts: [{ type: "text", text: "new turn" }] }];
+    const response = await fetchScenario("ui-tool-state-persistence", { headers: { "content-type": "application/json" }, body: JSON.stringify({ messages }) });
+    expect(response.status).toBe(200);
+    const go = await response.json();
+    expect(canonicalModel(go.modelMessages)).toEqual(canonicalModel(await convertToModelMessages(messages)));
+    expect(go.modelMessages[0].content).toEqual([{ type: "text", text: "pending" }]);
+  });
+  it.each([false, true])("replaces tool metadata on output errors (dynamic: %s)", async dynamic => {
+    const initialMessage = { id: "m", role: "assistant", parts: [{ type: dynamic ? "dynamic-tool" : "tool-lookup", ...(dynamic ? { toolName: "lookup" } : {}), toolCallId: "c", state: "input-available", input: {}, toolMetadata: { phase: "input" } }] } as UIMessage;
+    const updates: UIMessageChunk[] = [{ type: "tool-output-error", toolCallId: "c", errorText: "failed", toolMetadata: {} }];
+    const response = await fetchScenario("ui-tool-state-chunks", { headers: { "content-type": "application/json" }, body: JSON.stringify({ chunks: updates }) });
+    const expected = await readToolStateStream(response, json(initialMessage));
+    expect(expected.chunks).toEqual(updates);
+    const go = await persist({ initialMessage, chunks: updates });
+    expect(canonicalUI(go.snapshots)).toEqual(canonicalUI(expected.snapshots));
+    expect(go.uiMessages[0].parts[0].toolMetadata).toEqual({});
+  });
+
+  it.each([false, true])("resumes last-step persisted raw tool input (dynamic: %s)", async dynamic => {
+    const initialMessage = { id: "m", role: "assistant", parts: [
+      { type: "tool-lookup", toolCallId: "old", state: "input-streaming", input: {}, rawInput: "{" },
+      { type: "step-start" },
+      { type: dynamic ? "dynamic-tool" : "tool-lookup", ...(dynamic ? { toolName: "lookup" } : {}), toolCallId: "c", state: "input-streaming", input: { q: "par" }, rawInput: '{"q":"par', title: "", toolMetadata: {} },
+    ] } as UIMessage;
+    const updates: UIMessageChunk[] = [
+      { type: "tool-input-delta", toolCallId: "c", inputTextDelta: 'tial"}' },
+      { type: "tool-input-available", toolCallId: "c", toolName: "lookup", input: { q: "partial" }, dynamic },
+      { type: "tool-output-available", toolCallId: "c", output: "ok", toolMetadata: { phase: "result" } },
+    ];
+    const expected: UIMessage[] = [];
+    for await (const message of readUIMessageStream({ message: json(initialMessage), stream: simulateReadableStream({ chunks: json(updates) }), terminateOnError: true })) expected.push(json(message));
+    const go = await persist({ initialMessage, chunks: updates });
+    expect(canonicalUI(go.snapshots)).toEqual(canonicalUI(expected));
+    expect(go.snapshots[0].parts[2]).toMatchObject({ input: { q: "partial" }, rawInput: '{"q":"partial"}' });
+    expect(go.uiMessages[0].parts[2]).not.toHaveProperty("rawInput");
+    expect(go.uiMessages[0].parts[2].toolMetadata).toEqual({ phase: "result" });
+    const response = await fetchScenario("ui-tool-state-chunks", { headers: { "content-type": "application/json" }, body: JSON.stringify({ chunks: updates }) });
+    const parsed = await readToolStateStream(response, json(initialMessage));
+    expect(parsed.chunks).toEqual(updates);
+    expect(canonicalUI(parsed.snapshots)).toEqual(canonicalUI(expected));
+  });
+
   it("matches schema-parsed chunks, every reader write point and persisted model conversion", async () => {
     const reference: UIMessage[] = [];
     for await (const message of readUIMessageStream({ stream: simulateReadableStream({ chunks: json(chunks) }), terminateOnError: true })) reference.push(json(message));
@@ -205,17 +249,17 @@ describe("pinned UI tool state persistence", () => {
     for await (const message of readUIMessageStream({ message: initialMessage ? json(initialMessage) : undefined, stream: simulateReadableStream({ chunks: updates }), terminateOnError: true })) expected.push(json(message));
     const go = await persist({ initialMessage, chunks: updates });
     expect(canonicalUI(go.snapshots)).toEqual(canonicalUI(expected));
-    expect(go.uiMessages[0].parts[0].rawInput).toBe("legacy");
+    expect(go.uiMessages[0].parts[0][seeded ? "rawInput" : "input"]).toBe("legacy");
     expect(canonicalModel(go.modelMessages)).toEqual(canonicalModel(await convertToModelMessages([expected.at(-1)!])));
   });
 
-  it("normalizes reader-retained dynamic raw input on an isolated Agent history", async () => {
+  it("clears dynamic raw input on output before isolated Agent validation", async () => {
     const initialMessage = stateMessage("output-error", true, { input: { q: "old" } });
     const updates: UIMessageChunk[] = [{ type: "tool-output-available", toolCallId: "c", output: "final" }];
     const assembled = await persist({ initialMessage, chunks: updates });
     const messages = assembled.uiMessages as UIMessage[];
     const original = json(messages);
-    expect(assembled.uiMessages[0].parts[0].rawInput).toBe("legacy");
+    expect(assembled.uiMessages[0].parts[0]).not.toHaveProperty("rawInput");
     const normalized = await validateUIMessages({ messages });
     const model = referenceToolStateModel();
     const stream = await createAgentUIStream({ agent: new ToolLoopAgent({ model, tools: toolStateReferenceTools }), uiMessages: messages });
@@ -378,4 +422,23 @@ describe("pinned UI tool state persistence", () => {
     }
     expect(message).toEqual(original);
   });
+});
+
+describe("provider approval resume boundary",()=>{
+ it.each([true,false])("normalizes application bookkeeping on copied history, approved=%s",async approved=>{
+  const initial=stateMessage(approved?"approval-responded":"output-denied",true,{providerExecuted:true});
+  const original=json(initial);
+  const response=await fetchScenario("ui-tool-state-agent",{headers:{"content-type":"application/json"},body:JSON.stringify({messages:[initial]})});
+  const parsed=await readToolStateStream(response,json(initial));
+  const finish=parsed.chunks.find(chunk=>chunk.type==="finish");
+  expect(finish?.type).toBe("finish");
+  const metadata=(finish as any).messageMetadata;
+  expect(metadata.providerCalls).toBe(1);
+  const parts=metadata.modelMessages.flatMap((message:any)=>Array.isArray(message.content)?message.content:[]);
+  const decision=parts.find((part:any)=>part.type==="tool-approval-response");
+  expect(decision).toMatchObject({approvalId:"a",approved});
+  for(const field of ["providerExecuted","toolCallId","toolName","signature","isAutomatic"])expect(decision).not.toHaveProperty(field);
+  expect(parts.some((part:any)=>part.type==="tool-approval-request")).toBe(false);
+  expect(initial).toEqual(original);
+ });
 });

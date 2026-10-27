@@ -93,8 +93,12 @@ to store the `UIMessage` history needed by your frontend.
 Built-in tools are requested through provider tools keyed by their OpenAI ID,
 including `openai.web_search`, `openai.code_interpreter`, `openai.file_search`,
 `openai.mcp`, `openai.computer`, and `openai.programmatic_tool_calling`.
-Hosted-tool calls and results are surfaced as provider-executed parts, and
-web-search citations become source parts.
+Hosted-tool calls and results are surfaced as provider-executed parts.
+Web-search and file-search results become source parts. URL, file and
+container-file annotations attach to the text they support as citations. URL and
+file annotations become source parts only when the response contains no
+corresponding search results; container-file and file-path annotations always
+become source parts.
 
 `openai.computer` is client-executed. Its tool-call input contains ordered
 computer actions and pending safety checks. Return a JSON tool result containing

@@ -203,7 +203,7 @@ type ResponseFormatConfig struct {
 	OutputMode  string   `yaml:"outputMode,omitempty"`
 	Schema      any      `yaml:"schema"`
 	Choices     []string `yaml:"choices,omitempty"`
-	Name        string   `yaml:"name,omitempty"`
+	Name        *string  `yaml:"name,omitempty"`
 	Description string   `yaml:"description,omitempty"`
 }
 
@@ -303,8 +303,8 @@ func (cfg *Config) BuildOutput() (aisdk.Output, error) {
 		return nil, nil
 	}
 	var opts []output.ObjectOption
-	if cfg.ResponseFormat.Name != "" {
-		opts = append(opts, output.WithName(cfg.ResponseFormat.Name))
+	if cfg.ResponseFormat.Name != nil {
+		opts = append(opts, output.WithName(*cfg.ResponseFormat.Name))
 	}
 	if cfg.ResponseFormat.Description != "" {
 		opts = append(opts, output.WithDescription(cfg.ResponseFormat.Description))
@@ -321,7 +321,11 @@ func (cfg *Config) BuildOutput() (aisdk.Output, error) {
 		if err != nil {
 			return nil, err
 		}
-		return output.Array[any](s, opts...)
+		arrayOpts := make([]output.ArrayOption, len(opts))
+		for i, opt := range opts {
+			arrayOpts[i] = opt
+		}
+		return output.Array[any](s, arrayOpts...)
 	case "choice":
 		return output.ChoiceWithOptions(cfg.ResponseFormat.Choices, opts...)
 	case "json":
@@ -1164,6 +1168,11 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	model, err := factory(ts.BaseURL, cfg)
 	require.NoError(t, err, "creating provider")
 
+	var recorder *recordingModel
+	if cfg.Operation != OperationGenerate && providerPartsProviders[tc.Provider] {
+		recorder = newRecordingModel(model)
+		model = recorder
+	}
 	result, err := ExecuteScenario(t.Context(), cfg, model)
 	require.NoError(t, err, "executing scenario")
 	if cfg.Operation == OperationGenerate {
@@ -1217,6 +1226,10 @@ func RunTestCaseWithServer(t *testing.T, tc TestCase, factory ProviderFactory, s
 	expectedObjectPath := filepath.Join(tc.Dir, "expected-object.json")
 	if _, err := os.Stat(expectedObjectPath); err == nil {
 		compareOutputObject(t, expectedObjectPath, result.Object, actual, cfg.AssertOutputValue)
+	}
+
+	if recorder != nil {
+		assertProviderParts(t, tc, recorder)
 	}
 }
 

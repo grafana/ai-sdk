@@ -2,8 +2,10 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/responses"
 )
@@ -12,6 +14,7 @@ func consumeStream(ctx context.Context, items <-chan responseStreamItem, buffere
 	parts := make(chan provider.StreamPart, 64)
 	go func() {
 		defer close(parts)
+		defer streamrecover.Recover(func() { parts <- streamrecover.Part() })
 		consumeStreamParts(items, buffered, parts, warnings, br, requestBody, response, generateID, providerName)
 	}()
 
@@ -40,7 +43,7 @@ func consumeStreamParts(items <-chan responseStreamItem, buffered []responseStre
 	adapter.startEmitted = true
 	ch <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: warnings}
 
-	handle := func(item responseStreamItem) {
+	handle := func(item responseStreamItem) bool {
 		if item.hasRaw {
 			ch <- provider.StreamPart{Type: provider.PartRaw, RawValue: item.rawValue}
 		}
@@ -48,7 +51,7 @@ func consumeStreamParts(items <-chan responseStreamItem, buffered []responseStre
 			retryable := false
 			adapter.recordStreamError("")
 			ch <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: item.err.Error(), Cause: item.err, IsRetryable: &retryable})}
-			return
+			return true
 		}
 		if item.err != nil {
 			wrapped := wrapStreamTransportError(item.err, requestBody, response)
@@ -58,17 +61,22 @@ func consumeStreamParts(items <-chan responseStreamItem, buffered []responseStre
 			}
 			adapter.recordStreamError("error")
 			ch <- provider.StreamPart{Type: provider.PartError, APICallError: apiErr}
-			return
+			return !errors.Is(item.err, streamrecover.ErrPanic)
 		}
 		if item.event != nil {
 			adapter.handleEvent(*item.event, ch)
 		}
+		return true
 	}
 	for _, item := range buffered {
-		handle(item)
+		if !handle(item) {
+			return
+		}
 	}
 	for item := range items {
-		handle(item)
+		if !handle(item) {
+			return
+		}
 	}
 	adapter.flush(ch)
 }

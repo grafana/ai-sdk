@@ -16,7 +16,7 @@ blocks. This capability codifies the upstream `convertToAnthropicPrompt` +
 
 ### Requirement: Consecutive user and tool messages merge into one Anthropic user block
 
-The Anthropic provider SHALL group consecutive `provider.Message` entries with `Role == provider.RoleUser` or `Role == provider.RoleTool` into a single Anthropic API user message before serialization. The merged user message's `content` array SHALL contain the concatenation of every part from every source message in the run, in source order. A `RoleTool` message in the middle of a sequence SHALL NOT open a new Anthropic message; it SHALL append into the current user block (or open one if none is active). This mirrors upstream `groupIntoBlocks` (`packages/anthropic/src/convert-to-anthropic-prompt.ts:1129`) exactly.
+Consecutive `provider.Message` entries with `RoleUser` or `RoleTool` SHALL serialize as one Anthropic user message, concatenating every source part in order. A tool message SHALL append to the active user block or open one if needed, not start a new block mid-run. This SHALL match upstream `groupIntoBlocks` (`packages/anthropic/src/convert-to-anthropic-prompt.ts:1129`).
 
 #### Scenario: Adjacent RoleUser then RoleTool merge into one user message
 - **WHEN** the prompt is `[RoleUser([text("hi")]), RoleTool([tool_result(call_1, "out")])]`
@@ -36,7 +36,7 @@ The Anthropic provider SHALL group consecutive `provider.Message` entries with `
 
 ### Requirement: User-role messages accept tool_result content parts
 
-The Anthropic provider SHALL convert `provider.ContentPart` entries of `Type == ContentPartTypeToolResult` to Anthropic API `tool_result` (or `mcp_tool_result`) blocks when they appear inside a `RoleUser` provider message. The resulting block SHALL be identical to what the same `ContentPart` produces when it appears inside a `RoleTool` provider message. Tool-result parts SHALL NOT be silently dropped from `RoleUser` messages.
+The Anthropic provider SHALL convert `provider.ContentPart` entries of `Type == ContentPartTypeToolResult` to Anthropic API `tool_result` blocks when they appear inside a `RoleUser` provider message. The resulting block SHALL be identical to what the same `ContentPart` produces when it appears inside a `RoleTool` provider message. Tool-result parts SHALL NOT be silently dropped from `RoleUser` messages.
 
 #### Scenario: Mixed tool_result and text in one user message preserves both blocks in order
 - **WHEN** a single `RoleUser` provider message has `Content == [tool_result(call_1, "out"), text("then text")]`
@@ -46,13 +46,13 @@ The Anthropic provider SHALL convert `provider.ContentPart` entries of `Type == 
 - **WHEN** the prompt is `[RoleUser([tool_result(call_1, "out")])]` and separately `[RoleTool([tool_result(call_1, "out")])]`
 - **THEN** the resulting Anthropic API request `Messages` SHALL be byte-identical between the two cases
 
-#### Scenario: MCP tool_result inside a user message produces an mcp_tool_result block
+#### Scenario: Tool_result matching a hosted-MCP tool use inside a user message stays a tool_result
 - **WHEN** the prompt contains an assistant `mcp_tool_use` for `toolCallID = mcp-1` followed by a `RoleUser` with content `[tool_result(mcp-1, ...)]`
-- **THEN** the resulting Anthropic user message SHALL contain `OfMCPToolResult{ToolUseID: "mcp-1", ...}` (not a plain `OfToolResult`)
+- **THEN** the resulting Anthropic user message SHALL contain `OfToolResult{ToolUseID: "mcp-1", ...}` (not an `OfMCPToolResult`), matching upstream, whose user block never emits `mcp_tool_result`
 
 ### Requirement: Tool approval responses inside user-role messages are skipped silently
 
-The Anthropic provider SHALL skip `provider.ContentPart` entries of `Type == ContentPartTypeToolApprovalResponse` when they appear inside a `RoleUser` provider message. No Anthropic content block SHALL be emitted for them. No warning SHALL be added (mirrors upstream's `if (part.type === 'tool-approval-response') { continue; }` skip in the user-block handler). Approval responses inside `RoleTool` messages keep their existing warning-and-drop behavior; this requirement only governs the `RoleUser` case.
+The Anthropic provider SHALL skip `ContentPartTypeToolApprovalResponse` parts in `RoleUser` messages without emitting content blocks or warnings, matching upstream's user-block skip. Approval responses in `RoleTool` messages SHALL retain their warning-and-drop behavior; only the `RoleUser` case is changed.
 
 #### Scenario: Approval response inside a user message with text yields only the text block
 - **WHEN** a `RoleUser` provider message has `Content == [tool_approval_response("a1", true), text("hello")]`
@@ -60,7 +60,7 @@ The Anthropic provider SHALL skip `provider.ContentPart` entries of `Type == Con
 
 ### Requirement: Cache-control cascade is keyed off source provider message, not merged Anthropic block
 
-When `provider.Message` entries are merged into a single Anthropic user (or assistant) block, the Anthropic provider SHALL apply each source message's `ProviderOptions["anthropic"].cache_control` cascade to the *last part of that source message's `Content` slice* — not to the last part of the merged Anthropic block. Each source message participates in the breakpoint budget independently. This preserves the upstream cascade semantics (`packages/anthropic/src/convert-to-anthropic-prompt.ts:130-145, 326-338`).
+For merged Anthropic user or assistant blocks, each source `provider.Message`'s `ProviderOptions["anthropic"].cache_control` SHALL cascade only to the last part of that source message's `Content`, not the merged block's last part. Each source SHALL independently consume the breakpoint budget, matching upstream (`packages/anthropic/src/convert-to-anthropic-prompt.ts:130-145, 326-338`).
 
 #### Scenario: Per-source-message message-level cascade survives the merge
 - **WHEN** the prompt is `[RoleTool([tool_result(call_1, "r1")] with msgOpts cache_control=ephemeral), RoleUser([text("hello")] with no opts)]`
@@ -76,15 +76,39 @@ When `provider.Message` entries are merged into a single Anthropic user (or assi
 
 ### Requirement: Consecutive assistant messages merge into one Anthropic assistant block
 
-The Anthropic provider SHALL group consecutive `provider.Message` entries with `Role == provider.RoleAssistant` into a single Anthropic API assistant message. The merged assistant message's `content` array SHALL contain the concatenation of every part from every source message in the run, in source order. The cache-control cascade and ProviderExecuted-vs-MCP-vs-standard tool-call dispatch in `convertAssistantContent` SHALL be applied per source message, not per merged block.
+The Anthropic provider SHALL group consecutive `provider.Message` entries with `Role == provider.RoleAssistant` into a single Anthropic API assistant message. Its `content` SHALL concatenate every source message's converted blocks in order, subject to client tool-use normalization. The cache-control cascade and tool-call dispatch in `convertAssistantContent` SHALL apply per source message. Hosted-MCP tool-use tracking SHALL span the merged block only, as specified by mcp-server-tools.
 
 #### Scenario: Two consecutive assistant messages merge into one
 - **WHEN** the prompt is `[RoleAssistant([text("hi")]), RoleAssistant([tool_call("c1", "search", {})])]`
 - **THEN** the resulting request SHALL contain exactly one `BetaMessageParam` with `Role: "assistant"` whose content is `[OfText{Text: "hi"}, OfToolUse{ID: "c1", Name: "search", ...}]` in that order
 
+#### Scenario: Hosted-MCP result in a later source message of the same block
+- **WHEN** the prompt is `[RoleAssistant([mcp_tool_call(mcp-1)]), RoleAssistant([tool_result(mcp-1, json)])]`
+- **THEN** the merged assistant message SHALL contain `OfMCPToolUse{ID: "mcp-1"}` followed by `OfMCPToolResult{ToolUseID: "mcp-1"}`
+
+### Requirement: Client tool-use blocks move to the end of each reasoning segment
+
+For direct and Vertex generate and stream requests, the provider SHALL stably move client `tool_use` blocks after the other blocks of each merged assistant segment, matching upstream `moveToolUseBlocksToEnd`. `thinking`, `redacted_thinking` and `fallback` blocks SHALL bound segments and keep their positions. Server and MCP blocks SHALL stay in the non-client partition. Blocks SHALL keep cache control and signatures; the prompt SHALL NOT be mutated.
+
+#### Scenario: Calls move after text within each fallback-bounded segment
+- **WHEN** a grouped assistant block converts to `[tool_use(a), text(x), fallback, tool_use(b), text(y)]`
+- **THEN** the request content SHALL be `[text(x), tool_use(a), fallback, text(y), tool_use(b)]`
+
+#### Scenario: Normalization spans consecutive assistant messages
+- **WHEN** the prompt is `[RoleAssistant([tool_call(a), text(x)]), RoleAssistant([tool_call(b), text(y)])]`
+- **THEN** the merged assistant content SHALL be `[text(x), text(y), tool_use(a), tool_use(b)]`
+
+#### Scenario: Calls do not cross thinking boundaries
+- **WHEN** the assistant content is `[thinking(sig-1), tool_call(a), thinking(sig-2), tool_call(b)]`
+- **THEN** the request content SHALL keep that order and both signatures
+
+#### Scenario: Server and MCP blocks stay before client calls
+- **WHEN** a segment contains `[tool_use(a), mcp_tool_use(m)]` or `[text(x), tool_use(a), server_tool_use(s), web_search_tool_result(s)]`
+- **THEN** the client `tool_use(a)` SHALL move after the MCP or server blocks, which keep their relative order
+
 ### Requirement: Final assistant prefill text is trimmed
 
-The Anthropic provider SHALL trim ECMAScript-defined leading and trailing whitespace from an ordinary assistant text part only when that part is the final content part of the final source assistant message in the final grouped prompt block. Whitespace in every earlier assistant text part SHALL be preserved exactly. If the final assistant content part is not ordinary text, preceding text SHALL remain unchanged. This mirrors upstream `convertToAnthropicPrompt`, which calls JavaScript `String.prototype.trim()` on the final prefilled assistant response because Anthropic rejects trailing whitespace in prefills. Text carrying `ProviderOptions["anthropic"].type == "compaction"` is governed by the compaction requirement below instead.
+The Anthropic provider SHALL apply ECMAScript `String.prototype.trim()` only to ordinary text that is the final content part of the final source assistant message in the final grouped prompt block. All earlier text SHALL retain its whitespace, including text before a final non-text part. Text with `ProviderOptions["anthropic"].type == "compaction"` SHALL follow the separate compaction contract instead.
 
 #### Scenario: Final assistant text trims spaces and newlines
 - **WHEN** the prompt ends with `RoleAssistant([text("Final prefill  \n")])`
@@ -106,7 +130,7 @@ The Anthropic provider SHALL trim ECMAScript-defined leading and trailing whites
 
 ### Requirement: Assistant compaction text round-trips without trimming
 
-A nonempty assistant text part with `ProviderOptions["anthropic"].type == "compaction"` SHALL be serialized as an Anthropic `compaction` content block rather than a `text` block. Its content SHALL remain byte-identical even when it is the final content part of the final assistant block. An empty compaction part SHALL be omitted; if its assistant message has no other content, that message SHALL also be omitted. Part-level and message-level cache control SHALL be resolved by the same rules as ordinary assistant text.
+Assistant text with `ProviderOptions["anthropic"].type == "compaction"` SHALL serialize as `compaction`, not `text`, preserving bytes even in the final assistant block. Empty compaction parts SHALL be omitted, and assistant messages left without content SHALL also be omitted. Part-level and message-level cache control SHALL follow ordinary assistant-text rules.
 
 #### Scenario: Final compaction content preserves whitespace and block type
 - **WHEN** the prompt ends with an assistant text part containing `"Compaction summary  \n"` and Anthropic provider option `type == "compaction"`
@@ -131,20 +155,36 @@ A nonempty assistant text part with `ProviderOptions["anthropic"].type == "compa
 
 ### Requirement: Single shared helper builds Anthropic tool_result blocks
 
-The Anthropic provider SHALL share a single internal helper that converts a `provider.ContentPart` of type `ContentPartTypeToolResult` into the corresponding Anthropic API content block (`OfToolResult` for standard tools, `OfMCPToolResult` when the tool-call ID was emitted by a prior MCP tool-use). Both `convertUserContent` (for tool-result parts inside `RoleUser` messages) and `convertToolContent` (for tool-result parts inside `RoleTool` messages) SHALL call this helper. The helper SHALL apply the same MCP-vs-standard branching, the same `serializeToolOutput` path, and the same `serializeMCPToolResultContent` path that today's `convertToolContent` uses.
+`convertUserContent` and `convertToolContent` SHALL share one helper for `ContentPartTypeToolResult`, producing `OfToolResult` through `serializeToolOutput` for both `RoleUser` and `RoleTool` parts, with the tool-result cache-control cascade from anthropic-prompt-caching. The helper SHALL NOT produce `OfMCPToolResult`.
 
 #### Scenario: Same tool_result produces same block from RoleUser and RoleTool inputs
 - **WHEN** an identical `tool_result(call_1, output)` part is converted via `convertUserContent` and via `convertToolContent`
 - **THEN** the resulting Anthropic API content block SHALL be byte-identical (same `ToolUseID`, same `Content`, same `IsError`, same `CacheControl`)
 
-#### Scenario: MCP tool_result detection works regardless of source role
+#### Scenario: Hosted-MCP IDs do not change user-block routing
 - **WHEN** the prompt contains a prior assistant `mcp_tool_use(call_1)` and a tool_result for `call_1` appears inside either a `RoleUser` or a `RoleTool` provider message
-- **THEN** in both cases the resulting Anthropic block SHALL be `OfMCPToolResult` (not `OfToolResult`)
+- **THEN** in both cases the resulting Anthropic block SHALL be `OfToolResult` (not `OfMCPToolResult`)
+
+### Requirement: Tool-result file entries
+
+On the `tool_result` path, the Anthropic provider SHALL convert a URL file entry to an image block for `image/*` and a URL document block otherwise. Inline data SHALL become a base64 image for `image/*` or a base64 PDF document for `application/pdf`, adding the `pdfs-2024-09-25` beta. Every other file entry SHALL be omitted with the `other` warning that upstream `convert-to-anthropic-prompt.ts` emits.
+
+#### Scenario: Unsupported inline media type
+- **WHEN** a tool result's content contains a file entry with inline data and media type `application/zip`
+- **THEN** the entry SHALL be omitted and the result SHALL carry the warning `unsupported tool content part type: file with media type: application/zip`
+
+#### Scenario: Reference or text data
+- **WHEN** a tool result's content contains a file entry with reference data or inline text data
+- **THEN** the entry SHALL be omitted and the result SHALL carry the warning `unsupported tool content part type: file with data type: reference` or `... with data type: text`
+
+#### Scenario: Non-image URL
+- **WHEN** a tool result's content contains a `text/plain` file entry with URL data
+- **THEN** the native tool_result content SHALL contain a document block with a `url` source and no warning
 
 ### Requirement: Wire-format and public API are unchanged
 
 The `provider.LanguageModel` interface, the `BuildParams` signature, and the SSE chunk types emitted by the orchestration layer SHALL remain unchanged. Apart from the prompt-conversion behaviors specified above, Anthropic request serialization SHALL remain byte-identical for unaffected prompts.
 
 #### Scenario: Unaffected prompts produce identical wire requests
-- **WHEN** a prompt does not exercise grouping, tool-result-in-user-message conversion, final assistant prefill whitespace normalization, or assistant compaction serialization
+- **WHEN** a prompt does not exercise grouping, tool-result-in-user-message conversion, final assistant prefill whitespace normalization, assistant compaction serialization, or client tool-use normalization
 - **THEN** the resulting Anthropic API request body SHALL be byte-identical to the pre-change output for the same input

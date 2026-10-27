@@ -7,14 +7,14 @@ import { parse } from "yaml";
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
-test("gateway CI blocks the required conformance check without gating publication", () => {
+test("gateway CI blocks the required conformance check without gating the plugin package", () => {
   const workflow = parse(readFileSync(resolve(repository, ".github/workflows/ci.yml"), "utf8"));
   const job = workflow.jobs["gateway-conformance-test"];
   assert.equal(job.name, "Gateway conformance");
   assert.equal(job["continue-on-error"], undefined);
   assert.equal(job.needs, undefined);
   const mise = job.steps.find((step: { uses?: string }) => step.uses?.startsWith("jdx/mise-action@"));
-  assert.equal(mise?.with?.cache, false, "gateway CI must not restore or save runtime caches");
+  assert.equal(mise?.with?.cache, "${{ !startsWith(github.ref, 'refs/tags/') }}");
   assert.ok(job.steps.some((step: { run?: string }) => step.run === "mise run test-conformance-gateway"));
   assert.ok(job.steps.some((step: { uses?: string; if?: string }) => step.uses?.startsWith("actions/upload-artifact@") && step.if === "always()"));
   for (const step of job.steps) assert.equal(step["continue-on-error"], undefined);
@@ -27,10 +27,7 @@ test("gateway CI blocks the required conformance check without gating publicatio
   assert.match(gate?.run ?? "", /test "\$DIRECT_RESULT" = success && test "\$GATEWAY_RESULT" = success/);
   assert.equal(gate?.env?.DIRECT_RESULT, "${{ needs.direct-conformance-test.result }}");
   assert.equal(gate?.env?.GATEWAY_RESULT, "${{ needs.gateway-conformance-test.result }}");
-  const publisher = workflow.jobs["publish-ai-gateway-image"];
-  assert.ok(publisher.needs.includes("direct-conformance-test"));
-  assert.ok(!publisher.needs.includes("gateway-conformance-test"));
-  assert.ok(!publisher.needs.includes("conformance-test"));
+  assert.equal(workflow.jobs["plugin-validation"].needs, undefined);
   for (const [name, other] of Object.entries(workflow.jobs) as [string, { needs?: string | string[] }][]) {
     if (name === "conformance-test") continue;
     const needs = typeof other.needs === "string" ? [other.needs] : other.needs ?? [];

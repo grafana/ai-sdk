@@ -6,89 +6,56 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"sync"
 	"sync/atomic"
-	"time"
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type telemetryStateKey struct{}
 
 type telemetryState struct {
-	authMu      sync.Mutex
-	authSource  string
-	authOutcome atomic.Uint32
+	// access is written and read on the request's handler goroutine.
+	access      gatewayauth.AccountAccess
 	observation atomic.Pointer[requestObservation]
 }
 
-// TelemetryOptions contains trusted static observation values.
+// TelemetryOptions contains the registerer for Gateway collectors. Without a
+// registerer, collectors use a private registry.
 type TelemetryOptions struct {
-	Region      string
-	Application string
+	Registerer prometheus.Registerer
 }
 
-// Telemetry owns bounded HTTP lifecycle metrics and completion logging.
+// Telemetry owns the Gateway's access and export metrics and request
+// completion logging. Route request metrics come from the plugin host.
 type Telemetry struct {
 	logger                *slog.Logger
-	registry              *prometheus.Registry
-	ready                 prometheus.Gauge
-	inFlight              *prometheus.GaugeVec
-	requests              *prometheus.CounterVec
-	duration              *prometheus.HistogramVec
-	authentication        *prometheus.CounterVec
+	registerer            prometheus.Registerer
+	accessDecisions       *prometheus.CounterVec
 	agentExportFailures   *prometheus.CounterVec
 	physicalDrops         *prometheus.CounterVec
-	staticObservation     requestObservation
 	generateCorrelationID func() string
 }
 
-// NewTelemetry constructs one service-owned Prometheus registry.
+// NewTelemetry registers the Gateway collectors exactly once.
 func NewTelemetry(logger *slog.Logger, options ...TelemetryOptions) (*Telemetry, error) {
-	return newTelemetry(logger, prometheus.NewRegistry(), options...)
-}
-
-func newTelemetry(logger *slog.Logger, registry *prometheus.Registry, options ...TelemetryOptions) (*Telemetry, error) {
 	var configured TelemetryOptions
 	if len(options) != 0 {
 		configured = options[0]
 	}
+	registerer := configured.Registerer
+	if registerer == nil {
+		registerer = prometheus.NewRegistry()
+	}
 	telemetry := &Telemetry{
-		logger:   logger,
-		registry: registry,
-		staticObservation: requestObservation{
-			region:      boundedObservationValue(configured.Region),
-			application: boundedObservationValue(configured.Application),
-		},
+		logger:                logger,
+		registerer:            registerer,
 		generateCorrelationID: newRequestCorrelationID,
-		ready: prometheus.NewGauge(prometheus.GaugeOpts{
+		accessDecisions: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "grafana_ai_gateway",
-			Name:      "ready",
-			Help:      "Whether the gateway is ready to receive protected requests.",
-		}),
-		inFlight: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "grafana_ai_gateway",
-			Name:      "http_requests_in_flight",
-			Help:      "Current in-flight HTTP requests.",
-		}, []string{"route", "method"}),
-		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "grafana_ai_gateway",
-			Name:      "http_requests_total",
-			Help:      "Completed HTTP requests.",
-		}, []string{"route", "method", "status"}),
-		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "grafana_ai_gateway",
-			Name:      "http_request_duration_seconds",
-			Help:      "HTTP request duration in seconds.",
-		}, []string{"route", "method", "status"}),
-		authentication: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "grafana_ai_gateway",
-			Name:      "authentication_total",
-			Help:      "Authentication attempts by source and outcome.",
-		}, []string{"source", "outcome"}),
+			Name:      "access_decisions_total",
+			Help:      "Route requests by account access decision.",
+		}, []string{"decision"}),
 		agentExportFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "grafana_ai_gateway",
 			Name:      "agento11y_export_failures_total",
@@ -100,17 +67,11 @@ func newTelemetry(logger *slog.Logger, registry *prometheus.Registry, options ..
 		}, []string{"class"}),
 	}
 	for _, collector := range []prometheus.Collector{
-		collectors.NewGoCollector(),
-		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		telemetry.ready,
-		telemetry.inFlight,
-		telemetry.requests,
-		telemetry.duration,
-		telemetry.authentication,
+		telemetry.accessDecisions,
 		telemetry.agentExportFailures,
 		telemetry.physicalDrops,
 	} {
-		if err := registry.Register(collector); err != nil {
+		if err := registerer.Register(collector); err != nil {
 			return nil, fmt.Errorf("gateway service: registering metrics: %w", err)
 		}
 	}
@@ -119,7 +80,7 @@ func newTelemetry(logger *slog.Logger, registry *prometheus.Registry, options ..
 
 func (telemetry *Telemetry) observePhysicalDrop(class physicalDropClass) {
 	switch class {
-	case physicalDropQueue, physicalDropProjection, physicalDropTransport, physicalDropShutdown, physicalDropWorker:
+	case physicalDropQueue, physicalDropProjection, physicalDropShutdown, physicalDropWorker:
 	default:
 		class = physicalDropWorker
 	}
@@ -149,76 +110,56 @@ func (telemetry *Telemetry) observeAgentExportFailure(class agentExportFailureCl
 	telemetry.logger.Warn("agent observability export failed", "class", string(class))
 }
 
-// Handler exposes the service-owned registry.
-func (telemetry *Telemetry) Handler() http.Handler {
-	return promhttp.HandlerFor(telemetry.registry, promhttp.HandlerOpts{})
-}
-
-// Registerer exposes only collector registration on the service-owned registry.
+// Registerer exposes only collector registration on the Gateway registerer.
 func (telemetry *Telemetry) Registerer() prometheus.Registerer {
-	return telemetry.registry
+	return telemetry.registerer
 }
 
-// SetReady updates the readiness collector.
-func (telemetry *Telemetry) SetReady(ready bool) {
-	if ready {
-		telemetry.ready.Set(1)
+// ObserveAccess records the closed access decision and retains the verified
+// caller's attributable values privately for request observations.
+func (telemetry *Telemetry) ObserveAccess(ctx context.Context, caller gatewayauth.Caller) {
+	access := caller.AccountAccess()
+	telemetry.accessDecisions.WithLabelValues(string(access)).Inc()
+	state, ok := ctx.Value(telemetryStateKey{}).(*telemetryState)
+	if !ok {
 		return
 	}
-	telemetry.ready.Set(0)
-}
-
-// ObserveAuthentication records the closed outcome and normalized caller without retaining token-bearing authlib state.
-func (telemetry *Telemetry) ObserveAuthentication(ctx context.Context, observation gatewayauth.Observation) {
-	source := authenticationSourceClass(observation.Source)
-	outcome := authenticationClass(observation.Outcome)
-	telemetry.authentication.WithLabelValues(source, outcome).Inc()
-	if state, ok := ctx.Value(telemetryStateKey{}).(*telemetryState); ok {
-		state.authMu.Lock()
-		state.authSource = source
-		state.authMu.Unlock()
-		state.authOutcome.Store(uint32(observation.Outcome))
-		if observation.Outcome == gatewayauth.OutcomeAuthenticated && observation.Source != gatewayauth.SourceCloudGateway && observation.Caller != nil {
-			current := observationFromContext(ctx)
-			current.callerService = boundedObservationValue(observation.Caller.Service)
-			current.namespace = boundedObservationValue(observation.Caller.Namespace)
-			state.observation.Store(&current)
-		}
+	state.access = access
+	if access != gatewayauth.Refused {
+		current := observationFromContext(ctx)
+		current.callerService = boundedObservationValue(caller.AttributedService())
+		current.namespace = boundedObservationValue(caller.Namespace)
+		state.observation.Store(&current)
 	}
 }
 
-// Middleware records exactly one bounded completion observation per request.
-func (telemetry *Telemetry) Middleware(next http.Handler) http.Handler {
+// Middleware records exactly one bounded completion observation per request,
+// labeled with the fixed route name from route.
+func (telemetry *Telemetry) Middleware(route func(*http.Request) string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		route := normalizeRequestRoute(request)
+		routeName := route(request)
 		method := normalizeMethod(request.Method)
-		observation := telemetry.staticObservation
+		var observation requestObservation
 		observation.correlationID = boundedObservationValue(telemetry.generateCorrelationID())
-		state := &telemetryState{authSource: authenticationSourceClass("")}
+		state := &telemetryState{}
 		state.observation.Store(&observation)
 		request = request.WithContext(context.WithValue(request.Context(), telemetryStateKey{}, state))
 		wrapped := &responseWriter{ResponseWriter: w}
-		started := time.Now()
-		telemetry.inFlight.WithLabelValues(route, method).Inc()
 		defer func() {
-			telemetry.inFlight.WithLabelValues(route, method).Dec()
 			status := wrapped.status
 			if status == 0 {
 				status = http.StatusOK
 			}
 			statusClass := normalizeStatus(status)
-			duration := time.Since(started).Seconds()
-			telemetry.requests.WithLabelValues(route, method, statusClass).Inc()
-			telemetry.duration.WithLabelValues(route, method, statusClass).Observe(duration)
-			state.authMu.Lock()
-			source := state.authSource
-			state.authMu.Unlock()
+			access := "not_attempted"
+			if state.access != "" {
+				access = string(state.access)
+			}
 			attrs := []any{
-				"route", route,
+				"route", routeName,
 				"method", method,
 				"status", statusClass,
-				"authentication", authenticationClass(gatewayauth.Outcome(state.authOutcome.Load())),
-				"authentication_source", source,
+				"access", access,
 			}
 			for _, attr := range observationLogAttrs(request.Context()) {
 				attrs = append(attrs, attr)
@@ -251,52 +192,6 @@ func (writer *responseWriter) Write(value []byte) (int, error) {
 
 func (writer *responseWriter) Unwrap() http.ResponseWriter {
 	return writer.ResponseWriter
-}
-
-func authenticationSourceClass(source gatewayauth.Source) string {
-	switch source {
-	case gatewayauth.SourceAccessToken:
-		return "access-token"
-	case gatewayauth.SourceCloudGateway:
-		return "cloud-gateway"
-	default:
-		return "unknown"
-	}
-}
-
-func authenticationClass(outcome gatewayauth.Outcome) string {
-	switch outcome {
-	case gatewayauth.OutcomeAuthenticated:
-		return "authenticated"
-	case gatewayauth.OutcomeFailed:
-		return "authentication_failed"
-	default:
-		return "not_attempted"
-	}
-}
-
-func normalizeRequestRoute(request *http.Request) string {
-	if request.URL.RawPath != "" {
-		return "unmatched"
-	}
-	return normalizeRoute(request.URL.Path)
-}
-
-func normalizeRoute(path string) string {
-	switch path {
-	case "/live":
-		return "live"
-	case "/ready":
-		return "ready"
-	case "/metrics":
-		return "metrics"
-	case "/api/v1/aisdk/config":
-		return "config"
-	case "/api/v1/aisdk/language-model":
-		return "language_model"
-	default:
-		return "unmatched"
-	}
 }
 
 func normalizeMethod(method string) string {

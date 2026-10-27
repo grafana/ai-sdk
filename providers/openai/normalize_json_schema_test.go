@@ -97,7 +97,7 @@ func TestBuildParams_NormalizesResponsesSchemas(t *testing.T) {
 				}
 				opts := provider.CallOptions{
 					Prompt:          []provider.Message{provider.UserText("hi")},
-					ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: "result", Schema: response},
+					ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Name: new("result"), Schema: response},
 					ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{StrictJSONSchema: &strict}),
 					Tools:           []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: input, ProviderOptions: provider.BuildProviderOptions(toolOptions)}},
 				}
@@ -126,50 +126,106 @@ func TestBuildParams_NormalizesResponsesSchemas(t *testing.T) {
 }
 
 func TestResponsesSchemaNormalization_GenerateAndStream(t *testing.T) {
-	response := json.RawMessage(`{"type":"object","propertyNames":{"type":"string"}}`)
-	input := json.RawMessage(`{"type":"object","propertyNames":{"type":"string"}}`)
-	output := json.RawMessage(`{"type":"object","propertyNames":{"type":"string"}}`)
-	strict := false
-	opts := provider.CallOptions{
-		Prompt:          []provider.Message{provider.UserText("hi")},
-		ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: response},
-		ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{StrictJSONSchema: &strict}),
-		Tools:           []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: input, ProviderOptions: provider.BuildProviderOptions(OpenAIToolOptions{OutputSchema: output})}},
-	}
-	var bodies []map[string]any
-	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		data, err := io.ReadAll(req.Body)
-		require.NoError(t, err)
-		var body map[string]any
-		require.NoError(t, json.Unmarshal(data, &body))
-		bodies = append(bodies, body)
-		contentType, payload := "application/json", `{"id":"resp_1","status":"completed","output":[]}`
-		if body["stream"] == true {
-			contentType = "text/event-stream"
-			payload = "event: response.completed\n" + `data: {"type":"response.completed","sequence_number":0,"response":{"id":"resp_1","status":"completed","output":[]}}` + "\n\n"
+	for _, tc := range []struct {
+		name, schema, want string
+		warnings           []provider.Warning
+	}{
+		{
+			name:     "property names",
+			schema:   `{"type":"object","propertyNames":{"type":"string"}}`,
+			want:     `{"type":"object"}`,
+			warnings: []provider.Warning{{Type: provider.WarnCompatibility, Feature: "JSON Schema propertyNames", Details: propertyNamesWarningDetails}},
+		},
+		{
+			name:     "lookaround and nested reference",
+			schema:   `{"type":"object","properties":{"email":{"type":"string","format":"email","pattern":"(?=email)"},"next":{"allOf":[{"$ref":"#"}]}},"additionalProperties":false}`,
+			want:     `{"type":"object","properties":{"email":{"type":"string","format":"email"},"next":{"$ref":"#"}},"additionalProperties":false}`,
+			warnings: []provider.Warning{{Type: provider.WarnCompatibility, Feature: "JSON Schema pattern with regex lookaround", Details: "OpenAI does not support regex lookaround in JSON Schema patterns. The pattern was removed before sending the schema, so OpenAI will not enforce that constraint."}},
+		},
+		{
+			name:   "root recursive reference",
+			schema: `{"allOf":[{"$ref":"#/$defs/person"}],"$defs":{"person":{"type":"object","properties":{"name":{"type":"string","pattern":"(?<!prefix)value"},"next":{"allOf":[{"$ref":"#/$defs/person"}]}},"propertyNames":{"type":"string"}}}}`,
+			want:   `{"type":"object","properties":{"name":{"type":"string"},"next":{"$ref":"#/$defs/person"}},"$defs":{"person":{"type":"object","properties":{"name":{"type":"string"},"next":{"$ref":"#/$defs/person"}}}}}`,
+			warnings: []provider.Warning{
+				{Type: provider.WarnCompatibility, Feature: "JSON Schema propertyNames", Details: propertyNamesWarningDetails},
+				{Type: provider.WarnCompatibility, Feature: "JSON Schema pattern with regex lookaround", Details: "OpenAI does not support regex lookaround in JSON Schema patterns. The pattern was removed before sending the schema, so OpenAI will not enforce that constraint."},
+			},
+		},
+	} {
+		for _, namespace := range []bool{false, true} {
+			for _, strict := range []bool{false, true} {
+				name := tc.name
+				if namespace {
+					name += "/namespace"
+				}
+				if strict {
+					name += "/strict"
+				}
+				t.Run(name, func(t *testing.T) {
+					response, input, output := json.RawMessage(tc.schema), json.RawMessage(tc.schema), json.RawMessage(tc.schema)
+					toolOptions := OpenAIToolOptions{OutputSchema: output}
+					if namespace {
+						toolOptions.Namespace = &OpenAIToolNamespaceOptions{Name: "tools"}
+					}
+					opts := provider.CallOptions{
+						Prompt:          []provider.Message{provider.UserText("hi")},
+						ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: response},
+						ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{StrictJSONSchema: &strict}),
+						Tools:           []provider.Tool{{Type: provider.ToolTypeFunction, Name: "lookup", InputSchema: input, Strict: &strict, ProviderOptions: provider.BuildProviderOptions(toolOptions)}},
+					}
+					var bodies []map[string]any
+					client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						data, err := io.ReadAll(req.Body)
+						require.NoError(t, err)
+						var body map[string]any
+						require.NoError(t, json.Unmarshal(data, &body))
+						bodies = append(bodies, body)
+						contentType, payload := "application/json", `{"id":"resp_1","status":"completed","output":[]}`
+						if body["stream"] == true {
+							contentType = "text/event-stream"
+							payload = "event: response.completed\n" + `data: {"type":"response.completed","sequence_number":0,"response":{"id":"resp_1","status":"completed","output":[]}}` + "\n\n"
+						}
+						return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(payload)), Request: req}, nil
+					})}
+					model := NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
+					generated, err := model.DoGenerate(t.Context(), opts)
+					require.NoError(t, err)
+					streamed, err := model.DoStream(t.Context(), opts)
+					require.NoError(t, err)
+					var streamWarnings []provider.Warning
+					for part := range streamed.Stream {
+						if part.Type == provider.PartStreamStart {
+							streamWarnings = part.Warnings
+						}
+					}
+					require.Len(t, bodies, 2)
+					var wantWarnings []provider.Warning
+					for range 3 {
+						wantWarnings = append(wantWarnings, tc.warnings...)
+					}
+					assert.Equal(t, wantWarnings, generated.Warnings)
+					assert.Equal(t, generated.Warnings, streamWarnings)
+					for _, body := range bodies {
+						format := body["text"].(map[string]any)["format"].(map[string]any)
+						assert.Equal(t, strict, format["strict"])
+						fn := toolsArray(t, body)[0]
+						if namespace {
+							fn = fn["tools"].([]any)[0].(map[string]any)
+						}
+						assert.Equal(t, strict, fn["strict"])
+						for _, schema := range []any{format["schema"], fn["parameters"], fn["output_schema"]} {
+							encoded, err := json.Marshal(schema)
+							require.NoError(t, err)
+							assert.JSONEq(t, tc.want, string(encoded))
+						}
+					}
+					for _, schema := range []json.RawMessage{response, input, output} {
+						assert.Equal(t, tc.schema, string(schema))
+					}
+				})
+			}
 		}
-		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(payload)), Request: req}, nil
-	})}
-	model := NewResponses("test-key", "gpt-4o", WithRequestOptions(option.WithHTTPClient(client), option.WithMaxRetries(0)))
-	generated, err := model.DoGenerate(context.Background(), opts)
-	require.NoError(t, err)
-	streamed, err := model.DoStream(context.Background(), opts)
-	require.NoError(t, err)
-	var streamWarnings []provider.Warning
-	for part := range streamed.Stream {
-		if part.Type == provider.PartStreamStart {
-			streamWarnings = part.Warnings
-		}
 	}
-	require.Len(t, bodies, 2)
-	require.Len(t, generated.Warnings, 3)
-	assert.Equal(t, generated.Warnings, streamWarnings)
-	assert.Equal(t, bodies[0]["text"], bodies[1]["text"])
-	assert.Equal(t, bodies[0]["tools"], bodies[1]["tools"])
-	assert.Equal(t, false, bodies[0]["text"].(map[string]any)["format"].(map[string]any)["strict"])
-	assert.JSONEq(t, `{"type":"object","propertyNames":{"type":"string"}}`, string(response))
-	assert.JSONEq(t, `{"type":"object","propertyNames":{"type":"string"}}`, string(input))
-	assert.JSONEq(t, `{"type":"object","propertyNames":{"type":"string"}}`, string(output))
 }
 
 func TestResponsesSchemaNormalization_NullOptionalSchemas(t *testing.T) {

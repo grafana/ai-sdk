@@ -121,11 +121,32 @@ routing accounts for Bedrock's model-specific native-output reliability.
 Reasoning, structured output, cache controls, and other provider options may be
 supported by one family and ignored with a warning by another.
 
+Cache points can be set on a message or on a single content part, and remain
+attached only when that message or part contributes content to the Converse
+request. When no prepared tools are active, tool calls and results
+are removed before message grouping, together with cache points on messages that
+become empty; the result includes a `toolContent` warning. Approval bookkeeping
+and unsigned reasoning also cannot create cache-only messages. A synthetic JSON
+response tool counts as an active tool.
+
 Claude Sonnet 5.5 rejects disabled thinking and forced tool use. For
 `claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking,
 a `required` or named tool choice is sent as `auto` with a warning, and a JSON
 schema response uses a system-prompt instruction instead of the forced JSON
 tool.
+
+## Handle unsupported content
+
+Most unsupported Converse content is dropped with a warning. Some content makes
+the request fail before it is sent:
+
+- custom tool-result entries, when tools are active;
+- file parts with provider references, non-S3 URLs, or unsupported image,
+  video, or document types.
+
+Match these failures with `errors.Is(err, provider.ErrUnsupportedFunctionality)`.
+In a fallback chain, the request moves on to the next model. Custom content
+from other providers in assistant history, such as compaction items, is ignored.
 
 Validate the capabilities required by your workflow before putting unlike model
 families in the same fallback chain.

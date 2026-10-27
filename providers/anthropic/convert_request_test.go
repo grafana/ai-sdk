@@ -199,7 +199,7 @@ func TestWebTool_HTTPNumberProjection(t *testing.T) {
 		{"older fractional fetch", "anthropic.web_fetch_20250910", `{"maxContentTokens":3.5}`, "", "", `[{"type":"web_fetch_20250910","name":"web_fetch","max_content_tokens":3.5}]`, false},
 		{"large content tokens", "anthropic.web_fetch_20260318", `{"maxContentTokens":100000000000000000000}`, "", "", `[{"type":"web_fetch_20260318","name":"web_fetch","max_content_tokens":100000000000000000000}]`, false},
 		{"zero uses", "anthropic.web_search_20260318", `{"maxUses":0}`, "", "", `[{"type":"web_search_20260318","name":"web_search","max_uses":0}]`, false},
-		{"none removes web tool", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", "", `[]`, false},
+		{"none keeps web tool", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", "", `[{"type":"web_fetch_20260318","name":"web_fetch","max_uses":1.5}]`, false},
 		{"none followed by JSON fallback", "anthropic.web_fetch_20260318", `{"maxUses":1.5}`, "none", `{"type":"object"}`, `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"}}]`, false},
 	}
 	for _, tc := range cases {
@@ -244,14 +244,62 @@ func TestWebTool_HTTPNumberProjection(t *testing.T) {
 				}
 				body := <-requests
 				if tc.choice == "none" && tc.schema == "" {
-					assert.NotContains(t, body, "tools")
-				} else if tc.schema != "" && stream {
+					assert.JSONEq(t, `{"type":"none"}`, string(body["tool_choice"]))
+				}
+				if tc.schema != "" && stream {
 					assert.JSONEq(t, `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"},"eager_input_streaming":true}]`, string(body["tools"]))
 				} else {
 					assert.JSONEq(t, tc.wantTools, string(body["tools"]))
 				}
 				server.Close()
 			}
+		})
+	}
+}
+
+func TestToolChoiceNone_HTTPJSONFallbackDropsCallerToolNamedJSON(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			requests := make(chan map[string]json.RawMessage, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]json.RawMessage
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				requests <- body
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"type":"error","error":{"type":"invalid_request_error","message":"captured"}}`))
+			}))
+			defer server.Close()
+
+			model := New("test-key", "claude-3-haiku", WithRequestOptions(option.WithBaseURL(server.URL), option.WithHTTPClient(server.Client()), option.WithMaxRetries(0)))
+			maxTokens := 1024
+			opts := provider.CallOptions{
+				MaxOutputTokens: &maxTokens,
+				Prompt:          []provider.Message{provider.UserText("hello")},
+				Tools: []provider.Tool{
+					{Type: provider.ToolTypeFunction, Name: "json", InputSchema: json.RawMessage(`{"type":"object","properties":{"caller":{"type":"string"}}}`)},
+				},
+				ToolChoice:     &provider.ToolChoice{Type: provider.ToolChoiceNone},
+				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: json.RawMessage(`{"type":"object"}`)},
+			}
+			var err error
+			if stream {
+				_, err = model.DoStream(context.Background(), opts)
+			} else {
+				_, err = model.DoGenerate(context.Background(), opts)
+			}
+			require.Error(t, err)
+
+			body := <-requests
+			want := `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"}}]`
+			if stream {
+				want = `[{"name":"json","description":"Respond with a JSON object.","input_schema":{"type":"object"},"eager_input_streaming":true}]`
+			}
+			assert.JSONEq(t, want, string(body["tools"]))
+			assert.JSONEq(t, `{"type":"any","disable_parallel_tool_use":true}`, string(body["tool_choice"]))
 		})
 	}
 }
@@ -1492,27 +1540,45 @@ func TestBuildParams_ToolChoice(t *testing.T) {
 	}
 }
 
-func TestBuildParams_ToolChoiceNoneDropsTools(t *testing.T) {
-	opts := provider.CallOptions{
-		Tools: []provider.Tool{
-			{
-				Type:        provider.ToolTypeFunction,
-				Name:        "search",
-				Description: "Search the web",
-				InputSchema: json.RawMessage(`{"type":"object"}`),
-			},
-		},
-		ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone},
+func TestBuildParams_ToolChoiceNoneKeepsTools(t *testing.T) {
+	disableParallelToolUse := true
+	tests := []struct {
+		name string
+		caps providerCapabilities
+		opts AnthropicOptions
+	}{
+		{name: "direct", caps: directProviderCapabilities},
+		{name: "vertex", caps: vertexProviderCapabilities},
+		{name: "disable parallel tool use", caps: directProviderCapabilities, opts: AnthropicOptions{DisableParallelToolUse: &disableParallelToolUse}},
 	}
 
-	p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
-	require.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := provider.CallOptions{
+				Tools: []provider.Tool{
+					{
+						Type:        provider.ToolTypeFunction,
+						Name:        "search",
+						Description: "Search the web",
+						InputSchema: json.RawMessage(`{"type":"object"}`),
+					},
+				},
+				ToolChoice:      &provider.ToolChoice{Type: provider.ToolChoiceNone},
+				ProviderOptions: provider.BuildProviderOptions(tc.opts),
+			}
 
-	assert.Empty(t, p.Tools)
-	assert.Nil(t, p.ToolChoice.OfNone)
-	assert.Nil(t, p.ToolChoice.OfAuto)
-	assert.Nil(t, p.ToolChoice.OfAny)
-	assert.Nil(t, p.ToolChoice.OfTool)
+			p, _, _, _, err := buildParamsWithCapabilities("claude-sonnet-4-6", opts, false, tc.caps)
+			require.NoError(t, err)
+
+			require.Len(t, p.Tools, 1)
+			require.NotNil(t, p.Tools[0].OfTool)
+			assert.Equal(t, "search", p.Tools[0].OfTool.Name)
+			assert.NotNil(t, p.ToolChoice.OfNone)
+			assert.Nil(t, p.ToolChoice.OfAuto)
+			assert.Nil(t, p.ToolChoice.OfAny)
+			assert.Nil(t, p.ToolChoice.OfTool)
+		})
+	}
 }
 
 func TestBuildParams_StrictFunctionTool(t *testing.T) {
@@ -2246,7 +2312,7 @@ func TestBuildParams_BetaDeduplication(t *testing.T) {
 func TestSerializeToolOutput_ExecutionDenied(t *testing.T) {
 	output := provider.ToolResultOutput{
 		Type:   provider.ToolOutputExecutionDenied,
-		Reason: "user rejected the tool call",
+		Reason: new("user rejected the tool call"),
 	}
 
 	blocks := serializeToolOutput(&output, nil, nil)
@@ -2263,7 +2329,7 @@ func TestSerializeToolOutput_ExecutionDenied_DefaultReason(t *testing.T) {
 
 	blocks := serializeToolOutput(&output, nil, nil)
 
-	assert.Equal(t, "tool execution was denied", blocks[0].OfText.Text)
+	assert.Equal(t, "Tool call execution denied.", blocks[0].OfText.Text)
 }
 
 func TestSerializeToolOutput_Content(t *testing.T) {
@@ -2282,6 +2348,151 @@ func TestSerializeToolOutput_Content(t *testing.T) {
 	assert.Equal(t, "result text", blocks[0].OfText.Text)
 	require.NotNil(t, blocks[1].OfImage)
 	assert.Equal(t, "imgdata", blocks[1].OfImage.Source.OfBase64.Data)
+}
+
+func TestSerializeToolOutput_FileEntries(t *testing.T) {
+	file := func(mediaType string, data provider.DataContent) provider.ToolResultContentValue {
+		return provider.ToolResultContentValue{Type: provider.ToolContentFile, MediaType: mediaType, Data: &data}
+	}
+	tests := []struct {
+		name        string
+		entry       provider.ToolResultContentValue
+		wantContent string
+		wantBetas   []sdk.AnthropicBeta
+		wantWarning string
+	}{
+		{
+			name:        "image URL",
+			entry:       file("image/png", provider.URLDataContent("https://example.com/a.png")),
+			wantContent: `[{"type":"image","source":{"type":"url","url":"https://example.com/a.png"}}]`,
+		},
+		{
+			name:        "non-image URL becomes a document",
+			entry:       file("text/plain", provider.URLDataContent("https://example.com/a.txt")),
+			wantContent: `[{"type":"document","source":{"type":"url","url":"https://example.com/a.txt"}}]`,
+		},
+		{
+			name:        "PDF data adds the PDF beta",
+			entry:       file("application/pdf", provider.Base64DataContent("cGRm")),
+			wantContent: `[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"cGRm"}}]`,
+			wantBetas:   []sdk.AnthropicBeta{"pdfs-2024-09-25"},
+		},
+		{
+			name:        "unsupported media type warns",
+			entry:       file("application/zip", provider.Base64DataContent("emlw")),
+			wantContent: `[]`,
+			wantWarning: "unsupported tool content part type: file with media type: application/zip",
+		},
+		{
+			name:        "reference data warns",
+			entry:       file("application/pdf", provider.ReferenceDataContent(json.RawMessage(`{"anthropic":"file_1"}`))),
+			wantContent: `[]`,
+			wantWarning: "unsupported tool content part type: file with data type: reference",
+		},
+		{
+			name:        "text data warns",
+			entry:       file("text/plain", provider.TextDataContent("hi")),
+			wantContent: `[]`,
+			wantWarning: "unsupported tool content part type: file with data type: text",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			output := provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{tc.entry}}
+			var betas []sdk.AnthropicBeta
+			var warnings []provider.Warning
+
+			blocks := serializeToolOutput(&output, &betas, &warnings)
+
+			encoded, err := json.Marshal(blocks)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.wantContent, string(encoded))
+			assert.Equal(t, tc.wantBetas, betas)
+			if tc.wantWarning == "" {
+				assert.Empty(t, warnings)
+				return
+			}
+			assert.Equal(t, []provider.Warning{{Type: provider.WarnOther, Message: tc.wantWarning}}, warnings)
+		})
+	}
+}
+
+func TestBuildParams_ToolResultOutputCacheControl(t *testing.T) {
+	cache := func(ttl string) provider.ProviderOptions {
+		if ttl == "" {
+			return makeProviderOpts(`{"cacheControl":{"type":"ephemeral"}}`)
+		}
+		return makeProviderOpts(`{"cacheControl":{"type":"ephemeral","ttl":"` + ttl + `"}}`)
+	}
+	text := func(value string, options provider.ProviderOptions) provider.ToolResultContentValue {
+		return provider.ToolResultContentValue{Type: provider.ToolContentText, Text: value, ProviderOptions: options}
+	}
+	content := func(entries ...provider.ToolResultContentValue) *provider.ToolResultOutput {
+		return &provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: entries}
+	}
+
+	tests := []struct {
+		name        string
+		partOptions provider.ProviderOptions
+		output      *provider.ToolResultOutput
+		msgOptions  provider.ProviderOptions
+		wantCache   string
+	}{
+		{
+			name:      "first content entry with options",
+			output:    content(text("a", nil), text("b", cache(""))),
+			wantCache: `{"type":"ephemeral"}`,
+		},
+		{
+			name:   "first entry with options but no cache control wins",
+			output: content(text("a", makeProviderOpts(`{}`)), text("b", cache(""))),
+		},
+		{
+			name:      "output options on a JSON output",
+			output:    &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{}`), ProviderOptions: cache("")},
+			wantCache: `{"type":"ephemeral"}`,
+		},
+		{
+			name:        "part options take precedence over output options",
+			partOptions: cache("1h"),
+			output:      content(text("a", cache("5m"))),
+			wantCache:   `{"type":"ephemeral","ttl":"1h"}`,
+		},
+		{
+			name:       "output options take precedence over message options",
+			output:     content(text("a", cache("5m"))),
+			msgOptions: cache("1h"),
+			wantCache:  `{"type":"ephemeral","ttl":"5m"}`,
+		},
+		{
+			name:       "message options apply without output options",
+			output:     content(text("a", nil)),
+			msgOptions: cache("1h"),
+			wantCache:  `{"type":"ephemeral","ttl":"1h"}`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			part := provider.ToolResultPart("call_1", "search", tc.output)
+			part.ProviderOptions = tc.partOptions
+			message := provider.NewToolMessage(part)
+			message.ProviderOptions = tc.msgOptions
+
+			p, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: []provider.Message{message}}, false)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+
+			result := p.Messages[0].Content[0].OfToolResult
+			require.NotNil(t, result)
+			if tc.wantCache == "" {
+				assert.Empty(t, result.CacheControl.Type)
+				return
+			}
+			encoded, err := json.Marshal(result.CacheControl)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.wantCache, string(encoded))
+		})
+	}
 }
 
 func TestSerializeToolOutput_UnsupportedTypeWarns(t *testing.T) {
@@ -3093,7 +3304,7 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 		assert.Contains(t, warnings[0].Message, "server name is required")
 	})
 
-	t.Run("mcp_tool_result_in_tool_message", func(t *testing.T) {
+	t.Run("mcp result in tool message stays tool_result", func(t *testing.T) {
 		mcpOpts := makeProviderOpts(`{"type": "mcp-tool-use", "serverName": "my-server"}`)
 		opts := provider.CallOptions{
 			Prompt: []provider.Message{
@@ -3110,16 +3321,20 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 			},
 		}
 
-		p, _, _, _, err := buildParams("claude-sonnet-4-6", opts, false)
+		p, _, warnings, _, err := buildParams("claude-sonnet-4-6", opts, false)
 		require.NoError(t, err)
+		assert.Empty(t, warnings)
 
 		require.Len(t, p.Messages, 2)
 
 		require.Len(t, p.Messages[1].Content, 1)
 		block := p.Messages[1].Content[0]
-		require.NotNil(t, block.OfMCPToolResult, "expected OfMCPToolResult block")
-		assert.Nil(t, block.OfToolResult, "should NOT emit OfToolResult for MCP")
-		assert.Equal(t, "tc_1", block.OfMCPToolResult.ToolUseID)
+		require.NotNil(t, block.OfToolResult, "tool-message results stay tool_result blocks")
+		assert.Nil(t, block.OfMCPToolResult)
+		assert.Equal(t, "tc_1", block.OfToolResult.ToolUseID)
+		encoded, err := json.Marshal(block.OfToolResult.Content)
+		require.NoError(t, err)
+		assert.JSONEq(t, `[{"type":"text","text":"\"result data\""}]`, string(encoded))
 	})
 
 	t.Run("assistant inline MCP continuation with configured server", func(t *testing.T) {
@@ -3197,13 +3412,14 @@ func TestBuildParams_MCPToolCallRoundTrip(t *testing.T) {
 
 		assistantBlocks := p.Messages[0].Content
 		require.Len(t, assistantBlocks, 2)
-		assert.NotNil(t, assistantBlocks[0].OfToolUse)
-		assert.NotNil(t, assistantBlocks[1].OfMCPToolUse)
+		assert.NotNil(t, assistantBlocks[0].OfMCPToolUse)
+		assert.NotNil(t, assistantBlocks[1].OfToolUse)
 
 		toolBlocks := p.Messages[1].Content
 		require.Len(t, toolBlocks, 2)
 		assert.NotNil(t, toolBlocks[0].OfToolResult)
-		assert.NotNil(t, toolBlocks[1].OfMCPToolResult)
+		assert.NotNil(t, toolBlocks[1].OfToolResult)
+		assert.Nil(t, toolBlocks[1].OfMCPToolResult)
 	})
 }
 
@@ -3510,7 +3726,7 @@ func hasUnsupportedWarning(warnings []provider.Warning, feature string) bool {
 }
 
 func TestBuildParams_UnsupportedContentWarnings(t *testing.T) {
-	t.Run("CustomContentPart in assistant message", func(t *testing.T) {
+	t.Run("Unknown CustomContentPart in assistant message", func(t *testing.T) {
 		opts := provider.CallOptions{
 			Prompt: []provider.Message{
 				provider.NewAssistantMessage(
@@ -3526,7 +3742,7 @@ func TestBuildParams_UnsupportedContentWarnings(t *testing.T) {
 		require.Len(t, p.Messages, 1)
 		require.Len(t, p.Messages[0].Content, 1, "custom content should be skipped")
 		require.NotNil(t, p.Messages[0].Content[0].OfText)
-		assert.True(t, hasUnsupportedWarning(warnings, "customContent"), "expected unsupported warning for CustomContentPart")
+		assert.Empty(t, warnings, "unknown assistant custom kinds are skipped without a warning")
 	})
 
 	t.Run("ReasoningFileContentPart in assistant message", func(t *testing.T) {
@@ -3863,6 +4079,9 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 				Type:   provider.ResponseFormatJSON,
 				Schema: testSchema,
 			},
+			Tools: []provider.Tool{
+				{Type: provider.ToolTypeFunction, Name: "search", InputSchema: json.RawMessage(`{"type":"object"}`)},
+			},
 			ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone},
 		}
 
@@ -3871,6 +4090,30 @@ func TestBuildParams_StructuredOutput(t *testing.T) {
 
 		assert.True(t, br.usesJsonResponseTool)
 		require.NotNil(t, p.ToolChoice.OfAny, "none should be overridden to required")
+		require.Len(t, p.Tools, 1, "only the JSON response tool should be sent")
+		require.NotNil(t, p.Tools[0].OfTool)
+		assert.Equal(t, "json", p.Tools[0].OfTool.Name)
+	})
+
+	t.Run("ToolFallback_NoneDropsCallerToolNamedJSON", func(t *testing.T) {
+		opts := provider.CallOptions{
+			ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: testSchema},
+			Tools: []provider.Tool{
+				{Type: provider.ToolTypeFunction, Name: "json", InputSchema: json.RawMessage(`{"type":"object","properties":{"caller":{"type":"string"}}}`)},
+			},
+			ToolChoice: &provider.ToolChoice{Type: provider.ToolChoiceNone},
+		}
+
+		p, _, _, br, err := buildParams("claude-3-haiku", opts, false)
+		require.NoError(t, err)
+
+		assert.True(t, br.usesJsonResponseTool)
+		require.NotNil(t, p.ToolChoice.OfAny)
+		require.Len(t, p.Tools, 1)
+		encoded, err := json.Marshal(p.Tools[0])
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"description":"Respond with a JSON object."`)
+		assert.NotContains(t, string(encoded), "caller")
 	})
 
 	t.Run("SchemalessJSON_Warning", func(t *testing.T) {
@@ -5706,10 +5949,87 @@ func TestBuildParams_CacheControlSourceMessageScoped(t *testing.T) {
 		"text (last part of second source message, which has no cache_control) must NOT have cache_control")
 }
 
-// TestBuildParams_MCPToolResultInUserMessage confirms the shared
-// appendToolResultBlock helper detects MCP tool-call IDs even when the
-// matching tool_result lands inside a `RoleUser` message rather than a
-// `RoleTool` message.
+func TestBuildParams_MCPToolResultScope(t *testing.T) {
+	mcpCall := func(options string) provider.ContentPart {
+		return provider.ContentPart{
+			Type: provider.ContentPartTypeToolCall, ToolCallID: "mcp-1", ToolName: "echo",
+			Input: json.RawMessage(`{}`), ProviderExecuted: true, ProviderOptions: makeProviderOpts(options),
+		}
+	}
+	withServer := mcpCall(`{"type":"mcp-tool-use","serverName":"srv"}`)
+	result := func(output provider.ToolResultOutput) provider.ContentPart {
+		return provider.ToolResultPart("mcp-1", "echo", &output)
+	}
+	jsonResult := result(provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`"out"`)})
+	mcpUse := `{"type":"mcp_tool_use","id":"mcp-1","name":"echo","input":{},"server_name":"srv"}`
+
+	tests := []struct {
+		name         string
+		prompt       []provider.Message
+		wantMessages string
+		wantWarnings []string
+	}{
+		{
+			name:         "merged assistant messages share one block",
+			prompt:       []provider.Message{provider.NewAssistantMessage(withServer), provider.NewAssistantMessage(jsonResult)},
+			wantMessages: `[{"role":"assistant","content":[` + mcpUse + `,{"type":"mcp_tool_result","tool_use_id":"mcp-1","is_error":false,"content":"out"}]}]`,
+		},
+		{
+			name: "later assistant block does not see the tool use",
+			prompt: []provider.Message{
+				provider.NewAssistantMessage(withServer),
+				provider.NewUserMessage(provider.TextPart("next")),
+				provider.NewAssistantMessage(jsonResult),
+			},
+			wantMessages: `[{"role":"assistant","content":[` + mcpUse + `]},{"role":"user","content":[{"type":"text","text":"next"}]}]`,
+			wantWarnings: []string{"provider executed tool result for tool echo is not supported"},
+		},
+		{
+			name:         "error JSON passes the raw value",
+			prompt:       []provider.Message{provider.NewAssistantMessage(withServer, result(provider.ToolResultOutput{Type: provider.ToolOutputErrorJSON, JSON: json.RawMessage(`{"code":1}`)}))},
+			wantMessages: `[{"role":"assistant","content":[` + mcpUse + `,{"type":"mcp_tool_result","tool_use_id":"mcp-1","is_error":true,"content":{"code":1}}]}]`,
+		},
+		{
+			name:         "text output is dropped with a warning",
+			prompt:       []provider.Message{provider.NewAssistantMessage(withServer, result(provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "out"}))},
+			wantMessages: `[{"role":"assistant","content":[` + mcpUse + `]}]`,
+			wantWarnings: []string{"provider executed tool result output type text for tool echo is not supported"},
+		},
+		{
+			name: "content output is dropped with a warning",
+			prompt: []provider.Message{provider.NewAssistantMessage(withServer, result(provider.ToolResultOutput{
+				Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{{Type: provider.ToolContentText, Text: "out"}},
+			}))},
+			wantMessages: `[{"role":"assistant","content":[` + mcpUse + `]}]`,
+			wantWarnings: []string{"provider executed tool result output type content for tool echo is not supported"},
+		},
+		{
+			name:         "missing server name still tracks the tool use",
+			prompt:       []provider.Message{provider.NewAssistantMessage(mcpCall(`{"type":"mcp-tool-use"}`), jsonResult)},
+			wantMessages: `[{"role":"assistant","content":[{"type":"mcp_tool_result","tool_use_id":"mcp-1","is_error":false,"content":"out"}]}]`,
+			wantWarnings: []string{"mcp tool use server name is required and must be a string"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{Prompt: tc.prompt}, false)
+			require.NoError(t, err)
+			encoded, err := json.Marshal(p.Messages)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.wantMessages, string(encoded))
+			var messages []string
+			for _, warning := range warnings {
+				messages = append(messages, warning.Message)
+			}
+			assert.Equal(t, tc.wantWarnings, messages)
+		})
+	}
+}
+
+// TestBuildParams_MCPToolResultInUserMessage confirms a tool result inside a
+// `RoleUser` message stays a tool_result block even when its ID matches a prior
+// hosted-MCP tool use.
 func TestBuildParams_MCPToolResultInUserMessage(t *testing.T) {
 	mcpOpts := makeProviderOpts(`{"type": "mcp-tool-use", "serverName": "srv"}`)
 	opts := provider.CallOptions{
@@ -5733,9 +6053,9 @@ func TestBuildParams_MCPToolResultInUserMessage(t *testing.T) {
 
 	require.Len(t, p.Messages, 2)
 	require.Len(t, p.Messages[1].Content, 1)
-	require.NotNil(t, p.Messages[1].Content[0].OfMCPToolResult, "tool-result inside a user message must still detect MCP")
-	assert.Nil(t, p.Messages[1].Content[0].OfToolResult)
-	assert.Equal(t, "mcp-1", p.Messages[1].Content[0].OfMCPToolResult.ToolUseID)
+	require.NotNil(t, p.Messages[1].Content[0].OfToolResult)
+	assert.Nil(t, p.Messages[1].Content[0].OfMCPToolResult)
+	assert.Equal(t, "mcp-1", p.Messages[1].Content[0].OfToolResult.ToolUseID)
 }
 
 // TestBuildParams_NonGroupingPromptUnchanged is a regression guard: a
@@ -6018,5 +6338,90 @@ func TestBuildParams_VertexJSONOutput(t *testing.T) {
 				assert.NotContains(t, p.Betas, sdk.AnthropicBeta("structured-outputs-2025-11-13"))
 			})
 		}
+	}
+}
+
+func TestBuildParams_CustomToolResultContent(t *testing.T) {
+	// Synthetic request snapshots: no recorded provider traffic or upstream
+	// fixture covers custom tool-result entries.
+	anthropicOptions := func(raw string) provider.ProviderOptions {
+		return provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(raw)}}
+	}
+	file := provider.Base64DataContent("imgdata")
+
+	tests := []struct {
+		name        string
+		content     []provider.ToolResultContentValue
+		wantContent string
+		wantWarning string
+	}{
+		{
+			name: "mixed text file custom order",
+			content: []provider.ToolResultContentValue{
+				{Type: provider.ToolContentText, Text: "before"},
+				{Type: provider.ToolContentCustom, ProviderOptions: anthropicOptions(`{"type":"tool-reference","toolName":"search"}`)},
+				{Type: provider.ToolContentFile, Data: &file, MediaType: "image/png"},
+			},
+			wantContent: `[{"text":"before","type":"text"},{"tool_name":"search","type":"tool_reference"},{"source":{"data":"imgdata","media_type":"image/png","type":"base64"},"type":"image"}]`,
+		},
+		{
+			name:        "missing tool name omits tool_name",
+			content:     []provider.ToolResultContentValue{{Type: provider.ToolContentCustom, ProviderOptions: anthropicOptions(`{"type":"tool-reference"}`)}},
+			wantContent: `[{"type":"tool_reference"}]`,
+		},
+		{
+			name:        "non-string tool name is copied raw",
+			content:     []provider.ToolResultContentValue{{Type: provider.ToolContentCustom, ProviderOptions: anthropicOptions(`{"type":"tool-reference","toolName":7}`)}},
+			wantContent: `[{"tool_name":7,"type":"tool_reference"}]`,
+		},
+		{
+			name:        "single non-reference entry leaves empty content",
+			content:     []provider.ToolResultContentValue{{Type: provider.ToolContentCustom, ProviderOptions: anthropicOptions(`{"type":"other"}`)}},
+			wantContent: `[]`,
+			wantWarning: "unsupported custom tool content part",
+		},
+		{
+			name:        "unsupported file entry warns and leaves empty content",
+			content:     []provider.ToolResultContentValue{{Type: provider.ToolContentFile, Data: &file, MediaType: "text/plain"}},
+			wantContent: `[]`,
+			wantWarning: "unsupported tool content part type: file with media type: text/plain",
+		},
+		{
+			name:        "non-string type warns instead of failing",
+			content:     []provider.ToolResultContentValue{{Type: provider.ToolContentCustom, ProviderOptions: anthropicOptions(`{"type":3}`)}},
+			wantContent: `[]`,
+			wantWarning: "unsupported custom tool content part",
+		},
+		{
+			name:        "no anthropic options warns",
+			content:     []provider.ToolResultContentValue{{Type: provider.ToolContentCustom}},
+			wantContent: `[]`,
+			wantWarning: "unsupported custom tool content part",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := provider.CallOptions{Prompt: []provider.Message{
+				provider.NewToolMessage(provider.ToolResultPart("call_1", "search", &provider.ToolResultOutput{
+					Type:    provider.ToolOutputContent,
+					Content: tc.content,
+				})),
+			}}
+
+			p, _, warnings, _, err := buildParams("claude-sonnet-4-6", opts, false)
+			require.NoError(t, err)
+
+			result := p.Messages[0].Content[0].OfToolResult
+			require.NotNil(t, result)
+			encoded, err := json.Marshal(result.Content)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.wantContent, string(encoded))
+			if tc.wantWarning == "" {
+				assert.Empty(t, warnings)
+				return
+			}
+			assert.Equal(t, []provider.Warning{{Type: provider.WarnOther, Message: tc.wantWarning}}, warnings)
+		})
 	}
 }

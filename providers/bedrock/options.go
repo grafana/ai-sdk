@@ -116,8 +116,8 @@ type BedrockOptions struct {
 	// additionalModelRequestFields.anthropic_beta. Only meaningful for
 	// Anthropic models on Bedrock.
 	AnthropicBeta []string `json:"anthropicBeta,omitempty"`
-	// CachePoint configures Bedrock prompt caching for the system messages or
-	// the message it is attached to.
+	// CachePoint configures Bedrock prompt caching for the system messages, or
+	// for the message or content part it is attached to.
 	CachePoint *CachePoint `json:"cachePoint,omitempty"`
 	// ServiceTier optionally pins the Bedrock service tier (e.g., "priority").
 	ServiceTier string `json:"serviceTier,omitempty"`
@@ -242,8 +242,8 @@ func (ImagePartOptions) ProviderKey() string { return "amazonBedrock" }
 
 // FilePartOptions carries per-file-part Bedrock configuration from
 // `ContentPart.ProviderOptions["amazonBedrock"]`. Mirrors upstream
-// amazonBedrockFilePartProviderOptions, which only exposes citations at the
-// part level (prompt-cache breakpoints are message-level only).
+// amazonBedrockFilePartProviderOptions, which only exposes citations. A
+// part-level cachePoint is read separately, as for BedrockOptions.CachePoint.
 type FilePartOptions struct {
 	// Citations enables Bedrock document citations on the part it's attached
 	// to.

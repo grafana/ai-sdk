@@ -1,0 +1,202 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/custom",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "continue"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "answer"
+            },
+            {
+              "type": "custom",
+              "kind": "openai.compaction",
+              "providerOptions": {
+                "openai": {
+                  "itemId": "cmp_1",
+                  "encryptedContent": "ENC"
+                }
+              }
+            },
+            {
+              "type": "custom",
+              "kind": "anthropic.fallback",
+              "providerOptions": {
+                "anthropic": {
+                  "type": "fallback",
+                  "from": {
+                    "model": "claude-a"
+                  },
+                  "to": {
+                    "model": "claude-b"
+                  }
+                }
+              }
+            },
+            {
+              "type": "custom",
+              "kind": "example.kind"
+            },
+            {
+              "type": "tool-call",
+              "toolCallId": "call-1",
+              "toolName": "lookup",
+              "input": {}
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "call-1",
+              "toolName": "lookup",
+              "output": {
+                "type": "content",
+                "value": [
+                  {
+                    "type": "text",
+                    "text": "before"
+                  },
+                  {
+                    "type": "custom",
+                    "providerOptions": {
+                      "anthropic": {
+                        "type": "tool-reference",
+                        "toolName": "search"
+                      }
+                    }
+                  },
+                  {
+                    "type": "custom"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/custom",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "true",
+      "content-type": "application/json"
+    },
+    "streaming": true,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "continue"
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "answer"
+            },
+            {
+              "type": "custom",
+              "kind": "openai.compaction",
+              "providerOptions": {
+                "openai": {
+                  "itemId": "cmp_1",
+                  "encryptedContent": "ENC"
+                }
+              }
+            },
+            {
+              "type": "custom",
+              "kind": "anthropic.fallback",
+              "providerOptions": {
+                "anthropic": {
+                  "type": "fallback",
+                  "from": {
+                    "model": "claude-a"
+                  },
+                  "to": {
+                    "model": "claude-b"
+                  }
+                }
+              }
+            },
+            {
+              "type": "custom",
+              "kind": "example.kind"
+            },
+            {
+              "type": "tool-call",
+              "toolCallId": "call-1",
+              "toolName": "lookup",
+              "input": {}
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "content": [
+            {
+              "type": "tool-result",
+              "toolCallId": "call-1",
+              "toolName": "lookup",
+              "output": {
+                "type": "content",
+                "value": [
+                  {
+                    "type": "text",
+                    "text": "before"
+                  },
+                  {
+                    "type": "custom",
+                    "providerOptions": {
+                      "anthropic": {
+                        "type": "tool-reference",
+                        "toolName": "search"
+                      }
+                    }
+                  },
+                  {
+                    "type": "custom"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

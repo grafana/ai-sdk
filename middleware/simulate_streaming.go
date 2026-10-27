@@ -52,10 +52,10 @@ func SimulateStreaming() Middleware {
 					idStr := strconv.Itoa(id)
 					switch part.Type {
 					case provider.ContentText:
-						if len(part.Text) > 0 {
+						if len(part.Text) > 0 || len(part.Citations) > 0 {
 							if !send(provider.StreamPart{Type: provider.PartTextStart, ID: idStr, ProviderMetadata: part.ProviderMetadata}) ||
 								!send(provider.StreamPart{Type: provider.PartTextDelta, ID: idStr, Delta: part.Text}) ||
-								!send(provider.StreamPart{Type: provider.PartTextEnd, ID: idStr}) {
+								!send(provider.StreamPart{Type: provider.PartTextEnd, ID: idStr, Citations: part.Citations}) {
 								return
 							}
 							id++
@@ -137,11 +137,11 @@ func contentPartToStreamPart(part provider.GenerateContentPart) provider.StreamP
 		if part.Data != nil {
 			switch {
 			case part.Data.Bytes != nil:
-				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: part.Data.Bytes}
+				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Bytes: part.Data.Bytes, OriginalURL: part.Data.OriginalURL}
 			case part.Data.Base64 != "":
-				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: part.Data.Base64}
-			case part.Data.URL != "":
-				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: part.Data.URL}
+				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeData, Base64: part.Data.Base64, OriginalURL: part.Data.OriginalURL}
+			case part.Data.IsURL():
+				sp.Data = &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: part.Data.URL, OriginalURL: part.Data.OriginalURL}
 			}
 		}
 	}

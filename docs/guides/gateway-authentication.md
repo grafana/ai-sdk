@@ -1,106 +1,157 @@
 # Authenticate to Grafana AI Gateway
 
-For the public Grafana Cloud URL, authenticate your application server with
-your stack ID and a Cloud Access Policy (CAP) token. These credentials are
-separate from how users sign in to your app. Grafana AI Gateway manages the
-underlying model-provider API keys.
+Grafana AI Gateway is a Grafana app. Your application calls it through your
+Grafana instance, with a Grafana credential. Which credential you use, and which
+models you get, depends on where Grafana runs:
 
-## Choose the URL and credential
+| You are | Credential | You get |
+|---|---|---|
+| An application on self-hosted Grafana | Grafana service account token | The models your administrator configured |
+| An application on Grafana Cloud | Grafana service account token | Any model from your own provider account (bring your own key) |
+| A Grafana service in Grafana Cloud | Cloud access policy token | The models Grafana configured for your service |
 
-| Gateway URL | Go client | Server-side Vercel client | What you need |
-| --- | --- | --- | --- |
-| Public Grafana Cloud URL | `NewWithCloudCredentials` | `createGateway({ apiKey })` | Stack ID and Cloud Access Policy (CAP) token |
-| Separately provided JWT-enabled URL | `NewWithTokenExchange` or `NewWithAccessToken` | No built-in Grafana JWT configuration | Short-lived access token or credentials to obtain one |
+Keep credentials on your application server. Never include them in browser
+code.
 
-Use the public Grafana Cloud URL provided for your stack. It requires a CAP
-with access to that stack. If your deployment provides a separate JWT-enabled
-Gateway URL, use that URL for JWT-based Go clients; a JWT is not a credential
-for the public Cloud URL.
+## Find your Gateway URL
 
-## Use a Cloud policy from Go
+Open **Grafana AI Gateway** in your Grafana instance. The overview page shows
+the Gateway URL for your stack and a quick start you can copy. The URL has this
+form:
 
-Provision a CAP for your stack with `ai-gateway:read` to discover models and
-`ai-gateway:write` to invoke them. Limit the policy to the stacks your app
-needs; avoid granting access to all stacks by default.
-
-On your Go server, use the [Grafana provider](../providers/grafana-gateway.md)
-with the public Gateway URL ending in `/api/v1/aisdk`:
-
-```go
-client, err := grafana.NewWithCloudCredentials(grafana.CloudCredentialsConfig{
-    StackID:  stackID,
-    CAPToken: capToken,
-    BaseURL:  "https://gateway.example.com/api/v1/aisdk",
-})
-if err != nil {
-    return err
-}
-models, err := client.ListModels(ctx)
-if err != nil {
-    return err
-}
-_ = models
-model, err := client.LanguageModel("assistant")
-if err != nil {
-    return err
-}
-maxTokens := 32
-result, err := model.DoGenerate(ctx, provider.CallOptions{
-    Prompt:          []provider.Message{provider.UserText("Summarize this incident.")},
-    MaxOutputTokens: &maxTokens,
-})
-if err != nil {
-    return err
-}
-_ = result
+```text
+https://<your-grafana>/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<namespace>
 ```
 
-## Use a Cloud policy from a Vercel server
+The namespace is `stacks-<stack ID>` in Grafana Cloud and usually `default` in
+self-hosted Grafana. Use the whole URL as the client base URL.
 
-On your application server (not in a browser), configure the Vercel Gateway
-client with your stack ID and CAP token:
+## Use the configured models in self-hosted Grafana
+
+1. [Create a service account](https://grafana.com/docs/grafana/latest/administration/service-accounts/)
+   for your application, and add a token to it.
+2. Store the token in your server's secret store.
+3. Create a client with the token and your Gateway URL:
+
+```go
+client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
+	Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
+	BaseURL: "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/default",
+})
+if err != nil {
+	return err
+}
+models, err := client.ListModels(ctx)
+```
+
+From a server-side TypeScript application, pass the token as the Vercel
+client's API key:
 
 ```ts
 import { createGateway } from '@ai-sdk/gateway';
 
 const gateway = createGateway({
-  baseURL: 'https://gateway.example.com/api/v1/aisdk',
-  apiKey: `${stackID}:${capToken}`,
+  baseURL: 'https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/default',
+  apiKey: process.env.GRAFANA_SERVICE_ACCOUNT_TOKEN,
 });
-const catalog = await gateway.getAvailableModels();
-const result = await gateway('assistant').doGenerate({
-  prompt: [{ role: 'user', content: [{ type: 'text', text: 'Summarize this incident.' }] }],
-  maxOutputTokens: 32,
-});
+const { models } = await gateway.getAvailableModels();
 ```
 
-## JWT-enabled Gateway URLs (Go)
+Each service account is a separate caller, so create one per application or
+person you want to tell apart. Your administrator decides which Grafana roles
+can use the app. If the Gateway is not available yet, ask them to set it up as
+described in the [Gateway guide](../../ai-gateway/README.md#install).
 
-If your deployment provides a JWT-enabled Gateway URL and token-exchange
-service, ask its operator for the Gateway URL, token-exchange URL and namespace.
-The Go client can then obtain a short-lived access token:
+In self-hosted Grafana, the Gateway uses only the provider accounts your
+administrator configured, and refuses requests that bring their own provider
+keys.
+
+## Bring your own provider key in Grafana Cloud
+
+Any user of your stack can call the Gateway with a service account token, and
+no extra role is needed. You supply your own provider key with every request,
+so the Gateway uses your provider account and the models it offers.
+
+Create the client the same way as in self-hosted Grafana, with your stack's
+Gateway URL:
 
 ```go
-client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
-    CAPToken:         capToken,
-    TokenExchangeURL: tokenExchangeURL,
-    Namespace:        namespace,
-    BaseURL:          accessTokenGatewayURL,
+client, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{
+	Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
+	BaseURL: "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123",
 })
 ```
 
-For token exchange, your policy must allow `access-token:sign` for the target
-namespace and audience. If you already have a short-lived JWT, use
-`NewWithAccessToken` and refresh it before expiry. JWT-enabled setups can
-attach an acting-user token with `grafana.WithUserIDToken(ctx, userIDToken)`.
+Then select a model by provider and name, such as `openai/gpt-5`, and send your
+key with the request. See
+[Use your own provider credentials](../providers/grafana-gateway.md#use-your-own-provider-credentials)
+for Go and TypeScript examples.
 
-## Keep credentials secure
+Model listing is not available in this mode, because your provider account
+decides which models exist.
 
-Use HTTPS, store CAPs in a server-side secret manager, grant only the scopes
-and stacks your app needs, and rotate tokens regularly. Avoid logging request
-headers or errors that may contain credentials. Never include a CAP in browser
-code or distribute it to untrusted workers.
+## Call from a Grafana service in Grafana Cloud
+
+Grafana services use the configured models with a Cloud access policy token.
+Ask the Gateway owners to allow your service, then create a client that
+exchanges your token for one the Gateway accepts:
+
+```go
+client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
+	CAPToken:         os.Getenv("GRAFANA_CAP_TOKEN"),
+	TokenExchangeURL: tokenExchangeURL,
+	Namespace:        "stacks-123",
+	Audience:         "grafana-aigateway-app",
+	BaseURL:          "https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123",
+})
+```
+
+Set `Namespace` to the stack you call. The client renews exchanged tokens before
+they expire; you rotate the access policy token itself. Model aliases, discovery
+and fallback work as described in the [provider guide](../providers/grafana-gateway.md).
+
+This flow needs the Go client. The Vercel client cannot exchange tokens.
+
+### Call on behalf of a user
+
+When a request is made for a user, pass their token in the call context. Use
+the user's Grafana ID token, or the access token your plugin received for them:
+
+```go
+ctx = grafana.WithOnBehalfOf(ctx, userToken)
+result, err := aisdk.GenerateText(ctx, model, aisdk.WithModelMessages(provider.UserText("Summarize this incident.")))
+```
+
+The call still uses your service's models, and is made on the user's behalf.
+
+## Troubleshoot authentication errors
+
+| Response | Likely cause |
+|---|---|
+| `401 Unauthorized` | The token is missing, expired or revoked. |
+| `403 Forbidden` from Grafana | The token does not belong to the stack in the URL, or your role cannot use the app. |
+| `403` Gateway permission error | Your credential has no Gateway access, for example a Grafana service not yet allowed. |
+| `400` reserved provider option namespace | You sent your own provider key to a self-hosted Gateway. |
+| Request ends after 60 seconds | Grafana limits how long a request can run. Stream long responses. |
+
+Grafana answers some of these before the request reaches the Gateway, in its own
+error format rather than a Gateway error. The Go client reports them as
+protocol errors with the HTTP status.
+
+## Keep credentials out of logs
+
+Requests that bring their own provider key carry that key, and the request
+details your client returns can contain it. Do not log request bodies or
+provider options, and do not send them to browsers.
+
+Start with metadata-only logging. If you capture content, configure
+[structured logging redaction](../middleware/structured-logging.md) and review
+what your application and exporters collect. Redaction does not remove a key
+that a provider echoes in its response or error text, so treat diagnostics as
+sensitive. See
+[Inspect execution overviews and failures](../providers/grafana-gateway.md#inspect-execution-overviews-and-failures)
+for what clients can inspect.
 
 ---
 
-← [Fallback and registry](fallback-and-registry.md) · [Docs index](../README.md) · [Run AI Gateway in a container →](ai-gateway-container.md)
+← [Call Grafana AI Gateway from Go](../providers/grafana-gateway.md) · [Docs index](../README.md) · [Production checklist →](../best-practices/production.md)

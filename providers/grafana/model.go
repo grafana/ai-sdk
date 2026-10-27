@@ -18,7 +18,7 @@ func (m *model) doRequest(ctx context.Context, opts provider.CallOptions, stream
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	if err := m.provider.validateCloudCallHeaders(opts.Headers); err != nil {
+	if err := validateCallAuthenticationHeaders(opts.Headers); err != nil {
 		return nil, nil, err
 	}
 	body, err := encodeRequest(opts)
@@ -198,10 +198,8 @@ func decodeUsage(value *wireUsage) (provider.Usage, error) {
 		return provider.Usage{}, errors.New("grafana: missing usage")
 	}
 	i, o := value.InputTokens, value.OutputTokens
-	for _, count := range []*int{i.Total, i.NoCache, i.CacheRead, i.CacheWrite, o.Total, o.Text, o.Reasoning} {
-		if count != nil && (*count < 0 || int64(*count) > 9007199254740991) {
-			return provider.Usage{}, errors.New("grafana: invalid token count")
-		}
+	if !validSafeCounts(i.Total, i.NoCache, i.CacheRead, i.CacheWrite, o.Total, o.Text, o.Reasoning) {
+		return provider.Usage{}, errors.New("grafana: invalid token count")
 	}
 	var raw json.RawMessage
 	if len(value.Raw) > 0 {
@@ -243,7 +241,10 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 	for _, raw := range *value.Content {
 		var part struct {
 			Type             provider.GenerateContentType `json:"type"`
+			Kind             *string                      `json:"kind"`
 			Text             *string                      `json:"text"`
+			Citations        json.RawMessage              `json:"citations"`
+			ApprovalID       *string                      `json:"approvalId"`
 			ToolCallID       *string                      `json:"toolCallId"`
 			ToolName         *string                      `json:"toolName"`
 			Input            *string                      `json:"input"`
@@ -264,7 +265,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			return nil, err
 		}
 		switch part.Type {
-		case provider.ContentReasoning, provider.ContentReasoningFile:
+		case provider.ContentReasoning, provider.ContentReasoningFile, provider.ContentFile:
 			mapped := provider.GenerateContentPart{Type: part.Type, ProviderMetadata: metadata}
 			if part.Type == provider.ContentReasoning {
 				if decodeFields(raw, &part, "text") != nil || part.Text == nil {
@@ -282,6 +283,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 				file := provider.Base64DataContent(data.Base64)
 				if data.Type == provider.StreamFileDataTypeURL {
 					file = provider.URLDataContent(data.URL)
+					file.OriginalURL = data.OriginalURL
 				}
 				mapped.Data, mapped.MediaType = &file, *part.MediaType
 			}
@@ -292,11 +294,25 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 				return nil, err
 			}
 			content = append(content, provider.GenerateContentPart{Type: provider.ContentSource, SourceType: source.SourceType, ID: source.ID, URL: source.URL, Title: source.Title, Text: source.Title, MediaType: source.MediaType, Filename: source.Filename, ProviderMetadata: source.ProviderMetadata})
+		case provider.ContentCustom:
+			if decodeFields(raw, &part, "kind") != nil || part.Kind == nil {
+				return nil, errors.New("grafana: invalid unary custom content")
+			}
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentCustom, Kind: *part.Kind, ProviderMetadata: metadata})
 		case provider.ContentText:
-			if decodeFields(raw, &part, "text") != nil || part.Text == nil {
+			if decodeFields(raw, &part, "text", "citations") != nil || part.Text == nil {
 				return nil, errors.New("grafana: missing unary text")
 			}
-			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text, ProviderMetadata: metadata})
+			citations, err := decodeCitations(part.Citations)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text, Citations: citations, ProviderMetadata: metadata})
+		case provider.ContentToolApprovalRequest:
+			if decodeFields(raw, &part, "approvalId", "toolCallId") != nil || part.ApprovalID == nil || *part.ApprovalID == "" || part.ToolCallID == nil || *part.ToolCallID == "" {
+				return nil, errors.New("grafana: invalid approval request")
+			}
+			content = append(content, provider.GenerateContentPart{Type: part.Type, ApprovalID: *part.ApprovalID, ToolCallID: *part.ToolCallID, ProviderMetadata: metadata})
 		case provider.ContentToolCall, provider.ContentToolResult:
 			fields := []string{"toolCallId", "toolName", "dynamic"}
 			if part.Type == provider.ContentToolCall {

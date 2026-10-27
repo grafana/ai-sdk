@@ -7,8 +7,12 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { generateAnthropicStreamParts } from "./anthropic-stream-parts.mts";
+import { generateAnthropicUnary } from "./anthropic-unary.mts";
+import { generateAnthropicPromptConversion } from "./anthropic-prompt-conversion.mts";
 import { loadConfig, writeRequestSnapshots, type TestCase } from "./common.mts";
 import { discoverCases } from "./gateway-matrix.mts";
+import { PROVIDER_PARTS_FILE, PROVIDER_PARTS_PROVIDERS, recordProviderParts, writeProviderParts } from "./provider-parts.mts";
 import { startReplay } from "./replay.mts";
 import { executeScenario } from "./scenario.mts";
 
@@ -33,12 +37,15 @@ async function generateExpected(tc: TestCase) {
   const cfg = loadConfig(tc.dir);
   const replay = await startReplay(tc);
   try {
-    const result = await executeScenario(tc, createModel(tc.provider, cfg.model, replay.url));
+    const baseModel = createModel(tc.provider, cfg.model, replay.url);
+    const providerParts = cfg.operation !== "generate" && PROVIDER_PARTS_PROVIDERS.has(tc.provider) ? recordProviderParts(baseModel) : undefined;
+    const result = await executeScenario(tc, providerParts?.model ?? baseModel);
     if (cfg.operation === "generate") {
       if (result.error) throw new Error(result.error);
       writeFileSync(join(tc.dir, "expected-generate.json"), JSON.stringify(result.generate, null, 2) + "\n");
     } else {
       writeFileSync(join(tc.dir, "expected.jsonl"), result.chunks.map(chunk => JSON.stringify(chunk)).join("\n") + "\n");
+      if (providerParts) writeProviderParts(join(tc.dir, PROVIDER_PARTS_FILE), providerParts.recorder.calls, tc.provider);
       if (existsSync(join(tc.dir, "expected-usage.json"))) writeFileSync(join(tc.dir, "expected-usage.json"), JSON.stringify(result.usage, null, 2) + "\n");
       if (result.outputError) console.log(`  output validation failed: ${result.outputError}`);
       else if (cfg.responseFormat) writeFileSync(join(tc.dir, "expected-object.json"), JSON.stringify(result.object, null, 2) + "\n");
@@ -54,13 +61,25 @@ async function generateExpected(tc: TestCase) {
 async function main() {
   const index = process.argv.indexOf("--scenario");
   const filter = index === -1 ? undefined : process.argv[index + 1];
+  const matchesFilter = (generator: string) => !filter || generator.includes(filter);
+  const includeStreamParts = matchesFilter("anthropic-stream-parts");
+  const includeUnary = matchesFilter("anthropic-unary");
+  const includePromptConversion = matchesFilter("anthropic-prompt-conversion");
   const cases = discoverCases(CONFORMANCE_ROOT).filter(tc => !filter || tc.name.includes(filter));
-  if (!cases.length) throw new Error("No test cases found");
+  if (!cases.length && !includeStreamParts && !includeUnary && !includePromptConversion) throw new Error("No test cases found");
   let errors = 0;
   for (const tc of cases) {
     console.log(`Generating: ${tc.name}`);
     try { await generateExpected(tc); }
     catch (error) { console.error(error); errors++; }
+  }
+  try {
+    if (includeStreamParts) await generateAnthropicStreamParts();
+    if (includeUnary) await generateAnthropicUnary();
+    if (includePromptConversion) await generateAnthropicPromptConversion();
+  } catch (error) {
+    console.error(error);
+    errors++;
   }
   if (errors) throw new Error(`${errors} error(s) encountered`);
 }

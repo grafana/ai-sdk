@@ -23,16 +23,19 @@ type anthropicUsage struct {
 	cacheReadInputTokens     int64
 	reasoningTokens          *int64
 	iterations               anthropic.BetaIterationsUsage
+	iterationsRaw            json.RawMessage
 	raw                      json.RawMessage
 }
 
 func (a *streamAdapter) resetUsage(usage anthropic.BetaUsage) error {
 	a.usage = anthropicUsage{
 		inputTokens:              usage.InputTokens,
-		outputTokens:             usage.OutputTokens,
+		outputTokens:             a.usage.outputTokens,
 		cacheCreationInputTokens: usage.CacheCreationInputTokens,
 		cacheReadInputTokens:     usage.CacheReadInputTokens,
-		reasoningTokens:          thinkingTokenCount(usage.OutputTokensDetails),
+		reasoningTokens:          a.usage.reasoningTokens,
+		iterations:               a.usage.iterations,
+		iterationsRaw:            a.usage.iterationsRaw,
 	}
 	return a.mergeRawUsage(usage.RawJSON())
 }
@@ -54,7 +57,13 @@ func (a *streamAdapter) updateUsage(usage anthropic.BetaMessageDeltaUsage) error
 	if usage.JSON.Iterations.Valid() {
 		a.usage.iterations = usage.Iterations
 	}
-	return a.mergeRawUsage(usage.RawJSON())
+	if err := a.mergeRawUsage(usage.RawJSON()); err != nil {
+		return err
+	}
+	if usage.JSON.Iterations.Valid() {
+		a.usage.iterationsRaw = usageIterationsField(a.usage.raw)
+	}
+	return nil
 }
 
 func (a *streamAdapter) mergeRawUsage(raw string) error {
@@ -72,6 +81,13 @@ func (a *streamAdapter) mergeRawUsage(raw string) error {
 		for key, value := range update {
 			merged[key] = value
 		}
+		if iterations, ok := merged["iterations"]; ok {
+			filtered, err := filterUsageIterations(iterations)
+			if err != nil {
+				return err
+			}
+			merged["iterations"] = filtered
+		}
 	}
 	if len(merged) == 0 {
 		a.usage.raw = nil
@@ -85,9 +101,41 @@ func (a *streamAdapter) mergeRawUsage(raw string) error {
 	return nil
 }
 
+var usageIterationFields = map[string]struct{}{
+	"type":                        {},
+	"model":                       {},
+	"input_tokens":                {},
+	"output_tokens":               {},
+	"cache_creation_input_tokens": {},
+	"cache_read_input_tokens":     {},
+}
+
+// filterUsageIterations keeps the iteration fields upstream's response schema
+// declares and drops the rest, such as the nested cache_creation breakdown.
+func filterUsageIterations(raw json.RawMessage) (json.RawMessage, error) {
+	var iterations []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &iterations); err != nil {
+		return raw, nil
+	}
+	for _, iteration := range iterations {
+		for key := range iteration {
+			if _, known := usageIterationFields[key]; !known {
+				delete(iteration, key)
+			}
+		}
+	}
+	filtered, err := json.Marshal(iterations)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling usage iterations: %w", err)
+	}
+	return filtered, nil
+}
+
 func convertAnthropicUsage(usage anthropicUsage) provider.Usage {
 	inputTokens := usage.inputTokens
 	outputTokens := usage.outputTokens
+	cacheReadTokens := usage.cacheReadInputTokens
+	cacheWriteTokens := usage.cacheCreationInputTokens
 	servedByFallback := false
 	for _, iteration := range usage.iterations {
 		if anthropicIterationType(iteration.Type) == anthropicIterationFallbackMessage {
@@ -99,6 +147,8 @@ func convertAnthropicUsage(usage anthropicUsage) provider.Usage {
 	if len(usage.iterations) > 0 && !servedByFallback {
 		var executorInputTokens int64
 		var executorOutputTokens int64
+		var executorCacheReadTokens int64
+		var executorCacheWriteTokens int64
 		executorIterations := 0
 		for _, iteration := range usage.iterations {
 			iterationType := anthropicIterationType(iteration.Type)
@@ -107,17 +157,21 @@ func convertAnthropicUsage(usage anthropicUsage) provider.Usage {
 			}
 			executorInputTokens += iteration.InputTokens
 			executorOutputTokens += iteration.OutputTokens
+			executorCacheReadTokens += iteration.CacheReadInputTokens
+			executorCacheWriteTokens += iteration.CacheCreationInputTokens
 			executorIterations++
 		}
 		if executorIterations > 0 {
 			inputTokens = executorInputTokens
 			outputTokens = executorOutputTokens
+			cacheReadTokens = executorCacheReadTokens
+			cacheWriteTokens = executorCacheWriteTokens
 		}
 	}
 
 	noCache := int(inputTokens)
-	cacheRead := int(usage.cacheReadInputTokens)
-	cacheWrite := int(usage.cacheCreationInputTokens)
+	cacheRead := int(cacheReadTokens)
+	cacheWrite := int(cacheWriteTokens)
 	totalInput := noCache + cacheRead + cacheWrite
 	totalOutput := int(outputTokens)
 	var textOutput, reasoningOutput *int

@@ -5,7 +5,8 @@ Define Anthropic's opt-in safeguard request, beta, and verdict metadata behavior
 ## Requirements
 
 ### Requirement: Opt-in Anthropic safeguard request projection
-The Anthropic provider SHALL accept model-level `AnthropicOptions.Safeguards` on `CallOptions.ProviderOptions["anthropic"]`, both as typed options and as JSON-round-tripped `RawProviderOption`. Each configured entry SHALL have `type: "dangerous_tool_use"` and MAY contain a JSON object `classifierContext` with arbitrary JSON property values. For both `DoGenerate` and `DoStream`, a nonempty option SHALL produce the request-body array `safeguards`, preserving entry order, each `type`, and any present `classifierContext` as `classifier_context` without changing its JSON values. The provider SHALL add `dangerous-tool-use-2026-09-03` to `anthropic-beta` exactly once, including when the caller also explicitly supplies that beta. An absent or empty safeguards option SHALL NOT add the field or beta automatically. Explicit JSON `safeguards: null` SHALL be rejected before HTTP, matching the registered upstream optional array schema. Explicit caller-supplied `Betas` SHALL continue to be honored independently.
+
+The provider SHALL accept model-level `AnthropicOptions.Safeguards` under `CallOptions.ProviderOptions["anthropic"]` as typed or JSON-round-tripped `RawProviderOption`. Entries SHALL have type `dangerous_tool_use` and optional object `classifierContext` with arbitrary JSON values. Nonempty options SHALL emit ordered `safeguards` in DoGenerate/DoStream, preserving types and present context as `classifier_context` without changing values.
 
 #### Scenario: Omitted safeguards
 - **WHEN** a unary or streaming call omits `safeguards` from the Anthropic provider options
@@ -33,7 +34,8 @@ The Anthropic provider SHALL accept model-level `AnthropicOptions.Safeguards` on
 - **THEN** `DoGenerate` or `DoStream` SHALL fail before issuing any HTTP request and SHALL NOT silently send a different classifier
 
 ### Requirement: Anthropic unary safeguard verdict metadata
-When an Anthropic unary response carries a valid non-null `safeguard_results` array, the provider SHALL expose it only at `GenerateResult.ProviderMetadata["anthropic"].safeguardResults`, preserving the response's permitted nested snake_case keys, string values and tool-call-id keys. Each entry SHALL contain string `type` and object `status` with string `type`; optional/null `status.tool_uses` SHALL hold a map of tool-call ids to entries with string `type` and optional/null string `outcome` and `explanation`. Other response fields and extra nested safeguard properties SHALL NOT be copied into this metadata field. If `safeguard_results` is missing or null, the key SHALL be omitted; if it is a valid empty array, the key SHALL be present as `[]`. A malformed present value SHALL yield a contextual conversion error, without embedding the raw verdict payload.
+
+Valid non-null unary `safeguard_results` SHALL appear only at `GenerateResult.ProviderMetadata["anthropic"].safeguardResults`, retaining permitted nested snake_case keys, strings and tool-call-id keys, excluding other response/extra nested fields. Missing/null SHALL omit the key; valid [] SHALL preserve it. Malformed present values SHALL yield contextual conversion errors without raw verdict payloads.
 
 #### Scenario: Tool-call verdict retains wire shape
 - **WHEN** a unary response contains `safeguard_results` with an available status and a tool-call-id `toolu_01` whose verdict has `type: "evaluated"`, `outcome: "flagged"`, and `explanation: "[Data Exfiltration]"`
@@ -52,28 +54,56 @@ When an Anthropic unary response carries a valid non-null `safeguard_results` ar
 - **WHEN** `safeguard_results` is present but is not an array of entries matching the defined field shapes
 - **THEN** conversion SHALL return an error and SHALL NOT expose the malformed raw payload as provider metadata
 
-### Requirement: Anthropic streaming safeguard verdict lifecycle
-The Anthropic stream adapter SHALL read verdicts from `message_delta.delta.safeguard_results` and retain the last non-null valid array in the current message, overwriting it with a later non-null array including `[]` and ignoring later null or missing fields. It SHALL reset that state for a new message and SHALL omit the `safeguardResults` key when no delta in the message supplies a non-null array. The last `PartFinish` for a message and the completed stream step SHALL carry the final retained result in `ProviderMetadata["anthropic"].safeguardResults`; unrelated raw fields SHALL NOT leak. A malformed present array SHALL follow the existing stream-error path rather than produce a successful finish with malformed metadata. This requirement does not change the adapter's existing finish-event timing.
+### Requirement: Anthropic safeguard opt-in beta and null handling
+
+Nonempty safeguards SHALL add `dangerous-tool-use-2026-09-03` to anthropic-beta exactly once, even when explicitly supplied. Absent/empty safeguards SHALL add neither field nor beta automatically. Explicit JSON safeguards:null SHALL fail before HTTP, matching registered upstream optional-array schema. Explicit caller Betas SHALL be honored independently.
+
+#### Scenario: Anthropic safeguard opt-in beta and null handling
+
+- **WHEN** safeguards are empty with an explicit beta, or null without one
+- **THEN** the empty request SHALL omit safeguards but retain the explicit beta; null SHALL be rejected before HTTP
+
+### Requirement: Anthropic safeguard verdict field schema
+
+Verdict entries SHALL contain string type and object status with string type; optional/null status.tool_uses SHALL hold a map of tool-call IDs to entries with string type and optional/null string outcome and explanation. Only these permitted fields SHALL be projected.
+
+#### Scenario: Anthropic safeguard verdict field schema
+
+- **WHEN** a verdict contains a tool_uses entry with type, nullable outcome/explanation, and an extra secret property
+- **THEN** projection SHALL preserve the permitted fields and null semantics but exclude the extra property; invalid consumed field types SHALL fail conversion
+
+### Requirement: Anthropic streaming safeguard error and timing boundary
+
+Malformed present verdict arrays SHALL follow the existing stream-error path at the offending `message_delta`, not a successful finish with malformed metadata. Safeguard handling SHALL NOT change the finish-event timing defined by `anthropic-stream-finish-lifecycle`.
+
+#### Scenario: Anthropic streaming safeguard error and timing boundary
+
+- **WHEN** a message delta contains malformed safeguard_results
+- **THEN** the existing error part SHALL be emitted without successful malformed metadata, no `PartFinish` SHALL follow for that message, and the finish-event timing SHALL remain that of `anthropic-stream-finish-lifecycle`
+
+### Requirement: Anthropic streaming safeguard verdict is stream-level
+
+The adapter SHALL retain the last non-null valid `message_delta.delta.safeguard_results` for the whole stream, replacing it even with [] and ignoring null/missing, as upstream does; a new message does not reset it. No valid delta SHALL mean no safeguardResults key. The single PartFinish emitted at the message's `message_stop`, and the completed step, SHALL carry the retained array under ProviderMetadata["anthropic"].safeguardResults without unrelated raw fields.
 
 #### Scenario: Null then verdict then null
 - **WHEN** successive message deltas contain null, a valid verdict array keyed by `toolu_01`, then null, followed by `message_stop`
-- **THEN** the final `PartFinish` and completed stream step SHALL contain that verdict array under `safeguardResults` with nested wire shape preserved
+- **THEN** the message's only `PartFinish` and the completed stream step SHALL contain that verdict array under `safeguardResults` with nested wire shape preserved
 
 #### Scenario: Later valid verdict replaces earlier verdict
 - **WHEN** two deltas contain different non-null arrays, including when the later one is `[]`
-- **THEN** the final `PartFinish` SHALL contain the later array
+- **THEN** the message's `PartFinish` SHALL contain the later array
 
 #### Scenario: No streaming verdict
 - **WHEN** deltas omit `safeguard_results` or contain only null
-- **THEN** all produced Anthropic finish metadata SHALL omit `safeguardResults`
+- **THEN** the produced Anthropic finish metadata SHALL omit `safeguardResults`
 
 #### Scenario: Verdict only in message start
 - **WHEN** `message_start` contains `safeguard_results` but the following deltas omit or null that field
-- **THEN** all produced Anthropic finish metadata SHALL omit `safeguardResults`
+- **THEN** the produced Anthropic finish metadata SHALL omit `safeguardResults`
 
-#### Scenario: Reset on new message
-- **WHEN** a new `message_start` follows a message with a verdict
-- **THEN** a finish for the new message SHALL NOT inherit the prior message's verdict
+#### Scenario: Verdict carries into the next message
+- **WHEN** a new `message_start` follows a message with a verdict and the new message's deltas omit or null `safeguard_results`
+- **THEN** the finish for the new message SHALL carry the prior message's verdict, as upstream does
 
 #### Scenario: Malformed streaming verdict and transport failure
 - **WHEN** a delta contains a malformed non-null `safeguard_results` value

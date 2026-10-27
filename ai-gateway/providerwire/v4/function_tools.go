@@ -32,6 +32,7 @@ type wireToolChoice struct {
 	ToolName string                  `json:"toolName"`
 }
 type wireToolOutput struct {
+	Reason          *string                       `json:"reason"`
 	Type            provider.ToolResultOutputType `json:"type"`
 	Value           json.RawMessage               `json:"value"`
 	ProviderOptions map[string]json.RawMessage    `json:"providerOptions"`
@@ -55,14 +56,14 @@ func mapFunctionTools(rawTools []json.RawMessage, rawChoice json.RawMessage) ([]
 			continue
 		}
 		if kind.Type != provider.ToolTypeFunction {
-			return nil, nil, unsupportedMappingFailure(capabilityTools)
+			return nil, nil, rejectedMappingFailure(capabilityTools)
 		}
 		var wire wireFunctionTool
 		if json.Unmarshal(raw, &wire) != nil {
 			return nil, nil, invalidMappingFailure()
 		}
 		if trimmed := bytes.TrimSpace(wire.InputSchema); len(trimmed) == 0 || trimmed[0] != '{' {
-			return nil, nil, unsupportedMappingFailure(capabilityTools)
+			return nil, nil, rejectedMappingFailure(capabilityTools)
 		}
 		tool := provider.Tool{Type: wire.Type, Name: wire.Name, Description: wire.Description, InputSchema: wire.InputSchema, Strict: wire.Strict}
 		if wire.InputExamples != nil {
@@ -98,10 +99,14 @@ func mapToolOutput(wire *wireToolOutput) (*provider.ToolResultOutput, *requestFa
 	if wire == nil {
 		return nil, invalidMappingFailure()
 	}
-	if !providerOptionsEmpty(wire.ProviderOptions) {
-		return nil, unsupportedMappingFailure(capabilityProviderOptions)
+	if wire.Type == provider.ToolOutputContent && !providerOptionsEmpty(wire.ProviderOptions) {
+		return nil, rejectedMappingFailure(capabilityProviderOptions)
 	}
-	output := &provider.ToolResultOutput{Type: wire.Type}
+	options, failure := mapWireProviderOptions(wire.ProviderOptions)
+	if failure != nil {
+		return nil, failure
+	}
+	output := &provider.ToolResultOutput{Type: wire.Type, ProviderOptions: options}
 	switch wire.Type {
 	case provider.ToolOutputText, provider.ToolOutputErrorText:
 		if json.Unmarshal(wire.Value, &output.Text) != nil {
@@ -109,6 +114,8 @@ func mapToolOutput(wire *wireToolOutput) (*provider.ToolResultOutput, *requestFa
 		}
 	case provider.ToolOutputJSON, provider.ToolOutputErrorJSON:
 		output.JSON = wire.Value
+	case provider.ToolOutputExecutionDenied:
+		output.Reason = wire.Reason
 	case provider.ToolOutputContent:
 		var parts []wirePart
 		if json.Unmarshal(wire.Value, &parts) != nil {
@@ -118,10 +125,11 @@ func mapToolOutput(wire *wireToolOutput) (*provider.ToolResultOutput, *requestFa
 		for _, part := range parts {
 			switch part.Type {
 			case provider.ContentPartTypeText:
-				if !providerOptionsEmpty(part.ProviderOptions) {
-					return nil, unsupportedMappingFailure(capabilityProviderOptions)
+				options, failure := mapWireProviderOptions(part.ProviderOptions)
+				if failure != nil {
+					return nil, failure
 				}
-				output.Content = append(output.Content, provider.ToolResultContentValue{Type: provider.ToolContentText, Text: part.Text})
+				output.Content = append(output.Content, provider.ToolResultContentValue{Type: provider.ToolContentText, Text: part.Text, ProviderOptions: options})
 			case provider.ContentPartTypeFile:
 				options, failure := mapWireProviderOptions(part.ProviderOptions)
 				if failure != nil {
@@ -135,12 +143,18 @@ func mapToolOutput(wire *wireToolOutput) (*provider.ToolResultOutput, *requestFa
 					Type: provider.ToolContentFile, Data: &data, MediaType: part.MediaType,
 					Filename: part.Filename, ProviderOptions: options,
 				})
+			case provider.ContentPartTypeCustom:
+				options, failure := mapWireProviderOptions(part.ProviderOptions)
+				if failure != nil {
+					return nil, failure
+				}
+				output.Content = append(output.Content, provider.ToolResultContentValue{Type: provider.ToolContentCustom, ProviderOptions: options})
 			default:
-				return nil, unsupportedMappingFailure(capabilityTools)
+				return nil, rejectedMappingFailure(capabilityTools)
 			}
 		}
 	default:
-		return nil, unsupportedMappingFailure(capabilityTools)
+		return nil, rejectedMappingFailure(capabilityTools)
 	}
 	return output, nil
 }

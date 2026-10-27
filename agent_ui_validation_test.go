@@ -99,7 +99,7 @@ func TestValidateAgentUIMessages_StateProjection(t *testing.T) {
 				require.NoError(t, err)
 				var value struct{ Parts []map[string]json.RawMessage }
 				require.NoError(t, json.Unmarshal(encoded, &value))
-				assert.Equal(t, tc.state == "output-error", value.Parts[0]["rawInput"] != nil)
+				assert.Equal(t, tc.state == "output-error" || tc.state == "input-streaming", value.Parts[0]["rawInput"] != nil)
 				assert.Equal(t, tc.state == "output-available", value.Parts[0]["preliminary"] != nil)
 				assert.Equal(t, tc.state == "output-available" || tc.state == "output-error", value.Parts[0]["resultProviderMetadata"] != nil)
 				after, err := json.Marshal(message)
@@ -119,7 +119,9 @@ func TestValidateAgentUIMessages_NormalizedClone(t *testing.T) {
 	require.NoError(t, err)
 	got, ok := normalized[0].Parts[0].(DynamicToolUIPart)
 	require.True(t, ok)
-	assert.Equal(t, toolPartFields(part), toolPartFields(got))
+	expected := toolPartFields(part)
+	expected.toolUnavailable = true
+	assert.Equal(t, expected, toolPartFields(got))
 	*got.Title = "changed"
 	*got.ErrorText = "changed"
 	got.RawInput[0] = 'x'
@@ -133,6 +135,112 @@ func TestValidateAgentUIMessages_NormalizedClone(t *testing.T) {
 	after, err := json.Marshal(original)
 	require.NoError(t, err)
 	assert.JSONEq(t, string(before), string(after))
+}
+
+func TestValidateAgentUIMessages_UnavailableToolPersistence(t *testing.T) {
+	const placeholder = "Tool output omitted because the tool is no longer available."
+	historicalTool := Tool{
+		InputSchema: testMustSchema(t, `{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`),
+		ToModelOutput: func(ctx ToolOutputContext) (*provider.ToolResultOutput, error) {
+			var output struct{ Summary string }
+			if err := json.Unmarshal(ctx.Output, &output); err != nil {
+				return nil, err
+			}
+			return &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: output.Summary}, nil
+		},
+	}
+	tests := []struct {
+		name  string
+		input string
+		tools ToolSet
+	}{
+		{name: "removed tool", input: `{"query":"weather"}`},
+		{name: "incompatible input", input: `{}`, tools: ToolSet{"search": historicalTool}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			history := []UIMessage{{ID: "assistant-1", Role: RoleAssistant, Parts: []Part{ToolInvocationPart{
+				ToolCallID: "call-1",
+				ToolName:   "search",
+				State:      ToolStateOutputAvailable,
+				Input:      json.RawMessage(tc.input),
+				Output:     json.RawMessage(`{"summary":"sunny","privateMetadata":"must-not-reach-the-model"}`),
+			}}}}
+			normalized, err := validateAgentUIMessages(history, tc.tools)
+			require.NoError(t, err)
+			encoded, err := json.Marshal(normalized)
+			require.NoError(t, err)
+			var persisted []struct{ Parts []map[string]json.RawMessage }
+			require.NoError(t, json.Unmarshal(encoded, &persisted))
+			assert.JSONEq(t, `"dynamic-tool"`, string(persisted[0].Parts[0]["type"]))
+			assert.JSONEq(t, `false`, string(persisted[0].Parts[0]["dynamic"]))
+
+			var reloaded []UIMessage
+			require.NoError(t, json.Unmarshal(encoded, &reloaded))
+			revalidated, err := validateAgentUIMessages(reloaded, nil)
+			require.NoError(t, err)
+			reencoded, err := json.Marshal(revalidated)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(encoded), string(reencoded))
+
+			for name, check := range map[string]struct {
+				tools ToolSet
+				want  string
+			}{
+				"without tool":    {want: placeholder},
+				"historical tool": {tools: ToolSet{"search": historicalTool}, want: "sunny"},
+			} {
+				t.Run(name, func(t *testing.T) {
+					messages, err := ConvertToModelMessages(revalidated, WithTools(check.tools))
+					require.NoError(t, err)
+					require.Len(t, messages, 2)
+					require.Len(t, messages[1].Content, 1)
+					assert.Equal(t, &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: check.want}, messages[1].Content[0].Output)
+				})
+			}
+		})
+	}
+}
+
+func TestDynamicToolUIPart_UnavailableMarkerJSON(t *testing.T) {
+	const base = `"type":"dynamic-tool","toolName":"search","toolCallId":"c","state":"output-available","input":{},"output":1`
+	tests := []struct {
+		name        string
+		marker      string
+		wantErr     bool
+		unavailable bool
+	}{
+		{name: "absent"},
+		{name: "false", marker: `,"dynamic":false`, unavailable: true},
+		{name: "true", marker: `,"dynamic":true`, wantErr: true},
+		{name: "null", marker: `,"dynamic":null`, wantErr: true},
+		{name: "string", marker: `,"dynamic":"false"`, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var message UIMessage
+			err := json.Unmarshal([]byte(`{"id":"m","role":"assistant","parts":[{`+base+tc.marker+`}]}`), &message)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			part, ok := message.Parts[0].(DynamicToolUIPart)
+			require.True(t, ok)
+			assert.Equal(t, tc.unavailable, part.toolUnavailable)
+			encoded, err := json.Marshal(message)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{"id":"m","role":"assistant","parts":[{`+base+tc.marker+`}]}`, string(encoded))
+		})
+	}
+
+	t.Run("static part ignores marker", func(t *testing.T) {
+		var message UIMessage
+		require.NoError(t, json.Unmarshal([]byte(`{"id":"m","role":"assistant","parts":[{"type":"tool-search","toolCallId":"c","state":"output-available","input":{},"output":1,"dynamic":false}]}`), &message))
+		encoded, err := json.Marshal(message)
+		require.NoError(t, err)
+		assert.NotContains(t, string(encoded), `"dynamic"`)
+	})
 }
 
 func TestValidateAgentUIMessages_SchemaBoundaries(t *testing.T) {
@@ -179,7 +287,7 @@ func TestCreateAgentUIStream_DynamicRawInputContinuation(t *testing.T) {
 	require.NoError(t, err)
 	part := normalized[0].Parts[0].(DynamicToolUIPart)
 	assert.Nil(t, part.RawInput)
-	assert.JSONEq(t, `"legacy"`, string(persisted.Parts[0].(DynamicToolUIPart).RawInput))
+	assert.Nil(t, persisted.Parts[0].(DynamicToolUIPart).RawInput)
 	*part.Title = "changed"
 	assert.Equal(t, "", *persisted.Parts[0].(DynamicToolUIPart).Title)
 	model := &mockModel{streamFunc: func(_ context.Context, options provider.CallOptions) (*provider.StreamResult, error) {

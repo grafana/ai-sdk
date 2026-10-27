@@ -50,6 +50,7 @@ func validateAgentUIPart(part Part, tools ToolSet) (Part, error) {
 		terminal := p.State == ToolStateOutputAvailable || p.State == ToolStateOutputError || p.State == ToolStateOutputDenied
 		if !exists {
 			if terminal {
+				fields.toolUnavailable = true
 				return DynamicToolUIPart(fields), nil
 			}
 			return nil, fmt.Errorf("tool %q is not configured on agent", p.ToolName)
@@ -70,6 +71,7 @@ func validateAgentUIPart(part Part, tools ToolSet) (Part, error) {
 			}
 		}
 		if toDynamic {
+			fields.toolUnavailable = true
 			return DynamicToolUIPart(fields), nil
 		}
 		return p, nil
@@ -80,6 +82,9 @@ func validateAgentUIPart(part Part, tools ToolSet) (Part, error) {
 		}
 		return DynamicToolUIPart(fields), nil
 	case TextPart:
+		if err := validateCitations(p.Citations); err != nil {
+			return nil, err
+		}
 		if err := validateUIContentState(p.State); err != nil {
 			return nil, err
 		}
@@ -126,6 +131,12 @@ func isEmptyJSONObj(raw json.RawMessage) bool {
 }
 
 func validateToolUIState(part *toolPartFields) error {
+	if !validToolInputEncoding(part.InputEncoding) {
+		return fmt.Errorf("unknown tool input encoding %q", part.InputEncoding)
+	}
+	if part.State != ToolStateInputStreaming {
+		part.InputEncoding = ""
+	}
 	for _, metadata := range []provider.ProviderMetadata{part.CallProviderMetadata, part.ResultProviderMetadata} {
 		if err := validateProviderMetadata(metadata); err != nil {
 			return err
@@ -151,7 +162,12 @@ func validateToolUIState(part *toolPartFields) error {
 	if !available {
 		part.Preliminary = nil
 	}
-	if !failed {
+	if part.State == ToolStateInputStreaming && part.RawInput != nil {
+		var raw *string
+		if err := json.Unmarshal(part.RawInput, &raw); err != nil || raw == nil {
+			return fmt.Errorf("tool invocation %q has non-string streaming raw input", part.ToolCallID)
+		}
+	} else if !failed {
 		part.RawInput = nil
 	}
 	if !available && !failed {

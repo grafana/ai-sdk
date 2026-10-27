@@ -6,6 +6,21 @@ Define a transport-neutral public model catalog for hosted gateways, including c
 
 ## Requirements
 
+### Requirement: Catalog is exclusive to configured-account access
+The Gateway host SHALL use catalog resolution and listing only for configured-account access. The catalog SHALL describe configured models, aliases and provider candidates; it SHALL NOT define BYOK model support or request routing. BYOK selectors SHALL NOT receive catalog instances or resolve configured provider references. Future authentication mechanisms can grant configured access without changing catalog semantics.
+
+#### Scenario: Configured alias is used internally
+- **WHEN** a configured-access request names a catalog alias
+- **THEN** catalog resolution SHALL preserve canonical identity and the configured provider/account selection
+
+#### Scenario: BYOK request coincides with a configured ID
+- **WHEN** a BYOK request's provider/model text also exists as a configured catalog ID
+- **THEN** selection SHALL parse the request independently and SHALL make zero catalog calls
+
+#### Scenario: Catalog changes independently
+- **WHEN** configured aliases, defaults, providers or fallback routes change
+- **THEN** an otherwise identical BYOK request SHALL retain the same provider, native model and request-credential selection
+
 ### Requirement: Request-aware gateway model contracts
 The `ai-gateway/catalog` package SHALL expose a `ModelResolver` contract that resolves a public model ID with `context.Context`, a `ModelLister` contract that lists visible model metadata with `context.Context`, and a `Catalog` contract that combines both capabilities.
 
@@ -90,7 +105,7 @@ Listing SHALL return one `ModelInfo` per canonical entry in ascending canonical-
 - **THEN** construction/listing SHALL preserve and defensively copy those facts without deriving additional candidates from registry lookup
 
 ### Requirement: Public model metadata semantics
-`ModelInfo` SHALL require a canonical public ID and SHALL support optional presentation name, description, explicit aliases, typed model capabilities and explicitly supplied configured candidates. Each candidate SHALL contain only provider-instance reference, effective adapter/provider identifier and configured invocation model ID. Metadata SHALL describe the authorized configured public route, not selected/completed attempts or provider-reported response identity. Canonical IDs, aliases, capabilities and candidates SHALL be supplied by the catalog owner; the catalog SHALL NOT derive them from `LanguageModel.ModelID()`, provider `ModelIDs()` inventories, built-in public-name policy or runtime responses. Missing configured candidate metadata SHALL remain missing rather than be invented. Credentials and secret references SHALL NOT be represented by candidate metadata.
+`ModelInfo` SHALL require a canonical public ID and SHALL support optional presentation name, description, explicit aliases, typed model capabilities and explicitly supplied configured candidates. Each candidate SHALL contain only provider-instance reference, effective adapter/provider identifier and configured invocation model ID. Metadata SHALL describe the authorized configured public route, not selected/completed attempts or provider-reported response identity.
 
 #### Scenario: Provider inventories do not create public routes
 - **WHEN** provider packages expose supported model ID inventories
@@ -111,6 +126,13 @@ Listing SHALL return one `ModelInfo` per canonical entry in ascending canonical-
 #### Scenario: Configured fallback candidates are inspected
 - **WHEN** the catalog owner supplies primary and fallback candidate facts in explicit order
 - **THEN** listing SHALL retain that order without executing candidates or identifying any as selected or successful
+
+### Requirement: Catalog-owner supplied identity and candidate provenance
+Canonical IDs, aliases, capabilities and candidates SHALL be supplied by the catalog owner; the catalog SHALL NOT derive them from `LanguageModel.ModelID()`, provider `ModelIDs()` inventories, built-in public-name policy or runtime responses. Missing configured candidate metadata SHALL remain missing rather than be invented. Credentials and secret references SHALL NOT be represented by candidate metadata.
+
+#### Scenario: Catalog-owner supplied identity and candidate provenance
+- **WHEN** a provider exposes a model inventory but the catalog owner supplies no candidate facts
+- **THEN** the catalog SHALL NOT invent public aliases, capabilities or mappings, and candidate metadata SHALL exclude credentials and secret references
 
 ### Requirement: Structured unknown-model errors
 The package SHALL expose an `ErrUnknownModel` sentinel and return a pointer `*UnknownModelError` that contains the requested public ID and unwraps to the sentinel. Unknown-model errors SHALL NOT enumerate available catalog entries.

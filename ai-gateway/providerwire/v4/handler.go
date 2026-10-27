@@ -15,7 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 )
@@ -25,7 +26,7 @@ const (
 	LanguageModelPath = "/language-model"
 	// HeaderSpecificationVersion carries the provider contract major version.
 	HeaderSpecificationVersion = "ai-language-model-specification-version"
-	// HeaderModelID carries the exact public model identifier to resolve.
+	// HeaderModelID carries the exact model selector for the authenticated policy.
 	HeaderModelID = "ai-language-model-id"
 	// HeaderStreaming selects unary or streaming execution.
 	HeaderStreaming = "ai-language-model-streaming"
@@ -49,7 +50,7 @@ type Limits struct {
 	StreamParts int
 	// StreamFrameBytes is the maximum complete SSE frame size.
 	StreamFrameBytes int64
-	// ModelDuration is the maximum total duration of one model call.
+	// ModelDuration bounds selection and the complete logical model call.
 	ModelDuration time.Duration
 	// StreamIdleDuration is the maximum time between represented provider parts.
 	StreamIdleDuration time.Duration
@@ -59,22 +60,24 @@ type Limits struct {
 
 // Config configures an immutable ProviderWire V4 language-model handler.
 type Config struct {
-	// Resolver resolves the exact public model ID from the protocol header.
-	Resolver catalog.ModelResolver
+	Selector RequestSelector
+	// ConfiguredAPIKeys are provider/exporter credentials redacted only from native error summaries.
+	ConfiguredAPIKeys []string `json:"-"`
 	// Limits bounds request processing, responses, and model execution.
 	Limits Limits
 }
 
 type handler struct {
-	resolver      catalog.ModelResolver
-	limits        Limits
-	requestSchema *schema.CompiledSchema
+	selector        RequestSelector
+	limits          Limits
+	requestSchema   *schema.CompiledSchema
+	summaryRedactor execution.SummaryRedactor
 }
 
 // New constructs an immutable strict ProviderWire V4 HTTP handler.
 func New(config Config) (http.Handler, error) {
-	if isNilInterface(config.Resolver) {
-		return nil, fmt.Errorf("providerwire v4: resolver is nil")
+	if config.Selector == nil {
+		return nil, fmt.Errorf("providerwire v4: selector is nil")
 	}
 	if err := validateLimits(config.Limits); err != nil {
 		return nil, err
@@ -85,9 +88,10 @@ func New(config Config) (http.Handler, error) {
 		return nil, fmt.Errorf("providerwire v4: compiling request schema: %w", err)
 	}
 	return &handler{
-		resolver:      config.Resolver,
-		limits:        config.Limits,
-		requestSchema: requestSchema,
+		selector:        config.Selector,
+		limits:          config.Limits,
+		requestSchema:   requestSchema,
+		summaryRedactor: execution.NewSummaryRedactor(config.ConfiguredAPIKeys),
 	}, nil
 }
 
@@ -126,13 +130,13 @@ func validateLimits(limits Limits) error {
 	}
 	for name, frame := range map[string][]byte{
 		"empty stream start":        canonicalEmptyStartFrame,
-		"rate-limit stream error":   canonicalRateLimitStreamErrorFrame,
-		"overload stream error":     canonicalOverloadStreamErrorFrame,
-		"dependency stream error":   canonicalDependencyStreamErrorFrame,
-		"upstream stream error":     canonicalUpstreamStreamErrorFrame,
-		"internal stream error":     canonicalInternalStreamErrorFrame,
-		"timeout stream error":      canonicalTimeoutStreamErrorFrame,
-		"cancellation stream error": canonicalCancellationStreamErrorFrame,
+		"rate-limit stream error":   streamErrorFrameForSafeError(safeError{category: safeRateLimit}),
+		"overload stream error":     streamErrorFrameForSafeError(safeError{category: safeOverload}),
+		"dependency stream error":   streamErrorFrameForSafeError(safeError{category: safeFailedDependency}),
+		"upstream stream error":     streamErrorFrameForSafeError(safeError{category: safeUpstream}),
+		"internal stream error":     streamErrorFrameForSafeError(safeError{category: safeInternal}),
+		"timeout stream error":      streamErrorFrameForSafeError(safeError{category: safeTimeout}),
+		"cancellation stream error": streamErrorFrameForSafeError(safeError{category: safeCancellation}),
 	} {
 		if int64(len(frame)) > limits.StreamFrameBytes {
 			return fmt.Errorf("providerwire v4: stream frame bytes cannot contain canonical %s", name)
@@ -177,7 +181,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeFailure(w, failure)
 		return
 	}
-	options, failure := mapWireRequest(validated.body, validated.mode)
+	var wire wireRequest
+	if err := json.Unmarshal(validated.body, &wire); err != nil {
+		h.writeFailure(w, invalidMappingFailure())
+		return
+	}
+	gateway := wire.ProviderOptions["gateway"]
+	delete(wire.ProviderOptions, "gateway")
+	options, failure := mapRequest(wire)
 	if failure != nil {
 		h.writeFailure(w, failure)
 		return
@@ -187,26 +198,34 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeFailure(w, failure)
 		return
 	}
-	resolved, err := h.resolveModel(r.Context(), validated.modelID)
+	ctx, cancel := context.WithTimeout(r.Context(), h.limits.ModelDuration)
+	defer cancel()
+	resolved, err := h.selectModel(ctx, validated.modelID, options, gateway)
 	if err != nil {
-		h.writeSafeError(w, safeErrorFromResolution(err))
+		h.writeSafeError(w, safeErrorFromResolution(err), nil)
 		return
 	}
-	if !validResolvedModel(resolved) {
-		h.writeSafeError(w, safeError{category: safeInternal})
-		return
+	request := newExecutionRequest(validated.modelID, resolved, h.limits.UnaryResponseBytes)
+	request.summaryRedactor = h.summaryRedactor
+	capture := &attemptCapture{sealed: resolved.configured == nil}
+	if resolved.configured != nil {
+		ctx = fallback.WithAttemptObserver(ctx, capture.observe)
 	}
+	defer capture.discard()
 	if validated.mode == executionStreaming {
-		h.serveStream(w, r.Context(), resolved.Model, options, history)
+		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history, request, capture)
 		return
 	}
-	result, err := h.invokeModel(r.Context(), resolved.Model, options)
+	result, err := h.invokeModel(ctx, resolved.Model, options, capture)
 	if err != nil {
-		h.writeSafeError(w, safeErrorFromProvider(err))
+		value := safeErrorFromProvider(err)
+		view := request.snapshot(capture, err)
+		h.writeSafeError(w, value, view.metadata())
 		return
 	}
-	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history}) {
-		h.writeSafeError(w, safeError{category: safeInternal})
+	view := request.snapshot(capture, nil)
+	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: view.overview}) {
+		h.writeSafeError(w, safeError{category: safeInternal}, view.metadata())
 	}
 }
 
@@ -297,30 +316,20 @@ func (h *handler) writeFailure(w http.ResponseWriter, failure *requestFailure) {
 	if value.category == 0 {
 		value.category = safeInvalidRequest
 	}
-	h.writeSafeError(w, value)
+	h.writeSafeError(w, value, nil)
 }
 
 func invalidMappingFailure() *requestFailure {
 	return &requestFailure{safe: safeError{category: safeInvalidRequest}}
 }
 
-func unsupportedMappingFailure(capability unsupportedCapability) *requestFailure {
-	return &requestFailure{safe: safeError{category: safeInvalidRequest, capability: capability}}
+func rejectedMappingFailure(reason requestFailureReason) *requestFailure {
+	return &requestFailure{safe: safeError{category: safeInvalidRequest, reason: reason}}
 }
 
 var errRuntimeInternal = errors.New("providerwire v4: runtime internal failure")
 
-func (h *handler) resolveModel(ctx context.Context, modelID string) (resolved catalog.ResolvedModel, err error) {
-	defer func() {
-		if recover() != nil {
-			resolved = catalog.ResolvedModel{}
-			err = errRuntimeInternal
-		}
-	}()
-	return h.resolver.ResolveModel(ctx, modelID)
-}
-
-func validResolvedModel(resolved catalog.ResolvedModel) (valid bool) {
+func validSelection(resolved Selection) (valid bool) {
 	defer func() {
 		if recover() != nil {
 			valid = false
@@ -336,15 +345,12 @@ type modelOutcome struct {
 
 var errModelInternal = errors.New("providerwire v4: model internal failure")
 
-func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel, options provider.CallOptions) (*provider.GenerateResult, error) {
+func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel, options provider.CallOptions, capture *attemptCapture) (*provider.GenerateResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	modelContext, cancel := context.WithTimeout(ctx, h.limits.ModelDuration)
+	modelContext, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 
 	outcomes := make(chan modelOutcome, 1)
 	go func() {
@@ -358,24 +364,21 @@ func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel,
 			}
 			outcomes <- outcome
 		}()
+		capture.enter()
 		outcome.result, outcome.err = model.DoGenerate(modelContext, options)
 	}()
 
+	rejectOutcome := func(err error) (*provider.GenerateResult, error) {
+		capture.discard()
+		return nil, err
+	}
 	select {
 	case outcome := <-outcomes:
 		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if err := modelContext.Err(); err != nil {
-			return nil, err
+			return rejectOutcome(err)
 		}
 		return outcome.result, outcome.err
 	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-modelContext.Done():
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		return nil, context.DeadlineExceeded
+		return rejectOutcome(ctx.Err())
 	}
 }

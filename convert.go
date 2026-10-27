@@ -72,8 +72,14 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 	opt := buildConvertConfig(opts)
 
 	var result []provider.Message
+	lastUserMessageIndex := -1
+	for i, message := range messages {
+		if message.Role == RoleUser {
+			lastUserMessageIndex = i
+		}
+	}
 
-	for _, msg := range messages {
+	for messageIndex, msg := range messages {
 		switch msg.Role {
 		case RoleSystem:
 			text, opts := extractSystemContent(msg.Parts)
@@ -147,7 +153,7 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 							ProviderOptions: providerMetadataToOptions(tp.CallProviderMetadata),
 							Output: &provider.ToolResultOutput{
 								Type:   provider.ToolOutputExecutionDenied,
-								Reason: stringValue(tp.Approval.Reason),
+								Reason: denialReason(stringValue(tp.Approval.Reason)),
 							},
 						})
 					}
@@ -170,6 +176,9 @@ func ConvertToModelMessages(messages []UIMessage, opts ...ConvertOption) ([]prov
 			}
 
 			processToolPart := func(tp toolPartFields) error {
+				if tp.State == ToolStateApprovalRequested && messageIndex < lastUserMessageIndex {
+					return nil
+				}
 				if tp.State == ToolStateInputStreaming || (opt.ignoreIncompleteToolCalls && (!isCompleteToolCallState(tp.State) || (tp.State == ToolStateOutputAvailable && tp.Preliminary != nil && *tp.Preliminary))) {
 					return nil
 				}
@@ -455,7 +464,11 @@ func stringValue(value *string) string {
 }
 
 func createToolModelOutput(tp toolPartFields, tools ToolSet) (*provider.ToolResultOutput, error) {
-	if tool, ok := tools[tp.ToolName]; ok && tool.ToModelOutput != nil {
+	tool, ok := tools[tp.ToolName]
+	if !ok && tp.toolUnavailable {
+		return &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "Tool output omitted because the tool is no longer available."}, nil
+	}
+	if ok && tool.ToModelOutput != nil {
 		output, err := tool.ToModelOutput(ToolOutputContext{
 			ToolCallID: tp.ToolCallID,
 			Input:      tp.Input,

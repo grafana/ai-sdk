@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"sync"
@@ -23,6 +24,7 @@ var syntheticRawUsage = json.RawMessage(`{"input_tokens":32,"cache_read_input_to
 type providerWireV4Stats struct {
 	successCalls        atomic.Int64
 	streamCalls         atomic.Int64
+	executionFailures   atomic.Int64
 	blockingCalls       atomic.Int64
 	streamBlockingCalls atomic.Int64
 	cancellations       atomic.Int64
@@ -145,6 +147,9 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	one := 1
 	two := 2
 	switch m.kind {
+	case "execution-failure":
+		m.stats.executionFailures.Add(1)
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "native unavailable"})
 	case "native-values", "native-empty", "native-partial", "native-absent":
 		return scenarioNativeStream(m.kind), nil
 	case "reasoning-files":
@@ -154,6 +159,15 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData}, ProviderMetadata: meta},
 			provider.StreamPart{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Bytes: []byte{1, 2, 3}}, ProviderMetadata: provider.ProviderMetadata{}},
 			provider.StreamPart{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "https://example.test/reasoning"}},
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}},
+		)}, nil
+	case "generated-files":
+		m.stats.recordSuccess(options)
+		meta := provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"file","reasoningEncryptedContent":null}`)}
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeData}, ProviderMetadata: meta},
+			provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Bytes: []byte{1, 2, 3}}, ProviderMetadata: provider.ProviderMetadata{}},
+			provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: &provider.StreamFileData{Type: provider.StreamFileDataTypeURL, URL: "opaque:generated", OriginalURL: stringPointer("opaque:Original?token=application")}},
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}},
 		)}, nil
 	case "reasoning":
@@ -170,6 +184,24 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartTextEnd, ID: "1"},
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
 		)}, nil
+	case "custom":
+		m.stats.recordSuccess(options)
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "custom-response", ModelID: "custom-model"},
+			scenarioCustomStreamPart(scenarioCustom()[0]),
+			provider.StreamPart{Type: provider.PartTextStart, ID: "text"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "text", Delta: "answer"},
+			scenarioCustomStreamPart(scenarioCustom()[1]),
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "text"},
+			scenarioCustomStreamPart(scenarioCustom()[2]),
+			scenarioCustomStreamPart(scenarioCustom()[3]),
+			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: &provider.Usage{}},
+		)}, nil
+	case "unsupported-functionality":
+		m.stats.recordSuccess(options)
+		return nil, fmt.Errorf("test: unsupported tool content part type: custom: %w", provider.ErrUnsupportedFunctionality)
+	case "citations":
+		return &provider.StreamResult{Stream: scenarioStream(scenarioCitationStream()...)}, nil
 	case "sources":
 		parts := []provider.StreamPart{}
 		for _, source := range scenarioSources() {
@@ -241,20 +273,32 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call-weather", ToolName: "weather", Input: `{"city":"Rio"}`},
 			provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}},
 		)}, nil
+	case "raw":
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartStreamStart},
+			provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"type":"response.created","response":{"id":"resp_1","tools":[{"type":"mcp","server_label":"docs","headers":{"Authorization":"Bearer private-header"},"server_url":"https://user:private-pass@mcp.example/mcp?api_key=private-query&region=eu"}]}}`)},
+			provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartRaw},
+			provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage("{\"delta\":\"\xff\"}")},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "hello"},
+			provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"type":"message_stop"}`)},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}},
+		)}, nil
 	case "raw-usage", "raw-usage-empty":
 		raw := syntheticRawUsage
 		if m.kind == "raw-usage-empty" {
 			raw = json.RawMessage(`{}`)
 		}
 		return &provider.StreamResult{Stream: scenarioStream(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{Raw: raw}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}})}, nil
-	case "success":
+	case "success", "structured", "structured-invalid":
 		m.stats.recordSuccess(options)
 		stream := make(chan provider.StreamPart, 8)
 		stream <- provider.StreamPart{Type: provider.PartStreamStart, Warnings: []provider.Warning{{Type: provider.WarnOther, Message: "private warning"}}}
 		stream <- provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "stream-response-1", ModelID: "private-backend", Provider: "private-provider", Timestamp: time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)}
 		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"}
 		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: ""}
-		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "hello from Go stream"}
+		stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: scenarioOutputText(m.kind, "hello from Go stream")}
 		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"}
 		stream <- provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{
 			InputTokens:  provider.InputTokenUsage{Total: &two, NoCache: &one, CacheRead: &one, CacheWrite: &zero},
@@ -262,6 +306,25 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "test-stop"}}
 		close(stream)
 		return &provider.StreamResult{Stream: stream}, nil
+	case "structured-committed":
+		m.stats.recordSuccess(options)
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartStreamStart},
+			provider.StreamPart{Type: provider.PartTextStart, ID: "object"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "object", Delta: `{"value":`},
+			provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400, Message: "wrapper must not escape", Data: json.RawMessage(`{"error":{"message":"event detail","type":"schema_error","code":17}}`)})},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "object", Delta: `"ok"}`},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "object"},
+			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}},
+		)}, nil
+	case "stream-key-errors":
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Data: json.RawMessage(`{"message":"configured-test-key own-byok-key","type":"configured-test-key","code":"configured-test-key"}`)})},
+			provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "configured-test-key"},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}, ProviderMetadata: provider.ProviderMetadata{"native": json.RawMessage(`{"opaque":"configured-test-key"}`)}},
+		)}, nil
 	case "stream-errors":
 		stream := make(chan provider.StreamPart, 8)
 		stream <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusServiceUnavailable, Message: "private overload"})}
@@ -290,6 +353,9 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 
 func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	switch m.kind {
+	case "execution-failure":
+		m.stats.executionFailures.Add(1)
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "native unavailable"})
 	case "native-values", "native-empty", "native-partial", "native-absent":
 		return scenarioNativeValues(m.kind), nil
 	case "reasoning-files":
@@ -301,9 +367,27 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &data, ProviderMetadata: provider.ProviderMetadata{}},
 			{Type: provider.ContentReasoningFile, MediaType: "image/png", Data: &url},
 		}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}}, nil
+	case "generated-files":
+		m.stats.recordSuccess(options)
+		empty, data, url := provider.Base64DataContent(""), provider.BytesDataContent([]byte{1, 2, 3}), provider.URLDataContent("opaque:generated")
+		url.OriginalURL = stringPointer("opaque:Original?token=application")
+		two := 2
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{
+			{Type: provider.ContentFile, MediaType: "image/png", Data: &empty, ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"itemId":"file","reasoningEncryptedContent":null}`)}},
+			{Type: provider.ContentFile, MediaType: "image/png", Data: &data, ProviderMetadata: provider.ProviderMetadata{}},
+			{Type: provider.ContentFile, MediaType: "image/png", Data: &url},
+		}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &two, Reasoning: &two}}}, nil
 	case "reasoning":
 		m.stats.recordSuccess(options)
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentReasoning, Text: "", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"end-signature"}`)}}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+	case "custom":
+		m.stats.recordSuccess(options)
+		return &provider.GenerateResult{Content: append([]provider.GenerateContentPart{{Type: provider.ContentText, Text: "answer"}}, scenarioCustom()...), FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+	case "unsupported-functionality":
+		m.stats.recordSuccess(options)
+		return nil, fmt.Errorf("test: unsupported tool content part type: custom: %w", provider.ErrUnsupportedFunctionality)
+	case "citations":
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "answer", Citations: scenarioCitations()}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "sources":
 		return &provider.GenerateResult{Content: scenarioSources(), FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "hosted-deferred", "hosted-deferred-error":
@@ -342,19 +426,21 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 			call.Dynamic = &yes
 		}
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: ""}, call}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonToolCalls}}, nil
+	case "raw":
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "hello"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "raw-usage", "raw-usage-empty":
 		raw := syntheticRawUsage
 		if m.kind == "raw-usage-empty" {
 			raw = json.RawMessage(`{}`)
 		}
 		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "ok"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{Raw: raw}}, nil
-	case "success":
+	case "success", "structured", "structured-invalid":
 		m.stats.recordSuccess(options)
 		zero := 0
 		one := 1
 		two := 2
 		return &provider.GenerateResult{
-			Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: "hello from Go"}},
+			Content:      []provider.GenerateContentPart{{Type: provider.ContentText, Text: scenarioOutputText(m.kind, "hello from Go")}},
 			FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "test-stop"},
 			Usage: provider.Usage{
 				InputTokens:  provider.InputTokenUsage{Total: &two, NoCache: &one, CacheRead: &one, CacheWrite: &zero},
@@ -382,25 +468,54 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 22)
-	for _, id := range []string{"native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "success", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
+	entries := make([]catalog.StaticEntry, 0, 29)
+	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "citations", "custom", "unsupported-functionality", "success", "raw", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
 		})
 
 	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "execution-errors", Candidates: []catalog.ConfiguredCandidate{{Provider: "test", ProviderInstance: "configured", ModelID: "errors"}}}, Model: &providerWireV4Model{kind: "stream-errors", stats: stats}})
 	ordered, err := fallback.New(&providerWireV4Model{kind: "setup-failure", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
 	if err != nil {
 		return nil, err
 	}
 	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "mapped-fallback"}, Model: ordered})
+	structured, err := fallback.New(&providerWireV4Model{kind: "setup-failure", stats: stats}, &providerWireV4Model{kind: "structured", stats: stats})
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "structured-fallback"}, Model: structured})
+	committed, err := fallback.New(&providerWireV4Model{kind: "structured-committed", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "structured-committed", Candidates: []catalog.ConfiguredCandidate{
+		{ProviderInstance: "selected", Provider: "test", ModelID: "private-structured-committed"},
+		{ProviderInstance: "unused", Provider: "test", ModelID: "private-success"},
+	}}, Model: committed})
+	executionModel, err := fallback.New(&providerWireV4Model{kind: "execution-failure", stats: stats}, &providerWireV4Model{kind: "success", stats: stats})
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, catalog.StaticEntry{Info: catalog.ModelInfo{ID: "execution-fallback", Candidates: []catalog.ConfiguredCandidate{{Provider: "test", ProviderInstance: "primary", ModelID: "execution-failure"}, {Provider: "test", ProviderInstance: "secondary", ModelID: "success"}}}, Model: executionModel})
 	resolver, err := catalog.NewStatic(entries)
 	if err != nil {
 		return nil, err
 	}
+	configured := providerwirev4.CatalogSelector(resolver)
 	runtime, err := providerwirev4.New(providerwirev4.Config{
-		Resolver: resolver,
+		ConfiguredAPIKeys: []string{"configured-test-key"},
+		Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (providerwirev4.Selection, error) {
+			if id == "unconfigured-key-errors" {
+				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-key-errors", stats: stats}}, nil
+			}
+			if id == "unconfigured-errors" {
+				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-errors", stats: stats}}, nil
+			}
+			return configured(ctx, id, options, gateway)
+		},
 		Limits: providerwirev4.Limits{
 			RequestBytes:        1 << 20,
 			UnaryResponseBytes:  1 << 20,
@@ -426,6 +541,19 @@ func scenarioStream(parts ...provider.StreamPart) <-chan provider.StreamPart {
 	return stream
 }
 
+func scenarioCustom() []provider.GenerateContentPart {
+	return []provider.GenerateContentPart{
+		{Type: provider.ContentCustom, Kind: "openai.compaction", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"type":"compaction","itemId":"cmp_1","encryptedContent":"ENC","nested":{"none":null,"no":false,"zero":0,"empty":""}}`)}},
+		{Type: provider.ContentCustom, Kind: "anthropic.fallback", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"fallback","from":{"model":"a"},"to":{"model":"b"}}`)}},
+		{Type: provider.ContentCustom, Kind: "example.future_block"},
+		{Type: provider.ContentCustom, Kind: "example.empty", ProviderMetadata: provider.ProviderMetadata{}},
+	}
+}
+
+func scenarioCustomStreamPart(part provider.GenerateContentPart) provider.StreamPart {
+	return provider.StreamPart{Type: provider.PartCustom, Kind: part.Kind, ProviderMetadata: part.ProviderMetadata}
+}
+
 func scenarioSources() []provider.GenerateContentPart {
 	return []provider.GenerateContentPart{
 		{Type: provider.ContentSource, SourceType: provider.SourceTypeURL, ID: "backend-secret", URL: "https://example.com", Title: "URL"},
@@ -449,6 +577,7 @@ func (s *providerWireV4Scenario) register(mux *http.ServeMux) {
 		_ = json.NewEncoder(w).Encode(map[string]int64{
 			"successCalls":        s.stats.successCalls.Load(),
 			"streamCalls":         s.stats.streamCalls.Load(),
+			"executionFailures":   s.stats.executionFailures.Load(),
 			"blockingCalls":       s.stats.blockingCalls.Load(),
 			"streamBlockingCalls": s.stats.streamBlockingCalls.Load(),
 			"cancellations":       s.stats.cancellations.Load(),
@@ -469,3 +598,15 @@ func registerProviderWireV4(mux *http.ServeMux) error {
 	scenario.register(mux)
 	return nil
 }
+
+func scenarioOutputText(kind, fallbackText string) string {
+	switch kind {
+	case "structured":
+		return `{"value":"ok"}`
+	case "structured-invalid":
+		return `{"value":42}`
+	default:
+		return fallbackText
+	}
+}
+func stringPointer(value string) *string { return &value }

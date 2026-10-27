@@ -55,9 +55,16 @@ type systemContentBlock struct {
 	CachePoint *cachePoint `json:"cachePoint,omitempty"`
 }
 
+type converseRole string
+
+const (
+	converseRoleUser      converseRole = "user"
+	converseRoleAssistant converseRole = "assistant"
+)
+
 // converseMessage is a `messages` entry: a role plus content blocks.
 type converseMessage struct {
-	Role    string         `json:"role"` // "user" or "assistant"
+	Role    converseRole   `json:"role"`
 	Content []contentBlock `json:"content"`
 }
 
@@ -146,7 +153,7 @@ type toolResultBlock struct {
 // are stringified into Text to match upstream, so there is no dedicated json
 // field.
 type toolResultContent struct {
-	Text     string         `json:"text,omitempty"`
+	Text     *string        `json:"text,omitempty"`
 	Image    *imageBlock    `json:"image,omitempty"`
 	Video    *videoBlock    `json:"video,omitempty"`
 	Document *documentBlock `json:"document,omitempty"`
