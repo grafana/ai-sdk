@@ -19,6 +19,9 @@ import (
 const (
 	// defaultStreamBuffer is the channel buffer size for stream channels.
 	defaultStreamBuffer = 256
+	// deniedApprovalCorrelationProvider is the provider options namespace
+	// upstream generateText uses to correlate provider-executed denials.
+	deniedApprovalCorrelationProvider = "openai"
 )
 
 // ErrNoOutputGenerated is returned when a model stream ends before producing output.
@@ -2254,17 +2257,21 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 
 	deniedToolParts := make([]provider.ContentPart, 0, len(denied))
 	for _, approval := range denied {
-		if approval.toolCall.ProviderExecuted || approval.hasExistingToolResult {
+		if approval.hasExistingToolResult || (approval.toolCall.ProviderExecuted && !cfg.providerExecutedDenialResults) {
 			continue
+		}
+		output := &provider.ToolResultOutput{
+			Type:   provider.ToolOutputExecutionDenied,
+			Reason: denialReason(approval.response.Reason),
+		}
+		if approval.toolCall.ProviderExecuted {
+			output.ProviderOptions = providerExecutedDenialOptions(approval.response.ApprovalID)
 		}
 		deniedToolParts = append(deniedToolParts, provider.ContentPart{
 			Type:       provider.ContentPartTypeToolResult,
 			ToolCallID: approval.toolCall.ToolCallID,
 			ToolName:   approval.toolCall.ToolName,
-			Output: &provider.ToolResultOutput{
-				Type:   provider.ToolOutputExecutionDenied,
-				Reason: denialReason(approval.response.Reason),
-			},
+			Output:     output,
 		})
 	}
 
@@ -2275,6 +2282,15 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		resultMsgs = append(resultMsgs, provider.NewToolMessage(toolParts...))
 	}
 	return resultMsgs, nil
+}
+
+func providerExecutedDenialOptions(approvalID string) provider.ProviderOptions {
+	raw, _ := json.Marshal(struct {
+		ApprovalID string `json:"approvalId"`
+	}{ApprovalID: approvalID})
+	return provider.ProviderOptions{
+		deniedApprovalCorrelationProvider: provider.RawProviderOption{Key: deniedApprovalCorrelationProvider, Raw: raw},
+	}
 }
 
 func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, approvals []collectedToolApproval) ([]collectedToolApproval, []collectedToolApproval, error) {

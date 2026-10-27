@@ -88,10 +88,11 @@ type baseConfig struct {
 
 type streamConfig struct {
 	baseConfig
-	onChunk                  func(OnChunkState)
-	onAbort                  func(OnAbortState)
-	includeRawChunks         bool
-	parseOutputOnAllFinishes bool
+	onChunk                       func(OnChunkState)
+	onAbort                       func(OnAbortState)
+	includeRawChunks              bool
+	parseOutputOnAllFinishes      bool
+	providerExecutedDenialResults bool
 }
 
 type generateConfig struct {
@@ -102,7 +103,7 @@ func (gc *generateConfig) toStreamConfig() *streamConfig {
 	bc := gc.baseConfig
 	bc.timeout.FirstChunk = 0
 	bc.timeout.Chunk = 0
-	return &streamConfig{baseConfig: bc}
+	return &streamConfig{baseConfig: bc, providerExecutedDenialResults: true}
 }
 
 func buildStreamConfig(opts []StreamOption) *streamConfig {

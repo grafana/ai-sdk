@@ -2125,6 +2125,130 @@ func TestStreamTextToolApproval_ProviderExecutedDeniedResponseEmitsDenied(t *tes
 	assert.False(t, last.Content[0].ProviderExecuted)
 }
 
+func TestToolApproval_ProviderExecutedDenialResultsByEntryPoint(t *testing.T) {
+	msgs := []provider.Message{
+		provider.UserText("shorten https://example.com"),
+		provider.NewAssistantMessage(
+			provider.ContentPart{Type: provider.ContentPartTypeToolCall, ToolCallID: "mcp-call-1", ToolName: "mcp_tool", Input: json.RawMessage(`{"query":"test"}`), ProviderExecuted: true},
+			provider.ToolApprovalRequestPart("mcp-approval-1", "mcp-call-1", false),
+			provider.ToolCallPart("local-call-1", "local", json.RawMessage(`{}`)),
+			provider.ToolApprovalRequestPart("local-approval-1", "local-call-1", false),
+		),
+		provider.NewToolMessage(
+			provider.ProviderExecutedToolApprovalResponsePart("mcp-approval-1", false, "User denied the request"),
+			provider.ToolApprovalResponsePart("local-approval-1", false, ""),
+		),
+	}
+	localDenial := provider.ContentPart{
+		Type:       provider.ContentPartTypeToolResult,
+		ToolCallID: "local-call-1",
+		ToolName:   "local",
+		Output:     &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied},
+	}
+	providerDenial := provider.ContentPart{
+		Type:       provider.ContentPartTypeToolResult,
+		ToolCallID: "mcp-call-1",
+		ToolName:   "mcp_tool",
+		Output: &provider.ToolResultOutput{
+			Type:            provider.ToolOutputExecutionDenied,
+			Reason:          new("User denied the request"),
+			ProviderOptions: provider.ProviderOptions{"openai": provider.RawProviderOption{Key: "openai", Raw: json.RawMessage(`{"approvalId":"mcp-approval-1"}`)}},
+		},
+	}
+	var executed atomic.Int32
+	tools := ToolSet{
+		"mcp_tool": Tool{Type: UserToolProvider},
+		"local": Tool{Execute: func(context.Context, json.RawMessage, ToolExecutionOptions) (json.RawMessage, error) {
+			executed.Add(1)
+			return json.RawMessage(`"ran"`), nil
+		}},
+	}
+
+	tests := []struct {
+		name string
+		want []provider.ContentPart
+		run  func(t *testing.T, model provider.LanguageModel) ([]provider.Message, []TextStreamPart)
+	}{
+		{
+			name: "generate text",
+			want: []provider.ContentPart{providerDenial, localDenial},
+			run: func(t *testing.T, model provider.LanguageModel) ([]provider.Message, []TextStreamPart) {
+				result, err := GenerateText(t.Context(), model, WithModelMessages(msgs...), WithTools(tools))
+				require.NoError(t, err)
+				return result.ResponseMessages, nil
+			},
+		},
+		{
+			name: "agent generate",
+			want: []provider.ContentPart{providerDenial, localDenial},
+			run: func(t *testing.T, model provider.LanguageModel) ([]provider.Message, []TextStreamPart) {
+				result, err := NewToolLoopAgent(model, WithToolLoopAgentOptions(WithTools(tools))).Generate(t.Context(), WithAgentModelMessages(msgs...))
+				require.NoError(t, err)
+				return result.ResponseMessages, nil
+			},
+		},
+		{
+			name: "stream text",
+			want: []provider.ContentPart{localDenial},
+			run: func(t *testing.T, model provider.LanguageModel) ([]provider.Message, []TextStreamPart) {
+				return collectStreamResult(t, StreamText(t.Context(), model, WithModelMessages(msgs...), WithTools(tools)))
+			},
+		},
+		{
+			name: "agent stream",
+			want: []provider.ContentPart{localDenial},
+			run: func(t *testing.T, model provider.LanguageModel) ([]provider.Message, []TextStreamPart) {
+				return collectStreamResult(t, NewToolLoopAgent(model, WithToolLoopAgentOptions(WithTools(tools))).Stream(t.Context(), WithAgentModelMessages(msgs...)))
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var prompt []provider.Message
+			model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+				prompt = opts.Prompt
+				return &provider.StreamResult{Stream: textStreamParts("not approved")}, nil
+			}}
+
+			responseMessages, parts := tc.run(t, model)
+
+			assert.Zero(t, executed.Load())
+			require.NotEmpty(t, responseMessages)
+			assert.Equal(t, provider.RoleTool, responseMessages[0].Role)
+			assert.Equal(t, tc.want, responseMessages[0].Content)
+			require.Len(t, prompt, 3)
+			last := prompt[2]
+			require.Equal(t, provider.RoleTool, last.Role)
+			wantPrompt := append([]provider.ContentPart{{
+				Type:       provider.ContentPartTypeToolApprovalResponse,
+				ApprovalID: "mcp-approval-1",
+				Approved:   new(false),
+				Reason:     "User denied the request",
+			}}, tc.want...)
+			assert.Equal(t, wantPrompt, last.Content)
+			if parts != nil {
+				var denied []string
+				for _, part := range parts {
+					if d, ok := part.(StreamToolOutputDenied); ok {
+						denied = append(denied, d.ToolCallID)
+					}
+				}
+				assert.ElementsMatch(t, []string{"mcp-call-1", "local-call-1"}, denied)
+			}
+		})
+	}
+}
+
+func collectStreamResult(t *testing.T, result *StreamTextResult) ([]provider.Message, []TextStreamPart) {
+	t.Helper()
+	var parts []TextStreamPart
+	for part := range result.FullStream() {
+		parts = append(parts, part)
+	}
+	require.NoError(t, result.Err())
+	return result.ResponseMessages(), parts
+}
+
 func TestStreamTextToolApproval_ExistingResultNotDuplicated(t *testing.T) {
 	approved := true
 	msgs := []provider.Message{

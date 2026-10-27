@@ -89,7 +89,7 @@ When a completed step has no effective required/named choice violation, a non-pr
 
 ### Requirement: Approval response collection before model calls
 
-At StreamText start, orchestration SHALL inspect the last tool-role message for approval responses, correlate approvalId with earlier assistant request and toolCallId with original call. Approved local tools SHALL execute before next model call and append resulting tool-result message to prompt. Denied local approvals SHALL append synthetic execution-denied output with response reason.
+At StreamText start, orchestration SHALL inspect the last tool-role message for approval responses, correlate approvalId with earlier assistant request and toolCallId with original call. Approved local tools SHALL execute before next model call and append resulting tool-result message to prompt. Denied local approvals SHALL append synthetic execution-denied output with response reason. StreamText SHALL add no result for provider-executed denials.
 
 #### Scenario: Approved tool executes before next model call
 - **WHEN** input messages contain an assistant approval request and a tool approval response with `approved: true`
@@ -106,6 +106,11 @@ At StreamText start, orchestration SHALL inspect the last tool-role message for 
 - **WHEN** input messages contain one approved local approval response and one denied local approval response
 - **THEN** `StreamText` SHALL emit the denied output event before the approved tool output event
 - **AND** the prompt for the language model SHALL append the approved tool result before the synthetic execution-denied result
+
+#### Scenario: Streamed provider-executed denial adds no result
+- **WHEN** `StreamText` input messages contain a denied approval response for a provider-executed tool call without an existing result
+- **THEN** it SHALL emit a tool output denied event for that call
+- **AND** neither the prompt nor the response messages SHALL contain an execution-denied result for it
 
 #### Scenario: Existing tool result is not duplicated
 - **WHEN** the last tool message already contains a tool-result for the approval request's tool call ID
@@ -203,7 +208,7 @@ assembleResponseMessage SHALL apply approval chunks to the corresponding invocat
 
 ### Requirement: GenerateText inherits approval orchestration
 
-`GenerateText` SHALL use the same approval orchestration semantics as `StreamText` because it is implemented by consuming `StreamText`. Approval requests, approval-resolved tool results, denied synthetic results, and content accessors SHALL match the streaming path.
+`GenerateText` SHALL use the same approval orchestration semantics as `StreamText` because it is implemented by consuming `StreamText`. Approval requests, approval-resolved tool results, local denied synthetic results, and content accessors SHALL match the streaming path. Provider-executed denial results are the only difference.
 
 #### Scenario: GenerateText returns pending approval content
 - **WHEN** `GenerateText` receives a model response with a tool call requiring approval
@@ -214,6 +219,15 @@ assembleResponseMessage SHALL apply approval chunks to the corresponding invocat
 - **WHEN** `GenerateText` is called with messages containing an approved approval response
 - **THEN** it SHALL execute the approved local tool before the model call
 - **AND** the returned steps SHALL include the resumed tool result before any subsequent model response content
+
+### Requirement: Generate paths record provider-executed denials
+
+`GenerateText` and `ToolLoopAgent.Generate` SHALL append an execution-denied result for each denied provider-executed approval without an existing result, as upstream `generateText` does. The result SHALL carry the response reason and `providerOptions.openai.approvalId` on its output, follow upstream denied-approval order after approved results, and appear in the next prompt and `ResponseMessages`.
+
+#### Scenario: GenerateText records a correlated provider-executed denial
+- **WHEN** `GenerateText` resumes messages containing a denied approval response for a provider-executed OpenAI MCP call
+- **THEN** `ResponseMessages` SHALL begin with a tool message containing an execution-denied result for that call with `providerOptions.openai.approvalId` set to the approval ID
+- **AND** the next OpenAI request SHALL carry the denial as an `mcp_approval_response` with `approve: false` and no function call output for that call
 
 ### Requirement: Approved streaming local tools use final results for approval continuation
 

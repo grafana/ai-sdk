@@ -63,6 +63,11 @@ second call
   → model continues with the outcome
 ```
 
+Provider-executed tools, such as OpenAI MCP calls, receive the decision through
+the provider. For a denied provider-executed call, `GenerateText` also adds an
+execution-denied result to `ResponseMessages` that carries the approval ID;
+`StreamText` emits only the denied output event, as upstream does.
+
 For `useChat`, persist the complete `UIMessage` parts and submit the updated
 history after the user decides. Pending approvals intentionally stop the current
 invocation; do not keep the HTTP request open while waiting for a person.
