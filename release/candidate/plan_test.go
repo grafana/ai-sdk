@@ -123,7 +123,7 @@ require (
 		},
 		{
 			name: "gateway pins follow co-released libraries, including indirect requirements",
-			goMod: `module github.com/grafana/ai-sdk/ai-gateway
+			goMod: "module " + CorePath + "/" + GatewayDir + `
 
 go 1.27.3
 
@@ -135,7 +135,7 @@ require (
 
 require github.com/grafana/ai-sdk/providers/bedrock v0.0.0-20260928202004-dd43c6dff058 // indirect
 `,
-			want: `module github.com/grafana/ai-sdk/ai-gateway
+			want: "module " + CorePath + "/" + GatewayDir + `
 
 go 1.27.3
 
