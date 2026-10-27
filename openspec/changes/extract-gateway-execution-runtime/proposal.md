@@ -60,7 +60,7 @@ ProviderWire V4 owns model execution, failure classification, attempt capture an
 - **Wire:** no document changes. Requests that used the removed namespaces now succeed. The precedence between a protected-header refusal and a later mapping failure changes; both are fixed 400 documents.
 - **Tests:** behavior is the gate. Tests may change imports, construction and the package that owns a moved internal. Tests for work that ignores cancellation are replaced by tests for discarded late results.
 - **Parity:** Gateway execution and host policy are Go extensions with no `@ai-sdk/gateway@4.0.116` counterpart. The pinned client sends provider options and call headers in the body as opaque data, unchanged. `knownGaps`, recorded fixtures and conformance expectations are unchanged.
-- **Delivery:** branch `nrbrd/gateway-execution-runtime`, based on `nrbrd/gateway-platform-limits` (#521). The issue names `nrbrd/gateway-resource-policy`, but #521 was inserted into the stack after it.
+- **Delivery:** branch `nrbrd/gateway-execution-runtime`, based on `main` now that #518 and #532 (#521) have merged. The issue names `nrbrd/gateway-resource-policy`, which no longer exists.
 - **Out of scope:**
   - one selector and one handler, the route table, host errors, discovery and per-attempt translation (#482);
   - lifecycle validation (#483);

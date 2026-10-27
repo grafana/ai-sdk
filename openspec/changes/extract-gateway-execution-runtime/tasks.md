@@ -1,6 +1,6 @@
 # Tasks
 
-Each numbered group is one commit. Every commit must leave these passing: `mise run test-ai-gateway`, `mise run test-providerwire-v4` and `go test -race` for `ai-gateway/internal/execution/...` and `ai-gateway/providerwire/v4/...`. The branch is based on `nrbrd/gateway-platform-limits` (#521).
+Each numbered group is one commit. Every commit must leave these passing: `mise run test-ai-gateway`, `mise run test-providerwire-v4` and `go test -race` for `ai-gateway/internal/execution/...` and `ai-gateway/providerwire/v4/...`. The branch is based on `main`, after #518 and #532 (#521).
 
 ## 1. Selection types, limits and classification in `execution`
 
@@ -71,5 +71,5 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## Workflow follow-up
 
-- Open a draft PR titled `refactor(ai-gateway)!: extract the shared execution runtime`, based on `nrbrd/gateway-platform-limits`, linking #481 and #394.
+- Open a draft PR titled `refactor(ai-gateway)!: extract the shared execution runtime`, based on `main`, linking #481 and #394.
 - Archive the change in the same PR before merge, and verify the synced specs.
