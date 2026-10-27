@@ -65,7 +65,7 @@ func (h *handler) processReasoningPart(w http.ResponseWriter, state *streamState
 		if part.ID == "" {
 			return streamPartAdapterFailure
 		}
-		if _, exists := state.usedReasoningIDs[part.ID]; exists {
+		if _, exists := state.segmentReasoningIDs[part.ID]; exists {
 			return streamPartAdapterFailure
 		}
 	case provider.PartReasoningDelta, provider.PartReasoningEnd:
@@ -79,10 +79,9 @@ func (h *handler) processReasoningPart(w http.ResponseWriter, state *streamState
 	case streamWriteWriterFailure:
 		return streamPartWriterFailure
 	}
-	state.textStarted = true
 	if part.Type == provider.PartReasoningStart {
 		state.reasoningIDs[part.ID] = struct{}{}
-		state.usedReasoningIDs[part.ID] = struct{}{}
+		state.segmentReasoningIDs[part.ID] = struct{}{}
 	}
 	if part.Type == provider.PartReasoningEnd {
 		delete(state.reasoningIDs, part.ID)

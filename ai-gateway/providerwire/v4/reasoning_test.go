@@ -71,7 +71,8 @@ func TestReasoningConcurrentLifecycle(t *testing.T) {
 	for _, part := range parts {
 		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, part), part.Type)
 	}
-	require.Equal(t, streamPartFinished, h.processStreamPart(w, state, finishPart()))
+	require.Equal(t, streamPartContinue, h.processStreamPart(w, state, finishPart()))
+	require.Equal(t, segmentFinished, state.phase)
 	assert.Contains(t, w.Body.String(), `"delta":""`)
 	assert.Contains(t, w.Body.String(), `"providerMetadata":{}`)
 	assert.Contains(t, w.Body.String(), "end-only")

@@ -490,7 +490,7 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 		{"duplicate result", []provider.StreamPart{call, result, result}},
 		{"mismatched name", []provider.StreamPart{start, end, {Type: provider.PartToolCall, ToolCallID: "a", ToolName: "other", Input: "{}"}}},
 		{"open at finish", []provider.StreamPart{start, finishPart()}},
-		{"late metadata", []provider.StreamPart{call, {Type: provider.PartResponseMeta}}},
+		{"metadata then close", []provider.StreamPart{call, {Type: provider.PartResponseMeta}}},
 		{"metadata after input start", []provider.StreamPart{start, {Type: provider.PartResponseMeta}, end, call}},
 		{"empty input id", []provider.StreamPart{{Type: provider.PartToolInputStart, ToolName: "f"}}},
 		{"empty input name", []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "a"}}},
@@ -510,6 +510,22 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 			assert.NotContains(t, body, `"type":"finish"`)
 		})
 	}
+}
+
+func TestStreamingTools_MetadataAfterClosedCall(t *testing.T) {
+	harness := newRuntimeHarness(t, testLimits())
+	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return &provider.StreamResult{Stream: makeStream(
+			provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "a", ToolName: "f", Input: "{}"},
+			provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "resp_2"},
+			finishPart(),
+		)}, nil
+	}
+	body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+	requireStreamBodyMatchesSchema(t, body)
+	assert.NotContains(t, body, `"type":"error"`)
+	assert.Less(t, strings.Index(body, `"type":"tool-call"`), strings.Index(body, `"id":"resp_2"`))
+	assert.Contains(t, body, `"type":"finish"`)
 }
 
 func TestStreamingTools_IndependentTextAndToolIDs(t *testing.T) {
