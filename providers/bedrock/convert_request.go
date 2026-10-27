@@ -70,10 +70,8 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	isThinkingEnabled := bo.ReasoningConfig != nil &&
 		(bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive" || bo.ReasoningConfig.Type == reasoningTypeBetweenTools)
 
-	// ResponseFormat handling. Some Anthropic models reject native
-	// output_config.format even when their model family otherwise supports it.
-	// Opus 4.7/4.8 use an instruction when user tools are present so those tools
-	// remain selectable; other non-native cases use the synthetic json tool.
+	// ResponseFormat routing: native output_config.format, JSON instruction, or
+	// synthetic json tool.
 	useNativeStructuredOutput := false
 	if opts.ResponseFormat != nil && opts.ResponseFormat.Type == provider.ResponseFormatJSON {
 		if len(opts.ResponseFormat.Schema) == 0 {
@@ -82,12 +80,9 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 				Feature: "responseFormat",
 				Details: "Bedrock requires a schema for JSON response format; ignoring",
 			})
-		} else if isAnthropic && (mode == StructuredOutputModeOutputFormat || (mode == StructuredOutputModeAuto && !rejectsNativeStructuredOutput(modelID) && (supportsStructuredOutputCapability(modelID) || isThinkingEnabled || family == ModelFamilyAnthropic))) {
+		} else if isAnthropic && (mode == StructuredOutputModeOutputFormat || (mode == StructuredOutputModeAuto && supportsNativeStructuredOutput(modelID) && (supportsStructuredOutputCapability(modelID) || isThinkingEnabled || family == ModelFamilyAnthropic))) {
 			useNativeStructuredOutput = true
-		} else if isAnthropic && (rejectsForcedToolUse(modelID) || (mode != StructuredOutputModeJSONTool && usesJSONInstructionForStructuredOutput(modelID) && len(opts.Tools) > 0)) {
-			// The JSON response tool needs forced tool use, so models that
-			// reject it always get the instruction (upstream
-			// amazon-bedrock-chat-language-model.ts, 5.0.99).
+		} else if isAnthropic && usesJSONInstructionForStructuredOutput(modelID, mode, len(opts.Tools) > 0) {
 			meta.usesJSONInstruction = true
 		} else {
 			meta.usesJSONResponseTool = true
@@ -212,6 +207,25 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	}
 
 	return out, warnings, meta, nil
+}
+
+// usesJSONInstructionForStructuredOutput selects the system JSON instruction
+// for Anthropic schema responses that do not use native output. Mirrors
+// upstream amazon-bedrock-chat-language-model.ts (@ai-sdk/amazon-bedrock
+// 5.0.118): the JSON response tool needs forced tool use, so models that
+// reject it always get the instruction.
+func usesJSONInstructionForStructuredOutput(modelID string, mode StructuredOutputMode, hasTools bool) bool {
+	if rejectsForcedToolUse(modelID) {
+		return true
+	}
+	if mode == StructuredOutputModeJSONTool {
+		return false
+	}
+	if strings.Contains(modelID, "claude-") && !supportsNativeStructuredOutput(modelID) &&
+		(!isKnownClaudeModel(modelID) || !supportsStructuredOutputCapability(modelID)) {
+		return true
+	}
+	return hasTools && !supportsStrictTools(modelID)
 }
 
 func hasActiveTools(pt preparedTools) bool {

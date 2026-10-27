@@ -117,7 +117,9 @@ then applies family-specific behavior based on the Bedrock model ID. For opaque
 application inference profiles, set the Anthropic model family on the model
 when its ID and request options do not identify it. JSON schema requests can
 use automatic, native output-format, or synthetic JSON-tool routing; automatic
-routing accounts for Bedrock's model-specific native-output reliability.
+routing accounts for Bedrock's model-specific native-output reliability and
+uses a system JSON instruction for unknown Claude IDs and for Claude models
+without strict-tool support when caller tools are present.
 Reasoning, structured output, cache controls, and other provider options may be
 supported by one family and ignored with a warning by another.
 
