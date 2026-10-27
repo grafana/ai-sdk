@@ -10,7 +10,10 @@
 # Boundary: the AGPL Gateway stays under ai-gateway/; Apache SDK modules must
 # not reference it; root go.work and the SDK/Grafana graphs exclude it.
 # Workspace: go.gateway.work explicitly selects local candidate source; the
-# root workspace does not. Isolation: SDK and Grafana build/test without Gateway
+# root workspace does not. Both workspaces use the local-only resolution module,
+# whose manifest replaces every published library with its directory so untagged
+# first-party versions resolve to candidate source; workspace files themselves
+# carry no replace directives. Isolation: SDK and Grafana build/test without Gateway
 # source present. These checks do not replace copied-code or dependency license
 # review. Standalone builds gate artifacts, not source PRs.
 set -euo pipefail
@@ -19,6 +22,7 @@ repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 module_prefix=github.com/grafana/ai-sdk
 gateway_module=$module_prefix/ai-gateway
+resolution_module=test/workspace
 canonical_url=https://github.com/grafana/ai-sdk.git
 readonly_flags="${GOFLAGS:+$GOFLAGS }-mod=readonly"
 
@@ -131,6 +135,23 @@ merged_pins() {
   done <<<"$records"
 }
 
+workspace_resolution() {
+  local file=$1 name workspace manifest expected actual
+  name=$(basename "$file")
+  workspace=$(go work edit -json "$file")
+  [[ $(jq '(.Replace // []) | length' <<<"$workspace") -eq 0 ]] || fail "$name must not contain replace directives"
+  jq -e --arg dir "./$resolution_module" '[.Use[]?.DiskPath] | index($dir) != null' <<<"$workspace" >/dev/null ||
+    fail "$name must use ./$resolution_module"
+  manifest=$(GOWORK=off go mod edit -json "$resolution_module/go.mod")
+  [[ $(jq -r '.Module.Path' <<<"$manifest") == "$module_prefix/$resolution_module" ]] || fail "$resolution_module declares the wrong module path"
+  [[ $(jq '(.Require // []) | length' <<<"$manifest") -eq 0 ]] || fail "$resolution_module must not require modules"
+  expected=$(modules | awk -F '\t' -v gateway="$gateway_module" '$2 != gateway {
+    printf "%s\t\t%s\t\n", $2, ($1 == "." ? "../.." : "../../" $1)
+  }' | sort)
+  actual=$(jq -r '(.Replace // [])[] | [.Old.Path, (.Old.Version // ""), .New.Path, (.New.Version // "")] | @tsv' <<<"$manifest" | sort)
+  [[ "$actual" == "$expected" ]] || fail "$resolution_module must replace exactly the published libraries with their directories"
+}
+
 boundary() {
   local path marker module workspace paths list root manifest references targets target candidate resolved graph status imports replacements
   for license in 'LICENSE:Apache License' 'ai-gateway/LICENSE:GNU AFFERO GENERAL PUBLIC LICENSE'; do
@@ -145,6 +166,7 @@ boundary() {
   workspace=$(go work edit -json go.work)
   replacements=$(jq '(.Replace // []) | length' <<<"$workspace")
   [[ "$replacements" -eq 0 ]] || fail 'root go.work must not contain replace directives'
+  workspace_resolution go.work
   paths=$(jq -r '.Use[]?.DiskPath' <<<"$workspace")
   while IFS= read -r path; do
     [[ -n "$path" ]] || continue
@@ -200,8 +222,9 @@ workspace() {
     directory=$(cd "$root" && pwd -P)
     [[ $(jq -r '.Main' <<<"$selected") == true && $(jq -r '.Dir' <<<"$selected") == "$directory" ]] || fail "Gateway workspace did not select local $module"
   done <<<"$paths"
-  expected=$(modules | cut -f2 | sort)
-  [[ $(printf '%s' "$actual" | sort) == "$expected" ]] || fail 'Gateway workspace must contain exactly the published modules'
+  expected=$( (modules | cut -f2; echo "$module_prefix/$resolution_module") | sort)
+  [[ $(printf '%s' "$actual" | sort) == "$expected" ]] || fail 'Gateway workspace must contain exactly the published modules and the resolution module'
+  workspace_resolution "$file"
   [[ $(go work edit -json go.work | jq -r '[.Use[]?.DiskPath] | index("./ai-gateway")') == null ]] || fail 'root go.work includes Gateway'
 }
 

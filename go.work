@@ -16,4 +16,5 @@ use (
 	./providers/openai-compatible
 	./test/conformance
 	./test/integration/testserver
+	./test/workspace
 )

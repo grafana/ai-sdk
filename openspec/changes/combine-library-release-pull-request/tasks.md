@@ -2,10 +2,10 @@
 
 ## 1. Workspace resolution module
 
-- [ ] 1.1 Add `test/workspace/go.mod` replacing every published first-party library with its directory, include it in `go.work` and `go.gateway.work`, and verify `mise run build`, `mise run verify-gateway-workspace` and `mise run verify-sdk-gateway-isolation` pass
-- [ ] 1.2 Extend `module-policy.sh` `boundary`/`workspace` to require the module to list exactly the published libraries with in-repository targets and to keep rejecting workspace `replace` directives; add fixtures to `test/module-policy.sh` for a missing library, an out-of-repository target and a workspace `replace`, and verify `mise run test-module-policy` passes
-- [ ] 1.3 Add a module-policy fixture where libraries and Gateway require an untagged first-party version and verify root workspace builds and the Gateway plugin backend build succeed with `GOPROXY=off`
-- [ ] 1.4 Update the module-validation section of `CONTRIBUTING.md` for the workspace module and verify `mise run lint-docs` passes
+- [x] 1.1 Add `test/workspace/go.mod` replacing every published first-party library with its directory, include it in `go.work` and `go.gateway.work`, and verify `mise run build`, `mise run verify-gateway-workspace` and `mise run verify-sdk-gateway-isolation` pass
+- [x] 1.2 Extend `module-policy.sh` `boundary`/`workspace` to require the module to list exactly the published libraries with in-repository targets and to keep rejecting workspace `replace` directives; add fixtures to `test/module-policy.sh` for a missing library, an out-of-repository target and a workspace `replace`, and verify `mise run test-module-policy` passes
+- [x] 1.3 Add a module-policy fixture where libraries and Gateway require an untagged first-party version and verify root workspace builds and the Gateway plugin backend build succeed with `GOPROXY=off`
+- [x] 1.4 Update the module-validation section of `CONTRIBUTING.md` for the workspace module and verify `mise run lint-docs` passes
 
 ## 2. Candidate requirement generator
 

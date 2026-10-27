@@ -577,7 +577,12 @@ SDK's Go module dependency graph.
   changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
   the app manifest source for `pnpm generate:kinds`.
 
-The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
+The root `go.work` excludes `ai-gateway/`. Both `go.work` and `go.gateway.work`
+use the local-only `test/workspace` module. Its `go.mod` replaces every published
+library with its directory, so workspace builds resolve first-party versions that
+are not tagged yet to candidate source. Keep it in sync when adding or removing a
+library; workspace files themselves must not contain `replace` directives.
+Gateway may depend on SDK modules,
 but SDK modules must not import, require, or replace Gateway. Real published
 module pins must refer to commits merged on canonical `grafana/ai-sdk` `main`;
 merged pseudo-versions are valid, while local example/test replacements are not

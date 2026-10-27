@@ -180,7 +180,16 @@ for root in . ai-gateway providers/grafana middleware/logger; do
 done
 cp "$repo_root/LICENSE" "$boundary_repo/LICENSE"
 cp "$repo_root/ai-gateway/LICENSE" "$boundary_repo/ai-gateway/LICENSE"
-printf 'go 1.27.3\nuse (\n .\n ./providers/grafana\n)\n' >"$boundary_repo/go.work"
+resolution_manifest() {
+  printf 'module %s/test/workspace\n\ngo 1.27.3\n\nreplace (\n' "$module_prefix"
+  printf '\t%s => ../..\n' "$module_prefix"
+  printf '\t%s => %s\n' "$module_prefix/providers/grafana" "${grafana_target:-../../providers/grafana}"
+  [[ -n "${omit_logger:-}" ]] || printf '\t%s => ../../middleware/logger\n' "$module_prefix/middleware/logger"
+  printf ')\n'
+}
+mkdir -p "$boundary_repo/test/workspace"
+resolution_manifest >"$boundary_repo/test/workspace/go.mod"
+printf 'go 1.27.3\nuse (\n .\n ./providers/grafana\n ./test/workspace\n)\n' >"$boundary_repo/go.work"
 printf 'package sdk\n' >"$boundary_repo/consumer.go"
 (
   cd "$boundary_repo"
@@ -203,6 +212,20 @@ printf 'package sdk\n' >"$boundary_repo/consumer.go"
   git add -u middleware/logger/consumer.go
   printf 'require %s v0.1.0\n' "$gateway_module" >>middleware/logger/go.mod
   assert_fails 'requires or replaces Gateway' boundary
+  printf 'module %s\n\ngo 1.27.3\n' "$module_prefix/middleware/logger" >middleware/logger/go.mod
+  boundary >/dev/null
+  omit_logger=1 resolution_manifest >test/workspace/go.mod
+  assert_fails 'replace exactly the published libraries' boundary
+  grafana_target=../../../elsewhere/providers/grafana resolution_manifest >test/workspace/go.mod
+  assert_fails 'replace exactly the published libraries' boundary
+  resolution_manifest >test/workspace/go.mod
+  printf 'go 1.27.3\nuse (\n .\n ./providers/grafana\n)\n' >go.work
+  assert_fails 'must use ./test/workspace' boundary
+  printf 'go 1.27.3\nuse (\n .\n ./providers/grafana\n ./test/workspace\n)\nreplace %s v0.1.0 => ./providers/grafana\n' "$module_prefix" >go.work
+  assert_fails 'must not contain replace directives' boundary
+  printf 'go 1.27.3\nuse (\n .\n ./providers/grafana\n ./test/workspace\n)\n' >go.work
+  printf 'go 1.27.3\nuse (\n ./ai-gateway\n ./test/workspace\n)\nreplace %s v0.1.0 => ./providers/grafana\n' "$module_prefix" >go.gateway.work
+  assert_fails 'go.gateway.work must not contain replace directives' workspace_resolution go.gateway.work
 )
 
 source_absent_repo=$fixture/source-absent
@@ -235,5 +258,22 @@ for root in ai-gateway/cmd/grafana-ai-gateway ai-gateway/test/providerwire-v4/te
 done
 assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOWORK="$2" GOFLAGS="-mod=readonly -overlay=$3" mage build:linux build:linuxARM64' \
   bash "$repo_root/ai-gateway" "$repo_root/go.gateway.work" "$overlay"
+
+untagged=v0.1.0-alpha.999999
+untagged_overlay=$fixture/untagged-overlay.json
+for root in providers/bedrock ai-gateway; do
+  sed -E "s#^([[:space:]]+$module_prefix(/[a-z/-]+)?) v[^ ]+#\1 $untagged#" "$repo_root/$root/go.mod" >"$fixture/${root//\//-}.mod"
+  grep -Fq "$untagged" "$fixture/${root//\//-}.mod" || fail "untagged fixture did not rewrite $root requirements"
+done
+jq -n --arg bedrock "$repo_root/providers/bedrock/go.mod" --arg bedrock_fixture "$fixture/providers-bedrock.mod" \
+  --arg gateway "$repo_root/ai-gateway/go.mod" --arg gateway_fixture "$fixture/ai-gateway.mod" \
+  '{Replace: {($bedrock): $bedrock_fixture, ($gateway): $gateway_fixture}}' >"$untagged_overlay"
+(cd "$repo_root/providers/bedrock" && GOPROXY=off GOWORK="$repo_root/go.work" GOFLAGS="-mod=readonly -overlay=$untagged_overlay" command go build ./...)
+(cd "$repo_root/ai-gateway" && GOPROXY=off GOWORK="$repo_root/go.gateway.work" GOFLAGS="-mod=readonly -overlay=$untagged_overlay" \
+  command go build -o "$fixture/gateway" ./cmd/grafana-ai-gateway)
+grep -v "\./$resolution_module\$" "$repo_root/go.gateway.work" | sed -e "s#^\t\.\$#\t$repo_root#" -e "s#^\t\./#\t$repo_root/#" >"$fixture/unresolved.work"
+cp "$repo_root/go.gateway.work.sum" "$fixture/unresolved.work.sum"
+assert_fails "$untagged: module lookup disabled" bash -c 'cd "$1" && GOPROXY=off GOWORK="$2" GOFLAGS="-mod=readonly -overlay=$3" go build -o "$4" ./cmd/grafana-ai-gateway' \
+  bash "$repo_root/ai-gateway" "$fixture/unresolved.work" "$untagged_overlay" "$fixture/gateway"
 
 echo 'module policy fixtures: OK'

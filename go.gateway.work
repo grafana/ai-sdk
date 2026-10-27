@@ -13,4 +13,5 @@ use (
 	./providers/grafana
 	./providers/openai
 	./providers/openai-compatible
+	./test/workspace
 )
