@@ -66,8 +66,8 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 7. Integration checks
 
-- [ ] 7.1 Run `mise run test-ai-gateway`, `mise run test-ai-gateway-command`, `mise run test-providerwire-v4`, `mise run test-race`, `mise run lint`, `mise run lint-docs` and `mise run validate-parity-baseline`, and confirm that no file under `test/conformance/*/recorded/` changed.
-- [ ] 7.2 Confirm with `rg` that `selectModel`, `invokeModel`, `callStream`, `waitStreamPart`, `ReservedProviderOptionNamespace`, `Settings.ProviderWire` and `limitValidationResolver` appear only in historical references. Confirm that the README limit ledger is unchanged.
+- [x] 7.1 Run `mise run test-ai-gateway`, `mise run test-ai-gateway-command`, `mise run test-providerwire-v4`, `mise run test-race`, `mise run lint`, `mise run lint-docs` and `mise run validate-parity-baseline`, and confirm that no file under `test/conformance/*/recorded/` changed.
+- [x] 7.2 Confirm with `rg` that ProviderWire's `selectModel`, `invokeModel`, `callStream`, `waitStreamPart`, `ReservedProviderOptionNamespace`, `Settings.ProviderWire` and `limitValidationResolver` appear only in historical references. Confirm that the README limit ledger is unchanged.
 
 ## Workflow follow-up
 
