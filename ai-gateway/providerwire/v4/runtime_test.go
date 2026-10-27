@@ -1363,12 +1363,11 @@ func TestInvocation_RejectedUnaryOutcomeBeforePublication(t *testing.T) {
 	}
 	parent, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved))
-	capture := &attemptCapture{}
-	ctx := fallback.WithAttemptObserver(parent, capture.observe)
+	attempts := execution.NewAttempts("alias", selectConfiguredModel(t, h.resolver.resolved), execution.SummaryRedactor{})
+	ctx := attempts.Context(parent)
 	results := make(chan error, 1)
 	go func() {
-		_, err := h.handler.invokeModel(ctx, h.resolver.resolved.Model, provider.CallOptions{}, capture)
+		_, err := h.handler.invokeModel(ctx, h.resolver.resolved.Model, provider.CallOptions{}, attempts)
 		results <- err
 	}()
 	select {
@@ -1394,36 +1393,8 @@ func TestInvocation_RejectedUnaryOutcomeBeforePublication(t *testing.T) {
 	assert.Equal(t, fallback.AttemptCanceled, attempt.Outcome)
 	require.NotNil(t, attempt.SourceErr)
 	assert.Contains(t, attempt.SourceErr.Error(), "handler-rejected native failure")
-	view := request.snapshot(capture, err)
-	assert.Nil(t, view.overview)
-	capture.mu.Lock()
-	defer capture.mu.Unlock()
-	assert.True(t, capture.sealed)
-	assert.Empty(t, capture.attempts)
-	assert.Zero(t, second.callCount())
-}
-
-func TestInvocation_RejectRecordedFallbackOutcome(t *testing.T) {
-	parent, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-		cancel()
-		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Message: "handler-rejected native failure"})
-	}}
-	second := &recordingModel{}
-	h := invocationHarness(t, testLimits(), first, second)
-	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved))
-	capture := &attemptCapture{}
-	ctx := fallback.WithAttemptObserver(parent, capture.observe)
-	_, err := h.resolver.resolved.Model.DoGenerate(ctx, provider.CallOptions{})
-	require.ErrorIs(t, err, context.Canceled)
-	require.Len(t, capture.attempts, 1)
-	require.NotNil(t, capture.attempts[0].SourceErr)
-	capture.discard()
-	view := request.snapshot(capture, ctx.Err())
-	assert.Nil(t, view.overview)
-	assert.Empty(t, capture.attempts)
-	assert.True(t, capture.sealed)
+	assert.Nil(t, attempts.View(err).Overview)
+	assert.Nil(t, attempts.View(nil).Overview)
 	assert.Zero(t, second.callCount())
 }
 
@@ -1432,33 +1403,6 @@ func selectConfiguredModel(t *testing.T, resolved catalog.ResolvedModel) executi
 	selected, err := execution.CatalogSelector(&recordingResolver{resolved: resolved})(t.Context(), "alias", provider.CallOptions{}, nil)
 	require.NoError(t, err)
 	return selected
-}
-
-func TestRequestSelection_ConfiguredExecution(t *testing.T) {
-	resolved := catalog.ResolvedModel{
-		ID:         "canonical",
-		Model:      &recordingModel{},
-		Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "backend", ProviderInstance: "configured"}},
-	}
-	selected := selectConfiguredModel(t, resolved)
-	resolved.Candidates[0].ModelID = "mutated"
-	request := newExecutionRequest("alias", selected)
-	candidates, configured := selected.ConfiguredCandidates()
-	require.True(t, configured)
-	candidates[0].ModelID = "mutated-again"
-	assert.Equal(t, "canonical", request.canonical)
-	assert.Equal(t, "backend", request.candidates[0].ModelID)
-	encoded, err := json.Marshal(selected)
-	require.NoError(t, err)
-	assert.NotContains(t, string(encoded), "configured")
-	capture := &attemptCapture{}
-	capture.enter()
-	view := request.snapshot(capture, nil)
-	require.NotNil(t, view.overview)
-	assert.Equal(t, "alias", view.overview.RequestedModelID)
-	assert.Equal(t, "canonical", view.overview.CanonicalModelID)
-	assert.Equal(t, "configured", view.overview.Attempts[0].ProviderInstance)
-	assert.Equal(t, &execution.Failure{Message: "configured-secret"}, view.current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "configured-secret"})))
 }
 
 func TestRequestSelection_UnconfiguredNativeSummary(t *testing.T) {
@@ -1529,129 +1473,6 @@ func TestRequestSelection_UnconfiguredNativeSummary(t *testing.T) {
 					assert.Contains(t, response.Body.String(), `"type":"finish"`)
 				}
 			}
-		})
-	}
-}
-
-func TestExecutionRequest_Snapshot(t *testing.T) {
-	failure := errors.New("candidate failure")
-	for _, tc := range []struct {
-		name       string
-		candidates int
-		entered    bool
-		attempts   []fallback.Attempt
-		err        error
-		discard    bool
-		outcomes   []fallback.AttemptOutcome
-	}{
-		{name: "not entered", candidates: 1},
-		{name: "direct selected", candidates: 1, entered: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
-		{name: "direct failed", candidates: 1, entered: true, err: failure, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed}},
-		{name: "rejected direct canceled", candidates: 1, entered: true, err: context.Canceled, discard: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptCanceled}},
-		{name: "rejected before entry", candidates: 1, discard: true},
-		{name: "fallback selected", candidates: 2, entered: true, attempts: []fallback.Attempt{
-			{Index: 1, Outcome: fallback.AttemptFailed, SourceErr: failure, WillFallback: true},
-			{Index: 2, Outcome: fallback.AttemptSelected},
-		}, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
-		{name: "rejected fallback", candidates: 2, entered: true, attempts: []fallback.Attempt{
-			{Index: 1, Outcome: fallback.AttemptCanceled, SourceErr: failure},
-		}, err: context.Canceled, discard: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			resolved := catalog.ResolvedModel{ID: "canonical"}
-			for i := range tc.candidates {
-				resolved.Candidates = append(resolved.Candidates, catalog.ConfiguredCandidate{Provider: "native", ModelID: fmt.Sprint(i)})
-			}
-			request := newExecutionRequest("alias", selectConfiguredModel(t, resolved))
-			resolved.Candidates[0].ModelID = "mutated"
-			capture := &attemptCapture{}
-			if tc.entered {
-				capture.enter()
-			}
-			for _, attempt := range tc.attempts {
-				capture.observe(t.Context(), attempt)
-			}
-			if tc.discard {
-				capture.discard()
-			}
-			view := request.snapshot(capture, tc.err)
-			if len(tc.outcomes) == 0 {
-				assert.Nil(t, view.overview)
-			} else {
-				require.NotNil(t, view.overview)
-				require.Len(t, view.overview.Attempts, len(tc.outcomes))
-				for i, outcome := range tc.outcomes {
-					assert.Equal(t, outcome, view.overview.Attempts[i].Outcome)
-					assert.Equal(t, fmt.Sprint(i), view.overview.Attempts[i].ModelID)
-				}
-			}
-			assert.Equal(t, &execution.Failure{Message: "credential"}, view.current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "credential"})))
-			before, err := json.Marshal(view.overview)
-			require.NoError(t, err)
-			var late sync.WaitGroup
-			for range 8 {
-				late.Go(func() {
-					capture.enter()
-					capture.observe(t.Context(), fallback.Attempt{Index: 1, Outcome: fallback.AttemptFailed, SourceErr: errors.New("late failure")})
-				})
-			}
-			late.Wait()
-			after, err := json.Marshal(view.overview)
-			require.NoError(t, err)
-			assert.Equal(t, before, after)
-			entered, attempts := capture.seal()
-			assert.Equal(t, tc.entered, entered)
-			assert.Empty(t, attempts)
-			assert.True(t, capture.sealed)
-		})
-	}
-}
-
-type projectionError struct {
-	inspect func()
-}
-
-func (err projectionError) Error() string {
-	err.inspect()
-	return "candidate failure"
-}
-
-func TestExecutionRequest_ProjectionAfterSeal(t *testing.T) {
-	for _, panics := range []bool{false, true} {
-		t.Run(fmt.Sprint(panics), func(t *testing.T) {
-			request := newExecutionRequest("alias", selectConfiguredModel(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}))
-			capture := &attemptCapture{}
-			capture.enter()
-			inspected := make(chan struct{})
-			failure := projectionError{inspect: func() {
-				capture.observe(t.Context(), fallback.Attempt{Index: 2, Outcome: fallback.AttemptSelected})
-				close(inspected)
-				if panics {
-					panic("projection failed")
-				}
-			}}
-			views := make(chan executionView, 1)
-			go func() { views <- request.snapshot(capture, failure) }()
-			var view executionView
-			select {
-			case view = <-views:
-			case <-time.After(time.Second):
-				require.FailNow(t, "projection held the capture lock")
-			}
-			select {
-			case <-inspected:
-			default:
-				require.FailNow(t, "native error was not inspected")
-			}
-			if panics {
-				assert.Nil(t, view.overview)
-			} else {
-				require.NotNil(t, view.overview)
-				require.Len(t, view.overview.Attempts, 1)
-				assert.Equal(t, "candidate failure", view.overview.Attempts[0].Error.Message)
-			}
-			_, attempts := capture.seal()
-			assert.Empty(t, attempts)
 		})
 	}
 }

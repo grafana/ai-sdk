@@ -23,15 +23,6 @@ type configuredSelection struct {
 	candidates []catalog.ConfiguredCandidate
 }
 
-// ConfiguredCandidates reports the configured chain behind a catalog
-// selection, and false for a selection that did not come from the catalog.
-func (s Selection) ConfiguredCandidates() ([]catalog.ConfiguredCandidate, bool) {
-	if s.configured == nil {
-		return nil, false
-	}
-	return s.configured.candidates, true
-}
-
 // RequestSelector chooses the model for a request from its model ID, its mapped
 // options and the raw call-level gateway controls, which are nil when absent.
 type RequestSelector func(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (Selection, error)

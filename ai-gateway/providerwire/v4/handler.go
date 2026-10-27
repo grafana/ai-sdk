@@ -14,7 +14,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
-	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 )
@@ -133,28 +132,23 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeSafeError(w, safeErrorFromResolution(err), nil)
 		return
 	}
-	request := newExecutionRequest(validated.modelID, resolved)
-	request.summaryRedactor = h.summaryRedactor
-	_, configured := resolved.ConfiguredCandidates()
-	capture := &attemptCapture{sealed: !configured}
-	if configured {
-		ctx = fallback.WithAttemptObserver(ctx, capture.observe)
-	}
-	defer capture.discard()
+	attempts := execution.NewAttempts(validated.modelID, resolved, h.summaryRedactor)
+	ctx = attempts.Context(ctx)
+	defer attempts.Discard()
 	if validated.mode == executionStreaming {
-		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history, request, capture)
+		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history, attempts)
 		return
 	}
-	result, err := h.invokeModel(ctx, resolved.Model, options, capture)
+	result, err := h.invokeModel(ctx, resolved.Model, options, attempts)
 	if err != nil {
 		value := safeErrorFromProvider(err)
-		view := request.snapshot(capture, err)
-		h.writeSafeError(w, value, view.metadata())
+		view := attempts.View(err)
+		h.writeSafeError(w, value, view.Metadata())
 		return
 	}
-	view := request.snapshot(capture, nil)
-	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: view.overview}) {
-		h.writeSafeError(w, safeError{category: safeInternal}, view.metadata())
+	view := attempts.View(nil)
+	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: view.Overview}) {
+		h.writeSafeError(w, safeError{category: safeInternal}, view.Metadata())
 	}
 }
 
@@ -275,7 +269,7 @@ type modelOutcome struct {
 
 var errModelInternal = errors.New("providerwire v4: model internal failure")
 
-func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel, options provider.CallOptions, capture *attemptCapture) (*provider.GenerateResult, error) {
+func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel, options provider.CallOptions, attempts *execution.Attempts) (*provider.GenerateResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -294,12 +288,12 @@ func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel,
 			}
 			outcomes <- outcome
 		}()
-		capture.enter()
+		attempts.Enter()
 		outcome.result, outcome.err = model.DoGenerate(modelContext, options)
 	}()
 
 	rejectOutcome := func(err error) (*provider.GenerateResult, error) {
-		capture.discard()
+		attempts.Discard()
 		return nil, err
 	}
 	select {

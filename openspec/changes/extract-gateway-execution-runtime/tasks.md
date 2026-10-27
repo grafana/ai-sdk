@@ -4,14 +4,14 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 1. Selection types, limits and classification in `execution`
 
-- [x] 1.1 Move `Selection`, `RequestSelector`, `CatalogSelector` and the host sentinels (`ErrAccountAccess`, `ErrInvalidBYOK`, `ErrInvalidBYOKSelector`, `ErrUnsupportedGatewayControl`, `ErrReservedProviderOptions`) from `providerwire/v4/selection.go` to `internal/execution` (design D6). Expose the configured candidates through `Selection.ConfiguredCandidates` until task 2.1 moves the capture. Update `cmd/.../service/selection.go`, the testserver and the tests to import them. Verify with `go test ./providerwire/v4/... ./cmd/grafana-ai-gateway/internal/service/...`.
+- [x] 1.1 Move `Selection`, `RequestSelector`, `CatalogSelector` and the host sentinels (`ErrAccountAccess`, `ErrInvalidBYOK`, `ErrInvalidBYOKSelector`, `ErrUnsupportedGatewayControl`, `ErrReservedProviderOptions`) from `providerwire/v4/selection.go` to `internal/execution` (design D6). Update `cmd/.../service/selection.go`, the testserver and the tests to import them. Verify with `go test ./providerwire/v4/... ./cmd/grafana-ai-gateway/internal/service/...`.
 - [x] 1.2 Add `execution.Limits` (idle and drain), its validation and `DefaultLimits` (30s, 1s), and make `v4.Config` take `execution.Limits` (design D7). Add table tests for invalid durations in `execution`. Verify with `go test ./internal/execution/... ./providerwire/v4/...`.
 - [x] 1.3 Add the closed `execution.Category` and `execution.Reason` types, with `ClassifySelection`, `ClassifyProvider` and `ClassifyStreamPart` moved unchanged from `safeErrorFrom*` (design D1). Map them into ProviderWire's `safeError`, keeping authentication and BYOK discovery local. Move the classifier tables from `runtime_test.go` to `execution` with the same inputs and expected categories. Keep the ProviderWire document tests unchanged. Verify with `go test -race ./internal/execution/... ./providerwire/v4/...`.
 - [x] 1.4 Point the "catalog selection" link in `docs/concepts/gateway-architecture.md` at its new file. Verify with `mise run lint-docs`.
 
 ## 2. Attempt capture and execution view in `execution`
 
-- [ ] 2.1 Move `attemptCapture`, `executionRequest`, `snapshot` and `executionView` from `execution_capture.go` to `execution` unchanged, and keep ProviderWire's calls compiling through the moved API. Move their white-box tests from `runtime_test.go` (configured execution, unconfigured native summary, one-candidate synthesis, redaction, seal races) with the same assertions. Verify with `go test -race ./internal/execution/... ./providerwire/v4/...`.
+- [x] 2.1 Move `attemptCapture`, `executionRequest`, `snapshot` and `executionView` from `execution_capture.go` to `execution` as `Attempts` and `View`, with unchanged behavior, and keep ProviderWire's calls compiling through the moved API. Move their white-box tests from `runtime_test.go` (configured execution, unconfigured native summary, one-candidate synthesis, redaction, seal races) with the same assertions. Verify with `go test -race ./internal/execution/... ./providerwire/v4/...`.
 
 ## 3. Runtime with synchronous execution
 
