@@ -167,19 +167,31 @@ func TestReadJSON_DeclaredLengthBackstop(t *testing.T) {
 		limit         int64
 		wantRead      int
 		wantErr       bool
+		canceled      bool
 	}{
-		{"declared at limit", int64(len(document)), int64(len(document)), len(document), false},
-		{"declared one over", int64(len(document)), int64(len(document)) - 1, 0, true},
-		{"declared far over", 1 << 40, int64(len(document)), 0, true},
-		{"unknown length at limit", -1, int64(len(document)), len(document), false},
-		{"unknown length one over", -1, int64(len(document)) - 1, len(document), true},
+		{"declared at limit", int64(len(document)), int64(len(document)), len(document), false, false},
+		{"declared one over", int64(len(document)), int64(len(document)) - 1, 0, true, false},
+		{"declared far over", 1 << 40, int64(len(document)), 0, true, false},
+		{"unknown length at limit", -1, int64(len(document)), len(document), false, false},
+		{"unknown length one over", -1, int64(len(document)) - 1, len(document), true, false},
+		{"canceled with declared length over", int64(len(document)), int64(len(document)) - 1, 0, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := &trackedBody{Reader: strings.NewReader(document)}
 			resp := &http.Response{Header: http.Header{"Content-Type": {"application/json"}}, ContentLength: tc.contentLength, Body: body}
-			got, transportFailure, err := readJSON(context.Background(), resp, tc.limit)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.canceled {
+				cancel()
+			}
+			got, transportFailure, err := readJSON(ctx, resp, tc.limit)
 			assert.False(t, transportFailure)
 			assert.Equal(t, tc.wantRead, body.read)
+			if tc.canceled {
+				require.ErrorIs(t, err, context.Canceled)
+				assert.Nil(t, got)
+				return
+			}
 			if tc.wantErr {
 				require.Error(t, err)
 				assert.Nil(t, got)

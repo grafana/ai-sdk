@@ -765,6 +765,7 @@ The client SHALL expose no configurable response-processing limits. The Gateway 
 #### Scenario: Declared length crosses the backstop
 - **WHEN** a response to a unary, error or discovery read declares a `Content-Length` above the backstop
 - **THEN** the client SHALL fail with the same non-retryable bounded protocol error before reading any of the body, and a declared length at or below the backstop, or an unknown length, SHALL be bounded while reading
+- **AND** context cancellation or deadline expiry SHALL take precedence over the declared-length failure and remain discoverable with `errors.Is`, with no body read
 
 #### Scenario: Caller bounds a request
 - **WHEN** a caller supplies an `http.Client` with its own transport or timeout, or a call context with a deadline
