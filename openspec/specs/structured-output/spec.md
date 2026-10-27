@@ -234,7 +234,7 @@ The system SHALL support combining structured output with tool calling in the sa
 
 ### Requirement: Partial output streaming
 
-StreamTextResult SHALL expose PartialOutputStream() as a channel of json.RawMessage partial snapshots from configured output mode. Partial failures SHALL be silently skipped. A snapshot SHALL be published when it differs from the last snapshot published in the same step; each step SHALL start with no previous snapshot, as upstream's `start-step` reset does. Every published snapshot SHALL arrive exactly once in production order, losslessly even if consumed after generation. The stream SHALL close only after generation finishes and queued snapshots are delivered.
+StreamTextResult SHALL expose PartialOutputStream() as a channel of json.RawMessage partial snapshots from configured output mode. Partial failures SHALL be silently skipped. Partials SHALL parse only the step's first text part, which is the first text part any text event names, including `text-start`; deltas of other text parts SHALL pass through unparsed. A snapshot SHALL be published when it differs from the last snapshot published in the same step; each step SHALL start with no previous snapshot, as upstream's `start-step` reset does. Every published snapshot SHALL arrive exactly once in production order, losslessly even if consumed after generation. The stream SHALL close only after generation finishes and queued snapshots are delivered.
 
 #### Scenario: Receive partial output during streaming
 
@@ -253,6 +253,17 @@ StreamTextResult SHALL expose PartialOutputStream() as a channel of json.RawMess
 
 - **WHEN** array output streams `{"elements":[`
 - **THEN** `PartialOutputStream()` SHALL emit `[]`, not `null`
+
+#### Scenario: Another text part interleaves with the output text
+
+- **WHEN** a step starts text parts `t1` and `t2`, and `t2` streams `note` between `t1`'s deltas `{"name":` and `"a"}`
+- **THEN** `PartialOutputStream()` SHALL emit `{}` and then `{"name":"a"}`
+- **AND** the `t2` delta SHALL be emitted when it arrives
+
+#### Scenario: The first text part starts before any delta
+
+- **WHEN** a step starts `t1` and then `t2`, and `t2` streams a delta before `t1` does
+- **THEN** partials SHALL parse `t1`'s text, not `t2`'s
 
 #### Scenario: Partial output consumption starts after the channel buffer is exceeded
 
