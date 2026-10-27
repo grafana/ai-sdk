@@ -37,7 +37,7 @@ One fixed bound of 8 provider attempts per request SHALL limit both configured c
 ## MODIFIED Requirements
 
 ### Requirement: Outbound model transport bounds
-Every Gateway-constructed model, including each configured provider type and each BYOK account, SHALL use one shared model HTTP client. That client SHALL reject redirects and wait at most 10 seconds for response headers. It SHALL fail a response whose media type is not `text/event-stream` once its decompressed body exceeds 16 MiB. It SHALL NOT bound the bytes of a `text/event-stream` response, which the provider decodes incrementally and the execution time bounds end. None of these bounds SHALL be an operator setting.
+Every Gateway-constructed model, including each configured provider type and each BYOK account, SHALL use one shared model HTTP client. That client SHALL reject redirects and wait at most 10 seconds for response headers. It SHALL fail a non-`text/event-stream` response once its decompressed body exceeds 16 MiB, and SHALL NOT bound the bytes of a `text/event-stream` response, which the execution time bounds end. No bound SHALL be an operator setting.
 
 #### Scenario: Decompressed bytes are counted
 - **WHEN** a provider returns a gzip-encoded body under 16 MiB compressed whose decompressed size exceeds 16 MiB

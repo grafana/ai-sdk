@@ -139,14 +139,14 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **AND** Empty/missing BYOK or missing credentials for that provider SHALL fail before provider I/O.
 - **AND** The entire supplied BYOK map SHALL be validated before execution, including unused entries.
 - **AND** Supported provider-map keys SHALL be exactly anthropic and openai.
-- **AND** Each decoded key SHALL be nonempty. The eight-account bound SHALL apply only to the selected provider's array, as execution attempt policy rather than JSON grammar; an unused provider array SHALL NOT be rejected for its length.
+- **AND** Each decoded key SHALL be nonempty. The shared provider attempt bound of 8 under gateway-resource-policy SHALL apply only to the selected provider's array, as execution attempt policy rather than JSON grammar; an unused provider array SHALL NOT be rejected for its length.
 - **AND** Decoding SHALL use provider-to-account maps and ordinary typed Go decoding without blanket unknown-field rejection.
 - **AND** The only accepted Gateway control SHALL be exactly lowercase byok, as emitted by the supported clients; BYOK and other case variants SHALL fail.
 - **AND** Account fields SHALL use the canonical client names apiKey, baseURL, organization and project.
 - **AND** Account struct fields SHALL retain standard Go case-insensitive matching; namespace/map keys and discriminator values SHALL NOT be normalized.
 - **AND** Null strings SHALL retain their ordinary Go value, and duplicate members SHALL follow ordinary Go decoding.
 - **AND** Malformed earlier duplicate members MAY fail typed decoding even when a later member is valid; no JSON normalization layer SHALL be introduced.
-- **AND** The route request-body bound under gateway-resource-policy SHALL govern BYOK input without separate subtree or per-field byte ceilings.
+- **AND** The platform request size under gateway-resource-policy SHALL govern BYOK input without separate subtree or per-field byte ceilings.
 - **AND** Native HTTP transport SHALL enforce outgoing header validity; request decoding SHALL NOT implement an additional credential/account-header grammar.
 - **AND** Existing protected call-header and native-option controls SHALL remain unchanged.
 
@@ -185,10 +185,10 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **THEN** the request SHALL fail with the fixed BYOK credentials invalid-request document before I/O, with zero native calls and without echoing the rejected value
 
 #### Scenario: Shared request bound
-- **WHEN** a BYOK request reaches the route request-body bound
+- **WHEN** a BYOK request is above 1 MiB and within the host route message size
 - **THEN** otherwise valid input SHALL reach selection without a separate BYOK byte ceiling
-- **WHEN** that bound is exceeded by one byte
-- **THEN** the wire handler SHALL reject the request before selection
+- **WHEN** a BYOK request exceeds the host route message size
+- **THEN** the host SHALL reject it before selection, with zero native calls
 
 #### Scenario: Native header validity
 - **WHEN** a decoded account contains an invalid outgoing HTTP header value
