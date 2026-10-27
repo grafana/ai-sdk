@@ -155,11 +155,6 @@ def verify_release(pr, before, after, config):
     return components
 
 
-def owner(path, roots):
-    return next((root for root in sorted(roots, key=len, reverse=True)
-                 if root != "." and path.startswith(root + "/")), ".")
-
-
 def tree(ref):
     entries = {}
     for line in run("git", "ls-tree", "-rz", ref).split("\0"):

@@ -394,20 +394,19 @@ class ReleaseReadinessTest(unittest.TestCase):
                 tests = "\n".join(path.read_text() for path in (repo / root).glob("*_test.go"))
                 self.assertIn(f"func {scenario}(t *testing.T)", tests)
 
-    def test_consumer_rejects_substituted_or_changed_dependency_graph(self):
-        from release_consumer import VERSION, verify_graph
+    def test_consumer_requires_the_published_version_without_replacements(self):
+        from release_consumer import verify_graph
         path = readiness.PREFIX + "/providers/openai"
         with tempfile.TemporaryDirectory() as directory:
-            candidate = {"Path": path, "Version": VERSION, "Dir": directory + "/candidate"}
-            root = {"Path": readiness.PREFIX, "Version": "v0.1.0"}
-            expected = {readiness.PREFIX: "v0.1.0"}
-            verify_graph([candidate, root], path, expected, Path(directory))
+            candidate = {"Path": path, "Version": "v0.1.1", "Dir": directory + "/candidate"}
+            root = {"Path": readiness.PREFIX, "Version": "v0.2.0"}
+            verify_graph([candidate, root], path, "v0.1.1", Path(directory))
             for graph in [[dict(candidate, Main=True), root],
                           [dict(candidate, Dir="/outside"), root],
-                          [candidate, dict(root, Version="v0.2.0")],
+                          [dict(candidate, Version="v0.1.0"), root],
                           [candidate, dict(root, Replace={"Path": "../.."})]]:
                 with self.assertRaises(ValueError):
-                    verify_graph(graph, path, expected, Path(directory))
+                    verify_graph(graph, path, "v0.1.1", Path(directory))
 
     def test_initial_adoption_requires_disabled_automation(self):
         root = Path(__file__).resolve().parent.parent

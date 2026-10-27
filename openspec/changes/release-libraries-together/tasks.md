@@ -26,10 +26,10 @@
 ## 4. Release tooling
 
 - [x] 4.1 Prepare one combined library release pull request in `release/tooling/activation.mjs`
-- [ ] 4.2 Set first-party requirements to the candidate manifest versions in the same App-signed preparation commit
+- [x] 4.2 Set first-party requirements to the candidate manifest versions in the same App-signed preparation commit
 - [x] 4.3 Move lifecycle labels once per pull request after all its libraries publish in `release/tooling/publication.mjs`
-- [ ] 4.4 Block dependents of a blocked co-released prerequisite in authorization and publication
-- [ ] 4.5 Verify each published version as an external consumer through the public Go proxy
+- [x] 4.4 Block dependents of a blocked co-released prerequisite in authorization and publication
+- [x] 4.5 Verify each published version as an external consumer through the public Go proxy
 - [x] 4.6 Keep the root bootstrap exercise on its single-root shape
 
 ## 5. Configuration and documentation

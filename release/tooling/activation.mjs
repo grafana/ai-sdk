@@ -4,6 +4,7 @@ import { Manifest } from 'release-please';
 import { SOURCE_JOBS, successfulRun } from './authorization-evidence.mjs';
 import { REPO, REPOSITORY_ID, SHA, discoverMerged } from './merged-candidates.mjs';
 import { readOnlyFetch } from './preview.mjs';
+import { MANIFEST, withRequirementUpdates } from './requirements.mjs';
 
 export function activationContext(env) {
   assert.ok(['root', 'libraries'].includes(env.RELEASE_LIBRARY_MODE), 'library publication is disabled');
@@ -103,7 +104,6 @@ export function preparationTransport(beforeWrite, fetchImpl = globalThis.fetch) 
   };
 }
 
-const MANIFEST = '.release-please-manifest.json';
 const changelog = component => component === '.' ? 'CHANGELOG.md' : `${component}/CHANGELOG.md`;
 
 function releasedLibraries(libraries, updates) {
@@ -135,13 +135,14 @@ export async function prepareLibraries(github, expectedSha) {
   const results = [];
   for (const candidate of candidates) {
     const components = releasedLibraries(libraries, candidate.updates);
+    const requirements = await withRequirementUpdates(github, candidate, { config });
     manifest.alwaysUpdate = open.some(pr => pr.headBranchName === candidate.headRefName);
     const previous = !manifest.alwaysUpdate && snoozed.find(pr => pr.headBranchName === candidate.headRefName);
     if (previous && previous.body === candidate.body.toString()) continue;
     const result = await manifest.createOrUpdatePullRequest(candidate, open, []);
     if (result?.number > 0) {
       if (previous) await github.removeIssueLabels(['autorelease: snooze'], previous.number);
-      results.push({ components, prNumber: result.number });
+      results.push({ components, requirements, prNumber: result.number });
     }
   }
   return results;

@@ -12,7 +12,6 @@ from unittest.mock import patch
 import zipfile
 
 import release_authorization as authorization
-import release_consumer
 import release_readiness as readiness
 
 

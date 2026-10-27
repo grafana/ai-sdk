@@ -141,12 +141,20 @@ test('Renovate final rule selects only registered libraries and tagged prereleas
 const combined = { ...config, 'separate-pull-requests': false, packages: { ...config.packages,
   'ai-gateway': { ...config.packages['ai-gateway'], 'separate-pull-requests': true } } };
 
+const modules = {
+  'go.mod': 'module github.com/grafana/ai-sdk\n\ngo 1.27.3\n',
+  'providers/openai/go.mod': 'module github.com/grafana/ai-sdk/providers/openai\n\ngo 1.27.3\n\nrequire github.com/grafana/ai-sdk v0.1.0-alpha.1\n\nreplace github.com/grafana/ai-sdk => ../..\n',
+  'providers/bedrock/go.mod': 'module github.com/grafana/ai-sdk/providers/bedrock\n\ngo 1.27.3\n\nrequire (\n\tgithub.com/grafana/ai-sdk v0.1.0-alpha.1 // indirect\n\tgithub.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.1\n)\n',
+};
+
 function combinedFixture(settings = combined) {
   const source = fixture();
   const { github } = source;
-  github.getFileJson = async path => path === 'release-please-config.json' ? structuredClone(settings) : { '.': '0.1.0-alpha.1' };
+  github.getFileJson = async path => path === 'release-please-config.json' ? structuredClone(settings) : { '.': '0.1.0-alpha.1', 'providers/openai': '0.1.0-alpha.1' };
   github.releaseIterator = async function* () {};
   github.tagIterator = async function* () {};
+  github.findFilesByFilenameAndRef = async (name, ref) => { assert.equal(name, 'go.mod'); assert.equal(ref, 'main'); return Object.keys(modules); };
+  github.getFileContentsOnBranch = async path => ({ parsedContent: modules[path] });
   return source;
 }
 
@@ -168,11 +176,15 @@ test('preparation combines pending libraries and skips merged pending components
   const { github } = combinedFixture();
   github.mergeCommitIterator = libraryChanges;
   mergedOnly(github);
-  const created = [];
-  github.createPullRequest = async pr => { created.push(pr); return { number: 999 }; };
+  const created = [], updates = [];
+  github.createPullRequest = async (pr, target, message, files) => { created.push(pr); updates.push(files); return { number: 999 }; };
   const result = await prepareLibraries(github, base);
-  assert.deepEqual(result, [{ components: ['middleware/logger', 'providers/openai'], prNumber: 999 }]);
+  assert.deepEqual(result, [{ components: ['middleware/logger', 'providers/openai'],
+    requirements: ['providers/bedrock/go.mod'], prNumber: 999 }]);
   assert.equal(created.length, 1);
+  const bedrock = updates[0].find(update => update.path === 'providers/bedrock/go.mod');
+  assert.equal(bedrock.updater.updateContent(modules['providers/bedrock/go.mod']),
+    modules['providers/bedrock/go.mod'].replace('openai v0.1.0-alpha.1', 'openai v0.1.0-alpha.2'));
   assert.equal(created[0].headBranchName, 'release-please--branches--main');
   assert.equal(created[0].title, 'chore: release main');
   assert.match(created[0].body, /provider change[\s\S]*logger change|logger change[\s\S]*provider change/);
@@ -190,6 +202,7 @@ test('a separately configured library keeps its own release pull request', async
   github.createPullRequest = async pr => { created.push(pr); return { number: 900 + created.length }; };
   const result = await prepareLibraries(github, base);
   assert.deepEqual(result.map(entry => entry.components).sort(), [['middleware/logger'], ['providers/openai']]);
+  assert.deepEqual(result.find(entry => entry.components[0] === 'providers/openai').requirements, ['providers/bedrock/go.mod']);
   assert.deepEqual(created.map(pr => pr.headBranchName).sort(), [
     'release-please--branches--main', 'release-please--branches--main--components--providers/openai']);
 });
@@ -286,6 +299,7 @@ test('changed snoozed release uses the pinned labeled creation path and actual r
   });
   const github = await GitHub.create({ owner: 'grafana', repo: 'ai-sdk', defaultBranch: 'main', fetch: transport });
   github.getFileJson = source.github.getFileJson;
+  github.findFilesByFilenameAndRef = async () => [];
   github.octokit.repos.getCommit = source.github.octokit.repos.getCommit;
   github.releaseIterator = async function* () {};
   github.tagIterator = async function* () {};
@@ -295,7 +309,7 @@ test('changed snoozed release uses the pinned labeled creation path and actual r
   };
   github.buildChangeSet = async updates => new Map(updates.map(update => [update.path, { content: 'generated content' }]));
   const result = await prepareLibraries(github, base);
-  assert.deepEqual(result, [{ components: ['.'], prNumber: 100 }]);
+  assert.deepEqual(result, [{ components: ['.'], requirements: [], prNumber: 100 }]);
   assert.deepEqual(replacement.labels, [{ name: 'autorelease: pending' }]);
   assert.equal(requests.some(r => r.method === 'PATCH' && r.path.endsWith('/pulls/99')), false);
   const label = requests.findIndex(r => r.method === 'POST' && r.path.endsWith('/issues/100/labels'));
