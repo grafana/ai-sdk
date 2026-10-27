@@ -42,7 +42,7 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 4. Limits leave settings
 
-- [ ] 4.1 Remove `Settings.ProviderWire`, the stream duration constants and `limitValidationResolver` from `config`, so `Validate` constructs no handler. Gateway wiring and `NewModelObservabilityFactories` use `execution.DefaultLimits`. Update `settings_test.go`. Verify with `go test ./cmd/grafana-ai-gateway/internal/...` and `mise run test-ai-gateway-command`.
+- [x] 4.1 Remove `Settings.ProviderWire`, the stream duration constants from `config` (`limitValidationResolver` already went with task 3.5), so `Validate` constructs no handler. Gateway wiring and `NewModelObservabilityFactories` use `execution.DefaultLimits`. Update `settings_test.go`. Verify with `go test ./cmd/grafana-ai-gateway/internal/...` and `mise run test-ai-gateway-command`.
 
 ## 5. Host request policy in the runtime
 

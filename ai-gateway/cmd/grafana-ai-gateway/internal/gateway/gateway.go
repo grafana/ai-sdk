@@ -156,7 +156,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(sinks.telemetry, logger, sinks.agent, settings.ProviderWire.StreamDrainDuration)
+	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(sinks.telemetry, logger, sinks.agent, execution.DefaultLimits.StreamDrainDuration)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 		return nil, err
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
-	configuredLanguage, err := newLanguageHandler(execution.Config{Selector: service.NewConfiguredSelector(catalog), Limits: settings.ProviderWire, ConfiguredAPIKeys: secrets})
+	configuredLanguage, err := newLanguageHandler(execution.Config{Selector: service.NewConfiguredSelector(catalog), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 		configuredLanguage:  configuredLanguage,
 	}
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
-		byokLanguage, err := newLanguageHandler(execution.Config{Selector: service.NewBYOKSelector(nativeClient, byokFactory), Limits: settings.ProviderWire, ConfiguredAPIKeys: secrets})
+		byokLanguage, err := newLanguageHandler(execution.Config{Selector: service.NewBYOKSelector(nativeClient, byokFactory), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 		if err != nil {
 			return nil, err
 		}
