@@ -189,15 +189,28 @@ Grouped parallel function results SHALL retain wrapper call_id, child index orde
 
 ### Requirement: Reasoning conversion
 
-Assistant reasoning SHALL become reasoning items with encrypted_content and summary, or item_reference when store=true with an ID. Active conversation/previousResponseId SHALL skip reasoning with IDs. Missing IDs SHALL fall back to encrypted_content; store=false reasoning without encrypted content SHALL be filtered with a warning.
+Assistant reasoning SHALL become reasoning items with encrypted_content and summary, or item_reference when store=true with an ID. Active conversation/previousResponseId SHALL skip reasoning with IDs. Reasoning parts of one assistant message sharing an item ID SHALL produce at most one input item. Missing IDs SHALL fall back to encrypted_content; store=false reasoning without encrypted content SHALL be filtered with a warning.
 
 #### Scenario: Stored reasoning becomes item reference
 - **WHEN** `store` is true and a reasoning part carries an item id
 - **THEN** the request emits a single `item_reference` for that reasoning id
 
+#### Scenario: Stored reasoning parts sharing an item id
+- **WHEN** `store` is true and two reasoning parts of one assistant message carry item id `rs_1`
+- **THEN** the request emits exactly one `item_reference` for `rs_1`
+
+#### Scenario: Non-stored reasoning parts sharing an item id are merged
+- **WHEN** `store` is false and two reasoning parts of one assistant message carry item id `rs_1` with summaries and encrypted content
+- **THEN** the request emits one `reasoning` item for `rs_1` with both summaries in order and the last non-null encrypted content
+- **AND** reasoning parts with different item ids still produce separate items
+
+#### Scenario: Empty later reasoning part is skipped
+- **WHEN** `store` is false and an empty reasoning part follows another part with the same item id
+- **THEN** no summary entry is added for the empty part and an `other` warning is emitted
+
 #### Scenario: Non-stored reasoning without encrypted content is dropped
-- **WHEN** `store` is false and a reasoning part has no encrypted content
-- **THEN** the reasoning item is omitted from the request and an `unsupported` warning is emitted
+- **WHEN** `store` is false and no reasoning part for an item supplies encrypted content
+- **THEN** the reasoning item is omitted from the request and an `other` warning is emitted
 
 ### Requirement: Request parameters and structured output
 The provider SHALL map `temperature`, `topP`, and `maxOutputTokens` to the

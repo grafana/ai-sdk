@@ -1670,6 +1670,82 @@ func TestBuildParams_NonStoredReasoningEmptySummaryIsEmptyArray(t *testing.T) {
 	})
 }
 
+func TestBuildParams_ReasoningPartsSharingItemID(t *testing.T) {
+	reasoning := func(text, itemID string, encrypted *string) provider.ContentPart {
+		part := provider.ReasoningPart(text)
+		part.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{ItemID: itemID, ReasoningEncryptedContent: encrypted})
+		return part
+	}
+	firstEncrypted, lastEncrypted := "enc_first", "enc_last"
+	summary := func(texts ...string) []any {
+		out := []any{}
+		for _, text := range texts {
+			out = append(out, map[string]any{"type": "summary_text", "text": text})
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name         string
+		store        bool
+		parts        []provider.ContentPart
+		want         []any
+		wantWarnings []provider.Warning
+	}{
+		{
+			name:  "stored parts produce one reference",
+			store: true,
+			parts: []provider.ContentPart{reasoning("first", "rs_1", nil), reasoning("second", "rs_1", nil)},
+			want:  []any{map[string]any{"type": "item_reference", "id": "rs_1"}},
+		},
+		{
+			name:  "non-stored parts merge summaries and keep the last encrypted content",
+			parts: []provider.ContentPart{reasoning("first", "rs_1", &firstEncrypted), reasoning("second", "rs_1", &lastEncrypted), reasoning("third", "rs_1", nil)},
+			want:  []any{map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": lastEncrypted, "summary": summary("first", "second", "third")}},
+		},
+		{
+			name:  "encrypted content on a later part keeps earlier summaries",
+			parts: []provider.ContentPart{reasoning("first", "rs_1", nil), reasoning("second", "rs_1", &lastEncrypted)},
+			want:  []any{map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": lastEncrypted, "summary": summary("first", "second")}},
+		},
+		{
+			name:         "empty later part warns and adds no summary",
+			parts:        []provider.ContentPart{reasoning("first", "rs_1", &firstEncrypted), reasoning("", "rs_1", &lastEncrypted)},
+			want:         []any{map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": lastEncrypted, "summary": summary("first")}},
+			wantWarnings: []provider.Warning{emptyReasoningAppendWarning},
+		},
+		{
+			name:         "non-stored parts without encrypted content are omitted once",
+			parts:        []provider.ContentPart{reasoning("first", "rs_1", nil), reasoning("second", "rs_1", nil)},
+			wantWarnings: []provider.Warning{omittedReasoningWarning},
+		},
+		{
+			name:  "different stored IDs produce separate references",
+			store: true,
+			parts: []provider.ContentPart{reasoning("first", "rs_1", nil), reasoning("second", "rs_2", nil)},
+			want:  []any{map[string]any{"type": "item_reference", "id": "rs_1"}, map[string]any{"type": "item_reference", "id": "rs_2"}},
+		},
+		{
+			name:  "different non-stored IDs produce separate items",
+			parts: []provider.ContentPart{reasoning("first", "rs_1", &firstEncrypted), reasoning("second", "rs_2", &lastEncrypted)},
+			want: []any{
+				map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": firstEncrypted, "summary": summary("first")},
+				map[string]any{"type": "reasoning", "id": "rs_2", "encrypted_content": lastEncrypted, "summary": summary("second")},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := tc.store
+			body, warnings := buildBody(t, "o4-mini", provider.CallOptions{
+				Prompt:          []provider.Message{provider.NewAssistantMessage(tc.parts...)},
+				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &store}),
+			})
+			input, _ := body["input"].([]any)
+			assert.Equal(t, tc.want, input)
+			assert.Equal(t, tc.wantWarnings, warnings)
+		})
+	}
+}
+
 func findInput(body map[string]any, itemType string) map[string]any {
 	for _, it := range body["input"].([]any) {
 		m := it.(map[string]any)
