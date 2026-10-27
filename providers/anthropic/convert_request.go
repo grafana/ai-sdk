@@ -350,7 +350,11 @@ func buildParamsWithCapabilities(modelID string, opts provider.CallOptions, stre
 					}
 					content = append(content, converted...)
 				case provider.RoleTool:
-					content = append(content, convertToolContent(v, msg.Content, msg.ProviderOptions, &p.Betas, &warnings)...)
+					converted, err := convertToolContent(v, msg.Content, msg.ProviderOptions, &p.Betas, &warnings)
+					if err != nil {
+						return anthropic.BetaMessageNewParams{}, toolNameMapping{}, nil, buildResult{}, err
+					}
+					content = append(content, converted...)
 				}
 			}
 			p.Messages = append(p.Messages, anthropic.BetaMessageParam{
@@ -842,9 +846,9 @@ func convertUserContent(
 		case provider.ContentPartTypeFile:
 			cc := v.resolveCacheControl(p.ProviderOptions, msgOpts, isLast, true)
 			if p.Data != nil && len(p.Data.Reference) > 0 {
-				fileID, availableProviders, ok := resolveAnthropicFileReference(p.Data.Reference)
-				if !ok {
-					return nil, fmt.Errorf("anthropic: no provider reference found for provider anthropic; available providers: %s", strings.Join(availableProviders, ", "))
+				fileID, err := resolveAnthropicFileID(p.Data.Reference)
+				if err != nil {
+					return nil, err
 				}
 				*betas = appendBetaUnique(*betas, filesAPIBeta)
 				if useContainerUpload(p.ProviderOptions) {
@@ -893,7 +897,11 @@ func convertUserContent(
 			}
 		case provider.ContentPartTypeToolResult:
 			cc := v.resolveToolResultCacheControl(p, msgOpts, isLast)
-			blocks = appendToolResultBlock(blocks, p, cc, betas, warnings)
+			var err error
+			blocks, err = appendToolResultBlock(blocks, p, cc, betas, warnings)
+			if err != nil {
+				return nil, err
+			}
 		case provider.ContentPartTypeToolApprovalResponse:
 			// Mirrors upstream user-block handler line 319: silently skip.
 			// The `RoleTool` path keeps its existing warning behavior in
@@ -901,6 +909,14 @@ func convertUserContent(
 		}
 	}
 	return blocks, nil
+}
+
+func resolveAnthropicFileID(reference json.RawMessage) (string, error) {
+	fileID, availableProviders, ok := resolveAnthropicFileReference(reference)
+	if !ok {
+		return "", fmt.Errorf("anthropic: no provider reference found for provider anthropic; available providers: %s", strings.Join(availableProviders, ", "))
+	}
+	return fileID, nil
 }
 
 func resolveAnthropicFileReference(reference json.RawMessage) (string, []string, bool) {
@@ -1968,19 +1984,23 @@ func toolOutputTypeLabel(output *provider.ToolResultOutput) string {
 	return string(output.Type)
 }
 
-func convertToolContent(v *cacheControlValidator, parts []provider.ContentPart, msgOpts provider.ProviderOptions, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) []anthropic.BetaContentBlockParamUnion {
+func convertToolContent(v *cacheControlValidator, parts []provider.ContentPart, msgOpts provider.ProviderOptions, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) ([]anthropic.BetaContentBlockParamUnion, error) {
 	var blocks []anthropic.BetaContentBlockParamUnion
 	for i, p := range parts {
 		isLast := i == len(parts)-1
 		switch p.Type {
 		case provider.ContentPartTypeToolResult:
 			cc := v.resolveToolResultCacheControl(p, msgOpts, isLast)
-			blocks = appendToolResultBlock(blocks, p, cc, betas, warnings)
+			var err error
+			blocks, err = appendToolResultBlock(blocks, p, cc, betas, warnings)
+			if err != nil {
+				return nil, err
+			}
 		case provider.ContentPartTypeToolApprovalResponse:
 			continue
 		}
 	}
-	return blocks
+	return blocks, nil
 }
 
 // appendToolResultBlock converts a [provider.ContentPart] of type
@@ -2001,8 +2021,11 @@ func appendToolResultBlock(
 	cc anthropic.BetaCacheControlEphemeralParam,
 	betas *[]anthropic.AnthropicBeta,
 	warnings *[]provider.Warning,
-) []anthropic.BetaContentBlockParamUnion {
-	content := serializeToolOutput(p.Output, betas, warnings)
+) ([]anthropic.BetaContentBlockParamUnion, error) {
+	content, err := serializeToolOutput(p.Output, betas, warnings)
+	if err != nil {
+		return nil, err
+	}
 	result := &anthropic.BetaToolResultBlockParam{
 		ToolUseID:    p.ToolCallID,
 		Content:      content,
@@ -2016,7 +2039,7 @@ func appendToolResultBlock(
 	}
 	return append(blocks, anthropic.BetaContentBlockParamUnion{
 		OfToolResult: result,
-	})
+	}), nil
 }
 
 func customToolReference(opts provider.ProviderOptions) (anthropic.BetaToolResultBlockParamContentUnion, bool) {
@@ -2034,21 +2057,21 @@ func customToolReference(opts provider.ProviderOptions) (anthropic.BetaToolResul
 	return param.Override[anthropic.BetaToolResultBlockParamContentUnion](block), true
 }
 
-func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) []anthropic.BetaToolResultBlockParamContentUnion {
+func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.AnthropicBeta, warnings *[]provider.Warning) ([]anthropic.BetaToolResultBlockParamContentUnion, error) {
 	if output == nil {
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
-		}
+		}, nil
 	}
 	switch output.Type {
 	case provider.ToolOutputText, provider.ToolOutputErrorText:
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: output.Text}},
-		}
+		}, nil
 	case provider.ToolOutputJSON, provider.ToolOutputErrorJSON:
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: string(output.JSON)}},
-		}
+		}, nil
 	case provider.ToolOutputExecutionDenied:
 		reason := "Tool call execution denied."
 		if output.Reason != nil {
@@ -2056,10 +2079,10 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 		}
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: reason}},
-		}
+		}, nil
 	case provider.ToolOutputContent:
 		if output.Content != nil && len(output.Content) == 0 {
-			return []anthropic.BetaToolResultBlockParamContentUnion{}
+			return []anthropic.BetaToolResultBlockParamContentUnion{}, nil
 		}
 		var blocks []anthropic.BetaToolResultBlockParamContentUnion
 		for _, v := range output.Content {
@@ -2069,7 +2092,10 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 					OfText: &anthropic.BetaTextBlockParam{Text: v.Text},
 				})
 			case provider.ToolContentFile:
-				block, unsupported := convertToolResultFileContent(v, betas)
+				block, unsupported, err := convertToolResultFileContent(v, betas)
+				if err != nil {
+					return nil, err
+				}
 				if unsupported == "" {
 					blocks = append(blocks, block)
 				} else if warnings != nil {
@@ -2093,11 +2119,11 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 			if len(output.Content) == 0 {
 				return []anthropic.BetaToolResultBlockParamContentUnion{
 					{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
-				}
+				}, nil
 			}
-			return []anthropic.BetaToolResultBlockParamContentUnion{}
+			return []anthropic.BetaToolResultBlockParamContentUnion{}, nil
 		}
-		return blocks
+		return blocks, nil
 	default:
 		if warnings != nil {
 			*warnings = append(*warnings, provider.Warning{
@@ -2108,29 +2134,48 @@ func serializeToolOutput(output *provider.ToolResultOutput, betas *[]anthropic.A
 		}
 		return []anthropic.BetaToolResultBlockParamContentUnion{
 			{OfText: &anthropic.BetaTextBlockParam{Text: ""}},
-		}
+		}, nil
 	}
 }
 
-// convertToolResultFileContent converts a tool-result file entry, or returns
-// the upstream warning message for an entry Anthropic cannot carry.
-func convertToolResultFileContent(v provider.ToolResultContentValue, betas *[]anthropic.AnthropicBeta) (anthropic.BetaToolResultBlockParamContentUnion, string) {
+// convertToolResultFileContent converts a tool-result file entry, returns the
+// upstream warning message for an entry Anthropic cannot carry, or returns an
+// error for a provider reference without an Anthropic file ID.
+func convertToolResultFileContent(v provider.ToolResultContentValue, betas *[]anthropic.AnthropicBeta) (anthropic.BetaToolResultBlockParamContentUnion, string, error) {
+	isImage := strings.HasPrefix(v.MediaType, "image/")
+	if v.Data != nil && v.Data.IsReference() {
+		fileID, err := resolveAnthropicFileID(v.Data.Reference)
+		if err != nil {
+			return anthropic.BetaToolResultBlockParamContentUnion{}, "", err
+		}
+		if betas != nil {
+			*betas = appendBetaUnique(*betas, filesAPIBeta)
+		}
+		if isImage {
+			return anthropic.BetaToolResultBlockParamContentUnion{OfImage: &anthropic.BetaImageBlockParam{
+				Source: anthropic.BetaImageBlockParamSourceUnion{OfFile: &anthropic.BetaFileImageSourceParam{FileID: fileID}},
+			}}, "", nil
+		}
+		return anthropic.BetaToolResultBlockParamContentUnion{OfDocument: &anthropic.BetaRequestDocumentBlockParam{
+			Source: anthropic.BetaRequestDocumentBlockSourceUnionParam{OfFile: &anthropic.BetaFileDocumentSourceParam{FileID: fileID}},
+		}}, "", nil
+	}
 	if v.Data == nil || (!v.Data.IsURL() && !v.Data.IsData()) {
-		return anthropic.BetaToolResultBlockParamContentUnion{}, fmt.Sprintf("unsupported tool content part type: %s with data type: %s", v.Type, dataContentType(v.Data))
+		return anthropic.BetaToolResultBlockParamContentUnion{}, fmt.Sprintf("unsupported tool content part type: %s with data type: %s", v.Type, dataContentType(v.Data)), nil
 	}
 	file := provider.FilePart(v.MediaType, *v.Data)
-	if strings.HasPrefix(v.MediaType, "image/") {
+	if isImage {
 		image, _ := convertImageFileContentPart(file, anthropic.BetaCacheControlEphemeralParam{})
-		return anthropic.BetaToolResultBlockParamContentUnion{OfImage: image.OfImage}, ""
+		return anthropic.BetaToolResultBlockParamContentUnion{OfImage: image.OfImage}, "", nil
 	}
 	if v.Data.IsData() && v.MediaType != "application/pdf" {
-		return anthropic.BetaToolResultBlockParamContentUnion{}, fmt.Sprintf("unsupported tool content part type: %s with media type: %s", v.Type, v.MediaType)
+		return anthropic.BetaToolResultBlockParamContentUnion{}, fmt.Sprintf("unsupported tool content part type: %s with media type: %s", v.Type, v.MediaType), nil
 	}
 	document, _ := convertPDFDocumentContentPart(file, anthropic.BetaCacheControlEphemeralParam{})
 	if v.Data.IsData() && betas != nil {
 		*betas = appendBetaUnique(*betas, "pdfs-2024-09-25")
 	}
-	return anthropic.BetaToolResultBlockParamContentUnion{OfDocument: document.OfDocument}, ""
+	return anthropic.BetaToolResultBlockParamContentUnion{OfDocument: document.OfDocument}, "", nil
 }
 
 func dataContentType(data *provider.DataContent) string {
