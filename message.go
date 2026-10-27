@@ -135,7 +135,9 @@ func (p ToolInvocationPart) PartType() string { return "tool-" + p.ToolName }
 
 // DynamicToolUIPart carries a dynamic/MCP tool invocation in a UIMessage.
 // Same shape and field-presence contracts as [ToolInvocationPart], but with
-// type "dynamic-tool" on the wire.
+// type "dynamic-tool" on the wire. Parts normalized from a static tool whose
+// definition is unavailable or incompatible persist "dynamic": false, so model
+// conversion keeps omitting their output while the tool remains unavailable.
 type DynamicToolUIPart struct {
 	toolUnavailable        bool
 	InputEncoding          provider.ToolInputEncoding `json:"inputEncoding,omitempty"`

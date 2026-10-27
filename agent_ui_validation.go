@@ -71,6 +71,7 @@ func validateAgentUIPart(part Part, tools ToolSet) (Part, error) {
 			}
 		}
 		if toDynamic {
+			fields.toolUnavailable = true
 			return DynamicToolUIPart(fields), nil
 		}
 		return p, nil

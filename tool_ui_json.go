@@ -10,7 +10,7 @@ import (
 
 type toolPartJSON ToolInvocationPart
 
-func marshalToolPart(p toolPartJSON) ([]byte, error) {
+func marshalToolPart(p toolPartJSON, dynamic *bool) ([]byte, error) {
 	var toolMetadata *map[string]json.RawMessage
 	var callMetadata, resultMetadata *provider.ProviderMetadata
 	if p.ToolMetadata != nil {
@@ -24,14 +24,23 @@ func marshalToolPart(p toolPartJSON) ([]byte, error) {
 	}
 	return json.Marshal(struct {
 		toolPartJSON
+		Dynamic                *bool                       `json:"dynamic,omitempty"`
 		ToolMetadata           *map[string]json.RawMessage `json:"toolMetadata,omitempty"`
 		CallProviderMetadata   *provider.ProviderMetadata  `json:"callProviderMetadata,omitempty"`
 		ResultProviderMetadata *provider.ProviderMetadata  `json:"resultProviderMetadata,omitempty"`
-	}{p, toolMetadata, callMetadata, resultMetadata})
+	}{p, dynamic, toolMetadata, callMetadata, resultMetadata})
 }
 
-func (p ToolInvocationPart) MarshalJSON() ([]byte, error) { return marshalToolPart(toolPartJSON(p)) }
-func (p DynamicToolUIPart) MarshalJSON() ([]byte, error)  { return marshalToolPart(toolPartJSON(p)) }
+func (p ToolInvocationPart) MarshalJSON() ([]byte, error) {
+	return marshalToolPart(toolPartJSON(p), nil)
+}
+
+func (p DynamicToolUIPart) MarshalJSON() ([]byte, error) {
+	if p.toolUnavailable {
+		return marshalToolPart(toolPartJSON(p), new(false))
+	}
+	return marshalToolPart(toolPartJSON(p), nil)
+}
 
 func validToolInputEncoding(encoding provider.ToolInputEncoding) bool {
 	return encoding == "" || encoding == provider.ToolInputEncodingJSON || encoding == provider.ToolInputEncodingText
@@ -75,6 +84,18 @@ func (p *DynamicToolUIPart) UnmarshalJSON(data []byte) error {
 	decoded, err := unmarshalToolPart(data)
 	if err != nil {
 		return err
+	}
+	var marker struct {
+		Dynamic json.RawMessage `json:"dynamic"`
+	}
+	if err := json.Unmarshal(data, &marker); err != nil {
+		return err
+	}
+	if marker.Dynamic != nil {
+		if !bytes.Equal(bytes.TrimSpace(marker.Dynamic), []byte("false")) {
+			return fmt.Errorf("aisdk: dynamic tool field \"dynamic\" must be false")
+		}
+		decoded.toolUnavailable = true
 	}
 	*p = DynamicToolUIPart(decoded)
 	return nil
