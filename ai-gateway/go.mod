@@ -11,7 +11,7 @@ require (
 	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260928202004-dd43c6dff058
-	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260928202004-dd43c6dff058
+	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.1
 	github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.1
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260928202004-dd43c6dff058

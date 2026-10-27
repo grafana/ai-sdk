@@ -66,8 +66,8 @@ github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260928202004-dd43c6dff058 h
 github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260928202004-dd43c6dff058/go.mod h1:Vcm/lc51AtX49gHd6MhmiZ4vsDceQ7ARbD1UKxzUP5s=
 github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260928202004-dd43c6dff058 h1:9dT2hWc9tQB1C6f1FN7Ec5SAxlj0Et6LgPSF9kvByq4=
 github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260928202004-dd43c6dff058/go.mod h1:2Tj0NheOjdGf3o1qTdm2ShziOgeEDBYTAUaUS3RVlE8=
-github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260928202004-dd43c6dff058 h1:Cy6ZgQdJ9fMUFPqr5/DY8vK5Fvt729KOCSs88OkotkU=
-github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260928202004-dd43c6dff058/go.mod h1:8EgoiafHzizwn/Pk8ExUiYVxc6/qClMG8Ca3Uo5p3Xw=
+github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.1 h1:11j2UwSiSz5Kgrmnq1x9tHNufzdyzxBqxXowaxQwInM=
+github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.1/go.mod h1:z2zV+PXbvqa9VDm6if9kSpspamMLek2DYcFmIK/HZ3g=
 github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260928202004-dd43c6dff058 h1:bWnMmcDeTbsjQNKX2W+Ysp3cQxyY3CdbuHZQoaMqRQk=
 github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260928202004-dd43c6dff058/go.mod h1:+DD1ffs0T5zjyQ5qxNNl3dK8GGDZa2kwFcRiZSLJwnQ=
 github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.1 h1:PGuWbTYnMjRt5D1FgOAMaiSo2uTpFLozt6bUoyCFu6g=
