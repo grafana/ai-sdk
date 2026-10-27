@@ -195,6 +195,7 @@ var knownResponsesModelIDs = []string{
 	"gpt-6-astra",
 	"gpt-6-luna",
 	"gpt-6-sol",
+	"gpt-6.1-sol",
 	"o1",
 	"o1-2024-12-17",
 	"o3",
