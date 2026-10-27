@@ -90,6 +90,16 @@ Context cancellation while reading a provider stream SHALL use abort behavior ra
 - **AND** no `finish-step` is emitted for the canceled step
 - **AND** the canceled step is not recorded
 
+### Requirement: Cancellation skips the finish callback
+
+Matching upstream, which skips `onEnd` when aborted, cancellation SHALL call OnAbort with the completed steps and SHALL NOT call OnFinish, even when earlier steps completed. The StreamTextResult SHALL still retain those steps, their all-step projection and their total usage.
+
+#### Scenario: Cancellation after a completed step
+
+- **WHEN** the context is canceled while a later step's provider stream is being read
+- **THEN** OnAbort SHALL receive the completed steps and OnFinish SHALL NOT be called
+- **AND** result accessors SHALL project the completed steps and TotalUsage SHALL aggregate their usage
+
 ### Requirement: Step content preserves provider order
 
 StreamText SHALL build StepResult.Content and response content from recorded provider sequence. Text/reasoning/sources/regular files/tool calls/tool results/approval requests SHALL retain relative provider order and metadata. Locally created post-stream approvals/results SHALL append exactly once. Manually constructed state without recorded content SHALL use deterministic grouped fallback.
@@ -115,6 +125,38 @@ StreamText SHALL build StepResult.Content and response content from recorded pro
 
 - **WHEN** content is built from manually constructed step fields without a recorded provider sequence
 - **THEN** reasoning, text, tools, sources, and files SHALL be emitted in that grouped order
+
+### Requirement: Collected results project all recorded steps
+
+StreamText, GenerateText and ToolLoopAgent results SHALL derive Content, ToolCalls, ToolResults, Files and Sources by concatenating every recorded step's values in step order, mirroring upstream `steps.flatMap`. Text, Reasoning, FinishReason, Response and ProviderMetadata SHALL describe the final recorded step. StreamTextResult accessors on error and cancellation SHALL project the steps recorded before termination.
+
+#### Scenario: Multi-step collections retain earlier steps
+
+- **WHEN** a tool step emits reasoning, cited text, a source, a file and a tool call, and the next step emits reasoning, a source and final text
+- **THEN** Content, ToolCalls, ToolResults, Files and Sources SHALL contain both steps' values in order
+- **AND** aggregated content SHALL keep each part's provider metadata, including citations
+- **AND** Text and Reasoning SHALL contain only the final step's values
+
+#### Scenario: No recorded step
+
+- **WHEN** the invocation fails before recording any step
+- **THEN** the aggregated collections and `ResponseMessages` SHALL be nil
+
+#### Scenario: Returned collections are caller owned
+
+- **WHEN** a caller replaces elements of, or appends to, an aggregated collection or `ResponseMessages` slice returned by a StreamTextResult accessor
+- **THEN** later accessor calls and recorded steps SHALL be unaffected
+
+### Requirement: Finish callback state follows the result projection
+
+OnFinishState SHALL mirror the upstream end event. Its embedded StepResult SHALL hold the final recorded step with Content, ToolCalls, ToolResults, Files and Sources replaced by the all-step projection, Warnings by the StreamTextResult's accumulated warnings and Usage by total usage. ResponseMessages SHALL equal the result's full response-message history; Steps SHALL hold every recorded step.
+
+#### Scenario: Multi-step finish callback aggregates
+
+- **WHEN** OnFinish runs after a tool step and a final text step
+- **THEN** its Content, ToolCalls, ToolResults, Files, Sources and ResponseMessages SHALL equal the corresponding result accessors
+- **AND** Text, Reasoning, StepNumber, FinishReason, Response and ProviderMetadata SHALL describe the final step
+- **AND** Usage SHALL equal TotalUsage
 
 ### Requirement: Tool execution requires an allowed finish
 

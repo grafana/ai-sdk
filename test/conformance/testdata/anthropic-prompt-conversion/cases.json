@@ -1,0 +1,676 @@
+[
+  {
+    "name": "tool-result-cache-control-from-content-entry",
+    "description": "SYNTHETIC: a content output takes cache control from its first entry with provider options.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "input": {
+              "city": "Portland"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "output": {
+              "type": "content",
+              "value": [
+                {
+                  "type": "text",
+                  "text": "72 degrees"
+                },
+                {
+                  "type": "text",
+                  "text": "sunny",
+                  "providerOptions": {
+                    "anthropic": {
+                      "cacheControl": {
+                        "type": "ephemeral"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "tool-result-cache-control-first-entry-without-cache-control",
+    "description": "SYNTHETIC: the first entry with provider options is used even when it has no cache control.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "input": {
+              "city": "Portland"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "output": {
+              "type": "content",
+              "value": [
+                {
+                  "type": "text",
+                  "text": "72 degrees",
+                  "providerOptions": {
+                    "anthropic": {}
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": "sunny",
+                  "providerOptions": {
+                    "anthropic": {
+                      "cacheControl": {
+                        "type": "ephemeral"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "tool-result-cache-control-from-output-options",
+    "description": "SYNTHETIC: a JSON output takes cache control from its own provider options.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "input": {
+              "city": "Portland"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "output": {
+              "type": "json",
+              "value": {
+                "temperature": 72
+              },
+              "providerOptions": {
+                "anthropic": {
+                  "cacheControl": {
+                    "type": "ephemeral"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "tool-result-cache-control-part-before-output",
+    "description": "SYNTHETIC: part cache control takes precedence over output cache control.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "input": {
+              "city": "Portland"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "output": {
+              "type": "content",
+              "value": [
+                {
+                  "type": "text",
+                  "text": "72 degrees",
+                  "providerOptions": {
+                    "anthropic": {
+                      "cacheControl": {
+                        "type": "ephemeral",
+                        "ttl": "5m"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "providerOptions": {
+              "anthropic": {
+                "cacheControl": {
+                  "type": "ephemeral",
+                  "ttl": "1h"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "tool-result-cache-control-output-before-message",
+    "description": "SYNTHETIC: output cache control takes precedence over message cache control.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "input": {
+              "city": "Portland"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "output": {
+              "type": "content",
+              "value": [
+                {
+                  "type": "text",
+                  "text": "72 degrees",
+                  "providerOptions": {
+                    "anthropic": {
+                      "cacheControl": {
+                        "type": "ephemeral",
+                        "ttl": "5m"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "providerOptions": {
+          "anthropic": {
+            "cacheControl": {
+              "type": "ephemeral",
+              "ttl": "1h"
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "tool-result-dropped-file-entries",
+    "description": "SYNTHETIC: unsupported tool-result file entries are dropped with warnings; URL entries are kept.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "input": {
+              "city": "Portland"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "call-1",
+            "toolName": "weather",
+            "output": {
+              "type": "content",
+              "value": [
+                {
+                  "type": "text",
+                  "text": "attachments"
+                },
+                {
+                  "type": "file",
+                  "mediaType": "application/zip",
+                  "data": {
+                    "type": "data",
+                    "data": "UEsDBA=="
+                  }
+                },
+                {
+                  "type": "file",
+                  "mediaType": "application/pdf",
+                  "data": {
+                    "type": "reference",
+                    "reference": {
+                      "anthropic": "file_1"
+                    }
+                  }
+                },
+                {
+                  "type": "file",
+                  "mediaType": "text/plain",
+                  "data": {
+                    "type": "text",
+                    "text": "inline notes"
+                  }
+                },
+                {
+                  "type": "file",
+                  "mediaType": "text/plain",
+                  "data": {
+                    "type": "url",
+                    "url": "https://example.com/notes.txt"
+                  }
+                },
+                {
+                  "type": "file",
+                  "mediaType": "image/png",
+                  "data": {
+                    "type": "url",
+                    "url": "https://example.com/map.png"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "mcp-result-in-tool-message",
+    "description": "SYNTHETIC: a tool-message result matching a hosted-MCP tool use stays a tool_result.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "input": {
+              "query": "cache"
+            },
+            "providerExecuted": true,
+            "providerOptions": {
+              "anthropic": {
+                "type": "mcp-tool-use",
+                "serverName": "docs"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "output": {
+              "type": "json",
+              "value": "found 2 pages"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "mcp-result-in-merged-assistant-block",
+    "description": "SYNTHETIC: consecutive assistant messages form one block, so the result becomes an mcp_tool_result.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "input": {
+              "query": "cache"
+            },
+            "providerExecuted": true,
+            "providerOptions": {
+              "anthropic": {
+                "type": "mcp-tool-use",
+                "serverName": "docs"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "output": {
+              "type": "json",
+              "value": "found 2 pages"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "mcp-result-in-later-assistant-block",
+    "description": "SYNTHETIC: a later assistant block does not see the hosted-MCP tool use.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "input": {
+              "query": "cache"
+            },
+            "providerExecuted": true,
+            "providerOptions": {
+              "anthropic": {
+                "type": "mcp-tool-use",
+                "serverName": "docs"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Continue."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "output": {
+              "type": "json",
+              "value": "found 2 pages"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "mcp-result-text-output",
+    "description": "SYNTHETIC: a hosted-MCP result with a text output is dropped with a warning.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "input": {
+              "query": "cache"
+            },
+            "providerExecuted": true,
+            "providerOptions": {
+              "anthropic": {
+                "type": "mcp-tool-use",
+                "serverName": "docs"
+              }
+            }
+          },
+          {
+            "type": "tool-result",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "output": {
+              "type": "text",
+              "value": "found 2 pages"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "mcp-result-error-json-object",
+    "description": "SYNTHETIC: an error JSON hosted-MCP result sets is_error and passes the raw value.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "input": {
+              "query": "cache"
+            },
+            "providerExecuted": true,
+            "providerOptions": {
+              "anthropic": {
+                "type": "mcp-tool-use",
+                "serverName": "docs"
+              }
+            }
+          },
+          {
+            "type": "tool-result",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "output": {
+              "type": "error-json",
+              "value": {
+                "code": "timeout"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "mcp-result-missing-server-name",
+    "description": "SYNTHETIC: a hosted-MCP tool use without a server name is dropped but still tracked.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is the weather?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "input": {
+              "query": "cache"
+            },
+            "providerExecuted": true,
+            "providerOptions": {
+              "anthropic": {
+                "type": "mcp-tool-use"
+              }
+            }
+          },
+          {
+            "type": "tool-result",
+            "toolCallId": "mcp-1",
+            "toolName": "search_docs",
+            "output": {
+              "type": "json",
+              "value": "found 2 pages"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

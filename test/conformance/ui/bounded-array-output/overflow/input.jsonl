@@ -1,0 +1,9 @@
+{"type":"stream-start","warnings":[]}
+{"type":"text-start","id":"text-1"}
+{"type":"text-delta","id":"text-1","delta":"{\"elements\":["}
+{"type":"text-delta","id":"text-1","delta":"{\"name\":\"a\"},"}
+{"type":"text-delta","id":"text-1","delta":"{\"name\":\"b\"},"}
+{"type":"text-delta","id":"text-1","delta":"{\"name\":\"c\"}"}
+{"type":"text-delta","id":"text-1","delta":"]}"}
+{"type":"text-end","id":"text-1"}
+{"type":"finish","finishReason":{"unified":"stop","raw":"stop"},"usage":{"inputTokens":{"total":10},"outputTokens":{"total":5}}}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 	"go.opentelemetry.io/otel/trace"
@@ -193,6 +194,7 @@ func runStreamTee(
 			return
 		}
 		finalized = true
+		defer streamrecover.Recover(func() {})
 		if first := streamRec.FirstChunkAt(); !first.IsZero() {
 			recorder.SetFirstTokenAt(first)
 		}

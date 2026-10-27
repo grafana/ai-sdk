@@ -63,6 +63,15 @@ knownGaps:
       Go stream at the offending event, where upstream reports the invalid chunk
       and keeps reading. Go unit tests cover this; no golden can, because the two
       differ by design.
+  - id: anthropic-mcp-result-fallthrough-warning
+    surface: provider-anthropic
+    status: intentional-deviation
+    description: After converting a hosted-MCP result to mcp_tool_result,
+      registered @ai-sdk/anthropic 4.0.71 falls through to the provider-executed
+      routing and also warns that the tool result is not supported. Go emits the
+      same mcp_tool_result without that contradictory warning. The synthetic
+      cases under testdata/anthropic-prompt-conversion verify the upstream
+      warning is present and compare everything else unchanged.
   - id: anthropic-restricted-access-recordings
     surface: provider-anthropic
     status: gap
@@ -99,6 +108,16 @@ knownGaps:
       tests cover supported models, streaming and non-streaming requests, and
       the absence of forced tool choice and synthetic tools. Organization policy
       must enable structured outputs; no live Vertex recording is claimed.
+  - id: array-element-stream-overflow
+    surface: core-streamtext
+    status: documented-deviation
+    description: Upstream errors the array element stream when the model
+      produces an element past maxItems. A Go channel carries no error, so
+      ElementStream closes at that point and stays closed for later steps, and
+      StreamTextResult.ElementStreamError reports the overflow. Upstream
+      streamText has no output repair; when Go WithRepairText accepts a
+      repaired array within the bounds, OutputError is nil although
+      ElementStreamError reports the overflow.
   - id: astra-model-catalog
     surface: provider-openai
     status: gap
@@ -123,14 +142,17 @@ knownGaps:
   - id: bedrock-cache-point-ownership
     surface: provider-bedrock
     status: intentional-deviation
-    description: Cache points are retained only when their source message emits
-      native content, including user/tool approval-only messages and system
-      messages with only unsupported parts. This goes beyond the registered
+    description: Cache points are retained only when their source message or
+      content part emits native content, including user/tool approval-only
+      messages and system messages with only unsupported parts. This goes beyond the registered
       upstream's assistant cache-only suppression and prevents orphaned markers
-      from borrowing content from another source in a merged block. Tool
+      from borrowing content from another source in a merged block; upstream
+      keeps a non-emitting part's marker at its position in the current Converse
+      message, dropping it only when that message would be cache-only. Tool
       filtering happens before grouping with the prepared tool set, matching
       upstream. Adjacent user messages left after an omitted unsigned-only
-      assistant message remain unchanged.
+      assistant message remain separate unless the earlier one carries tool
+      results, matching upstream.
   - id: bedrock-converse-premature-eof
     surface: provider-bedrock
     status: intentional-deviation

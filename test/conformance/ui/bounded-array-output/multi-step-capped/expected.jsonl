@@ -1,0 +1,17 @@
+{"type":"start","messageId":"message-1"}
+{"type":"start-step"}
+{"type":"text-start","id":"text-1"}
+{"type":"text-delta","id":"text-1","delta":"{\"elements\":["}
+{"type":"text-delta","id":"text-1","delta":"{\"name\":\"a\"},{\"name\":\"b\"}]}"}
+{"type":"text-end","id":"text-1"}
+{"type":"tool-input-available","toolCallId":"call-1","toolName":"lookup","input":{}}
+{"type":"tool-output-available","toolCallId":"call-1","output":{}}
+{"type":"finish-step"}
+{"type":"start-step"}
+{"type":"text-start","id":"text-2"}
+{"type":"text-delta","id":"text-2","delta":"{\"elements\":["}
+{"type":"text-delta","id":"text-2","delta":"{\"name\":\"x\"},{\"name\":\"y\"},"}
+{"type":"text-delta","id":"text-2","delta":"{\"name\":\"z\"}]}"}
+{"type":"text-end","id":"text-2"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

@@ -38,14 +38,15 @@ type StreamTextResult struct {
 	mu        sync.Mutex
 	toolTypes map[string]UserToolType
 
-	steps        []StepResult
-	totalUsage   provider.Usage
-	lastStep     *StepResult
-	allWarnings  []provider.Warning
-	provMeta     provider.ProviderMetadata
-	lastResponse ResponseMetadata
-	firstError   error
-	abortCause   error
+	steps                   []StepResult
+	initialResponseMessages []provider.Message
+	totalUsage              provider.Usage
+	lastStep                *StepResult
+	allWarnings             []provider.Warning
+	provMeta                provider.ProviderMetadata
+	lastResponse            ResponseMetadata
+	firstError              error
+	abortCause              error
 
 	outputValue any
 	outputErr   error
@@ -54,6 +55,7 @@ type StreamTextResult struct {
 	elementStream       *losslessStream[json.RawMessage]
 	lastPartialJSON     string
 	emittedElementCount int
+	elementStreamErr    error
 	usedTextIDs         map[string]struct{}
 	usedReasoningIDs    map[string]struct{}
 }
@@ -95,17 +97,22 @@ type losslessStream[T any] struct {
 	queue  []T
 	output chan T
 	closed bool
+	done   chan struct{}
 	start  sync.Once
 }
 
 func newLosslessStream[T any]() *losslessStream[T] {
-	stream := &losslessStream[T]{output: make(chan T, defaultStreamBuffer)}
+	stream := &losslessStream[T]{output: make(chan T, defaultStreamBuffer), done: make(chan struct{})}
 	stream.ready = sync.NewCond(&stream.mu)
 	return stream
 }
 
 func (s *losslessStream[T]) send(value T) {
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	s.queue = append(s.queue, value)
 	s.ready.Signal()
 	s.mu.Unlock()
@@ -113,7 +120,10 @@ func (s *losslessStream[T]) send(value T) {
 
 func (s *losslessStream[T]) close() {
 	s.mu.Lock()
-	s.closed = true
+	if !s.closed {
+		s.closed = true
+		close(s.done)
+	}
 	s.ready.Broadcast()
 	s.mu.Unlock()
 }
@@ -497,7 +507,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		r.emitError(err, cfg.onError)
 		return
 	}
-	responseMessages := cloneMessages(msgs[preApprovalMessageCount:])
+	r.mu.Lock()
+	r.initialResponseMessages = cloneMessages(msgs[preApprovalMessageCount:])
+	r.mu.Unlock()
 
 	// Stop conditions default
 	stopWhen := cfg.stopWhen
@@ -539,7 +551,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				Model:            currentModel,
 				Messages:         currentMsgs,
 				InitialMessages:  initialMessages,
-				ResponseMessages: responseMessages,
+				ResponseMessages: collectResponseMessages(r.initialResponseMessages, r.steps),
 				Context:          currentRuntimeContext,
 			})
 			if err != nil {
@@ -713,8 +725,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Mid-stream cancellation: the context was canceled while reading
-		// the provider stream. Fire onAbort, and only fire onFinish if
-		// earlier steps completed (matching upstream recordedSteps semantics).
+		// the provider stream. Fire onAbort but not onFinish, matching
+		// upstream, while keeping completed steps and their usage on the result.
 		if ctx.Err() != nil {
 			if outcome.completed {
 				r.mu.Lock()
@@ -728,16 +740,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					cfg.onStepFinish(OnStepFinishState{StepResult: step})
 				}
 			}
+			r.totalUsage = aggregateUsage(r.steps)
 			r.abort(ctx, cfg)
-			if len(r.steps) > 0 && cfg.onFinish != nil {
-				r.totalUsage = aggregateUsage(r.steps)
-				last := r.steps[len(r.steps)-1]
-				cfg.onFinish(OnFinishState{
-					StepResult: last,
-					Steps:      r.steps,
-					TotalUsage: r.totalUsage,
-				})
-			}
 			return
 		}
 
@@ -807,11 +811,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			r.totalUsage = aggregateUsage(r.steps)
 
 			if cfg.onFinish != nil {
-				cfg.onFinish(OnFinishState{
-					StepResult: step,
-					Steps:      r.steps,
-					TotalUsage: r.totalUsage,
-				})
+				cfg.onFinish(r.finishState())
 			}
 
 			r.emit(StreamFinish{
@@ -822,11 +822,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Append tool results to messages for next step
-		stepResponseMessages := step.Response.Messages
 		msgs = appendToolResults(currentMsgs, step)
-		nextResponseMessages := make([]provider.Message, 0, len(responseMessages)+len(stepResponseMessages))
-		nextResponseMessages = append(nextResponseMessages, responseMessages...)
-		responseMessages = append(nextResponseMessages, stepResponseMessages...)
 	}
 }
 
@@ -2094,10 +2090,28 @@ func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
 		return ""
 	}
 	if elements, isSlice := v.([]json.RawMessage); isSlice {
+		var overflow error
+		if bounded, ok := out.(BoundedArrayOutput); ok {
+			if limit, ok := bounded.MaxItems(); ok {
+				limit = max(limit, 0)
+				if len(elements) > limit {
+					elements = elements[:limit]
+					overflow = fmt.Errorf("%w: elements array must contain at most %d items", ErrInvalidOutputText, limit)
+				}
+			}
+		}
 		for i := r.emittedElementCount; i < len(elements); i++ {
 			r.elementStream.send(elements[i])
 		}
-		r.emittedElementCount = len(elements)
+		r.emittedElementCount = max(r.emittedElementCount, len(elements))
+		if overflow != nil {
+			r.mu.Lock()
+			if r.elementStreamErr == nil {
+				r.elementStreamErr = overflow
+			}
+			r.mu.Unlock()
+			r.elementStream.close()
+		}
 	}
 
 	var data json.RawMessage
@@ -2217,7 +2231,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	resumeStep := &StepResult{StepNumber: 0, Model: StepModel{}}
 	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index, emit)
+		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, cfg.runtimeContext, msgs, outcomes, et.index, emit)
 	})
 
 	approvedToolParts := make([]provider.ContentPart, 0, len(executable))
@@ -2288,6 +2302,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 			}, ToolExecutionOptions{
 				ToolCallID: approval.toolCall.ToolCallID,
 				Messages:   msgs,
+				Context:    cfg.runtimeContext,
 			})
 			if err != nil {
 				return nil, nil, err
@@ -2572,44 +2587,32 @@ func (r *StreamTextResult) Reasoning() []ReasoningOutput {
 	return nil
 }
 
-// ToolCalls returns the tool calls from the last step.
-// Blocks until the stream completes.
+// ToolCalls returns the tool calls from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) ToolCalls() []ToolCall {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.ToolCalls
-	}
-	return nil
+	return r.toolCalls()
 }
 
-// ToolResults returns the tool results from the last step.
-// Blocks until the stream completes.
+// ToolResults returns the tool results from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) ToolResults() []ToolResult {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.ToolResults
-	}
-	return nil
+	return r.toolResults()
 }
 
-// Files returns the generated files from the last step.
-// Blocks until the stream completes.
+// Files returns the generated files from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) Files() []GeneratedFile {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.Files
-	}
-	return nil
+	return r.files()
 }
 
-// Sources returns the sources from the last step.
-// Blocks until the stream completes.
+// Sources returns the sources from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) Sources() []Source {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.Sources
-	}
-	return nil
+	return r.sources()
 }
 
 // FinishReason returns the finish reason from the last step.
@@ -2655,14 +2658,64 @@ func (r *StreamTextResult) Warnings() []provider.Warning {
 	return r.allWarnings
 }
 
-// Content returns the structured content from the last step.
-// Blocks until the stream completes.
+// Content returns the structured content from all recorded steps in step
+// order. The returned slice is newly allocated. Blocks until the stream
+// completes.
 func (r *StreamTextResult) Content() []ContentPart {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.Content
+	return r.content()
+}
+
+// ResponseMessages returns the full generated message history: tool messages
+// produced by resolving approval responses before the first model call,
+// followed by every recorded step's Response.Messages in step order. Unlike
+// Response().Messages, which holds only the last step's messages, the result
+// can be appended to the input messages to continue the conversation. The
+// returned slice is newly allocated. Blocks until the stream completes.
+func (r *StreamTextResult) ResponseMessages() []provider.Message {
+	r.Wait()
+	return r.responseMessages()
+}
+
+func (r *StreamTextResult) content() []ContentPart {
+	return flattenSteps(r.steps, func(step StepResult) []ContentPart { return step.Content })
+}
+
+func (r *StreamTextResult) toolCalls() []ToolCall {
+	return flattenSteps(r.steps, func(step StepResult) []ToolCall { return step.ToolCalls })
+}
+
+func (r *StreamTextResult) toolResults() []ToolResult {
+	return flattenSteps(r.steps, func(step StepResult) []ToolResult { return step.ToolResults })
+}
+
+func (r *StreamTextResult) files() []GeneratedFile {
+	return flattenSteps(r.steps, func(step StepResult) []GeneratedFile { return step.Files })
+}
+
+func (r *StreamTextResult) sources() []Source {
+	return flattenSteps(r.steps, func(step StepResult) []Source { return step.Sources })
+}
+
+func (r *StreamTextResult) responseMessages() []provider.Message {
+	return collectResponseMessages(r.initialResponseMessages, r.steps)
+}
+
+func (r *StreamTextResult) finishState() OnFinishState {
+	projected := r.steps[len(r.steps)-1]
+	projected.Content = r.content()
+	projected.ToolCalls = r.toolCalls()
+	projected.ToolResults = r.toolResults()
+	projected.Files = r.files()
+	projected.Sources = r.sources()
+	projected.Warnings = slices.Clone(r.allWarnings)
+	projected.Usage = r.totalUsage
+	return OnFinishState{
+		StepResult:       projected,
+		Steps:            r.steps,
+		TotalUsage:       r.totalUsage,
+		ResponseMessages: r.responseMessages(),
 	}
-	return nil
 }
 
 // Response returns the response metadata from the last step.
@@ -2705,10 +2758,27 @@ func (r *StreamTextResult) PartialOutputStream() <-chan json.RawMessage {
 
 // ElementStream returns a channel of complete validated array elements
 // during streaming. Only produces values when the Output is in array mode.
-// Elements are delivered exactly once and in order. The channel is closed after
-// the stream finishes and all elements are delivered.
+// Elements are delivered exactly once and in order. The count carries over
+// between steps: a later step delivers only the elements of its array past the
+// number already delivered, as upstream does. The channel is closed after
+// the stream finishes and all elements are delivered. When the Output reports a
+// maximum through BoundedArrayOutput, the channel closes as soon as the model
+// produces an element past it, in any step, and ElementStreamError reports why.
 func (r *StreamTextResult) ElementStream() <-chan json.RawMessage {
 	return r.elementStream.stream()
+}
+
+// ElementStreamError reports why ElementStream closed: an error wrapping
+// ErrInvalidOutputText when the model produced more elements than the
+// maximum, or nil after a normal close. It blocks until the element stream
+// closes, which happens at the overflow or when the stream finishes. Like
+// ElementStream, it needs a concurrent FullStream consumer. The final output
+// is validated separately and reported by OutputError.
+func (r *StreamTextResult) ElementStreamError() error {
+	<-r.elementStream.done
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.elementStreamErr
 }
 
 // Err returns the first error encountered during streaming, or nil.
@@ -2726,6 +2796,30 @@ func (r *StreamTextResult) abortError() error {
 }
 
 // Helpers
+
+func flattenSteps[T any](steps []StepResult, pick func(StepResult) []T) []T {
+	count := 0
+	for _, step := range steps {
+		count += len(pick(step))
+	}
+	if count == 0 {
+		return nil
+	}
+	flattened := make([]T, 0, count)
+	for _, step := range steps {
+		flattened = append(flattened, pick(step)...)
+	}
+	return flattened
+}
+
+func collectResponseMessages(initial []provider.Message, steps []StepResult) []provider.Message {
+	var messages []provider.Message
+	messages = append(messages, initial...)
+	for _, step := range steps {
+		messages = append(messages, step.Response.Messages...)
+	}
+	return messages
+}
 
 func filterProviderTools(tools []provider.Tool, activeNames []string) []provider.Tool {
 	nameSet := make(map[string]bool, len(activeNames))

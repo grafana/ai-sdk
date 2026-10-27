@@ -112,6 +112,25 @@ When the last content part in a message does not have its own `cache_control` an
 - **WHEN** a `ToolMessage` has message-level cache control and the last `ToolResultContentPart` has no part-level cache control
 - **THEN** the last tool_result block SHALL include the message-level cache control
 
+### Requirement: Tool-result output cache control
+For `tool_result` blocks, the provider SHALL resolve cache control from the part, then the output options, then the message options for the last part, matching upstream `convert-to-anthropic-prompt.ts`. Output options SHALL be the output's own `ProviderOptions`, or for `content` outputs without them, those of the first content entry that has any.
+
+#### Scenario: Cache control from a content entry
+- **WHEN** a tool result has a `content` output whose second text entry, the first with provider options, sets cache control type `"ephemeral"`
+- **THEN** the tool_result block SHALL include `cache_control: {"type": "ephemeral"}`
+
+#### Scenario: First entry with options has no cache control
+- **WHEN** the first content entry with provider options has none for cache control and a later entry sets it
+- **THEN** the tool_result block SHALL NOT include `cache_control`
+
+#### Scenario: Output options on a JSON output
+- **WHEN** a tool result has a `json` output whose `ProviderOptions` set cache control
+- **THEN** the tool_result block SHALL include that cache control
+
+#### Scenario: Precedence
+- **WHEN** the part, output and message all set cache control with different TTLs
+- **THEN** the tool_result block SHALL use the part's value, or the output's value when the part sets none, and SHALL consume one breakpoint
+
 ### Requirement: Streaming cache usage metrics
 The Anthropic provider SHALL expose cache usage metrics through `Usage.InputTokens.CacheRead` and `Usage.InputTokens.CacheWrite`. Streaming finish usage SHALL follow the same accounting policy as non-streaming generation. `Usage.InputTokens.Total` SHALL include uncached input, cache reads and cache writes exactly once.
 

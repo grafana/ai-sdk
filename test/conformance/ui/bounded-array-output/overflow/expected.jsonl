@@ -1,0 +1,10 @@
+{"type":"start","messageId":"message-1"}
+{"type":"start-step"}
+{"type":"text-start","id":"text-1"}
+{"type":"text-delta","id":"text-1","delta":"{\"elements\":["}
+{"type":"text-delta","id":"text-1","delta":"{\"name\":\"a\"},{\"name\":\"b\"},"}
+{"type":"text-delta","id":"text-1","delta":"{\"name\":\"c\"}"}
+{"type":"text-delta","id":"text-1","delta":"]}"}
+{"type":"text-end","id":"text-1"}
+{"type":"finish-step"}
+{"type":"finish","finishReason":"stop"}

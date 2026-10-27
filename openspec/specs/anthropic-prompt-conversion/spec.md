@@ -36,7 +36,7 @@ Consecutive `provider.Message` entries with `RoleUser` or `RoleTool` SHALL seria
 
 ### Requirement: User-role messages accept tool_result content parts
 
-The Anthropic provider SHALL convert `provider.ContentPart` entries of `Type == ContentPartTypeToolResult` to Anthropic API `tool_result` (or `mcp_tool_result`) blocks when they appear inside a `RoleUser` provider message. The resulting block SHALL be identical to what the same `ContentPart` produces when it appears inside a `RoleTool` provider message. Tool-result parts SHALL NOT be silently dropped from `RoleUser` messages.
+The Anthropic provider SHALL convert `provider.ContentPart` entries of `Type == ContentPartTypeToolResult` to Anthropic API `tool_result` blocks when they appear inside a `RoleUser` provider message. The resulting block SHALL be identical to what the same `ContentPart` produces when it appears inside a `RoleTool` provider message. Tool-result parts SHALL NOT be silently dropped from `RoleUser` messages.
 
 #### Scenario: Mixed tool_result and text in one user message preserves both blocks in order
 - **WHEN** a single `RoleUser` provider message has `Content == [tool_result(call_1, "out"), text("then text")]`
@@ -46,9 +46,9 @@ The Anthropic provider SHALL convert `provider.ContentPart` entries of `Type == 
 - **WHEN** the prompt is `[RoleUser([tool_result(call_1, "out")])]` and separately `[RoleTool([tool_result(call_1, "out")])]`
 - **THEN** the resulting Anthropic API request `Messages` SHALL be byte-identical between the two cases
 
-#### Scenario: MCP tool_result inside a user message produces an mcp_tool_result block
+#### Scenario: Tool_result matching a hosted-MCP tool use inside a user message stays a tool_result
 - **WHEN** the prompt contains an assistant `mcp_tool_use` for `toolCallID = mcp-1` followed by a `RoleUser` with content `[tool_result(mcp-1, ...)]`
-- **THEN** the resulting Anthropic user message SHALL contain `OfMCPToolResult{ToolUseID: "mcp-1", ...}` (not a plain `OfToolResult`)
+- **THEN** the resulting Anthropic user message SHALL contain `OfToolResult{ToolUseID: "mcp-1", ...}` (not an `OfMCPToolResult`), matching upstream, whose user block never emits `mcp_tool_result`
 
 ### Requirement: Tool approval responses inside user-role messages are skipped silently
 
@@ -76,11 +76,15 @@ For merged Anthropic user or assistant blocks, each source `provider.Message`'s 
 
 ### Requirement: Consecutive assistant messages merge into one Anthropic assistant block
 
-The Anthropic provider SHALL group consecutive `provider.Message` entries with `Role == provider.RoleAssistant` into a single Anthropic API assistant message. The merged `content` SHALL contain every source message's converted blocks in source order, subject to client tool-use normalization. The cache-control cascade and ProviderExecuted-vs-MCP-vs-standard tool-call dispatch in `convertAssistantContent` SHALL be applied per source message, not per merged block.
+The Anthropic provider SHALL group consecutive `provider.Message` entries with `Role == provider.RoleAssistant` into a single Anthropic API assistant message. Its `content` SHALL concatenate every source message's converted blocks in order, subject to client tool-use normalization. The cache-control cascade and tool-call dispatch in `convertAssistantContent` SHALL apply per source message. Hosted-MCP tool-use tracking SHALL span the merged block only, as specified by mcp-server-tools.
 
 #### Scenario: Two consecutive assistant messages merge into one
 - **WHEN** the prompt is `[RoleAssistant([text("hi")]), RoleAssistant([tool_call("c1", "search", {})])]`
 - **THEN** the resulting request SHALL contain exactly one `BetaMessageParam` with `Role: "assistant"` whose content is `[OfText{Text: "hi"}, OfToolUse{ID: "c1", Name: "search", ...}]` in that order
+
+#### Scenario: Hosted-MCP result in a later source message of the same block
+- **WHEN** the prompt is `[RoleAssistant([mcp_tool_call(mcp-1)]), RoleAssistant([tool_result(mcp-1, json)])]`
+- **THEN** the merged assistant message SHALL contain `OfMCPToolUse{ID: "mcp-1"}` followed by `OfMCPToolResult{ToolUseID: "mcp-1"}`
 
 ### Requirement: Client tool-use blocks move to the end of each reasoning segment
 
@@ -151,15 +155,31 @@ Assistant text with `ProviderOptions["anthropic"].type == "compaction"` SHALL se
 
 ### Requirement: Single shared helper builds Anthropic tool_result blocks
 
-`convertUserContent` and `convertToolContent` SHALL share one helper for `ContentPartTypeToolResult`, producing `OfMCPToolResult` for IDs from prior MCP tool-use and `OfToolResult` otherwise. The helper SHALL preserve `convertToolContent`'s MCP/standard branching and its `serializeToolOutput` and `serializeMCPToolResultContent` paths for both `RoleUser` and `RoleTool` parts.
+`convertUserContent` and `convertToolContent` SHALL share one helper for `ContentPartTypeToolResult`, producing `OfToolResult` through `serializeToolOutput` for both `RoleUser` and `RoleTool` parts, with the tool-result cache-control cascade from anthropic-prompt-caching. The helper SHALL NOT produce `OfMCPToolResult`.
 
 #### Scenario: Same tool_result produces same block from RoleUser and RoleTool inputs
 - **WHEN** an identical `tool_result(call_1, output)` part is converted via `convertUserContent` and via `convertToolContent`
 - **THEN** the resulting Anthropic API content block SHALL be byte-identical (same `ToolUseID`, same `Content`, same `IsError`, same `CacheControl`)
 
-#### Scenario: MCP tool_result detection works regardless of source role
+#### Scenario: Hosted-MCP IDs do not change user-block routing
 - **WHEN** the prompt contains a prior assistant `mcp_tool_use(call_1)` and a tool_result for `call_1` appears inside either a `RoleUser` or a `RoleTool` provider message
-- **THEN** in both cases the resulting Anthropic block SHALL be `OfMCPToolResult` (not `OfToolResult`)
+- **THEN** in both cases the resulting Anthropic block SHALL be `OfToolResult` (not `OfMCPToolResult`)
+
+### Requirement: Tool-result file entries
+
+On the `tool_result` path, the Anthropic provider SHALL convert a URL file entry to an image block for `image/*` and a URL document block otherwise. Inline data SHALL become a base64 image for `image/*` or a base64 PDF document for `application/pdf`, adding the `pdfs-2024-09-25` beta. Every other file entry SHALL be omitted with the `other` warning that upstream `convert-to-anthropic-prompt.ts` emits.
+
+#### Scenario: Unsupported inline media type
+- **WHEN** a tool result's content contains a file entry with inline data and media type `application/zip`
+- **THEN** the entry SHALL be omitted and the result SHALL carry the warning `unsupported tool content part type: file with media type: application/zip`
+
+#### Scenario: Reference or text data
+- **WHEN** a tool result's content contains a file entry with reference data or inline text data
+- **THEN** the entry SHALL be omitted and the result SHALL carry the warning `unsupported tool content part type: file with data type: reference` or `... with data type: text`
+
+#### Scenario: Non-image URL
+- **WHEN** a tool result's content contains a `text/plain` file entry with URL data
+- **THEN** the native tool_result content SHALL contain a document block with a `url` source and no warning
 
 ### Requirement: Wire-format and public API are unchanged
 

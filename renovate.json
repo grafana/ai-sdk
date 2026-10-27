@@ -41,10 +41,10 @@
         "enabled": false
       },
       {
-        "description": "Keep internal submodules on merged pseudo-versions; do not apply root release tags",
+        "description": "Keep internal submodules off root release tags and unreleased main commits",
         "matchManagers": ["gomod"],
         "matchPackageNames": ["github.com/grafana/ai-sdk/**"],
-        "matchUpdateTypes": ["major", "minor", "patch"],
+        "matchUpdateTypes": ["major", "minor", "patch", "digest"],
         "enabled": false
       },
       {
@@ -176,6 +176,19 @@
         "labels": ["agento11y-conformance-review"]
       },
       {
+        "description": "Look up first-party modules by tagged releases, including prereleases",
+        "matchManagers": [
+          "gomod"
+        ],
+        "matchPackageNames": [
+          "github.com/grafana/ai-sdk",
+          "github.com/grafana/ai-sdk/**"
+        ],
+        "ignoreUnstable": false,
+        "respectLatest": false,
+        "allowedVersions": "/^v?\\d+\\.\\d+\\.\\d+(?:-(?:alpha|beta|rc)\\.\\d+)?$/"
+      },
+      {
         "description": "Independent tagged first-party library prerequisites",
         "matchManagers": [
           "gomod"
@@ -193,16 +206,17 @@
           "github.com/grafana/ai-sdk/middleware/logger",
           "github.com/grafana/ai-sdk/middleware/prometheus"
         ],
+        "matchUpdateTypes": [
+          "major",
+          "minor",
+          "patch"
+        ],
         "enabled": true,
-        "ignoreUnstable": false,
-        "respectLatest": false,
-        "allowedVersions": "/^v?\\d+\\.\\d+\\.\\d+(?:-(?:alpha|beta|rc)\\.\\d+)?$/",
-        "minimumReleaseAge": "0 days",
         "schedule": [
           "at any time"
         ],
-        "groupName": null,
-        "groupSlug": null,
+        "groupName": "ai-sdk first-party modules",
+        "groupSlug": "ai-sdk-first-party",
         "automerge": false,
         "semanticCommits": "enabled",
         "semanticCommitType": "fix",
