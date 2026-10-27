@@ -76,7 +76,7 @@ For merged Anthropic user or assistant blocks, each source `provider.Message`'s 
 
 ### Requirement: Consecutive assistant messages merge into one Anthropic assistant block
 
-The Anthropic provider SHALL group consecutive `provider.Message` entries with `Role == provider.RoleAssistant` into a single Anthropic API assistant message. Its `content` SHALL concatenate every source part in order. The cache-control cascade and tool-call dispatch in `convertAssistantContent` SHALL apply per source message. Hosted-MCP tool-use tracking SHALL span the merged block only, as specified by mcp-server-tools.
+The Anthropic provider SHALL group consecutive `provider.Message` entries with `Role == provider.RoleAssistant` into a single Anthropic API assistant message. Its `content` SHALL concatenate every source message's converted blocks in order, subject to client tool-use normalization. The cache-control cascade and tool-call dispatch in `convertAssistantContent` SHALL apply per source message. Hosted-MCP tool-use tracking SHALL span the merged block only, as specified by mcp-server-tools.
 
 #### Scenario: Two consecutive assistant messages merge into one
 - **WHEN** the prompt is `[RoleAssistant([text("hi")]), RoleAssistant([tool_call("c1", "search", {})])]`
@@ -85,6 +85,26 @@ The Anthropic provider SHALL group consecutive `provider.Message` entries with `
 #### Scenario: Hosted-MCP result in a later source message of the same block
 - **WHEN** the prompt is `[RoleAssistant([mcp_tool_call(mcp-1)]), RoleAssistant([tool_result(mcp-1, json)])]`
 - **THEN** the merged assistant message SHALL contain `OfMCPToolUse{ID: "mcp-1"}` followed by `OfMCPToolResult{ToolUseID: "mcp-1"}`
+
+### Requirement: Client tool-use blocks move to the end of each reasoning segment
+
+For direct and Vertex generate and stream requests, the provider SHALL stably move client `tool_use` blocks after the other blocks of each merged assistant segment, matching upstream `moveToolUseBlocksToEnd`. `thinking`, `redacted_thinking` and `fallback` blocks SHALL bound segments and keep their positions. Server and MCP blocks SHALL stay in the non-client partition. Blocks SHALL keep cache control and signatures; the prompt SHALL NOT be mutated.
+
+#### Scenario: Calls move after text within each fallback-bounded segment
+- **WHEN** a grouped assistant block converts to `[tool_use(a), text(x), fallback, tool_use(b), text(y)]`
+- **THEN** the request content SHALL be `[text(x), tool_use(a), fallback, text(y), tool_use(b)]`
+
+#### Scenario: Normalization spans consecutive assistant messages
+- **WHEN** the prompt is `[RoleAssistant([tool_call(a), text(x)]), RoleAssistant([tool_call(b), text(y)])]`
+- **THEN** the merged assistant content SHALL be `[text(x), text(y), tool_use(a), tool_use(b)]`
+
+#### Scenario: Calls do not cross thinking boundaries
+- **WHEN** the assistant content is `[thinking(sig-1), tool_call(a), thinking(sig-2), tool_call(b)]`
+- **THEN** the request content SHALL keep that order and both signatures
+
+#### Scenario: Server and MCP blocks stay before client calls
+- **WHEN** a segment contains `[tool_use(a), mcp_tool_use(m)]` or `[text(x), tool_use(a), server_tool_use(s), web_search_tool_result(s)]`
+- **THEN** the client `tool_use(a)` SHALL move after the MCP or server blocks, which keep their relative order
 
 ### Requirement: Final assistant prefill text is trimmed
 
@@ -166,5 +186,5 @@ On the `tool_result` path, the Anthropic provider SHALL convert a URL file entry
 The `provider.LanguageModel` interface, the `BuildParams` signature, and the SSE chunk types emitted by the orchestration layer SHALL remain unchanged. Apart from the prompt-conversion behaviors specified above, Anthropic request serialization SHALL remain byte-identical for unaffected prompts.
 
 #### Scenario: Unaffected prompts produce identical wire requests
-- **WHEN** a prompt does not exercise grouping, tool-result-in-user-message conversion, final assistant prefill whitespace normalization, or assistant compaction serialization
+- **WHEN** a prompt does not exercise grouping, tool-result-in-user-message conversion, final assistant prefill whitespace normalization, assistant compaction serialization, or client tool-use normalization
 - **THEN** the resulting Anthropic API request body SHALL be byte-identical to the pre-change output for the same input
