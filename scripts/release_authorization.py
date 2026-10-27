@@ -92,14 +92,17 @@ def verify_merged(candidate, pr, record):
     reconstructed = readiness.run("git", "merge-tree", "--write-tree", base, pr["head"]["sha"])
     if reconstructed != record["treeSha"]:
         raise ValueError("squash tree differs from reconstructed candidate")
-    readiness.verify_release_files(components, readiness.run("git", "diff", "--name-only", base, merge).splitlines(), readiness.tree(merge))
+    files = readiness.run("git", "diff", "--name-only", base, merge).splitlines()
+    readiness.verify_release_files(components, files, readiness.tree(merge))
+    versions = readiness.expected_versions(after, config)
+    readiness.verify_requirement_updates(base, merge, files, versions)
     changelog = readiness.changelog_path(component)
     old = subprocess.check_output(["git", "show", f"{base}:{changelog}"], text=True) if changelog in readiness.tree(base) else ""
     notes = readiness.component_notes(pr, config, components, after)[component]
     if candidate["notes"].strip() != notes:
         raise ValueError("frozen notes differ from validated release body")
     readiness.verify_changelog(old, Path(changelog).read_text(), notes)
-    return component, base, set(config["packages"])
+    return component, base, components, versions
 
 
 def main():
@@ -114,8 +117,8 @@ def main():
         return
     payload = json.loads(args.input.read_text())
     with redirect_stdout(sys.stderr):
-        component, base, roots = verify_merged(payload["candidate"], payload["pr"], payload["record"])
-        graph = readiness.verify_library(component, base, roots, tooling_root=Path(__file__).resolve().parent.parent)
+        component, base, components, versions = verify_merged(payload["candidate"], payload["pr"], payload["record"])
+        graph = readiness.verify_requirements(component, components, versions, base)
         readiness.verify_clean_checkout()
     if not args.result:
         raise ValueError("validation requires a result path")

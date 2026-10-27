@@ -20,8 +20,8 @@
 - [x] 3.1 Validate combined library release metadata, footprint and changelogs in `scripts/release_readiness.py`
 - [x] 3.2 Remove the prerequisite freshness check and source ownership snapshots
 - [x] 3.3 Write and accept readiness record schema 2 with all released components in `scripts/release_authorization.py`
-- [ ] 3.4 Accept `go.mod` requirement-line updates in the footprint and require released libraries' first-party requirements to be tagged or co-released
-- [ ] 3.5 Remove public-proxy prerequisite resolution, standalone and pre-merge consumer checks from readiness and authorization
+- [x] 3.4 Accept `go.mod` requirement-line updates in the footprint and require released libraries' first-party requirements to be tagged or co-released
+- [x] 3.5 Remove public-proxy prerequisite resolution, standalone and pre-merge consumer checks from readiness and authorization
 
 ## 4. Release tooling
 

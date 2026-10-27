@@ -197,59 +197,74 @@ def verify_release_files(components, files, entries=None):
     allowed = {MANIFEST} | {changelog_path(component) for component in components}
     if GATEWAY in components:
         allowed.add("ai-gateway/package.json")
-    if not set(files).issubset(allowed) or MANIFEST not in files:
-        raise ValueError("release candidate may only update its generated changelogs and version manifest")
+    if not all(path in allowed or path == "go.mod" or path.endswith("/go.mod") for path in files) or MANIFEST not in files:
+        raise ValueError("release candidate may only update its generated changelogs, module requirements and version manifest")
     if entries is not None and any(not entries[path].startswith("100644 blob ") for path in files):
         raise ValueError("generated release files must be ordinary non-executable files")
 
 
-def verify_tag(root, version, commit):
+def module_root(path):
+    return "." if path == PREFIX else path[len(PREFIX) + 1:]
+
+
+def first_party(path):
+    return path == PREFIX or path.startswith(PREFIX + "/")
+
+
+def expected_versions(after, config):
+    versions = {}
+    for root, package in config["packages"].items():
+        version = after.get(root) or package.get("initial-version") or config.get("initial-version")
+        if version:
+            versions[PREFIX if root == "." else f"{PREFIX}/{root}"] = "v" + version
+    return versions
+
+
+def module_file(ref, path):
+    with tempfile.NamedTemporaryFile("w", suffix=".mod") as handle:
+        handle.write(run("git", "show", f"{ref}:{path}") + "\n")
+        handle.flush()
+        return json.loads(run("go", "mod", "edit", "-json", handle.name, env=dict(os.environ, GOWORK="off")))
+
+
+def verify_requirement_updates(base, head, files, versions):
+    for path in files:
+        if path != "go.mod" and not path.endswith("/go.mod"):
+            continue
+        expected = module_file(base, path)
+        for requirement in expected.get("Require") or []:
+            if first_party(requirement["Path"]):
+                requirement["Version"] = versions.get(requirement["Path"], requirement["Version"])
+        if module_file(head, path) != expected:
+            raise ValueError(f"release candidate may only update first-party requirements to the manifest versions: {path}")
+
+
+def verify_tagged(root, version, base):
     tag = version if root == "." else f"{root}/{version}"
     run("git", "fetch", "--no-tags", CANONICAL, f"refs/tags/{tag}")
-    if run("git", "rev-parse", "FETCH_HEAD^{commit}") != commit:
-        raise ValueError(f"canonical tag target differs from prerequisite origin: {tag}")
+    subprocess.run(["git", "merge-base", "--is-ancestor", run("git", "rev-parse", "FETCH_HEAD^{commit}"), base], check=True)
 
 
-def verify_library(root, base, roots, tooling_root=None):
-    if root == "ai-gateway":
-        raise ValueError("Gateway application readiness awaits a plugin publication workflow and workspace release attribution; publication remains disabled")
-    with tempfile.TemporaryDirectory(prefix="release-readiness-") as cache:
-        env = dict(os.environ, GOWORK="off", GOFLAGS="-mod=readonly -modcacherw",
-                   GOPROXY="https://proxy.golang.org", GOPRIVATE="", GONOPROXY="",
-                   GONOSUMDB="", GOSUMDB="sum.golang.org", GOMODCACHE=cache)
-        manifest = json.loads(run("go", "mod", "edit", "-json", cwd=root, env=env))
-        if manifest.get("Replace"):
-            raise ValueError("selected library contains replace directives")
-        graph = list(json_stream(run("go", "list", "-m", "-json", "all", cwd=root, env=env)))
-        for module in graph:
-            path = module["Path"]
-            if module.get("Replace"):
-                raise ValueError(f"selected replacement is not releasable: {path}")
-            if module.get("Main") or not (path == PREFIX or path.startswith(PREFIX + "/")):
-                continue
-            dependency = "." if path == PREFIX else path[len(PREFIX) + 1:]
-            if dependency not in roots or dependency == "ai-gateway":
-                raise ValueError(f"unsupported library prerequisite: {path}")
-            version = module["Version"]
-            if not re.fullmatch("v" + VERSION, version) or re.search(r"[.-]\d{14}-[0-9a-f]{12}$", version):
-                raise ValueError(f"library publication requires a tagged prerequisite: {path}@{version}")
-            metadata = json.loads(run("go", "mod", "download", "-json", f"{path}@{version}", env=env))
-            origin = metadata.get("Origin", {})
-            commit = origin.get("Hash", "")
-            subdir = "" if dependency == "." else dependency
-            if (metadata.get("Error") or metadata.get("Path") != path or metadata.get("Version") != version
-                    or origin.get("VCS") != "git" or origin.get("URL", "").removesuffix(".git") != CANONICAL.removesuffix(".git")
-                    or origin.get("Subdir", "") != subdir or not re.fullmatch(r"[0-9a-f]{40}", commit)):
-                raise ValueError(f"unverified canonical prerequisite: {path}@{version}")
-            module["Origin"] = origin
-            verify_tag(dependency, version, commit)
-            subprocess.run(["git", "merge-base", "--is-ancestor", commit, base], check=True)
-        policy = str(Path(tooling_root) / "scripts/module-policy.sh") if tooling_root else "scripts/module-policy.sh"
-        subprocess.run(["bash", policy, "standalone", root], check=True, env=env)
-        from release_consumer import verify_consumer
-        verify_consumer(root, env, graph, tooling_root=tooling_root)
-        return [{"path": m["Path"], "version": m.get("Version"), "origin": m.get("Origin")}
-                for m in graph if not m.get("Main")]
+def verify_requirements(component, components, versions, base):
+    if component == GATEWAY:
+        raise ValueError("Gateway application readiness awaits a plugin publication workflow and Gateway release attribution; publication remains disabled")
+    manifest = json.loads(run("go", "mod", "edit", "-json", str(Path(component, "go.mod")), env=dict(os.environ, GOWORK="off")))
+    requirements = []
+    for requirement in manifest.get("Require") or []:
+        path, version = requirement["Path"], requirement["Version"]
+        if not first_party(path):
+            continue
+        dependency = module_root(path)
+        if version != versions.get(path):
+            raise ValueError(f"{component} requires {path}@{version}, expected {versions.get(path)}")
+        co_released = dependency in components
+        if not co_released:
+            try:
+                verify_tagged(dependency, version, base)
+            except subprocess.CalledProcessError as error:
+                raise ValueError(f"{component} requires {path}@{version}, which is neither a canonical tag nor released by this pull request") from error
+        requirements.append({"path": path, "version": version, "coReleased": co_released})
+    return requirements
 
 
 def release_publication_disabled(workflow):
@@ -330,16 +345,18 @@ def main():
     run("git", "fetch", "--no-tags", CANONICAL, "refs/heads/main")
     canonical = run("git", "rev-parse", "FETCH_HEAD")
     verify_candidate(pr, canonical, "HEAD")
-    verify_release_files(components, run("git", "diff", "--name-only", canonical, "HEAD").splitlines(), tree("HEAD"))
+    files = run("git", "diff", "--name-only", canonical, "HEAD").splitlines()
+    verify_release_files(components, files, tree("HEAD"))
+    versions = expected_versions(after, config)
+    verify_requirement_updates(canonical, "HEAD", files, versions)
     notes = component_notes(pr, config, components, after)
     canonical_files = tree(canonical)
     for component in components:
         changelog = changelog_path(component)
         old_notes = subprocess.check_output(["git", "show", f"{canonical}:{changelog}"], text=True) if changelog in canonical_files else ""
         verify_changelog(old_notes, Path(changelog).read_text(), notes[component])
-    roots = set(config["packages"])
     for component in components:
-        verify_library(component, canonical, roots)
+        verify_requirements(component, components, versions, canonical)
     verify_clean_checkout()
     verify_live_candidate(pr, before, after, config)
     if args.evidence:

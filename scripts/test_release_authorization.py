@@ -89,8 +89,9 @@ class MergedAuthorizationTest(unittest.TestCase):
 
     def test_actual_squash_tree_matches_successful_pr_test_merge(self):
         self.assertNotEqual(self.record["mergeSha"], self.merge)
-        component, parent, roots = authorization.verify_merged(self.candidate, self.pr, self.record)
-        self.assertEqual((component, parent, roots), (".", self.base, set(self.config["packages"])))
+        component, parent, components, versions = authorization.verify_merged(self.candidate, self.pr, self.record)
+        self.assertEqual((component, parent, components), (".", self.base, ["."]))
+        self.assertEqual(versions[readiness.PREFIX], "v0.1.0-alpha.2")
         self.git("checkout", "-qb", "later-main")
         Path("later.md").write_text("later unrelated merge")
         self.git("add", ".")
@@ -136,16 +137,6 @@ class MergedAuthorizationTest(unittest.TestCase):
         self.candidate["mergeSha"] = self.pr["merge_commit_sha"] = self.record["mergeSha"]
         with self.assertRaisesRegex(ValueError, "squash parent"):
             authorization.verify_merged(self.candidate, self.pr, self.record)
-
-    def test_trusted_policy_path_cannot_be_replaced_by_candidate(self):
-        trusted = Path(__file__).resolve().parent.parent
-        graph = json.dumps({"Path": readiness.PREFIX, "Main": True})
-        with patch.object(readiness, "run", return_value=graph), \
-             patch.object(release_consumer, "verify_consumer") as consumer, \
-             patch.object(readiness.subprocess, "run") as execute:
-            readiness.verify_library(".", self.base, set(self.config["packages"]), tooling_root=trusted)
-        self.assertEqual(execute.call_args.args[0], ["bash", str(trusted / "scripts/module-policy.sh"), "standalone", "."])
-        self.assertEqual(consumer.call_args.kwargs["tooling_root"], trusted)
 
 
 class CombinedAuthorizationTest(unittest.TestCase):
@@ -209,7 +200,8 @@ class CombinedAuthorizationTest(unittest.TestCase):
         for component in [".", "providers/openai"]:
             with self.subTest(component=component):
                 result = authorization.verify_merged(self.candidate(component), self.pr, self.record)
-                self.assertEqual(result, (component, self.base, set(self.config["packages"])))
+                self.assertEqual(result[:3], (component, self.base, [".", "providers/openai"]))
+                self.assertEqual(result[3], readiness.expected_versions(self.after, self.config))
 
     def test_combined_candidate_must_match_the_validated_release(self):
         for name, edit, message in [
@@ -221,31 +213,6 @@ class CombinedAuthorizationTest(unittest.TestCase):
             edit(candidate, record)
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, message):
                 authorization.verify_merged(candidate, self.pr, record)
-
-
-class SelectedRootIntegrationTest(unittest.TestCase):
-    @unittest.skipUnless(os.environ.get("RELEASE_AUTHORIZATION_INTEGRATION") == "1", "explicit clean-cache root consumer integration")
-    def test_root_consumer_passes_with_unready_downstream_source(self):
-        trusted = Path(__file__).resolve().parent.parent
-        with tempfile.TemporaryDirectory() as directory:
-            checkout = Path(directory, "candidate")
-            subprocess.run(["git", "worktree", "add", "--detach", str(checkout), "HEAD"], cwd=trusted, check=True, capture_output=True)
-            try:
-                with chdir(checkout):
-                    for root in ["providers/openai", "providers/bedrock"]:
-                        Path(root, "broken_authorization_test.go").write_text("package broken\nfunc Broken(\n")
-                    subprocess.run(["git", "add", "."], check=True)
-                    subprocess.run(["git", "-c", "commit.gpgsign=false", "-c", "user.name=Test", "-c", "user.email=test@example.com",
-                                    "commit", "-qm", "broken downstream fixture"], check=True)
-                    parent = readiness.run("git", "rev-parse", "HEAD")
-                    config = json.loads(Path("release-please-config.json").read_text())
-                    with patch.object(readiness.subprocess, "run", wraps=subprocess.run) as execute:
-                        readiness.verify_library(".", parent, set(config["packages"]), tooling_root=trusted)
-                    selections = [call.args[0][-1] for call in execute.call_args_list if "standalone" in call.args[0]]
-                    self.assertEqual(selections, ["."])
-                    readiness.verify_clean_checkout()
-            finally:
-                subprocess.run(["git", "worktree", "remove", "--force", str(checkout)], cwd=trusted, check=True, capture_output=True)
 
 
 if __name__ == "__main__":
