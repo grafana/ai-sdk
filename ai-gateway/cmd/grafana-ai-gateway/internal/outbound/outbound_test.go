@@ -1,6 +1,7 @@
 package outbound
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -52,9 +54,9 @@ func TestValidateEndpoint(t *testing.T) {
 }
 
 func TestNewClients_IndependentExactTransports(t *testing.T) {
-	first, err := NewAnthropicClient(5*time.Second, 1024)
+	first, err := NewModelClient(5*time.Second, 1024)
 	require.NoError(t, err)
-	second, err := NewAnthropicClient(10*time.Second, 2048)
+	second, err := NewModelClient(10*time.Second, 2048)
 	require.NoError(t, err)
 	firstBounded := requireBoundedTransport(t, first)
 	secondBounded := requireBoundedTransport(t, second)
@@ -116,7 +118,7 @@ func TestClients_RejectRedirectsBeforeCredentialForwarding(t *testing.T) {
 			}))
 			defer source.Close()
 
-			client, err := NewAnthropicClient(time.Second, 1024)
+			client, err := NewModelClient(time.Second, 1024)
 			require.NoError(t, err)
 			request, err := http.NewRequest(http.MethodGet, source.URL, nil)
 			require.NoError(t, err)
@@ -167,7 +169,7 @@ func TestBoundedTransport_DecompressedResponseBoundaries(t *testing.T) {
 
 				for _, delta := range []int64{1, 0, -1} {
 					limit := int64(len(payload.payload)) + delta
-					client, err := NewAnthropicClient(time.Second, limit)
+					client, err := NewModelClient(time.Second, limit)
 					require.NoError(t, err)
 					response, err := client.Get(server.URL)
 					require.NoError(t, err)
@@ -183,6 +185,52 @@ func TestBoundedTransport_DecompressedResponseBoundaries(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestBoundedTransport_CountsDecompressedBytes(t *testing.T) {
+	const limit = 64 << 10
+	payload := strings.Repeat("a", limit+1)
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	_, err := io.WriteString(writer, payload)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	require.Less(t, compressed.Len(), limit)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		_, _ = w.Write(compressed.Bytes())
+	}))
+	defer server.Close()
+
+	client, err := NewModelClient(time.Second, limit)
+	require.NoError(t, err)
+	response, err := client.Get(server.URL)
+	require.NoError(t, err)
+	body, err := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	require.ErrorIs(t, err, ErrResponseTooLarge)
+	assert.Len(t, body, limit)
+}
+
+func TestBoundedTransport_BoundsEachResponseIndependently(t *testing.T) {
+	const limit = 64 << 10
+	payload := strings.Repeat("a", limit)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, payload)
+	}))
+	defer server.Close()
+
+	client, err := NewModelClient(time.Second, limit)
+	require.NoError(t, err)
+	for range 2 {
+		response, err := client.Get(server.URL)
+		require.NoError(t, err)
+		body, err := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		require.NoError(t, err)
+		assert.Len(t, body, limit)
 	}
 }
 
@@ -207,7 +255,7 @@ func TestClients_HostileServersTerminateWithinBounds(t *testing.T) {
 			<-request.Context().Done()
 		}))
 		defer server.Close()
-		client, err := NewAnthropicClient(50*time.Millisecond, 1024)
+		client, err := NewModelClient(50*time.Millisecond, 1024)
 		require.NoError(t, err)
 		_, err = client.Get(server.URL)
 		require.Error(t, err)
@@ -222,7 +270,7 @@ func TestClients_HostileServersTerminateWithinBounds(t *testing.T) {
 			<-request.Context().Done()
 		}))
 		defer server.Close()
-		client, err := NewAnthropicClient(time.Second, 1024)
+		client, err := NewModelClient(time.Second, 1024)
 		require.NoError(t, err)
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
@@ -237,7 +285,7 @@ func TestClients_HostileServersTerminateWithinBounds(t *testing.T) {
 	})
 }
 
-func TestNewAnthropicClient_InvalidLimits(t *testing.T) {
+func TestNewModelClient_InvalidLimits(t *testing.T) {
 	for _, limits := range []struct {
 		timeout time.Duration
 		bytes   int64
@@ -247,7 +295,7 @@ func TestNewAnthropicClient_InvalidLimits(t *testing.T) {
 		{timeout: time.Second, bytes: 0},
 		{timeout: time.Second, bytes: -1},
 	} {
-		client, err := NewAnthropicClient(limits.timeout, limits.bytes)
+		client, err := NewModelClient(limits.timeout, limits.bytes)
 		require.Error(t, err)
 		assert.Nil(t, client)
 	}

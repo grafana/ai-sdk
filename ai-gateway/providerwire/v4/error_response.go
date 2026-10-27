@@ -8,10 +8,7 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const (
-	maxErrorResponseBytes     = 64 << 10
-	statusClientClosedRequest = 499
-)
+const statusClientClosedRequest = 499
 
 type errorType string
 type errorCode string
@@ -207,19 +204,15 @@ func (definition errorDefinition) fields() publicError {
 	return publicError{Message: definition.message, Type: definition.kind, Code: definition.code}
 }
 
-func encodeHTTPError(value safeError, metadata provider.ProviderMetadata, limit int64) (int, []byte) {
+func encodeHTTPError(value safeError, metadata provider.ProviderMetadata) (int, []byte) {
 	definition := definitionForError(value)
-	response := errorResponse{Error: definition.fields()}
-	original, _ := json.Marshal(response)
-	if len(metadata) == 0 || int64(len(original)) > limit {
-		return definition.status, original
+	response := errorResponse{Error: definition.fields(), Metadata: metadata}
+	body, err := json.Marshal(response)
+	if err != nil {
+		response.Metadata = nil
+		body, _ = json.Marshal(response)
 	}
-	response.Metadata = metadata
-	enriched, err := json.Marshal(response)
-	if err != nil || int64(len(enriched)) > limit {
-		return definition.status, original
-	}
-	return definition.status, enriched
+	return definition.status, body
 }
 
 func streamErrorResponse(value safeError) errorResponse {
@@ -243,37 +236,21 @@ func encodeErrorFrame(response errorResponse) ([]byte, error) {
 	return append(append([]byte("data: "), body...), '\n', '\n'), nil
 }
 
-func streamErrorFrameForSafeError(value safeError) []byte {
-	frame, _ := encodeErrorFrame(streamErrorResponse(value))
+func encodeStreamError(value safeError, metadata provider.ProviderMetadata, current *execution.Failure) []byte {
+	response := streamErrorResponse(value)
+	if len(metadata) != 0 || current != nil {
+		response.Error.Data = &errorData{Metadata: metadata, NativeError: current}
+		if frame, err := encodeErrorFrame(response); err == nil {
+			return frame
+		}
+		response.Error.Data = nil
+	}
+	frame, _ := encodeErrorFrame(response)
 	return frame
 }
 
-func encodeStreamError(value safeError, metadata provider.ProviderMetadata, current *execution.Failure, limit int64) ([]byte, bool) {
-	response := streamErrorResponse(value)
-	original, _ := encodeErrorFrame(response)
-	if int64(len(original)) > limit {
-		return nil, false
-	}
-	accepted := original
-	if current != nil {
-		response.Error.Data = &errorData{NativeError: current}
-		frame, err := encodeErrorFrame(response)
-		if err != nil || int64(len(frame)) > limit {
-			return original, true
-		}
-		accepted = frame
-	}
-	if len(metadata) != 0 {
-		response.Error.Data = &errorData{Metadata: metadata, NativeError: current}
-		if frame, err := encodeErrorFrame(response); err == nil && int64(len(frame)) <= limit {
-			accepted = frame
-		}
-	}
-	return accepted, true
-}
-
 func (h *handler) writeSafeError(w http.ResponseWriter, value safeError, metadata provider.ProviderMetadata) {
-	status, body := encodeHTTPError(value, metadata, min(h.limits.UnaryResponseBytes, maxErrorResponseBytes))
+	status, body := encodeHTTPError(value, metadata)
 	writeErrorResponse(w, status, body)
 }
 

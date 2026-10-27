@@ -49,7 +49,7 @@ Each public model backed by an `openai` provider SHALL be constructed once throu
 - **AND** the ProviderWire streaming finish part SHALL carry the output token total from the backend's completed response
 
 #### Scenario: Responses backend exceeds the byte bound
-- **WHEN** an OpenAI Responses backend response exceeds `anthropic.response-bytes`
+- **WHEN** an OpenAI Responses backend response exceeds the 16 MiB model transport bound
 - **THEN** the call SHALL fail without returning the response
 - **AND** the client SHALL receive a fixed safe error
 
@@ -59,13 +59,6 @@ The Gateway SHALL NOT construct these models through `openai-go`'s `NewClient`, 
 #### Scenario: OpenAI SDK environment exclusion and proxy compatibility
 - **WHEN** OPENAI_API_KEY and OPENAI_BASE_URL conflict with configured values while HTTPS_PROXY is set
 - **THEN** explicit Gateway configuration SHALL remain authoritative without openai-go NewClient while standard proxy handling SHALL still apply
-
-### Requirement: OpenAI Responses shared bounded transport and flag help
-OpenAI Responses models SHALL inherit the shared redirect rejection, the `anthropic.response-header-timeout` response-header timeout and the `anthropic.response-bytes` cumulative response byte bound, and the help text for both flags SHALL state that they govern all provider types.
-
-#### Scenario: OpenAI Responses shared bounded transport and flag help
-- **WHEN** an OpenAI backend redirects or exceeds the configured response timeout/byte bound
-- **THEN** the shared hardened client SHALL enforce the same all-provider bounds and both flag help texts SHALL identify that scope
 
 ### Requirement: OpenAI Responses configuration and operator identity boundaries
 Authenticated discovery SHALL publish one canonical row per configured model with its name, description and specification provider grafana, plus authorized aliases/primary/fallbacks and provider-instance/provider/providerModelId facts through the gateway-configured-discovery projection. It SHALL NOT contain an OpenAI provider's API key, apiKeyEnv name, baseURL or unrelated configuration. Authorized provider-instance and configured model identifiers SHALL NOT be treated as credentials.
@@ -140,16 +133,9 @@ Each public model backed by an `openai-compatible` provider SHALL be constructed
 - **AND** the client SHALL receive a fixed safe error
 
 #### Scenario: Backend response exceeds the byte bound
-- **WHEN** a compatible backend response exceeds `anthropic.response-bytes`
+- **WHEN** a compatible backend response exceeds the 16 MiB model transport bound
 - **THEN** the call SHALL fail without returning the response
 - **AND** the client SHALL receive a fixed safe error
-
-### Requirement: Compatible shared transport flags and provider-independent help
-The compatible model HTTP client SHALL be the same client used for Anthropic models, so compatible backends inherit redirect rejection, the `anthropic.response-header-timeout` response-header timeout and the `anthropic.response-bytes` cumulative response byte bound; no provider-specific flags SHALL be added, and the help text for both flags SHALL state that they govern all provider types.
-
-#### Scenario: Compatible shared transport flags and provider-independent help
-- **WHEN** a compatible backend redirects, exceeds the response-byte bound or stalls response headers
-- **THEN** the same Anthropic shared client SHALL enforce the limits without provider-specific flags, and both help texts SHALL state their all-provider scope
 
 ### Requirement: Compatible streams request usage
 Streaming requests to `openai-compatible` backends SHALL send `stream_options.include_usage: true` so ProviderWire finish parts carry backend token counts. This SHALL be unconditional for Gateway-constructed compatible models. A backend that omits the usage chunk SHALL still finish the stream.
@@ -207,3 +193,17 @@ Returned native modelId SHALL NOT be replaced with canonical route identity. Sec
 #### Scenario: Compatible native model identity and tenant protection
 - **WHEN** a successful compatible response supplies a native modelId different from the route
 - **THEN** output SHALL retain native modelId rather than canonical replacement while secrets and another tenant state remain protected
+
+### Requirement: OpenAI Responses shared bounded transport
+OpenAI Responses models SHALL use the shared model HTTP client and inherit its redirect rejection, fixed 10-second response-header timeout and fixed 16 MiB per-response decompressed byte bound under gateway-resource-policy. No provider-specific transport setting SHALL exist.
+
+#### Scenario: OpenAI Responses shared bounded transport
+- **WHEN** an OpenAI backend redirects, stalls its response headers or exceeds the response byte bound
+- **THEN** the shared client SHALL enforce the same bounds as for every other provider type
+
+### Requirement: Compatible shared bounded transport
+The compatible model HTTP client SHALL be the shared model HTTP client used for every provider type, so compatible backends inherit redirect rejection, the fixed 10-second response-header timeout and the fixed 16 MiB per-response decompressed byte bound. No provider-specific transport setting SHALL be added.
+
+#### Scenario: Compatible shared bounded transport
+- **WHEN** a compatible backend redirects, exceeds the response byte bound or stalls response headers
+- **THEN** the shared client SHALL enforce the same bounds without provider-specific settings

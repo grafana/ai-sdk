@@ -142,7 +142,6 @@ func registerRecordedUsage(mux *http.ServeMux, root string) (func(), error) {
 		return nil, err
 	}
 	created, err := providerwirev4.New(providerwirev4.Config{Selector: providerwirev4.CatalogSelector(resolver), Limits: providerwirev4.Limits{
-		RequestBytes: 1 << 20, UnaryResponseBytes: 1 << 20, StreamParts: 1_000, StreamFrameBytes: 1 << 20,
 		ModelDuration: 10 * time.Second, StreamIdleDuration: 2 * time.Second, StreamDrainDuration: 100 * time.Millisecond,
 	}})
 	if err != nil {

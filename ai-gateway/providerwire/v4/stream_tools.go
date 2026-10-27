@@ -71,7 +71,7 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 	if part.Type == provider.PartToolCall || part.Type == provider.PartToolResult {
 		id = part.ToolCallID
 	}
-	if id == "" || int64(len(id)) > h.limits.StreamFrameBytes || !utf8.ValidString(id) {
+	if id == "" || !utf8.ValidString(id) {
 		return streamPartAdapterFailure
 	}
 	current, exists := state.tools[id]
@@ -83,9 +83,6 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 	}
 	next := current
 	event := streamEvent{typeName: part.Type, id: id, toolName: part.ToolName, inputEncoding: part.InputEncoding, delta: part.Delta, input: part.Input, result: part.Result, isError: part.IsError, metadata: part.ProviderMetadata}
-	if !streamEventPreflight(event, h.limits.StreamFrameBytes) {
-		return streamPartAdapterFailure
-	}
 	switch part.Type {
 	case provider.PartToolInputStart:
 		if exists || seenInHistory || part.ToolName == "" || (part.Preliminary != nil && *part.Preliminary) {
@@ -110,7 +107,7 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 		if !exists || part.ToolName == "" || (current.phase != toolCallEmitted && current.phase != toolResultPreliminary) || current.name != part.ToolName {
 			return streamPartAdapterFailure
 		}
-		if int64(len(part.Result)) > h.limits.StreamFrameBytes || !json.Valid(part.Result) || bytes.Equal(bytes.TrimSpace(part.Result), []byte("null")) {
+		if !json.Valid(part.Result) || bytes.Equal(bytes.TrimSpace(part.Result), []byte("null")) {
 			return streamPartAdapterFailure
 		}
 		if part.Preliminary != nil && *part.Preliminary {
@@ -119,9 +116,6 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 			next.phase = toolResultEmitted
 		}
 		event.dynamic, event.preliminary = part.Dynamic, part.Preliminary
-	}
-	if !exists && len(state.tools) >= h.limits.StreamParts {
-		return streamPartAdapterFailure
 	}
 	switch h.emitStreamEvent(w, event) {
 	case streamWriteEncodingFailure:

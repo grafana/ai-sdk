@@ -72,8 +72,8 @@ Unary output SHALL preserve ordered text, client-executed and provider-executed 
 - **THEN** both clients SHALL receive semantically equivalent call IDs, names, inputs, supported call metadata, usage and finish through the real handler
 
 #### Scenario: Oversized tool input
-- **WHEN** a provider output cannot fit the configured unary budget
-- **THEN** no partial HTTP 200 SHALL be committed and the fixed safe error SHALL be returned
+- **WHEN** a valid provider tool call input is larger than the former unary budget
+- **THEN** the complete response SHALL be committed with HTTP 200 and the unchanged input
 
 #### Scenario: Actual returned caller continues natively
 - **WHEN** each client's first native Anthropic tool-call response supplies caller metadata on a supported local function call and its actual assembled response history is reused
@@ -99,14 +99,6 @@ Results SHALL correlate with current-response calls or eligible unresolved provi
 - **WHEN** history contains an unresolved provider-owned call and output supplies only its result
 - **THEN** correlation SHALL accept the historical match without repeated call and SHALL preserve disabled/final marker semantics
 
-### Requirement: Unary tool metadata identity and output bounds
-
-Tool metadata SHALL retain opaque namespace objects and omitted/empty presence under gateway-provider-metadata. This SHALL NOT promote provider metadata into routing authority or replace catalog identity. All added strings, result/metadata bytes and cardinality SHALL participate in preflight and final encoding bounds; unsupported or invalid output SHALL fail before HTTP 200.
-
-#### Scenario: Unary tool metadata identity and output bounds
-- **WHEN** a supported call contains an unknown metadata object and oversized input
-- **THEN** metadata SHALL remain opaque without routing authority, and the oversized complete response SHALL fail before HTTP 200
-
 ### Requirement: Unary function tools remain direct and stateless
 
 The Gateway SHALL NOT execute application functions or persist tool-loop state. Direct and configured-fallback routes SHALL accept the existing supported unary function definitions, choices and history/results through the same strict mapper. Configured candidates SHALL receive the same mapped request without tool/choice/history-specific admission guards, namespace translation or candidate intersections.
@@ -129,7 +121,7 @@ The Gateway SHALL NOT execute application functions or persist tool-loop state. 
 - **THEN** a configured-fallback route SHALL NOT reject it merely because of the choice and every attempted candidate SHALL receive the original choice
 
 #### Scenario: Selected unary call is not replayed
-- **WHEN** a candidate returns a successful unary function call and the strict response encoder rejects an accompanying unsupported output or exceeds its response budget
+- **WHEN** a candidate returns a successful unary function call and the strict response encoder rejects an accompanying unsupported output
 - **THEN** the existing safe response failure SHALL apply without invoking a later candidate or executing a consumer function in the Gateway
 
 ### Requirement: Unary fallback success boundary and protected capabilities
@@ -153,7 +145,7 @@ Exact registered Vercel and independent Go clients SHALL complete authenticated 
 
 #### Scenario: Capability verification
 - **WHEN** unary function verification runs
-- **THEN** both-client direct/fallback HTTP semantics, native request assertions, unsupported family rejection, privacy and response bounds SHALL pass without claiming invented provider payloads as recorded evidence
+- **THEN** both-client direct/fallback HTTP semantics, native request assertions, unsupported family rejection, privacy and large-output acceptance SHALL pass without claiming invented provider payloads as recorded evidence
 
 ### Requirement: Unary tool evidence provenance and module independence
 
@@ -162,3 +154,14 @@ Apache modules SHALL remain independent of the Gateway module, and fixture prove
 #### Scenario: Unary tool evidence provenance and module independence
 - **WHEN** synthetic native request assertions pass
 - **THEN** they SHALL NOT claim live acceptance, complete output-derived continuation or exactly-once execution, and Apache module independence and fixture provenance SHALL remain intact
+
+### Requirement: Unary tool metadata identity and output validity
+Tool metadata SHALL retain opaque namespace objects and omitted/empty presence under gateway-provider-metadata. This SHALL NOT promote provider metadata into routing authority or replace catalog identity. Tool strings, results and metadata SHALL be validated for UTF-8, JSON and lifecycle, but SHALL NOT be bounded by size or cardinality. Unsupported or invalid output SHALL fail before HTTP 200.
+
+#### Scenario: Unary tool metadata identity and output validity
+- **WHEN** a supported call contains an unknown metadata object and a large input
+- **THEN** metadata SHALL remain opaque without routing authority, and the complete response SHALL succeed
+
+#### Scenario: Invalid tool output
+- **WHEN** a tool call has invalid UTF-8 input or a result is malformed JSON or JSON null
+- **THEN** the complete response SHALL fail before HTTP 200

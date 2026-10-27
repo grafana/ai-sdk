@@ -219,6 +219,51 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 	}
 }
 
+func TestBYOKSelection_SelectedProviderAccountCount(t *testing.T) {
+	accounts := func(count int) string {
+		entries := make([]string, count)
+		for i := range entries {
+			entries[i] = fmt.Sprintf(`{"apiKey":"dummy-%d"}`, i)
+		}
+		return "[" + strings.Join(entries, ",") + "]"
+	}
+	for _, tc := range []struct {
+		name        string
+		byok        string
+		status      int
+		nativeCalls int32
+	}{
+		{name: "nine selected accounts", byok: `{"openai":` + accounts(9) + `}`, status: http.StatusBadRequest},
+		{name: "nine unused accounts", byok: `{"openai":` + accounts(1) + `,"anthropic":` + accounts(9) + `}`, status: http.StatusFailedDependency, nativeCalls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			client := &http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+				calls.Add(1)
+				return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"denied"}}`)), Request: r}, nil
+			})}
+			factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
+			wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
+			require.NoError(t, err)
+			handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
+			body := `{"prompt":[],"providerOptions":{"gateway":{"byok":` + tc.byok + `}}}`
+			request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
+			request.Header = headers
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set(providerv4.HeaderModelID, "openai/native-model")
+			request.Header.Set(providerv4.HeaderSpecificationVersion, "4")
+			request.Header.Set(providerv4.HeaderStreaming, "false")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			assert.Equal(t, tc.status, response.Code)
+			assert.Equal(t, tc.nativeCalls, calls.Load())
+			if tc.status == http.StatusBadRequest {
+				assert.JSONEq(t, `{"error":{"message":"providerOptions.gateway.byok requires supported provider arrays with valid accounts","type":"invalid_request_error","param":null,"code":"invalid_request"}}`, response.Body.String())
+			}
+		})
+	}
+}
+
 type selectionTransport func(*http.Request) (*http.Response, error)
 
 func (f selectionTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

@@ -39,7 +39,7 @@ func TestProviderWireV4Scenario_SuccessUsesProductionRoute(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	request := providerWireV4Request(t, context.Background(), "success", `{"prompt":[{"role":"system","content":"hello"}]}`)
-	mux.ServeHTTP(response, request)
+	boundRequests(mux).ServeHTTP(response, request)
 
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.JSONEq(t, `{
@@ -62,7 +62,7 @@ func TestProviderWireV4Scenario_StreamingUsesProductionRoute(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	request := providerWireV4StreamingRequest(t, context.Background(), "success", `{"prompt":[]}`)
-	mux.ServeHTTP(response, request)
+	boundRequests(mux).ServeHTTP(response, request)
 
 	require.Equal(t, http.StatusOK, response.Code)
 	assert.Equal(t, "text/event-stream", response.Header().Get("Content-Type"))
@@ -83,7 +83,7 @@ func TestProviderWireV4Scenario_HostedMCPUsesConfiguredRoute(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	request := providerWireV4Request(t, context.Background(), "hosted-deferred", `{"prompt":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"tools":[{"type":"provider","id":"anthropic.code_execution_20260120","name":"code","args":{}}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test","authorizationToken":"dummy"}]}}}`)
-	mux.ServeHTTP(response, request)
+	boundRequests(mux).ServeHTTP(response, request)
 
 	require.Equal(t, http.StatusOK, response.Code, "%s; provider options: %#v", response.Body.String(), scenario.stats.options().ProviderOptions)
 	assert.Contains(t, response.Body.String(), `"type":"mcp-tool-use"`)
@@ -91,7 +91,7 @@ func TestProviderWireV4Scenario_HostedMCPUsesConfiguredRoute(t *testing.T) {
 
 	response = httptest.NewRecorder()
 	request = providerWireV4Request(t, context.Background(), "hosted-deferred", `{"prompt":[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}],"tools":[{"type":"provider","id":"anthropic.code_execution_20260120","name":"code","args":{}}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test","authorizationToken":"dummy"}]}}}`)
-	mux.ServeHTTP(response, request)
+	boundRequests(mux).ServeHTTP(response, request)
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 	assert.Contains(t, response.Body.String(), `"type":"tool-result"`)
 }
@@ -107,7 +107,7 @@ func TestProviderWireV4Scenario_ObservesClientCancellation(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		mux.ServeHTTP(response, request)
+		boundRequests(mux).ServeHTTP(response, request)
 	}()
 
 	require.Eventually(t, func() bool { return scenario.stats.blockingCalls.Load() == 1 }, time.Second, time.Millisecond)
