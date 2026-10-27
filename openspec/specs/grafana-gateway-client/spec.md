@@ -132,8 +132,8 @@ For text/reasoning blocks and tool input/call/result variants, the client SHALL 
 - **AND** typed Response id/modelId/timestamp SHALL remain unset rather than falsely exposing native typed identity
 
 #### Scenario: Unary response exceeds its bound
-- **WHEN** the response is one byte larger than the configured unary limit or has trailing data
-- **THEN** the call SHALL fail without returning a partial result or retaining an unbounded body
+- **WHEN** the response is one byte larger than the fixed buffered-read backstop or has trailing data
+- **THEN** the call SHALL fail without returning a partial or truncated result
 
 #### Scenario: Unary result is outside supported families
 - **WHEN** an output discriminator has no supported client mapper
@@ -161,11 +161,11 @@ For text/reasoning blocks and tool input/call/result variants, the client SHALL 
 
 ### Requirement: Bounded unary document and required payload consumption
 
-Required payload checks, opaque metadata structure and transport resource bounds SHALL remain unchanged. For successful unary responses, the client SHALL require JSON media type, read within its unary limit, accept one complete valid document and map its supported registered content, including provider calls and results, finishReason, usage, warnings and ordinary result/content providerMetadata into provider.GenerateResult.
+Required payload checks and opaque metadata structure SHALL remain unchanged. For successful unary responses, the client SHALL require JSON media type, read within the fixed buffered-read backstop, accept one complete valid document and map its supported registered content, including provider calls and results, finishReason, usage, warnings and ordinary result/content providerMetadata into provider.GenerateResult.
 
 #### Scenario: Bounded unary document and required payload consumption
-- **WHEN** a successful response has valid ordered content and ordinary metadata at the configured byte limit
-- **THEN** the client SHALL consume one complete JSON document into GenerateResult with required payload, metadata and transport bounds intact
+- **WHEN** a successful response has valid ordered content and ordinary metadata larger than the former 16 MiB client default
+- **THEN** the client SHALL consume one complete JSON document into GenerateResult with required payload and metadata intact
 
 ### Requirement: Unary malformed input and Gateway-hop transport replacement
 
@@ -193,15 +193,15 @@ Optional absent/empty details SHALL decode to the same empty Go string as a docu
 
 ### Requirement: Successful unary transport read failures retain retryability
 
-When a successful HTTP 200 `DoGenerate` response body fails to read because of transport I/O after headers, the Grafana client SHALL return a retryable `*provider.APICallError` with HTTP status 200, a bounded locally worded primary message, and a discoverable underlying read cause, without returning a partial result or making another model request. Wrong media type, malformed JSON, malformed consumed fields, and unary byte-limit violations SHALL remain non-retryable protocol failures.
+When a successful HTTP 200 `DoGenerate` response body fails to read because of transport I/O after headers, the Grafana client SHALL return a retryable `*provider.APICallError` with HTTP status 200, a bounded locally worded primary message, and a discoverable underlying read cause, without returning a partial result or making another model request. Wrong media type, malformed JSON, malformed consumed fields, and buffered-read backstop violations SHALL remain non-retryable protocol failures.
 
 #### Scenario: HTTP 200 response body is interrupted after headers
-- **WHEN** the real HTTP handler sends JSON headers and a partial, below-limit body with a declared longer `Content-Length`, then closes the connection before the body completes
+- **WHEN** the real HTTP handler sends JSON headers and a partial body with a declared longer `Content-Length`, then closes the connection before the body completes
 - **THEN** `DoGenerate` SHALL return no result and one retryable `*provider.APICallError` with status 200, a locally bounded primary message that does not disclose the response body, and the underlying body-read failure discoverable through its cause chain, after exactly one model request
 
 #### Scenario: Successful unary body cannot be accepted for protocol reasons
-- **WHEN** a successful unary response has a wrong media type, malformed JSON, invalid consumed result fields, or exceeds the configured unary byte limit, including when an over-limit partial body and a transport read error occur together
-- **THEN** `DoGenerate` SHALL return no partial result and a non-retryable bounded protocol error after exactly one model request; the unary byte limit SHALL take precedence over the read error, except that context cancellation or deadline expiry SHALL retain highest precedence
+- **WHEN** a successful unary response has a wrong media type, malformed JSON, invalid consumed result fields, or exceeds the buffered-read backstop, including when an over-backstop partial body and a transport read error occur together
+- **THEN** `DoGenerate` SHALL return no partial result and a non-retryable bounded protocol error after exactly one model request; the backstop SHALL take precedence over the read error, except that context cancellation or deadline expiry SHALL retain highest precedence
 
 #### Scenario: Unary read is canceled
 - **WHEN** the call context is canceled or reaches its deadline while a successful unary response body is being read
@@ -219,38 +219,6 @@ Context cancellation or deadline expiry SHALL remain discoverable with `errors.I
 - **WHEN** context cancellation interrupts a successful response read
 - **THEN** errors.Is SHALL retain context identity without retryable transport classification or a new public service-error category
 
-### Requirement: Incremental bounded SSE consumption
-
-A successful streaming setup SHALL require SSE media type and return a `StreamResult` whose request body and response headers are client-owned. One goroutine SHALL own the body, parse incrementally under configured cumulative-byte, complete-event-byte, and event-count limits, send mapped parts with context-aware backpressure, close the body, and close the output channel exactly once. It SHALL not buffer the full response or an unbounded line/event.
-
-#### Scenario: Text stream completes
-- **WHEN** the server emits valid start, metadata, sequential text parts, safe errors, and finish frames
-- **THEN** the client SHALL deliver every accepted part in order, including required empty deltas and finish, then close the channel
-
-#### Scenario: Consumer is slow
-- **WHEN** result delivery blocks and the call context is canceled
-- **THEN** the stream owner SHALL stop the blocked send, close the response body, close the channel, and leave no client-owned goroutine reading the stream
-
-#### Scenario: SSE resource limit is crossed
-- **WHEN** cumulative bytes, complete event bytes, or event count exceeds its configured limit
-- **THEN** the client SHALL stop reading, emit at most one bounded protocol error when delivery remains possible, and close all owned resources
-
-#### Scenario: Unsupported response family is received
-- **WHEN** the client receives another unsupported later-package stream part
-- **THEN** it SHALL produce an explicit protocol error rather than decoding through provider-domain JSON accidentally
-
-#### Scenario: Hosted dynamic call with preview results
-- **WHEN** valid tool input, a provider-owned dynamic call, preliminary results and a final result arrive before finish
-- **THEN** all parts and enabled markers SHALL be delivered in order, with false Dynamic/Preliminary pointer presence and input-start dynamic presence retained and final-event-before-EOF behavior unchanged
-
-#### Scenario: Input-start dynamic is presence-sensitive
-- **WHEN** otherwise equivalent input-start events omit dynamic or contain false or true
-- **THEN** the client SHALL preserve nil, false and true respectively for subsequent core inference
-
-#### Scenario: Deferred result is consumed
-- **WHEN** the current request carries an unresolved provider-owned call in history and the response contains only its result and finish
-- **THEN** the client SHALL deliver the success or error result without demanding a repeated call or adding a result-level providerExecuted wire member
-
 ### Requirement: Supported SSE tool payload and marker preservation
 
 The mapper SHALL accept supported text, function-tool and provider-tool calls/results, safe error parts and bounded raw parts needed for registered filtering behavior. Supported execution/dynamic/preliminary markers and opaque tool metadata SHALL be preserved under gateway-provider-metadata. Input-start dynamic SHALL retain absent, explicit false and true independently through decoding; it SHALL NOT be eagerly defaulted. A deferred result SHALL NOT require a repeated call in the same response.
@@ -261,10 +229,10 @@ The mapper SHALL accept supported text, function-tool and provider-tool calls/re
 
 ### Requirement: SSE protocol failure without server lifecycle dialect
 
-Every unsupported, malformed or oversized event SHALL emit at most one terminal non-retryable protocol PartError and close. Server lifecycle validation SHALL NOT be imported into the client as a new independent protocol dialect.
+Every unsupported or malformed event SHALL emit at most one terminal non-retryable protocol PartError and close. Server lifecycle validation SHALL NOT be imported into the client as a new independent protocol dialect.
 
 #### Scenario: SSE protocol failure without server lifecycle dialect
-- **WHEN** an event has an unknown discriminator or exceeds its configured event limit
+- **WHEN** an event has an unknown discriminator or is not valid UTF-8 JSON
 - **THEN** the client SHALL emit at most one terminal non-retryable protocol PartError and close without importing server lifecycle validation
 
 ### Requirement: Registered stream normalization
@@ -321,45 +289,33 @@ Bounded original-document UTF-8/type validation and valid RFC3339Nano timestamp 
 
 ### Requirement: Optional bounded provider raw usage consumption
 
-On a successful unary result and a streaming finish, the Grafana client SHALL preserve a supplied `usage.raw` as a `provider.Usage.Raw` JSON object, including nested provider-native fields and `{}`; absent raw SHALL remain absent. The client SHALL reject present null, scalar, array, malformed or incomplete JSON, and a retained raw object larger than 1,048,576 bytes.
+On a successful unary result and a streaming finish, the Grafana client SHALL preserve a supplied `usage.raw` as a `provider.Usage.Raw` JSON object, including nested provider-native fields and `{}`; absent raw SHALL remain absent. The client SHALL reject present null, scalar, array, malformed or incomplete JSON. It SHALL NOT cap the size of a retained raw object.
 
 #### Scenario: Unary and finish have present or absent raw
 - **WHEN** a bounded valid unary result or finish contains nested raw usage, `{}`, or no raw member
 - **THEN** the resulting Go usage SHALL preserve the supplied JSON object semantics, retain an empty object when supplied, or leave `Raw` absent while preserving validated normalized counts
 
+#### Scenario: Large raw usage is accepted
+- **WHEN** a unary result or streaming finish contains a valid `usage.raw` object larger than 1 MiB
+- **THEN** both paths SHALL retain the complete object without a size cap
+
 #### Scenario: Hostile unary response contains invalid raw
-- **WHEN** a successful HTTP 200 unary response contains malformed, null, non-object, or over-limit retained `usage.raw`
+- **WHEN** a successful HTTP 200 unary response contains malformed, null or non-object `usage.raw`
 - **THEN** the client SHALL return a bounded non-retryable protocol error without any partial result or raw data in its error text
 
 #### Scenario: Hostile streaming finish contains invalid raw
-- **WHEN** a streaming finish contains malformed, null, non-object, or over-limit retained `usage.raw`
+- **WHEN** a streaming finish contains malformed, null or non-object `usage.raw`
 - **THEN** the client SHALL emit at most one bounded terminal non-retryable protocol `PartError` and close, without delivering the invalid finish
 
 #### Scenario: UTF-8 and JSON escapes in both paths
 - **WHEN** bounded unary or streaming finish JSON contains invalid UTF-8 in `usage.raw`, including a nested key or value
 - **THEN** the client SHALL reject the response with the path's bounded protocol error, without retaining normalized replacement characters in raw usage
 - **WHEN** `usage.raw` contains valid JSON with lone or paired escaped surrogates
-- **THEN** both paths SHALL accept the object under the same size and shape limits and preserve its raw JSON escapes
+- **THEN** both paths SHALL accept the object under the same shape rules and preserve its raw JSON escapes
 
 #### Scenario: Raw part filtering does not erase usage
 - **WHEN** a finish includes `usage.raw` and `IncludeRawChunks` is false
 - **THEN** the finish SHALL retain its raw usage even when independent `type: "raw"` stream parts are filtered
-
-### Requirement: Retained raw-object and original-document limits
-
-The 1,048,576-byte raw-object limit applies to the retained representation after JSON decoding/compaction removes insignificant whitespace around and inside the value; the original complete unary response or event SHALL remain bounded by its configured `UnaryBytes` or `StreamEventBytes`. The client SHALL validate those original bounded documents for UTF-8 and JSON syntax before Go decoding can normalize invalid bytes.
-
-#### Scenario: Retained raw-object and original-document limits
-- **WHEN** usage.raw contains substantial JSON whitespace in an otherwise bounded document
-- **THEN** the 1,048,576-byte raw cap SHALL apply after compaction, while original response/event bounds and pre-decode UTF-8/syntax validation SHALL still apply
-
-### Requirement: Raw usage escape preservation and bounded intermediates
-
-Valid JSON with lone or paired escaped surrogates SHALL be accepted, with raw-object escapes preserved in `provider.Usage.Raw`. The existing cumulative-stream and event-count limits SHALL still apply, and intermediate `decodeFields`/usage-map copies SHALL remain bounded by the full-response or event limits.
-
-#### Scenario: Raw usage escape preservation and bounded intermediates
-- **WHEN** usage.raw contains a lone escaped UTF-16 surrogate in a valid object
-- **THEN** the escape SHALL be accepted and retained with cumulative/event-count bounds and bounded intermediate usage copies
 
 ### Requirement: Raw usage independence from raw stream filtering
 
@@ -371,7 +327,7 @@ The client SHALL continue to validate known normalized token counts and filter u
 
 ### Requirement: Closed Gateway error classification
 
-Every non-2xx model or discovery response SHALL be read within the configured error-body limit and mapped only from the registered public error envelope into the closed categories authentication, forbidden, invalid request, model not found, rate limit, failed dependency, and internal server. The resulting `GatewayError` SHALL expose category, public code, public message, HTTP status, and status-derived retryability and SHALL unwrap to a bounded `*provider.APICallError`.
+Every non-2xx model or discovery response SHALL be read within the fixed buffered-read backstop and mapped only from the registered public error envelope into the closed categories authentication, forbidden, invalid request, model not found, rate limit, failed dependency, and internal server. The resulting `GatewayError` SHALL expose category, public code, public message, HTTP status, and status-derived retryability and SHALL unwrap to a bounded `*provider.APICallError`.
 
 #### Scenario: Registered error is returned
 - **WHEN** the server returns one of the registered error type/status/code documents
@@ -383,7 +339,7 @@ Every non-2xx model or discovery response SHALL be read within the configured er
 - **AND** retained HTTP documents and selected SSE data SHALL preserve their original JSON bytes without changing classification or retryability rules
 
 #### Scenario: Error body is malformed or oversized
-- **WHEN** a non-2xx body is malformed, has a wrong media type, or exceeds the error limit
+- **WHEN** a non-2xx body is malformed, has a wrong media type, or exceeds the buffered-read backstop
 - **THEN** the client SHALL return a bounded local `*provider.APICallError` without accepting a partial category or exposing the full body in its message
 
 #### Scenario: Transport fails
@@ -433,8 +389,8 @@ ListModels SHALL read authenticated bounded /config into public typed rows and o
 
 #### Scenario: Authenticated public discovery policy
 - **WHEN** the activated Gateway enforces this contract
-- **THEN** `Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the configured discovery limit, and return public ID, name, optional description and the specification version/provider/model-ID triple, plus optional typed `ModelInfo.Gateway *ConfiguredRoute`. `ConfiguredRoute` SHALL expose `Aliases`, `Primary` and ordered `Fallbacks`; each `ConfiguredCandidate` SHALL expose `ProviderInstance`, `Provider` and `ProviderModelID`. This SHALL remain the existing discovery method, without a second client or AGPL module dependency.
-- **AND** The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the existing configurable document-byte limit and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency. Standard Go JSON behavior SHALL apply, including case-insensitive field matching, zero/nil values for missing/null fields and U+FFFD normalization of escaped lone UTF-16 surrogates. A missing/null models collection, malformed JSON, byte overflow or type-decoding error SHALL invalidate the complete result. It SHALL preserve response order and configured alias/fallback order exactly as served, without expanding aliases into extra rows. Missing/null gateway SHALL remain nil. Unknown additive members SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
+- **THEN** `Provider.ListModels(ctx)` SHALL issue authenticated `GET /config`, read within the fixed buffered-read backstop, and return public ID, name, optional description and the specification version/provider/model-ID triple, plus optional typed `ModelInfo.Gateway *ConfiguredRoute`. `ConfiguredRoute` SHALL expose `Aliases`, `Primary` and ordered `Fallbacks`; each `ConfiguredCandidate` SHALL expose `ProviderInstance`, `Provider` and `ProviderModelID`. This SHALL remain the existing discovery method, without a second client or AGPL module dependency.
+- **AND** The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the fixed buffered-read backstop and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency. Standard Go JSON behavior SHALL apply, including case-insensitive field matching, zero/nil values for missing/null fields and U+FFFD normalization of escaped lone UTF-16 surrogates. A missing/null models collection, malformed JSON, byte overflow or type-decoding error SHALL invalidate the complete result. It SHALL preserve response order and configured alias/fallback order exactly as served, without expanding aliases into extra rows. Missing/null gateway SHALL remain nil. Unknown additive members SHALL remain ignored. Configured mappings SHALL be retained only when supplied by the server, never inferred from responses, models or inventories; credentials and arbitrary configuration SHALL NOT be exposed.
 
 #### Scenario: Configured models and aliases are discovered
 - **WHEN** the authenticated service returns canonical model rows with configured route facts
@@ -447,7 +403,7 @@ ListModels SHALL read authenticated bounded /config into public typed rows and o
 - **AND** a recognized gateway extension SHALL be decoded into typed fields and retained rather than discarded
 
 #### Scenario: Discovery is structurally unsafe
-- **WHEN** the document exceeds the read budget, is malformed JSON, has no models collection or contains a field that cannot decode into its declared Go type
+- **WHEN** the document exceeds the buffered-read backstop, is malformed JSON, has no models collection or contains a field that cannot decode into its declared Go type
 - **THEN** discovery SHALL fail atomically with no partial catalog result
 
 #### Scenario: Server has no configured extension
@@ -465,7 +421,7 @@ ListModels SHALL read authenticated bounded /config into public typed rows and o
 
 ### Requirement: Independent ordinary typed discovery decoding
 
-ListModels SHALL remain the existing discovery method, without a second client or AGPL module dependency. The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the existing configurable document-byte limit and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency.
+ListModels SHALL remain the existing discovery method, without a second client or AGPL module dependency. The client SHALL use ordinary Go JSON decoding into typed ModelInfo values after enforcing the fixed buffered-read backstop and raw UTF-8 JSON validity. It SHALL NOT revalidate server-owned public-ID grammar, nonblank strings, specification/model-ID agreement, route cardinality, duplicate IDs/aliases/candidate tuples or route-group consistency.
 
 #### Scenario: Independent ordinary typed discovery decoding
 - **WHEN** discovery rows contain server-owned IDs outside the public grammar
@@ -524,8 +480,8 @@ Tests SHALL compare Go and the exact Gateway version registered in test/conforma
 - **THEN** baseline validation SHALL fail until differential evidence and every observed divergence are reviewed and updated together
 
 #### Scenario: Client bounds are tested
-- **WHEN** fake endpoints exercise exact-limit and one-byte/one-event-over-limit discovery, unary, error, and SSE inputs plus cancellation under blocked delivery
-- **THEN** tests SHALL prove bounded allocation/read behavior, body closure, channel closure, and absence of retained client goroutines
+- **WHEN** tests exercise the buffered-read backstop at its exact size and one byte over through an unexported seam, large SSE inputs above the former client defaults, and cancellation under blocked delivery
+- **THEN** tests SHALL prove non-truncating backstop failure, body closure, channel closure, and absence of retained client goroutines without allocating a backstop-sized fixture
 
 #### Scenario: Authenticated command is exercised
 - **WHEN** the repository integration suite runs the protocol test host with test-signed platform tokens and provider fakes serving supported native values
@@ -584,11 +540,11 @@ Unknown source discriminators and malformed metadata SHALL use the existing boun
 
 ### Requirement: Independent opaque stream metadata consumption
 
-The Grafana client SHALL independently decode providerMetadata on supported text/reasoning start/delta/end, reasoning-file, source, tool-input start/delta/end, function call, basic result, custom and finish parts. It SHALL preserve namespace objects, nested values, original event order and absent versus empty presence without IncludeRawChunks. Original accepted events, retained copies and metadata cardinality SHALL remain bounded by the existing event, cumulative byte and count limits.
+The Grafana client SHALL independently decode providerMetadata on supported text/reasoning start/delta/end, reasoning-file, source, tool-input start/delta/end, function call, basic result, custom and finish parts. It SHALL preserve namespace objects, nested values, original event order and absent versus empty presence without IncludeRawChunks.
 
 #### Scenario: Unknown namespace survives all supported placements
 - **WHEN** valid events carry future object-valued namespaces with nested null/false/zero/empty values and explicit empty metadata at supported positions
-- **THEN** the independent Go client SHALL preserve those values and positions under existing limits without importing server code
+- **THEN** the independent Go client SHALL preserve those values and positions without importing server code
 
 #### Scenario: Malformed metadata on finish
 - **WHEN** a bounded finish contains a null namespace or malformed metadata shape
@@ -663,14 +619,14 @@ The independent Go client SHALL decode unary and streamed provider approval requ
 - **THEN** core prompt conversion SHALL retain only registered approval-response fields at the provider boundary after handling ownership, without mutating the caller's history, and the next Gateway/native request SHALL succeed
 
 ### Requirement: Independent generated-file response decoding
-The Apache Grafana client SHALL decode registered generated files in unary and streaming responses without importing Gateway code. It SHALL preserve data/URL values, optional originalUrl, media type, metadata presence and ordering under its existing cumulative, event-count and response limits. Provider-local filenames SHALL not become normalized generated-file fields.
+The Apache Grafana client SHALL decode registered generated files in unary and streaming responses without importing Gateway code. It SHALL preserve data/URL values, optional originalUrl, media type, metadata presence and ordering; unary responses SHALL remain within the fixed buffered-read backstop. Provider-local filenames SHALL not become normalized generated-file fields.
 
 #### Scenario: Generated file response is decoded
 - **WHEN** the server returns a valid generated file using data or URL in unary or SSE output
 - **THEN** the client SHALL expose the corresponding provider file value with metadata intact and selected empty data preserved
 
 #### Scenario: Malformed or oversized response
-- **WHEN** a generated file has malformed consumed fields or exceeds client limits
+- **WHEN** a generated file has malformed consumed fields or its unary response exceeds the buffered-read backstop
 - **THEN** existing bounded protocol-error, cancellation and body-ownership behavior SHALL terminate consumption
 
 ### Requirement: Custom content consumption
@@ -715,7 +671,7 @@ The client SHALL provide distinct typed constructors for CAP-to-access-token exc
 - **THEN** no Cloud stack/CAP constructor, Cloud credential configuration type or acting-user context helper SHALL exist
 
 ### Requirement: Platform route base URL and credential validation
-Each constructor SHALL require a valid HTTP(S) ProviderWire API-prefix base URL and reject user info, query and fragment components. It SHALL accept optional configured outer headers, HTTP client and positive client-processing limits. Credentials SHALL be nonempty valid UTF-8 without whitespace or control characters and SHALL NOT be parsed or prefix-checked.
+Each constructor SHALL require a valid HTTP(S) ProviderWire API-prefix base URL and reject user info, query and fragment components. It SHALL accept optional configured outer headers and HTTP client, and SHALL NOT accept client-processing limits. Credentials SHALL be nonempty valid UTF-8 without whitespace or control characters and SHALL NOT be parsed or prefix-checked.
 
 #### Scenario: Unsafe constructor input
 - **WHEN** construction receives user info in its base URL or whitespace in a token
@@ -793,3 +749,81 @@ The shared guide under docs SHALL explain the plugin route prefix URL and both a
 #### Scenario: Documentation examples are verified
 - **WHEN** documentation examples are accepted
 - **THEN** Go examples SHALL build, TypeScript examples SHALL typecheck against the registered baseline and documentation navigation SHALL remain valid
+
+### Requirement: Server-owned resource bounds and buffered-read backstop
+
+The client SHALL expose no configurable response-processing limits. The Gateway SHALL own resource bounds, and callers SHALL bound work through their `http.Client` and call context. Every buffered read SHALL share one fixed 2 GiB backstop. This covers unary success, non-2xx error bodies including stream setup failures, and discovery. Exceeding the backstop SHALL fail without truncation. This is a parity-preserving match of the registered upstream download limit.
+
+#### Scenario: Limit configuration is absent
+- **WHEN** exported declarations and constructor configuration fields are enumerated
+- **THEN** no limit type, default-limit function or per-config limit field SHALL exist
+
+#### Scenario: Buffered body crosses the backstop
+- **WHEN** a unary, error or discovery body is exactly at the backstop or one byte above it
+- **THEN** the body at the backstop SHALL be accepted, and the body above it SHALL fail with a non-retryable bounded protocol error that returns no partial or truncated result
+
+#### Scenario: Declared length crosses the backstop
+- **WHEN** a response to a unary, error or discovery read declares a `Content-Length` above the backstop
+- **THEN** the client SHALL fail with the same non-retryable bounded protocol error before reading any of the body, and a declared length at or below the backstop, or an unknown length, SHALL be bounded while reading
+- **AND** context cancellation or deadline expiry SHALL take precedence over the declared-length failure and remain discoverable with `errors.Is`, with no body read
+
+#### Scenario: Caller bounds a request
+- **WHEN** a caller supplies an `http.Client` with its own transport or timeout, or a call context with a deadline
+- **THEN** the client SHALL apply those bounds to discovery, unary and streaming calls
+- **AND** a context deadline SHALL remain discoverable with `errors.Is` for discovery, unary calls and stream setup, while an established stream SHALL end without a client-generated error
+
+#### Scenario: Guidance describes server-owned bounds
+- **WHEN** a reader consults the Grafana provider godoc or the Grafana Gateway guide
+- **THEN** it SHALL state that the Gateway owns resource bounds and that callers bound requests through `http.Client` and `context`, without client limit-tuning guidance
+
+### Requirement: Incremental SSE consumption
+
+A successful streaming setup SHALL require SSE media type and return a `StreamResult` whose request body and response headers are client-owned. One goroutine SHALL own the body, parse incrementally without client byte or event-count caps, send mapped parts with context-aware backpressure, close the body, and close the output channel exactly once. It SHALL NOT buffer the full response beyond the event being parsed. A body read failure SHALL be a retryable transport error.
+
+#### Scenario: Text stream completes
+- **WHEN** the server emits valid start, metadata, sequential text parts, safe errors, and finish frames
+- **THEN** the client SHALL deliver every accepted part in order, including required empty deltas and finish, then close the channel
+
+#### Scenario: Consumer is slow
+- **WHEN** result delivery blocks and the call context is canceled
+- **THEN** the stream owner SHALL stop the blocked send, close the response body, close the channel, and leave no client-owned goroutine reading the stream
+
+#### Scenario: Large stream is accepted
+- **WHEN** a stream contains a single event larger than 1 MiB, more than 100,000 events, or more than 64 MiB in total
+- **THEN** the client SHALL deliver every part in order and close the channel without a client-generated protocol error
+
+#### Scenario: Stream body read fails
+- **WHEN** reading an established stream body fails without context cancellation
+- **THEN** the client SHALL emit at most one retryable `PartError` with status 200 that retains the read cause, and close all owned resources
+
+#### Scenario: Unsupported response family is received
+- **WHEN** the client receives another unsupported later-package stream part
+- **THEN** it SHALL produce an explicit protocol error rather than decoding through provider-domain JSON accidentally
+
+#### Scenario: Hosted dynamic call with preview results
+- **WHEN** valid tool input, a provider-owned dynamic call, preliminary results and a final result arrive before finish
+- **THEN** all parts and enabled markers SHALL be delivered in order, with false Dynamic/Preliminary pointer presence and input-start dynamic presence retained and final-event-before-EOF behavior unchanged
+
+#### Scenario: Input-start dynamic is presence-sensitive
+- **WHEN** otherwise equivalent input-start events omit dynamic or contain false or true
+- **THEN** the client SHALL preserve nil, false and true respectively for subsequent core inference
+
+#### Scenario: Deferred result is consumed
+- **WHEN** the current request carries an unresolved provider-owned call in history and the response contains only its result and finish
+- **THEN** the client SHALL deliver the success or error result without demanding a repeated call or adding a result-level providerExecuted wire member
+
+### Requirement: Pre-decode raw usage document validation
+
+The retained raw object SHALL be the representation after JSON decoding/compaction removes insignificant whitespace around and inside the value. The client SHALL validate the original complete unary response or stream event for UTF-8 and JSON syntax before Go decoding can normalize invalid bytes.
+
+#### Scenario: Pre-decode raw usage document validation
+- **WHEN** usage.raw contains substantial JSON whitespace in an otherwise valid document
+- **THEN** the retained raw object SHALL be compacted without a client size cap, while pre-decode UTF-8/syntax validation of the original document SHALL still apply
+
+### Requirement: Raw usage escape preservation
+
+Valid JSON with lone or paired escaped surrogates SHALL be accepted, with raw-object escapes preserved in `provider.Usage.Raw`.
+
+#### Scenario: Raw usage escape preservation
+- **WHEN** usage.raw contains a lone escaped UTF-16 surrogate in a valid object
+- **THEN** the escape SHALL be accepted and retained unchanged

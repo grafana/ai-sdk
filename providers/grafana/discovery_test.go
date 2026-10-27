@@ -55,7 +55,7 @@ func TestListModels_AtomicValidation(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Header()["Content-Type"] = []string{tc.media}
 				_, _ = io.WriteString(w, tc.body)
-			}, nil)
+			})
 			rows, err := p.ListModels(context.Background())
 			if tc.valid {
 				require.NoError(t, err)
@@ -100,13 +100,11 @@ func TestListModels_BoundsAndCleanup(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := &trackedBody{Reader: strings.NewReader(tc.body)}
-			limits := DefaultLimits()
-			limits.DiscoveryBytes = tc.limit
-			limits.ErrorBytes = tc.limit
-			p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test", Limits: &limits, HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			p, err := NewWithAccessToken(AccessTokenConfig{AccessToken: "token", BaseURL: "https://example.test", HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: tc.status, Header: http.Header{"Content-Type": {"application/json"}}, Body: body, Request: req}, nil
 			})}})
 			require.NoError(t, err)
+			p.bufferedReadLimit = tc.limit
 			rows, err := p.ListModels(context.Background())
 			if tc.valid {
 				require.NoError(t, err)
@@ -161,6 +159,51 @@ func discoveryBody(t *testing.T, rows []ModelInfo) string {
 	return string(data)
 }
 
+func TestReadJSON_DeclaredLengthBackstop(t *testing.T) {
+	const document = `{"a":"bcd"}`
+	for _, tc := range []struct {
+		name          string
+		contentLength int64
+		limit         int64
+		wantRead      int
+		wantErr       bool
+		canceled      bool
+	}{
+		{"declared at limit", int64(len(document)), int64(len(document)), len(document), false, false},
+		{"declared one over", int64(len(document)), int64(len(document)) - 1, 0, true, false},
+		{"declared far over", 1 << 40, int64(len(document)), 0, true, false},
+		{"unknown length at limit", -1, int64(len(document)), len(document), false, false},
+		{"unknown length one over", -1, int64(len(document)) - 1, len(document), true, false},
+		{"canceled with declared length over", int64(len(document)), int64(len(document)) - 1, 0, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := &trackedBody{Reader: strings.NewReader(document)}
+			resp := &http.Response{Header: http.Header{"Content-Type": {"application/json"}}, ContentLength: tc.contentLength, Body: body}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.canceled {
+				cancel()
+			}
+			got, transportFailure, err := readJSON(ctx, resp, tc.limit)
+			assert.False(t, transportFailure)
+			assert.Equal(t, tc.wantRead, body.read)
+			if tc.canceled {
+				require.ErrorIs(t, err, context.Canceled)
+				assert.Nil(t, got)
+				return
+			}
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Nil(t, got)
+				assert.ErrorContains(t, err, "response byte limit exceeded")
+				return
+			}
+			require.NoError(t, err)
+			assert.JSONEq(t, document, string(got))
+		})
+	}
+}
+
 func TestListModels_ConfiguredRetention(t *testing.T) {
 	calls := 0
 	p := testProvider(t, func(w http.ResponseWriter, r *http.Request) {
@@ -169,7 +212,7 @@ func TestListModels_ConfiguredRetention(t *testing.T) {
 		assert.Equal(t, "/api/v1/aisdk/config", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, configuredDiscoveryFixture(t))
-	}, nil)
+	})
 	rows, err := p.ListModels(context.Background())
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
@@ -183,7 +226,6 @@ func TestListModels_ConfiguredRetention(t *testing.T) {
 	assert.Equal(t, []string{"alias"}, rows[0].Gateway.Aliases)
 	assert.Equal(t, ConfiguredCandidate{ProviderInstance: "primary", Provider: "anthropic", ProviderModelID: "native-primary"}, rows[0].Gateway.Primary)
 	assert.Equal(t, []ConfiguredCandidate{{ProviderInstance: "backup", Provider: "openai", ProviderModelID: "native-backup"}}, rows[0].Gateway.Fallbacks)
-	assert.EqualValues(t, 4<<20, DefaultLimits().DiscoveryBytes)
 }
 
 func TestListModels_ServerOwnsRouteSemantics(t *testing.T) {
@@ -229,7 +271,7 @@ func TestListModels_ServerOwnsRouteSemantics(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, body)
-			}, nil)
+			})
 			rows, err := p.ListModels(context.Background())
 			require.NoError(t, err)
 			assert.Equal(t, expected, rows)
@@ -257,7 +299,7 @@ func TestListModels_ServerOwnsRouteSemantics(t *testing.T) {
 			p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = io.WriteString(w, changed)
-			}, nil)
+			})
 			rows, err := p.ListModels(context.Background())
 			require.NoError(t, err)
 			var expected struct {
@@ -277,7 +319,7 @@ func TestListModels_ConfiguredUnknownAdditionsAreNotPromoted(t *testing.T) {
 	p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, body)
-	}, nil)
+	})
 	rows, err := p.ListModels(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, configuredRows(t), rows)
@@ -286,7 +328,7 @@ func TestListModels_ConfiguredUnknownAdditionsAreNotPromoted(t *testing.T) {
 	assert.NotContains(t, string(encoded), "ignored-dummy-secret")
 }
 
-func TestListModels_LargeCatalogReadAllowance(t *testing.T) {
+func TestListModels_LargeCatalogBackstop(t *testing.T) {
 	candidates := make([]ConfiguredCandidate, 16)
 	for i := range candidates {
 		candidates[i] = ConfiguredCandidate{ProviderInstance: "instance", Provider: "anthropic", ProviderModelID: fmt.Sprintf("%d-", i) + strings.Repeat(`"`, 512)}
@@ -299,15 +341,14 @@ func TestListModels_LargeCatalogReadAllowance(t *testing.T) {
 	}
 	body := discoveryBody(t, models)
 	require.Greater(t, len(body), 1<<20)
-	require.Less(t, len(body), 4<<20)
 	p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, body)
-	}, nil)
+	})
 	rows, err := p.ListModels(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, rows, len(models))
-	p.limits.DiscoveryBytes = 1 << 20
+	p.bufferedReadLimit = 1 << 20
 	rows, err = p.ListModels(context.Background())
 	require.Error(t, err)
 	assert.Nil(t, rows)
@@ -351,7 +392,7 @@ func TestListModels_ClientDoesNotDuplicateServerPolicy(t *testing.T) {
 				p := testProvider(t, func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					_, _ = io.WriteString(w, body)
-				}, nil)
+				})
 				got, err := p.ListModels(context.Background())
 				require.NoError(t, err)
 				assert.Equal(t, rows, got)

@@ -22,25 +22,21 @@ events as `aisdk.StreamRaw` parts, in order with the normalized parts. Without
 the option, the Gateway sends no raw events. Unary calls accept the option and
 return no raw output.
 
-Raw events are diagnostic. Their shape is whatever the provider sends and can
+Raw events are for debugging. Their shape is whatever the provider sends and can
 change without notice, so do not build application logic on them. Events keep
 their JSON values but not their exact bytes: whitespace, key order and escaping
-can differ from the provider's. A native event that is not valid UTF-8 JSON, or
-that repeats an object key, is skipped. Native provider error events pass
-through, so they can contain more detail than the Gateway's own error events.
-The Gateway does not log or export raw values.
+can differ from the provider's. An event that is not valid JSON, or that repeats
+an object key, is skipped. Provider error events pass through, so they can
+contain more detail than the Gateway's own errors. Treat raw events as
+sensitive. The Gateway does not log or export them.
 
-Before writing an event, the Gateway removes MCP tool credentials that OpenAI
-echoes from the request: the `headers` object becomes `null`, `authorization`
-is removed, and `server_url` loses userinfo and the `access_token`, `api_key`
-and `X-Amz-*` credential query keys, or is removed if it cannot be parsed.
-Other query keys pass through.
+The Gateway removes MCP tool credentials that OpenAI echoes from your request
+before it sends an event: headers, the authorization value, and credential
+query parameters in the server URL.
 
-Requesting raw output can make an otherwise successful stream fail. Raw parts
-use the stream part budget, and a raw event larger than the frame limit ends
-the stream with an error and no finish; it is never truncated. To allow larger
-events, raise the Gateway's stream frame limit and the client's
-`Limits.StreamEventBytes` together.
+Raw events count toward the stream's size limits. If a raw event is too large,
+the stream ends with an error and no finish instead of being cut short. To allow
+larger events, ask your Gateway administrator to raise the stream's size limit.
 
 ## Authenticate the client
 
@@ -148,12 +144,10 @@ A Grafana service can send its exchanged token in `X-Access-Token` instead of
 
 ### Handle large catalogs
 
-Listing returns the whole catalog or an error, never part of it. If a catalog
-is larger than the Go client accepts, raise `DiscoveryBytes` in a copy of
-[`grafana.DefaultLimits()`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana#Limits)
-and pass it to the client. The TypeScript helper's `maxBytes` can only lower
-its limit; for a larger catalog, ask your Gateway administrator to publish
-fewer models.
+Listing returns the whole catalog or an error, never part of it. The Go client
+does not limit the catalog size. The TypeScript helper's `maxBytes` can only
+lower its limit, so if a catalog is too large for it, ask your Gateway
+administrator to publish fewer models.
 
 To combine the Gateway with other providers, see
 [Fallback and registry](../guides/fallback-and-registry.md).
@@ -322,7 +316,7 @@ in a tool result, the call fails with an invalid request error.
 
 When a model generates files, the Gateway returns them in generated and
 streamed responses. The SDK downloads files that arrive as URLs; the Gateway
-does not. Generated files count toward the response size limits. Once a model
+does not. Generated files count toward the Gateway's response size limits. Once a model
 has returned a file, the Gateway does not fall back for that call.
 
 ## Native response values
@@ -375,11 +369,12 @@ Use `errors.Is` to detect cancellation and deadlines. Use `errors.As` with
 `*provider.APICallError` to check whether a call can be retried. The client
 does not retry on its own; configure retries in your application.
 
-If responses or streams exceed the client's size limits, raise them from
-[`grafana.DefaultLimits`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/grafana#DefaultLimits)
-instead of using a partial result. `APICallError.Data` and `ResponseBody`
-contain the error response, which can include provider details; keep it out of
-public logs.
+The Gateway limits response and stream sizes, so the client has no size limits
+to configure. To bound a call yourself, use the context deadline above, and your
+own `http.Client` for transport-level limits such as timeouts.
+
+`APICallError.Data` and `ResponseBody` contain the error response, which can
+include provider details; keep it out of public logs.
 
 ## Reference
 
