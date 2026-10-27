@@ -38,7 +38,7 @@
 ## 6. Dependency automation and documentation
 
 - [x] 6.1 Remove the first-party lookup and tagged-prerequisite rules from `renovate.json` and disable all first-party gomod update types, update the activation test, and verify `renovate-config-validator --strict` and `npm test --prefix release/tooling` pass
-- [ ] 6.2 Rewrite the release runbook sections in `release/README.md`, `release/tooling/ACTIVATION.md` and `CONTRIBUTING.md` for the combined pull request, generated requirement files, dependency-closed publication and rollback, and verify `mise run lint-docs` passes
+- [x] 6.2 Rewrite the release runbook sections in `release/README.md`, `release/tooling/ACTIVATION.md` and `CONTRIBUTING.md` for the combined pull request, generated requirement files, dependency-closed publication and rollback, and verify `mise run lint-docs` passes
 - [ ] 6.3 Switch `release-please-config.json` to the combined shape (`separate-pull-requests: false`, `ai-gateway` separate) and verify `mise run release-check` and an in-memory preview against current `main` produce one library pull request and one Gateway pull request
 
 ## 7. Integration

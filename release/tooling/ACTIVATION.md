@@ -119,23 +119,21 @@ release config stays unchanged so #490's retained config identity remains valid.
 The historical PR header describes publication as disabled; this activation runbook
 and the live mode are authoritative until that header is updated after bootstrap.
 
-The final first-party rule in `renovate.json` becomes effective when this PR merges.
-It enables independent updates only for registered library modules, accepts tagged
-alpha/beta/rc versions, excludes pseudo-version and digest proposals, groups all
-first-party updates into one pull request and overrides the inherited weekly
-schedule. The organization-wide minimum release age still applies; see the
-[release runbook](../README.md#keep-dependent-modules-on-released-first-party-requirements).
-Updates use `fix(deps)` and require review;
-automerge is disabled. This follows Renovate's
-[configuration contracts](https://docs.renovatebot.com/configuration-options/).
+Library mode prepares one combined release pull request for every pending
+library and keeps Gateway's release separate. Preparation refuses a configuration
+that is not combined, appends the generated first-party `go.mod`/`go.sum` updates
+to the same App commit, and closes superseded per-component library release pull
+requests. Renovate no longer proposes first-party requirement updates; see the
+[release runbook](../README.md#release-libraries-together).
 
-Review and merge the root requirement update for direct dependents, then repeat
-for provider prerequisites and Bedrock. Ordinary source PRs retain candidate-source
-CI. A dependency bump does not prove its dependent is release-ready: publication
-rechecks tag origin, ancestry, owned-source freshness, standalone and consumer
-behavior. Record the root → direct provider → Bedrock progression in #468; if a
-provider needs unrelated implementation fixes, track those separately rather than
-holding the root release or pretending the progression is proven.
+Review and merge the combined release pull request. Ordinary source PRs retain
+candidate-source CI. Readiness regenerates the requirement files and validates each
+released library with co-released prerequisites from candidate archives;
+publication rechecks tag origin, ancestry, owned-source freshness, standalone and
+consumer behavior, tags prerequisites before dependents and verifies every new
+version on the public proxy. Record the published set and its proxy checksums in
+issue #468. If one library needs unrelated implementation fixes, it and the
+libraries that require it stay blocked while the others publish.
 
 ## Stop and recovery
 
@@ -150,6 +148,6 @@ library's completed result. A workflow can finish failed after publishing a read
 subset; inspect its per-candidate report before retrying.
 
 Completion means the implementation is merged, settings verified, root publication
-and external consumption proven, dependency progression demonstrated or explicitly
-tracked, and #245 acceptance criteria reconciled with the library-only scope.
+and external consumption proven, a combined release including dependent libraries
+published or explicitly tracked, and #245 acceptance criteria reconciled with the library-only scope.
 Closing the umbrella still requires maintainer approval.
