@@ -281,13 +281,13 @@ func TestDoStream_ErrorFrames(t *testing.T) {
 		{
 			name:         "error between delta and stop keeps reading and finishes",
 			events:       []string{start, textStart, textDelta, textEnd, delta, errorFrame, stop},
-			wantTypes:    []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd, provider.PartError, provider.PartFinish},
+			wantTypes:    []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartCustom, provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd, provider.PartError, provider.PartFinish},
 			wantFinishes: 1,
 		},
 		{
 			name:      "error without stop produces no finish",
 			events:    []string{start, textStart, textDelta, textEnd, delta, errorFrame},
-			wantTypes: []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd, provider.PartError},
+			wantTypes: []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartCustom, provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd, provider.PartError},
 		},
 		{
 			name:        "error as the first frame fails the call",
@@ -297,7 +297,7 @@ func TestDoStream_ErrorFrames(t *testing.T) {
 		{
 			name:      "undecodable frame after an error frame stays terminal",
 			events:    []string{start, errorFrame, `not JSON`, stop},
-			wantTypes: []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartError, provider.PartError},
+			wantTypes: []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartCustom, provider.PartError, provider.PartError},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

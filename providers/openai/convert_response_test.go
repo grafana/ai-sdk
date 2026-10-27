@@ -84,6 +84,10 @@ func TestConvertResponse_TextAndURLCitation(t *testing.T) {
 	require.Len(t, res.Content, 2)
 	assert.Equal(t, provider.ContentText, res.Content[0].Type)
 	assert.Equal(t, "see here", res.Content[0].Text)
+	require.Len(t, res.Content[0].Citations, 1)
+	assert.Equal(t, "https://x.com", res.Content[0].Citations[0].Source.ID)
+	assert.Equal(t, 0, *res.Content[0].Citations[0].StartIndex)
+	assert.Equal(t, 3, *res.Content[0].Citations[0].EndIndex)
 	assert.Equal(t, provider.ContentSource, res.Content[1].Type)
 	assert.Equal(t, provider.SourceTypeURL, res.Content[1].SourceType)
 	assert.Equal(t, "https://x.com", res.Content[1].URL)
@@ -223,7 +227,9 @@ func TestConvertResponse_FileSearchResultFields(t *testing.T) {
 	}`)
 
 	res := mustConvertResponse(t, resp, buildResult{})
-	require.Len(t, res.Content, 2)
+	require.Len(t, res.Content, 3)
+	assert.Equal(t, provider.ContentSource, res.Content[2].Type)
+	assert.Equal(t, "guide.pdf", res.Content[2].Title)
 	assert.JSONEq(t, `{
 		"queries":["q"],
 		"results":[{

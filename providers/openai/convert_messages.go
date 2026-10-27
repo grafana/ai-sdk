@@ -140,6 +140,8 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 	var items []responses.ResponseInputItemUnionParam
 	var warnings []provider.Warning
 
+	hasPrecedingReasoning := false
+	emittedTextIDs := make(map[string]bool)
 	for _, part := range msg.Content {
 		switch part.Type {
 		case provider.ContentPartTypeText:
@@ -147,8 +149,11 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 			if ctx.hasConversation && po.ItemID != "" {
 				continue
 			}
-			if ctx.store && po.ItemID != "" {
-				items = append(items, itemReference(po.ItemID))
+			if ctx.store && po.ItemID != "" && (!ctx.isReasoningModel || hasPrecedingReasoning) {
+				if !emittedTextIDs[po.ItemID] {
+					emittedTextIDs[po.ItemID] = true
+					items = append(items, itemReference(po.ItemID))
+				}
 				continue
 			}
 			items = append(items, assistantOutputMessage(part.Text, po))
@@ -176,6 +181,7 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 			}
 
 		case provider.ContentPartTypeReasoning:
+			hasPrecedingReasoning = true
 			po := ctx.partOptions(part)
 			if (ctx.hasConversation || ctx.hasPreviousResponseID) && po.ItemID != "" {
 				continue

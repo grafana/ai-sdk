@@ -10,12 +10,13 @@ import (
 )
 
 type streamToolStartEvent struct {
-	Type             provider.StreamPartType   `json:"type"`
-	ID               string                    `json:"id"`
-	ToolName         string                    `json:"toolName"`
-	ProviderExecuted bool                      `json:"providerExecuted,omitempty"`
-	Dynamic          *bool                     `json:"dynamic,omitempty"`
-	Metadata         provider.ProviderMetadata `json:"providerMetadata,omitzero"`
+	InputEncoding    provider.ToolInputEncoding `json:"inputEncoding,omitempty"`
+	Type             provider.StreamPartType    `json:"type"`
+	ID               string                     `json:"id"`
+	ToolName         string                     `json:"toolName"`
+	ProviderExecuted bool                       `json:"providerExecuted,omitempty"`
+	Dynamic          *bool                      `json:"dynamic,omitempty"`
+	Metadata         provider.ProviderMetadata  `json:"providerMetadata,omitzero"`
 }
 type streamToolDeltaEvent struct {
 	Type     provider.StreamPartType   `json:"type"`
@@ -81,7 +82,7 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 		exists = historical
 	}
 	next := current
-	event := streamEvent{typeName: part.Type, id: id, toolName: part.ToolName, delta: part.Delta, input: part.Input, result: part.Result, isError: part.IsError, metadata: part.ProviderMetadata}
+	event := streamEvent{typeName: part.Type, id: id, toolName: part.ToolName, inputEncoding: part.InputEncoding, delta: part.Delta, input: part.Input, result: part.Result, isError: part.IsError, metadata: part.ProviderMetadata}
 	if !streamEventPreflight(event, h.limits.StreamFrameBytes) {
 		return streamPartAdapterFailure
 	}

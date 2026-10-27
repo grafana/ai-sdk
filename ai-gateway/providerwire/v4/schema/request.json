@@ -36,7 +36,8 @@
         "low",
         "medium",
         "high",
-        "xhigh"
+        "xhigh",
+        "max"
       ]
     },
     "providerOptions": { "$ref": "#/$defs/providerOptions" }

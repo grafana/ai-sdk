@@ -146,7 +146,7 @@ func TestDoStream_WorkerPanic(t *testing.T) {
 	})
 
 	t.Run("stream adapter", func(t *testing.T) {
-		annotation := "data: {\"type\":\"response.output_text.annotation.added\",\"sequence_number\":2,\"output_index\":0,\"content_index\":0,\"item_id\":\"msg_1\",\"annotation_index\":0,\"annotation\":{\"type\":\"url_citation\",\"url\":\"https://example.com\",\"title\":\"Example\",\"start_index\":0,\"end_index\":2}}\n\n"
+		annotation := "data: {\"type\":\"response.output_text.annotation.added\",\"sequence_number\":2,\"output_index\":0,\"content_index\":0,\"item_id\":\"msg_1\",\"annotation_index\":0,\"annotation\":{\"type\":\"container_file_citation\",\"container_id\":\"cntr_1\",\"file_id\":\"file_1\",\"filename\":\"a.txt\",\"start_index\":0,\"end_index\":2}}\n\n"
 		body := newBlockingBody(panicResponseCreated+annotation, false)
 		model := panicStreamModel(body, WithGenerateID(func() string { panic("secret-panic-value") }))
 		result, err := model.DoStream(context.Background(), options)

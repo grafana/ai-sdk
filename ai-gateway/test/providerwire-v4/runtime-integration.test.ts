@@ -402,6 +402,37 @@ describe("sources through the authenticated handler", () => {
   });
 });
 
+describe("citations and text-encoded tool input through the authenticated handler", () => {
+  it("preserves the target fields and message-start custom parts through both clients", async () => {
+    const expected = [
+      { source: { type: "source", sourceType: "url", id: "u", url: "https://example.com" }, startIndex: 0, endIndex: 6 },
+      { source: { type: "source", sourceType: "document", id: "", mediaType: "text/plain", title: "", providerMetadata: {} }, citedText: "" },
+    ];
+    const wire = (streaming: boolean) => fetch(`${baseURL}/function-tools/language-model`, { method: "POST", headers: { "content-type": "application/json", "x-access-token": "function-test-token", "ai-language-model-specification-version": "4", "ai-language-model-id": "citations", "ai-language-model-streaming": String(streaming) }, body: JSON.stringify({ prompt: [], reasoning: "max" }) });
+    const rawUnary = await (await wire(false)).json();
+    assert.equal(validateUnarySuccess(rawUnary), true, JSON.stringify(validateUnarySuccess.errors));
+    const frames = (await (await wire(true)).text()).split("\n\n").filter(Boolean).map(frame => JSON.parse(frame.slice("data: ".length)));
+    for (const frame of frames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
+    const client = createGateway({ apiKey: "test", baseURL: `${baseURL}/function-tools`, headers: { "x-access-token": "function-test-token" } })("citations");
+    const options: LanguageModelV4CallOptions = { prompt: [], reasoning: "max" };
+    const unary = await client.doGenerate(options);
+    const parts = await collect((await client.doStream(options)).stream);
+    const config = { baseURL: `${baseURL}/function-tools`, accessToken: "function-test-token", modelID: "citations", options };
+    const goUnary = await captureGoClient(goClientBinary, { ...config, mode: "generate" });
+    const goStream = await captureGoClient(goClientBinary, { ...config, mode: "stream" });
+    assert.equal(goUnary.error, undefined);
+    assert.equal(goStream.error, undefined);
+    for (const content of [rawUnary.content, unary.content, goUnary.result.content]) assert.deepEqual(content[0].citations, expected);
+    for (const stream of [frames, parts, goStream.parts]) {
+      assert.deepEqual(stream.find((part: any) => part.type === "text-end").citations, expected);
+      assert.equal(stream.find((part: any) => part.type === "tool-input-start").inputEncoding, "text");
+      assert.equal(stream.find((part: any) => part.type === "tool-input-delta").delta, "SELECT \"value\"\n");
+      assert.equal(stream.find((part: any) => part.type === "custom").kind, "anthropic.message_start");
+      assert.equal(stream.at(-1).type, "finish");
+    }
+  });
+});
+
 describe("custom content through the authenticated handler", () => {
   const expected = [
     { type: "custom", kind: "openai.compaction", providerMetadata: { openai: { type: "compaction", itemId: "cmp_1", encryptedContent: "ENC", nested: { none: null, no: false, zero: 0, empty: "" } } } },

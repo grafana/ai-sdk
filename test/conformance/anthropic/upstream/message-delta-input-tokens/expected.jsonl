@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_3196a1cc08de4d76b85b8f5777c0d42b","model":"claude-opus-4-5-20251101","usage":{"input_tokens":43,"output_tokens":1}}}}
 {"type":"text-start","id":"0"}
 {"type":"text-delta","id":"0","delta":"p"}
 {"type":"text-delta","id":"0","delta":"ong"}

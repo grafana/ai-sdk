@@ -53,7 +53,9 @@ const (
 // empty title/reason and false preliminary/providerExecuted values. Direct
 // scalar zero-value construction keeps optional-field omission semantics.
 type UIMessageChunk struct {
-	Type ChunkType `json:"type"`
+	InputEncoding provider.ToolInputEncoding `json:"inputEncoding,omitempty"`
+	Citations     []provider.Citation        `json:"citations,omitzero"`
+	Type          ChunkType                  `json:"type"`
 
 	// Lifecycle fields
 	MessageID       string          `json:"messageId,omitempty"`
@@ -189,6 +191,9 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 
 	case ChunkTextEnd:
 		m["id"] = c.ID
+		if c.Citations != nil {
+			m["citations"] = c.Citations
+		}
 		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkReasoningStart:
@@ -205,6 +210,9 @@ func (c UIMessageChunk) MarshalJSON() ([]byte, error) {
 		setOptMeta(m, c.ProviderMetadata)
 
 	case ChunkToolInputStart:
+		if c.InputEncoding != "" {
+			m["inputEncoding"] = c.InputEncoding
+		}
 		m["toolCallId"] = c.ToolCallID
 		m["toolName"] = c.ToolName
 		setPresentBool(m, "providerExecuted", c.ProviderExecuted, c.providerExecutedPresent)

@@ -79,6 +79,7 @@ const (
 	wireReasoningMedium          wireReasoning = "medium"
 	wireReasoningHigh            wireReasoning = "high"
 	wireReasoningXHigh           wireReasoning = "xhigh"
+	wireReasoningMax             wireReasoning = "max"
 )
 
 func mapWireRequest(body []byte) (provider.CallOptions, *requestFailure) {
@@ -471,6 +472,8 @@ func mapWireReasoning(value wireReasoning) (provider.ReasoningEffort, error) {
 		return provider.ReasoningHigh, nil
 	case wireReasoningXHigh:
 		return provider.ReasoningXHigh, nil
+	case wireReasoningMax:
+		return provider.ReasoningMax, nil
 	default:
 		return provider.ReasoningProviderDefault, fmt.Errorf("unknown reasoning value")
 	}

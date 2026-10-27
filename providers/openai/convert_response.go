@@ -31,6 +31,20 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 	var logprobs [][]responseLogprob
 	hasFunctionCall := false
 	var hostedToolSearchCallIDs []string
+	hasWebSources, hasFileResults := false, false
+	retrievedFileIDs := make(map[string]bool)
+	for _, item := range resp.Output {
+		switch value := item.AsAny().(type) {
+		case responses.ResponseFunctionWebSearch:
+			if value.Action.Type == "search" {
+				for _, source := range value.Action.Sources {
+					hasWebSources = hasWebSources || source.Type == "url"
+				}
+			}
+		case responses.ResponseFileSearchToolCall:
+			hasFileResults = hasFileResults || len(value.Results) > 0
+		}
+	}
 
 	for _, item := range resp.Output {
 		switch v := item.AsAny().(type) {
@@ -44,9 +58,17 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 						content = append(content, provider.GenerateContentPart{
 							Type:             provider.ContentText,
 							Text:             ot.Text,
+							Citations:        convertCitationAnnotations(ot.Annotations, providerOptionsName),
 							ProviderMetadata: textMeta(providerOptionsName, v.ID, string(v.Phase), rawList(ot.Annotations)),
 						})
-						content = append(content, convertAnnotations(ot.Annotations, generateID, providerOptionsName)...)
+						for _, annotation := range ot.Annotations {
+							if fallbackSourceSuppressed(annotation.Type, hasWebSources, hasFileResults) {
+								continue
+							}
+							if part, ok := convertAnnotation(annotation, generateID, providerOptionsName); ok {
+								content = append(content, part)
+							}
+						}
 					}
 				}
 			}
@@ -110,6 +132,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolName:   toolName,
 				Result:     webSearchOutput(v.Action),
 			})
+			content = append(content, webSearchSources(v.Action, generateID)...)
 
 		case responses.ResponseFileSearchToolCall:
 			toolName := br.toolNameMapping.toCustomToolName("file_search")
@@ -120,6 +143,7 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 				ToolName:   toolName,
 				Result:     fileSearchOutput(v.Queries, v.Results),
 			})
+			content = append(content, fileSearchSources(v.Results, retrievedFileIDs, generateID, providerOptionsName)...)
 
 		case responses.ResponseCodeInterpreterToolCall:
 			toolName := br.toolNameMapping.toCustomToolName("code_interpreter")

@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_011CdaZBjxTpEak6nrXJ8Ueb","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":618,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":7,"service_tier":"standard","inference_geo":"not_available"}}}}
 {"type":"reasoning-start","id":"0"}
 {"type":"reasoning-delta","id":"0","delta":"The user wants to know the weather"}
 {"type":"reasoning-delta","id":"0","delta":" in Portland so they can decide what to wear. They want me to:\n1. Check the weather in Portland\n2. Recommend an outfit based"}
@@ -19,6 +20,7 @@
 {"type":"tool-output-available","toolCallId":"toolu_01EWtSaF5RgYAvgDP8S75ybk","output":{"temperature":55,"conditions":"overcast with light rain","humidity":82},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"finish-step"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_011CdaZC1pTGEtPrwU6ihLoQ","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":835,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":6,"service_tier":"standard","inference_geo":"not_available"}}}}
 {"type":"text-start","id":"0"}
 {"type":"text-delta","id":"0","delta":"Based on the current weather in"}
 {"type":"text-delta","id":"0","delta":" Portland, here's what I found:\n\n**Current Weather:**\n- Temperature: 55°F (13°C)\n- Conditions: Overcast with light rain\n- Humidity: 82%"}
