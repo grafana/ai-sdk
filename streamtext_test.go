@@ -3400,8 +3400,9 @@ func TestStreamTextAbortCallbacks(t *testing.T) {
 
 		assert.True(t, abortCalled, "OnAbort should fire on mid-stream cancel")
 		assert.Len(t, abortSteps, 1, "abort should see the completed first step")
-		assert.True(t, finishCalled, "OnFinish should fire when completed steps exist")
-		assert.Len(t, finishSteps, 1, "OnFinish should see only completed steps")
+		assert.False(t, finishCalled, "OnFinish should not fire after cancellation")
+		assert.Empty(t, finishSteps)
+		assert.Len(t, result.Steps(), 1, "the result should retain the completed first step")
 	})
 
 	t.Run("NormalCompletion_NoAbort", func(t *testing.T) {
