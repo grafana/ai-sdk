@@ -215,6 +215,17 @@ aisdk.ResponseMetadata SHALL define Messages []provider.Message tagged json:"-".
 - **WHEN** `result.Steps()[i].Response` is marshaled to JSON
 - **THEN** the resulting JSON SHALL NOT contain a `messages` key
 
+### Requirement: Results expose the full response-message history
+
+StreamTextResult.ResponseMessages() and GenerateTextResult.ResponseMessages SHALL hold the full generated history, mirroring upstream `result.responseMessages`: the tool message produced by resolving local approvals before the first model call, followed by every recorded step's Response.Messages in order. Messages SHALL NOT enter any wire format.
+
+#### Scenario: Result response messages hold the full history
+
+- **WHEN** a `StreamText` or `GenerateText` run resumes an approved and a denied local approval and then completes one or more steps
+- **THEN** `ResponseMessages` SHALL start with one tool message holding the approved tool result and the execution-denied result
+- **AND** it SHALL continue with every `result.Steps()[i].Response.Messages` in step order
+- **AND** `result.Response().Messages` SHALL still equal the last step's messages
+
 ### Requirement: Stream-order content forwarded to ToResponseMessages
 
 Orchestration SHALL pass step.Reasoning blocks, a single step.Text part only if nonempty, each step.ToolCalls call immediately followed by matching provider-executed result if any, then remaining non-provider-executed step.ToolResults. This SHALL preserve Anthropic expectations: reasoning precedes supported text/tool-use, and provider results immediately follow originating calls within the same assistant message.

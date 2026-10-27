@@ -197,10 +197,15 @@ type OnStepFinishState struct {
 }
 
 // OnFinishState is passed to the OnFinish callback after all steps complete.
+// The embedded StepResult follows the collected result projection: Content,
+// ToolCalls, ToolResults, Files, Sources and Warnings cover every step in
+// order, Usage is the total usage, and the remaining fields describe the
+// final step. ResponseMessages holds the full generated message history.
 type OnFinishState struct {
 	StepResult
-	Steps      []StepResult
-	TotalUsage provider.Usage
+	Steps            []StepResult
+	TotalUsage       provider.Usage
+	ResponseMessages []provider.Message
 }
 
 // OnAbortState is passed to the OnAbort callback when the stream is cancelled.

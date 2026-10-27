@@ -181,6 +181,14 @@ The provider SHALL translate `provider.CallOptions` into the AWS Bedrock Convers
 - **WHEN** the prompt contains a `ToolMessage` with a tool result for tool call id `abc`
 - **THEN** the request emits a user-role message with `{toolResult: {toolUseId: "abc", content: [...]}}` content (Converse collapses tool results into the user role)
 
+#### Scenario: Assistant-role tool results
+
+- **WHEN** an assistant message contains tool-result parts, such as provider-executed results replayed after their tool calls
+- **THEN** each run of tool results is emitted as user-role `toolResult` content between the assistant content before and after it, preserving part order
+- **AND** the results use the same output conversion, tool call ID normalization, document naming and rejection rules as tool-role results
+- **AND** user content that follows a user message carrying tool results is appended to that message, while a leading tool result after plain user content still starts a separate user message, matching upstream
+- **AND** an assistant message cache point follows the tool results when the message ends with one, and otherwise follows that message's trailing assistant content when it emits any
+
 #### Scenario: Inference config mapping
 
 - **WHEN** the consumer sets `MaxOutputTokens=512`, `Temperature=0.5`, `TopP=0.9`, `TopK=20`, `StopSequences=["END"]`
@@ -591,12 +599,18 @@ The provider SHALL classify OpenAI IDs by anchored `openai.` with optional regio
 
 ### Requirement: Converse option merge preserves cache and beta precedence
 
-Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks only when the source message emits native content. A marker SHALL NOT survive solely because another source in the same merged block emits content. Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
+Converse prompt conversion SHALL preserve cache-point placement on system and user/assistant message blocks only when the source message emits native content, and on user, tool-result and assistant content parts only when the source part emits native content. A marker SHALL NOT survive solely because another source in the same merged block emits content. Explicit `anthropicBeta` and required provider-tool betas SHALL override a conflicting raw `additionalModelRequestFields.anthropic_beta` after merging, while unrelated caller fields and derived `output_config.effort` SHALL be preserved unless a selected mode forbids `output_config.format`.
 
 #### Scenario: Cache point remains at selected message boundary
 
 - **WHEN** a system block and a user or assistant message have cache-point options under `amazonBedrock` or legacy `bedrock`
 - **THEN** their cache points remain at the corresponding Converse content boundaries after structured-output and tool routing
+
+#### Scenario: Content part cache point
+
+- **WHEN** a user part, a tool-result part in a tool or assistant message, or an assistant part has cache-point options under `amazonBedrock` or legacy `bedrock`
+- **THEN** the cache point immediately follows that part's Converse block, before any message cache point, using `amazonBedrock` when both namespaces set one
+- **AND** a part that emits no block, such as unsigned reasoning, empty assistant text or an approval response, contributes no cache point and its options are not parsed
 
 #### Scenario: Explicit beta and tool-required beta win over raw pass-through
 
@@ -936,7 +950,7 @@ When raw chunks are requested, each event-stream frame SHALL produce a raw part 
 - **THEN** the `tool-input-start` part SHALL carry `id` and `toolName` only
 
 ### Requirement: Custom tool-result content rejection
-When tools remain active after tool preparation, the Bedrock Converse adapter SHALL reject user- or tool-role tool-result content containing a custom entry before any HTTP request. The error SHALL wrap the provider unsupported-functionality sentinel and name the unsupported tool content type, instead of dropping the entry with a warning. Bedrock Mantle SHALL keep its existing warning.
+When tools remain active after tool preparation, the Bedrock Converse adapter SHALL reject user-, tool- or assistant-role tool-result content containing a custom entry before any HTTP request. The error SHALL wrap the provider unsupported-functionality sentinel and name the unsupported tool content type, instead of dropping the entry with a warning. Bedrock Mantle SHALL keep its existing warning.
 
 #### Scenario: Custom tool-result entry
 - **WHEN** DoGenerate or DoStream with active tools receives tool-result content with text and custom entries

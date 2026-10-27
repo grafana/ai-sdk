@@ -166,33 +166,64 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 				}
 			}
 			if len(content) > 0 {
-				out.Messages = append(out.Messages, converseMessage{Role: "user", Content: content})
+				out.Messages = appendUserMessage(out.Messages, content)
 			}
 
 		case promptBlockAssistant:
-			var content []contentBlock
+			blockStart := len(out.Messages)
 			for messageIndex, msg := range block.messages {
 				trimLastText := blockIndex == len(blocks)-1 && messageIndex == len(block.messages)-1
-				contentBlocks, err := convertAssistantContent(msg.Content, &warnings, isMistral, trimLastText)
+				segments, err := convertAssistantContent(msg.Content, &documentCounter, &warnings, isMistral, trimLastText)
 				if err != nil {
 					return convertedPrompt{}, warnings, err
 				}
-				content = append(content, contentBlocks...)
 				cp, err := extractCachePoint(msg.ProviderOptions)
 				if err != nil {
 					return convertedPrompt{}, warnings, err
 				}
-				if cp != nil && len(contentBlocks) > 0 {
-					content = append(content, contentBlock{CachePoint: cp})
+				if last := len(segments) - 1; cp != nil && last >= 0 && segments[last].Role == assistantCachePointRole(msg.Content) {
+					segments[last].Content = append(segments[last].Content, contentBlock{CachePoint: cp})
 				}
-			}
-			if len(content) > 0 {
-				out.Messages = append(out.Messages, converseMessage{Role: "assistant", Content: content})
+				for _, segment := range segments {
+					if segment.Role == converseRoleUser {
+						out.Messages = appendUserMessage(out.Messages, segment.Content)
+						continue
+					}
+					if last := len(out.Messages) - 1; last >= blockStart && out.Messages[last].Role == converseRoleAssistant {
+						out.Messages[last].Content = append(out.Messages[last].Content, segment.Content...)
+						continue
+					}
+					out.Messages = append(out.Messages, segment)
+				}
 			}
 		}
 	}
 
 	return out, warnings, nil
+}
+
+func appendUserMessage(messages []converseMessage, content []contentBlock) []converseMessage {
+	if last := len(messages) - 1; last >= 0 && messages[last].Role == converseRoleUser && containsToolResult(messages[last].Content) {
+		messages[last].Content = append(messages[last].Content, content...)
+		return messages
+	}
+	return append(messages, converseMessage{Role: converseRoleUser, Content: content})
+}
+
+func containsToolResult(content []contentBlock) bool {
+	for _, block := range content {
+		if block.ToolResult != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func assistantCachePointRole(parts []provider.ContentPart) converseRole {
+	if len(parts) > 0 && parts[len(parts)-1].Type == provider.ContentPartTypeToolResult {
+		return converseRoleUser
+	}
+	return converseRoleAssistant
 }
 
 func convertSystemBlock(messages []provider.Message, warnings *[]provider.Warning) ([]systemContentBlock, error) {
@@ -224,6 +255,7 @@ func convertSystemBlock(messages []provider.Message, warnings *[]provider.Warnin
 func convertUserContent(parts []provider.ContentPart, documentCounter *int, warnings *[]provider.Warning, isMistral bool) ([]contentBlock, error) {
 	var out []contentBlock
 	for _, p := range parts {
+		start := len(out)
 		switch p.Type {
 		case provider.ContentPartTypeText:
 			guarded, qualifiers, err := readTextGuardContent(p.ProviderOptions)
@@ -237,99 +269,11 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			}
 
 		case provider.ContentPartTypeFile:
-			if p.Data == nil {
-				continue
-			}
-			switch {
-			case p.Data.IsReference():
-				return nil, unsupportedFunctionality("bedrock: file parts with provider references are not supported")
-			case p.Data.IsURL():
-				if !isS3URL(p.Data.URL) {
-					return nil, unsupportedFunctionality("bedrock: file URL data is not supported")
-				}
-				mediaType := p.MediaType
-				if !isFullMediaType(mediaType) {
-					return nil, fmt.Errorf("bedrock: file URL data requires a full media type")
-				}
-				switch topLevelMediaType(mediaType) {
-				case "image":
-					format, ok := imageMediaTypeFormat[mediaType]
-					if !ok {
-						return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
-					}
-					out = append(out, contentBlock{Image: &imageBlock{
-						Format: format,
-						Source: imageSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
-					}})
-				case "video":
-					format, ok := videoMediaTypeFormat[mediaType]
-					if !ok {
-						return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
-					}
-					out = append(out, contentBlock{Video: &videoBlock{
-						Format: format,
-						Source: videoSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
-					}})
-				default:
-					return nil, unsupportedFunctionality("bedrock: file URL data is only supported for images and videos")
-				}
-				continue
-			case p.Data.IsText():
-				mediaType := p.MediaType
-				if !isFullMediaType(mediaType) {
-					mediaType = "text/plain"
-				}
-				block, err := buildDocumentContentBlock(p, mediaType, base64.StdEncoding.EncodeToString([]byte(p.Data.Text)), documentCounter)
-				if err != nil {
-					return nil, err
-				}
-				out = append(out, block)
-				continue
-			}
-
-			b64 := p.Data.Base64
-			if p.Data.Bytes != nil {
-				b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
-			}
-			if !p.Data.IsData() {
-				continue
-			}
-			mediaType, err := resolveFullMediaType(p)
+			blocks, err := convertUserFilePart(p, documentCounter)
 			if err != nil {
 				return nil, err
 			}
-			switch topLevelMediaType(mediaType) {
-			case "image":
-				format, ok := imageMediaTypeFormat[mediaType]
-				if !ok {
-					return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
-				}
-				image := &imageBlock{Format: format, Source: imageSource{Bytes: b64}}
-				guarded, err := readImageGuardContent(p.ProviderOptions)
-				if err != nil {
-					return nil, err
-				}
-				if guarded {
-					out = append(out, contentBlock{GuardContent: &guardContentBlock{Image: image}})
-				} else {
-					out = append(out, contentBlock{Image: image})
-				}
-				continue
-			case "video":
-				format, ok := videoMediaTypeFormat[mediaType]
-				if !ok {
-					return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
-				}
-				out = append(out, contentBlock{
-					Video: &videoBlock{Format: format, Source: videoSource{Bytes: b64}},
-				})
-				continue
-			}
-			block, err := buildDocumentContentBlock(p, mediaType, b64, documentCounter)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, block)
+			out = append(out, blocks...)
 
 		case provider.ContentPartTypeToolResult:
 			toolResult, err := buildToolResult(p, documentCounter, isMistral, warnings)
@@ -343,8 +287,116 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			// silently, matching upstream behavior for user-role approval
 			// responses.
 		}
+		if len(out) > start {
+			var err error
+			if out, err = appendPartCachePoint(out, p.ProviderOptions); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return out, nil
+}
+
+func appendPartCachePoint(content []contentBlock, opts provider.ProviderOptions) ([]contentBlock, error) {
+	cp, err := extractPartCachePoint(opts)
+	if err != nil {
+		return nil, err
+	}
+	if cp != nil {
+		content = append(content, contentBlock{CachePoint: cp})
+	}
+	return content, nil
+}
+
+func convertUserFilePart(p provider.ContentPart, documentCounter *int) ([]contentBlock, error) {
+	if p.Data == nil {
+		return nil, nil
+	}
+	switch {
+	case p.Data.IsReference():
+		return nil, unsupportedFunctionality("bedrock: file parts with provider references are not supported")
+	case p.Data.IsURL():
+		if !isS3URL(p.Data.URL) {
+			return nil, unsupportedFunctionality("bedrock: file URL data is not supported")
+		}
+		mediaType := p.MediaType
+		if !isFullMediaType(mediaType) {
+			return nil, fmt.Errorf("bedrock: file URL data requires a full media type")
+		}
+		switch topLevelMediaType(mediaType) {
+		case "image":
+			format, ok := imageMediaTypeFormat[mediaType]
+			if !ok {
+				return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
+			}
+			return []contentBlock{{Image: &imageBlock{
+				Format: format,
+				Source: imageSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
+			}}}, nil
+		case "video":
+			format, ok := videoMediaTypeFormat[mediaType]
+			if !ok {
+				return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
+			}
+			return []contentBlock{{Video: &videoBlock{
+				Format: format,
+				Source: videoSource{S3Location: &s3LocationBlock{URI: p.Data.URL}},
+			}}}, nil
+		default:
+			return nil, unsupportedFunctionality("bedrock: file URL data is only supported for images and videos")
+		}
+	case p.Data.IsText():
+		mediaType := p.MediaType
+		if !isFullMediaType(mediaType) {
+			mediaType = "text/plain"
+		}
+		block, err := buildDocumentContentBlock(p, mediaType, base64.StdEncoding.EncodeToString([]byte(p.Data.Text)), documentCounter)
+		if err != nil {
+			return nil, err
+		}
+		return []contentBlock{block}, nil
+	}
+
+	b64 := p.Data.Base64
+	if p.Data.Bytes != nil {
+		b64 = base64.StdEncoding.EncodeToString(p.Data.Bytes)
+	}
+	if !p.Data.IsData() {
+		return nil, nil
+	}
+	mediaType, err := resolveFullMediaType(p)
+	if err != nil {
+		return nil, err
+	}
+	switch topLevelMediaType(mediaType) {
+	case "image":
+		format, ok := imageMediaTypeFormat[mediaType]
+		if !ok {
+			return nil, unsupportedFunctionality("bedrock: image media type %q is not supported", mediaType)
+		}
+		image := &imageBlock{Format: format, Source: imageSource{Bytes: b64}}
+		guarded, err := readImageGuardContent(p.ProviderOptions)
+		if err != nil {
+			return nil, err
+		}
+		if guarded {
+			return []contentBlock{{GuardContent: &guardContentBlock{Image: image}}}, nil
+		}
+		return []contentBlock{{Image: image}}, nil
+	case "video":
+		format, ok := videoMediaTypeFormat[mediaType]
+		if !ok {
+			return nil, unsupportedFunctionality("bedrock: video media type %q is not supported", mediaType)
+		}
+		return []contentBlock{{
+			Video: &videoBlock{Format: format, Source: videoSource{Bytes: b64}},
+		}}, nil
+	}
+	block, err := buildDocumentContentBlock(p, mediaType, b64, documentCounter)
+	if err != nil {
+		return nil, err
+	}
+	return []contentBlock{block}, nil
 }
 
 func unsupportedFunctionality(format string, args ...any) error {
@@ -525,7 +577,9 @@ func convertToolContent(parts []provider.ContentPart, documentCounter *int, warn
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, contentBlock{ToolResult: toolResult})
+			if out, err = appendPartCachePoint(append(out, contentBlock{ToolResult: toolResult}), p.ProviderOptions); err != nil {
+				return nil, err
+			}
 		case provider.ContentPartTypeToolApprovalResponse:
 			// Same skip behavior as in user-role conversion.
 		}
@@ -533,9 +587,13 @@ func convertToolContent(parts []provider.ContentPart, documentCounter *int, warn
 	return out, nil
 }
 
-func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.Warning, isMistral bool, trimLastText bool) ([]contentBlock, error) {
-	var out []contentBlock
+func convertAssistantContent(parts []provider.ContentPart, documentCounter *int, warnings *[]provider.Warning, isMistral bool, trimLastText bool) ([]converseMessage, error) {
+	var out []converseMessage
+	emit := func(role converseRole, block contentBlock) {
+		out = append(out, converseMessage{Role: role, Content: []contentBlock{block}})
+	}
 	for partIndex, p := range parts {
+		start := len(out)
 		switch p.Type {
 		case provider.ContentPartTypeText:
 			// Skip empty text parts unless they coexist with reasoning blocks
@@ -547,7 +605,7 @@ func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.
 			if trimLastText && partIndex == len(parts)-1 {
 				text = trimECMAScriptWhitespace(text)
 			}
-			out = append(out, contentBlock{Text: text})
+			emit(converseRoleAssistant, contentBlock{Text: text})
 
 		case provider.ContentPartTypeReasoning:
 			meta, _, err := readReasoningMetadata(p.ProviderOptions)
@@ -565,17 +623,23 @@ func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.
 			default:
 				continue
 			}
-			out = append(out, contentBlock{ReasoningContent: rc})
+			emit(converseRoleAssistant, contentBlock{ReasoningContent: rc})
 
 		case provider.ContentPartTypeToolCall:
-			input := toBedrockToolInput(p.Input)
-			out = append(out, contentBlock{
+			emit(converseRoleAssistant, contentBlock{
 				ToolUse: &toolUseBlock{
 					ToolUseID: normalizeToolCallID(p.ToolCallID, isMistral),
 					Name:      sanitizeToolName(p.ToolName),
-					Input:     input,
+					Input:     toBedrockToolInput(p.Input),
 				},
 			})
+
+		case provider.ContentPartTypeToolResult:
+			toolResult, err := buildToolResult(p, documentCounter, isMistral, warnings)
+			if err != nil {
+				return nil, err
+			}
+			emit(converseRoleUser, contentBlock{ToolResult: toolResult})
 
 		case provider.ContentPartTypeToolApprovalRequest:
 			// Tool approval requests are local conversation bookkeeping.
@@ -591,6 +655,14 @@ func convertAssistantContent(parts []provider.ContentPart, warnings *[]provider.
 				Feature: "assistantContentPart",
 				Details: fmt.Sprintf("Bedrock assistant messages do not support %q", p.Type),
 			})
+		}
+		if len(out) > start {
+			last := len(out) - 1
+			content, err := appendPartCachePoint(out[last].Content, p.ProviderOptions)
+			if err != nil {
+				return nil, err
+			}
+			out[last].Content = content
 		}
 	}
 	return out, nil
