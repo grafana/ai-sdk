@@ -58,9 +58,16 @@ type Call struct {
 	limits   Limits
 }
 
-// Call selects the model for a request. A context that has ended before or
-// during selection decides the outcome, and its error is returned.
-func (r *Runtime) Call(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (*Call, error) {
+// Call applies host request policy and selects the model for a request. It
+// refuses protected call headers with [ErrProtectedCallHeader], and removes the
+// call-level [ControlNamespace] from options to pass it to the selector. A
+// context that has ended before or during selection decides the outcome, and
+// its error is returned.
+func (r *Runtime) Call(ctx context.Context, modelID string, options provider.CallOptions) (*Call, error) {
+	options, gateway, err := applyPolicy(options)
+	if err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

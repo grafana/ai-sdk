@@ -125,9 +125,11 @@ sequenceDiagram
    [access decision](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access.go).
 2. **ProviderWire translates the request.** The handler validates protocol
    headers, reads the body the routes have bounded, checks UTF-8 and the request schema, and maps
-   the body to `provider.CallOptions`. It separates the reserved `gateway`
-   options from native provider options and checks tool-call history. Invalid
-   input can fail before model selection. See the
+   the body to `provider.CallOptions` and checks tool-call history. The
+   execution runtime then refuses credential-bearing call headers and removes
+   the call-level `gateway` options, which only the selector reads. Every other
+   provider-option namespace reaches the model unchanged. Invalid input can
+   fail before model selection. See the
    [handler](../../ai-gateway/providerwire/v4/handler.go) and
    [request mapper](../../ai-gateway/providerwire/v4/request.go).
 3. **Selection resolves a public name.** The shared

@@ -46,19 +46,19 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 5. Host request policy in the runtime
 
-- [ ] 5.1 In `Call`, remove call-level `gateway` from the mapped options and pass its raw JSON to the selector, then refuse protected call headers with the protected-header sentinel before selection (design D4). Move `IsProtectedCallHeader`, its set, and a `ControlNamespace = "gateway"` constant to `execution`. Add `execution` tests for each refusal reason, for `gateway` never reaching the model, and for an ordinary header kept with its case. Verify with `go test -race ./internal/execution/...`.
-- [ ] 5.2 In ProviderWire:
+- [x] 5.1 In `Call`, remove call-level `gateway` from the mapped options and pass its raw JSON to the selector, then refuse protected call headers with the protected-header sentinel before selection (design D4). Move `IsProtectedCallHeader`, its set, and a `ControlNamespace = "gateway"` constant to `execution`. Add `execution` tests for each refusal reason, for `gateway` never reaching the model, and for an ordinary header kept with its case. Verify with `go test -race ./internal/execution/...`.
+- [x] 5.2 In ProviderWire:
   - stop deleting `gateway` before mapping, and remove the reserved-namespace loop and the credential check from `mapWireProviderOptions` and `mapWireHeaders`, keeping duplicate spellings and protocol-name dropping;
   - map the protected-header sentinel to the existing document;
   - fix the stale comment that names the removed edge test.
 
-  Keep the protected-header document tests, and keep the reserved-namespace document test for configured call-level `gateway`.
-- [ ] 5.3 Flip the reserved-namespace tests (design D5):
+  Keep the protected-header document tests, and keep the reserved-namespace document test for configured call-level `gateway`, including the command test, which now sends call-level `gateway`.
+- [x] 5.3 Flip the reserved-namespace tests (design D5):
   - `grafana` and `grafana-ai-sdk` at call level, and `gateway`, `grafana` and `grafana-ai-sdk` on messages, files, tool results, custom parts, reasoning files and MCP tool calls, reach the model unchanged;
   - add a case where a protected header beside an invalid `toolChoice` gets the generic invalid-request document.
 
   Verify with `go test -race ./providerwire/v4/...` and `mise run test-providerwire-v4`.
-- [ ] 5.4 In `config/file.go`, refuse an openai-compatible `providerName` whose namespace is `execution.ControlNamespace` instead of `grafana`. Update `file_test.go` so `gateway`, ` gateway` and `gateway.chat` fail and `grafana` loads. Verify with `go test ./cmd/grafana-ai-gateway/internal/config/...`.
+- [x] 5.4 In `config/file.go`, refuse an openai-compatible `providerName` whose namespace is `execution.ControlNamespace` instead of `grafana`. Update `file_test.go` so `gateway`, ` gateway` and `gateway.chat` fail and `grafana` loads. Verify with `go test ./cmd/grafana-ai-gateway/internal/config/...`.
 
 ## 6. Test-only adapter
 

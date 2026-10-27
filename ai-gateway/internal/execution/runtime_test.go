@@ -37,7 +37,7 @@ func newRuntime(t *testing.T, selector RequestSelector, limits Limits) *Runtime 
 
 func newCall(t *testing.T, ctx context.Context, model provider.LanguageModel, limits Limits) *Call {
 	t.Helper()
-	call, err := newRuntime(t, directSelector(model), limits).Call(ctx, "request/model", provider.CallOptions{}, nil)
+	call, err := newRuntime(t, directSelector(model), limits).Call(ctx, "request/model", provider.CallOptions{})
 	require.NoError(t, err)
 	t.Cleanup(call.Close)
 	return call
@@ -103,7 +103,7 @@ func TestRuntimeCall_Selection(t *testing.T) {
 		}, err: ErrInvalidBYOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := newRuntime(t, tc.selector, testLimits()).Call(t.Context(), "id", provider.CallOptions{}, nil)
+			_, err := newRuntime(t, tc.selector, testLimits()).Call(t.Context(), "id", provider.CallOptions{})
 			assert.ErrorIs(t, err, tc.err)
 		})
 	}
@@ -114,7 +114,7 @@ func TestRuntimeCall_Selection(t *testing.T) {
 			received = gateway
 			return Selection{ID: id, Model: &generateModel{}}, nil
 		}, testLimits())
-		_, err := runtime.Call(t.Context(), "id", provider.CallOptions{}, json.RawMessage(`{"byok":{}}`))
+		_, err := runtime.Call(t.Context(), "id", provider.CallOptions{ProviderOptions: provider.ProviderOptions{ControlNamespace: provider.RawProviderOption{Key: ControlNamespace, Raw: json.RawMessage(`{"byok":{}}`)}}})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"byok":{}}`, string(received))
 	})
@@ -127,7 +127,7 @@ func TestRuntimeCall_Selection(t *testing.T) {
 			selections.Add(1)
 			return Selection{}, nil
 		}, testLimits())
-		_, err := runtime.Call(ctx, "id", provider.CallOptions{}, nil)
+		_, err := runtime.Call(ctx, "id", provider.CallOptions{})
 		assert.ErrorIs(t, err, context.Canceled)
 		assert.Zero(t, selections.Load())
 	})
@@ -139,7 +139,7 @@ func TestRuntimeCall_Selection(t *testing.T) {
 				<-ctx.Done()
 				return Selection{ID: id, Model: model}, nil
 			}, testLimits())
-			_, err := runtime.Call(ending.ctx(), "id", provider.CallOptions{}, nil)
+			_, err := runtime.Call(ending.ctx(), "id", provider.CallOptions{})
 			assert.ErrorIs(t, err, ending.err)
 			assert.Zero(t, model.callCount())
 		})
@@ -191,7 +191,7 @@ func TestCallGenerate(t *testing.T) {
 		require.NoError(t, err)
 		resolved := catalog.ResolvedModel{ID: "canonical", Model: model, Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "A"}, {Provider: "native", ModelID: "B"}}}
 		runtime := newRuntime(t, CatalogSelector(staticResolver{resolved: resolved}), testLimits())
-		call, err := runtime.Call(ctx, "alias", provider.CallOptions{}, nil)
+		call, err := runtime.Call(ctx, "alias", provider.CallOptions{})
 		require.NoError(t, err)
 		_, err = call.Generate()
 		require.ErrorIs(t, err, context.Canceled)
@@ -215,7 +215,7 @@ func TestCallGenerate_CanceledAttemptIsNotPublished(t *testing.T) {
 	observations := make(chan fallback.Attempt, 1)
 	model.WithAttemptObserver(func(_ context.Context, attempt fallback.Attempt) { observations <- attempt })
 	resolved := catalog.ResolvedModel{ID: "canonical", Model: model, Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "A"}, {Provider: "native", ModelID: "B"}}}
-	call, err := newRuntime(t, CatalogSelector(staticResolver{resolved: resolved}), testLimits()).Call(ctx, "alias", provider.CallOptions{}, nil)
+	call, err := newRuntime(t, CatalogSelector(staticResolver{resolved: resolved}), testLimits()).Call(ctx, "alias", provider.CallOptions{})
 	require.NoError(t, err)
 	go func() { <-entered; cancel() }()
 	_, err = call.Generate()
@@ -303,7 +303,7 @@ func TestRuntime_ConcurrentCallsAreIsolated(t *testing.T) {
 	for range 8 {
 		for id := range models {
 			wg.Go(func() {
-				call, err := runtime.Call(t.Context(), id, provider.CallOptions{}, nil)
+				call, err := runtime.Call(t.Context(), id, provider.CallOptions{})
 				if !assert.NoError(t, err) {
 					return
 				}

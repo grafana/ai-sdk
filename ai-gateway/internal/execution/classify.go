@@ -43,8 +43,9 @@ const (
 	ReasonProtectedCallHeader
 )
 
-// ClassifySelection classifies an error returned before invocation: a host
-// sentinel, a catalog error, or otherwise as [ClassifyProvider] does.
+// ClassifySelection classifies an error returned by [Runtime.Call]: a policy
+// refusal, a host sentinel, a catalog error, or otherwise as
+// [ClassifyProvider] does.
 func ClassifySelection(err error) (category Category, reason Reason) {
 	defer func() {
 		if recover() != nil {
@@ -65,6 +66,8 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 		return CategoryGatewayControl, ReasonNone
 	case errors.Is(err, ErrReservedProviderOptions):
 		return CategoryInvalidRequest, ReasonReservedProviderOptions
+	case errors.Is(err, ErrProtectedCallHeader):
+		return CategoryInvalidRequest, ReasonProtectedCallHeader
 	case errors.Is(err, catalog.ErrUnknownModel):
 		return CategoryModelNotFound, ReasonNone
 	}

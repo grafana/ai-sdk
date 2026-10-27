@@ -79,8 +79,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeFailure(w, invalidMappingFailure())
 		return
 	}
-	gateway := wire.ProviderOptions["gateway"]
-	delete(wire.ProviderOptions, "gateway")
 	options, failure := mapRequest(wire)
 	if failure != nil {
 		h.writeFailure(w, failure)
@@ -91,7 +89,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeFailure(w, failure)
 		return
 	}
-	call, err := h.runtime.Call(r.Context(), validated.modelID, options, gateway)
+	call, err := h.runtime.Call(r.Context(), validated.modelID, options)
 	if err != nil {
 		h.writeSafeError(w, safeErrorFromResolution(err), nil)
 		return

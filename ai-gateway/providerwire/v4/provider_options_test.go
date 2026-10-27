@@ -59,11 +59,13 @@ func TestProviderOptions_MalformedNamespaceIsInvalidRequest(t *testing.T) {
 	}
 }
 
-func TestProviderOptions_ReservedNamespaceIsRejected(t *testing.T) {
-	for _, namespace := range []string{"grafana", "gateway", "grafana-ai-sdk"} {
-		t.Run(namespace, func(t *testing.T) {
+func TestProviderOptions_ConfiguredGatewayControlsAreRejected(t *testing.T) {
+	for _, streaming := range []string{"false", "true"} {
+		t.Run(streaming, func(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())
-			response := harness.serve(validRequest(`{"prompt":[],"providerOptions":{"` + namespace + `":{"tenant":"other"}}}`))
+			request := validRequest(`{"prompt":[],"providerOptions":{"gateway":{"tenant":"other"}}}`)
+			request.Header.Set(HeaderStreaming, streaming)
+			response := harness.serve(request)
 			require.Equal(t, http.StatusBadRequest, response.Code)
 			assert.JSONEq(t, string(reservedProviderOptionsError), response.Body.String())
 			assert.NotContains(t, response.Body.String(), "tenant")
@@ -71,6 +73,48 @@ func TestProviderOptions_ReservedNamespaceIsRejected(t *testing.T) {
 			assert.Zero(t, harness.model.calls)
 		})
 	}
+}
+
+func TestProviderOptions_FormerHostNamespacesReachTheModel(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+	}{
+		{name: "call grafana", body: `{"prompt":[],"providerOptions":{"grafana":{"marker":"kept"}}}`},
+		{name: "call grafana-ai-sdk", body: `{"prompt":[],"providerOptions":{"grafana-ai-sdk":{"marker":"kept"}}}`},
+		{name: "message gateway", body: `{"prompt":[{"role":"user","content":[],"providerOptions":{"gateway":{"marker":"kept"}}}]}`},
+		{name: "file grafana", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"grafana":{"marker":"kept"}}}]}]}`},
+		{name: "result file grafana-ai-sdk", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","providerOptions":{"grafana-ai-sdk":{"marker":"kept"}}}]}}]}]}`},
+		{name: "function tool gateway", body: `{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"providerOptions":{"gateway":{"marker":"kept"}}}]}`},
+		{name: "function tool grafana", body: `{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"providerOptions":{"grafana":{"marker":"kept"}}}]}`},
+		{name: "tool call gateway", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"f","input":{},"providerOptions":{"gateway":{"marker":"kept"}}}]}]}`},
+		{name: "custom part gateway", body: `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x","providerOptions":{"gateway":{"marker":"kept"}}}]}]}`},
+		{name: "tool-result custom grafana", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"content","value":[{"type":"custom","providerOptions":{"grafana":{"marker":"kept"}}}]}}]}]}`},
+		{name: "reasoning gateway", body: `{"prompt":[{"role":"assistant","content":[{"type":"reasoning","text":"","providerOptions":{"gateway":{"marker":"kept"}}}]}]}`},
+		{name: "reasoning file grafana", body: `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"grafana":{"marker":"kept"}}}]}]}`},
+	} {
+		for _, streaming := range []string{"false", "true"} {
+			t.Run(tc.name+"/"+streaming, func(t *testing.T) {
+				harness := newRuntimeHarness(t, testLimits())
+				request := validRequest(tc.body)
+				request.Header.Set(HeaderStreaming, streaming)
+				response := harness.serve(request)
+				require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+				require.Equal(t, 1, harness.model.callCount())
+				received, err := json.Marshal(harness.model.receivedOptions())
+				require.NoError(t, err)
+				assert.Contains(t, string(received), `{"marker":"kept"}`)
+			})
+		}
+	}
+}
+
+func TestCallHeaders_ProtectedHeaderBesideMappingFailure(t *testing.T) {
+	harness := newRuntimeHarness(t, testLimits())
+	response := harness.serve(validRequest(`{"prompt":[],"headers":{"Authorization":"Bearer caller"},"toolChoice":{"type":"tool"}}`))
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	assert.JSONEq(t, string(canonicalInvalidRequestError), response.Body.String())
+	assert.Zero(t, harness.resolver.callCount())
+	assert.Zero(t, harness.model.calls)
 }
 
 func TestCallHeaders_CaseInsensitiveDuplicateIsInvalid(t *testing.T) {
@@ -111,7 +155,7 @@ func TestProviderOptions_ReasoningFileScopes(t *testing.T) {
 		failure       []byte
 	}{
 		{name: "ordinary model", options: `{"anthropic":{"model":"ordinary"}}`, status: http.StatusOK},
-		{name: "reserved", options: `{"grafana":{}}`, status: http.StatusBadRequest, failure: reservedProviderOptionsError},
+		{name: "former host namespace", options: `{"grafana":{}}`, status: http.StatusOK},
 		{name: "signature", options: `{"anthropic":{"signature":""}}`, status: http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -136,14 +180,8 @@ func TestCallHeaders_ProtectedNamesAreRejected(t *testing.T) {
 			require.Equal(t, http.StatusBadRequest, response.Code)
 			assert.JSONEq(t, string(protectedCallHeaderError), response.Body.String())
 			assert.NotContains(t, response.Body.String(), "caller-controlled")
+			assert.Zero(t, harness.resolver.callCount())
 			assert.Zero(t, harness.model.calls)
 		})
-	}
-}
-
-func TestProtectedCallHeaders_CoverInboundAuthNames(t *testing.T) {
-	for _, name := range []string{"authorization", "x-access-token", "x-grafana-id"} {
-		_, protected := protectedCallHeaders[name]
-		assert.True(t, protected)
 	}
 }

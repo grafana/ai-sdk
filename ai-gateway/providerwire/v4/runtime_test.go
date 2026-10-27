@@ -363,7 +363,7 @@ func TestRuntimeRequestRejections(t *testing.T) {
 		body string
 		want []byte
 	}{
-		{name: "policy/reserved provider namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, want: reservedProviderOptionsError},
+		{name: "policy/reserved provider namespace", body: `{"prompt":[],"providerOptions":{"gateway":{"enabled":true}}}`, want: reservedProviderOptionsError},
 		{name: "policy/protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, want: protectedCallHeaderError},
 		{name: "policy/protected call header case", body: `{"prompt":[],"headers":{"X-ACCESS-TOKEN":"caller"}}`, want: protectedCallHeaderError},
 	}
@@ -459,9 +459,6 @@ func TestRuntimeFileValidationBeforeInvocation(t *testing.T) {
 		{name: "reference nonstring value", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"provider":1}},"mediaType":"application/pdf"}]}]}`},
 		{name: "tool role ordinary file", body: `{"prompt":[{"role":"tool","content":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}]}]}`},
 		{name: "reasoning file text arm", body: `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"text","text":""},"mediaType":"text/plain"}]}]}`},
-		{name: "reserved message option", body: `{"prompt":[{"role":"user","content":[],"providerOptions":{"gateway":{}}}]}`, want: reservedProviderOptionsError},
-		{name: "reserved file option", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"grafana":{}}}]}]}`, want: reservedProviderOptionsError},
-		{name: "reserved result file option", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","providerOptions":{"grafana-ai-sdk":{}}}]}}]}]}`, want: reservedProviderOptionsError},
 		{name: "deferred tool output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}],"providerOptions":{"provider":{"private":true}}}}]}]}`, want: canonicalInvalidRequestError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1470,8 +1467,6 @@ func TestCustomContentRequest_Refusals(t *testing.T) {
 		{"undotted kind", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"unqualified"}]}]}`, string(canonicalInvalidRequestError)},
 		{"missing kind", `{"prompt":[{"role":"assistant","content":[{"type":"custom"}]}]}`, string(canonicalInvalidRequestError)},
 		{"non-object options", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x","providerOptions":{"p":[]}}]}]}`, string(canonicalInvalidRequestError)},
-		{"reserved namespace on custom part", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x","providerOptions":{"gateway":{}}}]}]}`, string(reservedProviderOptionsError)},
-		{"reserved namespace on tool-result custom entry", `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"content","value":[{"type":"custom","providerOptions":{"grafana":{}}}]}}]}]}`, string(reservedProviderOptionsError)},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
