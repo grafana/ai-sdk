@@ -62,7 +62,7 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 6. Test-only adapter
 
-- [ ] 6.1 In an `execution_test` package, add a minimal adapter over `Runtime` and one scenario table run against both it and `v4.New` with the same fake models (design D9). Each row asserts the category and reason, the model-call and drain counts and the attempt view, and ProviderWire's document for that category. Verify with `go test -race ./internal/execution/...`.
+- [x] 6.1 In an `execution_test` package, add a minimal adapter over `Runtime` and one scenario table run against both it and `v4.New` with the same fake models (design D9). Each row asserts the category and reason, the model-call and drain counts and the attempt view, and ProviderWire's document for that category. Verify with `go test -race ./internal/execution/...`.
 
 ## 7. Integration checks
 
