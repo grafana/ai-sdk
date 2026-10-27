@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
@@ -164,7 +165,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 		return nil, err
 	}
 	errorWriter := providerv4.NewHostErrorWriter()
-	configuredLanguage, err := providerv4.New(providerv4.Config{Selector: service.NewConfiguredSelector(catalog), Limits: settings.ProviderWire, ConfiguredAPIKeys: secrets})
+	configuredLanguage, err := newLanguageHandler(execution.Config{Selector: service.NewConfiguredSelector(catalog), Limits: settings.ProviderWire, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +174,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 		configuredLanguage:  configuredLanguage,
 	}
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
-		byokLanguage, err := providerv4.New(providerv4.Config{Selector: service.NewBYOKSelector(nativeClient, byokFactory), Limits: settings.ProviderWire, ConfiguredAPIKeys: secrets})
+		byokLanguage, err := newLanguageHandler(execution.Config{Selector: service.NewBYOKSelector(nativeClient, byokFactory), Limits: settings.ProviderWire, ConfiguredAPIKeys: secrets})
 		if err != nil {
 			return nil, err
 		}
@@ -181,6 +182,15 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 		routes.byokLanguage = byokLanguage
 	}
 	return newHandler(settings.Access, sinks.telemetry, errorWriter, routes), nil
+}
+
+// newLanguageHandler serves ProviderWire V4 over one execution runtime.
+func newLanguageHandler(config execution.Config) (http.Handler, error) {
+	runtime, err := execution.New(config)
+	if err != nil {
+		return nil, err
+	}
+	return providerv4.New(runtime)
 }
 
 func newAuthenticator(lookupEnv config.LookupEnv) (authn.Authenticator, error) {

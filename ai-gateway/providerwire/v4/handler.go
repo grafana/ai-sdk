@@ -1,7 +1,6 @@
 package v4
 
 import (
-	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -9,12 +8,10 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"reflect"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
-	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 )
 
@@ -36,54 +33,22 @@ var (
 	requestSchemaJSON []byte
 )
 
-// Config configures an immutable ProviderWire V4 language-model handler.
-type Config struct {
-	Selector execution.RequestSelector
-	// ConfiguredAPIKeys are provider/exporter credentials redacted only from native error summaries.
-	ConfiguredAPIKeys []string `json:"-"`
-	// Limits bounds the stream idle and drain durations.
-	Limits execution.Limits
-}
-
 type handler struct {
-	selector        execution.RequestSelector
-	limits          execution.Limits
-	requestSchema   *schema.CompiledSchema
-	summaryRedactor execution.SummaryRedactor
+	runtime       *execution.Runtime
+	requestSchema *schema.CompiledSchema
 }
 
-// New constructs an immutable strict ProviderWire V4 HTTP handler.
-func New(config Config) (http.Handler, error) {
-	if config.Selector == nil {
-		return nil, fmt.Errorf("providerwire v4: selector is nil")
+// New constructs an immutable strict ProviderWire V4 HTTP handler over runtime,
+// which selects and invokes the model.
+func New(runtime *execution.Runtime) (http.Handler, error) {
+	if runtime == nil {
+		return nil, fmt.Errorf("providerwire v4: runtime is nil")
 	}
-	if err := config.Limits.Validate(); err != nil {
-		return nil, fmt.Errorf("providerwire v4: %w", err)
-	}
-
 	requestSchema, err := schema.CompileSchema(requestSchemaJSON)
 	if err != nil {
 		return nil, fmt.Errorf("providerwire v4: compiling request schema: %w", err)
 	}
-	return &handler{
-		selector:        config.Selector,
-		limits:          config.Limits,
-		requestSchema:   requestSchema,
-		summaryRedactor: execution.NewSummaryRedactor(config.ConfiguredAPIKeys),
-	}, nil
-}
-
-func isNilInterface(value any) bool {
-	if value == nil {
-		return true
-	}
-	v := reflect.ValueOf(value)
-	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return v.IsNil()
-	default:
-		return false
-	}
+	return &handler{runtime: runtime, requestSchema: requestSchema}, nil
 }
 
 type requestFailure struct {
@@ -126,27 +91,23 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeFailure(w, failure)
 		return
 	}
-	ctx := r.Context()
-	resolved, err := h.selectModel(ctx, validated.modelID, options, gateway)
+	call, err := h.runtime.Call(r.Context(), validated.modelID, options, gateway)
 	if err != nil {
 		h.writeSafeError(w, safeErrorFromResolution(err), nil)
 		return
 	}
-	attempts := execution.NewAttempts(validated.modelID, resolved, h.summaryRedactor)
-	ctx = attempts.Context(ctx)
-	defer attempts.Discard()
+	defer call.Close()
 	if validated.mode == executionStreaming {
-		h.serveStream(w, r.Context(), ctx, resolved.Model, options, history, attempts)
+		h.serveStream(w, call, options, history)
 		return
 	}
-	result, err := h.invokeModel(ctx, resolved.Model, options, attempts)
+	result, err := call.Generate()
 	if err != nil {
-		value := safeErrorFromProvider(err)
-		view := attempts.View(err)
-		h.writeSafeError(w, value, view.Metadata())
+		view := call.View(err)
+		h.writeSafeError(w, safeErrorFromProvider(err), view.Metadata())
 		return
 	}
-	view := attempts.View(nil)
+	view := call.View(nil)
 	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: view.Overview}) {
 		h.writeSafeError(w, safeError{category: safeInternal}, view.Metadata())
 	}
@@ -249,60 +210,4 @@ func invalidMappingFailure() *requestFailure {
 
 func rejectedMappingFailure(reason requestFailureReason) *requestFailure {
 	return &requestFailure{safe: safeError{category: safeInvalidRequest, reason: reason}}
-}
-
-var errRuntimeInternal = errors.New("providerwire v4: runtime internal failure")
-
-func validSelection(resolved execution.Selection) (valid bool) {
-	defer func() {
-		if recover() != nil {
-			valid = false
-		}
-	}()
-	return resolved.ID != "" && utf8.ValidString(resolved.ID) && !isNilInterface(resolved.Model) && resolved.Model.SpecificationVersion() == "v4"
-}
-
-type modelOutcome struct {
-	result *provider.GenerateResult
-	err    error
-}
-
-var errModelInternal = errors.New("providerwire v4: model internal failure")
-
-func (h *handler) invokeModel(ctx context.Context, model provider.LanguageModel, options provider.CallOptions, attempts *execution.Attempts) (*provider.GenerateResult, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	modelContext, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	outcomes := make(chan modelOutcome, 1)
-	go func() {
-		outcome := modelOutcome{}
-		defer func() {
-			if recover() != nil {
-				outcome = modelOutcome{err: errModelInternal}
-			}
-			if outcome.result == nil && outcome.err == nil {
-				outcome.err = errModelInternal
-			}
-			outcomes <- outcome
-		}()
-		attempts.Enter()
-		outcome.result, outcome.err = model.DoGenerate(modelContext, options)
-	}()
-
-	rejectOutcome := func(err error) (*provider.GenerateResult, error) {
-		attempts.Discard()
-		return nil, err
-	}
-	select {
-	case outcome := <-outcomes:
-		if err := ctx.Err(); err != nil {
-			return rejectOutcome(err)
-		}
-		return outcome.result, outcome.err
-	case <-ctx.Done():
-		return rejectOutcome(ctx.Err())
-	}
 }

@@ -506,7 +506,7 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		return nil, err
 	}
 	configured := execution.CatalogSelector(resolver)
-	runtime, err := providerwirev4.New(providerwirev4.Config{
+	runtime, err := newWireHandler(execution.Config{
 		ConfiguredAPIKeys: []string{"configured-test-key"},
 		Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 			if id == "unconfigured-key-errors" {
@@ -606,3 +606,11 @@ func scenarioOutputText(kind, fallbackText string) string {
 	}
 }
 func stringPointer(value string) *string { return &value }
+
+func newWireHandler(config execution.Config) (http.Handler, error) {
+	runtime, err := execution.New(config)
+	if err != nil {
+		return nil, err
+	}
+	return providerwirev4.New(runtime)
+}

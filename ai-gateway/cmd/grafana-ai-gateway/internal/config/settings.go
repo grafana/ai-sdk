@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -9,10 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
-	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
 // LookupEnv resolves one environment variable.
@@ -156,7 +153,7 @@ func (settings Settings) Validate() error {
 	if err := settings.AgentObservability.validate(); err != nil {
 		return err
 	}
-	if _, err := providerv4.New(providerv4.Config{Selector: execution.CatalogSelector(limitValidationResolver{}), Limits: settings.ProviderWire}); err != nil {
+	if err := settings.ProviderWire.Validate(); err != nil {
 		return fmt.Errorf("config: providerwire limits: %w", err)
 	}
 	return nil
@@ -263,10 +260,4 @@ func validateAgentObservabilityEndpoint(protocol AgentObservabilityProtocol, end
 		return fmt.Errorf("config: agent observability grpc endpoint must use host:port syntax")
 	}
 	return nil
-}
-
-type limitValidationResolver struct{}
-
-func (limitValidationResolver) ResolveModel(context.Context, string) (catalog.ResolvedModel, error) {
-	return catalog.ResolvedModel{}, catalog.ErrUnknownModel
 }

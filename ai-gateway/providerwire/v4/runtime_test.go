@@ -134,7 +134,7 @@ func newRuntimeHarness(t *testing.T, limits execution.Limits) *runtimeHarness {
 	t.Helper()
 	model := &recordingModel{}
 	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model}}
-	created, err := New(Config{Selector: execution.CatalogSelector(resolver), Limits: limits})
+	created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(resolver), Limits: limits})
 	require.NoError(t, err)
 	return &runtimeHarness{handler: created.(*handler), resolver: resolver, model: model}
 }
@@ -769,52 +769,30 @@ func TestRuntimeModelContainment(t *testing.T) {
 		}
 	})
 
-	t.Run("request deadline bounds a model that ignores context", func(t *testing.T) {
+	t.Run("result returned after the request deadline is discarded", func(t *testing.T) {
 		harness := newRuntimeHarness(t, testLimits())
-		release := make(chan struct{})
-		returned := make(chan struct{})
-		harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-			<-release
-			close(returned)
+		harness.model.generate = func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+			<-ctx.Done()
 			return validGenerateResult(), nil
 		}
-		start := time.Now()
 		response := harness.serve(withRequestDeadline(t, validRequest(`{"prompt":[]}`), 20*time.Millisecond))
 		assert.Equal(t, http.StatusGatewayTimeout, response.Code)
-		assert.Less(t, time.Since(start), time.Second)
-		close(release)
-		select {
-		case <-returned:
-		case <-time.After(time.Second):
-			t.Fatal("late model return blocked")
-		}
+		assert.Equal(t, string(canonicalTimeoutError), response.Body.String())
 	})
 
-	t.Run("caller cancellation returns without waiting", func(t *testing.T) {
+	t.Run("result returned after caller cancellation is discarded", func(t *testing.T) {
 		harness := newRuntimeHarness(t, testLimits())
 		started := make(chan struct{})
-		release := make(chan struct{})
-		harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		harness.model.generate = func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
 			close(started)
-			<-release
+			<-ctx.Done()
 			return validGenerateResult(), nil
 		}
 		ctx, cancel := context.WithCancel(context.Background())
-		response := httptest.NewRecorder()
-		done := make(chan struct{})
-		go func() {
-			harness.handler.ServeHTTP(response, validRequest(`{"prompt":[]}`).WithContext(ctx))
-			close(done)
-		}()
-		<-started
-		cancel()
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-			t.Fatal("handler did not return")
-		}
+		go func() { <-started; cancel() }()
+		response := harness.serve(validRequest(`{"prompt":[]}`).WithContext(ctx))
 		assert.Equal(t, 499, response.Code)
-		close(release)
+		assert.NotContains(t, response.Body.String(), `"content"`)
 	})
 }
 
@@ -1187,7 +1165,7 @@ func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 				}
 			}
 			keys := []string{"server-key", "unused-key"}
-			handler, err := New(Config{Selector: selector, Limits: testLimits(), ConfiguredAPIKeys: keys})
+			handler, err := newWireHandler(execution.Config{Selector: selector, Limits: testLimits(), ConfiguredAPIKeys: keys})
 			require.NoError(t, err)
 			keys[0] = "caller-mutation"
 			request := validRequest(`{"prompt":[]}`)
@@ -1306,8 +1284,9 @@ func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	observed := make(chan struct{})
-	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+	first := &recordingModel{generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
 		close(entered)
+		<-ctx.Done()
 		<-release
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "unowned late native failure", StatusCode: 401})
 	}}
@@ -1329,80 +1308,19 @@ func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
 		require.FailNow(t, "candidate did not enter")
 	}
 	cancel()
+	close(release)
 	select {
 	case body := <-responses:
 		assert.NotContains(t, body, "unowned late native failure")
 	case <-time.After(time.Second):
 		require.FailNow(t, "cancellation did not return")
 	}
-	close(release)
 	select {
 	case <-observed:
 	case <-time.After(time.Second):
 		require.FailNow(t, "fallback observation did not arrive")
 	}
 	assert.Zero(t, second.callCount())
-}
-
-func TestInvocation_RejectedUnaryOutcomeBeforePublication(t *testing.T) {
-	entered := make(chan struct{})
-	release := make(chan struct{})
-	observations := make(chan fallback.Attempt, 1)
-	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-		close(entered)
-		<-release
-		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Message: "handler-rejected native failure"})
-	}}
-	second := &recordingModel{}
-	h := invocationHarness(t, testLimits(), first, second)
-	switch model := h.resolver.resolved.Model.(type) {
-	case *fallback.Model:
-		model.WithAttemptObserver(func(_ context.Context, attempt fallback.Attempt) { observations <- attempt })
-	default:
-		require.FailNow(t, "expected configured fallback")
-	}
-	parent, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	attempts := execution.NewAttempts("alias", selectConfiguredModel(t, h.resolver.resolved), execution.SummaryRedactor{})
-	ctx := attempts.Context(parent)
-	results := make(chan error, 1)
-	go func() {
-		_, err := h.handler.invokeModel(ctx, h.resolver.resolved.Model, provider.CallOptions{}, attempts)
-		results <- err
-	}()
-	select {
-	case <-entered:
-	case <-time.After(time.Second):
-		require.FailNow(t, "candidate did not enter")
-	}
-	cancel()
-	var err error
-	select {
-	case err = <-results:
-	case <-time.After(time.Second):
-		require.FailNow(t, "cancellation did not return")
-	}
-	require.ErrorIs(t, err, context.Canceled)
-	close(release)
-	var attempt fallback.Attempt
-	select {
-	case attempt = <-observations:
-	case <-time.After(time.Second):
-		require.FailNow(t, "fallback observation did not arrive")
-	}
-	assert.Equal(t, fallback.AttemptCanceled, attempt.Outcome)
-	require.NotNil(t, attempt.SourceErr)
-	assert.Contains(t, attempt.SourceErr.Error(), "handler-rejected native failure")
-	assert.Nil(t, attempts.View(err).Overview)
-	assert.Nil(t, attempts.View(nil).Overview)
-	assert.Zero(t, second.callCount())
-}
-
-func selectConfiguredModel(t *testing.T, resolved catalog.ResolvedModel) execution.Selection {
-	t.Helper()
-	selected, err := execution.CatalogSelector(&recordingResolver{resolved: resolved})(t.Context(), "alias", provider.CallOptions{}, nil)
-	require.NoError(t, err)
-	return selected
 }
 
 func TestRequestSelection_UnconfiguredNativeSummary(t *testing.T) {
@@ -1443,13 +1361,13 @@ func TestRequestSelection_UnconfiguredNativeSummary(t *testing.T) {
 			}
 			ordered, err := fallback.New(model)
 			require.NoError(t, err)
-			h, err := New(Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+			h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
 				return execution.Selection{ID: "request/model", Model: ordered}, nil
 			}})
 			require.NoError(t, err)
 			var observed int
-			ctx := fallback.WithAttemptObserver(t.Context(), func(context.Context, fallback.Attempt) { observed++ })
-			request := validRequest(`{"prompt":[]}`).WithContext(ctx)
+			ordered.WithAttemptObserver(func(context.Context, fallback.Attempt) { observed++ })
+			request := validRequest(`{"prompt":[]}`)
 			request.Header.Set(HeaderStreaming, fmt.Sprint(tc.streaming))
 			response := httptest.NewRecorder()
 			h.ServeHTTP(response, request)

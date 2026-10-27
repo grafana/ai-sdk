@@ -130,8 +130,11 @@ sequenceDiagram
    input can fail before model selection. See the
    [handler](../../ai-gateway/providerwire/v4/handler.go) and
    [request mapper](../../ai-gateway/providerwire/v4/request.go).
-3. **Selection resolves a public name.** The request deadline, which Grafana's
-   route deadline sets, covers selection plus model execution. `NewConfiguredSelector`
+3. **Selection resolves a public name.** The shared
+   [execution runtime](../../ai-gateway/internal/execution/runtime.go) selects
+   and invokes the model for every API adapter, on the request goroutine. The
+   request deadline, which Grafana's route deadline sets, covers selection plus
+   model execution. `NewConfiguredSelector`
    checks configured-account access, then delegates to `CatalogSelector` to
    resolve `assistant` or an alias to its canonical model. This private path
    rejects reserved Gateway controls; its caller cannot switch to request
@@ -190,8 +193,9 @@ flowchart TD
 
 For configured fallback, `DoStream` waits for candidate selection before
 returning the usable stream. For a direct model, the handler may commit HTTP
-success before the first provider part arrives. The
-[stream runtime](../../ai-gateway/providerwire/v4/stream.go) supplies an empty
+success before the first provider part arrives. The execution runtime waits for
+each part and owns the idle timer and cleanup. The
+[ProviderWire stream encoder](../../ai-gateway/providerwire/v4/stream.go) supplies an empty
 `stream-start` when needed, checks event ordering and validity, and writes
 complete `data: <JSON>` frames separated by a blank line.
 
@@ -209,8 +213,8 @@ deadline, the request size, admission and, through the container, process
 memory. The Gateway keeps only what it owns: 8 provider attempts per request,
 checked when the catalog loads and when request keys are decoded; 16 MiB per
 decompressed provider response that is not a stream, in the model transport;
-and stream idle time and cleanup in the handler, which never rejects
-or truncates output because of its size. See the
+and stream idle time and cleanup in the execution runtime. No API adapter
+rejects or truncates output because of its size. See the
 [limits](../../ai-gateway/README.md#limits) for the full list.
 
 ## What the observations tell you

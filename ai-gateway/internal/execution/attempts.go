@@ -24,10 +24,10 @@ type Attempts struct {
 	attempts []fallback.Attempt
 }
 
-// NewAttempts prepares the capture for selected. Only configured selections
-// are captured.
+// NewAttempts prepares the capture for selected. Every selection is captured,
+// and only configured selections are projected into an overview.
 func NewAttempts(requested string, selected Selection, redactor SummaryRedactor) *Attempts {
-	attempts := &Attempts{redactor: redactor, sealed: selected.configured == nil}
+	attempts := &Attempts{redactor: redactor}
 	if selected.configured != nil {
 		attempts.requested = requested
 		attempts.canonical = selected.ID
@@ -36,12 +36,8 @@ func NewAttempts(requested string, selected Selection, redactor SummaryRedactor)
 	return attempts
 }
 
-// Context returns ctx with the request-scoped fallback observer attached when
-// the selection is captured.
+// Context returns ctx with the request-scoped fallback observer attached.
 func (a *Attempts) Context(ctx context.Context) context.Context {
-	if a.sealed {
-		return ctx
-	}
 	return fallback.WithAttemptObserver(ctx, a.observe)
 }
 

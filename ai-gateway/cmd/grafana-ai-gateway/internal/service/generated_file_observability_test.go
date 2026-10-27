@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
-	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/middleware"
 	clientlogger "github.com/grafana/ai-sdk/middleware/logger"
 	"github.com/grafana/ai-sdk/provider"
@@ -55,7 +54,7 @@ func TestGeneratedFileCaptureIndependence(t *testing.T) {
 					operatorModel := middleware.WrapLanguageModel(lower, clientlogger.Middleware(clientlogger.Options{Logger: slog.New(slog.NewJSONHandler(&operatorLogs, &slog.HandlerOptions{Level: slog.LevelDebug})), LogStreamParts: true, Capture: clientlogger.CaptureOptions{Outputs: serverCapture, Files: serverCapture, ProviderMetadata: serverCapture, MaxJSONBytes: 16384}}))
 					observed, err := factory("files", operatorModel)
 					require.NoError(t, err)
-					handler, err := providerv4.New(providerv4.Config{Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+					handler, err := newWireHandler(execution.Config{Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
 						return execution.Selection{ID: "files", Model: observed}, nil
 					}, Limits: serviceTestLimits()})
 					require.NoError(t, err)

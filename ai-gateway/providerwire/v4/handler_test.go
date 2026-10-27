@@ -40,7 +40,7 @@ func testLimits() execution.Limits {
 
 func newTestHandler(t *testing.T, limits execution.Limits) *handler {
 	t.Helper()
-	created, err := New(Config{Selector: execution.CatalogSelector(&resolverStub{}), Limits: limits})
+	created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(&resolverStub{}), Limits: limits})
 	require.NoError(t, err)
 	h, ok := created.(*handler)
 	require.True(t, ok)
@@ -56,43 +56,24 @@ func validRequest(body string) *http.Request {
 	return req
 }
 
+func newWireHandler(config execution.Config) (http.Handler, error) {
+	runtime, err := execution.New(config)
+	if err != nil {
+		return nil, err
+	}
+	return New(runtime)
+}
+
 func TestNew(t *testing.T) {
-	t.Run("valid immutable configuration", func(t *testing.T) {
-		limits := testLimits()
-		created, err := New(Config{Selector: execution.CatalogSelector(&resolverStub{}), Limits: limits})
+	t.Run("valid configuration", func(t *testing.T) {
+		created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(&resolverStub{}), Limits: testLimits()})
 		require.NoError(t, err)
-		h := created.(*handler)
-		require.NotNil(t, h.requestSchema)
-		limits.StreamIdleDuration = time.Hour
-		assert.Equal(t, time.Second, h.limits.StreamIdleDuration)
+		require.NotNil(t, created.(*handler).requestSchema)
 	})
 
-	t.Run("nil resolver", func(t *testing.T) {
-		_, err := New(Config{Limits: testLimits()})
+	t.Run("nil runtime", func(t *testing.T) {
+		_, err := New(nil)
 		require.Error(t, err)
-		var resolver *resolverStub
-		_, err = New(Config{Selector: execution.CatalogSelector(resolver), Limits: testLimits()})
-		require.Error(t, err)
-	})
-
-	t.Run("invalid limits", func(t *testing.T) {
-		tests := []struct {
-			name   string
-			mutate func(*execution.Limits)
-		}{
-			{name: "idle negative", mutate: func(l *execution.Limits) { l.StreamIdleDuration = -time.Second }},
-			{name: "drain negative", mutate: func(l *execution.Limits) { l.StreamDrainDuration = -time.Second }},
-			{name: "idle zero", mutate: func(l *execution.Limits) { l.StreamIdleDuration = 0 }},
-			{name: "drain zero", mutate: func(l *execution.Limits) { l.StreamDrainDuration = 0 }},
-		}
-		for _, tc := range tests {
-			t.Run(tc.name, func(t *testing.T) {
-				limits := testLimits()
-				tc.mutate(&limits)
-				_, err := New(Config{Selector: execution.CatalogSelector(&resolverStub{}), Limits: limits})
-				require.Error(t, err)
-			})
-		}
 	})
 }
 
@@ -121,7 +102,7 @@ func TestHandlerEnvelope(t *testing.T) {
 	}
 
 	resolver := &resolverStub{}
-	created, err := New(Config{Selector: execution.CatalogSelector(resolver), Limits: testLimits()})
+	created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(resolver), Limits: testLimits()})
 	require.NoError(t, err)
 	h := created.(*handler)
 	for _, tc := range tests {
@@ -260,7 +241,7 @@ func TestRequestSelection_CatalogIndependent(t *testing.T) {
 		t.Run(strconv.FormatBool(streaming), func(t *testing.T) {
 			model := &recordingModel{}
 			var selections atomic.Int32
-			h, err := New(Config{Limits: testLimits(), Selector: func(_ context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
+			h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(_ context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 				selections.Add(1)
 				assert.Equal(t, "openai/native-model", id)
 				assert.JSONEq(t, `{"byok":{"openai":[{"apiKey":"dummy-key"}]}}`, string(gateway))
@@ -304,7 +285,7 @@ func TestRequestSelection_ValidationErrors(t *testing.T) {
 		for _, streaming := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/streaming=%t", tc.name, streaming), func(t *testing.T) {
 				model := &recordingModel{}
-				h, err := New(Config{Limits: testLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+				h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
 					return execution.Selection{ID: id, Model: model}, fmt.Errorf("private-key private-organization https://private.invalid: %w", tc.err)
 				}})
 				require.NoError(t, err)
@@ -330,7 +311,7 @@ func TestRequestSelection_RequestByteLimit(t *testing.T) {
 			t.Run(fmt.Sprintf("streaming=%t/bytes+%d", streaming, delta), func(t *testing.T) {
 				model := &recordingModel{}
 				var selections atomic.Int32
-				h, err := New(Config{Limits: testLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
+				h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 					selections.Add(1)
 					assert.Contains(t, string(gateway), key)
 					return execution.Selection{ID: id, Model: model}, nil
@@ -382,10 +363,8 @@ func TestRequestSelection_Deadline(t *testing.T) {
 		} {
 			t.Run(tc.name+"/"+strconv.FormatBool(streaming), func(t *testing.T) {
 				model := &recordingModel{}
-				release, selected := make(chan struct{}), make(chan struct{})
-				h, err := New(Config{Limits: testLimits(), Selector: func(_ context.Context, id string, options provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
-					defer close(selected)
-					<-release
+				h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(ctx context.Context, id string, options provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+					<-ctx.Done()
 					return execution.Selection{ID: id, Model: model}, nil
 				}})
 				require.NoError(t, err)
@@ -393,19 +372,9 @@ func TestRequestSelection_Deadline(t *testing.T) {
 				r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
 				r = tc.end(t, r)
 				w := httptest.NewRecorder()
-				done := make(chan struct{})
-				go func() { defer close(done); h.ServeHTTP(w, r) }()
-				select {
-				case <-done:
-				case <-time.After(time.Second):
-					close(release)
-					require.FailNow(t, "selection exceeded handler latency bound")
-				}
+				h.ServeHTTP(w, r)
 				assert.Equal(t, tc.status, w.Code)
 				assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
-				assert.Zero(t, model.callCount())
-				close(release)
-				<-selected
 				assert.Zero(t, model.callCount())
 			})
 		}
@@ -429,7 +398,7 @@ func TestRequestSelection_Deadline(t *testing.T) {
 					return &provider.StreamResult{Stream: parts}, nil
 				},
 			}
-			h, err := New(Config{Limits: testLimits(), Selector: func(ctx context.Context, id string, options provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+			h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(ctx context.Context, id string, options provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
 				var ok bool
 				selectionDeadline, ok = ctx.Deadline()
 				assert.True(t, ok)
@@ -470,7 +439,7 @@ func TestRequestSelection_Deadline(t *testing.T) {
 					return &provider.StreamResult{Stream: parts}, nil
 				},
 			}
-			h, err := New(Config{Limits: testLimits(), Selector: func(ctx context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+			h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(ctx context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
 				_, ok := ctx.Deadline()
 				deadlines <- ok
 				return execution.Selection{ID: id, Model: model}, nil

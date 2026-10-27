@@ -100,7 +100,7 @@ The runtime SHALL invoke `DoStream` once per streaming call, synchronously under
 - **THEN** the adapter SHALL receive it before any part is read, and SHALL decide when to commit its response
 
 ### Requirement: Stream wait outcomes
-Each wait for a stream part SHALL return exactly one outcome: a part, closed, canceled, deadline or idle timeout. Deadline and canceled SHALL follow the request context's error. The idle duration SHALL restart only when the adapter reports a part represented. Every outcome other than a part SHALL cancel the model context before it is returned.
+Each wait for a stream part SHALL return exactly one outcome: a part, closed, canceled, deadline or idle timeout. Deadline and canceled SHALL follow the request context's error. The idle duration SHALL start when setup returns the stream and restart at each later wait, after the adapter has represented the previous part. Every outcome other than a part SHALL cancel the model context before it is returned.
 
 #### Scenario: Each outcome
 - **WHEN** a part arrives, the stream closes, the request is canceled, the deadline expires or no part arrives within the idle duration

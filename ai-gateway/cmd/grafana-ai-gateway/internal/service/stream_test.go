@@ -17,6 +17,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func newWireHandler(config execution.Config) (http.Handler, error) {
+	runtime, err := execution.New(config)
+	if err != nil {
+		return nil, err
+	}
+	return providerv4.New(runtime)
+}
+
 func serviceTestLimits() execution.Limits {
 	return execution.Limits{
 		StreamIdleDuration:  5 * time.Second,
@@ -61,7 +69,7 @@ func TestGatewayAnthropicStream_FinishOnMessageStop(t *testing.T) {
 				map[string]config.ResolvedProvider{"native": {Type: "anthropic", APIKey: "native-key", BaseURL: backend.URL, ProviderName: "anthropic"}},
 				backend.Client(), identityModelFactory)
 			require.NoError(t, err)
-			handler, err := providerv4.New(providerv4.Config{Selector: execution.CatalogSelector(catalog), Limits: serviceTestLimits()})
+			handler, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(catalog), Limits: serviceTestLimits()})
 			require.NoError(t, err)
 			request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[]}`))
 			request.Header.Set("Content-Type", "application/json")

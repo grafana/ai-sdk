@@ -14,7 +14,7 @@ Host authorization, explicit credential sources and request isolation SHALL rema
 - **AND** Supported provider/model identity, application content and native response values SHALL remain available under their existing contracts.
 - **AND** Configured execution attribution SHALL remain independent of logical BYOK observation.
 - **AND** Event-local native SSE summaries SHALL remain eligible without catalog-owned attribution. The execution runtime SHALL capture BYOK account attempts in order through the same request-scoped observer as configured fallbacks, but BYOK unary/setup summaries and attempt overviews SHALL NOT be published; #420 owns their publication with honest request identity, not a new collector.
-- **AND** Independently registered SDK observers SHALL remain effective; original native metadata SHALL remain opaque and SHALL NOT establish configured provenance.
+- **AND** Observers registered on a model with `WithAttemptObserver` SHALL remain effective. The runtime's request-scoped capture SHALL replace a request-scoped observer that a caller placed on the request context, as it does for configured calls. Original native metadata SHALL remain opaque and SHALL NOT establish configured provenance.
 - **AND** Diagnostic messages SHALL use bounded approved capability names/schema paths and bounded indices/counts, never arbitrary rejected key names, values or serialized bodies.
 - **AND** Detailed public attempt evidence SHALL remain owned by its separate contract; this capability SHALL NOT introduce a second metadata/error protocol.
 
@@ -30,3 +30,7 @@ Host authorization, explicit credential sources and request isolation SHALL rema
 #### Scenario: BYOK attempts are captured but not published
 - **WHEN** a BYOK request's first selected-provider account fails and the second succeeds
 - **THEN** the request's capture SHALL hold a failed then a selected attempt, and neither the unary result nor the stream finish SHALL carry a `gateway.execution` overview
+
+#### Scenario: Model observers see BYOK attempts
+- **WHEN** a BYOK model's fallback chain carries a model-level attempt observer and the request runs
+- **THEN** that observer SHALL receive each account attempt, and no `gateway.execution` overview SHALL be published

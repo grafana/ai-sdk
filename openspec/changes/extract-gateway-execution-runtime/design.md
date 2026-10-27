@@ -70,7 +70,7 @@ execution.ClassifySelection(err) / ClassifyProvider(err) / ClassifyStreamPart(er
 - Each call restarts the idle timer. Adapters call `Next` only after the previous part was represented, so this matches today's reset after each successfully represented part.
 - Any non-part outcome cancels the model context before returning.
 - `Close` is idempotent: it cancels, then starts one asynchronous drain bounded by the drain duration.
-- The idle timer starts at the first `Next` instead of before commitment, so the time to write the 200 header no longer counts as idle. This is negligible and recorded as parity-preserving.
+- The idle timer starts when setup returns the stream, as before, so the time to commit the response counts as idle time.
 
 ### D4. Host policy at the start of `Call`
 
@@ -92,6 +92,8 @@ execution.ClassifySelection(err) / ClassifyProvider(err) / ClassifyStreamPart(er
 
 - `Selection` (with unexported configured candidates), `RequestSelector`, `CatalogSelector` and the host sentinels move to `execution`. The cmd `service` selectors import them. This is allowed because `ai-gateway/internal` is visible to the whole module.
 - Each `Call` attaches its own `fallback.WithAttemptObserver` for every selection, BYOK included. Publication comes from the existing `Project` rule: a BYOK selection has no requested or canonical identity, so its overview is nil.
+- `fallback` stores one request observer per context and offers no way to read it, so the runtime's observer replaces one a caller placed on the request context. Configured calls already behaved this way. Model-level observers are unaffected, and no production code sets a context observer.
+- **Alternative: chain to the caller's observer.** Rejected: it needs a new public getter in the root `fallback` module for no production caller.
 - The view, redactor and one-candidate synthesis move unchanged.
 - **Alternative: a BYOK-specific capture flag.** Rejected as unneeded until #420 publishes.
 

@@ -175,7 +175,7 @@ func TestPhysicalAttempts_SaturationDoesNotSuppressConsumerEvidence(t *testing.T
 		}}
 	}, identityModelFactory, sink)
 	require.NoError(t, err)
-	handler, err := providerv4.New(providerv4.Config{Selector: execution.CatalogSelector(created), Limits: serviceTestLimits()})
+	handler, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(created), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[]}`))
 	request.Header.Set("Content-Type", "application/json")

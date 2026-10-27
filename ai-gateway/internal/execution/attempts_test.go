@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ type generateModel struct {
 	provider.LanguageModel
 	modelID  string
 	generate func(context.Context) (*provider.GenerateResult, error)
+	stream   func(context.Context) (*provider.StreamResult, error)
 	mu       sync.Mutex
 	calls    int
 }
@@ -44,6 +46,18 @@ func (m *generateModel) DoGenerate(ctx context.Context, _ provider.CallOptions) 
 		return m.generate(ctx)
 	}
 	return &provider.GenerateResult{}, nil
+}
+
+func (m *generateModel) DoStream(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+	m.mu.Lock()
+	m.calls++
+	m.mu.Unlock()
+	if m.stream != nil {
+		return m.stream(ctx)
+	}
+	parts := make(chan provider.StreamPart)
+	close(parts)
+	return &provider.StreamResult{Stream: parts}, nil
 }
 
 func (m *generateModel) callCount() int {
@@ -228,10 +242,22 @@ func TestAttempts_ProjectionAfterSeal(t *testing.T) {
 	}
 }
 
-func TestAttempts_UnconfiguredSelectionIsNotCaptured(t *testing.T) {
-	attempts := NewAttempts("request/model", Selection{ID: "request/model", Model: &generateModel{}}, SummaryRedactor{})
-	ctx := attempts.Context(t.Context())
-	assert.Equal(t, t.Context(), ctx)
-	attempts.Enter()
+func TestAttempts_BYOKCapturedNotProjected(t *testing.T) {
+	first := &generateModel{modelID: "A", generate: func(context.Context) (*provider.GenerateResult, error) {
+		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "first account"})
+	}}
+	second := &generateModel{modelID: "B"}
+	model, err := fallback.New(first, second)
+	require.NoError(t, err)
+	attempts := NewAttempts("anthropic/model", Selection{ID: "anthropic/model", Model: model}, SummaryRedactor{})
+	_, err = model.DoGenerate(attempts.Context(t.Context()), provider.CallOptions{})
+	require.NoError(t, err)
+	attempts.mu.Lock()
+	captured := slices.Clone(attempts.attempts)
+	attempts.mu.Unlock()
+	require.Len(t, captured, 2)
+	assert.Equal(t, fallback.AttemptFailed, captured[0].Outcome)
+	assert.True(t, captured[0].WillFallback)
+	assert.Equal(t, fallback.AttemptSelected, captured[1].Outcome)
 	assert.Nil(t, attempts.View(nil).Overview)
 }

@@ -489,7 +489,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	resolved, err := catalog.ResolveModel(context.Background(), "alias")
 	require.NoError(t, err)
 	h.model = resolved.Model
-	h.handler, err = providerv4.New(providerv4.Config{Selector: execution.CatalogSelector(catalog), Limits: serviceTestLimits()})
+	h.handler, err = newWireHandler(execution.Config{Selector: execution.CatalogSelector(catalog), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	h.context = func(ctx context.Context) context.Context {
 		state := &telemetryState{}

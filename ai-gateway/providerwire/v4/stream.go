@@ -1,7 +1,6 @@
 package v4
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -195,88 +194,18 @@ func validStreamEvent(value streamEvent) bool {
 	}
 }
 
-type streamOutcome struct {
-	result *provider.StreamResult
-	err    error
-}
-
-func (h *handler) serveStream(w http.ResponseWriter, requestContext, executionContext context.Context, model provider.LanguageModel, options provider.CallOptions, history map[string]string, attempts *execution.Attempts) {
-	if err := requestContext.Err(); err != nil {
-		h.writeSafeError(w, safeErrorFromProvider(err), nil)
+func (h *handler) serveStream(w http.ResponseWriter, call *execution.Call, options provider.CallOptions, history map[string]string) {
+	stream, err := call.Stream()
+	if err != nil {
+		view := call.View(err)
+		h.writeSafeError(w, safeErrorFromProvider(err), view.Metadata())
 		return
 	}
-
-	modelContext, cancel := context.WithCancel(executionContext)
-	outcomes := make(chan streamOutcome)
-	go func() {
-		outcome := callStream(modelContext, model, options, attempts)
-		select {
-		case outcomes <- outcome:
-		case <-modelContext.Done():
-			if outcome.result != nil {
-				h.startStreamDrain(outcome.result.Stream)
-			}
-		}
-	}()
-
-	var outcome streamOutcome
-	select {
-	case outcome = <-outcomes:
-	case <-modelContext.Done():
-		cancel()
-		value := safeError{category: streamContextErrorCategory(requestContext)}
-		view := attempts.View(modelContext.Err())
-		h.writeSafeError(w, value, view.Metadata())
-		return
-	}
-
-	if !isNilInterface(outcome.err) || outcome.result == nil || outcome.result.Stream == nil {
-		cancel()
-		if outcome.result != nil {
-			h.startStreamDrain(outcome.result.Stream)
-		}
-		if !isNilInterface(outcome.err) {
-			value := safeErrorFromProvider(outcome.err)
-			view := attempts.View(outcome.err)
-			h.writeSafeError(w, value, view.Metadata())
-		} else {
-			view := attempts.View(errModelInternal)
-			h.writeSafeError(w, safeError{category: safeInternal}, view.Metadata())
-		}
-		return
-	}
-
-	defer func() {
-		cancel()
-		h.startStreamDrain(outcome.result.Stream)
-	}()
-	idleTimer := time.NewTimer(h.limits.StreamIdleDuration)
-	defer idleTimer.Stop()
+	defer stream.Close()
 	if !commitStreamResponse(w) {
 		return
 	}
-	h.runStream(w, requestContext, modelContext, cancel, outcome.result.Stream, idleTimer, history, attempts, options.IncludeRawChunks)
-}
-
-func callStream(ctx context.Context, model provider.LanguageModel, options provider.CallOptions, attempts *execution.Attempts) (outcome streamOutcome) {
-	defer func() {
-		if recover() != nil {
-			outcome = streamOutcome{err: errModelInternal}
-		}
-		if outcome.result == nil && isNilInterface(outcome.err) {
-			outcome.err = errModelInternal
-		}
-	}()
-	attempts.Enter()
-	outcome.result, outcome.err = model.DoStream(ctx, options)
-	return outcome
-}
-
-func streamContextErrorCategory(requestContext context.Context) safeErrorCategory {
-	if errors.Is(requestContext.Err(), context.DeadlineExceeded) {
-		return safeTimeout
-	}
-	return safeCancellation
+	h.runStream(w, stream, call, history, options.IncludeRawChunks)
 }
 
 func commitStreamResponse(w http.ResponseWriter) (ok bool) {
@@ -314,33 +243,6 @@ func writeCompleteStreamFrame(w http.ResponseWriter, frame []byte) (ok bool) {
 	return flushStreamResponse(w)
 }
 
-type streamWaitResult uint8
-
-const (
-	streamWaitPart streamWaitResult = iota + 1
-	streamWaitClosed
-	streamWaitCanceled
-	streamWaitDeadline
-	streamWaitIdleTimeout
-)
-
-func waitStreamPart(requestContext, modelContext context.Context, stream <-chan provider.StreamPart, idle <-chan time.Time) (provider.StreamPart, streamWaitResult) {
-	select {
-	case part, ok := <-stream:
-		if !ok {
-			return provider.StreamPart{}, streamWaitClosed
-		}
-		return part, streamWaitPart
-	case <-modelContext.Done():
-		if errors.Is(requestContext.Err(), context.DeadlineExceeded) {
-			return provider.StreamPart{}, streamWaitDeadline
-		}
-		return provider.StreamPart{}, streamWaitCanceled
-	case <-idle:
-		return provider.StreamPart{}, streamWaitIdleTimeout
-	}
-}
-
 type streamPartResult uint8
 
 const (
@@ -375,19 +277,18 @@ func newStreamState(history map[string]string) *streamState {
 	return state
 }
 
-func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, idleTimer *time.Timer, history map[string]string, attempts *execution.Attempts, includeRaw bool) {
-	part, waitResult := waitStreamPart(requestContext, modelContext, stream, idleTimer.C)
-	if waitResult != streamWaitPart {
-		view := attempts.View(errorForStreamWait(waitResult))
-		cancel()
+func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, call *execution.Call, history map[string]string, includeRaw bool) {
+	part, wait := stream.Next()
+	if wait != execution.WaitPart {
+		view := call.View(wait.Err())
 		if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) != streamWriteSuccess {
 			return
 		}
-		h.writeStreamTerminalForWait(w, waitResult, view)
+		h.writeStreamTerminalForWait(w, wait, view)
 		return
 	}
 
-	view := attempts.View(nil)
+	view := call.View(nil)
 	state := newStreamState(history)
 	state.execution = view
 	state.includeRaw = includeRaw
@@ -398,9 +299,8 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 		}
 		switch result {
 		case streamWriteSuccess:
-			idleTimer.Reset(h.limits.StreamIdleDuration)
 		case streamWriteEncodingFailure:
-			cancel()
+			stream.Close()
 			if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) == streamWriteSuccess {
 				h.writeStreamTerminalError(w, safeError{category: safeInternal}, view.Metadata())
 			}
@@ -413,39 +313,33 @@ func (h *handler) runStream(w http.ResponseWriter, requestContext, modelContext 
 			return
 		}
 		result := h.processStreamPart(w, state, part)
-		if h.handleStreamPartResult(w, cancel, result, state.execution) {
+		if h.handleStreamPartResult(w, stream, result, state.execution) {
 			return
 		}
-		idleTimer.Reset(h.limits.StreamIdleDuration)
-		h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, idleTimer, state)
-		return
 	}
-
-	h.consumeStreamParts(w, requestContext, modelContext, cancel, stream, idleTimer, state)
+	h.consumeStreamParts(w, stream, state)
 }
 
-func (h *handler) consumeStreamParts(w http.ResponseWriter, requestContext, modelContext context.Context, cancel context.CancelFunc, stream <-chan provider.StreamPart, idleTimer *time.Timer, state *streamState) {
+func (h *handler) consumeStreamParts(w http.ResponseWriter, stream *execution.Stream, state *streamState) {
 	for {
-		part, waitResult := waitStreamPart(requestContext, modelContext, stream, idleTimer.C)
-		if waitResult != streamWaitPart {
-			cancel()
-			h.writeStreamTerminalForWait(w, waitResult, state.execution)
+		part, wait := stream.Next()
+		if wait != execution.WaitPart {
+			h.writeStreamTerminalForWait(w, wait, state.execution)
 			return
 		}
 		result := h.processStreamPart(w, state, part)
-		if h.handleStreamPartResult(w, cancel, result, state.execution) {
+		if h.handleStreamPartResult(w, stream, result, state.execution) {
 			return
 		}
-		idleTimer.Reset(h.limits.StreamIdleDuration)
 	}
 }
 
-func (h *handler) handleStreamPartResult(w http.ResponseWriter, cancel context.CancelFunc, result streamPartResult, view execution.View) bool {
+func (h *handler) handleStreamPartResult(w http.ResponseWriter, stream *execution.Stream, result streamPartResult, view execution.View) bool {
 	switch result {
 	case streamPartContinue:
 		return false
 	case streamPartAdapterFailure:
-		cancel()
+		stream.Close()
 		h.writeStreamTerminalError(w, safeError{category: safeInternal}, view.Metadata())
 	}
 	return true
@@ -651,50 +545,17 @@ func (h *handler) emitSafeStreamError(w http.ResponseWriter, value safeError, me
 	return writeCompleteStreamFrame(w, encodeStreamError(value, metadata, current))
 }
 
-func (h *handler) writeStreamTerminalForWait(w http.ResponseWriter, result streamWaitResult, view execution.View) {
+func (h *handler) writeStreamTerminalForWait(w http.ResponseWriter, wait execution.Wait, view execution.View) {
 	value := safeError{category: safeInternal}
-	switch result {
-	case streamWaitCanceled:
+	switch wait {
+	case execution.WaitCanceled:
 		value.category = safeCancellation
-	case streamWaitDeadline, streamWaitIdleTimeout:
+	case execution.WaitDeadline, execution.WaitIdleTimeout:
 		value.category = safeTimeout
 	}
 	h.writeStreamTerminalError(w, value, view.Metadata())
 }
 
-func errorForStreamWait(result streamWaitResult) error {
-	switch result {
-	case streamWaitCanceled:
-		return context.Canceled
-	case streamWaitDeadline, streamWaitIdleTimeout:
-		return context.DeadlineExceeded
-	default:
-		return errModelInternal
-	}
-}
-
 func (h *handler) writeStreamTerminalError(w http.ResponseWriter, value safeError, metadata provider.ProviderMetadata) {
 	h.emitSafeStreamError(w, value, metadata, nil)
-}
-
-func (h *handler) startStreamDrain(stream <-chan provider.StreamPart) {
-	if stream == nil {
-		return
-	}
-	go h.drainStream(stream)
-}
-
-func (h *handler) drainStream(stream <-chan provider.StreamPart) {
-	timer := time.NewTimer(h.limits.StreamDrainDuration)
-	defer timer.Stop()
-	for {
-		select {
-		case _, ok := <-stream:
-			if !ok {
-				return
-			}
-		case <-timer.C:
-			return
-		}
-	}
 }

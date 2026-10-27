@@ -15,13 +15,13 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 3. Runtime with synchronous execution
 
-- [ ] 3.1 Add `execution.Runtime`, `Call` and `Stream` (design D1–D3):
+- [x] 3.1 Add `execution.Runtime`, `Call` and `Stream` (design D1–D3):
   - `New` validates the selector and limits;
   - `Call` selects synchronously with `recover` and validation, and attaches a request-local attempt observer for every selection, BYOK included;
   - `Generate` and `Stream` run on the caller's goroutine, contain panics and `nil, nil`, and let an ended request context win, draining late or errored streams once;
   - `Stream.Next` returns the five wait outcomes and restarts idle each call;
   - `Stream.Close` cancels and starts one bounded drain, and is idempotent.
-- [ ] 3.2 Add `execution` tests:
+- [x] 3.2 Add `execution` tests:
   - a selector and a model that return after the deadline, and after cancellation;
   - selector and model panics, invalid selections and `nil, nil`;
   - late unary results discarded, and attempts after sealing ignored;
@@ -30,15 +30,15 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
   - every wait outcome, idle reset by activity, a permanently ready stream after close stopping at the drain duration, a late stream drained once, an errored stream drained once, and a repeated close starting no second drain.
 
   Verify with `go test -race ./internal/execution/...`.
-- [ ] 3.3 Make `v4.New` take an `*execution.Runtime` (design D8). Rewrite `ServeHTTP` and `serveStream` over `Call`, `Generate` and `Stream`, keeping commitment, framing, the snapshot after the first wait, and the state machine. Move `validSelection` into the runtime, and delete `selectModel`, `invokeModel`, `callStream`, `waitStreamPart`, `startStreamDrain` and `drainStream`. Verify with `go test -race ./providerwire/v4/...`.
-- [ ] 3.4 Migrate the ProviderWire tests (design D10):
+- [x] 3.3 Make `v4.New` take an `*execution.Runtime` (design D8). Rewrite `ServeHTTP` and `serveStream` over `Call`, `Generate` and `Stream`, keeping commitment, framing, the snapshot after the first wait, and the state machine. Move `validSelection` into the runtime, and delete `selectModel`, `invokeModel`, `callStream`, `waitStreamPart`, `startStreamDrain` and `drainStream`. Verify with `go test -race ./providerwire/v4/...`.
+- [x] 3.4 Migrate the ProviderWire tests (design D10):
   - construction and imports change, and expected documents stay byte-identical;
   - tests asserting bounded latency for a selector or model that ignores cancellation become late-result tests with the same expected documents;
   - drain tests move to `execution`.
 
   Verify with `go test -race ./providerwire/v4/...` and `mise run test-providerwire-v4`.
-- [ ] 3.5 Construct a runtime per route in `gateway.go` (configured, and BYOK in cloud mode) and in each testserver handler. Verify with `mise run test-ai-gateway` and `mise run test-providerwire-v4`.
-- [ ] 3.6 Write the `internal/execution` package godoc (what the runtime owns, what adapters own, and that work which ignores cancellation holds its own request), and trim `providerwire/v4/doc.go` to the codec's responsibilities. Update `docs/concepts/gateway-architecture.md` (selection and limits paragraphs, stream-runtime link and the idle and drain owner) and the glossary's ProviderWire, framing and drain rows. Verify with `mise run lint-docs`.
+- [x] 3.5 Construct a runtime per route in `gateway.go` (configured, and BYOK in cloud mode) and in each testserver handler. Verify with `mise run test-ai-gateway` and `mise run test-providerwire-v4`.
+- [x] 3.6 Write the `internal/execution` package godoc (what the runtime owns, what adapters own, and that work which ignores cancellation holds its own request), and trim `providerwire/v4/doc.go` to the codec's responsibilities. Update `docs/concepts/gateway-architecture.md` (selection and limits paragraphs, stream-runtime link and the idle and drain owner) and the glossary's ProviderWire, framing and drain rows. Verify with `mise run lint-docs`.
 
 ## 4. Limits leave settings
 
