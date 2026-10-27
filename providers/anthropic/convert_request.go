@@ -27,6 +27,8 @@ const (
 	serverSideFallbackDefaultBeta  = anthropic.AnthropicBeta("server-side-fallback-2026-07-01")
 	serverSideFallbackExplicitBeta = anthropic.AnthropicBeta("server-side-fallback-2026-06-01")
 	dangerousToolUseBeta           = anthropic.AnthropicBeta("dangerous-tool-use-2026-09-03")
+	defaultServerToolErrorCode     = "unavailable"
+	toolSearchToolResultErrorType  = "tool_search_tool_result_error"
 )
 
 func trimECMAScriptWhitespace(s string) string {
@@ -1485,20 +1487,23 @@ func convertProviderExecutedToolResult(p provider.ContentPart, mapping toolNameM
 	}
 }
 
+func extractServerToolErrorCode(data json.RawMessage) string {
+	var text string
+	if json.Unmarshal(data, &text) == nil {
+		data = json.RawMessage(text)
+	}
+	var value struct {
+		ErrorCode *string `json:"errorCode"`
+	}
+	if json.Unmarshal(data, &value) == nil && value.ErrorCode != nil {
+		return *value.ErrorCode
+	}
+	return defaultServerToolErrorCode
+}
+
 func convertInlineWebSearchResult(p provider.ContentPart, cc anthropic.BetaCacheControlEphemeralParam, warnings *[]provider.Warning) *anthropic.BetaContentBlockParamUnion {
 	if p.Output != nil && p.Output.Type == provider.ToolOutputErrorJSON {
-		data := p.Output.JSON
-		var text string
-		if json.Unmarshal(data, &text) == nil {
-			data = json.RawMessage(text)
-		}
-		var value struct {
-			ErrorCode *string `json:"errorCode"`
-		}
-		code := "unavailable"
-		if json.Unmarshal(data, &value) == nil && value.ErrorCode != nil {
-			code = *value.ErrorCode
-		}
+		code := extractServerToolErrorCode(p.Output.JSON)
 		return &anthropic.BetaContentBlockParamUnion{
 			OfWebSearchToolResult: &anthropic.BetaWebSearchToolResultBlockParam{
 				ToolUseID: p.ToolCallID,
@@ -1577,7 +1582,7 @@ func convertInlineWebFetchResult(p provider.ContentPart, cc anthropic.BetaCacheC
 			}
 		}
 		if errorInfo.ErrorCode == "" {
-			errorInfo.ErrorCode = "unavailable"
+			errorInfo.ErrorCode = defaultServerToolErrorCode
 		}
 		block := anthropic.BetaContentBlockParamUnion{
 			OfWebFetchToolResult: &anthropic.BetaWebFetchToolResultBlockParam{
@@ -1915,7 +1920,38 @@ func convertInlineAdvisorResult(p provider.ContentPart, cc anthropic.BetaCacheCo
 	return &block
 }
 
+func isToolSearchErrorOutput(output *provider.ToolResultOutput) bool {
+	if output == nil {
+		return false
+	}
+	switch output.Type {
+	case provider.ToolOutputErrorJSON:
+		return true
+	case provider.ToolOutputJSON:
+		var value struct {
+			Type string `json:"type"`
+		}
+		return json.Unmarshal(output.JSON, &value) == nil && value.Type == toolSearchToolResultErrorType
+	default:
+		return false
+	}
+}
+
 func convertInlineToolSearchResult(p provider.ContentPart, cc anthropic.BetaCacheControlEphemeralParam, warnings *[]provider.Warning) *anthropic.BetaContentBlockParamUnion {
+	if isToolSearchErrorOutput(p.Output) {
+		return &anthropic.BetaContentBlockParamUnion{
+			OfToolSearchToolResult: &anthropic.BetaToolSearchToolResultBlockParam{
+				ToolUseID: p.ToolCallID,
+				Content: anthropic.BetaToolSearchToolResultBlockParamContentUnion{
+					OfRequestToolSearchToolResultError: &anthropic.BetaToolSearchToolResultErrorParam{
+						ErrorCode: anthropic.BetaToolSearchToolResultErrorParamErrorCode(extractServerToolErrorCode(p.Output.JSON)),
+					},
+				},
+				CacheControl: cc,
+			},
+		}
+	}
+
 	outputJSON := extractOutputJSON(p.Output)
 	if outputJSON == nil {
 		*warnings = append(*warnings, provider.Warning{
