@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -57,28 +58,16 @@ func (a lineAdapter) run(ctx context.Context, modelID string, options provider.C
 	for first := true; ; first = false {
 		part, wait := stream.Next()
 		if first {
-			var waitErr error
-			if wait != execution.WaitPart {
-				waitErr = wait.Err()
-			}
-			result.overview = call.View(waitErr).Overview
+			result.overview = call.View(wait.Err()).Overview
 		}
-		switch wait {
-		case execution.WaitPart:
-			switch part.Type {
-			case provider.PartError:
-				result.partErrors = append(result.partErrors, execution.ClassifyStreamPart(part.APICallError))
-			case provider.PartFinish:
-				return result
-			}
-		case execution.WaitCanceled:
-			result.category = execution.CategoryCancellation
+		if wait != execution.WaitPart {
+			result.category = execution.ClassifyProvider(wait.Err())
 			return result
-		case execution.WaitDeadline, execution.WaitIdleTimeout:
-			result.category = execution.CategoryTimeout
-			return result
-		default:
-			result.category = execution.CategoryInternal
+		}
+		switch part.Type {
+		case provider.PartError:
+			result.partErrors = append(result.partErrors, execution.ClassifyStreamPart(part.APICallError))
+		case provider.PartFinish:
 			return result
 		}
 	}
@@ -135,7 +124,7 @@ func overviewFrom(t *testing.T, metadata provider.ProviderMetadata) *execution.O
 }
 
 // assertProviderWire checks that ProviderWire wrote the documents the
-// adapter's outcome maps to, and returns the attempt view it published.
+// adapter's outcome maps to, including the attempt view it published.
 func assertProviderWire(t *testing.T, response *httptest.ResponseRecorder, want outcome) {
 	t.Helper()
 	if !want.committed {
@@ -290,18 +279,19 @@ type scenario struct {
 
 const scenarioTimeout = time.Second
 
-func endsAfter(cancelOnly bool) func(*testing.T) context.Context {
-	return func(t *testing.T) context.Context {
-		if cancelOnly {
-			ctx, cancel := context.WithCancel(t.Context())
-			time.AfterFunc(30*time.Millisecond, cancel)
-			t.Cleanup(cancel)
-			return ctx
-		}
-		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
-		t.Cleanup(cancel)
-		return ctx
-	}
+const scenarioEnd = 30 * time.Millisecond
+
+func expiring(t *testing.T) context.Context {
+	ctx, cancel := context.WithTimeout(t.Context(), scenarioEnd)
+	t.Cleanup(cancel)
+	return ctx
+}
+
+func canceling(t *testing.T) context.Context {
+	ctx, cancel := context.WithCancel(t.Context())
+	time.AfterFunc(scenarioEnd, cancel)
+	t.Cleanup(cancel)
+	return ctx
 }
 
 func one(configure func(*probe)) func() []*probe {
@@ -382,7 +372,7 @@ func (sc scenario) request(t *testing.T, ctx context.Context) *http.Request {
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(v4.HeaderSpecificationVersion, v4.SpecificationVersion)
 	request.Header.Set(v4.HeaderModelID, "alias")
-	request.Header.Set(v4.HeaderStreaming, map[bool]string{false: "false", true: "true"}[sc.streaming])
+	request.Header.Set(v4.HeaderStreaming, strconv.FormatBool(sc.streaming))
 	return request
 }
 
@@ -413,7 +403,7 @@ func (r resolver) ResolveModel(context.Context, string) (catalog.ResolvedModel, 
 	return r.resolved, nil
 }
 
-func TestTestAdapter_MatchesProviderWire(t *testing.T) {
+func TestLineAdapter_MatchesProviderWire(t *testing.T) {
 	for _, sc := range []scenario{
 		{name: "configured unary success", configured: true, models: one(nil), calls: []int32{1},
 			attempts: []fallback.AttemptOutcome{fallback.AttemptSelected}},
@@ -456,11 +446,11 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 			models: one(func(p *probe) {
 				p.generate = func(context.Context) (*provider.GenerateResult, error) { return nil, nil }
 			})},
-		{name: "late result after the deadline", ctx: endsAfter(false), calls: []int32{1}, want: outcome{category: execution.CategoryTimeout},
+		{name: "late result after the deadline", ctx: expiring, calls: []int32{1}, want: outcome{category: execution.CategoryTimeout},
 			models: one(func(p *probe) {
 				p.generate = func(ctx context.Context) (*provider.GenerateResult, error) { <-ctx.Done(); return validResult(), nil }
 			})},
-		{name: "late result after cancellation", ctx: endsAfter(true), calls: []int32{1}, want: outcome{category: execution.CategoryCancellation},
+		{name: "late result after cancellation", ctx: canceling, calls: []int32{1}, want: outcome{category: execution.CategoryCancellation},
 			models: one(func(p *probe) {
 				p.generate = func(ctx context.Context) (*provider.GenerateResult, error) { <-ctx.Done(); return validResult(), nil }
 			})},
@@ -471,7 +461,7 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 					return result, apiError(503)
 				}
 			})},
-		{name: "late stream after cancellation", streaming: true, ctx: endsAfter(true), calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryCancellation},
+		{name: "late stream after cancellation", streaming: true, ctx: canceling, calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryCancellation},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
 					<-ctx.Done()
@@ -479,17 +469,17 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 				}
 			})},
 		{name: "idle timeout", streaming: true, calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryTimeout, committed: true},
-			limits: execution.Limits{StreamIdleDuration: 30 * time.Millisecond, StreamDrainDuration: scenarioTimeout},
+			limits: execution.Limits{StreamIdleDuration: scenarioEnd, StreamDrainDuration: scenarioTimeout},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) { return p.parts(ctx) }
 			})},
-		{name: "deadline during the stream", streaming: true, ctx: endsAfter(false), calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryTimeout, committed: true},
+		{name: "deadline during the stream", streaming: true, ctx: expiring, calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryTimeout, committed: true},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
 					return p.parts(ctx, provider.StreamPart{Type: provider.PartStreamStart})
 				}
 			})},
-		{name: "cancellation during the stream", streaming: true, ctx: endsAfter(true), calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryCancellation, committed: true},
+		{name: "cancellation during the stream", streaming: true, ctx: canceling, calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryCancellation, committed: true},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
 					return p.parts(ctx, provider.StreamPart{Type: provider.PartStreamStart})
@@ -503,7 +493,7 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 					return p.parts(ctx, provider.StreamPart{Type: provider.PartError, APICallError: failure}, finishPart())
 				}
 			})},
-		{name: "configured deadline during the stream", streaming: true, configured: true, ctx: endsAfter(false), calls: []int32{1}, drained: true,
+		{name: "configured deadline during the stream", streaming: true, configured: true, ctx: expiring, calls: []int32{1}, drained: true,
 			want: outcome{category: execution.CategoryTimeout, committed: true}, attempts: []fallback.AttemptOutcome{fallback.AttemptCanceled},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) { return p.parts(ctx) }

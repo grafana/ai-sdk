@@ -883,7 +883,7 @@ func TestPublicError_FixedBytes(t *testing.T) {
 		{"unknown request reason", safeError{category: safeInvalidRequest, reason: requestFailureReason("unknown")}, 400, canonicalInvalidRequestError, canonicalInternalStreamErrorFrame},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h := newTestHandler(t, testLimits())
+			h := newTestHandler(t)
 			response := httptest.NewRecorder()
 			h.writeSafeError(response, tc.value, nil)
 			assert.Equal(t, tc.status, response.Code)
@@ -940,7 +940,7 @@ func TestSafeErrorReduction(t *testing.T) {
 			{value: safeError{category: safeInternal}, status: http.StatusInternalServerError},
 			{value: safeError{category: safeInvalidRequest, reason: capabilityTools}, status: http.StatusBadRequest},
 		} {
-			h := newTestHandler(t, testLimits())
+			h := newTestHandler(t)
 			response := httptest.NewRecorder()
 			h.writeSafeError(response, tc.value, nil)
 			assert.Equal(t, tc.status, response.Code)
@@ -1279,12 +1279,10 @@ func TestInvocation_SharedModelIsolation(t *testing.T) {
 
 func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
 	entered := make(chan struct{})
-	release := make(chan struct{})
 	observed := make(chan struct{})
 	first := &recordingModel{generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
 		close(entered)
 		<-ctx.Done()
-		<-release
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "unowned late native failure", StatusCode: 401})
 	}}
 	second := &recordingModel{}
@@ -1305,7 +1303,6 @@ func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
 		require.FailNow(t, "candidate did not enter")
 	}
 	cancel()
-	close(release)
 	select {
 	case body := <-responses:
 		assert.NotContains(t, body, "unowned late native failure")

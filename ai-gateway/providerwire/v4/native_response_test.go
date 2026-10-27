@@ -171,7 +171,7 @@ func TestNativeResponse_CompleteEncoding(t *testing.T) {
 			}
 			got := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
 			w := httptest.NewRecorder()
-			assert.True(t, newTestHandler(t, testLimits()).writeUnarySuccess(w, tc.result))
+			assert.True(t, newTestHandler(t).writeUnarySuccess(w, tc.result))
 			assert.Equal(t, body, w.Body.Bytes())
 			requireStreamBodyMatchesSchema(t, got)
 			assert.Contains(t, got, `"type":"`+string(tc.part.Type)+`"`)
@@ -268,7 +268,7 @@ func TestNativeResponse_InvalidValues(t *testing.T) {
 			tc.mutate(result)
 			_, err := mapUnarySuccess(result)
 			require.Error(t, err)
-			h := newTestHandler(t, testLimits())
+			h := newTestHandler(t)
 			w := httptest.NewRecorder()
 			assert.False(t, h.writeUnarySuccess(w, result))
 			assert.Empty(t, w.Body.String())

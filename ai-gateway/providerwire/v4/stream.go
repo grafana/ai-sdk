@@ -279,8 +279,8 @@ func newStreamState(history map[string]string) *streamState {
 
 func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, call *execution.Call, history map[string]string, includeRaw bool) {
 	part, wait := stream.Next()
+	view := call.View(wait.Err())
 	if wait != execution.WaitPart {
-		view := call.View(wait.Err())
 		if h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart}) != streamWriteSuccess {
 			return
 		}
@@ -288,7 +288,6 @@ func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, cal
 		return
 	}
 
-	view := call.View(nil)
 	state := newStreamState(history)
 	state.execution = view
 	state.includeRaw = includeRaw
@@ -546,14 +545,7 @@ func (h *handler) emitSafeStreamError(w http.ResponseWriter, value safeError, me
 }
 
 func (h *handler) writeStreamTerminalForWait(w http.ResponseWriter, wait execution.Wait, view execution.View) {
-	value := safeError{category: safeInternal}
-	switch wait {
-	case execution.WaitCanceled:
-		value.category = safeCancellation
-	case execution.WaitDeadline, execution.WaitIdleTimeout:
-		value.category = safeTimeout
-	}
-	h.writeStreamTerminalError(w, value, view.Metadata())
+	h.writeStreamTerminalError(w, safeErrorFromProvider(wait.Err()), view.Metadata())
 }
 
 func (h *handler) writeStreamTerminalError(w http.ResponseWriter, value safeError, metadata provider.ProviderMetadata) {

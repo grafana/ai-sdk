@@ -38,9 +38,9 @@ func testLimits() execution.Limits {
 	}
 }
 
-func newTestHandler(t *testing.T, limits execution.Limits) *handler {
+func newTestHandler(t *testing.T) *handler {
 	t.Helper()
-	created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(&resolverStub{}), Limits: limits})
+	created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(&resolverStub{}), Limits: testLimits()})
 	require.NoError(t, err)
 	h, ok := created.(*handler)
 	require.True(t, ok)
@@ -139,7 +139,7 @@ func TestHandlerBodyProcessing(t *testing.T) {
 	t.Run("host byte boundary and close", func(t *testing.T) {
 		base := `{"prompt":[]}`
 		limit := len(base) + 1
-		h := newTestHandler(t, testLimits())
+		h := newTestHandler(t)
 		for _, tc := range []struct {
 			name    string
 			body    string
@@ -167,7 +167,7 @@ func TestHandlerBodyProcessing(t *testing.T) {
 	})
 
 	t.Run("invalid UTF-8 and JSON", func(t *testing.T) {
-		h := newTestHandler(t, testLimits())
+		h := newTestHandler(t)
 		bodies := [][]byte{
 			append([]byte(`{"prompt":[],"providerOptions":{"example":"`), append([]byte{0xff}, []byte(`"}}`)...)...),
 			[]byte(`{"prompt":[}`),
@@ -183,7 +183,7 @@ func TestHandlerBodyProcessing(t *testing.T) {
 	})
 
 	t.Run("body failures", func(t *testing.T) {
-		h := newTestHandler(t, testLimits())
+		h := newTestHandler(t)
 		for _, body := range []io.ReadCloser{
 			nil,
 			&failingReadCloser{readErr: errors.New("read secret")},

@@ -38,6 +38,7 @@ flowchart LR
       pw[ProviderWire V4 decoder and response encoder]
     end
     subgraph shared[Model selection and execution]
+      runtime[Execution runtime]
       select[Account-access selection]
       catalog[Public model catalog]
       byok[Cloud request accounts: Anthropic or OpenAI]
@@ -54,7 +55,7 @@ flowchart LR
   go --> host
   ts --> host
   host --> pw
-  pw --> select
+  pw --> runtime --> select
   select -->|private| catalog --> logical --> routing
   select -->|Cloud| byok
   byok --> anthropic
@@ -95,18 +96,22 @@ sequenceDiagram
   participant C as Application client
   participant H as HTTP host
   participant W as ProviderWire handler
+  participant R as Execution runtime
   participant M as Catalog and wrapped model
   participant P as Native provider API
   C->>H: POST model call with Gateway credentials
   H->>H: Match route and method, authenticate
   H->>W: Authenticated request, bounded body and caller context
   W->>W: Validate and map protocol
-  W->>M: Resolve public model under request deadline
-  M-->>W: Canonical model and configured candidates
-  W->>M: DoGenerate or DoStream
+  W->>R: Call with mapped options
+  R->>R: Apply host request policy
+  R->>M: Resolve public model under request deadline
+  M-->>R: Canonical model and configured candidates
+  R->>M: DoGenerate or DoStream
   M->>P: Provider-specific authenticated request
   P-->>M: Native result or native stream
-  M-->>W: GenerateResult or StreamPart values
+  M-->>R: GenerateResult or StreamPart values
+  R-->>W: Result, stream parts and failure categories
   W-->>C: JSON result or ProviderWire SSE
   Note over H,M: HTTP and model observations have different scopes
 ```

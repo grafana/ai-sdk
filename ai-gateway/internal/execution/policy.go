@@ -38,9 +38,9 @@ var protectedCallHeaders = map[string]struct{}{
 	"x-access-policy-id":  {},
 }
 
-// IsProtectedCallHeader reports whether a call header name, compared without
+// isProtectedCallHeader reports whether a call header name, compared without
 // case, carries credentials.
-func IsProtectedCallHeader(name string) bool {
+func isProtectedCallHeader(name string) bool {
 	_, protected := protectedCallHeaders[strings.ToLower(name)]
 	return protected
 }
@@ -50,7 +50,7 @@ func IsProtectedCallHeader(name string) bool {
 // caller's options are not modified.
 func applyPolicy(options provider.CallOptions) (provider.CallOptions, json.RawMessage, error) {
 	for name := range options.Headers {
-		if IsProtectedCallHeader(name) {
+		if isProtectedCallHeader(name) {
 			return provider.CallOptions{}, nil, ErrProtectedCallHeader
 		}
 	}

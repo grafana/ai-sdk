@@ -43,28 +43,51 @@ func newCall(t *testing.T, ctx context.Context, model provider.LanguageModel, li
 	return call
 }
 
-func endingContexts(t *testing.T) []struct {
+type endingContext struct {
 	name string
 	ctx  func() context.Context
 	err  error
-} {
-	return []struct {
-		name string
-		ctx  func() context.Context
-		err  error
-	}{
-		{name: "deadline", err: context.DeadlineExceeded, ctx: func() context.Context {
+	wait Wait
+}
+
+func endingContexts(t *testing.T) []endingContext {
+	return []endingContext{
+		{name: "deadline", err: context.DeadlineExceeded, wait: WaitDeadline, ctx: func() context.Context {
 			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 			t.Cleanup(cancel)
 			return ctx
 		}},
-		{name: "canceled", err: context.Canceled, ctx: func() context.Context {
+		{name: "canceled", err: context.Canceled, wait: WaitCanceled, ctx: func() context.Context {
 			ctx, cancel := context.WithCancel(t.Context())
 			time.AfterFunc(20*time.Millisecond, cancel)
 			t.Cleanup(cancel)
 			return ctx
 		}},
 	}
+}
+
+// readyProducer returns a stream that always has a part ready, and the number
+// of parts taken from it so far.
+func readyProducer(t *testing.T) (chan provider.StreamPart, *atomic.Int64) {
+	parts := make(chan provider.StreamPart)
+	var produced atomic.Int64
+	stop, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		for {
+			select {
+			case parts <- provider.StreamPart{Type: provider.PartRaw}:
+				produced.Add(1)
+			case <-stop:
+				return
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(stop)
+		<-stopped
+	})
+	return parts, &produced
 }
 
 func TestNew_Validation(t *testing.T) {
@@ -229,54 +252,16 @@ func TestCallGenerate_CanceledAttemptIsNotPublished(t *testing.T) {
 	assert.Zero(t, second.callCount())
 }
 
-func TestDrain(t *testing.T) {
-	t.Run("normal close consumes every part", func(t *testing.T) {
-		parts := make(chan provider.StreamPart, 10)
-		for range 10 {
-			parts <- provider.StreamPart{Type: provider.PartRaw}
-		}
-		close(parts)
+func TestDrain_DelayedClose(t *testing.T) {
+	parts := make(chan provider.StreamPart)
+	done := make(chan struct{})
+	go func() {
 		drain(parts, testTimeout)
-		assert.Empty(t, parts)
-	})
-
-	t.Run("delayed close exits within the drain bound", func(t *testing.T) {
-		parts := make(chan provider.StreamPart)
-		done := make(chan struct{})
-		go func() {
-			drain(parts, testTimeout)
-			close(done)
-		}()
-		parts <- provider.StreamPart{Type: provider.PartRaw}
-		close(parts)
-		requireClosed(t, done, "drain did not observe delayed close")
-	})
-
-	t.Run("duration bounds a permanently ready drain", func(t *testing.T) {
-		parts := make(chan provider.StreamPart)
-		stop, stopped := make(chan struct{}), make(chan struct{})
-		var produced atomic.Int64
-		go func() {
-			defer close(stopped)
-			for {
-				select {
-				case parts <- provider.StreamPart{Type: provider.PartRaw}:
-					produced.Add(1)
-				case <-stop:
-					return
-				}
-			}
-		}()
-		done := make(chan struct{})
-		go func() {
-			drain(parts, 25*time.Millisecond)
-			close(done)
-		}()
-		requireClosed(t, done, "drain exceeded its configured duration")
-		close(stop)
-		<-stopped
-		assert.Positive(t, produced.Load())
-	})
+		close(done)
+	}()
+	parts <- provider.StreamPart{Type: provider.PartRaw}
+	close(parts)
+	requireClosed(t, done, "drain did not observe delayed close")
 }
 
 func TestRuntime_ConcurrentCallsAreIsolated(t *testing.T) {
@@ -425,12 +410,11 @@ func TestStreamNext_Outcomes(t *testing.T) {
 		assert.Error(t, model().Err())
 	})
 
-	waits := map[string]Wait{"deadline": WaitDeadline, "canceled": WaitCanceled}
 	for _, ending := range endingContexts(t) {
 		t.Run(ending.name, func(t *testing.T) {
 			stream, model := establish(t, ending.ctx(), make(chan provider.StreamPart), testLimits())
 			_, wait := stream.Next()
-			assert.Equal(t, waits[ending.name], wait)
+			assert.Equal(t, ending.wait, wait)
 			assert.Error(t, model().Err())
 			assert.ErrorIs(t, wait.Err(), ending.err)
 		})
@@ -493,20 +477,7 @@ func TestStreamClose_Drain(t *testing.T) {
 	t.Run("permanently ready stream stops at the drain duration", func(t *testing.T) {
 		limits := testLimits()
 		limits.StreamDrainDuration = 25 * time.Millisecond
-		parts := make(chan provider.StreamPart)
-		var produced atomic.Int64
-		stop, stopped := make(chan struct{}), make(chan struct{})
-		go func() {
-			defer close(stopped)
-			for {
-				select {
-				case parts <- provider.StreamPart{Type: provider.PartRaw}:
-					produced.Add(1)
-				case <-stop:
-					return
-				}
-			}
-		}()
+		parts, produced := readyProducer(t)
 		stream, _ := establish(t, t.Context(), parts, limits)
 		stream.Close()
 		require.Eventually(t, func() bool { return produced.Load() > 0 }, testTimeout, time.Millisecond)
@@ -514,27 +485,12 @@ func TestStreamClose_Drain(t *testing.T) {
 		settled := produced.Load()
 		time.Sleep(4 * limits.StreamDrainDuration)
 		assert.Equal(t, settled, produced.Load())
-		close(stop)
-		<-stopped
 	})
 
 	t.Run("repeated close starts no second drain", func(t *testing.T) {
 		limits := testLimits()
 		limits.StreamDrainDuration = 25 * time.Millisecond
-		parts := make(chan provider.StreamPart)
-		var produced atomic.Int64
-		stop, stopped := make(chan struct{}), make(chan struct{})
-		go func() {
-			defer close(stopped)
-			for {
-				select {
-				case parts <- provider.StreamPart{Type: provider.PartRaw}:
-					produced.Add(1)
-				case <-stop:
-					return
-				}
-			}
-		}()
+		parts, produced := readyProducer(t)
 		stream, _ := establish(t, t.Context(), parts, limits)
 		stream.Close()
 		time.Sleep(4 * limits.StreamDrainDuration)
@@ -542,7 +498,5 @@ func TestStreamClose_Drain(t *testing.T) {
 		stream.Close()
 		time.Sleep(4 * limits.StreamDrainDuration)
 		assert.Equal(t, settled, produced.Load())
-		close(stop)
-		<-stopped
 	})
 }

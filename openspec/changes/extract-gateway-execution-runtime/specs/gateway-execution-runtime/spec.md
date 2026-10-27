@@ -169,7 +169,7 @@ Tests SHALL include a minimal adapter, not ProviderWire, built only on the runti
 
 #### Scenario: Matching outcomes
 - **WHEN** the same fake model scenarios run through the test adapter and ProviderWire
-- **THEN** both SHALL report the same category, reason, model-call count, drain count and attempt view for every scenario
+- **THEN** both SHALL report the same category, reason, model-call count, drains and attempt view for every scenario
 
 ### Requirement: Runtime ownership documentation
 The execution package godoc SHALL state what the runtime owns and what each adapter owns. The Gateway architecture walkthrough and glossary SHALL name the runtime as the owner of stream idle time and drain.

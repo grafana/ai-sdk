@@ -11,7 +11,7 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 2. Attempt capture and execution view in `execution`
 
-- [x] 2.1 Move `attemptCapture`, `executionRequest`, `snapshot` and `executionView` from `execution_capture.go` to `execution` as `Attempts` and `View`, with unchanged behavior, and keep ProviderWire's calls compiling through the moved API. Move their white-box tests from `runtime_test.go` (configured execution, unconfigured native summary, one-candidate synthesis, redaction, seal races) with the same assertions. Verify with `go test -race ./internal/execution/... ./providerwire/v4/...`.
+- [x] 2.1 Move `attemptCapture`, `executionRequest`, `snapshot` and `executionView` from `execution_capture.go` to `execution` as the attempt capture and `View`, with unchanged behavior, and keep ProviderWire's calls compiling through the moved API. Move their white-box tests from `runtime_test.go` (configured execution, unconfigured native summary, one-candidate synthesis, redaction, seal races) with the same assertions. Verify with `go test -race ./internal/execution/... ./providerwire/v4/...`.
 
 ## 3. Runtime with synchronous execution
 
@@ -46,7 +46,7 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 5. Host request policy in the runtime
 
-- [x] 5.1 In `Call`, remove call-level `gateway` from the mapped options and pass its raw JSON to the selector, then refuse protected call headers with the protected-header sentinel before selection (design D4). Move `IsProtectedCallHeader`, its set, and a `ControlNamespace = "gateway"` constant to `execution`. Add `execution` tests for each refusal reason, for `gateway` never reaching the model, and for an ordinary header kept with its case. Verify with `go test -race ./internal/execution/...`.
+- [x] 5.1 In `Call`, refuse protected call headers with the protected-header sentinel, then remove call-level `gateway` from the mapped options and pass its raw JSON to the selector, before selection (design D4). Move the protected-header check, its set, and a `ControlNamespace = "gateway"` constant to `execution`. Add `execution` tests for each refusal reason, for `gateway` never reaching the model, and for an ordinary header kept with its case. Verify with `go test -race ./internal/execution/...`.
 - [x] 5.2 In ProviderWire:
   - stop deleting `gateway` before mapping, and remove the reserved-namespace loop and the credential check from `mapWireProviderOptions` and `mapWireHeaders`, keeping duplicate spellings and protocol-name dropping;
   - map the protected-header sentinel to the existing document;
@@ -62,7 +62,7 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 6. Test-only adapter
 
-- [x] 6.1 In an `execution_test` package, add a minimal adapter over `Runtime` and one scenario table run against both it and `v4.New` with the same fake models (design D9). Each row asserts the category and reason, the model-call and drain counts and the attempt view, and ProviderWire's document for that category. Verify with `go test -race ./internal/execution/...`.
+- [x] 6.1 In an `execution_test` package, add a minimal adapter over `Runtime` and one scenario table run against both it and `v4.New` with the same fake models (design D9). Each row asserts the category and reason, the model-call count, drains and the attempt view, and ProviderWire's document for that category. Verify with `go test -race ./internal/execution/...`.
 
 ## 7. Integration checks
 

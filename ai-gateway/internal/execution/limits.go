@@ -25,8 +25,8 @@ var (
 	errDrainDuration = errors.New("execution: stream drain duration must be positive")
 )
 
-// Validate reports whether both durations are positive.
-func (limits Limits) Validate() error {
+// validate reports whether both durations are positive.
+func (limits Limits) validate() error {
 	if limits.StreamIdleDuration <= 0 {
 		return errIdleDuration
 	}

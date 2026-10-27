@@ -73,7 +73,7 @@ func selectConfigured(t *testing.T, resolved catalog.ResolvedModel) Selection {
 	return selected
 }
 
-func TestAttempts_ConfiguredSelection(t *testing.T) {
+func TestAttemptCapture_ConfiguredSelection(t *testing.T) {
 	resolved := catalog.ResolvedModel{
 		ID:         "canonical",
 		Model:      &generateModel{},
@@ -81,15 +81,15 @@ func TestAttempts_ConfiguredSelection(t *testing.T) {
 	}
 	selected := selectConfigured(t, resolved)
 	resolved.Candidates[0].ModelID = "mutated"
-	attempts := NewAttempts("alias", selected, SummaryRedactor{})
+	attempts := newAttemptCapture("alias", selected, SummaryRedactor{})
 	selected.configured.candidates[0].ModelID = "mutated-again"
 	assert.Equal(t, "canonical", attempts.canonical)
 	assert.Equal(t, "backend", attempts.candidates[0].ModelID)
 	encoded, err := json.Marshal(selected)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), "configured")
-	attempts.Enter()
-	view := attempts.View(nil)
+	attempts.enter()
+	view := attempts.view(nil)
 	require.NotNil(t, view.Overview)
 	assert.Equal(t, "alias", view.Overview.RequestedModelID)
 	assert.Equal(t, "canonical", view.Overview.CanonicalModelID)
@@ -97,7 +97,7 @@ func TestAttempts_ConfiguredSelection(t *testing.T) {
 	assert.Equal(t, &Failure{Message: "configured-secret"}, view.Current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "configured-secret"})))
 }
 
-func TestAttempts_View(t *testing.T) {
+func TestAttemptCapture_View(t *testing.T) {
 	failure := errors.New("candidate failure")
 	for _, tc := range []struct {
 		name       string
@@ -126,18 +126,18 @@ func TestAttempts_View(t *testing.T) {
 			for i := range tc.candidates {
 				resolved.Candidates = append(resolved.Candidates, catalog.ConfiguredCandidate{Provider: "native", ModelID: fmt.Sprint(i)})
 			}
-			attempts := NewAttempts("alias", selectConfigured(t, resolved), SummaryRedactor{})
+			attempts := newAttemptCapture("alias", selectConfigured(t, resolved), SummaryRedactor{})
 			resolved.Candidates[0].ModelID = "mutated"
 			if tc.entered {
-				attempts.Enter()
+				attempts.enter()
 			}
 			for _, attempt := range tc.attempts {
 				attempts.observe(t.Context(), attempt)
 			}
 			if tc.discard {
-				attempts.Discard()
+				attempts.discard()
 			}
-			view := attempts.View(tc.err)
+			view := attempts.view(tc.err)
 			if len(tc.outcomes) == 0 {
 				assert.Nil(t, view.Overview)
 			} else {
@@ -154,7 +154,7 @@ func TestAttempts_View(t *testing.T) {
 			var late sync.WaitGroup
 			for range 8 {
 				late.Go(func() {
-					attempts.Enter()
+					attempts.enter()
 					attempts.observe(t.Context(), fallback.Attempt{Index: 1, Outcome: fallback.AttemptFailed, SourceErr: errors.New("late failure")})
 				})
 			}
@@ -170,7 +170,7 @@ func TestAttempts_View(t *testing.T) {
 	}
 }
 
-func TestAttempts_RejectRecordedFallbackOutcome(t *testing.T) {
+func TestAttemptCapture_RejectRecordedFallbackOutcome(t *testing.T) {
 	parent, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	first := &generateModel{modelID: "A", generate: func(context.Context) (*provider.GenerateResult, error) {
@@ -180,14 +180,14 @@ func TestAttempts_RejectRecordedFallbackOutcome(t *testing.T) {
 	second := &generateModel{modelID: "B"}
 	model, err := fallback.New(first, second)
 	require.NoError(t, err)
-	attempts := NewAttempts("alias", selectConfigured(t, catalog.ResolvedModel{ID: "canonical", Model: model, Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "A"}, {Provider: "native", ModelID: "B"}}}), SummaryRedactor{})
-	ctx := attempts.Context(parent)
+	attempts := newAttemptCapture("alias", selectConfigured(t, catalog.ResolvedModel{ID: "canonical", Model: model, Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "A"}, {Provider: "native", ModelID: "B"}}}), SummaryRedactor{})
+	ctx := attempts.withObserver(parent)
 	_, err = model.DoGenerate(ctx, provider.CallOptions{})
 	require.ErrorIs(t, err, context.Canceled)
 	require.Len(t, attempts.attempts, 1)
 	require.NotNil(t, attempts.attempts[0].SourceErr)
-	attempts.Discard()
-	view := attempts.View(ctx.Err())
+	attempts.discard()
+	view := attempts.view(ctx.Err())
 	assert.Nil(t, view.Overview)
 	assert.Empty(t, attempts.attempts)
 	assert.True(t, attempts.sealed)
@@ -203,11 +203,11 @@ func (err projectionError) Error() string {
 	return "candidate failure"
 }
 
-func TestAttempts_ProjectionAfterSeal(t *testing.T) {
+func TestAttemptCapture_ProjectionAfterSeal(t *testing.T) {
 	for _, panics := range []bool{false, true} {
 		t.Run(fmt.Sprint(panics), func(t *testing.T) {
-			attempts := NewAttempts("alias", selectConfigured(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}), SummaryRedactor{})
-			attempts.Enter()
+			attempts := newAttemptCapture("alias", selectConfigured(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}), SummaryRedactor{})
+			attempts.enter()
 			inspected := make(chan struct{})
 			failure := projectionError{inspect: func() {
 				attempts.observe(t.Context(), fallback.Attempt{Index: 2, Outcome: fallback.AttemptSelected})
@@ -217,7 +217,7 @@ func TestAttempts_ProjectionAfterSeal(t *testing.T) {
 				}
 			}}
 			views := make(chan View, 1)
-			go func() { views <- attempts.View(failure) }()
+			go func() { views <- attempts.view(failure) }()
 			var view View
 			select {
 			case view = <-views:
@@ -242,15 +242,15 @@ func TestAttempts_ProjectionAfterSeal(t *testing.T) {
 	}
 }
 
-func TestAttempts_BYOKCapturedNotProjected(t *testing.T) {
+func TestAttemptCapture_BYOKCapturedNotProjected(t *testing.T) {
 	first := &generateModel{modelID: "A", generate: func(context.Context) (*provider.GenerateResult, error) {
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "first account"})
 	}}
 	second := &generateModel{modelID: "B"}
 	model, err := fallback.New(first, second)
 	require.NoError(t, err)
-	attempts := NewAttempts("anthropic/model", Selection{ID: "anthropic/model", Model: model}, SummaryRedactor{})
-	_, err = model.DoGenerate(attempts.Context(t.Context()), provider.CallOptions{})
+	attempts := newAttemptCapture("anthropic/model", Selection{ID: "anthropic/model", Model: model}, SummaryRedactor{})
+	_, err = model.DoGenerate(attempts.withObserver(t.Context()), provider.CallOptions{})
 	require.NoError(t, err)
 	attempts.mu.Lock()
 	captured := slices.Clone(attempts.attempts)
@@ -259,5 +259,5 @@ func TestAttempts_BYOKCapturedNotProjected(t *testing.T) {
 	assert.Equal(t, fallback.AttemptFailed, captured[0].Outcome)
 	assert.True(t, captured[0].WillFallback)
 	assert.Equal(t, fallback.AttemptSelected, captured[1].Outcome)
-	assert.Nil(t, attempts.View(nil).Overview)
+	assert.Nil(t, attempts.view(nil).Overview)
 }

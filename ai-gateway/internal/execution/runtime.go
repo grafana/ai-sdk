@@ -38,7 +38,7 @@ func New(config Config) (*Runtime, error) {
 	if config.Selector == nil {
 		return nil, errNilSelector
 	}
-	if err := config.Limits.Validate(); err != nil {
+	if err := config.Limits.validate(); err != nil {
 		return nil, err
 	}
 	return &Runtime{
@@ -54,7 +54,7 @@ type Call struct {
 	ctx      context.Context
 	model    provider.LanguageModel
 	options  provider.CallOptions
-	attempts *Attempts
+	attempts *attemptCapture
 	limits   Limits
 }
 
@@ -78,8 +78,8 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 	if err != nil {
 		return nil, err
 	}
-	attempts := NewAttempts(modelID, selected, r.redactor)
-	return &Call{ctx: attempts.Context(ctx), model: selected.Model, options: options, attempts: attempts, limits: r.limits}, nil
+	attempts := newAttemptCapture(modelID, selected, r.redactor)
+	return &Call{ctx: attempts.withObserver(ctx), model: selected.Model, options: options, attempts: attempts, limits: r.limits}, nil
 }
 
 func (r *Runtime) selectModel(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (selected Selection, err error) {
@@ -115,7 +115,7 @@ func (c *Call) Generate() (*provider.GenerateResult, error) {
 	defer cancel()
 	result, err := c.generate(modelContext)
 	if ctxErr := c.ctx.Err(); ctxErr != nil {
-		c.attempts.Discard()
+		c.attempts.discard()
 		return nil, ctxErr
 	}
 	return result, err
@@ -130,7 +130,7 @@ func (c *Call) generate(ctx context.Context) (result *provider.GenerateResult, e
 			err = errInternal
 		}
 	}()
-	c.attempts.Enter()
+	c.attempts.enter()
 	return c.model.DoGenerate(ctx, c.options)
 }
 
@@ -144,7 +144,7 @@ func (c *Call) Stream() (*Stream, error) {
 	result, err := c.stream(modelContext)
 	if ctxErr := c.ctx.Err(); ctxErr != nil {
 		c.abandon(cancel, result)
-		c.attempts.Discard()
+		c.attempts.discard()
 		return nil, ctxErr
 	}
 	if !isNilInterface(err) {
@@ -171,7 +171,7 @@ func (c *Call) stream(ctx context.Context) (result *provider.StreamResult, err e
 			result, err = nil, errInternal
 		}
 	}()
-	c.attempts.Enter()
+	c.attempts.enter()
 	return c.model.DoStream(ctx, c.options)
 }
 
@@ -184,10 +184,10 @@ func (c *Call) abandon(cancel context.CancelFunc, result *provider.StreamResult)
 
 // View seals the call's attempt capture and projects it for an outcome that
 // failed with err, or succeeded when err is nil.
-func (c *Call) View(err error) View { return c.attempts.View(err) }
+func (c *Call) View(err error) View { return c.attempts.view(err) }
 
 // Close seals the call's attempt capture.
-func (c *Call) Close() { c.attempts.Discard() }
+func (c *Call) Close() { c.attempts.discard() }
 
 // Wait is the outcome of waiting for a stream part.
 type Wait uint8
@@ -200,9 +200,11 @@ const (
 	WaitIdleTimeout
 )
 
-// Err returns the error a terminal wait outcome stands for.
+// Err returns the error a terminal wait outcome stands for, and nil for WaitPart.
 func (w Wait) Err() error {
 	switch w {
+	case WaitPart:
+		return nil
 	case WaitCanceled:
 		return context.Canceled
 	case WaitDeadline, WaitIdleTimeout:

@@ -554,13 +554,11 @@ func TestStreamingSetupAndCleanup(t *testing.T) {
 	})
 
 	t.Run("cancellation cleans up a late stream", func(t *testing.T) {
-		release := make(chan struct{})
 		lateStream := make(chan provider.StreamPart)
 		drained := make(chan struct{})
 		harness := newRuntimeHarness(t, testLimits())
 		harness.model.stream = func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 			<-ctx.Done()
-			<-release
 			go func() {
 				lateStream <- provider.StreamPart{Type: provider.PartRaw}
 				close(drained)
@@ -579,7 +577,6 @@ func TestStreamingSetupAndCleanup(t *testing.T) {
 			return stream == 1
 		}, time.Second, time.Millisecond)
 		cancel()
-		close(release)
 		result := <-done
 		assert.Equal(t, 499, result.code)
 		select {
@@ -1009,13 +1006,9 @@ func TestInvocation_StreamCurrentErrors(t *testing.T) {
 
 func TestInvocation_CanceledLateDirectSetup(t *testing.T) {
 	entered := make(chan struct{})
-	release := make(chan struct{})
-	finished := make(chan struct{})
 	first := &recordingModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 		close(entered)
 		<-ctx.Done()
-		<-release
-		defer close(finished)
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "unowned late native failure", StatusCode: 401})
 	}}
 	h := invocationHarness(t, testLimits(), first)
@@ -1025,7 +1018,6 @@ func TestInvocation_CanceledLateDirectSetup(t *testing.T) {
 	go func() { responses <- h.serve(streamRequest(`{"prompt":[]}`).WithContext(ctx)).Body.String() }()
 	<-entered
 	cancel()
-	close(release)
 	var body string
 	select {
 	case body = <-responses:
@@ -1033,8 +1025,6 @@ func TestInvocation_CanceledLateDirectSetup(t *testing.T) {
 		t.Fatal("cancellation did not return")
 	}
 	assert.Contains(t, body, `"outcome":"canceled"`)
-	assert.NotContains(t, body, "unowned late native failure")
-	<-finished
 	assert.NotContains(t, body, "unowned late native failure")
 }
 

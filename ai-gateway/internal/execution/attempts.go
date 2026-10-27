@@ -11,8 +11,8 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-// Attempts records one call's fallback attempts until its outcome is decided.
-type Attempts struct {
+// attemptCapture records one call's fallback attempts until its outcome is decided.
+type attemptCapture struct {
 	requested  string
 	canonical  string
 	candidates []catalog.ConfiguredCandidate
@@ -24,10 +24,10 @@ type Attempts struct {
 	attempts []fallback.Attempt
 }
 
-// NewAttempts prepares the capture for selected. Every selection is captured,
+// newAttemptCapture prepares the capture for selected. Every selection is captured,
 // and only configured selections are projected into an overview.
-func NewAttempts(requested string, selected Selection, redactor SummaryRedactor) *Attempts {
-	attempts := &Attempts{redactor: redactor}
+func newAttemptCapture(requested string, selected Selection, redactor SummaryRedactor) *attemptCapture {
+	attempts := &attemptCapture{redactor: redactor}
 	if selected.configured != nil {
 		attempts.requested = requested
 		attempts.canonical = selected.ID
@@ -36,12 +36,12 @@ func NewAttempts(requested string, selected Selection, redactor SummaryRedactor)
 	return attempts
 }
 
-// Context returns ctx with the request-scoped fallback observer attached.
-func (a *Attempts) Context(ctx context.Context) context.Context {
+// withObserver returns ctx with the request-scoped fallback observer attached.
+func (a *attemptCapture) withObserver(ctx context.Context) context.Context {
 	return fallback.WithAttemptObserver(ctx, a.observe)
 }
 
-func (a *Attempts) observe(_ context.Context, attempt fallback.Attempt) {
+func (a *attemptCapture) observe(_ context.Context, attempt fallback.Attempt) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.sealed {
@@ -49,8 +49,8 @@ func (a *Attempts) observe(_ context.Context, attempt fallback.Attempt) {
 	}
 }
 
-// Enter records that the model was invoked.
-func (a *Attempts) Enter() {
+// enter records that the model was invoked.
+func (a *attemptCapture) enter() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.sealed {
@@ -58,7 +58,7 @@ func (a *Attempts) Enter() {
 	}
 }
 
-func (a *Attempts) seal() (bool, []fallback.Attempt) {
+func (a *attemptCapture) seal() (bool, []fallback.Attempt) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sealed = true
@@ -67,14 +67,14 @@ func (a *Attempts) seal() (bool, []fallback.Attempt) {
 	return a.entered, attempts
 }
 
-// Discard seals the capture without projecting it.
-func (a *Attempts) Discard() {
+// discard seals the capture without projecting it.
+func (a *attemptCapture) discard() {
 	a.seal()
 }
 
-// View seals the capture and projects it for an outcome that failed with err,
+// view seals the capture and projects it for an outcome that failed with err,
 // or succeeded when err is nil. Attempts observed afterwards are ignored.
-func (a *Attempts) View(err error) (view View) {
+func (a *attemptCapture) view(err error) (view View) {
 	entered, attempts := a.seal()
 	view = View{redactor: a.redactor}
 	defer func() {

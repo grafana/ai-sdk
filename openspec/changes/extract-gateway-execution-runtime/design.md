@@ -40,7 +40,7 @@ call.View(err) View                                   // seals capture, overview
 call.Close()                                          // seals capture
 stream.Next() (provider.StreamPart, Wait)             // Part|Closed|Canceled|Deadline|IdleTimeout
 stream.Close()                                        // cancel + one drain
-execution.ClassifySelection(err) / ClassifyProvider(err) / ClassifyStreamPart(err) -> (Category, Reason)
+execution.ClassifySelection(err) -> (Category, Reason); ClassifyProvider(err) / ClassifyStreamPart(err) -> Category
 ```
 
 - The runtime returns ordinary Go errors: context errors, the host sentinels, new sentinels for policy refusals and internal failures, and provider errors.
@@ -75,8 +75,7 @@ execution.ClassifySelection(err) / ClassifyProvider(err) / ClassifyStreamPart(er
 ### D4. Host policy at the start of `Call`
 
 - Mapping no longer reserves namespaces, so call-level `gateway` arrives in `options.ProviderOptions` as an ordinary `RawProviderOption`.
-- `Call` removes it and passes its raw bytes to the selector. The bytes are the same as today, because the schema already requires an object.
-- `Call` then refuses protected call headers, before selection.
+- `Call` first refuses protected call headers. It then removes call-level `gateway` and passes its raw bytes to the selector. The bytes are the same as today, because the schema already requires an object.
 - The protected set and the `gateway` control namespace become `execution` constants. Config reads the namespace to refuse a `gateway` provider name.
 - ProviderWire keeps the duplicate-spelling rejection and the dropping of `ai-language-model-*` and `ai-o11y-*` names.
 - Precedence change: a protected header used to win over later mapping failures and now loses to them. Both are fixed 400 documents. The old order also depended on map order when a protected header and a duplicate header were both present.
@@ -126,7 +125,7 @@ execution.ClassifySelection(err) / ClassifyProvider(err) / ClassifyStreamPart(er
   - in-band stream errors;
   - protected headers and configured `gateway` controls;
   - fallback attempts.
-- Each row expects a category and reason, model-call and drain counts, and an attempt view. The test adapter must report them directly, and ProviderWire must write the document for that category.
+- Each row expects a category and reason, model-call counts, drains, and an attempt view. The test adapter must report them directly, and ProviderWire must write the document for that category.
 
 ### D10. Test migration
 

@@ -99,14 +99,12 @@ func TestRuntimeCall_GatewayControls(t *testing.T) {
 	})
 
 	t.Run("catalog selector refuses them", func(t *testing.T) {
-		model := &generateModel{}
 		runtime := newRuntime(t, CatalogSelector(staticResolver{}), testLimits())
 		_, err := runtime.Call(t.Context(), "alias", provider.CallOptions{ProviderOptions: rawOptions(map[string]string{ControlNamespace: `{}`})})
 		require.ErrorIs(t, err, ErrReservedProviderOptions)
 		category, reason := ClassifySelection(err)
 		assert.Equal(t, CategoryInvalidRequest, category)
 		assert.Equal(t, ReasonReservedProviderOptions, reason)
-		assert.Zero(t, model.callCount())
 	})
 
 	t.Run("protected header wins over controls", func(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestLimits_Validate(t *testing.T) {
+func TestLimitsValidate(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		limits Limits
@@ -20,7 +20,7 @@ func TestLimits_Validate(t *testing.T) {
 		{name: "drain negative", limits: Limits{StreamIdleDuration: time.Second, StreamDrainDuration: -time.Second}, err: errDrainDuration},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.ErrorIs(t, tc.limits.Validate(), tc.err)
+			assert.ErrorIs(t, tc.limits.validate(), tc.err)
 		})
 	}
 }
