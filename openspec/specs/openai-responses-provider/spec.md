@@ -252,7 +252,7 @@ Anchored gpt-6 and later SHALL support configuration updates and async calling. 
 
 ### Requirement: OpenAI reasoning configuration update and explicit compaction trigger
 
-The provider SHALL accept reasoningEffortUpdate none/low/medium/high/xhigh/max (others invalid) and optional compactionTrigger. Eligible GPT-6+ standard-mode updates without automatic context management/truncation and with a model-supported effort SHALL prepend {"type":"configuration_update","reasoning":{"effort":<update>}} before converted prompt items. Neither control SHALL mutate caller messages, change request effort, persist as conversation content or alter defaults.
+The provider SHALL accept reasoningEffortUpdate none/low/medium/high/xhigh/max (others invalid) and optional compactionTrigger. Eligible GPT-6+ standard-mode updates without automatic context management/truncation and with a model-supported effort SHALL prepend {"type":"configuration_update","reasoning":{"effort":<update>}} before converted prompt items. Request-level controls SHALL NOT mutate caller messages, change request effort, persist as conversation content or alter defaults.
 
 #### Scenario: Independent update with previous response
 - **WHEN** a `gpt-6-astra` request has `reasoningEffort: low`, `reasoningEffortUpdate: high`, `previousResponseId`, and a user prompt
@@ -279,6 +279,26 @@ The provider SHALL accept reasoningEffortUpdate none/low/medium/high/xhigh/max (
 #### Scenario: Disabled trigger retains existing request
 - **WHEN** `compactionTrigger` is absent or false
 - **THEN** the request contains no compaction-trigger item, including on pre-GPT-6 models
+
+### Requirement: Message-level reasoning effort updates
+
+A system message whose part options carry reasoningEffortUpdate SHALL emit a configuration update at its position regardless of systemMessageMode. Non-empty content, unsupported configuration or a model-unsupported effort SHALL fail before sending; invalid values SHALL fail as invalid. A request-level update matching the first item SHALL NOT be prepended. Adjacent updates after conversion SHALL fail.
+
+#### Scenario: Positioned updates are retained
+- **WHEN** a `gpt-6-astra` prompt contains empty system messages with updates `high` and `low` between user turns
+- **THEN** the input carries both configuration updates at those positions and the request effort is unchanged
+
+#### Scenario: Unsupported positioned update
+- **WHEN** a positioned update has system text, targets a model without configuration-update support, conflicts with pro mode, context management or automatic truncation, or uses `none` on `gpt-6-astra`
+- **THEN** the request fails with `provider.ErrUnsupportedFunctionality` and no HTTP request is sent
+
+#### Scenario: Adjacent updates
+- **WHEN** updates become adjacent through the prompt, request-level prepending, system-text removal or stored-reasoning filtering
+- **THEN** the request fails with `provider.ErrUnsupportedFunctionality`
+
+#### Scenario: Azure message options
+- **WHEN** an Azure request system message has `azure` update options, only `openai` options, or an explicit empty `azure` object
+- **THEN** the Azure value wins, the OpenAI value is the fallback, and the explicit empty object leaves an ordinary empty system message
 
 ### Requirement: Capability-gated async tools and round-trip metadata
 

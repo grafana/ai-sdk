@@ -1,6 +1,8 @@
 package openai
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -11,6 +13,8 @@ import (
 )
 
 const (
+	configurationUpdateAdjacent                 = "adjacent reasoning effort configuration updates"
+	configurationUpdateNonEmptySystemMessage    = "message-level reasoningEffortUpdate requires empty system message content"
 	configurationUpdateModelUnsupported         = "reasoningEffortUpdate is only supported by GPT-6 and later models"
 	configurationUpdateConfigurationUnsupported = "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"
 )
@@ -36,10 +40,60 @@ func configurationUpdateUnsupportedReason(caps modelCapabilities, popts OpenAIRe
 }
 
 func unsupportedReasoningEffortReason(modelID string, caps modelCapabilities, effort string) string {
-	if caps.supportedReasoningEfforts == nil || slices.Contains(caps.supportedReasoningEfforts, effort) {
+	if effort == "" || caps.supportedReasoningEfforts == nil || slices.Contains(caps.supportedReasoningEfforts, effort) {
 		return ""
 	}
 	return fmt.Sprintf("%s only supports the following reasoning efforts: %s", modelID, strings.Join(caps.supportedReasoningEfforts, ", "))
+}
+
+// systemMessageEffortUpdate returns the positioned update carried by a system
+// message, resolving options from the active namespace with an OpenAI fallback.
+func systemMessageEffortUpdate(msg provider.Message, ctx inputConversionContext) (OpenAIReasoningEffortUpdate, error) {
+	update, ok, err := messageEffortUpdateOption(msg.ProviderOptions, ctx.providerOptionsName)
+	if err == nil && !ok && ctx.providerOptionsName != providerName {
+		update, _, err = messageEffortUpdateOption(msg.ProviderOptions, providerName)
+	}
+	if err != nil {
+		return "", fmt.Errorf("openai: system message options: %w", err)
+	}
+	if update == "" {
+		return "", nil
+	}
+	if !update.valid() {
+		return "", fmt.Errorf("openai: invalid message-level reasoningEffortUpdate %q", update)
+	}
+	reason := ctx.configurationUpdateUnsupportedReason
+	if concatText(msg.Content) != "" {
+		reason = configurationUpdateNonEmptySystemMessage
+	}
+	if reason != "" {
+		return "", fmt.Errorf("openai: message-level reasoningEffortUpdate: %s: %w", reason, provider.ErrUnsupportedFunctionality)
+	}
+	return update, nil
+}
+
+// messageEffortUpdateOption reads only reasoningEffortUpdate so unrelated part
+// options keep their lenient handling on system messages.
+func messageEffortUpdateOption(opts provider.ProviderOptions, key string) (OpenAIReasoningEffortUpdate, bool, error) {
+	switch v := opts[key].(type) {
+	case nil:
+		return "", false, nil
+	case OpenAIPartOptions:
+		return v.ReasoningEffortUpdate, true, nil
+	case provider.RawProviderOption:
+		if bytes.Equal(bytes.TrimSpace(v.Raw), []byte("null")) {
+			return "", false, nil
+		}
+		var options struct {
+			ReasoningEffortUpdate OpenAIReasoningEffortUpdate `json:"reasoningEffortUpdate"`
+		}
+		if err := json.Unmarshal(v.Raw, &options); err != nil {
+			return "", true, fmt.Errorf("unmarshaling %q option: %w", key, err)
+		}
+		return options.ReasoningEffortUpdate, true, nil
+	default:
+		return "", true, nil
+	}
 }
 
 func configurationUpdateItem(effort OpenAIReasoningEffortUpdate) responses.ResponseInputItemUnionParam {
@@ -58,7 +112,7 @@ func configurationUpdateEffort(item responses.ResponseInputItemUnionParam) (stri
 // applyConfigurationUpdates validates positioned updates against the model,
 // prepends the request-level update when supported, and rejects adjacent
 // updates that the Responses API does not accept.
-func applyConfigurationUpdates(input responses.ResponseInputParam, modelID string, caps modelCapabilities, popts OpenAIResponsesOptions, unsupportedReason string) (responses.ResponseInputParam, []provider.Warning, error) {
+func applyConfigurationUpdates(input responses.ResponseInputParam, modelID string, caps modelCapabilities, popts OpenAIResponsesOptions) (responses.ResponseInputParam, []provider.Warning, error) {
 	for _, item := range input {
 		if effort, ok := configurationUpdateEffort(item); ok {
 			if reason := unsupportedReasoningEffortReason(modelID, caps, effort); reason != "" {
@@ -69,27 +123,30 @@ func applyConfigurationUpdates(input responses.ResponseInputParam, modelID strin
 
 	var warnings []provider.Warning
 	if update := popts.ReasoningEffortUpdate; update != "" {
-		reason := unsupportedReason
+		reason := configurationUpdateUnsupportedReason(caps, popts)
 		if reason == "" {
 			reason = unsupportedReasoningEffortReason(modelID, caps, string(update))
 		}
 		if reason != "" {
 			warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffortUpdate", Details: reason})
-		} else if len(input) == 0 || !isConfigurationUpdate(input[0], string(update)) {
+		} else if !startsWithConfigurationUpdate(input, string(update)) {
 			input = append(responses.ResponseInputParam{configurationUpdateItem(update)}, input...)
 		}
 	}
 
 	for i := 1; i < len(input); i++ {
 		if input[i-1].OfConfigurationUpdate != nil && input[i].OfConfigurationUpdate != nil {
-			return nil, nil, fmt.Errorf("openai: adjacent reasoning effort configuration updates: %w", provider.ErrUnsupportedFunctionality)
+			return nil, nil, fmt.Errorf("openai: %s: %w", configurationUpdateAdjacent, provider.ErrUnsupportedFunctionality)
 		}
 	}
 	return input, warnings, nil
 }
 
-func isConfigurationUpdate(item responses.ResponseInputItemUnionParam, effort string) bool {
-	got, ok := configurationUpdateEffort(item)
+func startsWithConfigurationUpdate(input responses.ResponseInputParam, effort string) bool {
+	if len(input) == 0 {
+		return false
+	}
+	got, ok := configurationUpdateEffort(input[0])
 	return ok && got == effort
 }
 

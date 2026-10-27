@@ -95,16 +95,25 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 		Model: shared.ResponsesModel(modelID),
 	}
 
+	resolvedEffort := popts.ReasoningEffort
+	if resolvedEffort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
+		resolvedEffort = string(opts.Reasoning)
+	}
+	if reason := unsupportedReasoningEffortReason(modelID, caps, resolvedEffort); reason != "" {
+		warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffort", Details: reason})
+		resolvedEffort = ""
+	}
+
 	// Input conversion.
 	inputCtx := newInputConversionContext(opts.Tools, br.toolNameMapping, store, poptsName, popts.Conversation != "", popts.PreviousResponseID != "")
 	inputCtx.isReasoningModel = isReasoning
-	updateUnsupportedReason := configurationUpdateUnsupportedReason(caps, popts)
+	inputCtx.configurationUpdateUnsupportedReason = configurationUpdateUnsupportedReason(caps, popts)
 	input, inputWarnings, err := convertInput(opts.Prompt, systemMode, popts, inputCtx)
 	if err != nil {
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
 	warnings = append(warnings, inputWarnings...)
-	input, updateWarnings, err := applyConfigurationUpdates(input, modelID, caps, popts, updateUnsupportedReason)
+	input, updateWarnings, err := applyConfigurationUpdates(input, modelID, caps, popts)
 	if err != nil {
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
@@ -113,15 +122,6 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 		input = append(input, responses.ResponseInputItemUnionParam{OfCompactionTrigger: &responses.ResponseInputItemCompactionTriggerParam{}})
 	}
 	body.Input = responses.ResponseNewParamsInputUnion{OfInputItemList: input}
-
-	resolvedEffort := popts.ReasoningEffort
-	if resolvedEffort == "" && opts.Reasoning != provider.ReasoningProviderDefault {
-		resolvedEffort = string(opts.Reasoning)
-	}
-	if reason := unsupportedReasoningEffortReason(modelID, caps, resolvedEffort); resolvedEffort != "" && reason != "" {
-		warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffort", Details: reason})
-		resolvedEffort = ""
-	}
 
 	restrictSampling := isReasoning && (effectiveReasoningEffort(input, resolvedEffort) != "none" || !caps.supportsNonReasoningParameters)
 	restrictLogprobs := restrictSampling && caps.supportedReasoningEfforts != nil

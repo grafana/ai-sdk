@@ -20,6 +20,14 @@ func convertInput(prompt []provider.Message, systemMode string, popts OpenAIResp
 	for _, msg := range prompt {
 		switch msg.Role {
 		case provider.RoleSystem:
+			update, err := systemMessageEffortUpdate(msg, ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			if update != "" {
+				input = append(input, configurationUpdateItem(update))
+				continue
+			}
 			text := concatText(msg.Content)
 			switch systemMode {
 			case "remove":
