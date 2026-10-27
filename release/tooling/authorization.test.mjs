@@ -59,6 +59,55 @@ test('duplicate claims block before validation and new arrivals cannot join the 
   assert.deepEqual((await authorizeInventory(github, { mainSha: base, candidates: [] }, () => assert.fail(), base)).candidates, []);
 });
 
+const combinedConfig = { ...config, 'separate-pull-requests': false, packages: { ...config.packages,
+  'ai-gateway': { ...config.packages['ai-gateway'], 'separate-pull-requests': true } } };
+const combinedBody = 'Header\n---\n\n\n<details><summary>0.1.0-alpha.2</summary>\n\n## 0.1.0-alpha.2 (2026-10-27)\n\n* root\n</details>\n\n' +
+  '<details><summary>providers/openai: 0.1.0-alpha.2</summary>\n\n## 0.1.0-alpha.2 (2026-10-27)\n\n* openai\n</details>\n\n---\nFooter';
+
+test('a merged combined release yields one unambiguous record per released library', async () => {
+  const { github, candidate } = fixture();
+  github.getFileJson = async path => path === 'release-please-config.json' ? combinedConfig
+    : { '.': '0.1.0-alpha.2', 'providers/openai': '0.1.0-alpha.2' };
+  const pr = { ...candidate.pr, title: 'chore: release main', body: combinedBody };
+  github.octokit.pulls.get = async () => ({ data: structuredClone(pr) });
+  github.pullRequestIterator = async function* () {
+    yield { number: 10, title: pr.title, body: pr.body, sha: mergeSha, labels: ['autorelease: pending'],
+      headBranchName: branch, baseBranchName: 'main', files: [] };
+  };
+  github.releaseIterator = async function* () {};
+  github.tagIterator = async function* () {};
+  const inventory = await discoverMerged(github);
+  assert.deepEqual(inventory.candidates.map(item => [item.component, item.tag, item.prNumber, item.mergeSha]), [
+    ['.', 'v0.1.0-alpha.2', 10, mergeSha], ['providers/openai', 'providers/openai/v0.1.0-alpha.2', 10, mergeSha]]);
+  const report = await authorizeInventory(github, inventory, async () => ({ prerequisites: [] }), base);
+  assert.deepEqual(report.candidates.map(item => item.status), ['approved', 'approved']);
+});
+
+test('a blocked co-released prerequisite blocks only the libraries that require it', async () => {
+  const { github, candidate, inventory } = fixture();
+  const component = (name, version = '0.1.0-alpha.2') => ({ ...candidate, component: name, version,
+    tag: (name === '.' ? '' : `${name}/`) + `v${version}` });
+  inventory.candidates.splice(0, 1, component('.'), component('providers/openai'), component('providers/bedrock'),
+    component('middleware/logger'), component('providers/azure', '0.1.0-alpha.1'));
+  const core = 'github.com/grafana/ai-sdk';
+  const prerequisites = {
+    '.': [],
+    'providers/bedrock': [{ path: core, version: 'v0.1.0-alpha.2' }, { path: `${core}/providers/openai`, version: 'v0.1.0-alpha.2' }],
+    'middleware/logger': [{ path: core, version: 'v0.1.0-alpha.2' }],
+    'providers/azure': [{ path: `${core}/providers/bedrock`, version: 'v0.1.0-alpha.2' }],
+  };
+  const report = await authorizeInventory(github, inventory, async item => {
+    if (item.component === 'providers/openai') throw new Error('openai prerequisite failed');
+    return { prerequisites: prerequisites[item.component] };
+  }, base);
+  assert.deepEqual(report.candidates.map(item => [item.component, item.status]), [
+    ['.', 'approved'], ['providers/openai', 'blocked'], ['providers/bedrock', 'blocked'],
+    ['middleware/logger', 'approved'], ['providers/azure', 'blocked']]);
+  assert.match(report.candidates[2].reason, /co-released prerequisite blocked: providers\/openai/);
+  assert.match(report.candidates[4].reason, /co-released prerequisite blocked: providers\/bedrock/);
+  assert.equal(report.candidates[2].library, undefined);
+});
+
 test('unsigned, spoofed and unsupported identities fail before library validation', () => {
   for (const mutate of [
     ({ candidate }) => { candidate.pr.user.id = 1; },

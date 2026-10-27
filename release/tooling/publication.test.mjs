@@ -33,10 +33,16 @@ function publisher() {
     } else throw new Error(`unexpected pinned writer request: ${method} ${path}`);
     return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
   };
+  const verified = [];
   const options = { github: f.github, inventory: f.inventory, toolingRevision: base,
-    validate: async candidate => { validations.push(candidate.prNumber); return { baseSha: base }; }, fetchImpl: fetch };
+    validate: async candidate => { validations.push(candidate.prNumber); return { baseSha: base }; }, fetchImpl: fetch,
+    verifyProxy: async candidate => {
+      assert.ok(tags.has(candidate.tag), 'proxy verification before tag creation');
+      verified.push(candidate.tag);
+      return { target: candidate.tag };
+    } };
   const run = () => publishInventory(options);
-  return { ...f, tags, releases, requests, validations, options, fetch, run };
+  return { ...f, tags, releases, requests, validations, verified, options, fetch, run };
 }
 
 function existing(f, release = false) {
@@ -248,4 +254,74 @@ test('concurrent tag creation accepts only the exact immutable target', async ()
     assert.equal(status(report), matching ? 'published' : 'blocked');
     assert.equal(f.releases.size, matching ? 1 : 0);
   }
+});
+
+function combinedPublisher() {
+  const f = publisher();
+  const core = 'github.com/grafana/ai-sdk';
+  const component = (name, version = '0.1.0-alpha.2') => ({ ...f.candidate, component: name, version,
+    tag: (name === '.' ? '' : `${name}/`) + `v${version}`, name: (name === '.' ? '' : `${name}: `) + `v${version}` });
+  f.inventory.candidates.splice(0, 1, component('providers/bedrock'), component('.'), component('providers/openai'));
+  const prerequisites = {
+    '.': [], 'providers/openai': [{ path: core, version: 'v0.1.0-alpha.2' }],
+    'providers/bedrock': [{ path: core, version: 'v0.1.0-alpha.2' }, { path: `${core}/providers/openai`, version: 'v0.1.0-alpha.2' }],
+  };
+  f.options.validate = async candidate => { f.validations.push(candidate.component); return { baseSha: base, prerequisites: prerequisites[candidate.component] }; };
+  return f;
+}
+
+const tagRequests = f => f.requests.filter(r => r.path.endsWith('/git/refs')).map(r => r.body.ref.slice(10));
+const labelRequests = f => f.requests.filter(r => r.path.includes('/labels'));
+
+test('combined release publishes prerequisites first and moves lifecycle labels once', async () => {
+  const f = combinedPublisher();
+  const report = await f.run();
+  assert.deepEqual(report.candidates.map(c => [c.component, c.status]),
+    [['providers/bedrock', 'published'], ['.', 'published'], ['providers/openai', 'published']], JSON.stringify(report));
+  assert.deepEqual(tagRequests(f), ['v0.1.0-alpha.2', 'providers/openai/v0.1.0-alpha.2', 'providers/bedrock/v0.1.0-alpha.2']);
+  assert.deepEqual(f.verified, ['v0.1.0-alpha.2', 'providers/openai/v0.1.0-alpha.2', 'providers/bedrock/v0.1.0-alpha.2']);
+  assert.equal(labelRequests(f).length, 2);
+  assert.deepEqual(f.candidate.pr.labels, [{ name: 'autorelease: tagged' }]);
+  assert.ok(f.requests.findIndex(r => r.path.includes('/labels')) > f.requests.findLastIndex(r => r.path.endsWith('/releases')));
+});
+
+test('a failed co-released prerequisite tag holds its dependents and the release labels until retry', async () => {
+  const f = combinedPublisher();
+  let fail = true;
+  f.options.fetchImpl = async (url, options) => {
+    if (fail && options.method === 'POST' && options.body?.includes('refs/tags/providers/openai/')) {
+      fail = false; throw new Error('tag write lost');
+    }
+    return f.fetch(url, options);
+  };
+  const report = await f.run();
+  assert.deepEqual(report.candidates.map(c => [c.component, c.status]),
+    [['providers/bedrock', 'blocked'], ['.', 'published'], ['providers/openai', 'blocked']]);
+  assert.match(report.candidates[0].reason, /co-released prerequisite was not published: providers\/openai/);
+  assert.equal(f.tags.has('providers/bedrock/v0.1.0-alpha.2'), false);
+  assert.equal(labelRequests(f).length, 0);
+  assert.ok(f.candidate.pr.labels.some(l => l.name === 'autorelease: pending'));
+
+  f.requests.length = 0;
+  const retry = await f.run();
+  assert.deepEqual(retry.candidates.map(c => [c.component, c.status]),
+    [['providers/bedrock', 'published'], ['.', 'recovered'], ['providers/openai', 'published']], JSON.stringify(retry));
+  assert.deepEqual(tagRequests(f), ['providers/openai/v0.1.0-alpha.2', 'providers/bedrock/v0.1.0-alpha.2']);
+  assert.deepEqual(f.candidate.pr.labels, [{ name: 'autorelease: tagged' }]);
+});
+
+test('a public proxy checksum mismatch blocks the release lifecycle without moving tags', async () => {
+  const f = combinedPublisher();
+  f.options.verifyProxy = async candidate => {
+    if (candidate.component === 'providers/openai') throw new Error('public proxy checksum differs');
+    return {};
+  };
+  const report = await f.run();
+  assert.deepEqual(report.candidates.map(c => c.status), ['blocked', 'published', 'blocked']);
+  assert.match(report.candidates[2].reason, /checksum differs/);
+  assert.ok(f.tags.has('providers/openai/v0.1.0-alpha.2'));
+  assert.equal(labelRequests(f).length, 0);
+  f.requests.length = 0;
+  assert.deepEqual((await f.run()).candidates.map(c => c.status), ['blocked', 'recovered', 'blocked']);
+  assert.equal(tagRequests(f).length, 0);
 });

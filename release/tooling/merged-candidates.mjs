@@ -50,5 +50,15 @@ export async function discoverMerged(github, component) {
 
 export function duplicateCandidates(candidates) {
   return new Set(candidates.filter(candidate => candidates.some(other => other !== candidate &&
-    (other.component === candidate.component || other.tag === candidate.tag))).map(candidate => candidate.prNumber));
+    (other.component === candidate.component || other.tag === candidate.tag))));
+}
+
+export function modulePath(component) {
+  return component === '.' ? 'github.com/grafana/ai-sdk' : `github.com/grafana/ai-sdk/${component}`;
+}
+
+export function coReleasedPrerequisites(candidate, candidates, prerequisites) {
+  const required = new Set(prerequisites.map(module => `${module.path}@${module.version}`));
+  return candidates.filter(other => other !== candidate && other.mergeSha === candidate.mergeSha &&
+    required.has(`${modulePath(other.component)}@v${other.version}`));
 }

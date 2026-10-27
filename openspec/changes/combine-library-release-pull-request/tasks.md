@@ -30,10 +30,10 @@
 
 ## 5. Authorization and publication
 
-- [ ] 5.1 Update `merged-candidates.mjs` to yield one record per released component of a combined merge and key ambiguity by component and tag; verify `authorization.test.mjs` covers a combined merge and a duplicate component
-- [ ] 5.2 Update authorization to validate each library against published prerequisites and co-released archives built from the merge revision, and to block candidates whose co-released prerequisites are blocked; verify tests cover the OpenAI-blocked/Bedrock-blocked case and an unrelated library staying approved
-- [ ] 5.3 Update `publication.mjs` to tag prerequisites before dependents at the merge commit and to skip dependents of a failed co-released tag; verify `publication.test.mjs` covers ordering, a failed prerequisite tag and retry from partial tag state without moving tags
-- [ ] 5.4 Add post-publication public-proxy hash verification with bounded retries that never queries a version before its tag exists; verify tests cover a matching hash, a mismatch and an unavailable version
+- [x] 5.1 Update `merged-candidates.mjs` to yield one record per released component of a combined merge and key ambiguity by component and tag; verify `authorization.test.mjs` covers a combined merge and a duplicate component
+- [x] 5.2 Update authorization to validate each library against published prerequisites and co-released archives built from the merge revision, and to block candidates whose co-released prerequisites are blocked; verify tests cover the OpenAI-blocked/Bedrock-blocked case and an unrelated library staying approved
+- [x] 5.3 Update `publication.mjs` to tag prerequisites before dependents at the merge commit and to skip dependents of a failed co-released tag; verify `publication.test.mjs` covers ordering, a failed prerequisite tag and retry from partial tag state without moving tags
+- [x] 5.4 Add post-publication public-proxy hash verification with bounded retries that never queries a version before its tag exists; verify tests cover a matching hash, a mismatch and an unavailable version
 
 ## 6. Dependency automation and documentation
 

@@ -3,7 +3,8 @@ import { GitHub } from 'release-please';
 import { TagName } from 'release-please/build/src/util/tag-name.js';
 import { readOnlyFetch } from './preview.mjs';
 import { authorizeInventory, recheckCandidate } from './authorize.mjs';
-import { duplicateCandidates, REPO, SHA } from './merged-candidates.mjs';
+import { coReleasedPrerequisites, REPO, SHA } from './merged-candidates.mjs';
+import { verifyPublishedVersion } from './proxy-verification.mjs';
 
 const prefix = '/repos/grafana/ai-sdk';
 const pending = 'autorelease: pending', tagged = 'autorelease: tagged';
@@ -87,29 +88,49 @@ export function publicationTransport(candidate, beforeWrite, afterWrite, fetchIm
   };
 }
 
+function publicationOrder(candidates, evidence) {
+  const order = [], state = new Map();
+  const visit = candidate => {
+    if (state.get(candidate) === 'done') return;
+    assert.notEqual(state.get(candidate), 'visiting', 'co-released prerequisite cycle');
+    state.set(candidate, 'visiting');
+    const result = evidence[candidates.indexOf(candidate)];
+    for (const prerequisite of coReleasedPrerequisites(candidate, candidates, result.library?.prerequisites ?? [])) {
+      visit(prerequisite);
+    }
+    state.set(candidate, 'done');
+    order.push(candidate);
+  };
+  candidates.forEach(visit);
+  return order;
+}
+
+const published = result => ['published', 'recovered'].includes(result?.status);
+
 export async function publishInventory({ github, inventory, validate, toolingRevision, token,
-  fetchImpl = globalThis.fetch }) {
+  fetchImpl = globalThis.fetch, verifyProxy = verifyPublishedVersion }) {
   assert.equal(running, false, 'publication already running in this process');
   running = true;
   try {
     const frozen = structuredClone(inventory);
-    const duplicates = duplicateCandidates(frozen.candidates);
-    const results = [];
-    for (const candidate of frozen.candidates) {
+    const initialStates = new Map();
+    const inspect = async (reader, tag, candidate) => {
+      const current = await publicationState(reader, tag, candidate);
+      if (!initialStates.has(candidate)) initialStates.set(candidate, current);
+      return current;
+    };
+    const report = await authorizeInventory(github, frozen, validate, toolingRevision, inspect);
+    const results = new Map(), contexts = new Map();
+    for (const candidate of publicationOrder(frozen.candidates, report.candidates)) {
+      const evidence = report.candidates[frozen.candidates.indexOf(candidate)];
       const identity = { prNumber: candidate.prNumber, component: candidate.component,
         tag: candidate.tag, mergeSha: candidate.mergeSha };
       try {
-        assert.equal(duplicates.has(candidate.prNumber), false, 'ambiguous component or tag');
-        let state;
-        const inspect = async (...args) => {
-          const current = await publicationState(...args);
-          state ??= current;
-          return current;
-        };
-        const report = await authorizeInventory(github, { ...frozen, candidates: [candidate] }, validate,
-          toolingRevision, inspect);
-        const evidence = report.candidates[0];
         assert.equal(evidence.status, 'approved', evidence.reason);
+        const missing = coReleasedPrerequisites(candidate, frozen.candidates, evidence.library.prerequisites ?? [])
+          .filter(prerequisite => !published(results.get(prerequisite)));
+        assert.equal(missing.length, 0, `co-released prerequisite was not published: ${missing.map(m => m.component).join(', ')}`);
+        let state = initialStates.get(candidate);
         const initial = structuredClone(state);
         const recheck = async operation => {
           await recheckCandidate(github, candidate, evidence);
@@ -147,19 +168,35 @@ export async function publishInventory({ github, inventory, validate, toolingRev
           await writer.createRelease({ tag, sha: candidate.mergeSha, name: candidate.name, notes: candidate.notes },
             { draft: false, prerelease: candidate.prerelease, forceTag: !state.tagObject });
         }
-        await recheck('label-add');
-        const { data: pr } = await github.octokit.pulls.get({ ...REPO, pull_number: candidate.prNumber });
-        if (!pr.labels.some(label => label.name === tagged)) await writer.addIssueLabels([tagged], candidate.prNumber);
-        if (pr.labels.some(label => label.name === pending)) await writer.removeIssueLabels([pending], candidate.prNumber);
         await recheckCandidate(github, candidate, evidence);
         assert.deepEqual(await publicationState(github, candidate.tag, candidate), state);
-        results.push({ ...identity, status: initial.releaseId ? 'recovered' : 'published',
-          releaseId: state.releaseId, evidence });
+        const proxy = await verifyProxy(candidate);
+        contexts.set(candidate, { writer, recheck });
+        results.set(candidate, { ...identity, status: initial.releaseId ? 'recovered' : 'published',
+          releaseId: state.releaseId, proxy, evidence });
       } catch (error) {
-        results.push({ ...identity, status: 'blocked', reason: error.message });
+        results.set(candidate, { ...identity, status: 'blocked', reason: error.message });
       }
     }
-    return { schemaVersion: 1, toolingRevision, mainSha: frozen.mainSha, candidates: results };
+    for (const prNumber of new Set(frozen.candidates.map(candidate => candidate.prNumber))) {
+      const members = frozen.candidates.filter(candidate => candidate.prNumber === prNumber);
+      if (!members.every(candidate => published(results.get(candidate)))) continue;
+      const { writer, recheck } = contexts.get(members.at(-1));
+      try {
+        await recheck('label-add');
+        const { data: pr } = await github.octokit.pulls.get({ ...REPO, pull_number: prNumber });
+        if (!pr.labels.some(label => label.name === tagged)) await writer.addIssueLabels([tagged], prNumber);
+        if (pr.labels.some(label => label.name === pending)) await writer.removeIssueLabels([pending], prNumber);
+      } catch (error) {
+        for (const candidate of members) {
+          const { prNumber: number, component, tag, mergeSha } = results.get(candidate);
+          results.set(candidate, { prNumber: number, component, tag, mergeSha, status: 'blocked',
+            reason: `release lifecycle labels incomplete: ${error.message}` });
+        }
+      }
+    }
+    return { schemaVersion: 1, toolingRevision, mainSha: frozen.mainSha,
+      candidates: frozen.candidates.map(candidate => results.get(candidate)) };
   } finally {
     running = false;
   }

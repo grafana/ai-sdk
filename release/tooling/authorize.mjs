@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { GitHub, setLogger } from 'release-please';
 import { readOnlyFetch } from './preview.mjs';
-import { discoverMerged, duplicateCandidates, REPO, SHA } from './merged-candidates.mjs';
+import { coReleasedPrerequisites, discoverMerged, duplicateCandidates, REPO, SHA } from './merged-candidates.mjs';
 import { verifyMergedIdentity, successfulRun, readinessArtifact, downloadArtifact,
   assertUnpublished, sameCandidate, SOURCE_JOBS } from './authorization-evidence.mjs';
 
@@ -48,7 +48,7 @@ export async function authorizeInventory(github, inventory, validate, toolingRev
       headSha: candidate.headSha, mergeSha: candidate.mergeSha, parents: candidate.parents,
       treeSha: candidate.treeSha, name: candidate.name, notes: candidate.notes };
     try {
-      assert.equal(duplicates.has(candidate.prNumber), false, 'ambiguous component or tag in frozen inventory');
+      assert.equal(duplicates.has(candidate), false, 'ambiguous component or tag in frozen inventory');
       assert.notEqual(candidate.component, 'ai-gateway', 'Gateway is unsupported by library authorization');
       const initialState = await publicationState(github, candidate.tag, candidate);
       const { data: head } = await github.octokit.repos.getCommit({ ...REPO, ref: candidate.headSha });
@@ -66,7 +66,25 @@ export async function authorizeInventory(github, inventory, validate, toolingRev
       report.candidates.push({ ...identity, status: 'blocked', reason: error.message });
     }
   }
+  blockDependents(inventory.candidates, report.candidates);
   return report;
+}
+
+export function blockDependents(candidates, results) {
+  for (let changed = true; changed;) {
+    changed = false;
+    candidates.forEach((candidate, index) => {
+      const result = results[index];
+      if (result.status !== 'approved') return;
+      const blocked = coReleasedPrerequisites(candidate, candidates, result.library.prerequisites ?? [])
+        .filter(prerequisite => results[candidates.indexOf(prerequisite)].status !== 'approved');
+      if (blocked.length === 0) return;
+      const { source, readiness, artifactId, library, ...identity } = result;
+      results[index] = { ...identity, status: 'blocked',
+        reason: `co-released prerequisite blocked: ${blocked.map(prerequisite => prerequisite.component).join(', ')}` };
+      changed = true;
+    });
+  }
 }
 
 export function libraryValidator(inventory, token) {
