@@ -108,6 +108,17 @@ func TestReleasePleaseConfig_Settings(t *testing.T) {
 	assert.False(t, *root.IncludeComponentInTag, "the root module is tagged vX.Y.Z without a component")
 }
 
+func TestReleasePleaseConfig_LibrariesShareOneReleasePullRequest(t *testing.T) {
+	config, err := LoadConfig(repositoryRoot)
+	require.NoError(t, err)
+
+	require.NotNil(t, config.SeparatePullRequests)
+	assert.False(t, *config.SeparatePullRequests, "libraries are released together from one pull request")
+	gateway := config.Packages["ai-gateway"]
+	require.NotNil(t, gateway.SeparatePullRequests)
+	assert.True(t, *gateway.SeparatePullRequests, "Gateway keeps its own release pull request")
+}
+
 func TestReleasePleaseConfig_GatewayVersionsThePluginPackage(t *testing.T) {
 	config, err := LoadConfig(repositoryRoot)
 	require.NoError(t, err)
