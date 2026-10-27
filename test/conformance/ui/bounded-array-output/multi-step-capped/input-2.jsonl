@@ -1,0 +1,8 @@
+{"type":"stream-start","warnings":[]}
+{"type":"text-start","id":"text-2"}
+{"type":"text-delta","id":"text-2","delta":"{\"elements\":["}
+{"type":"text-delta","id":"text-2","delta":"{\"name\":\"x\"},"}
+{"type":"text-delta","id":"text-2","delta":"{\"name\":\"y\"},"}
+{"type":"text-delta","id":"text-2","delta":"{\"name\":\"z\"}]}"}
+{"type":"text-end","id":"text-2"}
+{"type":"finish","finishReason":{"unified":"stop","raw":"stop"},"usage":{"inputTokens":{"total":10},"outputTokens":{"total":5}}}

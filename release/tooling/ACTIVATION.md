@@ -121,8 +121,11 @@ and the live mode are authoritative until that header is updated after bootstrap
 
 The final first-party rule in `renovate.json` becomes effective when this PR merges.
 It enables independent updates only for registered library modules, accepts tagged
-alpha/beta/rc versions, excludes pseudo-version proposals, and overrides inherited
-weekly grouping and release-age delay. Updates use `fix(deps)` and require review;
+alpha/beta/rc versions, excludes pseudo-version and digest proposals, groups all
+first-party updates into one pull request and overrides the inherited weekly
+schedule. The organization-wide minimum release age still applies; see the
+[release runbook](../README.md#keep-dependent-modules-on-released-first-party-requirements).
+Updates use `fix(deps)` and require review;
 automerge is disabled. This follows Renovate's
 [configuration contracts](https://docs.renovatebot.com/configuration-options/).
 
