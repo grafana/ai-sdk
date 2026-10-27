@@ -13,7 +13,7 @@ choices. They still need compatible capabilities: translating a request does
 not make a provider support another provider's tools or options. This walkthrough
 follows the runnable `grafana-ai-gateway` command. For setup, see
 [calling Gateway](../providers/grafana-gateway.md) and
-[running the container](../guides/ai-gateway-container.md). Unfamiliar terms have
+[installing the plugin](../../ai-gateway/README.md). Unfamiliar terms have
 [definitions and aliases in the glossary](gateway-glossary.md).
 
 ## The pieces and their boundaries
@@ -64,13 +64,16 @@ flowchart LR
   routing --> compatible --> apis
 ```
 
-Both API listeners register `GET /api/v1/aisdk/config` and
-`POST /api/v1/aisdk/language-model`. Private discovery lists configured models;
-Cloud discovery returns an unsupported-discovery error rather than exposing the
-private catalog. The private API, optional Cloud API, and operational endpoints
-use separate listeners. `/live`, `/ready`, and `/metrics` are operational routes. See the
-[router](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/router.go) and
-[process composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/process/process.go).
+The command registers two namespaced App Platform routes under the plugin's
+API group: `GET {prefix}/config` and `POST {prefix}/language-model`, where the
+prefix is `/apis/{group}/{version}/namespaces/{namespace}`. Configured discovery
+lists configured models; BYOK discovery returns an unsupported-discovery error
+rather than exposing the configured catalog. The command registers only these
+two app routes; the plugin host owns transport and any operational endpoints, so
+there are no separate listeners and no `/live`, `/ready`, or `/metrics` routes
+here. See the
+[routes](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/routes.go) and
+[plugin composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/gateway.go).
 
 **Other inbound protocols are not wired into this command.** In particular,
 `/v1/chat/completions`, `/v1/messages`, and `/v1/responses` are not registered
@@ -108,15 +111,18 @@ sequenceDiagram
   Note over H,M: HTTP and model observations have different scopes
 ```
 
-1. **The host identifies and authenticates the caller.** HTTP telemetry wraps
-   dispatch. Route and method checks happen before authentication; authentication
-   happens before body decoding. Private access uses JWT verification or
-   configured static keys (with a separate unsafe development mode). Cloud mode
-   trusts identity from an authenticating proxy and requires network isolation
-   so callers cannot forge that identity directly. Gateway credentials identify
-   the caller; provider credentials authorize the later native API call. See
+1. **The host verifies the caller and the access decision maps it.** HTTP
+   telemetry wraps dispatch. Route and method checks happen before the access
+   decision; the decision happens before body decoding. The plugin host verifies
+   the platform-delegated token against the platform signing keys
+   (`GRAFANA_JWKS_URL` or `GRAFANA_JWKS`). `Decide` then maps the verified token
+   and route namespace to account access under the configured `access_mode`
+   (`cloud` or `self-hosted`): the token namespace must cover the route
+   namespace, then the mode and the token's actor chain select configured, BYOK,
+   or refused access. The delegated identity names the caller; provider
+   credentials authorize the later native API call. See
    [authentication](../guides/gateway-authentication.md) and the
-   [authentication middleware](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/auth.go).
+   [access decision](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access.go).
 2. **ProviderWire translates the request.** The handler validates protocol
    headers, reads a bounded body, checks UTF-8 and the request schema, and maps
    the body to `provider.CallOptions`. It separates the reserved `gateway`
@@ -223,29 +229,33 @@ summary redaction is not a general filter for generated content or secrets.
 
 ## Existing code versus deployed capabilities
 
-The command wires two account paths, selected by the authenticated listener,
-not by a caller choosing a different model name:
+The command wires two account paths, selected by the access decision from the
+`access_mode` and the verified token, not by a caller choosing a different model
+name:
 
-- **Private:** JWT or static-key callers use configured models and server-held
-  provider credentials. They cannot use Cloud request accounts.
-- **Cloud:** the trusted proxy supplies caller identity; `NewBYOKSelector`
-  checks request-account access and decodes the provider/model destination and
-  credentials. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
+- **Configured:** callers granted configured access use configured models and
+  server-held provider credentials. In `self-hosted` mode this is any verified
+  user or service account; in `cloud` mode it is an allowlisted internal
+  service. They cannot switch to request accounts.
+- **BYOK:** in `cloud` mode, other verified identities get request-scoped
+  access; `NewBYOKSelector` checks request-account access and decodes the
+  provider/model destination and credentials. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
   constructs an Anthropic or OpenAI model with request-local accounts and
   observation. It does not consult the configured catalog or fall back to
   server-held keys. This host supplies no custom base-URL approval map.
 
 See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go)
 and [authentication configuration](../guides/gateway-authentication.md).
-The Cloud listener must be reachable only through its authenticating proxy,
-including isolation from private JWT clients. Source and synthetic tests establish
-service wiring, not production network isolation or live-provider acceptance.
+`Decide` refuses a token whose namespace does not cover the route namespace, so
+a caller cannot reach another namespace's account path. Source and synthetic
+tests establish service wiring, not production network isolation or live-provider
+acceptance.
 Reusable middleware supports policy hooks, but this command does not install
 every available SDK policy or an aggregate admission controller.
 
 This walkthrough is grounded in the router, process composition, handler, and
 catalog linked above. Useful regression evidence includes
-[authentication ordering tests](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/auth_test.go),
+[access decision tests](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access_test.go),
 [configured fallback tests](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/fallback_acceptance_test.go),
 and [stream lifecycle tests](../../ai-gateway/providerwire/v4/stream_test.go).
 The [parity coverage map](../../test/conformance/PARITY.md) distinguishes client

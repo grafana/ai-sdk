@@ -32,7 +32,7 @@ func testSourcesMetadataOnlyObservation(t *testing.T, requireAdoption bool) {
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
 			telemetry, err := NewTelemetry(logger)
 			require.NoError(t, err)
-			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 			require.NoError(t, err)
 			source := provider.SourceInfo{SourceType: provider.SourceTypeDocument, ID: "native-private", Title: "title-private", MediaType: "text/plain", Filename: "filename-private", ProviderMetadata: provider.ProviderMetadata{"openai": json.RawMessage(`{"fileId":"metadata-private"}`)}}

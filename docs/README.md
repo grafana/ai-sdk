@@ -78,7 +78,7 @@ the service your application calls:
 - [OpenAI-compatible APIs](providers/openai-compatible.md) for local or hosted
   Chat Completions-compatible servers.
 - [Grafana AI Gateway](providers/grafana-gateway.md) for authenticated public-model discovery and text calls.
-- [Authenticate to Grafana AI Gateway](guides/gateway-authentication.md) to choose Cloud or JWT credentials for Go and server-side Vercel clients.
+- [Authenticate to Grafana AI Gateway](guides/gateway-authentication.md) to choose the right Grafana credential for your application, in Go or server-side TypeScript.
 
 ## Extend model infrastructure
 
@@ -91,9 +91,6 @@ the service your application calls:
 
 ## Operate in production
 
-- [Run AI Gateway in a container](guides/ai-gateway-container.md) — build and
-  test the standalone Gateway image and configure models, secrets,
-  authentication, and network access.
 - [Production checklist](best-practices/production.md) — bound work, secure the
   request boundary, and verify the deployed streaming path.
 - [Error handling](best-practices/error-handling.md) — handle failures before,

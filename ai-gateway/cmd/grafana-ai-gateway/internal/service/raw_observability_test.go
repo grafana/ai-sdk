@@ -24,7 +24,7 @@ func TestRawOutputMetadataOnlyObservation(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
 	raw := json.RawMessage(`{"type":"response.created","response":{"id":"raw-response-private","output_text":"raw-text-private"}}`)

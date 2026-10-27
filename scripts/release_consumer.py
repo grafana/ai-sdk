@@ -17,7 +17,7 @@ SCENARIOS = {
     "providers/openai-compatible": "TestDoGenerateSendsCompatibleRequest",
     "providers/azure": "TestNewAnthropic_ProtocolAndIdentity",
     "providers/bedrock": "TestModel_InvalidToolDoesNotInvokeProvider",
-    "providers/grafana": "TestCloudCredentials_Requests",
+    "providers/grafana": "TestServiceAccount_Requests",
     "middleware/logger": "TestMiddleware_GenerateSuccessLogsStartAndFinish",
     "middleware/enrichment": "TestMiddlewareIntegration_GenerateStreamNoMutationRegistryAndOrdering",
     "middleware/prometheus": "TestGenerateMetrics",

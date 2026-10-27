@@ -451,15 +451,15 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 		cfg.Hooks = agento11y.HooksConfig{Enabled: false}
 	})
 	var logs lockedBuffer
-	var output physicalBuffer
+	var output lockedBuffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	telemetry, err := NewTelemetry(logger)
 	require.NoError(t, err)
-	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry, flushTimeout: time.Second, shutdownTimeout: time.Second}
+	runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
 	factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
 	require.NoError(t, err)
-	sink := newPhysicalAttemptSink(&output, telemetry, 8, time.Second, time.Second)
-	t.Cleanup(sink.Close)
+	sink := newPhysicalAttemptSink(hclogLogger(&output), telemetry, 8)
+	t.Cleanup(func() { sink.Close(context.Background()) })
 	h := &fallbackAcceptance{}
 	h.logText = logs.String
 	catalog, err := buildCatalog(fallbackCatalogFile(), fallbackProviders(), http.DefaultClient, func(_ nativemodel.Config, id string, _ *http.Client) provider.LanguageModel {
@@ -498,7 +498,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	h.verify = func(t *testing.T, mode, public string, outcomes []fallback.AttemptOutcome) {
 		t.Helper()
 		require.Eventually(t, func() bool { return env.RequestCount() == 1 }, time.Second, time.Millisecond)
-		sink.Close()
+		sink.Close(context.Background())
 		env.Shutdown(t)
 		generation := env.SingleGenerationJSON(t)
 		encoded, err := json.Marshal(generation)
@@ -539,7 +539,9 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 			require.NoError(t, json.Unmarshal([]byte(line), &fields))
 			var keys []string
 			for key := range fields {
-				keys = append(keys, key)
+				if !strings.HasPrefix(key, "@") {
+					keys = append(keys, key)
+				}
 			}
 			assert.ElementsMatch(t, []string{"event", "correlation_id", "candidate_index", "provider_instance", "backend_model_id", "started_at", "decided_at", "outcome", "will_fallback", "winner"}, keys)
 			assert.Equal(t, index+1, record.CandidateIndex)

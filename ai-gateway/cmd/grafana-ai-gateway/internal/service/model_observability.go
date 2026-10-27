@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -25,41 +24,54 @@ const maxAgentDiagnosticBytes = 2048
 
 // AgentObservabilityRuntime owns the optional process-wide recording client.
 type AgentObservabilityRuntime struct {
-	client          *agento11y.Client
-	telemetry       *Telemetry
-	flushTimeout    time.Duration
-	shutdownTimeout time.Duration
-	mu              sync.Mutex
-	recordings      sync.WaitGroup
-	closing         bool
-	closeOnce       sync.Once
+	client     *agento11y.Client
+	telemetry  *Telemetry
+	mu         sync.Mutex
+	recordings sync.WaitGroup
+	closing    bool
+	closeOnce  sync.Once
 }
 
-// NewAgentObservabilityRuntime consumes prevalidated settings, rejects the
-// SDK's ambient configuration layer, resolves the bearer credential once, and
-// constructs one metadata-only hooks-disabled client. A disabled development
+// agentExportTuning holds the exporter's queueing, batching and retry policy.
+type agentExportTuning struct {
+	queueSize       int
+	batchSize       int
+	payloadMaxBytes int
+	maxRetries      int
+	initialBackoff  time.Duration
+	maxBackoff      time.Duration
+	exportTimeout   time.Duration
+	flushInterval   time.Duration
+}
+
+var defaultAgentExportTuning = agentExportTuning{
+	queueSize:       2000,
+	batchSize:       100,
+	payloadMaxBytes: 16 << 20,
+	maxRetries:      5,
+	initialBackoff:  100 * time.Millisecond,
+	maxBackoff:      5 * time.Second,
+	exportTimeout:   10 * time.Second,
+	flushInterval:   time.Second,
+}
+
+// NewAgentObservabilityRuntime consumes prevalidated settings and the
+// resolved bearer credential and constructs one metadata-only hooks-disabled
+// client. Callers reject the SDK's ambient configuration layer first. A disabled development
 // configuration returns a no-op runtime.
-func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, lookupEnv config.LookupEnv, telemetry *Telemetry) (runtime *AgentObservabilityRuntime, err error) {
+func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, secret string, telemetry *Telemetry) (*AgentObservabilityRuntime, error) {
+	return newAgentObservabilityRuntime(settings, secret, telemetry, defaultAgentExportTuning)
+}
+
+func newAgentObservabilityRuntime(settings config.AgentObservabilitySettings, secret string, telemetry *Telemetry, tuning agentExportTuning) (runtime *AgentObservabilityRuntime, err error) {
 	if telemetry == nil {
 		return nil, fmt.Errorf("gateway service: telemetry is required")
 	}
 	runtime = &AgentObservabilityRuntime{
-		telemetry:       telemetry,
-		flushTimeout:    settings.FlushTimeout,
-		shutdownTimeout: settings.ShutdownTimeout,
+		telemetry: telemetry,
 	}
 	if !settings.Enabled {
 		return runtime, nil
-	}
-	if err := settings.ValidateAmbientEnvironment(lookupEnv); err != nil {
-		return nil, err
-	}
-	if err := settings.ValidateAmbientEnvironment(os.LookupEnv); err != nil {
-		return nil, err
-	}
-	secret, err := settings.ResolveAuthSecret(lookupEnv)
-	if err != nil {
-		return nil, err
 	}
 	protocol := agento11y.GenerationExportProtocolGRPC
 	if settings.Protocol == config.AgentObservabilityHTTP {
@@ -72,16 +84,16 @@ func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, lo
 			Endpoint:                   settings.Endpoint,
 			Auth:                       agento11y.AuthConfig{Mode: agento11y.ExportAuthModeBearer, BearerToken: secret},
 			Insecure:                   new(insecure),
-			GRPCMaxSendMessageBytes:    settings.PayloadMaxBytes,
-			GRPCMaxReceiveMessageBytes: settings.PayloadMaxBytes,
-			BatchSize:                  settings.BatchSize,
-			FlushInterval:              settings.FlushInterval,
-			QueueSize:                  settings.QueueSize,
-			MaxRetries:                 settings.MaxRetries,
-			InitialBackoff:             settings.InitialBackoff,
-			MaxBackoff:                 settings.MaxBackoff,
-			PayloadMaxBytes:            settings.PayloadMaxBytes,
-			ExportTimeout:              settings.ExportTimeout,
+			GRPCMaxSendMessageBytes:    tuning.payloadMaxBytes,
+			GRPCMaxReceiveMessageBytes: tuning.payloadMaxBytes,
+			BatchSize:                  tuning.batchSize,
+			FlushInterval:              tuning.flushInterval,
+			QueueSize:                  tuning.queueSize,
+			MaxRetries:                 tuning.maxRetries,
+			InitialBackoff:             tuning.initialBackoff,
+			MaxBackoff:                 tuning.maxBackoff,
+			PayloadMaxBytes:            tuning.payloadMaxBytes,
+			ExportTimeout:              tuning.exportTimeout,
 		},
 		EnableExperimentalFeatures: new(false),
 		Hooks:                      agento11y.HooksConfig{Enabled: false},
@@ -99,9 +111,11 @@ func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, lo
 	return runtime, nil
 }
 
-// Close performs independent bounded flush and shutdown attempts. It never
-// returns raw SDK errors to process logging.
-func (runtime *AgentObservabilityRuntime) Close() {
+// Close waits for in-flight recordings, flushes and shuts the client down.
+// Each step ends at ctx's deadline or its configured timeout, whichever is
+// first, and later recordings are dropped. It never returns raw SDK errors to
+// process logging.
+func (runtime *AgentObservabilityRuntime) Close(ctx context.Context) {
 	if runtime == nil || runtime.client == nil {
 		return
 	}
@@ -109,19 +123,15 @@ func (runtime *AgentObservabilityRuntime) Close() {
 		runtime.mu.Lock()
 		runtime.closing = true
 		runtime.mu.Unlock()
-		if !runtime.waitForRecordings(runtime.flushTimeout) {
+		if !runtime.waitForRecordings(ctx) {
 			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		}
-		flushCtx, cancelFlush := context.WithTimeout(context.Background(), runtime.flushTimeout)
-		if err := runtime.client.Flush(flushCtx); err != nil {
+		if err := runtime.client.Flush(ctx); err != nil {
 			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		}
-		cancelFlush()
-		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), runtime.shutdownTimeout)
-		if err := runtime.client.Shutdown(shutdownCtx); err != nil {
+		if err := runtime.client.Shutdown(ctx); err != nil {
 			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		}
-		cancelShutdown()
 	})
 }
 
@@ -131,7 +141,11 @@ func (runtime *AgentObservabilityRuntime) acquireClient(context.Context) *agento
 	}
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
-	if runtime.closing || runtime.client == nil {
+	if runtime.client == nil {
+		return nil
+	}
+	if runtime.closing {
+		runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
 		return nil
 	}
 	runtime.recordings.Add(1)
@@ -142,18 +156,16 @@ func (runtime *AgentObservabilityRuntime) recordingComplete() {
 	runtime.recordings.Done()
 }
 
-func (runtime *AgentObservabilityRuntime) waitForRecordings(timeout time.Duration) bool {
+func (runtime *AgentObservabilityRuntime) waitForRecordings(ctx context.Context) bool {
 	done := make(chan struct{})
 	go func() {
 		runtime.recordings.Wait()
 		close(done)
 	}()
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
 	select {
 	case <-done:
 		return true
-	case <-timer.C:
+	case <-ctx.Done():
 		return false
 	}
 }
@@ -300,8 +312,6 @@ var allowedAgentMetadataKeys = map[string]struct{}{
 	"gateway.correlation_id": {},
 	"gateway.caller_service": {},
 	"gateway.namespace":      {},
-	"gateway.region":         {},
-	"gateway.application":    {},
 }
 
 // filterAgentGeneration removes every metadata/tag/identity field not owned by

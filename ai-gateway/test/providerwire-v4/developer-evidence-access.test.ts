@@ -54,7 +54,7 @@ function sse(parts: LanguageModelV4StreamPart[]) {
 }
 
 function gateway(fetch: NonNullable<GatewayProviderSettings["fetch"]>) {
-  return createGateway({ apiKey: "dummy-gateway-key", baseURL: "https://contract.invalid/api/v1/aisdk", fetch });
+  return createGateway({ apiKey: "dummy-gateway-key", baseURL: "https://contract.invalid/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1", fetch });
 }
 
 function failure(allFailed: boolean) {
@@ -219,14 +219,14 @@ describe("#321 pinned developer access witnesses (current baseline, not permanen
     let calls = 0;
     const fetch: NonNullable<GatewayProviderSettings["fetch"]> = async (url, init) => {
       calls++;
-      assert.equal(String(url), "https://contract.invalid/api/v1/aisdk/config");
+      assert.equal(String(url), "https://contract.invalid/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1/config");
       assert.equal(init?.method, "GET");
       assert.equal(new Headers(init?.headers).get("x-access-token"), "dummy-access-token");
       assert.equal(init?.redirect, "error");
       return Response.json(document);
     };
     const bytes = Buffer.byteLength(JSON.stringify(document));
-    const options = { baseURL: "https://contract.invalid/api/v1/aisdk", headers: { "x-access-token": "dummy-access-token" }, fetch };
+    const options = { baseURL: "https://contract.invalid/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1", headers: { "x-access-token": "dummy-access-token" }, fetch };
     assert.deepEqual(await fetchConfiguredModels({ ...options, maxBytes: bytes }), document);
     await assert.rejects(() => fetchConfiguredModels({ ...options, maxBytes: bytes - 1 }), /byte limit exceeded/);
     assert.equal(calls, 2);

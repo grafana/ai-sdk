@@ -16,7 +16,7 @@ BYOK SHALL receive one request-local logical observer outside ordered attempts, 
 - **AND** Bounded structured logs/traces/Agent Observability records SHALL identify the requested provider/model without catalog lookup; configured calls SHALL retain canonical catalog identity.
 - **AND** Operator capture SHALL remain metadata-only and exclude BYOK, authentication material and unrestricted native diagnostic payloads.
 - **AND** Authentication provenance and account-access policy SHALL be observed per request, not copied from a startup auth mode.
-- **AND** Wildcard namespaces SHALL remain service-level context unless verified acting-user binding supplies a concrete namespace.
+- **AND** Namespace attribution SHALL be the platform-authorized route namespace, including for callers whose delegated token covers all namespaces.
 - **AND** Neither namespace nor customer identity SHALL become metric labels.
 
 #### Scenario: BYOK logical call uses two credentials
@@ -88,11 +88,11 @@ Provider response metadata SHALL remain unmodified for the protocol adapter and 
 
 ### Requirement: Trusted bounded request observation context
 
-The Gateway SHALL create one private immutable observation view per accepted HTTP request. It SHALL contain only a bounded Gateway-generated opaque request correlation ID, normalized verified caller service and namespace from the authenticated caller context, and validated static region and application values when configured. Empty optional values SHALL be omitted.
+The Gateway SHALL create one private immutable observation view per accepted HTTP request. It SHALL contain only a bounded Gateway-generated opaque request correlation ID and the normalized verified caller service and namespace from the authenticated caller context. Empty optional values SHALL be omitted.
 
 #### Scenario: Authenticated request is enriched
-- **WHEN** authentication stores a normalized caller and static region/application are configured
-- **THEN** logical logs and Agent Observability metadata SHALL contain the same request correlation ID, caller service, namespace, region, and application under fixed keys
+- **WHEN** authentication stores a normalized caller
+- **THEN** logical logs and Agent Observability metadata SHALL contain the same request correlation ID, caller service and namespace under fixed keys
 - **AND** the direct provider's call headers and provider options SHALL contain none of those values unless an independent future policy explicitly approves them
 
 #### Scenario: Untrusted headers attempt enrichment
@@ -101,7 +101,7 @@ The Gateway SHALL create one private immutable observation view per accepted HTT
 - **AND** none SHALL become logical metadata or provider-bound options through this capability
 
 #### Scenario: Optional deployment context is absent
-- **WHEN** region or application has no configured trusted value
+- **WHEN** the verified caller has no attributable service or namespace
 - **THEN** the field SHALL be absent from logical telemetry rather than populated from request input or a placeholder
 
 #### Scenario: Existing clients require no change
@@ -163,17 +163,17 @@ One shared service registry SHALL expose reusable model metrics. Configured metr
 
 #### Scenario: Bounded-cardinality logical model metrics policy
 - **WHEN** the activated Gateway enforces this contract
-- **THEN** The Gateway SHALL register the reusable Prometheus model middleware exactly once against the existing service-owned registry and expose its collectors on the existing unauthenticated `/metrics` route. Model metrics SHALL use requested identity mode.
+- **THEN** The Gateway SHALL register the reusable Prometheus model middleware exactly once against the registerer the Gateway was constructed with, which in the plugin process is the default registry that the plugin host collects. Model metrics SHALL use requested identity mode.
 - **AND** For configured-account calls, labels SHALL be limited to operation, canonical configured public model identity, closed status and error classes, normalized status code (`100`–`599`, `none`, or `other`), unified finish reason, token type, and closed stream-part type. Caller, namespace, correlation ID, alias, region, application, provider instance, backend model, response ID, arbitrary error, and arbitrary stream values SHALL NOT be metric labels. Duplicate registration SHALL fail startup before readiness.
 
 #### Scenario: Unary and streaming text are scraped
-- **WHEN** authenticated unary and streaming calls complete and `/metrics` is scraped
-- **THEN** the scrape SHALL expose request count, in-flight calls, duration, token usage, and applicable stream timing/count metrics for the canonical public model
+- **WHEN** authenticated unary and streaming calls complete and the plugin host collects metrics
+- **THEN** the collection SHALL include request count, in-flight calls, duration, token usage, and applicable stream timing/count metrics for the canonical public model
 - **AND** no forbidden label value SHALL occur
 
 #### Scenario: Collector registration collides
 - **WHEN** model collectors cannot be registered exactly once in the service registry
-- **THEN** startup SHALL fail before listener binding and readiness
+- **THEN** plugin startup SHALL fail before serving requests
 
 BYOK requests SHALL use a fixed BYOK model class and, if exposed, only bounded supported-provider/access-policy labels. Caller-selected native model IDs SHALL NOT become Prometheus labels or allocate per-model observer/metric caches. These BYOK rules SHALL NOT consult the configured catalog.
 
@@ -231,11 +231,11 @@ Each generation SHALL omit input/output content, system prompts, detailed errors
 
 ### Requirement: Strict bounded Agent Observability exporter configuration
 
-Gateway-owned settings SHALL explicitly select and validate Agent Observability enablement, protocol, endpoint, transport security, authentication secret reference, finite batch and queue sizes, finite payload bytes, finite retry/backoff behavior, a positive per-attempt HTTP/gRPC export timeout, and finite flush/shutdown durations before client construction. The export-attempt timeout SHALL default to 10 seconds and SHALL be no greater than 5 minutes, independently of flush/shutdown deadlines.
+Gateway-owned settings SHALL explicitly select and validate Agent Observability enablement, protocol, endpoint, transport security and bearer token before client construction. The token SHALL be read only after the other settings and the model configuration are validated. Batch and queue sizes, payload bytes, retries and a 10-second per-attempt export timeout SHALL be fixed Gateway constants, and the plugin's final-flush budget SHALL bound flush and shutdown.
 
 #### Scenario: Exporter configuration is unsafe
-- **WHEN** production configuration enables an insecure endpoint, names an unset secret, or provides a non-positive resource bound
-- **THEN** startup SHALL fail before constructing models, binding, or readiness
+- **WHEN** configuration enables an endpoint that contradicts its transport security or names an unset secret
+- **THEN** plugin startup SHALL fail before constructing models or serving requests
 - **AND** no secret value SHALL appear in the error or log
 
 #### Scenario: Export destination is unavailable
@@ -245,9 +245,9 @@ Gateway-owned settings SHALL explicitly select and validate Agent Observability 
 
 #### Scenario: Process shuts down with queued records
 - **WHEN** shutdown begins with Agent Observability records queued
-- **THEN** request work SHALL stop according to the existing process order
+- **THEN** the plugin host SHALL first drain route serving
 - **AND** the process SHALL boundedly wait for already-started recorders before flushing, while refusing new recorder acquisition after close begins
-- **AND** export flush and client shutdown SHALL finish or be abandoned within the configured independent deadline
+- **AND** the recorder wait, export flush and client shutdown SHALL use the plugin's shared final-flush context, finishing or being abandoned when it expires
 
 ### Requirement: Exporter ambient-setting and credential restrictions
 
@@ -259,11 +259,11 @@ Ambient SDK timeout, retry, queue, and experimental-feature environment settings
 
 ### Requirement: Bounded exporter failure and shutdown reporting
 
-Queue saturation, serialization failure, transport failure, and rejected exports SHALL produce only bounded counters and fixed diagnostic classes; they SHALL NOT expose credentials, endpoints, payloads, generation content, or raw exporter errors. The process SHALL flush and shut down the client after request serving stops using an independent bounded context.
+Queue saturation, serialization failure, transport failure, and rejected exports SHALL produce only bounded counters and fixed diagnostic classes; they SHALL NOT expose credentials, endpoints, payloads, generation content, or raw exporter errors. The plugin SHALL flush and shut down the client after the host stops request serving, using the shared final-flush context; configured flush and shutdown durations SHALL only shorten each step.
 
 #### Scenario: Bounded exporter failure and shutdown reporting
 - **WHEN** export delivery fails while records are queued at shutdown
-- **THEN** only fixed diagnostics and bounded counters SHALL be emitted, and flush/shutdown SHALL use an independent bounded context after serving stops
+- **THEN** only fixed diagnostics and bounded counters SHALL be emitted, and flush/shutdown SHALL use the shared final-flush context after the host stops serving
 
 ### Requirement: Logical text lifecycle semantics
 
@@ -396,3 +396,14 @@ This capability SHALL NOT add middleware/API surface, universal stream-warning/s
 #### Scenario: Native-value observation surface boundary
 - **WHEN** native source values are returned to a consumer wrapper
 - **THEN** this capability SHALL NOT introduce middleware APIs, universal built-in source/warning export, an unsupported Agent Observability source representation or diagnostic carrier
+
+### Requirement: Optional exporter with explicit transport security
+Agent Observability export SHALL be optional. When export is disabled, the Gateway SHALL resolve no exporter credential and start no exporter workers. When it is enabled, the Gateway SHALL require a credential, and the endpoint SHALL match the configured transport security, which defaults to TLS.
+
+#### Scenario: Plugin without export
+- **WHEN** configuration disables Agent Observability export
+- **THEN** the plugin SHALL start and serve requests without an exporter
+
+#### Scenario: Endpoint contradicts transport security
+- **WHEN** export is enabled with TLS and a cleartext endpoint, or without TLS and an https endpoint
+- **THEN** plugin startup SHALL fail before serving requests

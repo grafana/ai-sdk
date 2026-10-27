@@ -1,6 +1,7 @@
 package releasecheck
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -105,6 +106,37 @@ func TestReleasePleaseConfig_Settings(t *testing.T) {
 	require.True(t, exists, "the root module must be registered")
 	require.NotNil(t, root.IncludeComponentInTag)
 	assert.False(t, *root.IncludeComponentInTag, "the root module is tagged vX.Y.Z without a component")
+}
+
+func TestReleasePleaseConfig_GatewayVersionsThePluginPackage(t *testing.T) {
+	config, err := LoadConfig(repositoryRoot)
+	require.NoError(t, err)
+	for packagePath, packageConfig := range config.Packages {
+		if packagePath == "ai-gateway" {
+			assert.Equal(t, []ExtraFile{{Type: "json", Path: "package.json", JSONPath: "$.version"}}, packageConfig.ExtraFiles)
+			continue
+		}
+		assert.Emptyf(t, packageConfig.ExtraFiles, "library %q is versioned by its tag only", packagePath)
+	}
+
+	if os.Getenv("SDK_GATEWAY_ISOLATION") == "1" {
+		t.Skip("Gateway source is absent in the SDK isolation check")
+	}
+	content, err := os.ReadFile(filepath.Join(repositoryRoot, "ai-gateway", "package.json"))
+	require.NoError(t, err)
+	var plugin struct {
+		Version string `json:"version"`
+	}
+	require.NoError(t, json.Unmarshal(content, &plugin))
+	manifest, err := os.ReadFile(filepath.Join(repositoryRoot, ".release-please-manifest.json"))
+	require.NoError(t, err)
+	var released map[string]string
+	require.NoError(t, json.Unmarshal(manifest, &released))
+	expected, ok := released["ai-gateway"]
+	if !ok {
+		expected = config.Packages["ai-gateway"].InitialVersion
+	}
+	assert.Equal(t, expected, plugin.Version, "the plugin package version must match the Gateway release version")
 }
 
 func TestReleasePleaseConfig_RootExcludesNestedModules(t *testing.T) {

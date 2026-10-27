@@ -26,8 +26,6 @@ type requestObservation struct {
 	correlationID string
 	callerService string
 	namespace     string
-	region        string
-	application   string
 }
 
 type modelObservationKey struct{}
@@ -94,7 +92,7 @@ func observationBridgeMiddleware() middleware.Middleware {
 
 func observationLogAttrs(ctx context.Context) []slog.Attr {
 	observation := observationFromContext(ctx)
-	attrs := make([]slog.Attr, 0, 5)
+	attrs := make([]slog.Attr, 0, 3)
 	for _, field := range []struct {
 		key   string
 		value string
@@ -102,8 +100,6 @@ func observationLogAttrs(ctx context.Context) []slog.Attr {
 		{key: "correlation_id", value: observation.correlationID},
 		{key: "caller_service", value: observation.callerService},
 		{key: "namespace", value: observation.namespace},
-		{key: "region", value: observation.region},
-		{key: "application", value: observation.application},
 	} {
 		if field.value != "" {
 			attrs = append(attrs, slog.String(field.key, field.value))
@@ -116,13 +112,11 @@ func observationLogAttrs(ctx context.Context) []slog.Attr {
 // observation bridge. Callers may mutate the result without changing context.
 func observationMetadata(ctx context.Context) map[string]any {
 	observation := observationFromContext(ctx)
-	metadata := make(map[string]any, 5)
+	metadata := make(map[string]any, 3)
 	for key, value := range map[string]string{
 		"gateway.correlation_id": observation.correlationID,
 		"gateway.caller_service": observation.callerService,
 		"gateway.namespace":      observation.namespace,
-		"gateway.region":         observation.region,
-		"gateway.application":    observation.application,
 	} {
 		if value != "" {
 			metadata[key] = value

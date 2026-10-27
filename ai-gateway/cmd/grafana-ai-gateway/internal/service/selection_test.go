@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +18,9 @@ import (
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/grafana/authlib/authn"
+	"github.com/grafana/authlib/types"
+	"github.com/grafana/grafana-app-sdk/resource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -39,8 +41,8 @@ func (c *accountCatalogSpy) ListModels(context.Context) ([]catalog.ModelInfo, er
 }
 
 func TestAccountSelection_Isolation(t *testing.T) {
-	for _, privateSource := range []gatewayauth.Source{gatewayauth.SourceAccessToken, gatewayauth.SourceStaticKey} {
-		t.Run(string(privateSource), func(t *testing.T) {
+	for _, configuredMode := range []gatewayauth.AccessMode{gatewayauth.AccessModeCloud, gatewayauth.AccessModeSelfHosted} {
+		t.Run(string(configuredMode), func(t *testing.T) {
 			const body = `{"prompt":[],"providerOptions":{"gateway":{"byok":{"openai":[{"APIKEY":"dummy-request-key","Organization":"request-organization","Project":"request-project","ModelMappings":[],"headers":{"Authorization":"untrusted-key"},"maxRetries":100,"future":true}]}},"openai":{"store":false}}}`
 			for _, streaming := range []bool{false, true} {
 				t.Run(strconv.FormatBool(streaming), func(t *testing.T) {
@@ -81,24 +83,17 @@ func TestAccountSelection_Isolation(t *testing.T) {
 					}{
 						{"byok inference", true, byokHandler, http.StatusFailedDependency},
 						{"configured rejects BYOK", false, configuredHandler, http.StatusBadRequest},
-						{"cloud cannot use configured selector", true, configuredHandler, http.StatusForbidden},
-						{"private cannot use BYOK selector", false, byokHandler, http.StatusForbidden},
+						{"BYOK cannot use configured selector", true, configuredHandler, http.StatusForbidden},
+						{"configured cannot use BYOK selector", false, byokHandler, http.StatusForbidden},
 						{"BYOK discovery", true, BYOKDiscovery(writer), http.StatusBadRequest},
-						{"cloud cannot use configured discovery", true, ConfiguredDiscovery(discovery.New(configured, writer), writer), http.StatusForbidden},
+						{"BYOK cannot use configured discovery", true, ConfiguredDiscovery(discovery.New(configured, writer), writer), http.StatusForbidden},
 					} {
 						t.Run(tc.name, func(t *testing.T) {
-							source := privateSource
+							mode, access := configuredMode, gatewayauth.ConfiguredAccounts
 							if tc.cloud {
-								source = gatewayauth.SourceCloudGateway
+								mode, access = gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK
 							}
-							authenticator, headers := serviceModeAuthentication(source)
-							if source == gatewayauth.SourceStaticKey {
-								var err error
-								authenticator, err = gatewayauth.NewStaticKeyAuthenticator([]gatewayauth.StaticIdentity{{Name: "deployment", KeyDigest: sha256.Sum256([]byte("local-key"))}})
-								require.NoError(t, err)
-								headers = http.Header{"X-Access-Token": {"local-key"}}
-							}
-							h := gatewayauth.Middleware(authenticator, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorAuthentication) }, func(context.Context, gatewayauth.Observation) {}, tc.handler)
+							h, headers := withAccess(t, mode, access, tc.handler)
 							r := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
 							r.Header = headers
 							r.Header.Set("Content-Type", "application/json")
@@ -167,9 +162,7 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 					factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
 					wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits(), ConfiguredAPIKeys: policy.keys})
 					require.NoError(t, err)
-					writer := providerv4.NewHostErrorWriter()
-					authenticator, headers := serviceModeAuthentication(gatewayauth.SourceCloudGateway)
-					handler := gatewayauth.Middleware(authenticator, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorAuthentication) }, func(context.Context, gatewayauth.Observation) {}, wire)
+					handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
 					accountFields := ""
 					if name == "openai" {
 						accountFields = `,"organization":"request-org","project":"request-project"`
@@ -229,3 +222,60 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 type selectionTransport func(*http.Request) (*http.Response, error)
 
 func (f selectionTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+const (
+	testInternalService = "internal-service"
+	testNamespace       = "stacks-1"
+)
+
+type verifiedInfo struct {
+	types.AuthInfo
+	extra map[string][]string
+}
+
+func (info verifiedInfo) GetExtra() map[string][]string { return info.extra }
+
+func verifiedContext(ctx context.Context, service, identity, namespace string) context.Context {
+	extra := map[string][]string{}
+	if service != "" {
+		extra[gatewayauth.DirectCallerServiceKey] = []string{service}
+	}
+	var claims authn.Claims[authn.AccessTokenClaims]
+	claims.Rest.Namespace = namespace
+	if typ, uid, err := types.ParseTypeID(identity); err == nil {
+		claims.Rest.Actor = &authn.ActorClaims{IDTokenClaims: authn.IDTokenClaims{Type: typ, Identifier: uid}}
+	}
+	ctx = types.WithAuthInfo(ctx, verifiedInfo{AuthInfo: authn.NewAccessTokenAuthInfo(claims), extra: extra})
+	return resource.WithRouteRequestInfo(ctx, &resource.RouteRequestInfo{FullIdentifier: resource.FullIdentifier{Namespace: namespace}})
+}
+
+func verifiedCaller(mode gatewayauth.AccessMode, internal []string, service, identity, namespace string) gatewayauth.Caller {
+	policy := gatewayauth.AccessPolicy{Mode: mode, InternalServices: internal}
+	info, _ := types.AuthInfoFrom(verifiedContext(context.Background(), service, identity, namespace))
+	return policy.Decide(info, namespace)
+}
+
+func withAccess(t *testing.T, mode gatewayauth.AccessMode, access gatewayauth.AccountAccess, next http.Handler) (http.Handler, http.Header) {
+	t.Helper()
+	service, identity := testInternalService, ""
+	switch {
+	case access == gatewayauth.RequestBYOK:
+		require.Equal(t, gatewayauth.AccessModeCloud, mode)
+		service, identity = "front-door", "user:u1"
+	case mode == gatewayauth.AccessModeSelfHosted:
+		service, identity = "", "service-account:sa1"
+	}
+	policy := gatewayauth.AccessPolicy{Mode: mode}
+	if mode == gatewayauth.AccessModeCloud {
+		policy.InternalServices = []string{testInternalService}
+	}
+	writer := providerv4.NewHostErrorWriter()
+	protected := gatewayauth.AccessMiddleware(policy, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorPermission) }, func(context.Context, gatewayauth.Caller) {}, next)
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		protected.ServeHTTP(w, request.WithContext(verifiedContext(request.Context(), service, identity, testNamespace)))
+	}), http.Header{}
+}
+
+func fixedRoute(name string) func(*http.Request) string {
+	return func(*http.Request) string { return name }
+}

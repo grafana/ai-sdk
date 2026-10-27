@@ -77,6 +77,19 @@ func TestLoadFile_StrictBoundedDocument(t *testing.T) {
 	}
 }
 
+func TestLoadFile_RejectsLegacyAuthenticationBlocks(t *testing.T) {
+	for name, block := range map[string]string{
+		"jwt auth":        "auth:\n  type: jwt\n  jwt:\n    jwksURL: https://private-jwks.example/keys\n",
+		"static-key auth": "auth:\n  type: static-key\n  staticKey:\n    identities:\n      private-identity:\n        keyEnv: PRIVATE_KEY_ENV\n",
+		"cloud server":    "server:\n  cloud:\n    enabled: false\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := LoadFile(writeConfigFile(t, minimalConfigYAML+block), 1<<20)
+			require.EqualError(t, err, "config: invalid YAML fields or values")
+		})
+	}
+}
+
 func TestValidatePublicID(t *testing.T) {
 	tests := []struct {
 		name  string

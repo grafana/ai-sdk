@@ -171,7 +171,10 @@ def verify_clean_checkout():
 
 def verify_release_files(component, files, entries=None):
     changelog = "CHANGELOG.md" if component == "." else f"{component}/CHANGELOG.md"
-    if set(files) != {MANIFEST, changelog}:
+    allowed = {MANIFEST, changelog}
+    if component == "ai-gateway":
+        allowed.add("ai-gateway/package.json")
+    if not set(files).issubset(allowed) or MANIFEST not in files:
         raise ValueError("release candidate may only update its generated changelog and version manifest")
     if entries is not None and any(not entries[path].startswith("100644 blob ") for path in files):
         raise ValueError("generated release files must be ordinary non-executable files")
@@ -191,7 +194,7 @@ def source_snapshot(ref, root, roots):
 
 def verify_library(root, base, roots, tooling_root=None):
     if root == "ai-gateway":
-        raise ValueError("Gateway application readiness and workspace release attribution remain pending; publication remains disabled")
+        raise ValueError("Gateway application readiness awaits a plugin publication workflow and workspace release attribution; publication remains disabled")
     with tempfile.TemporaryDirectory(prefix="release-readiness-") as cache:
         env = dict(os.environ, GOWORK="off", GOFLAGS="-mod=readonly -modcacherw",
                    GOPROXY="https://proxy.golang.org", GOPRIVATE="", GONOPROXY="",
