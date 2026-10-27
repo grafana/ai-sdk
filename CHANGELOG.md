@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/v0.1.0-alpha.2...v0.1.0-alpha.3) (2026-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **output:** support bounded array outputs ([#526](https://github.com/grafana/ai-sdk/issues/526))
+
+### Features
+
+* **output:** support bounded array outputs ([#526](https://github.com/grafana/ai-sdk/issues/526)) ([904e766](https://github.com/grafana/ai-sdk/commit/904e766556fc8256de8e0fbd6c3e6eaeabac93ee))
+
+
+### Bug Fixes
+
+* **agent:** pass the runtime context to approved tools on resume ([#484](https://github.com/grafana/ai-sdk/issues/484)) ([842e854](https://github.com/grafana/ai-sdk/commit/842e854d177c3e90133565f98d92b253753e97b3))
+* **ai-gateway:** contain panics in stream worker goroutines ([#471](https://github.com/grafana/ai-sdk/issues/471)) ([e74f87b](https://github.com/grafana/ai-sdk/commit/e74f87bcf30f2a9fccdc900f5d4d6ecdb06c8ec6)), refs [#419](https://github.com/grafana/ai-sdk/issues/419)
+* **deps:** update npm non-major dependencies ([#536](https://github.com/grafana/ai-sdk/issues/536)) ([2b4f4a0](https://github.com/grafana/ai-sdk/commit/2b4f4a0d5fd21fcac272f4f6c0611db08bc6781a))
+
 ## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/v0.1.0-alpha.1...v0.1.0-alpha.2) (2026-10-22)
 
 
