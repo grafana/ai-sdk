@@ -281,7 +281,7 @@ func TestFile_ConfiguredDiscoveryLimits(t *testing.T) {
 						model.Aliases = append(model.Aliases, fmt.Sprintf("alias-%d", i))
 					}
 				case "candidates":
-					for i := range maxCandidates - 1 + extra {
+					for i := range MaxProviderAttempts - 1 + extra {
 						model.Fallback = append(model.Fallback, Primary{Provider: "provider", Model: fmt.Sprintf("native-%d", i)})
 					}
 				case "name":

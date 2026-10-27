@@ -36,17 +36,20 @@ const (
 	// ProviderResponseHeaderTimeout bounds the wait for a model provider's
 	// response headers.
 	ProviderResponseHeaderTimeout = 10 * time.Second
-	// ProviderResponseBytes bounds a model provider response body. It stays
-	// below the Anthropic SDK's 32 MiB stream scanner limit.
+	// ProviderResponseBytes bounds a model provider response body that is not
+	// a stream. Streams are decoded incrementally and bounded by time.
 	ProviderResponseBytes = 16 << 20
+	// MaxProviderAttempts bounds the provider attempts of one request: a
+	// configured model's primary and fallbacks, or the request's BYOK accounts
+	// for the selected provider. Each attempt is one outbound request, so the
+	// bound limits how far fast failures amplify.
+	MaxProviderAttempts = 8
 )
 
-// Defaults of the configurable request and model limits, and the fixed stream durations.
+// Fixed stream durations. The request deadline belongs to the plugin host.
 const (
-	defaultRequestBytes  = 1 << 20
-	defaultModelDuration = 120 * time.Second
-	streamIdleDuration   = 30 * time.Second
-	streamDrainDuration  = time.Second
+	streamIdleDuration  = 30 * time.Second
+	streamDrainDuration = time.Second
 )
 
 // AgentObservabilityTokenSetting is the setting key of the Agent
@@ -67,9 +70,7 @@ type Settings struct {
 	ConfigFile         string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
-	// MaxRequestBytes bounds the body of every plugin route request.
-	MaxRequestBytes int64
-	ProviderWire    providerv4.Limits
+	ProviderWire       providerv4.Limits
 }
 
 // SettingName returns the environment variable of a plugin setting key, as
@@ -116,30 +117,6 @@ func (e *environment) bool(key string, fallback bool) bool {
 	return parsed
 }
 
-func (e *environment) int64(key string, fallback int64) int64 {
-	name, value, ok := e.raw(key)
-	if !ok {
-		return fallback
-	}
-	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		e.invalid(name)
-	}
-	return parsed
-}
-
-func (e *environment) duration(key string, fallback time.Duration) time.Duration {
-	name, value, ok := e.raw(key)
-	if !ok {
-		return fallback
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		e.invalid(name)
-	}
-	return parsed
-}
-
 // ParseSettings reads and validates the plugin settings from the environment.
 func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 	env := environment{lookup: lookupEnv}
@@ -151,9 +128,7 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 			Endpoint: env.string("agento11y_endpoint", ""),
 			TLS:      env.bool("agento11y_tls", true),
 		},
-		MaxRequestBytes: env.int64("max_request_bytes", defaultRequestBytes),
 		ProviderWire: providerv4.Limits{
-			ModelDuration:       env.duration("max_model_duration", defaultModelDuration),
 			StreamIdleDuration:  streamIdleDuration,
 			StreamDrainDuration: streamDrainDuration,
 		},
@@ -179,12 +154,6 @@ func (settings Settings) Validate() error {
 	}
 	if err := settings.AgentObservability.validate(); err != nil {
 		return err
-	}
-	if settings.MaxRequestBytes <= 0 {
-		return fmt.Errorf("config: max request bytes must be positive")
-	}
-	if settings.ProviderWire.ModelDuration < ProviderResponseHeaderTimeout || settings.ProviderWire.ModelDuration < streamIdleDuration {
-		return fmt.Errorf("config: max model duration must be at least %s", max(ProviderResponseHeaderTimeout, streamIdleDuration))
 	}
 	if _, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(limitValidationResolver{}), Limits: settings.ProviderWire}); err != nil {
 		return fmt.Errorf("config: providerwire limits: %w", err)

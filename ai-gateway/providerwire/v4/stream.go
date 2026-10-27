@@ -273,10 +273,10 @@ func callStream(ctx context.Context, model provider.LanguageModel, options provi
 }
 
 func streamContextErrorCategory(requestContext context.Context) safeErrorCategory {
-	if requestContext.Err() != nil {
-		return safeCancellation
+	if errors.Is(requestContext.Err(), context.DeadlineExceeded) {
+		return safeTimeout
 	}
-	return safeTimeout
+	return safeCancellation
 }
 
 func commitStreamResponse(w http.ResponseWriter) (ok bool) {
@@ -320,7 +320,7 @@ const (
 	streamWaitPart streamWaitResult = iota + 1
 	streamWaitClosed
 	streamWaitCanceled
-	streamWaitTotalTimeout
+	streamWaitDeadline
 	streamWaitIdleTimeout
 )
 
@@ -332,10 +332,10 @@ func waitStreamPart(requestContext, modelContext context.Context, stream <-chan 
 		}
 		return part, streamWaitPart
 	case <-modelContext.Done():
-		if requestContext.Err() != nil {
-			return provider.StreamPart{}, streamWaitCanceled
+		if errors.Is(requestContext.Err(), context.DeadlineExceeded) {
+			return provider.StreamPart{}, streamWaitDeadline
 		}
-		return provider.StreamPart{}, streamWaitTotalTimeout
+		return provider.StreamPart{}, streamWaitCanceled
 	case <-idle:
 		return provider.StreamPart{}, streamWaitIdleTimeout
 	}
@@ -703,7 +703,7 @@ func (h *handler) writeStreamTerminalForWait(w http.ResponseWriter, result strea
 	switch result {
 	case streamWaitCanceled:
 		value.category = safeCancellation
-	case streamWaitTotalTimeout, streamWaitIdleTimeout:
+	case streamWaitDeadline, streamWaitIdleTimeout:
 		value.category = safeTimeout
 	}
 	h.writeStreamTerminalError(w, value, view.metadata())
@@ -713,7 +713,7 @@ func errorForStreamWait(result streamWaitResult) error {
 	switch result {
 	case streamWaitCanceled:
 		return context.Canceled
-	case streamWaitTotalTimeout, streamWaitIdleTimeout:
+	case streamWaitDeadline, streamWaitIdleTimeout:
 		return context.DeadlineExceeded
 	default:
 		return errModelInternal

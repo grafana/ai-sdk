@@ -234,6 +234,56 @@ func TestBoundedTransport_BoundsEachResponseIndependently(t *testing.T) {
 	}
 }
 
+func TestBoundedTransport_StreamsAreNotBounded(t *testing.T) {
+	const limit = 64 << 10
+	events := strings.Repeat("data: "+strings.Repeat("e", limit/2)+"\n\n", 4)
+	oversizedEvent := "data: " + strings.Repeat("e", 2*limit) + "\n\n"
+	tests := []struct {
+		name        string
+		contentType string
+		payload     string
+		compressed  bool
+		tooLarge    bool
+	}{
+		{name: "stream above the total", contentType: "text/event-stream", payload: events},
+		{name: "stream with parameters", contentType: "text/event-stream; charset=utf-8", payload: events},
+		{name: "stream with mixed case", contentType: "Text/Event-Stream", payload: events},
+		{name: "compressed stream", contentType: "text/event-stream", payload: events, compressed: true},
+		{name: "single event above the bound", contentType: "text/event-stream", payload: oversizedEvent},
+		{name: "JSON above the total", contentType: "application/json", payload: events, tooLarge: true},
+		{name: "unparsable media type", contentType: "text/event-stream; =", payload: events, tooLarge: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", tc.contentType)
+				if !tc.compressed {
+					_, _ = io.WriteString(w, tc.payload)
+					return
+				}
+				w.Header().Set("Content-Encoding", "gzip")
+				writer := gzip.NewWriter(w)
+				_, _ = io.WriteString(writer, tc.payload)
+				_ = writer.Close()
+			}))
+			defer server.Close()
+
+			client, err := NewModelClient(time.Second, limit)
+			require.NoError(t, err)
+			response, err := client.Get(server.URL)
+			require.NoError(t, err)
+			body, err := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if tc.tooLarge {
+				require.ErrorIs(t, err, ErrResponseTooLarge)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.payload, string(body))
+		})
+	}
+}
+
 func TestClients_HostileServersTerminateWithinBounds(t *testing.T) {
 	t.Run("dial cancellation", func(t *testing.T) {
 		transport := newTransport(time.Second)

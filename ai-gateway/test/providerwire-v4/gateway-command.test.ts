@@ -24,6 +24,7 @@ const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const COMMAND_DIR = resolve(AI_GATEWAY_ROOT, "cmd/grafana-ai-gateway");
 const HOST_DIR = resolve(AI_GATEWAY_ROOT, "test/platformhost/cmd/plugin-host");
 const READY_TIMEOUT_MS = 30_000;
+const ROUTE_DEADLINE = "60s";
 const TEST_TOKEN = "glsa_integration_service_account_token";
 const TEST_NAMESPACE = "stacks-27038";
 const INTERNAL_SERVICE = "integration-internal-service";
@@ -821,8 +822,8 @@ describe("authenticated Anthropic Gateway command", () => {
     const fake = await FakeAnthropic.start();
     let gateway: GatewayProcess | undefined;
     try {
-      const candidates = Array.from({ length: 16 }, (_, i) => ({ providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: `${i}-` + '"'.repeat(512) }));
-      const routes = Array.from({ length: 65 }, (_, i) => ({ id: `public-${String(i).padStart(3, "0")}`, aliases: [`alias-${i}`] }));
+      const candidates = Array.from({ length: 8 }, (_, i) => ({ providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: `${i}-` + '"'.repeat(512) }));
+      const routes = Array.from({ length: 140 }, (_, i) => ({ id: `public-${String(i).padStart(3, "0")}`, aliases: [`alias-${i}`] }));
       const config = `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fake.url}\nmodels:\n` + routes.map(route => `  ${route.id}:\n    name: Model\n    primary:\n      provider: anthropic-primary\n      model: '${candidates[0].providerModelId}'\n    fallback:\n${candidates.slice(1).map(candidate => `      - provider: anthropic-primary\n        model: '${candidate.providerModelId}'\n`).join("")}    aliases: [${route.aliases[0]}]\n`).join("");
       gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "access-token", config);
       const baseURL = gateway.baseURL;
@@ -832,7 +833,7 @@ describe("authenticated Anthropic Gateway command", () => {
       const body = await response.text();
       assert.ok(Buffer.byteLength(body) > 1_048_576);
       const document = JSON.parse(body);
-      assert.equal(document.models.length, 65);
+      assert.equal(document.models.length, 140);
       assert.deepEqual(document.models.map((model: { id: string }) => model.id), routes.map(route => route.id));
       for (const [i, model] of document.models.entries()) assert.deepEqual(model.gateway, { aliases: routes[i].aliases, primary: candidates[0], fallbacks: candidates.slice(1) });
       assert.deepEqual(await fetchConfiguredModels({ baseURL, headers }), document);
@@ -1461,6 +1462,62 @@ describe("authenticated Anthropic Gateway command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
+  it("streams a provider response above 16 MiB in total to both clients", async () => {
+    const [fake, gateway] = await startGateway();
+    const options = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "long-output" }] }], maxOutputTokens: 32 };
+    const expected = longDelta.repeat(longDeltaCount);
+    const assertLongStream = (parts: Array<Record<string, any>>) => {
+      const text = parts.filter((part) => part.type === "text-delta").map((part) => part.delta).join("");
+      assert.equal(text.length, expected.length);
+      assert.ok(text === expected, "streamed text differs from the provider deltas");
+      assert.equal(parts.find((part) => part.type === "finish")?.finishReason.unified, "stop");
+      assert.ok(parts.every((part) => part.type !== "error"));
+    };
+    try {
+      const result = await gateway.client()("assistant").doStream(options);
+      assertLongStream(await collectGatewayStream(result.stream));
+      const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, mode: "stream", modelID: "assistant", options });
+      assert.equal(go.error, undefined);
+      assertLongStream(go.parts);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("accepts requests above the former body bound and leaves larger ones to the host", async () => {
+    const [fake, gateway] = await startGateway();
+    const base = { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "assistant" };
+    const fileData = (bytes: number) => Buffer.alloc(bytes, 0x89).toString("base64");
+    const fileOptions = (data: string) => ({
+      prompt: [{ role: "user" as const, content: [
+        { type: "text" as const, text: "normal-unary" },
+        { type: "file" as const, data: { type: "data" as const, data }, mediaType: "image/png" },
+      ] }],
+    });
+    try {
+      const data = fileData(3 << 19);
+      const accepted = fileOptions(data);
+      assert.ok(JSON.stringify(accepted).length > 2 << 20);
+      const vercel = await gateway.client()("assistant").doGenerate(accepted);
+      assert.ok(JSON.stringify(vercel.content).includes("hello from fake Anthropic"));
+      const go = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", options: accepted });
+      assert.equal(go.error, undefined);
+      for (const request of fake.requests.slice(-2)) assert.equal((request.body as any).messages[0].content[1].source.data, data);
+
+      const oversized = fileOptions(fileData(13 << 20));
+      assert.ok(JSON.stringify(oversized).length > 16 << 20);
+      const before = fake.requests.length;
+      const rejected = await gateway.client()("assistant").doGenerate(oversized).then(() => undefined, (error: unknown) => error as { statusCode?: number; responseBody?: string });
+      assert.notEqual(rejected, undefined);
+      assert.ok(rejected!.statusCode! >= 400);
+      assert.ok(!String(rejected!.responseBody).includes("invalid_request_error"));
+      const goRejected = await captureGoClient(goClientBinaryPath, { ...base, mode: "generate", options: oversized });
+      assert.notEqual(goRejected.error, undefined);
+      assert.ok(goRejected.error.statusCode >= 400);
+      assert.equal(fake.requests.length, before);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
   it("maps file inputs and file-result continuation through authenticated native calls", async () => {
     const [fake, gateway] = await startGateway();
     const client = gateway.client();
@@ -1867,13 +1924,14 @@ describe("authenticated Anthropic Gateway command", () => {
     try {
       let failure = "";
       try {
-        await GatewayProcess.start(binaryPath, fake.url, ["--max-model-duration=20s"]);
+        await GatewayProcess.start(binaryPath, fake.url, ["--agento11y-enabled=private-value"]);
       } catch (error) {
         failure = String(error);
       }
       assert.ok(failure.includes("gateway exited unsuccessfully"));
       assert.ok(failure.includes("gateway plugin failed to start"));
-      assert.ok(failure.includes("max model duration must be at least"));
+      assert.ok(failure.includes("GF_PLUGIN_AGENTO11Y_ENABLED has an invalid value"));
+      assert.ok(!failure.includes("private-value"));
       assert.deepEqual(processLifecycleEvents(failure), []);
       assert.notEqual(GatewayProcess.lastFailedDirectory, undefined);
       assert.equal(existsSync(GatewayProcess.lastFailedDirectory!), false);
@@ -3108,7 +3166,7 @@ class GatewayProcess {
       writeFileSync(configPath, fallbackURL
         ? anthropicFallbackConfig(anthropicURL, fallbackURL, backendModel)
         : configYAML ?? anthropicConfig(anthropicURL, backendModel));
-      proc = spawn(hostBinaryPath, ["--plugin", binary, "--topology", topology, "--namespace", TEST_NAMESPACE, "--service-account-token", TEST_TOKEN, "--log-level", "debug"], {
+      proc = spawn(hostBinaryPath, ["--plugin", binary, "--topology", topology, "--namespace", TEST_NAMESPACE, "--service-account-token", TEST_TOKEN, "--log-level", "debug", "--route-deadline", ROUTE_DEADLINE], {
         cwd: directory,
         stdio: ["ignore", "pipe", "pipe"],
         env: {
@@ -3224,6 +3282,21 @@ type FakeRequest = { path: string; apiKey?: string; headers: IncomingMessage["he
 const largeText = "x".repeat(9 << 20);
 const largeDelta = "d".repeat(1536 << 10);
 const largeUsagePadding = "u".repeat(1536 << 10);
+
+const longDelta = "l".repeat(1 << 20);
+const longDeltaCount = 20;
+
+function writeLongAnthropicStream(response: ServerResponse): void {
+  response.writeHead(200, { "Content-Type": "text/event-stream" });
+  const event = (value: { type: string; [key: string]: unknown }) => response.write(`event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`);
+  event({ type: "message_start", message: { id: "msg_long", type: "message", role: "assistant", model: "backend-private", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 2, output_tokens: 0 } } });
+  event({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
+  for (let i = 0; i < longDeltaCount; i++) event({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: longDelta } });
+  event({ type: "content_block_stop", index: 0 });
+  event({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 3 } });
+  event({ type: "message_stop" });
+  response.end();
+}
 
 function writeLargeAnthropicOutput(streaming: boolean, response: ServerResponse): void {
   const usage = { input_tokens: 2, output_tokens: 3, native_padding: largeUsagePadding };
@@ -3342,6 +3415,10 @@ class FakeAnthropic {
     }
     if (marker === "silent-unary-shutdown") {
       response.once("close", () => this.canceled.add(marker));
+      return;
+    }
+    if (serialized.includes("long-output") && body.stream === true) {
+      writeLongAnthropicStream(response);
       return;
     }
     if (serialized.includes("large-output")) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/fallback"
@@ -20,7 +21,7 @@ func New(name Provider, modelID string, accounts []nativemodel.Config, client *h
 	default:
 		return nil, ErrInvalidSelector
 	}
-	if modelID == "" || len(accounts) == 0 || len(accounts) > maxCredentials {
+	if modelID == "" || len(accounts) == 0 || len(accounts) > config.MaxProviderAttempts {
 		return nil, ErrInvalidRequest
 	}
 	if client == nil {

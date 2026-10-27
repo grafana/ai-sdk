@@ -45,15 +45,15 @@ File-entry and function-tool options SHALL obey consumption-backed protections u
 - **THEN** the supported file options SHALL remain unfiltered under native protections, while the unsupported result-option request SHALL fail safely
 
 ### Requirement: File validation preserves processing order and bounds
-Malformed role/data/reference/media-field shapes, typed null, mixed arms, missing required fields, and schema-invalid file members SHALL fail before the execution boundary, resolution, and model invocation. Schema-valid runtime-deferred branches SHALL remain safe unsupported failures. The route request-body bound under gateway-resource-policy SHALL bound file strings and decoding work, including JSON escaping and base64 overhead.
+Malformed role/data/reference/media-field shapes, typed null, mixed arms, missing required fields, and schema-invalid file members SHALL fail before the execution boundary, resolution, and model invocation. Schema-valid runtime-deferred branches SHALL remain safe unsupported failures. The platform request size under gateway-resource-policy SHALL bound file strings and decoding work, including JSON escaping and base64 overhead; the Gateway SHALL add no file or request byte bound of its own.
 
 #### Scenario: Invalid request has no effects
 - **WHEN** a file request has conflicting arms, a forbidden reference member, a missing mediaType, a file directly in a tool-role content array, or a typed null filename
 - **THEN** complete validation SHALL fail with zero execution-boundary, resolver, and model calls
 
 #### Scenario: Encoded request byte boundary
-- **WHEN** otherwise supported file requests are below, exactly at, and one byte above the route request-body bound
-- **THEN** only the first two SHALL reach mapping and the oversized body SHALL fail with the fixed invalid-request document and zero resolver or model calls
+- **WHEN** an otherwise supported file request is above 1 MiB and within the host route message size, or above the host route message size
+- **THEN** the first SHALL reach mapping and the configured candidates, and the second SHALL be rejected by the host with zero resolver or model calls
 
 #### Scenario: Supported file request reaches configured candidates
 - **WHEN** a mapped unary or streaming request contains supported ordinary files, active scoped options or supported file-bearing tool history and a primary fails eligibly before commitment

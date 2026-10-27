@@ -101,7 +101,7 @@ sequenceDiagram
   H->>H: Match route and method, authenticate
   H->>W: Authenticated request, bounded body and caller context
   W->>W: Validate and map protocol
-  W->>M: Resolve public model under model deadline
+  W->>M: Resolve public model under request deadline
   M-->>W: Canonical model and configured candidates
   W->>M: DoGenerate or DoStream
   M->>P: Provider-specific authenticated request
@@ -130,8 +130,8 @@ sequenceDiagram
    input can fail before model selection. See the
    [handler](../../ai-gateway/providerwire/v4/handler.go) and
    [request mapper](../../ai-gateway/providerwire/v4/request.go).
-3. **Selection resolves a public name.** A model deadline begins after request
-   validation and covers selection plus model execution. `NewConfiguredSelector`
+3. **Selection resolves a public name.** The request deadline, which Grafana's
+   route deadline sets, covers selection plus model execution. `NewConfiguredSelector`
    checks configured-account access, then delegates to `CatalogSelector` to
    resolve `assistant` or an alias to its canonical model. This private path
    rejects reserved Gateway controls; its caller cannot switch to request
@@ -204,11 +204,13 @@ Cancellation propagates through contexts, and cleanup drains remaining parts
 only within a configured duration. It cannot undo work already
 performed by a remote provider or tool.
 
-Each resource limit has one owner. The plugin routes bound every request body
-with `max_request_bytes`, and the model transport bounds each decompressed
-provider response to 16 MiB. The handler bounds only model duration, stream
-idle time and cleanup; it never rejects or truncates output because of its
-size. Grafana's plugin host owns the route deadline and admission. See the
+Each resource limit has one owner. Grafana's plugin host owns the request
+deadline, the request size, admission and, through the container, process
+memory. The Gateway keeps only what it owns: 8 provider attempts per request,
+checked when the catalog loads and when request keys are decoded; 16 MiB per
+decompressed provider response that is not a stream, in the model transport;
+and stream idle time and cleanup in the handler, which never rejects
+or truncates output because of its size. See the
 [limits](../../ai-gateway/README.md#limits) for the full list.
 
 ## What the observations tell you

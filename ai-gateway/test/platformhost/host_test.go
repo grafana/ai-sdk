@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/grafana/authlib/authn"
 	"github.com/grafana/authlib/types"
@@ -59,7 +60,12 @@ func (o *observed) handler() http.Handler {
 
 func newTestHost(t *testing.T, topology Topology, handler http.Handler) (*Host, *InProcess, *httptest.Server) {
 	t.Helper()
-	host, err := New(Config{Topology: topology, PluginID: testPluginID, Group: testGroup, Version: testVersion})
+	return newTestHostWithConfig(t, Config{Topology: topology, PluginID: testPluginID, Group: testGroup, Version: testVersion}, handler)
+}
+
+func newTestHostWithConfig(t *testing.T, config Config, handler http.Handler) (*Host, *InProcess, *httptest.Server) {
+	t.Helper()
+	host, err := New(config)
 	require.NoError(t, err)
 	served, err := host.ServeInProcess(grpcplugin.ServeOpts{
 		RouteServer:   appadapter.NewRouteAdapter(stubApp{handler: handler}),
@@ -223,6 +229,60 @@ func TestHost_StreamsIncrementally(t *testing.T) {
 	line, err = reader.ReadString('\n')
 	require.NoError(t, err)
 	assert.Equal(t, "second\n", line)
+}
+
+func TestHost_RouteDeadlineReachesThePlugin(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		deadline time.Duration
+	}{
+		{name: "route deadline", deadline: time.Minute},
+		{name: "no route deadline"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			deadlines := make(chan time.Time, 1)
+			config := Config{Topology: TopologyCloud, PluginID: testPluginID, Group: testGroup, Version: testVersion, RouteDeadline: tc.deadline}
+			host, _, server := newTestHostWithConfig(t, config, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				deadline, _ := r.Context().Deadline()
+				deadlines <- deadline
+			}))
+			request, err := http.NewRequest(http.MethodGet, routeURL(server, testNamespace), nil)
+			require.NoError(t, err)
+			request.Header.Set("Authorization", "Bearer "+host.AddServiceAccount("sa1", testNamespace))
+			response, err := http.DefaultClient.Do(request)
+			require.NoError(t, err)
+			require.NoError(t, response.Body.Close())
+			received := time.Now()
+			deadline := <-deadlines
+			if tc.deadline == 0 {
+				assert.True(t, deadline.IsZero())
+				return
+			}
+			assert.False(t, deadline.IsZero())
+			assert.False(t, deadline.After(received.Add(tc.deadline)))
+		})
+	}
+
+	t.Run("expiry cancels the plugin request", func(t *testing.T) {
+		canceled := make(chan error, 1)
+		config := Config{Topology: TopologyCloud, PluginID: testPluginID, Group: testGroup, Version: testVersion, RouteDeadline: 50 * time.Millisecond}
+		host, _, server := newTestHostWithConfig(t, config, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+			canceled <- r.Context().Err()
+		}))
+		request, err := http.NewRequest(http.MethodGet, routeURL(server, testNamespace), nil)
+		require.NoError(t, err)
+		request.Header.Set("Authorization", "Bearer "+host.AddServiceAccount("sa1", testNamespace))
+		response, err := http.DefaultClient.Do(request)
+		require.NoError(t, err)
+		require.NoError(t, response.Body.Close())
+		select {
+		case err := <-canceled:
+			require.Error(t, err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("route deadline did not end the plugin request")
+		}
+	})
 }
 
 func TestHost_RefusesBeforeHandler(t *testing.T) {

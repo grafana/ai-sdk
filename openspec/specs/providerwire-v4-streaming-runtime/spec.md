@@ -7,7 +7,7 @@ Define the production strict, bounded ProviderWire V4 streaming text runtime and
 ## Requirements
 
 ### Requirement: Constructed streaming limits
-The strict ProviderWire V4 handler SHALL require a positive stream idle duration and a positive post-cancellation drain duration in addition to the total model duration. It SHALL NOT take a provider stream-part count or complete SSE frame byte limit. Complete frames SHALL consist of the `data: ` prefix, JSON payload, and terminating `\n\n`.
+The strict ProviderWire V4 handler SHALL require a positive stream idle duration and a positive post-cancellation drain duration. It SHALL NOT take a total model duration, a provider stream-part count or a complete SSE frame byte limit. Complete frames SHALL consist of the `data: ` prefix, JSON payload, and terminating `\n\n`.
 
 #### Scenario: Valid streaming limits
 - **WHEN** a caller supplies positive idle and drain durations
@@ -57,7 +57,7 @@ A supported streaming request SHALL invoke `DoStream` exactly once and SHALL NOT
 
 ### Requirement: Single-owner stream setup and logical commitment
 
-The total model duration SHALL cover `DoStream` setup and all later stream consumption. Setup SHALL execute with panic recovery so request cancellation or timeout can end handler latency even if `DoStream` does not return. Every returned stream SHALL have one cleanup owner: an outcome received by the handler belongs to the handler, while setup work SHALL clean up a stream returned after the request has ended.
+The request context's deadline SHALL cover `DoStream` setup and all later stream consumption. Setup SHALL execute with panic recovery so request cancellation or timeout can end handler latency even if `DoStream` does not return. Every returned stream SHALL have one cleanup owner: an outcome received by the handler belongs to the handler, while setup work SHALL clean up a stream returned after the request has ended.
 
 #### Scenario: Stream setup fails before commitment
 - **WHEN** `DoStream` returns an error, panics, returns `nil, nil`, or returns a result with a nil stream channel
@@ -377,35 +377,35 @@ Each frame SHALL be completely encoded before any of its bytes are written.
 - **THEN** provider work SHALL be canceled with no subsequent write, while complete-frame encoding before write and the prohibition of event fields/DONE SHALL remain effective
 
 ### Requirement: Cancellation and timeouts
-The total deadline SHALL cover selection, setup, attempts and streaming without resets. Idle timeout SHALL follow represented provider parts; cancellation and timeout SHALL retain terminal authority, bounded cleanup and writer-failure behavior.
+The request context's deadline SHALL cover selection, setup, attempts and streaming without resets, and the handler SHALL add no total deadline of its own. Idle timeout SHALL follow represented provider parts; cancellation and timeout SHALL retain terminal authority, bounded cleanup and writer-failure behavior.
 
 #### Scenario: Streaming deadline and terminal policy
 - **WHEN** selection or streaming encounters cancellation, timeout or competing terminal conditions
-- **THEN** The configured total timeout SHALL begin immediately before authenticated host selection, after bounded protocol input validation, and cover selection/construction, logical `DoStream` setup, all credential attempts and stream consumption.
-- **AND** An earlier request-context deadline SHALL remain effective.
-- **AND** Logical invocation, credential attempts and stream establishment SHALL NOT reset or extend the shared deadline.
+- **THEN** The request context's deadline SHALL cover selection/construction, logical `DoStream` setup, all credential attempts and stream consumption.
+- **AND** Logical invocation, credential attempts and stream establishment SHALL NOT reset or extend the request deadline.
+- **AND** Expiry of the request context's deadline SHALL be a timeout, and cancellation of the request context SHALL be a cancellation.
 - **AND** Selection cancellation and late-result cleanup SHALL follow the shared bounded invocation contract.
 - **AND** After stream commitment, the configured idle timeout SHALL restart after each accepted provider part is successfully represented, including a consumed start and a written provider error.
-- **AND** Request cancellation, total timeout, or idle timeout SHALL cancel selection/provider work before the corresponding safe terminal response or event is written.
+- **AND** Request cancellation, request deadline expiry, or idle timeout SHALL cancel selection/provider work before the corresponding safe terminal response or event is written.
 - **AND** A valid finish written before another terminal outcome SHALL remain authoritative.
 - **AND** When provider output, cancellation, and timeout become ready concurrently before terminal output, any applicable safe bounded outcome MAY win; the protocol does not define scheduler-level precedence.
 - **AND** Writer failure SHALL terminate immediately without another write.
 
 #### Scenario: Terminal conditions race
-- **WHEN** provider output, request cancellation, or a configured timeout become ready concurrently before terminal output
+- **WHEN** provider output, request cancellation, the request deadline or the idle timeout become ready concurrently before terminal output
 - **THEN** the handler SHALL produce at most one applicable bounded terminal outcome and SHALL not leak or clean up the stream twice
 
 #### Scenario: Selection exhausts streaming time
-- **WHEN** the total timeout expires during delayed or non-cooperative selection
+- **WHEN** the request deadline expires during delayed or non-cooperative selection
 - **THEN** handler latency SHALL remain bounded with a pre-commit JSON failure, zero logical model invocations and bounded cleanup of late selection results
 
 #### Scenario: Attempts inherit the remaining budget
-- **WHEN** selection consumes part of the total duration and the chosen model then tries multiple eligible credentials
-- **THEN** every attempt and subsequent stream consumption SHALL use only the remaining shared budget without resetting it
+- **WHEN** selection consumes part of the time before the request deadline and the chosen model then tries multiple eligible credentials
+- **THEN** every attempt and subsequent stream consumption SHALL use only the remaining time without resetting it
 
 #### Scenario: Total timeout cancels provider before output
-- **WHEN** the total timeout expires during setup or stream consumption
-- **THEN** the model context SHALL be canceled before the timeout response or event is encoded or written
+- **WHEN** the request deadline expires during setup or stream consumption
+- **THEN** the model context SHALL be canceled before the timeout response or event is encoded or written, and that response or event SHALL use the timeout category
 
 #### Scenario: Idle timeout cancels provider before output
 - **WHEN** the idle timeout expires after stream establishment
@@ -416,8 +416,12 @@ The total deadline SHALL cover selection, setup, attempts and streaming without 
 - **THEN** finish SHALL be the authoritative final event
 
 #### Scenario: Accepted activity resets idle time
-- **WHEN** accepted provider parts arrive within each idle interval while total duration remains available
+- **WHEN** accepted provider parts arrive within each idle interval before the request deadline
 - **THEN** the idle timeout SHALL restart after each represented part and SHALL not expire solely because total stream age exceeds one idle interval
+
+#### Scenario: Stream without a request deadline
+- **WHEN** the request context carries no deadline and the provider keeps emitting parts within the idle duration
+- **THEN** the stream SHALL continue until finish, caller cancellation or an idle timeout
 
 ### Requirement: Streaming terminal authority and scheduler race boundary
 

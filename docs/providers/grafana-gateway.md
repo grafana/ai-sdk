@@ -34,9 +34,9 @@ The Gateway removes MCP tool credentials that OpenAI echoes from your request
 before it sends an event: headers, the authorization value, and credential
 query parameters in the server URL.
 
-Raw events are never truncated, and their size does not end a stream. Each
-provider response is still limited to 16 MiB by the Gateway, so a large raw
-stream can reach that limit sooner.
+Raw events are never truncated, and their size does not end a stream. The
+Gateway does not limit the size of a provider stream; the request deadline and
+the stream idle limit bound it.
 
 ## Authenticate the client
 
@@ -368,8 +368,9 @@ Use `errors.Is` to detect cancellation and deadlines. Use `errors.As` with
 `*provider.APICallError` to check whether a call can be retried. The client
 does not retry on its own; configure retries in your application.
 
-The Gateway limits request sizes, provider response sizes and model duration,
-so the client has no size limits to configure. To bound a call yourself, use the
+The Gateway limits provider response sizes and stream idle time, and Grafana
+limits request size and duration, so the client has no size limits to
+configure. To bound a call yourself, use the
 context deadline above, and your own `http.Client` for transport-level limits
 such as timeouts.
 

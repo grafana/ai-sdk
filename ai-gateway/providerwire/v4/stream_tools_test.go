@@ -15,20 +15,20 @@ import (
 )
 
 func TestStreamingTools_OpenInputTermination(t *testing.T) {
-	for _, scenario := range []string{"cancel", "idle timeout", "total timeout", "write failure", "premature EOF"} {
+	for _, scenario := range []string{"cancel", "idle timeout", "deadline timeout", "write failure", "premature EOF"} {
 		t.Run(scenario, func(t *testing.T) {
 			limits := testLimits()
-			limits.ModelDuration = time.Second
 			limits.StreamIdleDuration = time.Second
 			if scenario == "idle timeout" {
 				limits.StreamIdleDuration = 25 * time.Millisecond
 			}
-			if scenario == "total timeout" {
-				limits.ModelDuration = 25 * time.Millisecond
-			}
 			harness := newRuntimeHarness(t, limits)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			if scenario == "deadline timeout" {
+				ctx, cancel = context.WithTimeout(ctx, 25*time.Millisecond)
+				defer cancel()
+			}
 			producerDone := make(chan struct{})
 			handlerDone := make(chan struct{})
 			var modelContext context.Context
@@ -107,7 +107,6 @@ func TestStreamingTools_ConcurrentReadyCancellation(t *testing.T) {
 	for _, delta := range []string{"", "{}"} {
 		t.Run("delta="+delta, func(t *testing.T) {
 			limits := testLimits()
-			limits.ModelDuration = time.Second
 			limits.StreamIdleDuration = time.Second
 			harness := newRuntimeHarness(t, limits)
 			ctx, cancel := context.WithCancel(context.Background())
@@ -335,7 +334,6 @@ func TestStreamingProviderTools_ManyPreviewsAndLargeMetadata(t *testing.T) {
 
 func TestStreamingProviderTools_CancelDuringPreliminaryResult(t *testing.T) {
 	limits := testLimits()
-	limits.ModelDuration = time.Second
 	limits.StreamIdleDuration = time.Second
 	harness := newRuntimeHarness(t, limits)
 	requestContext, cancel := context.WithCancel(context.Background())

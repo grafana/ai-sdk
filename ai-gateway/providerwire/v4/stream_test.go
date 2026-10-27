@@ -327,9 +327,7 @@ func TestStreamingRuntimePartVolumeAndTerminalAuthority(t *testing.T) {
 		stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "a"}
 		stream <- finishPart()
 		close(stream)
-		limits := testLimits()
-		limits.ModelDuration = 30 * time.Second
-		harness := newRuntimeHarness(t, limits)
+		harness := newRuntimeHarness(t, testLimits())
 		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 			return &provider.StreamResult{Stream: stream}, nil
 		}
@@ -723,24 +721,41 @@ func TestStreamingWriterAndFlushBehavior(t *testing.T) {
 }
 
 func TestStreamingTimeouts(t *testing.T) {
-	t.Run("total timeout cancels provider during setup before json", func(t *testing.T) {
-		limits := testLimits()
-		limits.ModelDuration = 25 * time.Millisecond
-		harness := newRuntimeHarness(t, limits)
-		capturedContext := make(chan context.Context, 1)
-		harness.model.stream = func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-			capturedContext <- ctx
-			<-ctx.Done()
-			return nil, ctx.Err()
-		}
-		canceledAtWrite := make(chan bool, 1)
-		writer := &responseWriterProbe{onWrite: func() {
-			canceledAtWrite <- (<-capturedContext).Err() != nil
-		}}
-		harness.handler.ServeHTTP(writer, streamRequest(`{"prompt":[]}`))
-		assert.True(t, <-canceledAtWrite)
-		assert.Equal(t, http.StatusGatewayTimeout, writer.status)
-	})
+	endings := []struct {
+		name   string
+		end    func(*testing.T, *http.Request) *http.Request
+		status int
+		code   errorCode
+	}{
+		{name: "deadline", end: func(t *testing.T, r *http.Request) *http.Request {
+			return withRequestDeadline(t, r, 25*time.Millisecond)
+		}, status: http.StatusGatewayTimeout, code: codeTimeout},
+		{name: "canceled", end: func(t *testing.T, r *http.Request) *http.Request {
+			ctx, cancel := context.WithCancel(r.Context())
+			time.AfterFunc(25*time.Millisecond, cancel)
+			t.Cleanup(cancel)
+			return r.WithContext(ctx)
+		}, status: statusClientClosedRequest, code: codeCancellation},
+	}
+
+	for _, ending := range endings {
+		t.Run("request "+ending.name+" cancels provider during setup before json", func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			capturedContext := make(chan context.Context, 1)
+			harness.model.stream = func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				capturedContext <- ctx
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			canceledAtWrite := make(chan bool, 1)
+			writer := &responseWriterProbe{onWrite: func() {
+				canceledAtWrite <- (<-capturedContext).Err() != nil
+			}}
+			harness.handler.ServeHTTP(writer, ending.end(t, streamRequest(`{"prompt":[]}`)))
+			assert.True(t, <-canceledAtWrite)
+			assert.Equal(t, ending.status, writer.status)
+		})
+	}
 
 	t.Run("accepted activity resets idle timeout", func(t *testing.T) {
 		tests := []struct {
@@ -755,7 +770,6 @@ func TestStreamingTimeouts(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				limits := testLimits()
-				limits.ModelDuration = 5 * time.Second
 				limits.StreamIdleDuration = 500 * time.Millisecond
 				harness := newRuntimeHarness(t, limits)
 				stream := make(chan provider.StreamPart, 4)
@@ -779,34 +793,58 @@ func TestStreamingTimeouts(t *testing.T) {
 		}
 	})
 
-	t.Run("total timeout cancels an established provider before timeout frame", func(t *testing.T) {
+	for _, ending := range endings {
+		t.Run("request "+ending.name+" cancels an established provider before terminal frame", func(t *testing.T) {
+			harness := newRuntimeHarness(t, testLimits())
+			stream := make(chan provider.StreamPart)
+			capturedContext := make(chan context.Context, 1)
+			harness.model.stream = func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				capturedContext <- ctx
+				return &provider.StreamResult{Stream: stream}, nil
+			}
+			canceledAtWrite := make(chan bool, 2)
+			writer := &responseWriterProbe{onWrite: func() {
+				modelContext := <-capturedContext
+				canceledAtWrite <- modelContext.Err() != nil
+				capturedContext <- modelContext
+			}}
+			harness.handler.ServeHTTP(writer, ending.end(t, streamRequest(`{"prompt":[]}`)))
+			assert.True(t, <-canceledAtWrite)
+			assert.True(t, <-canceledAtWrite)
+			assert.Equal(t, http.StatusOK, writer.status)
+			assert.True(t, strings.HasPrefix(writer.body.String(), string(canonicalEmptyStartFrame)))
+			assert.Contains(t, writer.body.String(), `"code":"`+string(ending.code)+`"`)
+		})
+	}
+
+	t.Run("request without a deadline streams past the idle duration in total", func(t *testing.T) {
 		limits := testLimits()
-		limits.ModelDuration = 25 * time.Millisecond
-		limits.StreamIdleDuration = time.Second
+		limits.StreamIdleDuration = 100 * time.Millisecond
 		harness := newRuntimeHarness(t, limits)
 		stream := make(chan provider.StreamPart)
-		capturedContext := make(chan context.Context, 1)
 		harness.model.stream = func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-			capturedContext <- ctx
+			_, ok := ctx.Deadline()
+			assert.False(t, ok)
 			return &provider.StreamResult{Stream: stream}, nil
 		}
-		canceledAtWrite := make(chan bool, 2)
-		writer := &responseWriterProbe{onWrite: func() {
-			modelContext := <-capturedContext
-			canceledAtWrite <- modelContext.Err() != nil
-			capturedContext <- modelContext
-		}}
-		harness.handler.ServeHTTP(writer, streamRequest(`{"prompt":[]}`))
-		assert.True(t, <-canceledAtWrite)
-		assert.True(t, <-canceledAtWrite)
-		assert.Equal(t, http.StatusOK, writer.status)
-		assert.True(t, strings.HasPrefix(writer.body.String(), string(canonicalEmptyStartFrame)))
-		assert.Contains(t, writer.body.String(), `"code":"timeout"`)
+		go func() {
+			defer close(stream)
+			stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "a"}
+			for range 6 {
+				time.Sleep(50 * time.Millisecond)
+				stream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "a", Delta: "x"}
+			}
+			stream <- provider.StreamPart{Type: provider.PartTextEnd, ID: "a"}
+			stream <- finishPart()
+		}()
+		body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+		assert.Equal(t, 6, strings.Count(body, `"type":"text-delta"`))
+		assert.Contains(t, body, `"type":"finish"`)
+		assert.NotContains(t, body, `"type":"error"`)
 	})
 
 	t.Run("idle timeout includes commitment flush", func(t *testing.T) {
 		limits := testLimits()
-		limits.ModelDuration = time.Second
 		limits.StreamIdleDuration = 25 * time.Millisecond
 		harness := newRuntimeHarness(t, limits)
 		stream := make(chan provider.StreamPart)
@@ -836,7 +874,6 @@ func TestStreamingTimeouts(t *testing.T) {
 
 	t.Run("idle timeout cancels provider before timeout frame", func(t *testing.T) {
 		limits := testLimits()
-		limits.ModelDuration = time.Second
 		limits.StreamIdleDuration = 25 * time.Millisecond
 		harness := newRuntimeHarness(t, limits)
 		stream := make(chan provider.StreamPart)
@@ -925,16 +962,11 @@ func TestStreamDrainBounds(t *testing.T) {
 }
 
 func TestProviderMetadata_Lifecycle(t *testing.T) {
-	for _, mode := range []string{"cancellation", "idle", "total", "writer"} {
+	for _, mode := range []string{"cancellation", "idle", "deadline", "writer"} {
 		t.Run(mode, func(t *testing.T) {
 			limits := testLimits()
 			if mode == "idle" {
 				limits.StreamIdleDuration = 10 * time.Millisecond
-				limits.ModelDuration = time.Second
-			}
-			if mode == "total" {
-				limits.ModelDuration = 30 * time.Millisecond
-				limits.StreamIdleDuration = time.Second
 			}
 			h := newRuntimeHarness(t, limits)
 			stopped := make(chan struct{})
@@ -946,6 +978,10 @@ func TestProviderMetadata_Lifecycle(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			if mode == "deadline" {
+				ctx, cancel = context.WithTimeout(ctx, 30*time.Millisecond)
+				defer cancel()
+			}
 			w := &responseWriterProbe{}
 			w.onWrite = func() {
 				if w.writes == 2 {

@@ -43,12 +43,13 @@ func run() error {
 	namespace := flag.String("namespace", "stacks-1", "route namespace")
 	serviceAccount := flag.String("service-account-token", "", "service account token to register")
 	logLevel := flag.String("log-level", "info", "level at which plugin log records are relayed")
+	routeDeadline := flag.Duration("route-deadline", 0, "deadline of each forwarded route call, as a platform route deadline; 0 disables it")
 	flag.Parse()
 	if *binary == "" {
 		return errors.New("--plugin is required")
 	}
 
-	host, err := platformhost.New(platformhost.Config{Topology: platformhost.Topology(*topology), PluginID: pluginID, Group: group, Version: version})
+	host, err := platformhost.New(platformhost.Config{Topology: platformhost.Topology(*topology), PluginID: pluginID, Group: group, Version: version, RouteDeadline: *routeDeadline})
 	if err != nil {
 		return err
 	}

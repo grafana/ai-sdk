@@ -1,0 +1,110 @@
+package gateway
+
+import (
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/grafana/authlib/authn"
+	"github.com/grafana/authlib/types"
+	"github.com/grafana/grafana-app-sdk/resource"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
+	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+)
+
+const bodyTestPrompt = `{"prompt":[]}`
+
+type routeAuthInfo struct {
+	types.AuthInfo
+	extra map[string][]string
+}
+
+func (info routeAuthInfo) GetExtra() map[string][]string { return info.extra }
+
+type bodyTestCaller struct {
+	name, service, identity string
+}
+
+var (
+	bodyConfiguredCaller = bodyTestCaller{name: "configured", service: testInternalService}
+	bodyBYOKCaller       = bodyTestCaller{name: "byok", service: "front-door", identity: "user:u1"}
+	bodyRefusedCaller    = bodyTestCaller{name: "refused", service: "svc-b"}
+)
+
+func bodyTestHandler(t *testing.T, routes routeHandlers) http.Handler {
+	t.Helper()
+	telemetry, err := service.NewTelemetry(slog.New(slog.DiscardHandler), service.TelemetryOptions{Registerer: prometheus.NewRegistry()})
+	require.NoError(t, err)
+	policy := gatewayauth.AccessPolicy{Mode: gatewayauth.AccessModeCloud, InternalServices: []string{testInternalService}}
+	return newHandler(policy, telemetry, providerv4.NewHostErrorWriter(), routes)
+}
+
+func bodyLanguageRequest(caller bodyTestCaller, body io.Reader) *http.Request {
+	url := strings.Replace(RoutePrefix(), "{namespace}", testNamespace, 1) + "/language-model"
+	request := httptest.NewRequest(http.MethodPost, url, body)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(providerv4.HeaderSpecificationVersion, providerv4.SpecificationVersion)
+	request.Header.Set(providerv4.HeaderModelID, "public")
+	request.Header.Set(providerv4.HeaderStreaming, "false")
+	var claims authn.Claims[authn.AccessTokenClaims]
+	claims.Rest.Namespace = testNamespace
+	if typ, uid, err := types.ParseTypeID(caller.identity); err == nil {
+		claims.Rest.Actor = &authn.ActorClaims{IDTokenClaims: authn.IDTokenClaims{Type: typ, Identifier: uid}}
+	}
+	info := routeAuthInfo{AuthInfo: authn.NewAccessTokenAuthInfo(claims), extra: map[string][]string{gatewayauth.DirectCallerServiceKey: {caller.service}}}
+	ctx := types.WithAuthInfo(request.Context(), info)
+	ctx = resource.WithRouteRequestInfo(ctx, &resource.RouteRequestInfo{FullIdentifier: resource.FullIdentifier{Namespace: testNamespace}})
+	return request.WithContext(ctx)
+}
+
+func TestRouteBody_HandlersReadTheWholeBody(t *testing.T) {
+	body := bodyTestPrompt + strings.Repeat(" ", 2<<20)
+	var read int
+	var readErr error
+	probe := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		data, err := io.ReadAll(request.Body)
+		read, readErr = len(data), err
+		w.WriteHeader(http.StatusNoContent)
+	})
+	handler := bodyTestHandler(t, routeHandlers{configuredLanguage: probe, byokLanguage: probe})
+	for _, caller := range []bodyTestCaller{bodyConfiguredCaller, bodyBYOKCaller} {
+		t.Run(caller.name, func(t *testing.T) {
+			read, readErr = 0, nil
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, bodyLanguageRequest(caller, strings.NewReader(body)))
+			assert.Equal(t, http.StatusNoContent, response.Code)
+			require.NoError(t, readErr)
+			assert.Equal(t, len(body), read)
+		})
+	}
+}
+
+type countingBody struct {
+	reads atomic.Int32
+}
+
+func (body *countingBody) Read([]byte) (int, error) {
+	body.reads.Add(1)
+	return 0, io.EOF
+}
+
+func TestRouteBody_RefusedCallerBodyIsNotRead(t *testing.T) {
+	var served atomic.Int32
+	probe := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { served.Add(1) })
+	handler := bodyTestHandler(t, routeHandlers{configuredLanguage: probe, byokLanguage: probe})
+	body := &countingBody{}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, bodyLanguageRequest(bodyRefusedCaller, body))
+	assert.Equal(t, http.StatusForbidden, response.Code)
+	assert.Zero(t, body.reads.Load())
+	assert.Zero(t, served.Load())
+}

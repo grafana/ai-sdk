@@ -46,7 +46,7 @@ func newStartupEnvironment(t *testing.T, providerURL string) *startupEnvironment
 	require.NoError(t, err)
 	return &startupEnvironment{
 		values: map[string]string{
-			"GF_PLUGIN_CONFIG_FILE": writeModelConfig(t, providerURL),
+			"GF_PLUGIN_CONFIG_FILE": writeModelConfig(t, providerURL, false),
 			"GF_PLUGIN_ACCESS_MODE": "cloud",
 			"GRAFANA_JWKS":          string(keys),
 			"ANTHROPIC_SECRET":      providerSecret,
@@ -109,11 +109,8 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 		}, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
 		{name: "both signing key sources", change: func(env map[string]string) { env["GRAFANA_JWKS_URL"] = "https://auth.example/jwks" }, message: "only one"},
 		{name: "unparsable scalar", change: func(env map[string]string) {
-			env["GF_PLUGIN_MAX_REQUEST_BYTES"] = "password"
-		}, message: "GF_PLUGIN_MAX_REQUEST_BYTES has an invalid value"},
-		{name: "scalar relationship", change: func(env map[string]string) {
-			env["GF_PLUGIN_MAX_MODEL_DURATION"] = "20s"
-		}, message: "max model duration must be at least"},
+			env["GF_PLUGIN_AGENTO11Y_TLS"] = "password"
+		}, message: "GF_PLUGIN_AGENTO11Y_TLS has an invalid value"},
 		{name: "legacy settings are ignored", change: func(env map[string]string) {
 			env["GRAFANA_AI_GATEWAY_SERVER_PRIVATE_LISTEN_ADDRESS"] = "bad"
 			env["GRAFANA_AI_GATEWAY_ACCESS_MODE"] = "cloud"
@@ -283,7 +280,7 @@ func launchPlugin(t *testing.T, binary string, env map[string]string) *pluginPro
 	require.NoError(t, err)
 	fake := newFakeAnthropic(t)
 	environment := []string{
-		"GF_PLUGIN_CONFIG_FILE=" + writeModelConfig(t, fake.server.URL),
+		"GF_PLUGIN_CONFIG_FILE=" + writeModelConfig(t, fake.server.URL, false),
 		"GF_PLUGIN_ACCESS_MODE=cloud",
 		"GF_PLUGIN_ACCESS_INTERNAL_SERVICES=" + testInternalService,
 		"ANTHROPIC_SECRET=" + providerSecret,

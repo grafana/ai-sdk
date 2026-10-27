@@ -17,7 +17,6 @@ import (
 
 const (
 	maxModelRows   = 1024
-	maxCandidates  = 16
 	maxAliases     = 128
 	maxStringBytes = 2048
 )
@@ -167,7 +166,7 @@ func (file File) Validate() error {
 	}
 	rowCount := 0
 	for _, model := range file.Models {
-		if len(model.Aliases) > maxAliases || len(model.Fallback) >= maxCandidates || len(model.Aliases)+1 > maxModelRows-rowCount {
+		if len(model.Aliases) > maxAliases || len(model.Fallback)+1 > MaxProviderAttempts || len(model.Aliases)+1 > maxModelRows-rowCount {
 			return fmt.Errorf("config: configured discovery cardinality exceeds limit")
 		}
 		rowCount += len(model.Aliases) + 1

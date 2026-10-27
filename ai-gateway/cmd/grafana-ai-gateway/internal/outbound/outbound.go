@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,6 +20,8 @@ const (
 	outboundMaxIdleConns          = 32
 	outboundMaxIdleConnsPerHost   = 8
 	outboundMaxConnsPerHost       = 32
+
+	eventStreamMediaType = "text/event-stream"
 )
 
 var (
@@ -27,8 +30,9 @@ var (
 )
 
 // NewModelClient returns the streaming client shared by every provider type.
-// It rejects redirects, bounds the wait for response headers, and bounds the
-// decompressed body of each response independently.
+// It rejects redirects and bounds the wait for response headers. It bounds the
+// decompressed body of each response independently, except a text/event-stream
+// body, which the provider decodes incrementally and time bounds.
 func NewModelClient(headerTimeout time.Duration, responseBytes int64) (*http.Client, error) {
 	if headerTimeout <= 0 {
 		return nil, fmt.Errorf("gateway outbound: timeout must be positive")
@@ -90,10 +94,15 @@ func (transport *boundedTransport) RoundTrip(request *http.Request) (*http.Respo
 	if err != nil {
 		return response, err
 	}
-	if response.Body != nil {
+	if response.Body != nil && !isEventStream(response.Header.Get("Content-Type")) {
 		response.Body = &boundedBody{body: response.Body, remaining: transport.limit}
 	}
 	return response, nil
+}
+
+func isEventStream(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	return err == nil && mediaType == eventStreamMediaType
 }
 
 type boundedBody struct {
