@@ -2,9 +2,9 @@
 
 ## 1. Readiness and authorization
 
-- [ ] 1.1 Validate combined library release metadata, footprint, changelogs and every released library in `scripts/release_readiness.py`
-- [ ] 1.2 Remove the prerequisite freshness check and source ownership snapshots
-- [ ] 1.3 Write and accept readiness record schema 2 with all released components in `scripts/release_authorization.py`
+- [x] 1.1 Validate combined library release metadata, footprint, changelogs and every released library in `scripts/release_readiness.py`
+- [x] 1.2 Remove the prerequisite freshness check and source ownership snapshots
+- [x] 1.3 Write and accept readiness record schema 2 with all released components in `scripts/release_authorization.py`
 
 ## 2. Release tooling
 
