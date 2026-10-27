@@ -48,9 +48,10 @@ type Revision struct {
 	Rev  string
 }
 
-// Worktree is the checked-out tree of a Git repository, including uncommitted
-// tracked changes and untracked files that are not ignored. It is used while
-// requirement files are generated and not yet committed.
+// Worktree is the checked-out tree of a Git repository: the paths in its index
+// with their working-tree content. Untracked files are excluded, so stray files
+// cannot enter an archive; stage new files that belong to the candidate. It is
+// used while requirement files are generated and not yet committed.
 type Worktree struct {
 	Dir string
 }
@@ -164,7 +165,7 @@ func (r Revision) commitTime() (string, error) {
 }
 
 func (w Worktree) materialize(moduleDir, destination string) error {
-	args := []string{"ls-files", "-z", "--cached", "--others", "--exclude-standard"}
+	args := []string{"ls-files", "-z", "--cached"}
 	if moduleDir != "." {
 		args = append(args, "--", moduleDir)
 	}

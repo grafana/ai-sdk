@@ -154,11 +154,14 @@ func TestProxyAdd_WorktreeMatchesCommittedRevision(t *testing.T) {
 	git("commit", "-qm", "base")
 	write("lib/go.sum", "example.com/dep v1.0.0 h1:x=\n")
 	write("lib/ignored.go", "package lib\n")
+	write("lib/stray.go", "package lib\n")
+	write("lib/lib.go", "package lib\n\nconst Changed = true\n")
+	git("add", "lib/go.sum")
 	m := Module{Dir: "lib", Path: "example.com/m/lib"}
 
 	fromWorktree, err := Proxy{Dir: t.TempDir()}.Add(Worktree{Dir: source}, m, "v0.1.0")
 	require.NoError(t, err)
-	git("add", "lib/go.sum")
+	git("add", "lib/lib.go")
 	git("commit", "-qm", "generated")
 	fromRevision, err := Proxy{Dir: t.TempDir()}.Add(Revision{Repo: source, Rev: "HEAD"}, m, "v0.1.0")
 	require.NoError(t, err)

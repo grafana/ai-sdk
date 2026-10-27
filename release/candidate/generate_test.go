@@ -89,6 +89,7 @@ func TestGenerate_ChecksumsMatchRebuiltArchives(t *testing.T) {
 	repo := newFixtureRepo(t, "a")
 	plan := fixturePlan(t, repo.dir)
 
+	repo.write("stray.txt", "not part of the candidate\n")
 	result, err := Generate(repo.dir, plan, offline)
 	require.NoError(t, err)
 	assert.Equal(t, []string{
@@ -100,7 +101,6 @@ func TestGenerate_ChecksumsMatchRebuiltArchives(t *testing.T) {
 	assert.Contains(t, repo.read("ai-gateway/go.mod"), CorePath+"/providers/bedrock v0.2.0")
 	assert.Len(t, result.Checksums, 3)
 
-	repo.git("add", ".")
 	repo.git("commit", "-qm", "generated")
 	rebuilt := Proxy{Dir: t.TempDir()}
 	for _, target := range plan.Targets {

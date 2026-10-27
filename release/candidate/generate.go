@@ -72,7 +72,8 @@ func Modules(dir string) ([]Module, error) {
 }
 
 // Generate rewrites the first-party requirements of the plan's targets in the
-// Git worktree at dir and records their checksums. Released modules are built
+// Git worktree at dir, stages the requirement files it writes and records their
+// checksums. Candidate changes such as new changelogs must be staged before. Released modules are built
 // into a candidate proxy in first-party dependency order, so each module is
 // tidied against the exact archives of its co-released prerequisites. Every
 // run uses a fresh module cache.
@@ -120,6 +121,9 @@ func Generate(dir string, plan Plan, options Options) (Result, error) {
 			if err := tidy(dir, target, env); err != nil {
 				return Result{}, err
 			}
+			if err := stage(dir, target); err != nil {
+				return Result{}, err
+			}
 		}
 		version, released := plan.Released[target.Path]
 		if !released {
@@ -134,11 +138,11 @@ func Generate(dir string, plan Plan, options Options) (Result, error) {
 	if err := verifyUpstream(dir, plan, options); err != nil {
 		return Result{}, err
 	}
-
 	generated, err := requirementFiles(dir, plan.Targets)
 	if err != nil {
 		return Result{}, err
 	}
+
 	for name, content := range generated {
 		if !bytes.Equal(content, original[name]) {
 			result.Files = append(result.Files, name)
@@ -233,6 +237,17 @@ func goEnv(work string, proxy Proxy, options Options) []string {
 		"GONOSUMDB="+CorePath,
 		"GOINSECURE=",
 	)
+}
+
+func stage(dir string, target Module) error {
+	names := []string{repoPath(target.Dir, "go.mod")}
+	if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(repoPath(target.Dir, "go.sum")))); err == nil {
+		names = append(names, repoPath(target.Dir, "go.sum"))
+	}
+	if _, err := gitOutput(dir, append([]string{"add", "--"}, names...)...); err != nil {
+		return fmt.Errorf("candidate: staging %s requirement files: %w", target.Path, err)
+	}
+	return nil
 }
 
 func tidy(dir string, target Module, env []string) error {
