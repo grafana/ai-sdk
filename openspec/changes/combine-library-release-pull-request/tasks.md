@@ -12,7 +12,7 @@
 - [x] 2.1 Create the local-only `release/candidate` Go module, classify it as local-only in module inventory and publishable-module validation, and verify `mise run release-check` and `mise run test-module-policy` pass
 - [x] 2.2 Implement archive building with Go command semantics (nested-module exclusion, root `LICENSE` for nested modules lacking one) and verify a test reproduces the published `h1:` and `go.mod` hashes for root `v0.1.0-alpha.3` and `providers/openai/v0.1.0-alpha.1` from their tags
 - [x] 2.3 Implement requirement rewriting per design D2 (released modules and Gateway only; co-released version, otherwise latest tag) and verify table tests cover root+Bedrock without OpenAI, Gateway pins and unchanged non-released manifests
-- [ ] 2.4 Implement level-ordered `go.sum` generation with a file proxy, `GONOSUMDB` for the repository and an isolated module cache, and verify a fixture release produces checksums equal to archives rebuilt from the output tree, including a test that a pre-populated cache is not used
+- [x] 2.4 Implement level-ordered `go.sum` generation with a file proxy, `GONOSUMDB` for the repository and an isolated module cache, and verify a fixture release produces checksums equal to archives rebuilt from the output tree, including a test that a pre-populated cache is not used
 - [ ] 2.5 Add a check mode that regenerates on a given tree and fails on any byte difference, and verify tests cover a hand-edited pin and an unexpected third-party change
 
 ## 3. Release preparation
