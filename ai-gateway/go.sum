@@ -64,8 +64,8 @@ github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260928202004-dd
 github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260928202004-dd43c6dff058/go.mod h1:CnxFHuadng8C9LrLy+yp6uT+jyPNMRIe2GtbXdk2I6k=
 github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260928202004-dd43c6dff058 h1:KjQG2B/UO0ffO7Z++bseMflwWfmfhD/+ygg3mMR2xV8=
 github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260928202004-dd43c6dff058/go.mod h1:Vcm/lc51AtX49gHd6MhmiZ4vsDceQ7ARbD1UKxzUP5s=
-github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260928202004-dd43c6dff058 h1:9dT2hWc9tQB1C6f1FN7Ec5SAxlj0Et6LgPSF9kvByq4=
-github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260928202004-dd43c6dff058/go.mod h1:2Tj0NheOjdGf3o1qTdm2ShziOgeEDBYTAUaUS3RVlE8=
+github.com/grafana/ai-sdk/middleware/prometheus v0.1.0-alpha.1 h1:qfNLe5+VJanamzDWA7FqZJN300rhlNw58XyI/Mmrwas=
+github.com/grafana/ai-sdk/middleware/prometheus v0.1.0-alpha.1/go.mod h1:AqjMFOSUNetufcRk3aK/VNxwkRNgdhmCYq/A4GooMMw=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260928202004-dd43c6dff058 h1:Cy6ZgQdJ9fMUFPqr5/DY8vK5Fvt729KOCSs88OkotkU=
 github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260928202004-dd43c6dff058/go.mod h1:8EgoiafHzizwn/Pk8ExUiYVxc6/qClMG8Ca3Uo5p3Xw=
 github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260928202004-dd43c6dff058 h1:bWnMmcDeTbsjQNKX2W+Ysp3cQxyY3CdbuHZQoaMqRQk=
