@@ -201,10 +201,25 @@ The requirement bump cannot live in a release pull request, because the
 first-party version it would point at is not published until its own release
 pull request merges.
 
-The final first-party rule in [`renovate.json`](../renovate.json) enables independent
-tagged prerequisite updates, including prereleases, without the generic weekly
-schedule or 14-day delay. These PRs require human review and candidate-source CI.
+The final first-party rule in [`renovate.json`](../renovate.json) enables tagged
+prerequisite updates, including prereleases, without the generic weekly schedule.
+It groups every first-party requirement update into one pull request, so bumps
+that edit the same `go.mod` do not conflict with each other. It never proposes
+unreleased main commits. These PRs require human review and candidate-source CI.
 See the [activation rollout](tooling/ACTIVATION.md) before enabling publication.
+
+Grafana's self-hosted Renovate enforces a minimum release age, currently three
+days, that repository configuration cannot override. A new tag therefore reaches
+the grouped pull request about three days after it is published, and each hop of
+the root -> provider -> Bedrock progression waits again. To skip the wait for one
+update, tick it under **Pending Status Checks** on the Dependency Dashboard; the
+next Renovate run applies it.
+
+A module without any tag of its own breaks Renovate's version lookup: Renovate
+falls back to the root module's `vX.Y.Z` tags and proposes a version Go cannot
+resolve, so every check on the pull request fails. This resolves itself once the
+module publishes its first release. Do not merge or hand-edit such a bump;
+release the module first.
 
 Two consequences are worth knowing. Renovate commits through the GitHub API, so
 its commits are signed and satisfy the organization's signed-commit ruleset,
@@ -313,4 +328,4 @@ the repository's squash defaults must be `PR_TITLE` for the commit title and
 commits a branch happened to have.
 
 **Renovate.** The final first-party tagged-prerequisite rule overrides the earlier
-internal-module disables and generic Go delay. Its PRs require human review.
+internal-module disables and generic Go grouping. Its PRs require human review.
