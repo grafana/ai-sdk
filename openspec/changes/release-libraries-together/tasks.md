@@ -2,18 +2,18 @@
 
 ## 1. Module layout
 
-- [ ] 1.1 Add complete local first-party replacements to every tracked `go.mod` and tidy every module
-- [ ] 1.2 Set every first-party requirement to its manifest version, or the registered initial version, replacing pseudo-versions and placeholders
-- [ ] 1.3 Remove `go.work`, `go.gateway.work` and their sum files, and ignore `go.work*`
-- [ ] 1.4 Run mise tasks, CI workflows, the Gateway plugin build and license packaging per module with `GOWORK=off`
-- [ ] 1.5 Keep the ProviderWire differential harness and integration tests working without workspaces
+- [x] 1.1 Add complete local first-party replacements to every tracked `go.mod` and tidy every module
+- [x] 1.2 Set every first-party requirement to its manifest version, or the registered initial version, replacing pseudo-versions and placeholders
+- [x] 1.3 Remove `go.work`, `go.gateway.work` and their sum files, and ignore `go.work*`
+- [x] 1.4 Run mise tasks, CI workflows, the Gateway plugin build and license packaging per module with `GOWORK=off`
+- [x] 1.5 Keep the ProviderWire differential harness and integration tests working without workspaces
 
 ## 2. Validation
 
-- [ ] 2.1 Check replacement completeness and manifest-aligned requirements in `scripts/module-policy.sh`, replacing the merged-pin check, with fixtures in `test/module-policy.sh`
-- [ ] 2.2 Run the boundary and Gateway-free isolation checks without workspaces
-- [ ] 2.3 Replace standalone public-proxy commands and workspace verification tasks with per-module validation
-- [ ] 2.4 Allow only local first-party replacements in `internal/releasecheck`
+- [x] 2.1 Check replacement completeness and manifest-aligned requirements in `scripts/module-policy.sh`, replacing the merged-pin check, with fixtures in `test/module-policy.sh`
+- [x] 2.2 Run the boundary and Gateway-free isolation checks without workspaces
+- [x] 2.3 Replace standalone public-proxy commands and workspace verification tasks with per-module validation
+- [x] 2.4 Allow only local first-party replacements in `internal/releasecheck`
 
 ## 3. Readiness and authorization
 

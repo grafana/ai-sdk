@@ -3,6 +3,9 @@ min_version = "2026.5.4"
 [settings]
 experimental = true
 
+[env]
+GOWORK = "off"
+
 [tools]
 go = "1.27.3"
 jq = "1.8.2"
@@ -32,7 +35,6 @@ run = "pnpm install --frozen-lockfile"
 [tasks.test]
 description = "Run candidate-source Go tests across all modules"
 run = """
-export GOWORK="$PWD/go.work"
 mise run test-examples
 mise run test-root
 mise run test-ai-gateway
@@ -50,38 +52,28 @@ mise run test-prometheus-middleware
 
 [tasks.test-root]
 description = "Run root candidate-source module tests"
-run = 'GOWORK="$PWD/go.work" go test ./...'
+run = "go test ./..."
 
 [tasks.test-ai-gateway]
 description = "Run AI Gateway tests against candidate SDK source"
 run = """
-workspace_file="$PWD/go.gateway.work"
-mise run verify-gateway-workspace
-(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./...)
+(cd ai-gateway && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./...)
 """
-
-[tasks.verify-gateway-workspace]
-description = "Verify explicit Gateway workspace resolves candidate SDK source"
-run = "bash scripts/module-policy.sh workspace"
 
 [tasks.test-ai-gateway-source]
 description = "Run Gateway Go tests against candidate SDK source"
 run = """
-workspace_file="$PWD/go.gateway.work"
-mise run verify-gateway-workspace
-(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./...)
+(cd ai-gateway && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./...)
 """
 
 [tasks.build-ai-gateway-plugin]
 description = "Build the AI Gateway plugin package from candidate SDK source"
 run = """
-workspace_file="$PWD/go.gateway.work"
-mise run verify-gateway-workspace
 mise deps install --only test
 rm -rf ai-gateway/dist
 pnpm --filter ./ai-gateway build
-(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly -trimpath" mage -v build:linux build:linuxARM64)
-GOWORK="$workspace_file" bash ai-gateway/scripts/package-licenses.sh
+(cd ai-gateway && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly -trimpath" mage -v build:linux build:linuxARM64)
+bash ai-gateway/scripts/package-licenses.sh
 """
 
 [tasks.test-ai-gateway-frontend]
@@ -151,12 +143,9 @@ run = "cd middleware/agentobservability && go test -run 'TestConformance|TestPar
 [tasks.test-short]
 description = "Run short candidate-source tests across all modules"
 run = """
-workspace_file="$PWD/go.gateway.work"
-export GOWORK="$PWD/go.work"
-mise run verify-gateway-workspace
 mise run test-examples
 go test -short ./...
-(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -short ./...)
+(cd ai-gateway && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -short ./...)
 (cd providers/anthropic && go test -short ./...)
 (cd providers/azure && go test -short ./...)
 (cd providers/bedrock && go test -short ./...)
@@ -172,11 +161,8 @@ go test -short ./...
 [tasks.test-race]
 description = "Run short candidate-source tests with the race detector on the Gateway and its stream-path modules"
 run = """
-workspace_file="$PWD/go.gateway.work"
-export GOWORK="$PWD/go.work"
-mise run verify-gateway-workspace
 go test -race -short ./...
-(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -race -short ./...)
+(cd ai-gateway && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -race -short ./...)
 (cd providers/anthropic && go test -race -short ./...)
 (cd providers/openai && go test -race -short ./...)
 (cd providers/openai-compatible && go test -race -short ./...)
@@ -199,11 +185,8 @@ git diff --exit-code || (echo "Code is not formatted. Run 'mise run fmt' and com
 [tasks.vet]
 description = "Vet candidate source across all modules"
 run = """
-workspace_file="$PWD/go.gateway.work"
-export GOWORK="$PWD/go.work"
-mise run verify-gateway-workspace
 go vet ./...
-(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go vet ./...)
+(cd ai-gateway && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go vet ./...)
 (cd providers/anthropic && go vet ./...)
 (cd providers/azure && go vet ./...)
 (cd providers/bedrock && go vet ./...)
@@ -216,17 +199,17 @@ go vet ./...
 (cd middleware/prometheus && go vet ./...)
 """
 
-[tasks.verify-module-resolution]
-description = "Verify every published module from the public proxy outside the workspace"
-run = "bash scripts/module-policy.sh standalone"
+[tasks.verify-modules]
+description = "Download, verify, build and test every module with its local first-party replacements"
+run = "bash scripts/module-policy.sh validate"
 
-[tasks.verify-published-module]
-description = "Verify one published module outside the workspace (MODULE=providers/openai)"
-run = "bash scripts/module-policy.sh standalone \"${MODULE:?set MODULE to a published module root or path}\""
+[tasks.verify-module]
+description = "Download, verify, build and test one module (MODULE=providers/openai)"
+run = "bash scripts/module-policy.sh validate \"${MODULE:?set MODULE to a module root or path}\""
 
-[tasks.verify-merged-pins]
-description = "Verify published internal pins descend from canonical merged main"
-run = "bash scripts/module-policy.sh pins"
+[tasks.verify-module-requirements]
+description = "Verify first-party requirements follow the version manifest with local replacements"
+run = "bash scripts/module-policy.sh requirements"
 
 [tasks.release-check]
 description = "Validate the release-please configuration against published modules"
@@ -271,35 +254,16 @@ cd test && pnpm --filter @ai-sdk/conformance-tools test:ci
 description = "Run golangci-lint across all modules"
 run = """
 set -e
-workspace_file="$PWD/go.work"
-gateway_workspace_file="$PWD/go.gateway.work"
-mise run verify-gateway-workspace
-workspace_modules=$(go work edit -json "$workspace_file" | jq -r '.Use[].DiskPath | if startswith("./") then ltrimstr("./") else . end')
-
-run_in_module() {
-  module=$1
-  shift
-  module_name=${module#./}
-  if [ "$module_name" = ai-gateway ]; then
-    (cd "$module" && GOWORK="$gateway_workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" "$@")
-  elif printf '%s\n' "$workspace_modules" | grep -Fxq "$module_name"; then
-    (cd "$module" && GOWORK="$workspace_file" "$@")
-  else
-    echo "module $module_name has no candidate workspace" >&2
-    exit 1
-  fi
-}
-
 for go_mod in $(git ls-files 'go.mod' '*/go.mod' | sort); do
   mod=$(dirname "$go_mod")
-  packages=$(run_in_module "$mod" go list -tags conformance ./...)
+  packages=$(cd "$mod" && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go list -tags conformance ./...)
   if [ -z "$packages" ]; then
     echo "lint $mod (skipped: no packages)"
     continue
   fi
 
   echo "lint $mod"
-  run_in_module "$mod" golangci-lint run --build-tags conformance ./...
+  (cd "$mod" && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" golangci-lint run --build-tags conformance ./...)
 done
 """
 
@@ -319,30 +283,15 @@ description = "Test centralized OpenSpec skill freshness and rollback"
 run = "bash scripts/update-openspec-skills_test.sh"
 
 [tasks.tidy]
-description = "Run go mod tidy across all modules"
-run = """
-go mod tidy
-(cd ai-gateway && GOWORK=off go mod tidy)
-(cd providers/anthropic && go mod tidy)
-(cd providers/bedrock && go mod tidy)
-(cd providers/grafana && go mod tidy)
-(cd providers/openai && go mod tidy)
-(cd providers/openai-compatible && go mod tidy)
-(cd middleware/logger && go mod tidy)
-(cd middleware/agentobservability && go mod tidy)
-(cd middleware/enrichment && go mod tidy)
-(cd middleware/prometheus && go mod tidy)
-"""
+description = "Sync first-party requirements and replacements, then tidy every module"
+run = "bash scripts/module-policy.sh sync"
 
 [tasks.build]
 description = "Build candidate source modules and examples"
 run = """
-workspace_file="$PWD/go.gateway.work"
-export GOWORK="$PWD/go.work"
-mise run verify-gateway-workspace
 mise run build-examples
 go build ./...
-(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go build ./...)
+(cd ai-gateway && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go build ./...)
 (cd providers/anthropic && go build ./...)
 (cd providers/azure && go build ./...)
 (cd providers/bedrock && go build ./...)
@@ -358,7 +307,6 @@ go build ./...
 [tasks.build-examples]
 description = "Build every example module against candidate SDK source"
 run = """
-export GOWORK="$PWD/go.work"
 for mod in $(find examples -name go.mod -exec dirname {} \\;); do
   echo "build $mod"
   (cd "$mod" && go build ./...)
@@ -368,7 +316,6 @@ done
 [tasks.test-examples]
 description = "Run short example tests against candidate SDK source"
 run = """
-export GOWORK="$PWD/go.work"
 for mod in $(find examples -name go.mod -exec dirname {} \\; | sort); do
   test_file=$(find "$mod" -name '*_test.go' -type f -print -quit)
   if [ -z "$test_file" ]; then
@@ -383,7 +330,6 @@ done
 [tasks.test-integration]
 description = "Run cross-language candidate-source integration tests"
 run = """
-export GOWORK="$PWD/go.work"
 mise deps install --only test
 (cd test/integration/testserver && go test ./...)
 (cd test && pnpm --filter @ai-sdk/test-integration test)
@@ -414,31 +360,22 @@ cd test && pnpm --filter @ai-sdk/conformance-tools typecheck
 [tasks.test-providerwire-v4]
 description = "Run ProviderWire V4 contract checks against candidate source"
 run = """
-workspace_file="$PWD/go.gateway.work"
-mise run verify-gateway-workspace
-(cd ai-gateway && GOWORK="$workspace_file" GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./providerwire/v4)
+(cd ai-gateway && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test ./providerwire/v4)
 mise deps install --only test
-export GATEWAY_TEST_GOWORK="$workspace_file"
 cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:contract
 """
 
 [tasks.test-ai-gateway-command]
 description = "Run the authenticated candidate-source AI Gateway command integration"
 run = """
-workspace_file="$PWD/go.gateway.work"
-mise run verify-gateway-workspace
 mise deps install --only test
-export GATEWAY_TEST_GOWORK="$workspace_file"
 cd test && pnpm --filter @ai-sdk/providerwire-v4-contract test:command
 """
 
 [tasks.test-ai-gateway-source-integration]
 description = "Run Gateway command and ProviderWire integration against candidate SDK source"
 run = """
-workspace_file="$PWD/go.gateway.work"
-mise run verify-gateway-workspace
 mise deps install --only test
-export GATEWAY_TEST_GOWORK="$workspace_file"
 cd test
 pnpm --filter @ai-sdk/providerwire-v4-contract exec tsx --test runtime-integration.test.ts
 pnpm --filter @ai-sdk/providerwire-v4-contract test:command

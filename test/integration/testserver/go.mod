@@ -2,16 +2,10 @@ module github.com/grafana/ai-sdk/test/integration/testserver
 
 go 1.27.3
 
-replace (
-	github.com/grafana/ai-sdk => ../../..
-	github.com/grafana/ai-sdk/middleware/logger => ../../../middleware/logger
-	github.com/grafana/ai-sdk/providers/grafana => ../../../providers/grafana
-)
-
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.2
-	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20261007173843-8d36b82dfd52
-	github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260921202550-3dff0f7087dc
+	github.com/grafana/ai-sdk v0.1.0-alpha.3
+	github.com/grafana/ai-sdk/middleware/logger v0.1.0-alpha.1
+	github.com/grafana/ai-sdk/providers/grafana v0.1.0-alpha.1
 	github.com/stretchr/testify v1.12.1
 )
 
@@ -44,3 +38,9 @@ require (
 	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
+
+replace github.com/grafana/ai-sdk => ../../..
+
+replace github.com/grafana/ai-sdk/middleware/logger => ../../../middleware/logger
+
+replace github.com/grafana/ai-sdk/providers/grafana => ../../../providers/grafana

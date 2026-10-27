@@ -159,14 +159,6 @@ func ImportableTag(directory, tag string) bool {
 	return strings.HasPrefix(tag, directory+"/v")
 }
 
-var localReplacement = regexp.MustCompile(`(?m)=>[ \t]*(\.{1,2}/|/)`)
-
-// HasLocalReplacement reports whether a go.mod redirects a dependency to the
-// local filesystem, which cannot be resolved by module proxy users.
-func HasLocalReplacement(content []byte) bool {
-	return localReplacement.Match(content)
-}
-
 func boolOr(value *bool, fallback bool) bool {
 	if value == nil {
 		return fallback

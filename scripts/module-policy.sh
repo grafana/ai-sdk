@@ -2,24 +2,24 @@
 # Repository module policy; invoke through mise tasks or the modes below.
 # Inventory: published modules are tracked go.mod roots outside examples/ and
 # test/; declared module paths must match their repository locations.
-# Pins: declared and selected internal versions must resolve to commits on an
-# independently fetched canonical grafana/ai-sdk main, not merely download.
-# Standalone: published modules have no replacements and must download, verify,
-# build, and test with a fresh public-proxy cache, readonly manifests, and no
-# workspace substitutions. One module may be selected by root or module path.
+# Requirements: every tracked go.mod replaces each first-party module in its
+# build graph with that module's directory and requires it at its version in
+# .release-please-manifest.json, or its registered initial version. Sync writes
+# both; consumers ignore replacements, so published requirements stay real.
+# Validate: one or all modules download, verify, build and test with readonly
+# manifests, GOWORK=off and their local first-party replacements.
 # Boundary: the AGPL Gateway stays under ai-gateway/; Apache SDK modules must
-# not reference it; root go.work and the SDK/Grafana graphs exclude it.
-# Workspace: go.gateway.work explicitly selects local candidate source; the
-# root workspace does not. Isolation: SDK and Grafana build/test without Gateway
-# source present. These checks do not replace copied-code or dependency license
-# review. Standalone builds gate artifacts, not source PRs.
+# not reference it and the SDK/Grafana graphs exclude it. Isolation: SDK and
+# Grafana build/test without Gateway source present. These checks do not
+# replace copied-code or dependency license review.
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 module_prefix=github.com/grafana/ai-sdk
 gateway_module=$module_prefix/ai-gateway
-canonical_url=https://github.com/grafana/ai-sdk.git
+manifest_file=.release-please-manifest.json
+config_file=release-please-config.json
 readonly_flags="${GOFLAGS:+$GOFLAGS }-mod=readonly"
 
 fail() { echo "$*" >&2; exit 1; }
@@ -45,25 +45,19 @@ modules() {
   [[ "$has_root" == true ]] || fail 'missing tracked root go.mod'
 }
 
-standalone() (
-  local list root path manifest replacements cache selection=${1:-}
-  list=$(modules)
+validate() (
+  local list root path selection=${1:-}
+  list=$(modules all)
   if [[ -n "$selection" ]]; then
     list=$(awk -F '\t' -v wanted="$selection" '$1 == wanted || $2 == wanted' <<<"$list")
-    [[ -n "$list" ]] || fail "unknown or local-only published module: $selection"
+    [[ -n "$list" ]] || fail "unknown module: $selection"
   fi
-  export GOPROXY=https://proxy.golang.org GOPRIVATE='' GONOPROXY='' GONOSUMDB='' GOWORK=off GOFLAGS="$readonly_flags"
-  cache=$(mktemp -d)
-  trap 'chmod -R u+w "$cache" 2>/dev/null || true; rm -rf "$cache"' EXIT
-  export GOMODCACHE=$cache
+  export GOWORK=off GOFLAGS="$readonly_flags"
   while IFS=$'\t' read -r root path; do
     [[ -n "$root" ]] || continue
     echo "==> $root ($path)"
     (
       cd "$root"
-      manifest=$(go mod edit -json)
-      replacements=$(jq '(.Replace // []) | length' <<<"$manifest")
-      [[ "$replacements" -eq 0 ]] || fail "$path contains replace directives"
       go mod download
       go mod verify >/dev/null
       go build ./...
@@ -72,67 +66,125 @@ standalone() (
   done <<<"$list"
 )
 
-pin_commit() {
-  local path=$1 version=$2 root=$3 metadata subdir=$3
-  [[ "$subdir" == . ]] && subdir=
-  metadata=$(go mod download -json "$path@$version")
-  jq -er --arg path "$path" --arg version "$version" --arg subdir "$subdir" --arg url "${canonical_url%.git}" '
-    if .Error == null and .Path == $path and .Version == $version and
-       .Origin.VCS == "git" and (.Origin.URL | sub("\\.git$"; "")) == $url and
-       (.Origin.Subdir // "") == $subdir and (.Origin.Hash | test("^[0-9a-f]{40}$"))
-    then .Origin.Hash else error("unverifiable origin for " + $path + "@" + $version) end
-  ' <<<"$metadata"
+module_root() {
+  if [[ "$1" == "$module_prefix" ]]; then echo .; else echo "${1#"$module_prefix"/}"; fi
 }
 
-verify_history() (
-  local remote=$1 records=$2 dir anchor consumer path version hash
-  unset GIT_CONFIG_PARAMETERS GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_TEMPLATE_DIR
-  export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=0
-  dir=$(mktemp -d)
-  trap 'rm -rf "$dir"' EXIT
-  git init --bare -q "$dir"
-  git -C "$dir" fetch -q --no-tags "$remote" refs/heads/main || fail "cannot fetch canonical main from $remote"
-  anchor=$(git -C "$dir" rev-parse FETCH_HEAD)
-  while IFS=$'\t' read -r consumer path version hash; do
-    [[ -n "$consumer" ]] || continue
-    [[ "$hash" =~ ^[0-9a-f]{40}$ ]] || fail "$consumer requires $path@$version: invalid commit $hash"
-    if ! git -C "$dir" cat-file -e "$hash^{commit}" 2>/dev/null; then
-      git -C "$dir" fetch -q --no-tags "$remote" "$hash" || fail "$consumer requires $path@$version: cannot fetch $hash from canonical repository"
-    fi
-    git -C "$dir" merge-base --is-ancestor "$hash" "$anchor" || fail "$consumer requires $path@$version ($hash): not an ancestor of canonical main"
-  done <<<"$records"
-)
+relative_path() {
+  local from=$1 to=$2 up=./
+  [[ "$from" == . ]] || up=$(sed -E 's#[^/]+#..#g' <<<"$from")/
+  if [[ "$to" == . ]]; then echo "${up%/}"; else echo "$up$to"; fi
+}
 
-merged_pins() {
-  local list root consumer manifest graph declared selected versions path version selected_root hash replacements records=
-  list=$(modules)
-  export GOPROXY=https://proxy.golang.org GOPRIVATE='' GONOPROXY='' GONOSUMDB='' GOWORK=off GOFLAGS="$readonly_flags"
-  while IFS=$'\t' read -r root consumer; do
-    [[ -n "$root" ]] || continue
-    manifest=$(cd "$root" && go mod edit -json)
-    replacements=$(jq '(.Replace // []) | length' <<<"$manifest")
-    [[ "$replacements" -eq 0 ]] || fail "$consumer contains replace directives"
-    graph=$(cd "$root" && go list -m -json all)
-    declared=$(jq -r '(.Require // [])[] | [.Path, .Version] | @tsv' <<<"$manifest")
-    selected=$(jq -sr '.[] | select(.Main != true) | if .Replace then error("selected replacement for " + .Path) else [.Path, .Version] | @tsv end' <<<"$graph")
-    versions=$(printf '%s\n%s\n' "$declared" "$selected" | sort -u)
+expected_version() {
+  local root=$1 version
+  version=$(jq -r --arg root "$root" '.[$root] // empty' "$manifest_file")
+  [[ -n "$version" ]] || version=$(jq -r --arg root "$root" '.packages[$root]["initial-version"] // .["initial-version"] // empty' "$config_file")
+  [[ -n "$version" ]] || fail "$root has no manifest or initial version"
+  echo "v$version"
+}
+
+published_root() {
+  local root
+  root=$(module_root "$1")
+  awk -F '\t' -v root="$root" '$1 == root { found = 1 } END { exit !found }' <<<"$2" || fail "unregistered first-party module: $1"
+  echo "$root"
+}
+
+first_party_requirements() {
+  GOWORK=off go mod edit -json "$1/go.mod" | jq -r --arg prefix "$module_prefix" '
+    (.Require // [])[] | select(.Path == $prefix or (.Path | startswith($prefix + "/"))) | .Path'
+}
+
+closure() {
+  local published=$1 pending seen= path root
+  pending=$(first_party_requirements "$2")
+  while [[ -n "$pending" ]]; do
+    path=${pending%%$'\n'*}
+    if [[ "$pending" == *$'\n'* ]]; then pending=${pending#*$'\n'}; else pending=; fi
+    [[ -n "$path" ]] || continue
+    grep -Fxq -- "$path" <<<"$seen" && continue
+    seen+="$path"$'\n'
+    root=$(published_root "$path" "$published")
+    pending+="${pending:+$'\n'}$(first_party_requirements "$root")"
+  done
+  printf '%s' "$seen" | sort
+}
+
+sync_module() {
+  local published=$1 root=$2 path args=()
+  while IFS= read -r path; do
+    [[ -n "$path" ]] && args+=("-dropreplace=$path")
+  done < <(GOWORK=off go mod edit -json "$root/go.mod" | jq -r --arg prefix "$module_prefix" '
+    (.Replace // [])[] | select(.Old.Path == $prefix or (.Old.Path | startswith($prefix + "/"))) | .Old.Path')
+  while IFS= read -r path; do
+    [[ -n "$path" ]] && args+=("-replace=$path=$(relative_path "$root" "$(module_root "$path")")")
+  done < <(closure "$published" "$root")
+  while IFS= read -r path; do
+    [[ -n "$path" ]] && args+=("-require=$path@$(expected_version "$(published_root "$path" "$published")")")
+  done < <(first_party_requirements "$root")
+  (( ${#args[@]} == 0 )) || (cd "$root" && GOWORK=off go mod edit "${args[@]}")
+}
+
+sync() {
+  local published all root _ pass
+  published=$(modules)
+  all=$(modules all)
+  for pass in 1 2; do
+    while IFS=$'\t' read -r root _; do
+      sync_module "$published" "$root"
+    done <<<"$all"
+    while IFS=$'\t' read -r root _; do
+      (cd "$root" && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=mod" go mod tidy)
+    done <<<"$all"
+  done
+}
+
+requirements() {
+  local published all root module manifest graph path version target expected failures=
+  published=$(modules)
+  all=$(modules all)
+  export GOWORK=off GOFLAGS="$readonly_flags"
+  while IFS=$'\t' read -r root module; do
+    manifest=$(go mod edit -json "$root/go.mod")
     while IFS=$'\t' read -r path version; do
-      [[ "$path" == "$module_prefix" || "$path" == "$module_prefix/"* ]] || continue
-      selected_root=$(awk -F '\t' -v path="$path" '$2 == path {print $1}' <<<"$list")
-      [[ -n "$selected_root" ]] || fail "$consumer references unknown internal module $path"
-      hash=$(pin_commit "$path" "$version" "$selected_root") || fail "$consumer requires $path@$version: cannot resolve canonical origin"
-      records+="$consumer"$'\t'"$path"$'\t'"$version"$'\t'"$hash"$'\n'
-    done <<<"$versions"
-  done <<<"$list"
-  verify_history "$canonical_url" "$records"
-  while IFS=$'\t' read -r consumer path version hash; do
-    [[ -n "$consumer" ]] || continue
-    printf '%s: %s@%s %s\n' "$consumer" "$path" "$version" "$hash"
-  done <<<"$records"
+      [[ -n "$path" ]] || continue
+      expected=$(expected_version "$(published_root "$path" "$published")")
+      [[ "$version" == "$expected" ]] || failures+="$module requires $path@$version, expected $expected"$'\n'
+    done < <(jq -r --arg prefix "$module_prefix" '(.Require // [])[]
+      | select(.Path == $prefix or (.Path | startswith($prefix + "/"))) | [.Path, .Version] | @tsv' <<<"$manifest")
+    while IFS=$'\t' read -r path target version; do
+      [[ -n "$path" ]] || continue
+      if [[ "$path" != "$module_prefix" && "$path" != "$module_prefix/"* ]]; then
+        failures+="$module replaces non-first-party module $path"$'\n'
+        continue
+      fi
+      expected=$(relative_path "$root" "$(published_root "$path" "$published")")
+      [[ -z "$version" && "$target" == "$expected" ]] || failures+="$module replaces $path${version:+@$version} with $target, expected $expected"$'\n'
+    done < <(jq -r '(.Replace // [])[] | [.Old.Path, .New.Path, (.Old.Version // "")] | @tsv' <<<"$manifest")
+    while IFS= read -r path; do
+      [[ -n "$path" ]] || continue
+      expected=$(relative_path "$root" "$(module_root "$path")")
+      jq -e --arg path "$path" --arg target "$expected" 'any((.Replace // [])[]; .Old.Path == $path and .New.Path == $target)' <<<"$manifest" >/dev/null ||
+        failures+="$module does not replace $path with $expected"$'\n'
+    done < <(closure "$published" "$root")
+    if ! graph=$(cd "$root" && go list -m -json all); then
+      failures+="$module build graph cannot be resolved"$'\n'
+      continue
+    fi
+    while IFS=$'\t' read -r path target; do
+      [[ -n "$path" ]] || continue
+      expected=$(relative_path "$root" "$(published_root "$path" "$published")")
+      [[ "$target" == "$expected" ]] || failures+="$module does not replace $path with $expected"$'\n'
+    done < <(jq -r --arg prefix "$module_prefix" 'select(.Main != true)
+      | select(.Path == $prefix or (.Path | startswith($prefix + "/"))) | [.Path, (.Replace.Path // "")] | @tsv' <<<"$graph")
+  done <<<"$all"
+  [[ -z "$failures" ]] || fail "${failures}run 'mise run tidy' to fix"
+  echo 'First-party requirements and replacements: OK'
 }
 
 boundary() {
-  local path marker module workspace paths list root manifest references targets target candidate resolved graph status imports replacements
+  local path marker module list root manifest references targets target candidate resolved graph status imports
   for license in 'LICENSE:Apache License' 'ai-gateway/LICENSE:GNU AFFERO GENERAL PUBLIC LICENSE'; do
     path=${license%%:*}; marker=${license#*:}
     if [[ ! -s "$path" ]] || ! grep -Fq "$marker" "$path"; then
@@ -142,15 +194,6 @@ boundary() {
   module=$(GOWORK=off go mod edit -json ai-gateway/go.mod | jq -er '.Module.Path')
   [[ "$module" == "$gateway_module" ]] || fail "ai-gateway/go.mod declares $module"
   [[ ! -e gateway/catalog && ! -e gateway/providerwire ]] || fail 'Gateway implementation must live below ai-gateway'
-  workspace=$(go work edit -json go.work)
-  replacements=$(jq '(.Replace // []) | length' <<<"$workspace")
-  [[ "$replacements" -eq 0 ]] || fail 'root go.work must not contain replace directives'
-  paths=$(jq -r '.Use[]?.DiskPath' <<<"$workspace")
-  while IFS= read -r path; do
-    [[ -n "$path" ]] || continue
-    module=$(GOWORK=off go mod edit -json "$path/go.mod" | jq -er '.Module.Path')
-    [[ "$module" != "$gateway_module" && "$module" != "$gateway_module/"* ]] || fail 'Gateway module in root go.work'
-  done <<<"$paths"
   list=$(modules all)
   while IFS=$'\t' read -r root module; do
     [[ -n "$root" ]] || continue
@@ -189,38 +232,22 @@ boundary() {
   echo 'AI Gateway module and license boundary: OK'
 }
 
-workspace() {
-  local file=$repo_root/go.gateway.work paths actual expected root module selected directory
-  paths=$(go work edit -json "$file" | jq -r '.Use[].DiskPath')
-  actual=
-  while IFS= read -r root; do
-    module=$(GOWORK=off go mod edit -json "$root/go.mod" | jq -er '.Module.Path')
-    actual+="$module"$'\n'
-    selected=$(cd ai-gateway && GOWORK="$file" GOFLAGS="$readonly_flags" go list -m -json "$module")
-    directory=$(cd "$root" && pwd -P)
-    [[ $(jq -r '.Main' <<<"$selected") == true && $(jq -r '.Dir' <<<"$selected") == "$directory" ]] || fail "Gateway workspace did not select local $module"
-  done <<<"$paths"
-  expected=$(modules | cut -f2 | sort)
-  [[ $(printf '%s' "$actual" | sort) == "$expected" ]] || fail 'Gateway workspace must contain exactly the published modules'
-  [[ $(go work edit -json go.work | jq -r '[.Use[]?.DiskPath] | index("./ai-gateway")') == null ]] || fail 'root go.work includes Gateway'
-}
-
 isolation() (
-  local dir root module selected directory workspace_file
+  local dir root module selected directory
   dir=$(mktemp -d)
   dir=$(cd "$dir" && pwd -P)
   trap 'rm -rf "$dir"' EXIT
   rsync -a --exclude='/.git' --exclude='/ai-gateway' --exclude='**/node_modules' "$repo_root/" "$dir/"
   [[ ! -e "$dir/ai-gateway" ]] || fail 'isolated copy contains Gateway source'
-  workspace_file=$dir/go.work
+  export GOWORK=off GOFLAGS="$readonly_flags"
   for root in . providers/grafana; do
     echo "==> $root without Gateway source"
     module=$module_prefix
     [[ "$root" == . ]] || module+=/$root
-    selected=$(cd "$dir/$root" && GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go list -m -json "$module")
+    selected=$(cd "$dir/$root" && go list -m -json "$module")
     directory=$(cd "$dir/$root" && pwd -P)
     [[ $(jq -r '.Main' <<<"$selected") == true && $(jq -r '.Dir' <<<"$selected") == "$directory" ]] || fail "isolated copy did not select candidate $module"
-    (cd "$dir/$root" && GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go build ./... && SDK_GATEWAY_ISOLATION=1 GOWORK="$workspace_file" GOFLAGS="$readonly_flags" go test ./...)
+    (cd "$dir/$root" && go build ./... && SDK_GATEWAY_ISOLATION=1 go test ./...)
   done
 )
 
@@ -228,11 +255,11 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   case "${1:-}" in
     modules) [[ $# == 1 ]] || fail 'usage: module-policy.sh modules'; modules ;;
     all-modules) [[ $# == 1 ]] || fail 'usage: module-policy.sh all-modules'; modules all ;;
-    standalone) [[ $# -le 2 ]] || fail 'usage: module-policy.sh standalone [module-root-or-path]'; standalone "${2:-}" ;;
-    pins) [[ $# == 1 ]] || fail 'usage: module-policy.sh pins'; merged_pins ;;
+    validate) [[ $# -le 2 ]] || fail 'usage: module-policy.sh validate [module-root-or-path]'; validate "${2:-}" ;;
+    requirements) [[ $# == 1 ]] || fail 'usage: module-policy.sh requirements'; requirements ;;
+    sync) [[ $# == 1 ]] || fail 'usage: module-policy.sh sync'; sync ;;
     boundary) [[ $# == 1 ]] || fail 'usage: module-policy.sh boundary'; boundary ;;
-    workspace) [[ $# == 1 ]] || fail 'usage: module-policy.sh workspace'; workspace ;;
     isolation) [[ $# == 1 ]] || fail 'usage: module-policy.sh isolation'; isolation ;;
-    *) fail 'usage: module-policy.sh {modules|all-modules|standalone|pins|boundary|workspace|isolation}' ;;
+    *) fail 'usage: module-policy.sh {modules|all-modules|validate|requirements|sync|boundary|isolation}' ;;
   esac
 fi

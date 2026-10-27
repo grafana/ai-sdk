@@ -1,50 +1,46 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { realpathSync, writeFileSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
+
+const goEnvironment = () => ({ ...nodeProcess.env, GOWORK: "off", GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly` });
+
+function assertCandidateSource(directory: string, root: string, client: string, message: string) {
+  for (const [module, path] of [
+    ["github.com/grafana/ai-sdk", root],
+    ["github.com/grafana/ai-sdk/providers/grafana", client],
+  ] as const) {
+    const selected = JSON.parse(execFileSync("go", ["list", "-m", "-json", module], { cwd: directory, env: goEnvironment(), encoding: "utf8" }));
+    assert.equal(realpathSync(selected.Dir), path, message);
+  }
+}
+
+function anchorReplacements(copy: string, original: string) {
+  const manifest = JSON.parse(execFileSync("go", ["mod", "edit", "-json"], { cwd: copy, env: goEnvironment(), encoding: "utf8" })) as { Replace?: Array<{ Old: { Path: string }; New: { Path: string } }> };
+  const replacements = (manifest.Replace ?? []).filter(({ New }) => New.Path.startsWith("."))
+    .map(({ Old, New }) => `-replace=${Old.Path}=${resolve(original, New.Path)}`);
+  if (replacements.length > 0) execFileSync("go", ["mod", "edit", ...replacements], { cwd: copy, env: goEnvironment() });
+}
 
 export function buildGoClientCapture(directory: string, sourceDirectory = resolve(import.meta.dirname, "../../../providers/grafana")): string {
   sourceDirectory = realpathSync(sourceDirectory);
   directory = realpathSync(directory);
   const root = realpathSync(resolve(import.meta.dirname, "../../.."));
   const rootClient = join(root, "providers/grafana");
-  let workspace = join(root, "go.work");
-  if (sourceDirectory !== rootClient) {
-    const sourceWorkspace = JSON.parse(execFileSync("go", ["work", "edit", "-json", workspace], { encoding: "utf8" })) as { Go: string; Use: Array<{ DiskPath: string }> };
-    workspace = join(directory, "go.work");
-    const modules = sourceWorkspace.Use.map(({ DiskPath }) => resolve(root, DiskPath)).filter((path) => path !== rootClient);
-    writeFileSync(workspace, `go ${sourceWorkspace.Go}\n\nuse (\n${[...modules, sourceDirectory].map((path) => `\t${path}`).join("\n")}\n)\n`);
-  }
-  const env = { ...nodeProcess.env, GOWORK: workspace, GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly` };
-  for (const [module, path] of [
-    ["github.com/grafana/ai-sdk", root],
-    ["github.com/grafana/ai-sdk/providers/grafana", sourceDirectory],
-  ] as const) {
-    const selected = JSON.parse(execFileSync("go", ["list", "-m", "-json", module], { cwd: sourceDirectory, env, encoding: "utf8" }));
-    assert.equal(selected.Dir, path, "Go client capture must select candidate source");
-    assert.equal(selected.Main, true);
-  }
+  if (sourceDirectory !== rootClient) anchorReplacements(sourceDirectory, rootClient);
+  assertCandidateSource(sourceDirectory, root, sourceDirectory, "Go client capture must select candidate source");
   const binary = join(directory, "go-client-capture");
-  execFileSync("go", ["build", "-o", binary, "./internal/capture"], { cwd: sourceDirectory, env, stdio: "pipe" });
+  execFileSync("go", ["build", "-o", binary, "./internal/capture"], { cwd: sourceDirectory, env: goEnvironment(), stdio: "pipe" });
   return binary;
 }
 
 export function buildGoStreamTextCapture(directory: string): string {
-  const root = resolve(import.meta.dirname, "../../..");
-  const env = { ...nodeProcess.env, GOWORK: join(root, "go.work"), GOFLAGS: "-mod=readonly" };
-  for (const [module, path] of [
-    ["github.com/grafana/ai-sdk", root],
-    ["github.com/grafana/ai-sdk/providers/grafana", join(root, "providers/grafana")],
-  ] as const) {
-    const selected = JSON.parse(execFileSync("go", ["list", "-m", "-json", module], { cwd: root, env, encoding: "utf8" }));
-    assert.equal(selected.Dir, path, "high-level probe must use the changed local source");
-    assert.equal(selected.Main, true);
-  }
+  const root = realpathSync(resolve(import.meta.dirname, "../../.."));
+  const client = join(root, "providers/grafana");
+  assertCandidateSource(client, root, client, "high-level probe must use the changed local source");
   const binary = join(directory, "go-stream-text-capture");
-  execFileSync("go", ["build", "-o", binary, "./providers/grafana/internal/capture"], {
-    cwd: root, env, stdio: "pipe",
-  });
+  execFileSync("go", ["build", "-o", binary, "./internal/capture"], { cwd: client, env: goEnvironment(), stdio: "pipe" });
   return binary;
 }
 

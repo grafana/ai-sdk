@@ -10,7 +10,6 @@ gateway=$repo_root/ai-gateway
 dist=$gateway/dist
 licenses=$dist/licenses
 revision=${AI_GATEWAY_VCS_REF:-local-unverified}
-workspace=${GOWORK:-$repo_root/go.gateway.work}
 
 fail() { echo "$*" >&2; exit 1; }
 
@@ -39,9 +38,9 @@ for platform in linux/amd64 linux/arm64; do
   goos=${platform%/*} goarch=${platform#*/}
   output=$licenses/backend-${goos}_${goarch}
   mkdir -p "$output/modules"
-  modules=$(cd "$gateway" && GOWORK="$workspace" GOFLAGS="-mod=readonly" GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 \
+  modules=$(cd "$gateway" && GOWORK=off GOFLAGS="-mod=readonly" GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 \
     go list -deps -tags arrow_json_stdlib \
-    -f '{{with .Module}}{{.Path}}{{"\t"}}{{if .Version}}{{.Version}}{{else}}local{{end}}{{"\t"}}{{if .Sum}}{{.Sum}}{{else}}-{{end}}{{"\t"}}{{.Dir}}{{end}}' \
+    -f '{{with .Module}}{{.Path}}{{"\t"}}{{if or .Replace (not .Version)}}local{{else}}{{.Version}}{{end}}{{"\t"}}{{if .Sum}}{{.Sum}}{{else}}-{{end}}{{"\t"}}{{.Dir}}{{end}}' \
     ./cmd/grafana-ai-gateway | sort -u)
   : >"$output/THIRD_PARTY_MODULES.txt"
   while IFS=$'\t' read -r module version checksum directory; do

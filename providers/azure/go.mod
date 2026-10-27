@@ -4,8 +4,8 @@ go 1.27.3
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.80.0
-	github.com/grafana/ai-sdk v0.1.0-alpha.2
-	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260825181821-1f7f7ef4a4c8
+	github.com/grafana/ai-sdk v0.1.0-alpha.3
+	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.1
 	github.com/stretchr/testify v1.12.1
 )
 
@@ -50,3 +50,7 @@ require (
 	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
+
+replace github.com/grafana/ai-sdk => ../..
+
+replace github.com/grafana/ai-sdk/providers/anthropic => ../../providers/anthropic
