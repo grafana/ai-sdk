@@ -54,6 +54,7 @@ type StreamTextResult struct {
 	elementStream       *losslessStream[json.RawMessage]
 	lastPartialJSON     string
 	emittedElementCount int
+	elementStreamErr    error
 	usedTextIDs         map[string]struct{}
 	usedReasoningIDs    map[string]struct{}
 }
@@ -95,17 +96,22 @@ type losslessStream[T any] struct {
 	queue  []T
 	output chan T
 	closed bool
+	done   chan struct{}
 	start  sync.Once
 }
 
 func newLosslessStream[T any]() *losslessStream[T] {
-	stream := &losslessStream[T]{output: make(chan T, defaultStreamBuffer)}
+	stream := &losslessStream[T]{output: make(chan T, defaultStreamBuffer), done: make(chan struct{})}
 	stream.ready = sync.NewCond(&stream.mu)
 	return stream
 }
 
 func (s *losslessStream[T]) send(value T) {
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	s.queue = append(s.queue, value)
 	s.ready.Signal()
 	s.mu.Unlock()
@@ -113,7 +119,10 @@ func (s *losslessStream[T]) send(value T) {
 
 func (s *losslessStream[T]) close() {
 	s.mu.Lock()
-	s.closed = true
+	if !s.closed {
+		s.closed = true
+		close(s.done)
+	}
 	s.ready.Broadcast()
 	s.mu.Unlock()
 }
@@ -2102,10 +2111,28 @@ func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
 		return ""
 	}
 	if elements, isSlice := v.([]json.RawMessage); isSlice {
+		var overflow error
+		if bounded, ok := out.(BoundedArrayOutput); ok {
+			if limit, ok := bounded.MaxItems(); ok {
+				limit = max(limit, 0)
+				if len(elements) > limit {
+					elements = elements[:limit]
+					overflow = fmt.Errorf("%w: elements array must contain at most %d items", ErrInvalidOutputText, limit)
+				}
+			}
+		}
 		for i := r.emittedElementCount; i < len(elements); i++ {
 			r.elementStream.send(elements[i])
 		}
-		r.emittedElementCount = len(elements)
+		r.emittedElementCount = max(r.emittedElementCount, len(elements))
+		if overflow != nil {
+			r.mu.Lock()
+			if r.elementStreamErr == nil {
+				r.elementStreamErr = overflow
+			}
+			r.mu.Unlock()
+			r.elementStream.close()
+		}
 	}
 
 	var data json.RawMessage
@@ -2225,7 +2252,7 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	resumeStep := &StepResult{StepNumber: 0, Model: StepModel{}}
 	r.runToolsEmitOnCompletion(ctx, cfg, outcomes, func(i int, emit func(TextStreamPart) error) {
 		et := executable[i]
-		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, nil, msgs, outcomes, et.index, emit)
+		r.executeSingleTool(ctx, resumeStep, cfg, et.tc, et.tool, cfg.runtimeContext, msgs, outcomes, et.index, emit)
 	})
 
 	approvedToolParts := make([]provider.ContentPart, 0, len(executable))
@@ -2296,6 +2323,7 @@ func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, a
 			}, ToolExecutionOptions{
 				ToolCallID: approval.toolCall.ToolCallID,
 				Messages:   msgs,
+				Context:    cfg.runtimeContext,
 			})
 			if err != nil {
 				return nil, nil, err
@@ -2713,10 +2741,27 @@ func (r *StreamTextResult) PartialOutputStream() <-chan json.RawMessage {
 
 // ElementStream returns a channel of complete validated array elements
 // during streaming. Only produces values when the Output is in array mode.
-// Elements are delivered exactly once and in order. The channel is closed after
-// the stream finishes and all elements are delivered.
+// Elements are delivered exactly once and in order. The count carries over
+// between steps: a later step delivers only the elements of its array past the
+// number already delivered, as upstream does. The channel is closed after
+// the stream finishes and all elements are delivered. When the Output reports a
+// maximum through BoundedArrayOutput, the channel closes as soon as the model
+// produces an element past it, in any step, and ElementStreamError reports why.
 func (r *StreamTextResult) ElementStream() <-chan json.RawMessage {
 	return r.elementStream.stream()
+}
+
+// ElementStreamError reports why ElementStream closed: an error wrapping
+// ErrInvalidOutputText when the model produced more elements than the
+// maximum, or nil after a normal close. It blocks until the element stream
+// closes, which happens at the overflow or when the stream finishes. Like
+// ElementStream, it needs a concurrent FullStream consumer. The final output
+// is validated separately and reported by OutputError.
+func (r *StreamTextResult) ElementStreamError() error {
+	<-r.elementStream.done
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.elementStreamErr
 }
 
 // Err returns the first error encountered during streaming, or nil.

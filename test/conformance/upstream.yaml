@@ -98,6 +98,16 @@ knownGaps:
       tests cover supported models, streaming and non-streaming requests, and
       the absence of forced tool choice and synthetic tools. Organization policy
       must enable structured outputs; no live Vertex recording is claimed.
+  - id: array-element-stream-overflow
+    surface: core-streamtext
+    status: documented-deviation
+    description: Upstream errors the array element stream when the model
+      produces an element past maxItems. A Go channel carries no error, so
+      ElementStream closes at that point and stays closed for later steps, and
+      StreamTextResult.ElementStreamError reports the overflow. Upstream
+      streamText has no output repair; when Go WithRepairText accepts a
+      repaired array within the bounds, OutputError is nil although
+      ElementStreamError reports the overflow.
   - id: astra-model-catalog
     surface: provider-openai
     status: gap

@@ -119,6 +119,16 @@ writes or irreversible actions. For array output, `output.TypedElementStream`
 can emit completed elements while the full result is still being generated; it
 also needs a concurrent `FullStream` consumer.
 
+`output.WithMinItems` and `output.WithMaxItems` bound an array. They apply
+only to `output.Array`, so passing them to another output does not compile. The
+bounds are sent to the provider in the schema and checked on the final result. With a
+maximum, the element stream closes as soon as the model produces one element
+too many in any step, and `ElementStreamError` reports the overflow. The
+element count carries over between steps, so a later step's array only adds the
+elements past those already delivered. The final
+result is checked separately: `OutputError` reports a final array outside the
+bounds, and is nil when `WithRepairText` accepts a repaired array within them.
+
 ## Stream JSON to `useObject`
 
 `useObject` consumes the same plain text JSON stream written by

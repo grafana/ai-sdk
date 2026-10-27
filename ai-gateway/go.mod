@@ -7,13 +7,13 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.80.0
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/grafana/agento11y/go v0.19.0
-	github.com/grafana/ai-sdk v0.1.0-alpha.1.0.20260928202004-dd43c6dff058
+	github.com/grafana/ai-sdk v0.1.0-alpha.2
 	github.com/grafana/ai-sdk/middleware/agentobservability v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/middleware/logger v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/middleware/prometheus v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/ai-sdk/providers/grafana v0.0.0-20260928202004-dd43c6dff058
-	github.com/grafana/ai-sdk/providers/openai v0.0.0-20260928202004-dd43c6dff058
+	github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.1
 	github.com/grafana/ai-sdk/providers/openai-compatible v0.0.0-20260928202004-dd43c6dff058
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/grafana/authlib/types v0.0.0-20260814184937-0d62418c2815
@@ -42,7 +42,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/s2a-go v0.1.11 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.23 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.24 // indirect
 	github.com/googleapis/gax-go/v2 v2.26.2 // indirect
 	github.com/grafana/dskit v0.0.0-20260108123158-1a1acfb6ef2e // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
