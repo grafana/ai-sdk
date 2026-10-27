@@ -746,6 +746,58 @@ func TestStreamText_PartialOutputStream(t *testing.T) {
 		assert.Equal(t, []string{deltas[0], deltas[1] + deltas[2]}, textDeltas)
 	})
 
+	t.Run("republishes a repeated partial in a later step", func(t *testing.T) {
+		step2 := []string{`{"name":"a`, `"}`}
+		callNum := 0
+		model := &testModel{
+			streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				callNum++
+				ch := make(chan provider.StreamPart, 6)
+				ch <- provider.StreamPart{Type: provider.PartTextStart, ID: "t1"}
+				if callNum == 1 {
+					ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: step2[0]}
+					ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+					ch <- provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "c1", ToolName: "lookup", Input: `{}`}
+					ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}}
+				} else {
+					for _, delta := range step2 {
+						ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: "t1", Delta: delta}
+					}
+					ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+					ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+				}
+				close(ch)
+				return &provider.StreamResult{Stream: ch}, nil
+			},
+		}
+		result := aisdk.StreamText(context.Background(), model,
+			aisdk.WithModelMessages(provider.UserText("test")),
+			aisdk.WithOutput(output.JSON()),
+			aisdk.WithTools(aisdk.ToolSet{"lookup": aisdk.Tool{
+				InputSchema: mustSchema(t, `{"type":"object"}`),
+				Execute: func(context.Context, json.RawMessage, aisdk.ToolExecutionOptions) (json.RawMessage, error) {
+					return json.RawMessage(`{}`), nil
+				},
+			}}),
+			aisdk.WithStopWhen(aisdk.StepCountIs(3)),
+		)
+
+		var textDeltas []string
+		for part := range result.FullStream() {
+			if delta, ok := part.(aisdk.StreamTextDelta); ok {
+				textDeltas = append(textDeltas, delta.Text)
+			}
+		}
+		var partials []string
+		for partial := range result.PartialOutputStream() {
+			partials = append(partials, string(partial))
+		}
+
+		require.Equal(t, 2, callNum)
+		assert.Equal(t, []string{`{"name":"a"}`, `{"name":"a"}`}, partials)
+		assert.Equal(t, []string{step2[0], step2[0], step2[1]}, textDeltas)
+	})
+
 	t.Run("emits partial JSON objects", func(t *testing.T) {
 		ch := make(chan provider.StreamPart, 20)
 		go func() {

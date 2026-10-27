@@ -904,7 +904,7 @@ func (r *StreamTextResult) processStep(
 	var outputTextChunkID string
 	var outputTextChunk strings.Builder
 	var outputTextMeta provider.ProviderMetadata
-	var lastPublishedOutput string
+	r.lastPartialJSON = ""
 
 	r.emit(StreamStartStep{Warnings: warnings, Request: streamResult.Request})
 
@@ -1013,9 +1013,7 @@ loop:
 					r.callOnChunk(cfg, tsp)
 					continue
 				}
-				parsed := r.emitPartialOutput(cfg.output, textBuilder.String())
-				if parsed != lastPublishedOutput && parsed != "" {
-					lastPublishedOutput = parsed
+				if r.emitPartialOutput(cfg.output, textBuilder.String()) {
 					tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
@@ -2092,10 +2090,10 @@ func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
 	r.callOnChunk(cfg, part)
 }
 
-func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
+func (r *StreamTextResult) emitPartialOutput(out Output, text string) bool {
 	v, ok := out.ParsePartial(text)
 	if !ok {
-		return ""
+		return false
 	}
 	if elements, isSlice := v.([]json.RawMessage); isSlice {
 		var overflow error
@@ -2129,16 +2127,16 @@ func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
 		var err error
 		data, err = json.Marshal(v)
 		if err != nil {
-			return ""
+			return false
 		}
 	}
 	canonical, err := canonicalPartialJSON(data)
 	if err != nil || canonical == r.lastPartialJSON {
-		return ""
+		return false
 	}
 	r.lastPartialJSON = canonical
 	r.partialOutputStream.send(data)
-	return canonical
+	return true
 }
 
 func canonicalPartialJSON(data json.RawMessage) (string, error) {
