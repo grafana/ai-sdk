@@ -106,8 +106,10 @@ old local reports, recreate evidence, move a tag, or force a release through.
 
 After root proof passes, approve switching the variable to `libraries`. The next
 main push publishes only independently ready pending libraries and prepares one
-release PR per eligible component. A merged pending component suppresses only its
-own next preparation. Late publication candidates wait for another run. Preparation
+combined library release PR, plus one for each library configured with
+`separate-pull-requests: true`. A merged pending component suppresses only its
+own next preparation. A merged combined release keeps its pending label until every
+library in it is published. Late publication candidates wait for another run. Preparation
 requires that main still equals the workflow SHA and uses App-signed commits.
 Existing release PRs refresh even when their notes are unchanged, so current-base
 readiness can run again. Commit-parser diagnostics stop preparation writes.
@@ -129,13 +131,12 @@ Updates use `fix(deps)` and require review;
 automerge is disabled. This follows Renovate's
 [configuration contracts](https://docs.renovatebot.com/configuration-options/).
 
-Review and merge the root requirement update for direct dependents, then repeat
-for provider prerequisites and Bedrock. Ordinary source PRs retain candidate-source
-CI. A dependency bump does not prove its dependent is release-ready: publication
-rechecks tag origin, ancestry, owned-source freshness, standalone and consumer
-behavior. Record the root → direct provider → Bedrock progression in #468; if a
-provider needs unrelated implementation fixes, track those separately rather than
-holding the root release or pretending the progression is proven.
+Requirement updates are not on the release path. Ordinary source PRs retain
+candidate-source CI. Publication rechecks tag origin, ancestry, standalone and
+consumer behavior. Record the first combined library release in #468; if a library
+cannot pass readiness, move it to its own release PR as described in the
+[release runbook](../README.md#when-a-library-needs-an-unreleased-prerequisite)
+rather than holding the other libraries.
 
 ## Stop and recovery
 

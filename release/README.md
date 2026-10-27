@@ -27,6 +27,30 @@ Root releases are tagged `vX.Y.Z`; nested releases are tagged
 library module inside a repository. Gateway retains `ai-gateway/vX.Y.Z` application
 tags without promising standalone `go install` or external Go imports.
 
+## Release libraries together
+
+release-please proposes every pending library in one release pull request,
+`chore: release main` on `release-please--branches--main`. It carries each
+library's version, changelog entry and the manifest update. Merging it tags each
+library and creates one GitHub Release per library. Gateway keeps its own release
+pull request.
+
+Released libraries keep their pinned first-party requirements. A provider released
+alongside root `v0.1.0-alpha.4` may still require root `v0.1.0-alpha.2`. That
+requirement is a minimum: readiness proves the provider against it, and workspace CI
+proves the provider against the root source released in the same pull request.
+Renovate moves the requirements forward afterwards, off the release path.
+
+### When a library needs an unreleased prerequisite
+
+If a library's source uses prerequisite behavior that no tag has yet, its readiness
+fails and blocks the combined pull request. Pseudo-version requirements fail the same
+way. Move that library to its own release pull request by adding
+`"separate-pull-requests": true` to its package in
+[`release-please-config.json`](../release-please-config.json), so the others can
+release. Once its prerequisite is released and the requirement update has merged,
+release it from its own pull request and remove the setting.
+
 ## Record release intent in normal pull requests
 
 Release intent is the pull request title. Pull requests are squash-merged with
@@ -106,12 +130,13 @@ release-please job. Review pending release PRs and already-merged candidates bef
 removing the publication guard; activation must not publish an unvalidated version.
 
 The `release-readiness` check is informational until maintainers make it required.
-A library candidate must change exactly one manifest version and its generated
-changelog. The validator checks the dedicated bot's immutable user ID
-`332654929` (App `5038074`), canonical repository ID `1315458055`, branch, open
-non-draft state, and matching title/body/manifest versions. Changelog history must
-be preserved and the new entry must equal the release body notes, using the
-pinned release-please 17.6.0 format. Release-looking PRs without a version change
+A library candidate may change only the manifest versions of the libraries it
+releases and their generated changelogs. The validator checks the dedicated bot's
+immutable user ID `332654929` (App `5038074`), canonical repository ID
+`1315458055`, branch, open non-draft state, and matching title/body/manifest
+versions. A combined release body must contain exactly one release notes section
+per released library. Changelog history must be preserved and each new entry must
+equal that library's release notes, using the pinned release-please 17.6.0 format. Release-looking PRs without a version change
 fail instead of falling through to ordinary-source handling. Labels grant nothing.
 Ordinary source PRs retain #262's candidate-source and provenance gates.
 
@@ -123,26 +148,14 @@ merge-queue enforcement: main can still advance after the job finishes. Required
 checks, protection changes and post-merge publication authorization remain #245
 activation prerequisites. This check does not authorize publication by itself.
 
-For the selected library, readiness resolves its dependency graph from a fresh
+For each released library, readiness resolves its dependency graph from a fresh
 public-proxy cache. Replacements are rejected. Each internal prerequisite must
 have a tagged version, canonical Git download origin, a matching canonical tag
-target, and ancestry in the candidate base. Its owned source snapshot must equal
-the base snapshot; compiling against an older dependency is insufficient.
-Missing tags, unavailable proxy responses and unverifiable origins fail closed.
-Then `scripts/module-policy.sh standalone <root>` downloads, verifies, builds and
-tests only the selected module with `GOWORK=off` and readonly manifests.
-
-Snapshot ownership follows the longest registered module root; root middleware
-remains root-owned. Snapshots include file paths, Git modes and contents, so
-renames and deletions count. Normal exclusions are `.md` and `_test.go` files;
-`test`, `tests`, `testdata`, `docs`, `examples`, `openspec`, `release`, `scripts`,
-`.github`, `.agents` and `.claude` directory segments; root dotfiles; and the root
-workspace, mise, Renovate and release configuration files enumerated in
-`scripts/release_readiness.py`. A runtime Go embed directive overrides these
-exclusions for all owned files beneath its directory, including hidden assets and
-Markdown. This conservative rule may require a release for a non-runtime sibling
-change. Nested module ownership still takes precedence. Development-only Go files
-do not introduce embed overrides.
+target, and ancestry in the candidate base. The tag may predate the
+prerequisite's current source. Missing tags, unavailable proxy responses and
+unverifiable origins fail closed. Then `scripts/module-policy.sh standalone <root>`
+downloads, verifies, builds and tests only that library with `GOWORK=off` and
+readonly manifests.
 
 ## Selected consumer evidence
 
@@ -172,7 +185,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/release_consumer.py .
 ```
 
 Replace `.` with a registered library root for a selected consumer diagnostic.
-The consumer command alone does not certify prerequisite tag identity or freshness;
+The consumer command alone does not certify prerequisite tag identity;
 the release readiness entry point performs those checks first. Root's frontend
 check installs the locked integration dependencies with pnpm. The candidate source
 and registered Vercel baseline are unchanged by this governance slice.
@@ -183,10 +196,9 @@ The [activation rollout](tooling/ACTIVATION.md) records the remaining settings, 
 publication, external consumption and dependency progression evidence. Gateway image
 work is excluded. Release writes default off until explicit activation.
 
-The normal library progression is root release -> Renovate root updates -> directly
-dependent library releases -> Renovate provider updates -> Bedrock readiness. The first
-root release needs no internal prerequisite tags; nested first releases wait for tagged
-prerequisites. Already-merged pseudo-versions remain valid for ordinary source PRs.
+Libraries release together; see [Release libraries together](#release-libraries-together).
+A nested first release needs tagged prerequisites. Already-merged pseudo-versions
+remain valid for ordinary source PRs but block that library's release.
 
 Gateway has a separate application contract: main and versioned plugin packages build
 from the same-revision workspace and pass plugin build, licensing and validator checks,
@@ -203,9 +215,10 @@ Never move or delete published tags. Correct a bad release with a new version.
 
 ## Keep dependent modules on released first-party requirements
 
-The requirement bump cannot live in a release pull request, because the
-first-party version it would point at is not published until its own release
-pull request merges.
+Released libraries do not need current first-party requirements, but keeping
+them current lets the next release declare newer minimums. The requirement bump
+cannot live in a release pull request, because the first-party version it would
+point at is not published until that pull request merges.
 
 The final first-party rule in [`renovate.json`](../renovate.json) enables tagged
 prerequisite updates, including prereleases, without the generic weekly schedule.
@@ -216,10 +229,11 @@ See the [activation rollout](tooling/ACTIVATION.md) before enabling publication.
 
 Grafana's self-hosted Renovate enforces a minimum release age, currently three
 days, that repository configuration cannot override. A new tag therefore reaches
-the grouped pull request about three days after it is published, and each hop of
-the root -> provider -> Bedrock progression waits again. To skip the wait for one
-update, tick it under **Pending Status Checks** on the Dependency Dashboard; the
-next Renovate run applies it.
+the grouped pull request about three days after it is published. This delays only
+the requirement update, not the next release, unless a library is waiting on it as
+described in [When a library needs an unreleased prerequisite](#when-a-library-needs-an-unreleased-prerequisite).
+To skip the wait for one update, tick it under **Pending Status Checks** on the
+Dependency Dashboard; the next Renovate run applies it.
 
 A module without any tag of its own breaks Renovate's version lookup: Renovate
 falls back to the root module's `vX.Y.Z` tags and proposes a version Go cannot
@@ -299,10 +313,8 @@ Three things must be true before the first release.
 
 **A clean history boundary.** The adoption configuration intentionally ignores
 pre-adoption release history. After this pull request merges, create
-release-worthy changes in dependency order rather than trying to reconstruct
-historical changelogs: core first, then the directly dependent modules, then
-Bedrock after Renovate has published its prerequisite bumps. Gateway uses its
-independent workspace application contract.
+release-worthy changes rather than trying to reconstruct historical changelogs.
+Gateway uses its independent workspace application contract.
 Preparation ignores the temporary `last-release-sha` setting in memory so published
 modules advance independently of modules that have no first tag.
 

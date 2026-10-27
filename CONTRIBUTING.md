@@ -537,9 +537,8 @@ mise run release-preview    # dry-run of the next release pull request
 Library automation defaults off and requires the reviewed settings and explicit
 mode in the [activation rollout](release/tooling/ACTIVATION.md). Gateway work does
 not gate library activation.
-After activation, each library gets its own release pull request. Maintainers merge the root one
-first, let Renovate carry the new core version into the nested `go.mod` files,
-then merge the rest. The complete workflow is in the
+After activation, all pending libraries release from one release pull request;
+Gateway keeps its own. The complete workflow is in the
 [release runbook](release/README.md).
 
 ## Dependency management
@@ -562,7 +561,7 @@ SDK's Go module dependency graph.
   for external Go consumers, validate that module against its declared `go.mod`
   dependencies with `MODULE=providers/anthropic mise run verify-published-module`
   (substitute the module being released). Release PR readiness additionally checks
-  current-base metadata, canonical tagged prerequisite freshness, and isolated
+  current-base metadata, canonical tagged prerequisites, and isolated
   selected-consumer regressions; see the [release runbook](release/README.md).
   Publication requires explicit activation under #245. For a broader diagnostic,
   `mise run verify-module-resolution` checks all published modules.

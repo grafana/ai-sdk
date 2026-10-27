@@ -15,7 +15,7 @@
 ## 3. Configuration and documentation
 
 - [x] 3.1 Release libraries from one pull request in `release-please-config.json`, with Gateway separate, and check it in `internal/releasecheck`
-- [ ] 3.2 Update `release/README.md`, `release/tooling` docs and `CONTRIBUTING.md`, including the escape hatch
+- [x] 3.2 Update `release/README.md`, `release/tooling` docs and `CONTRIBUTING.md`, including the escape hatch
 
 ## 4. Validation
 
