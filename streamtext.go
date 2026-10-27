@@ -2194,12 +2194,17 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	// mutates existing message Content slices.
 	resultMsgs := cloneMessages(msgs)
 
-	approved, demoted, err := validateApprovedToolApprovals(cfg, msgs, approved)
+	localApproved := slices.DeleteFunc(slices.Clone(approved), isProviderExecutedApproval)
+	approved, demoted, err := validateApprovedToolApprovals(cfg, msgs, localApproved)
 	if err != nil {
 		return nil, err
 	}
+	localDenied := append(slices.DeleteFunc(slices.Clone(denied), isProviderExecutedApproval), demoted...)
+	providerDenied := slices.DeleteFunc(slices.Clone(denied), func(approval collectedToolApproval) bool {
+		return !isProviderExecutedApproval(approval)
+	})
 	denied = append(denied, demoted...)
-	for _, approval := range denied {
+	for _, approval := range slices.Concat(localDenied, providerDenied) {
 		deniedEvent := StreamToolOutputDenied{ToolCallID: approval.toolCall.ToolCallID, ToolName: approval.toolCall.ToolName}
 		r.emit(deniedEvent)
 		r.callOnChunk(cfg, deniedEvent)
@@ -2212,9 +2217,6 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	}
 	var executable []executableApproval
 	for _, approval := range approved {
-		if approval.toolCall.ProviderExecuted {
-			continue
-		}
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
 		if !ok || !isExecutableTool(tool) {
 			return nil, &ToolNotExecutableError{ToolName: approval.toolCall.ToolName}
@@ -2282,6 +2284,10 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		resultMsgs = append(resultMsgs, provider.NewToolMessage(toolParts...))
 	}
 	return resultMsgs, nil
+}
+
+func isProviderExecutedApproval(approval collectedToolApproval) bool {
+	return approval.toolCall.ProviderExecuted
 }
 
 func providerExecutedDenialOptions(approvalID string) provider.ProviderOptions {

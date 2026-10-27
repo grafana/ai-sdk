@@ -125,6 +125,19 @@ At StreamText start, orchestration SHALL inspect the last tool-role message for 
 - **WHEN** an approval request exists but its referenced tool call cannot be found in prior assistant messages
 - **THEN** `StreamText` SHALL surface an error and SHALL NOT call the language model
 
+### Requirement: Provider-executed approvals resume without local revalidation
+
+Approved provider-executed approvals SHALL skip local signature, input and call-level policy revalidation, as upstream does, and SHALL produce no client result. Their approval response SHALL reach the provider as an approved response. Resume SHALL emit tool output denied events for local denials, including revalidation denials, before provider-executed denials.
+
+#### Scenario: Approved provider-executed approval is not re-checked
+- **WHEN** a resumed approved provider-executed approval has a missing or invalid signature with a configured secret, or a call-level policy that would deny it
+- **THEN** orchestration SHALL NOT surface a signature error, consult the policy or emit a tool output denied event
+- **AND** the next prompt SHALL carry the approved response
+
+#### Scenario: Local denials are reported first
+- **WHEN** a resumed tool message denies a provider-executed call before a local call
+- **THEN** the local tool output denied event SHALL precede the provider-executed one
+
 ### Requirement: Provider prompts reject missing tool results
 
 Before each model call after approval resolution/per-step message overrides, orchestration SHALL validate the sanitized prompt. Non-provider-executed assistant calls SHALL have a subsequent tool-role result before next user/system message or prompt end, unless correlated approval response resolves them. Provider-executed calls SHALL NOT need client results.

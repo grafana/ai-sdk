@@ -2233,9 +2233,82 @@ func TestToolApproval_ProviderExecutedDenialResultsByEntryPoint(t *testing.T) {
 						denied = append(denied, d.ToolCallID)
 					}
 				}
-				assert.ElementsMatch(t, []string{"mcp-call-1", "local-call-1"}, denied)
+				assert.Equal(t, []string{"local-call-1", "mcp-call-1"}, denied)
 			}
 		})
+	}
+}
+
+func TestToolApproval_ApprovedProviderExecutedSkipsRevalidation(t *testing.T) {
+	msgs := func(signature string) []provider.Message {
+		return []provider.Message{
+			provider.UserText("shorten https://example.com"),
+			provider.NewAssistantMessage(
+				provider.ContentPart{Type: provider.ContentPartTypeToolCall, ToolCallID: "mcp-call-1", ToolName: "mcp_tool", Input: json.RawMessage(`{"query":"test"}`), ProviderExecuted: true},
+				provider.ContentPart{Type: provider.ContentPartTypeToolApprovalRequest, ApprovalID: "mcp-approval-1", ToolCallID: "mcp-call-1", Signature: signature},
+			),
+			provider.NewToolMessage(provider.ProviderExecutedToolApprovalResponsePart("mcp-approval-1", true, "")),
+		}
+	}
+	var policyCalls atomic.Int32
+	denyingPolicy := WithToolApproval(ToolApprovalFunc(func(ToolApprovalOptions) (ToolApprovalDecision, error) {
+		policyCalls.Add(1)
+		return ToolApprovalDecision{Status: ToolApprovalDenied, Reason: "blocked"}, nil
+	}))
+	tools := WithTools(ToolSet{"mcp_tool": Tool{Type: UserToolProvider}})
+
+	cases := []struct {
+		name string
+		opts []Option
+	}{
+		{name: "missing signature", opts: []Option{WithModelMessages(msgs("")...), WithToolApprovalSecret("secret")}},
+		{name: "invalid signature", opts: []Option{WithModelMessages(msgs("not-valid")...), WithToolApprovalSecret("secret")}},
+		{name: "denying policy", opts: []Option{WithModelMessages(msgs("")...), denyingPolicy}},
+	}
+	for _, tc := range cases {
+		for _, mode := range []string{"generate", "stream"} {
+			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				policyCalls.Store(0)
+				var prompt []provider.Message
+				model := &mockModel{streamFunc: func(_ context.Context, opts provider.CallOptions) (*provider.StreamResult, error) {
+					prompt = opts.Prompt
+					return &provider.StreamResult{Stream: textStreamParts("shortened")}, nil
+				}}
+				opts := append([]Option{tools}, tc.opts...)
+
+				var responseMessages []provider.Message
+				var parts []TextStreamPart
+				if mode == "generate" {
+					generateOpts := make([]GenerateOption, len(opts))
+					for i, opt := range opts {
+						generateOpts[i] = opt
+					}
+					result, err := GenerateText(t.Context(), model, generateOpts...)
+					require.NoError(t, err)
+					responseMessages = result.ResponseMessages
+				} else {
+					streamOpts := make([]StreamOption, len(opts))
+					for i, opt := range opts {
+						streamOpts[i] = opt
+					}
+					responseMessages, parts = collectStreamResult(t, StreamText(t.Context(), model, streamOpts...))
+				}
+
+				assert.Zero(t, policyCalls.Load())
+				for _, part := range parts {
+					_, denied := part.(StreamToolOutputDenied)
+					assert.False(t, denied)
+				}
+				require.Len(t, responseMessages, 1)
+				assert.Equal(t, provider.RoleAssistant, responseMessages[0].Role)
+				require.Len(t, prompt, 3)
+				assert.Equal(t, []provider.ContentPart{{
+					Type:       provider.ContentPartTypeToolApprovalResponse,
+					ApprovalID: "mcp-approval-1",
+					Approved:   new(true),
+				}}, prompt[2].Content)
+			})
+		}
 	}
 }
 

@@ -90,6 +90,10 @@ the approval ID, tool call ID, tool name, and proposed input so modified client
 state is rejected. Keep the secret server-side and rotate it with a deliberate
 migration strategy for in-flight approvals.
 
+Resume verifies signatures only for locally executed tools. Approvals for
+provider-executed tools, such as OpenAI MCP calls, go to the provider without
+signature or policy checks, because the provider runs those tools.
+
 Signing prevents message tampering; it does not replace authorization. Recheck
 the current user, tenant, resource permissions, and business invariants inside
 `Execute` immediately before the side effect.
