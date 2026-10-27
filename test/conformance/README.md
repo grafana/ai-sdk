@@ -191,9 +191,11 @@ requests. Rows blocked at startup are explicitly not client executions. If the
 stack stops during the run, the remaining rows are reported as not executed.
 
 The plugin currently routes Anthropic, OpenAI Responses, and OpenAI-compatible
-backends; Bedrock rows fail at provider setup. The gateway also adds
-`providerMetadata.gateway.execution` to finish parts, which the provider-parts
-comparison reports. The matrix is an executable compatibility backlog: a red row
+backends; Bedrock rows fail at provider setup. The plugin always adds a compact
+execution overview under `providerMetadata.gateway.execution` to finish parts.
+The gateway lane removes only that key before comparing provider parts, as
+registered in `upstream.yaml` (`gateway-execution-overview-metadata`); every
+other part and metadata key is compared exactly. The matrix is an executable compatibility backlog: a red row
 blocks merging until the underlying compatibility work lands or a reviewed
 contract decision defines an equivalence. Intentional metadata or privacy
 differences are not normalized away by the harness.

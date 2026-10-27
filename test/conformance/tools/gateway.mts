@@ -110,7 +110,7 @@ async function main() {
         evidence.capture = capture;
         evidence.requests = replay?.requests ?? [];
         try {
-          const errors = JSON.parse(await command(binary, [], { input: { operation: "compare", directory: row.dir, result: capture, requests: replay?.requests ?? [] } })) as string[];
+          const errors = JSON.parse(await command(binary, [], { input: { operation: "compare", directory: row.dir, result: capture, requests: replay?.requests ?? [], gateway: true } })) as string[];
           result.errors.push(...errors);
         } catch (error) {
           stage = "harness";

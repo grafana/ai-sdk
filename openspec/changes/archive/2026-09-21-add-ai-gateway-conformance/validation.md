@@ -18,19 +18,23 @@ Passed:
 
 ## Full gateway matrix
 
-`mise run test-conformance-gateway` ran in 102 seconds and exited nonzero as intended. The plugin package combined the backend built from this revision with the frontend from main's CI artifact for the merged commit, because the local sandbox could not load the frontend build's native SWC binding; `ai-gateway/` is identical between the two revisions.
+`mise run test-conformance-gateway` exited nonzero as intended. The local run (102 seconds) and the CI run on the pushed head, which built the plugin package itself, produced the same results. Locally, the plugin package combined the backend built from this revision with main's CI frontend artifact for the merged commit, because the sandbox could not load the frontend build's native SWC binding; `ai-gateway/` is identical between the two revisions.
+
+Both runs booted the stack twice: the first boot's plugin rejected `providers.row-N.type "bedrock"`, and the second boot without Bedrock became ready. There were no harness errors, missing or duplicate rows, or leftover containers.
+
+With strict provider-parts comparison, 2 rows passed, because the plugin adds `providerMetadata.gateway.execution` to every finish part. After registering that as `gateway-execution-overview-metadata`, the updated comparator was rerun over the CI run's captured outputs and requests:
 
 | Result | Rows |
 | --- | ---: |
-| Passed | 2 |
-| Failed comparison | 218 |
+| Passed | 194 |
+| Failed comparison | 26 |
 | Failed provider setup (Bedrock) | 62 |
 | Total | 282 |
 | Client executor invoked | 220 |
 
-The stack booted twice: the first boot's plugin rejected `providers.row-N.type "bedrock"`, and the second boot without Bedrock became ready. There were no harness errors, missing or duplicate rows, or leftover containers.
+Both clients fail the same 13 fixtures: Anthropic server-side fallback (2), code-execution pptx skill, programmatic tool calling, spliced message start and tool search (4); OpenAI-compatible structured JSON output, where the plugin's backend lacks structured-output support; and OpenAI parallel tool-call wrapper, encrypted reasoning content and shell. Several Anthropic streams end before the raw parts the goldens expect.
 
-Of the 218 comparison failures, 192 differ only where the gateway adds `providerMetadata.gateway.execution` to the finish part, as observed through the provider-parts comparison. This count is an upper bound because that comparison reports the first mismatch per model call. The other 26 rows differ in UI chunks, backend requests, provider parts or execution errors. Intentional gateway metadata is not normalized away.
+The previous container-based run reported 162/278 passing on a revision with 139 fixtures and no provider-parts goldens.
 
 Local artifacts: `test/conformance/gateway-results/report.json`, `summary.md`, and `row-*.json` (ignored, not committed). CI uploads the same directory and links it from its summary.
 
@@ -38,4 +42,4 @@ Local artifacts: `test/conformance/gateway-results/report.json`, `summary.md`, a
 
 The `Gateway conformance` job builds the plugin package and uses the Grafana image pinned for the plugin end-to-end tests; a workflow test keeps them equal. The required `conformance-test` status succeeds only when both direct and gateway conformance succeed. Plugin package validation does not depend on the gateway job.
 
-Remaining limitations: the matrix blocks merging until it passes; whether the gateway execution metadata becomes a reviewed equivalence is open; the harness requires Linux with a local Docker daemon.
+Remaining limitations: the matrix blocks merging until it passes, and the harness requires Linux with a local Docker daemon.

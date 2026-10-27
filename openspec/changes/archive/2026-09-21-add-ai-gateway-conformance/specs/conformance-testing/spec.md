@@ -104,6 +104,11 @@ Both gateway clients SHALL be checked against the existing direct upstream expec
 - **THEN** the report retains the call error and missing expected backend requests
 - **AND** assertions that could not execute are not reported as passing
 
+#### Scenario: Registered gateway execution overview
+- **WHEN** a gateway finish part carries the plugin's `providerMetadata.gateway.execution` overview
+- **THEN** the gateway lane removes only that key before comparing provider parts, under the equivalence registered in `upstream.yaml`
+- **AND** other gateway keys, native provider metadata and all other parts remain compared exactly, and the direct suite applies no such removal
+
 #### Scenario: Existing normalization remains valid
 - **WHEN** outputs differ only in an already permitted direct conformance equivalence, such as adjacent locally executed tool output order
 - **THEN** both gateway client comparisons apply the same existing equivalence

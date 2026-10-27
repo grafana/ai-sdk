@@ -29,6 +29,7 @@ type request struct {
 	ModelID   string                        `json:"modelID"`
 	Result    conformance.ScenarioResult    `json:"result"`
 	Requests  []conformance.RequestSnapshot `json:"requests"`
+	Gateway   bool                          `json:"gateway"`
 }
 
 func run() error {
@@ -39,7 +40,7 @@ func run() error {
 	var value any
 	switch input.Operation {
 	case operationCompare:
-		errors, err := conformance.CompareScenario(input.Directory, input.Result, input.Requests)
+		errors, err := conformance.CompareScenario(input.Directory, input.Result, input.Requests, input.Gateway)
 		if err != nil {
 			return err
 		}

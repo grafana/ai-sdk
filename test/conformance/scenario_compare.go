@@ -5,10 +5,12 @@ package conformance
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,7 +23,10 @@ func (l *comparisonLog) Errorf(format string, args ...any) {
 	l.errors = append(l.errors, fmt.Sprintf(format, args...))
 }
 
-func CompareScenario(dir string, result ScenarioResult, requests []RequestSnapshot) ([]string, error) {
+// CompareScenario compares a scenario result with the fixture's direct
+// expectations. The gateway lane additionally applies the
+// gateway-execution-overview-metadata equivalence registered in upstream.yaml.
+func CompareScenario(dir string, result ScenarioResult, requests []RequestSnapshot, gateway bool) ([]string, error) {
 	cfg, err := LoadConfig(filepath.Join(dir, "config.yaml"))
 	if err != nil {
 		return nil, err
@@ -42,7 +47,11 @@ func CompareScenario(dir string, result ScenarioResult, requests []RequestSnapsh
 			return nil, err
 		}
 		CompareChunks(log, expected, result.Chunks)
-		if err := compareProviderParts(log, filepath.Join(dir, providerPartsFile), result.ProviderParts); err != nil {
+		actualParts := result.ProviderParts
+		if gateway {
+			actualParts = withoutGatewayExecution(actualParts)
+		}
+		if err := compareProviderParts(log, filepath.Join(dir, providerPartsFile), actualParts); err != nil {
 			return nil, err
 		}
 	}
@@ -92,6 +101,40 @@ func CompareScenario(dir string, result ScenarioResult, requests []RequestSnapsh
 		}
 	}
 	return log.errors, nil
+}
+
+func withoutGatewayExecution(calls []providerPartsCall) []providerPartsCall {
+	normalized := make([]providerPartsCall, len(calls))
+	for i, call := range calls {
+		normalized[i] = make(providerPartsCall, len(call))
+		for j, part := range call {
+			normalized[i][j] = part
+			metadata, _ := part["providerMetadata"].(map[string]any)
+			gateway, _ := metadata["gateway"].(map[string]any)
+			if part["type"] != string(provider.PartFinish) || gateway == nil {
+				continue
+			}
+			if _, ok := gateway["execution"]; !ok {
+				continue
+			}
+			rest := maps.Clone(gateway)
+			delete(rest, "execution")
+			metadata = maps.Clone(metadata)
+			if len(rest) == 0 {
+				delete(metadata, "gateway")
+			} else {
+				metadata["gateway"] = rest
+			}
+			part = maps.Clone(part)
+			if len(metadata) == 0 {
+				delete(part, "providerMetadata")
+			} else {
+				part["providerMetadata"] = metadata
+			}
+			normalized[i][j] = part
+		}
+	}
+	return normalized
 }
 
 func compareProviderParts(log *comparisonLog, path string, actual []providerPartsCall) error {

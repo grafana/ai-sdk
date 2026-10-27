@@ -50,7 +50,7 @@ Refactor existing Go scenario setup and TypeScript generation helpers only enoug
 
 Reuse Go discovery, framing, and comparison infrastructure where practical; use a test-only Go executable or test runner for `providers/grafana` and a TypeScript executor for the pinned public client. Coordinate them through process/HTTP boundaries. Gateway orchestration must not introduce an import, require, or replace of `ai-gateway` into SDK/harness modules. Keep AGPL implementation helpers inside the gateway tree.
 
-Compare provider stream parts at the client model boundary against the direct provider-parts golden. Retain existing normalization rules for request headers, JSON, deterministic IDs, OpenAI source IDs, and adjacent local tool outputs. Apply equivalent comparison semantics to both clients. Do not add blanket metadata removal, reorder arbitrary chunks, or suppress errors for the gateway lane. A necessary new equivalence requires a separate reviewed parity decision.
+Compare provider stream parts at the client model boundary against the direct provider-parts golden. The plugin always adds `providerMetadata.gateway.execution` to finish parts by design (`gateway-execution-overview`), which a direct golden cannot contain; the gateway lane removes only that key, registered as `gateway-execution-overview-metadata` in `upstream.yaml`. Retain existing normalization rules for request headers, JSON, deterministic IDs, OpenAI source IDs, and adjacent local tool outputs. Apply equivalent comparison semantics to both clients. Do not add blanket metadata removal, reorder arbitrary chunks, or suppress errors for the gateway lane. A necessary new equivalence requires a separate reviewed parity decision.
 
 ### 3. One Grafana stack, isolated rows, honest startup reporting
 
@@ -97,4 +97,4 @@ Add `mise run test-conformance-gateway` and a separate CI job. The existing requ
 
 ## Open Questions
 
-- Whether the gateway's `providerMetadata.gateway.execution` extension on finish parts becomes a reviewed equivalence in provider-parts comparisons.
+No product-scope decision blocks implementation.
