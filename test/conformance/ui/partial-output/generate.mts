@@ -19,7 +19,18 @@ const nameSchema = jsonSchema({
 const cases = {
   "empty-array": Output.array({ element: nameSchema }),
   "multi-step-repeat": Output.object({ schema: nameSchema }),
+  "interleaved-text": Output.object({ schema: nameSchema }),
+  "first-text-start": Output.object({ schema: nameSchema }),
 };
+
+function innermostCause(error: unknown): string {
+  let current = error as { cause?: unknown; message?: string };
+  while (current?.cause != null) {
+    if (typeof current.cause === "string") return current.cause;
+    current = current.cause as typeof current;
+  }
+  return String(current?.message ?? current);
+}
 
 function readParts(path: string) {
   return readFileSync(path, "utf8")
@@ -70,7 +81,17 @@ for (const [name, output] of Object.entries(cases)) {
 
   const partials: unknown[] = [];
   const ui: string[] = [];
+  let finalOutput: unknown = null;
+  let outputError: string | null = null;
   await Promise.all([
+    result.output.then(
+      (value) => {
+        finalOutput = value;
+      },
+      (error) => {
+        outputError = innermostCause(error);
+      },
+    ),
     (async () => {
       for await (const partial of result.partialOutputStream) partials.push(partial);
     })(),
@@ -85,4 +106,8 @@ for (const [name, output] of Object.entries(cases)) {
 
   writeFileSync(join(caseDir, "expected.jsonl"), `${ui.join("\n")}\n`);
   writeFileSync(join(caseDir, "expected-partials.json"), `${JSON.stringify(partials, null, 2)}\n`);
+  writeFileSync(
+    join(caseDir, "expected-result.json"),
+    `${JSON.stringify({ text: await result.text, output: finalOutput, outputError }, null, 2)}\n`,
+  );
 }

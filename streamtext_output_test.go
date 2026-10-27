@@ -798,6 +798,57 @@ func TestStreamText_PartialOutputStream(t *testing.T) {
 		assert.Equal(t, []string{step2[0], step2[0], step2[1]}, textDeltas)
 	})
 
+	t.Run("parses only the first text block", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			parts []provider.StreamPart
+		}{
+			{name: "interleaved deltas", parts: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "t1"},
+				{Type: provider.PartTextDelta, ID: "t1", Delta: `{"name":`},
+				{Type: provider.PartTextStart, ID: "t2"},
+				{Type: provider.PartTextDelta, ID: "t2", Delta: "note"},
+				{Type: provider.PartTextDelta, ID: "t1", Delta: `"a"}`},
+			}},
+			{name: "first block starts before the first delta", parts: []provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "t1"},
+				{Type: provider.PartTextStart, ID: "t2"},
+				{Type: provider.PartTextDelta, ID: "t2", Delta: "note"},
+				{Type: provider.PartTextDelta, ID: "t1", Delta: `{"name":"a"}`},
+			}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				ch := make(chan provider.StreamPart, len(tc.parts)+3)
+				for _, part := range tc.parts {
+					ch <- part
+				}
+				ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t2"}
+				ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: "t1"}
+				ch <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
+				close(ch)
+				model := &testModel{
+					streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+						return &provider.StreamResult{Stream: ch}, nil
+					},
+				}
+				result := aisdk.StreamText(context.Background(), model,
+					aisdk.WithModelMessages(provider.UserText("test")),
+					aisdk.WithOutput(output.JSON()),
+				)
+				for range result.FullStream() {
+				}
+				var partials []string
+				for partial := range result.PartialOutputStream() {
+					partials = append(partials, string(partial))
+				}
+
+				require.NotEmpty(t, partials)
+				assert.Equal(t, `{"name":"a"}`, partials[len(partials)-1])
+				assert.Equal(t, `{"name":"a"}note`, result.Text(), "step text joins whole blocks in start order")
+			})
+		}
+	})
+
 	t.Run("emits partial JSON objects", func(t *testing.T) {
 		ch := make(chan provider.StreamPart, 20)
 		go func() {

@@ -328,6 +328,8 @@ func TestUIConformance_PartialOutput(t *testing.T) {
 	}{
 		{"empty-array", array},
 		{"multi-step-repeat", object},
+		{"interleaved-text", object},
+		{"first-text-start", object},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixtureDir := filepath.Join("ui", "partial-output", tc.name)
@@ -355,6 +357,14 @@ func TestUIConformance_PartialOutput(t *testing.T) {
 			require.NoError(t, err)
 			var expectedPartials []json.RawMessage
 			require.NoError(t, json.Unmarshal(data, &expectedPartials))
+			data, err = os.ReadFile(filepath.Join(fixtureDir, "expected-result.json"))
+			require.NoError(t, err)
+			var expectedResult struct {
+				Text        string          `json:"text"`
+				Output      json.RawMessage `json:"output"`
+				OutputError *string         `json:"outputError"`
+			}
+			require.NoError(t, json.Unmarshal(data, &expectedResult))
 
 			result := aisdk.StreamText(t.Context(), model, opts...)
 			var partials []json.RawMessage
@@ -379,6 +389,18 @@ func TestUIConformance_PartialOutput(t *testing.T) {
 			require.Len(t, partials, len(expectedPartials))
 			for i := range partials {
 				require.JSONEq(t, string(expectedPartials[i]), string(partials[i]))
+			}
+			require.Equal(t, expectedResult.Text, result.Text())
+			// The upstream cause is a JavaScript JSON.parse message, so only
+			// whether the final output failed is compared.
+			if expectedResult.OutputError != nil {
+				require.Error(t, result.OutputError())
+				require.Nil(t, result.OutputValue())
+			} else {
+				require.NoError(t, result.OutputError())
+				value, err := json.Marshal(result.OutputValue())
+				require.NoError(t, err)
+				require.JSONEq(t, string(expectedResult.Output), string(value))
 			}
 		})
 	}

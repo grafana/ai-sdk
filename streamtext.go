@@ -882,7 +882,19 @@ func (r *StreamTextResult) processStep(
 	var warnings []provider.Warning
 	responseMeta := provider.ResponseMetadata{ID: generateConfigID(cfg), ModelID: stepModel.ModelID}
 	var responseHeaders map[string]string
-	var textBuilder strings.Builder
+	// Step text joins each text block in the order it first appeared, as
+	// upstream's step content does, rather than in delta arrival order.
+	var textBlocks []*strings.Builder
+	textBlockByID := make(map[string]*strings.Builder)
+	textBlock := func(id string) *strings.Builder {
+		block, ok := textBlockByID[id]
+		if !ok {
+			block = &strings.Builder{}
+			textBlockByID[id] = block
+			textBlocks = append(textBlocks, block)
+		}
+		return block
+	}
 	var reasoningBlocks []ReasoningOutput
 	type activeReasoningBlock struct {
 		text             strings.Builder
@@ -966,6 +978,9 @@ loop:
 		switch part.Type {
 		case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd:
 			part.ID = remapStreamPartID(part, textPartIDs, r.usedTextIDs, cfg)
+			if cfg.output != nil && outputTextChunkID == "" {
+				outputTextChunkID = part.ID
+			}
 		case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
 			part.ID = remapStreamPartID(part, reasoningPartIDs, r.usedReasoningIDs, cfg)
 		}
@@ -981,6 +996,7 @@ loop:
 				Type:            provider.ContentPartTypeText,
 				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
 			})
+			textBlock(part.ID)
 			tsp := StreamTextStart{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
@@ -992,12 +1008,11 @@ loop:
 					step.responseContent[idx].ProviderOptions = providerMetadataToOptions(part.ProviderMetadata)
 				}
 			}
-			textBuilder.WriteString(part.Delta)
+			block := textBlock(part.ID)
+			block.WriteString(part.Delta)
 
 			if cfg.output != nil {
-				if outputTextChunkID == "" {
-					outputTextChunkID = part.ID
-				} else if part.ID != outputTextChunkID {
+				if part.ID != outputTextChunkID {
 					tsp := StreamTextDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
@@ -1013,7 +1028,7 @@ loop:
 					r.callOnChunk(cfg, tsp)
 					continue
 				}
-				if r.emitPartialOutput(cfg.output, textBuilder.String()) {
+				if r.emitPartialOutput(cfg.output, block.String()) {
 					tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
@@ -1341,7 +1356,11 @@ loop:
 		r.callOnChunk(cfg, tsp)
 	}
 
-	step.Text = textBuilder.String()
+	var stepText strings.Builder
+	for _, block := range textBlocks {
+		stepText.WriteString(block.String())
+	}
+	step.Text = stepText.String()
 	step.Reasoning = reasoningBlocks
 	for _, output := range reasoningBlocks {
 		if text, ok := output.(ReasoningTextOutput); ok {
