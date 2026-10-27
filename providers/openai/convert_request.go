@@ -105,6 +105,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 		return responses.ResponseNewParams{}, nil, buildResult{}, err
 	}
 	warnings = append(warnings, inputWarnings...)
+	var appliedEffortUpdate OpenAIReasoningEffortUpdate
 	if popts.ReasoningEffortUpdate != "" {
 		if !caps.supportsConfigurationUpdate || popts.ReasoningMode == "pro" || popts.ContextManagement != nil || popts.Truncation == "auto" {
 			details := "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"
@@ -117,6 +118,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 				Reasoning: responses.ResponseConfigurationUpdateItemParamReasoning{Effort: shared.ReasoningEffort(popts.ReasoningEffortUpdate)},
 			}}
 			input = append(responses.ResponseInputParam{update}, input...)
+			appliedEffortUpdate = popts.ReasoningEffortUpdate
 		}
 	}
 	if popts.CompactionTrigger != nil && *popts.CompactionTrigger {
@@ -136,8 +138,15 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 		resolvedEffort = ""
 	}
 
+	effectiveEffort := resolvedEffort
+	if appliedEffortUpdate != "" {
+		effectiveEffort = string(appliedEffortUpdate)
+	}
+	restrictSampling := isReasoning && (effectiveEffort != "none" || !caps.supportsNonReasoningParameters)
+	restrictLogprobs := restrictSampling && caps.supportedReasoningEfforts != nil
+
 	// Scalar params + unsupported-param warnings.
-	warnings = append(warnings, applyScalarParams(&body, opts, caps, isReasoning, resolvedEffort)...)
+	warnings = append(warnings, applyScalarParams(&body, opts, restrictSampling)...)
 
 	// Structured output.
 	formatWarnings, err := applyResponseFormat(&body, opts, popts)
@@ -157,7 +166,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	warnings = append(warnings, applyProviderOptions(&body, popts, isReasoning, caps)...)
 
 	// include auto-population + reasoning block.
-	warnings = append(warnings, applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, store, webSearchSourcesIncludeSupported, defaultReasoningSummary, caps, &br)...)
+	warnings = append(warnings, applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, restrictLogprobs, store, webSearchSourcesIncludeSupported, defaultReasoningSummary, &br)...)
 
 	return body, warnings, br, nil
 }
@@ -264,8 +273,9 @@ func resolveSystemMessageMode(popts OpenAIResponsesOptions, caps modelCapabiliti
 }
 
 // applyScalarParams maps temperature/topP/maxOutputTokens and emits warnings for
-// unsupported sampling parameters and capability-gated parameters.
-func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOptions, caps modelCapabilities, isReasoning bool, resolvedEffort string) []provider.Warning {
+// unsupported sampling parameters and, when restrictSampling is set, the
+// temperature/topP controls that reasoning models reject.
+func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOptions, restrictSampling bool) []provider.Warning {
 	var warnings []provider.Warning
 
 	if opts.TopK != nil {
@@ -288,18 +298,15 @@ func applyScalarParams(body *responses.ResponseNewParams, opts provider.CallOpti
 		body.MaxOutputTokens = param.NewOpt(int64(*opts.MaxOutputTokens))
 	}
 
-	// Capability gating for temperature/topP on reasoning models.
-	allowNonReasoning := resolvedEffort == "none" && caps.supportsNonReasoningParameters
-
 	if opts.Temperature != nil {
-		if isReasoning && !allowNonReasoning {
+		if restrictSampling {
 			warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "temperature", Details: "temperature is not supported for reasoning models"})
 		} else {
 			body.Temperature = param.NewOpt(*opts.Temperature)
 		}
 	}
 	if opts.TopP != nil {
-		if isReasoning && !allowNonReasoning {
+		if restrictSampling {
 			warnings = append(warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "topP", Details: "topP is not supported for reasoning models"})
 		} else {
 			body.TopP = param.NewOpt(*opts.TopP)

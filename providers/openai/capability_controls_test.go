@@ -3,7 +3,9 @@ package openai
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -314,6 +316,90 @@ func TestBuildParams_CompactionReplayPresence(t *testing.T) {
 				assert.Equal(t, want, input[i])
 			}
 			assert.Equal(t, "user", input[len(tc.want)].(map[string]any)["role"])
+		})
+	}
+}
+
+func TestBuildParams_NonReasoningControlsByModel(t *testing.T) {
+	const logprobsInclude = "message.output_text.logprobs"
+	temperature, topP, logprobs := 0.5, 0.7, int64(5)
+	sampling := map[string]any{"temperature": temperature, "top_p": topP}
+	logprobsFields := map[string]any{"top_logprobs": float64(logprobs), "include": []any{logprobsInclude}}
+	samplingWarnings := []provider.Warning{
+		{Type: provider.WarnUnsupported, Feature: "temperature", Details: "temperature is not supported for reasoning models"},
+		{Type: provider.WarnUnsupported, Feature: "topP", Details: "topP is not supported for reasoning models"},
+	}
+	strippedWarnings := append(slices.Clone(samplingWarnings), provider.Warning{Type: provider.WarnUnsupported, Feature: "logprobs", Details: "logprobs is not supported for reasoning models"})
+	unsupportedEffortWarnings := func(model, supported string) []provider.Warning {
+		effort := provider.Warning{Type: provider.WarnUnsupported, Feature: "reasoningEffort", Details: model + " only supports the following reasoning efforts: " + supported}
+		return append([]provider.Warning{effort}, strippedWarnings...)
+	}
+	const gpt6Efforts = "low, medium, high, xhigh, max"
+	reasoning := func(effort string) map[string]any {
+		block := map[string]any{"effort": effort}
+		if effort != "none" {
+			block["summary"] = "detailed"
+		}
+		return map[string]any{"reasoning": block}
+	}
+
+	for _, tc := range []struct {
+		name, model   string
+		azure         bool
+		effort        string
+		fallback      provider.ReasoningEffort
+		update        OpenAIReasoningEffortUpdate
+		reasoningMode string
+		wantUpdate    bool
+		wantFields    []map[string]any
+		wantWarnings  []provider.Warning
+	}{
+		{name: "sol none retains controls", model: "gpt-6-sol", effort: "none", wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
+		{name: "luna none retains controls", model: "gpt-6-luna", effort: "none", wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
+		{name: "azure sol none retains controls", model: "gpt-6-sol", azure: true, effort: "none", wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
+		{name: "sol positive effort strips controls", model: "gpt-6-sol", effort: "low", wantFields: []map[string]any{reasoning("low")}, wantWarnings: strippedWarnings},
+		{name: "luna default effort strips controls", model: "gpt-6-luna", wantWarnings: strippedWarnings},
+		{name: "luna core none fallback retains controls", model: "gpt-6-luna", fallback: provider.ReasoningNone, wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
+		{name: "sol minimal is unsupported", model: "gpt-6-sol", effort: "minimal", wantWarnings: unsupportedEffortWarnings("gpt-6-sol", "none, "+gpt6Efforts)},
+		{name: "sol blocked update keeps none effort", model: "gpt-6-sol", effort: "none", update: OpenAIReasoningEffortUpdateHigh, reasoningMode: "pro", wantFields: []map[string]any{sampling, logprobsFields, {"reasoning": map[string]any{"effort": "none", "mode": "pro"}}}, wantWarnings: []provider.Warning{{Type: provider.WarnUnsupported, Feature: "reasoningEffortUpdate", Details: "reasoningEffortUpdate requires standard reasoning mode without automatic compaction or automatic truncation"}}},
+		{name: "sol positive update strips controls", model: "gpt-6-sol", effort: "none", update: OpenAIReasoningEffortUpdateHigh, wantUpdate: true, wantFields: []map[string]any{reasoning("none")}, wantWarnings: strippedWarnings},
+		{name: "astra none is unsupported", model: "gpt-6-astra", effort: "none", wantWarnings: unsupportedEffortWarnings("gpt-6-astra", gpt6Efforts)},
+		{name: "versioned sol none is unsupported", model: "gpt-6.1-sol", effort: "none", wantWarnings: unsupportedEffortWarnings("gpt-6.1-sol", gpt6Efforts)},
+		{name: "fast luna none is unsupported", model: "gpt-6-luna-fast", effort: "none", wantWarnings: unsupportedEffortWarnings("gpt-6-luna-fast", gpt6Efforts)},
+		{name: "gpt-5.1 none retains controls", model: "gpt-5.1", effort: "none", wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
+		{name: "gpt-5.1 positive effort strips sampling", model: "gpt-5.1", effort: "low", wantFields: []map[string]any{logprobsFields, reasoning("low")}, wantWarnings: samplingWarnings},
+		{name: "gpt-5.6-luna none retains controls", model: "gpt-5.6-luna", effort: "none", wantFields: []map[string]any{sampling, logprobsFields, reasoning("none")}},
+		{name: "gpt-99 none is unsupported", model: "gpt-99", effort: "none", wantWarnings: unsupportedEffortWarnings("gpt-99", gpt6Efforts)},
+		{name: "gpt-5 none strips sampling", model: "gpt-5", effort: "none", wantFields: []map[string]any{logprobsFields, reasoning("none")}, wantWarnings: samplingWarnings},
+		{name: "non-reasoning model retains controls", model: "gpt-4o", wantFields: []map[string]any{sampling, logprobsFields}},
+		{name: "mantle sol keeps endpoint restrictions", model: "openai.gpt-6-sol", effort: "none", wantFields: []map[string]any{logprobsFields, reasoning("none")}, wantWarnings: samplingWarnings},
+		{name: "mantle astra keeps endpoint restrictions", model: "openai.gpt-6-astra", effort: "none", wantFields: []map[string]any{logprobsFields, reasoning("none")}, wantWarnings: samplingWarnings},
+		{name: "mantle gpt-5.6-luna keeps endpoint restrictions", model: "openai.gpt-5.6-luna", effort: "none", wantFields: []map[string]any{logprobsFields, reasoning("none")}, wantWarnings: samplingWarnings},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			options := OpenAIResponsesOptions{ReasoningEffort: tc.effort, ReasoningEffortUpdate: tc.update, ReasoningMode: tc.reasoningMode, Logprobs: &LogprobsOption{Int: &logprobs}, Include: []string{logprobsInclude}}
+			providerOptions := withOpenAIOptions(options)
+			if tc.azure {
+				providerOptions = withAzureOptions(t, options)
+			}
+			body, warnings := buildBody(t, tc.model, provider.CallOptions{
+				Prompt: []provider.Message{provider.UserText("hi")}, Temperature: &temperature, TopP: &topP, Reasoning: tc.fallback,
+				ProviderOptions: providerOptions,
+			})
+
+			input := body["input"].([]any)
+			if tc.wantUpdate {
+				assert.Equal(t, map[string]any{"type": "configuration_update", "reasoning": map[string]any{"effort": string(tc.update)}}, input[0])
+			} else {
+				assert.Contains(t, input[0].(map[string]any), "content")
+			}
+			delete(body, "input")
+			want := map[string]any{"model": tc.model}
+			for _, fields := range tc.wantFields {
+				maps.Copy(want, fields)
+			}
+			assert.Equal(t, want, body)
+			assert.Equal(t, tc.wantWarnings, warnings)
 		})
 	}
 }

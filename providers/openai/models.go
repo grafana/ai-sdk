@@ -20,6 +20,16 @@ type modelCapabilities struct {
 	supportedReasoningEfforts      []string
 }
 
+const (
+	gpt6SolModelID  = "gpt-6-sol"
+	gpt6LunaModelID = "gpt-6-luna"
+)
+
+var (
+	gpt6ReasoningEfforts        = []string{"low", "medium", "high", "xhigh", "max"}
+	gpt6SolLunaReasoningEfforts = append([]string{"none"}, gpt6ReasoningEfforts...)
+)
+
 var (
 	oSeriesModelPattern = regexp.MustCompile(`^o(\d+)(?:-|$)`)
 	gptModelPattern     = regexp.MustCompile(`^gpt-(\d+)(?:\.(\d+))?(?:-(.+))?$`)
@@ -62,12 +72,16 @@ func getOpenAIModelCapabilities(modelID string) modelCapabilities {
 	supportsPriority := strings.HasPrefix(modelID, "gpt-4") ||
 		(hasGPTVersion && gpt.major >= 5 && !isGPTNano && !isGPTChat) ||
 		(hasOSeriesVersion && oVersion >= 3)
-	supportsNonReasoningParams := hasGPTVersion &&
-		gpt.major == 5 && gpt.minor != nil && *gpt.minor >= 1
 	isGPT6OrLater := hasGPTVersion && gpt.major >= 6
+	isGPT6SolOrLuna := modelID == gpt6SolModelID || modelID == gpt6LunaModelID
+	supportsNonReasoningParams := isGPT6SolOrLuna ||
+		(hasGPTVersion && gpt.major == 5 && gpt.minor != nil && *gpt.minor >= 1)
 	var supportedReasoningEfforts []string
-	if isGPT6OrLater {
-		supportedReasoningEfforts = []string{"low", "medium", "high", "xhigh", "max"}
+	switch {
+	case isGPT6SolOrLuna:
+		supportedReasoningEfforts = gpt6SolLunaReasoningEfforts
+	case isGPT6OrLater:
+		supportedReasoningEfforts = gpt6ReasoningEfforts
 	}
 
 	mode := "system"

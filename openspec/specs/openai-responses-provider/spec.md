@@ -217,19 +217,28 @@ when no schema is provided.
 
 ### Requirement: GPT-6 Responses capability and reasoning-effort validation
 
-Anchored gpt-6 and later SHALL support configuration updates and async calling. Request effort SHALL resolve via existing provider-option/core precedence; only low/medium/high/xhigh/max SHALL be sent, others omitted with unsupported reasoningEffort warning listing supported values. Earlier/non-GPT/unknown models SHALL retain effort behavior; forced reasoning alone SHALL NOT enable GPT-6 capabilities.
+Anchored gpt-6 and later SHALL support configuration updates and async calling. Request effort SHALL resolve via existing provider-option/core precedence; only low/medium/high/xhigh/max SHALL be sent, plus none for exact `gpt-6-sol`/`gpt-6-luna`; others SHALL be omitted with unsupported reasoningEffort warning listing supported values. Earlier/non-GPT/unknown models SHALL retain effort behavior; forced reasoning alone SHALL NOT enable GPT-6 capabilities.
 
 #### Scenario: Supported GPT-6 effort from provider option
 - **WHEN** a `gpt-6-astra` generate or stream request sets `reasoningEffort` to `max`
 - **THEN** the request uses reasoning effort `max` without a capability warning
 
 #### Scenario: Unsupported GPT-6 effort from provider option or core fallback
-- **WHEN** a GPT-6 or later generate or stream request resolves effort `none` or `minimal` from either the OpenAI provider option or the existing core reasoning setting
-- **THEN** the request omits reasoning effort and emits an `unsupported` `reasoningEffort` warning naming `low, medium, high, xhigh, max`
+- **WHEN** a GPT-6 or later generate or stream request resolves effort `minimal`, or resolves `none` on a model other than `gpt-6-sol` or `gpt-6-luna`, from either the OpenAI provider option or the existing core reasoning setting
+- **THEN** the request omits reasoning effort and emits an `unsupported` `reasoningEffort` warning naming the model's supported efforts: `low, medium, high, xhigh, max`, prefixed with `none` for `gpt-6-sol` and `gpt-6-luna`
 - **AND** it does not mutate the supplied options
 
+#### Scenario: Only exact Sol and Luna IDs accept effort none
+- **WHEN** a versioned, fast or otherwise suffixed Sol/Luna ID such as `gpt-6.1-sol` or `gpt-6-luna-fast`, or a Mantle-prefixed `openai.gpt-6-sol`, resolves effort `none`
+- **THEN** the direct OpenAI IDs follow the GPT-6 unsupported-effort behavior
+- **AND** the Mantle ID sends effort `none` while omitting `temperature` and `top_p` with `unsupported` warnings
+
+#### Scenario: GPT-6 Sol and Luna retain non-reasoning controls
+- **WHEN** a `gpt-6-sol` or `gpt-6-luna` request under the `openai` or `azure` namespace resolves effort `none` and sets temperature, topP and logprobs
+- **THEN** the request sends reasoning effort `none`, `temperature`, `top_p`, `top_logprobs` and the `message.output_text.logprobs` include without warnings
+
 #### Scenario: GPT-6 omits unsupported logprobs
-- **WHEN** a GPT-6 or later reasoning request asks for top logprobs or includes `message.output_text.logprobs`
+- **WHEN** a GPT-6 or later reasoning request asks for top logprobs or includes `message.output_text.logprobs`, unless its effective effort is `none` on a model that supports non-reasoning parameters
 - **THEN** both settings are omitted and an `unsupported` `logprobs` warning is emitted
 
 #### Scenario: GPT-6 omits legacy prompt-cache retention
@@ -318,11 +327,19 @@ Before HTTP, the provider SHALL reject execution-denied programmatic function re
 
 ### Requirement: Model capability gating
 
-Capabilities SHALL use upstream getOpenAILanguageModelCapabilities prefix matching: isReasoningModel, systemMessageMode, supportsFlexProcessing, supportsPriorityProcessing, supportsNonReasoningParameters. Reasoning models SHALL strip temperature/topP with unsupported warnings unless effort=none and non-reasoning parameters are supported. Non-reasoning models SHALL warn on reasoningEffort/reasoningSummary. Unsupported serviceTier flex/priority SHALL be stripped with warning.
+Capabilities SHALL use upstream getOpenAILanguageModelCapabilities model-ID matching: isReasoningModel, systemMessageMode, supportsFlexProcessing, supportsPriorityProcessing, supportsNonReasoningParameters. Reasoning models SHALL strip temperature/topP with unsupported warnings unless effective effort=none and non-reasoning parameters are supported. Non-reasoning models SHALL warn on reasoningEffort/reasoningSummary. Unsupported serviceTier flex/priority SHALL be stripped with warning.
 
 #### Scenario: Temperature stripped on reasoning model
 - **WHEN** the model is a reasoning model and `temperature` is set
 - **THEN** the request omits `temperature` and emits an `unsupported` warning
+
+#### Scenario: Non-reasoning parameter support
+- **WHEN** capabilities are resolved for `gpt-5.1` and later GPT-5 minors, exact `gpt-6-sol`/`gpt-6-luna`, other GPT-6 IDs, `gpt-5`, and Mantle-prefixed IDs
+- **THEN** only the GPT-5.1+ and exact Sol/Luna IDs support non-reasoning parameters
+
+#### Scenario: Positive configuration update restricts sampling
+- **WHEN** a `gpt-6-sol` request sets reasoning effort `none`, a positive `reasoningEffortUpdate`, temperature and topP
+- **THEN** the request prepends the configuration update, keeps reasoning effort `none`, omits `temperature` and `top_p`, and emits `unsupported` warnings for them
 
 #### Scenario: Flex tier unsupported
 - **WHEN** `serviceTier == flex` on a model that does not support flex processing
