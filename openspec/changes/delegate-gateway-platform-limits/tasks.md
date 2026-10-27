@@ -2,18 +2,17 @@
 
 Each numbered group is one commit that leaves `mise run test-ai-gateway`, `mise run test-providerwire-v4` and `mise run test-grafana` passing. The branch is based on `nrbrd/gateway-resource-policy` (#518).
 
-## 1. Per-event bound for streamed provider responses
+## 1. No byte bound on streamed provider responses
 
-- [x] 1.1 In `outbound`, choose the body wrapper per response from its media type (design D4). Add `eventBoundedBody` for `text/event-stream`, and keep `boundedBody` for every other media type, including a missing or unparsable one. Update the `NewModelClient` godoc. In `outbound_test.go`, add table cases:
-  - a stream totalling more than 16 MiB, with events just under the bound, separated by LF, CRLF and CR, including a CRLF split across reads;
-  - a single event above the bound, which fails with `ErrResponseTooLarge`;
-  - a gzip-encoded event stream whose decompressed event exceeds the bound;
+- [x] 1.1 In `outbound`, pass `text/event-stream` bodies through unwrapped and keep `boundedBody` for every other media type, including a missing or unparsable one (design D4). Update the `NewModelClient` godoc. In `outbound_test.go`, add table cases:
+  - a stream totalling more than the bound, plain and gzip-encoded;
+  - a single event above the bound, which succeeds;
   - `text/event-stream; charset=utf-8` and mixed-case media types;
-  - a non-SSE body above 16 MiB, which still fails.
+  - a non-SSE body and an unparsable media type above the bound, which still fail.
 
   Verify with `go test -race ./cmd/grafana-ai-gateway/internal/outbound/...`.
 - [x] 1.2 In `gateway-command.test.ts`, add a fake Anthropic stream of about 20 MiB in total, in events of about 1 MiB. Assert that both registered clients receive every delta and the finish through the built plugin. Verify with `mise run test-ai-gateway-command`.
-- [x] 1.3 Update the transport row and the removed-limits paragraph of the `ai-gateway/README.md` ledger, and the raw-events paragraph of `docs/providers/grafana-gateway.md`, to say that the bound applies per event. Verify with `mise run lint-docs`.
+- [x] 1.3 Update the transport row and the removed-limits paragraph of the `ai-gateway/README.md` ledger, and the raw-events paragraph of `docs/providers/grafana-gateway.md`, to say that time, not size, bounds a stream, and link #546. Verify with `mise run lint-docs`.
 
 ## 2. One provider attempt bound
 

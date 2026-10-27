@@ -1462,7 +1462,7 @@ describe("authenticated Anthropic Gateway command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 
-  it("streams a provider response above 16 MiB in total, with every event within the bound, to both clients", async () => {
+  it("streams a provider response above 16 MiB in total to both clients", async () => {
     const [fake, gateway] = await startGateway();
     const options = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "long-output" }] }], maxOutputTokens: 32 };
     const expected = longDelta.repeat(longDeltaCount);

@@ -1,7 +1,6 @@
 package outbound
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -26,16 +25,14 @@ const (
 )
 
 var (
-	// ErrResponseTooLarge reports that an outbound decompressed body, or one
-	// event of a streamed body, exceeded its limit.
+	// ErrResponseTooLarge reports that an outbound decompressed body exceeded its limit.
 	ErrResponseTooLarge = errors.New("gateway outbound: response exceeds byte limit")
 )
 
 // NewModelClient returns the streaming client shared by every provider type.
 // It rejects redirects and bounds the wait for response headers. It bounds the
-// decompressed body of each response independently: a text/event-stream body
-// per event, so a long stream is bounded by time rather than size, and any
-// other body in total.
+// decompressed body of each response independently, except a text/event-stream
+// body, which the provider decodes incrementally and time bounds.
 func NewModelClient(headerTimeout time.Duration, responseBytes int64) (*http.Client, error) {
 	if headerTimeout <= 0 {
 		return nil, fmt.Errorf("gateway outbound: timeout must be positive")
@@ -97,12 +94,7 @@ func (transport *boundedTransport) RoundTrip(request *http.Request) (*http.Respo
 	if err != nil {
 		return response, err
 	}
-	if response.Body == nil {
-		return response, nil
-	}
-	if isEventStream(response.Header.Get("Content-Type")) {
-		response.Body = &eventBoundedBody{body: response.Body, limit: transport.limit, lineStart: true}
-	} else {
+	if response.Body != nil && !isEventStream(response.Header.Get("Content-Type")) {
 		response.Body = &boundedBody{body: response.Body, remaining: transport.limit}
 	}
 	return response, nil
@@ -146,80 +138,5 @@ func (body *boundedBody) Read(buffer []byte) (int, error) {
 }
 
 func (body *boundedBody) Close() error {
-	return body.body.Close()
-}
-
-// eventBoundedBody bounds each server-sent event: the bytes between blank
-// lines, with LF, CRLF or CR line endings.
-type eventBoundedBody struct {
-	body      io.ReadCloser
-	limit     int64
-	size      int64
-	lineStart bool
-	pendingCR bool
-	overflow  bool
-}
-
-func (body *eventBoundedBody) Read(buffer []byte) (int, error) {
-	if body.overflow {
-		return 0, ErrResponseTooLarge
-	}
-	n, err := body.body.Read(buffer)
-	if accepted, ok := body.scan(buffer[:n]); !ok {
-		body.overflow = true
-		_ = body.body.Close()
-		return accepted, ErrResponseTooLarge
-	}
-	return n, err
-}
-
-// scan advances the event state over data. When the current event exceeds the
-// limit, it returns the length of the prefix within the limit and false.
-func (body *eventBoundedBody) scan(data []byte) (int, bool) {
-	for i := 0; i < len(data); {
-		if body.pendingCR {
-			body.pendingCR = false
-			if data[i] == '\n' {
-				if body.size > 0 {
-					if body.size == body.limit {
-						return i, false
-					}
-					body.size++
-				}
-				i++
-				continue
-			}
-		}
-		content := bytes.IndexAny(data[i:], "\r\n")
-		if content < 0 {
-			content = len(data) - i
-		}
-		if content > 0 {
-			if body.size+int64(content) > body.limit {
-				return i + int(body.limit-body.size), false
-			}
-			body.size += int64(content)
-			body.lineStart = false
-			i += content
-			if i == len(data) {
-				break
-			}
-		}
-		body.pendingCR = data[i] == '\r'
-		if body.lineStart {
-			body.size = 0
-		} else {
-			if body.size == body.limit {
-				return i, false
-			}
-			body.size++
-			body.lineStart = true
-		}
-		i++
-	}
-	return len(data), true
-}
-
-func (body *eventBoundedBody) Close() error {
 	return body.body.Close()
 }

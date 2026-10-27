@@ -36,9 +36,8 @@ const (
 	// ProviderResponseHeaderTimeout bounds the wait for a model provider's
 	// response headers.
 	ProviderResponseHeaderTimeout = 10 * time.Second
-	// ProviderResponseBytes bounds a model provider response body, or each
-	// event of a streamed one. It stays below the 32 MiB line limit of the
-	// Anthropic and OpenAI SDK stream scanners.
+	// ProviderResponseBytes bounds a model provider response body that is not
+	// a stream. Streams are decoded incrementally and bounded by time.
 	ProviderResponseBytes = 16 << 20
 	// MaxProviderAttempts bounds the provider attempts of one request: a
 	// configured model's primary and fallbacks, or the request's BYOK accounts

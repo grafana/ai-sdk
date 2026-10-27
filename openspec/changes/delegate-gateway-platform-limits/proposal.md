@@ -25,9 +25,9 @@ After #518, four Gateway limits duplicate or contradict the platform, and one co
 - **One attempt bound.** One constant, 8 provider attempts per request, replaces `maxCandidates` and `maxCredentials`:
   - configured models: primary plus fallbacks ≤ 8, checked at config load with today's configuration error;
   - BYOK: selected-provider accounts ≤ 8, checked at decode with today's fixed BYOK 400 and zero native calls. Unused provider arrays are still not counted.
-- **Per-unit response bound.** The shared model transport:
-  - bounds a non-SSE response at 16 MiB in total, counted after decompression, as today;
-  - bounds a `text/event-stream` response at 16 MiB per event: the bytes between event boundaries, with LF, CRLF and CR line endings;
+- **Non-stream response bound.** The shared model transport:
+  - bounds a non-stream response at 16 MiB in total, counted after decompression, as today;
+  - no longer bounds a `text/event-stream` response, which the provider decodes incrementally and time bounds; #546 bounds one event in the openai-compatible decoder;
   - keeps the 10s header timeout and redirect rejection.
 - **Memory owner.** The limit ledger states that the platform owns concurrency and process memory, and gives generic guidance: set `GOMEMLIMIT` to about 85–90% of the container memory limit. The Gateway adds no limiter on concurrent requests.
 - **BREAKING (Go API):** `providerwire/v4.Limits` loses `ModelDuration`.
@@ -48,12 +48,12 @@ None.
 
 ### Modified Capabilities
 
-- `gateway-resource-policy`: replaces the route request-body bound with the platform request size, the model duration with the platform request deadline, and the per-response bound with per-response or per-event bounds. Adds the shared attempt bound and the memory owner to the ledger.
+- `gateway-resource-policy`: replaces the route request-body bound with the platform request size, the model duration with the platform request deadline, and drops the byte bound on streamed responses. Adds the shared attempt bound and the memory owner to the ledger.
 - `providerwire-v4-unary-runtime`: construction takes only idle and drain durations. The execution deadline is the request context's deadline.
 - `providerwire-v4-streaming-runtime`: streaming limits drop the total model duration. Setup and consumption use the request context's deadline, and its expiry is a timeout.
 - `gateway-request-byok`: the account bound is the shared attempt bound, and the request size is platform-owned.
 - `gateway-configured-discovery`: a configured chain allows 8 candidates instead of 16.
-- `gateway-provider-configuration`: the shared transport bounds each non-SSE response or each SSE event.
+- `gateway-provider-configuration`: the shared transport bounds each non-stream response and leaves streams to time.
 - `gateway-file-inputs`: the platform route message size bounds file request bytes, not a Gateway setting.
 - `gateway-streaming-function-tools`: history-derived state is bounded by the platform request size.
 - `gateway-plugin-host`: deployment guidance uses the platform deadline, and the test host may prove deadline propagation through the route RPC.

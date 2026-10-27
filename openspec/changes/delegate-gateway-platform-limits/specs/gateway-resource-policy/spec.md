@@ -37,7 +37,7 @@ One fixed bound of 8 provider attempts per request SHALL limit both configured c
 ## MODIFIED Requirements
 
 ### Requirement: Outbound model transport bounds
-Every Gateway-constructed model, including each configured provider type and each BYOK account, SHALL use one shared model HTTP client. That client SHALL reject redirects and wait at most 10 seconds for response headers. It SHALL fail a response whose media type is not `text/event-stream` once its decompressed body exceeds 16 MiB, and a `text/event-stream` response once a single event exceeds 16 MiB after decompression. An event SHALL be the bytes between SSE event boundaries, with LF, CRLF or CR line endings. None of these bounds SHALL be an operator setting.
+Every Gateway-constructed model, including each configured provider type and each BYOK account, SHALL use one shared model HTTP client. That client SHALL reject redirects and wait at most 10 seconds for response headers. It SHALL fail a response whose media type is not `text/event-stream` once its decompressed body exceeds 16 MiB. It SHALL NOT bound the bytes of a `text/event-stream` response, which the provider decodes incrementally and the execution time bounds end. None of these bounds SHALL be an operator setting.
 
 #### Scenario: Decompressed bytes are counted
 - **WHEN** a provider returns a gzip-encoded body under 16 MiB compressed whose decompressed size exceeds 16 MiB
@@ -51,17 +51,13 @@ Every Gateway-constructed model, including each configured provider type and eac
 - **WHEN** a non-SSE provider response exceeds 16 MiB after decompression
 - **THEN** the call SHALL fail through the existing fallback and safe-error classification without returning a partial result
 
-#### Scenario: Long stream within the event bound
-- **WHEN** a `text/event-stream` response totals more than 16 MiB and every event is within 16 MiB
-- **THEN** the stream SHALL be read to its end without a response-too-large error
+#### Scenario: Stream above the response bound
+- **WHEN** a `text/event-stream` response, plain or compressed and with any media-type parameters or case, totals more than 16 MiB, or carries one event above 16 MiB
+- **THEN** the transport SHALL read it to its end without a response-too-large error
 
-#### Scenario: Single event exceeds the bound
-- **WHEN** one event of a `text/event-stream` response exceeds 16 MiB after decompression
-- **THEN** the read SHALL fail with the transport's response-too-large error, which reaches the caller through the existing transport failure path
-
-#### Scenario: Event boundaries for every line ending
-- **WHEN** a `text/event-stream` response separates events with blank lines using LF, CRLF or CR line endings, including a CRLF split across reads
-- **THEN** each event SHALL be counted from zero, and a stream of events that are each just under 16 MiB SHALL succeed for every line ending
+#### Scenario: Unparsable media type
+- **WHEN** a response's media type cannot be parsed
+- **THEN** the 16 MiB total bound SHALL apply
 
 ### Requirement: Execution time bounds
 The language-model handler SHALL bound selection and the logical model call by the request context's deadline, which the platform's route deadline sets, and SHALL add no total duration of its own. It SHALL bound each established stream by a fixed 30-second idle duration between represented parts, and each post-terminal drain by a fixed 1-second drain duration. Drain SHALL be bounded by its duration alone, without a part count.
@@ -108,11 +104,11 @@ The "Limits" section of `ai-gateway/README.md` SHALL list each retained Gateway 
 
 #### Scenario: Ledger content
 - **WHEN** an operator reads the Limits section
-- **THEN** it SHALL name the Gateway owner of the provider attempt bound, the outbound response and event bytes, the header timeout and redirect rejection, and the idle and drain durations
+- **THEN** it SHALL name the Gateway owner of the provider attempt bound, the outbound non-stream response bytes, the header timeout and redirect rejection, and the idle and drain durations
 - **AND** it SHALL name the platform as the owner of the request deadline, the request message size, admission, concurrency and process memory, with the source of each
 - **AND** it SHALL list the removed `max_request_bytes` and `max_model_duration` settings, the former per-response stream bound, and the former unary, frame, part-count, raw-usage, error-document and summary-source limits, with their replacements
 - **AND** it SHALL state what bounds a call when the platform deadline is disabled, that unary Anthropic calls with a large token budget then fail unless they set `maxOutputTokens` or stream, and that a platform deadline appears as a cancellation in Gateway telemetry
-- **AND** it SHALL state that per-request memory grows with response size, JSON encoding expansion and concurrency, and recommend setting `GOMEMLIMIT` to about 85–90% of the container memory limit
+- **AND** it SHALL state that per-request memory grows with response and stream event size, JSON encoding expansion and concurrency, that the Gateway does not bound a single stream event, and recommend setting `GOMEMLIMIT` to about 85–90% of the container memory limit
 
 ### Requirement: Large-output client evidence
 Automated tests SHALL prove that both registered clients (the pinned TypeScript Gateway client and the Go `providers/grafana` client) send large requests and consume large outputs through the real plugin route host. They SHALL NOT add or modify recorded provider fixtures.
@@ -122,7 +118,7 @@ Automated tests SHALL prove that both registered clients (the pinned TypeScript 
 - **THEN** both clients SHALL receive the complete values in unary and streaming mode, and no file under `test/conformance/*/recorded/` SHALL change
 
 #### Scenario: Long stream through the test host
-- **WHEN** a fake native provider behind the built plugin streams more than 16 MiB in total, with every event within 16 MiB
+- **WHEN** a fake native provider behind the built plugin streams more than 16 MiB in total
 - **THEN** both clients SHALL receive the complete stream and its finish
 
 #### Scenario: Large request through the test host

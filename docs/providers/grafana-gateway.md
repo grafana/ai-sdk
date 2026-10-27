@@ -35,8 +35,8 @@ before it sends an event: headers, the authorization value, and credential
 query parameters in the server URL.
 
 Raw events are never truncated, and their size does not end a stream. The
-Gateway limits each provider stream event to 16 MiB, so a single raw event
-larger than that ends the stream with an error.
+Gateway does not limit the size of a provider stream; the request deadline and
+the stream idle limit bound it.
 
 ## Authenticate the client
 

@@ -120,7 +120,7 @@ Gateway limits:
 | Limit | Owner |
 |---|---|
 | 8 provider attempts per request: a model's primary and fallbacks, or the keys for the selected provider in a request that brings its own keys | Model catalog loader, at startup, and request key selection |
-| 16 MiB per provider response, or per event in a streamed response, counted after decompression; 10 seconds to receive response headers; no redirects | Model transport, shared by every provider and provider key |
+| 16 MiB per provider response that is not a stream, counted after decompression; 10 seconds to receive response headers; no redirects | Model transport, shared by every provider and provider key |
 | 30 seconds without stream activity; 1 second of cleanup after a stream ends | Language-model handler |
 | 1 MiB model catalog file; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName` and each `provider` and `model` value | Model catalog loader, at startup |
 
@@ -139,7 +139,7 @@ Platform limits:
 |---|---|
 | `max_request_bytes` setting | The plugin route message size |
 | `max_model_duration` setting | Grafana's route deadline |
-| 16 MiB per streamed provider response in total | 16 MiB per event, and the time limits |
+| 16 MiB per streamed provider response in total | The time limits |
 | 16 candidates per model; 8 keys per request | 8 provider attempts per request |
 | Sizes of a generated response, a stream event, the provider's raw usage, an error response and the provider error summaries; the number of stream events | The model transport limit and the time limits |
 
@@ -164,7 +164,10 @@ the Anthropic SDK allows without a deadline: set `maxOutputTokens`, or stream.
 
 Memory per request grows with the request size, with the size of each provider
 response or stream event, because encoding it as JSON can expand it several
-times, and with the number of requests running at once. Grafana, not the
+times, and with the number of requests running at once. The Gateway does not
+limit the size of a single stream event: the Anthropic and OpenAI SDKs limit a
+line to 32 MiB, and the OpenAI-compatible provider has no limit yet
+([#546](https://github.com/grafana/ai-sdk/issues/546)). Grafana, not the
 Gateway, decides how many requests run at once, and the container memory limit
 bounds the process. Setting `GOMEMLIMIT` below that limit makes the Go runtime
 collect garbage before the container runs out of memory.

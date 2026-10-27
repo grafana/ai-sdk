@@ -22,7 +22,7 @@ Code facts that shape the approach:
 - **Expiry arrives as a cancellation.** When the route deadline expires, the caller's gRPC client cancels the stream before the plugin's own deadline timer fires. In the test host, the plugin's request context ended with `context.Canceled` in 20 of 20 runs, once before its copy of the deadline had passed. The plugin cannot tell a platform deadline from a caller disconnect.
 - **The in-process test host** (`platformhost.ServeInProcess`) uses `grpc.NewServer()` with gRPC's 4 MiB receive default. Only the built plugin, launched through the process host, has the production 16 MiB limit.
 - **Streaming classifies termination by which context ended.** `serveStream` receives `requestContext` and `executionContext`. When the model context ends, `waitStreamPart` and `streamContextErrorCategory` report cancellation if `requestContext.Err() != nil`, and a timeout otherwise. Today, then, an earlier request deadline is reported as cancellation. The unary path already maps `context.DeadlineExceeded` to timeout in `safeErrorFromProvider`.
-- **SDK decoders are looser than the bound.** The Anthropic and OpenAI SDK SSE decoders cap a line at 32 MiB (`bufio.MaxScanTokenSize<<9`), and the openai-compatible reader uses an unbounded `bufio.Reader`. A 16 MiB per-event bound in the transport therefore fires first.
+- **Stream decoders buffer one event at a time.** The Anthropic and OpenAI SDK SSE decoders cap a line at 32 MiB (`bufio.MaxScanTokenSize<<9`) and join an event's `data:` lines. The openai-compatible reader uses an unbounded `bufio.Reader` and `strings.Builder`.
 - **Import graph.** `config` imports `auth` and `providerwire/v4`. `byok` imports `nativemodel` and `nativeoptions`. Neither imports the other.
 
 ## Goals / Non-Goals
@@ -30,7 +30,7 @@ Code facts that shape the approach:
 **Goals:**
 - The request context's deadline is the only total deadline, and its expiry is reported as a timeout on both paths.
 - One attempt bound, with today's error behavior at both check sites.
-- The transport bounds what drives memory: one non-SSE response, or one SSE event.
+- The transport bounds what the SDKs read whole: one non-stream response. Streams are bounded by time.
 - Tests prove that a host deadline crosses the route RPC, and that request size is enforced by the real plugin.
 
 **Non-Goals:**
@@ -92,20 +92,17 @@ Alternatives:
 - *A new `limits` package.* Rejected (YAGNI): it would hold a single constant.
 - *Pass the bound as a parameter.* Rejected: it adds plumbing for a value that never varies.
 
-### D4. Per-event bound for SSE responses in the shared transport
-`boundedTransport.RoundTrip` picks the wrapper from the response's media type (`mime.ParseMediaType`, case-insensitive). The decision is made once per response, after the base transport's transparent decompression, as today.
-- **`text/event-stream`: `eventBoundedBody`.**
-  - It counts the bytes of the current event, line terminators included, and fails with `ErrResponseTooLarge` once the count exceeds 16 MiB.
-  - A blank line ends the event and resets the count. Line terminators are LF, CRLF or CR. A pending CR at the end of a read is remembered, so a CRLF split across reads counts as one terminator.
-  - Scanning uses `bytes.IndexAny` over each read, so the bound costs one pass over bytes already being read.
-- **Any other media type, or a missing or unparsable one:** the existing total `boundedBody`.
+### D4. Streams are not byte-bounded in the shared transport
+`boundedTransport.RoundTrip` checks the response's media type (`mime.ParseMediaType`, case-insensitive) after the base transport's transparent decompression. A `text/event-stream` body passes through unwrapped. Any other media type, or a missing or unparsable one, keeps the existing total `boundedBody`.
 
-After an overflow, both wrappers close the underlying body and keep returning `ErrResponseTooLarge`. The failure reaches the caller as today: the fallback and safe-error classification before commitment, or the stream's transport error after it.
+- **Why not bound streams:** the provider decodes a stream incrementally, so its memory is the largest event the decoder buffers, not the total. The Anthropic and OpenAI SDK decoders cap a line at 32 MiB. Time bounds the total through the request deadline and the 30s idle duration.
+- **The remaining gap:** the openai-compatible reader buffers a line and an event without a bound, so a misbehaving configured backend could grow one request's memory until time ends it. BYOK reaches only the official endpoints. #546 bounds the event in that reader, where it is buffered.
+- **Why the non-stream bound stays:** the SDKs read a non-stream body whole, and no other layer bounds it.
 
 Alternatives:
 - *Raise the total bound.* Rejected: it still ends long, valid streams, and it does not bound memory any better.
-- *Bound events in each provider's SSE decoder.* Rejected: the Anthropic and OpenAI decoders belong to the SDKs, and the providers are separate modules. The shared transport is the one place every provider passes through.
-- *Bound lines instead of events.* Rejected: decoders accumulate multi-line `data:` fields per event, so the event is the memory unit.
+- *Bound each event in the transport.* Implemented first, then rejected in review: it is a second SSE parser with its own line-ending state, duplicating the decoders, to guard a configured backend's bug. The bound belongs in the decoder that buffers the event (#546).
+- *Bound lines instead of events.* Rejected: decoders accumulate multi-line `data:` fields per event, so a line bound does not bound memory.
 
 ### D5. The test host can apply a route deadline
 `platformhost.Config` gains `RouteDeadline time.Duration`. When it is positive, `Host.Handler` wraps the forwarded context in `context.WithTimeout` before `CallRoute`, as a platform route deadline would. Zero means no deadline. The test host stays test-only, and it is not evidence of Grafana's deadline value.
@@ -126,7 +123,7 @@ The in-process host's 4 MiB gRPC default differs from the production 16 MiB, so 
 - a request above 16 MiB fails before selection, and the fake native provider counts zero calls;
 - a fake Anthropic stream totalling about 20 MiB in events of about 1 MiB is received completely.
 
-Event-boundary, single-event overflow and non-SSE overflow cases are `outbound` unit tests, because a 16 MiB single event through the full process stack is slow under `-race`. The existing large-output test keeps its values.
+The stream pass-through and non-stream overflow cases are `outbound` unit tests. The existing large-output test keeps its values.
 
 ### D7. Ledger and docs
 The `ai-gateway/README.md` Limits table becomes two groups.
@@ -136,7 +133,7 @@ The `ai-gateway/README.md` Limits table becomes two groups.
 | Limit | Owner |
 | --- | --- |
 | 8 provider attempts per request: a model's primary and fallbacks, or a request's keys for the selected provider | Catalog loader and request key selection |
-| 16 MiB per provider response, or per event in a streamed response, counted after decompression; 10s to receive headers; no redirects | Model transport |
+| 16 MiB per provider response that is not a stream, counted after decompression; 10s to receive headers; no redirects | Model transport |
 | 30s without stream activity; 1s of cleanup after a stream ends | Language-model handler |
 | Catalog file, IDs, aliases, 7 fallbacks, string lengths | Model catalog loader (unchanged, fallback count updated) |
 
@@ -156,7 +153,7 @@ Then:
 
 The Settings table drops both rows. Other docs:
 - **`docs/guides/gateway-authentication.md`:** the 60s row says the deadline includes streams, and drops "Stream long responses".
-- **`docs/providers/grafana-gateway.md`:** the raw-events paragraph says the 16 MiB bound applies per event. "Bound work and handle errors" names the platform as the owner of request size and duration.
+- **`docs/providers/grafana-gateway.md`:** the raw-events paragraph says time, not size, bounds a provider stream. "Bound work and handle errors" names the platform as the owner of request size and duration.
 - **`docs/concepts/gateway-architecture.md`:** "model deadline" becomes "request deadline" in the sequence diagram, step 3 and the limits paragraph.
 - **`docs/concepts/gateway-glossary.md`:** the deadline row changes the same way.
 - **`providerwire/v4` godoc** (`doc.go`, `Limits`, `Config`): the handler bounds only idle and drain time, and uses the request context's deadline.

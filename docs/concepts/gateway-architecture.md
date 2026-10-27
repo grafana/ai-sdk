@@ -208,8 +208,8 @@ Each resource limit has one owner. Grafana's plugin host owns the request
 deadline, the request size, admission and, through the container, process
 memory. The Gateway keeps only what it owns: 8 provider attempts per request,
 checked when the catalog loads and when request keys are decoded; 16 MiB per
-decompressed provider response, or per event of a streamed one, in the model
-transport; and stream idle time and cleanup in the handler, which never rejects
+decompressed provider response that is not a stream, in the model transport;
+and stream idle time and cleanup in the handler, which never rejects
 or truncates output because of its size. See the
 [limits](../../ai-gateway/README.md#limits) for the full list.
 
