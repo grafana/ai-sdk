@@ -232,6 +232,7 @@ run = "bash scripts/module-policy.sh pins"
 description = "Validate the release-please configuration against published modules"
 run = """
 go test ./internal/releasecheck
+mise run test-release-candidate
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_release_*.py'
 """
 
@@ -255,6 +256,10 @@ run = "bash scripts/module-policy.sh boundary"
 [tasks.verify-sdk-gateway-isolation]
 description = "Build and test the SDK and Grafana client without Gateway source"
 run = "bash scripts/module-policy.sh isolation"
+
+[tasks.test-release-candidate]
+description = "Test combined release candidate archive and requirement generation"
+run = 'cd release/candidate && GOWORK="$PWD/../../go.work" go test ./...'
 
 [tasks.test-module-policy]
 description = "Run deterministic Bash module-policy fixtures"

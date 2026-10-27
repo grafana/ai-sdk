@@ -85,7 +85,7 @@ func LoadManifest(root string) (map[string]string, error) {
 var moduleDeclaration = regexp.MustCompile(`(?m)^module[ \t]+(\S+)`)
 
 // ReleaseComponents discovers library modules and the Gateway application.
-// Example programs and test harnesses are excluded.
+// Example programs, release tooling and test harnesses are excluded.
 func ReleaseComponents(root string) ([]Module, error) {
 	var modules []Module
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
@@ -111,6 +111,7 @@ func ReleaseComponents(root string) ([]Module, error) {
 		}
 		modulePath := string(match[1])
 		if strings.HasPrefix(modulePath, CorePath+"/examples/") ||
+			strings.HasPrefix(modulePath, CorePath+"/release/") ||
 			strings.HasPrefix(modulePath, CorePath+"/test/") {
 			return nil
 		}

@@ -104,7 +104,7 @@ assert_fails 'unverifiable origin' pin_commit "$module_prefix/providers/openai" 
 unset -f go
 
 module_repo=$fixture/modules
-for root in . ai-gateway providers/openai examples/demo test/conformance; do
+for root in . ai-gateway providers/openai examples/demo release/candidate test/conformance; do
   path=$module_prefix
   [[ "$root" == . ]] || path+=/$root
   mkdir -p "$module_repo/$root"
@@ -114,7 +114,7 @@ done
 (
   cd "$module_repo"
   [[ $(modules | wc -l) -eq 3 ]] || fail 'published module selection included local-only modules'
-  [[ $(modules all | wc -l) -eq 5 ]] || fail 'tracked module inventory is incomplete'
+  [[ $(modules all | wc -l) -eq 6 ]] || fail 'tracked module inventory is incomplete'
   (
     printf 'module %s\n\ngo 1.27.3\nrequire %s v0.1.0\n' "$gateway_module" "$module_prefix" >ai-gateway/go.mod
     graph_extra=
@@ -151,6 +151,7 @@ done
   printf 'module %s\n\ngo 1.27.3\n' "$module_prefix/providers/openai" >providers/openai/go.mod
 )
 assert_fails 'unknown or local-only' standalone test/conformance
+assert_fails 'unknown or local-only' standalone release/candidate
 assert_fails 'unknown or local-only' standalone nonexistent
 (
   cd "$module_repo"

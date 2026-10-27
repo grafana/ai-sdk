@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Repository module policy; invoke through mise tasks or the modes below.
-# Inventory: published modules are tracked go.mod roots outside examples/ and
-# test/; declared module paths must match their repository locations.
+# Inventory: published modules are tracked go.mod roots outside examples/,
+# release/ and test/; declared module paths must match their repository locations.
 # Pins: declared and selected internal versions must resolve to commits on an
 # independently fetched canonical grafana/ai-sdk main, not merely download.
 # Standalone: published modules have no replacements and must download, verify,
@@ -42,7 +42,7 @@ modules() {
     expected=$module_prefix
     [[ "$root" == . ]] || expected+=/$root
     [[ "$path" == "$expected" ]] || fail "$file declares $path, expected $expected"
-    if [[ "${1:-published}" == all || ( "$root" != examples/* && "$root" != test/* ) ]]; then
+    if [[ "${1:-published}" == all || ( "$root" != examples/* && "$root" != release/* && "$root" != test/* ) ]]; then
       printf '%s\t%s\n' "$root" "$path"
     fi
   done <<<"$files"
