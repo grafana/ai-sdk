@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_01FallbackStreamAbcdefghij","model":"claude-fable-5","usage":{"input_tokens":408,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}}
 {"type":"custom","kind":"anthropic.fallback","providerMetadata":{"anthropic":{"type":"fallback","from":{"model":"claude-fable-5"},"to":{"model":"claude-opus-4-8"}}}}
 {"type":"text-start","id":"1"}
 {"type":"text-delta","id":"1","delta":"The printing press was invented "}

@@ -442,8 +442,8 @@ providers.
 
 ## Native response values
 
-Use returned sources to display citations and warnings to identify unsupported
-settings. See the [source guide](../../ai-gateway/docs/sources.md) for citation
+Use returned sources and text citations to display references, and warnings to
+identify unsupported settings. See the [source guide](../../ai-gateway/docs/sources.md) for citation
 handling. Keep sensitive warning text and response details out of public logs.
 
 Response IDs and model names describe the provider's generation and may differ

@@ -194,28 +194,30 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		return invalid()
 	}
 	var value struct {
-		Type             provider.StreamPartType `json:"type"`
-		ID               *string                 `json:"id"`
-		Kind             *string                 `json:"kind"`
-		Delta            *string                 `json:"delta"`
-		ModelID          *string                 `json:"modelId"`
-		Timestamp        *string                 `json:"timestamp"`
-		Warnings         *[]wireWarning          `json:"warnings"`
-		FinishReason     *wireFinish             `json:"finishReason"`
-		Usage            *wireUsage              `json:"usage"`
-		RawValue         json.RawMessage         `json:"rawValue"`
-		ApprovalID       *string                 `json:"approvalId"`
-		ToolCallID       *string                 `json:"toolCallId"`
-		ToolName         *string                 `json:"toolName"`
-		Input            *string                 `json:"input"`
-		Result           json.RawMessage         `json:"result"`
-		IsError          bool                    `json:"isError"`
-		ProviderExecuted bool                    `json:"providerExecuted"`
-		Dynamic          *bool                   `json:"dynamic"`
-		Preliminary      *bool                   `json:"preliminary"`
-		MediaType        *string                 `json:"mediaType"`
-		Data             json.RawMessage         `json:"data"`
-		Metadata         json.RawMessage         `json:"providerMetadata"`
+		Type             provider.StreamPartType     `json:"type"`
+		ID               *string                     `json:"id"`
+		Kind             *string                     `json:"kind"`
+		Delta            *string                     `json:"delta"`
+		ModelID          *string                     `json:"modelId"`
+		Timestamp        *string                     `json:"timestamp"`
+		Warnings         *[]wireWarning              `json:"warnings"`
+		FinishReason     *wireFinish                 `json:"finishReason"`
+		Usage            *wireUsage                  `json:"usage"`
+		RawValue         json.RawMessage             `json:"rawValue"`
+		ApprovalID       *string                     `json:"approvalId"`
+		ToolCallID       *string                     `json:"toolCallId"`
+		ToolName         *string                     `json:"toolName"`
+		Input            *string                     `json:"input"`
+		InputEncoding    *provider.ToolInputEncoding `json:"inputEncoding"`
+		Citations        json.RawMessage             `json:"citations"`
+		Result           json.RawMessage             `json:"result"`
+		IsError          bool                        `json:"isError"`
+		ProviderExecuted bool                        `json:"providerExecuted"`
+		Dynamic          *bool                       `json:"dynamic"`
+		Preliminary      *bool                       `json:"preliminary"`
+		MediaType        *string                     `json:"mediaType"`
+		Data             json.RawMessage             `json:"data"`
+		Metadata         json.RawMessage             `json:"providerMetadata"`
 	}
 	fields, err := decodeObject(data)
 	if err != nil {
@@ -256,7 +258,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		fields := []string{"id"}
 		switch value.Type {
 		case provider.PartToolInputStart:
-			fields = append(fields, "toolName", "providerExecuted", "dynamic")
+			fields = append(fields, "toolName", "providerExecuted", "dynamic", "inputEncoding")
 		case provider.PartToolInputDelta:
 			fields = append(fields, "delta")
 		}
@@ -269,6 +271,12 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 				return invalid()
 			}
 			part.ToolName = *value.ToolName
+			if value.InputEncoding != nil {
+				if *value.InputEncoding != provider.ToolInputEncodingJSON && *value.InputEncoding != provider.ToolInputEncodingText {
+					return invalid()
+				}
+				part.InputEncoding = *value.InputEncoding
+			}
 			part.ProviderExecuted = value.ProviderExecuted
 			part.Dynamic = value.Dynamic
 		}
@@ -342,6 +350,9 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		}
 	case provider.PartTextStart, provider.PartTextEnd, provider.PartTextDelta, provider.PartReasoningStart, provider.PartReasoningEnd, provider.PartReasoningDelta:
 		fields := []string{"id"}
+		if value.Type == provider.PartTextEnd {
+			fields = append(fields, "citations")
+		}
 		if value.Type == provider.PartTextDelta || value.Type == provider.PartReasoningDelta {
 			fields = append(fields, "delta")
 		}
@@ -352,6 +363,13 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 			return invalid()
 		}
 		part.ID = *value.ID
+		if value.Type == provider.PartTextEnd {
+			citations, err := decodeCitations(value.Citations)
+			if err != nil {
+				return invalid()
+			}
+			part.Citations = citations
+		}
 		if value.Type == provider.PartTextDelta || value.Type == provider.PartReasoningDelta {
 			if value.Delta == nil {
 				return invalid()

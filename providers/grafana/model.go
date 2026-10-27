@@ -198,10 +198,8 @@ func decodeUsage(value *wireUsage) (provider.Usage, error) {
 		return provider.Usage{}, errors.New("grafana: missing usage")
 	}
 	i, o := value.InputTokens, value.OutputTokens
-	for _, count := range []*int{i.Total, i.NoCache, i.CacheRead, i.CacheWrite, o.Total, o.Text, o.Reasoning} {
-		if count != nil && (*count < 0 || int64(*count) > 9007199254740991) {
-			return provider.Usage{}, errors.New("grafana: invalid token count")
-		}
+	if !validSafeCounts(i.Total, i.NoCache, i.CacheRead, i.CacheWrite, o.Total, o.Text, o.Reasoning) {
+		return provider.Usage{}, errors.New("grafana: invalid token count")
 	}
 	var raw json.RawMessage
 	if len(value.Raw) > 0 {
@@ -245,6 +243,7 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			Type             provider.GenerateContentType `json:"type"`
 			Kind             *string                      `json:"kind"`
 			Text             *string                      `json:"text"`
+			Citations        json.RawMessage              `json:"citations"`
 			ApprovalID       *string                      `json:"approvalId"`
 			ToolCallID       *string                      `json:"toolCallId"`
 			ToolName         *string                      `json:"toolName"`
@@ -301,10 +300,14 @@ func decodeGenerate(body []byte) (*provider.GenerateResult, error) {
 			}
 			content = append(content, provider.GenerateContentPart{Type: provider.ContentCustom, Kind: *part.Kind, ProviderMetadata: metadata})
 		case provider.ContentText:
-			if decodeFields(raw, &part, "text") != nil || part.Text == nil {
+			if decodeFields(raw, &part, "text", "citations") != nil || part.Text == nil {
 				return nil, errors.New("grafana: missing unary text")
 			}
-			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text, ProviderMetadata: metadata})
+			citations, err := decodeCitations(part.Citations)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentText, Text: *part.Text, Citations: citations, ProviderMetadata: metadata})
 		case provider.ContentToolApprovalRequest:
 			if decodeFields(raw, &part, "approvalId", "toolCallId") != nil || part.ApprovalID == nil || *part.ApprovalID == "" || part.ToolCallID == nil || *part.ToolCallID == "" {
 				return nil, errors.New("grafana: invalid approval request")

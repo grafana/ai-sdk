@@ -200,6 +200,8 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 	case "unsupported-functionality":
 		m.stats.recordSuccess(options)
 		return nil, fmt.Errorf("test: unsupported tool content part type: custom: %w", provider.ErrUnsupportedFunctionality)
+	case "citations":
+		return &provider.StreamResult{Stream: scenarioStream(scenarioCitationStream()...)}, nil
 	case "sources":
 		parts := []provider.StreamPart{}
 		for _, source := range scenarioSources() {
@@ -384,6 +386,8 @@ func (m *providerWireV4Model) DoGenerate(ctx context.Context, options provider.C
 	case "unsupported-functionality":
 		m.stats.recordSuccess(options)
 		return nil, fmt.Errorf("test: unsupported tool content part type: custom: %w", provider.ErrUnsupportedFunctionality)
+	case "citations":
+		return &provider.GenerateResult{Content: []provider.GenerateContentPart{{Type: provider.ContentText, Text: "answer", Citations: scenarioCitations()}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "sources":
 		return &provider.GenerateResult{Content: scenarioSources(), FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	case "hosted-deferred", "hosted-deferred-error":
@@ -464,8 +468,8 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 28)
-	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "custom", "unsupported-functionality", "success", "raw", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
+	entries := make([]catalog.StaticEntry, 0, 29)
+	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "citations", "custom", "unsupported-functionality", "success", "raw", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},

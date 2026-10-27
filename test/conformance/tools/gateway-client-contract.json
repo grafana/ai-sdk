@@ -1,9 +1,9 @@
 {
-  "upstreamCommit": "eb77f09e3c06c28e860d92e0de941b143c2eecec",
+  "upstreamCommit": "b7f6255acaae7724adc0fd37aac3dae3f3466578",
   "packages": {
-    "@ai-sdk/gateway": "4.0.103",
-    "@ai-sdk/provider": "4.0.21",
-    "@ai-sdk/provider-utils": "5.0.53"
+    "@ai-sdk/gateway": "4.0.116",
+    "@ai-sdk/provider": "4.0.29",
+    "@ai-sdk/provider-utils": "5.0.62"
   },
   "types": {
     "CallOptions": "struct {\n\tPrompt           []Message         `json:\"prompt,omitempty\"`\n\tTools            []Tool            `json:\"tools,omitempty\"`\n\tToolChoice       *ToolChoice       `json:\"toolChoice,omitempty\"`\n\tMaxOutputTokens  *int              `json:\"maxOutputTokens,omitempty\"`\n\tTemperature      *float64          `json:\"temperature,omitempty\"`\n\tTopP             *float64          `json:\"topP,omitempty\"`\n\tTopK             *int              `json:\"topK,omitempty\"`\n\tPresencePenalty  *float64          `json:\"presencePenalty,omitempty\"`\n\tFrequencyPenalty *float64          `json:\"frequencyPenalty,omitempty\"`\n\tStopSequences    []string          `json:\"stopSequences,omitempty\"`\n\tResponseFormat   *ResponseFormat   `json:\"responseFormat,omitempty\"`\n\tSeed             *int              `json:\"seed,omitempty\"`\n\tReasoning        ReasoningEffort   `json:\"reasoning,omitempty\"`\n\tIncludeRawChunks bool              `json:\"includeRawChunks,omitempty\"`\n\tHeaders          map[string]string `json:\"headers,omitempty\"`\n\tProviderOptions  ProviderOptions   `json:\"providerOptions,omitempty\"`\n}",
@@ -45,6 +45,7 @@
     "ReasoningEffort": {
       "ReasoningHigh": "\"high\"",
       "ReasoningLow": "\"low\"",
+      "ReasoningMax": "\"max\"",
       "ReasoningMedium": "\"medium\"",
       "ReasoningMinimal": "\"minimal\"",
       "ReasoningNone": "\"none\"",
@@ -111,6 +112,7 @@
     "ContentPartTypeToolResult": "mapped",
     "ReasoningHigh": "mapped",
     "ReasoningLow": "mapped",
+    "ReasoningMax": "mapped",
     "ReasoningMedium": "mapped",
     "ReasoningMinimal": "mapped",
     "ReasoningNone": "mapped",

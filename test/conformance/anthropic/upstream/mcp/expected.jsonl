@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_01RNdvgjHoLmx2THF9AVj3KK","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":589,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard"}}}}
 {"type":"tool-input-available","toolCallId":"mcptoolu_017CuqaJcXe5ZHJjaz3KS1AT","toolName":"echo","input":{},"providerExecuted":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}},"dynamic":true}
 {"type":"tool-output-available","toolCallId":"mcptoolu_017CuqaJcXe5ZHJjaz3KS1AT","output":[{"type":"text","text":"Tool echo: hello world"}],"providerExecuted":true,"providerMetadata":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}},"dynamic":true}
 {"type":"text-start","id":"2"}

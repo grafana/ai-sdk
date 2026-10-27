@@ -340,7 +340,7 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamTextDelta:
 		return []UIMessageChunk{{Type: ChunkTextDelta, ID: p.ID, Delta: p.Text, ProviderMetadata: p.ProviderMetadata}}
 	case StreamTextEnd:
-		return []UIMessageChunk{{Type: ChunkTextEnd, ID: p.ID, ProviderMetadata: p.ProviderMetadata}}
+		return []UIMessageChunk{{Type: ChunkTextEnd, ID: p.ID, Citations: p.Citations, ProviderMetadata: p.ProviderMetadata}}
 	case StreamReasoningStart:
 		return []UIMessageChunk{{Type: ChunkReasoningStart, ID: p.ID, ProviderMetadata: p.ProviderMetadata}}
 	case StreamReasoningDelta:
@@ -349,7 +349,7 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 		return []UIMessageChunk{{Type: ChunkReasoningEnd, ID: p.ID, ProviderMetadata: p.ProviderMetadata}}
 	case StreamToolInputStart:
 		dynamic := uiToolDynamic(p.ToolName, p.Dynamic, cfg.toolTypes)
-		return []UIMessageChunk{{Type: ChunkToolInputStart, ToolCallID: p.ID, ToolName: p.ToolName, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
+		return []UIMessageChunk{{Type: ChunkToolInputStart, ToolCallID: p.ID, ToolName: p.ToolName, InputEncoding: p.InputEncoding, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolInputDelta:
 		return []UIMessageChunk{{Type: ChunkToolInputDelta, ToolCallID: p.ID, InputTextDelta: p.Delta}}
 	case StreamToolInputEnd:
@@ -1034,10 +1034,18 @@ loop:
 				r.callOnChunk(cfg, tsp)
 				outputTextChunk.Reset()
 			}
-			if idx, ok := responseTextIndex[part.ID]; ok && part.ProviderMetadata != nil {
-				step.responseContent[idx].ProviderOptions = providerMetadataToOptions(part.ProviderMetadata)
+			if idx, ok := responseTextIndex[part.ID]; ok {
+				if part.ProviderMetadata != nil {
+					step.responseContent[idx].ProviderOptions = providerMetadataToOptions(part.ProviderMetadata)
+				}
+				if part.Citations != nil {
+					if step.responseCitations == nil {
+						step.responseCitations = make(map[int][]provider.Citation)
+					}
+					step.responseCitations[idx] = cloneCitations(part.Citations)
+				}
 			}
-			tsp := StreamTextEnd{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+			tsp := StreamTextEnd{ID: part.ID, Citations: part.Citations, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
 
@@ -1099,7 +1107,7 @@ loop:
 				toolTitleByID[part.ID] = part.Title
 			}
 			tsp := StreamToolInputStart{
-				ID: part.ID, ToolName: part.ToolName,
+				ID: part.ID, ToolName: part.ToolName, InputEncoding: part.InputEncoding,
 				ProviderExecuted: part.ProviderExecuted, Dynamic: isInputStartDynamic(part.ToolName, part.Dynamic, cfg.tools),
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
@@ -3240,10 +3248,10 @@ func buildRecordedContent(step StepResult) []ContentPart {
 	seenCalls := make(map[string]bool, len(step.ToolCalls))
 	seenResults := make(map[string]int, len(step.ToolResults))
 	seenRequests := make(map[string]bool, len(step.ToolApprovalRequests))
-	for _, recorded := range step.responseContent {
+	for index, recorded := range step.responseContent {
 		switch recorded.Type {
 		case provider.ContentPartTypeText:
-			parts = append(parts, TextContent{Text: recorded.Text, ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions)})
+			parts = append(parts, TextContent{Text: recorded.Text, Citations: cloneCitations(step.responseCitations[index]), ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions)})
 		case provider.ContentPartTypeReasoning:
 			parts = append(parts, ReasoningContent{Text: recorded.Text, ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions)})
 		case provider.ContentPartTypeFile:

@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_011CdbEwYQwrQto25R773YRq","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":589,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard","inference_geo":"not_available"}}}}
 {"type":"tool-input-start","toolCallId":"toolu_01FjqgqXvrM3bvHtemg38P7f","toolName":"get_weather"}
 {"type":"tool-input-delta","toolCallId":"toolu_01FjqgqXvrM3bvHtemg38P7f","inputTextDelta":"{\"city\": \"Tokyo"}
 {"type":"tool-input-delta","toolCallId":"toolu_01FjqgqXvrM3bvHtemg38P7f","inputTextDelta":"\"}"}
@@ -12,6 +13,7 @@
 {"type":"tool-output-available","toolCallId":"toolu_01R4ryjRY9tg1p6k7BiwFByZ","output":{"temperature":16,"conditions":"mild and overcast"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
 {"type":"finish-step"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_011CdbEwhnm3pV96AYJLbHFR","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":767,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard","inference_geo":"not_available"}}}}
 {"type":"text-start","id":"0"}
 {"type":"text-delta","id":"0","delta":"Here"}
 {"type":"text-delta","id":"0","delta":"'s the current weather comparison:\n\n**Tokyo:**\n- Temperature: 28°C\n- Conditions: Humid and partly cloudy\n\n**London:**\n- Temperature: 16°C\n- Conditions: Mild and overcast\n\nTokyo"}

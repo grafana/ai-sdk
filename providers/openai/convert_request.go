@@ -99,6 +99,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 
 	// Input conversion.
 	inputCtx := newInputConversionContext(opts.Tools, br.toolNameMapping, store, poptsName, popts.Conversation != "", popts.PreviousResponseID != "")
+	inputCtx.isReasoningModel = isReasoning
 	input, inputWarnings, err := convertInput(opts.Prompt, systemMode, popts, inputCtx)
 	if err != nil {
 		return responses.ResponseNewParams{}, nil, buildResult{}, err

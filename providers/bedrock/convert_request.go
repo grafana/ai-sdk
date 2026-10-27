@@ -542,7 +542,12 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 		}
 		return &ReasoningConfig{Type: "enabled", BudgetTokens: budget}
 	}
-	effort, ok := reasoningEffort(reasoning, warnings)
+	effortReasoning := reasoning
+	if strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && (reasoning == provider.ReasoningXHigh || reasoning == provider.ReasoningMax) {
+		effortReasoning = provider.ReasoningHigh
+		*warnings = append(*warnings, provider.Warning{Type: provider.WarnCompatibility, Feature: "reasoning", Details: fmt.Sprintf("reasoning %q is not directly supported by this model. mapped to effort %q.", reasoning, effortReasoning)})
+	}
+	effort, ok := reasoningEffort(effortReasoning, warnings)
 	if !ok {
 		*warnings = append(*warnings, provider.Warning{
 			Type:    provider.WarnUnsupported,
@@ -561,6 +566,7 @@ func reasoningBudget(modelID string, reasoning provider.ReasoningEffort) (int, b
 		provider.ReasoningMedium:  0.3,
 		provider.ReasoningHigh:    0.6,
 		provider.ReasoningXHigh:   0.9,
+		provider.ReasoningMax:     0.95,
 	}
 	pct, ok := percentages[reasoning]
 	if !ok {
@@ -588,7 +594,7 @@ func reasoningEffort(reasoning provider.ReasoningEffort, warnings *[]provider.Wa
 		mapped = "medium"
 	case provider.ReasoningHigh:
 		mapped = "high"
-	case provider.ReasoningXHigh:
+	case provider.ReasoningXHigh, provider.ReasoningMax:
 		mapped = "max"
 	default:
 		return "", false

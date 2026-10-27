@@ -731,11 +731,13 @@ describe("React hook interop", () => {
     const message = readProbe<UIMessage[]>("chat-messages")[1];
     expect(message.id).toBe("assistant-data");
     expect(message.metadata).toEqual({ phase: "updated", source: "go" });
-    const snapshots = readProbe<UIMessage[][]>("chat-message-history")
-      .map(messages => messages[1])
-      .filter(Boolean);
-    expect(snapshots.map(snapshot => snapshot.metadata)).toContainEqual({ phase: "initial" });
-    expect(snapshots.map(snapshot => snapshot.metadata)).toContainEqual({ phase: "updated", source: "go" });
+    await waitFor(() => {
+      const snapshots = readProbe<UIMessage[][]>("chat-message-history")
+        .map(messages => messages[1])
+        .filter(Boolean);
+      expect(snapshots.map(snapshot => snapshot.metadata)).toContainEqual({ phase: "initial" });
+      expect(snapshots.map(snapshot => snapshot.metadata)).toContainEqual({ phase: "updated", source: "go" });
+    });
     expect(readProbe<unknown[]>("chat-finish-calls")).toEqual([
       { messageId: "assistant-data", isAbort: false, isError: false, finishReason: "stop" },
     ]);

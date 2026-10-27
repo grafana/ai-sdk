@@ -36,22 +36,26 @@ func unarySource(part provider.GenerateContentPart) provider.SourceInfo {
 }
 
 func sourcePreflight(source provider.SourceInfo, limit int64) bool {
+	return sourcePreflightBudget(source, &limit)
+}
+
+func sourcePreflightBudget(source provider.SourceInfo, limit *int64) bool {
 	for _, value := range []string{source.ID, source.URL, source.Title, source.MediaType, source.Filename} {
-		if int64(len(value)) > limit {
+		if int64(len(value)) > *limit {
 			return false
 		}
-		limit -= int64(len(value))
+		*limit -= int64(len(value))
 	}
-	if int64(len(source.ProviderMetadata)) > limit {
+	if int64(len(source.ProviderMetadata)) > *limit {
 		return false
 	}
-	limit -= int64(len(source.ProviderMetadata))
+	*limit -= int64(len(source.ProviderMetadata))
 	for key, raw := range source.ProviderMetadata {
 		for _, size := range []int{len(key), len(raw)} {
-			if int64(size) > limit {
+			if int64(size) > *limit {
 				return false
 			}
-			limit -= int64(size)
+			*limit -= int64(size)
 		}
 	}
 	for key, raw := range source.ProviderMetadata {
@@ -62,16 +66,20 @@ func sourcePreflight(source provider.SourceInfo, limit int64) bool {
 	return true
 }
 
-func mapSource(source provider.SourceInfo, limit int64) (any, error) {
-	if !sourcePreflight(source, limit) {
-		return nil, errInvalidUnarySuccess
+func validSourceFields(source provider.SourceInfo) bool {
+	if source.SourceType != provider.SourceTypeURL && source.SourceType != provider.SourceTypeDocument {
+		return false
 	}
 	for _, value := range []string{source.ID, source.URL, source.Title, source.MediaType, source.Filename} {
 		if !utf8.ValidString(value) {
-			return nil, errInvalidUnarySuccess
+			return false
 		}
 	}
-	if source.SourceType != provider.SourceTypeURL && source.SourceType != provider.SourceTypeDocument {
+	return true
+}
+
+func mapSource(source provider.SourceInfo, limit int64) (any, error) {
+	if !sourcePreflight(source, limit) || !validSourceFields(source) {
 		return nil, errInvalidUnarySuccess
 	}
 	var mapped any

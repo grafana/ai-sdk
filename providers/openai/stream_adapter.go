@@ -78,6 +78,11 @@ type streamAdapter struct {
 
 	ongoingToolCalls          map[int64]*ongoingToolCall
 	ongoingAnnotations        []json.RawMessage
+	ongoingCitations          []provider.Citation
+	fallbackAnnotations       []responses.ResponseOutputTextAnnotationUnion
+	hasWebSearchSources       bool
+	hasFileSearchResults      bool
+	retrievedFileIDs          map[string]bool
 	logprobs                  [][]responseLogprob
 	activeReasoning           map[string]*activeReasoningState
 	activeOutputItemIDs       map[int64]string
@@ -107,6 +112,7 @@ func newStreamAdapter(warnings []provider.Warning, br buildResult, requestBody r
 		generateID:                generateID,
 		providerOptionsName:       providerOptionsName,
 		providerIdentity:          providerIdentity,
+		retrievedFileIDs:          make(map[string]bool),
 		ongoingToolCalls:          make(map[int64]*ongoingToolCall),
 		activeReasoning:           make(map[string]*activeReasoningState),
 		activeOutputItemIDs:       make(map[int64]string),
@@ -281,6 +287,7 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 	case responses.ResponseOutputMessage:
 		a.activeOutputItemIDs[e.OutputIndex] = v.ID
 		a.ongoingAnnotations = nil
+		a.ongoingCitations = nil
 		a.activeMessagePhase = string(v.Phase)
 		ch <- provider.StreamPart{Type: provider.PartTextStart, ID: v.ID, ProviderMetadata: textMeta(a.providerOptionsName, v.ID, string(v.Phase), nil)}
 
@@ -317,7 +324,7 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 	case responses.ResponseCustomToolCall:
 		toolName := v.Name
 		a.ongoingToolCalls[e.OutputIndex] = &ongoingToolCall{toolName: toolName, toolCallID: v.CallID, async: presentAsync(v.Async, v.JSON.Async.Valid())}
-		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: toolName}
+		ch <- provider.StreamPart{Type: provider.PartToolInputStart, ID: v.CallID, ToolName: toolName, InputEncoding: provider.ToolInputEncodingText}
 
 	case responses.ResponseComputerToolCall:
 		if v.CallID == "" {
@@ -382,8 +389,9 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			phase = a.activeMessagePhase
 		}
 		a.activeMessagePhase = ""
-		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: itemID, ProviderMetadata: textEndMeta(a.providerOptionsName, itemID, phase, a.ongoingAnnotations)}
+		ch <- provider.StreamPart{Type: provider.PartTextEnd, ID: itemID, Citations: a.ongoingCitations, ProviderMetadata: textEndMeta(a.providerOptionsName, itemID, phase, a.ongoingAnnotations)}
 		a.ongoingAnnotations = nil
+		a.ongoingCitations = nil
 		delete(a.activeOutputItemIDs, e.OutputIndex)
 
 	case responses.ResponseFunctionToolCall:
@@ -469,6 +477,9 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ToolName:   name,
 			Result:     webSearchOutput(v.Action),
 		}
+		sources := webSearchSources(v.Action, a.generateID)
+		a.hasWebSearchSources = a.hasWebSearchSources || len(sources) > 0
+		a.emitSources(sources, ch)
 
 	case responses.ResponseFileSearchToolCall:
 		name := a.br.toolNameMapping.toCustomToolName("file_search")
@@ -478,6 +489,8 @@ func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneE
 			ToolName:   name,
 			Result:     fileSearchOutput(v.Queries, v.Results),
 		}
+		a.hasFileSearchResults = a.hasFileSearchResults || len(v.Results) > 0
+		a.emitSources(fileSearchSources(v.Results, a.retrievedFileIDs, a.generateID, a.providerOptionsName), ch)
 
 	case responses.ResponseCustomToolCall:
 		a.hasFunctionCall = true
@@ -700,53 +713,25 @@ func (a *streamAdapter) emitAnnotationSource(raw string, annotation any, ch chan
 	} else {
 		return
 	}
-	switch ann := union.AsAny().(type) {
-	case responses.ResponseOutputTextAnnotationURLCitation:
-		ch <- provider.StreamPart{
-			Type: provider.PartSource,
-			Source: &provider.SourceInfo{
-				SourceType: provider.SourceTypeURL,
-				ID:         a.generateID(),
-				URL:        ann.URL,
-				Title:      ann.Title,
-			},
-		}
-	case responses.ResponseOutputTextAnnotationFileCitation:
-		ch <- provider.StreamPart{
-			Type: provider.PartSource,
-			Source: &provider.SourceInfo{
-				SourceType:       provider.SourceTypeDocument,
-				ID:               a.generateID(),
-				MediaType:        "text/plain",
-				Title:            ann.Filename,
-				Filename:         ann.Filename,
-				ProviderMetadata: sourceMeta(a.providerOptionsName, "file_citation", ann.FileID, ann.Index),
-			},
-		}
-	case responses.ResponseOutputTextAnnotationContainerFileCitation:
-		ch <- provider.StreamPart{
-			Type: provider.PartSource,
-			Source: &provider.SourceInfo{
-				SourceType:       provider.SourceTypeDocument,
-				ID:               a.generateID(),
-				MediaType:        "text/plain",
-				Title:            ann.Filename,
-				Filename:         ann.Filename,
-				ProviderMetadata: containerSourceMeta(a.providerOptionsName, ann.FileID, ann.ContainerID),
-			},
-		}
-	case responses.ResponseOutputTextAnnotationFilePath:
-		ch <- provider.StreamPart{
-			Type: provider.PartSource,
-			Source: &provider.SourceInfo{
-				SourceType:       provider.SourceTypeDocument,
-				ID:               a.generateID(),
-				MediaType:        "application/octet-stream",
-				Title:            ann.FileID,
-				Filename:         ann.FileID,
-				ProviderMetadata: sourceMeta(a.providerOptionsName, "file_path", ann.FileID, ann.Index),
-			},
-		}
+	a.ongoingCitations = append(a.ongoingCitations, convertCitationAnnotations([]responses.ResponseOutputTextAnnotationUnion{union}, a.providerOptionsName)...)
+	if union.Type == annotationURLCitation || union.Type == annotationFileCitation {
+		a.fallbackAnnotations = append(a.fallbackAnnotations, union)
+		return
+	}
+	a.emitConvertedAnnotation(union, ch)
+}
+
+func (a *streamAdapter) emitConvertedAnnotation(annotation responses.ResponseOutputTextAnnotationUnion, ch chan<- provider.StreamPart) {
+	if part, ok := convertAnnotation(annotation, a.generateID, a.providerOptionsName); ok {
+		source := sourceInfo(part)
+		ch <- provider.StreamPart{Type: provider.PartSource, Source: &source}
+	}
+}
+
+func (a *streamAdapter) emitSources(sources []provider.GenerateContentPart, ch chan<- provider.StreamPart) {
+	for _, part := range sources {
+		source := sourceInfo(part)
+		ch <- provider.StreamPart{Type: provider.PartSource, Source: &source}
 	}
 }
 
@@ -818,6 +803,13 @@ func (a *streamAdapter) recordStreamError(raw string) {
 }
 
 func (a *streamAdapter) flush(ch chan<- provider.StreamPart) {
+	for _, annotation := range a.fallbackAnnotations {
+		if fallbackSourceSuppressed(annotation.Type, a.hasWebSearchSources, a.hasFileSearchResults) {
+			continue
+		}
+		a.emitConvertedAnnotation(annotation, ch)
+	}
+	a.fallbackAnnotations = nil
 	indices := make([]int64, 0, len(a.ongoingToolCalls))
 	for index, call := range a.ongoingToolCalls {
 		if call.suppressInput {
