@@ -17,6 +17,8 @@ The corresponding environment variables use the
 `auth.mode`, combined listener or legacy listener alias. API listeners serve
 `GET /api/v1/aisdk/config` and `POST /api/v1/aisdk/language-model`; they do not
 serve operational routes, and the operational listener does not serve API routes.
+The private listener also serves the initial [Anthropic Messages subset](anthropic-messages-api.md)
+at `POST /v1/messages`. Cloud BYOK and operational listeners do not expose it.
 
 Regional JWKS trust is required for the private API. Audience is `ai-sdk`;
 concrete stack and wildcard namespaces are supported without a service allowlist.

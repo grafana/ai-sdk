@@ -1,0 +1,19 @@
+{
+  "name": "@grafana/ai-gateway-anthropic-messages-test",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "test": "pnpm run typecheck && tsx --test gateway-command.test.ts conformance.test.ts",
+    "test:conformance": "tsx --test conformance.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.133.0"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.9",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}

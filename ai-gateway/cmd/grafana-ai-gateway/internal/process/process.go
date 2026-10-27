@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grafana/ai-sdk/ai-gateway/anthropicmessages"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/discovery"
@@ -124,13 +125,14 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 	}
 	readiness := &service.Readiness{}
 	deps := service.RouterDependencies{
-		Readiness:     readiness,
-		Telemetry:     telemetry,
-		Authenticator: authenticator,
-		AuthSource:    authSource,
-		ErrorWriter:   errorWriter,
-		Discovery:     discoveryHandler,
-		LanguageModel: languageHandler,
+		Readiness:         readiness,
+		Telemetry:         telemetry,
+		Authenticator:     authenticator,
+		AuthSource:        authSource,
+		ErrorWriter:       errorWriter,
+		Discovery:         discoveryHandler,
+		LanguageModel:     languageHandler,
+		AnthropicMessages: anthropicmessages.New(modelCatalog),
 	}
 	type binding struct {
 		address string
@@ -148,6 +150,7 @@ func Run(ctx context.Context, args []string, lookupEnv config.LookupEnv, listen 
 		cloudDeps.AuthSource = gatewayauth.SourceCloudGateway
 		cloudDeps.Discovery = service.BYOKDiscovery(errorWriter)
 		cloudDeps.LanguageModel = byokHandler
+		cloudDeps.AnthropicMessages = nil
 		bindings = append(bindings, binding{settings.CloudListenAddress, service.NewAPIRouter(cloudDeps)})
 	}
 	bindings = append(bindings, binding{settings.OperationalListenAddress, service.NewOperationalRouter(deps)})
