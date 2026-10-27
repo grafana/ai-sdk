@@ -49,4 +49,4 @@
 ## Workflow follow-up
 
 - After merge, let the next release run supersede the open per-module release pull requests, review the first combined pull request and record tag, proxy-hash and consumer evidence on #245 and #468.
-- Archive the change after the first live combined release is verified.
+- Archive the change in this pull request before merge; the required `Validate Changes` check rejects active changes.

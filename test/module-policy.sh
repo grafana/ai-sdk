@@ -262,6 +262,8 @@ assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOWORK="$2" GOFLAGS="
 
 untagged=v0.1.0-alpha.999999
 untagged_overlay=$fixture/untagged-overlay.json
+(cd "$repo_root/providers/bedrock" && GOWORK="$repo_root/go.work" GOFLAGS=-mod=readonly command go build ./...)
+(cd "$repo_root/ai-gateway" && GOWORK="$repo_root/go.gateway.work" GOFLAGS=-mod=readonly command go build -o "$fixture/gateway" ./cmd/grafana-ai-gateway)
 for root in providers/bedrock ai-gateway; do
   sed -E "s#^([[:space:]]+$module_prefix(/[a-z/-]+)?) v[^ ]+#\1 $untagged#" "$repo_root/$root/go.mod" >"$fixture/${root//\//-}.mod"
   grep -Fq "$untagged" "$fixture/${root//\//-}.mod" || fail "untagged fixture did not rewrite $root requirements"
