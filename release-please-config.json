@@ -20,7 +20,7 @@
     { "type": "deps", "section": "Dependencies" },
     { "type": "docs", "section": "Documentation", "hidden": true },
     { "type": "chore", "section": "Miscellaneous Chores", "hidden": true },
-    { "type": "refactor", "section": "Code Refactoring", "hidden": true },
+    { "type": "refactor", "section": "Code Refactoring" },
     { "type": "test", "section": "Tests", "hidden": true },
     { "type": "build", "section": "Build System", "hidden": true },
     { "type": "ci", "section": "Continuous Integration", "hidden": true },

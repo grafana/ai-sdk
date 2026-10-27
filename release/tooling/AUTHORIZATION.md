@@ -59,16 +59,16 @@ For each library the authorizer requires:
 2. A successful readiness record bound to that exact head, base, tree, title and
    body. The squash parent must equal the tested base; its entire tree must equal
    the reconstruction of that base and release head. Versions, tags and generated
-   changelog content must agree. Only the manifest and selected changelog may change.
+   changelog content must agree. Only the manifest, released changelogs and
+   first-party requirement lines set to the manifest versions may change.
 3. A completed canonical `ci.yml` main-push run at the squash SHA, with successful
    `ci`, `race`, `docs-lint`, `module-resolution`, `parity-baseline`,
    `integration-test` and `conformance-test` jobs. A later SHA or a cancelled run
    cannot substitute. Failed image/publication jobs do not replace these source
    results. The PR and squash SHAs are different Git objects.
-4. Fresh standalone and consumer validation of the selected merged library, using
-   trusted tooling and its published prerequisites. Prerequisite ancestry and
-   owned-source freshness are compared with the immutable squash parent. Root's
-   validation does not invoke unrelated providers' standalone checks.
+4. Every first-party requirement of the selected library is a canonical tag that is
+   an ancestor of the immutable squash parent, or a library released by the same
+   squash. A library whose co-released prerequisite is blocked is blocked as well.
 5. Final rereads of live PR metadata, source/readiness runs and attempts, artifact
    identity, target-tag/release absence and canonical ancestry. Later unrelated
    main commits are allowed; altered candidate/evidence or tags are not.

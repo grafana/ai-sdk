@@ -507,7 +507,7 @@ maintainer to trigger CI.
 ## Releases and independent modules
 
 Core, providers, and middleware are released independently as Go libraries.
-Gateway is an independently versioned Grafana app plugin built from workspace source.
+Gateway is an independently versioned Grafana app plugin built from same-revision source.
 After #245 activates release automation, versions, changelogs, tags, and GitHub
 Releases will be produced by
 [release-please](https://github.com/googleapis/release-please) from the
@@ -515,15 +515,14 @@ Conventional Commits that land on `main`. Pull requests are squash-merged with
 their title as the subject, so a pull request records its release intent by
 using the right type in its title:
 
-- `fix:` and `perf:` produce a patch release.
+- `fix:`, `perf:` and `refactor:` produce a patch release.
 - `feat:` produces a minor release.
 - `feat!:` or a `BREAKING CHANGE:` footer produces a major release.
-- `chore:`, `ci:`, `docs:`, `refactor:`, `test:`, and `build:` produce no
-  release.
+- `chore:`, `ci:`, `docs:`, `test:`, and `build:` produce no release.
 
 A library change is attributed to its module by the files it touches. #245 will
 also attribute relevant SDK, provider, and middleware changes to the
-workspace-built Gateway plugin release. While the modules are in the `alpha`
+Gateway plugin release. While the modules are in the `alpha`
 channel, each release advances the prerelease counter
 (`v0.1.0-alpha.1` to `v0.1.0-alpha.2`).
 
@@ -551,22 +550,22 @@ SDK's Go module dependency graph.
 ### What to validate
 
 - **Source PRs:** CI builds and tests the SDK, providers, middleware, Grafana
-  client, and Gateway from the proposed source. It also verifies module-pin
-  ancestry and dependency and license boundaries. See
+  client, and Gateway from the proposed source. It also verifies first-party
+  requirements and dependency and license boundaries. See
   [CI](.github/workflows/ci.yml) for the seven required source checks. The `ci`
   check requires both the parallel `build-test` and `lint` jobs to succeed. CI no
   longer builds or publishes Gateway container images. The App Platform migration
   and its plugin validation are tracked separately in #428.
-- **Go module releases:** Before tagging an SDK, provider, or middleware version
-  for external Go consumers, validate that module against its declared `go.mod`
-  dependencies with `MODULE=providers/anthropic mise run verify-published-module`
-  (substitute the module being released). Release PR readiness additionally checks
-  current-base metadata, canonical tagged prerequisites, and isolated
-  selected-consumer regressions; see the [release runbook](release/README.md).
-  Publication requires explicit activation under #245. For a broader diagnostic,
-  `mise run verify-module-resolution` checks all published modules.
-- **Gateway plugin:** Gateway uses the separate `go.gateway.work` to build the
-  plugin backend from same-revision local source. Plugin validation runs on pull
+- **Go module releases:** Libraries are released from one release pull request,
+  whose CI is the release evidence. Readiness additionally checks current-base
+  metadata and that first-party requirements are tagged or released together, and
+  each published version is verified as an external consumer through the public
+  Go proxy; see the [release runbook](release/README.md). Publication requires
+  explicit activation under #245. `MODULE=providers/anthropic mise run verify-module`
+  downloads, verifies, builds and tests one module; `mise run verify-modules` runs
+  every module.
+- **Gateway plugin:** Gateway builds the plugin backend from same-revision SDK
+  source through the replacements in `ai-gateway/go.mod`. Plugin validation runs on pull
   requests and pushes: manifest regeneration, `mise run test-ai-gateway-frontend`,
   `mise run build-ai-gateway-plugin`, `mise run test-ai-gateway-e2e`,
   `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
@@ -576,25 +575,28 @@ SDK's Go module dependency graph.
   changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
   the app manifest source for `pnpm generate:kinds`.
 
-The root `go.work` excludes `ai-gateway/`. Gateway may depend on SDK modules,
-but SDK modules must not import, require, or replace Gateway. Real published
-module pins must refer to commits merged on canonical `grafana/ai-sdk` `main`;
-merged pseudo-versions are valid, while local example/test replacements are not
-published pins. `scripts/module-policy.sh` implements the module checks. These
-checks do not replace license review for copied code or third-party dependencies.
+There are no Go workspaces. Every `go.mod` replaces each first-party module in its
+build graph with that module's directory, so builds in this repository always use
+same-revision source, while consumers ignore the replacements and resolve published
+tags. First-party requirements equal the module's version in
+`.release-please-manifest.json` (or its `initial-version` before its first
+release); pseudo-versions are not used. Release pull requests update these
+requirements. Gateway may depend on SDK modules, but SDK modules must not import,
+require, or replace Gateway. `scripts/module-policy.sh` implements the module
+checks. These checks do not replace license review for copied code or third-party
+dependencies.
 
 ```bash
-mise run tidy        # go mod tidy across all modules
+mise run tidy        # sync first-party replacements and requirements, then tidy every module
 ```
 
-Commit `go.mod` and `go.sum` changes together. When adding a dependency to a
-provider or middleware module, run tidy from that module's directory.
+Commit `go.mod` and `go.sum` changes together.
 
 The pnpm test workspace is supply-chain hardened: `blockExoticSubdeps`,
 `strictDepBuilds`, and a `minimumReleaseAge` gate in
 `pnpm-workspace.yaml`. Do not bypass those settings to land a version bump.
-Dependency updates are otherwise automated via Renovate
-([`renovate.json`](renovate.json)).
+Third-party dependency updates are otherwise automated via Renovate
+([`renovate.json`](renovate.json)); first-party modules are excluded.
 
 ## Reporting security issues
 

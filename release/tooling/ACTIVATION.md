@@ -106,10 +106,10 @@ old local reports, recreate evidence, move a tag, or force a release through.
 
 After root proof passes, approve switching the variable to `libraries`. The next
 main push publishes only independently ready pending libraries and prepares one
-combined library release PR, plus one for each library configured with
-`separate-pull-requests: true`. A merged pending component suppresses only its
-own next preparation. A merged combined release keeps its pending label until every
-library in it is published. Late publication candidates wait for another run. Preparation
+combined library release PR, with first-party requirements set to the versions it
+releases. A merged pending component suppresses only its own next preparation. A
+merged combined release keeps its pending label until every library in it is
+published. Late publication candidates wait for another run. Preparation
 requires that main still equals the workflow SHA and uses App-signed commits.
 Existing release PRs refresh even when their notes are unchanged, so current-base
 readiness can run again. Commit-parser diagnostics stop preparation writes.
@@ -121,22 +121,11 @@ release config stays unchanged so #490's retained config identity remains valid.
 The historical PR header describes publication as disabled; this activation runbook
 and the live mode are authoritative until that header is updated after bootstrap.
 
-The final first-party rule in `renovate.json` becomes effective when this PR merges.
-It enables independent updates only for registered library modules, accepts tagged
-alpha/beta/rc versions, excludes pseudo-version and digest proposals, groups all
-first-party updates into one pull request and overrides the inherited weekly
-schedule. The organization-wide minimum release age still applies; see the
-[release runbook](../README.md#keep-dependent-modules-on-released-first-party-requirements).
-Updates use `fix(deps)` and require review;
-automerge is disabled. This follows Renovate's
-[configuration contracts](https://docs.renovatebot.com/configuration-options/).
-
-Requirement updates are not on the release path. Ordinary source PRs retain
-candidate-source CI. Publication rechecks tag origin, ancestry, standalone and
-consumer behavior. Record the first combined library release in #468; if a library
-cannot pass readiness, move it to its own release PR as described in the
-[release runbook](../README.md#when-a-library-needs-an-unreleased-prerequisite)
-rather than holding the other libraries.
+Renovate does not update first-party modules; release pull requests update those
+requirements, so no requirement update is needed between releases. Ordinary source
+PRs retain candidate-source CI. Publication rechecks tag origin, ancestry and
+co-released prerequisites, tags prerequisites first, and verifies each published
+version as an external consumer. Record the first combined library release in #468.
 
 ## Stop and recovery
 

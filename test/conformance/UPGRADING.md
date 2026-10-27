@@ -80,7 +80,7 @@ changed expectations without modifying provider input provenance.
 | `mise run parity-provider-shape` | Selected provider discriminator differences | Not full API/semantic parity; missing values are warnings and unavailable source can be skipped |
 | `mise run test-integration` | Covered frontend hook and stream interactions | Lower-level schema acceptance alone does not prove hook lifecycle behavior |
 | ProviderWire/Gateway contract and runtime tests | Covered mapping, client consumption, service lifecycle and privacy | Verify the actual dependency versions and runtime exercised |
-| `mise run verify-module-resolution` | Tests against published Go dependencies outside the workspace | Does not decide good PR boundaries or replace workspace/integration tests |
+| `mise run verify-module-requirements` | First-party requirements follow the version manifest with complete local replacements | Does not test published versions; publication verifies those |
 | `mise run validate-parity-baseline` | Consumer-pin consistency, Renovate exclusions, verification-date validity and reviewed Gateway witness consistency | Metadata consistency is not semantic review |
 
 Use request snapshots for provider conversion, UI/output snapshots for orchestration,
@@ -158,11 +158,12 @@ with old expectations, the necessary implementation, target pins, lockfile,
 expectations and attestation belong in the same baseline transition. Do not weaken
 comparisons or defer that PR's failing checks to a later PR.
 
-Check public-module dependencies before deciding delivery boundaries. A provider may require
-new root fields, or Mantle may require a newer OpenAI adapter. Merge and verify the
-producer's published revision before the consumer adopts it. Workspace success can
-otherwise hide a dependency failure. Module checks use a fresh public cache,
-`GOWORK=off` and readonly tests; local replacements are not publication evidence.
+A provider may require new root fields, or Mantle may require a newer OpenAI adapter.
+Every module builds against same-revision first-party source through local
+replacements, so the producer and consumer can change in one PR. The next library
+release releases both and updates the consumer's requirement to the co-released
+producer version; each published version is then verified as an external consumer
+through the public Go proxy.
 
 Choose tests from the affected behavior, including conformance, frontend,
 ProviderWire/Gateway runtime/privacy and focused module/race tests. Review snapshot
@@ -172,7 +173,7 @@ required CI checks on the merge candidate. The relevant entry points include:
 
 ```bash
 mise run parity-check
-mise run verify-module-resolution
+mise run verify-module-requirements
 mise run verify-ai-gateway-boundary
 mise run test-integration
 mise run test-ai-gateway-command
