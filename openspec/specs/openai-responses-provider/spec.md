@@ -636,7 +636,7 @@ both generate and completed stream calls.
 
 ### Requirement: OpenAI Responses schema normalization
 
-Before DoGenerate/DoStream, the provider SHALL normalize JSON structured-response and function input/optional output schemas, including namespaced functions, regardless of strict setting, without mutating caller data. String-schema propertyNames SHALL be removed with one compatibility warning per affected schema; null SHALL be removed silently; boolean/non-string/non-null propertyNames SHALL error before HTTP.
+Before DoGenerate/DoStream, the provider SHALL normalize JSON response and function input/optional output schemas, including namespaced functions, regardless of strict setting, without mutating caller data. Normalization SHALL remove string-schema propertyNames and regex lookaround patterns, unwrap nested singleton references, and expand resolvable local root singleton references. Unsupported property-name schemas SHALL fail before HTTP.
 
 #### Scenario: Recursive string property names are removed
 - **WHEN** a schema contains string-schema `propertyNames` in nested `properties`, `patternProperties`, `additionalProperties`, `additionalItems`, `items`, `contains`, `not`, `allOf`, `anyOf`, `oneOf`, `definitions`, `$defs`, schema-valued `dependencies`, or `if`/`then`/`else`
@@ -669,8 +669,34 @@ Before DoGenerate/DoStream, the provider SHALL normalize JSON structured-respons
 - **THEN** their requests contain the same normalized schema payloads and compatible warnings, with the requested `strict` setting unchanged
 - **AND** neither call changes the caller-owned schema data
 
+#### Scenario: Regex lookaround patterns are removed recursively
+- **WHEN** a response or function schema contains `pattern` values using positive or negative lookahead or lookbehind at any schema node traversed by property-name normalization
+- **THEN** those patterns are removed while other constraints, including `type` and `format`, are preserved
+- **AND** exactly one `compatibility` warning with feature `JSON Schema pattern with regex lookaround` and details `OpenAI does not support regex lookaround in JSON Schema patterns. The pattern was removed before sending the schema, so OpenAI will not enforce that constraint.` is returned per affected schema
+- **AND** any property-name warning precedes the lookaround warning, and patterns inside removed `propertyNames` do not cause an additional warning
+
+#### Scenario: Literal lookaround-like text is preserved
+- **WHEN** a pattern contains escaped literal lookaround-like text or such text inside a character class, but no actual lookaround
+- **THEN** the pattern is preserved without a lookaround compatibility warning
+- **AND** normalization does not treat `patternProperties` keys, examples, or default values as schema `pattern` keywords
+
+#### Scenario: Nested singleton references are unwrapped
+- **WHEN** a nested schema has exactly one `allOf` member that, after recursive normalization, contains only a string `$ref`
+- **THEN** `allOf` is replaced by that direct `$ref`, preserving sibling keywords and overriding any sibling `$ref`, without a compatibility warning
+- **AND** nested references need not resolve locally to be unwrapped
+
+#### Scenario: Local root singleton references are expanded
+- **WHEN** the schema root has exactly one `allOf` member containing only a string `$ref` resolving to an object schema under its `definitions` or `$defs`
+- **THEN** the normalized definition is expanded at the root, JSON-pointer name escapes `~1` and `~0` are decoded, and root sibling keywords take precedence
+- **AND** the root `allOf` wrapper is removed, definitions are retained, and nested recursive references remain direct `$ref` values
+
+#### Scenario: Other reference and intersection schemas are preserved
+- **WHEN** a root singleton reference is unresolved, external, outside `definitions`/`$defs`, or points to a boolean schema; or an `allOf` contains multiple members, a non-reference member, or a reference with sibling keywords
+- **THEN** the reference or intersection wrapper is preserved while its subschemas are still normalized
+- **AND** a direct root `$ref` is not expanded
+
 #### Scenario: Unaffected schemas remain unchanged
-- **WHEN** the response or function schema contains no `propertyNames` keyword, including schemas with boolean subschemas and `additionalProperties: false`
+- **WHEN** the response or function schema contains no `propertyNames`, lookaround `pattern`, or rewritable singleton `allOf` reference, including schemas with boolean subschemas and `additionalProperties: false`
 - **THEN** the request preserves the schema without a normalization compatibility warning
 
 ### Requirement: OpenAI client and request-option ownership
@@ -966,3 +992,16 @@ The streaming finish part SHALL report the response ID from `response.created` a
 #### Scenario: Rotated response IDs
 - **WHEN** `response.created` carries ID `resp_a` and `response.completed` carries ID `resp_b`
 - **THEN** the finish part's `responseId` SHALL be `resp_a`
+
+### Requirement: Stored reasoning-model text references require preceding reasoning
+
+Stored assistant text on reasoning models SHALL use an item reference only when reasoning precedes it in the same assistant message. Otherwise the text SHALL be reconstructed inline. Repeated eligible text item IDs within one assistant message SHALL produce one reference. Conversation skipping and non-reasoning stored-text behavior SHALL remain unchanged.
+
+#### Scenario: Reasoning was removed from stored history
+- **WHEN** stored reasoning-model text retains an item ID but no preceding reasoning part
+- **THEN** unary and streaming request conversion SHALL send inline assistant text instead of an invalid stored reference
+- **AND** shared Mantle conversion SHALL retain the same safeguard
+
+#### Scenario: Repeated references share a reasoning item
+- **WHEN** multiple text parts carry the same stored item ID after a reasoning part
+- **THEN** one item reference SHALL be sent for that text ID

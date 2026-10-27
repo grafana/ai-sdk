@@ -60,6 +60,28 @@ func (v *cacheControlValidator) resolveCacheControl(partOpts, msgOpts provider.P
 	return anthropic.BetaCacheControlEphemeralParam{}
 }
 
+func (v *cacheControlValidator) resolveToolResultCacheControl(p provider.ContentPart, msgOpts provider.ProviderOptions, isLast bool) anthropic.BetaCacheControlEphemeralParam {
+	if extractCacheControl(p.ProviderOptions) != nil {
+		return v.getCacheControl(p.ProviderOptions, true)
+	}
+	return v.resolveCacheControl(toolResultOutputProviderOptions(p.Output), msgOpts, isLast, true)
+}
+
+func toolResultOutputProviderOptions(output *provider.ToolResultOutput) provider.ProviderOptions {
+	if output == nil {
+		return nil
+	}
+	if output.ProviderOptions != nil || output.Type != provider.ToolOutputContent {
+		return output.ProviderOptions
+	}
+	for _, entry := range output.Content {
+		if entry.ProviderOptions != nil {
+			return entry.ProviderOptions
+		}
+	}
+	return nil
+}
+
 type cacheControlConfig struct {
 	Type string `json:"type"`
 	TTL  string `json:"ttl,omitempty"`

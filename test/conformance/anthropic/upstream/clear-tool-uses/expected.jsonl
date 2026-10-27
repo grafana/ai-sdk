@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_01YJG5jvxYUWfhVa6MSqT6qk","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":859,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":8,"service_tier":"standard","inference_geo":"not_available"}}}}
 {"type":"text-start","id":"0"}
 {"type":"text-delta","id":"0","delta":"\n\nHere's a comparison of the weather"}
 {"type":"text-delta","id":"0","delta":" in"}

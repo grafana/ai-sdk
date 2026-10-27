@@ -122,6 +122,9 @@ When building lower-level loops, `ToResponseMessages` converts collected model
 response content into assistant and tool messages suitable for a later call. It
 preserves provider information required by reasoning and tool round trips.
 `StreamText` handles this conversation loop automatically for most applications.
+To continue after a call returns, append the result's `ResponseMessages` to the
+input messages. It holds every generated message, including tool results from
+resolved approvals; the result's `Response.Messages` holds only the final step.
 Provider prompt preparation combines consecutive tool messages in order;
 direct UI-to-model conversion retains its step-block grouping.
 

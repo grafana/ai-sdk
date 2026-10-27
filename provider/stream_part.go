@@ -162,16 +162,17 @@ func (d StreamFileData) dataType() StreamFileDataType {
 type StreamPart struct {
 	Type StreamPartType `json:"type"`
 
-	ID               string `json:"id,omitempty"`
-	Delta            string `json:"delta,omitempty"`
-	ToolCallID       string `json:"toolCallId,omitempty"`
-	ToolName         string `json:"toolName,omitempty"`
-	Input            string `json:"input,omitempty"` // stringified JSON for tool-call
-	ProviderExecuted bool   `json:"providerExecuted,omitempty"`
-	IsError          bool   `json:"isError,omitempty"`
-	Dynamic          *bool  `json:"dynamic,omitempty"`
-	Preliminary      *bool  `json:"preliminary,omitempty"`
-	Title            string `json:"title,omitempty"`
+	ID               string            `json:"id,omitempty"`
+	Delta            string            `json:"delta,omitempty"`
+	ToolCallID       string            `json:"toolCallId,omitempty"`
+	ToolName         string            `json:"toolName,omitempty"`
+	InputEncoding    ToolInputEncoding `json:"inputEncoding,omitempty"`
+	Input            string            `json:"input,omitempty"` // stringified JSON for tool-call
+	ProviderExecuted bool              `json:"providerExecuted,omitempty"`
+	IsError          bool              `json:"isError,omitempty"`
+	Dynamic          *bool             `json:"dynamic,omitempty"`
+	Preliminary      *bool             `json:"preliminary,omitempty"`
+	Title            string            `json:"title,omitempty"`
 
 	// Result is populated for PartToolResult parts and contains the raw JSON
 	// value returned by the provider-executed tool.
@@ -198,6 +199,8 @@ type StreamPart struct {
 
 	Usage        *Usage        `json:"usage,omitempty"`
 	FinishReason *FinishReason `json:"finishReason,omitempty"`
+
+	Citations []Citation `json:"citations,omitzero"`
 
 	RawValue json.RawMessage `json:"rawValue,omitempty"`
 

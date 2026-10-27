@@ -160,6 +160,7 @@ type GenerateResult struct {
 // GenerateContentPart is a piece of content in a GenerateResult.
 // It is a flat union keyed by Type, mirroring LanguageModelV4Content.
 type GenerateContentPart struct {
+	Citations        []Citation          `json:"citations,omitzero"`
 	Type             GenerateContentType `json:"type"`
 	ID               string              `json:"id,omitempty"`
 	Kind             string              `json:"kind,omitempty"`

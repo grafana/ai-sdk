@@ -22,6 +22,7 @@ import {
 } from "ai";
 import { generateAnthropicStreamParts } from "./anthropic-stream-parts.mts";
 import { generateAnthropicUnary } from "./anthropic-unary.mts";
+import { generateAnthropicPromptConversion } from "./anthropic-prompt-conversion.mts";
 import {
   PROVIDER_PARTS_FILE,
   PROVIDER_PARTS_PROVIDERS,
@@ -516,15 +517,18 @@ async function generateExpected(tc: TestCase): Promise<void> {
 
     const output = buildOutput(cfg);
 
-    const result = streamText(buildStreamTextOptions(cfg, {
-      model,
-      messages,
-      prompt,
-      tools,
-      output,
-      stopWhen: stepCountIs(stopWhenStepCount),
-      generateId: mockId("id"),
-    }) as Parameters<typeof streamText>[0]);
+    const result = streamText({
+      ...buildStreamTextOptions(cfg, {
+        model,
+        messages,
+        prompt,
+        tools,
+        output,
+        stopWhen: stepCountIs(stopWhenStepCount),
+        generateId: mockId("id"),
+      }) as Parameters<typeof streamText>[0],
+      experimental_lowMemory: false,
+    });
 
     const uiStream = result.toUIMessageStream(cfg.streamOptions ?? {});
 
@@ -582,7 +586,8 @@ async function main() {
   const matchesFilter = (generator: string) => !scenarioFilter || generator.includes(scenarioFilter);
   const includeStreamParts = matchesFilter("anthropic-stream-parts");
   const includeUnary = matchesFilter("anthropic-unary");
-  const includeSynthetic = includeStreamParts || includeUnary;
+  const includePromptConversion = matchesFilter("anthropic-prompt-conversion");
+  const includeSynthetic = includeStreamParts || includeUnary || includePromptConversion;
 
   if (scenarioFilter) {
     cases = cases.filter((tc) => tc.name.includes(scenarioFilter));
@@ -613,6 +618,7 @@ async function main() {
   try {
     if (includeStreamParts) await generateAnthropicStreamParts();
     if (includeUnary) await generateAnthropicUnary();
+    if (includePromptConversion) await generateAnthropicPromptConversion();
   } catch (err) {
     console.error(`  ERROR: ${err}`);
     errors++;

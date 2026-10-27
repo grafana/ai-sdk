@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_dup","model":"claude-3-haiku-20240307","usage":{"input_tokens":17,"output_tokens":1}}}}
 {"type":"text-start","id":"0"}
 {"type":"text-delta","id":"0","delta":"Hello, World!"}
 {"type":"text-end","id":"0"}

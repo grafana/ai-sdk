@@ -1,6 +1,7 @@
 {"type":"start"}
 {"type":"tool-output-denied","toolCallId":"toolu_01QE1WLsSVp5hy5Q3GmGTmjP"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_011CdaZD2HWYULs64ZSsymFi","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":601,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":2,"service_tier":"standard","inference_geo":"not_available"}}}}
 {"type":"text-start","id":"0"}
 {"type":"text-delta","id":"0","delta":"I apolog"}
 {"type":"text-delta","id":"0","delta":"ize, but I don't have permission to update the issue list. It appears this action is restricted."}

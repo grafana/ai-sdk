@@ -1,5 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_011bqgzot9grwdetCByUmXRP","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":699,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":5,"service_tier":"standard"}}}}
 {"type":"text-start","id":"0"}
 {"type":"text-delta","id":"0","delta":"I'll search for a"}
 {"type":"text-delta","id":"0","delta":" weather"}
@@ -26,6 +27,7 @@
 {"type":"tool-input-delta","toolCallId":"toolu_019nRrfqqXcU5NPTUSYfEMAY","inputTextDelta":" Francisco, CA"}
 {"type":"tool-input-delta","toolCallId":"toolu_019nRrfqqXcU5NPTUSYfEMAY","inputTextDelta":"\"}"}
 {"type":"tool-input-available","toolCallId":"toolu_019nRrfqqXcU5NPTUSYfEMAY","toolName":"get_weather","input":{"location":"San Francisco, CA"},"providerMetadata":{"anthropic":{"caller":{"type":"direct"}}}}
+{"type":"custom","kind":"anthropic.message_start","providerMetadata":{"anthropic":{"id":"msg_0132hQ7tpsGJhdPtEBhmKA2R","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":1040,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":1,"service_tier":"standard"}}}}
 {"type":"text-start","id":"id-1"}
 {"type":"text-delta","id":"id-1","delta":"The"}
 {"type":"text-delta","id":"id-1","delta":" current"}

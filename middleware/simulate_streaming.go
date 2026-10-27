@@ -52,10 +52,10 @@ func SimulateStreaming() Middleware {
 					idStr := strconv.Itoa(id)
 					switch part.Type {
 					case provider.ContentText:
-						if len(part.Text) > 0 {
+						if len(part.Text) > 0 || len(part.Citations) > 0 {
 							if !send(provider.StreamPart{Type: provider.PartTextStart, ID: idStr, ProviderMetadata: part.ProviderMetadata}) ||
 								!send(provider.StreamPart{Type: provider.PartTextDelta, ID: idStr, Delta: part.Text}) ||
-								!send(provider.StreamPart{Type: provider.PartTextEnd, ID: idStr}) {
+								!send(provider.StreamPart{Type: provider.PartTextEnd, ID: idStr, Citations: part.Citations}) {
 								return
 							}
 							id++

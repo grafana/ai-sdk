@@ -327,8 +327,9 @@ has returned a file, the Gateway does not fall back for that call.
 
 ## Native response values
 
-Use returned sources to show citations, and warnings to find settings the model
-did not support. See the [source guide](../../ai-gateway/docs/sources.md).
+Use returned sources and text citations to display references, and warnings to
+identify unsupported settings. See the [source guide](../../ai-gateway/docs/sources.md) for citation
+handling. Keep sensitive warning text and response details out of public logs.
 
 Response IDs and model names come from the provider and can differ from the
 model you selected. Use them to diagnose a call, not to pick the next model.

@@ -914,6 +914,24 @@ func TestUIMessageReader_InvalidPersistedPartialInput(t *testing.T) {
 	}
 }
 
+func TestUIMessageReader_InputEncoding(t *testing.T) {
+	t.Run("text deltas assemble a raw string", func(t *testing.T) {
+		message, err := AssembleUIMessage(chunks(
+			UIMessageChunk{Type: ChunkToolInputStart, ToolCallID: "c", ToolName: "patch", InputEncoding: provider.ToolInputEncodingText},
+			UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: "c", InputTextDelta: `say "hi"`},
+			UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: "c", InputTextDelta: "\n{"},
+		))
+		require.NoError(t, err)
+		part := requireToolInvocationPart(t, message, 0)
+		assert.Equal(t, provider.ToolInputEncodingText, part.InputEncoding)
+		assert.JSONEq(t, `"say \"hi\"\n{"`, string(part.Input))
+	})
+	t.Run("unknown encoding is rejected", func(t *testing.T) {
+		_, err := AssembleUIMessage(chunks(UIMessageChunk{Type: ChunkToolInputStart, ToolCallID: "c", ToolName: "patch", InputEncoding: "xml"}))
+		require.ErrorContains(t, err, "invalid tool input encoding")
+	})
+}
+
 func TestUIMessage_StreamingRawInputValidation(t *testing.T) {
 	for _, kind := range []string{"tool-lookup", "dynamic-tool"} {
 		for _, raw := range []string{`null`, `{}`, `42`, `"{\"q\":"`} {

@@ -1,0 +1,53 @@
+# Provider-executed tool calls whose results are replayed in the assistant
+# message. Bedrock Converse requires the results in user-role messages, so the
+# assistant content is split around them and the trailing result shares the
+# following user message.
+model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+messages:
+  - role: user
+    content: Add 2 and 2, then add 3 and 3.
+  - role: assistant
+    content:
+      - type: text
+        text: Running the additions.
+      - type: tool-call
+        toolCallId: call-1
+        toolName: add
+        providerExecuted: true
+        input:
+          a: 2
+          b: 2
+      - type: tool-result
+        toolCallId: call-1
+        toolName: add
+        output:
+          type: json
+          value:
+            sum: 4
+      - type: tool-call
+        toolCallId: call-2
+        toolName: add
+        providerExecuted: true
+        input:
+          a: 3
+          b: 3
+      - type: tool-result
+        toolCallId: call-2
+        toolName: add
+        output:
+          type: json
+          value:
+            sum: 6
+  - role: user
+    content: Now add those sums together. Answer with the number only and do not call any tool.
+tools:
+  add:
+    description: Add two numbers.
+    inputSchema:
+      type: object
+      properties:
+        a:
+          type: number
+        b:
+          type: number
+      required: [a, b]

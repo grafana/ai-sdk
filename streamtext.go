@@ -38,14 +38,15 @@ type StreamTextResult struct {
 	mu        sync.Mutex
 	toolTypes map[string]UserToolType
 
-	steps        []StepResult
-	totalUsage   provider.Usage
-	lastStep     *StepResult
-	allWarnings  []provider.Warning
-	provMeta     provider.ProviderMetadata
-	lastResponse ResponseMetadata
-	firstError   error
-	abortCause   error
+	steps                   []StepResult
+	initialResponseMessages []provider.Message
+	totalUsage              provider.Usage
+	lastStep                *StepResult
+	allWarnings             []provider.Warning
+	provMeta                provider.ProviderMetadata
+	lastResponse            ResponseMetadata
+	firstError              error
+	abortCause              error
 
 	outputValue any
 	outputErr   error
@@ -339,7 +340,7 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 	case StreamTextDelta:
 		return []UIMessageChunk{{Type: ChunkTextDelta, ID: p.ID, Delta: p.Text, ProviderMetadata: p.ProviderMetadata}}
 	case StreamTextEnd:
-		return []UIMessageChunk{{Type: ChunkTextEnd, ID: p.ID, ProviderMetadata: p.ProviderMetadata}}
+		return []UIMessageChunk{{Type: ChunkTextEnd, ID: p.ID, Citations: p.Citations, ProviderMetadata: p.ProviderMetadata}}
 	case StreamReasoningStart:
 		return []UIMessageChunk{{Type: ChunkReasoningStart, ID: p.ID, ProviderMetadata: p.ProviderMetadata}}
 	case StreamReasoningDelta:
@@ -348,7 +349,7 @@ func translateToChunksWithMetadata(part TextStreamPart, cfg uiMessageStreamConfi
 		return []UIMessageChunk{{Type: ChunkReasoningEnd, ID: p.ID, ProviderMetadata: p.ProviderMetadata}}
 	case StreamToolInputStart:
 		dynamic := uiToolDynamic(p.ToolName, p.Dynamic, cfg.toolTypes)
-		return []UIMessageChunk{{Type: ChunkToolInputStart, ToolCallID: p.ID, ToolName: p.ToolName, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
+		return []UIMessageChunk{{Type: ChunkToolInputStart, ToolCallID: p.ID, ToolName: p.ToolName, InputEncoding: p.InputEncoding, ProviderExecuted: p.ProviderExecuted, Dynamic: dynamic, Title: p.Title, ProviderMetadata: p.ProviderMetadata, ToolMetadata: toolMetadataFromProviderMetadata(p.ProviderMetadata)}}
 	case StreamToolInputDelta:
 		return []UIMessageChunk{{Type: ChunkToolInputDelta, ToolCallID: p.ID, InputTextDelta: p.Delta}}
 	case StreamToolInputEnd:
@@ -506,7 +507,9 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		r.emitError(err, cfg.onError)
 		return
 	}
-	responseMessages := cloneMessages(msgs[preApprovalMessageCount:])
+	r.mu.Lock()
+	r.initialResponseMessages = cloneMessages(msgs[preApprovalMessageCount:])
+	r.mu.Unlock()
 
 	// Stop conditions default
 	stopWhen := cfg.stopWhen
@@ -548,7 +551,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 				Model:            currentModel,
 				Messages:         currentMsgs,
 				InitialMessages:  initialMessages,
-				ResponseMessages: responseMessages,
+				ResponseMessages: collectResponseMessages(r.initialResponseMessages, r.steps),
 				Context:          currentRuntimeContext,
 			})
 			if err != nil {
@@ -722,8 +725,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Mid-stream cancellation: the context was canceled while reading
-		// the provider stream. Fire onAbort, and only fire onFinish if
-		// earlier steps completed (matching upstream recordedSteps semantics).
+		// the provider stream. Fire onAbort but not onFinish, matching
+		// upstream, while keeping completed steps and their usage on the result.
 		if ctx.Err() != nil {
 			if outcome.completed {
 				r.mu.Lock()
@@ -737,16 +740,8 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 					cfg.onStepFinish(OnStepFinishState{StepResult: step})
 				}
 			}
+			r.totalUsage = aggregateUsage(r.steps)
 			r.abort(ctx, cfg)
-			if len(r.steps) > 0 && cfg.onFinish != nil {
-				r.totalUsage = aggregateUsage(r.steps)
-				last := r.steps[len(r.steps)-1]
-				cfg.onFinish(OnFinishState{
-					StepResult: last,
-					Steps:      r.steps,
-					TotalUsage: r.totalUsage,
-				})
-			}
 			return
 		}
 
@@ -816,11 +811,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 			r.totalUsage = aggregateUsage(r.steps)
 
 			if cfg.onFinish != nil {
-				cfg.onFinish(OnFinishState{
-					StepResult: step,
-					Steps:      r.steps,
-					TotalUsage: r.totalUsage,
-				})
+				cfg.onFinish(r.finishState())
 			}
 
 			r.emit(StreamFinish{
@@ -831,11 +822,7 @@ func (r *StreamTextResult) run(ctx context.Context, model provider.LanguageModel
 		}
 
 		// Append tool results to messages for next step
-		stepResponseMessages := step.Response.Messages
 		msgs = appendToolResults(currentMsgs, step)
-		nextResponseMessages := make([]provider.Message, 0, len(responseMessages)+len(stepResponseMessages))
-		nextResponseMessages = append(nextResponseMessages, responseMessages...)
-		responseMessages = append(nextResponseMessages, stepResponseMessages...)
 	}
 }
 
@@ -1047,10 +1034,18 @@ loop:
 				r.callOnChunk(cfg, tsp)
 				outputTextChunk.Reset()
 			}
-			if idx, ok := responseTextIndex[part.ID]; ok && part.ProviderMetadata != nil {
-				step.responseContent[idx].ProviderOptions = providerMetadataToOptions(part.ProviderMetadata)
+			if idx, ok := responseTextIndex[part.ID]; ok {
+				if part.ProviderMetadata != nil {
+					step.responseContent[idx].ProviderOptions = providerMetadataToOptions(part.ProviderMetadata)
+				}
+				if part.Citations != nil {
+					if step.responseCitations == nil {
+						step.responseCitations = make(map[int][]provider.Citation)
+					}
+					step.responseCitations[idx] = cloneCitations(part.Citations)
+				}
 			}
-			tsp := StreamTextEnd{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
+			tsp := StreamTextEnd{ID: part.ID, Citations: part.Citations, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
 
@@ -1112,7 +1107,7 @@ loop:
 				toolTitleByID[part.ID] = part.Title
 			}
 			tsp := StreamToolInputStart{
-				ID: part.ID, ToolName: part.ToolName,
+				ID: part.ID, ToolName: part.ToolName, InputEncoding: part.InputEncoding,
 				ProviderExecuted: part.ProviderExecuted, Dynamic: isInputStartDynamic(part.ToolName, part.Dynamic, cfg.tools),
 				Title: part.Title, ProviderMetadata: part.ProviderMetadata,
 			}
@@ -2600,44 +2595,32 @@ func (r *StreamTextResult) Reasoning() []ReasoningOutput {
 	return nil
 }
 
-// ToolCalls returns the tool calls from the last step.
-// Blocks until the stream completes.
+// ToolCalls returns the tool calls from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) ToolCalls() []ToolCall {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.ToolCalls
-	}
-	return nil
+	return r.toolCalls()
 }
 
-// ToolResults returns the tool results from the last step.
-// Blocks until the stream completes.
+// ToolResults returns the tool results from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) ToolResults() []ToolResult {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.ToolResults
-	}
-	return nil
+	return r.toolResults()
 }
 
-// Files returns the generated files from the last step.
-// Blocks until the stream completes.
+// Files returns the generated files from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) Files() []GeneratedFile {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.Files
-	}
-	return nil
+	return r.files()
 }
 
-// Sources returns the sources from the last step.
-// Blocks until the stream completes.
+// Sources returns the sources from all recorded steps in step order.
+// The returned slice is newly allocated. Blocks until the stream completes.
 func (r *StreamTextResult) Sources() []Source {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.Sources
-	}
-	return nil
+	return r.sources()
 }
 
 // FinishReason returns the finish reason from the last step.
@@ -2683,14 +2666,64 @@ func (r *StreamTextResult) Warnings() []provider.Warning {
 	return r.allWarnings
 }
 
-// Content returns the structured content from the last step.
-// Blocks until the stream completes.
+// Content returns the structured content from all recorded steps in step
+// order. The returned slice is newly allocated. Blocks until the stream
+// completes.
 func (r *StreamTextResult) Content() []ContentPart {
 	r.Wait()
-	if r.lastStep != nil {
-		return r.lastStep.Content
+	return r.content()
+}
+
+// ResponseMessages returns the full generated message history: tool messages
+// produced by resolving approval responses before the first model call,
+// followed by every recorded step's Response.Messages in step order. Unlike
+// Response().Messages, which holds only the last step's messages, the result
+// can be appended to the input messages to continue the conversation. The
+// returned slice is newly allocated. Blocks until the stream completes.
+func (r *StreamTextResult) ResponseMessages() []provider.Message {
+	r.Wait()
+	return r.responseMessages()
+}
+
+func (r *StreamTextResult) content() []ContentPart {
+	return flattenSteps(r.steps, func(step StepResult) []ContentPart { return step.Content })
+}
+
+func (r *StreamTextResult) toolCalls() []ToolCall {
+	return flattenSteps(r.steps, func(step StepResult) []ToolCall { return step.ToolCalls })
+}
+
+func (r *StreamTextResult) toolResults() []ToolResult {
+	return flattenSteps(r.steps, func(step StepResult) []ToolResult { return step.ToolResults })
+}
+
+func (r *StreamTextResult) files() []GeneratedFile {
+	return flattenSteps(r.steps, func(step StepResult) []GeneratedFile { return step.Files })
+}
+
+func (r *StreamTextResult) sources() []Source {
+	return flattenSteps(r.steps, func(step StepResult) []Source { return step.Sources })
+}
+
+func (r *StreamTextResult) responseMessages() []provider.Message {
+	return collectResponseMessages(r.initialResponseMessages, r.steps)
+}
+
+func (r *StreamTextResult) finishState() OnFinishState {
+	projected := r.steps[len(r.steps)-1]
+	projected.Content = r.content()
+	projected.ToolCalls = r.toolCalls()
+	projected.ToolResults = r.toolResults()
+	projected.Files = r.files()
+	projected.Sources = r.sources()
+	projected.Warnings = slices.Clone(r.allWarnings)
+	projected.Usage = r.totalUsage
+	return OnFinishState{
+		StepResult:       projected,
+		Steps:            r.steps,
+		TotalUsage:       r.totalUsage,
+		ResponseMessages: r.responseMessages(),
 	}
-	return nil
 }
 
 // Response returns the response metadata from the last step.
@@ -2771,6 +2804,30 @@ func (r *StreamTextResult) abortError() error {
 }
 
 // Helpers
+
+func flattenSteps[T any](steps []StepResult, pick func(StepResult) []T) []T {
+	count := 0
+	for _, step := range steps {
+		count += len(pick(step))
+	}
+	if count == 0 {
+		return nil
+	}
+	flattened := make([]T, 0, count)
+	for _, step := range steps {
+		flattened = append(flattened, pick(step)...)
+	}
+	return flattened
+}
+
+func collectResponseMessages(initial []provider.Message, steps []StepResult) []provider.Message {
+	var messages []provider.Message
+	messages = append(messages, initial...)
+	for _, step := range steps {
+		messages = append(messages, step.Response.Messages...)
+	}
+	return messages
+}
 
 func filterProviderTools(tools []provider.Tool, activeNames []string) []provider.Tool {
 	nameSet := make(map[string]bool, len(activeNames))
@@ -3191,10 +3248,10 @@ func buildRecordedContent(step StepResult) []ContentPart {
 	seenCalls := make(map[string]bool, len(step.ToolCalls))
 	seenResults := make(map[string]int, len(step.ToolResults))
 	seenRequests := make(map[string]bool, len(step.ToolApprovalRequests))
-	for _, recorded := range step.responseContent {
+	for index, recorded := range step.responseContent {
 		switch recorded.Type {
 		case provider.ContentPartTypeText:
-			parts = append(parts, TextContent{Text: recorded.Text, ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions)})
+			parts = append(parts, TextContent{Text: recorded.Text, Citations: cloneCitations(step.responseCitations[index]), ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions)})
 		case provider.ContentPartTypeReasoning:
 			parts = append(parts, ReasoningContent{Text: recorded.Text, ProviderMetadata: optionsToProviderMetadata(recorded.ProviderOptions)})
 		case provider.ContentPartTypeFile:

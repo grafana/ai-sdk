@@ -14,6 +14,13 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 	mcpToolCalls := make(map[string]mcpToolCallInfo)
 
 	var isJsonResponseFromTool bool
+	hasWebSearchResults := false
+	for _, block := range msg.Content {
+		if block.Type == "web_search_tool_result" && len(block.AsWebSearchToolResult().Content.OfBetaWebSearchResultBlockArray) > 0 {
+			hasWebSearchResults = true
+			break
+		}
+	}
 
 	for _, block := range msg.Content {
 		callerMetadata, err := marshalCallerMetadata(block.Caller.Type, block.Caller.ToolID)
@@ -41,22 +48,24 @@ func convertResponse(msg *anthropic.BetaMessage, mapping toolNameMapping, usesJs
 			})
 		case "text":
 			if !usesJsonResponseTool {
-				var webSearchCitations []json.RawMessage
+				var rawCitations []json.RawMessage
 				for _, citation := range block.Citations {
-					if _, ok := citation.AsAny().(anthropic.BetaCitationsWebSearchResultLocation); ok {
-						webSearchCitations = append(webSearchCitations, json.RawMessage(citation.RawJSON()))
-					}
+					rawCitations = append(rawCitations, json.RawMessage(citation.RawJSON()))
 				}
-				metadata, err := marshalWebSearchCitationMetadata(webSearchCitations)
+				citations, metadata, err := textCitations(rawCitations, citDocs)
 				if err != nil {
 					return nil, err
 				}
 				content = append(content, provider.GenerateContentPart{
 					Type:             provider.ContentText,
 					Text:             block.Text,
+					Citations:        citations,
 					ProviderMetadata: metadata,
 				})
 				for _, cit := range block.Citations {
+					if _, ok := cit.AsAny().(anthropic.BetaCitationsWebSearchResultLocation); ok && hasWebSearchResults {
+						continue
+					}
 					src, err := createCitationSource(cit.AsAny(), citDocs, generateID)
 					if err != nil {
 						return nil, fmt.Errorf("creating citation source: %w", err)
