@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/providers/grafana
 go 1.27.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.2
+	github.com/grafana/ai-sdk v0.1.0-alpha.3
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/stretchr/testify v1.12.1
 )

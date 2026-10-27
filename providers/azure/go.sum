@@ -40,10 +40,10 @@ github.com/googleapis/enterprise-certificate-proxy v0.3.24 h1:G9iCJIY+AYVmUskKdj
 github.com/googleapis/enterprise-certificate-proxy v0.3.24/go.mod h1:hEjCmnoakQzv5ImLUp6alkY7XgLlNoAxwTXmhHHNIsI=
 github.com/googleapis/gax-go/v2 v2.26.2 h1:ydkmNXxj7bEmmeK5AihkKnWxyOyBR9TDebvp5L5izk8=
 github.com/googleapis/gax-go/v2 v2.26.2/go.mod h1:sMKqnMesnKH+3wiRJROcttA+cJoZoGbZl1vDQ8XYtGk=
-github.com/grafana/ai-sdk v0.1.0-alpha.2 h1:jWONlSI4Q+i6gqEvGZ6yOv77071ecTai8l9utjMN2E0=
-github.com/grafana/ai-sdk v0.1.0-alpha.2/go.mod h1:2D9ae2gO9kFiNY21V+4g3/+dQtVIkDXvY7dlKr8Cn1Y=
-github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260825181821-1f7f7ef4a4c8 h1:1ilNzkrhrpXgshx3NjKIZmBLtaA4UTv8Yn/SIp+HZpk=
-github.com/grafana/ai-sdk/providers/anthropic v0.0.0-20260825181821-1f7f7ef4a4c8/go.mod h1:oPr4AxlYjk49sbciMnT7lYG6sJvuLurx0xwyXYfdo9M=
+github.com/grafana/ai-sdk v0.1.0-alpha.3 h1:eQ3U/xxETG3SICyW19KUdBrDhEOInJ0Wxyz/bnjopuo=
+github.com/grafana/ai-sdk v0.1.0-alpha.3/go.mod h1:2D9ae2gO9kFiNY21V+4g3/+dQtVIkDXvY7dlKr8Cn1Y=
+github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.1 h1:11j2UwSiSz5Kgrmnq1x9tHNufzdyzxBqxXowaxQwInM=
+github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.1/go.mod h1:z2zV+PXbvqa9VDm6if9kSpspamMLek2DYcFmIK/HZ3g=
 github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8iyZjg=
 github.com/invopop/jsonschema v0.14.0/go.mod h1:ygm6C2EaVNMBDPpaPlnOA2pFAxBnxGjFlMZABxm9n2I=
 github.com/pb33f/go-yaml v0.1.1 h1:yWGmhVdwzionRnSc/hEJwcfq6PaZL2QdYzyReXBbX7Q=
@@ -52,6 +52,8 @@ github.com/pb33f/ordered-map/v2 v2.3.2 h1:wDyaZ2Pv9QLh64X4utCeD5Zoi9nIv2aW3lwv17
 github.com/pb33f/ordered-map/v2 v2.3.2/go.mod h1:1OhFrXu3OYw3kM+FXF+Ug3ugmmZ9LE8z0JfQMLvtV0w=
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 h1:GFCKgmp0tecUJ0sJuv4pzYCqS9+RGSn52M3FUwPs+uo=
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10/go.mod h1:t/avpk3KcrXxUnYOhZhMXJlSEyie6gQbtLq5NM3loB8=
+github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 h1:1EYB5IzjZawrrnELUi78f9fPu57HuXjmddZPjrls/28=
+github.com/santhosh-tekuri/jsonschema/v6 v6.0.3/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
 github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 h1:uOfcYT+3QungH6tIGSVCR/Y3KJmgJiHcojJbMTPDZAI=
 github.com/standard-webhooks/standard-webhooks/libraries v0.0.1/go.mod h1:L1MQhA6x4dn9r007T033lsaZMv9EmBAdXyU/+EF40fo=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
