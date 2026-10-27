@@ -43,8 +43,8 @@
 
 ## 7. Integration
 
-- [ ] 7.1 Run an end-to-end local rehearsal on a scratch branch: prepare a combined candidate for all pending libraries, run readiness, authorization (read-only) and a dry publication against a file proxy, and verify every generated checksum matches rebuilt archives and an external consumer builds
-- [ ] 7.2 Run `mise run check`, `mise run test-module-policy`, `mise run test-ci-workflow` and `npm test --prefix release/tooling`, and verify all pass
+- [x] 7.1 Run an end-to-end local rehearsal on a scratch branch: prepare a combined candidate for all pending libraries, run readiness, authorization (read-only) and a dry publication against a file proxy, and verify every generated checksum matches rebuilt archives and an external consumer builds
+- [x] 7.2 Run `mise run check`, `mise run test-module-policy`, `mise run test-ci-workflow` and `npm test --prefix release/tooling`, and verify all pass
 
 ## Workflow follow-up
 
