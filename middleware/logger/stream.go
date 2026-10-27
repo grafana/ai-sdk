@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/internal/streamusage"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
@@ -70,6 +71,7 @@ func (l *modelLogger) runStreamTee(ctx context.Context, input streamTeeInput) {
 
 	summary := streamSummary{}
 	cancelled := false
+	observing := true
 
 streamLoop:
 	for {
@@ -84,11 +86,7 @@ streamLoop:
 				cancelled = ctx.Err() != nil
 				break streamLoop
 			}
-			observedAt := l.opts.clock()
-			summary.Observe(part, input.started, observedAt)
-			if l.opts.logStreamParts {
-				l.logStreamPart(ctx, input.callID, input.model, part, summary.total)
-			}
+			observing = l.observeStreamPart(ctx, input, &summary, part, observing)
 
 			select {
 			case input.tee <- part:
@@ -103,7 +101,32 @@ streamLoop:
 			break streamLoop
 		}
 	}
+	l.logStreamEnd(ctx, input, &summary, cancelled)
+}
 
+// observeStreamPart adds part to the summary, then, while observing, times
+// and logs it through the configured clock and handler. It reports false when
+// that panicked. The caller keeps forwarding and passes the result back, so
+// later parts still reach the summary and the stream's outcome stays correct.
+func (l *modelLogger) observeStreamPart(ctx context.Context, input streamTeeInput, summary *streamSummary, part provider.StreamPart, observing bool) (ok bool) {
+	defer streamrecover.Recover(func() { ok = false })
+	summary.observe(part)
+	if !observing {
+		return false
+	}
+	observedAt := l.opts.clock()
+	if summary.firstContentLatency == nil && isFirstContentPart(part) {
+		latency := observedAt.Sub(input.started)
+		summary.firstContentLatency = &latency
+	}
+	if l.opts.logStreamParts {
+		l.logStreamPart(ctx, input.callID, input.model, part, summary.total)
+	}
+	return true
+}
+
+func (l *modelLogger) logStreamEnd(ctx context.Context, input streamTeeInput, summary *streamSummary, cancelled bool) {
+	defer streamrecover.Recover(func() {})
 	duration := l.opts.clock().Sub(input.started)
 	outcome := outcomeSuccess
 	if summary.firstErrSet {
@@ -217,14 +240,6 @@ type streamSummary struct {
 	firstContentLatency *time.Duration
 	firstErr            *provider.APICallError
 	firstErrSet         bool
-}
-
-func (s *streamSummary) Observe(part provider.StreamPart, started, observedAt time.Time) {
-	s.observe(part)
-	if s.firstContentLatency == nil && isFirstContentPart(part) {
-		latency := observedAt.Sub(started)
-		s.firstContentLatency = &latency
-	}
 }
 
 func (s *streamSummary) ObserveDrained(part provider.StreamPart) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/grafana/ai-sdk/internal/streamrecover"
 	"github.com/grafana/ai-sdk/internal/streamusage"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -106,6 +107,7 @@ func drainStreamUntil(upstream <-chan provider.StreamPart, deadline time.Time) {
 }
 
 func (i *instrumentation) finalizeStream(ctx context.Context, requested identity, obs *streamObservation, start time.Time, canceled bool) {
+	defer streamrecover.Recover(func() {})
 	finalID := i.streamFinalIdentity(requested, obs.responseIdentity)
 	out := outcome{status: statusSuccess, errorType: errorTypeNone, statusCode: statusCodeNone, finishReason: obs.finishReason}
 	if canceled {
