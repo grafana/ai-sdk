@@ -189,7 +189,7 @@ Grouped parallel function results SHALL retain wrapper call_id, child index orde
 
 ### Requirement: Reasoning conversion
 
-Assistant reasoning SHALL become reasoning items with encrypted_content and summary, or item_reference when store=true with an ID. Active conversation/previousResponseId SHALL skip reasoning with IDs. Reasoning parts of one assistant message sharing an item ID SHALL produce at most one input item. Missing IDs SHALL fall back to encrypted_content; store=false reasoning without encrypted content SHALL be filtered with a warning.
+Assistant reasoning SHALL become reasoning items with encrypted_content and summary, or item_reference when store=true with an ID. Active conversation/previousResponseId SHALL skip reasoning with IDs. Reasoning parts of one assistant message sharing an item ID SHALL produce at most one input item. Missing IDs SHALL fall back to encrypted_content; store=false reasoning items without encrypted content SHALL be filtered from the request with one warning.
 
 #### Scenario: Stored reasoning becomes item reference
 - **WHEN** `store` is true and a reasoning part carries an item id
@@ -210,7 +210,8 @@ Assistant reasoning SHALL become reasoning items with encrypted_content and summ
 
 #### Scenario: Non-stored reasoning without encrypted content is dropped
 - **WHEN** `store` is false and no reasoning part for an item supplies encrypted content
-- **THEN** the reasoning item is omitted from the request and an `other` warning is emitted
+- **THEN** the reasoning item is omitted from the request
+- **AND** a single `other` warning is emitted for the request, however many reasoning items or assistant messages are omitted
 
 ### Requirement: Request parameters and structured output
 The provider SHALL map `temperature`, `topP`, and `maxOutputTokens` to the

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"mime"
-	"slices"
 	"strings"
 
 	"github.com/grafana/ai-sdk/internal/mediatype"
@@ -190,7 +189,7 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 			}
 			if po.ItemID == "" {
 				if po.ReasoningEncryptedContent == nil {
-					warnings = append(warnings, omittedReasoningWarning)
+					warnings = append(warnings, nonOpenAIReasoningWarning)
 					continue
 				}
 				items = append(items, reasoningItem(po.ItemID, po.ReasoningEncryptedContent, part.Text))
@@ -238,18 +237,10 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 		}
 	}
 
-	items = slices.DeleteFunc(items, func(item responses.ResponseInputItemUnionParam) bool {
-		omit := item.OfReasoning != nil && !item.OfReasoning.EncryptedContent.Valid()
-		if omit {
-			warnings = append(warnings, omittedReasoningWarning)
-		}
-		return omit
-	})
-
 	return items, warnings, nil
 }
 
-var omittedReasoningWarning = provider.Warning{
+var nonOpenAIReasoningWarning = provider.Warning{
 	Type:    provider.WarnOther,
 	Feature: "reasoning",
 	Message: "non-OpenAI reasoning parts are not supported and are omitted",
