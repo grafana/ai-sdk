@@ -217,19 +217,28 @@ when no schema is provided.
 
 ### Requirement: GPT-6 Responses capability and reasoning-effort validation
 
-Anchored gpt-6 and later SHALL support configuration updates and async calling. Request effort SHALL resolve via existing provider-option/core precedence; only low/medium/high/xhigh/max SHALL be sent, others omitted with unsupported reasoningEffort warning listing supported values. Earlier/non-GPT/unknown models SHALL retain effort behavior; forced reasoning alone SHALL NOT enable GPT-6 capabilities.
+Anchored gpt-6 and later SHALL support configuration updates and async calling. Request effort SHALL resolve via existing provider-option/core precedence; only low/medium/high/xhigh/max SHALL be sent, plus none for exact `gpt-6-sol`/`gpt-6-luna`; others SHALL be omitted with unsupported reasoningEffort warning listing supported values. Earlier/non-GPT/unknown models SHALL retain effort behavior; forced reasoning alone SHALL NOT enable GPT-6 capabilities.
 
 #### Scenario: Supported GPT-6 effort from provider option
 - **WHEN** a `gpt-6-astra` generate or stream request sets `reasoningEffort` to `max`
 - **THEN** the request uses reasoning effort `max` without a capability warning
 
 #### Scenario: Unsupported GPT-6 effort from provider option or core fallback
-- **WHEN** a GPT-6 or later generate or stream request resolves effort `none` or `minimal` from either the OpenAI provider option or the existing core reasoning setting
-- **THEN** the request omits reasoning effort and emits an `unsupported` `reasoningEffort` warning naming `low, medium, high, xhigh, max`
+- **WHEN** a GPT-6 or later generate or stream request resolves effort `minimal`, or resolves `none` on a model other than `gpt-6-sol` or `gpt-6-luna`, from either the OpenAI provider option or the existing core reasoning setting
+- **THEN** the request omits reasoning effort and emits an `unsupported` `reasoningEffort` warning naming the model's supported efforts: `low, medium, high, xhigh, max`, prefixed with `none` for `gpt-6-sol` and `gpt-6-luna`
 - **AND** it does not mutate the supplied options
 
+#### Scenario: Only exact Sol and Luna IDs accept effort none
+- **WHEN** a versioned, fast or otherwise suffixed Sol/Luna ID such as `gpt-6.1-sol` or `gpt-6-luna-fast`, or a Mantle-prefixed `openai.gpt-6-sol`, resolves effort `none`
+- **THEN** the direct OpenAI IDs follow the GPT-6 unsupported-effort behavior
+- **AND** the Mantle ID sends effort `none` while omitting `temperature` and `top_p` with `unsupported` warnings
+
+#### Scenario: GPT-6 Sol and Luna retain non-reasoning controls
+- **WHEN** a `gpt-6-sol` or `gpt-6-luna` request under the `openai` or `azure` namespace resolves effort `none` and sets temperature, topP and logprobs
+- **THEN** the request sends reasoning effort `none`, `temperature`, `top_p`, `top_logprobs` and the `message.output_text.logprobs` include without warnings
+
 #### Scenario: GPT-6 omits unsupported logprobs
-- **WHEN** a GPT-6 or later reasoning request asks for top logprobs or includes `message.output_text.logprobs`
+- **WHEN** a GPT-6 or later reasoning request asks for top logprobs or includes `message.output_text.logprobs`, unless its effective effort is `none` on a model that supports non-reasoning parameters
 - **THEN** both settings are omitted and an `unsupported` `logprobs` warning is emitted
 
 #### Scenario: GPT-6 omits legacy prompt-cache retention
@@ -243,7 +252,7 @@ Anchored gpt-6 and later SHALL support configuration updates and async calling. 
 
 ### Requirement: OpenAI reasoning configuration update and explicit compaction trigger
 
-The provider SHALL support reasoningEffortUpdate restricted to low/medium/high/xhigh/max and optional compactionTrigger. Eligible GPT-6+ standard-mode updates without automatic context management/truncation SHALL prepend {"type":"configuration_update","reasoning":{"effort":<update>}} before all converted prompt items in the current request. Neither control SHALL mutate caller messages, change request effort, persist as conversation content or alter defaults.
+The provider SHALL accept reasoningEffortUpdate none/low/medium/high/xhigh/max (others invalid) and optional compactionTrigger. Eligible GPT-6+ standard-mode updates without automatic context management/truncation and with a model-supported effort SHALL prepend {"type":"configuration_update","reasoning":{"effort":<update>}} before converted prompt items. Request-level controls SHALL NOT mutate caller messages, change request effort, persist as conversation content or alter defaults.
 
 #### Scenario: Independent update with previous response
 - **WHEN** a `gpt-6-astra` request has `reasoningEffort: low`, `reasoningEffortUpdate: high`, `previousResponseId`, and a user prompt
@@ -252,6 +261,11 @@ The provider SHALL support reasoningEffortUpdate restricted to low/medium/high/x
 #### Scenario: Unsupported configuration update
 - **WHEN** a GPT-5.6 request specifies `reasoningEffortUpdate: high`
 - **THEN** no configuration update is sent and an `unsupported` `reasoningEffortUpdate` warning is returned
+
+#### Scenario: Update effort unsupported by the model
+- **WHEN** a `gpt-6-astra` request specifies `reasoningEffortUpdate: none`
+- **THEN** no request-level configuration update is sent and an `unsupported` `reasoningEffortUpdate` warning lists the model's supported efforts
+- **AND** the same update on `gpt-6-sol` or `gpt-6-luna` is prepended
 
 #### Scenario: Incompatible update combinations
 - **WHEN** a GPT-6 request specifies `reasoningEffortUpdate` together with `reasoningMode: pro`, a present automatic `contextManagement` value, or `truncation: auto`
@@ -265,6 +279,26 @@ The provider SHALL support reasoningEffortUpdate restricted to low/medium/high/x
 #### Scenario: Disabled trigger retains existing request
 - **WHEN** `compactionTrigger` is absent or false
 - **THEN** the request contains no compaction-trigger item, including on pre-GPT-6 models
+
+### Requirement: Message-level reasoning effort updates
+
+A system message whose part options carry reasoningEffortUpdate SHALL emit a configuration update at its position regardless of systemMessageMode. Non-empty content, unsupported configuration or a model-unsupported effort SHALL fail before sending; invalid values SHALL fail as invalid. A request-level update matching the first item SHALL NOT be prepended. Adjacent updates after conversion SHALL fail.
+
+#### Scenario: Positioned updates are retained
+- **WHEN** a `gpt-6-astra` prompt contains empty system messages with updates `high` and `low` between user turns
+- **THEN** the input carries both configuration updates at those positions and the request effort is unchanged
+
+#### Scenario: Unsupported positioned update
+- **WHEN** a positioned update has system text, targets a model without configuration-update support, conflicts with pro mode, context management or automatic truncation, or uses `none` on `gpt-6-astra`
+- **THEN** the request fails with `provider.ErrUnsupportedFunctionality` and no HTTP request is sent
+
+#### Scenario: Adjacent updates
+- **WHEN** updates become adjacent through the prompt, request-level prepending, system-text removal or stored-reasoning filtering
+- **THEN** the request fails with `provider.ErrUnsupportedFunctionality`
+
+#### Scenario: Azure message options
+- **WHEN** an Azure request system message has `azure` update options, only `openai` options, or an explicit empty `azure` object
+- **THEN** the Azure value wins, the OpenAI value is the fallback, and the explicit empty object leaves an ordinary empty system message
 
 ### Requirement: Capability-gated async tools and round-trip metadata
 
@@ -318,11 +352,20 @@ Before HTTP, the provider SHALL reject execution-denied programmatic function re
 
 ### Requirement: Model capability gating
 
-Capabilities SHALL use upstream getOpenAILanguageModelCapabilities prefix matching: isReasoningModel, systemMessageMode, supportsFlexProcessing, supportsPriorityProcessing, supportsNonReasoningParameters. Reasoning models SHALL strip temperature/topP with unsupported warnings unless effort=none and non-reasoning parameters are supported. Non-reasoning models SHALL warn on reasoningEffort/reasoningSummary. Unsupported serviceTier flex/priority SHALL be stripped with warning.
+Capabilities SHALL follow upstream getOpenAILanguageModelCapabilities model-ID matching. Reasoning models SHALL strip temperature/topP with unsupported warnings unless effective effort (last input update, else request effort) is none and non-reasoning parameters are supported. Non-reasoning models SHALL warn on reasoningEffort/reasoningSummary. Unsupported serviceTier flex/priority SHALL be stripped with warning.
 
 #### Scenario: Temperature stripped on reasoning model
 - **WHEN** the model is a reasoning model and `temperature` is set
 - **THEN** the request omits `temperature` and emits an `unsupported` warning
+
+#### Scenario: Non-reasoning parameter support
+- **WHEN** capabilities are resolved for `gpt-5.1` and later GPT-5 minors, exact `gpt-6-sol`/`gpt-6-luna`, other GPT-6 IDs, `gpt-5`, and Mantle-prefixed IDs
+- **THEN** only the GPT-5.1+ and exact Sol/Luna IDs support non-reasoning parameters
+
+#### Scenario: Positive configuration update restricts sampling
+- **WHEN** a `gpt-6-sol` request sets reasoning effort `none`, a positive `reasoningEffortUpdate`, temperature and topP
+- **THEN** the request prepends the configuration update, keeps reasoning effort `none`, omits `temperature` and `top_p`, and emits `unsupported` warnings for them
+- **AND** a positive request effort with a `none` update retains `temperature` and `top_p` without warnings
 
 #### Scenario: Flex tier unsupported
 - **WHEN** `serviceTier == flex` on a model that does not support flex processing
