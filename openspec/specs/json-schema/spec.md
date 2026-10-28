@@ -85,6 +85,16 @@ The system SHALL provide a `CompileSchema(schema json.RawMessage) (*CompiledSche
 - **WHEN** multiple goroutines call `Validate` on the same `CompiledSchema` concurrently
 - **THEN** all calls SHALL produce correct results without data races
 
+#### Scenario: Exact JSON number validation
+
+- **WHEN** JSON numbers differ beyond float64 precision or range
+- **THEN** validation SHALL compare their original decimal values without float64 rounding; conversion to a caller's Go output type remains a separate step.
+
+#### Scenario: Self-contained compilation
+
+- **WHEN** `CompileSelfContainedSchema` compiles an untrusted schema
+- **THEN** local references and bundled standard meta-schemas SHALL resolve, while external file and URL loading SHALL fail; `CompileSchema` SHALL retain existing file-reference support.
+
 ### Requirement: Schema loading from files
 
 The `schema` package SHALL support loading JSON Schema from files via `SchemaFromFile(path string) (Schema, error)`. The returned `Schema` SHALL be usable for `output.Object[T]()`, `aisdk.Tool` fields, and validation.
