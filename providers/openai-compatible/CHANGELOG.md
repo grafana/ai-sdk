@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/openai-compatible/v0.1.0-alpha.1...providers/openai-compatible/v0.1.0-alpha.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* **ai-gateway:** contain panics in stream worker goroutines ([#471](https://github.com/grafana/ai-sdk/issues/471)) ([e74f87b](https://github.com/grafana/ai-sdk/commit/e74f87bcf30f2a9fccdc900f5d4d6ecdb06c8ec6)), refs [#419](https://github.com/grafana/ai-sdk/issues/419)
+
 ## 0.1.0-alpha.1 (2026-10-26)
 
 
