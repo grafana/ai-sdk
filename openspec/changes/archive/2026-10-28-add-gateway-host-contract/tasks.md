@@ -33,12 +33,12 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
   - concurrent calls on one runtime see only their own translator.
 
   Verify with `go test -race ./internal/execution/...`.
-- [x] 5.3 Wrap every configured candidate in `service/catalog.go`, single-candidate models included, and every BYOK account in `byok/model.go`, as native → `nativeoptions.Model` → `Translate`. Remove BYOK's outer Anthropic wrapper. Give Gateway-built fallback chains a decider that stops on `ErrTranslation`. Add service tests with fake native servers:
+- [x] 5.3 Wrap every configured candidate in `service/catalog.go`, single-candidate models included, and every BYOK account in `byok/model.go`, as native → `nativeoptions.Model` → `Translate`. Keep BYOK's outer Anthropic validation so a refused request makes no account attempt. Give Gateway-built fallback chains a decider that stops on `ErrTranslation`. Add service tests with fake native servers:
   - a heterogeneous Anthropic→OpenAI chain where each request carries only its own translation;
   - BYOK accounts translated per attempt;
   - a panicking translator and an injected protected header on the first candidate, with zero provider requests and no second attempt;
   - translated Anthropic options accepted and refused by native validation on configured and BYOK routes;
-  - BYOK Anthropic validation failing every account with zero native I/O and the unchanged document.
+  - BYOK Anthropic validation refusing the request before any account attempt, and refusing translated options on each account, with zero native I/O and the unchanged document.
 
   Verify with `go test -race ./cmd/grafana-ai-gateway/internal/service/... ./cmd/grafana-ai-gateway/internal/byok/...`.
 - [x] 5.4 Document `Translator` and the wrapping order in the `execution` godoc, add the "option translator; per-attempt translation" row and reword "Adapter; translator" in the glossary, and add the translation step to the architecture walkthrough. Verify with `mise run lint-docs`.

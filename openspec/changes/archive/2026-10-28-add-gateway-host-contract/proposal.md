@@ -24,7 +24,7 @@ After #481, every adapter shares the execution runtime. But adding a second adap
   - translated options are re-checked by host policy;
   - a panicking translator, or one whose output fails host policy, fails that attempt as internal, does not fall back, and makes zero provider requests;
   - with no translator, options pass through unchanged;
-  - BYOK's Anthropic option validation moves from the fallback wrapper onto each account candidate.
+  - BYOK's Anthropic option validation also runs on each account candidate, after translation. The request-level check before fallback stays, so a refused request still makes no account attempt.
 
   This replaces adapter-specific catalog wrappers such as #248's Chat defaults.
 - **Test adapter on a route.** The minimal adapter from #481 becomes a test-only HTTP adapter. Tests register it on an extra route, where it gets access refusal in its own format, its own label, the shared runtime and translation.
@@ -45,7 +45,7 @@ None.
 
 - `gateway-plugin-host`: route-table composition checked against the manifest, closed host-error categories, host-owned discovery listing with adapter projection, test-adapter composition evidence and the adapter-contract godoc.
 - `gateway-execution-runtime`: one access-aware selector per runtime, per-attempt native option translation with a host-policy re-check, and the test-only adapter served over HTTP.
-- `gateway-request-byok`: Anthropic option validation runs on each account candidate. A refused control still makes no native I/O, but every account records a failed attempt.
+- `gateway-request-byok`: Anthropic option validation also runs on each account candidate after translation. A refused request still fails before any account attempt, with no overview.
 - `providerwire-v4-unary-runtime`: the host error writer implements the host contract's categories, without the removed authentication category.
 
 ## Impact
@@ -58,7 +58,7 @@ None.
   - the test adapter moves from `execution_test` to a test-only package.
 - **Go API:** `v4.HostErrorWriter`, `v4.HostErrorCategory` and `HostErrorAuthentication` change or are removed. `execution.Runtime.Call` gains an optional translator. Nothing outside the `ai-gateway` module consumes them.
 - **Root module:** `fallback` exports its default decider, so Gateway chains can stop on translation failures (design D5). That is an additive Go extension with no upstream counterpart.
-- **Wire:** no document changes, and the configured-discovery and host-error documents stay byte-identical. One BYOK change: an Anthropic request that native validation refuses now records a failed attempt for every account instead of none. Its document is unchanged, and BYOK attempts are not published.
+- **Wire:** no document changes, and the configured-discovery and host-error documents stay byte-identical. A BYOK Anthropic request that native validation refuses still fails before any account attempt, with the same document and no overview.
 - **Parity:** host composition and option translation are Gateway extensions, with no counterpart in `@ai-sdk/gateway` at the pinned version in `test/conformance/upstream.yaml`. Fixtures, recordings and `knownGaps` are unchanged.
 - **Delivery:** branch `nrbrd/gateway-host-contract`, based on `nrbrd/gateway-execution-runtime` (#555, open). Draft PR title: `refactor(ai-gateway): register adapters through a host contract`.
 - **Out of scope:** real adapters (#248, #427), new manifest routes, lifecycle validation (#483), inbound credential translation for native SDKs, and publishing BYOK overviews (#420).

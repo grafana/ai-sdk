@@ -92,7 +92,7 @@ Flow:
 - Values inside those copies, and behind pointer fields, are shared with the caller and other attempts, so translators must replace them rather than mutate them. This is documented on `Translator`.
 - A panic or a policy refusal returns `ErrTranslation`, which never carries values. `ClassifyProvider` checks it first and returns internal. A translator's own error is returned as-is.
 
-Wrapping order for every candidate is native → `nativeoptions.Model` (when the type validates) → `Translate` → fallback. Single-candidate configured models are wrapped too. In `byok.New`, each account is wrapped in `nativeoptions.Model` and then `Translate`, and the outer Anthropic validation wrapper is removed.
+Wrapping order for every candidate is native → `nativeoptions.Model` (when the type validates) → `Translate` → fallback. Single-candidate configured models are wrapped too. In `byok.New`, each account is wrapped in `nativeoptions.Model` and then `Translate`. The outer Anthropic validation around the chain stays, so a request refused before translation makes no account attempt and publishes no overview, as #579 specifies.
 
 Stopping fallback on `ErrTranslation` requires a decider that honors it. The root module exports `fallback.DefaultDecider`. Gateway chains use `WithDecider` to stop on `ErrTranslation` and otherwise delegate to the default. The cost is an additive root API with a test, and no behavior change.
 - *Alternative: a Gateway decider that copies the default rules.* Rejected: it duplicates the context-window heuristic, which would drift.
@@ -114,7 +114,7 @@ Stopping fallback on `ErrTranslation` requires a decider that honors it. The roo
 
 ## Risks / Trade-offs
 
-- [BYOK Anthropic validation now fails each account in turn, because the unsupported-request error is retryable] → There is still zero native I/O and the same document. Attempts are captured but not published (#420). This is recorded in the `gateway-request-byok` delta.
+- [BYOK Anthropic options are validated twice: once on the request and once per account after translation] → The check is cheap and makes no I/O. Translated options that fail per account publish failed attempts, because those attempts are target-specific.
 - [A translator can be slow or ignore cancellation] → It runs on the request goroutine under the request context, like the selector. The platform deadline ends the caller's request.
 - [Translators that mutate nested option values leak between attempts] → The contract is documented, and the concurrency and heterogeneous-chain tests use translators that write new values.
 - [The root `fallback` export rides on a `refactor` PR title, which triggers no release] → The root API is additive, and the Gateway builds from workspace source. Library consumers get it with the next root release.
