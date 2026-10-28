@@ -75,7 +75,7 @@ func TestRouteBody_HandlersReadTheWholeBody(t *testing.T) {
 		read, readErr = len(data), err
 		w.WriteHeader(http.StatusNoContent)
 	})
-	handler := bodyTestHandler(t, routeHandlers{configuredLanguage: probe, byokLanguage: probe})
+	handler := bodyTestHandler(t, routeHandlers{language: probe})
 	for _, caller := range []bodyTestCaller{bodyConfiguredCaller, bodyBYOKCaller} {
 		t.Run(caller.name, func(t *testing.T) {
 			read, readErr = 0, nil
@@ -100,7 +100,7 @@ func (body *countingBody) Read([]byte) (int, error) {
 func TestRouteBody_RefusedCallerBodyIsNotRead(t *testing.T) {
 	var served atomic.Int32
 	probe := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { served.Add(1) })
-	handler := bodyTestHandler(t, routeHandlers{configuredLanguage: probe, byokLanguage: probe})
+	handler := bodyTestHandler(t, routeHandlers{language: probe})
 	body := &countingBody{}
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, bodyLanguageRequest(bodyRefusedCaller, body))

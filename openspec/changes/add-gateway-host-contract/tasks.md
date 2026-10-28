@@ -14,8 +14,8 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 3. One selector, one runtime
 
-- [ ] 3.1 Replace `NewConfiguredSelector` and `NewBYOKSelector` with `service.NewSelector`, which branches on account access and takes BYOK dependencies only in `cloud` mode (design D2). Port `selection_test.go` into one table covering configured, BYOK and refused access, with zero catalog and provider calls on refusal, and the 9-account BYOK request mapping to the fixed BYOK 400 through ProviderWire. Verify with `go test -race ./cmd/grafana-ai-gateway/internal/service/...`.
-- [ ] 3.2 Build one runtime and one ProviderWire handler in `gateway.go`, and remove `routeHandlers.byokLanguage`, `byAccess` and the second runtime. Update the selection paragraphs in `docs/concepts/gateway-architecture.md`. Verify with `go test ./cmd/grafana-ai-gateway/internal/gateway/...`, `mise run test-ai-gateway-command` and `mise run lint-docs`.
+- [x] 3.1 Replace `NewConfiguredSelector` and `NewBYOKSelector` with `service.NewSelector`, which branches on account access and takes BYOK dependencies only in `cloud` mode (design D2). Port `selection_test.go` into one table covering configured, BYOK and refused access, with zero catalog and provider calls on refusal, and the 9-account BYOK request mapping to the fixed BYOK 400 through ProviderWire. Verify with `go test -race ./cmd/grafana-ai-gateway/internal/service/...`.
+- [x] 3.2 Build one runtime and one ProviderWire handler in `gateway.go`, and remove `routeHandlers.byokLanguage`, `byAccess` and the second runtime. Update the selection paragraphs in `docs/concepts/gateway-architecture.md`. Verify with `go test ./cmd/grafana-ai-gateway/internal/gateway/...`, `mise run test-ai-gateway-command` and `mise run lint-docs`.
 
 ## 4. Route table
 

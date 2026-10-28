@@ -164,23 +164,18 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	errorWriter := providerv4.NewHostErrorWriter()
-	configuredLanguage, err := newLanguageHandler(execution.Config{Selector: service.NewConfiguredSelector(catalog), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	var byokOptions *service.BYOKOptions
+	if settings.Access.Mode == gatewayauth.AccessModeCloud {
+		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: byokFactory}
+	}
+	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
-	discoveryHandler := discovery.New(catalog, providerv4.DiscoveryProjection{}, errorWriter)
+	errorWriter := providerv4.NewHostErrorWriter()
 	routes := routeHandlers{
-		configuredDiscovery: discoveryHandler,
-		byokDiscovery:       discoveryHandler,
-		configuredLanguage:  configuredLanguage,
-	}
-	if settings.Access.Mode == gatewayauth.AccessModeCloud {
-		byokLanguage, err := newLanguageHandler(execution.Config{Selector: service.NewBYOKSelector(nativeClient, byokFactory), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
-		if err != nil {
-			return nil, err
-		}
-		routes.byokLanguage = byokLanguage
+		discovery: discovery.New(catalog, providerv4.DiscoveryProjection{}, errorWriter),
+		language:  language,
 	}
 	return newHandler(settings.Access, sinks.telemetry, errorWriter, routes), nil
 }

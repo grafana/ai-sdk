@@ -141,11 +141,11 @@ sequenceDiagram
    [execution runtime](../../ai-gateway/internal/execution/runtime.go) selects
    and invokes the model for every API adapter, on the request goroutine. The
    request deadline, which Grafana's route deadline sets, covers selection plus
-   model execution. `NewConfiguredSelector`
-   checks configured-account access, then delegates to `CatalogSelector` to
-   resolve `assistant` or an alias to its canonical model. This private path
-   rejects reserved Gateway controls; its caller cannot switch to request
-   accounts. See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go),
+   model execution. One access-aware selector, `NewSelector`, serves every
+   caller, so each adapter needs one runtime. For configured access it
+   delegates to `CatalogSelector` to resolve `assistant` or an alias to its
+   canonical model. This private path rejects reserved Gateway controls; its
+   caller cannot switch to request accounts. See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go),
    [catalog selection](../../ai-gateway/internal/execution/selection.go), and the
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** Logical observation surrounds the
@@ -243,17 +243,17 @@ summary redaction is not a general filter for generated content or secrets.
 
 ## Existing code versus deployed capabilities
 
-The command wires two account paths, selected by the access decision from the
-`access_mode` and the verified token, not by a caller choosing a different model
-name:
+The command serves two account paths through one selector and one runtime.
+The access decision chooses the path from the `access_mode` and the verified
+token, not from a caller choosing a different model name:
 
 - **Configured:** callers granted configured access use configured models and
   server-held provider credentials. In `self-hosted` mode this is any verified
   user or service account; in `cloud` mode it is an allowlisted internal
   service. They cannot switch to request accounts.
 - **BYOK:** in `cloud` mode, other verified identities get request-scoped
-  access; `NewBYOKSelector` checks request-account access and decodes the
-  provider/model destination and credentials. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
+  access; the selector decodes the provider/model destination and credentials
+  from the call-level `gateway.byok` controls. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
   constructs an Anthropic or OpenAI model with request-local accounts and
   observation, and the selection carries the destination and account count
   that the BYOK execution overview is checked against. It does not consult the

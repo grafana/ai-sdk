@@ -17,10 +17,8 @@ const (
 )
 
 type routeHandlers struct {
-	configuredDiscovery http.Handler
-	configuredLanguage  http.Handler
-	byokDiscovery       http.Handler
-	byokLanguage        http.Handler
+	discovery http.Handler
+	language  http.Handler
 }
 
 // RoutePrefix returns the path prefix of the plugin's namespaced routes,
@@ -38,12 +36,12 @@ func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, e
 	configPattern := http.MethodGet + " " + RoutePrefix() + "/config"
 	languagePattern := http.MethodPost + " " + RoutePrefix() + "/language-model"
 	mux := http.NewServeMux()
-	mux.Handle(configPattern, protect(byAccess(routes.configuredDiscovery, routes.byokDiscovery, refuse)))
+	mux.Handle(configPattern, protect(routes.discovery))
 	mux.HandleFunc(http.MethodHead+" "+RoutePrefix()+"/config", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Allow", http.MethodGet)
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	})
-	mux.Handle(languagePattern, protect(languageModelPath(byAccess(routes.configuredLanguage, routes.byokLanguage, refuse))))
+	mux.Handle(languagePattern, protect(languageModelPath(routes.language)))
 	label := func(request *http.Request) string {
 		switch _, pattern := mux.Handler(request); pattern {
 		case configPattern:
@@ -55,20 +53,6 @@ func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, e
 		}
 	}
 	return telemetry.Middleware(label, mux)
-}
-
-func byAccess(configured, byok http.Handler, refuse func(http.ResponseWriter)) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		caller, _ := gatewayauth.CallerFromContext(request.Context())
-		switch {
-		case caller.AccountAccess() == gatewayauth.ConfiguredAccounts:
-			configured.ServeHTTP(w, request)
-		case caller.AccountAccess() == gatewayauth.RequestBYOK && byok != nil:
-			byok.ServeHTTP(w, request)
-		default:
-			refuse(w)
-		}
-	})
 }
 
 func languageModelPath(next http.Handler) http.Handler {
