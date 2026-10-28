@@ -129,7 +129,7 @@ Each HTTP invocation SHALL have one canonical logical generation; tool payloads,
 - **THEN** it SHALL remain one canonical logical generation and metadata-only exports/logs/metric labels SHALL exclude tool payloads/names/IDs/metadata and physical attribution
 
 ### Requirement: Independent acceptance evidence
-Both registered clients SHALL exercise real-handler and authenticated-command scenarios without requiring MCP. Request goldens SHALL be captured from the pinned client. Provider fixtures SHALL retain authentic provenance and Apache modules SHALL NOT import Gateway code. Candidate-source checks SHALL select `go.gateway.work` explicitly; standalone Gateway builds SHALL use published pins with GOWORK disabled.
+Both registered clients SHALL exercise real-handler and authenticated-command scenarios without requiring MCP. Request goldens SHALL be captured from the pinned client. Provider fixtures SHALL retain authentic provenance and Apache modules SHALL NOT import Gateway code. Candidate-source checks SHALL build Gateway from `ai-gateway/go.mod` with `GOWORK=off`, resolving SDK source through its local replacements.
 
 #### Scenario: Intermediate PR validation
 - **WHEN** this change is validated independently of its successor change
