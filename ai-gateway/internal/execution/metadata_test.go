@@ -17,7 +17,7 @@ func TestMetadata_NamespaceIsolation(t *testing.T) {
 	}
 	before := cloneMetadata(original)
 	overview := &Overview{RequestedModelID: "alias", CanonicalModelID: "public", Attempts: []Attempt{{Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected}}}
-	got := Metadata(overview, original)
+	got := Metadata(overview, nil, original)
 	assert.Equal(t, before, original)
 	assert.Equal(t, original["native"], got["native"])
 	var namespace struct {
@@ -44,7 +44,7 @@ func TestMetadata_Unavailable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			original := provider.ProviderMetadata{"gateway": tc.native}
 			before := cloneMetadata(original)
-			assert.Nil(t, Metadata(tc.overview, original))
+			assert.Nil(t, Metadata(tc.overview, nil, original))
 			assert.Equal(t, before, original)
 		})
 	}

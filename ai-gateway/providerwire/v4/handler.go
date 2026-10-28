@@ -106,7 +106,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := call.View(nil)
-	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: view.Overview}) {
+	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, execution: view}) {
 		h.writeSafeError(w, safeError{category: safeInternal}, view.Metadata())
 	}
 }

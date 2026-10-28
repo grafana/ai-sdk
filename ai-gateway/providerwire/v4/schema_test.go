@@ -256,15 +256,31 @@ func TestExecutionSchema_ProducedNamespace(t *testing.T) {
 				{Index: 2, Provider: "native", ModelID: "second", Outcome: outcome},
 			}, nil)
 			require.NotNil(t, overview)
-			metadata := execution.Metadata(overview, provider.ProviderMetadata{"gateway": json.RawMessage(`{"execution":{"native":true},"null":null}`)})
+			metadata := execution.Metadata(overview, nil, provider.ProviderMetadata{"gateway": json.RawMessage(`{"execution":{"native":true},"null":null}`)})
 			require.NoError(t, compiled.Validate(metadata["gateway"]))
 		})
 	}
+	t.Run("routing summary", func(t *testing.T) {
+		routing := &execution.Routing{
+			OriginalModelID: "alias", CanonicalSlug: "public", ResolvedProvider: "native", FinalProvider: "other",
+			ModelAttemptCount: 2, TotalProviderAttemptCount: 2,
+			ModelAttempts: []execution.ModelAttempt{
+				{ModelID: "alias", CanonicalSlug: "public", ProviderAttemptCount: 1, ProviderAttempts: []execution.ProviderAttempt{{Provider: "native", StatusCode: 503}}},
+				{ModelID: "backup", CanonicalSlug: "backup", Success: true, ProviderAttemptCount: 1, ProviderAttempts: []execution.ProviderAttempt{{Provider: "other", Success: true}}},
+			},
+		}
+		overview := &execution.Overview{RequestedModelID: "alias", CanonicalModelID: "public", Attempts: []execution.Attempt{
+			{Provider: "native", ModelID: "first", Outcome: fallback.AttemptFailed, Error: &execution.Failure{StatusCode: 503}},
+			{Provider: "other", ModelID: "second", Outcome: fallback.AttemptSelected},
+		}}
+		metadata := execution.Metadata(overview, routing, nil)
+		require.NoError(t, compiled.Validate(metadata["gateway"]))
+	})
 	t.Run("request accounts", func(t *testing.T) {
 		metadata := execution.Metadata(&execution.Overview{RequestedModelID: "openai/gpt-5", Attempts: []execution.Attempt{
 			{Provider: "openai", ModelID: "gpt-5", Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: "overloaded", StatusCode: 503}},
 			{Provider: "openai", ModelID: "gpt-5", Outcome: fallback.AttemptSelected},
-		}}, nil)
+		}}, nil, nil)
 		assert.NotContains(t, string(metadata["gateway"]), "canonicalModelId")
 		require.NoError(t, compiled.Validate(metadata["gateway"]))
 	})

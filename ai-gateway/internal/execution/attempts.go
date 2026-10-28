@@ -113,6 +113,7 @@ func (a *attemptCapture) view(err error) (view View) {
 			attempt := &view.Overview.Attempts[i]
 			attempt.Error = a.redactor.Redact(attempt.Error)
 		}
+		view.Routing = projectRouting(view.Overview, a.groups)
 	}
 	return view
 }
@@ -121,6 +122,9 @@ func (a *attemptCapture) view(err error) (view View) {
 type View struct {
 	// Overview is the published attempt overview, or nil when none is published.
 	Overview *Overview
+	// Routing groups the overview's attempts by model, or is nil when they
+	// cannot be assigned to the call's models.
+	Routing  *Routing
 	redactor SummaryRedactor
 }
 
@@ -135,5 +139,11 @@ func (view View) Current(err *provider.APICallError) *Failure {
 
 // Metadata returns the execution metadata for an error document.
 func (view View) Metadata() provider.ProviderMetadata {
-	return Metadata(view.Overview, nil)
+	return view.Enrich(nil)
+}
+
+// Enrich returns original with the view's execution and routing metadata, or
+// nil when the view publishes no overview.
+func (view View) Enrich(original provider.ProviderMetadata) provider.ProviderMetadata {
+	return Metadata(view.Overview, view.Routing, original)
 }

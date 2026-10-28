@@ -2105,7 +2105,13 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
         const ts = await collectStream((await gateway.client()(BYOK_MODEL).doStream(options)).stream);
         const go = await captureGoClient(goClientBinaryPath, { mode: "stream", modelID: BYOK_MODEL, options, baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN });
         assert.equal(go.error, undefined);
-        const selected = { gateway: { execution: { requestedModelId: BYOK_MODEL, attempts: [{ provider: "anthropic", modelId: "request-only-native", outcome: "selected" }] } } };
+        const selected = { gateway: {
+          execution: { requestedModelId: BYOK_MODEL, attempts: [{ provider: "anthropic", modelId: "request-only-native", outcome: "selected" }] },
+          routing: {
+            originalModelId: BYOK_MODEL, resolvedProvider: "anthropic", finalProvider: "anthropic", modelAttemptCount: 1, totalProviderAttemptCount: 1,
+            modelAttempts: [{ modelId: BYOK_MODEL, success: true, providerAttemptCount: 1, providerAttempts: [{ provider: "anthropic", success: true }] }],
+          },
+        } };
         for (const parts of [ts, go.parts]) {
           const errors = parts.filter((part: { type: string; error?: { data?: { nativeError?: unknown } } }) => part.type === "error" && part.error?.data?.nativeError !== undefined);
           assert.equal(errors.length, 1);
@@ -2144,7 +2150,13 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
         assert.equal(go.error?.statusCode, 424);
         assert.equal(go.error?.category, "failed_dependency");
         const expected = { error: { message: "failed dependency", type: "failed_dependency", param: null, code: "failed_dependency" } };
-        const rejected = { gateway: { execution: { requestedModelId: BYOK_MODEL, attempts: [{ provider: "anthropic", modelId: "request-only-native", outcome: "failed", error: { message: "provider-secret-response request-only-key backend-private", type: "api_error", statusCode: 401 } }] } } };
+        const rejected = { gateway: {
+          execution: { requestedModelId: BYOK_MODEL, attempts: [{ provider: "anthropic", modelId: "request-only-native", outcome: "failed", error: { message: "provider-secret-response request-only-key backend-private", type: "api_error", statusCode: 401 } }] },
+          routing: {
+            originalModelId: BYOK_MODEL, resolvedProvider: "anthropic", modelAttemptCount: 1, totalProviderAttemptCount: 1,
+            modelAttempts: [{ modelId: BYOK_MODEL, success: false, providerAttemptCount: 1, providerAttempts: [{ provider: "anthropic", success: false, statusCode: 401 }] }],
+          },
+        } };
         const { providerMetadata: goMetadata, ...goBase } = go.error.apiError.data;
         assert.deepEqual(goBase, expected);
         assert.deepEqual(goMetadata, rejected);
@@ -2456,7 +2468,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
         "the gateway's backend credential is the one presented upstream");
 
       for (const [rejected, message] of [
-        [{ providerOptions: { gateway: { tenant: "other" } } }, "reserved provider option namespace"],
+        [{ providerOptions: { gateway: { tenant: "other" } } }, "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials"],
         [{ headers: { "x-api-key": "caller-controlled" } }, "protected call header"],
         [{ providerOptions: { compatibleBackend: { model: "someone-elses-model" } } }, "invalid request"],
       ] as const) {

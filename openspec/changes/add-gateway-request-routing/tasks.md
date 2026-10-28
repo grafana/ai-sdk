@@ -28,9 +28,9 @@
 
 ## 6. Routing metadata
 
-- [ ] 6.1 Project `gateway.routing` in the attempt view and place it through `execution.Metadata` on every carrier (D5). Verify with unit tests for each routing-summary scenario in the `gateway-execution-overview` delta, and ProviderWire unary, error, finish and committed-error tests.
-- [ ] 6.2 Add the optional `routing` definition to `providerwire/v4/schema/gateway_execution.json` and to the strict TypeScript schema test. Verify with `mise run test-providerwire-v4`.
-- [ ] 6.3 Update the existing exact-metadata expectations that now include `gateway.routing`, and check that only that member was added. Verify with `mise run test` in `ai-gateway`.
+- [x] 6.1 Project `gateway.routing` in the attempt view and place it through `execution.Metadata` on every carrier (D5). Verify with unit tests for each routing-summary scenario in the `gateway-execution-overview` delta, and ProviderWire unary, error, finish and committed-error tests.
+- [x] 6.2 Add the optional `routing` definition to `providerwire/v4/schema/gateway_execution.json` and to the strict TypeScript schema test. Verify with `mise run test-providerwire-v4`.
+- [x] 6.3 Update the existing exact-metadata expectations that now include `gateway.routing`, and check that only that member was added. Verify with `mise run test` in `ai-gateway`.
 
 ## 7. Go client routing support
 

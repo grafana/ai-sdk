@@ -1420,14 +1420,16 @@ func TestRequestSelection_NativeSummaries(t *testing.T) {
 				}
 				selected := `{"requestedModelId":" public/model ","attempts":[{"provider":"private-provider","modelId":"private-backend-model","outcome":"selected"}]}`
 				failed := `{"requestedModelId":" public/model ","attempts":[{"provider":"private-provider","modelId":"private-backend-model","outcome":"failed","error":{"message":"unconfigured-native-detail","statusCode":503}}]}`
+				selectedRouting := `{"originalModelId":" public/model ","resolvedProvider":"private-provider","finalProvider":"private-provider","modelAttemptCount":1,"totalProviderAttemptCount":1,"modelAttempts":[{"modelId":"private-provider/private-backend-model","success":true,"providerAttemptCount":1,"providerAttempts":[{"provider":"private-provider","success":true}]}]}`
+				failedRouting := `{"originalModelId":" public/model ","resolvedProvider":"private-provider","modelAttemptCount":1,"totalProviderAttemptCount":1,"modelAttempts":[{"modelId":"private-provider/private-backend-model","success":false,"providerAttemptCount":1,"providerAttempts":[{"provider":"private-provider","success":false,"statusCode":503}]}]}`
 				switch {
 				case tc.failSetup:
-					assert.Contains(t, body, `"providerMetadata":{"gateway":{"execution":`+failed+`}}`)
+					assert.Contains(t, body, `"providerMetadata":{"gateway":{"execution":`+failed+`,"routing":`+failedRouting+`}}`)
 				case tc.streaming:
-					assert.Contains(t, body, `"data":{"providerMetadata":{"gateway":{"execution":`+selected+`}}`)
-					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"nativeMetadata":{"opaque":"native-value"}}`)
+					assert.Contains(t, body, `"data":{"providerMetadata":{"gateway":{"execution":`+selected+`,"routing":`+selectedRouting+`}}`)
+					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"routing":`+selectedRouting+`,"nativeMetadata":{"opaque":"native-value"}}`)
 				default:
-					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"nativeMetadata":{"opaque":"native-value"}}`)
+					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"routing":`+selectedRouting+`,"nativeMetadata":{"opaque":"native-value"}}`)
 				}
 				assert.NotContains(t, body, "canonicalModelId")
 				assert.NotContains(t, body, "providerInstance")
