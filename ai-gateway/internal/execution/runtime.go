@@ -51,6 +51,7 @@ func New(config Config) (*Runtime, error) {
 // Call is one selected model call. Its methods must be called from one
 // goroutine.
 type Call struct {
+	modelID  string
 	ctx      context.Context
 	model    provider.LanguageModel
 	options  provider.CallOptions
@@ -84,7 +85,7 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 		return nil, err
 	}
 	attempts := newAttemptCapture(modelID, selected, r.redactor)
-	return &Call{ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, attempts: attempts, limits: r.limits}, nil
+	return &Call{modelID: selected.ID, ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, attempts: attempts, limits: r.limits}, nil
 }
 
 func (r *Runtime) selectModel(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (selected Selection, err error) {
@@ -108,6 +109,9 @@ func validSelection(selected Selection) (valid bool) {
 	}()
 	return selected.ID != "" && utf8.ValidString(selected.ID) && !isNilInterface(selected.Model) && selected.Model.SpecificationVersion() == "v4"
 }
+
+// ModelID returns the logical model identity chosen by the selector.
+func (c *Call) ModelID() string { return c.modelID }
 
 // Generate invokes the model once. A panic or a missing result fails as
 // internal, and a result returned after the context ended is discarded in
