@@ -1122,8 +1122,8 @@ func TestInvocation_NativeEchoAndLargeError(t *testing.T) {
 
 func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 	for _, tc := range []struct {
-		name                                             string
-		streaming, committed, fallback, exhausted, plain bool
+		name                                                       string
+		streaming, committed, fallback, exhausted, plain, accounts bool
 	}{
 		{name: "unary failure"},
 		{name: "unary fallback success", fallback: true},
@@ -1133,6 +1133,10 @@ func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 		{name: "stream exhausted", streaming: true, fallback: true, exhausted: true},
 		{name: "configured committed error", streaming: true, committed: true},
 		{name: "plain committed error", streaming: true, committed: true, plain: true},
+		{name: "request-account unary failure", accounts: true},
+		{name: "request-account unary fallback success", fallback: true, accounts: true},
+		{name: "request-account stream exhausted", streaming: true, fallback: true, exhausted: true, accounts: true},
+		{name: "request-account committed error", streaming: true, committed: true, accounts: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			const source = `{"message":"echo server-key unused-key own-byok-key","type":"type-server-key","code":"code-unused-key"}`
@@ -1161,12 +1165,23 @@ func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 					return execution.Selection{ID: "request/model", Model: first}, nil
 				}
 			}
+			if tc.accounts {
+				ordered := h.resolver.resolved.Model
+				if len(models) == 1 {
+					chain, err := fallback.New(first)
+					require.NoError(t, err)
+					ordered = chain
+				}
+				selector = func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+					return execution.AccountSelection(id, ordered, execution.RequestAccounts{Provider: "private-provider", ModelID: "private-backend-model", Count: len(models)}), nil
+				}
+			}
 			keys := []string{"server-key", "unused-key"}
 			handler, err := newWireHandler(execution.Config{Selector: selector, Limits: testLimits(), ConfiguredAPIKeys: keys})
 			require.NoError(t, err)
 			keys[0] = "caller-mutation"
 			request := validRequest(`{"prompt":[]}`)
-			if tc.plain {
+			if tc.plain || tc.accounts {
 				request = validRequest(`{"prompt":[],"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"own-byok-key"}]}}}}`)
 			}
 			request.Header.Set(HeaderStreaming, fmt.Sprint(tc.streaming))
@@ -1190,6 +1205,11 @@ func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 			}
 			if tc.plain {
 				assert.NotContains(t, body, "execution")
+			}
+			if tc.accounts {
+				assert.Contains(t, body, `"execution":{"requestedModelId":" public/model ","attempts":[{"provider":"private-provider","modelId":"private-backend-model","outcome":`)
+				assert.NotContains(t, body, "canonicalModelId")
+				assert.NotContains(t, body, "providerInstance")
 			}
 			if tc.streaming && status == http.StatusOK {
 				assert.Contains(t, body, `"type":"finish"`)
@@ -1317,7 +1337,7 @@ func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
 	assert.Zero(t, second.callCount())
 }
 
-func TestRequestSelection_UnconfiguredNativeSummary(t *testing.T) {
+func TestRequestSelection_NativeSummaries(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		streaming bool
@@ -1328,64 +1348,90 @@ func TestRequestSelection_UnconfiguredNativeSummary(t *testing.T) {
 		{name: "committed error", streaming: true},
 		{name: "stream setup failure", streaming: true, failSetup: true},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			native := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "unconfigured-native-detail"})
-			metadata := provider.ProviderMetadata{"gateway": json.RawMessage(`{"opaque":"native-value"}`)}
-			model := &recordingModel{
-				generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-					if tc.failSetup {
-						return nil, native
-					}
-					result := validGenerateResult()
-					result.ProviderMetadata = metadata
-					return result, nil
-				},
-				stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-					if tc.failSetup {
-						return nil, native
-					}
-					finish := finishPart()
-					finish.ProviderMetadata = metadata
-					parts := make(chan provider.StreamPart, 2)
-					parts <- provider.StreamPart{Type: provider.PartError, APICallError: native}
-					parts <- finish
-					close(parts)
-					return &provider.StreamResult{Stream: parts}, nil
-				},
-			}
-			ordered, err := fallback.New(model)
-			require.NoError(t, err)
-			h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
-				return execution.Selection{ID: "request/model", Model: ordered}, nil
-			}})
-			require.NoError(t, err)
-			var observed int
-			ordered.WithAttemptObserver(func(context.Context, fallback.Attempt) { observed++ })
-			request := validRequest(`{"prompt":[]}`)
-			request.Header.Set(HeaderStreaming, fmt.Sprint(tc.streaming))
-			response := httptest.NewRecorder()
-			h.ServeHTTP(response, request)
-			assert.Equal(t, 1, observed)
-			assert.Equal(t, 1, model.callCount())
-			if tc.streaming && !tc.failSetup {
-				assert.Contains(t, response.Body.String(), `"nativeError":{"message":"unconfigured-native-detail","statusCode":503}`)
-			} else {
-				assert.NotContains(t, response.Body.String(), "unconfigured-native-detail")
-				assert.NotContains(t, response.Body.String(), "nativeError")
-			}
-			assert.NotContains(t, response.Body.String(), "execution")
-			assert.NotContains(t, response.Body.String(), "nativeMetadata")
-			if tc.failSetup {
-				assert.Equal(t, http.StatusServiceUnavailable, response.Code)
-			} else {
-				assert.Equal(t, http.StatusOK, response.Code)
-				assert.Contains(t, response.Body.String(), `"gateway":{"opaque":"native-value"}`)
-				if tc.streaming {
-					assert.Contains(t, response.Body.String(), `"type":"error"`)
-					assert.Contains(t, response.Body.String(), `"type":"finish"`)
+		for _, accounts := range []bool{false, true} {
+			t.Run(tc.name+map[bool]string{false: "/unattributed", true: "/request accounts"}[accounts], func(t *testing.T) {
+				native := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "unconfigured-native-detail"})
+				metadata := provider.ProviderMetadata{"gateway": json.RawMessage(`{"opaque":"native-value"}`)}
+				model := &recordingModel{
+					generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+						if tc.failSetup {
+							return nil, native
+						}
+						result := validGenerateResult()
+						result.ProviderMetadata = metadata
+						return result, nil
+					},
+					stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+						if tc.failSetup {
+							return nil, native
+						}
+						finish := finishPart()
+						finish.ProviderMetadata = metadata
+						parts := make(chan provider.StreamPart, 2)
+						parts <- provider.StreamPart{Type: provider.PartError, APICallError: native}
+						parts <- finish
+						close(parts)
+						return &provider.StreamResult{Stream: parts}, nil
+					},
 				}
-			}
-		})
+				ordered, err := fallback.New(model)
+				require.NoError(t, err)
+				h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+					if accounts {
+						return execution.AccountSelection("request/model", ordered, execution.RequestAccounts{Provider: "private-provider", ModelID: "private-backend-model", Count: 1}), nil
+					}
+					return execution.Selection{ID: "request/model", Model: ordered}, nil
+				}})
+				require.NoError(t, err)
+				var observed int
+				ordered.WithAttemptObserver(func(context.Context, fallback.Attempt) { observed++ })
+				request := validRequest(`{"prompt":[]}`)
+				request.Header.Set(HeaderStreaming, fmt.Sprint(tc.streaming))
+				response := httptest.NewRecorder()
+				h.ServeHTTP(response, request)
+				body := response.Body.String()
+				assert.Equal(t, 1, observed)
+				assert.Equal(t, 1, model.callCount())
+				if tc.streaming && !tc.failSetup {
+					assert.Contains(t, body, `"nativeError":{"message":"unconfigured-native-detail","statusCode":503}`)
+				} else {
+					assert.NotContains(t, body, "nativeError")
+				}
+				if tc.failSetup {
+					assert.Equal(t, http.StatusServiceUnavailable, response.Code)
+				} else {
+					assert.Equal(t, http.StatusOK, response.Code)
+					if tc.streaming {
+						assert.Contains(t, body, `"type":"error"`)
+						assert.Contains(t, body, `"type":"finish"`)
+					}
+				}
+				if !accounts {
+					if !tc.streaming || tc.failSetup {
+						assert.NotContains(t, body, "unconfigured-native-detail")
+					}
+					assert.NotContains(t, body, "execution")
+					assert.NotContains(t, body, "nativeMetadata")
+					if !tc.failSetup {
+						assert.Contains(t, body, `"gateway":{"opaque":"native-value"}`)
+					}
+					return
+				}
+				selected := `{"requestedModelId":" public/model ","attempts":[{"provider":"private-provider","modelId":"private-backend-model","outcome":"selected"}]}`
+				failed := `{"requestedModelId":" public/model ","attempts":[{"provider":"private-provider","modelId":"private-backend-model","outcome":"failed","error":{"message":"unconfigured-native-detail","statusCode":503}}]}`
+				switch {
+				case tc.failSetup:
+					assert.Contains(t, body, `"providerMetadata":{"gateway":{"execution":`+failed+`}}`)
+				case tc.streaming:
+					assert.Contains(t, body, `"data":{"providerMetadata":{"gateway":{"execution":`+selected+`}}`)
+					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"nativeMetadata":{"opaque":"native-value"}}`)
+				default:
+					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"nativeMetadata":{"opaque":"native-value"}}`)
+				}
+				assert.NotContains(t, body, "canonicalModelId")
+				assert.NotContains(t, body, "providerInstance")
+			})
+		}
 	}
 }
 

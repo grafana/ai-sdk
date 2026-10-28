@@ -14,7 +14,8 @@
 //   - stream waits, the idle duration and one drain bounded by the drain
 //     duration, with exactly one cleanup owner for every returned stream;
 //   - the closed failure categories and reasons;
-//   - request-local attempt capture.
+//   - request-local attempt capture, projected into an overview for
+//     configured selections and for [AccountSelection] request accounts.
 //
 // Adapters own request mapping, wire encoding, their error documents,
 // response commitment and their protocol state machine. The runtime never
