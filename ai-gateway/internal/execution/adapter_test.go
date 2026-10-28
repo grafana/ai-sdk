@@ -183,8 +183,9 @@ func (p *probe) DoStream(ctx context.Context, _ provider.CallOptions) (*provider
 	return p.parts(ctx, finishPart())
 }
 
-// parts streams the given parts, then waits for cancellation and sends one more
-// part, which only a drain receives, before closing.
+// parts streams the given parts and closes after a final finish, as providers
+// do. Otherwise it waits for cancellation and sends one more part, which only a
+// drain receives, before closing.
 func (p *probe) parts(ctx context.Context, parts ...provider.StreamPart) (*provider.StreamResult, error) {
 	p.streamed.Store(true)
 	stream := make(chan provider.StreamPart)
@@ -195,6 +196,10 @@ func (p *probe) parts(ctx context.Context, parts ...provider.StreamPart) (*provi
 			case stream <- part:
 			case <-ctx.Done():
 			}
+		}
+		if len(parts) > 0 && parts[len(parts)-1].Type == provider.PartFinish {
+			close(p.drained)
+			return
 		}
 		<-ctx.Done()
 		stream <- provider.StreamPart{Type: provider.PartRaw}
