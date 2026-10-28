@@ -311,7 +311,7 @@ Nil, malformed, or unclassifiable provider error values SHALL reduce to the cano
 
 ### Requirement: Synthetic terminal adapter errors
 
-Unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL keep bounded terminal errors, also after a written finish. A provider close SHALL be premature unless the last lifecycle part is a valid finish. Reasoning, source, custom and raw parts SHALL follow their own capabilities. Ordinary generated files, approvals and unsupported tool behavior SHALL remain unsupported.
+Unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior, before and after a written finish. A provider close SHALL be premature unless the last lifecycle part is a valid finish. Ordinary generated files, approvals and unsupported tool behavior SHALL remain unsupported.
 
 #### Scenario: Reasoning lifecycle violation
 - **WHEN** reasoning ends without a matching active start, reuses an ended reasoning ID within its segment, or remains open at finish
@@ -320,6 +320,10 @@ Unsupported families, lifecycle violations, invalid output, premature close, map
 #### Scenario: Unsupported stream family appears
 - **WHEN** the text runtime receives provider-executed/dynamic/preliminary tool behavior, ordinary generated file, approval, or another unsupported part
 - **THEN** it SHALL emit at most one terminal internal error rather than serializing the provider-domain part
+
+### Requirement: Supported stream part families
+
+Reasoning start/delta/end and atomic reasoning-file events SHALL be supported under gateway-reasoning-content, URL/document sources SHALL be supported under gateway-sources, and atomic custom events SHALL be supported under gateway-custom-content. Raw parts SHALL follow gateway-raw-output.
 
 #### Scenario: Custom stream part is supported
 - **WHEN** the runtime receives a well-formed custom part within a response segment before its finish

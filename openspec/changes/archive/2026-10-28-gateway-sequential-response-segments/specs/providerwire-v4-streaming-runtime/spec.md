@@ -136,6 +136,18 @@ Automated evidence SHALL include focused raw-wire and schema tests for the segme
 - **WHEN** the sequential evidence is produced
 - **THEN** no `input*.chunks.txt`, `expected-provider-parts.jsonl`, `expected.jsonl` or `expected-requests.jsonl` file SHALL be modified, split or skipped
 
+### Requirement: Supported stream part families
+
+Reasoning start/delta/end and atomic reasoning-file events SHALL be supported under gateway-reasoning-content, URL/document sources SHALL be supported under gateway-sources, and atomic custom events SHALL be supported under gateway-custom-content. Raw parts SHALL follow gateway-raw-output.
+
+#### Scenario: Custom stream part is supported
+- **WHEN** the runtime receives a well-formed custom part within a response segment before its finish
+- **THEN** it SHALL emit the custom event and continue the stream rather than emitting a terminal error
+
+#### Scenario: Concurrent reasoning
+- **WHEN** two reasoning blocks and a text block sharing one raw ID interleave
+- **THEN** family-specific active state SHALL preserve each block independently and IDs SHALL not be rewritten
+
 ## MODIFIED Requirements
 
 ### Requirement: Native response metadata and text block state
@@ -277,7 +289,7 @@ Each provider `PartError`, before or after a finish, SHALL be independently redu
 
 ### Requirement: Synthetic terminal adapter errors
 
-Unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL keep bounded terminal errors, also after a written finish. A provider close SHALL be premature unless the last lifecycle part is a valid finish. Reasoning, source, custom and raw parts SHALL follow their own capabilities. Ordinary generated files, approvals and unsupported tool behavior SHALL remain unsupported.
+Unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior, before and after a written finish. A provider close SHALL be premature unless the last lifecycle part is a valid finish. Ordinary generated files, approvals and unsupported tool behavior SHALL remain unsupported.
 
 #### Scenario: Reasoning lifecycle violation
 - **WHEN** reasoning ends without a matching active start, reuses an ended reasoning ID within its segment, or remains open at finish
@@ -286,14 +298,6 @@ Unsupported families, lifecycle violations, invalid output, premature close, map
 #### Scenario: Unsupported stream family appears
 - **WHEN** the text runtime receives provider-executed/dynamic/preliminary tool behavior, ordinary generated file, approval, or another unsupported part
 - **THEN** it SHALL emit at most one terminal internal error rather than serializing the provider-domain part
-
-#### Scenario: Custom stream part is supported
-- **WHEN** the runtime receives a well-formed custom part within a response segment before its finish
-- **THEN** it SHALL emit the custom event and continue the stream rather than emitting a terminal error
-
-#### Scenario: Concurrent reasoning
-- **WHEN** two reasoning blocks and a text block sharing one raw ID interleave
-- **THEN** family-specific active state SHALL preserve each block independently and IDs SHALL not be rewritten
 
 ### Requirement: Adapter failure does not manufacture lifecycle completion
 
