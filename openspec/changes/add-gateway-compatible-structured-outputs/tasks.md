@@ -1,0 +1,44 @@
+## 1. Catalog setting (config package)
+
+- [ ] 1.1 Write failing tests in `ai-gateway/cmd/grafana-ai-gateway/internal/config/file_test.go`. Verify they fail before 1.2 with `(cd ai-gateway && go test ./cmd/grafana-ai-gateway/internal/config/)`.
+  - `TestLoadFile_OpenAICompatibleProvider`, or a sibling test: `supportsStructuredOutputs: true` on a compatible provider loads, and the resolved provider carries it.
+  - When the key is omitted, the resolved provider carries `false`.
+  - `TestLoadFile_ProviderErrorsNameTheField`: add `anthropic` and `openai` cases with `supportsStructuredOutputs: true`, each wanting `providers.anthropic-primary.supportsStructuredOutputs`.
+  - `TestLoadFile_StrictBoundedDocument`: add the same two rejection rows.
+  - Add an accept case for explicit `false` on `anthropic`/`openai`.
+- [ ] 1.2 Make the tests from 1.1 pass. Verify that `TestLoadFile_*` and `TestResolveProviderSecrets` pass.
+  - Add `SupportsStructuredOutputs bool` with `yaml:"supportsStructuredOutputs,omitempty"` to `Provider` (`file.go:33-39`) and to `ResolvedProvider` (`file.go:57-62`).
+  - Copy the field across in `ResolveProviderSecrets` (`file.go:253`).
+  - In `Validate`'s `case "anthropic", "openai"` branch (`file.go:136-139`), reject `true` with `config: providers.%s.supportsStructuredOutputs is only supported for openai-compatible providers`.
+
+## 2. Compatible model construction (service package)
+
+- [ ] 2.1 Write failing tests in `ai-gateway/cmd/grafana-ai-gateway/internal/service/structured_output_test.go`. Verify the new cases fail before 2.2 with `(cd ai-gateway && go test -run TestStructuredOutput ./cmd/grafana-ai-gateway/internal/service/)`.
+  - Make the structured-output setting selectable per resolved provider (`native` and `primary`) through an additive helper or option next to `nativeOptionsRequest` (`native_options_test.go:503-555`). Its nine existing callers (seven in `native_options_test.go`, two in `structured_output_test.go`) keep their signature and behavior.
+  - Setting-on case, both providers on, across stream × fallback × name. Assert `response_format.type == "json_schema"` and `json_schema.name` (`response` when absent, `""` or `answer` when given). Also assert `description == "description"`, `strict == true` (the body's `strictJsonSchema` is under the `openai` namespace, which compatible does not read), `schema.type == "object"`, and that the output has no `responseFormat` unsupported warning.
+  - Per-call strict override, setting on, unary and streaming: a body with `providerOptions.myVllm.strictJsonSchema:false` gives `json_schema.strict == false`. Do not use the raw `my-vllm` or `openai-compatible` keys, which add a deprecation warning (`providers/openai-compatible/convert_request.go:230-240`).
+  - Mixed fallback, unary and streaming: the primary fails (503 at `/primary`) before producing output, and it and the serving fallback have opposite settings. Assert each recorded request's `response_format.type` matches its own provider's setting (`json_object` for off, `json_schema` for on), and that the output has no `responseFormat` unsupported warning when the serving candidate has the setting on.
+  - Assert warnings structurally (type `unsupported`, feature `responseFormat`) instead of the `WithStructuredOutputs` substring.
+  - Keep the existing `openai-compatible` case (L45-47) as the setting-off case. Keep `json_object`, switch its warning check to the structural form, and also assert the unchanged details text `JSON schema response format requires WithStructuredOutputs(true); using json_object.`
+- [ ] 2.2 In `service/catalog.go:66-73`, add `openaicompatible.WithStructuredOutputs(providerConfig.SupportsStructuredOutputs)` to the compatible construction. Verify with `(cd ai-gateway && go test ./cmd/grafana-ai-gateway/internal/service/)`: the on, override, mixed-fallback and off cases pass, and the other catalog and native-option tests are unchanged.
+- [ ] 2.3 Client-level proof on main: in `ai-gateway/test/providerwire-v4/gateway-command.test.ts`, extend the "structured output candidate attribution" suite (L62-216) with a compatible provider configured `supportsStructuredOutputs: true` and backed by the existing `FakeCompatible` (L3732), which records request bodies. `FakeCompatible` returns fixed non-JSON text ("hello from fake compatible", L3804/L3814) and finishes streams only when the body contains the `normal-stream` marker (L3770, L3812). Add an additive `structuredOutput` flag to `FakeCompatible` that returns `{"value":"ok"}` in place of both the unary content (L3804) and the stream delta (L3814), mirroring `FakeOpenAI.structuredOutput` (L3829, L3920), and use the `normal-stream` prompt for streaming. Run generate and stream through both the Go and TypeScript clients. The schema assertions apply only to the low-level calls that carry the suite's schema response format (suite L92-96): the Go `generate`/`stream` capture modes and TypeScript `doGenerate`/`doStream`. For those calls, assert each recorded backend request has `response_format.type === "json_schema"` and that no `responseFormat` unsupported warning is returned; a missing `warnings` field (Go `omitempty`) counts as empty. The suite's high-level calls (TypeScript `Output.json()` at L141/L165 and Go `structured-*` via `output.JSON(output.WithName(""))` at `providers/grafana/internal/capture/main.go:140,145`) send no schema (`output/json.go:30-36`), so their recorded backend requests are expected to be `json_object`; they only prove that `{"value":"ok"}` parses. Verify with `mise run test-ai-gateway-command`.
+
+## 3. Documentation
+
+- [ ] 3.1 Document `supportsStructuredOutputs` in `ai-gateway/README.md` "Configure models" (L73-75), next to the `baseURL` sentence. Say that it is only for `openai-compatible`, defaults to `false`, sends JSON-schema response formats, and should be enabled only for backends verified to support them. Verify that the README renders and stays within its current section.
+- [ ] 3.2 In `docs/providers/grafana-gateway.md` "Structured output" (L258-260), qualify the sentence that says compatible providers always use JSON mode with a warning. With `supportsStructuredOutputs` they follow the schema, and they keep JSON mode with a warning without it. Verify the page links remain valid.
+- [ ] 3.3 Confirm that `docs/concepts/gateway-architecture.md` and `docs/concepts/gateway-glossary.md` need no change. Neither describes structured outputs or per-provider capabilities, and no flow, boundary or term changes. Record the result in the PR description, or update them if drift is found.
+
+## 4. #201 harness toggle
+
+- [ ] 4.1 Check whether #201 (`nrbrd/ai-gateway-conformance`) has merged to main, meaning `test/conformance/tools/gateway-runtime.mts` exists and `mise.toml` defines `test-conformance-gateway`. Verify with `git log origin/main -- test/conformance/tools/gateway-runtime.mts` and `grep test-conformance-gateway mise.toml`.
+- [ ] 4.2 If #201 has merged: in `catalog()` in `gateway-runtime.mts`, add `supportsStructuredOutputs: true` to the `r.provider === "openai-compatible"` conditional next to `providerName`, and update its test. This enables the setting for every compatible row. Verify with `mise run test-conformance-gateway` that the whole `openai-compatible` matrix stays green and both client rows of `openai-compatible/recorded/structured-json-output` now pass.
+- [ ] 4.3 If #201 has not merged: make no harness edit here. Record in the PR description a hand-off note for #201: the toggle goes in the `r.provider === "openai-compatible"` conditional of `catalog()`, so it enables the setting for every compatible row, and #201 must confirm that the whole `openai-compatible` matrix stays green and both client rows of `structured-json-output` now pass. State that only this matrix-row verification of issue #561 is pending #201. Then confirm that note is present.
+
+## 5. Integration validation
+
+- [ ] 5.1 Run `mise run fmt`, `mise run vet` and `mise run lint`. Verify all pass with no diff from fmt.
+- [ ] 5.2 Run `mise run test-ai-gateway`, then `mise run test`. Verify both pass.
+- [ ] 5.3 Run `mise run validate-parity-baseline`. Verify it passes, and confirm `test/conformance/PARITY.md` and `upstream.yaml` `knownGaps` are unchanged (see design, PARITY.md / knownGaps).
+- [ ] 5.4 File or link an `upstream-sync` issue for the off-path warning details divergence in `providers/openai-compatible` (Go `JSON schema response format requires WithStructuredOutputs(true); using json_object.` vs upstream 3.0.71 `JSON response format schema is only supported with structuredOutputs`), classified as an implementation bug and out of scope for #561. Do not change the provider or `knownGaps`. Verify the PR description references the issue.
+- [ ] 5.5 Run `openspec validate add-gateway-compatible-structured-outputs --strict`. Verify it passes.
