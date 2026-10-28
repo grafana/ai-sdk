@@ -258,7 +258,7 @@ summary redaction is not a general filter for generated content or secrets.
 ## Customer telemetry contracts
 
 The internal [customer telemetry package](../../ai-gateway/cmd/grafana-ai-gateway/internal/customertelemetry/doc.go)
-defines validation and policy contracts for future delivery to a customer's own
+defines validation, policy, and discovery-cache contracts for future delivery to a customer's own
 stack. It is not connected to request handling: changing a client's Gateway URL
 does not yet activate this delivery. Existing operator telemetry continues through
 the paths described above.
@@ -297,9 +297,44 @@ first-token measurements depend on available observations; the profile does not
 invent missing values. Expanding captured content, instruments, or dimensions
 requires explicit compatibility review.
 
-These are executable permission contracts, not an exporter implementation or
-proof of Cloud ingestion. Discovery field mappings, transport credentials,
-export filtering, cache refresh, and exporter lifecycle remain separate work.
+The internal cache starts empty and resolves an authorized stack on demand through
+supplied destination and policy resolvers. Each component has its own validity,
+refresh schedule, and shared in-flight lookup. Warm requests can reuse current
+snapshots while refresh runs. Canceling a waiting request does not cancel another
+request's lookup, and the cache does not retain caller context values or credentials.
+
+Cold lookup waits have a finite metadata timeout. A request with a deadline must
+have enough time left for that timeout plus configured inference headroom;
+otherwise lookup returns a budget outcome without starting new work. The cache
+never invokes or retries inference. Its explicit limits are deployment choices,
+not measured defaults or an automatic guarantee of inference latency.
+
+Positive snapshots refresh at the earlier of the configured refresh interval and
+half their remaining lifetime, subject to a minimum retry interval. Valid negative
+state and failures are rechecked at that retry interval. A short-lived snapshot
+can expire before the next allowed attempt; recording then stops until usable
+metadata returns. Destination and policy refresh are independent. Transient failure
+preserves each old snapshot only until its original expiry. Observed disablement,
+signal removal, authoritative denial, or invalid data takes effect for subsequent
+cache reads immediately. A failed read never restores recording defaults.
+
+Changes are observable only after refresh; this is not instantaneous revocation.
+Already-returned snapshots and future recorder leases need their own validity and
+lifecycle enforcement. Concrete adapters must map verified service responses to
+the cache's bounded outcomes; no Cloud response format is assumed here.
+
+Entry count is bounded, with at most one outstanding resolver call per component
+per entry. Background refresh does not extend idle retention. Idle entries are
+reclaimed once their actual resolver calls return. A timed-out call that ignores
+cancellation remains charged to capacity and cannot spawn replacement calls.
+The owner must close the cache with a finite shutdown deadline; closure cancels
+lookups, wakes waiters, and stops admission and maintenance. Real adapters must
+honor cancellation and bound their transports because Go cannot terminate arbitrary
+resolver code.
+
+These are executable contracts and cache behavior, not an exporter implementation
+or proof of Cloud ingestion. Discovery field mappings, transport credentials,
+export filtering, production cache wiring, and exporter lifecycle remain separate work.
 No customer settings API, log exporter, full agent-workflow trace, or billing
 accounting is supplied by this package.
 
