@@ -32,9 +32,9 @@ func itemReference(id string) responses.ResponseInputItemUnionParam {
 	return item
 }
 
-// reasoningItem builds a reasoning input item carrying encrypted content and a
-// single summary text part.
-func reasoningItem(id, encrypted, summary string) responses.ResponseInputItemUnionParam {
+// reasoningItem builds a reasoning input item carrying optional encrypted
+// content and a single summary text part.
+func reasoningItem(id string, encrypted *string, summary string) responses.ResponseInputItemUnionParam {
 	// Upstream only emits a summary_text entry when the reasoning text is
 	// non-empty; an empty reasoning part produces an empty summary array.
 	summaries := []responses.ResponseReasoningItemSummaryParam{}
@@ -42,8 +42,8 @@ func reasoningItem(id, encrypted, summary string) responses.ResponseInputItemUni
 		summaries = append(summaries, responses.ResponseReasoningItemSummaryParam{Text: summary})
 	}
 	item := responses.ResponseInputItemParamOfReasoning(id, summaries)
-	if item.OfReasoning != nil && encrypted != "" {
-		item.OfReasoning.EncryptedContent = param.NewOpt(encrypted)
+	if item.OfReasoning != nil && encrypted != nil {
+		item.OfReasoning.EncryptedContent = param.NewOpt(*encrypted)
 	}
 	return item
 }

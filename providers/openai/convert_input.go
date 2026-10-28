@@ -1,6 +1,8 @@
 package openai
 
 import (
+	"slices"
+
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/openai/openai-go/v3/responses"
 )
@@ -67,7 +69,25 @@ func convertInput(prompt []provider.Message, systemMode string, popts OpenAIResp
 		}
 	}
 
+	if !ctx.store && slices.ContainsFunc(input, isReasoningWithoutEncryptedContent) {
+		warnings = append(warnings, unstoredReasoningWithoutEncryptedContentWarning)
+		input = slices.DeleteFunc(input, isReasoningWithoutEncryptedContent)
+		if len(input) == 0 {
+			input = nil
+		}
+	}
+
 	return input, warnings, nil
+}
+
+var unstoredReasoningWithoutEncryptedContentWarning = provider.Warning{
+	Type:    provider.WarnOther,
+	Feature: "reasoning",
+	Message: "reasoning parts without encrypted content are not supported when store is false and are omitted",
+}
+
+func isReasoningWithoutEncryptedContent(item responses.ResponseInputItemUnionParam) bool {
+	return item.OfReasoning != nil && !item.OfReasoning.EncryptedContent.Valid()
 }
 
 // concatText concatenates the text of all text content parts.
