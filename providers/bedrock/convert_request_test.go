@@ -542,7 +542,8 @@ func TestBuildRequest_NovaHighReasoningMaxTokens(t *testing.T) {
 		wantEffort  string
 	}{
 		{name: "portable high", modelID: novaModel, reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
-		{name: "portable xhigh maps to max", modelID: novaModel, reasoning: provider.ReasoningXHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "max"},
+		{name: "portable xhigh coerced to high", modelID: novaModel, reasoning: provider.ReasoningXHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "portable max coerced to high", modelID: novaModel, reasoning: provider.ReasoningMax, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
 		{name: "explicit high", modelID: novaModel, explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
 		{name: "explicit xhigh", modelID: novaModel, explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "xhigh"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "xhigh"},
 		{name: "explicit max", modelID: novaModel, explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "max"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "max"},

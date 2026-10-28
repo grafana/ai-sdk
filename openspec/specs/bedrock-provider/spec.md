@@ -603,7 +603,7 @@ When a model ID containing `amazon.nova-2-lite-v1:0`, including regional prefixe
 
 #### Scenario: High Nova 2 Lite reasoning drops the token limit
 
-- **WHEN** `us.amazon.nova-2-lite-v1:0` receives `maxOutputTokens` with enabled reasoning at effort `high`, `xhigh`, or `max` from portable reasoning or explicit provider `reasoningConfig`
+- **WHEN** `us.amazon.nova-2-lite-v1:0` receives `maxOutputTokens` with enabled reasoning at effort `high`, including portable `xhigh` or `max` coerced to `high`, or explicit provider `reasoningConfig` effort `high`, `xhigh`, or `max`
 - **THEN** unary and streaming requests omit `inferenceConfig.maxTokens` and return an unsupported `maxOutputTokens` warning
 
 #### Scenario: Lower effort or other models keep the token limit

@@ -543,7 +543,7 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 		return &ReasoningConfig{Type: "enabled", BudgetTokens: budget}
 	}
 	effortReasoning := reasoning
-	if strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && (reasoning == provider.ReasoningXHigh || reasoning == provider.ReasoningMax) {
+	if isNova2ReasoningModel(modelID) && (reasoning == provider.ReasoningXHigh || reasoning == provider.ReasoningMax) {
 		effortReasoning = provider.ReasoningHigh
 		*warnings = append(*warnings, provider.Warning{Type: provider.WarnCompatibility, Feature: "reasoning", Details: fmt.Sprintf("reasoning %q is not directly supported by this model. mapped to effort %q.", reasoning, effortReasoning)})
 	}
