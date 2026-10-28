@@ -15,6 +15,8 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/discovery"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -71,9 +73,9 @@ func TestAccountSelection_Isolation(t *testing.T) {
 						return &http.Response{StatusCode: 401, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"dummy-request-key","type":"authentication_error"}}`)), Request: r}, nil
 					})}
 					writer := providerv4.NewHostErrorWriter()
-					configuredHandler, err := providerv4.New(providerv4.Config{Selector: NewConfiguredSelector(configured), Limits: serviceTestLimits()})
+					configuredHandler, err := newWireHandler(execution.Config{Selector: NewConfiguredSelector(configured), Limits: serviceTestLimits()})
 					require.NoError(t, err)
-					byokHandler, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
+					byokHandler, err := newWireHandler(execution.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
 					require.NoError(t, err)
 					for _, tc := range []struct {
 						name    string
@@ -103,7 +105,14 @@ func TestAccountSelection_Isolation(t *testing.T) {
 							w := httptest.NewRecorder()
 							h.ServeHTTP(w, r)
 							assert.Equal(t, tc.status, w.Code)
-							assert.NotContains(t, w.Body.String(), "dummy-request-key")
+							if tc.name == "byok inference" {
+								assert.Equal(t, []execution.Overview{{RequestedModelID: "openai/native-model", Attempts: []execution.Attempt{
+									{Provider: "openai", ModelID: "native-model", Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: "dummy-request-key", Type: "authentication_error", StatusCode: http.StatusUnauthorized}},
+								}}}, responseOverviews(t, w.Body.String()))
+								assert.NotContains(t, withoutProviderMetadata(t, w.Body.String()), "dummy-request-key")
+							} else {
+								assert.NotContains(t, w.Body.String(), "dummy-request-key")
+							}
 							if tc.name == "BYOK discovery" {
 								assert.Contains(t, w.Body.String(), "catalog discovery is unsupported for BYOK")
 							}
@@ -119,7 +128,7 @@ func TestAccountSelection_Isolation(t *testing.T) {
 	}
 }
 
-func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
+func TestBYOKSelection_NativeSummariesAndAttempts(t *testing.T) {
 	const nativeMessage = "provider-echo dummy-first dummy-second request-org request-project configured-provider-key configured-exporter-key static-gateway-key"
 	for _, policy := range []struct {
 		name string
@@ -159,8 +168,21 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 						}
 						return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 					})}
-					factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-					wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits(), ConfiguredAPIKeys: policy.keys})
+					factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) {
+						ordered := model
+						switch wrapped := model.(type) {
+						case nativeoptions.Model:
+							ordered = wrapped.LanguageModel
+						}
+						switch chain := ordered.(type) {
+						case *fallback.Model:
+							chain.WithAttemptObserver(func(context.Context, fallback.Attempt) { observed.Add(1) })
+						default:
+							require.FailNow(t, "expected a BYOK fallback chain")
+						}
+						return model, nil
+					}
+					wire, err := newWireHandler(execution.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits(), ConfiguredAPIKeys: policy.keys})
 					require.NoError(t, err)
 					handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
 					accountFields := ""
@@ -168,8 +190,7 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 						accountFields = `,"organization":"request-org","project":"request-project"`
 					}
 					body := fmt.Sprintf(`{"prompt":[],"maxOutputTokens":32,"providerOptions":{"gateway":{"byok":{%q:[{"apiKey":"dummy-first"%s},{"apiKey":"dummy-second"}]}}}}`, name, accountFields)
-					ctx := fallback.WithAttemptObserver(t.Context(), func(context.Context, fallback.Attempt) { observed.Add(1) })
-					request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body)).WithContext(ctx)
+					request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
 					request.Header = headers
 					request.Header.Set("Content-Type", "application/json")
 					request.Header.Set(providerv4.HeaderModelID, name+"/native-model")
@@ -177,11 +198,14 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 					request.Header.Set(providerv4.HeaderStreaming, strconv.FormatBool(mode != "unary"))
 					response := httptest.NewRecorder()
 					handler.ServeHTTP(response, request)
+					overviews := responseOverviews(t, response.Body.String())
 					if mode == "committed" {
 						assert.Equal(t, http.StatusOK, response.Code)
 						var nativeErrors []json.RawMessage
+						errorFrames := 0
 						for _, frame := range strings.Split(strings.TrimSpace(response.Body.String()), "\n\n") {
 							var event struct {
+								Type  string
 								Error struct {
 									StatusCode int
 									Data       struct {
@@ -190,6 +214,9 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 								}
 							}
 							require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &event))
+							if event.Type == "error" {
+								errorFrames++
+							}
 							if len(event.Error.Data.NativeError) != 0 {
 								nativeErrors = append(nativeErrors, event.Error.Data.NativeError)
 								if name == "anthropic" {
@@ -205,17 +232,69 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 						} else {
 							assert.JSONEq(t, fmt.Sprintf(`{"message":%q,"type":"error","code":"invalid_api_key","statusCode":400}`, expectedMessage), string(nativeErrors[0]))
 						}
+						selected := execution.Overview{RequestedModelID: name + "/native-model", Attempts: []execution.Attempt{{Provider: name, ModelID: "native-model", Outcome: fallback.AttemptSelected}}}
+						require.Len(t, overviews, errorFrames)
+						for _, overview := range overviews {
+							assert.Equal(t, selected, overview)
+						}
 					} else {
 						assert.Equal(t, http.StatusFailedDependency, response.Code)
-						assert.JSONEq(t, `{"error":{"message":"failed dependency","type":"failed_dependency","param":null,"code":"failed_dependency"}}`, response.Body.String())
+						assert.JSONEq(t, `{"error":{"message":"failed dependency","type":"failed_dependency","param":null,"code":"failed_dependency"}}`, withoutProviderMetadata(t, response.Body.String()))
+						assert.Equal(t, []execution.Overview{{RequestedModelID: name + "/native-model", Attempts: []execution.Attempt{
+							{Provider: name, ModelID: "native-model", Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: expectedMessage, Type: "authentication_error", StatusCode: http.StatusUnauthorized}},
+						}}}, overviews)
 					}
 					assert.Equal(t, int32(1), calls.Load())
 					assert.Equal(t, int32(1), observed.Load())
-					assert.NotContains(t, response.Body.String(), `"execution"`)
+					assert.NotContains(t, response.Body.String(), `"canonicalModelId"`)
 					assert.NotContains(t, response.Body.String(), `"providerInstance"`)
 				})
 			}
 		}
+	}
+}
+
+func TestBYOKSelection_NativeAttemptIdentity(t *testing.T) {
+	const suffix = "native/model/with-slashes"
+	for _, name := range []string{"anthropic", "openai"} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(name+"/"+strconv.FormatBool(streaming), func(t *testing.T) {
+				var calls atomic.Int32
+				client := &http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+					calls.Add(1)
+					raw, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+					assert.Contains(t, string(raw), fmt.Sprintf(`"model":%q`, suffix))
+					body := fmt.Sprintf(`{"type":"error","error":{"type":"overloaded_error","message":"overloaded %d"}}`, calls.Load())
+					return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+				})}
+				body := fmt.Sprintf(`{"prompt":[],"maxOutputTokens":32,"providerOptions":{"gateway":{"byok":{%q:[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}}}`, name)
+				response := serveBYOK(t, client, name+"/"+suffix, body, streaming)
+				assert.Equal(t, http.StatusServiceUnavailable, response.Code)
+				assert.Equal(t, int32(2), calls.Load())
+				failed := func(message string) execution.Attempt {
+					return execution.Attempt{Provider: name, ModelID: suffix, Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: message, Type: "overloaded_error", StatusCode: http.StatusServiceUnavailable}}
+				}
+				assert.Equal(t, []execution.Overview{{RequestedModelID: name + "/" + suffix, Attempts: []execution.Attempt{failed("overloaded 1"), failed("overloaded 2")}}}, responseOverviews(t, response.Body.String()))
+			})
+		}
+	}
+}
+
+func TestBYOKSelection_RejectedBeforeAttemptsHasNoOverview(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		t.Run(strconv.FormatBool(streaming), func(t *testing.T) {
+			var calls atomic.Int32
+			client := &http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+				calls.Add(1)
+				return nil, fmt.Errorf("unexpected native call")
+			})}
+			body := `{"prompt":[],"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-first"}]}},"anthropic":{"container":{"skills":[{"type":"anthropic","skillId":"skill"}]}}}}`
+			response := serveBYOK(t, client, "anthropic/native-model", body, streaming)
+			assert.Equal(t, http.StatusBadRequest, response.Code)
+			assert.Zero(t, calls.Load())
+			assert.NotContains(t, response.Body.String(), "providerMetadata")
+		})
 	}
 }
 
@@ -242,19 +321,7 @@ func TestBYOKSelection_SelectedProviderAccountCount(t *testing.T) {
 				calls.Add(1)
 				return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"denied"}}`)), Request: r}, nil
 			})}
-			factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-			wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
-			require.NoError(t, err)
-			handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
-			body := `{"prompt":[],"providerOptions":{"gateway":{"byok":` + tc.byok + `}}}`
-			request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
-			request.Header = headers
-			request.Header.Set("Content-Type", "application/json")
-			request.Header.Set(providerv4.HeaderModelID, "openai/native-model")
-			request.Header.Set(providerv4.HeaderSpecificationVersion, "4")
-			request.Header.Set(providerv4.HeaderStreaming, "false")
-			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, request)
+			response := serveBYOK(t, client, "openai/native-model", `{"prompt":[],"providerOptions":{"gateway":{"byok":`+tc.byok+`}}}`, false)
 			assert.Equal(t, tc.status, response.Code)
 			assert.Equal(t, tc.nativeCalls, calls.Load())
 			if tc.status == http.StatusBadRequest {
@@ -262,6 +329,69 @@ func TestBYOKSelection_SelectedProviderAccountCount(t *testing.T) {
 			}
 		})
 	}
+}
+
+// serveBYOK serves one BYOK ProviderWire request for modelID through the
+// Cloud request-account selector with an identity model factory.
+func serveBYOK(t *testing.T, client *http.Client, modelID, body string, streaming bool) *httptest.ResponseRecorder {
+	t.Helper()
+	factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
+	wire, err := newWireHandler(execution.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
+	require.NoError(t, err)
+	handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
+	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
+	request.Header = headers
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(providerv4.HeaderModelID, modelID)
+	request.Header.Set(providerv4.HeaderSpecificationVersion, "4")
+	request.Header.Set(providerv4.HeaderStreaming, strconv.FormatBool(streaming))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+// responseOverviews returns every execution overview in a ProviderWire response
+// body: the unary document's, or each stream frame's, in order.
+func responseOverviews(t *testing.T, body string) []execution.Overview {
+	t.Helper()
+	var overviews []execution.Overview
+	for _, frame := range strings.Split(strings.TrimSpace(body), "\n\n") {
+		if frame == "" {
+			continue
+		}
+		var document struct {
+			ProviderMetadata map[string]json.RawMessage `json:"providerMetadata"`
+			Error            struct {
+				Data struct {
+					ProviderMetadata map[string]json.RawMessage `json:"providerMetadata"`
+				} `json:"data"`
+			} `json:"error"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &document))
+		for _, metadata := range []map[string]json.RawMessage{document.ProviderMetadata, document.Error.Data.ProviderMetadata} {
+			var namespace struct {
+				Execution *execution.Overview `json:"execution"`
+			}
+			if raw, ok := metadata["gateway"]; ok {
+				require.NoError(t, json.Unmarshal(raw, &namespace))
+			}
+			if namespace.Execution != nil {
+				overviews = append(overviews, *namespace.Execution)
+			}
+		}
+	}
+	return overviews
+}
+
+// withoutProviderMetadata returns a unary document without its providerMetadata.
+func withoutProviderMetadata(t *testing.T, body string) string {
+	t.Helper()
+	var document map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(body), &document))
+	delete(document, "providerMetadata")
+	encoded, err := json.Marshal(document)
+	require.NoError(t, err)
+	return string(encoded)
 }
 
 type selectionTransport func(*http.Request) (*http.Response, error)

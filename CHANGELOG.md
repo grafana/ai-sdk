@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.1.0-alpha.4](https://github.com/grafana/ai-sdk/compare/v0.1.0-alpha.3...v0.1.0-alpha.4) (2026-10-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ai-gateway:** delegate request limits to the platform and bound attempts once ([#532](https://github.com/grafana/ai-sdk/issues/532))
+* **ai-gateway:** run the AI Gateway as a Grafana App Platform plugin ([#428](https://github.com/grafana/ai-sdk/issues/428))
+* **core:** project all steps and response history on results and OnFinish ([#531](https://github.com/grafana/ai-sdk/issues/531))
+
+### Features
+
+* **ai-gateway:** run the AI Gateway as a Grafana App Platform plugin ([#428](https://github.com/grafana/ai-sdk/issues/428)) ([1cc2e65](https://github.com/grafana/ai-sdk/commit/1cc2e65c264c830b5ddbd06379b471188b305873))
+* **core:** project all steps and response history on results and OnFinish ([#531](https://github.com/grafana/ai-sdk/issues/531)) ([25de8d4](https://github.com/grafana/ai-sdk/commit/25de8d467233c2fc3007dbe3fa5712f2bc9eb0de))
+* **parity:** advance pinned upstream to ai 7.0.143 ([#458](https://github.com/grafana/ai-sdk/issues/458)) ([f76495c](https://github.com/grafana/ai-sdk/commit/f76495c223918a2e879bc4c80cb0741528c2b565))
+
+
+### Bug Fixes
+
+* **core:** align provider-executed approval handling with upstream ([#567](https://github.com/grafana/ai-sdk/issues/567)) ([8973575](https://github.com/grafana/ai-sdk/commit/89735754faeba9f7fbcc4a0e44c0aa74fc874ef6))
+
+
+### Code Refactoring
+
+* **ai-gateway:** delegate request limits to the platform and bound attempts once ([#532](https://github.com/grafana/ai-sdk/issues/532)) ([2250fcf](https://github.com/grafana/ai-sdk/commit/2250fcff7964ab174cd796196a15578cde978a27))
+
 ## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/v0.1.0-alpha.2...v0.1.0-alpha.3) (2026-10-27)
 
 

@@ -395,7 +395,7 @@ func TestStreamText_EffectiveToolChoiceApprovalSuppression(t *testing.T) {
 		assert.True(t, step.ToolResults[0].ProviderExecuted)
 		require.Len(t, step.ToolApprovalRequests, 1)
 		assert.Equal(t, "provider-approval", step.ToolApprovalRequests[0].ApprovalID)
-		assert.NotEmpty(t, step.ToolApprovalRequests[0].Signature)
+		assert.Empty(t, step.ToolApprovalRequests[0].Signature)
 	})
 	t.Run("prior-message approval preserved", func(t *testing.T) {
 		executions := 0

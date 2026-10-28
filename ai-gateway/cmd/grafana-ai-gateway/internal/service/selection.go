@@ -9,43 +9,48 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/byok"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/provider"
 )
 
-func NewConfiguredSelector(resolver catalog.ModelResolver) providerv4.RequestSelector {
-	selectModel := providerv4.CatalogSelector(resolver)
-	return func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (providerv4.Selection, error) {
+func NewConfiguredSelector(resolver catalog.ModelResolver) execution.RequestSelector {
+	selectModel := execution.CatalogSelector(resolver)
+	return func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 		if !hasAccountAccess(ctx, gatewayauth.ConfiguredAccounts) {
-			return providerv4.Selection{}, providerv4.ErrAccountAccess
+			return execution.Selection{}, execution.ErrAccountAccess
 		}
 		return selectModel(ctx, id, options, gateway)
 	}
 }
 
-func NewBYOKSelector(client *http.Client, factory ModelFactory) providerv4.RequestSelector {
-	return func(ctx context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (providerv4.Selection, error) {
+func NewBYOKSelector(client *http.Client, factory ModelFactory) execution.RequestSelector {
+	return func(ctx context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 		if !hasAccountAccess(ctx, gatewayauth.RequestBYOK) {
-			return providerv4.Selection{}, providerv4.ErrAccountAccess
+			return execution.Selection{}, execution.ErrAccountAccess
 		}
 		request, err := byok.DecodeRequest(id, gateway, nil)
 		switch {
 		case errors.Is(err, byok.ErrInvalidSelector):
-			return providerv4.Selection{}, providerv4.ErrInvalidBYOKSelector
+			return execution.Selection{}, execution.ErrInvalidBYOKSelector
 		case errors.Is(err, byok.ErrInvalidRequest):
-			return providerv4.Selection{}, providerv4.ErrInvalidBYOK
+			return execution.Selection{}, execution.ErrInvalidBYOK
 		case err != nil:
-			return providerv4.Selection{}, err
+			return execution.Selection{}, err
 		}
 		lower, err := byok.New(request.Provider, request.Model, request.Accounts, client)
 		if err != nil {
-			return providerv4.Selection{}, err
+			return execution.Selection{}, err
 		}
 		model, err := factory(id, lower)
 		if err != nil {
-			return providerv4.Selection{}, err
+			return execution.Selection{}, err
 		}
-		return providerv4.Selection{ID: id, Model: model}, nil
+		return execution.AccountSelection(id, model, execution.RequestAccounts{
+			Provider: string(request.Provider),
+			ModelID:  request.Model,
+			Count:    len(request.Accounts),
+		}), nil
 	}
 }
 

@@ -8,11 +8,14 @@ release-please 17.6.0 writer. It does not establish live publication evidence.
 ## Candidate and write boundaries
 
 The publisher discovers one frozen inventory using the existing
-[merged candidate authorizer](AUTHORIZATION.md). It validates each selected library
-immediately before publishing, including retained readiness evidence, exact squash
-source CI, standalone builds, consumer checks and published prerequisite freshness.
-It does not trust a saved authorization report or rescan for new candidates.
-An unready provider does not prevent ready root from proceeding. Gateway remains
+[merged candidate authorizer](AUTHORIZATION.md). It validates every selected
+library before publishing, including retained readiness evidence, exact squash
+source CI and first-party requirements, then publishes them in dependency order. A
+library is tagged only after each co-released prerequisite was published in the
+same run. It does not trust a saved authorization report or rescan for new
+candidates. An unready provider does not prevent ready root from proceeding. After
+each release, the new version is verified as an external consumer through the
+public Go proxy; a failure is reported and never moves the tag. Gateway remains
 unsupported. Duplicate component or tag claims block the affected candidates.
 
 The writer permits only four operations for the current candidate:
@@ -20,7 +23,7 @@ The writer permits only four operations for the current candidate:
 1. Create its exact tag at its immutable squash SHA.
 2. Create its release with the pinned builder's exact name, notes and prerelease
    flag, targeting that same SHA. Draft publication is unsupported.
-3. Add `autorelease: tagged` to its PR.
+3. Add `autorelease: tagged` to its PR, once every library of that PR is published.
 4. Remove `autorelease: pending` from that PR after the tagged label exists.
 
 Live metadata, source/readiness run attempts, artifact identity, canonical ancestry

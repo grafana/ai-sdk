@@ -12,23 +12,24 @@ import (
 )
 
 type inputConversionContext struct {
-	isReasoningModel        bool
-	store                   bool
-	providerOptionsName     string
-	hasConversation         bool
-	hasPreviousResponseID   bool
-	toolNameMapping         toolNameMapping
-	hasLocalShellTool       bool
-	hasShellTool            bool
-	hasApplyPatchTool       bool
-	hasComputerTool         bool
-	customProviderToolNames map[string]struct{}
-	outputSchemaToolNames   map[string]struct{}
-	processedApprovalIDs    map[string]struct{}
-	parallelResults         map[string]*parallelToolResultGroup
-	emittedParallelCalls    map[string]bool
-	emittedParallelResults  map[string]bool
-	programmaticToolCallIDs map[string]bool
+	isReasoningModel                     bool
+	store                                bool
+	providerOptionsName                  string
+	hasConversation                      bool
+	hasPreviousResponseID                bool
+	toolNameMapping                      toolNameMapping
+	hasLocalShellTool                    bool
+	hasShellTool                         bool
+	hasApplyPatchTool                    bool
+	hasComputerTool                      bool
+	customProviderToolNames              map[string]struct{}
+	outputSchemaToolNames                map[string]struct{}
+	processedApprovalIDs                 map[string]struct{}
+	parallelResults                      map[string]*parallelToolResultGroup
+	emittedParallelCalls                 map[string]bool
+	emittedParallelResults               map[string]bool
+	programmaticToolCallIDs              map[string]bool
+	configurationUpdateUnsupportedReason string
 }
 
 func newInputConversionContext(tools []provider.Tool, mapping toolNameMapping, store bool, providerOptionsName string, hasConversation, hasPreviousResponseID bool) inputConversionContext {
@@ -260,7 +261,7 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		return group.output(ctx)
 	}
 	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied {
-		if ctx.outputOptions(part.Output).ApprovalID != "" {
+		if openAIPartOptionsFor(part.Output.ProviderOptions, providerName).ApprovalID != "" || ctx.outputOptions(part.Output).ApprovalID != "" {
 			return nil, nil, nil
 		}
 	}

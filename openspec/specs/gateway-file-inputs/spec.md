@@ -22,7 +22,7 @@ The strict Gateway mapper SHALL support user/assistant ordinary file parts and f
 - **THEN** the applicable deferred capability SHALL fail safely before model invocation without enabling that family as a side effect of file support
 
 ### Requirement: Scoped file options preserve semantic JSON
-Supported message-level and ordinary file-part provider options, including nested tool-result file options, SHALL preserve namespace objects and opaque nested JSON at their original scope. Reserved host namespaces `gateway`, `grafana`, and `grafana-ai-sdk` SHALL fail safely rather than reach native providers unless an owning host feature consumes them.
+Supported message-level and ordinary file-part provider options, including nested tool-result file options, SHALL preserve namespace objects and opaque nested JSON at their original scope. No namespace SHALL be reserved at these scopes: `gateway`, `grafana` and `grafana-ai-sdk` SHALL reach native providers like any other namespace, because the host consumes only call-level `gateway` controls.
 
 #### Scenario: Scoped opaque values survive
 - **WHEN** supported message/file scopes carry ordinary provider options containing nested null, false, zero, empty strings, arrays, or objects
@@ -34,8 +34,8 @@ Supported message-level and ordinary file-part provider options, including neste
 - **AND** native consumption and concrete bypass protections SHALL determine behavior
 
 #### Scenario: Host namespace is not forwarded
-- **WHEN** a supported message or file scope includes a reserved host namespace not consumed by an owning feature
-- **THEN** mapping SHALL fail with a fixed safe response before resolution or invocation and SHALL NOT promote it to headers or call options
+- **WHEN** a supported message or file scope includes a `gateway`, `grafana` or `grafana-ai-sdk` namespace
+- **THEN** the model SHALL receive it unchanged at that scope, and it SHALL NOT be promoted to headers, call options or host controls
 
 ### Requirement: Native file and function-tool option consumption boundaries
 File-entry and function-tool options SHALL obey consumption-backed protections under gateway-native-provider-options, without selected-backend namespace or field filtering. Existing call-level options, body headers, and text-part options SHALL retain their mapping and host protections. This capability SHALL NOT enable output-level tool-result options or non-file nested result options.

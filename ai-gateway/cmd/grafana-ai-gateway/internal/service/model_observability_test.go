@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/agento11y/go/agento11y/testkit"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
@@ -76,7 +77,7 @@ func TestBYOKObservability_LogicalExportAndCredentialPrivacy(t *testing.T) {
 					}
 					return &http.Response{StatusCode: code, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 				})}
-				wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, observe), Limits: serviceTestLimits()})
+				wire, err := newWireHandler(execution.Config{Selector: NewBYOKSelector(client, observe), Limits: serviceTestLimits()})
 				require.NoError(t, err)
 				handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
 				request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[{"role":"user","content":[{"type":"text","text":"application-content"}]}],"maxOutputTokens":32,"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-first"},{"apiKey":"dummy-second"}]}}}}`))
@@ -105,7 +106,16 @@ func TestBYOKObservability_LogicalExportAndCredentialPrivacy(t *testing.T) {
 				assert.Equal(t, requestID, testkit.StringValue(t, generation, "model", "name"))
 				exported, err := json.Marshal(generation)
 				require.NoError(t, err)
-				assert.NotContains(t, response.Body.String(), `"execution"`)
+				failed := execution.Attempt{Provider: "anthropic", ModelID: strings.TrimPrefix(requestID, "anthropic/"), Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: "dummy-first dummy-second", Type: "api_error", StatusCode: status}}
+				switch status {
+				case -1:
+					assert.Empty(t, responseOverviews(t, response.Body.String()))
+				case 401:
+					assert.Equal(t, []execution.Overview{{RequestedModelID: requestID, Attempts: []execution.Attempt{failed}}}, responseOverviews(t, response.Body.String()))
+				default:
+					selected := execution.Attempt{Provider: failed.Provider, ModelID: failed.ModelID, Outcome: fallback.AttemptSelected}
+					assert.Equal(t, []execution.Overview{{RequestedModelID: requestID, Attempts: []execution.Attempt{failed, selected}}}, responseOverviews(t, response.Body.String()))
+				}
 				assert.NotContains(t, response.Body.String(), `"nativeError"`)
 				metrics := testMetrics(t, telemetry)
 				assert.Contains(t, metrics, `model="byok"`)

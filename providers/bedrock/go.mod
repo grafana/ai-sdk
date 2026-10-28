@@ -6,8 +6,8 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.4
 	github.com/aws/aws-sdk-go-v2/config v1.33.10
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.10
-	github.com/grafana/ai-sdk v0.1.0-alpha.2
-	github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.1
+	github.com/grafana/ai-sdk v0.1.0-alpha.4
+	github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.2
 	github.com/openai/openai-go/v3 v3.76.0
 	github.com/stretchr/testify v1.12.1
 )
@@ -38,3 +38,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
+
+replace github.com/grafana/ai-sdk => ../..
+
+replace github.com/grafana/ai-sdk/providers/openai => ../../providers/openai

@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { GitHub, setLogger } from 'release-please';
 import { readOnlyFetch } from './preview.mjs';
 import { discoverMerged, REPO, REPOSITORY_ID } from './merged-candidates.mjs';
-import { childEnvironment, libraryValidator } from './authorize.mjs';
+import { childEnvironment, libraryValidator, publishedVerifier } from './authorize.mjs';
 import { publishInventory } from './publication.mjs';
 import { activationContext, selectInventory, verifyProtections, waitForToolingCI,
   preparationTransport, prepareLibraries } from './activation.mjs';
@@ -35,7 +35,7 @@ export async function main(args, env = process.env) {
   await waitForToolingCI(github, toolingRevision);
   const inventory = selectInventory(await discoverMerged(github, mode === 'root' ? '.' : undefined), mode);
   const report = await publishInventory({ github, inventory, toolingRevision, token: env.GH_TOKEN,
-    validate: libraryValidator(inventory, env.GH_READ_TOKEN),
+    validate: libraryValidator(inventory, env.GH_READ_TOKEN), verify: publishedVerifier(env),
     fetchImpl: async (url, options) => { await verifyProtections(github, approval, app); return fetch(url, options); } });
   console.log(JSON.stringify(report, null, 2));
   if (mode === 'libraries') {
@@ -49,7 +49,7 @@ export async function main(args, env = process.env) {
       fetch: preparationTransport(beforeWrite) });
     console.log(JSON.stringify({ prepared: await prepareLibraries(writer, toolingRevision) }, null, 2));
   }
-  if (report.candidates.some(candidate => candidate.status === 'blocked')) process.exitCode = 1;
+  if (report.candidates.some(candidate => candidate.status === 'blocked' || candidate.verification?.status === 'failed')) process.exitCode = 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

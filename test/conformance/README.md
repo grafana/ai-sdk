@@ -87,8 +87,8 @@ the others, and no check claims exhaustive parity.
   state-machine behavior.
 - **Generation** (`mise run generate-conformance`) produces expectations; it
   does not establish input provenance.
-- **Workspace substitutions** do not prove that a published module adopted a
-  producer change.
+- **Local replacements** do not prove that a published module adopted a
+  producer change; post-publication verification of the released versions does.
 - **Request snapshots** exclude volatile SigV4 headers. Header redaction does
   not protect query-string credentials, so a query-authenticated recording
   needs an explicit secret and volatility policy.
@@ -403,7 +403,7 @@ pnpm exec tsx request-snapshots.mts --write # explicitly regenerate the harness 
 pnpm exec tsx request-snapshots.mts         # check without rewriting it
 pnpm exec tsx --test common.test.mts
 cd ..
-GOWORK=off GOFLAGS=-mod=readonly go test -tags conformance -run TestRequestSnapshot ./...
+GOFLAGS=-mod=readonly go test -tags conformance -run TestRequestSnapshot ./...
 ```
 
 Existing queryless provider snapshots remain unchanged. Regenerate any

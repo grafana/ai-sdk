@@ -261,4 +261,12 @@ func TestExecutionSchema_ProducedNamespace(t *testing.T) {
 			require.NoError(t, compiled.Validate(metadata["gateway"]))
 		})
 	}
+	t.Run("request accounts", func(t *testing.T) {
+		metadata := execution.Metadata(&execution.Overview{RequestedModelID: "openai/gpt-5", Attempts: []execution.Attempt{
+			{Provider: "openai", ModelID: "gpt-5", Outcome: fallback.AttemptFailed, Error: &execution.Failure{Message: "overloaded", StatusCode: 503}},
+			{Provider: "openai", ModelID: "gpt-5", Outcome: fallback.AttemptSelected},
+		}}, nil)
+		assert.NotContains(t, string(metadata["gateway"]), "canonicalModelId")
+		require.NoError(t, compiled.Validate(metadata["gateway"]))
+	})
 }

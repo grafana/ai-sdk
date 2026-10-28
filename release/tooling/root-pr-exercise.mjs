@@ -110,7 +110,7 @@ export async function createRootTest(github, transport, sha, diagnostics) {
   } catch (error) {
     if (error.status !== 404) throw error;
   }
-  const candidates = await prepareCandidates(github, { path: '.' });
+  const candidates = await prepareCandidates(github, { path: '.', manifestOptions: { separatePullRequests: true } });
   assert.equal(candidates.length, 1, 'expected exactly one root candidate');
   assert.equal(diagnostics.length, 0, 'resolve commit parsing warnings before App writes');
   const [candidate] = candidates;

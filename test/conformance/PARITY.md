@@ -45,4 +45,4 @@ Other records have their own homes:
 | Agent Observability integration | Go extension | mixed | `middleware/agentobservability` tests, Gateway export tests |
 | AI Gateway | Go extension | mixed | `openspec/specs/gateway-*` and `grafana-gateway-client` specs, `ai-gateway/` tests |
 | Baseline and fixture inventory | Conformance harness | automated | `mise run validate-parity-baseline`, `mise run parity-coverage` |
-| Published module dependencies | Conformance harness | automated | `mise run verify-module-resolution` |
+| Published module dependencies | Conformance harness | automated | `mise run verify-module-requirements`, post-publication verification in `scripts/release_consumer.py` |

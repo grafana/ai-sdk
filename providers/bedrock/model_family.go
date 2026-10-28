@@ -32,6 +32,12 @@ func isOpenAIGptOSSModel(modelID string) bool {
 	return openAIGptOSSModelPattern.MatchString(modelID)
 }
 
+// isNova2ReasoningModel returns true when the Bedrock model ID refers to Amazon
+// Nova 2 Lite, including regional and inference-profile prefixes.
+func isNova2ReasoningModel(modelID string) bool {
+	return strings.Contains(modelID, "amazon.nova-2-lite-v1:0")
+}
+
 // isMistralModel returns true when the Bedrock model ID refers to a Mistral
 // model on Bedrock (e.g. `mistral.mistral-large-2407-v1:0`). Cross-region
 // prefixes (`us.mistral.`) also match. Mistral models require

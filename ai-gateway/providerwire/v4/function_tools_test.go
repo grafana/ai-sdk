@@ -3,6 +3,7 @@ package v4
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -182,7 +183,6 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 		{name: "opaque metadata does not grant ownership", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"mcp","toolName":"echo","input":{},"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}],"providerOptions":{"anthropic":{"mcpServers":[{"type":"url","name":"echo","url":"https://mcp.example.test"}]}}}`, pending: map[string]string{}, status: http.StatusOK},
 		{name: "duplicate historical call", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"f","input":{}},{"type":"tool-call","toolCallId":"call","toolName":"f","input":{}}]}]}`, status: http.StatusBadRequest},
 		{name: "mismatched history result", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"f","input":{},"providerExecuted":true},{"type":"tool-result","toolCallId":"call","toolName":"other","output":{"type":"text","value":"result"}}]}]}`, status: http.StatusBadRequest},
-		{name: "reserved part options", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"f","input":{},"providerOptions":{"gateway":{}}}]}]}`, status: http.StatusBadRequest},
 		{name: "nested output options", body: `{"prompt":[{"role":"assistant","content":[{"type":"tool-result","toolCallId":"call","toolName":"f","output":{"type":"json","value":false,"providerOptions":{"anthropic":{"private":true}}}}]}]}`, pending: map[string]string{}, status: http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -206,14 +206,23 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 			}
 		})
 	}
-	t.Run("reserved namespace precedes MCP metadata", func(t *testing.T) {
-		harness := newRuntimeHarness(t, testLimits())
-		body := `{"prompt":[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{"gateway":{},"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}]}]}`
-		response := harness.serve(validRequest(body))
-		assert.Equal(t, http.StatusBadRequest, response.Code)
-		assert.JSONEq(t, string(reservedProviderOptionsError), response.Body.String())
-		assert.Zero(t, harness.resolver.callCount())
-		assert.Zero(t, harness.model.callCount())
+	t.Run("gateway namespace beside MCP metadata", func(t *testing.T) {
+		const call = `{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{%s"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}`
+		pending := make([]map[string]string, 0, 2)
+		for _, extra := range []string{``, `"gateway":{"marker":true},`} {
+			harness := newRuntimeHarness(t, testLimits())
+			response := harness.serve(validRequest(`{"prompt":[{"role":"assistant","content":[` + fmt.Sprintf(call, extra) + `]}]}`))
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			opts := harness.model.receivedOptions()
+			calls, failure := unresolvedProviderCalls(opts.Prompt)
+			require.Nil(t, failure)
+			pending = append(pending, calls)
+			if extra != "" {
+				assert.Contains(t, opts.Prompt[0].Content[0].ProviderOptions, "gateway")
+				assert.Contains(t, opts.Prompt[0].Content[0].ProviderOptions, "anthropic")
+			}
+		}
+		assert.Equal(t, pending[0], pending[1])
 	})
 }
 
@@ -230,8 +239,6 @@ func TestUnresolvedProviderCalls_RejectsAmbiguousHistory(t *testing.T) {
 func TestRuntimeFunctionTools_Boundaries(t *testing.T) {
 	for _, body := range []string{
 		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"args":{}}]}`,
-		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"providerOptions":{"gateway":{}}}]}`,
-		`{"prompt":[],"tools":[{"type":"function","name":"f","inputSchema":{},"providerOptions":{"grafana":{"secret":"private"}}}]}`,
 		`{"prompt":[{"role":"user","content":[{"type":"tool-call","toolCallId":"a","toolName":"f","input":{}}]}]}`,
 		`{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"a","toolName":"f","output":{"type":"text"}}]}]}`,
 	} {

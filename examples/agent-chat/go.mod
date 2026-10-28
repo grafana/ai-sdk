@@ -3,8 +3,8 @@ module github.com/grafana/ai-sdk/examples/agent-chat
 go 1.27.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.2
-	github.com/grafana/ai-sdk/providers/anthropic v0.0.0
+	github.com/grafana/ai-sdk v0.1.0-alpha.4
+	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.2
 	github.com/stretchr/testify v1.12.1
 )
 
@@ -52,6 +52,6 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 )
 
-replace github.com/grafana/ai-sdk => ../../
+replace github.com/grafana/ai-sdk => ../..
 
 replace github.com/grafana/ai-sdk/providers/anthropic => ../../providers/anthropic

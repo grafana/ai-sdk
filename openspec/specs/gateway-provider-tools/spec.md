@@ -29,7 +29,7 @@ Calls/input-start SHALL preserve providerExecuted true. Dynamic and preliminary 
 - **THEN** the encoded SSE and Go client SHALL preserve each state for subsequent inference
 
 ### Requirement: Provider result and continuation transport
-Unary/SSE output SHALL preserve ordered calls and non-null JSON results, including error, dynamic and preliminary semantics. Assistant provider calls and basic assistant-side results SHALL map into continuation. Ordinary tool-part options SHALL retain opaque object namespaces while rejecting host-reserved controls.
+Unary/SSE output SHALL preserve ordered calls and non-null JSON results, including error, dynamic and preliminary semantics. Assistant provider calls and basic assistant-side results SHALL map into continuation. Tool-part options SHALL retain opaque object namespaces, including `gateway`, `grafana` and `grafana-ai-sdk`, because only call-level `gateway` controls are host-owned.
 
 #### Scenario: Selected result values
 - **WHEN** output results contain empty string, false, zero, empty object or array
@@ -38,6 +38,10 @@ Unary/SSE output SHALL preserve ordered calls and non-null JSON results, includi
 #### Scenario: Native continuation
 - **WHEN** either client replays an aliased provider call and result in assistant history
 - **THEN** native conversion SHALL preserve the pairing without a Gateway session or executor
+
+#### Scenario: Gateway namespace on a provider tool call
+- **WHEN** an assistant provider-executed tool call in history carries `gateway` and `anthropic` options
+- **THEN** the model SHALL receive both namespaces on the call, and native MCP interpretation of the `anthropic` namespace SHALL be unchanged
 
 ### Requirement: Tool option consuming authority and deferred content boundaries
 Native-consuming adapters SHALL reject tool identity, shape or authority overrides at their consuming scopes without projecting unknown extensions away. Registered text/json/error-text/error-json/execution-denied output options and nested text/file options SHALL reach native consumers. The content output wrapper SHALL NOT accept providerOptions; deferred content families SHALL remain unsupported.
@@ -129,7 +133,7 @@ Each HTTP invocation SHALL have one canonical logical generation; tool payloads,
 - **THEN** it SHALL remain one canonical logical generation and metadata-only exports/logs/metric labels SHALL exclude tool payloads/names/IDs/metadata and physical attribution
 
 ### Requirement: Independent acceptance evidence
-Both registered clients SHALL exercise real-handler and authenticated-command scenarios without requiring MCP. Request goldens SHALL be captured from the pinned client. Provider fixtures SHALL retain authentic provenance and Apache modules SHALL NOT import Gateway code. Candidate-source checks SHALL select `go.gateway.work` explicitly; standalone Gateway builds SHALL use published pins with GOWORK disabled.
+Both registered clients SHALL exercise real-handler and authenticated-command scenarios without requiring MCP. Request goldens SHALL be captured from the pinned client. Provider fixtures SHALL retain authentic provenance and Apache modules SHALL NOT import Gateway code. Candidate-source checks SHALL build Gateway from `ai-gateway/go.mod` with `GOWORK=off`, resolving SDK source through its local replacements.
 
 #### Scenario: Intermediate PR validation
 - **WHEN** this change is validated independently of its successor change
