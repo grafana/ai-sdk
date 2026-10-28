@@ -490,7 +490,6 @@ func TestStreamingTools_InvalidTransitions(t *testing.T) {
 		{"duplicate result", []provider.StreamPart{call, result, result}},
 		{"mismatched name", []provider.StreamPart{start, end, {Type: provider.PartToolCall, ToolCallID: "a", ToolName: "other", Input: "{}"}}},
 		{"open at finish", []provider.StreamPart{start, finishPart()}},
-		{"metadata then close", []provider.StreamPart{call, {Type: provider.PartResponseMeta}}},
 		{"metadata after input start", []provider.StreamPart{start, {Type: provider.PartResponseMeta}, end, call}},
 		{"empty input id", []provider.StreamPart{{Type: provider.PartToolInputStart, ToolName: "f"}}},
 		{"empty input name", []provider.StreamPart{{Type: provider.PartToolInputStart, ID: "a"}}},

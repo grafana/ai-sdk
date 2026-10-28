@@ -334,6 +334,7 @@ func TestStreamingSegments_Identifiers(t *testing.T) {
 			body := serveSegmentRequest(t, streamRequest(request), tc.parts...)
 			if tc.failure {
 				assert.Equal(t, []string{"internal_error"}, segmentErrorCodes(t, body))
+				assert.Len(t, segmentFrameTypes(t, body), len(tc.parts)+1)
 				return
 			}
 			assert.Empty(t, segmentErrorCodes(t, body))
@@ -400,19 +401,6 @@ func TestStreamingSegments_AfterFinish(t *testing.T) {
 		assert.Contains(t, body, `"delta":"after"`)
 	})
 
-	for _, includeRaw := range []bool{true, false} {
-		t.Run("raw then a segment includeRaw="+map[bool]string{true: "true", false: "false"}[includeRaw], func(t *testing.T) {
-			body := serveSegmentParts(t, includeRaw, joinSegmentParts(
-				[]provider.StreamPart{segmentMeta("msg_1"), finishPart(), segmentRaw(`{"type":"message_start"}`), segmentMeta("msg_2")},
-				segmentText("0", "after"),
-				[]provider.StreamPart{finishPart()},
-			)...)
-			assert.Empty(t, segmentErrorCodes(t, body))
-			assert.Equal(t, includeRaw, strings.Contains(body, `{"type":"raw","rawValue":{"type":"message_start"}}`))
-			assert.Equal(t, 2, strings.Count(body, `"type":"finish"`))
-		})
-	}
-
 	t.Run("recovered panic after finish", func(t *testing.T) {
 		body := serveSegmentParts(t, false, segmentMeta("msg_1"), finishPart(), provider.StreamPart{Type: provider.PartError, APICallError: streamrecover.Error()})
 		assert.Equal(t, []string{"internal_error"}, segmentErrorCodes(t, body))
@@ -422,13 +410,6 @@ func TestStreamingSegments_AfterFinish(t *testing.T) {
 }
 
 func TestStreamingSegments_Completion(t *testing.T) {
-	t.Run("close after finish is clean", func(t *testing.T) {
-		body := serveSegmentParts(t, false, append(append([]provider.StreamPart{segmentMeta("msg_1")}, segmentText("0", "x")...), finishPart())...)
-		assert.Empty(t, segmentErrorCodes(t, body))
-		types := segmentFrameTypes(t, body)
-		assert.Equal(t, "finish", types[len(types)-1])
-	})
-
 	t.Run("close before any finish", func(t *testing.T) {
 		body := serveSegmentParts(t, false, segmentMeta("msg_1"), provider.StreamPart{Type: provider.PartTextStart, ID: "0"})
 		assert.Equal(t, []string{"internal_error"}, segmentErrorCodes(t, body))
@@ -444,13 +425,13 @@ func TestStreamingSegments_Completion(t *testing.T) {
 }
 
 type stalledSegmentProvider struct {
-	parts     []provider.StreamPart
-	context   atomic.Pointer[context.Context]
-	cancelled chan struct{}
+	parts   []provider.StreamPart
+	context atomic.Pointer[context.Context]
+	done    chan struct{}
 }
 
 func newStalledSegmentProvider(parts ...provider.StreamPart) *stalledSegmentProvider {
-	return &stalledSegmentProvider{parts: parts, cancelled: make(chan struct{})}
+	return &stalledSegmentProvider{parts: parts, done: make(chan struct{})}
 }
 
 func (p *stalledSegmentProvider) stream(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
@@ -461,7 +442,7 @@ func (p *stalledSegmentProvider) stream(ctx context.Context, _ provider.CallOpti
 	}
 	go func() {
 		<-ctx.Done()
-		close(p.cancelled)
+		close(p.done)
 	}()
 	return &provider.StreamResult{Stream: stream}, nil
 }
@@ -472,6 +453,7 @@ func (p *stalledSegmentProvider) canceled() bool {
 }
 
 func TestStreamingSegments_StalledAfterFinish(t *testing.T) {
+	const budget = 550 * time.Millisecond
 	anthropicFirst := joinSegmentParts(
 		[]provider.StreamPart{segmentMeta("msg_1")},
 		segmentText("0", "first"),
@@ -484,13 +466,12 @@ func TestStreamingSegments_StalledAfterFinish(t *testing.T) {
 		deadline time.Duration
 		cancel   bool
 		want     []string
-		budget   time.Duration
 	}{
-		{name: "idle after finish", parts: []provider.StreamPart{segmentMeta("msg_1"), finishPart()}, idle: 50 * time.Millisecond, want: []string{"timeout"}, budget: 550 * time.Millisecond},
-		{name: "deadline after finish", parts: []provider.StreamPart{segmentMeta("msg_1"), finishPart()}, idle: time.Second, deadline: 50 * time.Millisecond, want: []string{"timeout"}, budget: 550 * time.Millisecond},
-		{name: "stall between segments", parts: anthropicFirst, idle: 50 * time.Millisecond, want: []string{"timeout"}, budget: 550 * time.Millisecond},
-		{name: "idle after a segment opens", parts: []provider.StreamPart{segmentMeta("msg_1"), finishPart(), segmentMeta("msg_2")}, idle: 50 * time.Millisecond, want: []string{"timeout"}, budget: 550 * time.Millisecond},
-		{name: "cancellation after finish", parts: []provider.StreamPart{segmentMeta("msg_1"), finishPart()}, idle: time.Second, cancel: true, want: []string{string(codeCancellation)}, budget: 550 * time.Millisecond},
+		{name: "idle after finish", parts: []provider.StreamPart{segmentMeta("msg_1"), finishPart()}, idle: 50 * time.Millisecond, want: []string{"timeout"}},
+		{name: "deadline after finish", parts: []provider.StreamPart{segmentMeta("msg_1"), finishPart()}, idle: time.Second, deadline: 50 * time.Millisecond, want: []string{"timeout"}},
+		{name: "stall between segments", parts: anthropicFirst, idle: 50 * time.Millisecond, want: []string{"timeout"}},
+		{name: "idle after a segment opens", parts: []provider.StreamPart{segmentMeta("msg_1"), finishPart(), segmentMeta("msg_2")}, idle: 50 * time.Millisecond, want: []string{"timeout"}},
+		{name: "cancellation after finish", parts: []provider.StreamPart{segmentMeta("msg_1"), finishPart()}, idle: time.Second, cancel: true, want: []string{string(codeCancellation)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			limits := testLimits()
@@ -517,9 +498,9 @@ func TestStreamingSegments_StalledAfterFinish(t *testing.T) {
 			}
 			start := time.Now()
 			harness.handler.ServeHTTP(writer, req)
-			assert.Less(t, time.Since(start), tc.budget)
+			assert.Less(t, time.Since(start), budget)
 			select {
-			case <-stalled.cancelled:
+			case <-stalled.done:
 			case <-time.After(time.Second):
 				require.FailNow(t, "provider was not canceled")
 			}

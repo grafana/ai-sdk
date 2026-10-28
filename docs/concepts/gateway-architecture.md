@@ -224,7 +224,7 @@ One provider stream can carry several native responses or messages. Each
 `response-metadata` part starts a response segment and each `finish` ends one,
 so a stream may contain several of both. A `finish` does not end the stream:
 the stream ends when the provider closes it, and that close is clean only
-directly after a `finish`. Idle time, the deadline and cancellation still end
+when the last part other than raw parts and provider errors is a `finish`. Idle time, the deadline and cancellation still end
 with their terminal error, even after a written `finish`.
 
 A provider error event can be followed by more content and a valid finish. It

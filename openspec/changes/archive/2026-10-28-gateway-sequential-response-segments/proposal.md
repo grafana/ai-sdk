@@ -75,9 +75,10 @@ None.
 
 - **Code:**
   - `ai-gateway/providerwire/v4`: `stream.go` (`streamState`, `processStreamPart`, `consumeStreamParts`), `reasoning.go` and `stream_tools.go`, plus their tests;
-  - the ProviderWire testserver (`ai-gateway/test/providerwire-v4/testserver`) and `runtime-integration.test.ts`.
+  - the ProviderWire testserver (`ai-gateway/test/providerwire-v4/testserver`) and `runtime-integration.test.ts`;
+  - the test-only Go capture tool in `providers/grafana/internal/capture`, so the Go client can replay fixtures that declare provider tools.
 - **Not changed:**
-  - the root SDK, provider modules, `providers/grafana` and middleware modules;
+  - the root SDK, the other provider modules, the `providers/grafana` library and middleware modules;
   - provider inputs, goldens, `upstream.yaml` `knownGaps` and `PARITY.md`.
 - **Wire:**
   - The event types and their schemas are unchanged.

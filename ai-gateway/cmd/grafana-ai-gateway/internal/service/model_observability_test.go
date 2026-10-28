@@ -1252,11 +1252,10 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 		logEvent     string
 		logOutcome   string
 		metricLabels string
-		wireErrors   int
 	}{
 		{name: "normal close", parts: segments, idle: 5 * time.Second, logEvent: "aisdk.model.stream.finish", logOutcome: "success", metricLabels: `error_type="none",finish_reason="stop"`},
-		{name: "deadline stall after finish", parts: segments[:5], stall: true, idle: 5 * time.Second, deadline: 100 * time.Millisecond, logEvent: "aisdk.model.stream.error", logOutcome: "timeout", metricLabels: `error_type="context_deadline_exceeded"`, wireErrors: 1},
-		{name: "idle stall after finish", parts: segments[:5], stall: true, idle: 50 * time.Millisecond, logEvent: "aisdk.model.stream.cancelled", logOutcome: "cancelled", metricLabels: `error_type="context_canceled"`, wireErrors: 1},
+		{name: "deadline stall after finish", parts: segments[:5], stall: true, idle: 5 * time.Second, deadline: 100 * time.Millisecond, logEvent: "aisdk.model.stream.error", logOutcome: "timeout", metricLabels: `error_type="context_deadline_exceeded"`},
+		{name: "idle stall after finish", parts: segments[:5], stall: true, idle: 50 * time.Millisecond, logEvent: "aisdk.model.stream.cancelled", logOutcome: "cancelled", metricLabels: `error_type="context_canceled"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := testkit.NewEnv(t, func(configuration *agento11y.Config) {
@@ -1300,13 +1299,13 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 			handler.ServeHTTP(response, request)
 			require.Equal(t, http.StatusOK, response.Code)
 			body := response.Body.String()
-			finishes := 2
+			finishes, wireErrors := 2, 0
 			if tc.stall {
-				finishes = 1
+				finishes, wireErrors = 1, 1
 			}
 			assert.Equal(t, finishes, strings.Count(body, `"type":"finish"`))
-			assert.Equal(t, tc.wireErrors, strings.Count(body, `"type":"error"`))
-			if tc.wireErrors > 0 {
+			assert.Equal(t, wireErrors, strings.Count(body, `"type":"error"`))
+			if tc.stall {
 				assert.Contains(t, body, `"code":"timeout"`)
 				assert.Less(t, strings.LastIndex(body, `"type":"finish"`), strings.Index(body, `"type":"error"`))
 			}

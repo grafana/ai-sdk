@@ -1,9 +1,7 @@
 package v4
 
 import (
-	"context"
 	"encoding/json"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,14 +79,7 @@ func decodeUpstreamParts(t *testing.T, raws []json.RawMessage) ([]provider.Strea
 
 func replayWrittenEvents(t *testing.T, parts []provider.StreamPart) []map[string]any {
 	t.Helper()
-	harness := newRuntimeHarness(t, testLimits())
-	harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-		return &provider.StreamResult{Stream: makeStream(parts...)}, nil
-	}
-	response := harness.serve(streamRequest(segmentRawRequest))
-	require.Equal(t, http.StatusOK, response.Code)
-	body := response.Body.String()
-	requireStreamBodyMatchesSchema(t, body)
+	body := serveSegmentParts(t, true, parts...)
 	var events []map[string]any
 	for _, frame := range strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n") {
 		var event map[string]any

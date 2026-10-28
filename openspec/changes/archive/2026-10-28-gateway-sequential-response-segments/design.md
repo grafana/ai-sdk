@@ -261,6 +261,7 @@ Whether logs and metrics should sum rather than take the maximum across segments
 - **Acceptance** is the evidence in D13. The plugin host mounts the same `providerwire/v4` handler that the replay tests exercise, and this change touches neither routing, authentication nor the route deadline, so no plugin-host run is part of this change.
 - No skip list, exclusion or `knownGaps` entry is added.
 - **Release:** the PR title is `feat(ai-gateway)!: forward sequential response segments in one stream`. It is breaking because the public stream lifecycle changes: EOF timing, repeated events and post-finish failures. The Agent Observability follow-up carries its own scope and release intent.
+- **Release attribution to `providers/grafana`** is accepted: the test-only capture tool change sits in that module, so the squash title also attributes a release there.
 
 ### D12. Upstream parity classification
 
