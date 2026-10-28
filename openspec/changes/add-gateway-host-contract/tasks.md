@@ -58,8 +58,8 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 7. Integration checks
 
-- [ ] 7.1 Run `mise run test-ai-gateway`, `mise run test-ai-gateway-command` (both access modes), `mise run test-providerwire-v4`, `mise run test-race`, `mise run lint`, `mise run lint-docs` and `mise run validate-parity-baseline`. Confirm that no file under `test/conformance/*/recorded/` changed.
-- [ ] 7.2 Confirm with `rg` that `NewConfiguredSelector`, `NewBYOKSelector`, `byAccess`, `routeHandlers`, `HostErrorAuthentication`, `ConfiguredDiscovery` and `BYOKDiscovery` appear only in historical references.
+- [x] 7.1 Run `mise run test-ai-gateway`, `mise run test-ai-gateway-command` (both access modes), `mise run test-providerwire-v4`, `mise run test-race`, `mise run lint`, `mise run lint-docs` and `mise run validate-parity-baseline`. Confirm that no file under `test/conformance/*/recorded/` changed.
+- [x] 7.2 Confirm with `rg` that `NewConfiguredSelector`, `NewBYOKSelector`, `byAccess`, `routeHandlers`, `HostErrorAuthentication`, `ConfiguredDiscovery` and `BYOKDiscovery` appear only in historical references.
 
 ## Workflow follow-up
 
