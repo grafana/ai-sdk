@@ -582,3 +582,17 @@ func TestOutputNamePresence(t *testing.T) {
 		}
 	}
 }
+
+func TestObjectOutput_ParseComplete_LargeInteger(t *testing.T) {
+	type record struct {
+		ID int64 `json:"id"`
+	}
+	s := mustSchema(t, `{"type":"object","properties":{"id":{"const":9007199254740993}},"required":["id"]}`)
+	out, err := Object[record](s)
+	require.NoError(t, err)
+	result, err := out.ParseComplete(`{"id":9007199254740993}`)
+	require.NoError(t, err)
+	assert.Equal(t, record{ID: 9007199254740993}, result)
+	_, err = out.ParseComplete(`{"id":9007199254740993.1}`)
+	require.Error(t, err)
+}

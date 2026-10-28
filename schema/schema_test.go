@@ -2,7 +2,9 @@ package schema
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -422,5 +424,56 @@ func TestSchemaFromFile(t *testing.T) {
 
 		_, err := SchemaFromFile(path)
 		require.Error(t, err)
+	})
+}
+
+func TestCompiledSchema_NumberPrecision(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		schema string
+		data   string
+		valid  bool
+	}{
+		{"exact large integer", `{"const":9007199254740993}`, `9007199254740993`, true},
+		{"distinct large integer", `{"const":9007199254740992}`, `9007199254740993`, false},
+		{"decimal fraction", `{"type":"integer"}`, `1.0000000000000001`, false},
+		{"large exponent", `{"type":"number"}`, `1e400`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			compiled, err := CompileSchema(json.RawMessage(tc.schema))
+			require.NoError(t, err)
+			err = compiled.Validate(json.RawMessage(tc.data))
+			if tc.valid {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestCompileSelfContainedSchema_References(t *testing.T) {
+	t.Run("local reference", func(t *testing.T) {
+		compiled, err := CompileSelfContainedSchema(json.RawMessage(`{"$schema":"https://json-schema.org/draft/2020-12/schema","$defs":{"value":{"type":["string","null"]}},"$ref":"#/$defs/value"}`))
+		require.NoError(t, err)
+		require.NoError(t, compiled.Validate(json.RawMessage(`null`)))
+		require.Error(t, compiled.Validate(json.RawMessage(`17`)))
+	})
+	t.Run("file loading stays explicit", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "value.json")
+		require.NoError(t, os.WriteFile(path, []byte(`{"const":42}`), 0600))
+		ref := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+		raw, err := json.Marshal(map[string]string{"$ref": ref})
+		require.NoError(t, err)
+		legacy, err := CompileSchema(raw)
+		require.NoError(t, err)
+		require.NoError(t, legacy.Validate(json.RawMessage(`42`)))
+		require.Error(t, legacy.Validate(json.RawMessage(`43`)))
+		_, err = CompileSelfContainedSchema(raw)
+		require.ErrorContains(t, err, "no URLLoader registered")
+	})
+	t.Run("URL loading disabled", func(t *testing.T) {
+		_, err := CompileSelfContainedSchema(json.RawMessage(`{"$ref":"https://example.invalid/schema.json"}`))
+		require.ErrorContains(t, err, "no URLLoader registered")
 	})
 }
