@@ -29,9 +29,14 @@ const (
 	CategoryTimeout
 	CategoryCancellation
 	CategoryInternal
+	// CategoryInvalidRouting reports routing controls that cannot route the
+	// call. It always carries a routing reason.
+	CategoryInvalidRouting
 )
 
-// Reason refines [CategoryInvalidRequest] for host policy refusals.
+// Reason refines [CategoryInvalidRequest] for host policy refusals,
+// [CategoryInvalidRouting] for routing refusals and [CategoryModelNotFound] for
+// unknown fallback models.
 type Reason uint8
 
 const (
@@ -41,6 +46,16 @@ const (
 	ReasonReservedProviderOptions
 	// ReasonProtectedCallHeader reports a credential-bearing call header.
 	ReasonProtectedCallHeader
+	// ReasonRoutingControls reports malformed models, order or only controls.
+	ReasonRoutingControls
+	// ReasonProviderTimeouts reports an invalid providerTimeouts.byok map.
+	ReasonProviderTimeouts
+	// ReasonNoCandidates reports an only filter that excludes every candidate.
+	ReasonNoCandidates
+	// ReasonAttemptBound reports a composed chain above the attempt bound.
+	ReasonAttemptBound
+	// ReasonFallbackModel reports a models entry that is not an available model.
+	ReasonFallbackModel
 )
 
 // ClassifySelection classifies an error returned by [Runtime.Call]: a policy
@@ -68,6 +83,16 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 		return CategoryInvalidRequest, ReasonReservedProviderOptions
 	case errors.Is(err, ErrProtectedCallHeader):
 		return CategoryInvalidRequest, ReasonProtectedCallHeader
+	case errors.Is(err, ErrRoutingControls):
+		return CategoryInvalidRouting, ReasonRoutingControls
+	case errors.Is(err, ErrProviderTimeouts):
+		return CategoryInvalidRouting, ReasonProviderTimeouts
+	case errors.Is(err, ErrNoRoutingCandidates):
+		return CategoryInvalidRouting, ReasonNoCandidates
+	case errors.Is(err, ErrRoutingAttemptBound):
+		return CategoryInvalidRouting, ReasonAttemptBound
+	case errors.Is(err, ErrUnknownFallbackModel):
+		return CategoryModelNotFound, ReasonFallbackModel
 	case errors.Is(err, catalog.ErrUnknownModel):
 		return CategoryModelNotFound, ReasonNone
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/routing"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
@@ -34,6 +35,11 @@ type accountCatalogSpy struct {
 func (c *accountCatalogSpy) ResolveModel(context.Context, string) (catalog.ResolvedModel, error) {
 	c.resolved.Add(1)
 	return catalog.ResolvedModel{ID: "configured-canonical", Model: c.model}, nil
+}
+
+func (c *accountCatalogSpy) selectRouted(context.Context, string, routing.Controls) (execution.Selection, error) {
+	c.resolved.Add(1)
+	return execution.Selection{}, catalog.ErrUnknownModel
 }
 
 func (c *accountCatalogSpy) ListModels(context.Context) ([]catalog.ModelInfo, error) {

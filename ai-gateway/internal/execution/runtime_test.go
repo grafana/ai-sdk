@@ -210,7 +210,7 @@ func TestCallGenerate(t *testing.T) {
 		},
 		"request accounts": func(model provider.LanguageModel) RequestSelector {
 			return func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
-				return AccountSelection(id, model, RequestAccounts{Provider: "native", ModelID: "A", Count: 2}), nil
+				return AccountSelection(id, model, []RequestAccounts{{Provider: "native", ModelID: "A", Count: 2}}), nil
 			}
 		},
 	} {
@@ -334,7 +334,7 @@ func TestRuntime_ConcurrentAccountCallsAreIsolated(t *testing.T) {
 	shared, err := fallback.New(first, second)
 	require.NoError(t, err)
 	runtime := newRuntime(t, func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
-		return AccountSelection(id, shared, RequestAccounts{Provider: "native", ModelID: "model", Count: 2}), nil
+		return AccountSelection(id, shared, []RequestAccounts{{Provider: "native", ModelID: "model", Count: 2}}), nil
 	}, testLimits())
 	const calls = 32
 	views := make([]View, calls)

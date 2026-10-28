@@ -1174,7 +1174,7 @@ func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 					ordered = chain
 				}
 				selector = func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
-					return execution.AccountSelection(id, ordered, execution.RequestAccounts{Provider: "private-provider", ModelID: "private-backend-model", Count: len(models)}), nil
+					return execution.AccountSelection(id, ordered, []execution.RequestAccounts{{Provider: "private-provider", ModelID: "private-backend-model", Count: len(models)}}), nil
 				}
 			}
 			keys := []string{"server-key", "unused-key"}
@@ -1379,7 +1379,7 @@ func TestRequestSelection_NativeSummaries(t *testing.T) {
 				require.NoError(t, err)
 				h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
 					if accounts {
-						return execution.AccountSelection("request/model", ordered, execution.RequestAccounts{Provider: "private-provider", ModelID: "private-backend-model", Count: 1}), nil
+						return execution.AccountSelection("request/model", ordered, []execution.RequestAccounts{{Provider: "private-provider", ModelID: "private-backend-model", Count: 1}}), nil
 					}
 					return execution.Selection{ID: "request/model", Model: ordered}, nil
 				}})

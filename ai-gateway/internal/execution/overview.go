@@ -39,32 +39,93 @@ type Failure struct {
 // read them. Mixed or unfinished observation is omitted rather than treated as
 // complete.
 func Project(requested, canonical string, decisions []fallback.Attempt, candidates []catalog.ConfiguredCandidate) *Overview {
-	if canonical == "" || !utf8.ValidString(canonical) {
+	return projectGroups(requested, canonical, decisions, []modelGroup{{requested: requested, canonical: canonical, candidates: candidates}})
+}
+
+// projectGroups converts one invocation's decisions into an optional overview,
+// attributing the decision at each position to the destination its model groups
+// expect there. Configured groups require canonical, the requested model's
+// canonical identity, and replace decision identity with the configured
+// candidate's. Request-account groups have no canonical identity and must match
+// the decision's native destination. Decisions that outnumber the expected
+// destinations, or groups of both kinds, omit the overview.
+func projectGroups(requested, canonical string, decisions []fallback.Attempt, groups []modelGroup) *Overview {
+	slots, open, ok := groupSlots(groups)
+	if !ok {
+		return nil
+	}
+	if groups[0].accounts != nil {
+		canonical = ""
+	} else if canonical == "" || !utf8.ValidString(canonical) {
 		return nil
 	}
 	return project(requested, canonical, decisions, func(i int, attempt *Attempt) bool {
-		if len(candidates) == 0 {
+		if open {
 			return true
 		}
-		if i >= len(candidates) {
+		if i >= len(slots) {
 			return false
 		}
-		candidate := candidates[i]
-		attempt.Provider, attempt.ModelID, attempt.ProviderInstance = candidate.Provider, candidate.ModelID, candidate.ProviderInstance
-		return true
+		switch slot := slots[i]; {
+		case slot.candidate != nil:
+			attempt.Provider, attempt.ModelID, attempt.ProviderInstance = slot.candidate.Provider, slot.candidate.ModelID, slot.candidate.ProviderInstance
+			return true
+		default:
+			return attempt.Provider == slot.accounts.Provider && attempt.ModelID == slot.accounts.ModelID
+		}
 	})
 }
 
-// projectAccounts converts one request-account invocation's decisions into an
-// optional overview without canonical identity. Every decision must name the
-// accounts' native destination, and decisions must not outnumber the accounts.
-func projectAccounts(requested string, decisions []fallback.Attempt, accounts RequestAccounts) *Overview {
-	if len(decisions) > accounts.Count {
-		return nil
+// groupSlot is one expected attempt position of a selection's chain.
+type groupSlot struct {
+	group     int
+	candidate *catalog.ConfiguredCandidate
+	accounts  *RequestAccounts
+}
+
+// groupSlots flattens groups into their expected attempt positions. A single
+// configured group without candidates is open: its positions take decision
+// identity and are unbounded. Mixed configured and account groups, or an open
+// group among others, are invalid.
+func groupSlots(groups []modelGroup) (slots []groupSlot, open bool, ok bool) {
+	if len(groups) == 0 {
+		return nil, false, false
 	}
-	return project(requested, "", decisions, func(_ int, attempt *Attempt) bool {
-		return attempt.Provider == accounts.Provider && attempt.ModelID == accounts.ModelID
-	})
+	accounts := groups[0].accounts != nil
+	for i, group := range groups {
+		if (group.accounts != nil) != accounts {
+			return nil, false, false
+		}
+		if accounts {
+			for range group.accounts.Count {
+				slots = append(slots, groupSlot{group: i, accounts: group.accounts})
+			}
+			continue
+		}
+		if len(group.candidates) == 0 {
+			if len(groups) != 1 {
+				return nil, false, false
+			}
+			return nil, true, true
+		}
+		for j := range group.candidates {
+			slots = append(slots, groupSlot{group: i, candidate: &group.candidates[j]})
+		}
+	}
+	return slots, false, true
+}
+
+// configuredCandidateCount returns the number of configured candidates across
+// groups, or zero for request-account groups.
+func configuredCandidateCount(groups []modelGroup) int {
+	count := 0
+	for _, group := range groups {
+		if group.accounts != nil {
+			return 0
+		}
+		count += len(group.candidates)
+	}
+	return count
 }
 
 // project validates decision order and outcomes; identify sets or checks each

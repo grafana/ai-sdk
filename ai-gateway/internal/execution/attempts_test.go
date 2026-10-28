@@ -81,9 +81,9 @@ func TestAttemptCapture_ConfiguredSelection(t *testing.T) {
 	selected := selectConfigured(t, resolved)
 	resolved.Candidates[0].ModelID = "mutated"
 	attempts := newAttemptCapture("alias", selected, SummaryRedactor{})
-	selected.configured.candidates[0].ModelID = "mutated-again"
-	assert.Equal(t, "canonical", attempts.canonical)
-	assert.Equal(t, "backend", attempts.candidates[0].ModelID)
+	selected.groups[0].candidates[0].ModelID = "mutated-again"
+	assert.Equal(t, "canonical", attempts.groups[0].canonical)
+	assert.Equal(t, "backend", attempts.groups[0].candidates[0].ModelID)
 	encoded, err := json.Marshal(selected)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), "configured")
@@ -243,15 +243,17 @@ func TestAttemptCapture_ProjectionAfterSeal(t *testing.T) {
 
 func TestAccountSelection(t *testing.T) {
 	accounts := RequestAccounts{Provider: "native", ModelID: "model", Count: 2}
-	selected := AccountSelection("native/model", &generateModel{modelID: "model"}, accounts)
+	selected := AccountSelection("native/model", &generateModel{modelID: "model"}, []RequestAccounts{accounts})
 	assert.True(t, validSelection(selected))
-	assert.Nil(t, selected.configured)
-	require.NotNil(t, selected.accounts)
-	assert.Equal(t, RequestAccounts{Provider: "native", ModelID: "model", Count: 2}, *selected.accounts)
+	require.Len(t, selected.groups, 1)
+	assert.Equal(t, "native/model", selected.groups[0].requested)
+	require.NotNil(t, selected.groups[0].accounts)
+	assert.Equal(t, accounts, *selected.groups[0].accounts)
 	attempts := newAttemptCapture("native/model", selected, SummaryRedactor{})
-	assert.Equal(t, RequestAccounts{Provider: "native", ModelID: "model", Count: 2}, *attempts.accounts)
-	assert.Empty(t, attempts.canonical)
-	assert.Empty(t, attempts.candidates)
+	require.Len(t, attempts.groups, 1)
+	assert.Equal(t, accounts, *attempts.groups[0].accounts)
+	assert.Empty(t, attempts.groups[0].canonical)
+	assert.Empty(t, attempts.groups[0].candidates)
 }
 
 func TestAttemptCapture_AccountProjection(t *testing.T) {
@@ -303,7 +305,7 @@ func TestAttemptCapture_AccountProjection(t *testing.T) {
 					return &provider.GenerateResult{}, nil
 				}})
 			}
-			attempts := newAttemptCapture("native/model", AccountSelection("native/model", &generateModel{modelID: "model"}, tc.accounts), SummaryRedactor{})
+			attempts := newAttemptCapture("native/model", AccountSelection("native/model", &generateModel{modelID: "model"}, []RequestAccounts{tc.accounts}), SummaryRedactor{})
 			attempts.enter()
 			var err error
 			if len(candidates) != 0 {

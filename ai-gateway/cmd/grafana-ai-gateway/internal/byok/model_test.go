@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,9 +28,9 @@ func (fn roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { ret
 
 func newTestModel(t *testing.T, selector string, controls json.RawMessage, approvals map[Provider][]string, client *http.Client) provider.LanguageModel {
 	t.Helper()
-	request, err := DecodeRequest(selector, controls, approvals)
+	request, err := decodeGateway(selector, controls, approvals)
 	require.NoError(t, err)
-	model, err := New(request.Provider, request.Model, request.Accounts, client)
+	model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, client)
 	require.NoError(t, err)
 	return model
 }
@@ -146,7 +147,7 @@ func TestNew_AccountConfigDefaults(t *testing.T) {
 			{name: "standard field matching", account: `{"APIKEY":"dummy-key","BaseURL":"https://api.openai.com/v1","Organization":"org-customer","Project":"proj-customer"}`, organization: "org-customer", project: "proj-customer"},
 		} {
 			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
-				request, err := DecodeRequest("openai/native-model", json.RawMessage(`{"byok":{"openai":[`+tc.account+`]}}`), nil)
+				request, err := decodeGateway("openai/native-model", json.RawMessage(`{"byok":{"openai":[`+tc.account+`]}}`), nil)
 				require.NoError(t, err)
 				calls := 0
 				client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -165,7 +166,7 @@ func TestNew_AccountConfigDefaults(t *testing.T) {
 					}
 					return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"rejected"}}`)), Request: r}, nil
 				})}
-				model, err := New(request.Provider, request.Model, request.Accounts, client)
+				model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, client)
 				require.NoError(t, err)
 				err = invokeTestModel(context.Background(), model, streaming, provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
 				require.Error(t, err)
@@ -188,7 +189,7 @@ func TestNew_ApprovedAccountOverrides(t *testing.T) {
 				}
 				raw := fmt.Sprintf(`{"byok":{"%s":[{"apiKey":"dummy-first","baseURL":%q%s},{"apiKey":"dummy-second","baseURL":%q%s}]}}`, name, first, extraFirst, second, extraSecond)
 				approval := map[Provider][]string{name: {first, second}}
-				request, err := DecodeRequest(string(name)+"/native-model", json.RawMessage(raw), approval)
+				request, err := decodeGateway(string(name)+"/native-model", json.RawMessage(raw), approval)
 				require.NoError(t, err)
 				delete(approval, name)
 				calls := 0
@@ -223,7 +224,7 @@ func TestNew_ApprovedAccountOverrides(t *testing.T) {
 					}
 					return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"api_error","message":"rejected"}}`)), Request: r}, nil
 				})}
-				model, err := New(request.Provider, request.Model, request.Accounts, client)
+				model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, client)
 				require.NoError(t, err)
 				options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("ordinary input")}}
 				err = invokeTestModel(context.Background(), model, streaming, options)
@@ -241,12 +242,13 @@ func TestDecodeRequest_AccountPolicy(t *testing.T) {
 		name, selector, raw string
 		approvals           map[Provider][]string
 		allowed             bool
+		want                error
 	}{
 		{name: "approved endpoint", selector: "openai/model", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]}}`, approvals: map[Provider][]string{OpenAI: {approved}}, allowed: true},
 		{name: "unapproved endpoint", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]}}`},
 		{name: "unapproved endpoint with secret", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://dummy-secret@approved.example/v1"}]}}`},
 		{name: "wrong provider approval", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]}}`, approvals: map[Provider][]string{Anthropic: {approved}}},
-		{name: "approval is not a request control", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]},"approvedBaseURLs":["https://approved.example/v1"]}`},
+		{name: "approval is not a request control", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://approved.example/v1"}]},"approvedBaseURLs":["https://approved.example/v1"]}`, want: execution.ErrUnsupportedGatewayControl},
 		{name: "approval does not supply defaults", raw: `{"byok":{"openai":[{"apiKey":"key"}]}}`, approvals: map[Provider][]string{OpenAI: {approved}}, allowed: true},
 		{name: "unused unapproved endpoint", raw: `{"byok":{"openai":[{"apiKey":"key"}],"anthropic":[{"apiKey":"unused","baseURL":"https://approved.example/v1"}]}}`},
 		{name: "native endpoint with changed path", raw: `{"byok":{"openai":[{"apiKey":"key","baseURL":"https://api.openai.com/other"}]}}`},
@@ -276,14 +278,17 @@ func TestDecodeRequest_AccountPolicy(t *testing.T) {
 			if selector == "" {
 				selector = "openai/model"
 			}
-			got, err := DecodeRequest(selector, json.RawMessage(tc.raw), tc.approvals)
+			got, err := decodeGateway(selector, json.RawMessage(tc.raw), tc.approvals)
 			if tc.allowed {
 				require.NoError(t, err)
 				if tc.name == "approval does not supply defaults" {
-					assert.Empty(t, got.Accounts[0].BaseURL)
+					assert.Empty(t, got.Destinations[0].Accounts[0].BaseURL)
 				}
 			} else {
-				require.ErrorIs(t, err, ErrInvalidRequest)
+				if tc.want == nil {
+					tc.want = ErrInvalidRequest
+				}
+				require.ErrorIs(t, err, tc.want)
 				assert.Empty(t, got)
 				assert.NotContains(t, err.Error(), "approved.example")
 				assert.NotContains(t, err.Error(), "dummy-secret")
@@ -315,12 +320,13 @@ func TestDecodeRequest(t *testing.T) {
 		{"unrelated additive account fields", "openai/model", `{"byok":{"openai":[{"apiKey":"valid","dummy-secret-field":true,"headers":{"Authorization":"dummy-secret"},"future":{"nested":[null,false,42]}}]}}`, OpenAI, "model", []string{"valid"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := DecodeRequest(tc.selector, json.RawMessage(tc.controls), nil)
+			got, err := decodeGateway(tc.selector, json.RawMessage(tc.controls), nil)
 			require.NoError(t, err)
-			assert.Equal(t, tc.wantProvider, got.Provider)
-			assert.Equal(t, tc.wantModel, got.Model)
-			keys := make([]string, len(got.Accounts))
-			for i, credential := range got.Accounts {
+			require.Len(t, got.Destinations, 1)
+			assert.Equal(t, tc.wantProvider, got.Destinations[0].Provider)
+			assert.Equal(t, tc.wantModel, got.Destinations[0].Model)
+			keys := make([]string, len(got.Destinations[0].Accounts))
+			for i, credential := range got.Destinations[0].Accounts {
 				keys[i] = credential.APIKey
 			}
 			assert.Equal(t, tc.wantKeys, keys)
@@ -328,34 +334,55 @@ func TestDecodeRequest(t *testing.T) {
 	}
 	for _, selector := range []string{"", "alias", "/model", "openai/", "OpenAI/model", "bedrock/model", "openai/" + string([]byte{255})} {
 		t.Run("invalid selector/"+selector, func(t *testing.T) {
-			got, err := DecodeRequest(selector, json.RawMessage(valid), nil)
+			got, err := decodeGateway(selector, json.RawMessage(valid), nil)
 			require.ErrorIs(t, err, ErrInvalidRequest)
 			assert.Empty(t, got)
 		})
 	}
+	for _, tc := range []struct {
+		raw  string
+		want error
+	}{
+		{`[]`, execution.ErrRoutingControls},
+		{`{"byok":{"openai":[{"apiKey":"valid"}]}} {}`, execution.ErrRoutingControls},
+		{`{"BYOK":{"openai":[{"apiKey":"dummy-secret"}]}}`, execution.ErrUnsupportedGatewayControl},
+		{`{"byok":{"openai":[{"apiKey":"valid"}]},"BYOK":{"openai":[{"apiKey":"dummy-secret"}]}}`, execution.ErrUnsupportedGatewayControl},
+		{`{"byok":{"openai":[{"apiKey":"valid"}]},"modelMappings":{}}`, execution.ErrUnsupportedGatewayControl},
+		{`{"byok":{"openai":[{"apiKey":"valid"}]},"dummy-secret-control":true}`, execution.ErrUnsupportedGatewayControl},
+		{`{"byok":{"openai":[{"apiKey":"valid"}]},"sort":"cost"}`, execution.ErrUnsupportedGatewayControl},
+	} {
+		t.Run("refused controls/"+tc.raw, func(t *testing.T) {
+			got, err := decodeGateway("openai/model", json.RawMessage(tc.raw), nil)
+			require.ErrorIs(t, err, tc.want)
+			assert.Empty(t, got)
+			assert.NotContains(t, err.Error(), "dummy-secret")
+		})
+	}
 	for _, raw := range []string{
-		`null`, `{}`, `[]`, `{"byok":null}`, `{"byok":{}}`, `{"byok":[]}`,
-		`{"BYOK":{"openai":[{"apiKey":"dummy-secret"}]}}`,
-		`{"byok":{"openai":[{"apiKey":"valid"}]},"BYOK":{"openai":[{"apiKey":"dummy-secret"}]}}`,
+		`{"byok":{"openai":[{"apiKey":"valid"}]},"order":["openai"]}`,
+		`{"byok":false,"byok":{"openai":[{"apiKey":"valid"}]}}`,
+	} {
+		t.Run("accepted controls/"+raw, func(t *testing.T) {
+			_, err := decodeGateway("openai/model", json.RawMessage(raw), nil)
+			require.NoError(t, err)
+		})
+	}
+	for _, raw := range []string{
+		`null`, `{}`, `{"byok":null}`, `{"byok":{}}`, `{"byok":[]}`,
 		`{"byok":{"openai":[{"apiKey":"discarded"}]},"byok":{"anthropic":[{"apiKey":"unused"}]}}`,
 		`{"byok":{"openai":null}}`, `{"byok":{"openai":[]}}`, `{"byok":{"openai":[null]}}`,
 		`{"byok":{"openai":[{}]}}`, `{"byok":{"openai":[{"apiKey":null}]}}`,
 		`{"byok":{"openai":[{"apiKey":12}]}}`, `{"byok":{"openai":[{"apiKey":""}]}}`,
 		`{"byok":{"openai":[{"apiKey":42,"apiKey":"valid"}]}}`,
 		`{"byok":{"openai":false,"openai":[{"apiKey":"valid"}]}}`,
-		`{"byok":false,"byok":{"openai":[{"apiKey":"valid"}]}}`,
-		`{"byok":{"openai":[{"apiKey":"valid"}]}} {}`,
 		`{"byok":{"openai":[{"apiKey":"valid","baseURL":"https://dummy-secret.invalid"}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid"}],"OpenAI":[{"apiKey":"dummy-secret"}]}}`,
 		`{"byok":{"dummy-secret-provider":[{"apiKey":"valid"}]}}`,
 		`{"byok":{"anthropic":[{"apiKey":"valid"}]}}`,
 		`{"byok":{"openai":[{"apiKey":"valid"}],"anthropic":[{}]}}`,
-		`{"byok":{"openai":[{"apiKey":"valid"}]},"order":["openai"]}`,
-		`{"byok":{"openai":[{"apiKey":"valid"}]},"modelMappings":{}}`,
-		`{"byok":{"openai":[{"apiKey":"valid"}]},"dummy-secret-control":true}`,
 	} {
 		t.Run("invalid controls/"+raw, func(t *testing.T) {
-			got, err := DecodeRequest("openai/model", json.RawMessage(raw), nil)
+			got, err := decodeGateway("openai/model", json.RawMessage(raw), nil)
 			require.ErrorIs(t, err, ErrInvalidRequest)
 			assert.Empty(t, got)
 			assert.NotContains(t, err.Error(), "dummy-secret")
@@ -382,15 +409,15 @@ func TestNew_PlainAccounts(t *testing.T) {
 		})
 	}
 	t.Run("missing transport", func(t *testing.T) {
-		request, err := DecodeRequest("openai/model", json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-key"}]}}`), nil)
+		request, err := decodeGateway("openai/model", json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-key"}]}}`), nil)
 		require.NoError(t, err)
-		model, err := New(request.Provider, request.Model, request.Accounts, nil)
+		model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, nil)
 		require.ErrorContains(t, err, "HTTP client is required")
 		assert.Nil(t, model)
 	})
 	t.Run("decoded request owns credentials", func(t *testing.T) {
 		raw := json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-key"}]}}`)
-		request, err := DecodeRequest("openai/model", raw, nil)
+		request, err := decodeGateway("openai/model", raw, nil)
 		require.NoError(t, err)
 		clear(raw)
 		calls := 0
@@ -400,7 +427,7 @@ func TestNew_PlainAccounts(t *testing.T) {
 			assert.Equal(t, "api.openai.com", r.URL.Host)
 			return nil, assert.AnError
 		})}
-		model, err := New(request.Provider, request.Model, request.Accounts, client)
+		model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, client)
 		require.NoError(t, err)
 		_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
 		require.Error(t, err)
@@ -419,7 +446,7 @@ func TestDecodeRequest_AccountCount(t *testing.T) {
 				}
 				raw, err := json.Marshal(map[string]any{"byok": accounts})
 				require.NoError(t, err)
-				_, err = DecodeRequest("openai/model", raw, nil)
+				_, err = decodeGateway("openai/model", raw, nil)
 				selected := name == OpenAI
 				if count == 0 || (selected && count > config.MaxProviderAttempts) {
 					require.ErrorIs(t, err, ErrInvalidRequest)
@@ -440,10 +467,10 @@ func TestDecodeRequest_NoSeparateByteLimits(t *testing.T) {
 	require.NoError(t, err)
 	raw = append(raw[:len(raw)-1], []byte(strings.Repeat(" ", 70_000)+"}")...)
 	modelID := strings.Repeat("m", 4096)
-	request, err := DecodeRequest("openai/"+modelID, raw, map[Provider][]string{OpenAI: {account.BaseURL}})
+	request, err := decodeGateway("openai/"+modelID, raw, map[Provider][]string{OpenAI: {account.BaseURL}})
 	require.NoError(t, err)
-	assert.Equal(t, modelID, request.Model)
-	assert.Equal(t, []nativemodel.Config{account}, request.Accounts)
+	assert.Equal(t, modelID, request.Destinations[0].Model)
+	assert.Equal(t, []nativemodel.Config{account}, request.Destinations[0].Accounts)
 }
 
 func TestNew_HTTPTransportRejectsInvalidHeaders(t *testing.T) {
@@ -566,12 +593,12 @@ func TestNew_ConcurrentRequestIsolation(t *testing.T) {
 	results := make(chan error, count)
 	for i := range count {
 		go func() {
-			request, err := DecodeRequest(fmt.Sprintf("openai/native-%d", i), json.RawMessage(fmt.Sprintf(`{"byok":{"openai":[{"apiKey":"dummy-%d","baseURL":"https://approved.example/v1","organization":"org-%d","project":"proj-%d"}]}}`, i, i, i)), map[Provider][]string{OpenAI: {"https://approved.example/v1"}})
+			request, err := decodeGateway(fmt.Sprintf("openai/native-%d", i), json.RawMessage(fmt.Sprintf(`{"byok":{"openai":[{"apiKey":"dummy-%d","baseURL":"https://approved.example/v1","organization":"org-%d","project":"proj-%d"}]}}`, i, i, i)), map[Provider][]string{OpenAI: {"https://approved.example/v1"}})
 			if err != nil {
 				results <- err
 				return
 			}
-			model, err := New(request.Provider, request.Model, request.Accounts, client)
+			model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, client)
 			if err == nil {
 				_, err = model.DoGenerate(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("ordinary input")}})
 			}
