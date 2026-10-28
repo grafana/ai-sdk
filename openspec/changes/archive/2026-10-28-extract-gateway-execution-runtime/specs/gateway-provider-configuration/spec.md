@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: OpenAI-compatible provider configuration
-The Gateway command model configuration SHALL accept `providers.<name>` instances with `type: openai-compatible`. Each instance SHALL require a non-empty `apiKeyEnv` and a non-empty `baseURL`, and SHALL accept an optional `providerName`. `providerName` SHALL be rejected for `anthropic` providers. A compatible `providerName` whose option namespace, the trimmed text before its first `.`, is `gateway` SHALL be rejected, because the host owns call-level `gateway` controls. An unsupported `type` SHALL fail with `providers.<name>.type` and the list of supported types. Configuration SHALL remain strict YAML, so unknown keys still fail.
+Model configuration SHALL accept `providers.<name>` instances with `type: openai-compatible`. Each instance SHALL require a non-empty `apiKeyEnv` and `baseURL` and SHALL accept an optional `providerName`, which SHALL be rejected for `anthropic` providers and, for compatible providers, in the host-owned `gateway` option namespace. An unsupported `type` SHALL fail with `providers.<name>.type` and the list of supported types. Configuration SHALL remain strict YAML, so unknown keys still fail.
 
 #### Scenario: Compatible provider omits the base URL
 - **WHEN** a `type: openai-compatible` provider has no `baseURL`

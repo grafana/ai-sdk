@@ -15,7 +15,7 @@ The `ai-gateway/providerwire/v4` package SHALL provide one HTTP handler for rela
 - **THEN** construction SHALL fail before serving traffic
 
 ### Requirement: Host selection preserves mapped options
-The selector SHALL consume validated call-level host controls under authenticated request policy and return a non-nil executable model and logical identity. The execution runtime SHALL retain the mapped native options after removing call-level Gateway controls; model selection SHALL NOT require returning or replacing those options. Configured catalog resolution and request-only BYOK selection SHALL be separate host implementations; neither the runtime nor the wire package SHALL require BYOK to implement a catalog.
+The selector SHALL consume validated call-level host controls under authenticated request policy and return a non-nil executable model and logical identity. The execution runtime SHALL retain the mapped native options after removing call-level Gateway controls, without requiring the selector to return them. Configured catalog resolution and request-only BYOK selection SHALL be separate host implementations; neither the runtime nor the wire package SHALL require BYOK to implement a catalog.
 
 #### Scenario: Host selection returns an executable model
 - **WHEN** a configured or request-only selector returns model and identity
