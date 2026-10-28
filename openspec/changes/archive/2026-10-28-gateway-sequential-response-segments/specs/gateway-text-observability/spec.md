@@ -1,8 +1,18 @@
+## ADDED Requirements
+
+### Requirement: Agent Observability first-segment limitation
+Until the `middleware/agentobservability` recorder change in #582 lands, the Agent Observability generation SHALL be finalized once at a stream's first finish, or at a logical finalization condition when no finish arrives first. Usage, finish reason and timing from parts after that first finish SHALL be excluded from the generation, and every part SHALL still pass through unchanged.
+
+#### Scenario: Multi-segment stream exports the first segment
+- **WHEN** a stream carries two segments that each end in a finish with different usage
+- **THEN** logs and metrics SHALL observe both segments
+- **AND** the Agent Observability generation SHALL carry the first finish's usage and finish reason
+
 ## MODIFIED Requirements
 
 ### Requirement: Logical text lifecycle semantics
 
-Unary observation SHALL start immediately before the shared model invocation and finalize once after its result or pre-result error. Streaming observation SHALL start immediately before stream setup. Logs and metrics SHALL finalize once after normal channel close, provider error observation, premature close, downstream cancellation, or timeout as represented at the model boundary. A stream with several response segments SHALL remain one logical call. Until the separately tracked `middleware/agentobservability` recorder change lands, the Agent Observability generation SHALL instead be finalized once at the stream's first finish, or at one of the conditions above when no finish arrives first; usage, finish reason and timing from parts after that first finish SHALL be excluded from the generation, while every part SHALL still pass through unchanged.
+Unary observation SHALL start immediately before the shared model invocation and finalize once after its result or pre-result error. Streaming observation SHALL start immediately before stream setup. Logs and metrics SHALL finalize once after normal channel close, provider error observation, premature close, downstream cancellation, or timeout as represented at the model boundary. A stream with several response segments SHALL remain one logical call.
 
 #### Scenario: Stream error precedes later finish
 - **WHEN** a stream emits usage, a provider error part, later text, and finish before closing

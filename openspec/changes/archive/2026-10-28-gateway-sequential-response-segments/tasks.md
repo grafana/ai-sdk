@@ -160,7 +160,7 @@ Each task adds or rewrites tests to the new spec. Cases for new behavior must fa
 
 ## 7. Acceptance and integration checks
 
-- [ ] 7.1 Run these and confirm they all pass:
+- [x] 7.1 Run these and confirm they all pass:
   - `mise run test-ai-gateway`
   - `mise run test-providerwire-v4`
   - `mise run test-ai-gateway-source-integration`
