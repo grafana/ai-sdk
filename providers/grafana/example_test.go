@@ -147,4 +147,3 @@ func ExampleGatewayMetadataFromError() {
 	}
 	// Output: anthropic failed 529
 }
-
