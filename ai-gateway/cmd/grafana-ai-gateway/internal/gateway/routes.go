@@ -9,13 +9,15 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
+	"github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
 const (
-	routeConfig        = "config"
-	routeLanguageModel = "language_model"
-	routeUnmatched     = "unmatched"
+	routeChatCompletions = "chat_completions"
+	routeConfig          = "config"
+	routeLanguageModel   = "language_model"
+	routeUnmatched       = "unmatched"
 )
 
 var errInvalidRoute = errors.New("gateway: invalid route table")
@@ -39,11 +41,12 @@ func RoutePrefix() string {
 }
 
 // productionRoutes is the route table the committed manifest declares.
-func productionRoutes(discovery, language http.Handler) []route {
+func productionRoutes(discovery, language, chat http.Handler) []route {
 	errorWriter := providerv4.NewHostErrorWriter()
 	return []route{
 		{method: http.MethodGet, path: "/config", label: routeConfig, handler: discovery, errors: errorWriter},
 		{method: http.MethodPost, path: "/language-model", label: routeLanguageModel, handler: languageModelPath(language), errors: errorWriter},
+		{method: http.MethodPost, path: chatcompletions.Path, label: routeChatCompletions, handler: chatCompletionsPath(chat), errors: chatcompletions.NewHostErrorWriter()},
 	}
 }
 
@@ -111,6 +114,15 @@ func languageModelPath(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		cloned := request.Clone(request.Context())
 		cloned.URL.Path = providerv4.LanguageModelPath
+		cloned.URL.RawPath = ""
+		next.ServeHTTP(w, cloned)
+	})
+}
+
+func chatCompletionsPath(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		cloned := request.Clone(request.Context())
+		cloned.URL.Path = chatcompletions.Path
 		cloned.URL.RawPath = ""
 		next.ServeHTTP(w, cloned)
 	})

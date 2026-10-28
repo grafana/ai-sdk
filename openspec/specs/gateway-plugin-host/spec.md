@@ -1,24 +1,9 @@
 # gateway-plugin-host Specification
 
 ## Purpose
-Run the Gateway as a Grafana App Platform app plugin backend that serves the ProviderWire operations as namespaced platform routes, with configuration, health and lifecycle owned by the plugin host.
+Run the Gateway as a Grafana App Platform app plugin backend serving ProviderWire and Chat Completions as namespaced routes, with configuration, access, health and transport lifecycle owned by the host.
 
 ## Requirements
-
-### Requirement: Routes-only app plugin
-The Gateway SHALL be distributed as one Grafana app plugin whose app manifest declares no kinds and serves one API version with exactly two namespaced routes: `GET namespaces/{namespace}/config` and `POST namespaces/{namespace}/language-model`. The manifest SHALL declare no other routes, kinds or admission and conversion hooks.
-
-#### Scenario: Committed manifest declares only the two routes
-- **WHEN** the committed generated manifest is inspected
-- **THEN** it SHALL declare one version with no kinds and only the two routes
-
-#### Scenario: Plugin identity is fixed
-- **WHEN** the backend is built by any supported method, including plain `go build` in tests
-- **THEN** it SHALL identify as the plugin ID declared in the plugin metadata
-
-#### Scenario: Undeclared path or method
-- **WHEN** a request targets another path under the plugin's group version, or a declared route with another method
-- **THEN** the Gateway SHALL perform no discovery, selection or provider work for it
 
 ### Requirement: ProviderWire semantics on platform routes
 The `config` and `language-model` routes SHALL accept and return the registered ProviderWire V4 discovery and language-model protocol: request headers, JSON bodies, SSE framing, terminal frames and Gateway error documents. Clients SHALL address them by using `/apis/<group>/<version>/namespaces/<namespace>` as the ProviderWire API prefix.
@@ -245,3 +230,24 @@ Godoc SHALL describe the adapter contract: what an adapter supplies (a route han
 #### Scenario: Developer adds an adapter
 - **WHEN** a developer reads the adapter contract godoc and the architecture walkthrough
 - **THEN** they SHALL find each item an adapter supplies, each item the host provides, and the one route-table entry needed to register an adapter
+
+### Requirement: Routes-only app plugin with Chat
+
+The Gateway SHALL ship as one Grafana app plugin with no kinds and one API
+version declaring exactly three namespaced operations: GET `config`, POST
+`language-model` and POST `v1/chat/completions`. The manifest SHALL declare no
+other routes, kinds or admission/conversion hooks and SHALL match the
+production route table.
+
+#### Scenario: Committed three-route manifest
+- **WHEN** the committed generated manifest is inspected
+- **THEN** it declares one version, no kinds and exactly those three operations.
+
+#### Scenario: Plugin identity is fixed
+- **WHEN** the backend is built by any supported method, including plain Go
+  builds in tests
+- **THEN** it identifies as the plugin ID declared in the plugin metadata.
+
+#### Scenario: Undeclared path or method
+- **WHEN** a request targets another path or uses an undeclared method
+- **THEN** no discovery, selection or provider work occurs for it.

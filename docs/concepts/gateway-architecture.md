@@ -18,8 +18,10 @@ follows the runnable `grafana-ai-gateway` command. For setup, see
 
 ## The pieces and their boundaries
 
-The shipped command accepts **ProviderWire V4**, the model-call protocol used by
-the Go Grafana provider and the server-side Vercel Gateway client. It is not the
+The shipped command accepts **ProviderWire V4**, used by the Go Grafana provider
+and server-side Vercel Gateway client, and a **Chat Completions subset** for
+official OpenAI clients. These are separate adapters over one execution runtime.
+Neither is the
 browser UI message stream protocol. A Go application can consume Gateway output
 and then produce a separate [UI message stream](wire-protocol.md) for React.
 
@@ -31,11 +33,13 @@ flowchart LR
   subgraph clients[Application servers]
     go[Go Grafana provider]
     ts[Vercel Gateway client]
+    chatclient[Official OpenAI clients]
   end
   subgraph gateway[Grafana AI Gateway command]
     host[HTTP routing and authentication]
     subgraph ingress[Inbound protocol]
       pw[ProviderWire V4 decoder and response encoder]
+      chat[Chat Completions decoder and response encoder]
     end
     subgraph shared[Model selection and execution]
       runtime[Execution runtime]
@@ -54,7 +58,9 @@ flowchart LR
   apis[Upstream model APIs]
   go --> host
   ts --> host
+  chatclient --> host
   host --> pw
+  host --> chat --> runtime
   pw --> runtime --> select
   select -->|private| catalog --> logical --> routing
   select -->|Cloud| byok
@@ -71,7 +77,7 @@ a telemetry label, the adapter's handler and the adapter's host-error writer.
 Every entry gets the same access decision and request telemetry, and a refused
 caller gets that adapter's permission document without its body being read. The
 production table matches the committed manifest: `GET {prefix}/config` and
-`POST {prefix}/language-model`. A request that matches no entry does no access,
+`POST {prefix}/language-model`, and `POST {prefix}/v1/chat/completions`. A request that matches no entry does no access,
 selection or provider work, and is labeled `unmatched`.
 
 Host failures use a closed set of categories (permission, internal, and BYOK
@@ -86,13 +92,21 @@ operational endpoints, so there are no separate listeners and no `/live`,
 [routes](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/routes.go) and
 [plugin composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/gateway.go).
 
-**Other inbound protocols are not wired into this command.** In particular,
-`/v1/chat/completions`, `/v1/messages`, and `/v1/responses` are not registered
-routes. An outbound Anthropic provider does not establish Claude Code support;
-an outbound Responses provider does not establish Codex support. Those clients
-need their own compatible ingress and end-to-end evidence. The
-[Chat Completions adapter proposal](https://github.com/grafana/ai-sdk/pull/248)
-is separate work, not an additional path in the diagram.
+The [Chat Completions adapter](../guides/openai-chat-completions.md) maps its
+supported request subset into the same execution runtime. Its call-scoped
+translator applies defaults per native fallback candidate. It supplies its own
+response/error projection and no BYOK controls; the shared selector therefore
+rejects Cloud user and service-account calls without provider accounts with
+HTTP 400 (`ErrInvalidBYOK`), before native I/O. Host access-policy refusal remains
+HTTP 403; the adapter does not add a separate access dispatcher.
+Self-hosted users/service accounts and allowlisted internal services use the
+configured catalog. Chat parses its own request body; selection, execution,
+cancellation and stream cleanup use the shared runtime and host contract.
+
+`/v1/messages` and `/v1/responses` are not registered inbound routes. An outbound
+Anthropic provider does not establish Claude Code support, and an outbound
+Responses provider does not establish Codex support. Those clients need their
+own compatible ingress and end-to-end evidence.
 
 ## Follow one request
 

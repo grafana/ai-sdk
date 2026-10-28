@@ -586,3 +586,66 @@ func TestGateway_RouteDeadlineEndsTheModelCall(t *testing.T) {
 }
 
 const unaryBody = `{"prompt":[{"role":"user","content":[{"type":"text","text":"hi"}]}],"maxOutputTokens":16}`
+
+func chatRequest(t *testing.T, url, body string, auth credential) *http.Request {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	require.NoError(t, err)
+	request.Header.Set("Content-Type", "application/json")
+	auth(request)
+	return request
+}
+
+func TestGateway_ChatCompletionsAccess(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	url := h.url("v1/chat/completions")
+	body := `{"model":"public","messages":[{"role":"user","content":"hello"}]}`
+	internal := accessToken(h.serviceToken(t, testInternalService))
+	account := bearer(h.host.AddServiceAccount("private-account-uid", testNamespace))
+	other := accessToken(h.serviceToken(t, "svc-b"))
+
+	status, response := do(t, chatRequest(t, url, body, internal))
+	assert.Equal(t, http.StatusOK, status, response)
+	assert.Contains(t, response, `"object":"chat.completion"`)
+	assert.Contains(t, response, "hello")
+
+	before := h.anthropic.requests.Load()
+	for _, tc := range []struct {
+		auth   credential
+		status int
+	}{{account, http.StatusBadRequest}, {other, http.StatusForbidden}} {
+		status, response = do(t, chatRequest(t, url, body, tc.auth))
+		assert.Equal(t, tc.status, status, response)
+		assert.Contains(t, response, `"error"`)
+	}
+	assert.Equal(t, before, h.anthropic.requests.Load())
+	assert.Contains(t, h.logs.String(), `"route":"chat_completions"`)
+}
+
+func TestGateway_ChatCompletionsSelfHosted(t *testing.T) {
+	h := newHarness(t, platformhost.TopologySelfHosted)
+	body := `{"model":"public","messages":[{"role":"user","content":"hello"}]}`
+	for _, auth := range []credential{bearer(h.host.AddServiceAccount("chat-sa", testNamespace)), session(h.host.AddSession(types.TypeUser, "chat-user", testNamespace))} {
+		for _, streaming := range []bool{false, true} {
+			requestBody := body
+			if streaming {
+				requestBody = strings.TrimSuffix(body, "}") + `,"stream":true}`
+			}
+			status, response := do(t, chatRequest(t, h.url("v1/chat/completions"), requestBody, auth))
+			assert.Equal(t, http.StatusOK, status, response)
+			if streaming {
+				assert.Contains(t, response, "first")
+				assert.Contains(t, response, "second")
+				assert.Contains(t, response, "[DONE]")
+			} else {
+				assert.Contains(t, response, "hello")
+			}
+		}
+	}
+	before := h.anthropic.requests.Load()
+	anonymous := session(h.host.AddSession(types.TypeAnonymous, "chat-anon", testNamespace))
+	status, response := do(t, chatRequest(t, h.url("v1/chat/completions"), body, anonymous))
+	assert.Equal(t, http.StatusForbidden, status, response)
+	assert.Contains(t, response, `"error"`)
+	assert.Equal(t, before, h.anthropic.requests.Load())
+}

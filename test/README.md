@@ -30,7 +30,13 @@ URL=http://localhost:8080/scenario/simple-text mise run test-cli
 
 The pnpm workspace root (`package.json`, `pnpm-workspace.yaml`, and
 `pnpm-lock.yaml`) is at the repository root and includes the Gateway tests
-under `ai-gateway/test/providerwire-v4`.
+under `ai-gateway/test/providerwire-v4` and
+`ai-gateway/test/openai-chat-completions-adapter`. The latter runs official
+OpenAI Go and TypeScript clients against the candidate Gateway plugin through
+the in-memory platform host. Run it with
+`mise run test-openai-chat-completions-adapter`; it uses synthetic local native
+providers and requires no commercial provider credentials. See the
+[client guide](../docs/guides/openai-chat-completions.md) for its evidence limits.
 
 ```
 test/
