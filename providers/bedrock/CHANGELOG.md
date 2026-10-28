@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/bedrock/v0.1.0-alpha.1...providers/bedrock/v0.1.0-alpha.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* **bedrock:** omit token limits with high Nova reasoning ([#516](https://github.com/grafana/ai-sdk/issues/516)) ([397ca5f](https://github.com/grafana/ai-sdk/commit/397ca5f53460d313db8eeae7b083d19fa6d488b6))
+
 ## 0.1.0-alpha.1 (2026-10-28)
 
 

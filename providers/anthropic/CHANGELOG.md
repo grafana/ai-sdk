@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/anthropic/v0.1.0-alpha.2...providers/anthropic/v0.1.0-alpha.3) (2026-10-28)
+
+
+### Features
+
+* **anthropic:** replay uploaded-file references inside tool results ([#566](https://github.com/grafana/ai-sdk/issues/566)) ([e3b02f0](https://github.com/grafana/ai-sdk/commit/e3b02f020fe746e291dbf7ce8f0beb942098f7b7))
+
 ## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/anthropic/v0.1.0-alpha.1...providers/anthropic/v0.1.0-alpha.2) (2026-10-28)
 
 
