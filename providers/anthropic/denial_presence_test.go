@@ -13,7 +13,8 @@ func TestDenialReasonPresence(t *testing.T) {
 		if reason != nil {
 			want = *reason
 		}
-		blocks := serializeToolOutput(output, nil, nil)
+		blocks, err := serializeToolOutput(output, nil, nil)
+		require.NoError(t, err)
 		require.Len(t, blocks, 1)
 		got := blocks[0].OfText.Text
 		require.Equal(t, want, got)
