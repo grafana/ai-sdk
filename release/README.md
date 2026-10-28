@@ -177,15 +177,20 @@ tag already on `main` or a version released by the same pull request.
 
 ## Published version verification
 
-After tagging a library, publication runs `scripts/release_consumer.py`. It creates
-a fresh consumer module that requires the new version through the public Go proxy
+Each published library GitHub Release triggers the
+[release verification workflow](../.github/workflows/release-verification.yml), which
+runs `scripts/release_consumer.py` for that tag. It first waits up to 40 minutes until
+the new version and its first-party requirements resolve through the public Go proxy.
+The proxy caches a lookup of a not-yet-tagged version for about 30 minutes, and a
+release pull request mentions such versions while it is open, so a short wait right
+after tagging is normal. It then creates a fresh consumer module that requires the
+new version through the public Go proxy
 and checksum database, with no replacements, checks that the published
 version is selected from the module cache, builds every public package, and runs a
 credential-free behavioral scenario. Root runs the deterministic simple-text Go
 scenario, and the registered `ai@7.0.127` baseline parses its SSE with
-`uiMessageChunkSchema`. The proxy is queried only after the tag exists, so a
-missing version is never cached. A failure is reported in the publication result;
-fix it forward with a new release.
+`uiMessageChunkSchema`. A failed verification run marks that release; fix it forward
+with a new release. Rerun it for any library tag from the workflow's manual dispatch.
 
 To reproduce the checks locally:
 
@@ -193,7 +198,7 @@ To reproduce the checks locally:
 go test ./internal/releasecheck
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'test_release_*.py'
 mise run verify-module-requirements
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/release_consumer.py providers/openai v0.1.0-alpha.1
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/release_consumer.py providers/openai/v0.1.0-alpha.2
 ```
 
 Only run the consumer check for a version that is already tagged.

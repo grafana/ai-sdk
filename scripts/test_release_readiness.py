@@ -408,6 +408,51 @@ class ReleaseReadinessTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify_graph(graph, path, "v0.1.1", Path(directory))
 
+    def test_consumer_parses_only_library_release_tags(self):
+        from release_consumer import parse_tag
+        self.assertEqual(parse_tag("v0.1.0-alpha.4"), (".", "v0.1.0-alpha.4"))
+        self.assertEqual(parse_tag("providers/openai/v0.1.0-alpha.2"), ("providers/openai", "v0.1.0-alpha.2"))
+        self.assertEqual(parse_tag("middleware/logger/v1.2.3"), ("middleware/logger", "v1.2.3"))
+        for tag in ["ai-gateway/v0.1.0", "providers/openai/0.1.0", "providers/../v1.0.0", "v1.0.0; rm -rf /", ""]:
+            with self.subTest(tag=tag), self.assertRaises(ValueError):
+                parse_tag(tag)
+
+    def test_consumer_waits_for_the_version_and_its_first_party_requirements(self):
+        import release_consumer
+        openai = readiness.PREFIX + "/providers/openai"
+        with tempfile.TemporaryDirectory() as directory:
+            mod = Path(directory, "bedrock.mod")
+            mod.write_text(f"module {readiness.PREFIX}/providers/bedrock\n\ngo 1.27.3\n\nrequire (\n"
+                           f"\t{readiness.PREFIX} v0.1.0-alpha.4\n\t{openai} v0.1.0-alpha.2\n\texample.com/x v1.0.0\n)\n")
+            available = set()
+            requested = []
+            real_run = subprocess.run
+            def download(args, **kwargs):
+                if list(args[:3]) != ["go", "mod", "download"]:
+                    return real_run(args, **kwargs)
+                module = args[-1]
+                requested.append(module)
+                if module.startswith(openai) and openai not in available:
+                    return subprocess.CompletedProcess(args, 1, json.dumps({"Error": "unknown revision providers/openai/v0.1.0-alpha.2"}), "")
+                return subprocess.CompletedProcess(args, 0, json.dumps({"GoMod": str(mod)}), "")
+            now = [0.0]
+            def sleep(seconds):
+                now[0] += seconds
+                if now[0] >= 60:
+                    available.add(openai)
+            with patch.object(release_consumer.subprocess, "run", side_effect=download):
+                release_consumer.wait_until_available(readiness.PREFIX + "/providers/bedrock", "v0.1.0-alpha.1", 5,
+                                                      sleep=sleep, clock=lambda: now[0])
+                self.assertIn(f"{openai}@v0.1.0-alpha.2", requested)
+                self.assertNotIn("example.com/x@v1.0.0", requested)
+                self.assertEqual(now[0], 60)
+                available.clear()
+                now[0] = 0.0
+                with self.assertRaisesRegex(ValueError, "after 1 minutes: .*providers/openai@v0.1.0-alpha.2: unknown revision"):
+                    release_consumer.wait_until_available(readiness.PREFIX + "/providers/bedrock", "v0.1.0-alpha.1", 1,
+                                                          sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
+                                                          clock=lambda: now[0])
+
     def test_initial_adoption_requires_disabled_automation(self):
         root = Path(__file__).resolve().parent.parent
         workflow = """  release-please:
@@ -463,6 +508,18 @@ class ReleaseReadinessTest(unittest.TestCase):
         self.assertNotIn("token-smoke-test:", workflow)
         self.assertNotIn("app-pr-test:", workflow)
 
+
+    def test_release_verification_workflow_is_read_only_and_tag_scoped(self):
+        root = Path(__file__).resolve().parent.parent
+        workflow = (root / ".github/workflows/release-verification.yml").read_text()
+        for expected in ["types: [published]", "workflow_dispatch:", "permissions: {}", "contents: read",
+                         "persist-credentials: false", "cancel-in-progress: false",
+                         "!startsWith(github.event.release.tag_name || inputs.tag, 'ai-gateway/')",
+                         'python3 scripts/release_consumer.py "$RELEASE_TAG" --wait-minutes 40']:
+            self.assertIn(expected, workflow)
+        for forbidden in ["write", "secrets.", "GH_TOKEN", "run: python3 scripts/release_consumer.py ${{"]:
+            self.assertNotIn(forbidden, workflow)
+        self.assertNotIn("release_consumer", (root / ".github/workflows/release-please.yml").read_text())
 
 if __name__ == "__main__":
     unittest.main()

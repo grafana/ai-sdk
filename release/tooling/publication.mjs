@@ -98,7 +98,7 @@ export function publicationOrder(entries) {
   return ordered;
 }
 
-export async function publishInventory({ github, inventory, validate, verify, toolingRevision, token,
+export async function publishInventory({ github, inventory, validate, toolingRevision, token,
   fetchImpl = globalThis.fetch }) {
   assert.equal(running, false, 'publication already running in this process');
   running = true;
@@ -175,7 +175,7 @@ export async function publishInventory({ github, inventory, validate, verify, to
         await recheckCandidate(github, candidate, evidence);
         assert.deepEqual(await publicationState(github, candidate.tag, candidate), state);
         results.push({ ...identity, status: initial.releaseId ? 'recovered' : 'published',
-          releaseId: state.releaseId, evidence, verification: await verification(verify, candidate) });
+          releaseId: state.releaseId, evidence });
       } catch (error) {
         results.push({ ...identity, status: 'blocked', reason: error.message });
       }
@@ -183,14 +183,5 @@ export async function publishInventory({ github, inventory, validate, verify, to
     return { schemaVersion: 1, toolingRevision, mainSha: frozen.mainSha, candidates: results };
   } finally {
     running = false;
-  }
-}
-
-async function verification(verify, candidate) {
-  try {
-    await verify(candidate);
-    return { status: 'passed' };
-  } catch (error) {
-    return { status: 'failed', reason: error.message };
   }
 }

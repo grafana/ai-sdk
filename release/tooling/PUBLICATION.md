@@ -13,9 +13,10 @@ library before publishing, including retained readiness evidence, exact squash
 source CI and first-party requirements, then publishes them in dependency order. A
 library is tagged only after each co-released prerequisite was published in the
 same run. It does not trust a saved authorization report or rescan for new
-candidates. An unready provider does not prevent ready root from proceeding. After
-each release, the new version is verified as an external consumer through the
-public Go proxy; a failure is reported and never moves the tag. Gateway remains
+candidates. An unready provider does not prevent ready root from proceeding. Each
+published GitHub Release triggers the separate release verification workflow, which
+checks the new version as an external consumer through the public Go proxy; its
+result never moves the tag. Gateway remains
 unsupported. Duplicate component or tag claims block the affected candidates.
 
 The writer permits only four operations for the current candidate:

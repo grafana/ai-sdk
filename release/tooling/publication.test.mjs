@@ -33,13 +33,11 @@ function publisher() {
     } else throw new Error(`unexpected pinned writer request: ${method} ${path}`);
     return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
   };
-  const verifications = [];
   const options = { github: f.github, inventory: f.inventory, toolingRevision: base,
     validate: async candidate => { validations.push(candidate.prNumber); return { baseSha: base }; },
-    verify: async candidate => { assert.ok(tags.has(candidate.tag), 'verify only after tagging'); verifications.push(candidate.component); },
     fetchImpl: fetch };
   const run = () => publishInventory(options);
-  return { ...f, tags, releases, requests, validations, verifications, options, fetch, run };
+  return { ...f, tags, releases, requests, validations, options, fetch, run };
 }
 
 function existing(f, release = false) {
@@ -221,7 +219,7 @@ function coReleasedRelease(f) {
   return { bedrock, openai, requires };
 }
 
-test('co-released libraries publish prerequisites first and verify each published version', async () => {
+test('co-released libraries publish prerequisites first', async () => {
   const f = publisher();
   const { requires } = coReleasedRelease(f);
   f.options.validate = async candidate => ({ prerequisites: requires[candidate.component].map(component => ({
@@ -229,8 +227,7 @@ test('co-released libraries publish prerequisites first and verify each publishe
   const report = await f.run();
   assert.deepEqual(report.candidates.map(c => [c.component, c.status]), [
     ['.', 'published'], ['providers/openai', 'published'], ['providers/bedrock', 'published']]);
-  assert.deepEqual(f.verifications, ['.', 'providers/openai', 'providers/bedrock']);
-  assert.ok(report.candidates.every(c => c.verification.status === 'passed'));
+  assert.deepEqual([...f.releases.keys()], ['v0.1.0-alpha.2', 'providers/openai/v0.1.1', 'providers/bedrock/v0.1.0-alpha.1']);
   assert.equal(f.requests.filter(r => r.path.endsWith('/labels')).length, 1, 'labels move once for the whole release');
 });
 
@@ -250,16 +247,6 @@ test('a blocked co-released prerequisite blocks its dependents transitively', as
     'providers/bedrock': 'co-released prerequisite providers/openai is blocked',
   });
   assert.deepEqual(f.requests, []);
-  assert.deepEqual(f.verifications, []);
-});
-
-test('a failed published-version verification is reported without moving the tag', async () => {
-  const f = publisher();
-  f.options.verify = async () => { throw new Error('consumer build failed'); };
-  const report = await f.run();
-  assert.equal(report.candidates[0].status, 'published');
-  assert.deepEqual(report.candidates[0].verification, { status: 'failed', reason: 'consumer build failed' });
-  assert.equal(f.tags.get(f.candidate.tag).object.sha, f.candidate.mergeSha);
 });
 
 test('ambiguous component claims cannot reach validation or writes', async () => {

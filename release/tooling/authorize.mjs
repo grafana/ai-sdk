@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -91,25 +90,6 @@ export async function authorizeInventory(github, inventory, validate, toolingRev
   }
   blockDependents(report.candidates);
   return report;
-}
-
-const UNRESOLVED = /unknown revision|invalid version|not found|410 Gone|404 Not Found/i;
-
-export function publishedVerifier(env = process.env, { attempts = 10, wait = () => sleep(30_000), run = execFileSync } = {}) {
-  return async candidate => {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        run('python3', [join(tooling, 'scripts/release_consumer.py'), candidate.component, `v${candidate.version}`], {
-          cwd: tooling, env: childEnvironment(env), maxBuffer: 8 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        return;
-      } catch (error) {
-        const detail = error.stderr?.toString().slice(-4000) || error.message;
-        if (attempt < attempts && UNRESOLVED.test(detail)) { await wait(); continue; }
-        throw new Error(`published version failed consumer verification: ${detail}`);
-      }
-    }
-  };
 }
 
 export function libraryValidator(inventory, token) {
