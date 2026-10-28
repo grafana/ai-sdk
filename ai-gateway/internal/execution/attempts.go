@@ -16,6 +16,7 @@ type attemptCapture struct {
 	requested  string
 	canonical  string
 	candidates []catalog.ConfiguredCandidate
+	accounts   *RequestAccounts
 	redactor   SummaryRedactor
 
 	mu       sync.Mutex
@@ -24,14 +25,19 @@ type attemptCapture struct {
 	attempts []fallback.Attempt
 }
 
-// newAttemptCapture prepares the capture for selected. Every selection is captured,
-// and only configured selections are projected into an overview.
+// newAttemptCapture prepares the capture for selected. Every selection is
+// captured, and only configured and request-account selections are projected
+// into an overview.
 func newAttemptCapture(requested string, selected Selection, redactor SummaryRedactor) *attemptCapture {
 	attempts := &attemptCapture{redactor: redactor}
-	if selected.configured != nil {
+	switch {
+	case selected.configured != nil:
 		attempts.requested = requested
 		attempts.canonical = selected.ID
 		attempts.candidates = slices.Clone(selected.configured.candidates)
+	case selected.accounts != nil:
+		attempts.requested = requested
+		attempts.accounts = selected.accounts
 	}
 	return attempts
 }
@@ -92,7 +98,11 @@ func (a *attemptCapture) view(err error) (view View) {
 		}
 		attempts = []fallback.Attempt{{Index: 1, Outcome: outcome, SourceErr: err}}
 	}
-	view.Overview = Project(a.requested, a.canonical, attempts, a.candidates)
+	if a.accounts != nil {
+		view.Overview = projectAccounts(a.requested, attempts, *a.accounts)
+	} else {
+		view.Overview = Project(a.requested, a.canonical, attempts, a.candidates)
+	}
 	if view.Overview != nil {
 		for i := range view.Overview.Attempts {
 			attempt := &view.Overview.Attempts[i]

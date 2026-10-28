@@ -228,8 +228,10 @@ rejects or truncates output because of its size. See the
 
 One HTTP request can contain several physical provider attempts but one logical
 model call. Logs and metrics describe those different scopes. Optional client
-execution overviews describe observed selection decisions and configured
-identities; they do not prove that a selected stream completed. Token usage is
+execution overviews describe observed selection decisions: configured
+identities for configured models, and the requested destination with each
+account attempt for BYOK calls. They do not prove that a selected stream
+completed. Token usage is
 provider-reported accounting, not a complete count of all remote work after
 retries or interrupted calls.
 
@@ -253,8 +255,9 @@ name:
   access; `NewBYOKSelector` checks request-account access and decodes the
   provider/model destination and credentials. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
   constructs an Anthropic or OpenAI model with request-local accounts and
-  observation. It does not consult the configured catalog or fall back to
-  server-held keys. This host supplies no custom base-URL approval map.
+  observation, and the selection carries the destination and account count
+  that the BYOK execution overview is checked against. It does not consult the
+  configured catalog or fall back to server-held keys. This host supplies no custom base-URL approval map.
 
 See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go)
 and [authentication configuration](../guides/gateway-authentication.md).

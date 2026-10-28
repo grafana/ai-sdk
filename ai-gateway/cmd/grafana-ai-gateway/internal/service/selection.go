@@ -46,7 +46,11 @@ func NewBYOKSelector(client *http.Client, factory ModelFactory) execution.Reques
 		if err != nil {
 			return execution.Selection{}, err
 		}
-		return execution.Selection{ID: id, Model: model}, nil
+		return execution.AccountSelection(id, model, execution.RequestAccounts{
+			Provider: string(request.Provider),
+			ModelID:  request.Model,
+			Count:    len(request.Accounts),
+		}), nil
 	}
 }
 

@@ -12,15 +12,35 @@ import (
 )
 
 // Selection is the executable model a selector chose for one request, with its
-// logical identity.
+// logical identity. A selection built by [CatalogSelector] or
+// [AccountSelection] carries the attribution its execution overview is
+// projected from; any other selection publishes no overview.
 type Selection struct {
 	ID         string
 	Model      provider.LanguageModel
 	configured *configuredSelection
+	accounts   *RequestAccounts
 }
 
 type configuredSelection struct {
 	candidates []catalog.ConfiguredCandidate
+}
+
+// RequestAccounts is the native destination and the number of ordered accounts
+// a request supplied for it.
+type RequestAccounts struct {
+	Provider string
+	ModelID  string
+	Count    int
+}
+
+// AccountSelection returns the selection for model, which tries the request's
+// accounts in order against one native destination. Its overview names the
+// call's requested model ID, has no canonical model or provider instance, and
+// lists each account attempt with its native destination. An attempt for
+// another destination, or more attempts than accounts, omits the overview.
+func AccountSelection(id string, model provider.LanguageModel, accounts RequestAccounts) Selection {
+	return Selection{ID: id, Model: model, accounts: &accounts}
 }
 
 // RequestSelector chooses the model for a request from its model ID, its mapped

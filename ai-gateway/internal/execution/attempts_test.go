@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -242,22 +241,109 @@ func TestAttemptCapture_ProjectionAfterSeal(t *testing.T) {
 	}
 }
 
-func TestAttemptCapture_BYOKCapturedNotProjected(t *testing.T) {
-	first := &generateModel{modelID: "A", generate: func(context.Context) (*provider.GenerateResult, error) {
-		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "first account"})
-	}}
-	second := &generateModel{modelID: "B"}
-	model, err := fallback.New(first, second)
-	require.NoError(t, err)
-	attempts := newAttemptCapture("anthropic/model", Selection{ID: "anthropic/model", Model: model}, SummaryRedactor{})
-	_, err = model.DoGenerate(attempts.withObserver(t.Context()), provider.CallOptions{})
-	require.NoError(t, err)
-	attempts.mu.Lock()
-	captured := slices.Clone(attempts.attempts)
-	attempts.mu.Unlock()
-	require.Len(t, captured, 2)
-	assert.Equal(t, fallback.AttemptFailed, captured[0].Outcome)
-	assert.True(t, captured[0].WillFallback)
-	assert.Equal(t, fallback.AttemptSelected, captured[1].Outcome)
-	assert.Nil(t, attempts.view(nil).Overview)
+func TestAccountSelection(t *testing.T) {
+	accounts := RequestAccounts{Provider: "native", ModelID: "model", Count: 2}
+	selected := AccountSelection("native/model", &generateModel{modelID: "model"}, accounts)
+	assert.True(t, validSelection(selected))
+	assert.Nil(t, selected.configured)
+	require.NotNil(t, selected.accounts)
+	assert.Equal(t, RequestAccounts{Provider: "native", ModelID: "model", Count: 2}, *selected.accounts)
+	attempts := newAttemptCapture("native/model", selected, SummaryRedactor{})
+	assert.Equal(t, RequestAccounts{Provider: "native", ModelID: "model", Count: 2}, *attempts.accounts)
+	assert.Empty(t, attempts.canonical)
+	assert.Empty(t, attempts.candidates)
+}
+
+func TestAttemptCapture_AccountProjection(t *testing.T) {
+	retryable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "account overloaded", IsRetryable: new(true)})
+	rejected := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Message: "account rejected"})
+	type expected struct {
+		outcome fallback.AttemptOutcome
+		message string
+	}
+	for _, tc := range []struct {
+		name     string
+		failures []error
+		accounts RequestAccounts
+		cancel   bool
+		observed []fallback.Attempt
+		calls    []int
+		want     []expected
+	}{
+		{name: "direct selected", failures: []error{nil}, calls: []int{1}, want: []expected{{outcome: fallback.AttemptSelected}}},
+		{name: "direct failed", failures: []error{rejected}, calls: []int{1}, want: []expected{{fallback.AttemptFailed, "account rejected"}}},
+		{name: "failed then selected", failures: []error{retryable, nil}, calls: []int{1, 1}, want: []expected{{fallback.AttemptFailed, "account overloaded"}, {outcome: fallback.AttemptSelected}}},
+		{name: "noneligible", failures: []error{rejected, nil}, calls: []int{1, 0}, want: []expected{{fallback.AttemptFailed, "account rejected"}}},
+		{name: "exhausted", failures: []error{retryable, retryable}, calls: []int{1, 1}, want: []expected{{fallback.AttemptFailed, "account overloaded"}, {fallback.AttemptFailed, "account overloaded"}}},
+		{name: "canceled", failures: []error{retryable, nil}, cancel: true, calls: []int{1, 0}, want: []expected{{fallback.AttemptCanceled, "account overloaded"}}},
+		{name: "mismatched provider", failures: []error{retryable, nil}, accounts: RequestAccounts{Provider: "other", ModelID: "model", Count: 2}, calls: []int{1, 1}},
+		{name: "mismatched model", failures: []error{retryable, nil}, accounts: RequestAccounts{Provider: "native", ModelID: "other", Count: 2}, calls: []int{1, 1}},
+		{name: "account overflow", failures: []error{retryable, nil}, accounts: RequestAccounts{Provider: "native", ModelID: "model", Count: 1}, calls: []int{1, 1}},
+		{name: "zero attempts", accounts: RequestAccounts{Provider: "native", ModelID: "model", Count: 1}},
+		{name: "mixed calls", accounts: RequestAccounts{Provider: "native", ModelID: "model", Count: 2}, observed: []fallback.Attempt{
+			{Index: 1, Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected},
+			{Index: 1, Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.accounts == (RequestAccounts{}) {
+				tc.accounts = RequestAccounts{Provider: "native", ModelID: "model", Count: len(tc.failures)}
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var candidates []*generateModel
+			for _, failure := range tc.failures {
+				candidates = append(candidates, &generateModel{modelID: "model", generate: func(context.Context) (*provider.GenerateResult, error) {
+					if tc.cancel {
+						cancel()
+					}
+					if failure != nil {
+						return nil, failure
+					}
+					return &provider.GenerateResult{}, nil
+				}})
+			}
+			attempts := newAttemptCapture("native/model", AccountSelection("native/model", &generateModel{modelID: "model"}, tc.accounts), SummaryRedactor{})
+			attempts.enter()
+			var err error
+			if len(candidates) != 0 {
+				models := make([]provider.LanguageModel, 0, len(candidates))
+				for _, candidate := range candidates {
+					models = append(models, candidate)
+				}
+				model, chainErr := fallback.New(models...)
+				require.NoError(t, chainErr)
+				_, err = model.DoGenerate(attempts.withObserver(ctx), provider.CallOptions{})
+			}
+			for _, attempt := range tc.observed {
+				attempts.observe(ctx, attempt)
+			}
+			for i, calls := range tc.calls {
+				assert.Equal(t, calls, candidates[i].callCount(), "candidate %d", i+1)
+			}
+			view := attempts.view(err)
+			if len(tc.want) == 0 {
+				assert.Nil(t, view.Overview)
+				return
+			}
+			require.NotNil(t, view.Overview)
+			assert.Equal(t, "native/model", view.Overview.RequestedModelID)
+			assert.Empty(t, view.Overview.CanonicalModelID)
+			require.Len(t, view.Overview.Attempts, len(tc.want))
+			for i, want := range tc.want {
+				attempt := view.Overview.Attempts[i]
+				assert.Equal(t, Attempt{Provider: "native", ModelID: "model", Outcome: want.outcome, Error: attempt.Error}, attempt)
+				if want.message == "" {
+					assert.Nil(t, attempt.Error)
+				} else {
+					require.NotNil(t, attempt.Error)
+					assert.Equal(t, want.message, attempt.Error.Message)
+				}
+			}
+			encoded, err := json.Marshal(view.Overview)
+			require.NoError(t, err)
+			assert.NotContains(t, string(encoded), "canonicalModelId")
+			assert.NotContains(t, string(encoded), "providerInstance")
+		})
+	}
 }

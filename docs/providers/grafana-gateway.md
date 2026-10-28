@@ -227,6 +227,8 @@ under the provider's own options, such as `openai`.
 - OpenAI accounts can also set `organization` and `project`.
 
 Calls with your own key do not use the Gateway's configured models or aliases.
+To see which of your accounts were tried, read the
+[execution overview](#inspect-execution-overviews-and-failures).
 
 ## Keep credentials out of logs
 
@@ -333,12 +335,21 @@ from the response metadata after the call. With `model.DoGenerate`, they are in
 
 ## Inspect execution overviews and failures
 
-Calls to configured models return a `gateway.execution` entry in the provider
-metadata of the result or the stream's finish. It names the model you selected
-and lists each attempt in order, with its provider, model, outcome and, for a
-failure, the provider's error message, type, code and status. In Go, read it
-from `ProviderMetadata`; in TypeScript, from `providerMetadata`. Each call has
-its own overview, so retries and tool loop steps start new ones.
+Calls return a `gateway.execution` entry in the provider metadata of the
+result or the stream's finish. It names the model you selected and lists each
+attempt in order, with its provider, model, outcome and, for a failure, the
+provider's error message, type, code and status. In Go, read it from
+`ProviderMetadata`; in TypeScript, from `providerMetadata`. Each call has its
+own overview, so retries and tool loop steps start new ones.
+
+For configured models, the overview also has the resolved `canonicalModelId`
+and each attempt's `providerInstance`. For calls with your own key,
+`requestedModelId` is the `provider/model` you sent, there is no
+`canonicalModelId` or `providerInstance`, and the attempts follow the order of
+your accounts. An account that failed before a later one answered keeps its
+own error summary. The overview has no account or key field; use the
+attempt's position to match it to your list. A provider's error text can still
+repeat your key, as described below.
 
 Errors carry the same information:
 
@@ -349,9 +360,10 @@ Errors carry the same information:
   `APICallError.Data`. The stream's later parts remain readable.
 
 Overviews are best-effort: a missing overview does not mean no provider was
-tried. Calls with your own provider key don't return overviews yet, only
-provider errors on streams
-([#317](https://github.com/grafana/ai-sdk/issues/317)).
+tried. A call the Gateway rejects before trying any account, such as one with
+missing or malformed `gateway.byok` credentials or unsupported options, has no
+overview. A selected
+attempt means the provider started answering, not that the stream completed.
 
 The Gateway replaces its own configured provider keys with `[REDACTED]` in
 error summaries. It does not change your own provider key if a provider repeats

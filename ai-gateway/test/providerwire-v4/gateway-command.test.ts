@@ -1952,6 +1952,120 @@ describe("authenticated Anthropic Gateway command", () => {
 
 });
 
+describe("Cloud BYOK attempt overviews (test-signed identities, dummy keys, fake native providers)", () => {
+  const FIRST = "byok-account-first";
+  const SECOND = "byok-account-second";
+  const UNUSED = "byok-unused-provider-key";
+  const scenarios: Array<{ name: string; keys: string[]; failures: Record<string, number>; status?: number; attempts: Array<[string, "selected" | "failed", number?]> }> = [
+    { name: "direct success", keys: [FIRST], failures: {}, attempts: [[FIRST, "selected"]] },
+    { name: "direct failure", keys: [FIRST], failures: { [FIRST]: 401 }, status: 424, attempts: [[FIRST, "failed", 401]] },
+    { name: "failed then selected", keys: [FIRST, SECOND], failures: { [FIRST]: 503 }, attempts: [[FIRST, "failed", 503], [SECOND, "selected"]] },
+    { name: "noneligible", keys: [FIRST, SECOND], failures: { [FIRST]: 401 }, status: 424, attempts: [[FIRST, "failed", 401]] },
+    { name: "exhausted", keys: [FIRST, SECOND], failures: { [FIRST]: 503, [SECOND]: 503 }, status: 503, attempts: [[FIRST, "failed", 503], [SECOND, "failed", 503]] },
+  ];
+
+  for (const name of ["anthropic", "openai"] as const) {
+    it(`exposes ordered ${name} account attempts through both clients`, async () => {
+      const resources = await startBYOKAttemptGateway(name);
+      try {
+        const { native, gateway, modelID } = resources;
+        native.accountKeys = [FIRST, SECOND];
+        for (const scenario of scenarios) {
+          native.keyFailures = new Map(Object.entries(scenario.failures));
+          const expected = {
+            requestedModelId: modelID,
+            attempts: scenario.attempts.map(([key, outcome, status]) => ({
+              provider: name, modelId: native.backendModel, outcome,
+              ...(status === undefined ? {} : { error: { message: `account failure ${key}`, type: accountFailureType(status), statusCode: status } }),
+            })),
+          };
+          for (const mode of ["generate", "stream"] as const) {
+            for (const language of ["go", "typescript"] as const) {
+              const label = `${name} ${scenario.name} ${language} ${mode}`;
+              const before = resources.keys().length;
+              const metadata = await byokMetadata(gateway, language, mode, modelID, byokOptions(name, scenario.keys), scenario.status);
+              assert.deepEqual(metadata?.gateway?.execution, expected, label);
+              assert.deepEqual(resources.keys().slice(before), scenario.attempts.map(([key]) => key), label);
+              const encoded = JSON.stringify(metadata);
+              for (const absent of ['"canonicalModelId"', '"providerInstance"', UNUSED]) assert.ok(!encoded.includes(absent), `${label}: ${absent}`);
+            }
+          }
+        }
+        assert.deepEqual(native.violations, []);
+        await gateway.stop();
+        assertCloudPrivateValuesAbsent(gateway.stderr, [FIRST, SECOND, UNUSED]);
+      } finally {
+        await resources.stop();
+      }
+    });
+  }
+
+  it("reports an OpenAI preflight failure before selecting the next account through both clients", async () => {
+    const resources = await startBYOKAttemptGateway("openai");
+    try {
+      const native = resources.native as FakeOpenAI;
+      native.accountKeys = [FIRST, SECOND];
+      native.keyPreflightErrors.add(FIRST);
+      const expected = {
+        requestedModelId: resources.modelID,
+        attempts: [
+          { provider: "openai", modelId: native.backendModel, outcome: "failed", error: { message: `preflight failure ${FIRST}`, type: "error", code: "overloaded", statusCode: 503 } },
+          { provider: "openai", modelId: native.backendModel, outcome: "selected" },
+        ],
+      };
+      for (const language of ["go", "typescript"] as const) {
+        const before = resources.keys().length;
+        const metadata = await byokMetadata(resources.gateway, language, "stream", resources.modelID, byokOptions("openai", [FIRST, SECOND]));
+        assert.deepEqual(metadata?.gateway?.execution, expected, language);
+        assert.deepEqual(resources.keys().slice(before), [FIRST, SECOND], language);
+      }
+      assert.deepEqual(native.violations, []);
+    } finally {
+      await resources.stop();
+    }
+  });
+
+  it("keeps concurrent account attempts request-local and starts no account after setup cancellation", async () => {
+    const resources = await startBYOKAttemptGateway("anthropic");
+    try {
+      const native = resources.native as FakeAnthropic;
+      const pairs = Array.from({ length: 8 }, (_, i) => [`byok-concurrent-${i}-first`, `byok-concurrent-${i}-second`]);
+      native.accountKeys = [...pairs.flat(), FIRST, SECOND];
+      native.keyFailures = new Map(pairs.filter((_, i) => i % 2 === 0).map(([first]) => [first, 503]));
+      const results = await Promise.all(pairs.map(async (keys, i) => {
+        const mode = i % 4 < 2 ? "generate" : "stream";
+        return { keys, failed: i % 2 === 0, metadata: await byokMetadata(resources.gateway, "typescript", mode, resources.modelID, byokOptions("anthropic", keys)) };
+      }));
+      for (const { keys: [first, second], failed, metadata } of results) {
+        const selected = { provider: "anthropic", modelId: native.backendModel, outcome: "selected" };
+        assert.deepEqual(metadata?.gateway?.execution, {
+          requestedModelId: resources.modelID,
+          attempts: failed
+            ? [{ provider: "anthropic", modelId: native.backendModel, outcome: "failed", error: { message: `account failure ${first}`, type: "overloaded_error", statusCode: 503 } }, selected]
+            : [selected],
+        }, first);
+        const own = resources.keys().filter((key) => key === first || key === second);
+        assert.deepEqual(own, failed ? [first, second] : [first]);
+      }
+      assert.equal(resources.keys().length, pairs.length * 1.5);
+
+      const before = resources.keys().length;
+      const abort = new AbortController();
+      const pending = resources.gateway.client()(resources.modelID).doStream({ ...byokOptions("anthropic", [FIRST, SECOND], "silent-unary-shutdown"), abortSignal: abort.signal });
+      await poll(async () => resources.keys().length > before, 5_000, "first BYOK account request");
+      abort.abort();
+      await assert.rejects(async () => await pending);
+      await native.waitForCancellation("silent-unary-shutdown");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.deepEqual(resources.keys().slice(before), [FIRST]);
+      assert.equal(await resources.gateway.ready(), true);
+      assert.deepEqual(native.violations, []);
+    } finally {
+      await resources.stop();
+    }
+  });
+});
+
 describe("Cloud BYOK through the platform host (test-signed identities, dummy native trust)", () => {
   it("rejects the native proxy certificate without explicit test trust", async () => {
     const [native, gateway] = await startCloudGateway([], undefined, { GATEWAY_TEST_CA_FILE: "" });
@@ -1991,17 +2105,19 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
         const ts = await collectStream((await gateway.client()(BYOK_MODEL).doStream(options)).stream);
         const go = await captureGoClient(goClientBinaryPath, { mode: "stream", modelID: BYOK_MODEL, options, baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN });
         assert.equal(go.error, undefined);
+        const selected = { gateway: { execution: { requestedModelId: BYOK_MODEL, attempts: [{ provider: "anthropic", modelId: "request-only-native", outcome: "selected" }] } } };
         for (const parts of [ts, go.parts]) {
           const errors = parts.filter((part: { type: string; error?: { data?: { nativeError?: unknown } } }) => part.type === "error" && part.error?.data?.nativeError !== undefined);
           assert.equal(errors.length, 1);
-          assert.deepEqual(errors[0].error.data, { nativeError: expected });
+          assert.deepEqual(errors[0].error.data, { nativeError: expected, providerMetadata: selected });
+          for (const part of parts.filter((part: { type: string }) => part.type === "error")) assert.deepEqual(part.error.data.providerMetadata, selected);
           const text = parts.filter((part: { type: string }) => part.type === "text-delta").map((part: { delta: string }) => part.delta).join("");
           assert.equal(text, native.streamErrorMessage);
           assert.equal(errors[0].error.statusCode, 502);
           assert.equal(errors[0].error.retryable ?? errors[0].error.isRetryable, true);
           assert.ok(parts.every((part: { type: string }) => part.type !== "finish"));
           assert.equal(parts.at(-1).type, "error");
-          assert.ok(!JSON.stringify(parts).includes('"execution"'));
+          assert.ok(!JSON.stringify(parts).includes('"canonicalModelId"'));
           assert.ok(!JSON.stringify(parts).includes('"providerInstance"'));
         }
         assert.equal(native.requests.length, 2);
@@ -2015,7 +2131,7 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
       }
     });
   }
-  it("distinguishes native credential rejection from Gateway authentication without rotating keys or echoing them", async () => {
+  it("distinguishes native credential rejection from Gateway authentication without rotating keys or echoing them in fixed error fields", async () => {
     const [native, gateway] = await startCloudGateway();
     native.failureStatus = 401;
     try {
@@ -2028,14 +2144,21 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
         assert.equal(go.error?.statusCode, 424);
         assert.equal(go.error?.category, "failed_dependency");
         const expected = { error: { message: "failed dependency", type: "failed_dependency", param: null, code: "failed_dependency" } };
-        assert.deepEqual(go.error.apiError.data, expected);
-        assertCloudPrivateValuesAbsent(JSON.stringify(go.error), ["request-only-key", "unused-second-key"]);
+        const rejected = { gateway: { execution: { requestedModelId: BYOK_MODEL, attempts: [{ provider: "anthropic", modelId: "request-only-native", outcome: "failed", error: { message: "provider-secret-response request-only-key backend-private", type: "api_error", statusCode: 401 } }] } } };
+        const { providerMetadata: goMetadata, ...goBase } = go.error.apiError.data;
+        assert.deepEqual(goBase, expected);
+        assert.deepEqual(goMetadata, rejected);
+        assertCloudPrivateValuesAbsent(JSON.stringify(go.error), ["unused-second-key"]);
+        assertCloudPrivateValuesAbsent(JSON.stringify(goBase) + go.error.message, ["request-only-key"]);
         const model = gateway.client()(BYOK_MODEL);
         await assert.rejects(async () => mode === "generate" ? model.doGenerate(options) : model.doStream(options), (error: unknown) => {
-          const failure = error as { statusCode?: number; message: string; cause?: { data?: unknown } };
+          const failure = error as { statusCode?: number; message: string; cause?: { data?: { providerMetadata?: unknown } } };
           assert.equal(failure.statusCode, 424);
-          assert.deepEqual(failure.cause?.data, expected);
-          assertCloudPrivateValuesAbsent(JSON.stringify(failure.cause?.data), ["request-only-key", "unused-second-key"]);
+          const { providerMetadata, ...base } = failure.cause?.data ?? {};
+          assert.deepEqual(base, expected);
+          assert.deepEqual(providerMetadata, rejected);
+          assertCloudPrivateValuesAbsent(JSON.stringify(failure.cause?.data), ["unused-second-key"]);
+          assertCloudPrivateValuesAbsent(JSON.stringify(base) + failure.message, ["request-only-key"]);
           return true;
         });
       }
@@ -2950,6 +3073,76 @@ async function startCloudGateway(extraArgs: string[] = [], configuredURL?: strin
   }
 }
 
+function accountFailureType(status: number): string {
+  return status === 401 ? "authentication_error" : "overloaded_error";
+}
+
+type BYOKAttemptGateway = {
+  native: FakeAnthropic | FakeOpenAI;
+  gateway: GatewayProcess;
+  modelID: string;
+  keys: () => string[];
+  stop: () => Promise<void>;
+};
+
+async function startBYOKAttemptGateway(name: "anthropic" | "openai"): Promise<BYOKAttemptGateway> {
+  if (name === "anthropic") {
+    const [native, gateway] = await startCloudGateway();
+    return { native, gateway, modelID: BYOK_MODEL, keys: () => native.requests.map((request) => request.apiKey ?? ""), stop: () => settleCleanup(() => gateway.stop(), () => native.stop()) };
+  }
+  const configured = await FakeAnthropic.start();
+  const native = await FakeOpenAI.start();
+  native.backendModel = "request-only-native";
+  const proxy = await startNativeProviderProxy(native.url, "api.openai.com:443");
+  let gateway: GatewayProcess | undefined;
+  try {
+    gateway = await GatewayProcess.start(nativeProxyBinaryPath, configured.url, [], nativeProxyEnvironment(proxy.url), "cloud-gateway");
+    gateway.nativeProxy = proxy;
+  } catch (error) {
+    await settleCleanup(() => proxy.stop(), () => native.stop(), () => configured.stop());
+    throw error;
+  }
+  const started = gateway;
+  return {
+    native, gateway: started, modelID: `openai/${native.backendModel}`,
+    keys: () => native.requests.map((request) => (request.apiKey ?? "").replace(/^Bearer /, "")),
+    stop: () => settleCleanup(() => started.stop(), () => native.stop(), () => configured.stop()),
+  };
+}
+
+function byokOptions(name: "anthropic" | "openai", keys: readonly string[], text = "normal-stream"): LanguageModelV4CallOptions {
+  const unused = name === "anthropic" ? "openai" : "anthropic";
+  return {
+    ...cloudCall(text),
+    providerOptions: { gateway: { byok: { [name]: keys.map((apiKey) => ({ apiKey })), [unused]: [{ apiKey: "byok-unused-provider-key" }] } } },
+  };
+}
+
+// byokMetadata returns the provider metadata one client exposes for a BYOK call:
+// the error's when status is set, otherwise the unary result's or stream finish's.
+async function byokMetadata(gateway: GatewayProcess, language: "go" | "typescript", mode: "generate" | "stream", modelID: string, options: LanguageModelV4CallOptions, status?: number): Promise<any> {
+  if (language === "go") {
+    const result = await captureGoClient(goClientBinaryPath, { mode, modelID, options, baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN });
+    assert.equal(result.error?.statusCode, status);
+    if (status !== undefined) return result.error.apiError.data.providerMetadata;
+    return mode === "generate" ? result.result.providerMetadata : result.partMetadata.at(-1);
+  }
+  const model = gateway.client()(modelID);
+  if (status !== undefined) {
+    let metadata: any;
+    await assert.rejects(async () => mode === "generate" ? await model.doGenerate(options) : await model.doStream(options), (error: any) => {
+      assert.equal(error.statusCode, status);
+      metadata = error.cause.data.providerMetadata;
+      return true;
+    });
+    return metadata;
+  }
+  if (mode === "generate") return (await model.doGenerate(options)).providerMetadata;
+  const parts = await collectGatewayStream((await model.doStream(options)).stream);
+  assert.equal(parts.at(-1)?.type, "finish");
+  return (parts.at(-1) as any).providerMetadata;
+}
+
 class RecordingProxy {
   readonly received: Array<{ path: string; headers: IncomingMessage["headers"]; body: string }> = [];
 
@@ -3325,6 +3518,8 @@ class FakeAnthropic {
   failureStatus?: number;
   streamErrorMessage?: string;
   failureCode?: string | number;
+  accountKeys: string[] = [];
+  keyFailures = new Map<string, number>();
   functionTools = false;
   providerTools = false;
   providerToolCaller = false;
@@ -3363,9 +3558,10 @@ class FakeAnthropic {
     const serialized = JSON.stringify(body);
     const marker = ["silent-abort", "silent-shutdown", "silent-unary-shutdown", "normal-stream", "provider-error", "redirect", "oversized"]
       .find((value) => serialized.includes(value));
-    this.requests.push({ path: request.url ?? "", apiKey: singleHeader(request.headers["x-api-key"]), headers: { ...request.headers }, body });
+    const apiKey = singleHeader(request.headers["x-api-key"]) ?? "";
+    this.requests.push({ path: request.url ?? "", apiKey, headers: { ...request.headers }, body });
     if (request.url !== "/v1/messages") this.violations.push(`path=${request.url}`);
-    if (singleHeader(request.headers["x-api-key"]) !== this.apiKey) this.violations.push("api-key");
+    if (apiKey !== this.apiKey && !this.accountKeys.includes(apiKey)) this.violations.push("api-key");
     if (body.model !== this.backendModel) this.violations.push(`model=${String(body.model)}`);
     if (request.headers["x-access-token"] != null || request.headers["x-grafana-id"] != null) this.violations.push("forwarded-caller-credential");
 
@@ -3384,6 +3580,12 @@ class FakeAnthropic {
       response.end();return;
     }
 
+    const keyFailure = this.keyFailures.get(apiKey);
+    if (keyFailure != null) {
+      response.writeHead(keyFailure, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ type: "error", error: { type: accountFailureType(keyFailure), message: `account failure ${apiKey}` } }));
+      return;
+    }
     if (this.failureStatus != null) {
       response.writeHead(this.failureStatus, { "Content-Type": "application/json", "x-private-provider": "backend-private" });
       response.end(JSON.stringify({ type: "error", error: { type: "api_error", code: this.failureCode, message: serialized.includes("configured-key-summary") ? "integration-anthropic-key integration-openai-key integration-agento11y-key own-byok-key" : `provider-secret-response ${this.apiKey} backend-private` }, request_id: "backend-private-request" }));
@@ -3632,6 +3834,9 @@ class FakeOpenAI {
   failWithSecret = false;
   failureCode?: string | number;
   sources = false;
+  accountKeys: string[] = [];
+  keyFailures = new Map<string, number>();
+  keyPreflightErrors = new Set<string>();
   apiKey = "integration-openai-key";
   backendModel = "backend-private";
   private readonly server: ReturnType<typeof createServer>;
@@ -3663,7 +3868,8 @@ class FakeOpenAI {
     const authorization = singleHeader(request.headers.authorization);
     this.requests.push({ path: request.url ?? "", apiKey: authorization, headers: { ...request.headers }, body });
     if (request.url !== "/v1/responses") this.violations.push(`path=${request.url}`);
-    if (authorization !== `Bearer ${this.apiKey}`) this.violations.push("authorization");
+    const apiKey = authorization?.replace(/^Bearer /, "") ?? "";
+    if (authorization !== `Bearer ${this.apiKey}` && !this.accountKeys.some((key) => authorization === `Bearer ${key}`)) this.violations.push("authorization");
     if (body.model !== this.backendModel) this.violations.push(`model=${String(body.model)}`);
 
     if (JSON.stringify(body).includes("wp17-reasoning")) {
@@ -3680,6 +3886,23 @@ class FakeOpenAI {
       response.end();return;
     }
 
+    if (body.stream === true && this.keyPreflightErrors.has(apiKey)) {
+      const started = { id: "resp_preflight", object: "response", created_at: 1, status: "in_progress", model: this.backendModel, output: [], usage: null };
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      for (const [index, event] of [
+        { type: "response.created", response: started },
+        { type: "response.in_progress", response: started },
+        { type: "error", code: "overloaded", message: `preflight failure ${apiKey}`, param: null },
+      ].entries()) response.write(`event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number: index })}\n\n`);
+      response.end();
+      return;
+    }
+    const keyFailure = this.keyFailures.get(apiKey);
+    if (keyFailure != null) {
+      response.writeHead(keyFailure, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: { type: accountFailureType(keyFailure), message: `account failure ${apiKey}` } }));
+      return;
+    }
     if (this.redirectTo != null) {
       response.writeHead(307, { Location: this.redirectTo });
       response.end();

@@ -270,6 +270,7 @@ type scenario struct {
 	limits     execution.Limits
 	models     func() []*probe
 	configured bool
+	accounts   bool
 	selector   func([]*probe) execution.RequestSelector
 	want       outcome
 	attempts   []fallback.AttemptOutcome
@@ -332,6 +333,16 @@ func (sc scenario) runtime(t *testing.T, models []*probe) *execution.Runtime {
 			model = chain
 		}
 		selector = execution.CatalogSelector(resolver{resolved: catalog.ResolvedModel{ID: "canonical", Model: model, Candidates: candidates}})
+	case sc.accounts:
+		languageModels := make([]provider.LanguageModel, len(models))
+		for i, model := range models {
+			languageModels[i] = model
+		}
+		chain, err := fallback.New(languageModels...)
+		require.NoError(t, err)
+		selector = func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+			return execution.AccountSelection(id, chain, execution.RequestAccounts{Provider: "native", ModelID: models[0].id, Count: len(models)}), nil
+		}
 	default:
 		selector = func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
 			return execution.Selection{ID: id, Model: models[0]}, nil
@@ -503,6 +514,23 @@ func TestLineAdapter_MatchesProviderWire(t *testing.T) {
 			models: one(func(p *probe) {
 				p.stream = func(context.Context, *probe) (*provider.StreamResult, error) { return nil, apiError(400) }
 			})},
+		{name: "BYOK failed then selected", accounts: true, calls: []int32{1, 1},
+			models: func() []*probe {
+				first, second := newProbe("model"), newProbe("model")
+				first.generate = func(context.Context) (*provider.GenerateResult, error) { return nil, apiError(503) }
+				return []*probe{first, second}
+			},
+			attempts: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
+		{name: "BYOK exhausted stream setup", streaming: true, accounts: true, calls: []int32{1, 1},
+			want: outcome{category: execution.CategoryOverload},
+			models: func() []*probe {
+				first, second := newProbe("model"), newProbe("model")
+				for _, p := range []*probe{first, second} {
+					p.stream = func(context.Context, *probe) (*provider.StreamResult, error) { return nil, apiError(503) }
+				}
+				return []*probe{first, second}
+			},
+			attempts: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptFailed}},
 		{name: "protected call header", headers: map[string]string{"Authorization": "Bearer caller"}, configured: true, models: one(nil), calls: []int32{0},
 			want: outcome{category: execution.CategoryInvalidRequest, reason: execution.ReasonProtectedCallHeader}},
 		{name: "configured gateway controls", options: map[string]string{"gateway": `{"byok":{}}`}, configured: true, models: one(nil), calls: []int32{0},
@@ -523,6 +551,12 @@ func TestLineAdapter_MatchesProviderWire(t *testing.T) {
 				}
 			}
 			assert.Equal(t, sc.attempts, attempts)
+			if sc.accounts && got.overview != nil {
+				assert.Empty(t, got.overview.CanonicalModelID)
+				for _, attempt := range got.overview.Attempts {
+					assert.Empty(t, attempt.ProviderInstance)
+				}
+			}
 
 			models = sc.models()
 			handler, err := v4.New(sc.runtime(t, models))
