@@ -78,9 +78,11 @@ Host failures use a closed set of categories (permission, internal, and BYOK
 discovery unsupported), which each adapter writes in its own format. Discovery
 is host-owned: the host lists the catalog for configured callers and returns the
 BYOK-discovery error for BYOK callers, and the adapter only projects the listed
-models into its document. The plugin host owns transport and any operational
-endpoints, so there are no separate listeners and no `/live`, `/ready`, or
-`/metrics` routes here. See the
+models into its document. The
+[host contract](../../ai-gateway/internal/host/doc.go) lists what an adapter
+supplies and what the host provides. The plugin host owns transport and any
+operational endpoints, so there are no separate listeners and no `/live`,
+`/ready`, or `/metrics` routes here. See the
 [routes](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/routes.go) and
 [plugin composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/gateway.go).
 

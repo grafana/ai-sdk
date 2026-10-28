@@ -46,12 +46,18 @@ func bodyTestHandler(t *testing.T, language http.Handler) http.Handler {
 }
 
 func bodyLanguageRequest(caller bodyTestCaller, body io.Reader) *http.Request {
-	url := strings.Replace(RoutePrefix(), "{namespace}", testNamespace, 1) + "/language-model"
-	request := httptest.NewRequest(http.MethodPost, url, body)
+	request := callerRequest(caller, http.MethodPost, "/language-model", body)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(providerv4.HeaderSpecificationVersion, providerv4.SpecificationVersion)
 	request.Header.Set(providerv4.HeaderModelID, "public")
 	request.Header.Set(providerv4.HeaderStreaming, "false")
+	return request
+}
+
+// callerRequest targets path under the route prefix as the verified caller.
+func callerRequest(caller bodyTestCaller, method, path string, body io.Reader) *http.Request {
+	url := strings.Replace(RoutePrefix(), "{namespace}", testNamespace, 1) + path
+	request := httptest.NewRequest(method, url, body)
 	var claims authn.Claims[authn.AccessTokenClaims]
 	claims.Rest.Namespace = testNamespace
 	if typ, uid, err := types.ParseTypeID(caller.identity); err == nil {

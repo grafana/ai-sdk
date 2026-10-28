@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/testadapter"
 	v4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -21,57 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// outcome is what an adapter observed for one call, in protocol-neutral terms.
-type outcome struct {
-	category   execution.Category
-	reason     execution.Reason
-	committed  bool
-	partErrors []execution.Category
-	overview   *execution.Overview
-}
-
-// lineAdapter is a minimal adapter built only on the runtime. It reports
-// outcomes instead of encoding a wire protocol.
-type lineAdapter struct {
-	runtime *execution.Runtime
-}
-
-func (a lineAdapter) run(ctx context.Context, modelID string, options provider.CallOptions, streaming bool) outcome {
-	call, err := a.runtime.Call(ctx, modelID, options)
-	if err != nil {
-		category, reason := execution.ClassifySelection(err)
-		return outcome{category: category, reason: reason}
-	}
-	defer call.Close()
-	if !streaming {
-		if _, err := call.Generate(); err != nil {
-			return outcome{category: execution.ClassifyProvider(err), overview: call.View(err).Overview}
-		}
-		return outcome{overview: call.View(nil).Overview}
-	}
-	stream, err := call.Stream()
-	if err != nil {
-		return outcome{category: execution.ClassifyProvider(err), overview: call.View(err).Overview}
-	}
-	defer stream.Close()
-	result := outcome{committed: true}
-	for first := true; ; first = false {
-		part, wait := stream.Next()
-		if first {
-			result.overview = call.View(wait.Err()).Overview
-		}
-		if wait != execution.WaitPart {
-			result.category = execution.ClassifyProvider(wait.Err())
-			return result
-		}
-		switch part.Type {
-		case provider.PartError:
-			result.partErrors = append(result.partErrors, execution.ClassifyStreamPart(part.APICallError))
-		case provider.PartFinish:
-			return result
-		}
-	}
-}
+type outcome = testadapter.Outcome
 
 // document is the ProviderWire document a category maps to.
 type document struct {
@@ -127,18 +78,18 @@ func overviewFrom(t *testing.T, metadata provider.ProviderMetadata) *execution.O
 // adapter's outcome maps to, including the attempt view it published.
 func assertProviderWire(t *testing.T, response *httptest.ResponseRecorder, want outcome) {
 	t.Helper()
-	if !want.committed {
-		expected := unaryDocuments[want.category]
-		if want.category == 0 {
+	if !want.Committed {
+		expected := unaryDocuments[want.Category]
+		if want.Category == 0 {
 			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 			var success struct {
 				Metadata provider.ProviderMetadata `json:"providerMetadata"`
 			}
 			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &success))
-			assertOverview(t, want.overview, overviewFrom(t, success.Metadata))
+			assertOverview(t, want.Overview, overviewFrom(t, success.Metadata))
 			return
 		}
-		if message, ok := reasonMessages[want.reason]; ok {
+		if message, ok := reasonMessages[want.Reason]; ok {
 			expected.message = message
 		}
 		require.Equal(t, expected.status, response.Code, response.Body.String())
@@ -146,7 +97,7 @@ func assertProviderWire(t *testing.T, response *httptest.ResponseRecorder, want 
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 		assert.Equal(t, expected.code, body.Error.Code)
 		assert.Equal(t, expected.message, body.Error.Message)
-		assertOverview(t, want.overview, overviewFrom(t, body.Metadata))
+		assertOverview(t, want.Overview, overviewFrom(t, body.Metadata))
 		return
 	}
 	require.Equal(t, http.StatusOK, response.Code)
@@ -168,22 +119,22 @@ func assertProviderWire(t *testing.T, response *httptest.ResponseRecorder, want 
 	for _, event := range errors {
 		codes = append(codes, event.Error.Code)
 	}
-	wantCodes := make([]string, 0, len(want.partErrors)+1)
-	for _, category := range want.partErrors {
+	wantCodes := make([]string, 0, len(want.PartErrors)+1)
+	for _, category := range want.PartErrors {
 		wantCodes = append(wantCodes, unaryDocuments[category].code)
 	}
-	if want.category != 0 {
+	if want.Category != 0 {
 		require.Nil(t, finish, "a terminal failure has no finish")
-		wantCodes = append(wantCodes, unaryDocuments[want.category].code)
+		wantCodes = append(wantCodes, unaryDocuments[want.Category].code)
 		last := errors[len(errors)-1]
 		var metadata provider.ProviderMetadata
 		if last.Error.Data != nil {
 			metadata = last.Error.Data.Metadata
 		}
-		assertOverview(t, want.overview, overviewFrom(t, metadata))
+		assertOverview(t, want.Overview, overviewFrom(t, metadata))
 	} else {
 		require.NotNil(t, finish, "a successful stream ends with finish")
-		assertOverview(t, want.overview, overviewFrom(t, finish.Metadata))
+		assertOverview(t, want.Overview, overviewFrom(t, finish.Metadata))
 	}
 	assert.Equal(t, wantCodes, codes)
 }
@@ -205,6 +156,7 @@ type probe struct {
 	calls    atomic.Int32
 	drained  chan struct{}
 	streamed atomic.Bool
+	options  provider.CallOptions
 }
 
 func newProbe(id string) *probe { return &probe{id: id, drained: make(chan struct{})} }
@@ -214,8 +166,9 @@ func (p *probe) Provider() string                           { return "native" }
 func (p *probe) ModelID() string                            { return p.id }
 func (p *probe) SupportedURLs() map[string][]*regexp.Regexp { return nil }
 
-func (p *probe) DoGenerate(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+func (p *probe) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	p.calls.Add(1)
+	p.options = options
 	if p.generate != nil {
 		return p.generate(ctx)
 	}
@@ -414,12 +367,12 @@ func (r resolver) ResolveModel(context.Context, string) (catalog.ResolvedModel, 
 	return r.resolved, nil
 }
 
-func TestLineAdapter_MatchesProviderWire(t *testing.T) {
+func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 	for _, sc := range []scenario{
 		{name: "configured unary success", configured: true, models: one(nil), calls: []int32{1},
 			attempts: []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{name: "configured stream success", streaming: true, configured: true, models: one(nil), calls: []int32{1}, drained: true,
-			want: outcome{committed: true}, attempts: []fallback.AttemptOutcome{fallback.AttemptSelected}},
+			want: outcome{Committed: true}, attempts: []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{name: "fallback after an overload", configured: true, calls: []int32{1, 1},
 			models: func() []*probe {
 				first, second := newProbe("A"), newProbe("B")
@@ -427,77 +380,77 @@ func TestLineAdapter_MatchesProviderWire(t *testing.T) {
 				return []*probe{first, second}
 			},
 			attempts: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
-		{name: "provider rate limit", calls: []int32{1}, want: outcome{category: execution.CategoryRateLimit},
+		{name: "provider rate limit", calls: []int32{1}, want: outcome{Category: execution.CategoryRateLimit},
 			models: one(func(p *probe) {
 				p.generate = func(context.Context) (*provider.GenerateResult, error) { return nil, apiError(429) }
 			})},
-		{name: "selector panic", calls: []int32{0}, want: outcome{category: execution.CategoryInternal}, models: one(nil),
+		{name: "selector panic", calls: []int32{0}, want: outcome{Category: execution.CategoryInternal}, models: one(nil),
 			selector: func([]*probe) execution.RequestSelector {
 				return func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
 					panic("private")
 				}
 			}},
-		{name: "invalid selection", calls: []int32{0}, want: outcome{category: execution.CategoryInternal}, models: one(nil),
+		{name: "invalid selection", calls: []int32{0}, want: outcome{Category: execution.CategoryInternal}, models: one(nil),
 			selector: func([]*probe) execution.RequestSelector {
 				return func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
 					return execution.Selection{ID: id}, nil
 				}
 			}},
-		{name: "BYOK credentials", calls: []int32{0}, want: outcome{category: execution.CategoryBYOKCredentials}, models: one(nil),
+		{name: "BYOK credentials", calls: []int32{0}, want: outcome{Category: execution.CategoryBYOKCredentials}, models: one(nil),
 			selector: func([]*probe) execution.RequestSelector {
 				return func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
 					return execution.Selection{}, execution.ErrInvalidBYOK
 				}
 			}},
-		{name: "model panic", calls: []int32{1}, want: outcome{category: execution.CategoryInternal},
+		{name: "model panic", calls: []int32{1}, want: outcome{Category: execution.CategoryInternal},
 			models: one(func(p *probe) {
 				p.generate = func(context.Context) (*provider.GenerateResult, error) { panic("private") }
 			})},
-		{name: "nil result", calls: []int32{1}, want: outcome{category: execution.CategoryInternal},
+		{name: "nil result", calls: []int32{1}, want: outcome{Category: execution.CategoryInternal},
 			models: one(func(p *probe) {
 				p.generate = func(context.Context) (*provider.GenerateResult, error) { return nil, nil }
 			})},
-		{name: "late result after the deadline", ctx: expiring, calls: []int32{1}, want: outcome{category: execution.CategoryTimeout},
+		{name: "late result after the deadline", ctx: expiring, calls: []int32{1}, want: outcome{Category: execution.CategoryTimeout},
 			models: one(func(p *probe) {
 				p.generate = func(ctx context.Context) (*provider.GenerateResult, error) { <-ctx.Done(); return validResult(), nil }
 			})},
-		{name: "late result after cancellation", ctx: canceling, calls: []int32{1}, want: outcome{category: execution.CategoryCancellation},
+		{name: "late result after cancellation", ctx: canceling, calls: []int32{1}, want: outcome{Category: execution.CategoryCancellation},
 			models: one(func(p *probe) {
 				p.generate = func(ctx context.Context) (*provider.GenerateResult, error) { <-ctx.Done(); return validResult(), nil }
 			})},
-		{name: "stream setup error with a stream", streaming: true, calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryOverload},
+		{name: "stream setup error with a stream", streaming: true, calls: []int32{1}, drained: true, want: outcome{Category: execution.CategoryOverload},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
 					result, _ := p.parts(ctx)
 					return result, apiError(503)
 				}
 			})},
-		{name: "late stream after cancellation", streaming: true, ctx: canceling, calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryCancellation},
+		{name: "late stream after cancellation", streaming: true, ctx: canceling, calls: []int32{1}, drained: true, want: outcome{Category: execution.CategoryCancellation},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
 					<-ctx.Done()
 					return p.parts(ctx)
 				}
 			})},
-		{name: "idle timeout", streaming: true, calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryTimeout, committed: true},
+		{name: "idle timeout", streaming: true, calls: []int32{1}, drained: true, want: outcome{Category: execution.CategoryTimeout, Committed: true},
 			limits: execution.Limits{StreamIdleDuration: scenarioEnd, StreamDrainDuration: scenarioTimeout},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) { return p.parts(ctx) }
 			})},
-		{name: "deadline during the stream", streaming: true, ctx: expiring, calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryTimeout, committed: true},
+		{name: "deadline during the stream", streaming: true, ctx: expiring, calls: []int32{1}, drained: true, want: outcome{Category: execution.CategoryTimeout, Committed: true},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
 					return p.parts(ctx, provider.StreamPart{Type: provider.PartStreamStart})
 				}
 			})},
-		{name: "cancellation during the stream", streaming: true, ctx: canceling, calls: []int32{1}, drained: true, want: outcome{category: execution.CategoryCancellation, committed: true},
+		{name: "cancellation during the stream", streaming: true, ctx: canceling, calls: []int32{1}, drained: true, want: outcome{Category: execution.CategoryCancellation, Committed: true},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
 					return p.parts(ctx, provider.StreamPart{Type: provider.PartStreamStart})
 				}
 			})},
 		{name: "in-band stream error", streaming: true, calls: []int32{1}, drained: true,
-			want: outcome{committed: true, partErrors: []execution.Category{execution.CategoryRateLimit}},
+			want: outcome{Committed: true, PartErrors: []execution.Category{execution.CategoryRateLimit}},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
 					failure := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 429, Message: "native failure"})
@@ -505,12 +458,12 @@ func TestLineAdapter_MatchesProviderWire(t *testing.T) {
 				}
 			})},
 		{name: "configured deadline during the stream", streaming: true, configured: true, ctx: expiring, calls: []int32{1}, drained: true,
-			want: outcome{category: execution.CategoryTimeout, committed: true}, attempts: []fallback.AttemptOutcome{fallback.AttemptCanceled},
+			want: outcome{Category: execution.CategoryTimeout, Committed: true}, attempts: []fallback.AttemptOutcome{fallback.AttemptCanceled},
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) { return p.parts(ctx) }
 			})},
 		{name: "configured setup failure", streaming: true, configured: true, calls: []int32{1},
-			want: outcome{category: execution.CategoryFailedDependency}, attempts: []fallback.AttemptOutcome{fallback.AttemptFailed},
+			want: outcome{Category: execution.CategoryFailedDependency}, attempts: []fallback.AttemptOutcome{fallback.AttemptFailed},
 			models: one(func(p *probe) {
 				p.stream = func(context.Context, *probe) (*provider.StreamResult, error) { return nil, apiError(400) }
 			})},
@@ -522,7 +475,7 @@ func TestLineAdapter_MatchesProviderWire(t *testing.T) {
 			},
 			attempts: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
 		{name: "BYOK exhausted stream setup", streaming: true, accounts: true, calls: []int32{1, 1},
-			want: outcome{category: execution.CategoryOverload},
+			want: outcome{Category: execution.CategoryOverload},
 			models: func() []*probe {
 				first, second := newProbe("model"), newProbe("model")
 				for _, p := range []*probe{first, second} {
@@ -532,28 +485,28 @@ func TestLineAdapter_MatchesProviderWire(t *testing.T) {
 			},
 			attempts: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptFailed}},
 		{name: "protected call header", headers: map[string]string{"Authorization": "Bearer caller"}, configured: true, models: one(nil), calls: []int32{0},
-			want: outcome{category: execution.CategoryInvalidRequest, reason: execution.ReasonProtectedCallHeader}},
+			want: outcome{Category: execution.CategoryInvalidRequest, Reason: execution.ReasonProtectedCallHeader}},
 		{name: "configured gateway controls", options: map[string]string{"gateway": `{"byok":{}}`}, configured: true, models: one(nil), calls: []int32{0},
-			want: outcome{category: execution.CategoryInvalidRequest, reason: execution.ReasonReservedProviderOptions}},
+			want: outcome{Category: execution.CategoryInvalidRequest, Reason: execution.ReasonReservedProviderOptions}},
 	} {
 		t.Run(sc.name, func(t *testing.T) {
 			models := sc.models()
-			got := lineAdapter{runtime: sc.runtime(t, models)}.run(sc.context(t), "alias", sc.callOptions(), sc.streaming)
+			got := testadapter.New(sc.runtime(t, models), nil).Run(sc.context(t), "alias", sc.callOptions(), sc.streaming)
 			sc.assertModels(t, models)
-			assert.Equal(t, sc.want.category, got.category)
-			assert.Equal(t, sc.want.reason, got.reason)
-			assert.Equal(t, sc.want.committed, got.committed)
-			assert.Equal(t, sc.want.partErrors, got.partErrors)
+			assert.Equal(t, sc.want.Category, got.Category)
+			assert.Equal(t, sc.want.Reason, got.Reason)
+			assert.Equal(t, sc.want.Committed, got.Committed)
+			assert.Equal(t, sc.want.PartErrors, got.PartErrors)
 			var attempts []fallback.AttemptOutcome
-			if got.overview != nil {
-				for _, attempt := range got.overview.Attempts {
+			if got.Overview != nil {
+				for _, attempt := range got.Overview.Attempts {
 					attempts = append(attempts, attempt.Outcome)
 				}
 			}
 			assert.Equal(t, sc.attempts, attempts)
-			if sc.accounts && got.overview != nil {
-				assert.Empty(t, got.overview.CanonicalModelID)
-				for _, attempt := range got.overview.Attempts {
+			if sc.accounts && got.Overview != nil {
+				assert.Empty(t, got.Overview.CanonicalModelID)
+				for _, attempt := range got.Overview.Attempts {
 					assert.Empty(t, attempt.ProviderInstance)
 				}
 			}
@@ -567,4 +520,31 @@ func TestLineAdapter_MatchesProviderWire(t *testing.T) {
 			assertProviderWire(t, response, got)
 		})
 	}
+}
+
+func TestTestAdapter_TranslatesEachAttempt(t *testing.T) {
+	first, second := newProbe("A"), newProbe("B")
+	first.generate = func(context.Context) (*provider.GenerateResult, error) { return nil, apiError(503) }
+	chain, err := fallback.New(
+		execution.Translate(first, execution.Target{Type: execution.TargetAnthropic, ModelID: "A"}),
+		execution.Translate(second, execution.Target{Type: execution.TargetOpenAI, ModelID: "B"}),
+	)
+	require.NoError(t, err)
+	chain.WithDecider(execution.FallbackDecider)
+	candidates := []catalog.ConfiguredCandidate{{Provider: "anthropic", ProviderInstance: "primary", ModelID: "A"}, {Provider: "openai", ProviderInstance: "backup", ModelID: "B"}}
+	runtime, err := execution.New(execution.Config{
+		Selector: execution.CatalogSelector(resolver{resolved: catalog.ResolvedModel{ID: "canonical", Model: chain, Candidates: candidates}}),
+		Limits:   execution.Limits{StreamIdleDuration: scenarioTimeout, StreamDrainDuration: scenarioTimeout},
+	})
+	require.NoError(t, err)
+	translator := func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+		options.Headers = map[string]string{"X-Target": string(target.Type) + "/" + target.ModelID}
+		return options, nil
+	}
+	got := testadapter.New(runtime, translator).Run(t.Context(), "alias", provider.CallOptions{}, false)
+	assert.Zero(t, got.Category)
+	require.NotNil(t, got.Overview)
+	require.Len(t, got.Overview.Attempts, 2)
+	assert.Equal(t, map[string]string{"X-Target": "anthropic/A"}, first.options.Headers)
+	assert.Equal(t, map[string]string{"X-Target": "openai/B"}, second.options.Headers)
 }

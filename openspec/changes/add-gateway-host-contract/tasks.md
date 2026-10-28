@@ -45,8 +45,8 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 6. Test adapter on a route
 
-- [ ] 6.1 Move `lineAdapter` from `execution_test` to `ai-gateway/internal/testadapter` as an HTTP handler with a line-format outcome and host-error writer and an optional translator (design D6). Keep the `execution_test` parity table passing over it, and add a translation row over a fallback model. Verify with `go test -race ./internal/...`.
-- [ ] 6.2 In gateway route tests, register the test adapter on an extra entry next to `productionRoutes`. Assert:
+- [x] 6.1 Move `lineAdapter` from `execution_test` to `ai-gateway/internal/testadapter` as an HTTP handler with a line-format outcome and host-error writer and an optional translator (design D6). Keep the `execution_test` parity table passing over it, and add a translation row over a fallback model. Verify with `go test -race ./internal/...`.
+- [x] 6.2 In gateway route tests, register the test adapter on an extra entry next to `productionRoutes`. Assert:
   - refusal in its format without reading the body;
   - its telemetry label;
   - configured and BYOK calls through the shared selector and runtime;
@@ -54,7 +54,7 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
   - a translator reaches both attempts of a configured fallback model.
 
   Add a test that `go list -deps ./cmd/grafana-ai-gateway` excludes `internal/testadapter`. Verify with `go test -race ./cmd/grafana-ai-gateway/internal/gateway/...`.
-- [ ] 6.3 Complete the adapter contract godoc in `internal/host/doc.go`: what an adapter supplies, what the host provides, and the one-entry registration. Link it from the architecture walkthrough. Verify with `mise run lint-docs`.
+- [x] 6.3 Complete the adapter contract godoc in `internal/host/doc.go`: what an adapter supplies, what the host provides, and the one-entry registration. Link it from the architecture walkthrough. Verify with `mise run lint-docs`.
 
 ## 7. Integration checks
 
