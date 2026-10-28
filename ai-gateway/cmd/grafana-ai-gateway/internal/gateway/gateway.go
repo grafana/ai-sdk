@@ -172,12 +172,8 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	errorWriter := providerv4.NewHostErrorWriter()
-	routes := routeHandlers{
-		discovery: discovery.New(catalog, providerv4.DiscoveryProjection{}, errorWriter),
-		language:  language,
-	}
-	return newHandler(settings.Access, sinks.telemetry, errorWriter, routes), nil
+	discoveryHandler := discovery.New(catalog, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
+	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language))
 }
 
 // newLanguageHandler serves ProviderWire V4 over one execution runtime.

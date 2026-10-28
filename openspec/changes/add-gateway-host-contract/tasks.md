@@ -19,8 +19,8 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 4. Route table
 
-- [ ] 4.1 Add the `route` entry type, table validation and `productionRoutes` in `routes.go`. Make `newHandler` register entries behind per-entry access middleware, label from the matched entry, and answer `HEAD` on `GET` entries with 405 (design D3). Add tests for invalid tables (empty label, nil handler or writer, duplicate method and path), and for production routes equal to the manifest operations. Keep `TestGateway_UndeclaredAndLegacyRoutesDoNoWork` and the route-body tests passing, adapted to the table. Verify with `go test ./cmd/grafana-ai-gateway/internal/gateway/... ./cmd/grafana-ai-gateway/internal/manifestdata/...`.
-- [ ] 4.2 Describe the route table and host errors in `docs/concepts/gateway-architecture.md`, and add the "host contract" and "route table" rows to `docs/concepts/gateway-glossary.md`. Verify with `mise run lint-docs`.
+- [x] 4.1 Add the `route` entry type, table validation and `productionRoutes` in `routes.go`. Make `newHandler` register entries behind per-entry access middleware, label from the matched entry, and answer `HEAD` on `GET` entries with 405 (design D3). Add tests for invalid tables (empty label, nil handler or writer, duplicate method and path), and for production routes equal to the manifest operations. Keep `TestGateway_UndeclaredAndLegacyRoutesDoNoWork` and the route-body tests passing, adapted to the table. Verify with `go test ./cmd/grafana-ai-gateway/internal/gateway/... ./cmd/grafana-ai-gateway/internal/manifestdata/...`.
+- [x] 4.2 Describe the route table and host errors in `docs/concepts/gateway-architecture.md`, and add the "host contract" and "route table" rows to `docs/concepts/gateway-glossary.md`. Verify with `mise run lint-docs`.
 
 ## 5. Per-attempt option translation
 

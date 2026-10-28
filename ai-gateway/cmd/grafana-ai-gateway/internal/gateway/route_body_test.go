@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,12 +11,10 @@ import (
 	"github.com/grafana/authlib/authn"
 	"github.com/grafana/authlib/types"
 	"github.com/grafana/grafana-app-sdk/resource"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
-	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
@@ -40,12 +37,12 @@ var (
 	bodyRefusedCaller    = bodyTestCaller{name: "refused", service: "svc-b"}
 )
 
-func bodyTestHandler(t *testing.T, routes routeHandlers) http.Handler {
+func bodyTestHandler(t *testing.T, language http.Handler) http.Handler {
 	t.Helper()
-	telemetry, err := service.NewTelemetry(slog.New(slog.DiscardHandler), service.TelemetryOptions{Registerer: prometheus.NewRegistry()})
-	require.NoError(t, err)
 	policy := gatewayauth.AccessPolicy{Mode: gatewayauth.AccessModeCloud, InternalServices: []string{testInternalService}}
-	return newHandler(policy, telemetry, providerv4.NewHostErrorWriter(), routes)
+	handler, err := newHandler(policy, newTestTelemetry(t), productionRoutes(http.NotFoundHandler(), language))
+	require.NoError(t, err)
+	return handler
 }
 
 func bodyLanguageRequest(caller bodyTestCaller, body io.Reader) *http.Request {
@@ -75,7 +72,7 @@ func TestRouteBody_HandlersReadTheWholeBody(t *testing.T) {
 		read, readErr = len(data), err
 		w.WriteHeader(http.StatusNoContent)
 	})
-	handler := bodyTestHandler(t, routeHandlers{language: probe})
+	handler := bodyTestHandler(t, probe)
 	for _, caller := range []bodyTestCaller{bodyConfiguredCaller, bodyBYOKCaller} {
 		t.Run(caller.name, func(t *testing.T) {
 			read, readErr = 0, nil
@@ -100,7 +97,7 @@ func (body *countingBody) Read([]byte) (int, error) {
 func TestRouteBody_RefusedCallerBodyIsNotRead(t *testing.T) {
 	var served atomic.Int32
 	probe := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { served.Add(1) })
-	handler := bodyTestHandler(t, routeHandlers{language: probe})
+	handler := bodyTestHandler(t, probe)
 	body := &countingBody{}
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, bodyLanguageRequest(bodyRefusedCaller, body))

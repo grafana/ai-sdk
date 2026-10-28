@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata"
@@ -16,9 +18,17 @@ const (
 	routeUnmatched     = "unmatched"
 )
 
-type routeHandlers struct {
-	discovery http.Handler
-	language  http.Handler
+var errInvalidRoute = errors.New("gateway: invalid route table")
+
+// route registers one adapter operation. Path is relative to [RoutePrefix].
+// Every route gets the access decision and request telemetry under its label,
+// and refused callers get errors' permission document.
+type route struct {
+	method  string
+	path    string
+	label   string
+	handler http.Handler
+	errors  host.ErrorWriter
 }
 
 // RoutePrefix returns the path prefix of the plugin's namespaced routes,
@@ -28,31 +38,58 @@ func RoutePrefix() string {
 	return "/apis/" + data.Group + "/" + data.PreferredVersion + "/namespaces/{namespace}"
 }
 
-func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, errorWriter host.ErrorWriter, routes routeHandlers) http.Handler {
-	refuse := func(w http.ResponseWriter) { errorWriter.WriteHostError(w, host.ErrorPermission) }
-	protect := func(next http.Handler) http.Handler {
-		return gatewayauth.AccessMiddleware(policy, refuse, telemetry.ObserveAccess, next)
+// productionRoutes is the route table the committed manifest declares.
+func productionRoutes(discovery, language http.Handler) []route {
+	errorWriter := providerv4.NewHostErrorWriter()
+	return []route{
+		{method: http.MethodGet, path: "/config", label: routeConfig, handler: discovery, errors: errorWriter},
+		{method: http.MethodPost, path: "/language-model", label: routeLanguageModel, handler: languageModelPath(language), errors: errorWriter},
 	}
-	configPattern := http.MethodGet + " " + RoutePrefix() + "/config"
-	languagePattern := http.MethodPost + " " + RoutePrefix() + "/language-model"
+}
+
+// newHandler composes the route table. A request that matches no route does
+// no access, selection or provider work, and is labeled unmatched.
+func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, routes []route) (http.Handler, error) {
+	if err := validateRoutes(routes); err != nil {
+		return nil, err
+	}
 	mux := http.NewServeMux()
-	mux.Handle(configPattern, protect(routes.discovery))
-	mux.HandleFunc(http.MethodHead+" "+RoutePrefix()+"/config", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Allow", http.MethodGet)
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	})
-	mux.Handle(languagePattern, protect(languageModelPath(routes.language)))
-	label := func(request *http.Request) string {
-		switch _, pattern := mux.Handler(request); pattern {
-		case configPattern:
-			return routeConfig
-		case languagePattern:
-			return routeLanguageModel
-		default:
-			return routeUnmatched
+	labels := make(map[string]string, len(routes))
+	for _, entry := range routes {
+		refuse := func(w http.ResponseWriter) { entry.errors.WriteHostError(w, host.ErrorPermission) }
+		pattern := entry.method + " " + RoutePrefix() + entry.path
+		mux.Handle(pattern, gatewayauth.AccessMiddleware(policy, refuse, telemetry.ObserveAccess, entry.handler))
+		labels[pattern] = entry.label
+		if entry.method == http.MethodGet {
+			mux.HandleFunc(http.MethodHead+" "+RoutePrefix()+entry.path, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Allow", http.MethodGet)
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			})
 		}
 	}
-	return telemetry.Middleware(label, mux)
+	label := func(request *http.Request) string {
+		_, pattern := mux.Handler(request)
+		if label, ok := labels[pattern]; ok {
+			return label
+		}
+		return routeUnmatched
+	}
+	return telemetry.Middleware(label, mux), nil
+}
+
+func validateRoutes(routes []route) error {
+	seen := make(map[string]struct{}, len(routes))
+	for _, entry := range routes {
+		if entry.method == "" || entry.method == http.MethodHead || !strings.HasPrefix(entry.path, "/") || entry.label == "" || entry.label == routeUnmatched || entry.handler == nil || entry.errors == nil {
+			return errInvalidRoute
+		}
+		key := entry.method + " " + entry.path
+		if _, duplicate := seen[key]; duplicate {
+			return errInvalidRoute
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
 }
 
 func languageModelPath(next http.Handler) http.Handler {

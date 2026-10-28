@@ -65,14 +65,22 @@ flowchart LR
   routing --> compatible --> apis
 ```
 
-The command registers two namespaced App Platform routes under the plugin's
-API group: `GET {prefix}/config` and `POST {prefix}/language-model`, where the
-prefix is `/apis/{group}/{version}/namespaces/{namespace}`. Configured discovery
-lists configured models; BYOK discovery returns an unsupported-discovery error
-rather than exposing the configured catalog. The command registers only these
-two app routes; the plugin host owns transport and any operational endpoints, so
-there are no separate listeners and no `/live`, `/ready`, or `/metrics` routes
-here. See the
+The command composes its routes from one route table. Each entry names a
+method, a path under the prefix `/apis/{group}/{version}/namespaces/{namespace}`,
+a telemetry label, the adapter's handler and the adapter's host-error writer.
+Every entry gets the same access decision and request telemetry, and a refused
+caller gets that adapter's permission document without its body being read. The
+production table matches the committed manifest: `GET {prefix}/config` and
+`POST {prefix}/language-model`. A request that matches no entry does no access,
+selection or provider work, and is labeled `unmatched`.
+
+Host failures use a closed set of categories (permission, internal, and BYOK
+discovery unsupported), which each adapter writes in its own format. Discovery
+is host-owned: the host lists the catalog for configured callers and returns the
+BYOK-discovery error for BYOK callers, and the adapter only projects the listed
+models into its document. The plugin host owns transport and any operational
+endpoints, so there are no separate listeners and no `/live`, `/ready`, or
+`/metrics` routes here. See the
 [routes](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/routes.go) and
 [plugin composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/gateway.go).
 
