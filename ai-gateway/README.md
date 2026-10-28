@@ -72,7 +72,11 @@ models:
 
 Each provider needs a `type` (`anthropic`, `openai` or `openai-compatible`)
 and an `apiKeyEnv`. An `openai-compatible` provider also needs a `baseURL`;
-the other types use it to replace the provider's default endpoint.
+the other types use it to replace the provider's default endpoint. Set
+`supportsStructuredOutputs: true` on an `openai-compatible` provider to send
+schema requests as JSON-schema response formats instead of JSON mode. It
+defaults to `false`, is rejected on other types, and should only be enabled for
+backends you have verified support JSON-schema outputs.
 
 Each model needs a `name` and a `primary` provider and model. Applications
 select it by its ID, such as `balanced`, or by one of its `aliases`. When the

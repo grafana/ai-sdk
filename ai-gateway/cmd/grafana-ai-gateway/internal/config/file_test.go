@@ -64,6 +64,8 @@ func TestLoadFile_StrictBoundedDocument(t *testing.T) {
 		{name: "provider name on anthropic", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    providerName: other\n", 1)},
 		{name: "provider name on openai", yaml: strings.Replace(strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai", 1), "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    providerName: other\n", 1)},
 		{name: "blank compatible provider name", yaml: strings.Replace(minimalConfigYAML, "    type: anthropic", "    type: openai-compatible\n    baseURL: https://backend.invalid\n    providerName: ' '", 1)},
+		{name: "structured outputs on anthropic", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    supportsStructuredOutputs: true\n", 1)},
+		{name: "structured outputs on openai", yaml: strings.Replace(strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai", 1), "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    supportsStructuredOutputs: true\n", 1)},
 		{name: "missing api key reference", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "", 1)},
 		{name: "missing model name", yaml: strings.Replace(minimalConfigYAML, "    name: Grafana Assistant\n", "", 1)},
 		{name: "unknown provider reference", yaml: strings.Replace(minimalConfigYAML, "provider: anthropic-primary", "provider: missing", 1)},
@@ -222,6 +224,44 @@ func TestLoadFile_OpenAICompatibleProvider(t *testing.T) {
 	assert.Equal(t, ResolvedProvider{Type: "openai-compatible", APIKey: "key", BaseURL: "http://127.0.0.1:11434/v1", ProviderName: "ollama"}, resolved["anthropic-primary"])
 }
 
+func TestLoadFile_SupportsStructuredOutputs(t *testing.T) {
+	compatible := strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: ollama\n", 1)
+	for _, tc := range []struct {
+		name string
+		yaml string
+		want ResolvedProvider
+	}{
+		{
+			name: "enabled on openai-compatible",
+			yaml: strings.Replace(compatible, "    providerName: ollama\n", "    providerName: ollama\n    supportsStructuredOutputs: true\n", 1),
+			want: ResolvedProvider{Type: "openai-compatible", APIKey: "key", BaseURL: "http://127.0.0.1:11434/v1", ProviderName: "ollama", SupportsStructuredOutputs: true},
+		},
+		{
+			name: "omitted on openai-compatible",
+			yaml: compatible,
+			want: ResolvedProvider{Type: "openai-compatible", APIKey: "key", BaseURL: "http://127.0.0.1:11434/v1", ProviderName: "ollama", SupportsStructuredOutputs: false},
+		},
+		{
+			name: "explicit false on anthropic",
+			yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    supportsStructuredOutputs: false\n", 1),
+			want: ResolvedProvider{Type: "anthropic", APIKey: "key"},
+		},
+		{
+			name: "explicit false on openai",
+			yaml: strings.Replace(strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai", 1), "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    supportsStructuredOutputs: false\n", 1),
+			want: ResolvedProvider{Type: "openai", APIKey: "key"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			file, err := LoadFile(writeConfigFile(t, tc.yaml), 1<<20)
+			require.NoError(t, err)
+			resolved, err := file.ResolveProviderSecrets(func(string) (string, bool) { return "key", true })
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, resolved["anthropic-primary"])
+		})
+	}
+}
+
 func TestLoadFile_GrafanaProviderNameIsOrdinary(t *testing.T) {
 	yaml := strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: grafana\n", 1)
 	file, err := LoadFile(writeConfigFile(t, yaml), 1<<20)
@@ -237,6 +277,8 @@ func TestLoadFile_ProviderErrorsNameTheField(t *testing.T) {
 	}{
 		{name: "missing base URL", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai-compatible", 1), want: "providers.anthropic-primary.baseURL"},
 		{name: "provider name on anthropic", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    providerName: other\n", 1), want: "providers.anthropic-primary.providerName"},
+		{name: "structured outputs on anthropic", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    supportsStructuredOutputs: true\n", 1), want: "providers.anthropic-primary.supportsStructuredOutputs is only supported for openai-compatible providers"},
+		{name: "structured outputs on openai", yaml: strings.Replace(strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai", 1), "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    supportsStructuredOutputs: true\n", 1), want: "providers.anthropic-primary.supportsStructuredOutputs is only supported for openai-compatible providers"},
 		{name: "unsupported type", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: unsupported", 1), want: `providers.anthropic-primary.type "unsupported" is unsupported (want anthropic, openai or openai-compatible)`},
 		{name: "reserved provider name", yaml: fmt.Sprintf(strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: %s\n", 1), "gateway"), want: "providers.anthropic-primary.providerName"},
 		{name: "reserved provider name with a suffix", yaml: fmt.Sprintf(strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: %s\n", 1), "gateway.chat"), want: "providers.anthropic-primary.providerName"},
