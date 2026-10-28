@@ -229,6 +229,16 @@ knownGaps:
       preempts ambient authentication and supports per-attempt API-key rotation.
       Hosting-specific capability restrictions, approved deployments and
       residency policy belong to consumers. No live Foundry recording is claimed.
+  - id: gateway-execution-overview-metadata
+    surface: conformance-gateway
+    status: documented-deviation
+    description: The AI Gateway plugin adds a compact execution overview under
+      providerMetadata.gateway.execution to streamed finish parts whenever it
+      fits, as specified by gateway-execution-overview; there is no setting to
+      disable it. Direct provider-parts goldens cannot contain it, so the gateway
+      conformance lane removes only that key from finish parts before comparing
+      provider parts. Every other gateway key, native provider metadata and all
+      other parts remain compared exactly. The direct suite is unaffected.
   - id: generate-text-collects-stream
     surface: core-streamtext
     status: documented-deviation

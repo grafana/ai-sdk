@@ -125,6 +125,88 @@ pnpm exec tsx ../ui/generated-files/data-and-url/generate.mts
 cd .. && go test -run TestUIConformance_ReasoningFiles ./...
 ```
 
+## Gateway compatibility matrix (required for merging)
+
+The same provider fixtures also run through two clients against the AI Gateway
+plugin, loaded by one Grafana instance:
+
+```text
+TypeScript ai + @ai-sdk/gateway -> Grafana App Platform route -> plugin -> provider replay
+Go aisdk + providers/grafana    -> Grafana App Platform route -> plugin -> provider replay
+```
+
+Both paths compare against the existing direct upstream goldens: UI chunks,
+backend requests, provider stream parts at the client model boundary, and
+applicable usage, object, and unary expectations. Tools and multi-step
+orchestration run in the calling SDK. Gateway runs never record inputs or update
+expectations. Provider-independent `ui/` mock-model cases remain in the direct
+suite, not the gateway matrix.
+
+Run on Linux with a local Docker daemon, Go, and the workspace Node dependencies.
+`GRAFANA_VERSION` selects the Grafana image; CI uses the digest pinned for the
+plugin end-to-end tests in `.github/workflows/ci.yml`:
+
+```bash
+mise run test-conformance-gateway-harness # deterministic harness tests, no Docker
+GRAFANA_VERSION=nightly@sha256:... mise run test-conformance-gateway # build the plugin; all cases, both clients
+
+# Reuse a built plugin package and reproduce a subset:
+AI_GATEWAY_PLUGIN_DIR=ai-gateway/dist SCENARIO=anthropic/recorded/simple-text \
+  CLIENT=typescript GRAFANA_VERSION=nightly@sha256:... mise run test-conformance-gateway
+```
+
+`CLIENT` accepts `typescript` or `go`; omit selectors for the full matrix.
+
+How a run works:
+
+1. Every row (fixture and client) gets its own replay server on the Docker
+   bridge, provider instance and public model in one generated catalog. Rows
+   share no replay or tool state.
+2. One Grafana container loads the plugin package with that catalog, the
+   feature toggles from `ai-gateway/provisioning/grafana.ini`, a dummy backend
+   key and `access_mode = self-hosted`. Plugin preinstallation and update checks
+   are disabled; replay is reached through `host.docker.internal`. No live model
+   API is contacted.
+3. If the plugin rejects a provider type at startup (Grafana then exits), every
+   row of that provider fails at `provider-setup` with the logged reason, and the
+   stack boots again without it. Any other startup exit fails the run as a
+   `harness` failure with container state and logs.
+4. The harness creates a Grafana service account token, waits until the
+   catalog lists every admitted model, then runs the rows one at a time.
+
+Results are written to the ignored `test/conformance/gateway-results/` directory:
+
+- `summary.md`: per-provider/client totals, invocation counts, and evidence filenames.
+- `report.json`: every fixture/client row, scope, source revision, Grafana
+  image digest, plugin revision and backend modules, stack boots, rejected
+  providers, stages, outcomes, and infrastructure errors.
+- `row-*.json`: route, client capture, backend requests, comparison diffs, and
+  bounded, credential-redacted plugin logs for the row's time window.
+- `stack-startup.json`: only when the stack failed to start.
+
+A complete default run has two rows per discovered provider fixture. It does not
+skip unsupported capabilities, treat known failures as passes, or stop after the
+first incompatibility. An early rejection also reports missing expected backend
+requests. Rows blocked at startup are explicitly not client executions. If the
+stack stops during the run, the remaining rows are reported as not executed.
+
+The plugin currently routes Anthropic, OpenAI Responses, and OpenAI-compatible
+backends; Bedrock rows fail at provider setup. The plugin always adds a compact
+execution overview under `providerMetadata.gateway.execution` to finish parts.
+The gateway lane removes only that key before comparing provider parts, as
+registered in `upstream.yaml` (`gateway-execution-overview-metadata`); every
+other part and metadata key is compared exactly. The matrix is an executable compatibility backlog: a red row
+blocks merging until the underlying compatibility work lands or a reviewed
+contract decision defines an equivalence. Intentional metadata or privacy
+differences are not normalized away by the harness.
+
+CI runs direct and gateway conformance independently. The existing required
+`conformance-test` status aggregates both: it fails unless both jobs succeed,
+even if one was skipped or failed. The gateway job builds the plugin package
+from the checkout and uses the same pinned Grafana image as the plugin
+end-to-end tests; it is not a prerequisite of plugin package validation.
+Existing direct parity commands remain unchanged.
+
 ## Structure
 
 ```text
