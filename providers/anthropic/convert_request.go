@@ -121,8 +121,16 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 		// Go map literals, and returns nil for root schemas that only have
 		// allOf. Upstream's sanitize-json-schema is the single intended
 		// transform on the wire payload.
+		schemaJSON, err := json.Marshal(orderedSchema{value: sanitizeJSONSchema(schemaMap), original: rf.Schema})
+		if err != nil {
+			return buildResult{warnings: append(warnings, provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "responseFormat",
+				Details: fmt.Sprintf("failed to serialize response format schema: %v", err),
+			})}
+		}
 		p.OutputConfig.Format = anthropic.BetaJSONOutputFormatParam{
-			Schema: sanitizeJSONSchema(schemaMap),
+			Schema: json.RawMessage(schemaJSON),
 		}
 		return buildResult{warnings: warnings}
 	}
@@ -130,7 +138,7 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 	jsonToolParam := &anthropic.BetaToolParam{
 		Name:        jsonResponseToolName,
 		Description: anthropic.String("Respond with a JSON object."),
-		InputSchema: rawToolInputSchema(schemaMap),
+		InputSchema: rawToolInputSchema(rf.Schema),
 	}
 	// Mirror upstream behavior: when the JSON fallback tool is added on a
 	// streaming request, it participates in the model-level
@@ -170,7 +178,7 @@ func applyResponseFormat(p *anthropic.BetaMessageNewParams, modelID string, rf *
 	return buildResult{usesJsonResponseTool: true, warnings: warnings}
 }
 
-func rawToolInputSchema(schema map[string]any) anthropic.BetaToolInputSchemaParam {
+func rawToolInputSchema(schema json.RawMessage) anthropic.BetaToolInputSchemaParam {
 	if schema == nil {
 		return anthropic.BetaToolInputSchemaParam{}
 	}
@@ -2409,8 +2417,8 @@ func convertToolsWithStrictTools(v *cacheControlValidator, tools []provider.Tool
 			var schema anthropic.BetaToolInputSchemaParam
 			if len(t.InputSchema) > 0 {
 				var raw map[string]any
-				if err := json.Unmarshal(t.InputSchema, &raw); err == nil {
-					schema = rawToolInputSchema(raw)
+				if err := json.Unmarshal(t.InputSchema, &raw); err == nil && raw != nil {
+					schema = rawToolInputSchema(t.InputSchema)
 				}
 			}
 
