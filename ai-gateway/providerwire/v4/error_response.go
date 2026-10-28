@@ -15,7 +15,6 @@ type errorCode string
 
 const (
 	errorInvalidRequest errorType = "invalid_request_error"
-	errorAuthentication errorType = "authentication_error"
 	errorForbidden      errorType = "forbidden"
 	errorModelNotFound  errorType = "model_not_found"
 	errorRateLimit      errorType = "rate_limit_exceeded"
@@ -23,7 +22,6 @@ const (
 	errorDependency     errorType = "failed_dependency"
 
 	codeInvalidRequest errorCode = "invalid_request"
-	codeAuthentication errorCode = "authentication_error"
 	codeForbidden      errorCode = "forbidden"
 	codeModelNotFound  errorCode = "model_not_found"
 	codeRateLimit      errorCode = "rate_limit_exceeded"
@@ -130,13 +128,6 @@ var publicErrors = [...]errorDefinition{
 		kind:      errorInternal,
 		code:      codeInternal,
 		retryable: true,
-	},
-	safeAuthentication: {
-		status:    http.StatusUnauthorized,
-		message:   "authentication failed",
-		kind:      errorAuthentication,
-		code:      codeAuthentication,
-		retryable: false,
 	},
 	safePermission: {
 		status:    http.StatusForbidden,

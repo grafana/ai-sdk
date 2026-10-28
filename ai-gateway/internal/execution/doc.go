@@ -21,6 +21,15 @@
 // response commitment and their protocol state machine. The runtime never
 // writes HTTP responses.
 //
+// An adapter that maps its API semantics to native options passes a
+// [Translator] to [Runtime.Call] with [WithTranslator]. The host wraps every
+// physical candidate once with [Translate], so the order around each one is:
+// fallback, then translation, then native option validation, then the native
+// model. Each attempt translates its own copy of the call's options for its
+// [Target], and host policy re-checks the result. A panicking translator or a
+// refused result fails with [ErrTranslation], which [FallbackDecider] does not
+// retry.
+//
 // Selection and invocation run on the caller's goroutine. The request
 // context's deadline, which the host sets, bounds them: when the context ends,
 // its error decides the outcome and a result returned later is discarded. A

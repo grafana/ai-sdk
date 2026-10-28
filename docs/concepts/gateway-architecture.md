@@ -65,14 +65,24 @@ flowchart LR
   routing --> compatible --> apis
 ```
 
-The command registers two namespaced App Platform routes under the plugin's
-API group: `GET {prefix}/config` and `POST {prefix}/language-model`, where the
-prefix is `/apis/{group}/{version}/namespaces/{namespace}`. Configured discovery
-lists configured models; BYOK discovery returns an unsupported-discovery error
-rather than exposing the configured catalog. The command registers only these
-two app routes; the plugin host owns transport and any operational endpoints, so
-there are no separate listeners and no `/live`, `/ready`, or `/metrics` routes
-here. See the
+The command composes its routes from one route table. Each entry names a
+method, a path under the prefix `/apis/{group}/{version}/namespaces/{namespace}`,
+a telemetry label, the adapter's handler and the adapter's host-error writer.
+Every entry gets the same access decision and request telemetry, and a refused
+caller gets that adapter's permission document without its body being read. The
+production table matches the committed manifest: `GET {prefix}/config` and
+`POST {prefix}/language-model`. A request that matches no entry does no access,
+selection or provider work, and is labeled `unmatched`.
+
+Host failures use a closed set of categories (permission, internal, and BYOK
+discovery unsupported), which each adapter writes in its own format. Discovery
+is host-owned: the host lists the catalog for configured callers and returns the
+BYOK-discovery error for BYOK callers, and the adapter only projects the listed
+models into its document. The
+[host contract](../../ai-gateway/internal/host/doc.go) lists what an adapter
+supplies and what the host provides. The plugin host owns transport and any
+operational endpoints, so there are no separate listeners and no `/live`,
+`/ready`, or `/metrics` routes here. See the
 [routes](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/routes.go) and
 [plugin composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/gateway.go).
 
@@ -101,7 +111,7 @@ sequenceDiagram
   participant P as Native provider API
   C->>H: POST model call with Gateway credentials
   H->>H: Match route and method, authenticate
-  H->>W: Authenticated request, bounded body and caller context
+  H->>W: Authenticated request and caller context
   W->>W: Validate and map protocol
   W->>R: Call with mapped options
   R->>R: Apply host request policy
@@ -129,7 +139,8 @@ sequenceDiagram
    [authentication](../guides/gateway-authentication.md) and the
    [access decision](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access.go).
 2. **ProviderWire translates the request.** The handler validates protocol
-   headers, reads the body the routes have bounded, checks UTF-8 and the request schema, and maps
+   headers, reads the whole body, which the platform's route message size
+   bounds, checks UTF-8 and the request schema, and maps
    the body to `provider.CallOptions` and checks tool-call history. The
    execution runtime then refuses credential-bearing call headers and removes
    the call-level `gateway` options, which only the selector reads. Every other
@@ -141,16 +152,19 @@ sequenceDiagram
    [execution runtime](../../ai-gateway/internal/execution/runtime.go) selects
    and invokes the model for every API adapter, on the request goroutine. The
    request deadline, which Grafana's route deadline sets, covers selection plus
-   model execution. `NewConfiguredSelector`
-   checks configured-account access, then delegates to `CatalogSelector` to
-   resolve `assistant` or an alias to its canonical model. This private path
-   rejects reserved Gateway controls; its caller cannot switch to request
-   accounts. See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go),
+   model execution. One access-aware selector, `NewSelector`, serves every
+   caller, so each adapter needs one runtime. For configured access it
+   delegates to `CatalogSelector` to resolve `assistant` or an alias to its
+   canonical model. This private path rejects reserved Gateway controls; its
+   caller cannot switch to request accounts. See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go),
    [catalog selection](../../ai-gateway/internal/execution/selection.go), and the
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** Logical observation surrounds the
    configured primary/fallback chain. Candidate-specific option checks and
-   native adapters run within that chain. An adapter converts common call
+   native adapters run within that chain. When the inbound adapter supplied an
+   option translator, each candidate first translates its own copy of the call
+   options for its native protocol; host policy re-checks the result before the
+   candidate's native option validation runs. An adapter converts common call
    options into its provider's HTTP request and converts the response back into
    SDK values. Native options remain provider-specific; not every candidate
    consumes every namespace. See
@@ -243,17 +257,17 @@ summary redaction is not a general filter for generated content or secrets.
 
 ## Existing code versus deployed capabilities
 
-The command wires two account paths, selected by the access decision from the
-`access_mode` and the verified token, not by a caller choosing a different model
-name:
+The command serves two account paths through one selector and one runtime.
+The access decision chooses the path from the `access_mode` and the verified
+token, not from a caller choosing a different model name:
 
 - **Configured:** callers granted configured access use configured models and
   server-held provider credentials. In `self-hosted` mode this is any verified
   user or service account; in `cloud` mode it is an allowlisted internal
   service. They cannot switch to request accounts.
 - **BYOK:** in `cloud` mode, other verified identities get request-scoped
-  access; `NewBYOKSelector` checks request-account access and decodes the
-  provider/model destination and credentials. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
+  access; the selector decodes the provider/model destination and credentials
+  from the call-level `gateway.byok` controls. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
   constructs an Anthropic or OpenAI model with request-local accounts and
   observation, and the selection carries the destination and account count
   that the BYOK execution overview is checked against. It does not consult the

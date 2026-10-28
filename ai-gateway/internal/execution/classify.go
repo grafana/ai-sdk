@@ -86,6 +86,8 @@ func ClassifyProvider(err error) (category Category) {
 		return CategoryInternal
 	}
 	switch {
+	case errors.Is(err, ErrTranslation):
+		return CategoryInternal
 	case errors.Is(err, catalog.ErrUnsupportedRequest):
 		return CategoryInvalidRequest
 	case errors.Is(err, context.Canceled):

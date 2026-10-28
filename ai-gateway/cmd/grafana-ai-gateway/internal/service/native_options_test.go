@@ -56,7 +56,7 @@ func TestBYOKSelection_NativeOptionGuards(t *testing.T) {
 					return &http.Response{StatusCode: 401, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"authentication_error","message":"rejected"}}`)), Request: r}, nil
 				})}
 				factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-				language, err := newWireHandler(execution.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
+				language, err := newWireHandler(execution.Config{Selector: byokSelector(client, factory), Limits: serviceTestLimits()})
 				require.NoError(t, err)
 				handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, language)
 				var options map[string]json.RawMessage
