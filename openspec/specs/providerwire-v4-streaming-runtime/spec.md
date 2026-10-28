@@ -7,15 +7,15 @@ Define the production strict, bounded ProviderWire V4 streaming text runtime and
 ## Requirements
 
 ### Requirement: Constructed streaming limits
-The strict ProviderWire V4 handler SHALL require a positive stream idle duration and a positive post-cancellation drain duration. It SHALL NOT take a total model duration, a provider stream-part count or a complete SSE frame byte limit. Complete frames SHALL consist of the `data: ` prefix, JSON payload, and terminating `\n\n`.
+The strict ProviderWire V4 handler SHALL use the stream idle and post-cancellation drain durations of the execution runtime it is constructed from, which gateway-execution-runtime requires to be positive. It SHALL NOT take a total model duration, a provider stream-part count or a complete SSE frame byte limit. Complete frames SHALL consist of the `data: ` prefix, JSON payload, and terminating `\n\n`.
 
 #### Scenario: Valid streaming limits
-- **WHEN** a caller supplies positive idle and drain durations
+- **WHEN** a handler is constructed from a runtime with positive idle and drain durations
 - **THEN** handler construction SHALL succeed and runtime streaming behavior SHALL be fixed by those values
 
 #### Scenario: Invalid streaming limits
 - **WHEN** a streaming duration is zero or negative
-- **THEN** construction SHALL fail before the handler serves a request
+- **THEN** runtime construction SHALL fail before any handler serves a request
 
 ### Requirement: Shared strict streaming request pipeline
 Unary and streaming SHALL share bounded validation/mapping and one authenticated host selection. Supported streaming SHALL invoke DoStream once, never DoGenerate, without repeated selection or catalog access for BYOK; failures before invocation SHALL remain safe non-2xx JSON.
@@ -57,23 +57,23 @@ A supported streaming request SHALL invoke `DoStream` exactly once and SHALL NOT
 
 ### Requirement: Single-owner stream setup and logical commitment
 
-The request context's deadline SHALL cover `DoStream` setup and all later stream consumption. Setup SHALL execute with panic recovery so request cancellation or timeout can end handler latency even if `DoStream` does not return. Every returned stream SHALL have one cleanup owner: an outcome received by the handler belongs to the handler, while setup work SHALL clean up a stream returned after the request has ended.
+The request context's deadline SHALL cover `DoStream` setup and all later stream consumption. Setup SHALL run synchronously through the execution runtime with panic recovery. Every returned stream SHALL have one cleanup owner, the runtime: it SHALL cancel and drain exactly once a stream the handler consumed, a stream returned with an error, and a stream returned after the request context ended.
 
 #### Scenario: Stream setup fails before commitment
 - **WHEN** `DoStream` returns an error, panics, returns `nil, nil`, or returns a result with a nil stream channel
-- **THEN** the handler SHALL return the corresponding bounded non-2xx safe JSON response and SHALL not commit SSE
+- **THEN** the handler SHALL return the corresponding non-2xx safe JSON response and SHALL not commit SSE
 
 #### Scenario: Result and error include a stream
 - **WHEN** `DoStream` returns both an error and a non-nil stream channel
-- **THEN** the outcome SHALL remain pre-commit, its single owner SHALL cancel and start asynchronous bounded drain exactly once, and the handler SHALL return bounded non-2xx JSON without waiting for drain duration
+- **THEN** the outcome SHALL remain pre-commit, the runtime SHALL cancel and start asynchronous bounded drain exactly once, and the handler SHALL return non-2xx JSON without waiting for drain duration
 
 #### Scenario: Setup completion races termination
-- **WHEN** a valid setup outcome and request cancellation or timeout become ready concurrently
-- **THEN** either the handler SHALL receive and own the stream or the setup worker SHALL retain and clean up the late stream, with no unowned channel or duplicate cleanup
+- **WHEN** `DoStream` returns a valid stream after the request context was canceled or its deadline expired
+- **THEN** the handler SHALL return the pre-commit cancellation or timeout JSON failure, and the runtime SHALL cancel and drain the stream exactly once
 
 #### Scenario: Non-nil stream commits streaming mode
-- **WHEN** the handler receives a non-nil result and stream channel without error
-- **THEN** the response mode SHALL irrevocably become HTTP 200 SSE before the first provider part is interpreted and the handler SHALL own cleanup
+- **WHEN** the handler receives a non-nil result and stream channel without error while the request context is live
+- **THEN** the response mode SHALL irrevocably become HTTP 200 SSE before the first provider part is interpreted, and the runtime SHALL own cleanup
 
 #### Scenario: Initial provider part never arrives
 - **WHEN** setup establishes a stream but no first provider part arrives before cancellation or timeout
@@ -384,7 +384,7 @@ The request context's deadline SHALL cover selection, setup, attempts and stream
 - **THEN** The request context's deadline SHALL cover selection/construction, logical `DoStream` setup, all credential attempts and stream consumption.
 - **AND** Logical invocation, credential attempts and stream establishment SHALL NOT reset or extend the request deadline.
 - **AND** Expiry of the request context's deadline SHALL be a timeout, and cancellation of the request context SHALL be a cancellation.
-- **AND** Selection cancellation and late-result cleanup SHALL follow the shared bounded invocation contract.
+- **AND** Selection and setup SHALL run synchronously under the request context; a selection or stream returned after it ended SHALL be discarded under gateway-execution-runtime.
 - **AND** After stream commitment, the configured idle timeout SHALL restart after each accepted provider part is successfully represented, including a consumed start and a written provider error.
 - **AND** Request cancellation, request deadline expiry, or idle timeout SHALL cancel selection/provider work before the corresponding safe terminal response or event is written.
 - **AND** A valid finish written before another terminal outcome SHALL remain authoritative.
@@ -396,8 +396,8 @@ The request context's deadline SHALL cover selection, setup, attempts and stream
 - **THEN** the handler SHALL produce at most one applicable bounded terminal outcome and SHALL not leak or clean up the stream twice
 
 #### Scenario: Selection exhausts streaming time
-- **WHEN** the request deadline expires during delayed or non-cooperative selection
-- **THEN** handler latency SHALL remain bounded with a pre-commit JSON failure, zero logical model invocations and bounded cleanup of late selection results
+- **WHEN** selection returns only after the request deadline expired
+- **THEN** the handler SHALL return a pre-commit timeout JSON failure with zero logical model invocations
 
 #### Scenario: Attempts inherit the remaining budget
 - **WHEN** selection consumes part of the time before the request deadline and the chosen model then tries multiple eligible credentials
@@ -433,7 +433,7 @@ A valid finish written before another terminal outcome SHALL remain authoritativ
 
 ### Requirement: Bounded stream ownership and drain
 
-Every returned stream SHALL have one receiver responsible for cleanup. A stream transferred from setup belongs to the handler; when model-context termination wins before transfer, the setup worker SHALL clean up any stream returned later. Terminal handling SHALL cancel provider work and start an asynchronous drain that reads only until channel close or the configured drain duration.
+Every returned stream SHALL have one cleanup owner, the execution runtime. Terminal handling SHALL cancel provider work and start one asynchronous drain that reads only until channel close or the configured drain duration.
 
 #### Scenario: Provider closes after cancellation
 - **WHEN** terminal handling cancels provider work and the provider closes its stream within the drain duration
@@ -441,23 +441,23 @@ Every returned stream SHALL have one receiver responsible for cleanup. A stream 
 
 #### Scenario: Provider ignores cancellation
 - **WHEN** a provider channel does not close before the drain duration
-- **THEN** handler latency and the handler-owned drain lifetime SHALL remain bounded even though provider-owned work may remain defective
+- **THEN** handler latency and the drain lifetime SHALL remain bounded even though provider-owned work may remain defective
 
 #### Scenario: Continuously ready drain reaches a hard bound
 - **WHEN** a canceled provider channel remains permanently ready with values
 - **THEN** the drain SHALL stop within the configured duration rather than consuming indefinitely
 
 #### Scenario: Setup returns a late stream
-- **WHEN** handler cancellation or timeout wins and `DoStream` later returns a non-nil stream
-- **THEN** the late setup owner SHALL cancel and bounded-drain that channel exactly once instead of abandoning it unread
+- **WHEN** `DoStream` returns a non-nil stream after the request context ended
+- **THEN** the runtime SHALL cancel and bounded-drain that channel exactly once instead of abandoning it unread
 
 ### Requirement: Bounded drain latency and provider lifecycle responsibility
 
-Draining SHALL not extend handler latency and SHALL remain bounded even when the provider channel is continuously ready. Providers SHALL remain responsible for observing cancellation and closing their channels; a provider call that never returns or a producer that remains blocked after bounded drain SHALL be classified as a provider lifecycle defect rather than a bounded Gateway resource.
+Draining SHALL not extend handler latency and SHALL remain bounded even when the provider channel is continuously ready. Providers SHALL remain responsible for observing cancellation, returning from setup and closing their channels; a provider call that never returns holds its own request, and a producer that remains blocked after bounded drain SHALL be classified as a provider lifecycle defect rather than a bounded Gateway resource.
 
 #### Scenario: Bounded drain latency and provider lifecycle responsibility
 - **WHEN** a canceled provider continuously produces parts or never returns
-- **THEN** Gateway drain/handler latency SHALL remain bounded, and non-cooperative provider-owned work SHALL be classified as a lifecycle defect
+- **THEN** Gateway drain latency SHALL remain bounded, a setup call that never returns SHALL hold only its own request, and non-cooperative provider-owned work SHALL be classified as a lifecycle defect
 
 ### Requirement: Streaming contract and cross-language evidence
 

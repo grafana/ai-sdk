@@ -89,7 +89,6 @@ func TestReasoningRequestRejectsBeforeResolution(t *testing.T) {
 		`{"type":"reasoning-file","mediaType":"image/png","data":{"type":"reference","reference":{}}}`,
 		`{"type":"reasoning-file","mediaType":"image/png","data":{"type":"data","data":""},"filename":"private"}`,
 		`{"type":"reasoning","text":"","providerOptions":{"anthropic":null}}`,
-		`{"type":"reasoning","text":"","providerOptions":{"gateway":{"token":"private"}}}`,
 	} {
 		for _, streaming := range []string{"true", "false"} {
 			harness := newRuntimeHarness(t, testLimits())

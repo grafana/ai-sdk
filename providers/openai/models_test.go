@@ -25,6 +25,13 @@ func TestGetModelCapabilities(t *testing.T) {
 		{"gpt-5.1", true, "developer", true, true, true},
 		{"gpt-6-astra", true, "developer", true, true, false},
 		{"openai.gpt-6-astra", true, "developer", false, false, false},
+		{"gpt-6-sol", true, "developer", true, true, true},
+		{"gpt-6-luna", true, "developer", true, true, true},
+		{"gpt-6.1-sol", true, "developer", true, true, false},
+		{"gpt-6-sol-fast", true, "developer", true, true, false},
+		{"gpt-6-luna-2026-09-01", true, "developer", true, true, false},
+		{"openai.gpt-6-sol", true, "developer", false, false, false},
+		{"openai.gpt-6-luna", true, "developer", false, false, false},
 		{"gpt-5.6", true, "developer", true, true, true},
 		{"gpt-5.6-luna", true, "developer", true, true, true},
 		{"openai.gpt-5.6-luna", true, "developer", false, false, false},
@@ -54,34 +61,38 @@ func TestGetModelCapabilities(t *testing.T) {
 }
 
 func TestGetModelCapabilities_GPT6Controls(t *testing.T) {
+	positiveEfforts := []string{"low", "medium", "high", "xhigh", "max"}
+	solLunaEfforts := []string{"none", "low", "medium", "high", "xhigh", "max"}
 	for _, tc := range []struct {
-		modelID   string
-		supported bool
+		modelID     string
+		supported   bool
+		wantEfforts []string
 	}{
-		{modelID: "gpt-6-astra", supported: true},
-		{modelID: "gpt-7", supported: true},
-		{modelID: "gpt-99-nano", supported: true},
+		{modelID: "gpt-6-astra", supported: true, wantEfforts: positiveEfforts},
+		{modelID: "gpt-6-sol", supported: true, wantEfforts: solLunaEfforts},
+		{modelID: "gpt-6-luna", supported: true, wantEfforts: solLunaEfforts},
+		{modelID: "gpt-6.1-sol", supported: true, wantEfforts: positiveEfforts},
+		{modelID: "gpt-6-sol-fast", supported: true, wantEfforts: positiveEfforts},
+		{modelID: "gpt-7", supported: true, wantEfforts: positiveEfforts},
+		{modelID: "gpt-99-nano", supported: true, wantEfforts: positiveEfforts},
 		{modelID: "gpt-5.6"},
 		{modelID: "gpt-6chat"},
 		{modelID: "openai.gpt-6-astra"},
+		{modelID: "openai.gpt-6-sol"},
 		{modelID: "ft:gpt-6:org:custom:abc"},
 	} {
 		t.Run(tc.modelID, func(t *testing.T) {
 			caps := getModelCapabilities(tc.modelID)
 			assert.Equal(t, tc.supported, caps.supportsConfigurationUpdate)
 			assert.Equal(t, tc.supported, caps.supportsAsyncToolCalling)
-			if tc.supported {
-				assert.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, caps.supportedReasoningEfforts)
-			} else {
-				assert.Nil(t, caps.supportedReasoningEfforts)
-			}
+			assert.Equal(t, tc.wantEfforts, caps.supportedReasoningEfforts)
 		})
 	}
 }
 
 func TestModelIDs(t *testing.T) {
 	ids := ModelIDs()
-	assert.Len(t, ids, 70)
+	assert.Len(t, ids, 71)
 	assert.Contains(t, ids, "gpt-4o")
 	assert.Contains(t, ids, "gpt-4o-2024-11-20")
 	assert.Contains(t, ids, "gpt-4o-audio-preview")
@@ -91,6 +102,7 @@ func TestModelIDs(t *testing.T) {
 	assert.Contains(t, ids, "gpt-6-astra")
 	assert.Contains(t, ids, "gpt-6-luna")
 	assert.Contains(t, ids, "gpt-6-sol")
+	assert.Contains(t, ids, "gpt-6.1-sol")
 	assert.Contains(t, ids, "gpt-5.1-codex-max")
 	assert.Contains(t, ids, "o4-mini-2025-04-16")
 	assert.True(t, sort.StringsAreSorted(ids))

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerwirev4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -504,19 +505,19 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	if err != nil {
 		return nil, err
 	}
-	configured := providerwirev4.CatalogSelector(resolver)
-	runtime, err := providerwirev4.New(providerwirev4.Config{
+	configured := execution.CatalogSelector(resolver)
+	runtime, err := newWireHandler(execution.Config{
 		ConfiguredAPIKeys: []string{"configured-test-key"},
-		Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (providerwirev4.Selection, error) {
+		Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 			if id == "unconfigured-key-errors" {
-				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-key-errors", stats: stats}}, nil
+				return execution.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-key-errors", stats: stats}}, nil
 			}
 			if id == "unconfigured-errors" {
-				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-errors", stats: stats}}, nil
+				return execution.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-errors", stats: stats}}, nil
 			}
 			return configured(ctx, id, options, gateway)
 		},
-		Limits: providerwirev4.Limits{
+		Limits: execution.Limits{
 			StreamIdleDuration:  200 * time.Millisecond,
 			StreamDrainDuration: 100 * time.Millisecond,
 		},
@@ -605,3 +606,11 @@ func scenarioOutputText(kind, fallbackText string) string {
 	}
 }
 func stringPointer(value string) *string { return &value }
+
+func newWireHandler(config execution.Config) (http.Handler, error) {
+	runtime, err := execution.New(config)
+	if err != nil {
+		return nil, err
+	}
+	return providerwirev4.New(runtime)
+}

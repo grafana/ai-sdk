@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	v4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 
 	"go.yaml.in/yaml/v4"
 )
@@ -145,14 +145,14 @@ func (file File) Validate() error {
 				return fmt.Errorf("config: providers.%s.baseURL is required for openai-compatible providers", name)
 			}
 			// The provider name doubles as the provider-option namespace callers
-			// use for this backend, and the runtime reserves one namespace for
-			// the host. Naming a provider after it would leave that backend with
-			// a namespace every caller is refused.
+			// use for this backend, and the host owns the call-level control
+			// namespace. Naming a provider after it would leave that backend's
+			// call options read as host controls.
 			// openai-compatible reads options under the name before the first dot,
-			// trimmed, so "grafana.chat" and " grafana" collide too.
+			// trimmed, so "gateway.chat" and " gateway" collide too.
 			namespace, _, _ := strings.Cut(provider.ProviderName, ".")
-			if strings.TrimSpace(namespace) == v4.ReservedProviderOptionNamespace {
-				return fmt.Errorf("config: providers.%s.providerName %q is reserved by the runtime as the host provider-option namespace; rename the provider", name, v4.ReservedProviderOptionNamespace)
+			if strings.TrimSpace(namespace) == execution.ControlNamespace {
+				return fmt.Errorf("config: providers.%s.providerName %q is reserved by the runtime as the host provider-option namespace; rename the provider", name, execution.ControlNamespace)
 			}
 		default:
 			return fmt.Errorf("config: providers.%s.type %q is unsupported (want anthropic, openai or openai-compatible)", name, provider.Type)

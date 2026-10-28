@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,7 +49,7 @@ func TestNativeOptions_SharedHandlerIsolation(t *testing.T) {
 				"primary": {Type: "openai-compatible", APIKey: "native-key", BaseURL: server.URL + "/primary", ProviderName: "my-vllm.chat"},
 			}, server.Client(), identityModelFactory)
 			require.NoError(t, err)
-			handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(created), Limits: serviceTestLimits()})
+			handler, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(created), Limits: serviceTestLimits()})
 			require.NoError(t, err)
 			var wg sync.WaitGroup
 			for index := range count {

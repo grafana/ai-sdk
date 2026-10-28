@@ -89,7 +89,7 @@ When a completed step has no effective required/named choice violation, a non-pr
 
 ### Requirement: Approval response collection before model calls
 
-At StreamText start, orchestration SHALL inspect the last tool-role message for approval responses, correlate approvalId with earlier assistant request and toolCallId with original call. Approved local tools SHALL execute before next model call and append resulting tool-result message to prompt. Denied local approvals SHALL append synthetic execution-denied output with response reason.
+At StreamText start, orchestration SHALL inspect the last tool-role message for approval responses, correlate approvalId with earlier assistant request and toolCallId with original call. Approved local tools SHALL execute before next model call and append resulting tool-result message to prompt. Denied local approvals SHALL append synthetic execution-denied output with response reason. StreamText SHALL add no result for provider-executed denials.
 
 #### Scenario: Approved tool executes before next model call
 - **WHEN** input messages contain an assistant approval request and a tool approval response with `approved: true`
@@ -107,6 +107,11 @@ At StreamText start, orchestration SHALL inspect the last tool-role message for 
 - **THEN** `StreamText` SHALL emit the denied output event before the approved tool output event
 - **AND** the prompt for the language model SHALL append the approved tool result before the synthetic execution-denied result
 
+#### Scenario: Streamed provider-executed denial adds no result
+- **WHEN** `StreamText` input messages contain a denied approval response for a provider-executed tool call without an existing result
+- **THEN** it SHALL emit a tool output denied event for that call
+- **AND** neither the prompt nor the response messages SHALL contain an execution-denied result for it
+
 #### Scenario: Existing tool result is not duplicated
 - **WHEN** the last tool message already contains a tool-result for the approval request's tool call ID
 - **THEN** approval response collection SHALL NOT execute the tool again
@@ -119,6 +124,23 @@ At StreamText start, orchestration SHALL inspect the last tool-role message for 
 #### Scenario: Missing original tool call is an error
 - **WHEN** an approval request exists but its referenced tool call cannot be found in prior assistant messages
 - **THEN** `StreamText` SHALL surface an error and SHALL NOT call the language model
+
+### Requirement: Provider-executed approvals resume without local revalidation
+
+Provider-originated approval requests SHALL NOT be signed, even with a configured secret. Approved provider-executed approvals SHALL skip local signature, input and call-level policy revalidation, as upstream does, and SHALL produce no client result. Their approval response SHALL reach the provider as an approved response. Resume SHALL emit tool output denied events for local denials, including revalidation denials, before provider-executed denials.
+
+#### Scenario: Approved provider-executed approval is not re-checked
+- **WHEN** a resumed approved provider-executed approval has a missing or invalid signature with a configured secret, or a call-level policy that would deny it
+- **THEN** orchestration SHALL NOT surface a signature error, consult the policy or emit a tool output denied event
+- **AND** the next prompt SHALL carry the approved response
+
+#### Scenario: Provider approval request stays unsigned
+- **WHEN** a provider emits an approval request while a tool approval secret is configured
+- **THEN** the request part, step result and response content SHALL carry no signature
+
+#### Scenario: Local denials are reported first
+- **WHEN** a resumed tool message denies a provider-executed call before a local call
+- **THEN** the local tool output denied event SHALL precede the provider-executed one
 
 ### Requirement: Provider prompts reject missing tool results
 
@@ -203,7 +225,7 @@ assembleResponseMessage SHALL apply approval chunks to the corresponding invocat
 
 ### Requirement: GenerateText inherits approval orchestration
 
-`GenerateText` SHALL use the same approval orchestration semantics as `StreamText` because it is implemented by consuming `StreamText`. Approval requests, approval-resolved tool results, denied synthetic results, and content accessors SHALL match the streaming path.
+`GenerateText` SHALL use the same approval orchestration semantics as `StreamText` because it is implemented by consuming `StreamText`. Approval requests, approval-resolved tool results, local denied synthetic results, and content accessors SHALL match the streaming path. Provider-executed denial results are the only difference.
 
 #### Scenario: GenerateText returns pending approval content
 - **WHEN** `GenerateText` receives a model response with a tool call requiring approval
@@ -214,6 +236,15 @@ assembleResponseMessage SHALL apply approval chunks to the corresponding invocat
 - **WHEN** `GenerateText` is called with messages containing an approved approval response
 - **THEN** it SHALL execute the approved local tool before the model call
 - **AND** the returned steps SHALL include the resumed tool result before any subsequent model response content
+
+### Requirement: Generate paths record provider-executed denials
+
+`GenerateText` and `ToolLoopAgent.Generate` SHALL append an execution-denied result for each denied provider-executed approval without an existing result, as upstream `generateText` does. The result SHALL carry the response reason and `providerOptions.openai.approvalId` on its output, follow upstream denied-approval order after approved results, and appear in the next prompt and `ResponseMessages`.
+
+#### Scenario: GenerateText records a correlated provider-executed denial
+- **WHEN** `GenerateText` resumes messages containing a denied approval response for a provider-executed OpenAI MCP call
+- **THEN** `ResponseMessages` SHALL begin with a tool message containing an execution-denied result for that call with `providerOptions.openai.approvalId` set to the approval ID
+- **AND** the next OpenAI request SHALL carry the denial as an `mcp_approval_response` with `approve: false` and no function call output for that call
 
 ### Requirement: Approved streaming local tools use final results for approval continuation
 
@@ -272,7 +303,7 @@ Completed effective required/named violations SHALL bypass the new local approva
 
 ### Requirement: Choice gates do not undo provider or historical approval effects
 
-Received provider calls/results/approval events SHALL retain stream/content handling including provider-event signing. The choice gate SHALL NOT undo provider effects or alter prior-input approval resolution/execution before the current model call. Choice-satisfying steps and other disallowed-finish approval behavior SHALL retain existing semantics.
+Received provider calls/results/approval events SHALL retain stream/content handling; provider-originated approval requests SHALL remain unsigned. The choice gate SHALL NOT undo provider effects or alter prior-input approval resolution/execution before the current model call. Choice-satisfying steps and other disallowed-finish approval behavior SHALL retain existing semantics.
 
 #### Scenario: Historical execution remains before a violating model call
 - **WHEN** a prior approved tool executes before a model call that later violates choice

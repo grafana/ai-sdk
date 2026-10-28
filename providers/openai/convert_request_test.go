@@ -1032,6 +1032,20 @@ func TestBuildParams_MCPApprovalContinuation(t *testing.T) {
 			assert.Equal(t, true, response["approve"])
 		})
 	}
+
+	t.Run("azure omits openai-correlated denial", func(t *testing.T) {
+		params, _, _, err := buildParamsForProvider("gpt-4o", provider.CallOptions{Prompt: prompt}, "azure")
+		require.NoError(t, err)
+		raw, err := json.Marshal(params)
+		require.NoError(t, err)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(raw, &body))
+
+		input := body["input"].([]any)
+		require.Len(t, input, 2)
+		assert.Equal(t, "item_reference", input[0].(map[string]any)["type"])
+		assert.Equal(t, "mcp_approval_response", input[1].(map[string]any)["type"])
+	})
 }
 
 func TestBuildParams_CustomToolContentOptions(t *testing.T) {
@@ -1429,45 +1443,6 @@ func TestBuildParams_BedrockMantleRejectsUnsupportedServiceTiers(t *testing.T) {
 	}
 }
 
-func TestBuildParams_ReasoningNoneSamplingParameters(t *testing.T) {
-	tests := []struct {
-		modelID      string
-		wantSampling bool
-	}{
-		{modelID: "gpt-5.6-luna", wantSampling: true},
-		{modelID: "gpt-6-astra", wantSampling: false},
-		{modelID: "gpt-99", wantSampling: false},
-		{modelID: "openai.gpt-6-astra", wantSampling: false},
-		{modelID: "openai.gpt-5.6-luna", wantSampling: false},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.modelID, func(t *testing.T) {
-			temp := 0.7
-			topP := 0.9
-			body, warnings := buildBody(t, tc.modelID, provider.CallOptions{
-				Prompt:      []provider.Message{provider.UserText("hi")},
-				Temperature: &temp,
-				TopP:        &topP,
-				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{
-					ReasoningEffort: "none",
-				}),
-			})
-			if tc.wantSampling {
-				assert.Equal(t, temp, body["temperature"])
-				assert.Equal(t, topP, body["top_p"])
-				assert.NotContains(t, warningFeatures(warnings), "temperature")
-				assert.NotContains(t, warningFeatures(warnings), "topP")
-				return
-			}
-			assert.NotContains(t, body, "temperature")
-			assert.NotContains(t, body, "top_p")
-			assert.Contains(t, warningFeatures(warnings), "temperature")
-			assert.Contains(t, warningFeatures(warnings), "topP")
-		})
-	}
-}
-
 func TestBuildParams_TopLevelReasoning(t *testing.T) {
 	t.Run("provider default is omitted", func(t *testing.T) {
 		body, _ := buildBody(t, "gpt-5.5", provider.CallOptions{
@@ -1707,6 +1682,95 @@ func TestBuildParams_NonStoredReasoningEmptySummaryIsEmptyArray(t *testing.T) {
 		assert.Equal(t, "summary_text", entry["type"])
 		assert.Equal(t, "thinking...", entry["text"])
 	})
+}
+
+func TestBuildParams_ReasoningPartsSharingItemID(t *testing.T) {
+	reasoning := func(text, itemID string, encrypted *string) provider.ContentPart {
+		part := provider.ReasoningPart(text)
+		part.ProviderOptions = provider.BuildProviderOptions(OpenAIPartOptions{ItemID: itemID, ReasoningEncryptedContent: encrypted})
+		return part
+	}
+	firstEncrypted, lastEncrypted := "enc_first", "enc_last"
+	summary := func(texts ...string) []any {
+		out := []any{}
+		for _, text := range texts {
+			out = append(out, map[string]any{"type": "summary_text", "text": text})
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name         string
+		store        bool
+		messages     [][]provider.ContentPart
+		want         []any
+		wantWarnings []provider.Warning
+	}{
+		{
+			name:     "stored parts produce one reference",
+			store:    true,
+			messages: [][]provider.ContentPart{{reasoning("first", "rs_1", nil), reasoning("second", "rs_1", nil)}},
+			want:     []any{map[string]any{"type": "item_reference", "id": "rs_1"}},
+		},
+		{
+			name:     "non-stored parts merge summaries and keep the last encrypted content",
+			messages: [][]provider.ContentPart{{reasoning("first", "rs_1", &firstEncrypted), reasoning("second", "rs_1", &lastEncrypted), reasoning("third", "rs_1", nil)}},
+			want:     []any{map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": lastEncrypted, "summary": summary("first", "second", "third")}},
+		},
+		{
+			name:     "encrypted content on a later part keeps earlier summaries",
+			messages: [][]provider.ContentPart{{reasoning("first", "rs_1", nil), reasoning("second", "rs_1", &lastEncrypted)}},
+			want:     []any{map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": lastEncrypted, "summary": summary("first", "second")}},
+		},
+		{
+			name:         "empty later part warns and adds no summary",
+			messages:     [][]provider.ContentPart{{reasoning("first", "rs_1", &firstEncrypted), reasoning("", "rs_1", &lastEncrypted)}},
+			want:         []any{map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": lastEncrypted, "summary": summary("first")}},
+			wantWarnings: []provider.Warning{emptyReasoningAppendWarning},
+		},
+		{
+			name: "non-stored reasoning without encrypted content is omitted with one warning",
+			messages: [][]provider.ContentPart{
+				{reasoning("first", "rs_1", nil), reasoning("second", "rs_1", nil), reasoning("other", "rs_2", nil)},
+				{reasoning("later", "rs_3", nil), reasoning("kept", "rs_4", &lastEncrypted)},
+			},
+			want:         []any{map[string]any{"type": "reasoning", "id": "rs_4", "encrypted_content": lastEncrypted, "summary": summary("kept")}},
+			wantWarnings: []provider.Warning{unstoredReasoningWithoutEncryptedContentWarning},
+		},
+		{
+			name:         "ID-less reasoning without encrypted content warns per part before the omission warning",
+			messages:     [][]provider.ContentPart{{reasoning("foreign", "", nil), reasoning("first", "rs_1", nil)}},
+			wantWarnings: []provider.Warning{nonOpenAIReasoningWarning, unstoredReasoningWithoutEncryptedContentWarning},
+		},
+		{
+			name:     "different stored IDs produce separate references",
+			store:    true,
+			messages: [][]provider.ContentPart{{reasoning("first", "rs_1", nil), reasoning("second", "rs_2", nil)}},
+			want:     []any{map[string]any{"type": "item_reference", "id": "rs_1"}, map[string]any{"type": "item_reference", "id": "rs_2"}},
+		},
+		{
+			name:     "different non-stored IDs produce separate items",
+			messages: [][]provider.ContentPart{{reasoning("first", "rs_1", &firstEncrypted), reasoning("second", "rs_2", &lastEncrypted)}},
+			want: []any{
+				map[string]any{"type": "reasoning", "id": "rs_1", "encrypted_content": firstEncrypted, "summary": summary("first")},
+				map[string]any{"type": "reasoning", "id": "rs_2", "encrypted_content": lastEncrypted, "summary": summary("second")},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := tc.store
+			var prompt []provider.Message
+			for _, parts := range tc.messages {
+				prompt = append(prompt, provider.NewAssistantMessage(parts...))
+			}
+			body, warnings := buildBody(t, "o4-mini", provider.CallOptions{
+				Prompt:          prompt,
+				ProviderOptions: withOpenAIOptions(OpenAIResponsesOptions{Store: &store}),
+			})
+			input, _ := body["input"].([]any)
+			assert.Equal(t, tc.want, input)
+			assert.Equal(t, tc.wantWarnings, warnings)
+		})
+	}
 }
 
 func findInput(body map[string]any, itemType string) map[string]any {

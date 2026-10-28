@@ -142,6 +142,7 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 
 	hasPrecedingReasoning := false
 	emittedTextIDs := make(map[string]bool)
+	reasoningByID := make(map[string]*responses.ResponseReasoningItemParam)
 	for _, part := range msg.Content {
 		switch part.Type {
 		case provider.ContentPartTypeText:
@@ -186,20 +187,36 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 			if (ctx.hasConversation || ctx.hasPreviousResponseID) && po.ItemID != "" {
 				continue
 			}
-			if po.ItemID != "" && ctx.store {
-				items = append(items, itemReference(po.ItemID))
+			if po.ItemID == "" {
+				if po.ReasoningEncryptedContent == nil {
+					warnings = append(warnings, nonOpenAIReasoningWarning)
+					continue
+				}
+				items = append(items, reasoningItem(po.ItemID, po.ReasoningEncryptedContent, part.Text))
 				continue
 			}
-			// Non-stored reasoning requires encrypted content for round-trip.
-			if po.ReasoningEncryptedContent == nil {
-				warnings = append(warnings, provider.Warning{
-					Type:    provider.WarnOther,
-					Feature: "reasoning",
-					Message: "non-OpenAI reasoning parts are not supported and are omitted",
-				})
+			reasoning, seen := reasoningByID[po.ItemID]
+			if ctx.store {
+				if !seen {
+					reasoningByID[po.ItemID] = nil
+					items = append(items, itemReference(po.ItemID))
+				}
 				continue
 			}
-			items = append(items, reasoningItem(po.ItemID, *po.ReasoningEncryptedContent, part.Text))
+			if !seen {
+				item := reasoningItem(po.ItemID, po.ReasoningEncryptedContent, part.Text)
+				reasoningByID[po.ItemID] = item.OfReasoning
+				items = append(items, item)
+				continue
+			}
+			if part.Text == "" {
+				warnings = append(warnings, emptyReasoningAppendWarning)
+			} else {
+				reasoning.Summary = append(reasoning.Summary, responses.ResponseReasoningItemSummaryParam{Text: part.Text})
+			}
+			if po.ReasoningEncryptedContent != nil {
+				reasoning.EncryptedContent = param.NewOpt(*po.ReasoningEncryptedContent)
+			}
 
 		case provider.ContentPartTypeCustom:
 			if part.Kind != "openai.compaction" {
@@ -221,6 +238,18 @@ func convertAssistantMessage(msg provider.Message, ctx inputConversionContext) (
 	}
 
 	return items, warnings, nil
+}
+
+var nonOpenAIReasoningWarning = provider.Warning{
+	Type:    provider.WarnOther,
+	Feature: "reasoning",
+	Message: "non-OpenAI reasoning parts are not supported and are omitted",
+}
+
+var emptyReasoningAppendWarning = provider.Warning{
+	Type:    provider.WarnOther,
+	Feature: "reasoning",
+	Message: "cannot append an empty reasoning part to an existing reasoning sequence; the part is omitted",
 }
 
 // compactionOptions reads the compaction item ID and encrypted content from

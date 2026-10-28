@@ -617,6 +617,7 @@ The independent Go client SHALL decode unary and streamed provider approval requ
 #### Scenario: High-level Go continuation
 - **WHEN** Go GenerateText or StreamText resumes actual response history containing a provider-owned approval and decision
 - **THEN** core prompt conversion SHALL retain only registered approval-response fields at the provider boundary after handling ownership, without mutating the caller's history, and the next Gateway/native request SHALL succeed
+- **AND** GenerateText response messages SHALL contain a correlated execution-denied result for each denied provider-owned approval while StreamText response messages SHALL NOT, matching the registered Vercel client
 
 ### Requirement: Independent generated-file response decoding
 The Apache Grafana client SHALL decode registered generated files in unary and streaming responses without importing Gateway code. It SHALL preserve data/URL values, optional originalUrl, media type, metadata presence and ordering; unary responses SHALL remain within the fixed buffered-read backstop. Provider-local filenames SHALL not become normalized generated-file fields.

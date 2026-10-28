@@ -2333,7 +2333,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
         "the gateway's backend credential is the one presented upstream");
 
       for (const [rejected, message] of [
-        [{ providerOptions: { grafana: { tenant: "other" } } }, "reserved provider option namespace"],
+        [{ providerOptions: { gateway: { tenant: "other" } } }, "reserved provider option namespace"],
         [{ headers: { "x-api-key": "caller-controlled" } }, "protected call header"],
         [{ providerOptions: { compatibleBackend: { model: "someone-elses-model" } } }, "invalid request"],
       ] as const) {

@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -555,12 +554,11 @@ func TestStreamingSetupAndCleanup(t *testing.T) {
 	})
 
 	t.Run("cancellation cleans up a late stream", func(t *testing.T) {
-		release := make(chan struct{})
 		lateStream := make(chan provider.StreamPart)
 		drained := make(chan struct{})
 		harness := newRuntimeHarness(t, testLimits())
-		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			<-release
+		harness.model.stream = func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			<-ctx.Done()
 			go func() {
 				lateStream <- provider.StreamPart{Type: provider.PartRaw}
 				close(drained)
@@ -581,7 +579,6 @@ func TestStreamingSetupAndCleanup(t *testing.T) {
 		cancel()
 		result := <-done
 		assert.Equal(t, 499, result.code)
-		close(release)
 		select {
 		case <-drained:
 		case <-time.After(time.Second):
@@ -897,70 +894,6 @@ func TestStreamingTimeouts(t *testing.T) {
 	})
 }
 
-func TestStreamDrainBounds(t *testing.T) {
-	t.Run("normal close consumes every part", func(t *testing.T) {
-		h := newTestHandler(t, testLimits())
-		stream := make(chan provider.StreamPart, 10)
-		for i := 0; i < 10; i++ {
-			stream <- provider.StreamPart{Type: provider.PartRaw}
-		}
-		close(stream)
-		h.drainStream(stream)
-		assert.Empty(t, stream)
-	})
-
-	t.Run("delayed close exits within the drain bound", func(t *testing.T) {
-		h := newTestHandler(t, testLimits())
-		stream := make(chan provider.StreamPart)
-		done := make(chan struct{})
-		go func() {
-			h.drainStream(stream)
-			close(done)
-		}()
-		stream <- provider.StreamPart{Type: provider.PartRaw}
-		close(stream)
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-			t.Fatal("drain did not observe delayed close")
-		}
-	})
-
-	t.Run("duration bounds a permanently ready drain", func(t *testing.T) {
-		limits := testLimits()
-		limits.StreamDrainDuration = 25 * time.Millisecond
-		h := newTestHandler(t, limits)
-		stream := make(chan provider.StreamPart)
-		stopProducer := make(chan struct{})
-		producerDone := make(chan struct{})
-		var produced atomic.Int64
-		go func() {
-			defer close(producerDone)
-			for {
-				select {
-				case stream <- provider.StreamPart{Type: provider.PartRaw}:
-					produced.Add(1)
-				case <-stopProducer:
-					return
-				}
-			}
-		}()
-		done := make(chan struct{})
-		go func() {
-			h.drainStream(stream)
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-			t.Fatal("drain exceeded its configured duration")
-		}
-		close(stopProducer)
-		<-producerDone
-		assert.Positive(t, produced.Load())
-	})
-}
-
 func TestProviderMetadata_Lifecycle(t *testing.T) {
 	for _, mode := range []string{"cancellation", "idle", "deadline", "writer"} {
 		t.Run(mode, func(t *testing.T) {
@@ -1073,12 +1006,9 @@ func TestInvocation_StreamCurrentErrors(t *testing.T) {
 
 func TestInvocation_CanceledLateDirectSetup(t *testing.T) {
 	entered := make(chan struct{})
-	release := make(chan struct{})
-	finished := make(chan struct{})
-	first := &recordingModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+	first := &recordingModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
 		close(entered)
-		<-release
-		defer close(finished)
+		<-ctx.Done()
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "unowned late native failure", StatusCode: 401})
 	}}
 	h := invocationHarness(t, testLimits(), first)
@@ -1095,9 +1025,6 @@ func TestInvocation_CanceledLateDirectSetup(t *testing.T) {
 		t.Fatal("cancellation did not return")
 	}
 	assert.Contains(t, body, `"outcome":"canceled"`)
-	assert.NotContains(t, body, "unowned late native failure")
-	close(release)
-	<-finished
 	assert.NotContains(t, body, "unowned late native failure")
 }
 

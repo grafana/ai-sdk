@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -9,9 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
-	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
 // LookupEnv resolves one environment variable.
@@ -46,12 +43,6 @@ const (
 	MaxProviderAttempts = 8
 )
 
-// Fixed stream durations. The request deadline belongs to the plugin host.
-const (
-	streamIdleDuration  = 30 * time.Second
-	streamDrainDuration = time.Second
-)
-
 // AgentObservabilityTokenSetting is the setting key of the Agent
 // Observability bearer token. The token is read only by ResolveAuthSecret,
 // after the other settings and the model configuration are validated.
@@ -70,7 +61,6 @@ type Settings struct {
 	ConfigFile         string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
-	ProviderWire       providerv4.Limits
 }
 
 // SettingName returns the environment variable of a plugin setting key, as
@@ -128,10 +118,6 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 			Endpoint: env.string("agento11y_endpoint", ""),
 			TLS:      env.bool("agento11y_tls", true),
 		},
-		ProviderWire: providerv4.Limits{
-			StreamIdleDuration:  streamIdleDuration,
-			StreamDrainDuration: streamDrainDuration,
-		},
 	}
 	if env.err != nil {
 		return Settings{}, env.err
@@ -154,9 +140,6 @@ func (settings Settings) Validate() error {
 	}
 	if err := settings.AgentObservability.validate(); err != nil {
 		return err
-	}
-	if _, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(limitValidationResolver{}), Limits: settings.ProviderWire}); err != nil {
-		return fmt.Errorf("config: providerwire limits: %w", err)
 	}
 	return nil
 }
@@ -262,10 +245,4 @@ func validateAgentObservabilityEndpoint(protocol AgentObservabilityProtocol, end
 		return fmt.Errorf("config: agent observability grpc endpoint must use host:port syntax")
 	}
 	return nil
-}
-
-type limitValidationResolver struct{}
-
-func (limitValidationResolver) ResolveModel(context.Context, string) (catalog.ResolvedModel, error) {
-	return catalog.ResolvedModel{}, catalog.ErrUnknownModel
 }
