@@ -96,7 +96,7 @@ Record these acceptance results in #468:
 - A fresh external module cache resolves the public tag through the Go proxy;
   `go mod download -json github.com/grafana/ai-sdk@v0.1.0-alpha.2` reports the expected
   canonical origin hash. Build a consumer using that public version without local
-  replacements or a workspace. The local candidate proxy test is not this proof.
+  replacements. The local candidate proxy test is not this proof.
 - A subsequent approved main push in root mode performs no duplicate publication.
 
 If artifacts expire or canonical state differs, stop and inspect. Do not substitute

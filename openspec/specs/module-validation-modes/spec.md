@@ -28,8 +28,7 @@ Structural checks SHALL enforce AGPL Gateway/Apache SDK boundaries: reject Gatew
 ### Requirement: Same-revision first-party source through local replacements
 
 Every tracked `go.mod` SHALL replace each first-party module in its build graph,
-including transitive ones, with that module's repository directory. The
-repository SHALL NOT commit `go.work`, `go.gateway.work` or their sum files.
+including transitive ones, with that module's repository directory.
 Required build, vet, lint, test and cross-language commands SHALL run inside each
 module with `GOWORK=off` and readonly manifests, so they execute same-revision
 candidate source. Required ProviderWire Go-client captures SHALL use candidate

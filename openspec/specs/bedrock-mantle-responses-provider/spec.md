@@ -159,7 +159,7 @@ Without active conversation, storage-enabled assistant text with a stored item I
 
 ### Requirement: Mantle published continuation boundary
 
-Unary/streaming assistant reconstruction and stored continuation SHALL work with the Bedrock module's published dependencies, without workspace substitutions. The only replacement directives SHALL be local first-party replacements, which consumers ignore.
+Unary/streaming assistant reconstruction and stored continuation SHALL work with the Bedrock module's published dependencies. The only replacement directives SHALL be local first-party replacements, which consumers ignore.
 
 #### Scenario: Mantle published continuation boundary
 

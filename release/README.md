@@ -68,9 +68,8 @@ first-party dependency or a module, run:
 mise run tidy
 ```
 
-It writes the replacements and requirement versions and tidies every module. There
-are no Go workspaces; every task runs inside its module. Renovate
-does not update first-party modules.
+It writes the replacements and requirement versions and tidies every module.
+Renovate does not update first-party modules.
 
 ## Record release intent in normal pull requests
 
@@ -180,7 +179,7 @@ tag already on `main` or a version released by the same pull request.
 
 After tagging a library, publication runs `scripts/release_consumer.py`. It creates
 a fresh consumer module that requires the new version through the public Go proxy
-and checksum database, with no workspace or replacements, checks that the published
+and checksum database, with no replacements, checks that the published
 version is selected from the module cache, builds every public package, and runs a
 credential-free behavioral scenario. Root runs the deterministic simple-text Go
 scenario, and the registered `ai@7.0.127` baseline parses its SSE with

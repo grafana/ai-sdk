@@ -458,8 +458,8 @@ updates SHALL NOT change `go.sum` files and SHALL NOT create release intent.
 ### Requirement: Post-publication proxy verification
 
 After tagging a library, publication SHALL resolve the new version through the
-public Go proxy and checksum database in a fresh cache, with no workspace or
-replacements, build a consumer of its public packages and run its deterministic
+public Go proxy and checksum database in a fresh cache, with no replacements,
+build a consumer of its public packages and run its deterministic
 consumer scenarios. It SHALL query the proxy only after the tag exists and SHALL
 retry a bounded number of times while the new version does not resolve yet. A
 failure SHALL be reported for a fix-forward release and SHALL NOT move or delete tags.

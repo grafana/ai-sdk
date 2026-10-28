@@ -575,7 +575,7 @@ SDK's Go module dependency graph.
   changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
   the app manifest source for `pnpm generate:kinds`.
 
-There are no Go workspaces. Every `go.mod` replaces each first-party module in its
+Every `go.mod` replaces each first-party module in its
 build graph with that module's directory, so builds in this repository always use
 same-revision source, while consumers ignore the replacements and resolve published
 tags. First-party requirements equal the module's version in
