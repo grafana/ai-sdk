@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/discovery"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -445,7 +446,7 @@ func withAccess(t *testing.T, mode gatewayauth.AccessMode, access gatewayauth.Ac
 		policy.InternalServices = []string{testInternalService}
 	}
 	writer := providerv4.NewHostErrorWriter()
-	protected := gatewayauth.AccessMiddleware(policy, func(w http.ResponseWriter) { writer.Write(w, providerv4.HostErrorPermission) }, func(context.Context, gatewayauth.Caller) {}, next)
+	protected := gatewayauth.AccessMiddleware(policy, func(w http.ResponseWriter) { writer.WriteHostError(w, host.ErrorPermission) }, func(context.Context, gatewayauth.Caller) {}, next)
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		protected.ServeHTTP(w, request.WithContext(verifiedContext(request.Context(), service, identity, testNamespace)))
 	}), http.Header{}

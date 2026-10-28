@@ -4,8 +4,8 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 1. Host-error contract
 
-- [ ] 1.1 Add `ai-gateway/internal/host` with the closed `ErrorCategory` (permission, internal, BYOK discovery) and the `ErrorWriter` interface, and a `doc.go` stub for the adapter contract (design D1). Verify with `go build ./internal/host/...`.
-- [ ] 1.2 Make ProviderWire implement `host.ErrorWriter`, and remove `HostErrorCategory`, `HostErrorAuthentication` and the host mapping to `safeAuthentication`. Remove `safeAuthentication` if nothing else uses it. Switch `routes.go`, `discovery` and `service` to the interface. Add a table test in `providerwire/v4` asserting byte-identical status, headers and body for each category against the current documents. Verify with `go test ./providerwire/v4/... ./cmd/grafana-ai-gateway/internal/...`.
+- [x] 1.1 Add `ai-gateway/internal/host` with the closed `ErrorCategory` (permission, internal, BYOK discovery) and the `ErrorWriter` interface, and a `doc.go` stub for the adapter contract (design D1). Verify with `go build ./internal/host/...`.
+- [x] 1.2 Make ProviderWire implement `host.ErrorWriter`, and remove `HostErrorCategory`, `HostErrorAuthentication` and the host mapping to `safeAuthentication`. Remove `safeAuthentication` if nothing else uses it. Switch `routes.go`, `discovery` and `service` to the interface. Add a table test in `providerwire/v4` asserting byte-identical status, headers and body for each category against the current documents. Verify with `go test ./providerwire/v4/... ./cmd/grafana-ai-gateway/internal/...`.
 
 ## 2. Host-owned discovery
 

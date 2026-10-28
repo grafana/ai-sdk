@@ -6,6 +6,7 @@ import (
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
@@ -29,8 +30,8 @@ func RoutePrefix() string {
 	return "/apis/" + data.Group + "/" + data.PreferredVersion + "/namespaces/{namespace}"
 }
 
-func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, errorWriter *providerv4.HostErrorWriter, routes routeHandlers) http.Handler {
-	refuse := func(w http.ResponseWriter) { errorWriter.Write(w, providerv4.HostErrorPermission) }
+func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, errorWriter host.ErrorWriter, routes routeHandlers) http.Handler {
+	refuse := func(w http.ResponseWriter) { errorWriter.WriteHostError(w, host.ErrorPermission) }
 	protect := func(next http.Handler) http.Handler {
 		return gatewayauth.AccessMiddleware(policy, refuse, telemetry.ObserveAccess, next)
 	}

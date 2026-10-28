@@ -9,7 +9,7 @@ import (
 	"sort"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
-	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 )
 
 type model struct {
@@ -40,23 +40,23 @@ type specification struct {
 
 type handler struct {
 	lister catalog.ModelLister
-	errors *providerv4.HostErrorWriter
+	errors host.ErrorWriter
 }
 
 // New constructs a discovery handler for a validated catalog.
-func New(lister catalog.ModelLister, errorWriter *providerv4.HostErrorWriter) http.Handler {
+func New(lister catalog.ModelLister, errorWriter host.ErrorWriter) http.Handler {
 	return &handler{lister: lister, errors: errorWriter}
 }
 
 func (handler *handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
 	models, err := handler.safeList(request.Context())
 	if err != nil {
-		handler.errors.Write(w, providerv4.HostErrorInternal)
+		handler.errors.WriteHostError(w, host.ErrorInternal)
 		return
 	}
 	document, err := handler.encode(models)
 	if err != nil {
-		handler.errors.Write(w, providerv4.HostErrorInternal)
+		handler.errors.WriteHostError(w, host.ErrorInternal)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
