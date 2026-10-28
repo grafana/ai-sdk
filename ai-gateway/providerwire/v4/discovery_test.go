@@ -47,6 +47,17 @@ func TestDiscoveryProjection_ClosedSortedCanonicalProjection(t *testing.T) {
 	}
 }
 
+func TestDiscoveryProjection_ExactBytes(t *testing.T) {
+	document := projectDiscovery(t, []catalog.ModelInfo{{
+		ID: "public", Name: "Public <&>", Description: "Described", Aliases: []string{"alias"},
+		Candidates: []catalog.ConfiguredCandidate{
+			{ProviderInstance: "primary", Provider: "anthropic", ModelID: "native-primary"},
+			{ProviderInstance: "backup", Provider: "openai", ModelID: "native-backup"},
+		},
+	}})
+	assert.Equal(t, `{"models":[{"id":"public","name":"Public <&>","description":"Described","specification":{"specificationVersion":"v4","provider":"grafana","modelId":"public"},"gateway":{"aliases":["alias"],"primary":{"providerInstance":"primary","provider":"anthropic","providerModelId":"native-primary"},"fallbacks":[{"providerInstance":"backup","provider":"openai","providerModelId":"native-backup"}]}}]}`, string(document))
+}
+
 func TestDiscoveryProjection_EmptyCatalog(t *testing.T) {
 	assert.Equal(t, `{"models":[]}`, string(projectDiscovery(t, nil)))
 }

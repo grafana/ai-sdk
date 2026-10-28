@@ -26,6 +26,8 @@ import (
 const (
 	translationAnthropicHost = "anthropic.translation.test"
 	translationOpenAIHost    = "openai.translation.test"
+	translationCompatHost    = "compatible.translation.test"
+	translationCompatBody    = `{"id":"chat_1","object":"chat.completion","created":1,"model":"local","choices":[{"index":0,"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`
 	translationOpenAIBody    = `{"id":"resp_1","object":"response","status":"completed","model":"gpt","output":[{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"output_text","text":"answer","annotations":[]}]}],"usage":{"input_tokens":1,"output_tokens":1}}`
 	translationAnthropicBody = `{"id":"msg_1","type":"message","role":"assistant","model":"claude","content":[{"type":"text","text":"answer"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
 )
@@ -56,8 +58,11 @@ func (s *nativeServer) client() *http.Client {
 		s.seen = append(s.seen, nativeRequest{host: r.URL.Host, key: key, marker: r.Header.Get("X-Translated-For"), body: string(body)})
 		s.mu.Unlock()
 		status, response := http.StatusOK, translationOpenAIBody
-		if strings.HasSuffix(r.URL.Path, "/messages") {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/messages"):
 			response = translationAnthropicBody
+		case strings.HasSuffix(r.URL.Path, "/chat/completions"):
+			response = translationCompatBody
 		}
 		if s.failing[r.URL.Host] || s.failing[key] {
 			status, response = http.StatusServiceUnavailable, `{"type":"error","error":{"type":"overloaded_error","message":"busy"}}`
@@ -93,15 +98,19 @@ func markTranslation(target execution.Target, options provider.CallOptions) (pro
 func translationCatalog(t *testing.T, client *http.Client) catalog.Catalog {
 	t.Helper()
 	file := config.File{
-		Providers: map[string]config.Provider{"anthropic-primary": {Type: "anthropic"}, "openai-backup": {Type: "openai"}},
+		Providers: map[string]config.Provider{"anthropic-primary": {Type: "anthropic"}, "openai-backup": {Type: "openai"}, "local": {Type: "openai-compatible"}, "unnamed": {Type: "openai-compatible"}},
 		Models: map[string]config.Model{
-			"grafana/chain":  {Name: "Chain", Primary: config.Primary{Provider: "anthropic-primary", Model: "claude"}, Fallback: []config.Primary{{Provider: "openai-backup", Model: "gpt"}}},
-			"grafana/claude": {Name: "Claude", Primary: config.Primary{Provider: "anthropic-primary", Model: "claude"}},
+			"grafana/local":   {Name: "Local", Primary: config.Primary{Provider: "local", Model: "local"}},
+			"grafana/unnamed": {Name: "Unnamed", Primary: config.Primary{Provider: "unnamed", Model: "unnamed"}},
+			"grafana/chain":   {Name: "Chain", Primary: config.Primary{Provider: "anthropic-primary", Model: "claude"}, Fallback: []config.Primary{{Provider: "openai-backup", Model: "gpt"}}},
+			"grafana/claude":  {Name: "Claude", Primary: config.Primary{Provider: "anthropic-primary", Model: "claude"}},
 		},
 	}
 	providers := map[string]config.ResolvedProvider{
 		"anthropic-primary": {Type: "anthropic", APIKey: "configured-anthropic", BaseURL: "https://" + translationAnthropicHost},
 		"openai-backup":     {Type: "openai", APIKey: "configured-openai", BaseURL: "https://" + translationOpenAIHost + "/v1"},
+		"local":             {Type: "openai-compatible", APIKey: "configured-local", BaseURL: "https://" + translationCompatHost + "/v1", ProviderName: "my-vllm.chat"},
+		"unnamed":           {Type: "openai-compatible", APIKey: "configured-unnamed", BaseURL: "https://" + translationCompatHost + "/v1"},
 	}
 	created, err := BuildCatalog(file, providers, client, identityModelFactory)
 	require.NoError(t, err)
@@ -298,4 +307,105 @@ func TestTranslation_BYOKAnthropicValidation(t *testing.T) {
 			assert.Empty(t, server.requests())
 		})
 	}
+}
+
+func TestTranslation_OpenAICompatibleTarget(t *testing.T) {
+	write := func(fields string) execution.Translator {
+		return func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+			assert.Equal(t, execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: "my-vllm.chat", ModelID: "local"}, target)
+			namespace, _, _ := strings.Cut(target.ProviderName, ".")
+			options.ProviderOptions = provider.ProviderOptions{namespace: provider.RawProviderOption{Key: namespace, Raw: json.RawMessage(fields)}}
+			return options, nil
+		}
+	}
+	server := &nativeServer{}
+	selector := NewSelector(translationCatalog(t, server.client()), nil)
+	require.NoError(t, runTranslation(t, selector, translationCall{access: gatewayauth.ConfiguredAccounts, modelID: "grafana/local", translator: write(`{"translatedField":"compatible"}`)}))
+	requests := server.requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, translationCompatHost, requests[0].host)
+	assert.Contains(t, requests[0].body, `"translatedField":"compatible"`)
+
+	err := runTranslation(t, selector, translationCall{access: gatewayauth.ConfiguredAccounts, modelID: "grafana/local", translator: write(`{"model":"other"}`)})
+	require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+	assert.Len(t, server.requests(), 1)
+
+	t.Run("default provider name", func(t *testing.T) {
+		server := &nativeServer{}
+		selector := NewSelector(translationCatalog(t, server.client()), nil)
+		var seen execution.Target
+		translator := func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+			seen = target
+			options.ProviderOptions = provider.ProviderOptions{"openaiCompatible": provider.RawProviderOption{Key: "openaiCompatible", Raw: json.RawMessage(`{"model":"other"}`)}}
+			return options, nil
+		}
+		err := runTranslation(t, selector, translationCall{access: gatewayauth.ConfiguredAccounts, modelID: "grafana/unnamed", translator: translator})
+		assert.Equal(t, execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: "openai-compatible", ModelID: "unnamed"}, seen)
+		require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+		assert.Empty(t, server.requests())
+	})
+}
+
+func TestTranslation_ConcurrentCallsAreIsolated(t *testing.T) {
+	server := &nativeServer{}
+	factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
+	selector := NewSelector(translationCatalog(t, server.client()), &BYOKOptions{Client: server.client(), Factory: factory})
+	runtime, err := execution.New(execution.Config{Selector: selector, Limits: serviceTestLimits()})
+	require.NoError(t, err)
+	configured, byok := callerContext(t, gatewayauth.ConfiguredAccounts), callerContext(t, gatewayauth.RequestBYOK)
+	const calls = 24
+	var group sync.WaitGroup
+	errs := make([]error, calls)
+	for index := range calls {
+		group.Go(func() {
+			marker := fmt.Sprintf("call-%d", index)
+			translator := func(_ execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+				switch index % 3 {
+				case 0:
+					panic("private")
+				case 1:
+					options.Headers = map[string]string{"X-Translated-For": marker}
+				}
+				return options, nil
+			}
+			ctx, modelID, options := configured, "grafana/claude", provider.CallOptions{}
+			if index%2 == 1 {
+				ctx, modelID, options = byok, "openai/gpt", byokControls("openai", "dummy-"+marker)
+			}
+			call, err := runtime.Call(ctx, modelID, options, execution.WithTranslator(translator))
+			if err != nil {
+				errs[index] = err
+				return
+			}
+			defer call.Close()
+			_, errs[index] = call.Generate()
+		})
+	}
+	group.Wait()
+	expected := 0
+	for index, err := range errs {
+		if index%3 == 0 {
+			assert.ErrorIs(t, err, execution.ErrTranslation, "call %d", index)
+			continue
+		}
+		assert.NoError(t, err, "call %d", index)
+		expected++
+	}
+	requests := server.requests()
+	require.Len(t, requests, expected)
+	var markers, wantMarkers []string
+	for index := range calls {
+		if index%3 == 1 {
+			wantMarkers = append(wantMarkers, fmt.Sprintf("call-%d", index))
+		}
+	}
+	for _, request := range requests {
+		if request.marker != "" {
+			markers = append(markers, request.marker)
+		}
+		if marker, ok := strings.CutPrefix(request.key, "dummy-"); ok && request.marker != "" {
+			assert.Equal(t, marker, request.marker, "a BYOK account carries only its own call's translation")
+		}
+	}
+	assert.ElementsMatch(t, wantMarkers, markers)
 }

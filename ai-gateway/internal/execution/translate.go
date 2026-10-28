@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"slices"
 
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -24,18 +25,22 @@ const (
 // Target identifies the physical candidate an attempt invokes.
 type Target struct {
 	Type TargetType
-	// ProviderName is the configured provider name of an OpenAI-compatible
-	// candidate, which names its native option namespace. It is empty for
-	// other types.
+	// ProviderName is the provider name of an OpenAI-compatible candidate.
+	// Its native option namespace is the part before the first ".", trimmed.
+	// It is empty for other types.
 	ProviderName string
 	ModelID      string
 }
 
 // Translator maps a call's options to one target's native options. It runs
-// once per physical attempt, on the attempt's own copy of the top-level
-// provider-option and header maps; it must not mutate values nested inside
-// them. Translated options are re-checked by host policy and then by the
-// target's native option validation.
+// once per physical attempt on the attempt's own copy of the top-level maps
+// and slices: provider options, headers, prompt, tools and stop sequences. The
+// values inside them, such as a message's content, and the values behind
+// pointer fields, such as the tool choice or the output-token limit, are shared
+// with the caller and other attempts; a translator must replace them rather
+// than mutate them. Translated
+// options are re-checked by host policy and then by the target's native option
+// validation.
 type Translator func(Target, provider.CallOptions) (provider.CallOptions, error)
 
 // ErrTranslation reports a translator that panicked or produced options that
@@ -107,6 +112,9 @@ func translate(ctx context.Context, target Target, options provider.CallOptions)
 	}
 	options.ProviderOptions = maps.Clone(options.ProviderOptions)
 	options.Headers = maps.Clone(options.Headers)
+	options.Prompt = slices.Clone(options.Prompt)
+	options.Tools = slices.Clone(options.Tools)
+	options.StopSequences = slices.Clone(options.StopSequences)
 	translated, err := safeTranslate(translator, target, options)
 	if err != nil {
 		return provider.CallOptions{}, err

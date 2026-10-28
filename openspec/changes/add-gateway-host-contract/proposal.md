@@ -46,6 +46,7 @@ None.
 - `gateway-plugin-host`: route-table composition checked against the manifest, closed host-error categories, host-owned discovery listing with adapter projection, test-adapter composition evidence and the adapter-contract godoc.
 - `gateway-execution-runtime`: one access-aware selector per runtime, per-attempt native option translation with a host-policy re-check, and the test-only adapter served over HTTP.
 - `gateway-request-byok`: Anthropic option validation runs on each account candidate. A refused control still makes no native I/O, but every account records a failed attempt.
+- `providerwire-v4-unary-runtime`: the host error writer implements the host contract's categories, without the removed authentication category.
 
 ## Impact
 

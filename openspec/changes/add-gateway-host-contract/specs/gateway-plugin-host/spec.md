@@ -18,7 +18,7 @@ The Gateway SHALL compose its routes from one table. Each entry SHALL declare a 
 - **THEN** the entry's handler SHALL receive the whole body, and only the platform's route message size SHALL bound it
 
 #### Scenario: Invalid table
-- **WHEN** the table has an entry with an empty label, a missing handler or writer, or the same method and path as another entry
+- **WHEN** the table has an entry with an empty method, a `HEAD` method, a path that does not start with `/` or ends with `/`, an empty or `unmatched` label, a missing handler or writer, the same method and path as another entry, or a pattern that conflicts with another entry
 - **THEN** Gateway construction SHALL fail before any request is served
 
 ### Requirement: Route table matches the manifest

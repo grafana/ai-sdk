@@ -53,8 +53,30 @@ func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, r
 	if err := validateRoutes(routes); err != nil {
 		return nil, err
 	}
-	mux := http.NewServeMux()
-	labels := make(map[string]string, len(routes))
+	mux, labels, err := registerRoutes(policy, telemetry, routes)
+	if err != nil {
+		return nil, err
+	}
+	label := func(request *http.Request) string {
+		_, pattern := mux.Handler(request)
+		if label, ok := labels[pattern]; ok {
+			return label
+		}
+		return routeUnmatched
+	}
+	return telemetry.Middleware(label, mux), nil
+}
+
+// registerRoutes registers every entry. A pattern the mux refuses, such as one
+// that conflicts with another entry, fails as an invalid table.
+func registerRoutes(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, routes []route) (mux *http.ServeMux, labels map[string]string, err error) {
+	defer func() {
+		if recover() != nil {
+			mux, labels, err = nil, nil, errInvalidRoute
+		}
+	}()
+	mux = http.NewServeMux()
+	labels = make(map[string]string, len(routes))
 	for _, entry := range routes {
 		refuse := func(w http.ResponseWriter) { entry.errors.WriteHostError(w, host.ErrorPermission) }
 		pattern := entry.method + " " + RoutePrefix() + entry.path
@@ -67,20 +89,13 @@ func newHandler(policy gatewayauth.AccessPolicy, telemetry *service.Telemetry, r
 			})
 		}
 	}
-	label := func(request *http.Request) string {
-		_, pattern := mux.Handler(request)
-		if label, ok := labels[pattern]; ok {
-			return label
-		}
-		return routeUnmatched
-	}
-	return telemetry.Middleware(label, mux), nil
+	return mux, labels, nil
 }
 
 func validateRoutes(routes []route) error {
 	seen := make(map[string]struct{}, len(routes))
 	for _, entry := range routes {
-		if entry.method == "" || entry.method == http.MethodHead || !strings.HasPrefix(entry.path, "/") || entry.label == "" || entry.label == routeUnmatched || entry.handler == nil || entry.errors == nil {
+		if entry.method == "" || entry.method == http.MethodHead || !strings.HasPrefix(entry.path, "/") || strings.HasSuffix(entry.path, "/") || entry.label == "" || entry.label == routeUnmatched || entry.handler == nil || entry.errors == nil {
 			return errInvalidRoute
 		}
 		key := entry.method + " " + entry.path

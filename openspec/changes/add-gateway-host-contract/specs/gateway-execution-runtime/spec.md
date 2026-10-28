@@ -37,7 +37,7 @@ An adapter MAY supply one option translator with each call. The runtime SHALL ma
 - **THEN** each attempt SHALL see only its own call's translation
 
 ### Requirement: Translation at the candidate boundary
-The host SHALL wrap every configured candidate and every BYOK account once, when it is constructed. The wrapper SHALL sit directly outside that candidate's native option validation and inside fallback. Each attempt SHALL call the translator with its target and its own copy of the options. Every native option validation SHALL check the translated options.
+The host SHALL wrap every configured candidate and every BYOK account once, when it is constructed. The wrapper SHALL sit directly outside that candidate's native option validation and inside fallback. Each attempt SHALL call the translator with its target and its own copy of the top-level option maps and slices. Every native option validation SHALL check the translated options.
 
 #### Scenario: Heterogeneous fallback chain
 - **WHEN** a configured model's Anthropic primary fails retryably and its OpenAI fallback succeeds, under a translator that writes target-specific options

@@ -9,19 +9,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 	"github.com/grafana/ai-sdk/provider"
 )
 
-const (
-	// HeaderModel carries the requested model ID.
-	HeaderModel = "Test-Model"
-	// HeaderStreaming selects streaming execution when "true".
-	HeaderStreaming = "Test-Streaming"
-)
+// HeaderModel carries the requested model ID.
+const HeaderModel = "Test-Model"
 
 // Outcome is what the adapter observed for one call, in protocol-neutral terms.
 type Outcome struct {
@@ -83,13 +78,12 @@ func (a *Adapter) Run(ctx context.Context, modelID string, options provider.Call
 	}
 }
 
-// request is the adapter's body: call options in their JSON form.
+// request is the adapter's body: provider options in their JSON form.
 type request struct {
 	ProviderOptions map[string]json.RawMessage `json:"providerOptions"`
-	Headers         map[string]string          `json:"headers"`
 }
 
-// ServeHTTP reads the whole body, runs the call and writes one line:
+// ServeHTTP reads the whole body, runs one unary call and writes one line:
 // "outcome category=<n> reason=<n> committed=<bool> body=<bytes>".
 func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
@@ -103,15 +97,14 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "invalid body=%d\n", len(body))
 		return
 	}
-	options := provider.CallOptions{Headers: decoded.Headers}
+	var options provider.CallOptions
 	if len(decoded.ProviderOptions) != 0 {
 		options.ProviderOptions = make(provider.ProviderOptions, len(decoded.ProviderOptions))
 		for namespace, raw := range decoded.ProviderOptions {
 			options.ProviderOptions[namespace] = provider.RawProviderOption{Key: namespace, Raw: raw}
 		}
 	}
-	streaming, _ := strconv.ParseBool(r.Header.Get(HeaderStreaming))
-	outcome := a.Run(r.Context(), r.Header.Get(HeaderModel), options, streaming)
+	outcome := a.Run(r.Context(), r.Header.Get(HeaderModel), options, false)
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintf(w, "outcome category=%d reason=%d committed=%t body=%d\n", outcome.Category, outcome.Reason, outcome.Committed, len(body))

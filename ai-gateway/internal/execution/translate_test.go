@@ -138,6 +138,33 @@ func TestTranslate_EachAttemptGetsItsOwnTranslation(t *testing.T) {
 	}
 }
 
+func TestTranslate_AttemptsDoNotShareTopLevelCollections(t *testing.T) {
+	first := &optionsModel{modelID: "first", fail: true}
+	second := &optionsModel{modelID: "second"}
+	chain, err := fallback.New(Translate(first, Target{Type: TargetAnthropic, ModelID: "first"}), Translate(second, Target{Type: TargetOpenAI, ModelID: "second"}))
+	require.NoError(t, err)
+	chain.WithDecider(FallbackDecider)
+	original := provider.CallOptions{
+		Prompt:        []provider.Message{{Role: provider.RoleUser}},
+		Tools:         []provider.Tool{{Name: "original"}},
+		StopSequences: []string{"original"},
+	}
+	translator := func(target Target, options provider.CallOptions) (provider.CallOptions, error) {
+		options.Prompt[0] = provider.Message{Role: provider.RoleSystem}
+		options.Tools[0] = provider.Tool{Name: target.ModelID}
+		options.StopSequences[0] = target.ModelID
+		return options, nil
+	}
+	require.NoError(t, callWithTranslator(t, chain, translator, original, false))
+	require.Len(t, second.attempts(), 1)
+	assert.Equal(t, "second", second.attempts()[0].Tools[0].Name)
+	assert.Equal(t, []string{"second"}, second.attempts()[0].StopSequences)
+	assert.Equal(t, "first", first.attempts()[0].Tools[0].Name)
+	assert.Equal(t, provider.RoleUser, original.Prompt[0].Role)
+	assert.Equal(t, "original", original.Tools[0].Name)
+	assert.Equal(t, []string{"original"}, original.StopSequences)
+}
+
 func TestTranslate_FailuresBeforeProviderContact(t *testing.T) {
 	const secret = "private-header-value"
 	inject := func(mutate func(*provider.CallOptions)) Translator {

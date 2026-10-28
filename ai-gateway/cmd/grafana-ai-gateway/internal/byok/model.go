@@ -14,10 +14,11 @@ import (
 
 func New(name Provider, modelID string, accounts []nativemodel.Config, client *http.Client) (provider.LanguageModel, error) {
 	var construct func(nativemodel.Config, string, *http.Client) provider.LanguageModel
+	var validate func(provider.CallOptions) error
 	var target execution.TargetType
 	switch name {
 	case Anthropic:
-		construct, target = nativemodel.NewAnthropic, execution.TargetAnthropic
+		construct, validate, target = nativemodel.NewAnthropic, nativeoptions.Anthropic, execution.TargetAnthropic
 	case OpenAI:
 		construct, target = nativemodel.NewOpenAI, execution.TargetOpenAI
 	default:
@@ -34,8 +35,8 @@ func New(name Provider, modelID string, accounts []nativemodel.Config, client *h
 	candidates := make([]provider.LanguageModel, 0, len(accounts))
 	for _, account := range accounts {
 		candidate := construct(account, modelID, &ownedClient)
-		if name == Anthropic {
-			candidate = nativeoptions.Model{LanguageModel: candidate, Validate: nativeoptions.Anthropic}
+		if validate != nil {
+			candidate = nativeoptions.Model{LanguageModel: candidate, Validate: validate}
 		}
 		candidates = append(candidates, execution.Translate(candidate, execution.Target{Type: target, ModelID: modelID}))
 	}
@@ -44,8 +45,8 @@ func New(name Provider, modelID string, accounts []nativemodel.Config, client *h
 		return nil, err
 	}
 	chain := model.WithDecider(execution.FallbackDecider)
-	if name == Anthropic {
-		return nativeoptions.Model{LanguageModel: chain, Validate: nativeoptions.Anthropic}, nil
+	if validate != nil {
+		return nativeoptions.Model{LanguageModel: chain, Validate: validate}, nil
 	}
 	return chain, nil
 }

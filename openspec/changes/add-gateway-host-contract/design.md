@@ -86,10 +86,10 @@ Flow:
 - `Runtime.Call` takes an optional `WithTranslator(t)` and stores the translator in the call context, next to the attempt observer. A request with no translator stores nothing.
 - `execution.Translate(model, target)` returns a wrapper. On each `DoGenerate` or `DoStream`:
   - with no translator in the context, it delegates unchanged;
-  - otherwise it clones the top-level `ProviderOptions` and `Headers` maps and calls the translator under `recover`;
+  - otherwise it clones the top-level `ProviderOptions` and `Headers` maps and the `Prompt`, `Tools` and `StopSequences` slices, and calls the translator under `recover`;
   - it re-checks the result with the runtime's policy: no call-level `gateway` namespace and no protected header;
   - then it delegates.
-- Translators must not mutate nested values. This is documented on `Translator`.
+- Values inside those copies, and behind pointer fields, are shared with the caller and other attempts, so translators must replace them rather than mutate them. This is documented on `Translator`.
 - A panic or a policy refusal returns `ErrTranslation`, which never carries values. `ClassifyProvider` checks it first and returns internal. A translator's own error is returned as-is.
 
 Wrapping order for every candidate is native → `nativeoptions.Model` (when the type validates) → `Translate` → fallback. Single-candidate configured models are wrapped too. In `byok.New`, each account is wrapped in `nativeoptions.Model` and then `Translate`, and the outer Anthropic validation wrapper is removed.

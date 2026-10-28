@@ -75,7 +75,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				validateOptions = func(options provider.CallOptions) error {
 					return nativeoptions.Compatible(options, providerName)
 				}
-				target.Type, target.ProviderName = execution.TargetOpenAICompatible, providerConfig.ProviderName
+				target.Type, target.ProviderName = execution.TargetOpenAICompatible, providerName
 			case "openai":
 				candidate = nativemodel.NewOpenAI(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
 				target.Type = execution.TargetOpenAI

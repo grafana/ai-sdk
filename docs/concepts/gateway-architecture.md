@@ -111,7 +111,7 @@ sequenceDiagram
   participant P as Native provider API
   C->>H: POST model call with Gateway credentials
   H->>H: Match route and method, authenticate
-  H->>W: Authenticated request, bounded body and caller context
+  H->>W: Authenticated request and caller context
   W->>W: Validate and map protocol
   W->>R: Call with mapped options
   R->>R: Apply host request policy
@@ -139,7 +139,8 @@ sequenceDiagram
    [authentication](../guides/gateway-authentication.md) and the
    [access decision](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access.go).
 2. **ProviderWire translates the request.** The handler validates protocol
-   headers, reads the body the routes have bounded, checks UTF-8 and the request schema, and maps
+   headers, reads the whole body, which the platform's route message size
+   bounds, checks UTF-8 and the request schema, and maps
    the body to `provider.CallOptions` and checks tool-call history. The
    execution runtime then refuses credential-bearing call headers and removes
    the call-level `gateway` options, which only the selector reads. Every other

@@ -32,6 +32,8 @@ func TestNewHandler_RejectsInvalidRouteTables(t *testing.T) {
 		{"empty method", func(r *route) { r.method = "" }},
 		{"HEAD method", func(r *route) { r.method = http.MethodHead }},
 		{"relative path", func(r *route) { r.path = "extra" }},
+		{"subtree path", func(r *route) { r.path = "/extra/" }},
+		{"malformed pattern", func(r *route) { r.path = "/{" }},
 		{"empty label", func(r *route) { r.label = "" }},
 		{"unmatched label", func(r *route) { r.label = routeUnmatched }},
 		{"nil handler", func(r *route) { r.handler = nil }},
@@ -48,6 +50,12 @@ func TestNewHandler_RejectsInvalidRouteTables(t *testing.T) {
 		duplicate := valid
 		duplicate.label = "other"
 		_, err := newHandler(gatewayauth.AccessPolicy{Mode: gatewayauth.AccessModeSelfHosted}, newTestTelemetry(t), []route{valid, duplicate})
+		require.ErrorIs(t, err, errInvalidRoute)
+	})
+	t.Run("conflicting wildcard patterns", func(t *testing.T) {
+		first, second := valid, valid
+		first.path, second.path, second.label = "/a/{x}", "/{y}/b", "other"
+		_, err := newHandler(gatewayauth.AccessPolicy{Mode: gatewayauth.AccessModeSelfHosted}, newTestTelemetry(t), []route{first, second})
 		require.ErrorIs(t, err, errInvalidRoute)
 	})
 	t.Run("same path with another method", func(t *testing.T) {
