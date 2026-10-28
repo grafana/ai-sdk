@@ -46,8 +46,8 @@
 
 ## 9. Documentation
 
-- [ ] 9.1 Document routing controls, slug identity, precedence, diagnostics, `providerTimeouts.byok`, `gateway.routing` and the support boundary in `docs/providers/grafana-gateway.md`. Use `GatewayOptions` for Go (replacing the raw BYOK example), `GatewayProviderOptions` for TypeScript, and the metadata readers in the execution-overview section. Verify that the examples match the command test cases and that the Go snippets compile as an `example_test.go` in `providers/grafana`.
-- [ ] 9.2 Update `docs/concepts/gateway-architecture.md` (selection and composition flow, diagram) and `docs/concepts/gateway-glossary.md` (routing controls, model group, composed chain, provider slug, provider start timeout). Verify the Mermaid diagrams render and the descriptions match the code.
+- [x] 9.1 Document routing controls, slug identity, precedence, diagnostics, `providerTimeouts.byok`, `gateway.routing` and the support boundary in `docs/providers/grafana-gateway.md`. Use `GatewayOptions` for Go (replacing the raw BYOK example), `GatewayProviderOptions` for TypeScript, and the metadata readers in the execution-overview section. Verify that the examples match the command test cases and that the Go snippets compile as an `example_test.go` in `providers/grafana`.
+- [x] 9.2 Update `docs/concepts/gateway-architecture.md` (selection and composition flow, diagram) and `docs/concepts/gateway-glossary.md` (routing controls, model group, composed chain, provider slug, provider start timeout). Verify the Mermaid diagrams render and the descriptions match the code.
 
 ## 10. Integration checks
 

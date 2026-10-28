@@ -76,13 +76,6 @@ func ExampleNewWithServiceAccountToken() {
 		fmt.Println(err)
 		return
 	}
-	credentials, err := json.Marshal(map[string]any{
-		"byok": map[string]any{"openai": []map[string]string{{"apiKey": os.Getenv("OPENAI_API_KEY")}}},
-	})
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 	model, err := client.LanguageModel("openai/gpt-5")
 	if err != nil {
 		fmt.Println(err)
@@ -90,7 +83,9 @@ func ExampleNewWithServiceAccountToken() {
 	}
 	result, err := aisdk.GenerateText(context.Background(), model,
 		aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
-		aisdk.WithProviderOptions(provider.RawProviderOption{Key: "gateway", Raw: credentials}),
+		aisdk.WithProviderOptions(GatewayOptions{
+			BYOK: map[string][]BYOKAccount{"openai": {{APIKey: os.Getenv("OPENAI_API_KEY")}}},
+		}),
 	)
 	if err != nil {
 		fmt.Println(err)
@@ -98,3 +93,58 @@ func ExampleNewWithServiceAccountToken() {
 	}
 	fmt.Println(result.Text)
 }
+
+// Routing controls try fallback models and prefer or restrict providers for
+// one call. The routing metadata reports which models and providers were tried.
+func ExampleGatewayOptions() {
+	client, err := NewWithServiceAccountToken(ServiceAccountConfig{
+		Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
+		BaseURL: exampleRoutePrefix,
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	model, err := client.LanguageModel("grafana/assistant")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	result, err := aisdk.GenerateText(context.Background(), model,
+		aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
+		aisdk.WithProviderOptions(GatewayOptions{
+			Models: []string{"grafana/backup"},
+			Order:  []string{"anthropic"},
+		}),
+	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	gateway, err := GatewayMetadataFrom(result.ProviderMetadata)
+	if err != nil || gateway == nil || gateway.Routing == nil {
+		fmt.Println("no routing metadata")
+		return
+	}
+	for _, model := range gateway.Routing.ModelAttempts {
+		fmt.Println(model.ModelID, model.Success)
+	}
+}
+
+// GatewayMetadataFromError reads the attempts of a failed call.
+func ExampleGatewayMetadataFromError() {
+	failed := provider.NewAPICallError(provider.APICallErrorOptions{
+		Message: "service overloaded",
+		Data:    json.RawMessage(`{"providerMetadata":{"gateway":{"execution":{"requestedModelId":"assistant","attempts":[{"provider":"anthropic","modelId":"claude","outcome":"failed","error":{"message":"overloaded","statusCode":529}}]}}}}`),
+	})
+	gateway, err := GatewayMetadataFromError(failed)
+	if err != nil || gateway == nil {
+		fmt.Println("no gateway metadata")
+		return
+	}
+	for _, attempt := range gateway.Execution.Attempts {
+		fmt.Println(attempt.Provider, attempt.Outcome, attempt.Error.StatusCode)
+	}
+	// Output: anthropic failed 529
+}
+
