@@ -3,7 +3,7 @@
   "providers/openai": "0.1.0-alpha.1",
   "middleware/logger": "0.1.0-alpha.1",
   "providers/anthropic": "0.1.0-alpha.1",
-  "providers/openai-compatible": "0.1.0-alpha.1",
+  "providers/openai-compatible": "0.1.0-alpha.2",
   "middleware/enrichment": "0.1.0-alpha.1",
   "providers/grafana": "0.1.0-alpha.1",
   "middleware/agentobservability": "0.1.0-alpha.1",
