@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.5](https://github.com/grafana/ai-sdk/compare/v0.1.0-alpha.4...v0.1.0-alpha.5) (2026-10-28)
+
+
+### Code Refactoring
+
+* **ai-gateway:** register adapters through a host contract ([#581](https://github.com/grafana/ai-sdk/issues/581)) ([3c3730d](https://github.com/grafana/ai-sdk/commit/3c3730d335cc4537395b60d6134062572a4a0e85))
+
 ## [0.1.0-alpha.4](https://github.com/grafana/ai-sdk/compare/v0.1.0-alpha.3...v0.1.0-alpha.4) (2026-10-28)
 
 
