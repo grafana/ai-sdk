@@ -50,10 +50,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		WriteError(w, 400)
 		return
 	}
-	if boolValue(r.Stream) {
-		WriteError(w, 400)
-		return
-	}
 	call, err := h.runtime.Call(req.Context(), r.Model, r.options, execution.WithTranslator(chatTranslator(r)))
 	if err != nil {
 		if req.Context().Err() == context.Canceled {
@@ -71,6 +67,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	id := "chatcmpl-" + hex.EncodeToString(random)
 	created := time.Now().Unix()
+	if boolValue(r.Stream) {
+		h.serveStream(req.Context(), w, call, r, id, call.ModelID(), created)
+		return
+	}
 	result, err := call.Generate()
 	if err != nil {
 		if req.Context().Err() == context.Canceled {
