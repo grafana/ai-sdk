@@ -403,7 +403,7 @@ pnpm exec tsx request-snapshots.mts --write # explicitly regenerate the harness 
 pnpm exec tsx request-snapshots.mts         # check without rewriting it
 pnpm exec tsx --test common.test.mts
 cd ..
-GOWORK=off GOFLAGS=-mod=readonly go test -tags conformance -run TestRequestSnapshot ./...
+GOFLAGS=-mod=readonly go test -tags conformance -run TestRequestSnapshot ./...
 ```
 
 Existing queryless provider snapshots remain unchanged. Regenerate any

@@ -7,7 +7,7 @@
 # .release-please-manifest.json, or its registered initial version. Sync writes
 # both; consumers ignore replacements, so published requirements stay real.
 # Validate: one or all modules download, verify, build and test with readonly
-# manifests, and their local first-party replacements.
+# manifests and their local first-party replacements.
 # Boundary: the AGPL Gateway stays under ai-gateway/; Apache SDK modules must
 # not reference it and the SDK/Grafana graphs exclude it. Isolation: SDK and
 # Grafana build/test without Gateway source present. These checks do not
@@ -21,7 +21,6 @@ gateway_module=$module_prefix/ai-gateway
 manifest_file=.release-please-manifest.json
 config_file=release-please-config.json
 readonly_flags="${GOFLAGS:+$GOFLAGS }-mod=readonly"
-export GOWORK=off
 
 fail() { echo "$*" >&2; exit 1; }
 

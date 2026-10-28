@@ -47,7 +47,6 @@ async function startServer(): Promise<string> {
     stdio: "pipe",
     env: {
       ...nodeProcess.env,
-      GOWORK: "off",
       GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly`,
     },
   });

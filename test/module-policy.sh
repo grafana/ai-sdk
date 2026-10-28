@@ -42,26 +42,26 @@ printf '{"initial-version": "0.0.1", "packages": {".": {}, "providers/openai": {
   assert_fails 'requires github.com/grafana/ai-sdk@v0.0.1, expected v0.2.0' requirements
   sync >/dev/null
   requirements >/dev/null
-  bedrock=$(GOWORK=off go mod edit -json providers/bedrock/go.mod)
+  bedrock=$(go mod edit -json providers/bedrock/go.mod)
   [[ $(jq -r --arg path "$module_prefix" '.Replace[] | select(.Old.Path == $path) | .New.Path' <<<"$bedrock") == ../.. ]] || fail 'transitive root replacement missing'
   [[ $(jq -r --arg path "$module_prefix/providers/openai" '.Require[] | select(.Path == $path) | .Version' <<<"$bedrock") == v0.1.0 ]] || fail 'requirement not set to the manifest version'
-  demo=$(GOWORK=off go mod edit -json examples/demo/go.mod)
+  demo=$(go mod edit -json examples/demo/go.mod)
   [[ $(jq -r --arg path "$module_prefix/providers/bedrock" '.Require[] | select(.Path == $path) | .Version' <<<"$demo") == v0.1.0-alpha.1 ]] || fail 'never-released requirement not set to its initial version'
   ! grep -q "$module_prefix" providers/bedrock/go.sum 2>/dev/null || fail 'first-party checksums remain'
   cp providers/bedrock/go.mod "$fixture/bedrock.mod"
-  (cd providers/bedrock && GOWORK=off go mod edit -require="$module_prefix/providers/openai@v0.0.0-20260101000000-0123456789ab")
+  (cd providers/bedrock && go mod edit -require="$module_prefix/providers/openai@v0.0.0-20260101000000-0123456789ab")
   assert_fails 'providers/openai@v0.0.0-20260101000000-0123456789ab, expected v0.1.0' requirements
   cp "$fixture/bedrock.mod" providers/bedrock/go.mod
-  (cd providers/bedrock && GOWORK=off go mod edit -dropreplace="$module_prefix")
+  (cd providers/bedrock && go mod edit -dropreplace="$module_prefix")
   assert_fails "does not replace $module_prefix with ../.." requirements
   cp "$fixture/bedrock.mod" providers/bedrock/go.mod
-  (cd providers/bedrock && GOWORK=off go mod edit -replace="$module_prefix/providers/openai=../openai")
+  (cd providers/bedrock && go mod edit -replace="$module_prefix/providers/openai=../openai")
   assert_fails 'expected ../../providers/openai' requirements
   cp "$fixture/bedrock.mod" providers/bedrock/go.mod
-  (cd providers/bedrock && GOWORK=off go mod edit -replace=example.com/other=../other)
+  (cd providers/bedrock && go mod edit -replace=example.com/other=../other)
   assert_fails 'replaces non-first-party module example.com/other' requirements
   cp "$fixture/bedrock.mod" providers/bedrock/go.mod
-  (cd providers/bedrock && GOWORK=off go mod edit -require="$module_prefix/providers/unknown@v0.1.0")
+  (cd providers/bedrock && go mod edit -require="$module_prefix/providers/unknown@v0.1.0")
   assert_fails "unregistered first-party module: $module_prefix/providers/unknown" requirements
   cp "$fixture/bedrock.mod" providers/bedrock/go.mod
   requirements >/dev/null
@@ -158,10 +158,10 @@ overlay=$fixture/overlay.json
 printf 'package provider\nvar _ = candidateSourceOnlyMarker\n' >"$candidate"
 jq -n --arg source "$repo_root/provider/doc.go" --arg candidate "$candidate" '{Replace:{($source):$candidate}}' >"$overlay"
 for root in ai-gateway/cmd/grafana-ai-gateway ai-gateway/test/providerwire-v4/testserver; do
-  assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOWORK=off GOFLAGS=-mod=readonly go build -overlay "$2" -o "$3" .' \
+  assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOFLAGS=-mod=readonly go build -overlay "$2" -o "$3" .' \
     bash "$repo_root/$root" "$overlay" "$fixture/gateway"
 done
-assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOWORK=off GOFLAGS="-mod=readonly -overlay=$2" mage build:linux build:linuxARM64' \
+assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOFLAGS="-mod=readonly -overlay=$2" mage build:linux build:linuxARM64' \
   bash "$repo_root/ai-gateway" "$overlay"
 
 echo 'module policy fixtures: OK'

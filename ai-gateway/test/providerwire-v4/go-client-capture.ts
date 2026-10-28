@@ -4,7 +4,7 @@ import { realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import nodeProcess from "node:process";
 
-const goEnvironment = () => ({ ...nodeProcess.env, GOWORK: "off", GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly` });
+const goEnvironment = () => ({ ...nodeProcess.env, GOFLAGS: `${nodeProcess.env.GOFLAGS ? `${nodeProcess.env.GOFLAGS} ` : ""}-mod=readonly` });
 
 function assertCandidateSource(directory: string, root: string, client: string, message: string) {
   for (const [module, path] of [

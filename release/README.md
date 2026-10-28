@@ -69,7 +69,7 @@ mise run tidy
 ```
 
 It writes the replacements and requirement versions and tidies every module. There
-are no Go workspaces; every task runs inside its module with `GOWORK=off`. Renovate
+are no Go workspaces; every task runs inside its module. Renovate
 does not update first-party modules.
 
 ## Record release intent in normal pull requests

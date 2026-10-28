@@ -415,7 +415,7 @@ cd test && pnpm --filter @ai-sdk/conformance-tools provider-shape
 description = "Run conformance tests"
 run = """
 mise run typecheck-conformance
-cd test/conformance && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -tags conformance -v ./...
+cd test/conformance && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly" go test -tags conformance -v ./...
 """
 
 [tasks.parity-check]

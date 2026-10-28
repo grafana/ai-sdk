@@ -219,7 +219,7 @@ def module_file(ref, path):
     with tempfile.NamedTemporaryFile("w", suffix=".mod") as handle:
         handle.write(run("git", "show", f"{ref}:{path}") + "\n")
         handle.flush()
-        return json.loads(run("go", "mod", "edit", "-json", handle.name, env=dict(os.environ, GOWORK="off")))
+        return json.loads(run("go", "mod", "edit", "-json", handle.name))
 
 
 def verify_requirement_updates(base, head, files, versions):
@@ -243,7 +243,7 @@ def verify_tagged(root, version, base):
 def verify_requirements(component, components, versions, base):
     if component == GATEWAY:
         raise ValueError("Gateway application readiness awaits a plugin publication workflow and Gateway release attribution; publication remains disabled")
-    manifest = json.loads(run("go", "mod", "edit", "-json", str(Path(component, "go.mod")), env=dict(os.environ, GOWORK="off")))
+    manifest = json.loads(run("go", "mod", "edit", "-json", str(Path(component, "go.mod"))))
     requirements = []
     for requirement in manifest.get("Require") or []:
         path, version = requirement["Path"], requirement["Version"]

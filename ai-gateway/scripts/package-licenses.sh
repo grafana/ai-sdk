@@ -38,7 +38,7 @@ for platform in linux/amd64 linux/arm64; do
   goos=${platform%/*} goarch=${platform#*/}
   output=$licenses/backend-${goos}_${goarch}
   mkdir -p "$output/modules"
-  modules=$(cd "$gateway" && GOWORK=off GOFLAGS="-mod=readonly" GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 \
+  modules=$(cd "$gateway" && GOFLAGS="-mod=readonly" GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 \
     go list -deps -tags arrow_json_stdlib \
     -f '{{with .Module}}{{.Path}}{{"\t"}}{{if or .Replace (not .Version)}}local{{else}}{{.Version}}{{end}}{{"\t"}}{{if .Sum}}{{.Sum}}{{else}}-{{end}}{{"\t"}}{{.Dir}}{{end}}' \
     ./cmd/grafana-ai-gateway | sort -u)
