@@ -34,10 +34,10 @@
 
 ## 7. Go client routing support
 
-- [ ] 7.1 Add `GatewayOptions`, `BYOKAccount` and `ProviderTimeouts` to `providers/grafana` (D9), with godoc. Verify with unit tests for nil versus empty `Only`, omitted account fields and body equivalence with raw `gateway` options, plus the updated public-surface and module-isolation tests (`cd providers/grafana && go test ./...`).
-- [ ] 7.2 Add `GatewayMetadataFrom` and `GatewayMetadataFromError` and their typed overview and routing values (D10), with godoc. Verify with unit tests for absence, malformed members, large numeric codes and string codes, and for unary result, stream finish, unary error document and stream error part carriers.
-- [ ] 7.3 Add a `middleware/logger` test showing that typed BYOK `apiKey` values are redacted while other account fields and `providerTimeouts.byok` are kept. Verify with `cd middleware/logger && go test ./...`.
-- [ ] 7.4 Add Go client cases using `GatewayOptions` to the request goldens and `go-client-differential.test.ts`, matching the pinned client's equivalent `GatewayProviderOptions` bodies in unary and streaming modes. Verify with `mise run test-providerwire-v4`.
+- [x] 7.1 Add `GatewayOptions`, `BYOKAccount` and `ProviderTimeouts` to `providers/grafana` (D9), with godoc. Verify with unit tests for nil versus empty `Only`, omitted account fields and body equivalence with raw `gateway` options, plus the updated public-surface and module-isolation tests (`cd providers/grafana && go test ./...`).
+- [x] 7.2 Add `GatewayMetadataFrom` and `GatewayMetadataFromError` and their typed overview and routing values (D10), with godoc. Verify with unit tests for absence, malformed members, large numeric codes and string codes, and for unary result, stream finish, unary error document and stream error part carriers.
+- [x] 7.3 Add a logger-capture test in `test/integration/testserver` (the module that already depends on both the Grafana client and `middleware/logger`) showing that typed BYOK `apiKey` values are redacted while other account fields and `providerTimeouts.byok` are kept. Verify with `cd test/integration/testserver && go test ./...`.
+- [x] 7.4 Add Go client cases using `GatewayOptions` to the request goldens and `go-client-differential.test.ts`, matching the pinned client's equivalent `GatewayProviderOptions` bodies in unary and streaming modes. Verify with `mise run test-providerwire-v4`.
 
 ## 8. Two-client command evidence
 

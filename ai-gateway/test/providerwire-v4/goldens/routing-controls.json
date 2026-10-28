@@ -1,0 +1,166 @@
+[
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/assistant",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "route"
+            }
+          ]
+        }
+      ],
+      "providerOptions": {
+        "gateway": {
+          "models": [
+            "grafana/backup",
+            "grafana/last"
+          ],
+          "order": [
+            "openai",
+            "anthropic"
+          ],
+          "only": [
+            "anthropic",
+            "openai"
+          ],
+          "byok": {
+            "anthropic": [
+              {
+                "apiKey": "dummy-anthropic"
+              }
+            ],
+            "openai": [
+              {
+                "apiKey": "dummy-openai-first",
+                "organization": "org-customer",
+                "project": "proj-customer"
+              },
+              {
+                "apiKey": "dummy-openai-second"
+              }
+            ]
+          },
+          "providerTimeouts": {
+            "byok": {
+              "anthropic": 2000,
+              "openai": 5000
+            }
+          }
+        },
+        "anthropic": {
+          "sendReasoning": false
+        }
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/assistant",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "true",
+      "content-type": "application/json"
+    },
+    "streaming": true,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "route"
+            }
+          ]
+        }
+      ],
+      "providerOptions": {
+        "gateway": {
+          "models": [
+            "grafana/backup",
+            "grafana/last"
+          ],
+          "order": [
+            "openai",
+            "anthropic"
+          ],
+          "only": [
+            "anthropic",
+            "openai"
+          ],
+          "byok": {
+            "anthropic": [
+              {
+                "apiKey": "dummy-anthropic"
+              }
+            ],
+            "openai": [
+              {
+                "apiKey": "dummy-openai-first",
+                "organization": "org-customer",
+                "project": "proj-customer"
+              },
+              {
+                "apiKey": "dummy-openai-second"
+              }
+            ]
+          },
+          "providerTimeouts": {
+            "byok": {
+              "anthropic": 2000,
+              "openai": 5000
+            }
+          }
+        },
+        "anthropic": {
+          "sendReasoning": false
+        }
+      }
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/language-model",
+    "headers": {
+      "ai-language-model-id": "grafana/assistant",
+      "ai-language-model-specification-version": "4",
+      "ai-language-model-streaming": "false",
+      "content-type": "application/json"
+    },
+    "streaming": false,
+    "hasSignal": false,
+    "body": {
+      "prompt": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "route"
+            }
+          ]
+        }
+      ],
+      "providerOptions": {
+        "gateway": {
+          "only": []
+        }
+      }
+    }
+  }
+]

@@ -25,6 +25,7 @@ func main() {
 		Mode              string                       `json:"mode"`
 		ModelID           string                       `json:"modelID"`
 		Options           provider.CallOptions         `json:"options"`
+		GatewayOptions    *grafana.GatewayOptions      `json:"gatewayOptions"`
 		Headers           map[string][]string          `json:"headers"`
 		AbortAfterParts   int                          `json:"abortAfterParts"`
 		AbortBefore       bool                         `json:"abortBefore"`
@@ -38,6 +39,12 @@ func main() {
 	if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
 		emit(map[string]any{"error": map[string]any{"message": "invalid capture input"}})
 		return
+	}
+	if input.GatewayOptions != nil {
+		if input.Options.ProviderOptions == nil {
+			input.Options.ProviderOptions = provider.ProviderOptions{}
+		}
+		input.Options.ProviderOptions[input.GatewayOptions.ProviderKey()] = *input.GatewayOptions
 	}
 	if input.PreferBytes {
 		for messageIndex := range input.Options.Prompt {
@@ -178,10 +185,19 @@ func main() {
 			}
 		}
 		metadata := make([]provider.ProviderMetadata, len(parts))
+		gatewayMetadata := make([]*grafana.GatewayMetadata, len(parts))
 		for i, part := range parts {
 			metadata[i] = part.ProviderMetadata
+			read := func() (*grafana.GatewayMetadata, error) { return grafana.GatewayMetadataFrom(part.ProviderMetadata) }
+			if part.Type == provider.PartError {
+				read = func() (*grafana.GatewayMetadata, error) { return grafana.GatewayMetadataFromError(part.APICallError) }
+			}
+			if gatewayMetadata[i], err = read(); err != nil {
+				emitError(err)
+				return
+			}
 		}
-		emit(map[string]any{"parts": parts, "partMetadata": metadata, "request": result.Request, "response": result.Response, "canceled": ctx.Err() != nil})
+		emit(map[string]any{"parts": parts, "partMetadata": metadata, "partGatewayMetadata": gatewayMetadata, "request": result.Request, "response": result.Response, "canceled": ctx.Err() != nil})
 		return
 	}
 	if input.Mode == "stream-text" {
@@ -279,7 +295,12 @@ func main() {
 	for i, part := range result.Content {
 		metadata[i] = part.ProviderMetadata
 	}
-	emit(map[string]any{"result": result, "contentMetadata": metadata})
+	gatewayMetadata, err := grafana.GatewayMetadataFrom(result.ProviderMetadata)
+	if err != nil {
+		emitError(err)
+		return
+	}
+	emit(map[string]any{"result": result, "contentMetadata": metadata, "gatewayMetadata": gatewayMetadata})
 }
 
 func emitError(err error) {
@@ -302,6 +323,9 @@ func emitError(err error) {
 	}
 	value["causes"] = causes
 	value["canceled"] = errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	if gatewayMetadata, readErr := grafana.GatewayMetadataFromError(err); readErr == nil && gatewayMetadata != nil {
+		value["gatewayMetadata"] = gatewayMetadata
+	}
 	emit(map[string]any{"error": value})
 }
 

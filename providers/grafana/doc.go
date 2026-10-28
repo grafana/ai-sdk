@@ -13,6 +13,12 @@
 // provider.LanguageModel contract. The client has no dependency on the Gateway
 // service module and never retries Gateway requests itself.
 //
+// GatewayOptions sends Gateway host controls under providerOptions.gateway:
+// fallback models, provider order and filters, request-supplied accounts and
+// their provider start timeouts. GatewayMetadataFrom and
+// GatewayMetadataFromError read the Gateway's execution and routing
+// attribution from returned provider metadata and errors.
+//
 // The Gateway owns response and stream size limits, so the client has no
 // configurable limits. Callers bound requests through their http.Client and the
 // call context.
