@@ -3,8 +3,8 @@ module github.com/grafana/ai-sdk/examples/agent-chat
 go 1.27.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.3
-	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.1
+	github.com/grafana/ai-sdk v0.1.0-alpha.4
+	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.2
 	github.com/stretchr/testify v1.12.1
 )
 
