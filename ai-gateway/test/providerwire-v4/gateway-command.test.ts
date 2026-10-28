@@ -3022,6 +3022,230 @@ describe("authenticated OpenAI Responses Gateway command", () => {
   });
 });
 
+type RoutedOutcome = { status?: number; metadata?: any; reader?: any; error?: any };
+
+// routedCall sends one call with gateway controls through one client and
+// returns its status, raw provider metadata and, for Go, the typed reader's
+// view. Go sends the controls as typed GatewayOptions.
+async function routedCall(gateway: GatewayProcess, language: "go" | "typescript", mode: "generate" | "stream", modelID: string, controls: Record<string, unknown>): Promise<RoutedOutcome> {
+  const base = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "normal-stream" }] }], maxOutputTokens: 32 };
+  if (language === "go") {
+    const result = await captureGoClient(goClientBinaryPath, { mode, modelID, options: base, gatewayOptions: controls, baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN });
+    if (result.error !== undefined) return { status: result.error.statusCode, metadata: result.error.apiError?.data?.providerMetadata, reader: result.error.gatewayMetadata, error: result.error };
+    if (mode === "generate") return { metadata: result.result.providerMetadata, reader: result.gatewayMetadata };
+    return { metadata: result.partMetadata.at(-1), reader: result.partGatewayMetadata.at(-1) };
+  }
+  const model = gateway.client()(modelID);
+  const options: LanguageModelV4CallOptions = { ...base, providerOptions: { gateway: controls as any }, abortSignal: AbortSignal.timeout(5_000) };
+  try {
+    if (mode === "generate") return { metadata: (await model.doGenerate(options)).providerMetadata };
+    const parts = await collectGatewayStream((await model.doStream(options)).stream);
+    assert.equal(parts.at(-1)?.type, "finish");
+    return { metadata: (parts.at(-1) as any).providerMetadata };
+  } catch (error: any) {
+    return { status: error.statusCode, metadata: error.cause?.data?.providerMetadata, error };
+  }
+}
+
+// assertRouted checks both clients' attempts and routing against the expected
+// per-model provider sequence, and the Go reader against the raw metadata.
+function assertRouted(outcome: RoutedOutcome, label: string, expected: { requested: string; canonical?: string; models: Array<{ modelId: string; canonical?: string; attempts: Array<[string, boolean, number?]> }> }) {
+  const routing = outcome.metadata?.gateway?.routing;
+  const attempts = expected.models.flatMap((model) => model.attempts);
+  const selected = attempts.find(([, success]) => success);
+  assert.deepEqual(routing, {
+    originalModelId: expected.requested,
+    ...(expected.canonical === undefined ? {} : { canonicalSlug: expected.canonical }),
+    resolvedProvider: attempts[0]![0],
+    ...(selected === undefined ? {} : { finalProvider: selected[0] }),
+    modelAttemptCount: expected.models.length,
+    totalProviderAttemptCount: attempts.length,
+    modelAttempts: expected.models.map((model) => ({
+      modelId: model.modelId,
+      ...(model.canonical === undefined ? {} : { canonicalSlug: model.canonical }),
+      success: model.attempts.some(([, success]) => success),
+      providerAttemptCount: model.attempts.length,
+      providerAttempts: model.attempts.map(([provider, success, statusCode]) => ({ provider, success, ...(statusCode === undefined ? {} : { statusCode }) })),
+    })),
+  }, label);
+  assert.deepEqual(outcome.metadata.gateway.execution.attempts.map((attempt: { provider: string; outcome: string }) => [attempt.provider, attempt.outcome === "selected"]), attempts.map(([provider, success]) => [provider, success]), label);
+  if (outcome.reader !== undefined) {
+    assert.equal(outcome.reader.routing.finalProvider, routing.finalProvider ?? "", `${label}: Go reader`);
+    assert.deepEqual(outcome.reader.routing.modelAttempts.map((model: { modelId: string }) => model.modelId), routing.modelAttempts.map((model: { modelId: string }) => model.modelId), `${label}: Go reader`);
+    assert.equal(outcome.reader.execution.attempts.length, attempts.length, `${label}: Go reader`);
+  }
+}
+
+describe("request routing through both clients (fake native providers)", () => {
+  it("routes configured requests with models, order and only, and refuses invalid controls before provider calls", async () => {
+    const first = await FakeAnthropic.start();
+    const backup = await FakeOpenAI.start();
+    const second = await FakeAnthropic.start();
+    const config = `providers:
+  anthropic-one:
+    type: anthropic
+    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY
+    baseURL: ${first.url}
+  openai-one:
+    type: openai
+    apiKeyEnv: GATEWAY_TEST_OPENAI_KEY
+    baseURL: ${backup.url}/v1
+  anthropic-two:
+    type: anthropic
+    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY
+    baseURL: ${second.url}
+models:
+  route-a:
+    name: Route A
+    aliases: [alias-a]
+    primary:
+      provider: anthropic-one
+      model: backend-private
+  route-b:
+    name: Route B
+    primary:
+      provider: openai-one
+      model: backend-private
+    fallback:
+      - provider: anthropic-two
+        model: backend-private
+`;
+    let gateway: GatewayProcess | undefined;
+    const fail = (fake: FakeAnthropic | FakeOpenAI, status?: number) => { fake.keyFailures = new Map(status === undefined ? [] : [[fake.apiKey, status]]); };
+    try {
+      gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", config);
+      const scenarios: Array<{ name: string; modelID: string; controls: Record<string, unknown>; failing: Array<FakeAnthropic | FakeOpenAI>; calls: [number, number, number]; models: Array<{ modelId: string; canonical: string; attempts: Array<[string, boolean, number?]> }> }> = [
+        { name: "configured only", modelID: "route-b", controls: {}, failing: [backup], calls: [0, 1, 1],
+          models: [{ modelId: "route-b", canonical: "route-b", attempts: [["openai", false, 503], ["anthropic", true]] }] },
+        { name: "request fallback model", modelID: "alias-a", controls: { models: ["route-b"] }, failing: [first], calls: [1, 1, 0],
+          models: [{ modelId: "alias-a", canonical: "route-a", attempts: [["anthropic", false, 503]] }, { modelId: "route-b", canonical: "route-b", attempts: [["openai", true]] }] },
+        { name: "order prefers without filtering", modelID: "route-b", controls: { order: ["anthropic"] }, failing: [second], calls: [0, 1, 1],
+          models: [{ modelId: "route-b", canonical: "route-b", attempts: [["anthropic", false, 503], ["openai", true]] }] },
+        { name: "only filters before order", modelID: "alias-a", controls: { models: ["route-b"], only: ["openai"], order: ["anthropic"] }, failing: [], calls: [0, 1, 0],
+          models: [{ modelId: "route-b", canonical: "route-b", attempts: [["openai", true]] }] },
+      ];
+      for (const scenario of scenarios) {
+        for (const fake of [first, backup, second]) fail(fake, scenario.failing.includes(fake) ? 503 : undefined);
+        for (const mode of ["generate", "stream"] as const) {
+          for (const language of ["go", "typescript"] as const) {
+            const label = `${scenario.name} ${language} ${mode}`;
+            const before = [first, backup, second].map((fake) => fake.requests.length);
+            const outcome = await routedCall(gateway, language, mode, scenario.modelID, scenario.controls);
+            assert.equal(outcome.status, undefined, label);
+            assertRouted(outcome, label, { requested: scenario.modelID, canonical: scenario.modelID === "alias-a" ? "route-a" : "route-b", models: scenario.models });
+            assert.deepEqual([first, backup, second].map((fake, i) => fake.requests.length - before[i]!), scenario.calls, label);
+            for (const fake of [first, backup, second]) {
+              for (const request of fake.requests.slice(before[[first, backup, second].indexOf(fake)]!)) {
+                const body = JSON.stringify(request.body);
+                for (const absent of ["route-b", "alias-a", '"only"', '"order"']) assert.ok(!body.includes(absent), `${label}: ${absent} reached a provider`);
+              }
+            }
+          }
+        }
+      }
+      for (const fake of [first, backup, second]) fail(fake);
+      for (const [name, controls, status, message] of [
+        ["unknown fallback model", { models: ["missing"] }, 404, "a providerOptions.gateway.models entry is not an available model"],
+        ["backend model as fallback", { models: ["backend-private"] }, 404, "a providerOptions.gateway.models entry is not an available model"],
+        ["only excludes every candidate", { only: ["vertex"] }, 400, "providerOptions.gateway.only excludes every candidate"],
+        ["malformed controls", { order: "anthropic" }, 400, "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"],
+        ["conditional models entry", { models: [{ model: "route-b", when: { confidenceBelow: 0.5 } }] }, 400, "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"],
+        ["unsupported control", { sort: "ttft" }, 400, "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials"],
+        ["request credentials from a configured caller", { byok: { anthropic: [{ apiKey: "dummy-configured-byok" }] } }, 400, "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials"],
+      ] as const) {
+        for (const mode of ["generate", "stream"] as const) {
+          for (const language of ["go", "typescript"] as const) {
+            if (language === "go" && ["conditional models entry", "malformed controls", "unsupported control"].includes(name)) continue;
+            const label = `${name} ${language} ${mode}`;
+            const before = [first, backup, second].map((fake) => fake.requests.length);
+            const outcome = await routedCall(gateway, language, mode, "alias-a", controls);
+            assert.equal(outcome.status, status, label);
+            assert.equal(outcome.error.message, message, label);
+            assert.equal(outcome.metadata, undefined, label);
+            assert.deepEqual([first, backup, second].map((fake, i) => fake.requests.length - before[i]!), [0, 0, 0], label);
+          }
+        }
+      }
+      for (const fake of [first, backup, second]) assert.deepEqual(fake.violations, []);
+      await gateway.stop();
+      assert.ok(!gateway.stderr.includes("dummy-configured-byok"));
+    } finally {
+      await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => first.stop(), () => backup.stop(), () => second.stop());
+    }
+  });
+
+  it("routes Cloud BYOK requests across supplied accounts only, and refuses invalid destinations before provider calls", async () => {
+    const configured = await FakeAnthropic.start();
+    const anthropic = await FakeAnthropic.start();
+    const openai = await FakeOpenAI.start();
+    anthropic.backendModel = "request-only-native";
+    openai.backendModel = "request-fallback-native";
+    anthropic.accountKeys = ["byok-anthropic-first", "byok-anthropic-second"];
+    openai.accountKeys = ["byok-openai"];
+    const proxy = await startNativeProviderProxy({ "api.anthropic.com:443": anthropic.url, "api.openai.com:443": openai.url });
+    let gateway: GatewayProcess | undefined;
+    try {
+      gateway = await GatewayProcess.start(nativeProxyBinaryPath, configured.url, [], nativeProxyEnvironment(proxy.url), "cloud-gateway");
+      gateway.nativeProxy = proxy;
+      const byok = { anthropic: [{ apiKey: "byok-anthropic-first" }, { apiKey: "byok-anthropic-second" }], openai: [{ apiKey: "byok-openai" }] };
+      const marks = () => [anthropic.requests.length, openai.requests.length] as const;
+      const keysSince = ([anthropicBefore, openaiBefore]: readonly [number, number]) => [
+        ...anthropic.requests.slice(anthropicBefore).map((request) => request.apiKey ?? ""),
+        ...openai.requests.slice(openaiBefore).map((request) => (request.apiKey ?? "").replace(/^Bearer /, "")),
+      ];
+      const scenarios: Array<{ name: string; controls: Record<string, unknown>; failures: Record<string, number>; keys: string[]; models: Array<{ modelId: string; attempts: Array<[string, boolean, number?]> }> }> = [
+        { name: "cross-provider fallback model", controls: { byok, models: ["openai/request-fallback-native"] }, failures: { "byok-anthropic-first": 503, "byok-anthropic-second": 503 }, keys: ["byok-anthropic-first", "byok-anthropic-second", "byok-openai"],
+          models: [{ modelId: BYOK_MODEL, attempts: [["anthropic", false, 503], ["anthropic", false, 503]] }, { modelId: "openai/request-fallback-native", attempts: [["openai", true]] }] },
+        { name: "only skips the requested provider", controls: { byok, models: ["openai/request-fallback-native"], only: ["openai"] }, failures: {}, keys: ["byok-openai"],
+          models: [{ modelId: "openai/request-fallback-native", attempts: [["openai", true]] }] },
+        { name: "provider timeout leaves responsive accounts", controls: { byok, providerTimeouts: { byok: { anthropic: 10_000 } } }, failures: { "byok-anthropic-first": 503 }, keys: ["byok-anthropic-first", "byok-anthropic-second"],
+          models: [{ modelId: BYOK_MODEL, attempts: [["anthropic", false, 503], ["anthropic", true]] }] },
+      ];
+      for (const scenario of scenarios) {
+        anthropic.keyFailures = new Map(Object.entries(scenario.failures));
+        openai.keyFailures = new Map(Object.entries(scenario.failures));
+        for (const mode of ["generate", "stream"] as const) {
+          for (const language of ["go", "typescript"] as const) {
+            const label = `${scenario.name} ${language} ${mode}`;
+            const before = marks();
+            const outcome = await routedCall(gateway, language, mode, BYOK_MODEL, scenario.controls);
+            assert.equal(outcome.status, undefined, label);
+            assertRouted(outcome, label, { requested: BYOK_MODEL, models: scenario.models });
+            assert.deepEqual(keysSince(before), scenario.keys, label);
+            const encoded = JSON.stringify(outcome.metadata);
+            for (const absent of ['"canonicalModelId"', '"providerInstance"', '"canonicalSlug"']) assert.ok(!encoded.includes(absent), `${label}: ${absent}`);
+          }
+        }
+      }
+      anthropic.keyFailures = new Map();
+      for (const [name, controls, status, message] of [
+        ["configured route as fallback", { byok, models: ["route-b"] }, 400, "BYOK requires a supported provider/model selector"],
+        ["fallback provider without accounts", { byok: { anthropic: byok.anthropic }, models: ["openai/request-fallback-native"] }, 400, "providerOptions.gateway.byok requires supported provider arrays with valid accounts"],
+        ["invalid provider timeout", { byok, providerTimeouts: { byok: { anthropic: 0 } } }, 400, "providerOptions.gateway.providerTimeouts.byok must map anthropic or openai to whole milliseconds from 1 to 600000"],
+        ["unsupported control", { byok, zeroDataRetention: true }, 400, "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials"],
+      ] as const) {
+        for (const language of ["go", "typescript"] as const) {
+          if (language === "go" && name === "unsupported control") continue;
+          const label = `${name} ${language}`;
+          const before = marks();
+          const configuredBefore = configured.requests.length;
+          const outcome = await routedCall(gateway, language, "generate", BYOK_MODEL, controls);
+          assert.equal(outcome.status, status, label);
+          assert.equal(outcome.error.message, message, label);
+          assert.deepEqual(keysSince(before), [], label);
+          assert.equal(configured.requests.length, configuredBefore, label);
+        }
+      }
+      assert.equal(configured.requests.length, 0, "no configured account served a BYOK caller");
+      for (const fake of [anthropic, openai]) assert.deepEqual(fake.violations, []);
+      await gateway.stop();
+      assertCloudPrivateValuesAbsent(gateway.stderr, ["byok-anthropic-first", "byok-anthropic-second", "byok-openai"]);
+    } finally {
+      await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => proxy.stop(), () => configured.stop(), () => anthropic.stop(), () => openai.stop());
+    }
+  });
+});
+
 const CLOUD_PRIVATE_VALUES = [TEST_TOKEN, INTERNAL_SERVICE];
 type HeaderPairs = Array<[string, string]>;
 type RawResponse = { status: number; body: string; headers: IncomingMessage["headers"] };

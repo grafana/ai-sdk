@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/grafana/agento11y/go/agento11y/testkit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,6 +22,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -513,4 +517,52 @@ func TestRoutedSelection_BYOKNativeOptionRefusal(t *testing.T) {
 		assert.Equal(t, fallback.AttemptFailed, overview.Attempts[0].Outcome)
 		assert.Equal(t, fallback.AttemptSelected, overview.Attempts[1].Outcome)
 	})
+}
+
+func TestRoutedSelection_ServerCaptureIndependence(t *testing.T) {
+	respond := func(factory ModelFactory) string {
+		t.Helper()
+		created := routedFakeCatalog(t, factory, nil, map[string]*observabilityTestModel{
+			"backend-primary": {generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return nil, hostileFallbackError(503)
+			}},
+			"backend-secondary": {generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+				return &provider.GenerateResult{
+					Content:          []provider.GenerateContentPart{{Type: provider.ContentText, Text: "private-output"}},
+					FinishReason:     provider.FinishReason{Unified: provider.FinishReasonStop},
+					ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"native":"kept"}`)},
+				}, nil
+			}},
+		})
+		wire, err := newWireHandler(execution.Config{Selector: NewSelector(created, nil), Limits: serviceTestLimits()})
+		require.NoError(t, err)
+		handler, headers := withAccess(t, gatewayauth.AccessModeSelfHosted, gatewayauth.ConfiguredAccounts, wire)
+		r := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[{"role":"user","content":[{"type":"text","text":"route"}]}],"providerOptions":{"gateway":{"models":["other"]}}}`))
+		r.Header = headers
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set(providerv4.HeaderModelID, "alias")
+		r.Header.Set(providerv4.HeaderSpecificationVersion, "4")
+		r.Header.Set(providerv4.HeaderStreaming, "false")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		return w.Body.String()
+	}
+	env := testkit.NewEnv(t, func(configuration *agento11y.Config) {
+		configuration.ContentCapture = agento11y.ContentCaptureModeMetadataOnly
+		configuration.Hooks = agento11y.HooksConfig{Enabled: false}
+	})
+	var logs lockedBuffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	telemetry, err := NewTelemetry(logger)
+	require.NoError(t, err)
+	observed, _, err := NewModelObservabilityFactories(telemetry, logger, &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}, 10*time.Millisecond)
+	require.NoError(t, err)
+
+	captured := respond(observed)
+	plain := respond(identityModelFactory)
+	assert.JSONEq(t, plain, captured)
+	assert.Contains(t, captured, `"routing":{"originalModelId":"alias","canonicalSlug":"public"`)
+	assert.Contains(t, captured, `"anthropic":{"native":"kept"}`)
+	assert.NotContains(t, logs.String(), "private-output")
 }

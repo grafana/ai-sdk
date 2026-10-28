@@ -41,8 +41,8 @@
 
 ## 8. Two-client command evidence
 
-- [ ] 8.1 Extend `ai-gateway/test/providerwire-v4/gateway-command.test.ts` and its testserver: configured-only, request-only and combined routing for configured (self-hosted) and cloud BYOK access, unary and streaming, through the pinned TypeScript client and the Go client. The Go side uses `GatewayOptions` and reads results and errors with the metadata readers. Assert attempt order, native requests, routing metadata and each diagnostic document. Verify with `mise run test-ai-gateway-command`.
-- [ ] 8.2 Add cross-population cases (a BYOK caller naming configured routes, a configured caller sending `byok`) and a Go consumer-middleware case that observes routing metadata with server capture disabled. Verify with the same command and the service tests.
+- [x] 8.1 Extend `ai-gateway/test/providerwire-v4/gateway-command.test.ts` and its testserver: configured-only, request-only and combined routing for configured (self-hosted) and cloud BYOK access, unary and streaming, through the pinned TypeScript client and the Go client. The Go side uses `GatewayOptions` and reads results and errors with the metadata readers. Assert attempt order, native requests, routing metadata and each diagnostic document. Verify with `mise run test-ai-gateway-command`.
+- [x] 8.2 Add cross-population cases (a BYOK caller naming configured routes, a configured caller sending `byok`) and a Go consumer-middleware case that observes routing metadata with server capture disabled. Verify with the same command and the service tests.
 
 ## 9. Documentation
 
