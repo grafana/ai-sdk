@@ -2,11 +2,13 @@ package byok
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/routing"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,6 +21,17 @@ func decodeGateway(selector string, raw json.RawMessage, approvals map[Provider]
 		return Request{}, err
 	}
 	return DecodeRequest(selector, controls, approvals)
+}
+
+// newAll returns the model that tries every account of request in order.
+func newAll(request Request, client *http.Client) (provider.LanguageModel, error) {
+	var placements []routing.Placement
+	for g, destination := range request.Destinations {
+		for c := range destination.Accounts {
+			placements = append(placements, routing.Placement{Group: g, Candidate: c})
+		}
+	}
+	return New(request, placements, client)
 }
 
 func TestDecodeRequest_FallbackModels(t *testing.T) {

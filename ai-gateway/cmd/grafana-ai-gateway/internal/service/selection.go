@@ -9,6 +9,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/byok"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/routing"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
@@ -73,8 +74,11 @@ func selectBYOK(id string, controls routing.Controls, options BYOKOptions) (exec
 	case err != nil:
 		return execution.Selection{}, err
 	}
-	requested := request.Destinations[0]
-	lower, err := byok.New(requested.Provider, requested.Model, requested.Accounts, options.Client)
+	placements, err := routing.Compose(request.Groups(), controls.Only, controls.Order, config.MaxProviderAttempts)
+	if err != nil {
+		return execution.Selection{}, err
+	}
+	lower, err := byok.New(request, placements, options.Client)
 	if err != nil {
 		return execution.Selection{}, err
 	}
@@ -82,9 +86,15 @@ func selectBYOK(id string, controls routing.Controls, options BYOKOptions) (exec
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	return execution.AccountSelection(id, model, []execution.RequestAccounts{{
-		Provider: string(requested.Provider),
-		ModelID:  requested.Model,
-		Count:    len(requested.Accounts),
-	}}), nil
+	var destinations []execution.RequestAccounts
+	group := -1
+	for _, placement := range placements {
+		if placement.Group != group {
+			group = placement.Group
+			destination := request.Destinations[group]
+			destinations = append(destinations, execution.RequestAccounts{Provider: string(destination.Provider), ModelID: destination.Model})
+		}
+		destinations[len(destinations)-1].Count++
+	}
+	return execution.AccountSelection(id, model, destinations), nil
 }

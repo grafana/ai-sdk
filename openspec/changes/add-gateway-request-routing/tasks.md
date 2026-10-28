@@ -23,8 +23,8 @@
 
 ## 5. BYOK routing
 
-- [ ] 5.1 Compose BYOK multi-model chains in `byok.New` (D6), with the request-level Anthropic check only for all-Anthropic chains. Verify with fake native tests: cross-provider fallback with only its own key, no configured account used, and a mixed chain where the per-candidate refusal still has no provider I/O.
-- [ ] 5.2 Implement the BYOK provider start timeout wrapper (D7) and decode `providerTimeouts.byok`. Verify with fake servers that delay response headers in unary and streaming modes: fall-through, no effect after the first byte, last-attempt timeout category, invalid maps, and request cancellation winning a race (`-race`).
+- [x] 5.1 Compose BYOK multi-model chains in `byok.New` (D6), with the request-level Anthropic check only for all-Anthropic chains. Verify with fake native tests: cross-provider fallback with only its own key, no configured account used, and a mixed chain where the per-candidate refusal still has no provider I/O.
+- [x] 5.2 Implement the BYOK provider start timeout wrapper (D7) and decode `providerTimeouts.byok`. Verify with fake servers that delay response headers in unary and streaming modes: fall-through, no effect after the first byte, last-attempt timeout category, invalid maps, and request cancellation winning a race (`-race`).
 
 ## 6. Routing metadata
 

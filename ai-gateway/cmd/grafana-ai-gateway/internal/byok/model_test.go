@@ -30,7 +30,7 @@ func newTestModel(t *testing.T, selector string, controls json.RawMessage, appro
 	t.Helper()
 	request, err := decodeGateway(selector, controls, approvals)
 	require.NoError(t, err)
-	model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, client)
+	model, err := newAll(request, client)
 	require.NoError(t, err)
 	return model
 }
@@ -166,7 +166,7 @@ func TestNew_AccountConfigDefaults(t *testing.T) {
 					}
 					return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"rejected"}}`)), Request: r}, nil
 				})}
-				model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, client)
+				model, err := newAll(request, client)
 				require.NoError(t, err)
 				err = invokeTestModel(context.Background(), model, streaming, provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
 				require.Error(t, err)
@@ -224,7 +224,7 @@ func TestNew_ApprovedAccountOverrides(t *testing.T) {
 					}
 					return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"api_error","message":"rejected"}}`)), Request: r}, nil
 				})}
-				model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, client)
+				model, err := newAll(request, client)
 				require.NoError(t, err)
 				options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("ordinary input")}}
 				err = invokeTestModel(context.Background(), model, streaming, options)
@@ -397,13 +397,13 @@ func TestNew_PlainAccounts(t *testing.T) {
 		model    string
 		accounts []nativemodel.Config
 	}{
-		{name: "unsupported provider"},
+		{name: "unsupported provider", provider: "bedrock", model: "model", accounts: []nativemodel.Config{{APIKey: "key"}}},
 		{name: "missing model", provider: OpenAI, accounts: []nativemodel.Config{{APIKey: "key"}}},
 		{name: "missing accounts", provider: OpenAI, model: "model"},
 		{name: "too many accounts", provider: OpenAI, model: "model", accounts: make([]nativemodel.Config, config.MaxProviderAttempts+1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			model, err := New(tc.provider, tc.model, tc.accounts, http.DefaultClient)
+			model, err := newAll(Request{Destinations: []Destination{{Provider: tc.provider, Model: tc.model, Accounts: tc.accounts}}}, http.DefaultClient)
 			require.ErrorIs(t, err, ErrInvalidRequest)
 			assert.Nil(t, model)
 		})
@@ -411,7 +411,7 @@ func TestNew_PlainAccounts(t *testing.T) {
 	t.Run("missing transport", func(t *testing.T) {
 		request, err := decodeGateway("openai/model", json.RawMessage(`{"byok":{"openai":[{"apiKey":"dummy-key"}]}}`), nil)
 		require.NoError(t, err)
-		model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, nil)
+		model, err := newAll(request, nil)
 		require.ErrorContains(t, err, "HTTP client is required")
 		assert.Nil(t, model)
 	})
@@ -427,7 +427,7 @@ func TestNew_PlainAccounts(t *testing.T) {
 			assert.Equal(t, "api.openai.com", r.URL.Host)
 			return nil, assert.AnError
 		})}
-		model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, client)
+		model, err := newAll(request, client)
 		require.NoError(t, err)
 		_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
 		require.Error(t, err)
@@ -598,7 +598,7 @@ func TestNew_ConcurrentRequestIsolation(t *testing.T) {
 				results <- err
 				return
 			}
-			model, err := New(request.Destinations[0].Provider, request.Destinations[0].Model, request.Destinations[0].Accounts, client)
+			model, err := newAll(request, client)
 			if err == nil {
 				_, err = model.DoGenerate(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("ordinary input")}})
 			}

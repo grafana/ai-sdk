@@ -369,3 +369,148 @@ func TestRoutedSelection_CommitmentAndCancellation(t *testing.T) {
 		assert.Zero(t, secondary.Load())
 	})
 }
+
+// byokRoutedCall runs one BYOK unary call for anthropic/x with raw gateway
+// controls and returns its overview.
+func byokRoutedCall(t *testing.T, selector execution.RequestSelector, gateway string, options provider.CallOptions) (*execution.Overview, error) {
+	t.Helper()
+	runtime, err := execution.New(execution.Config{Selector: selector, Limits: serviceTestLimits()})
+	require.NoError(t, err)
+	if options.ProviderOptions == nil {
+		options.ProviderOptions = provider.ProviderOptions{}
+	}
+	options.ProviderOptions[execution.ControlNamespace] = provider.RawProviderOption{Key: execution.ControlNamespace, Raw: json.RawMessage(gateway)}
+	options.Prompt = []provider.Message{provider.UserText("route me")}
+	call, err := runtime.Call(callerContext(t, gatewayauth.RequestBYOK), "anthropic/x", options)
+	if err != nil {
+		return nil, err
+	}
+	_, err = call.Generate()
+	return call.View(err).Overview, err
+}
+
+func TestRoutedSelection_BYOK(t *testing.T) {
+	const (
+		anthropicHost = "api.anthropic.com"
+		openAIHost    = "api.openai.com"
+		accounts      = `"byok":{"anthropic":[{"apiKey":"dummy-a1"},{"apiKey":"dummy-a2"}],"openai":[{"apiKey":"dummy-o1"}]}`
+	)
+	attempt := func(providerName, modelID string, outcome fallback.AttemptOutcome) execution.Attempt {
+		return execution.Attempt{Provider: providerName, ModelID: modelID, Outcome: outcome}
+	}
+	for _, tc := range []struct {
+		name     string
+		gateway  string
+		failing  []string
+		keys     []string
+		hosts    []string
+		attempts []execution.Attempt
+	}{
+		{
+			name: "cross-provider fallback model", gateway: `{` + accounts + `,"models":["openai/y"]}`, failing: []string{"dummy-a1", "dummy-a2"},
+			keys: []string{"dummy-a1", "dummy-a2", "dummy-o1"}, hosts: []string{anthropicHost, anthropicHost, openAIHost},
+			attempts: []execution.Attempt{attempt("anthropic", "x", fallback.AttemptFailed), attempt("anthropic", "x", fallback.AttemptFailed), attempt("openai", "y", fallback.AttemptSelected)},
+		},
+		{
+			name: "only skips the requested provider", gateway: `{` + accounts + `,"models":["openai/y"],"only":["openai"]}`,
+			keys: []string{"dummy-o1"}, hosts: []string{openAIHost}, attempts: []execution.Attempt{attempt("openai", "y", fallback.AttemptSelected)},
+		},
+		{
+			name: "order has no effect within a model", gateway: `{` + accounts + `,"models":["openai/y"],"order":["openai"]}`,
+			keys: []string{"dummy-a1"}, hosts: []string{anthropicHost}, attempts: []execution.Attempt{attempt("anthropic", "x", fallback.AttemptSelected)},
+		},
+		{
+			name: "repeated selector is skipped", gateway: `{` + accounts + `,"models":["anthropic/x","openai/y"]}`, failing: []string{"dummy-a1", "dummy-a2"},
+			keys: []string{"dummy-a1", "dummy-a2", "dummy-o1"}, hosts: []string{anthropicHost, anthropicHost, openAIHost},
+			attempts: []execution.Attempt{attempt("anthropic", "x", fallback.AttemptFailed), attempt("anthropic", "x", fallback.AttemptFailed), attempt("openai", "y", fallback.AttemptSelected)},
+		},
+		{
+			name: "same provider, another model", gateway: `{` + accounts + `,"models":["anthropic/z"]}`, failing: []string{"dummy-a1"},
+			keys: []string{"dummy-a1", "dummy-a2"}, hosts: []string{anthropicHost, anthropicHost},
+			attempts: []execution.Attempt{attempt("anthropic", "x", fallback.AttemptFailed), attempt("anthropic", "x", fallback.AttemptSelected)},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failing := map[string]bool{}
+			for _, key := range tc.failing {
+				failing[key] = true
+			}
+			server := &nativeServer{failing: failing}
+			spy := &accountCatalogSpy{}
+			selector := NewSelector(spy, &BYOKOptions{Client: server.client(), Factory: func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }})
+			overview, _ := byokRoutedCall(t, selector, tc.gateway, provider.CallOptions{})
+			requests := server.requests()
+			keys := make([]string, len(requests))
+			for i, request := range requests {
+				keys[i] = request.key
+			}
+			assert.Equal(t, tc.keys, keys)
+			assert.Equal(t, tc.hosts, hosts(requests))
+			require.NotNil(t, overview)
+			assert.Equal(t, "anthropic/x", overview.RequestedModelID)
+			assert.Empty(t, overview.CanonicalModelID)
+			for i := range overview.Attempts {
+				overview.Attempts[i].Error = nil
+			}
+			assert.Equal(t, tc.attempts, overview.Attempts)
+			assert.Zero(t, spy.resolved.Load())
+		})
+	}
+}
+
+func TestRoutedSelection_BYOKRefusals(t *testing.T) {
+	eight := make([]string, config.MaxProviderAttempts)
+	for i := range eight {
+		eight[i] = fmt.Sprintf(`{"apiKey":"dummy-%d"}`, i)
+	}
+	for _, tc := range []struct {
+		name, gateway string
+		want          error
+	}{
+		{name: "configured route as fallback", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"models":["grafana/chain"]}`, want: execution.ErrInvalidBYOKSelector},
+		{name: "flat alias as fallback", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"models":["alias"]}`, want: execution.ErrInvalidBYOKSelector},
+		{name: "fallback provider without accounts", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"models":["openai/y"]}`, want: execution.ErrInvalidBYOK},
+		{name: "only excludes every account", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"only":["openai"]}`, want: execution.ErrNoRoutingCandidates},
+		{name: "composed chain above the bound", gateway: `{"byok":{"anthropic":[` + strings.Join(eight, ",") + `],"openai":[{"apiKey":"dummy-o1"}]},"models":["openai/y"]}`, want: execution.ErrRoutingAttemptBound},
+		{name: "unsupported control", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"sort":"ttft"}`, want: execution.ErrUnsupportedGatewayControl},
+		{name: "invalid timeout provider", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"providerTimeouts":{"byok":{"vertex":100}}}`, want: execution.ErrProviderTimeouts},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := &nativeServer{}
+			spy := &accountCatalogSpy{}
+			selector := NewSelector(spy, &BYOKOptions{Client: server.client(), Factory: func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }})
+			overview, err := byokRoutedCall(t, selector, tc.gateway, provider.CallOptions{})
+			require.ErrorIs(t, err, tc.want)
+			assert.Nil(t, overview)
+			assert.Empty(t, server.requests())
+			assert.Zero(t, spy.resolved.Load())
+		})
+	}
+}
+
+func TestRoutedSelection_BYOKNativeOptionRefusal(t *testing.T) {
+	skills := provider.CallOptions{ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"skills":[{"type":"custom","skillId":"external"}]}}`)}}}
+	accounts := `"byok":{"anthropic":[{"apiKey":"dummy-a1"}],"openai":[{"apiKey":"dummy-o1"}]}`
+	t.Run("all-Anthropic chain refuses before any attempt", func(t *testing.T) {
+		server := &nativeServer{}
+		selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
+		overview, err := byokRoutedCall(t, selector, `{`+accounts+`,"models":["anthropic/y"]}`, skills)
+		require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+		assert.Nil(t, overview)
+		assert.Empty(t, server.requests())
+	})
+	t.Run("mixed chain refuses the Anthropic candidate without its I/O", func(t *testing.T) {
+		server := &nativeServer{}
+		selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
+		overview, err := byokRoutedCall(t, selector, `{`+accounts+`,"models":["openai/y"]}`, skills)
+		require.NoError(t, err)
+		requests := server.requests()
+		require.Len(t, requests, 1)
+		assert.Equal(t, "api.openai.com", requests[0].host)
+		assert.Equal(t, "dummy-o1", requests[0].key)
+		require.NotNil(t, overview)
+		require.Len(t, overview.Attempts, 2)
+		assert.Equal(t, fallback.AttemptFailed, overview.Attempts[0].Outcome)
+		assert.Equal(t, fallback.AttemptSelected, overview.Attempts[1].Outcome)
+	})
+}
