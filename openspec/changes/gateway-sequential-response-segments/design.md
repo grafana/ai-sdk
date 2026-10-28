@@ -279,7 +279,7 @@ The direct oracle is the committed provider parts. Upstream has no server lifecy
 | First-finish EOF and single-metadata rule (#98) | A former intentional deviation, now an implementation bug against the full registered direct oracle. This change removes it. |
 | Forwarding valid sequential segments unchanged | Parity-preserving. |
 | Quiescence, per-segment ID uniqueness, stream-global tool IDs, no content after `finish` without metadata | Intentional Gateway strictness: a Go extension, the strict server dialect established by #98. It is observable only for malformed input, no registered fixture exercises it, and it needs no `knownGaps` entry. |
-| Agent Observability first-segment generation | Coverage gap in a Go extension, tracked by the D10 follow-up. Not an upstream surface. |
+| Agent Observability first-segment generation | Coverage gap in a Go extension, tracked by #582 (D10). Not an upstream surface. |
 
 `PARITY.md` stays unchanged: no surface is added or removed, and the "AI Gateway" evidence location does not change.
 

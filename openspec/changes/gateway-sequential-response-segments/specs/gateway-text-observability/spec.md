@@ -19,7 +19,7 @@ Unary observation SHALL start immediately before the shared model invocation and
 - **WHEN** a stream emits two response segments, each ending with a finish that reports its own usage and finish reason, and then closes
 - **THEN** every part SHALL pass through unchanged and in order, and the request SHALL produce one logical log record, one metric observation set and one Agent Observability generation
 - **AND** the log record and metrics SHALL carry the strongest normalized counters across both finish parts and the last finish reason
-- **AND** until the separately tracked Agent Observability recorder change lands, the Agent Observability generation SHALL be finalized at the first finish and carry only the first segment's usage and finish reason
+- **AND** until the Agent Observability recorder change (#582) lands, the Agent Observability generation SHALL be finalized at the first finish and carry only the first segment's usage and finish reason
 
 ### Requirement: Logical finalization precedence and strongest usage
 
@@ -31,4 +31,4 @@ When upstream closure and downstream context cancellation are both observable at
 
 #### Scenario: Agent Observability stops at the first finish
 - **WHEN** usage-bearing parts arrive after the first finish of a stream with several response segments
-- **THEN** logs and metrics SHALL include them in their strongest-value aggregation, while the Agent Observability generation SHALL exclude them until the separately tracked recorder change lands
+- **THEN** logs and metrics SHALL include them in their strongest-value aggregation, while the Agent Observability generation SHALL exclude them until the #582 recorder change lands

@@ -150,7 +150,7 @@ Each task adds or rewrites tests to the new spec. Cases for new behavior must fa
   - in `ai-gateway/docs/text-observability.md`, add the Agent Observability first-segment limitation next to L74.
 
   Verify with `mise run lint-docs`, and check the architecture diagrams and glossary against the resulting code.
-- [ ] 6.2 File the follow-up issue for `middleware/agentobservability` (design D10). Its scope:
+- [x] 6.2 File the follow-up issue for `middleware/agentobservability` (design D10). Its scope:
   - finalize at upstream close or a terminal outcome instead of the first `PartFinish` (`recording.go:239-256`);
   - aggregate usage across all usage-bearing parts;
   - keep the last finish reason and "end before downstream EOF";
@@ -181,5 +181,6 @@ Each task adds or rewrites tests to the new spec. Cases for new behavior must fa
 - Open a draft PR titled `feat(ai-gateway)!: forward sequential response segments in one stream`. Include:
   - the review walkthrough from `AGENTS.md`;
   - the statement that the evidence is mock-stream or replay evidence, not live-provider acceptance.
+- Link the Agent Observability follow-up #582 from the PR description.
 - Before pushing, check the staged diff and the outgoing commits for secrets.
 - Archive the change in the same PR before merge. If the Agent Observability follow-up merged first, drop the limitation clauses from the gateway-text-observability delta before archiving.

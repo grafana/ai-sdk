@@ -45,7 +45,7 @@ Both clients reproduce the unchanged direct goldens when they are served the com
   - Later segments never re-enter candidate selection, fallback or replay.
 - **Observability.**
   - Logs and metrics already observe every part, so they see all segments.
-  - Agent Observability finalizes its generation at the first `finish`, in the separately versioned `middleware/agentobservability` module. Until a follow-up fixes that, its generation reflects only the first segment. The gateway-text-observability requirement states this precisely, and the module fix is registered as its own work package.
+  - Agent Observability finalizes its generation at the first `finish`, in the separately versioned `middleware/agentobservability` module. Until #582 fixes that, its generation reflects only the first segment. The gateway-text-observability requirement states this precisely, and the module fix is registered as its own work package.
 - **Evidence.**
   - Focused native-part, raw-wire and schema tests.
   - A handler replay of the committed `expected-provider-parts.jsonl` for the seven fixtures.
