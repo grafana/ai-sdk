@@ -163,6 +163,12 @@
         "labels": ["agento11y-conformance-review"]
       },
       {
+        "description": "Update indirect Go requirements too: every module replaces first-party modules locally, so a dependency bumped in one module must move in every go.mod that lists it",
+        "matchManagers": ["gomod"],
+        "matchDepTypes": ["indirect"],
+        "enabled": true
+      },
+      {
         "description": "First-party requirements follow the version manifest and are updated by release pull requests",
         "matchManagers": ["gomod"],
         "matchPackageNames": ["github.com/grafana/ai-sdk", "github.com/grafana/ai-sdk/**"],

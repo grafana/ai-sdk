@@ -36,7 +36,7 @@
 
 - [x] 5.1 Release libraries from one pull request in `release-please-config.json`, with Gateway separate, and check it in `internal/releasecheck`
 - [x] 5.2 Make `refactor` a releasing changelog section
-- [x] 5.3 Disable first-party Renovate updates and confirm third-party updates tidy modules with local replacements
+- [x] 5.3 Disable first-party Renovate updates and enable indirect gomod updates so third-party bumps move every listing go.mod together; the base preset's gomodTidy tidies each module
 - [x] 5.4 Update `release/README.md`, `release/tooling` docs, `CONTRIBUTING.md`, `ai-gateway/README.md` and architecture docs for local replacements, requirements and the release flow
 
 ## 6. Verification

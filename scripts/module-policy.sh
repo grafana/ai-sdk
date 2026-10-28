@@ -7,7 +7,7 @@
 # .release-please-manifest.json, or its registered initial version. Sync writes
 # both; consumers ignore replacements, so published requirements stay real.
 # Validate: one or all modules download, verify, build and test with readonly
-# manifests, GOWORK=off and their local first-party replacements.
+# manifests, and their local first-party replacements.
 # Boundary: the AGPL Gateway stays under ai-gateway/; Apache SDK modules must
 # not reference it and the SDK/Grafana graphs exclude it. Isolation: SDK and
 # Grafana build/test without Gateway source present. These checks do not
@@ -21,6 +21,7 @@ gateway_module=$module_prefix/ai-gateway
 manifest_file=.release-please-manifest.json
 config_file=release-please-config.json
 readonly_flags="${GOFLAGS:+$GOFLAGS }-mod=readonly"
+export GOWORK=off
 
 fail() { echo "$*" >&2; exit 1; }
 
@@ -34,7 +35,7 @@ modules() {
       root=.
       has_root=true
     fi
-    path=$(GOWORK=off go mod edit -json "$file" | jq -er '.Module.Path')
+    path=$(go mod edit -json "$file" | jq -er '.Module.Path')
     expected=$module_prefix
     [[ "$root" == . ]] || expected+=/$root
     [[ "$path" == "$expected" ]] || fail "$file declares $path, expected $expected"
@@ -52,7 +53,7 @@ validate() (
     list=$(awk -F '\t' -v wanted="$selection" '$1 == wanted || $2 == wanted' <<<"$list")
     [[ -n "$list" ]] || fail "unknown module: $selection"
   fi
-  export GOWORK=off GOFLAGS="$readonly_flags"
+  export GOFLAGS="$readonly_flags"
   while IFS=$'\t' read -r root path; do
     [[ -n "$root" ]] || continue
     echo "==> $root ($path)"
@@ -92,7 +93,7 @@ published_root() {
 }
 
 first_party_requirements() {
-  GOWORK=off go mod edit -json "$1/go.mod" | jq -r --arg prefix "$module_prefix" '
+  go mod edit -json "$1/go.mod" | jq -r --arg prefix "$module_prefix" '
     (.Require // [])[] | select(.Path == $prefix or (.Path | startswith($prefix + "/"))) | .Path'
 }
 
@@ -115,7 +116,7 @@ sync_module() {
   local published=$1 root=$2 path args=()
   while IFS= read -r path; do
     [[ -n "$path" ]] && args+=("-dropreplace=$path")
-  done < <(GOWORK=off go mod edit -json "$root/go.mod" | jq -r --arg prefix "$module_prefix" '
+  done < <(go mod edit -json "$root/go.mod" | jq -r --arg prefix "$module_prefix" '
     (.Replace // [])[] | select(.Old.Path == $prefix or (.Old.Path | startswith($prefix + "/"))) | .Old.Path')
   while IFS= read -r path; do
     [[ -n "$path" ]] && args+=("-replace=$path=$(relative_path "$root" "$(module_root "$path")")")
@@ -123,7 +124,7 @@ sync_module() {
   while IFS= read -r path; do
     [[ -n "$path" ]] && args+=("-require=$path@$(expected_version "$(published_root "$path" "$published")")")
   done < <(first_party_requirements "$root")
-  (( ${#args[@]} == 0 )) || (cd "$root" && GOWORK=off go mod edit "${args[@]}")
+  (( ${#args[@]} == 0 )) || (cd "$root" && go mod edit "${args[@]}")
 }
 
 sync() {
@@ -135,7 +136,7 @@ sync() {
       sync_module "$published" "$root"
     done <<<"$all"
     while IFS=$'\t' read -r root _; do
-      (cd "$root" && GOWORK=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=mod" go mod tidy)
+      (cd "$root" && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=mod" go mod tidy)
     done <<<"$all"
   done
 }
@@ -144,7 +145,7 @@ requirements() {
   local published all root module manifest graph path version target expected failures=
   published=$(modules)
   all=$(modules all)
-  export GOWORK=off GOFLAGS="$readonly_flags"
+  export GOFLAGS="$readonly_flags"
   while IFS=$'\t' read -r root module; do
     manifest=$(go mod edit -json "$root/go.mod")
     while IFS=$'\t' read -r path version; do
@@ -191,14 +192,14 @@ boundary() {
       fail "$path is missing the expected license text"
     fi
   done
-  module=$(GOWORK=off go mod edit -json ai-gateway/go.mod | jq -er '.Module.Path')
+  module=$(go mod edit -json ai-gateway/go.mod | jq -er '.Module.Path')
   [[ "$module" == "$gateway_module" ]] || fail "ai-gateway/go.mod declares $module"
   [[ ! -e gateway/catalog && ! -e gateway/providerwire ]] || fail 'Gateway implementation must live below ai-gateway'
   list=$(modules all)
   while IFS=$'\t' read -r root module; do
     [[ -n "$root" ]] || continue
     [[ "$module" != "$gateway_module" && "$module" != "$gateway_module/"* ]] || continue
-    manifest=$(GOWORK=off go mod edit -json "$root/go.mod")
+    manifest=$(go mod edit -json "$root/go.mod")
     references=$(jq -r --arg gateway "$gateway_module" '
       [(.Require // [])[]?.Path, (.Replace // [])[]?.Old.Path, (.Replace // [])[]?.New.Path]
       | map(select(type == "string" and (. == $gateway or startswith($gateway + "/")))) | .[]
@@ -224,7 +225,7 @@ boundary() {
     (( status == 1 )) || exit "$status"
   fi
   for root in . providers/grafana; do
-    graph=$(cd "$root" && GOWORK=off GOFLAGS="$readonly_flags" go list -m all)
+    graph=$(cd "$root" && GOFLAGS="$readonly_flags" go list -m all)
     while read -r module _; do
       [[ "$module" != "$gateway_module" && "$module" != "$gateway_module/"* ]] || fail "$root module graph contains Gateway"
     done <<<"$graph"
@@ -239,7 +240,7 @@ isolation() (
   trap 'rm -rf "$dir"' EXIT
   rsync -a --exclude='/.git' --exclude='/ai-gateway' --exclude='**/node_modules' "$repo_root/" "$dir/"
   [[ ! -e "$dir/ai-gateway" ]] || fail 'isolated copy contains Gateway source'
-  export GOWORK=off GOFLAGS="$readonly_flags"
+  export GOFLAGS="$readonly_flags"
   for root in . providers/grafana; do
     echo "==> $root without Gateway source"
     module=$module_prefix

@@ -20,7 +20,7 @@ changelogs. `bootstrap-sha` applies that boundary to modules without a release;
 the temporary `last-release-sha` applies it to the already-tagged root module.
 The activated preparation driver ignores `last-release-sha` in memory and uses
 actual releases as its boundary, retaining `bootstrap-sha` for never-released modules.
-The committed config is retained for bootstrap candidate evidence.
+The committed `last-release-sha` remains for configuration history only.
 
 Root releases are tagged `vX.Y.Z`; nested releases are tagged
 `<module-directory>/vX.Y.Z`, which is what the Go tool requires to resolve a
@@ -44,6 +44,16 @@ Release preparation sets those requirements to the versions being released, so a
 provider that uses unreleased root behavior is released together with root and
 requires the new root version, although that tag does not exist until the merge.
 Publication tags prerequisites before their dependents.
+
+If a merged library cannot be published, the manifest on `main` already records its
+new version. Every later release of a library that requires it fails readiness until
+it is published, because that version is neither tagged nor released again. Fix the
+blocker and rerun the release workflow; a blocked root therefore holds back every
+library release.
+
+Release pull requests opened by the previous per-module configuration fail readiness
+under the combined configuration. Close them after switching; the next release run
+proposes the combined pull request.
 
 ## First-party requirements
 
@@ -291,7 +301,7 @@ and installed only on `grafana/ai-sdk`. Its broker authorization is restricted t
 this workflow on main push events, with contents, pull-request and issue write
 permissions. PR #465's smoke run verified token issuance, repository read scope,
 and revocation. The controlled exercise also proved signed App PR creation and triggered readiness
-checks through merged root PR #490. Live publication proof remains pending.
+checks through merged root PR #490, and published library releases followed.
 
 The broker binds issuance to the workflow's file path, so renaming or moving
 `.github/workflows/release-please.yml` breaks token minting until that config is

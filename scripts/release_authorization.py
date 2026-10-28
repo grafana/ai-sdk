@@ -118,11 +118,11 @@ def main():
     payload = json.loads(args.input.read_text())
     with redirect_stdout(sys.stderr):
         component, base, components, versions = verify_merged(payload["candidate"], payload["pr"], payload["record"])
-        graph = readiness.verify_requirements(component, components, versions, base)
+        prerequisites = readiness.verify_requirements(component, components, versions, base)
         readiness.verify_clean_checkout()
     if not args.result:
         raise ValueError("validation requires a result path")
-    args.result.write_text(json.dumps({"component": component, "baseSha": base, "prerequisites": graph}))
+    args.result.write_text(json.dumps({"component": component, "baseSha": base, "prerequisites": prerequisites}))
 
 
 if __name__ == "__main__":

@@ -32,3 +32,17 @@ test('only first-party requirement versions are rewritten', () => {
     .replace('openai v0.0.0-20260101000000-0123456789ab', 'openai v0.1.1'));
   assert.equal(rewriteRequirements(after, versions), after);
 });
+
+test('exclude and replace blocks keep their first-party versions', () => {
+  const before = [
+    'require github.com/grafana/ai-sdk v0.1.0 // pinned', '',
+    'exclude (', '\tgithub.com/grafana/ai-sdk v0.0.9', ')',
+    'exclude github.com/grafana/ai-sdk v0.0.8',
+    'replace (', '\tgithub.com/grafana/ai-sdk v0.1.0 => ../..', ')',
+    'replace github.com/grafana/ai-sdk v0.1.0 => ../..',
+    'require ( // first-party', '\tgithub.com/grafana/ai-sdk/providers/openai v0.1.0', ')', '',
+  ].join('\n');
+  assert.equal(rewriteRequirements(before, versions), before
+    .replace('require github.com/grafana/ai-sdk v0.1.0 // pinned', 'require github.com/grafana/ai-sdk v0.2.0 // pinned')
+    .replace('\tgithub.com/grafana/ai-sdk/providers/openai v0.1.0', '\tgithub.com/grafana/ai-sdk/providers/openai v0.1.1'));
+});

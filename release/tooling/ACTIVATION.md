@@ -17,7 +17,7 @@ The activation PR introduces `RELEASE_LIBRARY_MODE`:
 | Value | Effect on the next canonical main push |
 | --- | --- |
 | Absent or any other value | No release job or writes |
-| `root` | Only merged root #490 may publish; no new release PRs |
+| `root` | Historical bootstrap for merged root #490; obsolete since the combined release configuration |
 | `libraries` | Publish verified pending libraries, then prepare library release PRs |
 
 No mode includes Gateway. The CLI repeats the mode, repository, event and branch
@@ -116,9 +116,9 @@ readiness can run again. Commit-parser diagnostics stop preparation writes.
 
 Preparation uses release-please 17.6.0 with the temporary `last-release-sha` override
 removed in memory; actual published releases delimit later notes, while
-`bootstrap-sha` remains the boundary for never-published modules. The committed
-release config stays unchanged so #490's retained config identity remains valid.
-The historical PR header describes publication as disabled; this activation runbook
+`bootstrap-sha` remains the boundary for never-published modules. The combined
+release configuration changed the committed release config, so root bootstrap mode
+can no longer authorize #490; that bootstrap is complete. The historical PR header describes publication as disabled; this activation runbook
 and the live mode are authoritative until that header is updated after bootstrap.
 
 Renovate does not update first-party modules; release pull requests update those

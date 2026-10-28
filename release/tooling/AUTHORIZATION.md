@@ -81,10 +81,10 @@ of relying on that mutable array. GitHub Actions check-suite App ID is `15368`.
 
 Validation uses a detached temporary checkout and removes it afterward. The
 candidate's copies of policy, consumer harnesses and authorization scripts are not
-executed as the trusted validator. Candidate library code and its tests do execute;
-run this command only in a suitable build environment for reviewed repository code.
-The restricted child environment excludes tokens and Python/Node/Git injection
-variables. Normal prerequisite downloads still use the public Go proxy.
+executed as the trusted validator. Validation reads Git objects and parses `go.mod`
+files; it does not build or test candidate code, which the squash revision's source
+CI covers. The restricted child environment excludes tokens and Python/Node/Git
+injection variables.
 
 ## Failures and evidence limits
 
@@ -108,14 +108,5 @@ downloads and independent decisions. Python release tests exercise real Git test
 merges/squashes, stale evidence, generated footprints and selected graph failures.
 They do not claim live App signature or release-publication evidence.
 
-The explicit root consumer integration uses real candidate source with deliberately
-broken OpenAI/Bedrock source, fresh proxy caches and the pinned frontend parser:
-
-```bash
-RELEASE_AUTHORIZATION_INTEGRATION=1 PYTHONDONTWRITEBYTECODE=1 \
-  python3 -m unittest discover -s scripts -p test_release_authorization.py
-```
-
-The default suite skips this extra network/build integration; run it before merging
-changes to the selected-library execution boundary. Required source CI continues to
+Required source CI continues to
 run ordinary integration and conformance jobs.

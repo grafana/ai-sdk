@@ -3,7 +3,6 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 
 from release_readiness import PREFIX, json_stream, run
@@ -35,10 +34,10 @@ def verify_graph(graph, path, version, cache):
         raise ValueError(f"consumer did not select the published {path}@{version} from its module cache")
 
 
-def verify_published(root, version, tooling_root=None):
+def verify_published(root, version):
     if root != "." and root not in SCENARIOS:
         raise ValueError(f"no consumer regression registered for {root}")
-    harness = Path(tooling_root) if tooling_root else Path(__file__).resolve().parent.parent
+    harness = Path(__file__).resolve().parent.parent
     path = PREFIX if root == "." else f"{PREFIX}/{root}"
     with tempfile.TemporaryDirectory(prefix="release-consumer-") as directory:
         temp = Path(directory)
@@ -86,7 +85,6 @@ func main() {
 
 
 def main():
-    sys.dont_write_bytecode = True
     parser = argparse.ArgumentParser()
     parser.add_argument("root")
     parser.add_argument("version")

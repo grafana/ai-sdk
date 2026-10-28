@@ -129,8 +129,13 @@ intermediate state.
   dependent whose requirement lacks it; D6 detects it after publication.
 - **Replacement completeness:** a missing transitive replacement breaks only the
   in-repository build of that module; the D1 check reports it.
-- **Renovate third-party updates:** Renovate must tidy modules with local
-  replacements from the full checkout; verified during implementation.
+- **Renovate third-party updates:** without a workspace, a module that lists a
+  dependency must list the version its local first-party replacements select, or
+  readonly builds fail with "updates to go.mod needed". Renovate disables indirect
+  gomod updates by default, so the repository enables them; every `go.mod` listing
+  a dependency then moves in the same grouped branch, and the base preset's
+  `gomodTidy` tidies each one. A failure surfaces in CI with the instruction to
+  run `mise run tidy`; the first grouped Renovate run confirms this behavior.
 - **Editor experience:** cross-module references may be less complete without a
   workspace.
 
@@ -141,5 +146,7 @@ One pull request adds replacements, sets requirements to the manifest
 the workspaces, and switches release preparation, readiness, publication,
 release-please configuration and Renovate. After merge, close open per-module
 release pull requests and the grouped first-party Renovate pull request; the next
-release run proposes one pull request for all pending libraries. Rollback reverts
+release run proposes one pull request for all pending libraries. Merged release pull
+requests must be published before this change lands, because their readiness
+evidence predates the combined configuration. Rollback reverts
 the pull request; published tags stay valid.

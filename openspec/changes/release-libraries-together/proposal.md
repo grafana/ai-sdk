@@ -67,6 +67,8 @@ The release process should meet four goals:
   workspaces; the separate integration workspace requirement is removed.
 - `gateway-sources`: evidence wording refers to same-revision source instead of
   a candidate workspace.
+- `sdk-provider-tools`, `gateway-provider-tools`, `bedrock-mantle-responses-provider`:
+  pin, workspace and replacement wording follows the manifest-aligned model.
 - `upstream-parity-governance`: coordinated producer and consumer changes rely on
   local replacements; release evidence is per-module CI plus post-publication
   verification.

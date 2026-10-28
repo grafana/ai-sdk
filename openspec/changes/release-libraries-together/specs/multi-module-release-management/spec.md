@@ -29,8 +29,9 @@ updates SHALL NOT change `go.sum` files and SHALL NOT create release intent.
 After tagging a library, publication SHALL resolve the new version through the
 public Go proxy and checksum database in a fresh cache, with no workspace or
 replacements, build a consumer of its public packages and run its deterministic
-consumer scenarios. It SHALL query the proxy only after the tag exists. A failure
-SHALL be reported for a fix-forward release and SHALL NOT move or delete tags.
+consumer scenarios. It SHALL query the proxy only after the tag exists and SHALL
+retry a bounded number of times while the new version does not resolve yet. A
+failure SHALL be reported for a fix-forward release and SHALL NOT move or delete tags.
 
 #### Scenario: Published library verified
 
@@ -203,6 +204,7 @@ candidate-source gates without requiring publication readiness.
 
 - **WHEN** the library release pull request releases several components
 - **THEN** its body contains exactly one release notes section per released component, each matching that component's manifest version and changelog entry
+- **AND** each component's GitHub Release uses that section's notes unchanged, including text that resembles HTML
 
 #### Scenario: Edited module file
 

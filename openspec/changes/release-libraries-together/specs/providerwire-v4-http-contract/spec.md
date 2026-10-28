@@ -34,6 +34,13 @@ The dependency boundary SHALL be one-way: Gateway code MAY import SDK modules, w
 - **WHEN** root SDK verification runs with GOWORK=off
 - **THEN** Gateway SHALL remain outside the root module graph and no external source/module SHALL import, require or replace it
 
+### Requirement: Gateway plugin release and pin policy
+The Gateway's supported release artifact SHALL be its App Platform plugin package, not a container image or standalone Go-module package. Its internal module boundary and declared first-party requirements SHALL remain subject to the manifest-aligned requirement and license policy.
+
+#### Scenario: Gateway plugin release and pin policy
+- **WHEN** an ai-gateway version tag selects a release artifact
+- **THEN** the supported artifact SHALL be the plugin package, with first-party requirements subject to the manifest-aligned requirement and license policy rather than standalone module support
+
 ## REMOVED Requirements
 
 ### Requirement: Explicit candidate-source integration workspace boundary

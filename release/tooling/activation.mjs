@@ -123,8 +123,7 @@ export async function prepareLibraries(github, expectedSha) {
   assert.equal(inventory.mainSha, expectedSha, 'main advanced before preparation');
   const config = await github.getFileJson('release-please-config.json', 'main');
   const libraries = Object.keys(config.packages).filter(path => path !== 'ai-gateway');
-  const manifest = await Manifest.fromManifest(github, 'main', 'release-please-config.json',
-    '.release-please-manifest.json', {});
+  const manifest = await Manifest.fromManifest(github, 'main', 'release-please-config.json', MANIFEST, {});
   manifest.lastReleaseSha = undefined;
   for (const component of ['ai-gateway', ...inventory.candidates.map(candidate => candidate.component)]) {
     delete manifest.repositoryConfig[component];
