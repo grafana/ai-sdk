@@ -174,7 +174,7 @@ Each task adds or rewrites tests to the new spec. Cases for new behavior must fa
   - `mise run lint-docs`
   - `mise run validate-parity-baseline`
   - `mise run parity-check`
-- [ ] 7.2 Run `git diff --stat origin/main -- 'test/conformance/*/upstream/' 'test/conformance/*/recorded/' test/conformance/testdata/ test/conformance/upstream.yaml test/conformance/PARITY.md`. It must show no changes. Then run `openspec validate gateway-sequential-response-segments --strict`, which must pass.
+- [x] 7.2 Run `git diff --stat origin/main -- 'test/conformance/*/upstream/' 'test/conformance/*/recorded/' test/conformance/testdata/ test/conformance/upstream.yaml test/conformance/PARITY.md`. It must show no changes. Then run `openspec validate gateway-sequential-response-segments --strict`, which must pass.
 
 ## Workflow follow-up
 
