@@ -24,8 +24,8 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 5. Per-attempt option translation
 
-- [ ] 5.1 Export `fallback.DefaultDecider` with a test that it matches the current default for API, context-window, buffer-limit and unknown errors. Verify with `go test ./fallback/...`.
-- [ ] 5.2 Add `execution.Target`, `TargetType`, `Translator`, `WithTranslator`, `Translate` and `ErrTranslation`. `Call` stores the translator in the call context, and `ClassifyProvider` maps `ErrTranslation` to internal before its other checks (design D5). Add `execution` tests:
+- [x] 5.1 Export `fallback.DefaultDecider` with a test that it matches the current default for API, context-window, buffer-limit and unknown errors. Verify with `go test ./fallback/...`.
+- [x] 5.2 Add `execution.Target`, `TargetType`, `Translator`, `WithTranslator`, `Translate` and `ErrTranslation`. `Call` stores the translator in the call context, and `ClassifyProvider` maps `ErrTranslation` to internal before its other checks (design D5). Add `execution` tests:
   - no translator passes options through unchanged;
   - the clone isolates attempts;
   - a translator panic and injected call-level `gateway` or protected headers in any case return `ErrTranslation` without calling the inner model, and without the header name or value;
@@ -33,7 +33,7 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
   - concurrent calls on one runtime see only their own translator.
 
   Verify with `go test -race ./internal/execution/...`.
-- [ ] 5.3 Wrap every configured candidate in `service/catalog.go`, single-candidate models included, and every BYOK account in `byok/model.go`, as native → `nativeoptions.Model` → `Translate`. Remove BYOK's outer Anthropic wrapper. Give Gateway-built fallback chains a decider that stops on `ErrTranslation`. Add service tests with fake native servers:
+- [x] 5.3 Wrap every configured candidate in `service/catalog.go`, single-candidate models included, and every BYOK account in `byok/model.go`, as native → `nativeoptions.Model` → `Translate`. Remove BYOK's outer Anthropic wrapper. Give Gateway-built fallback chains a decider that stops on `ErrTranslation`. Add service tests with fake native servers:
   - a heterogeneous Anthropic→OpenAI chain where each request carries only its own translation;
   - BYOK accounts translated per attempt;
   - a panicking translator and an injected protected header on the first candidate, with zero provider requests and no second attempt;
@@ -41,7 +41,7 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
   - BYOK Anthropic validation failing every account with zero native I/O and the unchanged document.
 
   Verify with `go test -race ./cmd/grafana-ai-gateway/internal/service/... ./cmd/grafana-ai-gateway/internal/byok/...`.
-- [ ] 5.4 Document `Translator` and the wrapping order in the `execution` godoc, add the "option translator; per-attempt translation" row and reword "Adapter; translator" in the glossary, and add the translation step to the architecture walkthrough. Verify with `mise run lint-docs`.
+- [x] 5.4 Document `Translator` and the wrapping order in the `execution` godoc, add the "option translator; per-attempt translation" row and reword "Adapter; translator" in the glossary, and add the translation step to the architecture walkthrough. Verify with `mise run lint-docs`.
 
 ## 6. Test adapter on a route
 

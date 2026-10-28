@@ -9,6 +9,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
@@ -52,10 +53,12 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			}
 			var candidate provider.LanguageModel
 			var validateOptions func(provider.CallOptions) error
+			target := execution.Target{ModelID: descriptor.Model}
 			switch providerConfig.Type {
 			case "anthropic":
 				candidate = construct(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
 				validateOptions = nativeoptions.Anthropic
+				target.Type = execution.TargetAnthropic
 			case "openai-compatible":
 				if providerConfig.BaseURL == "" {
 					return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
@@ -72,8 +75,10 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				validateOptions = func(options provider.CallOptions) error {
 					return nativeoptions.Compatible(options, providerName)
 				}
+				target.Type, target.ProviderName = execution.TargetOpenAICompatible, providerConfig.ProviderName
 			case "openai":
 				candidate = nativemodel.NewOpenAI(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
+				target.Type = execution.TargetOpenAI
 			default:
 				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 			}
@@ -83,6 +88,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			if validateOptions != nil {
 				candidate = nativeoptions.Model{LanguageModel: candidate, Validate: validateOptions}
 			}
+			candidate = execution.Translate(candidate, target)
 			providerName := providerConfig.Type
 			if providerConfig.Type == "openai-compatible" && providerConfig.ProviderName != "" {
 				providerName = providerConfig.ProviderName
@@ -102,7 +108,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			if len(physical) != 0 {
 				sink = physical[0]
 			}
-			ordered.WithAttemptObserver(physicalAttemptObserver(descriptors, sink))
+			ordered.WithDecider(execution.FallbackDecider).WithAttemptObserver(physicalAttemptObserver(descriptors, sink))
 			lower = ordered
 		}
 		model, err := factory(id, lower)

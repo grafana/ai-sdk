@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
-	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -100,12 +100,17 @@ func TestBuildCatalog_ModelFactoryReceivesCanonicalAndProtectedLowerOnce(t *test
 		factoryCalls++
 		switch canonicalID {
 		case "grafana/assistant":
-			assert.Same(t, direct["claude-assistant"], lower.(nativeoptions.Model).LanguageModel)
+			assert.NotEqual(t, direct["claude-assistant"], lower)
+			assert.Equal(t, "claude-assistant", lower.ModelID())
 		case "grafana/other":
-			assert.Same(t, direct["claude-other"], lower.(nativeoptions.Model).LanguageModel)
+			assert.NotEqual(t, direct["claude-other"], lower)
+			assert.Equal(t, "claude-other", lower.ModelID())
 		default:
 			t.Fatalf("unexpected canonical ID %q", canonicalID)
 		}
+		skills := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"skills":[{"type":"anthropic","skillId":"pptx"}]}}`)}}
+		_, err := lower.DoGenerate(context.Background(), provider.CallOptions{ProviderOptions: skills})
+		assert.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
 		return identityModelFactory(canonicalID, lower)
 	})
 	require.NoError(t, err)

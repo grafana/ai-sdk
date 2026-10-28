@@ -14,7 +14,6 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
-	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
@@ -183,12 +182,7 @@ func TestBYOKSelection_NativeSummariesAndAttempts(t *testing.T) {
 						return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 					})}
 					factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) {
-						ordered := model
-						switch wrapped := model.(type) {
-						case nativeoptions.Model:
-							ordered = wrapped.LanguageModel
-						}
-						switch chain := ordered.(type) {
+						switch chain := byokChain(model).(type) {
 						case *fallback.Model:
 							chain.WithAttemptObserver(func(context.Context, fallback.Attempt) { observed.Add(1) })
 						default:

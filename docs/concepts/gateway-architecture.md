@@ -158,7 +158,10 @@ sequenceDiagram
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** Logical observation surrounds the
    configured primary/fallback chain. Candidate-specific option checks and
-   native adapters run within that chain. An adapter converts common call
+   native adapters run within that chain. When the inbound adapter supplied an
+   option translator, each candidate first translates its own copy of the call
+   options for its native protocol; host policy re-checks the result before the
+   candidate's native option validation runs. An adapter converts common call
    options into its provider's HTTP request and converts the response back into
    SDK values. Native options remain provider-specific; not every candidate
    consumes every namespace. See
