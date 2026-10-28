@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
+import time
 
-from release_readiness import PREFIX, json_stream, run
+from release_readiness import PREFIX, VERSION, json_stream, run
 
 
 SCENARIOS = {
@@ -20,6 +23,55 @@ SCENARIOS = {
     "middleware/prometheus": "TestGenerateMetrics",
     "middleware/agentobservability": "TestHooksMiddleware_AllowPassesThrough",
 }
+
+
+POLL_SECONDS = 30
+TAG = re.compile(r"^(?:(?P<root>(?:providers|middleware)/[a-z0-9-]+)/)?(?P<version>v" + VERSION + r")$")
+
+
+def parse_tag(tag):
+    match = TAG.fullmatch(tag)
+    if not match:
+        raise ValueError(f"not a library release tag: {tag}")
+    return match.group("root") or ".", match.group("version")
+
+
+def proxy_env(cache):
+    return dict(os.environ, GOWORK="off", GOFLAGS="-mod=mod -modcacherw", GOPROXY="https://proxy.golang.org",
+                GOPRIVATE="", GONOPROXY="", GONOSUMDB="", GOSUMDB="sum.golang.org", GOMODCACHE=str(cache))
+
+
+def unavailable(modules, env):
+    missing = []
+    for path, version in modules:
+        result = subprocess.run(["go", "mod", "download", "-json", f"{path}@{version}"],
+                                env=env, text=True, capture_output=True)
+        try:
+            info = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            info = {"Error": result.stderr.strip()}
+        if result.returncode or info.get("Error"):
+            missing.append((path, version, info.get("Error") or result.stderr.strip()))
+        elif path == modules[0][0]:
+            manifest = json.loads(run("go", "mod", "edit", "-json", info["GoMod"], env=env))
+            modules.extend((m["Path"], m["Version"]) for m in manifest.get("Require") or []
+                           if (m["Path"] == PREFIX or m["Path"].startswith(PREFIX + "/"))
+                           and (m["Path"], m["Version"]) not in modules)
+    return missing
+
+
+def wait_until_available(path, version, minutes, sleep=time.sleep, clock=time.monotonic):
+    deadline = clock() + minutes * 60
+    while True:
+        with tempfile.TemporaryDirectory(prefix="release-availability-") as cache:
+            missing = unavailable([(path, version)], proxy_env(Path(cache)))
+        if not missing:
+            return
+        if clock() >= deadline:
+            details = "; ".join(f"{p}@{v}: {e}" for p, v, e in missing)
+            raise ValueError(f"not resolvable through the public Go proxy after {minutes} minutes: {details}")
+        print(f"Waiting for the public Go proxy: {', '.join(f'{p}@{v}' for p, v, _ in missing)}", flush=True)
+        sleep(POLL_SECONDS)
 
 
 def verify_graph(graph, path, version, cache):
@@ -44,8 +96,7 @@ def verify_published(root, version):
         cache = temp / "cache"
         consumer = temp / "consumer"
         consumer.mkdir()
-        env = dict(os.environ, GOWORK="off", GOFLAGS="-mod=mod -modcacherw", GOPROXY="https://proxy.golang.org",
-                   GOPRIVATE="", GONOPROXY="", GONOSUMDB="", GOSUMDB="sum.golang.org", GOMODCACHE=str(cache))
+        env = proxy_env(cache)
         run("go", "mod", "init", "releasecheck.local/consumer", cwd=consumer, env=env)
         run("go", "get", f"{path}@{version}", cwd=consumer, env=env)
         packages = list(json_stream(run("go", "list", "-json", f"{path}/...", cwd=consumer, env=env)))
@@ -85,11 +136,15 @@ func main() {
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("root")
-    parser.add_argument("version")
+    parser = argparse.ArgumentParser(description="Verify a published library release through the public Go proxy.")
+    parser.add_argument("tag", help="library release tag, for example providers/openai/v0.1.0-alpha.2")
+    parser.add_argument("--wait-minutes", type=int, default=0,
+                        help="wait up to this long for the version and its first-party requirements to resolve")
     args = parser.parse_args()
-    verify_published(args.root, args.version)
+    root, version = parse_tag(args.tag)
+    if args.wait_minutes:
+        wait_until_available(PREFIX if root == "." else f"{PREFIX}/{root}", version, args.wait_minutes)
+    verify_published(root, version)
 
 
 if __name__ == "__main__":

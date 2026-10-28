@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { combinedNotes, discoverMerged, REPOSITORY_ID, BOT_ID } from './merged-candidates.mjs';
 import { successfulRun, readinessArtifact, downloadArtifact, verifyMergedIdentity, SOURCE_JOBS } from './authorization-evidence.mjs';
-import { authorizeInventory, blockDependents, childEnvironment, publishedVerifier } from './authorize.mjs';
+import { authorizeInventory, blockDependents, childEnvironment } from './authorize.mjs';
 
 import { fixture, sha, base, headSha, mergeSha, treeSha, config, branch } from './authorization-fixture.mjs';
 
@@ -204,21 +204,3 @@ test('dependents are blocked only by a present blocked co-released prerequisite'
   ]);
 });
 
-test('published-version verification retries only unresolved versions', async () => {
-  const candidate = { component: 'providers/openai', version: '0.1.1' };
-  let calls = 0, waits = 0;
-  const failing = message => () => { calls++; throw Object.assign(new Error('failed'), { stderr: Buffer.from(message) }); };
-  await assert.rejects(publishedVerifier({}, { attempts: 3, wait: async () => { waits++; }, run: failing('unknown revision v0.1.1') })(candidate),
-    /unknown revision/);
-  assert.deepEqual([calls, waits], [3, 2]);
-  calls = 0; waits = 0;
-  await assert.rejects(publishedVerifier({}, { attempts: 3, wait: async () => { waits++; }, run: failing('consumer build failed') })(candidate),
-    /consumer build failed/);
-  assert.deepEqual([calls, waits], [1, 0]);
-  let attempt = 0;
-  await publishedVerifier({}, { attempts: 3, wait: async () => {}, run: (command, args) => {
-    assert.deepEqual(args.slice(-2), ['providers/openai', 'v0.1.1']);
-    if (attempt++ === 0) throw Object.assign(new Error('failed'), { stderr: Buffer.from('410 Gone') });
-  } })(candidate);
-  assert.equal(attempt, 2);
-});

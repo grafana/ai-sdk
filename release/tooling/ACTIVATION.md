@@ -110,7 +110,9 @@ combined library release PR, with first-party requirements set to the versions i
 releases. A merged pending component suppresses only its own next preparation. A
 merged combined release keeps its pending label until every library in it is
 published. Late publication candidates wait for another run. Preparation
-requires that main still equals the workflow SHA and uses App-signed commits.
+requires that main still equals the workflow SHA and uses App-signed commits. If
+main advanced while the run waited, it skips preparation with a notice; the run for
+the newer push prepares the release PR.
 Existing release PRs refresh even when their notes are unchanged, so current-base
 readiness can run again. Commit-parser diagnostics stop preparation writes.
 
@@ -124,8 +126,8 @@ and the live mode are authoritative until that header is updated after bootstrap
 Renovate does not update first-party modules; release pull requests update those
 requirements, so no requirement update is needed between releases. Ordinary source
 PRs retain candidate-source CI. Publication rechecks tag origin, ancestry and
-co-released prerequisites, tags prerequisites first, and verifies each published
-version as an external consumer. Record the first combined library release in #468.
+co-released prerequisites and tags prerequisites first; the release verification
+workflow then checks each published version as an external consumer. Record the first combined library release in #468.
 
 ## Stop and recovery
 
