@@ -365,3 +365,52 @@ func TestNativeContract_StreamingSDK(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamingWriterWithoutSocketDeadlines(t *testing.T) {
+	h := testHandler(t, &fakeModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+		return partsStream(textParts()...), nil
+	}})
+	req := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(strings.TrimSuffix(basic, "}")+`,"stream":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	h.ServeHTTP(response, req)
+	assert.Equal(t, http.StatusOK, response.Code)
+	assert.Equal(t, "text/event-stream", response.Header().Get("Content-Type"))
+	assert.Contains(t, response.Body.String(), `"content":"hello"`)
+	assert.Contains(t, response.Body.String(), "[DONE]")
+	assert.True(t, response.Flushed)
+}
+
+func TestStreamingNativeMetadataCustomParts(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind string
+		success    bool
+	}{
+		{"anthropic start metadata", "anthropic.message_start", true},
+		{"unknown anthropic custom", "anthropic.other", false},
+		{"unknown provider custom", "other.message_start", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := textParts()
+			meta := provider.StreamPart{Type: provider.PartCustom, Kind: tc.kind, ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"id":"native-id","model":"native-model","usage":{"input_tokens":3}}`)}}
+			parts = append([]provider.StreamPart{{Type: provider.PartResponseMeta, ResponseID: "native-id", ModelID: "native-model"}, meta}, parts...)
+			h := testHandler(t, &fakeModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				return partsStream(parts...), nil
+			}})
+			req := httptest.NewRequest(http.MethodPost, Path, strings.NewReader(strings.TrimSuffix(basic, "}")+`,"stream":true}`))
+			req.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			h.ServeHTTP(response, req)
+			body := response.Body.String()
+			if tc.success {
+				assert.Contains(t, body, `"content":"hello"`)
+				assert.Contains(t, body, `"id":"native-id"`)
+				assert.Contains(t, body, "[DONE]")
+				assert.NotContains(t, body, `"error"`)
+			} else {
+				assert.Contains(t, body, `"error"`)
+				assert.NotContains(t, body, "[DONE]")
+			}
+		})
+	}
+}
