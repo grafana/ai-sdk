@@ -41,6 +41,6 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Run the full check suite, integration tests, module-policy fixtures, release tooling and Python tests
-- [ ] 6.2 Preview the combined release pull request with requirement updates against current `main`
-- [ ] 6.3 Rehearse a release candidate tree: every module builds and tests offline for first-party modules with untagged co-released requirements
+- [x] 6.1 Run the full check suite, integration tests, module-policy fixtures, release tooling and Python tests
+- [x] 6.2 Preview the combined release pull request with requirement updates against current `main`
+- [x] 6.3 Rehearse a release candidate tree: every module builds and tests offline for first-party modules with untagged co-released requirements
