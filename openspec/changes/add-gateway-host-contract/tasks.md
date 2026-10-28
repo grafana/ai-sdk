@@ -9,8 +9,8 @@ Each numbered group is one commit. Every commit must leave these passing: `mise 
 
 ## 2. Host-owned discovery
 
-- [ ] 2.1 Move the discovery document types, sorting, encoding, `schema.json` and their projection tests from `cmd/.../internal/discovery` to `providerwire/v4/discovery.go`, implementing `host.DiscoveryProjection` (design D4). Verify with `go test ./providerwire/v4/...`.
-- [ ] 2.2 Make `discovery.New(lister, projection, errors)` own the access decision, safe listing and internal failures, and remove `service.ConfiguredDiscovery` and `service.BYOKDiscovery`. Keep the listing-failure, panic, scoped-listing and complete-catalog tests in `discovery`, and add cases for BYOK and refused access with zero listings. Verify with `go test ./cmd/grafana-ai-gateway/internal/discovery/... ./cmd/grafana-ai-gateway/internal/gateway/...` and the configured-discovery TS suite through `mise run test-ai-gateway-command`.
+- [x] 2.1 Move the discovery document types, sorting, encoding, `schema.json` and their projection tests from `cmd/.../internal/discovery` to `providerwire/v4/discovery.go`, implementing `host.DiscoveryProjection` (design D4). Verify with `go test ./providerwire/v4/...`.
+- [x] 2.2 Make `discovery.New(lister, projection, errors)` own the access decision, safe listing and internal failures, and remove `service.ConfiguredDiscovery` and `service.BYOKDiscovery`. Keep the listing-failure, panic, scoped-listing and complete-catalog tests in `discovery`, and add cases for BYOK and refused access with zero listings. Verify with `go test ./cmd/grafana-ai-gateway/internal/discovery/... ./cmd/grafana-ai-gateway/internal/gateway/...` and the configured-discovery TS suite through `mise run test-ai-gateway-command`.
 
 ## 3. One selector, one runtime
 

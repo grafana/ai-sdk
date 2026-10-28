@@ -88,8 +88,7 @@ func TestAccountSelection_Isolation(t *testing.T) {
 						{"configured rejects BYOK", false, configuredHandler, http.StatusBadRequest},
 						{"BYOK cannot use configured selector", true, configuredHandler, http.StatusForbidden},
 						{"configured cannot use BYOK selector", false, byokHandler, http.StatusForbidden},
-						{"BYOK discovery", true, BYOKDiscovery(writer), http.StatusBadRequest},
-						{"BYOK cannot use configured discovery", true, ConfiguredDiscovery(discovery.New(configured, writer), writer), http.StatusForbidden},
+						{"BYOK discovery", true, discovery.New(configured, providerv4.DiscoveryProjection{}, writer), http.StatusBadRequest},
 					} {
 						t.Run(tc.name, func(t *testing.T) {
 							mode, access := configuredMode, gatewayauth.ConfiguredAccounts

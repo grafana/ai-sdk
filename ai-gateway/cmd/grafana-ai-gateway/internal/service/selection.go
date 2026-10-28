@@ -10,7 +10,6 @@ import (
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/byok"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
-	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -52,26 +51,6 @@ func NewBYOKSelector(client *http.Client, factory ModelFactory) execution.Reques
 			Count:    len(request.Accounts),
 		}), nil
 	}
-}
-
-func ConfiguredDiscovery(next http.Handler, writer host.ErrorWriter) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !hasAccountAccess(r.Context(), gatewayauth.ConfiguredAccounts) {
-			writer.WriteHostError(w, host.ErrorPermission)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func BYOKDiscovery(writer host.ErrorWriter) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !hasAccountAccess(r.Context(), gatewayauth.RequestBYOK) {
-			writer.WriteHostError(w, host.ErrorPermission)
-			return
-		}
-		writer.WriteHostError(w, host.ErrorBYOKDiscovery)
-	})
 }
 
 func hasAccountAccess(ctx context.Context, access gatewayauth.AccountAccess) bool {

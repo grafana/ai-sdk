@@ -169,8 +169,10 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
+	discoveryHandler := discovery.New(catalog, providerv4.DiscoveryProjection{}, errorWriter)
 	routes := routeHandlers{
-		configuredDiscovery: service.ConfiguredDiscovery(discovery.New(catalog, errorWriter), errorWriter),
+		configuredDiscovery: discoveryHandler,
+		byokDiscovery:       discoveryHandler,
 		configuredLanguage:  configuredLanguage,
 	}
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
@@ -178,7 +180,6 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 		if err != nil {
 			return nil, err
 		}
-		routes.byokDiscovery = service.BYOKDiscovery(errorWriter)
 		routes.byokLanguage = byokLanguage
 	}
 	return newHandler(settings.Access, sinks.telemetry, errorWriter, routes), nil
