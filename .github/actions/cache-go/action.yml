@@ -15,7 +15,7 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: ${{ steps.paths.outputs.modules }}
-        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-modules-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum', 'go*.work*') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-modules-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-modules-v2-${{ github.job }}-
 
@@ -23,7 +23,7 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: ${{ steps.paths.outputs.build }}
-        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum', 'go*.work*') }}-${{ github.sha }}
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum', 'go*.work*') }}-
+          ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-
           ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-

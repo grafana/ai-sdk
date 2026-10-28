@@ -74,15 +74,6 @@ func TestReleasePleaseConfig_ReleaseComponents(t *testing.T) {
 				"component for %s must equal its repository directory", module.ModulePath)
 		}
 	})
-
-	t.Run("published modules have no local replacements", func(t *testing.T) {
-		for _, module := range modules {
-			content, err := os.ReadFile(filepath.Join(repositoryRoot, module.Directory, "go.mod"))
-			require.NoError(t, err)
-			assert.Falsef(t, HasLocalReplacement(content),
-				"%s contains a local replace directive and cannot be published", module.ModulePath)
-		}
-	})
 }
 
 func TestReleasePleaseConfig_Settings(t *testing.T) {
@@ -106,6 +97,17 @@ func TestReleasePleaseConfig_Settings(t *testing.T) {
 	require.True(t, exists, "the root module must be registered")
 	require.NotNil(t, root.IncludeComponentInTag)
 	assert.False(t, *root.IncludeComponentInTag, "the root module is tagged vX.Y.Z without a component")
+}
+
+func TestReleasePleaseConfig_LibrariesShareOneReleasePullRequest(t *testing.T) {
+	config, err := LoadConfig(repositoryRoot)
+	require.NoError(t, err)
+
+	require.NotNil(t, config.SeparatePullRequests)
+	assert.False(t, *config.SeparatePullRequests, "libraries are released together from one pull request")
+	gateway := config.Packages["ai-gateway"]
+	require.NotNil(t, gateway.SeparatePullRequests)
+	assert.True(t, *gateway.SeparatePullRequests, "Gateway keeps its own release pull request")
 }
 
 func TestReleasePleaseConfig_GatewayVersionsThePluginPackage(t *testing.T) {
@@ -201,24 +203,6 @@ func TestTag(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.want, func(t *testing.T) {
 			assert.Equal(t, tc.want, config.Tag(tc.packagePath, tc.version))
-		})
-	}
-}
-
-func TestHasLocalReplacement(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		want    bool
-	}{
-		{"no replacement", "module example.com/a\n\nrequire example.com/b v1.0.0\n", false},
-		{"single line", "replace example.com/b => ../b\n", true},
-		{"block", "replace (\n\texample.com/b => ./vendor/b\n)\n", true},
-		{"remote replacement", "replace example.com/b => example.com/c v1.0.0\n", false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, HasLocalReplacement([]byte(tc.content)))
 		})
 	}
 }

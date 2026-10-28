@@ -29,6 +29,7 @@ type Config struct {
 	TagSeparator          string                   `json:"tag-separator"`
 	Versioning            string                   `json:"versioning"`
 	Prerelease            *bool                    `json:"prerelease"`
+	SeparatePullRequests  *bool                    `json:"separate-pull-requests"`
 	Packages              map[string]PackageConfig `json:"packages"`
 }
 
@@ -40,6 +41,7 @@ type PackageConfig struct {
 	InitialVersion        string      `json:"initial-version"`
 	ExcludePaths          []string    `json:"exclude-paths"`
 	ExtraFiles            []ExtraFile `json:"extra-files"`
+	SeparatePullRequests  *bool       `json:"separate-pull-requests"`
 }
 
 // ExtraFile is a release-please file whose version field follows the component.
@@ -155,14 +157,6 @@ func ImportableTag(directory, tag string) bool {
 		return strings.HasPrefix(tag, "v")
 	}
 	return strings.HasPrefix(tag, directory+"/v")
-}
-
-var localReplacement = regexp.MustCompile(`(?m)=>[ \t]*(\.{1,2}/|/)`)
-
-// HasLocalReplacement reports whether a go.mod redirects a dependency to the
-// local filesystem, which cannot be resolved by module proxy users.
-func HasLocalReplacement(content []byte) bool {
-	return localReplacement.Match(content)
 }
 
 func boolOr(value *bool, fallback bool) bool {

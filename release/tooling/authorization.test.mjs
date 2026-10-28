@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { discoverMerged, REPOSITORY_ID, BOT_ID } from './merged-candidates.mjs';
+import { combinedNotes, discoverMerged, REPOSITORY_ID, BOT_ID } from './merged-candidates.mjs';
 import { successfulRun, readinessArtifact, downloadArtifact, verifyMergedIdentity, SOURCE_JOBS } from './authorization-evidence.mjs';
-import { authorizeInventory, childEnvironment } from './authorize.mjs';
+import { authorizeInventory, blockDependents, childEnvironment, publishedVerifier } from './authorize.mjs';
 
 import { fixture, sha, base, headSha, mergeSha, treeSha, config, branch } from './authorization-fixture.mjs';
 
@@ -174,4 +174,51 @@ test('unrelated image failure does not replace successful source-job evidence', 
   };
   await successfulRun(github, 'ci.yml', 'push', mergeSha, 'main', SOURCE_JOBS);
   await assert.rejects(successfulRun(github, 'release-readiness.yml', 'pull_request', headSha, branch, ['release-readiness']));
+});
+
+test('combined release notes keep tag-like and entity text from the release body', () => {
+  const body = ['Header', '---', '', '',
+    '<details><summary>0.2.0</summary>', '', '## 0.2.0 (2026-10-28)', '', '* support `Option<T>` & <think> tags', '</details>', '',
+    '<details><summary>providers/openai: 0.1.1</summary>', '', '## 0.1.1 (2026-10-28)', '', '* fix &amp; escape', '</details>', '',
+    '---', 'Footer'].join('\r\n');
+  assert.deepEqual(Object.fromEntries(combinedNotes(body)), {
+    '@0.2.0': '## 0.2.0 (2026-10-28)\n\n* support `Option<T>` & <think> tags',
+    'providers/openai@0.1.1': '## 0.1.1 (2026-10-28)\n\n* fix &amp; escape',
+  });
+  assert.equal(combinedNotes('single section notes').size, 0);
+});
+
+test('dependents are blocked only by a present blocked co-released prerequisite', () => {
+  const prerequisite = path => ({ path, coReleased: true });
+  const entry = (component, status, prerequisites = []) => ({ prNumber: 1, component, status, library: { prerequisites } });
+  const report = blockDependents([
+    entry('providers/openai', 'approved', [prerequisite('github.com/grafana/ai-sdk')]),
+    entry('providers/bedrock', 'approved', [prerequisite('github.com/grafana/ai-sdk/providers/openai')]),
+  ]);
+  assert.deepEqual(report.map(item => item.status), ['approved', 'approved'], 'absent prerequisites are not reported as blocked');
+  const blocked = blockDependents([entry('.', 'blocked'), ...report]);
+  assert.deepEqual(blocked.map(item => [item.component, item.reason]), [
+    ['.', undefined],
+    ['providers/openai', 'co-released prerequisite . is blocked'],
+    ['providers/bedrock', 'co-released prerequisite providers/openai is blocked'],
+  ]);
+});
+
+test('published-version verification retries only unresolved versions', async () => {
+  const candidate = { component: 'providers/openai', version: '0.1.1' };
+  let calls = 0, waits = 0;
+  const failing = message => () => { calls++; throw Object.assign(new Error('failed'), { stderr: Buffer.from(message) }); };
+  await assert.rejects(publishedVerifier({}, { attempts: 3, wait: async () => { waits++; }, run: failing('unknown revision v0.1.1') })(candidate),
+    /unknown revision/);
+  assert.deepEqual([calls, waits], [3, 2]);
+  calls = 0; waits = 0;
+  await assert.rejects(publishedVerifier({}, { attempts: 3, wait: async () => { waits++; }, run: failing('consumer build failed') })(candidate),
+    /consumer build failed/);
+  assert.deepEqual([calls, waits], [1, 0]);
+  let attempt = 0;
+  await publishedVerifier({}, { attempts: 3, wait: async () => {}, run: (command, args) => {
+    assert.deepEqual(args.slice(-2), ['providers/openai', 'v0.1.1']);
+    if (attempt++ === 0) throw Object.assign(new Error('failed'), { stderr: Buffer.from('410 Gone') });
+  } })(candidate);
+  assert.equal(attempt, 2);
 });

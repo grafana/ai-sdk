@@ -171,7 +171,7 @@ Then work from `ai-gateway/`:
 | After changing | Run |
 | --- | --- |
 | The frontend | `pnpm dev`, and keep it running. The page reloads on each change. |
-| The backend or `provisioning/aigateway/models.yaml` | `GOWORK=$PWD/../go.gateway.work mage -v build:linux` (`build:linuxARM64` on arm64), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin. |
+| The backend or `provisioning/aigateway/models.yaml` | `mage -v build:linux` (`build:linuxARM64` on arm64), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin. |
 | `provisioning/grafana.ini` | `docker compose restart grafana` |
 
 The Gateway refuses Grafana's anonymous sign-in. Create a service account token

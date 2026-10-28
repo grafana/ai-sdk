@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { GitHub } from 'release-please';
 import { TagName } from 'release-please/build/src/util/tag-name.js';
 import { readOnlyFetch } from './preview.mjs';
-import { authorizeInventory, recheckCandidate } from './authorize.mjs';
-import { duplicateCandidates, REPO, SHA } from './merged-candidates.mjs';
+import { authorizeInventory, coReleasedPrerequisites, recheckCandidate } from './authorize.mjs';
+import { REPO, SHA } from './merged-candidates.mjs';
 
 const prefix = '/repos/grafana/ai-sdk';
 const pending = 'autorelease: pending', tagged = 'autorelease: tagged';
@@ -87,29 +87,45 @@ export function publicationTransport(candidate, beforeWrite, afterWrite, fetchIm
   };
 }
 
-export async function publishInventory({ github, inventory, validate, toolingRevision, token,
+export function publicationOrder(entries) {
+  const ordered = entries.filter(entry => entry.status !== 'approved');
+  const remaining = entries.filter(entry => entry.status === 'approved');
+  while (remaining.length > 0) {
+    const index = remaining.findIndex(entry => coReleasedPrerequisites(entry).every(component =>
+      ordered.some(other => other.prNumber === entry.prNumber && other.component === component)));
+    ordered.push(...remaining.splice(index === -1 ? 0 : index, 1));
+  }
+  return ordered;
+}
+
+export async function publishInventory({ github, inventory, validate, verify, toolingRevision, token,
   fetchImpl = globalThis.fetch }) {
   assert.equal(running, false, 'publication already running in this process');
   running = true;
   try {
     const frozen = structuredClone(inventory);
-    const duplicates = duplicateCandidates(frozen.candidates);
+    const states = new Map();
+    const inspect = async (reader, tag, candidate) => {
+      const current = await publicationState(reader, tag, candidate);
+      if (!states.has(tag)) states.set(tag, current);
+      return current;
+    };
+    const report = await authorizeInventory(github, frozen, validate, toolingRevision, inspect);
+    const order = publicationOrder(report.candidates);
     const results = [];
-    for (const candidate of frozen.candidates) {
+    for (const evidence of order) {
+      const candidate = frozen.candidates.find(entry => entry.prNumber === evidence.prNumber && entry.component === evidence.component);
       const identity = { prNumber: candidate.prNumber, component: candidate.component,
         tag: candidate.tag, mergeSha: candidate.mergeSha };
+      if (evidence.status !== 'approved') {
+        results.push({ ...identity, status: 'blocked', reason: evidence.reason });
+        continue;
+      }
       try {
-        assert.equal(duplicates.has(candidate.prNumber), false, 'ambiguous component or tag');
-        let state;
-        const inspect = async (...args) => {
-          const current = await publicationState(...args);
-          state ??= current;
-          return current;
-        };
-        const report = await authorizeInventory(github, { ...frozen, candidates: [candidate] }, validate,
-          toolingRevision, inspect);
-        const evidence = report.candidates[0];
-        assert.equal(evidence.status, 'approved', evidence.reason);
+        const missing = coReleasedPrerequisites(evidence).find(component => !results.some(result =>
+          result.prNumber === candidate.prNumber && result.component === component && result.status !== 'blocked'));
+        assert.equal(missing, undefined, `co-released prerequisite ${missing} was not published in this run`);
+        let state = states.get(candidate.tag);
         const initial = structuredClone(state);
         const recheck = async operation => {
           await recheckCandidate(github, candidate, evidence);
@@ -147,14 +163,19 @@ export async function publishInventory({ github, inventory, validate, toolingRev
           await writer.createRelease({ tag, sha: candidate.mergeSha, name: candidate.name, notes: candidate.notes },
             { draft: false, prerelease: candidate.prerelease, forceTag: !state.tagObject });
         }
-        await recheck('label-add');
-        const { data: pr } = await github.octokit.pulls.get({ ...REPO, pull_number: candidate.prNumber });
-        if (!pr.labels.some(label => label.name === tagged)) await writer.addIssueLabels([tagged], candidate.prNumber);
-        if (pr.labels.some(label => label.name === pending)) await writer.removeIssueLabels([pending], candidate.prNumber);
+        const siblings = order.filter(entry => entry.prNumber === candidate.prNumber);
+        const released = siblings.at(-1) === evidence && siblings.slice(0, -1).every(other => results.some(result =>
+          result.prNumber === other.prNumber && result.component === other.component && result.status !== 'blocked'));
+        if (released) {
+          await recheck('label-add');
+          const { data: pr } = await github.octokit.pulls.get({ ...REPO, pull_number: candidate.prNumber });
+          if (!pr.labels.some(label => label.name === tagged)) await writer.addIssueLabels([tagged], candidate.prNumber);
+          if (pr.labels.some(label => label.name === pending)) await writer.removeIssueLabels([pending], candidate.prNumber);
+        }
         await recheckCandidate(github, candidate, evidence);
         assert.deepEqual(await publicationState(github, candidate.tag, candidate), state);
         results.push({ ...identity, status: initial.releaseId ? 'recovered' : 'published',
-          releaseId: state.releaseId, evidence });
+          releaseId: state.releaseId, evidence, verification: await verification(verify, candidate) });
       } catch (error) {
         results.push({ ...identity, status: 'blocked', reason: error.message });
       }
@@ -162,5 +183,14 @@ export async function publishInventory({ github, inventory, validate, toolingRev
     return { schemaVersion: 1, toolingRevision, mainSha: frozen.mainSha, candidates: results };
   } finally {
     running = false;
+  }
+}
+
+async function verification(verify, candidate) {
+  try {
+    await verify(candidate);
+    return { status: 'passed' };
+  } catch (error) {
+    return { status: 'failed', reason: error.message };
   }
 }

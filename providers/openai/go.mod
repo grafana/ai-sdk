@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/providers/openai
 go 1.27.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.2
+	github.com/grafana/ai-sdk v0.1.0-alpha.3
 	github.com/openai/openai-go/v3 v3.76.0
 	github.com/stretchr/testify v1.12.1
 )
@@ -23,3 +23,5 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
+
+replace github.com/grafana/ai-sdk => ../..
