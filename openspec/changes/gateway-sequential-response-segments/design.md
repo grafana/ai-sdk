@@ -68,7 +68,6 @@ Other facts that shape the design:
 - Any change in a provider adapter, including the Anthropic adapter's handling of overlapping `message_start`, or in `providers/grafana` or the TypeScript client.
 - Changing the strongest-value usage semantics of logs and metrics, or fixing Agent Observability in this PR (see D10).
 - A new limit of any kind: part, segment, byte, frame or grace period.
-- Making the #201 full-corpus matrix a required check (see D11).
 
 ## Decisions
 
@@ -256,16 +255,11 @@ If that follow-up lands first, this change drops the limitation clauses before a
 
 Whether logs and metrics should sum rather than take the maximum across segments is a product decision with billing implications. It is left unchanged and out of scope.
 
-### D11. Delivery, the #201 gate and release intent
+### D11. Delivery and release intent
 
 - **This lands as its own PR after #397**, which is done.
-- **The #201 sequencing decision (approved):**
-  - If the #201 `test-conformance-gateway` harness is on `main` at implementation time, rebase onto it and use it, without duplicating it.
-  - Otherwise, port only the #201 harness and `mise` task needed to run SCENARIO-scoped rows through the plugin test host. If #201 carries a spec delta for that harness, port it unchanged.
-  - Either way, the seven fixtures × both clients through the plugin host are this change's required acceptance evidence.
-  - This PR adds no required or red full-corpus CI job. Making the full matrix a required check stays with #201.
-  - The PR records the full-matrix row count before and after the change. At least these 14 rows must flip to passing, any other flip must be explained, and no row may regress. The baseline is 194/282 on CI run 40569512549.
-  - No skip list, exclusion or `knownGaps` entry is added for the other 74 failing rows.
+- **Acceptance** is the evidence in D13. The plugin host mounts the same `providerwire/v4` handler that the replay tests exercise, and this change touches neither routing, authentication nor the route deadline, so no plugin-host run is part of this change.
+- No skip list, exclusion or `knownGaps` entry is added.
 - **Release:** the PR title is `feat(ai-gateway)!: forward sequential response segments in one stream`. It is breaking because the public stream lifecycle changes: EOF timing, repeated events and post-finish failures. The Agent Observability follow-up carries its own scope and release intent.
 
 ### D12. Upstream parity classification
@@ -287,7 +281,7 @@ The direct oracle is the committed provider parts. Upstream has no server lifecy
 | Quiescence, per-segment ID uniqueness, stream-global tool IDs, no content after `finish` without metadata | Intentional Gateway strictness: a Go extension, the strict server dialect established by #98. It is observable only for malformed input, no registered fixture exercises it, and it needs no `knownGaps` entry. |
 | Agent Observability first-segment generation | Coverage gap in a Go extension, tracked by the D10 follow-up. Not an upstream surface. |
 
-`PARITY.md` stays unchanged: no surface is added or removed, and the "AI Gateway" evidence location does not change. The #201 PR owns any row change for its harness.
+`PARITY.md` stays unchanged: no surface is added or removed, and the "AI Gateway" evidence location does not change.
 
 ### D13. Evidence and its limits
 
@@ -311,9 +305,8 @@ The direct oracle is the committed provider parts. Upstream has no server lifecy
    - the assembled messages are asserted.
 
    It lives in `ai-gateway/test/providerwire-v4` (node:test via `tsx --test`, under the `test:client` script), not in `test/integration/`, which AGENTS.md names as the default for wire scenarios. `test/integration/testserver` is the root SDK's server and cannot import the Gateway handler: the module boundary is one-way (`mise run verify-ai-gateway-boundary`), and `mise run verify-sdk-gateway-isolation` builds and tests the SDK without Gateway source. Every existing Gateway ProviderWire cross-language scenario (sources, custom, reasoning, recorded replay) already lives in this harness, which runs both registered clients against the real handler.
-6. **The seven #201 rows** for both clients through the plugin test host (D11). This is the plugin-runtime acceptance.
 
-All of the above is mock-stream or replay evidence. None of it claims that live providers emit these combined sequences in one HTTP response. Live acceptance is out of scope.
+All of the above is mock-stream or replay evidence through the handler, not a plugin-host run. None of it claims that live providers emit these combined sequences in one HTTP response. Live acceptance is out of scope.
 
 ### Capabilities reviewed and left unchanged
 

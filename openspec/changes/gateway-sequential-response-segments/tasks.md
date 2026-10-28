@@ -2,15 +2,6 @@
 
 Every Go command below runs from `ai-gateway/` with `GOWORK="$PWD/../go.gateway.work"`, which is what `mise run test-ai-gateway` uses. Never modify any `input*.chunks.txt`, `expected-provider-parts.jsonl`, `expected.jsonl` or `expected-requests.jsonl`. Check with `git diff --exit-code -- 'test/conformance/*/upstream/' 'test/conformance/*/recorded/' test/conformance/testdata/` before each commit.
 
-## 1. Baseline and #201 sequencing (design D11)
-
-- [ ] 1.1 Decide how to get the #201 harness.
-  - Check whether it is on `main`: `git fetch origin && git grep -n 'test-conformance-gateway' origin/main -- mise.toml`.
-  - If it is, rebase onto it and use it.
-  - If it is not, port only the #201 harness and its `mise run test-conformance-gateway` task from the #201 branch (`6cc5480d`) as their own commit, so that SCENARIO-scoped rows run through the plugin test host. Port its spec delta unchanged if it has one. Add no required CI job, skip list, exclusion or `knownGaps` entry.
-  - Verify that `GRAFANA_VERSION=<digest pinned in .github/workflows/ci.yml> SCENARIO=anthropic/upstream/tool-search-bm25 mise run test-conformance-gateway` runs and fails for both clients with a clean EOF at the first `finish`. The same command for `openai/upstream/reasoning-encrypted-content` must fail with `internal_error` at the second `response-metadata`.
-- [ ] 1.2 Run the full matrix once on the base revision and record the row count for the PR description. The expected count is 194/282, with the seven fixtures accounting for 14 of the failures. Verify that the recorded failing-row list contains at least these 14 rows, that any other row whose status differs from the 194/282 baseline is explained in the PR description, and that `row-*.json` under `test/conformance/gateway-results/` is git-ignored and unstaged (`git status --short`).
-
 ## 2. Spec-driven failing tests
 
 Each task adds or rewrites tests to the new spec. Cases for new behavior must fail on the current code. Guard cases that already pass, such as metadata while a block is open, are kept and labeled as guards. Record which subtests fail in the commit message.
@@ -169,9 +160,7 @@ Each task adds or rewrites tests to the new spec. Cases for new behavior must fa
 
 ## 7. Acceptance and integration checks
 
-- [ ] 7.1 Run the seven fixtures through the plugin test host for both clients with `GRAFANA_VERSION=<ci.yml digest> SCENARIO=<fixture> mise run test-conformance-gateway`. All 14 rows must pass, with complete native content and matching backend request comparisons, and with unchanged inputs and goldens.
-- [ ] 7.2 Rerun the full matrix and record the before and after counts in the PR. At least the 14 rows from 1.2 must flip to passing, any other row that flips must be explained in the PR, and no row may regress. Make no CI-required change.
-- [ ] 7.3 Run these and confirm they all pass:
+- [ ] 7.1 Run these and confirm they all pass:
   - `mise run test-ai-gateway`
   - `mise run test-providerwire-v4`
   - `mise run test-ai-gateway-source-integration`
@@ -185,13 +174,12 @@ Each task adds or rewrites tests to the new spec. Cases for new behavior must fa
   - `mise run lint-docs`
   - `mise run validate-parity-baseline`
   - `mise run parity-check`
-- [ ] 7.4 Run `git diff --stat origin/main -- 'test/conformance/*/upstream/' 'test/conformance/*/recorded/' test/conformance/testdata/ test/conformance/upstream.yaml test/conformance/PARITY.md`. It must show no changes. Then run `openspec validate gateway-sequential-response-segments --strict`, which must pass.
+- [ ] 7.2 Run `git diff --stat origin/main -- 'test/conformance/*/upstream/' 'test/conformance/*/recorded/' test/conformance/testdata/ test/conformance/upstream.yaml test/conformance/PARITY.md`. It must show no changes. Then run `openspec validate gateway-sequential-response-segments --strict`, which must pass.
 
 ## Workflow follow-up
 
 - Open a draft PR titled `feat(ai-gateway)!: forward sequential response segments in one stream`. Include:
   - the review walkthrough from `AGENTS.md`;
-  - the before and after matrix counts;
   - the statement that the evidence is mock-stream or replay evidence, not live-provider acceptance.
-- Before pushing, check the staged diff and the outgoing commits for secrets, including any `row-*.json` captures and plugin logs.
+- Before pushing, check the staged diff and the outgoing commits for secrets.
 - Archive the change in the same PR before merge. If the Agent Observability follow-up merged first, drop the limitation clauses from the gateway-text-observability delta before archiving.

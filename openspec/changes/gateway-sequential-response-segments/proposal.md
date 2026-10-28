@@ -7,7 +7,7 @@ One provider `DoStream` result can carry several native responses or messages in
 - five Anthropic fixtures with one `response-metadata` and one `finish` per message;
 - two OpenAI fixtures with one `response-metadata` per response and a single `finish` at EOF.
 
-The Gateway stream runtime accepts at most one early `response-metadata`, ends the response at the first `finish` and suppresses everything after it. In the #201 full-corpus matrix this causes 14 failing rows, identical for both registered clients:
+The Gateway stream runtime accepts at most one early `response-metadata`, ends the response at the first `finish` and suppresses everything after it. Against the unchanged direct goldens this fails 14 client rows, seven fixtures for each of the two registered clients, identically for both:
 
 - the five Anthropic rows are silently truncated at the first `finish`;
 - the two OpenAI rows end with `internal_error` at the second `response-metadata`.
@@ -50,7 +50,6 @@ Both clients reproduce the unchanged direct goldens when they are served the com
   - Focused native-part, raw-wire and schema tests.
   - A handler replay of the committed `expected-provider-parts.jsonl` for the seven fixtures.
   - Both clients replaying the seven fixtures through the real adapters against their unchanged `expected.jsonl` and `expected-requests.jsonl`.
-  - The seven #201 rows for both clients through the plugin test host.
 - **Docs.** The stream flowchart in `docs/concepts/gateway-architecture.md`, a glossary row for response segments, and in `docs/providers/grafana-gateway.md` the execution-overview paragraph plus a note that one stream may carry several `response-metadata` and `finish` events and that EOF follows provider close.
 
 ## Capabilities
@@ -87,10 +86,9 @@ None.
   - The pinned `@ai-sdk/gateway@4.0.116` client and the Go Grafana client already forward every part and do not close on `finish`.
 - **Latency:** EOF follows provider close. A provider that never closes after its last `finish` holds the response until the idle timeout or the request deadline and then ends with a timeout error, where it previously ended cleanly at once. The `finish` itself is still written immediately.
 - **Release:** the PR title is `feat(ai-gateway)!: …` because the public stream lifecycle changes. The Agent Observability follow-up carries its own module scope.
-- **Delivery:** this lands as its own PR after #397. The #201 sequencing decision is in design.md D11.
+- **Delivery:** this lands as its own PR after #397 (design.md D11).
 - **Out of scope:**
   - the Anthropic adapter's overlapping-start handling;
   - OpenAI compaction `custom` and MCP `tool-approval-request` coverage;
   - changing the strongest-value usage semantics of logs and metrics;
-  - live-provider acceptance;
-  - making the #201 full matrix a required check.
+  - live-provider acceptance.
