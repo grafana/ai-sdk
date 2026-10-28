@@ -2,10 +2,10 @@
 
 ## Context
 
-See proposal.md (Why). Current code on `main` @ 1493f760:
+See proposal.md (Why). Current code:
 
 - **The stream tee ends early.** `recording.go` `runStreamTee` observes parts only while `finished` is false. On the first `PartFinish` it calls `finalize(false)`, which runs `SetFirstTokenAt`, `SetResult(filterGeneration(...))` and `End`, and it does so before the part is forwarded (`tee <- part`).
-  - The deferred comment explains why. This ordering came from #438: the pre-#583 Gateway handler canceled right after writing `finish`. That turned successful streams into `call_error: timeout`, or lost them when the client shut down first.
+  - The deferred comment explains why. This ordering came from #438: at the time, the Gateway handler canceled right after writing `finish`. That turned successful streams into `call_error: timeout`, or lost them when the client shut down first.
   - Cancellation handling: `ctx.Done()` sets `canceled`, an optional `drainStreamUntil` runs, and `finalize(true)` calls `SetCallError(ctx.Err())`.
 - **`StreamRecorder` accumulates state with these rules** (`map_stream.go`):
   - `usage` calls `streamusage.Aggregator.Observe` on every part. It keeps the strongest value per counter, and Raw is last non-empty.
@@ -18,7 +18,7 @@ See proposal.md (Why). Current code on `main` @ 1493f760:
   - `End` is idempotent. It stamps `completedAt` only when `Generation.CompletedAt` is zero (`normalizeGeneration`), and the span end and duration metric use the normalized `CompletedAt`.
   - There is no update-after-End and no multi-response concept.
 - **How downstream consumers finish reading:**
-  - After #583, the Gateway reads past each finish until the provider closes (`providerwire/v4/stream.go` `PartFinish` → `streamPartContinue`). `PartError` also continues.
+  - The Gateway reads past each finish until the provider closes (`providerwire/v4/stream.go` `PartFinish` → `streamPartContinue`). `PartError` also continues.
   - `AgentObservabilityRuntime.Close` waits for recordings through `OnRecordComplete` (`model_observability.go`, `recordings` WaitGroup, `recordingComplete`).
   - Core `StreamText` reads the provider stream until it closes (`streamtext.go` step loop).
 - **Anthropic usage carries over between messages:**
@@ -103,7 +103,7 @@ The other provider metadata is not recorded by `StreamRecorder`, so it needs no 
 
 On `PartFinish`, `StreamRecorder` replaces its `texts` and `reasonings` maps with empty ones. `streamOutputRef` keeps a pointer to its text or reasoning accumulator, so `buildOutput` no longer looks up either map by ID (today it reads `r.texts[ref.id]` and `r.reasonings[ref.id]`). A reused ID in the next segment then creates a new part, appended in observed order.
 
-Tool calls and tool results stay keyed for the whole stream. Tool and approval IDs are unique across the stream, and a provider-executed result can arrive in a later segment: `programmatic-tool-calling` has its call in segment 1 and its result in segment 15. #583 applies the same rule to the Gateway runtime.
+Tool calls and tool results stay keyed for the whole stream. Tool and approval IDs are unique across the stream, and a provider-executed result can arrive in a later segment: `programmatic-tool-calling` has its call in segment 1 and its result in segment 15. The Gateway runtime applies the same rule (`docs/concepts/gateway-glossary.md` "Response segment").
 
 Output remains one assistant message, with every segment's parts in order, plus tool-role messages. agento11y has one generation per recorder.
 
@@ -117,20 +117,30 @@ The recorder ends at upstream close or context end. It no longer ends before the
 
 The case #438 fixed (a consumer that stops at finish and cancels) stays a success, by D1's snapshot. What changes is narrower: a consumer that closes or shuts down the shared client without draining to EOF or waiting for `OnRecordComplete` can now lose the generation. The Gateway's `Close` already waits on `OnRecordComplete`.
 
-A consumer that stops reading without canceling keeps the tee goroutine blocked on `tee <- part` once the 64-part buffer (`streamRecordingBuffer`) is full. That goroutine block already happens on `main`. The recording then ends when upstream closes while the remaining parts fit in the buffer, or when the context ends. Before this change, the generation had already been enqueued at the first finish. A context that never ends therefore means no generation. This is documented in godoc and `docs/middleware/agent-observability.md`.
+A consumer that stops reading without canceling keeps the tee goroutine blocked on `tee <- part` once the 64-part buffer (`streamRecordingBuffer`) is full. That goroutine block already happens today. The recording then ends when upstream closes while the remaining parts fit in the buffer, or when the context ends. Before this change, the generation had already been enqueued at the first finish. A context that never ends therefore means no generation. This is documented in godoc and `docs/middleware/agent-observability.md`.
 
-### D6. Gateway follow-up after #583
+### D6. Gateway spec, test and docs
 
-The interim wording and test exist only in #583:
-- the `gateway-text-observability` requirement "Agent Observability first-segment limitation" and its scenarios;
-- the `ai-gateway/docs/text-observability.md` sentence;
-- `TestModelObservationChain_SequentialSegments`.
+The Gateway currently documents the first-finish export as a limitation:
+- `gateway-text-observability` requirement "Agent Observability first-segment limitation", with its scenario "Multi-segment stream exports the first segment";
+- in "Logical text lifecycle semantics", the scenarios "Usage is split across stream parts" and "Stream with several response segments" limit the generation to the first finish;
+- in "Logical finalization precedence and strongest usage", the scenario "Agent Observability stops at the first finish", and a precedence rule that makes cancellation or timeout the generation's call error even after a finish;
+- the `ai-gateway/docs/text-observability.md` "Export to Agent Observability" sentence saying the export records only the first message or response;
+- `TestModelObservationChain_SequentialSegments`, which asserts generation input 7, output 2 and `stop_reason` "tool_calls" in all three cases.
 
-The delta here validates against `main`: one ADDED requirement, plus a MODIFIED precedence requirement with the after-finish exception. After rebasing on #583, the delta is re-expressed against the merged spec: REMOVED for the limitation requirement, and MODIFIED to drop the "until #582" scenarios. The test then asserts:
-- normal close: generation input 7, output 9 (strongest), `stop_reason` "stop", one generation;
-- deadline and idle stall after finish: generation 7/2, "tool_calls" and no call error, while logs and metrics keep timeout/cancelled.
+The `gateway-text-observability` delta restates D1 at the Gateway boundary:
+- MODIFIED "Logical text lifecycle semantics": same scenario names, with the generation covering every segment.
+- REMOVED "Agent Observability first-segment limitation".
+- REMOVED "Logical finalization precedence and strongest usage", replaced by ADDED "Logical finalization precedence across response segments". OpenSpec's MODIFIED cannot drop a scenario, and "Agent Observability stops at the first finish" no longer holds. The replacement keeps the precedence, pass-through and usage rules and the scenario "Logical finalization precedence and strongest usage".
+- ADDED "Agent Observability generation covers every response segment": one generation per stream, observing every segment and finalizing at stream close or at an idle timeout, deadline or cancellation. It carries the strongest usage, the last finish reason, first-output timing from the first segment, and completion at stream end on normal close.
+- ADDED "Agent Observability generation after a finish": D1's call-error rule and the last-finish snapshot, completed at that finish.
 
-The diagram and lifecycle paragraph that #583 adds to `docs/concepts/gateway-architecture.md`, and its glossary "Response segment" entry, describe the runtime, not the export. They are checked for drift, and no edit is expected.
+`TestModelObservationChain_SequentialSegments` then asserts:
+- normal close: one generation with input 7, output 9 (strongest) and `stop_reason` "stop";
+- deadline and idle stall after the first finish: input 7, output 2, "tool_calls" and no `call_error`, while logs and metrics keep timeout and cancelled;
+- a new deadline case where a provider `PartError` (`provider.NewAPICallError`, status 503) precedes segment 1: `call_error` "server_error" (the agento11y metadata-only classification), with input 7, output 2 and "tool_calls", while metrics keep the deadline classification and logs keep the provider error.
+
+`docs/concepts/gateway-architecture.md` (the stream lifecycle paragraph at :223-228 and its flowchart) and the `docs/concepts/gateway-glossary.md` "Response segment" entry (:52) describe the runtime ("a `finish` ends a segment, not the stream"), not the export. Neither mentions the Agent Observability first-segment export, so no edit is expected; the task re-checks them for drift.
 
 ### D7. Release and dependency scope
 
@@ -139,8 +149,9 @@ The only released module that changes is `middleware/agentobservability`.
 - **PR title:** `feat(agentobservability)!: record every response segment of one stream`, with a `BREAKING CHANGE:` footer describing D5.
   - `!` marks the removed finish-before-forward guarantee for direct consumers.
   - Under the alpha prerelease configuration (`release-please-config.json`), this is expected to advance the prerelease counter rather than produce a stable major. Confirm with `mise run release-preview`.
+- **Gateway edits:** the D6 spec, test and doc updates land in the same PR. Task 5.4 checks any Gateway plugin release attribution they cause.
 - **Module versions:** never hand-edit versions or changelogs. `ai-gateway/go.mod` builds same-revision source through `replace ../middleware/agentobservability`. The release PR updates its `require` (CONTRIBUTING "Every `go.mod` replaces…"), so no manual bump is needed. Today `ai-gateway/go.mod` already requires `middleware/agentobservability v0.1.0-alpha.2`, which equals `.release-please-manifest.json`, so nothing needs bumping.
-- **agento11y:** `github.com/grafana/agento11y/go` and `go-providers/anthropic` are already at v0.19.0, the latest Go tag (`go list -m -versions`, 2026-10-28). `main` adds only tool and skill tracing changes. A task re-checks this at implementation time, and bumps both modules together in `middleware/agentobservability` and `ai-gateway` if a newer release exists.
+- **agento11y:** `github.com/grafana/agento11y/go` and `go-providers/anthropic` are already at v0.19.0, the latest Go tag (`go list -m -versions`, 2026-10-28). agento11y's unreleased `main` adds only tool and skill tracing changes. A task re-checks this at implementation time, and bumps both modules together in `middleware/agentobservability` and `ai-gateway` if a newer release exists.
 
 ### D8. Parity classification
 
@@ -148,7 +159,7 @@ This surface is a Grafana-only Go extension (`test/conformance/PARITY.md` "Agent
 
 An upstream-fixture replay is not added:
 - this module's conformance harness (`conformance_test.go`, `testdata/stream/*`) maps its own stream inputs;
-- the upstream provider-parts decoder lives in #583's `ai-gateway/providerwire/v4` test package, which this module cannot reach.
+- the upstream provider-parts decoder lives in the `ai-gateway/providerwire/v4` test package (`stream_segments_replay_test.go`), which this module cannot reach.
 
 The fixture numbers serve as design evidence only. Focused synthetic unit tests cover the behavior.
 
@@ -159,7 +170,7 @@ The fixture numbers serve as design evidence only. Focused synthetic unit tests 
 - [A snapshot at every finish adds work on the stream goroutine] → It copies only stream-derived state, so prompt conversion and media encoding run once, at finalize. The cost is O(output) per finish for the built output, which is negligible for realistic segment counts (15 in the largest fixture).
 - [Snapshot capture panics] → It runs under `streamrecover.Recover`. The snapshot is marked invalid, and `finalize` records the current state with `streamRec.CallError()`, never `ctx.Err()` after a finish. The stream passes through unchanged. The guard is defensive: it has no reachable trigger after D4, and no test covers it; no test seam is added.
 - [A custom `GenerationFilter` drops the snapshot `CompletedAt`] → agento11y falls back to `End` time, which is documented.
-- [Logs and metrics report timeout or cancellation after a finish, while the generation reports success] → The Gateway spec states this explicitly (MODIFIED precedence requirement). The generation describes completed model output, and logs and metrics describe the request outcome.
+- [Logs and metrics report timeout or cancellation after a finish, while the generation reports success] → The Gateway spec states this explicitly ("Agent Observability generation after a finish" and "Logical finalization precedence across response segments"). The generation describes completed model output, and logs and metrics describe the request outcome.
 
 ## Migration Plan
 
