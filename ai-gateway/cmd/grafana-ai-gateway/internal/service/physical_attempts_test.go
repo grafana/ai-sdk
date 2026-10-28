@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/pluginlog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -174,7 +175,7 @@ func TestPhysicalAttempts_SaturationDoesNotSuppressConsumerEvidence(t *testing.T
 		}}
 	}, identityModelFactory, sink)
 	require.NoError(t, err)
-	handler, err := providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(created), Limits: serviceTestLimits()})
+	handler, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(created), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[]}`))
 	request.Header.Set("Content-Type", "application/json")

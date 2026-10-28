@@ -17,8 +17,8 @@ The service SHALL map each schema-valid assistant `custom` part to provider-doma
 - **THEN** it SHALL fail as schema-invalid before resolution or model invocation
 
 #### Scenario: Reserved namespace on a custom part
-- **WHEN** a custom part carries a reserved Gateway namespace
-- **THEN** the existing reserved-provider-options refusal SHALL apply before resolution
+- **WHEN** a custom part or a tool-result custom entry carries a `gateway` or `grafana` namespace
+- **THEN** the model SHALL receive it unchanged with the part, because only call-level `gateway` controls are host-owned
 
 ### Requirement: Custom tool-result content mapping
 The service SHALL map tool-result `content` output entries of type `custom` to provider-domain custom tool-result content carrying their scoped opaque provider options. Mixed text, file and custom entries SHALL keep their order. A custom entry without options SHALL remain a valid empty custom entry.

@@ -222,6 +222,13 @@ func TestLoadFile_OpenAICompatibleProvider(t *testing.T) {
 	assert.Equal(t, ResolvedProvider{Type: "openai-compatible", APIKey: "key", BaseURL: "http://127.0.0.1:11434/v1", ProviderName: "ollama"}, resolved["anthropic-primary"])
 }
 
+func TestLoadFile_GrafanaProviderNameIsOrdinary(t *testing.T) {
+	yaml := strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: grafana\n", 1)
+	file, err := LoadFile(writeConfigFile(t, yaml), 1<<20)
+	require.NoError(t, err)
+	assert.Equal(t, "grafana", file.Providers["anthropic-primary"].ProviderName)
+}
+
 func TestLoadFile_ProviderErrorsNameTheField(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -231,9 +238,9 @@ func TestLoadFile_ProviderErrorsNameTheField(t *testing.T) {
 		{name: "missing base URL", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: openai-compatible", 1), want: "providers.anthropic-primary.baseURL"},
 		{name: "provider name on anthropic", yaml: strings.Replace(minimalConfigYAML, "    apiKeyEnv: ANTHROPIC_API_KEY\n", "    apiKeyEnv: ANTHROPIC_API_KEY\n    providerName: other\n", 1), want: "providers.anthropic-primary.providerName"},
 		{name: "unsupported type", yaml: strings.Replace(minimalConfigYAML, "type: anthropic", "type: unsupported", 1), want: `providers.anthropic-primary.type "unsupported" is unsupported (want anthropic, openai or openai-compatible)`},
-		{name: "reserved provider name", yaml: fmt.Sprintf(strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: %s\n", 1), "grafana"), want: "providers.anthropic-primary.providerName"},
-		{name: "reserved provider name with a suffix", yaml: fmt.Sprintf(strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: %s\n", 1), "grafana.chat"), want: "providers.anthropic-primary.providerName"},
-		{name: "reserved provider name with padding", yaml: fmt.Sprintf(strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: %s\n", 1), `" grafana"`), want: "providers.anthropic-primary.providerName"},
+		{name: "reserved provider name", yaml: fmt.Sprintf(strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: %s\n", 1), "gateway"), want: "providers.anthropic-primary.providerName"},
+		{name: "reserved provider name with a suffix", yaml: fmt.Sprintf(strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: %s\n", 1), "gateway.chat"), want: "providers.anthropic-primary.providerName"},
+		{name: "reserved provider name with padding", yaml: fmt.Sprintf(strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: %s\n", 1), `" gateway"`), want: "providers.anthropic-primary.providerName"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := LoadFile(writeConfigFile(t, tc.yaml), 1<<20)

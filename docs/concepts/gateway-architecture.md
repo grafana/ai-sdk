@@ -38,6 +38,7 @@ flowchart LR
       pw[ProviderWire V4 decoder and response encoder]
     end
     subgraph shared[Model selection and execution]
+      runtime[Execution runtime]
       select[Account-access selection]
       catalog[Public model catalog]
       byok[Cloud request accounts: Anthropic or OpenAI]
@@ -54,7 +55,7 @@ flowchart LR
   go --> host
   ts --> host
   host --> pw
-  pw --> select
+  pw --> runtime --> select
   select -->|private| catalog --> logical --> routing
   select -->|Cloud| byok
   byok --> anthropic
@@ -95,18 +96,22 @@ sequenceDiagram
   participant C as Application client
   participant H as HTTP host
   participant W as ProviderWire handler
+  participant R as Execution runtime
   participant M as Catalog and wrapped model
   participant P as Native provider API
   C->>H: POST model call with Gateway credentials
   H->>H: Match route and method, authenticate
   H->>W: Authenticated request, bounded body and caller context
   W->>W: Validate and map protocol
-  W->>M: Resolve public model under request deadline
-  M-->>W: Canonical model and configured candidates
-  W->>M: DoGenerate or DoStream
+  W->>R: Call with mapped options
+  R->>R: Apply host request policy
+  R->>M: Resolve public model under request deadline
+  M-->>R: Canonical model and configured candidates
+  R->>M: DoGenerate or DoStream
   M->>P: Provider-specific authenticated request
   P-->>M: Native result or native stream
-  M-->>W: GenerateResult or StreamPart values
+  M-->>R: GenerateResult or StreamPart values
+  R-->>W: Result, stream parts and failure categories
   W-->>C: JSON result or ProviderWire SSE
   Note over H,M: HTTP and model observations have different scopes
 ```
@@ -125,18 +130,23 @@ sequenceDiagram
    [access decision](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access.go).
 2. **ProviderWire translates the request.** The handler validates protocol
    headers, reads the body the routes have bounded, checks UTF-8 and the request schema, and maps
-   the body to `provider.CallOptions`. It separates the reserved `gateway`
-   options from native provider options and checks tool-call history. Invalid
-   input can fail before model selection. See the
+   the body to `provider.CallOptions` and checks tool-call history. The
+   execution runtime then refuses credential-bearing call headers and removes
+   the call-level `gateway` options, which only the selector reads. Every other
+   provider-option namespace reaches the model unchanged. Invalid input can
+   fail before model selection. See the
    [handler](../../ai-gateway/providerwire/v4/handler.go) and
    [request mapper](../../ai-gateway/providerwire/v4/request.go).
-3. **Selection resolves a public name.** The request deadline, which Grafana's
-   route deadline sets, covers selection plus model execution. `NewConfiguredSelector`
+3. **Selection resolves a public name.** The shared
+   [execution runtime](../../ai-gateway/internal/execution/runtime.go) selects
+   and invokes the model for every API adapter, on the request goroutine. The
+   request deadline, which Grafana's route deadline sets, covers selection plus
+   model execution. `NewConfiguredSelector`
    checks configured-account access, then delegates to `CatalogSelector` to
    resolve `assistant` or an alias to its canonical model. This private path
    rejects reserved Gateway controls; its caller cannot switch to request
    accounts. See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go),
-   [catalog selection](../../ai-gateway/providerwire/v4/selection.go), and the
+   [catalog selection](../../ai-gateway/internal/execution/selection.go), and the
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** Logical observation surrounds the
    configured primary/fallback chain. Candidate-specific option checks and
@@ -190,8 +200,9 @@ flowchart TD
 
 For configured fallback, `DoStream` waits for candidate selection before
 returning the usable stream. For a direct model, the handler may commit HTTP
-success before the first provider part arrives. The
-[stream runtime](../../ai-gateway/providerwire/v4/stream.go) supplies an empty
+success before the first provider part arrives. The execution runtime waits for
+each part and owns the idle timer and cleanup. The
+[ProviderWire stream encoder](../../ai-gateway/providerwire/v4/stream.go) supplies an empty
 `stream-start` when needed, checks event ordering and validity, and writes
 complete `data: <JSON>` frames separated by a blank line.
 
@@ -209,8 +220,8 @@ deadline, the request size, admission and, through the container, process
 memory. The Gateway keeps only what it owns: 8 provider attempts per request,
 checked when the catalog loads and when request keys are decoded; 16 MiB per
 decompressed provider response that is not a stream, in the model transport;
-and stream idle time and cleanup in the handler, which never rejects
-or truncates output because of its size. See the
+and stream idle time and cleanup in the execution runtime. No API adapter
+rejects or truncates output because of its size. See the
 [limits](../../ai-gateway/README.md#limits) for the full list.
 
 ## What the observations tell you

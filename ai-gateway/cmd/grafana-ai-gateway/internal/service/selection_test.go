@@ -15,6 +15,8 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/discovery"
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativeoptions"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -71,9 +73,9 @@ func TestAccountSelection_Isolation(t *testing.T) {
 						return &http.Response{StatusCode: 401, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"dummy-request-key","type":"authentication_error"}}`)), Request: r}, nil
 					})}
 					writer := providerv4.NewHostErrorWriter()
-					configuredHandler, err := providerv4.New(providerv4.Config{Selector: NewConfiguredSelector(configured), Limits: serviceTestLimits()})
+					configuredHandler, err := newWireHandler(execution.Config{Selector: NewConfiguredSelector(configured), Limits: serviceTestLimits()})
 					require.NoError(t, err)
-					byokHandler, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
+					byokHandler, err := newWireHandler(execution.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
 					require.NoError(t, err)
 					for _, tc := range []struct {
 						name    string
@@ -159,8 +161,21 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 						}
 						return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": {contentType}}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 					})}
-					factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-					wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits(), ConfiguredAPIKeys: policy.keys})
+					factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) {
+						ordered := model
+						switch wrapped := model.(type) {
+						case nativeoptions.Model:
+							ordered = wrapped.LanguageModel
+						}
+						switch chain := ordered.(type) {
+						case *fallback.Model:
+							chain.WithAttemptObserver(func(context.Context, fallback.Attempt) { observed.Add(1) })
+						default:
+							require.FailNow(t, "expected a BYOK fallback chain")
+						}
+						return model, nil
+					}
+					wire, err := newWireHandler(execution.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits(), ConfiguredAPIKeys: policy.keys})
 					require.NoError(t, err)
 					handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
 					accountFields := ""
@@ -168,8 +183,7 @@ func TestBYOKSelection_NativeSummariesAndAttributionGap(t *testing.T) {
 						accountFields = `,"organization":"request-org","project":"request-project"`
 					}
 					body := fmt.Sprintf(`{"prompt":[],"maxOutputTokens":32,"providerOptions":{"gateway":{"byok":{%q:[{"apiKey":"dummy-first"%s},{"apiKey":"dummy-second"}]}}}}`, name, accountFields)
-					ctx := fallback.WithAttemptObserver(t.Context(), func(context.Context, fallback.Attempt) { observed.Add(1) })
-					request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body)).WithContext(ctx)
+					request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
 					request.Header = headers
 					request.Header.Set("Content-Type", "application/json")
 					request.Header.Set(providerv4.HeaderModelID, name+"/native-model")
@@ -243,7 +257,7 @@ func TestBYOKSelection_SelectedProviderAccountCount(t *testing.T) {
 				return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"denied"}}`)), Request: r}, nil
 			})}
 			factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
-			wire, err := providerv4.New(providerv4.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
+			wire, err := newWireHandler(execution.Config{Selector: NewBYOKSelector(client, factory), Limits: serviceTestLimits()})
 			require.NoError(t, err)
 			handler, headers := withAccess(t, gatewayauth.AccessModeCloud, gatewayauth.RequestBYOK, wire)
 			body := `{"prompt":[],"providerOptions":{"gateway":{"byok":` + tc.byok + `}}}`

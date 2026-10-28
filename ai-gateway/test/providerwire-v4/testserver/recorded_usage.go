@@ -15,7 +15,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
-	providerwirev4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	openaiprovider "github.com/grafana/ai-sdk/providers/openai"
@@ -141,7 +141,7 @@ func registerRecordedUsage(mux *http.ServeMux, root string) (func(), error) {
 		closeServers()
 		return nil, err
 	}
-	created, err := providerwirev4.New(providerwirev4.Config{Selector: providerwirev4.CatalogSelector(resolver), Limits: providerwirev4.Limits{
+	created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(resolver), Limits: execution.Limits{
 		StreamIdleDuration: 2 * time.Second, StreamDrainDuration: 100 * time.Millisecond,
 	}})
 	if err != nil {
