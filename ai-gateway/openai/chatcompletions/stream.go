@@ -63,6 +63,11 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 	switch p.Type {
 	case provider.PartStreamStart, provider.PartResponseMeta, provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
 		return nil, nil
+	case provider.PartCustom:
+		if p.Kind == "anthropic.message_start" {
+			return nil, nil
+		}
+		return nil, errOutput
 	case provider.PartTextStart:
 		if p.ID == "" {
 			return nil, errOutput
@@ -192,7 +197,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 	defer stream.Close()
 	controller := http.NewResponseController(w)
 	if deadline, ok := ctx.Deadline(); ok {
-		if err := controller.SetWriteDeadline(deadline); err != nil {
+		if err := controller.SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
 			WriteError(w, 500)
 			return
 		}
