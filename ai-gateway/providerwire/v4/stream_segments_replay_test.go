@@ -18,7 +18,7 @@ import (
 const upstreamFixtureRoot = "../../../test/conformance"
 
 type upstreamReplayCase struct {
-	path string
+	path   string
 	adjust func(map[string]any)
 }
 
