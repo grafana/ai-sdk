@@ -1032,6 +1032,20 @@ func TestBuildParams_MCPApprovalContinuation(t *testing.T) {
 			assert.Equal(t, true, response["approve"])
 		})
 	}
+
+	t.Run("azure omits openai-correlated denial", func(t *testing.T) {
+		params, _, _, err := buildParamsForProvider("gpt-4o", provider.CallOptions{Prompt: prompt}, "azure")
+		require.NoError(t, err)
+		raw, err := json.Marshal(params)
+		require.NoError(t, err)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(raw, &body))
+
+		input := body["input"].([]any)
+		require.Len(t, input, 2)
+		assert.Equal(t, "item_reference", input[0].(map[string]any)["type"])
+		assert.Equal(t, "mcp_approval_response", input[1].(map[string]any)["type"])
+	})
 }
 
 func TestBuildParams_CustomToolContentOptions(t *testing.T) {

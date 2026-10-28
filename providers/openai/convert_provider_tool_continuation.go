@@ -261,7 +261,7 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 		return group.output(ctx)
 	}
 	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied {
-		if ctx.outputOptions(part.Output).ApprovalID != "" {
+		if openAIPartOptionsFor(part.Output.ProviderOptions, providerName).ApprovalID != "" || ctx.outputOptions(part.Output).ApprovalID != "" {
 			return nil, nil, nil
 		}
 	}

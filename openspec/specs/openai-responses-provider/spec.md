@@ -132,6 +132,10 @@ Assistant calls SHALL become function_call or corresponding built-in call items 
 - **THEN** hosted items are omitted with the upstream warning unless that tool taxonomy supports stateless reconstruction
 - **AND** execution-denied synthetic results are omitted
 
+#### Scenario: Approval-correlated denial result is omitted
+- **WHEN** a tool-role `execution-denied` result carries `providerOptions.openai.approvalId`, including on an Azure model
+- **THEN** the request emits no `function_call_output` for it, because the matching `mcp_approval_response` carries the denial
+
 ### Requirement: Function result output conversion
 
 Ordinary results SHALL use function_call_output with original call_id and existing result caller. Scalar text/error-text/JSON/error-JSON/execution-denied SHALL retain string and output-schema JSON encoding rules. Scalar output SHALL remain string unless a selected active OpenAI/Azure breakpoint wraps it in input_text with prompt_cache_breakpoint.

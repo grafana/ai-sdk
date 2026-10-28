@@ -41,7 +41,7 @@ func captureApprovalReplay(ctx context.Context, model provider.LanguageModel, op
 			}()...)
 			for range result.FullStream() {
 			}
-			return result.Response().Messages, result.Err()
+			return result.ResponseMessages(), result.Err()
 		}
 		result, err := aisdk.GenerateText(ctx, model, func() []aisdk.GenerateOption {
 			out := make([]aisdk.GenerateOption, len(opts))
@@ -53,7 +53,7 @@ func captureApprovalReplay(ctx context.Context, model provider.LanguageModel, op
 		if err != nil {
 			return nil, err
 		}
-		return result.Response.Messages, nil
+		return result.ResponseMessages, nil
 	}
 	if high {
 		var err error
@@ -131,9 +131,11 @@ func captureApprovalReplay(ctx context.Context, model provider.LanguageModel, op
 		}
 	}
 	var responses []provider.ContentPart
+	approvalIDs := map[string]string{}
 	for _, msg := range messages {
 		for _, part := range msg.Content {
 			if part.Type == provider.ContentPartTypeToolApprovalRequest {
+				approvalIDs[part.ToolCallID] = part.ApprovalID
 				if len(responses) >= len(decisions) {
 					return fmt.Errorf("too many approvals")
 				}
@@ -153,25 +155,44 @@ func captureApprovalReplay(ctx context.Context, model provider.LanguageModel, op
 		if err != nil {
 			return err
 		}
-		approvedCount := 0
+		approvedCount, deniedCount := 0, 0
 		for i, d := range decisions {
 			if i < 2 && d {
 				approvedCount++
 			}
+			if i < 2 && !d && !streaming {
+				deniedCount++
+			}
 		}
-		resultCount := 0
+		resultCount, denialCount := 0, 0
 		for _, msg := range resumed {
 			for _, part := range msg.Content {
 				if part.Type == provider.ContentPartTypeToolResult && part.ToolName == "mcp.lookup" {
-					resultCount++
 					if _, ok := calls[part.ToolCallID]; !ok {
 						return fmt.Errorf("result lost original tool call id")
+					}
+					if part.Output == nil || part.Output.Type != provider.ToolOutputExecutionDenied {
+						resultCount++
+						continue
+					}
+					denialCount++
+					correlation, _, err := provider.ResolveOption[struct {
+						ApprovalID string `json:"approvalId"`
+					}](part.Output.ProviderOptions, "openai")
+					if err != nil {
+						return err
+					}
+					if correlation.ApprovalID != approvalIDs[part.ToolCallID] {
+						return fmt.Errorf("denied provider result approval id %q, want %q", correlation.ApprovalID, approvalIDs[part.ToolCallID])
 					}
 				}
 			}
 		}
 		if resultCount != approvedCount {
 			return fmt.Errorf("got %d provider results, want %d", resultCount, approvedCount)
+		}
+		if denialCount != deniedCount {
+			return fmt.Errorf("got %d denied provider results, want %d", denialCount, deniedCount)
 		}
 		history = append(history, resumed...)
 		history = append(history, provider.NewUserMessage(provider.TextPart("third-turn")))
