@@ -13,8 +13,9 @@ client.
 - Grafana 13.3 or later.
 - The `appplugins.loadAppManifest`, `appplugins.registerAPIServer` and
   `grafana.useRouterMiddleware` feature toggles. The last one is experimental.
-- The plugin is not in the plugin catalog yet. Build it from this directory
-  and allow it as an unsigned plugin.
+- The plugin is published only to the dev plugin catalog for Grafana Cloud.
+  For other Grafana instances, build it from this directory and allow it as an
+  unsigned plugin.
 
 ## Install
 
@@ -175,7 +176,7 @@ Then work from `ai-gateway/`:
 | After changing | Run |
 | --- | --- |
 | The frontend | `pnpm dev`, and keep it running. The page reloads on each change. |
-| The backend or `provisioning/aigateway/models.yaml` | `mage -v build:linux` (`build:linuxARM64` on arm64), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin. |
+| The backend in `pkg/` or `provisioning/aigateway/models.yaml` | `mage -v build:linux` (`build:linuxARM64` on arm64), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin. |
 | `provisioning/grafana.ini` | `docker compose restart grafana` |
 
 The Gateway refuses Grafana's anonymous sign-in. Create a service account token
