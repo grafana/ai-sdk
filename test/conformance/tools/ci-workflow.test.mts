@@ -86,7 +86,10 @@ describe("candidate-source workflow gates", () => {
     const build = steps.find((step) => step.run === "mise run build-ai-gateway-plugin")!;
     assert.equal(build.env?.AI_GATEWAY_VCS_REF, "${{ github.sha }}");
     const caches = steps.filter((step) => step.uses?.startsWith("actions/cache@"));
-    assert.equal(caches.length, 2, "plugin validation caches Go and pnpm");
+    assert.equal(caches.length, 1, "plugin validation caches pnpm directly");
+    const goCache = steps.find((step) => step.uses === "./.github/actions/cache-go")!;
+    assert.ok(goCache, "plugin validation uses isolated module and build caches");
+    assert.equal(normalize(goCache.with?.["lookup-only"] as string), "${{ startsWith(github.ref, 'refs/tags/') }}");
     for (const cache of caches) assert.equal(normalize(cache.with?.["lookup-only"] as string), "${{ startsWith(github.ref, 'refs/tags/') }}");
     const keep = steps.at(-1)!;
     assert.match(keep.uses!, /^actions\/upload-artifact@[0-9a-f]{40}$/);
@@ -151,15 +154,19 @@ describe("candidate-source workflow gates", () => {
   it("refreshes isolated build caches for every Go job", () => {
     const cacheDocument = parseDocument(readFileSync(resolve(root, ".github/actions/cache-go/action.yml"), "utf8"));
     assert.deepEqual(cacheDocument.errors, []);
-    const cache = cacheDocument.toJS() as { runs: { using: string; steps: Array<{ uses?: string; with?: { key: string; path: string; "restore-keys": string } }> } };
+    const cache = cacheDocument.toJS() as { inputs: { "lookup-only": { default: string } }; runs: { using: string; steps: Array<{ uses?: string; with?: { key: string; path: string; "restore-keys": string; "lookup-only": string } }> } };
     assert.equal(cache.runs.using, "composite");
+    assert.equal(cache.inputs["lookup-only"].default, "false");
     const caches = cache.runs.steps.filter((step) => step.uses?.startsWith("actions/cache@"));
     assert.equal(caches.length, 2);
     assert.notEqual(caches[0]!.with!.path, caches[1]!.with!.path);
     for (const step of caches) {
+      assert.equal(step.with!["lookup-only"], "${{ inputs.lookup-only }}");
+      assert.ok(step.with!.key.includes("${{ runner.arch }}"));
       assert.ok(step.with!.key.includes("${{ github.job }}"));
       assert.ok(step.with!.key.includes("${{ steps.paths.outputs.version }}"));
     }
+    assert.ok(!caches[0]!.with!.key.includes("${{ github.sha }}"));
     assert.ok(caches[1]!.with!.key.endsWith("-${{ github.sha }}"));
     assert.ok(!caches[1]!.with!["restore-keys"].includes("${{ github.sha }}"));
     for (const job of ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "conformance-test"]) {
