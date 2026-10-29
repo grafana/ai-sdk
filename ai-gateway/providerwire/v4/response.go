@@ -209,19 +209,7 @@ func mapUnarySuccess(result *provider.GenerateResult, contexts ...unaryMappingCo
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
 	}
-	if !utf8.ValidString(result.FinishReason.Raw) {
-		return unarySuccess{}, errInvalidUnarySuccess
-	}
-
-	switch result.FinishReason.Unified {
-	case provider.FinishReasonStop,
-		provider.FinishReasonLength,
-		provider.FinishReasonContentFilter,
-		provider.FinishReasonToolCalls,
-		provider.FinishReasonError,
-		provider.FinishReasonInterrupted,
-		provider.FinishReasonOther:
-	default:
+	if !validFinishReason(result.FinishReason) {
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
 

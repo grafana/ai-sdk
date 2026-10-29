@@ -485,7 +485,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if !state.quiescent() || len(part.Warnings) != 0 || part.FinishReason == nil || part.Usage == nil {
 			return streamPartAdapterFailure
 		}
-		if !validStreamFinishReason(*part.FinishReason) {
+		if !validFinishReason(*part.FinishReason) {
 			return streamPartAdapterFailure
 		}
 		inputUsage, err := mapInputUsage(part.Usage.InputTokens)
@@ -534,11 +534,11 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 	}
 }
 
-func validStreamFinishReason(reason provider.FinishReason) bool {
-	return utf8.ValidString(reason.Raw) && validStreamUnifiedFinishReason(reason.Unified)
+func validFinishReason(reason provider.FinishReason) bool {
+	return utf8.ValidString(reason.Raw) && validUnifiedFinishReason(reason.Unified)
 }
 
-func validStreamUnifiedFinishReason(reason provider.UnifiedFinishReason) bool {
+func validUnifiedFinishReason(reason provider.UnifiedFinishReason) bool {
 	switch reason {
 	case provider.FinishReasonStop,
 		provider.FinishReasonLength,
