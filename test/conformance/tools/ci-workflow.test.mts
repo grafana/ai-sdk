@@ -8,7 +8,7 @@ import { parseAllDocuments, parseDocument } from "yaml";
 const root = resolve(import.meta.dirname, "../../..");
 const document = parseDocument(readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8"));
 assert.deepEqual(document.errors, []);
-const workflow = document.toJS() as { concurrency: { group: string; "cancel-in-progress": string }; on: { push: { branches: string[]; tags?: string[] }; pull_request: unknown }; jobs: Record<string, { if?: string; needs?: string | string[]; permissions?: Record<string, string>; "continue-on-error"?: boolean; steps: Array<{ name?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown>; "continue-on-error"?: boolean }> }> };
+const workflow = document.toJS() as { concurrency: { group: string; "cancel-in-progress": string }; on: { push: { branches: string[]; tags?: string[] }; pull_request: unknown }; jobs: Record<string, { name?: string; if?: string; needs?: string | string[]; permissions?: Record<string, string>; "continue-on-error"?: boolean; steps: Array<{ name?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown>; "continue-on-error"?: boolean }> }> };
 const jobs = workflow.jobs;
 const source = ["ci", "race", "docs-lint", "module-resolution", "parity-baseline", "integration-test", "conformance-test"];
 const pushGuard = "${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) && github.repository == 'grafana/ai-sdk' }}";
@@ -62,8 +62,8 @@ describe("candidate-source workflow gates", () => {
   });
 
   it("validates the plugin package on pull requests and keeps it only for eligible pushes", () => {
-    const job = jobs["plugin-validation"];
-    assert.ok(job, "missing plugin validation job");
+    const job = jobs["plugin-build"];
+    assert.ok(job, "missing plugin build job");
     assert.equal(job.if, undefined, "plugin validation must run on PR and push");
     const steps = job.steps;
     assert.ok(steps.some((step) => step.uses?.startsWith("actions/checkout@") && step.with?.["persist-credentials"] === false));
@@ -72,15 +72,15 @@ describe("candidate-source workflow gates", () => {
     assert.equal(normalize(clean.if), "${{ github.event_name == 'push' }}");
     assert.match(clean.run!, /git rev-parse HEAD.*GITHUB_SHA/);
     assert.match(clean.run!, /git status --porcelain --untracked-files=all/);
-    const order = ["generate:kinds", "mise run test-ai-gateway-frontend", "mise run build-ai-gateway-plugin", "mise run validate-ai-gateway-plugin", "mise run test-ai-gateway-e2e", "mise run test-ai-gateway\n", "mise run test-ai-gateway-command"];
-    const script = `${commands("plugin-validation")}\n`;
+    const order = ["generate:kinds", "mise run test-ai-gateway-frontend", "mise run build-ai-gateway-plugin", "mise run validate-ai-gateway-plugin", "mise run test-ai-gateway-e2e", "mise run test-ai-gateway-command"];
+    const script = `${commands("plugin-build")}\n`;
     let position = -1;
     for (const command of order) {
       const next = script.indexOf(command, position + 1);
       assert.ok(next > position, `${command} must run in order`);
       position = next;
     }
-    assert.match(commands("plugin-validation"), /git status --porcelain --untracked-files=all -- ai-gateway\)"/);
+    assert.match(commands("plugin-build"), /git status --porcelain --untracked-files=all -- ai-gateway\)"/);
     const e2e = steps.find((step) => step.run === "mise run test-ai-gateway-e2e")!;
     assert.match(e2e.env?.GRAFANA_VERSION ?? "", /^nightly@sha256:[0-9a-f]{64}$/);
     const build = steps.find((step) => step.run === "mise run build-ai-gateway-plugin")!;
@@ -91,8 +91,67 @@ describe("candidate-source workflow gates", () => {
     const keep = steps.at(-1)!;
     assert.match(keep.uses!, /^actions\/upload-artifact@[0-9a-f]{40}$/);
     assert.equal(normalize(keep.if), pushGuard);
-    assert.equal(keep.with?.path, "ai-gateway/dist");
+    assert.equal(keep.with?.name, "gateway-candidate-${{ github.sha }}");
+    assert.equal(keep.with?.path, "${{ runner.temp }}/plugin-candidate.tar");
+    assert.equal(keep.with?.["retention-days"], 1);
+    const archive = steps.at(-2)!;
+    assert.equal(normalize(archive.if), pushGuard);
+    assert.equal(archive.run, 'tar -C ai-gateway/dist -cf "$RUNNER_TEMP/plugin-candidate.tar" .');
     assert.equal(keep.with?.["if-no-files-found"], "error");
+  });
+
+  it("runs full Gateway source tests independently and fails the existing plugin gate unless both workers succeed", () => {
+    const gate = jobs["plugin-validation"]!;
+    assert.equal(gate.name, "Validate AI Gateway plugin");
+    assert.equal(gate.if, "${{ always() }}");
+    assert.deepEqual(needs("plugin-validation"), ["plugin-build", "gateway-test"]);
+    assert.notEqual(gate["continue-on-error"], true);
+    assert.ok(gate.steps.every((step) => step["continue-on-error"] !== true));
+    for (const worker of ["plugin-build", "gateway-test"]) {
+      assert.deepEqual(needs(worker), []);
+      assert.equal(jobs[worker]!.if, undefined);
+      assert.notEqual(jobs[worker]!["continue-on-error"], true);
+      assert.ok(jobs[worker]!.steps.every((step) => step["continue-on-error"] !== true));
+    }
+    const sourceTests = jobs["gateway-test"]!.steps.find((step) => step.run === "mise run test-ai-gateway")!;
+    assert.ok(sourceTests);
+    assert.equal(sourceTests.if, undefined);
+    assert.doesNotMatch(commands("plugin-build"), /mise run test-ai-gateway(?:\n|$)/);
+    assert.deepEqual(gate.steps[0]!.env, {
+      PLUGIN_BUILD_RESULT: "${{ needs.plugin-build.result }}",
+      GATEWAY_TEST_RESULT: "${{ needs.gateway-test.result }}",
+    });
+    for (const plugin of ["success", "failure", "cancelled", "skipped"]) {
+      for (const gateway of ["success", "failure", "cancelled", "skipped"]) {
+        const result = spawnSync("bash", ["-c", gate.steps[0]!.run!], {
+          env: { ...process.env, PLUGIN_BUILD_RESULT: plugin, GATEWAY_TEST_RESULT: gateway },
+        });
+        assert.equal(result.status === 0, plugin === "success" && gateway === "success", `${plugin}/${gateway}`);
+      }
+    }
+  });
+
+  it("promotes only the same-run candidate after all plugin checks pass on eligible pushes", () => {
+    const steps = jobs["plugin-validation"]!.steps;
+    assert.equal(steps.length, 4);
+    const [download, restore, keep] = steps.slice(1);
+    for (const step of [download!, restore!, keep!]) assert.equal(normalize(step.if), pushGuard);
+    assert.match(download!.uses!, /^actions\/download-artifact@[0-9a-f]{40}$/);
+    assert.deepEqual(download!.with, {
+      name: "gateway-candidate-${{ github.sha }}",
+      path: "${{ runner.temp }}/plugin-candidate",
+    });
+    assert.equal(restore!.run, 'mkdir -p ai-gateway/dist\ntar -C ai-gateway/dist -xf "$RUNNER_TEMP/plugin-candidate/plugin-candidate.tar"\n');
+    assert.match(keep!.uses!, /^actions\/upload-artifact@[0-9a-f]{40}$/);
+    assert.deepEqual(keep!.with, {
+      name: "grafana-aigateway-app-${{ github.sha }}",
+      path: "ai-gateway/dist",
+      "if-no-files-found": "error",
+    });
+    const validatedUploads = Object.entries(jobs).flatMap(([job, value]) => value.steps
+      .filter((step) => step.uses?.startsWith("actions/upload-artifact@") && step.with?.name === keep!.with!.name)
+      .map(() => job));
+    assert.deepEqual(validatedUploads, ["plugin-validation"]);
   });
 
   it("has no image, publication or deployment jobs", () => {
@@ -105,7 +164,7 @@ describe("candidate-source workflow gates", () => {
   });
 
   it("keeps the required source checks and workers without image automation", () => {
-    assert.deepEqual(Object.keys(jobs).sort(), [...source, "build-test", "lint", "plugin-validation"].sort());
+    assert.deepEqual(Object.keys(jobs).sort(), [...source, "build-test", "lint", "plugin-validation", "plugin-build", "gateway-test"].sort());
     assert.deepEqual(workflow.on.push, { branches: ["main"], tags: ["ai-gateway/v*"] });
     assert.ok(Object.hasOwn(workflow.on, "pull_request"));
     assert.deepEqual(Object.keys(workflow.on).sort(), ["pull_request", "push"]);
@@ -162,7 +221,7 @@ describe("candidate-source workflow gates", () => {
     }
     assert.ok(caches[1]!.with!.key.endsWith("-${{ github.sha }}"));
     assert.ok(!caches[1]!.with!["restore-keys"].includes("${{ github.sha }}"));
-    for (const job of ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "conformance-test"]) {
+    for (const job of ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "conformance-test", "gateway-test"]) {
       const steps = jobs[job]!.steps;
       const cacheIndex = steps.findIndex((step) => step.uses === "./.github/actions/cache-go");
       assert.ok(cacheIndex > steps.findIndex((step) => step.uses?.startsWith("actions/checkout@")), job);

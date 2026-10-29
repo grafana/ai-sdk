@@ -231,8 +231,29 @@ jobs:
       - name: Integration tests
         run: mise run test-integration
 
-  plugin-validation:
-    name: Validate AI Gateway plugin
+  gateway-test:
+    name: Test AI Gateway source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          version: "2026.5.4"
+          experimental: true
+
+      - uses: ./.github/actions/cache-go
+
+      - name: Gateway tests
+        run: mise run test-ai-gateway
+
+  plugin-build:
+    name: Build and test AI Gateway plugin
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -312,11 +333,58 @@ jobs:
           path: ai-gateway/playwright-report
           if-no-files-found: ignore
 
-      - name: Gateway tests
-        run: mise run test-ai-gateway
-
       - name: Plugin test host suites
         run: mise run test-ai-gateway-command
+
+      - name: Archive candidate plugin package
+        if: >-
+          ${{ github.event_name == 'push' &&
+              (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) &&
+              github.repository == 'grafana/ai-sdk' }}
+        run: tar -C ai-gateway/dist -cf "$RUNNER_TEMP/plugin-candidate.tar" .
+
+      - name: Keep candidate plugin package
+        if: >-
+          ${{ github.event_name == 'push' &&
+              (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) &&
+              github.repository == 'grafana/ai-sdk' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gateway-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/plugin-candidate.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  plugin-validation:
+    name: Validate AI Gateway plugin
+    runs-on: ubuntu-latest
+    needs: [plugin-build, gateway-test]
+    if: ${{ always() }}
+    steps:
+      - name: Require plugin and Gateway source checks
+        env:
+          PLUGIN_BUILD_RESULT: ${{ needs.plugin-build.result }}
+          GATEWAY_TEST_RESULT: ${{ needs.gateway-test.result }}
+        run: test "$PLUGIN_BUILD_RESULT" = success && test "$GATEWAY_TEST_RESULT" = success
+
+      - name: Download candidate plugin package
+        if: >-
+          ${{ github.event_name == 'push' &&
+              (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) &&
+              github.repository == 'grafana/ai-sdk' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: gateway-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/plugin-candidate
+
+      - name: Restore candidate plugin package
+        if: >-
+          ${{ github.event_name == 'push' &&
+              (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) &&
+              github.repository == 'grafana/ai-sdk' }}
+        run: |
+          mkdir -p ai-gateway/dist
+          tar -C ai-gateway/dist -xf "$RUNNER_TEMP/plugin-candidate/plugin-candidate.tar"
 
       - name: Keep validated plugin package
         if: >-
