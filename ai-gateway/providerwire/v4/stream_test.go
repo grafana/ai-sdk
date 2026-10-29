@@ -486,6 +486,90 @@ func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {
 		assert.NotContains(t, body, `"type":"text-end"`)
 		assert.NotContains(t, body, `"type":"finish"`)
 	})
+
+	t.Run("provider close right after a provider error ends cleanly", func(t *testing.T) {
+		statusLess := provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "ordinary native message"})}
+		rateLimited := provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusTooManyRequests, Message: "ordinary native message"})}
+		toolStart := provider.StreamPart{Type: provider.PartToolInputStart, ID: "call", ToolName: "lookup"}
+		raw := provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"native":true}`)}
+		for _, tc := range []struct {
+			name  string
+			parts []provider.StreamPart
+			types []string
+			codes []string
+		}{
+			{"open tool input then error", []provider.StreamPart{toolStart, statusLess}, []string{"stream-start", "tool-input-start", "error"}, []string{"provider_error"}},
+			{"error as first part", []provider.StreamPart{statusLess}, []string{"stream-start", "error"}, []string{"provider_error"}},
+			{"status-bearing error", []provider.StreamPart{rateLimited}, []string{"stream-start", "error"}, []string{"rate_limit_exceeded"}},
+			{"nil api error", []provider.StreamPart{{Type: provider.PartError}}, []string{"stream-start", "error"}, []string{"internal_error"}},
+			{"unrequested raw after error", []provider.StreamPart{statusLess, raw}, []string{"stream-start", "error"}, []string{"provider_error"}},
+			{"content after error", []provider.StreamPart{statusLess, {Type: provider.PartTextStart, ID: "a"}}, []string{"stream-start", "error", "text-start", "error"}, []string{"provider_error", "internal_error"}},
+			{"no error", []provider.StreamPart{{Type: provider.PartTextStart, ID: "a"}}, []string{"stream-start", "text-start", "error"}, []string{"internal_error"}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				harness := newRuntimeHarness(t, testLimits())
+				harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: makeStream(tc.parts...)}, nil
+				}
+				types, codes := streamEventTypesAndCodes(t, harness.serve(streamRequest(`{"prompt":[]}`)).Body.String())
+				assert.Equal(t, tc.types, types)
+				assert.Equal(t, tc.codes, codes)
+			})
+		}
+	})
+
+	t.Run("requested raw after a provider error keeps the synthetic close error", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
+		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: makeStream(
+				provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "ordinary native message"})},
+				provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"native":true}`)},
+			)}, nil
+		}
+		types, codes := streamEventTypesAndCodes(t, harness.serve(streamRequest(`{"prompt":[],"includeRawChunks":true}`)).Body.String())
+		assert.Equal(t, []string{"stream-start", "error", "raw", "error"}, types)
+		assert.Equal(t, []string{"provider_error", "internal_error"}, codes)
+	})
+
+	t.Run("idle timeout after a provider error keeps the timeout document", func(t *testing.T) {
+		limits := testLimits()
+		limits.StreamIdleDuration = 25 * time.Millisecond
+		harness := newRuntimeHarness(t, limits)
+		harness.model.stream = func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			stream := make(chan provider.StreamPart)
+			go func() {
+				defer close(stream)
+				stream <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "ordinary native message"})}
+				<-ctx.Done()
+			}()
+			return &provider.StreamResult{Stream: stream}, nil
+		}
+		types, codes := streamEventTypesAndCodes(t, harness.serve(streamRequest(`{"prompt":[]}`)).Body.String())
+		assert.Equal(t, []string{"stream-start", "error", "error"}, types)
+		assert.Equal(t, []string{"provider_error", "timeout"}, codes)
+	})
+}
+
+func streamEventTypesAndCodes(t *testing.T, body string) (types, codes []string) {
+	t.Helper()
+	for _, line := range strings.Split(body, "\n") {
+		data, ok := strings.CutPrefix(line, "data: ")
+		if !ok {
+			continue
+		}
+		var event struct {
+			Type  string `json:"type"`
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(data), &event))
+		types = append(types, event.Type)
+		if event.Type == string(provider.PartError) {
+			codes = append(codes, event.Error.Code)
+		}
+	}
+	return types, codes
 }
 
 func TestStreamingSetupAndCleanup(t *testing.T) {

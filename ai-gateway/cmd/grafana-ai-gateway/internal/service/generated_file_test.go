@@ -26,7 +26,7 @@ func TestGeneratedFileFallbackCommitment(t *testing.T) {
 	}{
 		{"preselection", nil, hostileFallbackError(503), []string{"stream-start", "file", "finish"}, []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
 		{"file only", fallbackParts(file, finish), nil, []string{"stream-start", "file", "finish"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
-		{"file then error", fallbackParts(file, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}), nil, []string{"stream-start", "file", "error", "error"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
+		{"file then error", fallbackParts(file, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}), nil, []string{"stream-start", "file", "error"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{"selected encoding", fallbackParts(provider.StreamPart{Type: provider.PartFile, MediaType: string([]byte{0xff}), Data: &provider.StreamFileData{Bytes: []byte{1}}}), nil, []string{"stream-start", "error"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{"text file ordering", fallbackParts(provider.StreamPart{Type: provider.PartTextStart, ID: "t"}, provider.StreamPart{Type: provider.PartTextDelta, ID: "t", Delta: "hello"}, file, provider.StreamPart{Type: provider.PartTextEnd, ID: "t"}, finish), nil, []string{"stream-start", "text-start", "text-delta", "file", "text-end", "finish"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
 	} {

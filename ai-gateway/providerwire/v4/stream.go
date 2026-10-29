@@ -271,6 +271,9 @@ type streamState struct {
 	// includeRaw records that the caller requested raw stream parts. Raw parts
 	// are dropped otherwise, including any an adapter emits unrequested.
 	includeRaw bool
+	// afterProviderError records that the last written event was a forwarded
+	// provider error, so a provider close ends the response cleanly.
+	afterProviderError bool
 }
 
 func newStreamState(history map[string]string) *streamState {
@@ -360,7 +363,7 @@ func (h *handler) consumeStreamParts(w http.ResponseWriter, stream *execution.St
 	for {
 		part, wait := stream.Next()
 		if wait != execution.WaitPart {
-			if wait == execution.WaitClosed && state.phase == segmentFinished {
+			if wait == execution.WaitClosed && (state.phase == segmentFinished || state.afterProviderError) {
 				return
 			}
 			h.writeStreamTerminalForWait(w, wait, state.execution)
@@ -387,6 +390,9 @@ func (h *handler) handleStreamPartResult(w http.ResponseWriter, stream *executio
 func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
 	if state.phase == segmentFinished && !allowedAfterFinish(part.Type) {
 		return streamPartAdapterFailure
+	}
+	if part.Type != provider.PartError && part.Type != provider.PartRaw {
+		state.afterProviderError = false
 	}
 	switch part.Type {
 	case provider.PartToolApprovalRequest:
@@ -480,6 +486,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if !h.emitSafeStreamError(w, value, metadata, current) {
 			return streamPartWriterFailure
 		}
+		state.afterProviderError = true
 		return streamPartContinue
 	case provider.PartFinish:
 		if !state.quiescent() || len(part.Warnings) != 0 || part.FinishReason == nil || part.Usage == nil {
@@ -526,6 +533,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			}
 			return streamPartWriterFailure
 		}
+		state.afterProviderError = false
 		return streamPartContinue
 	case provider.PartStreamStart:
 		return streamPartAdapterFailure
