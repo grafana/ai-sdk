@@ -143,11 +143,7 @@ func TestAttemptCapture_RoutingWithoutExpectedAttempts(t *testing.T) {
 }
 
 func configuredAttempts(modelID, canonical string, candidates ...catalog.ConfiguredCandidate) []ExpectedAttempt {
-	expected := make([]ExpectedAttempt, len(candidates))
-	for i, candidate := range candidates {
-		expected[i] = ExpectedAttempt{ModelID: modelID, CanonicalID: canonical, Destination: candidate}
-	}
-	return expected
+	return configuredExpected(modelID, canonical, candidates)
 }
 
 func accountAttempts(providerName, modelID string, count int) []ExpectedAttempt {

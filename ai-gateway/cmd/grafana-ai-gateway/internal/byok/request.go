@@ -33,6 +33,9 @@ type Destination struct {
 	Accounts []nativemodel.Config
 }
 
+// Selector returns the destination's provider/model selector.
+func (d Destination) Selector() string { return string(d.Provider) + "/" + d.Model }
+
 // Request is a decoded BYOK request: the requested destination followed by one
 // destination per fallback model, in order.
 type Request struct {
@@ -47,8 +50,10 @@ type requestAccount struct {
 // DecodeRequest validates the complete request-account map in controls and
 // returns the destinations of selector and of each fallback model in
 // controls.Models. An invalid selector, requested or fallback, wraps
-// [ErrInvalidSelector]; invalid accounts, or a destination without accounts,
-// wrap [ErrInvalidRequest].
+// [ErrInvalidSelector]; invalid accounts, a destination without accounts, or
+// more requested-provider accounts than the attempt bound wrap
+// [ErrInvalidRequest]. Fallback destinations are bounded by routing
+// composition instead.
 func DecodeRequest(selector string, controls routing.Controls, approvedBaseURLs map[Provider][]string) (Request, error) {
 	selected, model, ok := parseSelector(selector)
 	if !ok {
@@ -69,6 +74,9 @@ func DecodeRequest(selector string, controls routing.Controls, approvedBaseURLs 
 	requested, err := destination(selected, model, accountsByProvider)
 	if err != nil {
 		return Request{}, err
+	}
+	if len(requested.Accounts) > config.MaxProviderAttempts {
+		return Request{}, fmt.Errorf("%w: gateway.byok allows at most %d accounts for the selected provider", ErrInvalidRequest, config.MaxProviderAttempts)
 	}
 	request := Request{Destinations: []Destination{requested}}
 	for _, fallback := range controls.Models {
@@ -128,10 +136,7 @@ func validateAccounts(name Provider, accounts []requestAccount, approvedBaseURLs
 func destination(name Provider, model string, accountsByProvider map[Provider][]requestAccount) (Destination, error) {
 	supplied := accountsByProvider[name]
 	if len(supplied) == 0 {
-		return Destination{}, fmt.Errorf("%w: gateway.byok requires accounts for selected provider", ErrInvalidRequest)
-	}
-	if len(supplied) > config.MaxProviderAttempts {
-		return Destination{}, fmt.Errorf("%w: gateway.byok allows at most %d accounts for the selected provider", ErrInvalidRequest, config.MaxProviderAttempts)
+		return Destination{}, fmt.Errorf("%w: gateway.byok requires accounts for each named provider", ErrInvalidRequest)
 	}
 	accounts := make([]nativemodel.Config, len(supplied))
 	for i, account := range supplied {

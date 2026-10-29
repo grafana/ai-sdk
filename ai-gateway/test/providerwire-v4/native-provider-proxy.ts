@@ -46,13 +46,12 @@ type NativeAuthority = "api.anthropic.com:443" | "api.openai.com:443";
 
 // startNativeProviderProxy forwards TLS CONNECT tunnels for each native
 // authority to its fake target, and refuses every other authority.
-export async function startNativeProviderProxy(target: string | Partial<Record<NativeAuthority, string>>, authority: NativeAuthority = "api.anthropic.com:443") {
+export async function startNativeProviderProxy(targets: Partial<Record<NativeAuthority, string>>) {
   const context = createSecureContext({
     cert: readFileSync(nativeProxyCertificate),
     key: nativeProxyKey,
   });
   const sockets = new Set<TLSSocket>();
-  const targets = typeof target === "string" ? { [authority]: target } : target;
   const forwarders = new Map(Object.entries(targets).map(([name, url]) => [name, createServer((request, response) => {
     const upstream = httpRequest(new URL(request.url ?? "/", url), {
       method: request.method, headers: request.headers,

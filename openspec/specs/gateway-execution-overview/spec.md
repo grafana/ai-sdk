@@ -88,7 +88,7 @@ Enrichment SHALL place the overview under `gateway.execution` and its routing su
 - **THEN** the same carrier SHALL contain `gateway.routing` projected from that overview, and SHALL contain neither when no overview is published
 
 ### Requirement: Routing summary projection
-The routing summary SHALL be a pure projection of the published overview, with each attempt grouped under the model its chain position was composed from. It SHALL use a subset of Vercel's documented `gateway.routing` field names: `originalModelId`, `canonicalSlug`, `resolvedProvider`, `finalProvider`, `modelAttemptCount`, `totalProviderAttemptCount` and `modelAttempts`. It SHALL add no fact that the overview lacks.
+The routing summary SHALL project the published overview, grouping each attempt under the model its chain position was composed from. It SHALL use a subset of Vercel's documented `gateway.routing` field names: `originalModelId`, `canonicalSlug`, `resolvedProvider`, `finalProvider`, `modelAttemptCount`, `totalProviderAttemptCount` and `modelAttempts`. It SHALL add no attempt or outcome beyond the overview's.
 
 #### Scenario: Configured fallback model serves the call
 - **WHEN** a call requested alias `a`, its route `A` had one failed candidate, and `models` entry `b` resolved to route `B`, whose anthropic candidate was selected

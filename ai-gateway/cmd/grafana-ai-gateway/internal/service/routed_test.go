@@ -427,6 +427,10 @@ func TestRoutedSelection_BYOK(t *testing.T) {
 			keys: []string{"dummy-o1"}, hosts: []string{openAIHost}, attempts: []execution.Attempt{attempt("openai", "y", fallback.AttemptSelected)},
 		},
 		{
+			name: "only excludes a fallback provider above the bound", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}],"openai":[` + strings.Repeat(`{"apiKey":"dummy-o1"},`, config.MaxProviderAttempts) + `{"apiKey":"dummy-o1"}]},"models":["openai/y"],"only":["anthropic"]}`,
+			keys: []string{"dummy-a1"}, hosts: []string{anthropicHost}, attempts: []execution.Attempt{attempt("anthropic", "x", fallback.AttemptSelected)},
+		},
+		{
 			name: "order has no effect within a model", gateway: `{` + accounts + `,"models":["openai/y"],"order":["openai"]}`,
 			keys: []string{"dummy-a1"}, hosts: []string{anthropicHost}, attempts: []execution.Attempt{attempt("anthropic", "x", fallback.AttemptSelected)},
 		},
@@ -483,6 +487,7 @@ func TestRoutedSelection_BYOKRefusals(t *testing.T) {
 		{name: "fallback provider without accounts", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"models":["openai/y"]}`, want: execution.ErrInvalidBYOK},
 		{name: "only excludes every account", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"only":["openai"]}`, want: execution.ErrNoRoutingCandidates},
 		{name: "composed chain above the bound", gateway: `{"byok":{"anthropic":[` + strings.Join(eight, ",") + `],"openai":[{"apiKey":"dummy-o1"}]},"models":["openai/y"]}`, want: execution.ErrRoutingAttemptBound},
+		{name: "fallback provider above the bound", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}],"openai":[` + strings.Join(eight, ",") + `,{"apiKey":"dummy-o9"}]},"models":["openai/y"]}`, want: execution.ErrRoutingAttemptBound},
 		{name: "unsupported control", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"sort":"ttft"}`, want: execution.ErrUnsupportedGatewayControl},
 		{name: "provider timeouts", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"providerTimeouts":{"byok":{"anthropic":100}}}`, want: execution.ErrUnsupportedGatewayControl},
 	} {

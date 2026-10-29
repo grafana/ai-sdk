@@ -2189,7 +2189,7 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
     const native = await FakeOpenAI.start();
     native.apiKey = "request-only-openai";
     native.backendModel = "request-only-native@revision+" + "x".repeat(140);
-    const proxy = await startNativeProviderProxy(native.url, "api.openai.com:443");
+    const proxy = await startNativeProviderProxy({ "api.openai.com:443": native.url });
     let gateway: GatewayProcess | undefined;
     try {
       gateway = await GatewayProcess.start(nativeProxyBinaryPath, configured.url, [], {
@@ -3297,7 +3297,7 @@ async function startCloudGateway(extraArgs: string[] = [], configuredURL?: strin
   const fake = await FakeAnthropic.start();
   fake.backendModel = "request-only-native";
   fake.apiKey = "request-only-key";
-  const proxy = await startNativeProviderProxy(fake.url);
+  const proxy = await startNativeProviderProxy({ "api.anthropic.com:443": fake.url });
   let gateway: GatewayProcess | undefined;
   try {
     gateway = await GatewayProcess.start(nativeProxyBinaryPath, configuredURL ?? fake.url, extraArgs, { ...nativeProxyEnvironment(proxy.url), ...extraEnv }, "cloud-gateway");
@@ -3329,7 +3329,7 @@ async function startBYOKAttemptGateway(name: "anthropic" | "openai"): Promise<BY
   const configured = await FakeAnthropic.start();
   const native = await FakeOpenAI.start();
   native.backendModel = "request-only-native";
-  const proxy = await startNativeProviderProxy(native.url, "api.openai.com:443");
+  const proxy = await startNativeProviderProxy({ "api.openai.com:443": native.url });
   let gateway: GatewayProcess | undefined;
   try {
     gateway = await GatewayProcess.start(nativeProxyBinaryPath, configured.url, [], nativeProxyEnvironment(proxy.url), "cloud-gateway");

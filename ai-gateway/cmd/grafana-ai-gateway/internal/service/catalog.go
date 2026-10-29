@@ -37,7 +37,6 @@ type Catalog struct {
 type physicalRoute struct {
 	descriptors []config.Primary
 	candidates  []provider.LanguageModel
-	identities  []catalog.ConfiguredCandidate
 }
 
 // BuildCatalog constructs every configured model exactly once.
@@ -124,7 +123,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 		if err != nil {
 			return nil, err
 		}
-		routes[id] = physicalRoute{descriptors: descriptors, candidates: candidates, identities: configuredCandidates}
+		routes[id] = physicalRoute{descriptors: descriptors, candidates: candidates}
 		model, err := factory(id, lower)
 		if err != nil {
 			return nil, fmt.Errorf("gateway service: composing model %q: %w", id, err)

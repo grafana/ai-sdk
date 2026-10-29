@@ -19,7 +19,7 @@ import (
 func (r Request) Groups() []routing.Group {
 	groups := make([]routing.Group, len(r.Destinations))
 	for i, destination := range r.Destinations {
-		groups[i] = routing.Group{Key: string(destination.Provider) + "/" + destination.Model, Candidates: make([]routing.Candidate, len(destination.Accounts))}
+		groups[i] = routing.Group{Key: destination.Selector(), Candidates: make([]routing.Candidate, len(destination.Accounts))}
 		for j := range destination.Accounts {
 			groups[i].Candidates[j] = routing.Candidate{Provider: string(destination.Provider)}
 		}

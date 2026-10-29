@@ -90,7 +90,7 @@ func selectBYOK(id string, controls routing.Controls, options BYOKOptions) (exec
 	for i, placement := range placements {
 		destination := request.Destinations[placement.Group]
 		expected[i] = execution.ExpectedAttempt{
-			ModelID:     string(destination.Provider) + "/" + destination.Model,
+			ModelID:     destination.Selector(),
 			Destination: catalog.ConfiguredCandidate{Provider: string(destination.Provider), ModelID: destination.Model},
 		}
 	}

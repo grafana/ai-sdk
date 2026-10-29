@@ -4,7 +4,8 @@ import "github.com/grafana/ai-sdk/fallback"
 
 // Routing summarizes one invocation's overview by model, using a subset of the
 // Vercel AI Gateway's documented providerMetadata.gateway.routing fields. It
-// holds no fact that the overview lacks.
+// adds no attempt or outcome that the overview lacks, only the model each
+// attempt belongs to.
 type Routing struct {
 	// OriginalModelID is the model ID the call requested.
 	OriginalModelID string `json:"originalModelId"`

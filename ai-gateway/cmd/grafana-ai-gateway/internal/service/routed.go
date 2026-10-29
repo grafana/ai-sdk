@@ -39,11 +39,11 @@ func (c *Catalog) selectRouted(ctx context.Context, id string, controls routing.
 	groups := make([]routing.Group, len(resolved))
 	for i, model := range resolved {
 		route, ok := c.routes[model.ID]
-		if !ok {
+		if !ok || len(route.candidates) != len(model.Candidates) {
 			return execution.Selection{}, errMissingRoute
 		}
-		groups[i] = routing.Group{Key: model.ID, Candidates: make([]routing.Candidate, len(route.identities))}
-		for j, identity := range route.identities {
+		groups[i] = routing.Group{Key: model.ID, Candidates: make([]routing.Candidate, len(model.Candidates))}
+		for j, identity := range model.Candidates {
 			groups[i].Candidates[j] = routing.Candidate{Provider: identity.Provider, Destination: identity.ProviderInstance + "\x00" + identity.ModelID}
 		}
 	}
@@ -58,7 +58,7 @@ func (c *Catalog) selectRouted(ctx context.Context, id string, controls routing.
 		route := c.routes[resolved[placement.Group].ID]
 		candidates = append(candidates, route.candidates[placement.Candidate])
 		descriptors = append(descriptors, route.descriptors[placement.Candidate])
-		expected = append(expected, execution.ExpectedAttempt{ModelID: names[placement.Group], CanonicalID: resolved[placement.Group].ID, Destination: route.identities[placement.Candidate]})
+		expected = append(expected, execution.ExpectedAttempt{ModelID: names[placement.Group], CanonicalID: resolved[placement.Group].ID, Destination: resolved[placement.Group].Candidates[placement.Candidate]})
 	}
 	lower, err := composeCandidates(candidates, descriptors, c.physical)
 	if err != nil {

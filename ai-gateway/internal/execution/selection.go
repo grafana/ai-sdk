@@ -102,12 +102,18 @@ func CatalogSelector(resolver catalog.ModelResolver) RequestSelector {
 		if err != nil {
 			return Selection{}, err
 		}
-		expected := make([]ExpectedAttempt, len(resolved.Candidates))
-		for i, candidate := range resolved.Candidates {
-			expected[i] = ExpectedAttempt{ModelID: modelID, CanonicalID: resolved.ID, Destination: candidate}
-		}
-		return ConfiguredSelection(resolved.ID, resolved.Model, expected), nil
+		return Selection{ID: resolved.ID, Model: resolved.Model, attribution: attributionConfigured, expected: configuredExpected(modelID, resolved.ID, resolved.Candidates)}, nil
 	}
+}
+
+// configuredExpected returns the expected attempts of one configured model's
+// candidates, in order.
+func configuredExpected(modelID, canonical string, candidates []catalog.ConfiguredCandidate) []ExpectedAttempt {
+	expected := make([]ExpectedAttempt, len(candidates))
+	for i, candidate := range candidates {
+		expected[i] = ExpectedAttempt{ModelID: modelID, CanonicalID: canonical, Destination: candidate}
+	}
+	return expected
 }
 
 func isNilInterface(value any) bool {

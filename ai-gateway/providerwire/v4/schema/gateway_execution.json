@@ -25,7 +25,7 @@
       "additionalProperties": false
     },
     "routing": {
-      "description": "Optional routing summary of the execution overview, grouped by model, using a subset of the Vercel AI Gateway's documented gateway.routing fields. It describes the same attempts as execution and adds no facts.",
+      "description": "Optional routing summary of the execution overview, grouped by model, using a subset of the Vercel AI Gateway's documented gateway.routing fields. It describes the same attempts as execution and adds only the model each attempt belongs to.",
       "type": "object",
       "required": ["originalModelId", "resolvedProvider", "modelAttemptCount", "totalProviderAttemptCount", "modelAttempts"],
       "properties": {

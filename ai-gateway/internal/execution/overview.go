@@ -45,11 +45,7 @@ type Failure struct {
 // read them. Mixed or unfinished observation is omitted rather than treated as
 // complete.
 func Project(requested, canonical string, decisions []fallback.Attempt, candidates []catalog.ConfiguredCandidate) *Overview {
-	expected := make([]ExpectedAttempt, len(candidates))
-	for i, candidate := range candidates {
-		expected[i] = ExpectedAttempt{ModelID: requested, CanonicalID: canonical, Destination: candidate}
-	}
-	return projectExpected(requested, canonical, decisions, attributionConfigured, expected)
+	return projectExpected(requested, canonical, decisions, attributionConfigured, configuredExpected(requested, canonical, candidates))
 }
 
 // projectExpected converts one invocation's decisions into an optional
