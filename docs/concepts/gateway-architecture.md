@@ -339,9 +339,39 @@ lookups, wakes waiters, and stops admission and maintenance. Real adapters must
 honor cancellation and bound their transports because Go cannot terminate arbitrary
 resolver code.
 
-These are executable contracts and cache behavior, not an exporter implementation
+The internal exporter pool owns typed clients through immutable bindings and
+recording leases. A configuration owner must publish authoritative snapshots in
+order for each stack; requests acquire from a published binding rather than
+reconciling arbitrary old snapshots. Matching transport settings reuse clients
+across policy revisions. Changed endpoints, ingestion identities, or credential
+versions install new bindings; existing recordings can finish on the old target
+while its authority remains valid. Stale bindings cannot acquire again.
+
+Factories resolve the exact deployment-owned credential reference and configure
+their supported SDK queues/retries. They must install the pool's export gate at
+the real send boundary. The gate checks expiry, bounds each export, and cancels
+in-flight sends after revocation. Its HTTP client accepts only the bound endpoint
+and refuses redirects. Removing or disabling a signal revokes its current and
+retiring clients; already-delivered bytes cannot be retracted.
+
+Current, constructing, retiring, and closing resources all count toward capacity.
+Shutdown errors quarantine capacity while the pool is open because complete
+teardown is unproven. Idle clients retire; old clients close after their final lease
+unless the bounded shutdown period has elapsed. Late construction is cleaned up,
+and non-cooperative construction or shutdown remains charged until it returns.
+The pool owns no additional payload queue or export retry loop.
+
+Local TLS receivers verify actual protobuf requests through the pinned OTLP HTTP
+exporter's supported client injection, including credential-version isolation,
+bounded SDK queues, retries, and blocked queued sends after revocation. The pinned
+AgentO11y generation HTTP client does not expose that injection seam and drains its
+queue on shutdown. Direct generation delivery needs a supported SDK hook or another
+verified transport path before integration. These tests do not choose a different
+generation protocol or establish Cloud authentication.
+
+These are executable contracts, cache behavior, and client lifecycle, not production delivery
 or proof of Cloud ingestion. Discovery field mappings, transport credentials,
-export filtering, production cache wiring, and exporter lifecycle remain separate work.
+export filtering, production wiring, and concrete per-signal adapters remain separate work.
 No customer settings API, log exporter, full agent-workflow trace, or billing
 accounting is supplied by this package.
 
