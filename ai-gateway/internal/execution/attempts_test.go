@@ -44,7 +44,7 @@ func (m *generateModel) DoGenerate(ctx context.Context, _ provider.CallOptions) 
 	if m.generate != nil {
 		return m.generate(ctx)
 	}
-	return &provider.GenerateResult{}, nil
+	return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 }
 
 func (m *generateModel) DoStream(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
@@ -301,7 +301,7 @@ func TestAttemptCapture_AccountProjection(t *testing.T) {
 					if failure != nil {
 						return nil, failure
 					}
-					return &provider.GenerateResult{}, nil
+					return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 				}})
 			}
 			attempts := newAttemptCapture("native/model", AccountSelection("native/model", &generateModel{modelID: "model"}, tc.accounts), SummaryRedactor{})

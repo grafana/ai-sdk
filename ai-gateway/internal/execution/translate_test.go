@@ -44,7 +44,7 @@ func (m *optionsModel) DoGenerate(_ context.Context, options provider.CallOption
 	if err := m.record(options); err != nil {
 		return nil, err
 	}
-	return &provider.GenerateResult{}, nil
+	return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 }
 
 func (m *optionsModel) DoStream(_ context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
