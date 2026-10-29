@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	structuredOutputNames      = []string{"", `,"name":""`, `,"name":"answer"`}
+	structuredOutputNames      = []struct{ fragment, want string }{{"", "response"}, {`,"name":""`, ""}, {`,"name":"answer"`, "answer"}}
 	compatibleJSONObjectFormat = map[string]any{"type": "json_object"}
 	compatibleSchemaWarning    = provider.Warning{Type: provider.WarnUnsupported, Feature: responseFormatFeature, Details: "JSON response format schema is only supported with structuredOutputs"}
 )
@@ -29,15 +29,15 @@ func TestStructuredOutput_NativeRequests(t *testing.T) {
 		for _, streaming := range []bool{false, true} {
 			for _, fallback := range []bool{false, true} {
 				for _, name := range structuredOutputNames {
-					t.Run(fmt.Sprintf("%s/stream=%t/fallback=%t/name=%s", backend, streaming, fallback, name), func(t *testing.T) {
-						response, requests := nativeOptionsRequest(t, backend, structuredOutputBody(name, nativeStructuredOutputOptions), streaming, fallback)
+					t.Run(fmt.Sprintf("%s/stream=%t/fallback=%t/name=%s", backend, streaming, fallback, name.fragment), func(t *testing.T) {
+						response, requests := nativeOptionsRequest(t, backend, structuredOutputBody(name.fragment, nativeStructuredOutputOptions), streaming, fallback)
 						require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 						require.Len(t, requests, structuredOutputRequestCount(fallback))
 						for _, request := range requests {
 							switch backend {
 							case "openai":
 								format := request["text"].(map[string]any)["format"].(map[string]any)
-								assert.Equal(t, expectedStructuredOutputName(name), format["name"])
+								assert.Equal(t, name.want, format["name"])
 								assert.Equal(t, "description", format["description"])
 								assert.Equal(t, false, format["strict"])
 								assert.Equal(t, "object", format["schema"].(map[string]any)["type"])
@@ -64,13 +64,13 @@ func TestStructuredOutput_CompatibleStructuredOutputs(t *testing.T) {
 		for _, streaming := range []bool{false, true} {
 			for _, fallback := range []bool{false, true} {
 				for _, name := range structuredOutputNames {
-					t.Run(fmt.Sprintf("stream=%t/fallback=%t/name=%s", streaming, fallback, name), func(t *testing.T) {
-						response, requests := nativeOptionsRequestWithProviders(t, "openai-compatible", structuredOutputBody(name, nativeStructuredOutputOptions), streaming, fallback, withStructuredOutputs(true, true))
+					t.Run(fmt.Sprintf("stream=%t/fallback=%t/name=%s", streaming, fallback, name.fragment), func(t *testing.T) {
+						response, requests := nativeOptionsRequestWithProviders(t, "openai-compatible", structuredOutputBody(name.fragment, nativeStructuredOutputOptions), streaming, fallback, withStructuredOutputs(true, true))
 						require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 						require.Len(t, requests, structuredOutputRequestCount(fallback))
 						for _, request := range requests {
 							format := compatibleJSONSchemaFormat(t, request)
-							assert.Equal(t, expectedStructuredOutputName(name), format["name"])
+							assert.Equal(t, name.want, format["name"])
 							assert.Equal(t, "description", format["description"])
 							assert.Equal(t, true, format["strict"])
 							assert.Equal(t, "object", format["schema"].(map[string]any)["type"])
@@ -105,7 +105,7 @@ func TestStructuredOutput_CompatibleStructuredOutputs(t *testing.T) {
 				{name: "fallback enabled", primary: false, fallback: true},
 			} {
 				t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
-					response, requests := nativeOptionsRequestWithProviders(t, "openai-compatible", structuredOutputBody("", nativeStructuredOutputOptions), streaming, true, withStructuredOutputs(tc.fallback, tc.primary))
+					response, requests := nativeOptionsRequestWithProviders(t, "openai-compatible", structuredOutputBody("", nativeStructuredOutputOptions), streaming, true, withStructuredOutputs(tc.primary, tc.fallback))
 					require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 					require.Len(t, requests, 2)
 					assertCompatibleResponseFormat(t, tc.primary, requests[0])
@@ -143,20 +143,9 @@ func structuredOutputRequestCount(fallback bool) int {
 	return 1
 }
 
-func expectedStructuredOutputName(name string) string {
-	switch name {
-	case `,"name":""`:
-		return ""
-	case `,"name":"answer"`:
-		return "answer"
-	default:
-		return "response"
-	}
-}
-
-func withStructuredOutputs(native, primary bool) func(map[string]config.ResolvedProvider) {
+func withStructuredOutputs(primary, native bool) func(map[string]config.ResolvedProvider) {
 	return func(providers map[string]config.ResolvedProvider) {
-		for name, enabled := range map[string]bool{"native": native, "primary": primary} {
+		for name, enabled := range map[string]bool{"primary": primary, "native": native} {
 			resolved := providers[name]
 			resolved.SupportsStructuredOutputs = enabled
 			providers[name] = resolved

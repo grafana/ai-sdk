@@ -246,7 +246,7 @@ models:
           if (language === "go") {
             const low = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID, mode, options });
             assert.equal(low.error, undefined);
-            warnings = mode === "generate" ? low.result.warnings : low.parts.find((part: any) => part.type === "stream-start")?.warnings;
+            warnings = mode === "generate" ? low.result.warnings : streamStartWarnings(low.parts);
             const high = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID, mode: `structured-${mode}`, options });
             assert.equal(high.error, undefined);
             assert.equal(high.text, '{"value":"ok"}');
@@ -255,8 +255,7 @@ models:
             if (mode === "generate") {
               warnings = (await model.doGenerate(options)).warnings;
             } else {
-              const parts: any[] = await collectGatewayStream((await model.doStream(options)).stream);
-              warnings = parts.find((part) => part.type === "stream-start")?.warnings;
+              warnings = streamStartWarnings(await collectGatewayStream((await model.doStream(options)).stream));
             }
             const highOptions: { model: LanguageModelV4; prompt: string; maxOutputTokens: number; maxRetries: number; output: ReturnType<typeof Output.json> } = { model: gateway.client()(modelID), prompt: "normal-stream", maxOutputTokens: 64, maxRetries: 0, output: Output.json() };
             if (mode === "generate") {
@@ -278,6 +277,12 @@ models:
     }
   });
 });
+
+function streamStartWarnings(parts: readonly any[]): readonly any[] | undefined {
+  const start = parts.find((part) => part.type === "stream-start");
+  assert.ok(start, "stream has no stream-start part");
+  return start.warnings;
+}
 
 function responseFormatWarnings(warnings: readonly any[] | undefined): unknown[] {
   return (warnings ?? []).filter((warning) => warning.type === "unsupported" && warning.feature === "responseFormat");

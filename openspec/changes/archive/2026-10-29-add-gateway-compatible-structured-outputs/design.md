@@ -60,7 +60,7 @@ Upstream baseline: `@ai-sdk/openai-compatible` 3.0.71 (`test/conformance/upstrea
 
 ### PARITY.md / knownGaps
 
-No edit is expected. The `AI Gateway | Go extension | mixed` row (`PARITY.md:46`) already points to `openspec/specs/gateway-*` and `ai-gateway/` tests. Its status and evidence location do not change, and the `openai-compatible` adapter row is unaffected because the provider does not change. No accepted deviation or support boundary is added, so `knownGaps` stays as is. A metadata-only `mise run validate-parity-baseline` confirms the baseline still validates.
+No edit is expected. The `AI Gateway | Go extension | mixed` row (`PARITY.md:46`) already points to `openspec/specs/gateway-*` and `ai-gateway/` tests. Its status and evidence location do not change, and the `openai-compatible` adapter row is unaffected because the provider only changes its off-path warning `details` to match upstream. No accepted deviation or support boundary is added, so `knownGaps` stays as is. A metadata-only `mise run validate-parity-baseline` confirms the baseline still validates.
 
 ### Documentation
 

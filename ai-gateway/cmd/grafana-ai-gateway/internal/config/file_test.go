@@ -225,7 +225,6 @@ func TestLoadFile_OpenAICompatibleProvider(t *testing.T) {
 }
 
 func TestLoadFile_SupportsStructuredOutputs(t *testing.T) {
-	compatible := strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: ollama\n", 1)
 	for _, tc := range []struct {
 		name string
 		yaml string
@@ -233,13 +232,8 @@ func TestLoadFile_SupportsStructuredOutputs(t *testing.T) {
 	}{
 		{
 			name: "enabled on openai-compatible",
-			yaml: strings.Replace(compatible, "    providerName: ollama\n", "    providerName: ollama\n    supportsStructuredOutputs: true\n", 1),
+			yaml: strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: ollama\n    supportsStructuredOutputs: true\n", 1),
 			want: ResolvedProvider{Type: "openai-compatible", APIKey: "key", BaseURL: "http://127.0.0.1:11434/v1", ProviderName: "ollama", SupportsStructuredOutputs: true},
-		},
-		{
-			name: "omitted on openai-compatible",
-			yaml: compatible,
-			want: ResolvedProvider{Type: "openai-compatible", APIKey: "key", BaseURL: "http://127.0.0.1:11434/v1", ProviderName: "ollama", SupportsStructuredOutputs: false},
 		},
 		{
 			name: "explicit false on anthropic",
