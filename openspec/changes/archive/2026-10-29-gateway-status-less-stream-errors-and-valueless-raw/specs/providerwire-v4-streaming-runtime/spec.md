@@ -2,15 +2,19 @@
 
 ### Requirement: Ordered non-terminal provider errors
 
-Each pre-finish provider `PartError` SHALL be independently reduced through the closed safe-error classification and emitted in place with base fields `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`. The provider-stream category SHALL instead use the fixed base fields `{"type":"error","error":{"message":"provider stream error","type":"internal_server_error","param":null,"code":"provider_error","retryable":false}}`, with no `statusCode` member.
+Each provider `PartError`, before or after a finish, SHALL be independently reduced through the closed safe-error classification and emitted in place with base fields `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`. The provider-stream category SHALL use its own fixed base fields with no `statusCode` member.
 
 #### Scenario: Ordered non-terminal provider errors policy
 - **WHEN** the runtime encodes the corresponding response or stream event
-- **THEN** Optional `error.data` MAY carry native current-error and execution summaries under gateway-attempt-failure-evidence. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid.
+- **THEN** Optional `error.data` MAY carry native current-error and execution summaries under gateway-attempt-failure-evidence. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid under the sequential response segment rules.
 
 #### Scenario: Provider error is followed by content
 - **WHEN** a provider emits an error before or within a text block and later emits otherwise valid content and finish
 - **THEN** the client SHALL receive the safe error and every later event in provider order
+
+#### Scenario: Provider error follows a finish
+- **WHEN** a provider emits an error after a valid finish and then either closes or emits response-metadata and another segment
+- **THEN** the client SHALL receive the safe error in place, and the stream SHALL end at clean EOF or continue with the new segment
 
 #### Scenario: Multiple provider errors are ordered
 - **WHEN** a provider emits multiple errors separated by valid stream parts
@@ -34,7 +38,7 @@ Each pre-finish provider `PartError` SHALL be independently reduced through the 
 
 #### Scenario: Status-less provider error is written in place
 - **WHEN** a provider emits a status-less error, as for a stream frame that failed to parse, followed by valid content and finish
-- **THEN** both clients SHALL receive an error event whose base fields are exactly the provider-stream document, with no `statusCode` and `retryable` false, followed by every later event in provider order
+- **THEN** both clients SHALL receive an error event whose base fields are exactly `{"type":"error","error":{"message":"provider stream error","type":"internal_server_error","param":null,"code":"provider_error","retryable":false}}`, with no `statusCode` member, followed by every later event in provider order
 
 #### Scenario: Status-less provider error carries native text
 - **WHEN** a status-less provider error carries a native message, native status text or provider account detail
@@ -42,29 +46,36 @@ Each pre-finish provider `PartError` SHALL be independently reduced through the 
 
 ### Requirement: Synthetic terminal adapter errors
 
-Before valid finish, unsupported families, lifecycle violations, invalid output, premature close other than a clean end after a provider error, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior. Reasoning start/delta/end and atomic reasoning-file events SHALL be supported under gateway-reasoning-content, URL/document sources SHALL be supported under gateway-sources, and atomic custom events SHALL be supported under gateway-custom-content. Raw parts SHALL follow gateway-raw-output. Ordinary generated files, approvals and unsupported tool behavior SHALL remain unsupported.
+Unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior, before and after a written finish. A provider close SHALL be premature unless it ends cleanly under "Stream completion on provider close". Ordinary generated files, approvals and unsupported tool behavior SHALL remain unsupported.
 
 #### Scenario: Reasoning lifecycle violation
-- **WHEN** reasoning ends without a matching active start, reuses an ended reasoning ID, or remains open at finish
+- **WHEN** reasoning ends without a matching active start, reuses an ended reasoning ID within its segment, or remains open at finish
 - **THEN** the handler SHALL produce at most one safe terminal error and no synthetic finish
 
 #### Scenario: Unsupported stream family appears
 - **WHEN** the text runtime receives provider-executed/dynamic/preliminary tool behavior, ordinary generated file, approval, or another unsupported part
 - **THEN** it SHALL emit at most one terminal internal error rather than serializing the provider-domain part
 
-#### Scenario: Custom stream part is supported
-- **WHEN** the runtime receives a well-formed custom part between stream start and finish
-- **THEN** it SHALL emit the custom event and continue the stream rather than emitting a terminal error
+### Requirement: Stream completion on provider close
+The response SHALL end at provider close, at a terminal adapter or runtime failure, at idle timeout, request deadline or cancellation, or at writer failure, not at a finish. Lifecycle parts SHALL be every part except raw parts and provider error parts. Provider close SHALL be a clean EOF without `[DONE]` only when the last lifecycle part is a valid finish or the last written event is a provider error event; otherwise the handler SHALL attempt one synthetic premature-close internal error.
 
-#### Scenario: Concurrent reasoning
-- **WHEN** two reasoning blocks and a text block sharing one raw ID interleave
-- **THEN** family-specific active state SHALL preserve each block independently and IDs SHALL not be rewritten
+#### Scenario: Close after a finish
+- **WHEN** the provider closes its stream after a valid finish that is the last lifecycle part
+- **THEN** the response SHALL end at clean EOF without `[DONE]` or another event
+
+#### Scenario: Close without a finish
+- **WHEN** the provider closes its stream before any valid finish
+- **THEN** the handler SHALL attempt one synthetic internal error and SHALL NOT synthesize a finish or block end
+
+#### Scenario: Close after a new segment opens
+- **WHEN** the provider closes its stream after a valid finish followed by response-metadata
+- **THEN** the handler SHALL attempt one synthetic internal error after the metadata and SHALL NOT synthesize a finish
 
 ## ADDED Requirements
 
 ### Requirement: Clean end after a provider error
 
-When the provider closes its stream before a valid finish and the last public event written was a provider error event, the handler SHALL end the response at clean EOF. It SHALL NOT write a synthetic terminal error, finish or block closure. A provider part that writes no event, such as a dropped raw part, SHALL NOT change which event was written last. This rule SHALL apply to a provider error of any safe category.
+When the provider closes its stream and the last public event written was a provider error event, the handler SHALL end the response at clean EOF, whether or not a finish was written earlier. It SHALL NOT write a synthetic terminal error, finish or block closure. A provider part that writes no event, such as a dropped raw part, SHALL NOT change which event was written last. This rule SHALL apply to a provider error of any safe category.
 
 #### Scenario: Provider closes right after an error
 - **WHEN** a provider emits stream-start, opens a tool-input or text block, emits an error part and then closes its stream without finish
@@ -75,7 +86,7 @@ When the provider closes its stream before a valid finish and the last public ev
 - **THEN** the response SHALL contain the normalized stream-start and that error, then end at clean EOF
 
 #### Scenario: Output follows the error before close
-- **WHEN** a provider emits an error part, then a part that writes an event, and then closes without finish
+- **WHEN** a provider emits an error part, then a part that writes an event and is not a valid finish, and then closes
 - **THEN** the handler SHALL write exactly one synthetic terminal internal error after the later event, as for any other premature close
 
 #### Scenario: Dropped raw part follows the error
@@ -83,7 +94,7 @@ When the provider closes its stream before a valid finish and the last public ev
 - **THEN** the response SHALL end at clean EOF after the error
 
 #### Scenario: Close without any provider error
-- **WHEN** the provider closes before finish and no provider error event was the last event written, including a close before the first part
+- **WHEN** the provider closes, the last lifecycle part is not a valid finish, and the last event written was not a provider error event, including a close before the first part
 - **THEN** the existing single synthetic terminal internal error SHALL be written
 
 #### Scenario: Other terminal outcomes after an error

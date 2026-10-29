@@ -2,13 +2,9 @@
 
 Each numbered group is one commit. In every group, write the tests first and confirm they fail. After each group, `cd ai-gateway && go test ./...` and `mise run test-grafana` must pass. Do not record, hand-write or edit provider `input*.chunks.txt` fixtures.
 
-## 1. Delivery order (client first)
+## 1. Delivery
 
-- [ ] 1.1 Deliver as two PRs, following design "Confirmed decisions":
-  - **PR A, client:** group 5 and task 6.3 (raw SSE wire against the Go client only). Release `providers/grafana` through its normal release path.
-  - **PR B, Gateway:** groups 2, 3 and 4, tasks 6.1 and 6.2, and group 7. Start after PR A merges; ship after the client release. Its contract tests build the client from source (`ai-gateway/go.mod` replace), and it bumps the `providers/grafana` requirement in `ai-gateway/go.mod` to the released version.
-
-  Verify: each PR passes its own checks on `main`. PR B's description names the minimum Go client version.
+- [x] 1.1 Deliver the client and Gateway changes in one PR, following design "Confirmed decisions". The Gateway builds against same-revision client source through the `ai-gateway/go.mod` replacements, so no requirement bump is needed. Verify: the PR passes its checks on `main`, and its description names the minimum `providers/grafana` version for the new stream shapes.
 
 ## 2. Status-less provider stream error on the server
 
@@ -51,7 +47,8 @@ Each numbered group is one commit. In every group, write the tests first and con
   Update the service rows in `cmd/grafana-ai-gateway/internal/service` whose stream ends with a provider error frame and then closes:
   - `fallback_acceptance_test.go:52` ("tool input then error"): expect `[stream-start, tool-input-start, error]` and `["overloaded"]`;
   - `fallback_acceptance_test.go:286` ("postcommit_error_close"): expect `[stream-start, error]`;
-  - `generated_file_test.go:29` ("file then error"): expect `[stream-start, file, error]`.
+  - `generated_file_test.go:29` ("file then error"): expect `[stream-start, file, error]`;
+  - `providerwire/v4/stream_segments_replay_test.go` ("overlapping-message-start"): expect the direct golden's event count, ending with the provider error.
 
   Verify: the new and updated cases fail.
 - [x] 3.2 Implement design D5 with a `streamState` flag that is set after a written provider error frame and cleared after any other written frame, and checked on `WaitClosed`. Verify: `cd ai-gateway && go test -race ./providerwire/v4/... ./cmd/grafana-ai-gateway/internal/service/...` passes, including `stream_tools_test.go` "premature EOF".
@@ -110,5 +107,5 @@ The Go capture serializes `APICallError.statusCode` as `0` (no `omitempty` at `p
 
 ## Workflow follow-up
 
-- Choose each PR title release type (`providers/grafana` for PR A, `ai-gateway` for PR B) per CONTRIBUTING "Releases and independent modules". Follow the delivery order in task 1.1.
-- Archive this change in PR B, the last implementing PR, as CONTRIBUTING requires for PRs that touch `openspec/`.
+- Use a `feat` PR title per CONTRIBUTING "Releases and independent modules"; the change is attributed to `providers/grafana` and the Gateway by the files it touches.
+- Archive this change in the PR, as CONTRIBUTING requires for PRs that touch `openspec/`.

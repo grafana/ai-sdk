@@ -121,7 +121,8 @@ Alternative considered: copying the native `IsRetryable`. Rejected, because the 
 - **Existing Gateway tests.** Every service row whose stream ends with a provider error frame and then closes loses its trailing `internal_error`:
   - `cmd/grafana-ai-gateway/internal/service/fallback_acceptance_test.go:52` "tool input then error": `[stream-start, tool-input-start, error, error]` / `["overloaded","internal_error"]` becomes `[stream-start, tool-input-start, error]` / `["overloaded"]`;
   - `fallback_acceptance_test.go:286` "postcommit_error_close": `[stream-start, error, error]` becomes `[stream-start, error]`;
-  - `generated_file_test.go:29` "file then error": `[stream-start, file, error, error]` becomes `[stream-start, file, error]`.
+  - `generated_file_test.go:29` "file then error": `[stream-start, file, error, error]` becomes `[stream-start, file, error]`;
+  - `providerwire/v4/stream_segments_replay_test.go` "overlapping-message-start" (from sequential response segments, #583): the written events now equal the direct golden, which ends with the provider error, instead of gaining a trailing `internal_error`.
 
   gateway-streaming-function-tools "Tool events commit without replay" (`openspec/specs/gateway-streaming-function-tools/spec.md:110-112`) still holds: it requires no replay, no duplicated tool events and no later candidate, not a trailing `internal_error`.
 - **Race boundary.** `Stream.Next` (`internal/execution/runtime.go:238-260`) selects nondeterministically when a closed channel and `model.Done()` are both ready. A deadline or cancellation that races a provider close after an error may therefore end at clean EOF. This falls under the existing "Streaming terminal authority and scheduler race boundary" requirement; no precedence is added.
@@ -171,7 +172,7 @@ If the stricter reading is intended, that would mean no `nativeError` for this c
 
 - **Version skew.** `ai-gateway` and `providers/grafana` release independently (`release-please-config.json`), so shipping both in one PR does not control which reaches users first.
   - *Effect:* a released client rejects `provider_error`: status 0 matches no `registeredError` entry (`providers/grafana/errors.go:100-117`), and the stream ends at one terminal protocol error. On the OpenAI recoverable-parse path the direct stream continues after the error (`providers/openai/convert_stream.go:49-54`), so an old client that works today loses all later content and the finish. That is a functional regression, not only fail-closed. Raw-requesting old clients also stop at a value-less raw event. Nothing leaks.
-  - *Mitigation:* release the tolerant client first, as a client-only PR or at least a client release before the Gateway deploys, then ship the Gateway. Client-first is safe because the new client still decodes old 502 documents. The TS client is unaffected. Client-first is the confirmed rollout (below).
+  - *Mitigation:* client and Gateway ship in one PR. The Gateway plugin builds against same-revision client source through the `ai-gateway/go.mod` replacements, and the tolerant client still decodes old 502 documents. The PR description names the minimum `providers/grafana` version for the new stream shapes. The TS client is unaffected.
 - **Retryability flip.** A status-0 error whose cause is neither `net.Error` nor `url.Error` now reports `retryable:false`. One example is a body-truncation error that OpenAI wraps with `IsRetryable=true` (`providers/openai/stream_preflight.go:233-241`). `net.Error` and `url.Error` causes keep upstream or timeout.
   - *Effect:* the Gateway's server fallback is unaffected: it decides on the native `IsRetryable` and never replays after the first part. But in-stream `retryable` is not purely informational. Root `fallback.WithBufferedStream` returns the first in-stream `PartError`'s `APICallError` (`fallback/buffered_stream.go:106-111`), and `DefaultDecider` returns `IsRetryable` (`fallback/fallback.go:337-349`); `test/integration/testserver/scenario_buffered_fallback.go` uses this. A buffered consumer of a Gateway-backed model used to fall back on these errors (502, retryable) and now stops.
   - *Mitigation:* classified as an intentional deviation in D8, and documented in the provider guide's retry guidance (task 2.4).
@@ -181,12 +182,12 @@ If the stricter reading is intended, that would mean no `nativeError` for this c
 
 ## Migration Plan
 
-No data migration is needed. Rollout: release `providers/grafana` (PR A) first, then ship the Gateway (PR B); see Risks, Version skew. Roll back by reverting PR B. Gateway and client changes are independent of stored state. An updated client keeps decoding old 502 documents, so a Gateway rollback is safe for it.
+No data migration is needed. Client and Gateway ship in one PR; see Risks, Version skew. Roll back by reverting it. Gateway and client changes are independent of stored state. An updated client keeps decoding old 502 documents, so a Gateway rollback is safe for it.
 
 ## Confirmed decisions
 
 nara confirmed:
 
-1. **Rollout order.** Client first: the tolerant `providers/grafana` client is released before the Gateway change ships (tasks group 1).
+1. **Delivery.** One PR carries the client and the Gateway changes (tasks group 1).
 2. **Document names (D2).** `provider_error`, `provider stream error`, type `internal_server_error`.
 3. **Privacy (D7).** Native text stays out of base fields and new members; `error.data.nativeError` stays under gateway-attempt-failure-evidence.
