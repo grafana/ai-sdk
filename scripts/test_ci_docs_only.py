@@ -46,12 +46,18 @@ class DocsOnlyTest(unittest.TestCase):
         self.write('docs/README.md')
         self.assertTrue(self.classify())
 
+    def test_new_docs_pages(self):
+        self.write('docs/new-page.md')
+        self.write('docs/new-section/nested/new-page.md')
+        self.write('CONTRIBUTING.md')
+        self.assertTrue(self.classify())
+
     def test_delete_prose(self):
         (self.root / 'docs/guides/tools.md').unlink()
         self.assertTrue(self.classify())
 
     def test_rename_between_prose(self):
-        self.git('mv', 'docs/guides/tools.md', 'docs/guides/retry-and-timeout.md')
+        self.git('mv', 'docs/guides/tools.md', 'docs/guides/renamed-page.md')
         self.assertTrue(self.classify())
 
     def test_rename_source_to_prose(self):
@@ -60,8 +66,8 @@ class DocsOnlyTest(unittest.TestCase):
 
     def test_unknown_paths_and_mixed_changes(self):
         for path in ['main.go', 'mise.toml', '.github/workflows/ci.yml', 'docs/generate.py',
-                     'docs/fixtures/example.md', 'docs/guides/new-page.md', 'test/fixture.md',
-                     'examples/README.md', 'README.md\nmain.go']:
+                     'docs/example.go', 'docs/guides/page.mdx', 'test/fixture.md',
+                     'examples/README.md', 'docs-like/page.md', 'README.md\nmain.go']:
             with self.subTest(path=path):
                 self.git('reset', '--hard', self.base)
                 self.write('README.md', 'updated\n')

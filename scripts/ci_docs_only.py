@@ -4,50 +4,6 @@ import subprocess
 import sys
 
 
-NARRATIVE_PATHS = frozenset(
-    [
-        "README.md",
-        "CONTRIBUTING.md",
-        "docs/README.md",
-        "docs/best-practices/error-handling.md",
-        "docs/best-practices/production.md",
-        "docs/best-practices/security.md",
-        "docs/concepts/architecture.md",
-        "docs/concepts/gateway-architecture.md",
-        "docs/concepts/gateway-glossary.md",
-        "docs/concepts/messages.md",
-        "docs/concepts/providers.md",
-        "docs/concepts/wire-protocol.md",
-        "docs/getting-started/backend-only.md",
-        "docs/getting-started/full-stack-chat.md",
-        "docs/getting-started/installation.md",
-        "docs/guides/agent-loops.md",
-        "docs/guides/fallback-and-registry.md",
-        "docs/guides/gateway-authentication.md",
-        "docs/guides/retry-and-timeout.md",
-        "docs/guides/streaming-http.md",
-        "docs/guides/structured-output.md",
-        "docs/guides/testing.md",
-        "docs/guides/tool-approval.md",
-        "docs/guides/tools.md",
-        "docs/middleware/agent-observability.md",
-        "docs/middleware/context-enrichment.md",
-        "docs/middleware/overview.md",
-        "docs/middleware/prometheus.md",
-        "docs/middleware/structured-logging.md",
-        "docs/middleware/writing-middleware.md",
-        "docs/providers/anthropic.md",
-        "docs/providers/azure.md",
-        "docs/providers/bedrock.md",
-        "docs/providers/grafana-gateway.md",
-        "docs/providers/openai-compatible.md",
-        "docs/providers/openai.md",
-        "docs/providers/overview.md",
-        "docs/providers/writing-a-provider.md",
-    ]
-)
-
-
 def docs_only(base, head):
     if not all(re.fullmatch(r"[0-9a-f]{40}", ref or "") for ref in (base, head)):
         return False
@@ -64,7 +20,9 @@ def docs_only(base, head):
             return False
         if parts[0] not in {":100644", ":000000"} or parts[1] not in {"100644", "000000"}:
             return False
-        if path.decode("utf-8") not in NARRATIVE_PATHS:
+        name = path.decode("utf-8")
+        if not (name in {"README.md", "CONTRIBUTING.md"} or
+                (name.startswith("docs/") and name.endswith(".md"))):
             return False
     return True
 
