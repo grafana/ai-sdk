@@ -1,5 +1,5 @@
 // Package gateway composes the Gateway plugin: settings, catalog, BYOK,
-// telemetry, caller access and the ProviderWire route handlers.
+// telemetry, caller access and the protocol route handlers.
 package gateway
 
 import (
@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
@@ -168,21 +169,20 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
 		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: byokFactory}
 	}
-	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	runtime, err := execution.New(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	if err != nil {
+		return nil, err
+	}
+	language, err := providerv4.New(runtime)
+	if err != nil {
+		return nil, err
+	}
+	chat, err := chatcompletions.New(runtime)
 	if err != nil {
 		return nil, err
 	}
 	discoveryHandler := discovery.New(catalog, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
-	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language))
-}
-
-// newLanguageHandler serves ProviderWire V4 over one execution runtime.
-func newLanguageHandler(config execution.Config) (http.Handler, error) {
-	runtime, err := execution.New(config)
-	if err != nil {
-		return nil, err
-	}
-	return providerv4.New(runtime)
+	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat))
 }
 
 func newAuthenticator(lookupEnv config.LookupEnv) (authn.Authenticator, error) {
@@ -196,7 +196,7 @@ func newAuthenticator(lookupEnv config.LookupEnv) (authn.Authenticator, error) {
 	return gatewayauth.NewPlatformAuthenticator(gatewayauth.PlatformConfig{PluginID: PluginID, Group: manifestdata.LocalManifest().ManifestData.Group, Keys: keys})
 }
 
-// Handler returns the ProviderWire route handler for the plugin route adapter.
+// Handler returns the protocol route handler for the plugin route adapter.
 func (g *Gateway) Handler() http.Handler { return g.handler }
 
 // Authenticator returns the plugin authenticator for delegated access tokens.

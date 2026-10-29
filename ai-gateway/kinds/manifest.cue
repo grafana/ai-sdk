@@ -19,6 +19,10 @@ v1alpha1: {
 			operationId: "getConfig"
 			responses: default: description: "ProviderWire discovery response"
 		}
+		"/namespaces/{namespace}/v1/chat/completions": post: {
+			operationId: "createChatCompletion"
+			responses: default: description: "OpenAI Chat Completions response"
+		}
 		"/namespaces/{namespace}/language-model": post: {
 			operationId: "createLanguageModel"
 			responses: default: description: "ProviderWire language-model response"

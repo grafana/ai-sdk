@@ -25,8 +25,9 @@ func TestManifest_DeclaresOnlyGatewayRoutes(t *testing.T) {
 	assert.True(t, version.Served)
 	assert.Empty(t, version.Kinds)
 	assert.Equal(t, map[string][]string{
-		"/namespaces/{namespace}/config":         {http.MethodGet},
-		"/namespaces/{namespace}/language-model": {http.MethodPost},
+		"/namespaces/{namespace}/config":              {http.MethodGet},
+		"/namespaces/{namespace}/language-model":      {http.MethodPost},
+		"/namespaces/{namespace}/v1/chat/completions": {http.MethodPost},
 	}, operations(version.OpenAPI.Paths))
 }
 
