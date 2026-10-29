@@ -51,7 +51,7 @@
 
 ## 10. Integration checks
 
-- [ ] 10.1 Run `mise run fmt`, `mise run lint`, `mise run test`, `mise run test-providerwire-v4`, `mise run test-ai-gateway-command`, the plugin validation and `mise run parity-check`, and verify that all pass with no conformance fixture or `upstream.yaml` changes.
+- [x] 10.1 Run `mise run fmt`, `mise run lint`, `mise run test`, `mise run test-providerwire-v4`, `mise run test-ai-gateway-command`, the plugin validation and `mise run parity-check`, and verify that all pass with no conformance fixture or `upstream.yaml` changes.
 - [x] 10.2 Run `openspec validate add-gateway-request-routing --strict` and verify that it passes.
 
 ## Workflow follow-up
