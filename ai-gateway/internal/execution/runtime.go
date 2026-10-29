@@ -54,13 +54,16 @@ type Call struct {
 	ctx      context.Context
 	model    provider.LanguageModel
 	options  provider.CallOptions
+	history  ToolHistory
 	attempts *attemptCapture
 	limits   Limits
 }
 
-// Call applies host request policy and selects the model for a request. It
-// refuses protected call headers with [ErrProtectedCallHeader], and removes the
-// call-level [ControlNamespace] from options to pass it to the selector. A
+// Call rebuilds the prompt's tool history, applies host request policy and
+// selects the model for a request. It fails inconsistent history with
+// [ErrInvalidToolHistory] before anything else. It then refuses protected call
+// headers with [ErrProtectedCallHeader], and removes the call-level
+// [ControlNamespace] from options to pass it to the selector. A
 // context that has ended before or during selection decides the outcome, and
 // its error is returned. A translator set with [WithTranslator] reaches every
 // physical attempt of this call only.
@@ -68,6 +71,10 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 	var config callConfig
 	for _, apply := range callOptions {
 		apply(&config)
+	}
+	history, err := RebuildToolHistory(options.Prompt)
+	if err != nil {
+		return nil, err
 	}
 	options, gateway, err := applyPolicy(options)
 	if err != nil {
@@ -84,8 +91,12 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 		return nil, err
 	}
 	attempts := newAttemptCapture(modelID, selected, r.redactor)
-	return &Call{ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, attempts: attempts, limits: r.limits}, nil
+	return &Call{ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, history: history, attempts: attempts, limits: r.limits}, nil
 }
+
+// ToolHistory returns a copy of the call's pending provider-executed tool
+// calls, rebuilt from its prompt.
+func (c *Call) ToolHistory() ToolHistory { return c.history.clone() }
 
 func (r *Runtime) selectModel(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (selected Selection, err error) {
 	defer func() {

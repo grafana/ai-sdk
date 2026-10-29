@@ -53,7 +53,7 @@ type unaryToolResult struct {
 }
 
 type unaryMappingContext struct {
-	history  map[string]string
+	history  execution.ToolHistory
 	overview *execution.Overview
 }
 

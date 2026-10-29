@@ -194,7 +194,7 @@ func validStreamEvent(value streamEvent) bool {
 	}
 }
 
-func (h *handler) serveStream(w http.ResponseWriter, call *execution.Call, options provider.CallOptions, history map[string]string) {
+func (h *handler) serveStream(w http.ResponseWriter, call *execution.Call, options provider.CallOptions, history execution.ToolHistory) {
 	stream, err := call.Stream()
 	if err != nil {
 		view := call.View(err)
@@ -273,7 +273,7 @@ type streamState struct {
 	includeRaw bool
 }
 
-func newStreamState(history map[string]string) *streamState {
+func newStreamState(history execution.ToolHistory) *streamState {
 	const capacity = 64
 	state := &streamState{segmentTextIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), history: make(map[string]toolStreamState, len(history)), reasoningIDs: make(map[string]struct{}, capacity), segmentReasoningIDs: make(map[string]struct{}, capacity)}
 	for id, name := range history {
@@ -314,7 +314,7 @@ func allowedAfterFinish(partType provider.StreamPartType) bool {
 	}
 }
 
-func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, call *execution.Call, history map[string]string, includeRaw bool) {
+func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, call *execution.Call, history execution.ToolHistory, includeRaw bool) {
 	part, wait := stream.Next()
 	view := call.View(wait.Err())
 	if wait != execution.WaitPart {

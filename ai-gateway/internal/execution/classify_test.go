@@ -40,6 +40,7 @@ func TestClassifySelection(t *testing.T) {
 		category Category
 		reason   Reason
 	}{
+		{"inconsistent tool history", fmt.Errorf("wrapped: %w", ErrInvalidToolHistory), CategoryInvalidRequest, ReasonNone},
 		{"account access", fmt.Errorf("wrapped: %w", ErrAccountAccess), CategoryPermission, ReasonNone},
 		{"byok credentials", ErrInvalidBYOK, CategoryBYOKCredentials, ReasonNone},
 		{"byok selector", ErrInvalidBYOKSelector, CategoryBYOKSelector, ReasonNone},

@@ -9,20 +9,20 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
 
 ## 1. Tool history in the runtime
 
-- [ ] 1.1 Add `ToolHistory`, `RebuildToolHistory` and `ErrInvalidToolHistory` to `internal/execution`, moving the rules of `providerwire/v4/request.go:157-196` unchanged (design D1, D2). `ToolHistory` is not mutated after it is rebuilt, and each consumer copies it. Map the sentinel to invalid request with `ReasonNone` in `ClassifySelection`. Add a table test with one row per rule, plus the history cases:
+- [x] 1.1 Add `ToolHistory`, `RebuildToolHistory` and `ErrInvalidToolHistory` to `internal/execution`, moving the rules of `providerwire/v4/request.go:157-196` unchanged (design D1, D2). `ToolHistory` is not mutated after it is rebuilt, and each consumer copies it. Map the sentinel to invalid request with `ReasonNone` in `ClassifySelection`. Add a table test with one row per rule, plus the history cases:
   - deferred result;
   - orphan result, including a later call with the same ID;
   - conflicting duplicates: a re-emission after the result (`request.go:164-166`), a second re-emission, another name, either call not provider-executed, a mismatched or repeated result;
   - approval re-emission: once, and once followed by its result.
 
   Verify with `go test -race ./internal/execution/...`.
-- [ ] 1.2 Make `Runtime.Call` rebuild history before `applyPolicy`, and expose `Call.ToolHistory()`, which returns a copy. Add runtime tests:
+- [x] 1.2 Make `Runtime.Call` rebuild history before `applyPolicy`, and expose `Call.ToolHistory()`, which returns a copy. Add runtime tests:
   - bad history fails with zero selector and model calls;
   - bad history beside a protected header, gateway controls, and an ended context, fails as invalid request with no reason;
   - valid history is exposed unchanged, and changing the returned copy does not change the call's history.
 
   Verify with `go test -race ./internal/execution/...`.
-- [ ] 1.3 In ProviderWire, remove the pre-call history check from `ServeHTTP`, and pass `call.ToolHistory()` to the stream and unary paths. Keep `unresolvedProviderCalls` as a wrapper over `RebuildToolHistory` with today's signature, returning a non-nil empty map (design D8). Add a new test file asserting the byte-identical 400 document for bad history, unary and streaming, including with a protected header, gateway controls and a canceled context. Verify with `go test -race ./providerwire/v4/...` and `mise run test-providerwire-v4`.
+- [x] 1.3 In ProviderWire, remove the pre-call history check from `ServeHTTP`, and pass `call.ToolHistory()` to the stream and unary paths. Keep `unresolvedProviderCalls` as a wrapper over `RebuildToolHistory` with today's signature, returning a non-nil empty map (design D8). Add a new test file asserting the byte-identical 400 document for bad history, unary and streaming, including with a protected header, gateway controls and a canceled context. Verify with `go test -race ./providerwire/v4/...` and `mise run test-providerwire-v4`.
 
 ## 2. Shared stream validator in `Stream.Next`
 
