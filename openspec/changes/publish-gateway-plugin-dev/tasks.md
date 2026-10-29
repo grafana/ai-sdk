@@ -16,7 +16,7 @@
 
 ## 3. Dev catalog publication job
 
-- [x] 3.1 Add the `publish-ai-gateway-dev` job to `.github/workflows/ci.yml`. It calls `grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v9.0.0` with the inputs, `needs`, main-only guard, job permissions and concurrency from design.md. Verify with `actionlint` (or the repository's workflow lint) on the file.
+- [x] 3.1 Add the `publish-ai-gateway-dev` job to `.github/workflows/ci.yml`. It calls `grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v12.0.1` with the inputs, `needs`, main-only guard, job permissions and concurrency from design.md. Verify with `actionlint` (or the repository's workflow lint) on the file.
 - [x] 3.2 Extend `test/conformance/tools/ci-workflow.test.mts`:
   - add the job to the expected job set;
   - assert its `needs` cover the source jobs and `plugin-validation`;

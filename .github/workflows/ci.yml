@@ -339,7 +339,7 @@ jobs:
     concurrency:
       group: ai-gateway-dev-publish
       cancel-in-progress: false
-    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v9.0.0
+    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v12.0.1
     with:
       branch: ${{ github.sha }}
       environment: dev

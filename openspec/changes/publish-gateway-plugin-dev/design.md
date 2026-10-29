@@ -6,9 +6,9 @@ See proposal.md for motivation. Current state and constraints:
 
 - The backend is the `main` package in `ai-gateway/cmd/grafana-ai-gateway`, with its private packages under `cmd/grafana-ai-gateway/internal/`. `Magefile.go` points the plugin SDK build at that path with `RootPackagePath`.
 - `mise run build-ai-gateway-plugin` builds the frontend, runs `mage build:linux build:linuxARM64` with `GOFLAGS=-mod=readonly -trimpath`, then runs `scripts/package-licenses.sh`. The script reads `AI_GATEWAY_VCS_REF` for `SOURCE_REVISION`. Only the repository CI `plugin-validation` job sets that variable.
-- The shared workflow (`grafana/plugin-ci-workflows` `cd.yml` → `ci.yml`, tag `ci-cd-workflows/v9.0.0`) runs from `plugin-directory`. Its steps are:
+- The shared workflow (`grafana/plugin-ci-workflows` `cd.yml` → `ci.yml`, tag `ci-cd-workflows/v12.0.1`) runs from `plugin-directory`. Its steps are:
   - detect the package manager, then `install`, `lint`, `typecheck`, `test:ci` and `build`;
-  - `golangci-lint run`;
+  - `golangci-lint run ./pkg/...`;
   - `mage -v testRace`, which the plugin SDK defines as `go test -race ./pkg/...`;
   - `mage -v <backend-build-target>`, defaulting to `buildAll`;
   - zip, sign, trufflehog, an optional plugin validator, then publish.
@@ -55,7 +55,7 @@ For pull requests, `GITHUB_SHA` is the merge commit that actions/checkout checks
 
 ### Publish from a job in `ci.yml`, not a separate workflow
 
-Add a `publish-ai-gateway-dev` job to `ci.yml` that calls `cd.yml@ci-cd-workflows/v9.0.0`.
+Add a `publish-ai-gateway-dev` job to `ci.yml` that calls `cd.yml@ci-cd-workflows/v12.0.1`.
 
 - **Gating:**
   - `needs` the required source jobs (`ci`, `race`, `docs-lint`, `module-resolution`, `parity-baseline`, `integration-test`, `conformance-test`) and `plugin-validation`.
@@ -114,6 +114,7 @@ The plugin-validation gate already runs the end-to-end tests against a pinned Gr
   - run the same command locally before merge;
   - the race job already covers these packages with `-short`.
 - **The first publish needs one-time setup.** The `grafana-aigateway-app` stub must exist in the dev catalog, and the repository must be allowed to use the shared signing and publishing credentials. Both are listed as prerequisites. Until they are done, publish runs fail, but merges and other checks are unaffected.
+- **The repository Actions policy applies to the whole shared call tree.** GitHub validates every job of `cd.yml` and its nested workflows when `ci.yml` starts, so one denied action version anywhere in the shared workflow fails all of Build & Test, including on pull requests. `ci-cd-workflows/v9.0.0` hit this through a denied `create-github-app-token` version. Check any pin upgrade against the policy before merging it.
 - **Version order depends on publish order.** Versions that differ only in `+<sha>` have equal semver precedence, so "latest" depends on publish order. Serialized publication handles this.
 - **The catalog grows by one version per `main` push.** This is acceptable for dev.
 
