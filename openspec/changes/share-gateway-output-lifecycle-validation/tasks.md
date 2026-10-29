@@ -30,7 +30,8 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
   - metadata and `finish` while text, reasoning or tool input is open or a preview is pending, in the stream or in history;
   - consecutive and late metadata opening segments; text and reasoning IDs reused in a later segment; a tool ID reused in a later segment; a result in a later segment;
   - after a `finish`: metadata, raw and error accepted; content, a second `finish` and `stream-start` rejected;
-  - the history-seeded call, result, preview and approval rows;
+  - the history-seeded call, result, preview and approval rows, and tool input for a history ID whose result already arrived;
+  - approvals with an empty ID and with a false dynamic or preliminary value;
   - `raw` then `stream-start`, and `error` then `stream-start`, both rejected;
   - two validators seeded from one history stay independent, and the history is unchanged.
 
@@ -57,12 +58,12 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
 
 ## 3. ProviderWire stream delegation
 
-- [ ] 3.1 Give `newStreamState(history)` its own `StreamValidator`, seeded from a copy. Check each part exactly once (design D8):
+- [x] 3.1 Give `newStreamState(history)` its own `StreamValidator`, seeded from a copy. Check each part exactly once (design D8):
   - `runStream` consults the validator only in its first-part real `stream-start` branch (`stream.go:331-346`);
   - `processStreamPart` consults it once for every other part, including a non-start first part, before dispatching to `processToolStreamPart`, `processApprovalRequest` and `processReasoningPart`, which keep only representation checks. Its unconditional `stream-start` refusal stays as plumbing.
 
   Set `state.phase` from the validator's `SegmentFinished` after each accepted part, as a projection for the white-box tests. Remove `quiescent`, `startSegment`, `allowedAfterFinish`, the ID, tool, history and approval maps, and the lifecycle-only conditions, keeping the checks listed in design D7, and never share the runtime's instance. Verify with `go test -race ./providerwire/v4/...` and `mise run test-providerwire-v4`.
-- [ ] 3.2 Add `providerwire/v4/lifecycle_agreement_test.go`. For one violating sequence per stream rule class, including the segment rules, `raw` then `stream-start` and `error` then `stream-start`, it asserts that the runtime's validator and `processStreamPart` on `newStreamState` reject at the same index, feeding a leading real `stream-start` to ProviderWire's validator the way `runStream` does, and that both agree on the finished phase after every accepted part. Through the runtime harness, it asserts identical frames for a lifecycle violation and for a content violation ProviderWire still owns, at the first part, at a later part and after a written `finish`. Verify with `go test -race ./providerwire/v4/...`.
+- [x] 3.2 Add `providerwire/v4/lifecycle_agreement_test.go`. For one violating sequence per stream rule class, including the segment rules, `raw` then `stream-start` and `error` then `stream-start`, it asserts that the runtime's validator and `processStreamPart` on `newStreamState` reject at the same index, feeding a leading real `stream-start` to ProviderWire's validator the way `runStream` does, and that both agree on the finished phase after every accepted part. Through the runtime harness, it asserts identical frames for a lifecycle violation and for a content violation ProviderWire still owns, at the first part, at a later part and after a written `finish`. Verify with `go test -race ./providerwire/v4/...`.
 
 ## 4. Shared unary validation
 
@@ -78,7 +79,7 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
 ## 5. Test adapter evidence
 
 - [ ] 5.1 Make `testadapter.Run` report `WaitInvalidOutput` and unary `ErrInvalidOutput` in `Outcome`, as an invalid-output flag and the number of accepted parts (design D9). Verify with `go test -race ./internal/...`.
-- [ ] 5.2 Add a prompt field to the scenario in `internal/execution/adapter_test.go` (`:217-232`; `request` at `:320-341` always sends `"prompt": []`), encoded both as the wire prompt and as `provider.Message` values. Make `assertProviderWire` accept a `finish` frame before a terminal error and check that the terminal error is the last frame. Extend `TestTestAdapter_MatchesProviderWire` with rows for:
+- [ ] 5.2 Add a prompt field to the scenario in `internal/execution/adapter_test.go` (`:223-239`; `request` at `:325-346` always sends `"prompt": []`), encoded both as the wire prompt and as `provider.Message` values. Make `assertProviderWire` accept a `finish` frame before a terminal error and check that the terminal error is the last frame. Extend `TestTestAdapter_MatchesProviderWire` with rows for:
   - a first-part and a later-part violation for each stream rule class, including the segment rules;
   - a multi-segment stream that ends cleanly, and one that closes after a later metadata;
   - content after a `finish`;
@@ -87,7 +88,7 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
   - inconsistent history (invalid request, zero model calls), unary and streaming;
   - unary invalid output.
 
-  The rows leave out the content-validity classes of design D7 on purpose. For invalid output, the test adapter's accepted parts must equal the provider parts ProviderWire processed before its internal error, counted from its frames with the rules of design D9. Verify with `go test -race ./internal/...`.
+  The rows leave out the content-validity classes of design D7 on purpose. For invalid output, the test adapter's accepted parts must equal the provider parts ProviderWire processed before its internal error, counted from its frames with the rules of design D9; rows with raw parts derive the raw count from the scenario input, because the harness does not request raw chunks. Verify with `go test -race ./internal/...`.
 
 ## 6. Documentation
 
@@ -105,7 +106,7 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
 - [ ] 7.2 Confirm the following:
   - `git diff --name-status origin/main -- 'ai-gateway/providerwire/v4/*_test.go'` lists only added files;
   - `git diff --stat origin/main -- test/conformance` is empty, so `upstream.yaml`, fixtures and PARITY.md are unchanged (design D10);
-  - `rg` finds `historicalToolCall`, `toolStreamPhase`, `toolStreamState`, `segmentTextIDs`, `segmentReasoningIDs`, `quiescent`, `allowedAfterFinish` and the lifecycle conditions of `unaryToolState` nowhere in `ai-gateway/providerwire/v4`.
+  - `rg` finds `historicalToolCall`, `toolStreamPhase`, `toolStreamState`, `toolInputOpen`, `toolResultPreliminary`, `segmentTextIDs`, `segmentReasoningIDs`, `activeID`, `reasoningIDs`, `approvalIDs`, `quiescent`, `allowedAfterFinish` and `unaryToolState` nowhere in non-test `ai-gateway/providerwire/v4` code.
 
 ## Workflow follow-up
 

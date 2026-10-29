@@ -146,6 +146,7 @@ func streamRuleCases() []streamRuleCase {
 		{name: "history re-emission with another name", history: pending, parts: []provider.StreamPart{toolCall("hosted", "other", true)}, rejectAt: 0},
 		{name: "history re-emission after its result", history: pending, parts: []provider.StreamPart{toolResult("hosted", "search", `{}`), toolCall("hosted", "search", true)}, rejectAt: 1},
 		{name: "history approval", history: pending, parts: []provider.StreamPart{approval("hosted", "a"), toolResult("hosted", "search", `{}`), validFinish()}, rejectAt: -1},
+		{name: "tool input for a resolved history ID", history: pending, parts: []provider.StreamPart{toolResult("hosted", "search", `{}`), toolInput(provider.PartToolInputStart, "hosted", "search")}, rejectAt: 1},
 		{name: "history approval after its result", history: pending, parts: []provider.StreamPart{toolResult("hosted", "search", `{}`), approval("hosted", "a")}, rejectAt: 1},
 		{name: "history result in a later segment", history: pending, parts: []provider.StreamPart{metadata, validFinish(), metadata, toolResult("hosted", "search", `{}`), validFinish()}, rejectAt: -1},
 		{name: "re-emission keeps the history approval", history: pending, parts: []provider.StreamPart{approval("hosted", "a"), toolCall("hosted", "search", true), approval("hosted", "b")}, rejectAt: 2},
