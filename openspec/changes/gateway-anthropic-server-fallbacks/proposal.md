@@ -2,7 +2,7 @@
 
 ## Why
 
-Callers that send Anthropic server-side fallback (`providerOptions.anthropic.fallbacks`, an explicit chain or `"default"`) through the Gateway get `400 invalid request` ([#562](https://github.com/grafana/ai-sdk/issues/562)). The refusal exists because a caller could make the operator's Anthropic account serve models the catalog never granted. The Go provider already forwards the option like `@ai-sdk/anthropic@4.0.82`, so the only gap is an operator policy. The #201 matrix rows `anthropic/recorded/server-side-fallback-{chain,default}` fail on this refusal.
+Callers that send Anthropic server-side fallback (`providerOptions.anthropic.fallbacks`, an explicit chain or `"default"`) through the Gateway get `400 invalid request` ([#562](https://github.com/grafana/ai-sdk/issues/562)). The refusal exists because a caller could make the operator's Anthropic account serve models the catalog never granted. The Go provider already forwards the option like `@ai-sdk/anthropic@4.0.82`, so the only gap is an operator policy. The live recordings `anthropic/recorded/server-side-fallback-{chain,default}` replay that request, and the Gateway refuses both before any backend call.
 
 ## What Changes
 
@@ -21,7 +21,7 @@ Callers that send Anthropic server-side fallback (`providerOptions.anthropic.fal
   - If no candidate is left, the call fails with the invalid-request error.
 - Request routing (#316) is not designed here. Whatever candidates a future router selects, each applies its own policy.
 - The execution overview's selected attempt gains an optional `servedModelId`. It is the `to.model` of the last `anthropic.fallback` marker in the selected output, and is absent when no hop occurred. `modelId` stays the configured or requested model. Every carrier of the selected attempt publishes it, including stream errors after the first part: committed error parts, terminal waits (closed, deadline, canceled, idle timeout) and the adapter-failure terminal error.
-- Docs and the #201 harness are updated. The harness grants a fixed policy to the two matrix rows only. That harness work is gated on #201 merging.
+- Docs are updated. A command-level test replays the two recorded fixtures, unchanged, through the real Gateway binary under a fixed allowing policy, with both registered clients.
 
 ## Capabilities
 
@@ -47,7 +47,7 @@ Callers that send Anthropic server-side fallback (`providerOptions.anthropic.fal
   - `ai-gateway/providerwire/v4` (carriers and `schema/gateway_execution.json`).
 - Tests: Go unit and service tests, ProviderWire schema tests (`ai-gateway/test/providerwire-v4`) and command tests.
 - Docs: `ai-gateway/README.md`, `docs/providers/grafana-gateway.md`, `docs/concepts/gateway-architecture.md` and `docs/concepts/gateway-glossary.md`.
-- Matrix acceptance: depends on unmerged PR #201 (head `6cc5480d`; `test/conformance/tools/gateway-runtime.mts`; main has no `test-conformance-gateway` task). Recorded fixtures stay untouched. The implementation PR uses `Refs #562`, not a closing keyword, unless task group 5 passes in the same PR. The change is not archived and #562 is not closed until task 5.2 passes.
+- Recorded-fixture acceptance: the issue names `mise run test-conformance-gateway`, which does not exist on main. Task group 5 proves the same two fixtures through the real Gateway command with both clients (design D8). Recorded fixtures stay untouched. The implementation PR closes #562 and states this substitution.
 - Baseline: registered `@ai-sdk/anthropic` 4.0.82 and `@ai-sdk/gateway` 4.0.116 (commit `b7f6255a`). No pin, provider-module or UI-chunk change.
 - Client-visible changes:
   - allowed fallbacks now succeed where they were refused;

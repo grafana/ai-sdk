@@ -43,7 +43,7 @@ Paths are relative to `ai-gateway/` unless they start with a top-level directory
   - `service/native_options_test.go` `TestBYOKSelection_NativeOptionGuards`: a chain naming a model a configured route allows, unary and stream.
 
   Assert zero account attempts and no overview. Verify with `go test ./cmd/grafana-ai-gateway/internal/byok/... ./cmd/grafana-ai-gateway/internal/service/...`.
-- [ ] 2.5 Add a both-client command case to `test/providerwire-v4/gateway-command.test.ts` ("native option forwarding"). A configured policy allows the chain and `"default"`, and the fake Anthropic receives each; a disallowed model and a BYOK chain get the fixed 400. When the fake Anthropic returns a `fallback` block, both clients see `servedModelId` equal to its `to.model` on the selected attempt. Verify with `mise run test-ai-gateway-command`.
+- [ ] 2.5 Add a both-client command case to `test/providerwire-v4/gateway-command.test.ts` ("native option forwarding"). A configured policy allows the chain and `"default"`, and the fake Anthropic receives each; a disallowed model and a BYOK chain get the fixed 400. In the existing "returns and replays the Anthropic fallback marker through both clients" test (`gateway-command.test.ts:2862`), assert that both clients see `servedModelId` equal to the marker's `to.model` on the selected attempt, unary and stream. Verify with `mise run test-ai-gateway-command`.
 
 ## 3. Served model in the execution overview
 
@@ -69,10 +69,17 @@ Paths are relative to `ai-gateway/` unless they start with a top-level directory
 - [ ] 4.3 Update the candidate option checks in `docs/concepts/gateway-architecture.md` step 4, and the "Diagnostics; execution overview" row in `docs/concepts/gateway-glossary.md`. Add a "Server-side fallback" row distinguishing it from Gateway fallback, retry and "native fallback output identity". Check the diagrams for drift. Verify with `mise run lint-docs`.
 - [ ] 4.4 Update godoc for `config.Primary`, `nativeoptions`, and `execution.Attempt`. Verify with `go doc` on each.
 
-## 5. Conformance matrix (gated on PR #201 merging)
+## 5. Recorded fixtures through the Gateway command
 
-- [ ] 5.1 Once #201 is on main, add a harness-owned allowlist keyed by fixture case name (`TestCase.name`, not the client-suffixed row ID): `anthropic/recorded/server-side-fallback-chain` and `anthropic/recorded/server-side-fallback-default`, two fixture cases (four client rows). Extend `test/conformance/tools/gateway-runtime.mts` `Route`/`catalog()` to emit `primary.serverFallbacks` only for rows of those cases (design D8). Add a unit test in `gateway-runtime.test.mts` asserting both client rows of each case get the policy and a case outside the allowlist gets none. Verify with `mise run test-conformance-gateway-harness`.
-- [ ] 5.2 Confirm that both client rows of `anthropic/recorded/server-side-fallback-chain` and `-default` pass, and that `git status test/conformance/anthropic` is clean. Verify with `mise run test-conformance-gateway`.
+- [ ] 5.1 Before task 2.2, add a "recorded Anthropic server-side fallback" describe to `test/providerwire-v4/gateway-command.test.ts` (design D8). For each of `anthropic/recorded/server-side-fallback-chain` and `-default`:
+  - start a local backend that serves the unchanged `input.chunks.txt` as SSE and records requests;
+  - start `GatewayProcess` with a `claude-opus-5` Anthropic route carrying the fixture's fixed policy;
+  - stream with the TypeScript client (`streamText` + `toUIMessageStream`) and the Go client (`captureGoClient`, `recorded-ui` mode) using the fixture's `providerOptions`;
+  - assert chunks equal `expected.jsonl` and each client's normalized requests (`normalizeRequestSnapshot`, `writeRequestSnapshots` from `test/conformance/tools/common.mts`) equal `expected-requests.jsonl`.
+
+  Confirm it fails with 400 before 2.2 and passes after. Verify with `mise run test-ai-gateway-command`.
+- [ ] 5.2 Add the paired refusal: the same fixtures through a route without a policy, and with the other fixture's policy, give both clients the fixed 400 with zero backend requests. Verify with `mise run test-ai-gateway-command`.
+- [ ] 5.3 Confirm direct provider replay is unchanged and the inputs are untouched. Verify with `mise run test-conformance` and an empty `git status --porcelain test/conformance`.
 
 ## 6. Integration checks
 
@@ -84,6 +91,4 @@ Paths are relative to `ai-gateway/` unless they start with a top-level directory
 ## Workflow follow-up
 
 - Get nara's confirmations in design.md (BYOK refusal, hop-only `servedModelId`) before implementation starts.
-- If #201 has not merged when this change is ready, land groups 1-4 and 6, and track group 5 on #201 or as a follow-up.
-- Open a PR titled `feat(ai-gateway): allow Anthropic server-side fallbacks under operator policy`. Use `Refs #562`, not a closing keyword, unless group 5 passes in the same PR. State that the policy evidence is synthetic and the matrix rows replay unchanged recordings.
-- Do not archive the change or close #562 until 5.2 passes.
+- Open a PR titled `feat(ai-gateway): allow Anthropic server-side fallbacks under operator policy` with `Closes #562`. State that policy evidence is synthetic, that group 5 replays the unchanged recordings through the real command, and that it stands in for the issue's `mise run test-conformance-gateway` acceptance, which is not on main.

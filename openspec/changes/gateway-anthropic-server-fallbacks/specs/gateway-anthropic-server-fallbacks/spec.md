@@ -77,8 +77,12 @@ Server-side fallback SHALL run within one Gateway attempt and one outbound reque
 - **THEN** the call SHALL return the fixed invalid-request error with no native request
 
 ### Requirement: Server-side fallback evidence boundary
-Acceptance SHALL use synthetic native requests for policy cases and the two recorded `anthropic/recorded/server-side-fallback-{chain,default}` fixture cases (four client rows) for allowed requests, with recorded inputs unchanged. The harness SHALL key its fixed allowlist by fixture case name, not client-suffixed row ID, and not derive policies from a row's request. Evidence SHALL NOT claim live refusal-triggered hops, Anthropic's `"default"` choice or billing of fallback-served turns.
+Acceptance SHALL use synthetic native requests for policy cases. For allowed requests it SHALL replay the two recorded fixtures `anthropic/recorded/server-side-fallback-{chain,default}`, unchanged, through the real Gateway command with both registered clients. The test SHALL configure a fixed policy per fixture and SHALL NOT derive it from the request. Evidence SHALL NOT claim live refusal-triggered hops, Anthropic's `"default"` choice or billing of fallback-served turns.
 
-#### Scenario: Matrix rows with an allowing policy
-- **WHEN** the Gateway conformance matrix configures the `anthropic/recorded/server-side-fallback-chain` and `anthropic/recorded/server-side-fallback-default` fixture cases from its fixed allowlist
-- **THEN** both client rows of each case SHALL receive the case's policy and pass against their unchanged recorded inputs, and rows of any case outside the allowlist SHALL receive no policy
+#### Scenario: Recorded fixtures with an allowing policy
+- **WHEN** the Gateway command serves a `claude-opus-5` Anthropic route whose policy allows `claude-opus-4-8` (chain fixture) or has `allowDefault: true` (default fixture), and a backend replays the fixture's unchanged input
+- **THEN** the TypeScript and Go clients SHALL each receive the fixture's expected UI chunks, and the backend SHALL receive native requests matching the fixture's expected request snapshots
+
+#### Scenario: Recorded fixtures without an allowing policy
+- **WHEN** the same fixtures are sent through a route with no policy, or with the other fixture's policy
+- **THEN** both clients SHALL receive the fixed invalid-request error and the backend SHALL receive no request

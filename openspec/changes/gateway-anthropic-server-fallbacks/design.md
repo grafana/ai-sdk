@@ -124,18 +124,23 @@ Routing is only specified as "each selected candidate's policy applies".
 - Every carrier that publishes a selected attempt uses the current served model: unary result and error (`ServeHTTP`, `handler.go:104-110`), stream finish and committed stream error (`processStreamPart`, `stream.go:473`, 438), terminal-wait errors (closed, deadline, canceled, idle timeout) via `writeStreamTerminalForWait` (`stream.go:547-549`) and the adapter-failure terminal error (`handleStreamPartResult`, `stream.go:342-344`). The stream view stays sealed at the first part; only the served model is read later, on the adapter goroutine.
 - The schema adds an optional nonempty `servedModelId` on the attempt, forbidden unless the outcome is `selected`.
 - This is generic for configured and BYOK overviews. BYOK never hops while it refuses fallbacks.
-- Existing #201 rows that replay a hop (`anthropic/upstream/fallback`, `fallback-mid-output`) will now carry `servedModelId` in their overviews. #201 strips `gateway.execution` from finish parts before comparison (`withoutGatewayExecution`, `test/conformance/scenario_compare.go:106-130` at `6cc5480d`), so those rows are unaffected.
+- The existing command test "returns and replays the Anthropic fallback marker through both clients" (`test/providerwire-v4/gateway-command.test.ts:2862`) already returns a marker from a configured route. It does not assert the overview, so it keeps passing; task 2.5 adds the `servedModelId` assertion to it.
 - *Alternative: `ResponseMetadata.ModelID`.* Rejected; the evidence shows it is the requested model.
 - *Alternative: raw `usage.iterations`.* Rejected; raw usage is provider-raw and unvalidated.
 - *Alternative: always emit the served model.* Rejected. It would duplicate the response `modelId` and change every existing overview.
 - *Alternative: a host hook in the service package.* Rejected; it adds API for one documented kind.
 
-### D8. Matrix harness (#201)
-PR #201 (head `6cc5480d`) builds `models.yaml` in `test/conformance/tools/gateway-runtime.mts:91-100` with one route per row. Row IDs are `${tc.name}/${client}` (`gateway-matrix.mts:44`), stored as `Route.rowID` (`gateway.mts:60`, which also uses the row config's `model`). The plan:
-- The harness owns a fixed allowlist keyed by fixture case name (`TestCase.name`), not by the client-suffixed row ID: `anthropic/recorded/server-side-fallback-chain` gets the chain's models, and `anthropic/recorded/server-side-fallback-default` gets `allowDefault: true`. That is two fixture cases (four client rows). The policy is not derived from a row's own request, so a future case that sends fallbacks stays refused until the allowlist names it.
-- `Route` gains an optional server-fallback policy, and `catalog()` emits it as `primary.serverFallbacks` only for rows of those two cases.
-- A harness unit test asserts both client rows of each case get the policy and a case outside the allowlist gets none.
-- Recorded inputs are unchanged.
+### D8. Recorded-fixture acceptance through the Gateway command
+The issue's acceptance names `mise run test-conformance-gateway`, which is not on main. The same proof, two recorded fixtures through the Gateway with both clients, uses existing main infrastructure:
+- `test/providerwire-v4/gateway-command.test.ts` runs the real `grafana-ai-gateway` binary from an operator `models.yaml` (`GatewayProcess.start`, config builders such as `openAIConfig` at :3217) and drives both registered clients (`createGateway`, `captureGoClient`).
+- `test/providerwire-v4/runtime-integration.test.ts:758-800` already replays recorded fixtures against unchanged `expected.jsonl` and `expected-requests.jsonl` with the `test/conformance/tools/common.mts` helpers. It cannot carry this proof: its `testserver` serves `catalog.StaticEntry` models (`testserver/recorded_usage.go`), which bypass the command's `nativeoptions` validator.
+
+The plan adds a command-level replay:
+- A local backend serves each fixture's unchanged `input.chunks.txt` as SSE, as `recorded_usage.go` does in Go.
+- The route's primary is `{provider: anthropic, model: claude-opus-5}`. The test writes a fixed policy per fixture: `models: [claude-opus-4-8]` for the chain, `allowDefault: true` for default. The policy is never derived from the request.
+- Both clients stream with the fixture's `providerOptions`. UI chunks must equal `expected.jsonl`, and each client's normalized native requests must equal `expected-requests.jsonl`. If a compared chunk carries Gateway-owned `gateway.execution` metadata, only that key is removed, and the test says why.
+- A paired run without a policy, and with the other fixture's policy, gets the fixed 400 with zero backend requests.
+- Inputs are read in place. `git status --porcelain test/conformance` stays empty.
 
 ### D9. Parity
 - The provider layer is parity-preserving and unchanged.
@@ -160,7 +165,7 @@ PR #201 (head `6cc5480d`) builds `models.yaml` in `test/conformance/tools/gatewa
 - [Callers control per-entry `speed`, `max_tokens` and `thinking` within an allowed model] → These are forwarded unchanged and can raise cost. Docs say the policy grants models, not entry settings.
 - [Model renames break the exact match] → The operator updates the config. The refusal stays fail-closed.
 - [`servedModelId` comes from provider output] → It comes from the configured native destination only. A value that is empty or invalid UTF-8 is omitted. No new length bound is added (Non-Goal: new size constants); the value is the provider's own model ID, also published as the custom part.
-- [#201 not merged] → The matrix acceptance task is gated. Go and command tests prove the behavior independently.
+- [The issue names a matrix command that is not on main] → Task group 5 gives the same evidence through the real command. The PR states the substitution.
 
 ## Migration Plan
 
