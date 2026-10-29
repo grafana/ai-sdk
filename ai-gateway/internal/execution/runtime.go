@@ -62,8 +62,13 @@ type Call struct {
 // refuses protected call headers with [ErrProtectedCallHeader], and removes the
 // call-level [ControlNamespace] from options to pass it to the selector. A
 // context that has ended before or during selection decides the outcome, and
-// its error is returned.
-func (r *Runtime) Call(ctx context.Context, modelID string, options provider.CallOptions) (*Call, error) {
+// its error is returned. A translator set with [WithTranslator] reaches every
+// physical attempt of this call only.
+func (r *Runtime) Call(ctx context.Context, modelID string, options provider.CallOptions, callOptions ...CallOption) (*Call, error) {
+	var config callConfig
+	for _, apply := range callOptions {
+		apply(&config)
+	}
 	options, gateway, err := applyPolicy(options)
 	if err != nil {
 		return nil, err
@@ -79,7 +84,7 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 		return nil, err
 	}
 	attempts := newAttemptCapture(modelID, selected, r.redactor)
-	return &Call{ctx: attempts.withObserver(ctx), model: selected.Model, options: options, attempts: attempts, limits: r.limits}, nil
+	return &Call{ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, attempts: attempts, limits: r.limits}, nil
 }
 
 func (r *Runtime) selectModel(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (selected Selection, err error) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -202,25 +204,34 @@ func TestCallGenerate(t *testing.T) {
 		})
 	}
 
-	t.Run("late fallback attempts are not projected", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(t.Context())
-		defer cancel()
-		first := &generateModel{modelID: "A", generate: func(context.Context) (*provider.GenerateResult, error) {
-			cancel()
-			return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "unowned late native failure"})
-		}}
-		second := &generateModel{modelID: "B"}
-		model, err := fallback.New(first, second)
-		require.NoError(t, err)
-		resolved := catalog.ResolvedModel{ID: "canonical", Model: model, Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "A"}, {Provider: "native", ModelID: "B"}}}
-		runtime := newRuntime(t, CatalogSelector(staticResolver{resolved: resolved}), testLimits())
-		call, err := runtime.Call(ctx, "alias", provider.CallOptions{})
-		require.NoError(t, err)
-		_, err = call.Generate()
-		require.ErrorIs(t, err, context.Canceled)
-		assert.Nil(t, call.View(err).Overview)
-		assert.Zero(t, second.callCount())
-	})
+	for name, selector := range map[string]func(provider.LanguageModel) RequestSelector{
+		"configured": func(model provider.LanguageModel) RequestSelector {
+			return CatalogSelector(staticResolver{resolved: catalog.ResolvedModel{ID: "canonical", Model: model, Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "A"}, {Provider: "native", ModelID: "B"}}}})
+		},
+		"request accounts": func(model provider.LanguageModel) RequestSelector {
+			return func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
+				return AccountSelection(id, model, RequestAccounts{Provider: "native", ModelID: "A", Count: 2}), nil
+			}
+		},
+	} {
+		t.Run("late fallback attempts are not projected/"+name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			first := &generateModel{modelID: "A", generate: func(context.Context) (*provider.GenerateResult, error) {
+				cancel()
+				return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "unowned late native failure"})
+			}}
+			second := &generateModel{modelID: "B"}
+			model, err := fallback.New(first, second)
+			require.NoError(t, err)
+			call, err := newRuntime(t, selector(model), testLimits()).Call(ctx, "alias", provider.CallOptions{})
+			require.NoError(t, err)
+			_, err = call.Generate()
+			require.ErrorIs(t, err, context.Canceled)
+			assert.Nil(t, call.View(err).Overview)
+			assert.Zero(t, second.callCount())
+		})
+	}
 }
 
 func TestCallGenerate_CanceledAttemptIsNotPublished(t *testing.T) {
@@ -306,6 +317,61 @@ func TestRuntime_ConcurrentCallsAreIsolated(t *testing.T) {
 	assert.Equal(t, fallback.AttemptSelected, overviews["fails"].Attempts[1].Outcome)
 	require.Len(t, overviews["succeeds"].Attempts, 1)
 	assert.Equal(t, fallback.AttemptSelected, overviews["succeeds"].Attempts[0].Outcome)
+}
+
+type accountKey struct{}
+
+func TestRuntime_ConcurrentAccountCallsAreIsolated(t *testing.T) {
+	first := &generateModel{modelID: "model", generate: func(ctx context.Context) (*provider.GenerateResult, error) {
+		key := ctx.Value(accountKey{}).(string)
+		time.Sleep(time.Millisecond)
+		if strings.HasPrefix(key, "fails") {
+			return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "rejected " + key, IsRetryable: new(true)})
+		}
+		return &provider.GenerateResult{}, nil
+	}}
+	second := &generateModel{modelID: "model"}
+	shared, err := fallback.New(first, second)
+	require.NoError(t, err)
+	runtime := newRuntime(t, func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
+		return AccountSelection(id, shared, RequestAccounts{Provider: "native", ModelID: "model", Count: 2}), nil
+	}, testLimits())
+	const calls = 32
+	views := make([]View, calls)
+	keys := make([]string, calls)
+	var wg sync.WaitGroup
+	for i := range calls {
+		keys[i] = fmt.Sprintf("succeeds-%d", i)
+		if i%2 == 0 {
+			keys[i] = fmt.Sprintf("fails-%d", i)
+		}
+		wg.Go(func() {
+			call, err := runtime.Call(context.WithValue(t.Context(), accountKey{}, keys[i]), "native/model", provider.CallOptions{})
+			if !assert.NoError(t, err) {
+				return
+			}
+			_, err = call.Generate()
+			assert.NoError(t, err)
+			views[i] = call.View(nil)
+			call.attempts.observe(t.Context(), fallback.Attempt{Index: 1, Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected})
+			assert.Nil(t, call.View(nil).Overview, "late attempt after sealing")
+		})
+	}
+	wg.Wait()
+	for i, view := range views {
+		require.NotNil(t, view.Overview, keys[i])
+		if i%2 == 0 {
+			require.Len(t, view.Overview.Attempts, 2)
+			assert.Equal(t, fallback.AttemptFailed, view.Overview.Attempts[0].Outcome)
+			assert.Equal(t, "rejected "+keys[i], view.Overview.Attempts[0].Error.Message)
+			assert.Equal(t, fallback.AttemptSelected, view.Overview.Attempts[1].Outcome)
+		} else {
+			require.Len(t, view.Overview.Attempts, 1)
+			assert.Equal(t, fallback.AttemptSelected, view.Overview.Attempts[0].Outcome)
+		}
+	}
+	assert.Equal(t, calls, first.callCount())
+	assert.Equal(t, calls/2, second.callCount())
 }
 
 type drainProbe struct {

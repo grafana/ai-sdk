@@ -3391,6 +3391,58 @@ func TestStreamTextRawFinishReasonPropagation(t *testing.T) {
 	assert.Equal(t, "stop_sequence", steps[0].FinishReason.Raw)
 }
 
+func TestStreamText_TerminalPartOrder(t *testing.T) {
+	finish := func(unified provider.UnifiedFinishReason, raw string) provider.StreamPart {
+		return provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: unified, Raw: raw}, Usage: &provider.Usage{}}
+	}
+	failure := provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 529, Message: "overloaded"})}
+	for _, tc := range []struct {
+		name  string
+		parts []provider.StreamPart
+		want  provider.FinishReason
+	}{
+		{name: "error after finish", parts: []provider.StreamPart{finish(provider.FinishReasonStop, "end_turn"), failure}, want: provider.FinishReason{Unified: provider.FinishReasonError, Raw: "end_turn"}},
+		{name: "finish after error", parts: []provider.StreamPart{failure, finish(provider.FinishReasonStop, "end_turn")}, want: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"}},
+		{name: "finish after an error after finish", parts: []provider.StreamPart{finish(provider.FinishReasonToolCalls, "tool_use"), failure, finish(provider.FinishReasonStop, "stop_sequence")}, want: provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "stop_sequence"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parts := append([]provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "t1"},
+				{Type: provider.PartTextDelta, ID: "t1", Delta: "done"},
+				{Type: provider.PartTextEnd, ID: "t1"},
+			}, tc.parts...)
+			model := &mockModel{streamFunc: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+				ch := make(chan provider.StreamPart, len(parts))
+				for _, part := range parts {
+					ch <- part
+				}
+				close(ch)
+				return &provider.StreamResult{Stream: ch}, nil
+			}}
+
+			result := StreamText(t.Context(), model, WithModelMessages(provider.UserText("hi")))
+			var stepFinishes []provider.FinishReason
+			var streamFinishes []provider.FinishReason
+			for part := range result.FullStream() {
+				switch p := part.(type) {
+				case StreamFinishStep:
+					stepFinishes = append(stepFinishes, p.FinishReason)
+				case StreamFinish:
+					streamFinishes = append(streamFinishes, p.FinishReason)
+				}
+			}
+
+			steps := result.Steps()
+			require.Len(t, steps, 1)
+			assert.Equal(t, tc.want, steps[0].FinishReason)
+			assert.Equal(t, []provider.FinishReason{tc.want}, stepFinishes)
+			assert.Equal(t, []provider.FinishReason{tc.want}, streamFinishes)
+			assert.Equal(t, "done", steps[0].Text)
+			assert.Error(t, result.Err())
+		})
+	}
+}
+
 func TestStreamTextToolInputDeltaNameTracking(t *testing.T) {
 	model := &mockModel{
 		streamFunc: func(_ context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {

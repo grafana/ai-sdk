@@ -33,7 +33,8 @@ func TestGeneratedFileProjectionAndValidity(t *testing.T) {
 		state := newStreamState(nil)
 		w := httptest.NewRecorder()
 		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: event.fileData, ProviderMetadata: event.metadata}))
-		require.Equal(t, streamPartFinished, h.processStreamPart(w, state, finishPart()))
+		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, finishPart()))
+		require.Equal(t, segmentFinished, state.phase)
 		requireStreamBodyMatchesSchema(t, w.Body.String())
 	}
 }

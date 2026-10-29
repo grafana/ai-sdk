@@ -17,7 +17,7 @@ The activation PR introduces `RELEASE_LIBRARY_MODE`:
 | Value | Effect on the next canonical main push |
 | --- | --- |
 | Absent or any other value | No release job or writes |
-| `root` | Only merged root #490 may publish; no new release PRs |
+| `root` | Historical bootstrap for merged root #490; obsolete since the combined release configuration |
 | `libraries` | Publish verified pending libraries, then prepare library release PRs |
 
 No mode includes Gateway. The CLI repeats the mode, repository, event and branch
@@ -96,7 +96,7 @@ Record these acceptance results in #468:
 - A fresh external module cache resolves the public tag through the Go proxy;
   `go mod download -json github.com/grafana/ai-sdk@v0.1.0-alpha.2` reports the expected
   canonical origin hash. Build a consumer using that public version without local
-  replacements or a workspace. The local candidate proxy test is not this proof.
+  replacements. The local candidate proxy test is not this proof.
 - A subsequent approved main push in root mode performs no duplicate publication.
 
 If artifacts expire or canonical state differs, stop and inspect. Do not substitute
@@ -106,36 +106,28 @@ old local reports, recreate evidence, move a tag, or force a release through.
 
 After root proof passes, approve switching the variable to `libraries`. The next
 main push publishes only independently ready pending libraries and prepares one
-release PR per eligible component. A merged pending component suppresses only its
-own next preparation. Late publication candidates wait for another run. Preparation
-requires that main still equals the workflow SHA and uses App-signed commits.
+combined library release PR, with first-party requirements set to the versions it
+releases. A merged pending component suppresses only its own next preparation. A
+merged combined release keeps its pending label until every library in it is
+published. Late publication candidates wait for another run. Preparation
+requires that main still equals the workflow SHA and uses App-signed commits. If
+main advanced while the run waited, it skips preparation with a notice; the run for
+the newer push prepares the release PR.
 Existing release PRs refresh even when their notes are unchanged, so current-base
 readiness can run again. Commit-parser diagnostics stop preparation writes.
 
 Preparation uses release-please 17.6.0 with the temporary `last-release-sha` override
 removed in memory; actual published releases delimit later notes, while
-`bootstrap-sha` remains the boundary for never-published modules. The committed
-release config stays unchanged so #490's retained config identity remains valid.
-The historical PR header describes publication as disabled; this activation runbook
+`bootstrap-sha` remains the boundary for never-published modules. The combined
+release configuration changed the committed release config, so root bootstrap mode
+can no longer authorize #490; that bootstrap is complete. The historical PR header describes publication as disabled; this activation runbook
 and the live mode are authoritative until that header is updated after bootstrap.
 
-The final first-party rule in `renovate.json` becomes effective when this PR merges.
-It enables independent updates only for registered library modules, accepts tagged
-alpha/beta/rc versions, excludes pseudo-version and digest proposals, groups all
-first-party updates into one pull request and overrides the inherited weekly
-schedule. The organization-wide minimum release age still applies; see the
-[release runbook](../README.md#keep-dependent-modules-on-released-first-party-requirements).
-Updates use `fix(deps)` and require review;
-automerge is disabled. This follows Renovate's
-[configuration contracts](https://docs.renovatebot.com/configuration-options/).
-
-Review and merge the root requirement update for direct dependents, then repeat
-for provider prerequisites and Bedrock. Ordinary source PRs retain candidate-source
-CI. A dependency bump does not prove its dependent is release-ready: publication
-rechecks tag origin, ancestry, owned-source freshness, standalone and consumer
-behavior. Record the root → direct provider → Bedrock progression in #468; if a
-provider needs unrelated implementation fixes, track those separately rather than
-holding the root release or pretending the progression is proven.
+Renovate does not update first-party modules; release pull requests update those
+requirements, so no requirement update is needed between releases. Ordinary source
+PRs retain candidate-source CI. Publication rechecks tag origin, ancestry and
+co-released prerequisites and tags prerequisites first; the release verification
+workflow then checks each published version as an external consumer. Record the first combined library release in #468.
 
 ## Stop and recovery
 

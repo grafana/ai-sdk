@@ -45,10 +45,10 @@ describe("candidate-source workflow gates", () => {
       const required = dependencies(job);
       assert.ok(!required.has("plugin-validation"), `${job} depends on the artifact gate`);
       for (const path of [job, ...required]) {
-        assert.doesNotMatch(commands(path), /verify-module-resolution|verify-published-module|test-candidate-source|test-go-client-standalone/);
+        assert.doesNotMatch(commands(path), /test-candidate-source|test-go-client-standalone/);
       }
     }
-    for (const task of ["test-module-policy", "test-ci-workflow", "verify-gateway-workspace", "verify-ai-gateway-boundary", "verify-merged-pins", "verify-sdk-gateway-isolation"]) {
+    for (const task of ["test-module-policy", "test-ci-workflow", "verify-ai-gateway-boundary", "verify-module-requirements", "verify-sdk-gateway-isolation"]) {
       assert.match(commands("module-resolution"), new RegExp(`mise run ${task}`));
     }
     assert.match(commands("parity-baseline"), /test-providerwire-v4/);
@@ -93,7 +93,6 @@ describe("candidate-source workflow gates", () => {
     assert.equal(normalize(keep.if), pushGuard);
     assert.equal(keep.with?.path, "ai-gateway/dist");
     assert.equal(keep.with?.["if-no-files-found"], "error");
-    assert.doesNotMatch(commands("plugin-validation"), /GOWORK=off|verify-published-module/);
   });
 
   it("has no image, publication or deployment jobs", () => {

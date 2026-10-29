@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/openai/v0.1.0-alpha.1...providers/openai/v0.1.0-alpha.2) (2026-10-28)
+
+
+### Features
+
+* **openai:** align GPT-6 reasoning controls and effort updates with upstream ([#565](https://github.com/grafana/ai-sdk/issues/565)) ([590ecbb](https://github.com/grafana/ai-sdk/commit/590ecbb6f28215cbad0b0b6abc159faecca2b7a4))
+* **parity:** advance pinned upstream to ai 7.0.143 ([#458](https://github.com/grafana/ai-sdk/issues/458)) ([f76495c](https://github.com/grafana/ai-sdk/commit/f76495c223918a2e879bc4c80cb0741528c2b565))
+
+
+### Bug Fixes
+
+* **ai-gateway:** contain panics in stream worker goroutines ([#471](https://github.com/grafana/ai-sdk/issues/471)) ([e74f87b](https://github.com/grafana/ai-sdk/commit/e74f87bcf30f2a9fccdc900f5d4d6ecdb06c8ec6)), refs [#419](https://github.com/grafana/ai-sdk/issues/419)
+* **core:** align provider-executed approval handling with upstream ([#567](https://github.com/grafana/ai-sdk/issues/567)) ([8973575](https://github.com/grafana/ai-sdk/commit/89735754faeba9f7fbcc4a0e44c0aa74fc874ef6))
+* **openai:** merge replayed reasoning summaries sharing one item ID ([#578](https://github.com/grafana/ai-sdk/issues/578)) ([f86d936](https://github.com/grafana/ai-sdk/commit/f86d936bf72d3d01359622f2672efaae2f68307b))
+* **openai:** normalize lookaround patterns and recursive schema references ([#515](https://github.com/grafana/ai-sdk/issues/515)) ([7b81ec1](https://github.com/grafana/ai-sdk/commit/7b81ec1c75f87f76a25a8c6e683a9be8da7300b7))
+
 ## 0.1.0-alpha.1 (2026-10-26)
 
 

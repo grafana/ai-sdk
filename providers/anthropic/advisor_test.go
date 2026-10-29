@@ -226,6 +226,117 @@ func TestBuildParams_ReferencedAnthropicFileRequiresProviderID(t *testing.T) {
 	}
 }
 
+func TestBuildParams_ToolResultReferencedAnthropicFiles(t *testing.T) {
+	reference := func(mediaType, raw string) provider.ToolResultContentValue {
+		data := provider.ReferenceDataContent(json.RawMessage(raw))
+		return provider.ToolResultContentValue{Type: provider.ToolContentFile, MediaType: mediaType, Data: &data}
+	}
+	toolResult := func(callID string, entries ...provider.ToolResultContentValue) provider.ContentPart {
+		return provider.ToolResultPart(callID, "attachments", &provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: entries})
+	}
+	userReference := func() provider.ContentPart {
+		return provider.FilePart("application/pdf", provider.ReferenceDataContent(json.RawMessage(`{"anthropic":"file_user"}`)))
+	}
+	assistantCalls := provider.NewAssistantMessage(
+		provider.ToolCallPart("call_1", "attachments", json.RawMessage(`{}`)),
+		provider.ToolCallPart("call_2", "attachments", json.RawMessage(`{}`)),
+	)
+	tests := []struct {
+		name   string
+		prompt func() []provider.Message
+	}{
+		{
+			name: "tool message",
+			prompt: func() []provider.Message {
+				return []provider.Message{
+					provider.NewUserMessage(userReference()),
+					assistantCalls,
+					provider.NewToolMessage(
+						toolResult("call_1", reference("image/png", `{"anthropic":"file_img"}`)),
+						toolResult("call_2", reference("text/plain", `{"anthropic":"file_txt"}`)),
+					),
+				}
+			},
+		},
+		{
+			name: "user message carrying tool results",
+			prompt: func() []provider.Message {
+				return []provider.Message{
+					provider.NewUserMessage(userReference()),
+					assistantCalls,
+					provider.NewUserMessage(
+						toolResult("call_1", reference("image/png", `{"anthropic":"file_img"}`)),
+						toolResult("call_2", reference("text/plain", `{"anthropic":"file_txt"}`)),
+					),
+				}
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			prompt := tc.prompt()
+			params, _, warnings, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+				Prompt:          prompt,
+				ProviderOptions: makeProviderOpts(`{"betas":["files-api-2025-04-14"]}`),
+			}, false)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+			assert.Equal(t, tc.prompt(), prompt)
+
+			count := 0
+			for _, beta := range params.Betas {
+				if beta == filesAPIBeta {
+					count++
+				}
+			}
+			assert.Equal(t, 1, count, "betas: %v", params.Betas)
+			require.Len(t, params.Messages, 3)
+			wire, err := json.Marshal(params.Messages[2].Content)
+			require.NoError(t, err)
+			assert.JSONEq(t, `[
+				{"type":"tool_result","tool_use_id":"call_1","content":[{"type":"image","source":{"type":"file","file_id":"file_img"}}]},
+				{"type":"tool_result","tool_use_id":"call_2","content":[{"type":"document","source":{"type":"file","file_id":"file_txt"}}]}
+			]`, string(wire))
+		})
+	}
+}
+
+func TestBuildParams_ToolResultReferenceRequiresAnthropicID(t *testing.T) {
+	tests := []struct {
+		name      string
+		reference string
+		want      string
+	}{
+		{name: "different provider", reference: `{"openai":"file-123"}`, want: "anthropic: no provider reference found for provider anthropic; available providers: openai"},
+		{name: "key is not normalized", reference: `{"Anthropic":"file-123"}`, want: "anthropic: no provider reference found for provider anthropic; available providers: Anthropic"},
+		{name: "empty reference", reference: `{}`, want: "anthropic: no provider reference found for provider anthropic; available providers: "},
+	}
+	messages := map[string]func(provider.ContentPart) provider.Message{
+		"tool message": func(part provider.ContentPart) provider.Message { return provider.NewToolMessage(part) },
+		"user message": func(part provider.ContentPart) provider.Message { return provider.NewUserMessage(part) },
+	}
+
+	for _, tc := range tests {
+		for role, message := range messages {
+			t.Run(tc.name+"/"+role, func(t *testing.T) {
+				data := provider.ReferenceDataContent(json.RawMessage(tc.reference))
+				part := provider.ToolResultPart("call_1", "attachments", &provider.ToolResultOutput{
+					Type:    provider.ToolOutputContent,
+					Content: []provider.ToolResultContentValue{{Type: provider.ToolContentFile, MediaType: "application/pdf", Data: &data}},
+				})
+				_, _, _, _, err := buildParams("claude-sonnet-4-6", provider.CallOptions{
+					Prompt: []provider.Message{
+						provider.NewAssistantMessage(provider.ToolCallPart("call_1", "attachments", json.RawMessage(`{}`))),
+						message(part),
+					},
+				}, false)
+				require.EqualError(t, err, tc.want)
+			})
+		}
+	}
+}
+
 func TestBuildParams_AdvisorProviderToolRejectsInvalidArgs(t *testing.T) {
 	tests := []struct {
 		name string

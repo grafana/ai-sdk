@@ -149,12 +149,12 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 		if desc := strings.TrimSpace(t.Description); desc != "" {
 			spec.Description = desc
 		}
-		if rejectsNewerSchemaFields(modelID) {
-			if t.Strict != nil {
+		if !supportsStrictTools(modelID) {
+			if t.Strict != nil && *t.Strict {
 				res.warnings = append(res.warnings, provider.Warning{
 					Type:    provider.WarnUnsupported,
 					Feature: "strict",
-					Details: fmt.Sprintf("Tool '%s' has strict: %t, but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored.", t.Name, *t.Strict),
+					Details: fmt.Sprintf("Tool '%s' has strict: true, but strict mode is not supported by this model on Amazon Bedrock. The strict property will be ignored.", t.Name),
 				})
 			}
 		} else if t.Strict != nil && *t.Strict && !isStrictToolSchemaCompatible(jsonOrEmptyObject(t.InputSchema)) {

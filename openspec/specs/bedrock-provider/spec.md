@@ -472,7 +472,7 @@ For custom `provider.CallOptions.Reasoning` other than `none`, Anthropic Bedrock
 
 ### Requirement: Native structured output for supported Anthropic models
 
-For JSON with a schema, the provider SHALL select native `additionalModelRequestFields.output_config.format`, synthetic JSON tool, or JSON instruction using effective `structuredOutputMode`. Default `auto` native use SHALL require Anthropic family, reliable native support, and model capability, thinking, or explicit Anthropic family. Explicit `outputFormat` SHALL override the auto reliability gate for Anthropic schema responses.
+For JSON with a schema, the provider SHALL select native `output_config.format`, synthetic JSON tool, or JSON instruction by effective `structuredOutputMode`. `auto` SHALL use native output only for Anthropic models with reliable native support (strict-tool allowlist minus Sonnet 4.6, Haiku 4.5) and capability, thinking, or Anthropic family; `outputFormat` bypasses it. Outside `jsonTool`, unknown Claude IDs, and models lacking strict tools with caller tools, SHALL use the JSON instruction.
 
 #### Scenario: Native JSON output on supported Anthropic model
 
@@ -481,13 +481,29 @@ For JSON with a schema, the provider SHALL select native `additionalModelRequest
 
 #### Scenario: JSON-tool fallback on unsupported model
 
-- **WHEN** the model does not support native structured output, there are no caller tools, and `ResponseFormat.Type = json` with a schema
+- **WHEN** a non-Claude model, or a Claude model not routed to the JSON instruction, does not use native structured output, there are no caller tools, and `ResponseFormat.Type = json` with a schema
 - **THEN** the provider injects a synthetic tool named `json` with the schema as inputSchema, sets `toolChoice = required`, and translates the tool call into the final text in the response
 
 #### Scenario: Opus 4.7/4.8 structured output with user tools
 
 - **WHEN** Claude Opus 4.7 or 4.8 receives a JSON response schema, at least one user tool, and `auto` mode
 - **THEN** the provider keeps the user tools selectable, omits `output_config.format`, and injects the JSON schema instruction into the system prompt
+
+#### Scenario: Unknown Claude structured output uses instruction
+
+- **WHEN** an unknown, future major, or future minor Claude ID (including regional prefixes and explicit Anthropic family) receives a JSON response schema in `auto` mode, with or without thinking or user tools
+- **THEN** `output_config.format` is absent, no synthetic `json` tool or forced tool choice is sent, the JSON schema instruction is injected into the system prompt, and caller messages are unchanged
+- **AND** a Claude ID is unknown here when it lacks reliable native support and is not a known model with structured-output capability
+
+#### Scenario: Known Claude outside native auto routing keeps JSON tool
+
+- **WHEN** Haiku 5.5 or a legacy Claude model receives a JSON response schema in `auto` mode without user tools and, for Haiku 5.5, with or without thinking
+- **THEN** the synthetic `json` tool and required choice are emitted; legacy Claude with thinking uses native output
+
+#### Scenario: Explicit JSON tool on unknown Claude
+
+- **WHEN** an unknown Claude ID receives `structuredOutputMode = jsonTool`, with or without user tools
+- **THEN** the synthetic `json` tool and required choice are emitted instead of the JSON instruction
 
 #### Scenario: Thinking does not override native-output rejection
 
@@ -531,7 +547,7 @@ The Bedrock constructor SHALL allow `WithModelFamily` with the typed Anthropic f
 
 ### Requirement: Strict tools and effective Anthropic tool choice
 
-The Converse adapter SHALL keep strict-tool support independent of native JSON support. It SHALL omit `strict` with an unsupported warning when the model disallows either boolean value or when `strict:true` has an object schema lacking `additionalProperties:false` in any nested branch. Boolean schemas SHALL be accepted. Unsupported Anthropic web search/fetch provider tools SHALL be filtered with warnings; Anthropic provider-tool choices SHALL route through additional fields.
+The Converse adapter SHALL keep strict-tool support independent of native JSON support. It SHALL omit `strict` when the model disallows strict tools (warning only for `strict:true`), or with a warning when `strict:true` has an object schema lacking nested `additionalProperties:false`. Boolean schemas SHALL be accepted. Unsupported Anthropic web search/fetch provider tools SHALL be filtered with warnings; Anthropic provider-tool choices SHALL route through additional fields.
 
 #### Scenario: Separate Sonnet 4.6 strict and native gates
 
@@ -540,8 +556,9 @@ The Converse adapter SHALL keep strict-tool support independent of native JSON s
 
 #### Scenario: Unsupported strict on newest models
 
-- **WHEN** an Opus 4.7/4.8, Opus 5, Fable 5, or Sonnet 5 tool requests `strict:false` or `strict:true`
-- **THEN** `strict` is omitted and an unsupported strict warning identifies the tool and value
+- **WHEN** a Claude model outside the strict-tool allowlist (legacy Claude, dated Claude 4, Opus 4.1/4.5/4.6, Sonnet 4.5/4.6, Haiku 4.5), such as Opus 4.7/4.8, Opus 5, Fable 5, Sonnet 5, Haiku 5.5, or an unknown Claude ID, requests `strict:false` or `strict:true`
+- **THEN** `strict` is omitted; `strict:true` adds an unsupported strict warning identifying the tool, while `strict:false` is omitted silently
+- **AND** non-Claude IDs and opaque profiles keep strict support
 
 #### Scenario: Incompatible nested strict schema
 
@@ -596,6 +613,20 @@ The provider SHALL classify OpenAI IDs by anchored `openai.` with optional regio
 
 - **WHEN** `amazon.nova-micro-v1:0` receives portable reasoning `high` without an explicit `reasoningConfig`
 - **THEN** no reasoning field is sent and an unsupported warning is returned; with an explicit config its fields are forwarded and merged
+
+### Requirement: Converse Nova 2 Lite high reasoning omits token limits
+
+When a model ID containing `amazon.nova-2-lite-v1:0`, including regional prefixes and system inference-profile ARNs, resolves to `reasoningConfig.type: enabled` with effort `high`, `xhigh`, or `max`, the provider SHALL omit `inferenceConfig.maxTokens` and return an unsupported `maxOutputTokens` warning. Explicit provider `reasoningConfig` fields SHALL take precedence over portable reasoning when resolving that combination. Lower efforts, other reasoning types, and other models SHALL keep the caller's token limit.
+
+#### Scenario: High Nova 2 Lite reasoning drops the token limit
+
+- **WHEN** `us.amazon.nova-2-lite-v1:0` receives `maxOutputTokens` with enabled reasoning at effort `high`, including portable `xhigh` or `max` coerced to `high`, or explicit provider `reasoningConfig` effort `high`, `xhigh`, or `max`
+- **THEN** unary and streaming requests omit `inferenceConfig.maxTokens` and return an unsupported `maxOutputTokens` warning
+
+#### Scenario: Lower effort or other models keep the token limit
+
+- **WHEN** Nova 2 Lite resolves to effort `low` or `medium` or to non-enabled reasoning, or another model receives high reasoning
+- **THEN** `inferenceConfig.maxTokens` is preserved and no `maxOutputTokens` warning is returned
 
 ### Requirement: Converse option merge preserves cache and beta precedence
 

@@ -71,10 +71,8 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	isThinkingEnabled := bo.ReasoningConfig != nil &&
 		(bo.ReasoningConfig.Type == "enabled" || bo.ReasoningConfig.Type == "adaptive" || bo.ReasoningConfig.Type == reasoningTypeBetweenTools)
 
-	// ResponseFormat handling. Some Anthropic models reject native
-	// output_config.format even when their model family otherwise supports it.
-	// Opus 4.7/4.8 use an instruction when user tools are present so those tools
-	// remain selectable; other non-native cases use the synthetic json tool.
+	// ResponseFormat routing: native output_config.format, JSON instruction, or
+	// synthetic json tool.
 	useNativeStructuredOutput := false
 	if opts.ResponseFormat != nil && opts.ResponseFormat.Type == provider.ResponseFormatJSON {
 		if len(opts.ResponseFormat.Schema) == 0 {
@@ -83,12 +81,9 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 				Feature: "responseFormat",
 				Details: "Bedrock requires a schema for JSON response format; ignoring",
 			})
-		} else if isAnthropic && (mode == StructuredOutputModeOutputFormat || (mode == StructuredOutputModeAuto && !rejectsNativeStructuredOutput(modelID) && (supportsStructuredOutputCapability(modelID) || isThinkingEnabled || family == ModelFamilyAnthropic))) {
+		} else if isAnthropic && (mode == StructuredOutputModeOutputFormat || (mode == StructuredOutputModeAuto && supportsNativeStructuredOutput(modelID) && (supportsStructuredOutputCapability(modelID) || isThinkingEnabled || family == ModelFamilyAnthropic))) {
 			useNativeStructuredOutput = true
-		} else if isAnthropic && (rejectsForcedToolUse(modelID) || (mode != StructuredOutputModeJSONTool && usesJSONInstructionForStructuredOutput(modelID) && len(opts.Tools) > 0)) {
-			// The JSON response tool needs forced tool use, so models that
-			// reject it always get the instruction (upstream
-			// amazon-bedrock-chat-language-model.ts, 5.0.99).
+		} else if isAnthropic && usesJSONInstructionForStructuredOutput(modelID, mode, len(opts.Tools) > 0) {
 			meta.usesJSONInstruction = true
 		} else {
 			meta.usesJSONResponseTool = true
@@ -138,6 +133,7 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 
 	// OpenAI / Nova effort routing (non-Anthropic, model-prefix gated).
 	applyNonAnthropicEffort(addRequestFields, modelID, isAnthropic, bo)
+	warnings = append(warnings, omitNovaHighReasoningMaxTokens(modelID, bo, &inf)...)
 
 	// Native structured output goes through additionalModelRequestFields.
 	if useNativeStructuredOutput {
@@ -212,6 +208,25 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	}
 
 	return out, warnings, meta, nil
+}
+
+// usesJSONInstructionForStructuredOutput selects the system JSON instruction
+// for Anthropic schema responses that do not use native output. Mirrors
+// upstream amazon-bedrock-chat-language-model.ts (@ai-sdk/amazon-bedrock
+// 5.0.118): the JSON response tool needs forced tool use, so models that
+// reject it always get the instruction.
+func usesJSONInstructionForStructuredOutput(modelID string, mode StructuredOutputMode, hasTools bool) bool {
+	if rejectsForcedToolUse(modelID) {
+		return true
+	}
+	if mode == StructuredOutputModeJSONTool {
+		return false
+	}
+	if strings.Contains(modelID, "claude-") && !supportsNativeStructuredOutput(modelID) &&
+		(!isKnownClaudeModel(modelID) || !supportsStructuredOutputCapability(modelID)) {
+		return true
+	}
+	return hasTools && !supportsStrictTools(modelID)
 }
 
 func hasActiveTools(pt preparedTools) bool {
@@ -354,7 +369,7 @@ func buildInferenceConfig(modelID string, opts provider.CallOptions, isAnthropic
 	}
 
 	// Treat empty inferenceConfig as nil so it doesn't serialize.
-	if inf.MaxTokens == nil && inf.Temperature == nil && inf.TopP == nil && inf.TopK == nil && len(inf.StopSequences) == 0 {
+	if inf.empty() {
 		return nil, warnings
 	}
 	return inf, warnings
@@ -439,7 +454,7 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 			resolved = cloneReasoningConfig(explicit)
 		}
 	} else {
-		if !isAnthropic && !isOpenAIModel(modelID) && !strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && explicit == nil {
+		if !isAnthropic && !isOpenAIModel(modelID) && !isNova2ReasoningModel(modelID) && explicit == nil {
 			*warnings = append(*warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "reasoning",
@@ -448,7 +463,7 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 			return nil
 		}
 		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, isAnthropic, reasoning, warnings), explicit)
-		if !isAnthropic && strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && resolved != nil && resolved.Type == "" {
+		if !isAnthropic && isNova2ReasoningModel(modelID) && resolved != nil && resolved.Type == "" {
 			resolved.Type = "enabled"
 		}
 	}
@@ -543,7 +558,7 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 		return &ReasoningConfig{Type: "enabled", BudgetTokens: budget}
 	}
 	effortReasoning := reasoning
-	if strings.Contains(modelID, "amazon.nova-2-lite-v1:0") && (reasoning == provider.ReasoningXHigh || reasoning == provider.ReasoningMax) {
+	if isNova2ReasoningModel(modelID) && (reasoning == provider.ReasoningXHigh || reasoning == provider.ReasoningMax) {
 		effortReasoning = provider.ReasoningHigh
 		*warnings = append(*warnings, provider.Warning{Type: provider.WarnCompatibility, Feature: "reasoning", Details: fmt.Sprintf("reasoning %q is not directly supported by this model. mapped to effort %q.", reasoning, effortReasoning)})
 	}
@@ -635,6 +650,29 @@ func applyNonAnthropicEffort(addFields map[string]any, modelID string, isAnthrop
 		reasoningConfig["budgetTokens"] = bo.ReasoningConfig.BudgetTokens
 	}
 	addFields["reasoningConfig"] = reasoningConfig
+}
+
+// omitNovaHighReasoningMaxTokens drops maxTokens for Nova 2 Lite with enabled
+// high, xhigh, or max reasoning, which the model does not accept together.
+func omitNovaHighReasoningMaxTokens(modelID string, bo BedrockOptions, inf **inferenceConfig) []provider.Warning {
+	rc := bo.ReasoningConfig
+	if !isNova2ReasoningModel(modelID) || rc == nil || rc.Type != "enabled" || *inf == nil || (*inf).MaxTokens == nil {
+		return nil
+	}
+	switch rc.MaxReasoningEffort {
+	case "high", "xhigh", "max":
+	default:
+		return nil
+	}
+	(*inf).MaxTokens = nil
+	if (*inf).empty() {
+		*inf = nil
+	}
+	return []provider.Warning{{
+		Type:    provider.WarnUnsupported,
+		Feature: "maxOutputTokens",
+		Details: fmt.Sprintf("maxOutputTokens is not supported by %s when high reasoning is enabled and will be ignored", modelID),
+	}}
 }
 
 func ensureMap(m map[string]any, key string) map[string]any {

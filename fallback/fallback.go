@@ -80,12 +80,13 @@ func New(candidates ...provider.LanguageModel) (*Model, error) {
 	}
 	return &Model{
 		candidates: append([]provider.LanguageModel(nil), candidates...),
-		decider:    defaultDecider,
+		decider:    DefaultDecider,
 	}, nil
 }
 
 // WithDecider sets a custom fallback decider. The decider returns true
-// if the error should trigger fallback to the next candidate.
+// if the error should trigger fallback to the next candidate. See
+// [DefaultDecider] for the rules it replaces.
 func (m *Model) WithDecider(fn func(error) bool) *Model {
 	m.decider = fn
 	return m
@@ -327,11 +328,13 @@ func failedAttemptsError(failures []failedAttempt) error {
 	return errors.Join(errs...)
 }
 
-// defaultDecider returns true (try next candidate) for retryable API errors
-// and unknown errors. Returns false (stop) for non-retryable API errors. It also
-// returns false for context-window/context-length failures, because the next
-// candidate would fail identically.
-func defaultDecider(err error) bool {
+// DefaultDecider is the decider New installs. It returns true (try next
+// candidate) for retryable API errors and unknown errors, and false (stop) for
+// non-retryable API errors and [ErrStreamBufferLimit]. It also returns false for
+// context-window/context-length failures, because the next candidate would fail
+// identically. A custom decider passed to [Model.WithDecider] can delegate to it
+// for the errors it does not decide itself.
+func DefaultDecider(err error) bool {
 	if errors.Is(err, ErrStreamBufferLimit) {
 		return false
 	}

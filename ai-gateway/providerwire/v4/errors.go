@@ -17,7 +17,6 @@ const (
 	safeTimeout
 	safeCancellation
 	safeInternal
-	safeAuthentication
 	safePermission
 	safeBYOKDiscovery
 )

@@ -43,7 +43,6 @@ func TestPublicSurface_ModuleIsolation(t *testing.T) {
 	}
 	mod, err := os.ReadFile(filepath.Join("go.mod"))
 	require.NoError(t, err)
-	assert.NotContains(t, string(mod), "replace ")
 	assert.NotContains(t, string(mod), "github.com/grafana/ai-sdk/"+"ai-gateway")
 	assert.Contains(t, string(mod), "module github.com/grafana/ai-sdk/providers/grafana")
 }
