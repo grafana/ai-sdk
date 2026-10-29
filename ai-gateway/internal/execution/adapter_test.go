@@ -577,7 +577,7 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 		invalidStream("stream-start after raw", 1, provider.StreamPart{Type: provider.PartRaw}, provider.StreamPart{Type: provider.PartStreamStart}),
 		invalidStream("metadata after content", 1, streamPart(provider.PartTextStart, "t"), provider.StreamPart{Type: provider.PartResponseMeta}),
 		invalidStream("metadata with open reasoning", 2, provider.StreamPart{Type: provider.PartStreamStart}, streamPart(provider.PartReasoningStart, "r"), provider.StreamPart{Type: provider.PartResponseMeta}),
-		invalidStream("tool ID reused in a later segment", 2, toolCall("c", false), provider.StreamPart{Type: provider.PartResponseMeta}, toolCall("c", false)),
+		invalidStream("tool ID reused in a later segment", 2, toolCall("segment", false), provider.StreamPart{Type: provider.PartResponseMeta}, toolCall("segment", false)),
 		invalidStream("content after finish", 3, streamPart(provider.PartTextStart, "t"), streamPart(provider.PartTextEnd, "t"), finishPart(), streamPart(provider.PartTextStart, "late")),
 		invalidStream("second finish", 2, finishPart(), provider.StreamPart{Type: provider.PartRaw}, finishPart()),
 		invalidStream("text delta first", 0, streamPart(provider.PartTextDelta, "t")),
