@@ -93,6 +93,20 @@ func TestProject_InvalidObservationOmitted(t *testing.T) {
 	}
 }
 
+func TestProject_ConfiguredRequiresCanonical(t *testing.T) {
+	decisions := []fallback.Attempt{{Index: 1, Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected}}
+	assert.Nil(t, Project("alias", "", decisions, nil))
+	assert.Nil(t, Project("alias", "\xff", decisions, nil))
+	attempts := newAttemptCapture("alias", selectConfigured(t, catalog.ResolvedModel{Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}), SummaryRedactor{})
+	attempts.enter()
+	assert.Nil(t, attempts.view(nil).Overview)
+	got := Project("alias", "public", decisions, nil)
+	require.NotNil(t, got)
+	encoded, err := json.Marshal(got)
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"canonicalModelId":"public"`)
+}
+
 func TestProject_SelectedErrorPartsNotDuplicated(t *testing.T) {
 	got := Project("public", "public", []fallback.Attempt{{Index: 1, Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected}}, nil)
 	require.NotNil(t, got)

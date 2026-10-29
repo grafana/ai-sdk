@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/manifestdata"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/service"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 )
 
@@ -155,7 +156,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(sinks.telemetry, logger, sinks.agent, settings.ProviderWire.StreamDrainDuration)
+	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(sinks.telemetry, logger, sinks.agent, execution.DefaultLimits.StreamDrainDuration)
 	if err != nil {
 		return nil, err
 	}
@@ -163,24 +164,25 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	errorWriter := providerv4.NewHostErrorWriter()
-	configuredLanguage, err := providerv4.New(providerv4.Config{Selector: service.NewConfiguredSelector(catalog), Limits: settings.ProviderWire, ConfiguredAPIKeys: secrets})
+	var byokOptions *service.BYOKOptions
+	if settings.Access.Mode == gatewayauth.AccessModeCloud {
+		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: byokFactory}
+	}
+	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
-	routes := routeHandlers{
-		configuredDiscovery: service.ConfiguredDiscovery(discovery.New(catalog, errorWriter), errorWriter),
-		configuredLanguage:  configuredLanguage,
+	discoveryHandler := discovery.New(catalog, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
+	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language))
+}
+
+// newLanguageHandler serves ProviderWire V4 over one execution runtime.
+func newLanguageHandler(config execution.Config) (http.Handler, error) {
+	runtime, err := execution.New(config)
+	if err != nil {
+		return nil, err
 	}
-	if settings.Access.Mode == gatewayauth.AccessModeCloud {
-		byokLanguage, err := providerv4.New(providerv4.Config{Selector: service.NewBYOKSelector(nativeClient, byokFactory), Limits: settings.ProviderWire, ConfiguredAPIKeys: secrets})
-		if err != nil {
-			return nil, err
-		}
-		routes.byokDiscovery = service.BYOKDiscovery(errorWriter)
-		routes.byokLanguage = byokLanguage
-	}
-	return newHandler(settings.Access, sinks.telemetry, errorWriter, routes), nil
+	return providerv4.New(runtime)
 }
 
 func newAuthenticator(lookupEnv config.LookupEnv) (authn.Authenticator, error) {

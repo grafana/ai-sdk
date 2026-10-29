@@ -2315,7 +2315,8 @@ func TestSerializeToolOutput_ExecutionDenied(t *testing.T) {
 		Reason: new("user rejected the tool call"),
 	}
 
-	blocks := serializeToolOutput(&output, nil, nil)
+	blocks, err := serializeToolOutput(&output, nil, nil)
+	require.NoError(t, err)
 
 	require.Len(t, blocks, 1)
 	require.NotNil(t, blocks[0].OfText)
@@ -2327,7 +2328,8 @@ func TestSerializeToolOutput_ExecutionDenied_DefaultReason(t *testing.T) {
 		Type: provider.ToolOutputExecutionDenied,
 	}
 
-	blocks := serializeToolOutput(&output, nil, nil)
+	blocks, err := serializeToolOutput(&output, nil, nil)
+	require.NoError(t, err)
 
 	assert.Equal(t, "Tool call execution denied.", blocks[0].OfText.Text)
 }
@@ -2341,7 +2343,8 @@ func TestSerializeToolOutput_Content(t *testing.T) {
 		},
 	}
 
-	blocks := serializeToolOutput(&output, nil, nil)
+	blocks, err := serializeToolOutput(&output, nil, nil)
+	require.NoError(t, err)
 
 	require.Len(t, blocks, 2)
 	require.NotNil(t, blocks[0].OfText)
@@ -2354,65 +2357,191 @@ func TestSerializeToolOutput_FileEntries(t *testing.T) {
 	file := func(mediaType string, data provider.DataContent) provider.ToolResultContentValue {
 		return provider.ToolResultContentValue{Type: provider.ToolContentFile, MediaType: mediaType, Data: &data}
 	}
+	reference := func(mediaType, raw string) provider.ToolResultContentValue {
+		return file(mediaType, provider.ReferenceDataContent(json.RawMessage(raw)))
+	}
+	legacy := func(t *testing.T, raw string) provider.ToolResultContentValue {
+		var entry provider.ToolResultContentValue
+		require.NoError(t, json.Unmarshal([]byte(raw), &entry))
+		return entry
+	}
+	text := provider.ToolResultContentValue{Type: provider.ToolContentText, Text: "attachments"}
 	tests := []struct {
-		name        string
-		entry       provider.ToolResultContentValue
-		wantContent string
-		wantBetas   []sdk.AnthropicBeta
-		wantWarning string
+		name         string
+		entries      func(t *testing.T) []provider.ToolResultContentValue
+		wantContent  string
+		wantBetas    []sdk.AnthropicBeta
+		wantWarnings []string
 	}{
 		{
-			name:        "image URL",
-			entry:       file("image/png", provider.URLDataContent("https://example.com/a.png")),
+			name: "image URL",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{file("image/png", provider.URLDataContent("https://example.com/a.png"))}
+			},
 			wantContent: `[{"type":"image","source":{"type":"url","url":"https://example.com/a.png"}}]`,
 		},
 		{
-			name:        "non-image URL becomes a document",
-			entry:       file("text/plain", provider.URLDataContent("https://example.com/a.txt")),
+			name: "non-image URL becomes a document",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{file("text/plain", provider.URLDataContent("https://example.com/a.txt"))}
+			},
 			wantContent: `[{"type":"document","source":{"type":"url","url":"https://example.com/a.txt"}}]`,
 		},
 		{
-			name:        "PDF data adds the PDF beta",
-			entry:       file("application/pdf", provider.Base64DataContent("cGRm")),
+			name: "PDF data adds the PDF beta",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{file("application/pdf", provider.Base64DataContent("cGRm"))}
+			},
 			wantContent: `[{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"cGRm"}}]`,
 			wantBetas:   []sdk.AnthropicBeta{"pdfs-2024-09-25"},
 		},
 		{
-			name:        "unsupported media type warns",
-			entry:       file("application/zip", provider.Base64DataContent("emlw")),
-			wantContent: `[]`,
-			wantWarning: "unsupported tool content part type: file with media type: application/zip",
+			name: "unsupported media type warns",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{file("application/zip", provider.Base64DataContent("emlw"))}
+			},
+			wantContent:  `[]`,
+			wantWarnings: []string{"unsupported tool content part type: file with media type: application/zip"},
 		},
 		{
-			name:        "reference data warns",
-			entry:       file("application/pdf", provider.ReferenceDataContent(json.RawMessage(`{"anthropic":"file_1"}`))),
-			wantContent: `[]`,
-			wantWarning: "unsupported tool content part type: file with data type: reference",
+			name: "text data warns",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{file("text/plain", provider.TextDataContent("hi"))}
+			},
+			wantContent:  `[]`,
+			wantWarnings: []string{"unsupported tool content part type: file with data type: text"},
 		},
 		{
-			name:        "text data warns",
-			entry:       file("text/plain", provider.TextDataContent("hi")),
-			wantContent: `[]`,
-			wantWarning: "unsupported tool content part type: file with data type: text",
+			name: "image reference becomes a file image",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{reference("image/png", `{"anthropic":"file_img"}`)}
+			},
+			wantContent: `[{"type":"image","source":{"type":"file","file_id":"file_img"}}]`,
+			wantBetas:   []sdk.AnthropicBeta{filesAPIBeta},
+		},
+		{
+			name: "PDF reference becomes a file document without the PDF beta",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{reference("application/pdf", `{"anthropic":"file_1"}`)}
+			},
+			wantContent: `[{"type":"document","source":{"type":"file","file_id":"file_1"}}]`,
+			wantBetas:   []sdk.AnthropicBeta{filesAPIBeta},
+		},
+		{
+			name: "text and zip references become file documents",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{
+					reference("text/plain", `{"anthropic":"file_txt"}`),
+					reference("application/zip", `{"anthropic":"file_zip"}`),
+				}
+			},
+			wantContent: `[{"type":"document","source":{"type":"file","file_id":"file_txt"}},{"type":"document","source":{"type":"file","file_id":"file_zip"}}]`,
+			wantBetas:   []sdk.AnthropicBeta{filesAPIBeta},
+		},
+		{
+			name: "empty reference IDs are sent for image and document targets",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{
+					reference("image/png", `{"anthropic":""}`),
+					reference("application/pdf", `{"anthropic":""}`),
+				}
+			},
+			wantContent: `[{"type":"image","source":{"type":"file","file_id":""}},{"type":"document","source":{"type":"file","file_id":""}}]`,
+			wantBetas:   []sdk.AnthropicBeta{filesAPIBeta},
+		},
+		{
+			name: "multi-provider reference uses the anthropic ID",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{reference("application/pdf", `{"anthropic":"f","openai":"g"}`)}
+			},
+			wantContent: `[{"type":"document","source":{"type":"file","file_id":"f"}}]`,
+			wantBetas:   []sdk.AnthropicBeta{filesAPIBeta},
+		},
+		{
+			name: "legacy file-reference entry",
+			entries: func(t *testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{legacy(t, `{"type":"file-reference","mediaType":"image/png","providerReference":{"anthropic":"file_legacy"}}`)}
+			},
+			wantContent: `[{"type":"image","source":{"type":"file","file_id":"file_legacy"}}]`,
+			wantBetas:   []sdk.AnthropicBeta{filesAPIBeta},
+		},
+		{
+			name: "reference and PDF data add each beta once",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{
+					reference("application/pdf", `{"anthropic":"file_1"}`),
+					file("application/pdf", provider.Base64DataContent("cGRm")),
+					reference("image/png", `{"anthropic":"file_2"}`),
+					file("application/pdf", provider.Base64DataContent("cGRm")),
+				}
+			},
+			wantContent: `[{"type":"document","source":{"type":"file","file_id":"file_1"}},{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"cGRm"}},{"type":"image","source":{"type":"file","file_id":"file_2"}},{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"cGRm"}}]`,
+			wantBetas:   []sdk.AnthropicBeta{filesAPIBeta, "pdfs-2024-09-25"},
+		},
+		{
+			name: "mixed entries keep order",
+			entries: func(*testing.T) []provider.ToolResultContentValue {
+				return []provider.ToolResultContentValue{
+					text,
+					file("application/zip", provider.Base64DataContent("UEsDBA==")),
+					reference("application/pdf", `{"anthropic":"file_1"}`),
+					file("text/plain", provider.TextDataContent("inline notes")),
+					file("text/plain", provider.URLDataContent("https://example.com/notes.txt")),
+					file("image/png", provider.URLDataContent("https://example.com/map.png")),
+					file("image/png", provider.Base64DataContent("aW1n")),
+					file("application/pdf", provider.BytesDataContent([]byte("%PDF-"))),
+				}
+			},
+			wantContent: `[{"type":"text","text":"attachments"},{"type":"document","source":{"type":"file","file_id":"file_1"}},{"type":"document","source":{"type":"url","url":"https://example.com/notes.txt"}},{"type":"image","source":{"type":"url","url":"https://example.com/map.png"}},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"aW1n"}},{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBERi0="}}]`,
+			wantBetas:   []sdk.AnthropicBeta{filesAPIBeta, "pdfs-2024-09-25"},
+			wantWarnings: []string{
+				"unsupported tool content part type: file with media type: application/zip",
+				"unsupported tool content part type: file with data type: text",
+			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			output := provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{tc.entry}}
+			output := provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: tc.entries(t)}
 			var betas []sdk.AnthropicBeta
 			var warnings []provider.Warning
 
-			blocks := serializeToolOutput(&output, &betas, &warnings)
+			blocks, err := serializeToolOutput(&output, &betas, &warnings)
+			require.NoError(t, err)
 
 			encoded, err := json.Marshal(blocks)
 			require.NoError(t, err)
 			assert.JSONEq(t, tc.wantContent, string(encoded))
 			assert.Equal(t, tc.wantBetas, betas)
-			if tc.wantWarning == "" {
-				assert.Empty(t, warnings)
-				return
+			var wantWarnings []provider.Warning
+			for _, message := range tc.wantWarnings {
+				wantWarnings = append(wantWarnings, provider.Warning{Type: provider.WarnOther, Message: message})
 			}
-			assert.Equal(t, []provider.Warning{{Type: provider.WarnOther, Message: tc.wantWarning}}, warnings)
+			assert.Equal(t, wantWarnings, warnings)
+		})
+	}
+}
+
+func TestSerializeToolOutput_ReferenceWithoutAnthropicID(t *testing.T) {
+	tests := []struct {
+		name      string
+		reference string
+		wantErr   string
+	}{
+		{name: "other provider", reference: `{"openai":"file-123"}`, wantErr: "anthropic: no provider reference found for provider anthropic; available providers: openai"},
+		{name: "key is not normalized", reference: `{"Anthropic":"file-123"}`, wantErr: "anthropic: no provider reference found for provider anthropic; available providers: Anthropic"},
+		{name: "empty reference", reference: `{}`, wantErr: "anthropic: no provider reference found for provider anthropic; available providers: "},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data := provider.ReferenceDataContent(json.RawMessage(tc.reference))
+			output := provider.ToolResultOutput{Type: provider.ToolOutputContent, Content: []provider.ToolResultContentValue{
+				{Type: provider.ToolContentFile, MediaType: "application/pdf", Data: &data},
+			}}
+
+			_, err := serializeToolOutput(&output, nil, nil)
+
+			require.EqualError(t, err, tc.wantErr)
 		})
 	}
 }
@@ -2499,7 +2628,8 @@ func TestSerializeToolOutput_UnsupportedTypeWarns(t *testing.T) {
 	output := provider.ToolResultOutput{Type: provider.ToolResultOutputType("future")}
 	var warnings []provider.Warning
 
-	blocks := serializeToolOutput(&output, nil, &warnings)
+	blocks, err := serializeToolOutput(&output, nil, &warnings)
+	require.NoError(t, err)
 
 	require.Len(t, blocks, 1)
 	require.NotNil(t, blocks[0].OfText)

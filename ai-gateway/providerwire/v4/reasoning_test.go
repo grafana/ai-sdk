@@ -71,7 +71,8 @@ func TestReasoningConcurrentLifecycle(t *testing.T) {
 	for _, part := range parts {
 		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, part), part.Type)
 	}
-	require.Equal(t, streamPartFinished, h.processStreamPart(w, state, finishPart()))
+	require.Equal(t, streamPartContinue, h.processStreamPart(w, state, finishPart()))
+	require.Equal(t, segmentFinished, state.phase)
 	assert.Contains(t, w.Body.String(), `"delta":""`)
 	assert.Contains(t, w.Body.String(), `"providerMetadata":{}`)
 	assert.Contains(t, w.Body.String(), "end-only")
@@ -89,7 +90,6 @@ func TestReasoningRequestRejectsBeforeResolution(t *testing.T) {
 		`{"type":"reasoning-file","mediaType":"image/png","data":{"type":"reference","reference":{}}}`,
 		`{"type":"reasoning-file","mediaType":"image/png","data":{"type":"data","data":""},"filename":"private"}`,
 		`{"type":"reasoning","text":"","providerOptions":{"anthropic":null}}`,
-		`{"type":"reasoning","text":"","providerOptions":{"gateway":{"token":"private"}}}`,
 	} {
 		for _, streaming := range []string{"true", "false"} {
 			harness := newRuntimeHarness(t, testLimits())

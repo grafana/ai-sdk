@@ -7,15 +7,15 @@ Define the production strict, bounded ProviderWire V4 streaming text runtime and
 ## Requirements
 
 ### Requirement: Constructed streaming limits
-The strict ProviderWire V4 handler SHALL require a positive stream idle duration and a positive post-cancellation drain duration. It SHALL NOT take a total model duration, a provider stream-part count or a complete SSE frame byte limit. Complete frames SHALL consist of the `data: ` prefix, JSON payload, and terminating `\n\n`.
+The strict ProviderWire V4 handler SHALL use the stream idle and post-cancellation drain durations of the execution runtime it is constructed from, which gateway-execution-runtime requires to be positive. It SHALL NOT take a total model duration, a provider stream-part count or a complete SSE frame byte limit. Complete frames SHALL consist of the `data: ` prefix, JSON payload, and terminating `\n\n`.
 
 #### Scenario: Valid streaming limits
-- **WHEN** a caller supplies positive idle and drain durations
+- **WHEN** a handler is constructed from a runtime with positive idle and drain durations
 - **THEN** handler construction SHALL succeed and runtime streaming behavior SHALL be fixed by those values
 
 #### Scenario: Invalid streaming limits
 - **WHEN** a streaming duration is zero or negative
-- **THEN** construction SHALL fail before the handler serves a request
+- **THEN** runtime construction SHALL fail before any handler serves a request
 
 ### Requirement: Shared strict streaming request pipeline
 Unary and streaming SHALL share bounded validation/mapping and one authenticated host selection. Supported streaming SHALL invoke DoStream once, never DoGenerate, without repeated selection or catalog access for BYOK; failures before invocation SHALL remain safe non-2xx JSON.
@@ -57,23 +57,23 @@ A supported streaming request SHALL invoke `DoStream` exactly once and SHALL NOT
 
 ### Requirement: Single-owner stream setup and logical commitment
 
-The request context's deadline SHALL cover `DoStream` setup and all later stream consumption. Setup SHALL execute with panic recovery so request cancellation or timeout can end handler latency even if `DoStream` does not return. Every returned stream SHALL have one cleanup owner: an outcome received by the handler belongs to the handler, while setup work SHALL clean up a stream returned after the request has ended.
+The request context's deadline SHALL cover `DoStream` setup and all later stream consumption. Setup SHALL run synchronously through the execution runtime with panic recovery. Every returned stream SHALL have one cleanup owner, the runtime: it SHALL cancel and drain exactly once a stream the handler consumed, a stream returned with an error, and a stream returned after the request context ended.
 
 #### Scenario: Stream setup fails before commitment
 - **WHEN** `DoStream` returns an error, panics, returns `nil, nil`, or returns a result with a nil stream channel
-- **THEN** the handler SHALL return the corresponding bounded non-2xx safe JSON response and SHALL not commit SSE
+- **THEN** the handler SHALL return the corresponding non-2xx safe JSON response and SHALL not commit SSE
 
 #### Scenario: Result and error include a stream
 - **WHEN** `DoStream` returns both an error and a non-nil stream channel
-- **THEN** the outcome SHALL remain pre-commit, its single owner SHALL cancel and start asynchronous bounded drain exactly once, and the handler SHALL return bounded non-2xx JSON without waiting for drain duration
+- **THEN** the outcome SHALL remain pre-commit, the runtime SHALL cancel and start asynchronous bounded drain exactly once, and the handler SHALL return non-2xx JSON without waiting for drain duration
 
 #### Scenario: Setup completion races termination
-- **WHEN** a valid setup outcome and request cancellation or timeout become ready concurrently
-- **THEN** either the handler SHALL receive and own the stream or the setup worker SHALL retain and clean up the late stream, with no unowned channel or duplicate cleanup
+- **WHEN** `DoStream` returns a valid stream after the request context was canceled or its deadline expired
+- **THEN** the handler SHALL return the pre-commit cancellation or timeout JSON failure, and the runtime SHALL cancel and drain the stream exactly once
 
 #### Scenario: Non-nil stream commits streaming mode
-- **WHEN** the handler receives a non-nil result and stream channel without error
-- **THEN** the response mode SHALL irrevocably become HTTP 200 SSE before the first provider part is interpreted and the handler SHALL own cleanup
+- **WHEN** the handler receives a non-nil result and stream channel without error while the request context is live
+- **THEN** the response mode SHALL irrevocably become HTTP 200 SSE before the first provider part is interpreted, and the runtime SHALL own cleanup
 
 #### Scenario: Initial provider part never arrives
 - **WHEN** setup establishes a stream but no first provider part arrives before cancellation or timeout
@@ -160,8 +160,8 @@ Streaming SHALL preserve represented native identity and sequential text-block s
 
 #### Scenario: Native response metadata and text block state policy
 - **WHEN** the activated Gateway enforces this contract
-- **THEN** After public start, the state machine SHALL accept at most one response-metadata part before payload output, sequential text blocks, independent tool events under gateway-streaming-function-tools, supported reasoning/sources/custom under their capabilities, non-terminal provider errors and exactly one finish. Response metadata SHALL copy representable native ResponseID, ModelID and Timestamp at registered id, modelId and timestamp fields. Nonempty native strings SHALL remain unchanged; optional empty Go strings and zero timestamps SHALL be omitted as documented unrepresentable-presence adaptations. A nonzero timestamp SHALL encode a validated UTC RFC3339Nano instant. A provider metadata part with no identity SHALL contain only its type. The runtime SHALL NOT synthesize missing metadata or substitute requested/canonical route identity. Provider identity, headers and opaque metadata remain outside this scoped identity change.
-- **AND** Configured canonical identity SHALL remain authoritative for configured resolution and operator logical metrics, separately from returned identity. BYOK selection and observation SHALL instead follow the request-scoped identity and bounded-cardinality rules in gateway-text-observability, without catalog lookup or response-derived logical identity. Each text-start ID SHALL remain nonempty, valid UTF-8 and globally unique within its stream, opening the only active text block. Deltas/ends SHALL use its active ID and required empty deltas SHALL survive. Provider errors SHALL not change text/metadata state. Existing reasoning/source/tool first-output placement rules SHALL remain effective. New native identity strings and timestamps SHALL be validated before any write.
+- **THEN** After public start, the state machine SHALL accept response-metadata and finish parts under the sequential response segment rules, sequential text blocks, independent tool events under gateway-streaming-function-tools, supported reasoning/sources/custom under their capabilities and non-terminal provider errors. Response metadata SHALL copy representable native ResponseID, ModelID and Timestamp at registered id, modelId and timestamp fields. Nonempty native strings SHALL remain unchanged; optional empty Go strings and zero timestamps SHALL be omitted as documented unrepresentable-presence adaptations. A nonzero timestamp SHALL encode a validated UTC RFC3339Nano instant. A provider metadata part with no identity SHALL contain only its type. The runtime SHALL NOT synthesize missing metadata or substitute requested/canonical route identity. Provider identity, headers and opaque metadata remain outside this scoped identity change.
+- **AND** Configured canonical identity SHALL remain authoritative for configured resolution and operator logical metrics, separately from returned identity. BYOK selection and observation SHALL instead follow the request-scoped identity and bounded-cardinality rules in gateway-text-observability, without catalog lookup or response-derived logical identity. Each text-start ID SHALL remain nonempty, valid UTF-8 and unique within its response segment, opening the only active text block. Deltas/ends SHALL use its active ID and required empty deltas SHALL survive. Provider errors SHALL not change text/segment state. Reasoning, source, custom and tool output SHALL NOT prevent a later response-metadata part once no block is open. New native identity strings and timestamps SHALL be validated before any write.
 
 #### Scenario: Native metadata precedes output
 - **WHEN** a configured provider emits native response identity different from requested alias and canonical route before payload output
@@ -184,16 +184,20 @@ Streaming SHALL preserve represented native identity and sequential text-block s
 Each text-start, text-delta and text-end SHALL preserve supported opaque providerMetadata at its original event position under gateway-provider-metadata, including absent versus explicit empty presence. Content metadata SHALL NOT be moved into response-metadata.
 
 #### Scenario: Sequential text blocks are valid
-- **WHEN** a provider emits multiple non-overlapping text start/delta/end blocks with unique IDs
+- **WHEN** a provider emits multiple non-overlapping text start/delta/end blocks with IDs unique within their segment
 - **THEN** all events SHALL be emitted in order and empty delta strings SHALL remain present
 
 #### Scenario: Text lifecycle is invalid
-- **WHEN** a text ID is empty, invalid UTF-8, reused, mismatched, opened while another text block is active, or ended without an active matching block
+- **WHEN** a text ID is empty, invalid UTF-8, reused within its segment, mismatched, opened while another text block is active, or ended without an active matching block
 - **THEN** the handler SHALL cancel provider work and attempt at most one synthetic terminal internal error
 
 #### Scenario: Metadata placement is invalid
-- **WHEN** metadata is duplicated or arrives after text, tool, reasoning, source or custom output starts
+- **WHEN** metadata arrives while a text, reasoning or tool-input block is open or a tool preview series lacks its final result
 - **THEN** it SHALL not be forwarded and the existing safe terminal behavior SHALL apply
+
+#### Scenario: Metadata follows closed output
+- **WHEN** metadata arrives after text, tool, reasoning, source or custom output with no block open
+- **THEN** it SHALL be forwarded and open a new response segment
 
 #### Scenario: Metadata representation exceeds bounds
 - **WHEN** native identity contains invalid UTF-8 or an invalid timestamp
@@ -215,27 +219,27 @@ Nonempty native strings SHALL remain unchanged; optional empty Go strings and ze
 
 ### Requirement: Canonical telemetry and sequential text lifecycle
 
-Canonical identity SHALL remain authoritative for resolution and operator logical metrics, separately from returned identity. Each text-start ID SHALL remain nonempty, valid UTF-8 and globally unique within its stream, opening the only active text block. Deltas/ends SHALL use its active ID and required empty deltas SHALL survive. Provider errors SHALL not change text/metadata state. Existing reasoning/source/tool first-output placement rules SHALL remain effective.
+Canonical identity SHALL remain authoritative for resolution and operator logical metrics, separately from returned identity. Each text-start ID SHALL remain nonempty, valid UTF-8 and unique within its response segment, opening the only active text block. Deltas/ends SHALL use its active ID and required empty deltas SHALL survive. Provider errors SHALL not change text/segment state. Reasoning, source, custom and tool output SHALL follow the sequential response segment rules.
 
 #### Scenario: Canonical telemetry and sequential text lifecycle
 - **WHEN** a provider error interleaves with a text block whose ID differs from native model identity
-- **THEN** canonical telemetry SHALL stay separate, the active nonempty UTF-8 text ID SHALL remain unique, and errors SHALL NOT change text/metadata state
+- **THEN** canonical telemetry SHALL stay separate, the active nonempty UTF-8 text ID SHALL remain unique within its segment, and errors SHALL NOT change text/segment state
 
 ### Requirement: Finish validation and terminal authority
 
-A finish part SHALL be valid only when no text or tool-input block is active, its warnings are empty, and it contains a non-nil registered finish reason and non-nil usage.
+A finish part SHALL be valid only when no text, reasoning or tool-input block is active, no tool preview series lacks its final result, the current segment has not already finished, its warnings are empty, and it contains a non-nil registered finish reason and non-nil usage. A written finish SHALL never be retracted or followed by a synthetic finish.
 
 #### Scenario: Finish closes a valid stream
-- **WHEN** a valid finish is emitted with no active text or tool-input block
-- **THEN** the finish SHALL preserve normalized usage, finish reason and supplied ordinary providerMetadata, unrelated transport fields SHALL remain omitted, and the response SHALL end at clean EOF without `[DONE]`
+- **WHEN** a valid finish is emitted with no active text, reasoning or tool-input block
+- **THEN** the finish SHALL preserve normalized usage, finish reason and supplied ordinary providerMetadata, unrelated transport fields SHALL remain omitted, the handler SHALL keep reading the provider stream under the sequential response segment rules, and the response SHALL end at clean EOF without `[DONE]` when the provider then closes
 
 #### Scenario: Finish is invalid
-- **WHEN** finish arrives with an active block, warnings, nil or invalid usage, nil or invalid finish reason, unsafe token counts, invalid supplied raw usage, or invalid finish metadata
+- **WHEN** finish arrives with an active block, an unfinished tool preview series, after a finish without intervening response-metadata, with warnings, nil or invalid usage, nil or invalid finish reason, unsafe token counts, invalid supplied raw usage, or invalid finish metadata
 - **THEN** finish SHALL not be written and the handler SHALL attempt at most one synthetic terminal internal error
 
 #### Scenario: Provider emits after finish
 - **WHEN** any provider part is available after a valid finish has been written
-- **THEN** finish SHALL remain the final public event and the later part SHALL be suppressed while cancellation and bounded drain complete
+- **THEN** response-metadata, raw and provider error parts SHALL be processed under their rules, any other part SHALL fail safely under the parts-after-a-finish rule, and the written finish SHALL remain in place
 
 #### Scenario: Native raw object survives finish
 - **WHEN** a valid finish contains normalized usage and a supplied raw JSON object of any size, including nested provider-native keys or `{}`
@@ -255,31 +259,28 @@ A finish part SHALL be valid only when no text or tool-input block is active, it
 
 ### Requirement: Finish usage metadata and final public authority
 
-Known usage counts SHALL be non-negative JavaScript-safe integers and SHALL use the registered input/output groups; `usage.raw` SHALL contain a supplied valid provider JSON object, or be omitted when Raw is absent; finish providerMetadata SHALL be preserved as opaque object-valued namespaces under gateway-provider-metadata. A valid finish SHALL be written once as the final public event and SHALL be authoritative.
+Known usage counts SHALL be non-negative JavaScript-safe integers and SHALL use the registered input/output groups; `usage.raw` SHALL contain a supplied valid provider JSON object, or be omitted when Raw is absent; finish providerMetadata SHALL be preserved as opaque object-valued namespaces under gateway-provider-metadata. Each valid finish SHALL be written once in place and SHALL remain authoritative for its segment.
 
 #### Scenario: Finish usage metadata and final public authority
 - **WHEN** a valid finish contains normalized counts, a raw object and opaque metadata
-- **THEN** registered usage groups/safe counts and raw/metadata presence SHALL survive, with finish written once as final authority
-
-### Requirement: Immediate EOF and post-finish provider suppression
-
-The handler SHALL then cancel provider work, begin bounded asynchronous drain, and return clean EOF immediately without waiting for provider channel closure or emitting `[DONE]`. Provider parts observed after a written finish SHALL be suppressed during drain, treated as provider lifecycle defects for later operational reporting, and SHALL never produce a second public terminal event.
-
-#### Scenario: Immediate EOF and post-finish provider suppression
-- **WHEN** a provider emits another part after valid finish without closing its channel
-- **THEN** the handler SHALL cancel, asynchronously bounded-drain and return clean EOF immediately without DONE or another public event, classifying later parts as lifecycle defects
+- **THEN** registered usage groups/safe counts and raw/metadata presence SHALL survive, with the finish written once in place and never rewritten by a later finish
+- **AND** when the provider closes with that finish as the last lifecycle part, it SHALL be the final lifecycle event, with no synthetic error after it; provider error and raw parts MAY follow it under their rules
 
 ### Requirement: Ordered non-terminal provider errors
 
-Each pre-finish provider `PartError` SHALL be independently reduced through the closed safe-error classification and emitted in place with base fields `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`.
+Each provider `PartError`, before or after a finish, SHALL be independently reduced through the closed safe-error classification and emitted in place with base fields `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`.
 
 #### Scenario: Ordered non-terminal provider errors policy
 - **WHEN** the runtime encodes the corresponding response or stream event
-- **THEN** Optional `error.data` MAY carry native current-error and execution summaries under gateway-attempt-failure-evidence. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid.
+- **THEN** Optional `error.data` MAY carry native current-error and execution summaries under gateway-attempt-failure-evidence. A valid provider error SHALL not terminate the stream or alter lifecycle state; later metadata, content, additional provider errors, and finish SHALL remain valid under the sequential response segment rules.
 
 #### Scenario: Provider error is followed by content
 - **WHEN** a provider emits an error before or within a text block and later emits otherwise valid content and finish
 - **THEN** the client SHALL receive the safe error and every later event in provider order
+
+#### Scenario: Provider error follows a finish
+- **WHEN** a provider emits an error after a valid finish and then either closes or emits response-metadata and another segment
+- **THEN** the client SHALL receive the safe error in place, and the stream SHALL end at clean EOF or continue with the new segment
 
 #### Scenario: Multiple provider errors are ordered
 - **WHEN** a provider emits multiple errors separated by valid stream parts
@@ -310,18 +311,22 @@ Nil, malformed, or unclassifiable provider error values SHALL reduce to the cano
 
 ### Requirement: Synthetic terminal adapter errors
 
-Before valid finish, unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior. Reasoning start/delta/end and atomic reasoning-file events SHALL be supported under gateway-reasoning-content, URL/document sources SHALL be supported under gateway-sources, and atomic custom events SHALL be supported under gateway-custom-content. Raw parts SHALL follow gateway-raw-output. Ordinary generated files, approvals and unsupported tool behavior SHALL remain unsupported.
+Unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior, before and after a written finish. A provider close SHALL be premature unless the last lifecycle part is a valid finish. Ordinary generated files, approvals and unsupported tool behavior SHALL remain unsupported.
 
 #### Scenario: Reasoning lifecycle violation
-- **WHEN** reasoning ends without a matching active start, reuses an ended reasoning ID, or remains open at finish
+- **WHEN** reasoning ends without a matching active start, reuses an ended reasoning ID within its segment, or remains open at finish
 - **THEN** the handler SHALL produce at most one safe terminal error and no synthetic finish
 
 #### Scenario: Unsupported stream family appears
 - **WHEN** the text runtime receives provider-executed/dynamic/preliminary tool behavior, ordinary generated file, approval, or another unsupported part
 - **THEN** it SHALL emit at most one terminal internal error rather than serializing the provider-domain part
 
+### Requirement: Supported stream part families
+
+Reasoning start/delta/end and atomic reasoning-file events SHALL be supported under gateway-reasoning-content, URL/document sources SHALL be supported under gateway-sources, and atomic custom events SHALL be supported under gateway-custom-content. Raw parts SHALL follow gateway-raw-output.
+
 #### Scenario: Custom stream part is supported
-- **WHEN** the runtime receives a well-formed custom part between stream start and finish
+- **WHEN** the runtime receives a well-formed custom part within a response segment before its finish
 - **THEN** it SHALL emit the custom event and continue the stream rather than emitting a terminal error
 
 #### Scenario: Concurrent reasoning
@@ -330,11 +335,11 @@ Before valid finish, unsupported families, lifecycle violations, invalid output,
 
 ### Requirement: Adapter failure does not manufacture lifecycle completion
 
-Failure SHALL not synthesize block closures or a finish, nor emit after terminal authority or writer failure.
+Failure SHALL not synthesize block closures or a finish, nor emit after a terminal outcome or writer failure.
 
 #### Scenario: Adapter failure does not manufacture lifecycle completion
 - **WHEN** an unsupported part arrives while a text block is open
-- **THEN** failure SHALL NOT synthesize text-end or finish, nor write after terminal authority or writer failure
+- **THEN** failure SHALL NOT synthesize text-end or finish, nor write after a terminal outcome or writer failure
 
 ### Requirement: Complete bounded SSE framing and flushing
 
@@ -377,17 +382,17 @@ Each frame SHALL be completely encoded before any of its bytes are written.
 - **THEN** provider work SHALL be canceled with no subsequent write, while complete-frame encoding before write and the prohibition of event fields/DONE SHALL remain effective
 
 ### Requirement: Cancellation and timeouts
-The request context's deadline SHALL cover selection, setup, attempts and streaming without resets, and the handler SHALL add no total deadline of its own. Idle timeout SHALL follow represented provider parts; cancellation and timeout SHALL retain terminal authority, bounded cleanup and writer-failure behavior.
+The request context's deadline SHALL cover selection, setup, attempts and streaming without resets, and the handler SHALL add no total deadline of its own. Idle timeout SHALL follow represented provider parts; cancellation and timeout SHALL retain terminal authority, bounded cleanup and writer-failure behavior, including after a written finish.
 
 #### Scenario: Streaming deadline and terminal policy
 - **WHEN** selection or streaming encounters cancellation, timeout or competing terminal conditions
 - **THEN** The request context's deadline SHALL cover selection/construction, logical `DoStream` setup, all credential attempts and stream consumption.
 - **AND** Logical invocation, credential attempts and stream establishment SHALL NOT reset or extend the request deadline.
 - **AND** Expiry of the request context's deadline SHALL be a timeout, and cancellation of the request context SHALL be a cancellation.
-- **AND** Selection cancellation and late-result cleanup SHALL follow the shared bounded invocation contract.
+- **AND** Selection and setup SHALL run synchronously under the request context; a selection or stream returned after it ended SHALL be discarded under gateway-execution-runtime.
 - **AND** After stream commitment, the configured idle timeout SHALL restart after each accepted provider part is successfully represented, including a consumed start and a written provider error.
 - **AND** Request cancellation, request deadline expiry, or idle timeout SHALL cancel selection/provider work before the corresponding safe terminal response or event is written.
-- **AND** A valid finish written before another terminal outcome SHALL remain authoritative.
+- **AND** A valid finish written before another terminal outcome SHALL remain written and SHALL NOT be retracted; a later request cancellation, request deadline expiry or idle timeout SHALL still produce its corresponding safe terminal event after it.
 - **AND** When provider output, cancellation, and timeout become ready concurrently before terminal output, any applicable safe bounded outcome MAY win; the protocol does not define scheduler-level precedence.
 - **AND** Writer failure SHALL terminate immediately without another write.
 
@@ -396,8 +401,8 @@ The request context's deadline SHALL cover selection, setup, attempts and stream
 - **THEN** the handler SHALL produce at most one applicable bounded terminal outcome and SHALL not leak or clean up the stream twice
 
 #### Scenario: Selection exhausts streaming time
-- **WHEN** the request deadline expires during delayed or non-cooperative selection
-- **THEN** handler latency SHALL remain bounded with a pre-commit JSON failure, zero logical model invocations and bounded cleanup of late selection results
+- **WHEN** selection returns only after the request deadline expired
+- **THEN** the handler SHALL return a pre-commit timeout JSON failure with zero logical model invocations
 
 #### Scenario: Attempts inherit the remaining budget
 - **WHEN** selection consumes part of the time before the request deadline and the chosen model then tries multiple eligible credentials
@@ -412,8 +417,9 @@ The request context's deadline SHALL cover selection, setup, attempts and stream
 - **THEN** the model context SHALL be canceled before the idle-timeout event is encoded or written
 
 #### Scenario: Provider finish arrives before termination
-- **WHEN** a valid finish is written before cancellation or timeout terminates the stream
-- **THEN** finish SHALL be the authoritative final event
+- **WHEN** a valid finish is the last lifecycle part written before cancellation or timeout terminates the stream
+- **THEN** the finish SHALL remain written and SHALL NOT be retracted or followed by a synthetic finish
+- **AND** provider work SHALL be canceled before the terminal event is encoded, and the timeout error, or the cancellation error while the writer is still usable, SHALL be attempted after the finish as that terminal event
 
 #### Scenario: Accepted activity resets idle time
 - **WHEN** accepted provider parts arrive within each idle interval before the request deadline
@@ -421,19 +427,19 @@ The request context's deadline SHALL cover selection, setup, attempts and stream
 
 #### Scenario: Stream without a request deadline
 - **WHEN** the request context carries no deadline and the provider keeps emitting parts within the idle duration
-- **THEN** the stream SHALL continue until finish, caller cancellation or an idle timeout
+- **THEN** the stream SHALL continue until provider close, caller cancellation or an idle timeout
 
 ### Requirement: Streaming terminal authority and scheduler race boundary
 
-A valid finish written before another terminal outcome SHALL remain authoritative. When provider output, cancellation, and timeout become ready concurrently before terminal output, any applicable safe bounded outcome MAY win; the protocol does not define scheduler-level precedence. Writer failure SHALL terminate immediately without another write.
+A written valid finish SHALL never be retracted; a later idle timeout, deadline or cancellation SHALL produce its own terminal outcome after it. When provider output, cancellation, and timeout become ready concurrently before terminal output, any applicable safe bounded outcome MAY win; the protocol does not define scheduler-level precedence. Writer failure SHALL terminate immediately without another write.
 
 #### Scenario: Streaming terminal authority and scheduler race boundary
 - **WHEN** provider output and timeout become ready concurrently before terminal output
-- **THEN** any applicable safe bounded outcome MAY win without defined scheduler precedence; a previously written valid finish SHALL remain authoritative and writer failure SHALL prohibit another write
+- **THEN** any applicable safe bounded outcome MAY win without defined scheduler precedence; a previously written valid finish SHALL remain written and writer failure SHALL prohibit another write
 
 ### Requirement: Bounded stream ownership and drain
 
-Every returned stream SHALL have one receiver responsible for cleanup. A stream transferred from setup belongs to the handler; when model-context termination wins before transfer, the setup worker SHALL clean up any stream returned later. Terminal handling SHALL cancel provider work and start an asynchronous drain that reads only until channel close or the configured drain duration.
+Every returned stream SHALL have one cleanup owner, the execution runtime. Terminal handling SHALL cancel provider work and start one asynchronous drain that reads only until channel close or the configured drain duration.
 
 #### Scenario: Provider closes after cancellation
 - **WHEN** terminal handling cancels provider work and the provider closes its stream within the drain duration
@@ -441,23 +447,23 @@ Every returned stream SHALL have one receiver responsible for cleanup. A stream 
 
 #### Scenario: Provider ignores cancellation
 - **WHEN** a provider channel does not close before the drain duration
-- **THEN** handler latency and the handler-owned drain lifetime SHALL remain bounded even though provider-owned work may remain defective
+- **THEN** handler latency and the drain lifetime SHALL remain bounded even though provider-owned work may remain defective
 
 #### Scenario: Continuously ready drain reaches a hard bound
 - **WHEN** a canceled provider channel remains permanently ready with values
 - **THEN** the drain SHALL stop within the configured duration rather than consuming indefinitely
 
 #### Scenario: Setup returns a late stream
-- **WHEN** handler cancellation or timeout wins and `DoStream` later returns a non-nil stream
-- **THEN** the late setup owner SHALL cancel and bounded-drain that channel exactly once instead of abandoning it unread
+- **WHEN** `DoStream` returns a non-nil stream after the request context ended
+- **THEN** the runtime SHALL cancel and bounded-drain that channel exactly once instead of abandoning it unread
 
 ### Requirement: Bounded drain latency and provider lifecycle responsibility
 
-Draining SHALL not extend handler latency and SHALL remain bounded even when the provider channel is continuously ready. Providers SHALL remain responsible for observing cancellation and closing their channels; a provider call that never returns or a producer that remains blocked after bounded drain SHALL be classified as a provider lifecycle defect rather than a bounded Gateway resource.
+Draining SHALL not extend handler latency and SHALL remain bounded even when the provider channel is continuously ready. Providers SHALL remain responsible for observing cancellation, returning from setup and closing their channels; a provider call that never returns holds its own request, and a producer that remains blocked after bounded drain SHALL be classified as a provider lifecycle defect rather than a bounded Gateway resource.
 
 #### Scenario: Bounded drain latency and provider lifecycle responsibility
 - **WHEN** a canceled provider continuously produces parts or never returns
-- **THEN** Gateway drain/handler latency SHALL remain bounded, and non-cooperative provider-owned work SHALL be classified as a lifecycle defect
+- **THEN** Gateway drain latency SHALL remain bounded, a setup call that never returns SHALL hold only its own request, and non-cooperative provider-owned work SHALL be classified as a lifecycle defect
 
 ### Requirement: Streaming contract and cross-language evidence
 
@@ -489,15 +495,15 @@ The parity map SHALL identify the achieved strict streaming text scope and retai
 
 ### Requirement: Native-value regressions preserve terminal authority
 
-Native warning/source/identity changes SHALL preserve existing stream-start normalization, metadata placement, non-terminal provider errors, idle reset, authoritative finish, cancellation, writer failure and bounded cleanup rules. Raw/schema and exact-pinned TS/independent Go consumption tests SHALL establish these properties without relying on permissive client parsing.
+Native warning/source/identity changes SHALL preserve existing stream-start normalization, the sequential response segment rules, non-terminal provider errors, idle reset, per-segment finish authority, cancellation, writer failure and bounded cleanup rules. Raw/schema and exact-pinned TS/independent Go consumption tests SHALL establish these properties without relying on permissive client parsing.
 
 #### Scenario: Sources interleave and finish remains final
-- **WHEN** repeated and equal-cross-variant native source IDs interleave with active content and provider errors before finish, followed by later source/metadata parts
-- **THEN** accepted values SHALL retain order without closing active blocks, and finish SHALL suppress every later public part
+- **WHEN** repeated and equal-cross-variant native source IDs interleave with active content and provider errors before finish, followed by a later source without intervening response-metadata
+- **THEN** accepted values SHALL retain order without closing active blocks, the finish SHALL remain written, and the later source SHALL NOT be written but SHALL be followed by one synthetic terminal internal error
 
 #### Scenario: Cancellation or writer failure occurs
 - **WHEN** processing native-value events is canceled or a full-frame write/flush fails
-- **THEN** existing cancellation and single-owner bounded cleanup SHALL apply with no second write after writer failure or authoritative terminal output
+- **THEN** existing cancellation and single-owner bounded cleanup SHALL apply with no second write after writer failure or a terminal outcome
 
 ### Requirement: Optional streaming execution overview and current failures
 
@@ -573,3 +579,139 @@ Each finish and error frame SHALL be encoded once together with its optional exe
 #### Scenario: Optional error data cannot be encoded
 - **WHEN** encoding an error frame with its optional data fails
 - **THEN** the fixed base frame with the same classification SHALL be written
+
+### Requirement: Sequential response segments
+A committed stream SHALL consist of one or more response segments. The public start SHALL open the first segment, and every accepted response-metadata part SHALL open a new one. Response-metadata SHALL be accepted only while no text, reasoning or tool-input block is open and no tool preview series lacks its final result, the same condition a finish requires. Repeated response-metadata and finish parts SHALL be written in provider order.
+
+#### Scenario: Message-shaped segments
+- **WHEN** a provider emits metadata, content and a valid finish, then a raw part, then metadata, content and a valid finish again, and then closes its stream
+- **THEN** every part SHALL be written in order, including both metadata parts and both finish parts, and the response SHALL end at clean EOF
+
+#### Scenario: Response-shaped segments
+- **WHEN** a provider emits metadata, reasoning and a complete tool call, then metadata, a complete tool call, then metadata, text and one valid finish, and then closes its stream
+- **THEN** every part SHALL be written in order without a terminal error, and the response SHALL end at clean EOF
+
+#### Scenario: Metadata while a block is open
+- **WHEN** response-metadata arrives while a text, reasoning or tool-input block is open, or while a tool preview series lacks its final result
+- **THEN** the metadata SHALL NOT be written, provider work SHALL be canceled and at most one synthetic terminal internal error SHALL be attempted
+
+#### Scenario: Overlapping message start
+- **WHEN** a second message's response-metadata arrives before the previous message's text block has ended
+- **THEN** the handler SHALL fail safely as for metadata while a block is open, without closing the open block or writing a finish
+
+#### Scenario: Consecutive metadata parts
+- **WHEN** two valid response-metadata parts arrive with nothing open between them
+- **THEN** both SHALL be written, each opening a segment
+
+### Requirement: Segment-scoped and stream-scoped identifiers
+Text-start and reasoning-start IDs SHALL be unique within their response segment and MAY repeat in a later segment. Tool-input, tool-call and approval IDs SHALL remain unique for the whole stream and SHALL never reopen. A complete provider-executed call written in one segment SHALL remain eligible for its result in a later segment of the same stream.
+
+#### Scenario: Text ID repeats in a later segment
+- **WHEN** a segment ends a text block with ID `0` and a later segment opens a text block with ID `0`
+- **THEN** both blocks SHALL be written with their native ID unchanged
+
+#### Scenario: Text or reasoning ID repeats within a segment
+- **WHEN** a text-start or reasoning-start ID is reused within the same segment
+- **THEN** the reused start SHALL NOT be written and at most one synthetic terminal internal error SHALL be attempted
+
+#### Scenario: Tool ID reopens in a later segment
+- **WHEN** a later segment starts tool input or a tool call with an ID already used in an earlier segment
+- **THEN** the part SHALL NOT be written and at most one synthetic terminal internal error SHALL be attempted
+
+#### Scenario: Provider result crosses segments
+- **WHEN** a complete provider-executed call is written in the first segment and its matching final result arrives in a later segment
+- **THEN** the result SHALL be written in place and the stream SHALL continue
+
+### Requirement: Parts after a finish
+After a valid finish, only response-metadata, raw parts under gateway-raw-output, provider error parts or provider close SHALL follow. Any other part, including a second finish, SHALL NOT be written. The written finish SHALL remain in place, provider work SHALL be canceled and at most one synthetic terminal internal error SHALL follow it. A provider error part after a finish SHALL be written in place and SHALL NOT change lifecycle state.
+
+#### Scenario: Content follows a finish without metadata
+- **WHEN** a text, reasoning, tool, source, custom or approval part follows a valid finish without an intervening response-metadata part
+- **THEN** the part SHALL NOT be written and one synthetic terminal internal error SHALL follow the finish
+
+#### Scenario: Second finish without metadata
+- **WHEN** a second finish follows a valid finish without an intervening response-metadata part
+- **THEN** the second finish SHALL NOT be written and one synthetic terminal internal error SHALL follow the first finish
+
+#### Scenario: Provider error follows a finish
+- **WHEN** a valid finish is followed by a provider error part and the provider then closes its stream
+- **THEN** the error SHALL be written in place with its normal classification and the response SHALL end at clean EOF without a synthetic error
+
+#### Scenario: Raw part follows a finish
+- **WHEN** a raw part follows a valid finish and precedes the next response-metadata part
+- **THEN** the raw part SHALL be written when requested and dropped otherwise, and the next segment SHALL be accepted
+
+### Requirement: Stream completion on provider close
+The response SHALL end at provider close, at a terminal adapter or runtime failure, at idle timeout, request deadline or cancellation, or at writer failure, not at a finish. Lifecycle parts SHALL be every part except raw parts and provider error parts. Provider close SHALL be a clean EOF without `[DONE]` only when the last lifecycle part is a valid finish; otherwise the handler SHALL attempt one synthetic premature-close internal error.
+
+#### Scenario: Close after a finish
+- **WHEN** the provider closes its stream after a valid finish that is the last lifecycle part
+- **THEN** the response SHALL end at clean EOF without `[DONE]` or another event
+
+#### Scenario: Close without a finish
+- **WHEN** the provider closes its stream before any valid finish
+- **THEN** the handler SHALL attempt one synthetic internal error and SHALL NOT synthesize a finish or block end
+
+#### Scenario: Close after a new segment opens
+- **WHEN** the provider closes its stream after a valid finish followed by response-metadata
+- **THEN** the handler SHALL attempt one synthetic internal error after the metadata and SHALL NOT synthesize a finish
+
+### Requirement: Timeout and cancellation after a finish
+Idle timeout, request deadline expiry and request cancellation SHALL keep their normal terminal behavior after a written finish; only provider close SHALL depend on the last lifecycle part. The handler SHALL cancel provider work before encoding the terminal event and write it after the finish: a timeout error for idle timeout or deadline expiry, or a cancellation error only while the writer is still usable. The finish SHALL NOT be retracted.
+
+#### Scenario: Idle after a finish
+- **WHEN** a provider writes a valid finish and then neither emits nor closes until the idle timeout
+- **THEN** provider work SHALL be canceled before one timeout error event is written after the finish, the response SHALL end within the idle duration plus bounded handler latency, and cleanup SHALL remain single-owner and bounded
+
+#### Scenario: Stall between segments
+- **WHEN** a provider writes a valid finish for one message, has further messages pending and then stalls until the idle timeout or the request deadline
+- **THEN** the finish SHALL remain written and one timeout error event SHALL follow it, so the response SHALL NOT end at clean EOF
+
+#### Scenario: Cancellation after a finish
+- **WHEN** the request is canceled after a valid finish that is the last lifecycle part
+- **THEN** provider work SHALL be canceled and at most one cancellation error event SHALL be attempted after the finish, only if the writer is still usable
+
+#### Scenario: Idle after a segment opens
+- **WHEN** a valid finish is followed by response-metadata and the idle timeout then expires
+- **THEN** provider work SHALL be canceled before one timeout error event is written
+
+### Requirement: Per-finish usage and execution metadata
+Each valid finish SHALL forward its own normalized usage, supplied `usage.raw` and providerMetadata unchanged, including native safeguard results. The runtime SHALL NOT sum, merge, carry over or rewrite usage or metadata across finish parts. When an execution overview is available, every written finish SHALL carry it under `providerMetadata.gateway.execution`, encoded with that finish, without buffering or read-ahead.
+
+#### Scenario: Intermediate and final usage
+- **WHEN** two segments end with finish parts that report different normalized usage, raw usage and provider metadata
+- **THEN** each finish SHALL carry exactly its own values in its own position
+
+#### Scenario: Every finish is enriched
+- **WHEN** a configured stream with an available execution overview writes several finish parts
+- **THEN** each finish SHALL carry the same compact overview, and any native `gateway` namespace on each finish SHALL be relocated under it
+
+### Requirement: Segments share stream-global bounds and ownership
+Response segments SHALL NOT add or reset any bound. The idle timeout SHALL restart after each represented part in any segment, the request deadline SHALL cover all segments, and no part, segment, byte or frame count SHALL be imposed. One cleanup owner SHALL cancel before any terminal write and drain only after a terminal outcome. Later segments SHALL NOT re-enter candidate selection, fallback or replay.
+
+#### Scenario: Many segments within the deadlines
+- **WHEN** a provider emits many valid segments, each within the idle duration, before the request deadline and then closes
+- **THEN** every part of every segment SHALL be written in order and the response SHALL end at clean EOF
+
+#### Scenario: Continuously ready provider with segments
+- **WHEN** a provider keeps emitting valid segments without closing until the request deadline expires
+- **THEN** provider work SHALL be canceled at the deadline, at most one applicable terminal outcome SHALL be produced, and the drain SHALL stop within the drain duration
+
+#### Scenario: Later segment fails on a fallback route
+- **WHEN** a configured fallback candidate has been selected and a later segment of its stream fails validation
+- **THEN** the existing terminal failure SHALL apply and no other candidate SHALL be invoked
+
+### Requirement: Sequential segment evidence
+Automated evidence SHALL include focused raw-wire and schema tests for the segment rules. It SHALL replay the committed `expected-provider-parts.jsonl` of each registered sequential fixture through the real handler, read-only. Both registered clients SHALL reproduce each fixture's unchanged `expected.jsonl` and `expected-requests.jsonl` through the real adapters and handler. Mock-stream evidence SHALL NOT be described as live-provider acceptance.
+
+#### Scenario: Committed provider parts replay through the handler
+- **WHEN** the committed provider parts of the seven registered sequential fixtures are served through the handler with raw chunks requested
+- **THEN** every part SHALL be written in order with only documented ProviderWire projections, and each response SHALL end at clean EOF
+
+#### Scenario: Both clients reproduce the direct goldens
+- **WHEN** both registered clients call the seven fixtures through the real adapters and handler
+- **THEN** their UI chunks SHALL equal the unchanged `expected.jsonl` and the native requests SHALL equal the unchanged `expected-requests.jsonl`
+
+#### Scenario: Fixture inputs remain authentic
+- **WHEN** the sequential evidence is produced
+- **THEN** no `input*.chunks.txt`, `expected-provider-parts.jsonl`, `expected.jsonl` or `expected-requests.jsonl` file SHALL be modified, split or skipped

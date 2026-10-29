@@ -3,7 +3,7 @@ module github.com/grafana/ai-sdk/providers/grafana
 go 1.27.3
 
 require (
-	github.com/grafana/ai-sdk v0.1.0-alpha.2
+	github.com/grafana/ai-sdk v0.1.0-alpha.5
 	github.com/grafana/authlib v0.0.0-20260814184937-0d62418c2815
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/sync v0.24.0
@@ -36,3 +36,5 @@ require (
 	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
+
+replace github.com/grafana/ai-sdk => ../..

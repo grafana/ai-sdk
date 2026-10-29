@@ -2,10 +2,8 @@ package config
 
 import (
 	"testing"
-	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
-	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,10 +24,6 @@ func TestParseSettings_Defaults(t *testing.T) {
 			Protocol: AgentObservabilityGRPC,
 			Endpoint: "collector.example:4317",
 			TLS:      true,
-		},
-		ProviderWire: providerv4.Limits{
-			StreamIdleDuration:  30 * time.Second,
-			StreamDrainDuration: time.Second,
 		},
 	}, settings)
 }

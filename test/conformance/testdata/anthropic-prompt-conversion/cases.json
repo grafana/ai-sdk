@@ -297,7 +297,7 @@
   },
   {
     "name": "tool-result-dropped-file-entries",
-    "description": "SYNTHETIC: unsupported tool-result file entries are dropped with warnings; URL entries are kept.",
+    "description": "SYNTHETIC: unsupported tool-result file entries are dropped with warnings; reference and URL entries are kept in order.",
     "prompt": [
       {
         "role": "user",
@@ -375,6 +375,111 @@
                   "data": {
                     "type": "url",
                     "url": "https://example.com/map.png"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "tool-result-referenced-files",
+    "description": "SYNTHETIC: provider-referenced tool-result files become file-source image and document blocks in order, including empty IDs, and share the files API beta with a user-content reference.",
+    "prompt": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Summarize the report."
+          },
+          {
+            "type": "file",
+            "mediaType": "application/pdf",
+            "data": {
+              "type": "reference",
+              "reference": {
+                "anthropic": "file_user"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "tool-call",
+            "toolCallId": "call-1",
+            "toolName": "attachments",
+            "input": {
+              "report": "q3"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "call-1",
+            "toolName": "attachments",
+            "output": {
+              "type": "content",
+              "value": [
+                {
+                  "type": "text",
+                  "text": "attachments"
+                },
+                {
+                  "type": "file",
+                  "mediaType": "image/png",
+                  "data": {
+                    "type": "reference",
+                    "reference": {
+                      "anthropic": "file_img"
+                    }
+                  }
+                },
+                {
+                  "type": "file",
+                  "mediaType": "text/plain",
+                  "data": {
+                    "type": "reference",
+                    "reference": {
+                      "anthropic": "file_txt"
+                    }
+                  }
+                },
+                {
+                  "type": "file",
+                  "mediaType": "image/png",
+                  "data": {
+                    "type": "reference",
+                    "reference": {
+                      "anthropic": ""
+                    }
+                  }
+                },
+                {
+                  "type": "file",
+                  "mediaType": "application/pdf",
+                  "data": {
+                    "type": "reference",
+                    "reference": {
+                      "anthropic": ""
+                    }
+                  }
+                },
+                {
+                  "type": "file",
+                  "mediaType": "application/pdf",
+                  "data": {
+                    "type": "data",
+                    "data": "JVBERi0="
                   }
                 }
               ]

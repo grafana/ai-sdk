@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -52,6 +53,7 @@ func TestFallbackAcceptance_MappedPrecommitAndCommitment(t *testing.T) {
 		{"provider call then error", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: `{}`, ProviderExecuted: true}, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolCall, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
 		{"opaque MCP call then error", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: `{}`, ProviderExecuted: true, ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"mcp-tool-use","serverName":"unconfigured","caller":null}`)}}, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolCall, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
 		{"tool call then error", fallbackParts(toolCall, provider.StreamPart{Type: provider.PartError, APICallError: hostileFallbackError(503)}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartToolCall, provider.PartError, provider.PartFinish}, []string{"overloaded"}},
+		{"valid segment then invalid second segment", fallbackParts(provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "msg_1"}, finish, provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "msg_2"}, provider.StreamPart{Type: provider.PartTextStart, ID: "0"}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartResponseMeta, provider.PartFinish, provider.PartResponseMeta, provider.PartTextStart, provider.PartError}, []string{"internal_error"}},
 		{"reasoning then malformed finish", fallbackParts(provider.StreamPart{Type: provider.PartReasoningStart, ID: "r"}, finish), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, []provider.StreamPartType{provider.PartStreamStart, provider.PartReasoningStart, provider.PartError}, []string{"internal_error"}},
 		{"unsupported selected output", fallbackParts(provider.StreamPart{Type: provider.PartFile}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, failed, []string{"internal_error"}},
 		{"invalid selected call", fallbackParts(provider.StreamPart{Type: provider.PartToolCall, ToolCallID: "call", ToolName: "lookup", Input: string([]byte{0xff})}), nil, 200, []fallback.AttemptOutcome{fallback.AttemptSelected}, failed, []string{"internal_error"}},
@@ -488,7 +490,7 @@ func newFallbackAcceptance(t *testing.T, primary, secondary *observabilityTestMo
 	resolved, err := catalog.ResolveModel(context.Background(), "alias")
 	require.NoError(t, err)
 	h.model = resolved.Model
-	h.handler, err = providerv4.New(providerv4.Config{Selector: providerv4.CatalogSelector(catalog), Limits: serviceTestLimits()})
+	h.handler, err = newWireHandler(execution.Config{Selector: execution.CatalogSelector(catalog), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	h.context = func(ctx context.Context) context.Context {
 		state := &telemetryState{}

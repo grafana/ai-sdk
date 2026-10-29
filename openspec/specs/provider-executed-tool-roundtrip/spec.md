@@ -190,6 +190,13 @@ convertAssistantContent SHALL dispatch inline ToolResultContentPart by toolNameM
 
 - **WHEN** `convertAssistantContent` encounters a `ToolResultContentPart` with tool name mapping to `tool_search_tool_regex` or `tool_search_tool_bm25`
 - **THEN** it emits a `tool_search_tool_result` block with the deserialized tool references
+- **AND** an empty reference array serializes as `tool_references: []`
+
+#### Scenario: tool_search error result inline emits tool_search_tool_result_error
+
+- **WHEN** `convertAssistantContent` encounters a `ToolResultContentPart` with tool name mapping to `tool_search_tool_regex` or `tool_search_tool_bm25` and the output is `error-json`, or `json` whose object value has `type: "tool_search_tool_result_error"`
+- **THEN** it emits a `tool_search_tool_result` block whose content is `tool_search_tool_result_error` with the output `errorCode`, or `unavailable` when no code can be extracted
+- **AND** the block retains the part cache control and does not produce a warning
 
 #### Scenario: Unrecognized inline tool result produces warning
 

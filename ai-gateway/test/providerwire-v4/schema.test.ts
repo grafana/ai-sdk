@@ -76,6 +76,10 @@ describe("Gateway execution metadata schema", () => {
     ["canceled native failure", { execution: { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "canceled", error: { statusCode: 503 } }] } }],
     ["numeric code", { execution: { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed", error: { code: 42 } }] } }],
     ["missing diagnostics", { execution: { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "failed" }] } }],
+    ["request accounts without canonical identity", { execution: { requestedModelId: "openai/gpt-5", attempts: [
+      { provider: "openai", modelId: "gpt-5", outcome: "failed", error: { message: "overloaded", statusCode: 503 } },
+      { provider: "openai", modelId: "gpt-5", outcome: "selected" },
+    ] } }],
   ] as const) {
     it(`accepts ${name}`, () => {
       assert.equal(validateGatewayMetadata(value), true, formatValidationErrors(validateGatewayMetadata.errors));
@@ -84,6 +88,8 @@ describe("Gateway execution metadata schema", () => {
 
   for (const [name, execution] of [
     ["empty attempts", { ...namespace.execution, attempts: [] }],
+    ["empty canonical identity", { ...namespace.execution, canonicalModelId: "" }],
+    ["missing requested identity", { canonicalModelId: "grafana/assistant", attempts: namespace.execution.attempts }],
     ["missing outcome", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model" }] }],
     ["unknown outcome", { ...namespace.execution, attempts: [{ provider: "native", modelId: "model", outcome: "retried" }] }],
     ["selected index", { ...namespace.execution, selectedAttempt: 2 }],

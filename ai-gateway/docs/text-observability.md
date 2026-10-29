@@ -72,7 +72,9 @@ agento11y_token = $__file{/run/secrets/agento11y-token}
 | `agento11y_token` | Token for the collector. Required when exporting. |
 
 The export includes the model, timing, token usage and how the call ended, but
-no content. If the collector is slow or unavailable, model calls continue and
+no content. When one stream carries several messages or responses, the export
+currently records only the first one's usage and finish reason; logs and
+metrics cover the whole stream. If the collector is slow or unavailable, model calls continue and
 the export failure metric counts the lost records.
 
 Configure the export only through these settings. If Grafana's environment

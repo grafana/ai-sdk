@@ -19,6 +19,9 @@ import (
 const (
 	// defaultStreamBuffer is the channel buffer size for stream channels.
 	defaultStreamBuffer = 256
+	// deniedApprovalCorrelationProvider is the provider options namespace
+	// upstream generateText uses to correlate provider-executed denials.
+	deniedApprovalCorrelationProvider = "openai"
 )
 
 // ErrNoOutputGenerated is returned when a model stream ends before producing output.
@@ -1278,11 +1281,6 @@ loop:
 					break
 				}
 			}
-			if req.Signature == "" {
-				if err := maybeSignToolApproval(cfg.toolApprovalSecret, &req); err != nil {
-					return step, stepStreamOutcome{hasOutput: hasOutput}, err
-				}
-			}
 			step.ToolApprovalRequests = append(step.ToolApprovalRequests, req)
 			step.responseContent = append(step.responseContent, provider.ContentPart{
 				Type:            provider.ContentPartTypeToolApprovalRequest,
@@ -1310,6 +1308,7 @@ loop:
 		case provider.PartError:
 			terminated = true
 			providerFailed = true
+			step.FinishReason.Unified = provider.FinishReasonError
 			// Synthesize a non-retryable APICallError when a producer emits
 			// a PartError without a populated APICallError. Wire boundaries
 			// MUST always carry an *APICallError so the orchestration layer
@@ -2191,12 +2190,17 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	// mutates existing message Content slices.
 	resultMsgs := cloneMessages(msgs)
 
-	approved, demoted, err := validateApprovedToolApprovals(cfg, msgs, approved)
+	localApproved := slices.DeleteFunc(slices.Clone(approved), isProviderExecutedApproval)
+	approved, demoted, err := validateApprovedToolApprovals(cfg, msgs, localApproved)
 	if err != nil {
 		return nil, err
 	}
+	localDenied := append(slices.DeleteFunc(slices.Clone(denied), isProviderExecutedApproval), demoted...)
+	providerDenied := slices.DeleteFunc(slices.Clone(denied), func(approval collectedToolApproval) bool {
+		return !isProviderExecutedApproval(approval)
+	})
 	denied = append(denied, demoted...)
-	for _, approval := range denied {
+	for _, approval := range slices.Concat(localDenied, providerDenied) {
 		deniedEvent := StreamToolOutputDenied{ToolCallID: approval.toolCall.ToolCallID, ToolName: approval.toolCall.ToolName}
 		r.emit(deniedEvent)
 		r.callOnChunk(cfg, deniedEvent)
@@ -2209,9 +2213,6 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 	}
 	var executable []executableApproval
 	for _, approval := range approved {
-		if approval.toolCall.ProviderExecuted {
-			continue
-		}
 		tool, ok := cfg.tools[approval.toolCall.ToolName]
 		if !ok || !isExecutableTool(tool) {
 			return nil, &ToolNotExecutableError{ToolName: approval.toolCall.ToolName}
@@ -2254,17 +2255,21 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 
 	deniedToolParts := make([]provider.ContentPart, 0, len(denied))
 	for _, approval := range denied {
-		if approval.toolCall.ProviderExecuted || approval.hasExistingToolResult {
+		if approval.hasExistingToolResult || (approval.toolCall.ProviderExecuted && !cfg.providerExecutedDenialResults) {
 			continue
+		}
+		output := &provider.ToolResultOutput{
+			Type:   provider.ToolOutputExecutionDenied,
+			Reason: denialReason(approval.response.Reason),
+		}
+		if approval.toolCall.ProviderExecuted {
+			output.ProviderOptions = providerExecutedDenialOptions(approval.response.ApprovalID)
 		}
 		deniedToolParts = append(deniedToolParts, provider.ContentPart{
 			Type:       provider.ContentPartTypeToolResult,
 			ToolCallID: approval.toolCall.ToolCallID,
 			ToolName:   approval.toolCall.ToolName,
-			Output: &provider.ToolResultOutput{
-				Type:   provider.ToolOutputExecutionDenied,
-				Reason: denialReason(approval.response.Reason),
-			},
+			Output:     output,
 		})
 	}
 
@@ -2275,6 +2280,19 @@ func (r *StreamTextResult) resolveToolApprovals(ctx context.Context, cfg *stream
 		resultMsgs = append(resultMsgs, provider.NewToolMessage(toolParts...))
 	}
 	return resultMsgs, nil
+}
+
+func isProviderExecutedApproval(approval collectedToolApproval) bool {
+	return approval.toolCall.ProviderExecuted
+}
+
+func providerExecutedDenialOptions(approvalID string) provider.ProviderOptions {
+	raw, _ := json.Marshal(struct {
+		ApprovalID string `json:"approvalId"`
+	}{ApprovalID: approvalID})
+	return provider.ProviderOptions{
+		deniedApprovalCorrelationProvider: provider.RawProviderOption{Key: deniedApprovalCorrelationProvider, Raw: raw},
+	}
 }
 
 func validateApprovedToolApprovals(cfg *streamConfig, msgs []provider.Message, approvals []collectedToolApproval) ([]collectedToolApproval, []collectedToolApproval, error) {

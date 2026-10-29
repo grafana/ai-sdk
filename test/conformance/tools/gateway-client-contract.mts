@@ -20,7 +20,7 @@ export interface GatewayContractEvidence extends GatewayContractInventory {
 export function collectGatewayContract(providerDirectory = join(repositoryRoot, "provider")): GatewayContractInventory {
   return JSON.parse(execFileSync("go", [
     "run", join(toolsDirectory, "gateway-contract-inventory", "main.go"), providerDirectory,
-  ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GOWORK: "off" } })) as GatewayContractInventory;
+  ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: process.env })) as GatewayContractInventory;
 }
 
 export function readGatewayContractEvidence(): GatewayContractEvidence {

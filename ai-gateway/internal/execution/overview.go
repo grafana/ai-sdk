@@ -9,9 +9,10 @@ import (
 )
 
 // Overview explains one observed invocation without claiming stream completion.
+// CanonicalModelID is empty when no catalog resolution selected the model.
 type Overview struct {
 	RequestedModelID string    `json:"requestedModelId"`
-	CanonicalModelID string    `json:"canonicalModelId"`
+	CanonicalModelID string    `json:"canonicalModelId,omitempty"`
 	Attempts         []Attempt `json:"attempts"`
 }
 
@@ -32,11 +33,44 @@ type Failure struct {
 	StatusCode int             `json:"statusCode,omitempty"`
 }
 
-// Project converts one invocation's decisions into an optional overview.
-// Configured descriptors supply identity when present. Native error bodies are
-// bounded by the transport that read them. Mixed or unfinished observation is omitted rather than treated as complete.
+// Project converts one configured invocation's decisions into an optional
+// overview, which requires a canonical identity. Configured descriptors supply
+// identity when present. Native error bodies are bounded by the transport that
+// read them. Mixed or unfinished observation is omitted rather than treated as
+// complete.
 func Project(requested, canonical string, decisions []fallback.Attempt, candidates []catalog.ConfiguredCandidate) *Overview {
-	if requested == "" || canonical == "" || !utf8.ValidString(requested) || !utf8.ValidString(canonical) || len(decisions) == 0 {
+	if canonical == "" || !utf8.ValidString(canonical) {
+		return nil
+	}
+	return project(requested, canonical, decisions, func(i int, attempt *Attempt) bool {
+		if len(candidates) == 0 {
+			return true
+		}
+		if i >= len(candidates) {
+			return false
+		}
+		candidate := candidates[i]
+		attempt.Provider, attempt.ModelID, attempt.ProviderInstance = candidate.Provider, candidate.ModelID, candidate.ProviderInstance
+		return true
+	})
+}
+
+// projectAccounts converts one request-account invocation's decisions into an
+// optional overview without canonical identity. Every decision must name the
+// accounts' native destination, and decisions must not outnumber the accounts.
+func projectAccounts(requested string, decisions []fallback.Attempt, accounts RequestAccounts) *Overview {
+	if len(decisions) > accounts.Count {
+		return nil
+	}
+	return project(requested, "", decisions, func(_ int, attempt *Attempt) bool {
+		return attempt.Provider == accounts.Provider && attempt.ModelID == accounts.ModelID
+	})
+}
+
+// project validates decision order and outcomes; identify sets or checks each
+// attempt's destination.
+func project(requested, canonical string, decisions []fallback.Attempt, identify func(int, *Attempt) bool) *Overview {
+	if requested == "" || !utf8.ValidString(requested) || len(decisions) == 0 {
 		return nil
 	}
 	overview := &Overview{RequestedModelID: requested, CanonicalModelID: canonical, Attempts: make([]Attempt, 0, len(decisions))}
@@ -57,12 +91,8 @@ func Project(requested, canonical string, decisions []fallback.Attempt, candidat
 			return nil
 		}
 		attempt := Attempt{Provider: decision.Provider, ModelID: decision.ModelID, Outcome: decision.Outcome}
-		if len(candidates) != 0 {
-			if i >= len(candidates) {
-				return nil
-			}
-			candidate := candidates[i]
-			attempt.Provider, attempt.ModelID, attempt.ProviderInstance = candidate.Provider, candidate.ModelID, candidate.ProviderInstance
+		if !identify(i, &attempt) {
+			return nil
 		}
 		if attempt.Provider == "" || attempt.ModelID == "" || !utf8.ValidString(attempt.Provider) || !utf8.ValidString(attempt.ModelID) || !utf8.ValidString(attempt.ProviderInstance) {
 			return nil

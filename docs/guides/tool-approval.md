@@ -63,6 +63,11 @@ second call
   → model continues with the outcome
 ```
 
+Provider-executed tools, such as OpenAI MCP calls, receive the decision through
+the provider. For a denied provider-executed call, `GenerateText` also adds an
+execution-denied result to `ResponseMessages` that carries the approval ID;
+`StreamText` emits only the denied output event, as upstream does.
+
 For `useChat`, persist the complete `UIMessage` parts and submit the updated
 history after the user decides. Pending approvals intentionally stop the current
 invocation; do not keep the HTTP request open while waiting for a person.
@@ -84,6 +89,11 @@ Use the same secret when creating and resuming the approval. The signature binds
 the approval ID, tool call ID, tool name, and proposed input so modified client
 state is rejected. Keep the secret server-side and rotate it with a deliberate
 migration strategy for in-flight approvals.
+
+Only approvals for locally executed tools are signed and verified. Approvals
+for provider-executed tools, such as OpenAI MCP calls, are unsigned and go to
+the provider without signature or policy checks, because the provider runs
+those tools.
 
 Signing prevents message tampering; it does not replace authorization. Recheck
 the current user, tenant, resource permissions, and business invariants inside

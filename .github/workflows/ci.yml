@@ -82,9 +82,9 @@ jobs:
         with:
           lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ runner.temp }}/golangci-lint
-          key: ${{ runner.os }}-${{ runner.arch }}-golangci-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum', 'go*.work*') }}-${{ github.sha }}
+          key: ${{ runner.os }}-${{ runner.arch }}-golangci-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-golangci-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum', 'go*.work*') }}-
+            ${{ runner.os }}-${{ runner.arch }}-golangci-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum') }}-
 
       - name: Lint
         env:
@@ -152,14 +152,11 @@ jobs:
       - name: Test CI source and artifact gates
         run: mise run test-ci-workflow
 
-      - name: Verify candidate Gateway workspace
-        run: mise run verify-gateway-workspace
-
       - name: Verify AI Gateway module and license boundary
         run: mise run verify-ai-gateway-boundary
 
-      - name: Verify merged internal module pins
-        run: mise run verify-merged-pins
+      - name: Verify first-party module requirements
+        run: mise run verify-module-requirements
 
       - name: Verify SDK isolation from Gateway source
         run: mise run verify-sdk-gateway-isolation

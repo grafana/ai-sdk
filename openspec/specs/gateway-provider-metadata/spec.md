@@ -80,14 +80,18 @@ Invalid original unary metadata SHALL fail the whole response before HTTP 200 th
 
 #### Scenario: Finish remains authoritative
 - **WHEN** a valid finish carrying metadata is written and a later provider part is available
-- **THEN** finish and its metadata SHALL remain final, later output SHALL be suppressed and existing bounded cleanup SHALL occur
+- **THEN** the finish and its metadata SHALL remain written unchanged in their position; a later response-metadata, raw or provider error part SHALL follow the sequential response segment rules, any other later part SHALL fail safely without rewriting the finish, and existing bounded cleanup SHALL occur
+
+#### Scenario: Each finish keeps its own metadata
+- **WHEN** two response segments end with finish parts carrying different metadata namespaces, including an explicit empty object
+- **THEN** each finish SHALL carry exactly its own metadata and presence, with no merge or carry-over between them
 
 ### Requirement: Metadata processing retains delivered stream lifecycle
-IDs, non-terminal provider errors, cancellation, deadlines, authoritative finish and bounded drain SHALL retain their delivered semantics.
+IDs, non-terminal provider errors, cancellation, deadlines, the sequential response segment rules, per-segment finish authority and bounded drain SHALL retain their delivered semantics.
 
 #### Scenario: Metadata processing retains delivered stream lifecycle
 - **WHEN** a valid metadata-bearing finish is followed by a provider error or later content
-- **THEN** finish SHALL remain authoritative with existing IDs, non-terminal error behavior, cancellation/deadlines and bounded drain
+- **THEN** the finish SHALL remain written with its metadata, the provider error SHALL be written in place, content without intervening response-metadata SHALL fail safely, and existing IDs, cancellation/deadlines and bounded drain SHALL apply
 
 ### Requirement: Actual two-client native continuation
 Both clients' real first-output-derived unary and streaming history SHALL produce correct subsequent native requests for supported Anthropic/OpenAI/compatible continuation through direct and configured-fallback routes. Acceptance SHALL distinguish TS high-level unary/streaming, Go direct unary DoGenerate with a labeled independently tested consumer adaptation using only actual returned content/metadata and public ToResponseMessages, and Go high-level streaming assembly.

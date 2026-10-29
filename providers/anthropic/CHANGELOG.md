@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/anthropic/v0.1.0-alpha.2...providers/anthropic/v0.1.0-alpha.3) (2026-10-28)
+
+
+### Features
+
+* **anthropic:** replay uploaded-file references inside tool results ([#566](https://github.com/grafana/ai-sdk/issues/566)) ([e3b02f0](https://github.com/grafana/ai-sdk/commit/e3b02f020fe746e291dbf7ce8f0beb942098f7b7))
+
+## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/anthropic/v0.1.0-alpha.1...providers/anthropic/v0.1.0-alpha.2) (2026-10-28)
+
+
+### Features
+
+* **parity:** advance pinned upstream to ai 7.0.143 ([#458](https://github.com/grafana/ai-sdk/issues/458)) ([f76495c](https://github.com/grafana/ai-sdk/commit/f76495c223918a2e879bc4c80cb0741528c2b565))
+
+
+### Bug Fixes
+
+* **ai-gateway:** contain panics in stream worker goroutines ([#471](https://github.com/grafana/ai-sdk/issues/471)) ([e74f87b](https://github.com/grafana/ai-sdk/commit/e74f87bcf30f2a9fccdc900f5d4d6ecdb06c8ec6)), refs [#419](https://github.com/grafana/ai-sdk/issues/419)
+* **anthropic:** align tool-result cache control, file warnings and MCP routing ([#530](https://github.com/grafana/ai-sdk/issues/530)) ([4d2516d](https://github.com/grafana/ai-sdk/commit/4d2516d275b04178357b15eb685fa03d4d36e8f2))
+* **anthropic:** move client tool_use blocks to the end of reasoning segments ([#517](https://github.com/grafana/ai-sdk/issues/517)) ([8c138af](https://github.com/grafana/ai-sdk/commit/8c138af2150d6bc17648b6339ee65bb851a95c7d))
+
 ## 0.1.0-alpha.1 (2026-10-26)
 
 

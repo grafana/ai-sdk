@@ -4,6 +4,7 @@ import { Manifest } from 'release-please';
 import { SOURCE_JOBS, successfulRun } from './authorization-evidence.mjs';
 import { REPO, REPOSITORY_ID, SHA, discoverMerged } from './merged-candidates.mjs';
 import { readOnlyFetch } from './preview.mjs';
+import { MANIFEST, withRequirementUpdates } from './requirements.mjs';
 
 export function activationContext(env) {
   assert.ok(['root', 'libraries'].includes(env.RELEASE_LIBRARY_MODE), 'library publication is disabled');
@@ -103,30 +104,44 @@ export function preparationTransport(beforeWrite, fetchImpl = globalThis.fetch) 
   };
 }
 
+const changelog = component => component === '.' ? 'CHANGELOG.md' : `${component}/CHANGELOG.md`;
+
+function releasedLibraries(libraries, updates) {
+  const paths = updates.map(update => update.path);
+  assert.ok(paths.includes(MANIFEST), 'release must update the version manifest');
+  const components = paths.filter(path => path !== MANIFEST).map(path => {
+    const component = libraries.find(library => changelog(library) === path);
+    assert.ok(component !== undefined, `release may only update the manifest and library changelogs: ${path}`);
+    return component;
+  });
+  assert.ok(components.length > 0, 'release must include at least one library');
+  return components.sort();
+}
+
 export async function prepareLibraries(github, expectedSha) {
   const inventory = await discoverMerged(github);
   assert.equal(inventory.mainSha, expectedSha, 'main advanced before preparation');
-  const pending = new Set(inventory.candidates.map(candidate => candidate.component));
   const config = await github.getFileJson('release-please-config.json', 'main');
+  const libraries = Object.keys(config.packages).filter(path => path !== 'ai-gateway');
+  const manifest = await Manifest.fromManifest(github, 'main', 'release-please-config.json', MANIFEST, {});
+  manifest.lastReleaseSha = undefined;
+  for (const component of ['ai-gateway', ...inventory.candidates.map(candidate => candidate.component)]) {
+    delete manifest.repositoryConfig[component];
+  }
+  const candidates = await manifest.buildPullRequests();
+  const open = await manifest.findOpenReleasePullRequests();
+  const snoozed = await manifest.findSnoozedReleasePullRequests();
   const results = [];
-  for (const component of Object.keys(config.packages).filter(path => path !== 'ai-gateway' && !pending.has(path))) {
-    const manifest = await Manifest.fromManifest(github, 'main', 'release-please-config.json',
-      '.release-please-manifest.json', {}, component);
-    manifest.lastReleaseSha = undefined;
-    const candidates = await manifest.buildPullRequests();
-    const open = await manifest.findOpenReleasePullRequests();
-    const snoozed = await manifest.findSnoozedReleasePullRequests();
-    for (const candidate of candidates) {
-      const changelog = component === '.' ? 'CHANGELOG.md' : `${component}/CHANGELOG.md`;
-      assert.deepEqual(candidate.updates.map(update => update.path).sort(), ['.release-please-manifest.json', changelog].sort());
-      manifest.alwaysUpdate = open.some(pr => pr.headBranchName === candidate.headRefName);
-      const previous = !manifest.alwaysUpdate && snoozed.find(pr => pr.headBranchName === candidate.headRefName);
-      if (previous && previous.body === candidate.body.toString()) continue;
-      const result = await manifest.createOrUpdatePullRequest(candidate, open, []);
-      if (result?.number > 0) {
-        if (previous) await github.removeIssueLabels(['autorelease: snooze'], previous.number);
-        results.push({ component, prNumber: result.number });
-      }
+  for (const candidate of candidates) {
+    const components = releasedLibraries(libraries, candidate.updates);
+    const requirements = await withRequirementUpdates(github, candidate, { config });
+    manifest.alwaysUpdate = open.some(pr => pr.headBranchName === candidate.headRefName);
+    const previous = !manifest.alwaysUpdate && snoozed.find(pr => pr.headBranchName === candidate.headRefName);
+    if (previous && previous.body === candidate.body.toString()) continue;
+    const result = await manifest.createOrUpdatePullRequest(candidate, open, []);
+    if (result?.number > 0) {
+      if (previous) await github.removeIssueLabels(['autorelease: snooze'], previous.number);
+      results.push({ components, requirements, prNumber: result.number });
     }
   }
   return results;

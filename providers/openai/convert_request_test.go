@@ -514,9 +514,9 @@ func TestBuildParams_OutputSchemaTextResultsAreJSONEncoded(t *testing.T) {
 	input := body["input"].([]any)
 	require.Len(t, input, 4)
 	assert.Equal(t, `"The weather is sunny"`, input[0].(map[string]any)["output"])
-	assert.Equal(t, `"Error: boom"`, input[1].(map[string]any)["output"])
+	assert.Equal(t, `{"error":"Error: boom"}`, input[1].(map[string]any)["output"])
 	assert.Equal(t, `"User denied the tool execution"`, input[2].(map[string]any)["output"])
-	assert.Equal(t, "Error: unchanged", input[3].(map[string]any)["output"])
+	assert.Equal(t, `{"error":"Error: unchanged"}`, input[3].(map[string]any)["output"])
 }
 
 func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
@@ -1032,6 +1032,20 @@ func TestBuildParams_MCPApprovalContinuation(t *testing.T) {
 			assert.Equal(t, true, response["approve"])
 		})
 	}
+
+	t.Run("azure omits openai-correlated denial", func(t *testing.T) {
+		params, _, _, err := buildParamsForProvider("gpt-4o", provider.CallOptions{Prompt: prompt}, "azure")
+		require.NoError(t, err)
+		raw, err := json.Marshal(params)
+		require.NoError(t, err)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(raw, &body))
+
+		input := body["input"].([]any)
+		require.Len(t, input, 2)
+		assert.Equal(t, "item_reference", input[0].(map[string]any)["type"])
+		assert.Equal(t, "mcp_approval_response", input[1].(map[string]any)["type"])
+	})
 }
 
 func TestBuildParams_CustomToolContentOptions(t *testing.T) {

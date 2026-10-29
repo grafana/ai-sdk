@@ -247,10 +247,17 @@ func TestBuildRequest_FunctionToolStrict(t *testing.T) {
 		{name: "true", modelID: testAnthropicModel, strict: &strictTrue, want: &strictTrue},
 		{name: "false", modelID: testAnthropicModel, strict: &strictFalse, want: &strictFalse},
 		{name: "unsupported opus 4.7 true", modelID: "anthropic.claude-opus-4-7", strict: &strictTrue, wantWarning: true},
-		{name: "unsupported opus 4.8 false", modelID: "anthropic.claude-opus-4-8", strict: &strictFalse, wantWarning: true},
+		{name: "unsupported opus 4.8 false", modelID: "anthropic.claude-opus-4-8", strict: &strictFalse},
 		{name: "unsupported regional opus 5 true", modelID: "us.anthropic.claude-opus-5", strict: &strictTrue, wantWarning: true},
-		{name: "unsupported fable 5 false", modelID: "eu.anthropic.claude-fable-5", strict: &strictFalse, wantWarning: true},
+		{name: "unsupported fable 5 false", modelID: "eu.anthropic.claude-fable-5", strict: &strictFalse},
+		{name: "unsupported future claude false", modelID: "us.anthropic.claude-opus-6-v1:0", strict: &strictFalse},
 		{name: "unsupported sonnet 5 true", modelID: "anthropic.claude-sonnet-5", strict: &strictTrue, wantWarning: true},
+		{name: "unsupported future claude true", modelID: "us.anthropic.claude-opus-6-v1:0", strict: &strictTrue, wantWarning: true},
+		{name: "unsupported future minor claude true", modelID: "us.anthropic.claude-opus-4-9-v1:0", strict: &strictTrue, wantWarning: true},
+		{name: "unsupported haiku 5.5 true", modelID: "us.anthropic.claude-haiku-5-5", strict: &strictTrue, wantWarning: true},
+		{name: "dated sonnet 4 true", modelID: "anthropic.claude-sonnet-4-20250514-v1:0", strict: &strictTrue, want: &strictTrue},
+		{name: "legacy claude true", modelID: "anthropic.claude-3-haiku-20240307-v1:0", strict: &strictTrue, want: &strictTrue},
+		{name: "non-claude true", modelID: "mistral.mistral-large-2407-v1:0", strict: &strictTrue, want: &strictTrue},
 	}
 
 	for _, tc := range tests {
@@ -525,6 +532,87 @@ func TestBuildRequest_TopLevelReasoningNonAnthropicEffort(t *testing.T) {
 	rc, ok := req.AdditionalModelRequestFields["reasoningConfig"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, map[string]any{"type": "enabled", "maxReasoningEffort": "medium"}, rc)
+}
+
+func TestBuildRequest_NovaHighReasoningMaxTokens(t *testing.T) {
+	const novaModel = "us.amazon.nova-2-lite-v1:0"
+	maxTokens := 1024
+	temperature := 0.5
+	for _, tc := range []struct {
+		name        string
+		modelID     string
+		reasoning   provider.ReasoningEffort
+		explicit    *ReasoningConfig
+		maxTokens   *int
+		temperature *float64
+		wantOmitted bool
+		wantEffort  string
+	}{
+		{name: "portable high", modelID: novaModel, reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "portable xhigh coerced to high", modelID: novaModel, reasoning: provider.ReasoningXHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "portable max coerced to high", modelID: novaModel, reasoning: provider.ReasoningMax, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "explicit high", modelID: novaModel, explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "explicit xhigh", modelID: novaModel, explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "xhigh"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "xhigh"},
+		{name: "explicit max", modelID: novaModel, explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "max"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "max"},
+		{name: "explicit high overrides portable low", modelID: novaModel, reasoning: provider.ReasoningLow, explicit: &ReasoningConfig{MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "unprefixed model", modelID: "amazon.nova-2-lite-v1:0", reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "global profile", modelID: "global.amazon.nova-2-lite-v1:0", reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "inference profile ARN", modelID: "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.amazon.nova-2-lite-v1:0", reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, wantOmitted: true, wantEffort: "high"},
+		{name: "other inference fields kept", modelID: novaModel, reasoning: provider.ReasoningHigh, maxTokens: &maxTokens, temperature: &temperature, wantOmitted: true, wantEffort: "high"},
+		{name: "omitted limit", modelID: novaModel, reasoning: provider.ReasoningHigh, wantEffort: "high"},
+		{name: "portable medium", modelID: novaModel, reasoning: provider.ReasoningMedium, maxTokens: &maxTokens, wantEffort: "medium"},
+		{name: "portable low", modelID: novaModel, reasoning: provider.ReasoningLow, maxTokens: &maxTokens, wantEffort: "low"},
+		{name: "explicit low overrides portable high", modelID: novaModel, reasoning: provider.ReasoningHigh, explicit: &ReasoningConfig{MaxReasoningEffort: "low"}, maxTokens: &maxTokens, wantEffort: "low"},
+		{name: "explicit disabled overrides portable high", modelID: novaModel, reasoning: provider.ReasoningHigh, explicit: &ReasoningConfig{Type: "disabled"}, maxTokens: &maxTokens},
+		{name: "explicit adaptive high", modelID: novaModel, explicit: &ReasoningConfig{Type: "adaptive", MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantEffort: "high"},
+		{name: "explicit high without enabled type", modelID: novaModel, explicit: &ReasoningConfig{MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantEffort: "high"},
+		{name: "other Nova model", modelID: "amazon.nova-micro-v1:0", explicit: &ReasoningConfig{Type: "enabled", MaxReasoningEffort: "high"}, maxTokens: &maxTokens, wantEffort: "high"},
+		{name: "OpenAI model", modelID: testOpenAIModel, reasoning: provider.ReasoningHigh, maxTokens: &maxTokens},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := provider.CallOptions{
+				Prompt:          []provider.Message{provider.UserText("x")},
+				Reasoning:       tc.reasoning,
+				MaxOutputTokens: tc.maxTokens,
+				Temperature:     tc.temperature,
+			}
+			if tc.explicit != nil {
+				call.ProviderOptions = provider.ProviderOptions{"amazonBedrock": BedrockOptions{ReasoningConfig: tc.explicit}}
+			}
+			req, warnings, _ := mustBuildRequest(t, tc.modelID, call)
+
+			maxTokensWarning := provider.Warning{
+				Type:    provider.WarnUnsupported,
+				Feature: "maxOutputTokens",
+				Details: "maxOutputTokens is not supported by " + tc.modelID + " when high reasoning is enabled and will be ignored",
+			}
+			if tc.wantOmitted {
+				assert.Contains(t, warnings, maxTokensWarning)
+				if tc.temperature == nil {
+					assert.Nil(t, req.InferenceConfig)
+				} else {
+					require.NotNil(t, req.InferenceConfig)
+					assert.Nil(t, req.InferenceConfig.MaxTokens)
+					assert.Equal(t, tc.temperature, req.InferenceConfig.Temperature)
+				}
+			} else {
+				for _, w := range warnings {
+					assert.NotEqual(t, "maxOutputTokens", w.Feature)
+				}
+				if tc.maxTokens == nil {
+					assert.Nil(t, req.InferenceConfig)
+				} else {
+					require.NotNil(t, req.InferenceConfig)
+					assert.Equal(t, tc.maxTokens, req.InferenceConfig.MaxTokens)
+				}
+			}
+			if tc.wantEffort != "" {
+				rc, ok := req.AdditionalModelRequestFields["reasoningConfig"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, tc.wantEffort, rc["maxReasoningEffort"])
+			}
+		})
+	}
 }
 
 func TestBuildRequest_TopLevelReasoningUnknownModel(t *testing.T) {
@@ -1865,8 +1953,8 @@ func TestBuildRequest_MultipleSystemMessagesSeparatedWarns(t *testing.T) {
 }
 
 func TestBuildRequest_NativeStructuredOutputWhenThinkingEnabled(t *testing.T) {
-	// An older Anthropic model that does NOT match supportsNativeStructuredOutput
-	// markers, but with thinking enabled, should still use native structured
+	// An older Anthropic model without supportsStructuredOutputCapability, but
+	// with thinking enabled, should still use native structured
 	// output (matching upstream's modelSupportsStructuredOutput || isThinkingEnabled).
 	schema := json.RawMessage(`{"type":"object"}`)
 	bo := BedrockOptions{ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 1024}}

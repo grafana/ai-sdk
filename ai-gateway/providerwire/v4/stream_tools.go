@@ -128,7 +128,6 @@ func (h *handler) processToolStreamPart(w http.ResponseWriter, state *streamStat
 	} else {
 		state.tools[id] = next
 	}
-	state.textStarted = true
 	return streamPartContinue
 }
 
@@ -169,6 +168,5 @@ func (h *handler) processApprovalRequest(w http.ResponseWriter, state *streamSta
 	} else {
 		state.tools[part.ToolCallID] = current
 	}
-	state.textStarted = true
 	return streamPartContinue
 }

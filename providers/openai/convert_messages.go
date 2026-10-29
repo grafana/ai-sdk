@@ -333,7 +333,7 @@ func toolResultOutputString(out *provider.ToolResultOutput, encodeTextAsJSON boo
 		return ""
 	}
 	switch out.Type {
-	case provider.ToolOutputText, provider.ToolOutputErrorText:
+	case provider.ToolOutputText:
 		if encodeTextAsJSON {
 			encoded, _ := json.Marshal(out.Text)
 			return string(encoded)
@@ -349,7 +349,24 @@ func toolResultOutputString(out *provider.ToolResultOutput, encodeTextAsJSON boo
 			return string(encoded)
 		}
 		return reason
-	case provider.ToolOutputJSON, provider.ToolOutputErrorJSON:
+	case provider.ToolOutputErrorText:
+		encoded, _ := marshalToolInput(struct {
+			Error string `json:"error"`
+		}{Error: out.Text})
+		return string(encoded)
+	case provider.ToolOutputErrorJSON:
+		value := out.JSON
+		if len(value) == 0 {
+			value = nil
+		}
+		encoded, err := marshalToolInput(struct {
+			Error json.RawMessage `json:"error"`
+		}{Error: value})
+		if err != nil {
+			return toolResultOutputString(&provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: string(value)}, false)
+		}
+		return string(encoded)
+	case provider.ToolOutputJSON:
 		return string(out.JSON)
 	default:
 		if len(out.JSON) > 0 {

@@ -15,7 +15,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
-	providerwirev4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	openaiprovider "github.com/grafana/ai-sdk/providers/openai"
@@ -23,6 +23,8 @@ import (
 	openaioption "github.com/openai/openai-go/v3/option"
 	"go.yaml.in/yaml/v4"
 )
+
+const conformanceDefaultPrompt = "test"
 
 type recordedUsageEvent struct {
 	line []byte
@@ -50,6 +52,13 @@ func registerRecordedUsage(mux *http.ServeMux, root string) (func(), error) {
 		{"tool-call", filepath.Join(root, "tool-call"), "anthropic"},
 		{"thinking-tool-signature-roundtrip", filepath.Join(root, "thinking-tool-signature-roundtrip"), "anthropic"},
 		{"openai-reasoning-text", filepath.Join(root, "..", "..", "openai", "recorded", "reasoning-text"), "openai"},
+		{"anthropic-programmatic-tool-calling", filepath.Join(root, "..", "upstream", "programmatic-tool-calling"), "anthropic"},
+		{"anthropic-tool-search-bm25", filepath.Join(root, "..", "upstream", "tool-search-bm25"), "anthropic"},
+		{"anthropic-tool-search-regex", filepath.Join(root, "..", "upstream", "tool-search-regex"), "anthropic"},
+		{"anthropic-tool-search-deferred-bm25", filepath.Join(root, "..", "upstream", "tool-search-deferred-bm25"), "anthropic"},
+		{"anthropic-tool-search-deferred-regex", filepath.Join(root, "..", "upstream", "tool-search-deferred-regex"), "anthropic"},
+		{"openai-reasoning-encrypted-content", filepath.Join(root, "..", "..", "openai", "upstream", "reasoning-encrypted-content"), "openai"},
+		{"openai-shell", filepath.Join(root, "..", "..", "openai", "upstream", "shell"), "openai"},
 	}
 	for _, fixture := range fixtures {
 		configBytes, err := os.ReadFile(filepath.Join(fixture.dir, "config.yaml"))
@@ -61,9 +70,12 @@ func registerRecordedUsage(mux *http.ServeMux, root string) (func(), error) {
 			Model  string `yaml:"model"`
 			Prompt string `yaml:"prompt"`
 		}
-		if err := yaml.Unmarshal(configBytes, &config); err != nil || config.Model == "" || config.Prompt == "" {
+		if err := yaml.Unmarshal(configBytes, &config); err != nil || config.Model == "" {
 			closeServers()
 			return nil, fmt.Errorf("invalid recorded config for %s", fixture.name)
+		}
+		if config.Prompt == "" {
+			config.Prompt = conformanceDefaultPrompt
 		}
 		paths, err := filepath.Glob(filepath.Join(fixture.dir, "input*.chunks.txt"))
 		if err != nil || len(paths) == 0 {
@@ -141,7 +153,7 @@ func registerRecordedUsage(mux *http.ServeMux, root string) (func(), error) {
 		closeServers()
 		return nil, err
 	}
-	created, err := providerwirev4.New(providerwirev4.Config{Selector: providerwirev4.CatalogSelector(resolver), Limits: providerwirev4.Limits{
+	created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(resolver), Limits: execution.Limits{
 		StreamIdleDuration: 2 * time.Second, StreamDrainDuration: 100 * time.Millisecond,
 	}})
 	if err != nil {

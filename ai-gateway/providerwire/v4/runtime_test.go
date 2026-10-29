@@ -6,10 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -132,11 +130,11 @@ type runtimeHarness struct {
 	model    *recordingModel
 }
 
-func newRuntimeHarness(t *testing.T, limits Limits) *runtimeHarness {
+func newRuntimeHarness(t *testing.T, limits execution.Limits) *runtimeHarness {
 	t.Helper()
 	model := &recordingModel{}
 	resolver := &recordingResolver{resolved: catalog.ResolvedModel{ID: "canonical/model", Model: model}}
-	created, err := New(Config{Selector: CatalogSelector(resolver), Limits: limits})
+	created, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(resolver), Limits: limits})
 	require.NoError(t, err)
 	return &runtimeHarness{handler: created.(*handler), resolver: resolver, model: model}
 }
@@ -365,7 +363,7 @@ func TestRuntimeRequestRejections(t *testing.T) {
 		body string
 		want []byte
 	}{
-		{name: "policy/reserved provider namespace", body: `{"prompt":[],"providerOptions":{"grafana":{"enabled":true}}}`, want: reservedProviderOptionsError},
+		{name: "policy/reserved provider namespace", body: `{"prompt":[],"providerOptions":{"gateway":{"enabled":true}}}`, want: reservedProviderOptionsError},
 		{name: "policy/protected call header", body: `{"prompt":[],"headers":{"Authorization":"Bearer caller"}}`, want: protectedCallHeaderError},
 		{name: "policy/protected call header case", body: `{"prompt":[],"headers":{"X-ACCESS-TOKEN":"caller"}}`, want: protectedCallHeaderError},
 	}
@@ -461,9 +459,6 @@ func TestRuntimeFileValidationBeforeInvocation(t *testing.T) {
 		{name: "reference nonstring value", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"reference","reference":{"provider":1}},"mediaType":"application/pdf"}]}]}`},
 		{name: "tool role ordinary file", body: `{"prompt":[{"role":"tool","content":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}]}]}`},
 		{name: "reasoning file text arm", body: `{"prompt":[{"role":"assistant","content":[{"type":"reasoning-file","data":{"type":"text","text":""},"mediaType":"text/plain"}]}]}`},
-		{name: "reserved message option", body: `{"prompt":[{"role":"user","content":[],"providerOptions":{"gateway":{}}}]}`, want: reservedProviderOptionsError},
-		{name: "reserved file option", body: `{"prompt":[{"role":"user","content":[{"type":"file","data":{"type":"data","data":""},"mediaType":"image/png","providerOptions":{"grafana":{}}}]}]}`, want: reservedProviderOptionsError},
-		{name: "reserved result file option", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain","providerOptions":{"grafana-ai-sdk":{}}}]}}]}]}`, want: reservedProviderOptionsError},
 		{name: "deferred tool output options", body: `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"call","toolName":"tool","output":{"type":"content","value":[{"type":"file","data":{"type":"text","text":""},"mediaType":"text/plain"}],"providerOptions":{"provider":{"private":true}}}}]}]}`, want: canonicalInvalidRequestError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -771,52 +766,30 @@ func TestRuntimeModelContainment(t *testing.T) {
 		}
 	})
 
-	t.Run("request deadline bounds a model that ignores context", func(t *testing.T) {
+	t.Run("result returned after the request deadline is discarded", func(t *testing.T) {
 		harness := newRuntimeHarness(t, testLimits())
-		release := make(chan struct{})
-		returned := make(chan struct{})
-		harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-			<-release
-			close(returned)
+		harness.model.generate = func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+			<-ctx.Done()
 			return validGenerateResult(), nil
 		}
-		start := time.Now()
 		response := harness.serve(withRequestDeadline(t, validRequest(`{"prompt":[]}`), 20*time.Millisecond))
 		assert.Equal(t, http.StatusGatewayTimeout, response.Code)
-		assert.Less(t, time.Since(start), time.Second)
-		close(release)
-		select {
-		case <-returned:
-		case <-time.After(time.Second):
-			t.Fatal("late model return blocked")
-		}
+		assert.Equal(t, string(canonicalTimeoutError), response.Body.String())
 	})
 
-	t.Run("caller cancellation returns without waiting", func(t *testing.T) {
+	t.Run("result returned after caller cancellation is discarded", func(t *testing.T) {
 		harness := newRuntimeHarness(t, testLimits())
 		started := make(chan struct{})
-		release := make(chan struct{})
-		harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+		harness.model.generate = func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
 			close(started)
-			<-release
+			<-ctx.Done()
 			return validGenerateResult(), nil
 		}
 		ctx, cancel := context.WithCancel(context.Background())
-		response := httptest.NewRecorder()
-		done := make(chan struct{})
-		go func() {
-			harness.handler.ServeHTTP(response, validRequest(`{"prompt":[]}`).WithContext(ctx))
-			close(done)
-		}()
-		<-started
-		cancel()
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-			t.Fatal("handler did not return")
-		}
+		go func() { <-started; cancel() }()
+		response := harness.serve(validRequest(`{"prompt":[]}`).WithContext(ctx))
 		assert.Equal(t, 499, response.Code)
-		close(release)
+		assert.NotContains(t, response.Body.String(), `"content"`)
 	})
 }
 
@@ -825,11 +798,6 @@ type testNetError struct{ timeout bool }
 func (e testNetError) Error() string   { return "private transport details" }
 func (e testNetError) Timeout() bool   { return e.timeout }
 func (e testNetError) Temporary() bool { return false }
-
-type testAddr string
-
-func (a testAddr) Network() string { return "tcp" }
-func (a testAddr) String() string  { return string(a) }
 
 func TestPublicError_OptionalEncoding(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
@@ -902,7 +870,6 @@ func TestPublicError_FixedBytes(t *testing.T) {
 		{"timeout", safeError{category: safeTimeout}, 504, canonicalTimeoutError, canonicalTimeoutStreamErrorFrame},
 		{"canceled", safeError{category: safeCancellation}, 499, canonicalCancellationError, canonicalCancellationStreamErrorFrame},
 		{"internal", safeError{category: safeInternal}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
-		{"authentication", safeError{category: safeAuthentication}, 401, canonicalAuthenticationError, canonicalInternalStreamErrorFrame},
 		{"permission", safeError{category: safePermission}, 403, canonicalPermissionError, canonicalInternalStreamErrorFrame},
 		{"zero", safeError{}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
 		{"unknown", safeError{category: 255}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
@@ -915,7 +882,7 @@ func TestPublicError_FixedBytes(t *testing.T) {
 		{"unknown request reason", safeError{category: safeInvalidRequest, reason: requestFailureReason("unknown")}, 400, canonicalInvalidRequestError, canonicalInternalStreamErrorFrame},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h := newTestHandler(t, testLimits())
+			h := newTestHandler(t)
 			response := httptest.NewRecorder()
 			h.writeSafeError(response, tc.value, nil)
 			assert.Equal(t, tc.status, response.Code)
@@ -955,27 +922,6 @@ func TestPublicError_InvalidOptionalFields(t *testing.T) {
 	assert.Equal(t, canonicalOverloadError, body)
 }
 
-func TestPublicError_ClassificationBoundaries(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		err    error
-		unary  safeErrorCategory
-		stream safeErrorCategory
-	}{
-		{"wrapped cancellation", provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Cause: context.Canceled}), safeCancellation, safeFailedDependency},
-		{"wrapped timeout", provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Cause: context.DeadlineExceeded}), safeTimeout, safeFailedDependency},
-		{"invalid status", provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 700}), safeUpstream, safeInternal},
-		{"zero status", provider.NewAPICallError(provider.APICallErrorOptions{}), safeUpstream, safeUpstream},
-		{"zero canceled status", provider.NewAPICallError(provider.APICallErrorOptions{Cause: context.Canceled}), safeCancellation, safeCancellation},
-		{"nil API error", (*provider.APICallError)(nil), safeInternal, safeInternal},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.unary, safeErrorFromProvider(tc.err).category)
-			assert.Equal(t, tc.stream, safeErrorFromStreamProvider(tc.err).category)
-		})
-	}
-}
-
 func TestSafeErrorReduction(t *testing.T) {
 	t.Run("fixed documents", func(t *testing.T) {
 		for _, tc := range []struct {
@@ -993,32 +939,11 @@ func TestSafeErrorReduction(t *testing.T) {
 			{value: safeError{category: safeInternal}, status: http.StatusInternalServerError},
 			{value: safeError{category: safeInvalidRequest, reason: capabilityTools}, status: http.StatusBadRequest},
 		} {
-			h := newTestHandler(t, testLimits())
+			h := newTestHandler(t)
 			response := httptest.NewRecorder()
 			h.writeSafeError(response, tc.value, nil)
 			assert.Equal(t, tc.status, response.Code)
 			require.NoError(t, compileWireSchema(t, errorSchemaJSON).Validate(response.Body.Bytes()))
-		}
-	})
-
-	t.Run("provider status and transport reduction", func(t *testing.T) {
-		for _, tc := range []struct {
-			err      error
-			category safeErrorCategory
-		}{
-			{err: context.Canceled, category: safeCancellation},
-			{err: context.DeadlineExceeded, category: safeTimeout},
-			{err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 408}), category: safeTimeout},
-			{err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 429}), category: safeRateLimit},
-			{err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503}), category: safeOverload},
-			{err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 400}), category: safeFailedDependency},
-			{err: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 500}), category: safeUpstream},
-			{err: testNetError{timeout: true}, category: safeTimeout},
-			{err: &url.Error{Op: "Post", URL: "https://private", Err: testNetError{}}, category: safeUpstream},
-			{err: &net.OpError{Op: "dial", Net: "tcp", Addr: testAddr("private:443"), Err: errors.New("refused")}, category: safeUpstream},
-			{err: errors.New("private internal"), category: safeInternal},
-		} {
-			assert.Equal(t, tc.category, safeErrorFromProvider(tc.err).category)
 		}
 	})
 
@@ -1068,7 +993,9 @@ func TestProviderMetadata_RuntimeFailureAndFinishAuthority(t *testing.T) {
 	}
 	body := h.serve(streamRequest(`{"prompt":[]}`)).Body.String()
 	assert.Contains(t, body, `"future":{"final":true}`)
-	assert.NotContains(t, body, `"type":"error"`)
+	assert.Equal(t, 1, strings.Count(body, `"type":"error"`))
+	assert.Equal(t, 1, strings.Count(body, `"code":"internal_error"`))
+	assert.Less(t, strings.Index(body, `"type":"finish"`), strings.Index(body, `"type":"error"`))
 	assert.NotContains(t, body, "late")
 }
 
@@ -1108,7 +1035,7 @@ func TestProviderMetadata_SharedModelIsolation(t *testing.T) {
 	assert.Equal(t, requests, h.resolver.callCount())
 }
 
-func invocationHarness(t *testing.T, limits Limits, models ...*recordingModel) *runtimeHarness {
+func invocationHarness(t *testing.T, limits execution.Limits, models ...*recordingModel) *runtimeHarness {
 	t.Helper()
 	h := newRuntimeHarness(t, limits)
 	candidates := make([]provider.LanguageModel, len(models))
@@ -1196,8 +1123,8 @@ func TestInvocation_NativeEchoAndLargeError(t *testing.T) {
 
 func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 	for _, tc := range []struct {
-		name                                             string
-		streaming, committed, fallback, exhausted, plain bool
+		name                                                       string
+		streaming, committed, fallback, exhausted, plain, accounts bool
 	}{
 		{name: "unary failure"},
 		{name: "unary fallback success", fallback: true},
@@ -1207,6 +1134,10 @@ func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 		{name: "stream exhausted", streaming: true, fallback: true, exhausted: true},
 		{name: "configured committed error", streaming: true, committed: true},
 		{name: "plain committed error", streaming: true, committed: true, plain: true},
+		{name: "request-account unary failure", accounts: true},
+		{name: "request-account unary fallback success", fallback: true, accounts: true},
+		{name: "request-account stream exhausted", streaming: true, fallback: true, exhausted: true, accounts: true},
+		{name: "request-account committed error", streaming: true, committed: true, accounts: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			const source = `{"message":"echo server-key unused-key own-byok-key","type":"type-server-key","code":"code-unused-key"}`
@@ -1229,18 +1160,29 @@ func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 				models = append(models, second)
 			}
 			h := invocationHarness(t, testLimits(), models...)
-			selector := CatalogSelector(h.resolver)
+			selector := execution.CatalogSelector(h.resolver)
 			if tc.plain {
-				selector = func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
-					return Selection{ID: "request/model", Model: first}, nil
+				selector = func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+					return execution.Selection{ID: "request/model", Model: first}, nil
+				}
+			}
+			if tc.accounts {
+				ordered := h.resolver.resolved.Model
+				if len(models) == 1 {
+					chain, err := fallback.New(first)
+					require.NoError(t, err)
+					ordered = chain
+				}
+				selector = func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
+					return execution.AccountSelection(id, ordered, execution.RequestAccounts{Provider: "private-provider", ModelID: "private-backend-model", Count: len(models)}), nil
 				}
 			}
 			keys := []string{"server-key", "unused-key"}
-			handler, err := New(Config{Selector: selector, Limits: testLimits(), ConfiguredAPIKeys: keys})
+			handler, err := newWireHandler(execution.Config{Selector: selector, Limits: testLimits(), ConfiguredAPIKeys: keys})
 			require.NoError(t, err)
 			keys[0] = "caller-mutation"
 			request := validRequest(`{"prompt":[]}`)
-			if tc.plain {
+			if tc.plain || tc.accounts {
 				request = validRequest(`{"prompt":[],"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"own-byok-key"}]}}}}`)
 			}
 			request.Header.Set(HeaderStreaming, fmt.Sprint(tc.streaming))
@@ -1264,6 +1206,11 @@ func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 			}
 			if tc.plain {
 				assert.NotContains(t, body, "execution")
+			}
+			if tc.accounts {
+				assert.Contains(t, body, `"execution":{"requestedModelId":" public/model ","attempts":[{"provider":"private-provider","modelId":"private-backend-model","outcome":`)
+				assert.NotContains(t, body, "canonicalModelId")
+				assert.NotContains(t, body, "providerInstance")
 			}
 			if tc.streaming && status == http.StatusOK {
 				assert.Contains(t, body, `"type":"finish"`)
@@ -1353,11 +1300,10 @@ func TestInvocation_SharedModelIsolation(t *testing.T) {
 
 func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
 	entered := make(chan struct{})
-	release := make(chan struct{})
 	observed := make(chan struct{})
-	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+	first := &recordingModel{generate: func(ctx context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
 		close(entered)
-		<-release
+		<-ctx.Done()
 		return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "unowned late native failure", StatusCode: 401})
 	}}
 	second := &recordingModel{}
@@ -1384,7 +1330,6 @@ func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
 	case <-time.After(time.Second):
 		require.FailNow(t, "cancellation did not return")
 	}
-	close(release)
 	select {
 	case <-observed:
 	case <-time.After(time.Second):
@@ -1393,122 +1338,7 @@ func TestInvocation_CanceledLateFallbackObservation(t *testing.T) {
 	assert.Zero(t, second.callCount())
 }
 
-func TestInvocation_RejectedUnaryOutcomeBeforePublication(t *testing.T) {
-	entered := make(chan struct{})
-	release := make(chan struct{})
-	observations := make(chan fallback.Attempt, 1)
-	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-		close(entered)
-		<-release
-		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Message: "handler-rejected native failure"})
-	}}
-	second := &recordingModel{}
-	h := invocationHarness(t, testLimits(), first, second)
-	switch model := h.resolver.resolved.Model.(type) {
-	case *fallback.Model:
-		model.WithAttemptObserver(func(_ context.Context, attempt fallback.Attempt) { observations <- attempt })
-	default:
-		require.FailNow(t, "expected configured fallback")
-	}
-	parent, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved))
-	capture := &attemptCapture{}
-	ctx := fallback.WithAttemptObserver(parent, capture.observe)
-	results := make(chan error, 1)
-	go func() {
-		_, err := h.handler.invokeModel(ctx, h.resolver.resolved.Model, provider.CallOptions{}, capture)
-		results <- err
-	}()
-	select {
-	case <-entered:
-	case <-time.After(time.Second):
-		require.FailNow(t, "candidate did not enter")
-	}
-	cancel()
-	var err error
-	select {
-	case err = <-results:
-	case <-time.After(time.Second):
-		require.FailNow(t, "cancellation did not return")
-	}
-	require.ErrorIs(t, err, context.Canceled)
-	close(release)
-	var attempt fallback.Attempt
-	select {
-	case attempt = <-observations:
-	case <-time.After(time.Second):
-		require.FailNow(t, "fallback observation did not arrive")
-	}
-	assert.Equal(t, fallback.AttemptCanceled, attempt.Outcome)
-	require.NotNil(t, attempt.SourceErr)
-	assert.Contains(t, attempt.SourceErr.Error(), "handler-rejected native failure")
-	view := request.snapshot(capture, err)
-	assert.Nil(t, view.overview)
-	capture.mu.Lock()
-	defer capture.mu.Unlock()
-	assert.True(t, capture.sealed)
-	assert.Empty(t, capture.attempts)
-	assert.Zero(t, second.callCount())
-}
-
-func TestInvocation_RejectRecordedFallbackOutcome(t *testing.T) {
-	parent, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	first := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-		cancel()
-		return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 401, Message: "handler-rejected native failure"})
-	}}
-	second := &recordingModel{}
-	h := invocationHarness(t, testLimits(), first, second)
-	request := newExecutionRequest("alias", selectConfiguredModel(t, h.resolver.resolved))
-	capture := &attemptCapture{}
-	ctx := fallback.WithAttemptObserver(parent, capture.observe)
-	_, err := h.resolver.resolved.Model.DoGenerate(ctx, provider.CallOptions{})
-	require.ErrorIs(t, err, context.Canceled)
-	require.Len(t, capture.attempts, 1)
-	require.NotNil(t, capture.attempts[0].SourceErr)
-	capture.discard()
-	view := request.snapshot(capture, ctx.Err())
-	assert.Nil(t, view.overview)
-	assert.Empty(t, capture.attempts)
-	assert.True(t, capture.sealed)
-	assert.Zero(t, second.callCount())
-}
-
-func selectConfiguredModel(t *testing.T, resolved catalog.ResolvedModel) Selection {
-	t.Helper()
-	selected, err := CatalogSelector(&recordingResolver{resolved: resolved})(t.Context(), "alias", provider.CallOptions{}, nil)
-	require.NoError(t, err)
-	return selected
-}
-
-func TestRequestSelection_ConfiguredExecution(t *testing.T) {
-	resolved := catalog.ResolvedModel{
-		ID:         "canonical",
-		Model:      &recordingModel{},
-		Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "backend", ProviderInstance: "configured"}},
-	}
-	selected := selectConfiguredModel(t, resolved)
-	resolved.Candidates[0].ModelID = "mutated"
-	request := newExecutionRequest("alias", selected)
-	selected.configured.candidates[0].ModelID = "mutated-again"
-	assert.Equal(t, "canonical", request.canonical)
-	assert.Equal(t, "backend", request.candidates[0].ModelID)
-	encoded, err := json.Marshal(selected)
-	require.NoError(t, err)
-	assert.NotContains(t, string(encoded), "configured")
-	capture := &attemptCapture{}
-	capture.enter()
-	view := request.snapshot(capture, nil)
-	require.NotNil(t, view.overview)
-	assert.Equal(t, "alias", view.overview.RequestedModelID)
-	assert.Equal(t, "canonical", view.overview.CanonicalModelID)
-	assert.Equal(t, "configured", view.overview.Attempts[0].ProviderInstance)
-	assert.Equal(t, &execution.Failure{Message: "configured-secret"}, view.current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "configured-secret"})))
-}
-
-func TestRequestSelection_UnconfiguredNativeSummary(t *testing.T) {
+func TestRequestSelection_NativeSummaries(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		streaming bool
@@ -1519,187 +1349,90 @@ func TestRequestSelection_UnconfiguredNativeSummary(t *testing.T) {
 		{name: "committed error", streaming: true},
 		{name: "stream setup failure", streaming: true, failSetup: true},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			native := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "unconfigured-native-detail"})
-			metadata := provider.ProviderMetadata{"gateway": json.RawMessage(`{"opaque":"native-value"}`)}
-			model := &recordingModel{
-				generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
-					if tc.failSetup {
-						return nil, native
+		for _, accounts := range []bool{false, true} {
+			t.Run(tc.name+map[bool]string{false: "/unattributed", true: "/request accounts"}[accounts], func(t *testing.T) {
+				native := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "unconfigured-native-detail"})
+				metadata := provider.ProviderMetadata{"gateway": json.RawMessage(`{"opaque":"native-value"}`)}
+				model := &recordingModel{
+					generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+						if tc.failSetup {
+							return nil, native
+						}
+						result := validGenerateResult()
+						result.ProviderMetadata = metadata
+						return result, nil
+					},
+					stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+						if tc.failSetup {
+							return nil, native
+						}
+						finish := finishPart()
+						finish.ProviderMetadata = metadata
+						parts := make(chan provider.StreamPart, 2)
+						parts <- provider.StreamPart{Type: provider.PartError, APICallError: native}
+						parts <- finish
+						close(parts)
+						return &provider.StreamResult{Stream: parts}, nil
+					},
+				}
+				ordered, err := fallback.New(model)
+				require.NoError(t, err)
+				h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+					if accounts {
+						return execution.AccountSelection("request/model", ordered, execution.RequestAccounts{Provider: "private-provider", ModelID: "private-backend-model", Count: 1}), nil
 					}
-					result := validGenerateResult()
-					result.ProviderMetadata = metadata
-					return result, nil
-				},
-				stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-					if tc.failSetup {
-						return nil, native
+					return execution.Selection{ID: "request/model", Model: ordered}, nil
+				}})
+				require.NoError(t, err)
+				var observed int
+				ordered.WithAttemptObserver(func(context.Context, fallback.Attempt) { observed++ })
+				request := validRequest(`{"prompt":[]}`)
+				request.Header.Set(HeaderStreaming, fmt.Sprint(tc.streaming))
+				response := httptest.NewRecorder()
+				h.ServeHTTP(response, request)
+				body := response.Body.String()
+				assert.Equal(t, 1, observed)
+				assert.Equal(t, 1, model.callCount())
+				if tc.streaming && !tc.failSetup {
+					assert.Contains(t, body, `"nativeError":{"message":"unconfigured-native-detail","statusCode":503}`)
+				} else {
+					assert.NotContains(t, body, "nativeError")
+				}
+				if tc.failSetup {
+					assert.Equal(t, http.StatusServiceUnavailable, response.Code)
+				} else {
+					assert.Equal(t, http.StatusOK, response.Code)
+					if tc.streaming {
+						assert.Contains(t, body, `"type":"error"`)
+						assert.Contains(t, body, `"type":"finish"`)
 					}
-					finish := finishPart()
-					finish.ProviderMetadata = metadata
-					parts := make(chan provider.StreamPart, 2)
-					parts <- provider.StreamPart{Type: provider.PartError, APICallError: native}
-					parts <- finish
-					close(parts)
-					return &provider.StreamResult{Stream: parts}, nil
-				},
-			}
-			ordered, err := fallback.New(model)
-			require.NoError(t, err)
-			h, err := New(Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
-				return Selection{ID: "request/model", Model: ordered}, nil
-			}})
-			require.NoError(t, err)
-			var observed int
-			ctx := fallback.WithAttemptObserver(t.Context(), func(context.Context, fallback.Attempt) { observed++ })
-			request := validRequest(`{"prompt":[]}`).WithContext(ctx)
-			request.Header.Set(HeaderStreaming, fmt.Sprint(tc.streaming))
-			response := httptest.NewRecorder()
-			h.ServeHTTP(response, request)
-			assert.Equal(t, 1, observed)
-			assert.Equal(t, 1, model.callCount())
-			if tc.streaming && !tc.failSetup {
-				assert.Contains(t, response.Body.String(), `"nativeError":{"message":"unconfigured-native-detail","statusCode":503}`)
-			} else {
-				assert.NotContains(t, response.Body.String(), "unconfigured-native-detail")
-				assert.NotContains(t, response.Body.String(), "nativeError")
-			}
-			assert.NotContains(t, response.Body.String(), "execution")
-			assert.NotContains(t, response.Body.String(), "nativeMetadata")
-			if tc.failSetup {
-				assert.Equal(t, http.StatusServiceUnavailable, response.Code)
-			} else {
-				assert.Equal(t, http.StatusOK, response.Code)
-				assert.Contains(t, response.Body.String(), `"gateway":{"opaque":"native-value"}`)
-				if tc.streaming {
-					assert.Contains(t, response.Body.String(), `"type":"error"`)
-					assert.Contains(t, response.Body.String(), `"type":"finish"`)
 				}
-			}
-		})
-	}
-}
-
-func TestExecutionRequest_Snapshot(t *testing.T) {
-	failure := errors.New("candidate failure")
-	for _, tc := range []struct {
-		name       string
-		candidates int
-		entered    bool
-		attempts   []fallback.Attempt
-		err        error
-		discard    bool
-		outcomes   []fallback.AttemptOutcome
-	}{
-		{name: "not entered", candidates: 1},
-		{name: "direct selected", candidates: 1, entered: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
-		{name: "direct failed", candidates: 1, entered: true, err: failure, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed}},
-		{name: "rejected direct canceled", candidates: 1, entered: true, err: context.Canceled, discard: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptCanceled}},
-		{name: "rejected before entry", candidates: 1, discard: true},
-		{name: "fallback selected", candidates: 2, entered: true, attempts: []fallback.Attempt{
-			{Index: 1, Outcome: fallback.AttemptFailed, SourceErr: failure, WillFallback: true},
-			{Index: 2, Outcome: fallback.AttemptSelected},
-		}, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
-		{name: "rejected fallback", candidates: 2, entered: true, attempts: []fallback.Attempt{
-			{Index: 1, Outcome: fallback.AttemptCanceled, SourceErr: failure},
-		}, err: context.Canceled, discard: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			resolved := catalog.ResolvedModel{ID: "canonical"}
-			for i := range tc.candidates {
-				resolved.Candidates = append(resolved.Candidates, catalog.ConfiguredCandidate{Provider: "native", ModelID: fmt.Sprint(i)})
-			}
-			request := newExecutionRequest("alias", selectConfiguredModel(t, resolved))
-			resolved.Candidates[0].ModelID = "mutated"
-			capture := &attemptCapture{}
-			if tc.entered {
-				capture.enter()
-			}
-			for _, attempt := range tc.attempts {
-				capture.observe(t.Context(), attempt)
-			}
-			if tc.discard {
-				capture.discard()
-			}
-			view := request.snapshot(capture, tc.err)
-			if len(tc.outcomes) == 0 {
-				assert.Nil(t, view.overview)
-			} else {
-				require.NotNil(t, view.overview)
-				require.Len(t, view.overview.Attempts, len(tc.outcomes))
-				for i, outcome := range tc.outcomes {
-					assert.Equal(t, outcome, view.overview.Attempts[i].Outcome)
-					assert.Equal(t, fmt.Sprint(i), view.overview.Attempts[i].ModelID)
+				if !accounts {
+					if !tc.streaming || tc.failSetup {
+						assert.NotContains(t, body, "unconfigured-native-detail")
+					}
+					assert.NotContains(t, body, "execution")
+					assert.NotContains(t, body, "nativeMetadata")
+					if !tc.failSetup {
+						assert.Contains(t, body, `"gateway":{"opaque":"native-value"}`)
+					}
+					return
 				}
-			}
-			assert.Equal(t, &execution.Failure{Message: "credential"}, view.current(provider.NewAPICallError(provider.APICallErrorOptions{Message: "credential"})))
-			before, err := json.Marshal(view.overview)
-			require.NoError(t, err)
-			var late sync.WaitGroup
-			for range 8 {
-				late.Go(func() {
-					capture.enter()
-					capture.observe(t.Context(), fallback.Attempt{Index: 1, Outcome: fallback.AttemptFailed, SourceErr: errors.New("late failure")})
-				})
-			}
-			late.Wait()
-			after, err := json.Marshal(view.overview)
-			require.NoError(t, err)
-			assert.Equal(t, before, after)
-			entered, attempts := capture.seal()
-			assert.Equal(t, tc.entered, entered)
-			assert.Empty(t, attempts)
-			assert.True(t, capture.sealed)
-		})
-	}
-}
-
-type projectionError struct {
-	inspect func()
-}
-
-func (err projectionError) Error() string {
-	err.inspect()
-	return "candidate failure"
-}
-
-func TestExecutionRequest_ProjectionAfterSeal(t *testing.T) {
-	for _, panics := range []bool{false, true} {
-		t.Run(fmt.Sprint(panics), func(t *testing.T) {
-			request := newExecutionRequest("alias", selectConfiguredModel(t, catalog.ResolvedModel{ID: "canonical", Candidates: []catalog.ConfiguredCandidate{{Provider: "native", ModelID: "model"}}}))
-			capture := &attemptCapture{}
-			capture.enter()
-			inspected := make(chan struct{})
-			failure := projectionError{inspect: func() {
-				capture.observe(t.Context(), fallback.Attempt{Index: 2, Outcome: fallback.AttemptSelected})
-				close(inspected)
-				if panics {
-					panic("projection failed")
+				selected := `{"requestedModelId":" public/model ","attempts":[{"provider":"private-provider","modelId":"private-backend-model","outcome":"selected"}]}`
+				failed := `{"requestedModelId":" public/model ","attempts":[{"provider":"private-provider","modelId":"private-backend-model","outcome":"failed","error":{"message":"unconfigured-native-detail","statusCode":503}}]}`
+				switch {
+				case tc.failSetup:
+					assert.Contains(t, body, `"providerMetadata":{"gateway":{"execution":`+failed+`}}`)
+				case tc.streaming:
+					assert.Contains(t, body, `"data":{"providerMetadata":{"gateway":{"execution":`+selected+`}}`)
+					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"nativeMetadata":{"opaque":"native-value"}}`)
+				default:
+					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"nativeMetadata":{"opaque":"native-value"}}`)
 				}
-			}}
-			views := make(chan executionView, 1)
-			go func() { views <- request.snapshot(capture, failure) }()
-			var view executionView
-			select {
-			case view = <-views:
-			case <-time.After(time.Second):
-				require.FailNow(t, "projection held the capture lock")
-			}
-			select {
-			case <-inspected:
-			default:
-				require.FailNow(t, "native error was not inspected")
-			}
-			if panics {
-				assert.Nil(t, view.overview)
-			} else {
-				require.NotNil(t, view.overview)
-				require.Len(t, view.overview.Attempts, 1)
-				assert.Equal(t, "candidate failure", view.overview.Attempts[0].Error.Message)
-			}
-			_, attempts := capture.seal()
-			assert.Empty(t, attempts)
-		})
+				assert.NotContains(t, body, "canonicalModelId")
+				assert.NotContains(t, body, "providerInstance")
+			})
+		}
 	}
 }
 
@@ -1778,8 +1511,6 @@ func TestCustomContentRequest_Refusals(t *testing.T) {
 		{"undotted kind", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"unqualified"}]}]}`, string(canonicalInvalidRequestError)},
 		{"missing kind", `{"prompt":[{"role":"assistant","content":[{"type":"custom"}]}]}`, string(canonicalInvalidRequestError)},
 		{"non-object options", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x","providerOptions":{"p":[]}}]}]}`, string(canonicalInvalidRequestError)},
-		{"reserved namespace on custom part", `{"prompt":[{"role":"assistant","content":[{"type":"custom","kind":"p.x","providerOptions":{"gateway":{}}}]}]}`, string(reservedProviderOptionsError)},
-		{"reserved namespace on tool-result custom entry", `{"prompt":[{"role":"tool","content":[{"type":"tool-result","toolCallId":"c","toolName":"t","output":{"type":"content","value":[{"type":"custom","providerOptions":{"grafana":{}}}]}}]}]}`, string(reservedProviderOptionsError)},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

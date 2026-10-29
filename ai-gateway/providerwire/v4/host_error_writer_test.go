@@ -6,35 +6,33 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
 )
 
-func TestNewHostErrorWriter(t *testing.T) {
-	require.NotNil(t, NewHostErrorWriter())
-}
+var _ host.ErrorWriter = (*HostErrorWriter)(nil)
 
-func TestHostErrorWriter_Write(t *testing.T) {
-	writer := NewHostErrorWriter()
+func TestHostErrorWriter_WriteHostError(t *testing.T) {
+	internal := `{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`
 	tests := []struct {
 		name     string
-		category HostErrorCategory
+		category host.ErrorCategory
 		status   int
-		body     []byte
+		body     string
 	}{
-		{name: "authentication", category: HostErrorAuthentication, status: http.StatusUnauthorized, body: []byte(`{"error":{"message":"authentication failed","type":"authentication_error","param":null,"code":"authentication_error"}}`)},
-		{name: "permission", category: HostErrorPermission, status: http.StatusForbidden, body: []byte(`{"error":{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden"}}`)},
-		{name: "BYOK discovery", category: HostErrorBYOKDiscovery, status: http.StatusBadRequest, body: []byte(`{"error":{"message":"catalog discovery is unsupported for BYOK","type":"invalid_request_error","param":null,"code":"invalid_request"}}`)},
-		{name: "internal", category: HostErrorInternal, status: http.StatusInternalServerError, body: []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)},
-		{name: "zero category", category: 0, status: http.StatusInternalServerError, body: []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)},
-		{name: "unknown category", category: 255, status: http.StatusInternalServerError, body: []byte(`{"error":{"message":"internal error","type":"internal_server_error","param":null,"code":"internal_error"}}`)},
+		{name: "permission", category: host.ErrorPermission, status: http.StatusForbidden, body: `{"error":{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden"}}`},
+		{name: "BYOK discovery", category: host.ErrorBYOKDiscovery, status: http.StatusBadRequest, body: `{"error":{"message":"catalog discovery is unsupported for BYOK","type":"invalid_request_error","param":null,"code":"invalid_request"}}`},
+		{name: "internal", category: host.ErrorInternal, status: http.StatusInternalServerError, body: internal},
+		{name: "zero category", category: 0, status: http.StatusInternalServerError, body: internal},
+		{name: "unknown category", category: 255, status: http.StatusInternalServerError, body: internal},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			response := httptest.NewRecorder()
-			writer.Write(response, tc.category)
+			NewHostErrorWriter().WriteHostError(response, tc.category)
 			assert.Equal(t, tc.status, response.Code)
-			assert.Equal(t, string(tc.body), response.Body.String())
-			assert.Equal(t, "application/json", response.Header().Get("Content-Type"))
+			assert.Equal(t, tc.body, response.Body.String())
+			assert.Equal(t, http.Header{"Content-Type": {"application/json"}}, response.Header())
 		})
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	providerwirev4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -202,6 +203,9 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		return nil, fmt.Errorf("test: unsupported tool content part type: custom: %w", provider.ErrUnsupportedFunctionality)
 	case "citations":
 		return &provider.StreamResult{Stream: scenarioStream(scenarioCitationStream()...)}, nil
+	case "sequential-segments-anthropic", "sequential-segments-openai":
+		m.stats.recordSuccess(options)
+		return &provider.StreamResult{Stream: scenarioStream(scenarioSequentialSegments(m.kind)...)}, nil
 	case "sources":
 		parts := []provider.StreamPart{}
 		for _, source := range scenarioSources() {
@@ -468,8 +472,8 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 29)
-	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "citations", "custom", "unsupported-functionality", "success", "raw", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error"} {
+	entries := make([]catalog.StaticEntry, 0, 31)
+	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "citations", "custom", "unsupported-functionality", "success", "raw", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error", "sequential-segments-anthropic", "sequential-segments-openai"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},
@@ -504,19 +508,19 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	if err != nil {
 		return nil, err
 	}
-	configured := providerwirev4.CatalogSelector(resolver)
-	runtime, err := providerwirev4.New(providerwirev4.Config{
+	configured := execution.CatalogSelector(resolver)
+	runtime, err := newWireHandler(execution.Config{
 		ConfiguredAPIKeys: []string{"configured-test-key"},
-		Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (providerwirev4.Selection, error) {
+		Selector: func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
 			if id == "unconfigured-key-errors" {
-				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-key-errors", stats: stats}}, nil
+				return execution.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-key-errors", stats: stats}}, nil
 			}
 			if id == "unconfigured-errors" {
-				return providerwirev4.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-errors", stats: stats}}, nil
+				return execution.Selection{ID: "request/errors", Model: &providerWireV4Model{kind: "stream-errors", stats: stats}}, nil
 			}
 			return configured(ctx, id, options, gateway)
 		},
-		Limits: providerwirev4.Limits{
+		Limits: execution.Limits{
 			StreamIdleDuration:  200 * time.Millisecond,
 			StreamDrainDuration: 100 * time.Millisecond,
 		},
@@ -525,6 +529,33 @@ func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 		return nil, err
 	}
 	return &providerWireV4Scenario{runtime: runtime, stats: stats}, nil
+}
+
+func scenarioSequentialSegments(kind string) []provider.StreamPart {
+	usage := func(input, output int) *provider.Usage {
+		return &provider.Usage{InputTokens: provider.InputTokenUsage{Total: &input}, OutputTokens: provider.OutputTokenUsage{Total: &output}}
+	}
+	text := func(id, delta string) []provider.StreamPart {
+		return []provider.StreamPart{{Type: provider.PartTextStart, ID: id}, {Type: provider.PartTextDelta, ID: id, Delta: delta}, {Type: provider.PartTextEnd, ID: id}}
+	}
+	stop := provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"}
+	timestamp := time.Date(2026, time.October, 27, 12, 0, 0, 0, time.UTC)
+	meta := func(id string) provider.StreamPart {
+		return provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: id, ModelID: "segment-model", Timestamp: timestamp}
+	}
+	var parts []provider.StreamPart
+	if kind == "sequential-segments-anthropic" {
+		parts = append(parts, meta("msg_1"))
+		parts = append(parts, text("0", "first ")...)
+		parts = append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &stop, Usage: usage(3, 4)}, provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"type":"message_start"}`)}, meta("msg_2"))
+		parts = append(parts, text("0", "second")...)
+		return append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &stop, Usage: usage(5, 6)})
+	}
+	parts = append(parts, meta("resp_1"))
+	parts = append(parts, text("msg_1", "first ")...)
+	parts = append(parts, meta("resp_2"))
+	parts = append(parts, text("msg_2", "second")...)
+	return append(parts, provider.StreamPart{Type: provider.PartFinish, FinishReason: &stop, Usage: usage(5, 6)})
 }
 
 func scenarioStream(parts ...provider.StreamPart) <-chan provider.StreamPart {
@@ -605,3 +636,11 @@ func scenarioOutputText(kind, fallbackText string) string {
 	}
 }
 func stringPointer(value string) *string { return &value }
+
+func newWireHandler(config execution.Config) (http.Handler, error) {
+	runtime, err := execution.New(config)
+	if err != nil {
+		return nil, err
+	}
+	return providerwirev4.New(runtime)
+}

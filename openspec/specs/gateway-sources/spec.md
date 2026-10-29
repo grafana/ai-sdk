@@ -82,16 +82,24 @@ Useful native IDs, cited text and unknown fields inside ordinary provider metada
 - **THEN** ordinary metadata SHALL survive without changing identity/title/filename or discarding fields, with concrete credential/tenant-source protections remaining independent
 
 ### Requirement: Atomic source lifecycle and observation
-Sources SHALL preserve relative output order and SHALL NOT close active text or tool blocks. Accepted sources SHALL mark output as started, disallow subsequent response metadata and reset idle activity through the existing loop. Provider error parts SHALL remain non-terminal; authoritative finish SHALL suppress later sources. Sources SHALL commit fallback candidates without replay. Existing cancellation, timeouts and cleanup ownership SHALL remain effective.
+Sources SHALL preserve relative output order and SHALL NOT close active text or tool blocks. A source SHALL NOT prevent a later response-metadata part once no block is open, and SHALL reset idle activity through the existing loop. Provider error parts SHALL remain non-terminal; a source after a finish without intervening response-metadata SHALL fail safely. Sources SHALL commit fallback candidates without replay. Existing cancellation, timeouts and cleanup ownership SHALL remain effective.
 
 #### Scenario: Source interleaving
 - **WHEN** a source appears between text-start and text-end
 - **THEN** the text block SHALL remain active and subsequent text deltas SHALL be accepted
-- **AND** a later response-metadata part SHALL fail safely
+- **AND** a response-metadata part before that text-end SHALL fail safely
 
 #### Scenario: Source-only observation
 - **WHEN** a source is the only payload before finish
 - **THEN** reusable observers SHALL record first-output timing without recording its content in metadata-only output
+
+#### Scenario: Metadata after a source
+- **WHEN** response-metadata follows a source with no block open
+- **THEN** the metadata SHALL be written and open a new response segment
+
+#### Scenario: Source after a finish
+- **WHEN** a source follows a valid finish without intervening response-metadata
+- **THEN** the source SHALL NOT be written, the finish SHALL remain written and one synthetic terminal internal error SHALL follow it
 
 ### Requirement: Source observers preserve payload without unsupported recordings
 Reusable logging, Prometheus and Agent Observability SHALL treat source as payload-bearing first output and pass it through unchanged. Gateway metadata-only telemetry SHALL omit source IDs, URLs, titles, filenames and metadata. Agent Observability SHALL NOT manufacture an unsupported source recording representation.
@@ -127,11 +135,11 @@ Any response identity in assembled message metadata SHALL be copied explicitly b
 - **THEN** a test-only WithUIMessageStreamMessageMetadata callback SHALL explicitly copy it without claiming automatic identity/warning projection or Gateway absent-value semantics
 
 ### Requirement: Source transport provenance and delivery evidence separation
-Synthetic transports SHALL NOT be presented as provider recordings. Published dependency, candidate-workspace and plugin package evidence SHALL be reported separately.
+Synthetic transports SHALL NOT be presented as provider recordings. Published dependency, same-revision source and plugin package evidence SHALL be reported separately.
 
 #### Scenario: Source transport provenance and delivery evidence separation
-- **WHEN** source acceptance uses a synthetic transport and candidate workspace build
-- **THEN** the report SHALL NOT label the transport as a recording and SHALL separate published-dependency, candidate-workspace and plugin package evidence
+- **WHEN** source acceptance uses a synthetic transport and a same-revision source build
+- **THEN** the report SHALL NOT label the transport as a recording and SHALL separate published-dependency, same-revision source and plugin package evidence
 
 ### Requirement: Source metadata validity and explicit failure
 Each source metadata namespace SHALL be validated on its original bytes as a UTF-8 name with a UTF-8 JSON object value. Malformed JSON, invalid UTF-8 and null or non-object namespaces SHALL fail the response or event explicitly rather than selectively omit fields. Source strings and metadata SHALL NOT be budgeted by size or cardinality.

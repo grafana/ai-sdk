@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import { GitHub, Manifest, setLogger } from 'release-please';
+import { withRequirementUpdates } from './requirements.mjs';
 
 export function readOnlyFetch(fetchImpl = globalThis.fetch) {
   return async (url, options = {}) => {
@@ -22,10 +23,10 @@ export function readOnlyFetch(fetchImpl = globalThis.fetch) {
   };
 }
 
-export async function prepareCandidates(github, { branch = 'main', path } = {}) {
+export async function prepareCandidates(github, { branch = 'main', path, manifestOptions = {} } = {}) {
   const manifest = await Manifest.fromManifest(
     github, branch, 'release-please-config.json',
-    '.release-please-manifest.json', {}, path,
+    '.release-please-manifest.json', manifestOptions, path,
   );
   if (path !== undefined && !Object.hasOwn(manifest.repositoryConfig, path)) {
     throw new Error(`unregistered release component: ${path}`);
@@ -38,8 +39,10 @@ export async function preview(github, options = {}) {
   const ref = { ...github.repository, ref: branch };
   const before = (await github.octokit.repos.getCommit(ref)).data.sha;
   const candidates = await prepareCandidates(github, options);
+  const config = await github.getFileJson('release-please-config.json', branch);
   const proposals = [];
   for (const candidate of candidates) {
+    if (!candidate.headRefName.endsWith('--components--ai-gateway')) await withRequirementUpdates(github, candidate, { branch, config });
     const changes = await github.buildChangeSet(candidate.updates, branch);
     proposals.push({
       title: candidate.title.toString(),

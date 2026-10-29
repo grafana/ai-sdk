@@ -23,7 +23,9 @@ Schema validation protects shape, not authorization or intent.
 
 Use [tool approval](../guides/tool-approval.md) for destructive, external, or
 high-value actions. When approval state travels through a browser, sign it with
-`WithToolApprovalSecret` and verify it on resume.
+`WithToolApprovalSecret` and verify it on resume. Signing covers locally
+executed tools; provider-executed approvals are unsigned and go to the provider
+unchecked.
 
 Approval is not a substitute for authorization. Recheck current permissions and
 resource state immediately before execution, even after a user approved the
