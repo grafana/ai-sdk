@@ -24,6 +24,7 @@ const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
 const BACKEND_DIR = resolve(AI_GATEWAY_ROOT, "pkg");
 const HOST_DIR = resolve(AI_GATEWAY_ROOT, "test/platformhost/cmd/plugin-host");
 const READY_TIMEOUT_MS = 30_000;
+const MODEL_CATALOG_MAX_BYTES = 64 * 1024;
 const ROUTE_DEADLINE = "60s";
 const TEST_TOKEN = "glsa_integration_service_account_token";
 const TEST_NAMESPACE = "stacks-27038";
@@ -817,22 +818,23 @@ describe("authenticated Anthropic Gateway command", () => {
       } finally { await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop()); }
     });
   }
-  it("serves the complete configured catalog above the former response cap without inference", async () => {
+  it("serves the complete configured catalog at the model catalog bound without inference", async () => {
     const fake = await FakeAnthropic.start();
     let gateway: GatewayProcess | undefined;
     try {
-      const candidates = Array.from({ length: 8 }, (_, i) => ({ providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: `${i}-` + '"'.repeat(512) }));
-      const routes = Array.from({ length: 140 }, (_, i) => ({ id: `public-${String(i).padStart(3, "0")}`, aliases: [`alias-${i}`] }));
+      const candidates = Array.from({ length: 8 }, (_, i) => ({ providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: `${i}-` + '"'.repeat(256) }));
+      const routes = Array.from({ length: 24 }, (_, i) => ({ id: `public-${String(i).padStart(3, "0")}`, aliases: [`alias-${i}`] }));
       const config = `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fake.url}\nmodels:\n` + routes.map(route => `  ${route.id}:\n    name: Model\n    primary:\n      provider: anthropic-primary\n      model: '${candidates[0].providerModelId}'\n    fallback:\n${candidates.slice(1).map(candidate => `      - provider: anthropic-primary\n        model: '${candidate.providerModelId}'\n`).join("")}    aliases: [${route.aliases[0]}]\n`).join("");
+      assert.ok(Buffer.byteLength(config) > 60_000 && Buffer.byteLength(config) <= MODEL_CATALOG_MAX_BYTES);
       gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "access-token", config);
       const baseURL = gateway.baseURL;
       const headers = { Authorization: `Bearer ${TEST_TOKEN}` };
       const response = await fetch(`${baseURL}/config`, { headers });
       assert.equal(response.status, 200);
       const body = await response.text();
-      assert.ok(Buffer.byteLength(body) > 1_048_576);
+      assert.ok(Buffer.byteLength(body) > Buffer.byteLength(config));
       const document = JSON.parse(body);
-      assert.equal(document.models.length, 140);
+      assert.equal(document.models.length, routes.length);
       assert.deepEqual(document.models.map((model: { id: string }) => model.id), routes.map(route => route.id));
       for (const [i, model] of document.models.entries()) assert.deepEqual(model.gateway, { aliases: routes[i].aliases, primary: candidates[0], fallbacks: candidates.slice(1) });
       assert.deepEqual(await fetchConfiguredModels({ baseURL, headers }), document);
@@ -3354,16 +3356,15 @@ class GatewayProcess {
     let exited: Promise<ProcessExit> | undefined;
     const output = { stderr: "" };
     try {
-      const configPath = join(directory, "models.yaml");
-      writeFileSync(configPath, fallbackURL
+      const modelCatalog = fallbackURL
         ? anthropicFallbackConfig(anthropicURL, fallbackURL, backendModel)
-        : configYAML ?? anthropicConfig(anthropicURL, backendModel));
+        : configYAML ?? anthropicConfig(anthropicURL, backendModel);
       proc = spawn(hostBinaryPath, ["--plugin", binary, "--topology", topology, "--namespace", TEST_NAMESPACE, "--service-account-token", TEST_TOKEN, "--log-level", "debug", "--route-deadline", ROUTE_DEADLINE], {
         cwd: directory,
         stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...Object.fromEntries(Object.entries(nodeProcess.env).filter(([name]) => !name.startsWith("AGENTO11Y_") && !name.startsWith("SIGIL_") && !name.startsWith("GRAFANA_JWKS") && !name.startsWith("GF_"))),
-          GF_PLUGIN_CONFIG_FILE: configPath,
+          GF_PLUGIN_MODEL_CATALOG: modelCatalog,
           GF_PLUGIN_ACCESS_MODE: topology,
           ...(topology === "cloud" ? { GF_PLUGIN_ACCESS_INTERNAL_SERVICES: INTERNAL_SERVICE } : {}),
           GATEWAY_TEST_ANTHROPIC_KEY: "integration-anthropic-key",
