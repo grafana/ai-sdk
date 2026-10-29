@@ -60,6 +60,7 @@ const (
 // ContextInfo carries consumer-derived fields that get attached to every
 // Generation. None are required.
 type ContextInfo struct {
+	ConversationID string
 	// UserID is attached to GenerationStart.UserID when non-empty. When empty,
 	// agento11y.UserIDFromContext is consulted.
 	UserID string
