@@ -27,7 +27,7 @@ See proposal.md for motivation. Current state and constraints:
 
 - Changing Gateway runtime behavior, settings or the plugin package's contents.
 - Validating the shared workflow's path before merge. It cannot authenticate outside `main` and tags.
-- Changing release-please, Gateway application tags or the library release automation. Dev publication creates no tags or releases, so the `multi-module-release-management` requirements for versioned Gateway delivery are unaffected.
+- Changing release-please, Gateway application tags or the library release automation. Dev publication creates no tags or releases. The `multi-module-release-management` "Fail-closed activation" scenario is narrowed to versioned Gateway publication, which stays disabled.
 
 ## Decisions
 
@@ -86,7 +86,7 @@ The repository pins actions by commit SHA, but the shared workflow fails on SHA 
 
 ### Serialize publications
 
-Give the job a concurrency group of its own, `ai-gateway-dev-publish`, with `cancel-in-progress: false`. A started publication finishes. GitHub keeps only the newest pending run, so an older waiting push is superseded. Catalog publish order then follows push order, which a later deployment that tracks the latest version needs.
+Give the job a concurrency group of its own, `ai-gateway-dev-publish`, with `cancel-in-progress: false`. A started publication finishes. GitHub keeps only the newest pending job in the group, so an older waiting publication is superseded. The group applies only once a run's gates have passed, and gates finish at different times per push, so publish order is not guaranteed to follow push order. A deployment that tracks the latest catalog version (#612) must account for that, for example by pinning versions from CI.
 
 ### Skip the shared Playwright run and keep both validators
 
@@ -108,18 +108,18 @@ The plugin-validation gate already runs the end-to-end tests against a pinned Gr
   - structural workflow tests;
   - a local run of `mage -v testRace` and `mage -v buildPlugin` from `ai-gateway/`;
   - a first-run checklist in tasks.md.
-- **Package manager detection in a subdirectory of the root pnpm workspace may fail.** The lockfile and `packageManager` are at the repository root. Confirm on the first `main` run. If detection fails, disable the job and follow up with the shared workflow owners.
+- **Package manager detection in a subdirectory of the root pnpm workspace may fail.** The lockfile is at the repository root; `ai-gateway/package.json` repeats the root `packageManager` because `pnpm/action-setup` reads only the plugin directory's `package.json`. Confirm on the first `main` run. If detection fails, disable the job and follow up with the shared workflow owners.
 - **The shared backend steps differ from repository CI.** It lints from `ai-gateway/` with the root `.golangci.yml`, and runs `go test -race` on `./pkg/...` without `-short`. Mitigations:
   - match the `golangci-lint` version to the mise pin;
   - run the same command locally before merge;
   - the race job already covers these packages with `-short`.
-- **The first publish needs one-time setup.** The `grafana-aigateway-app` stub must exist in the dev catalog, and the repository must be allowed to use the shared signing and publishing credentials. Both are listed as prerequisites. Until they are done, publish runs fail, but merges and other checks are unaffected.
+- **The first publish needs one-time setup.** The shared workflow creates the `grafana-aigateway-app` dev catalog stub when it is missing, but the repository must be allowed to use the shared signing and publishing credentials and the self-hosted runner labels the shared workflow runs on (`ubuntu-arm64-small`, `ubuntu-x64-small`, `ubuntu-x64-large`). Both are listed as prerequisites; without runner access the publish job stays queued. Until they are done, publish runs fail (missing credentials) or stay queued (missing runner access); merges and the required jobs are unaffected, but a queued publish keeps the ci.yml run in progress.
 - **The repository Actions policy applies to the whole shared call tree.** GitHub validates every job of `cd.yml` and its nested workflows when `ci.yml` starts, so one denied action version anywhere in the shared workflow fails all of Build & Test, including on pull requests. `ci-cd-workflows/v9.0.0` hit this through a denied `create-github-app-token` version. Check any pin upgrade against the policy before merging it.
-- **Version order depends on publish order.** Versions that differ only in `+<sha>` have equal semver precedence, so "latest" depends on publish order. Serialized publication handles this.
+- **Version order depends on publish order.** Versions that differ only in `+<sha>` have equal semver precedence, so "latest" depends on publish order. Serialized publication prevents concurrent publishes but not out-of-order ones; see "Serialize publications".
 - **The catalog grows by one version per `main` push.** This is acceptable for dev.
 
 ## Migration Plan
 
-1. Create the dev catalog stub and confirm signing and publishing access for the repository.
+1. Confirm the repository may use the shared signing and publishing credentials and runner labels.
 2. Merge. The first `main` push publishes `<version>+<sha>`. Check the run summary, the catalog entry and the `SOURCE_REVISION` of the published package.
 3. To roll back, remove or disable the job. Versions already published stay in the dev catalog until an admin removes them.

@@ -31,7 +31,7 @@
 - [x] 3.4 Document dev publication in `CONTRIBUTING.md`:
   - the trigger and version format `<package.json version>+<sha>`;
   - the `grafana_cloud` scope and the gates;
-  - serialized runs, and the one-time catalog stub and credential prerequisites;
+  - serialized runs, and the one-time credential and runner prerequisites;
   - how to find a commit's published version;
   - that publication does not deploy or run the plugin.
 
@@ -44,7 +44,7 @@
 
 ## Workflow follow-up
 
-- Prerequisite (maintainer, with elevated catalog access): create the `grafana-aigateway-app` plugin stub in the dev catalog, and confirm that the repository may use the shared signing and publishing credentials.
+- Prerequisite (maintainer): confirm that the repository may use the shared signing and publishing credentials and the shared workflow's self-hosted runner labels. The shared workflow creates the dev catalog stub if it is missing.
 - After merge, check the first `main` run:
   - the version `<version>+<sha>` is in the dev catalog with the `grafana_cloud` scope;
   - the shared lint, tests, build, validator and trufflehog passed;

@@ -44,13 +44,13 @@ Publication SHALL run Grafana's shared plugin workflow, pinned to a release tag.
 - **WHEN** the shared workflow's lint, tests, build, plugin validator or secret scan fails for a commit
 - **THEN** no version SHALL be published for that commit
 
-### Requirement: Ordered publication
-Publications SHALL run one at a time, in push order. A newer `main` push SHALL supersede an older one that is still waiting to publish, and SHALL NOT cancel a publication that has already started.
+### Requirement: Serialized publication
+Publications SHALL run one at a time. A publication that becomes ready while another is waiting SHALL supersede the waiting one, and no publication that has already started SHALL be cancelled. Publication order SHALL NOT be assumed to follow push order, because each push's gates finish at different times.
 
-#### Scenario: Pushes in quick succession
-- **WHEN** three commits are pushed to `main` while the first commit's publication is running
+#### Scenario: Publications ready in quick succession
+- **WHEN** the publications of three commits become ready in turn while the first is running
 - **THEN** the first publication SHALL complete
-- **AND** the third commit SHALL be published after it, and the second SHALL NOT be published
+- **AND** the third SHALL be published after it, and the second SHALL NOT be published
 
 ### Requirement: Publication documentation
 Maintainer documentation SHALL describe how a `main` commit becomes a dev catalog version, including the version format, scope, gates and one-time prerequisites. It SHALL state that publication does not deploy or run the plugin, and SHALL NOT name private infrastructure repositories.

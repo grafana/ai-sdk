@@ -10,8 +10,10 @@ gateway=$repo_root/ai-gateway
 dist=$gateway/dist
 licenses=$dist/licenses
 revision=local-unverified
-if [[ "${GITHUB_ACTIONS:-}" == true && "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ && "$(git -C "$repo_root" rev-parse HEAD)" == "$GITHUB_SHA" ]]; then
+source_revision='local-unverified: development build from an unverified working tree'
+if [[ "${GITHUB_ACTIONS:-}" == true && "$(git -C "$repo_root" rev-parse HEAD)" == "${GITHUB_SHA:-}" ]]; then
   revision=$GITHUB_SHA
+  source_revision=$GITHUB_SHA
 fi
 
 fail() { echo "$*" >&2; exit 1; }
@@ -21,11 +23,7 @@ rm -rf "$licenses"
 mkdir -p "$licenses/grafana-ai-gateway" "$licenses/grafana-ai-sdk"
 cp "$gateway/LICENSE" "$gateway/NOTICE" "$licenses/grafana-ai-gateway/"
 cp "$repo_root/LICENSE" "$repo_root/NOTICE" "$licenses/grafana-ai-sdk/"
-if [[ "$revision" == local-unverified ]]; then
-  printf 'local-unverified: development build from an unverified working tree\n' >"$dist/SOURCE_REVISION"
-else
-  printf '%s\n' "$revision" >"$dist/SOURCE_REVISION"
-fi
+printf '%s\n' "$source_revision" >"$dist/SOURCE_REVISION"
 
 copy_license_files() {
   local source=$1 destination=$2 file

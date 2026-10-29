@@ -242,7 +242,7 @@ def verify_tagged(root, version, base):
 
 def verify_requirements(component, components, versions, base):
     if component == GATEWAY:
-        raise ValueError("Gateway application readiness awaits a plugin publication workflow and Gateway release attribution; publication remains disabled")
+        raise ValueError("Gateway application readiness awaits a versioned plugin publication workflow and Gateway release attribution; versioned publication remains disabled")
     manifest = json.loads(run("go", "mod", "edit", "-json", str(Path(component, "go.mod"))))
     requirements = []
     for requirement in manifest.get("Require") or []:

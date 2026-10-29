@@ -587,11 +587,12 @@ SDK's Go module dependency graph.
   `0.1.0-alpha.1+<sha>`, with the `grafana_cloud` scope, and its
   `SOURCE_REVISION` is that commit. The shared workflow lints, tests, builds,
   validates, scans and signs the package again before publishing. Publications
-  run one at a time: a newer push replaces one that is still waiting, so not
-  every commit is published. The job summary of the push's CI run shows the
-  published version. Publication needs a `grafana-aigateway-app` stub in the
-  dev catalog and access to the shared signing and publishing credentials. It
-  does not deploy or run the plugin, publish to the ops or prod catalogs, or
+  run one at a time: a newer publication replaces one that is still waiting, so
+  not every commit is published, and publish order can differ from push order.
+  The job summary of the push's CI run shows the published version. The shared
+  workflow creates the dev catalog stub if it is missing; the repository needs
+  access to the shared signing and publishing credentials and to the shared
+  workflow's self-hosted runner labels. Publication does not deploy or run the plugin, publish to the ops or prod catalogs, or
   create tags or releases.
 
 Every `go.mod` replaces each first-party module in its
