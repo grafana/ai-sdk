@@ -102,8 +102,8 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
 
 ## 7. Integration checks (checks only, not a commit)
 
-- [ ] 7.1 Run `mise run check`, `mise run lint`, `mise run lint-docs`, `mise run parity-check`, `mise run validate-parity-baseline`, `mise run test-integration`, `mise run test-ai-gateway`, `mise run test-ai-gateway-command`, `mise run test-providerwire-v4` and `mise run test-race`. `mise run test-race` uses `-short` (`mise.toml:161-165`), so also run the non-short Gateway race command from the header: `(cd ai-gateway && go test -race ./internal/... ./providerwire/v4/... ./cmd/grafana-ai-gateway/internal/...)`.
-- [ ] 7.2 Confirm the following:
+- [x] 7.1 Run `mise run check`, `mise run lint`, `mise run lint-docs`, `mise run parity-check`, `mise run validate-parity-baseline`, `mise run test-integration`, `mise run test-ai-gateway`, `mise run test-ai-gateway-command`, `mise run test-providerwire-v4` and `mise run test-race`. `mise run test-race` uses `-short` (`mise.toml:161-165`), so also run the non-short Gateway race command from the header: `(cd ai-gateway && go test -race ./internal/... ./providerwire/v4/... ./cmd/grafana-ai-gateway/internal/...)`.
+- [x] 7.2 Confirm the following:
   - `git diff --name-status origin/main -- 'ai-gateway/providerwire/v4/*_test.go'` lists only added files;
   - `git diff --stat origin/main -- test/conformance` is empty, so `upstream.yaml`, fixtures and PARITY.md are unchanged (design D10);
   - `rg` finds `historicalToolCall`, `toolStreamPhase`, `toolStreamState`, `toolInputOpen`, `toolResultPreliminary`, `segmentTextIDs`, `segmentReasoningIDs`, `activeID`, `reasoningIDs`, `approvalIDs`, `quiescent`, `allowedAfterFinish` and `unaryToolState` nowhere in non-test `ai-gateway/providerwire/v4` code.
