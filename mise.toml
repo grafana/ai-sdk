@@ -246,6 +246,7 @@ run = "bash test/module-policy.sh"
 [tasks.test-ci-workflow]
 description = "Check structural source and artifact workflow gates"
 run = """
+python3 -m unittest discover -s scripts -p test_ci_docs_only.py
 mise deps install --only test
 cd test && pnpm --filter @ai-sdk/conformance-tools test:ci
 """
