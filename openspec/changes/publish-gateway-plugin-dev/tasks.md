@@ -39,7 +39,7 @@
 
 ## 4. Integration checks
 
-- [ ] 4.1 Run `mise run check`, `mise run lint`, `mise run test-ai-gateway`, `mise run test-ai-gateway-frontend` and `mise run test-ai-gateway-e2e`, and verify all pass.
+- [x] 4.1 Run `mise run check`, `mise run lint`, `mise run test-ai-gateway`, `mise run test-ai-gateway-frontend` and `mise run test-ai-gateway-e2e`, and verify all pass.
 - [x] 4.2 Run `openspec validate publish-gateway-plugin-dev --strict` and verify it passes.
 
 ## Workflow follow-up
