@@ -8,12 +8,11 @@ import { parseAllDocuments, parseDocument } from "yaml";
 const root = resolve(import.meta.dirname, "../../..");
 const document = parseDocument(readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8"));
 assert.deepEqual(document.errors, []);
-const workflow = document.toJS() as { concurrency: { group: string; "cancel-in-progress": string }; on: { push: { branches: string[]; tags?: string[] }; pull_request: unknown }; jobs: Record<string, { if?: string; needs?: string | string[]; permissions?: Record<string, string>; concurrency?: unknown; secrets?: unknown; uses?: string; with?: Record<string, unknown>; "continue-on-error"?: boolean; steps?: Array<{ name?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown>; "continue-on-error"?: boolean }> }> };
+const workflow = document.toJS() as { concurrency: { group: string; "cancel-in-progress": string }; on: { push: { branches: string[]; tags?: string[] }; pull_request: unknown }; jobs: Record<string, { name?: string; if?: string; needs?: string | string[]; permissions?: Record<string, string>; concurrency?: unknown; secrets?: unknown; uses?: string; with?: Record<string, unknown>; "continue-on-error"?: boolean; steps?: Array<{ name?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown>; "continue-on-error"?: boolean }> }> };
 const jobs = workflow.jobs;
 const source = ["ci", "race", "docs-lint", "module-resolution", "parity-baseline", "integration-test", "conformance-test"];
 const pushGuard = "${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) && github.repository == 'grafana/ai-sdk' }}";
-const mainGuard = "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' }}";
-const publish = "publish-ai-gateway-dev";
+const publishFile = "publish-ai-gateway-dev.yml";
 const sharedCD = /^grafana\/plugin-ci-workflows\/\.github\/workflows\/cd\.yml@ci-cd-workflows\/v\d+\.\d+\.\d+$/;
 const normalize = (value: string | undefined) => value?.replace(/\s+/g, " ").trim();
 const needs = (job: string) => [jobs[job]!.needs ?? []].flat();
@@ -99,8 +98,8 @@ describe("candidate-source workflow gates", () => {
     assert.equal(keep.with?.["if-no-files-found"], "error");
   });
 
-  it("has no image or deployment jobs", () => {
-    for (const job of ["image-validation", "publish-ai-gateway-image", "deploy-ai-gateway"]) assert.equal(jobs[job], undefined, job);
+  it("has no image, publication or deployment jobs", () => {
+    for (const job of ["image-validation", "publish-ai-gateway-image", "publish-ai-gateway-dev", "deploy-ai-gateway"]) assert.equal(jobs[job], undefined, job);
     for (const job of Object.keys(jobs)) {
       assert.doesNotMatch(commands(job), /docker|Dockerfile|ghcr\.io/i, job);
       for (const step of steps(job)) assert.doesNotMatch(step.uses ?? "", /docker\/|trigger-argo-workflow/, job);
@@ -108,17 +107,33 @@ describe("candidate-source workflow gates", () => {
     assert.doesNotMatch(readFileSync(resolve(root, "mise.toml"), "utf8"), /Dockerfile|build-ai-gateway-image|test-ai-gateway-image-source/);
   });
 
-  it("publishes to the dev catalog only from gated canonical main pushes", () => {
-    const job = jobs[publish];
-    assert.ok(job, "missing dev publication job");
-    assert.deepEqual(needs(publish).sort(), [...source, "plugin-validation"].sort());
-    assert.equal(job.if, mainGuard);
+  it("publishes to the dev catalog only after source CI for canonical main pushes", () => {
+    const publishDocument = parseDocument(readFileSync(resolve(root, ".github/workflows", publishFile), "utf8"));
+    assert.deepEqual(publishDocument.errors, []);
+    const publishing = publishDocument.toJS() as { on: unknown; permissions: unknown; concurrency: unknown; jobs: typeof jobs };
+    assert.deepEqual(publishing.on, { push: { branches: ["main"] } });
+    assert.deepEqual(publishing.permissions, {});
+    assert.deepEqual(publishing.concurrency, { group: "ai-gateway-dev-publish", "cancel-in-progress": false });
+    assert.deepEqual(Object.keys(publishing.jobs).sort(), ["publish", "source-ci"]);
+
+    const gate = publishing.jobs["source-ci"]!;
+    assert.equal(gate.if, "${{ github.repository == 'grafana/ai-sdk' }}");
+    assert.deepEqual(gate.permissions, { contents: "read", actions: "read", checks: "read" });
+    assert.ok(gate.steps!.some((step) => step.uses?.startsWith("actions/checkout@") && step.with?.["persist-credentials"] === false));
+    assert.ok(gate.steps!.every((step) => step["continue-on-error"] !== true));
+    const wait = gate.steps!.at(-1)!;
+    assert.equal(wait.run, "node release/tooling/gateway-publication-gate.mjs");
+    assert.deepEqual(wait.env, { GH_READ_TOKEN: "${{ github.token }}" });
+    assert.equal(jobs["plugin-validation"]!.name, "Validate AI Gateway plugin", "the gate requires plugin validation by its job name");
+
+    const job = publishing.jobs.publish!;
+    assert.deepEqual(job.needs, "source-ci");
+    assert.equal(job.if, undefined, "publication must not run when the gate fails or is skipped");
     assert.match(job.uses ?? "", sharedCD, "pin the shared workflow to a release tag");
     assert.equal(job.steps, undefined);
     assert.equal(job.secrets, undefined, "the shared workflow reads its credentials through OIDC");
     assert.notEqual(job["continue-on-error"], true);
     assert.deepEqual(job.permissions, { contents: "write", "id-token": "write", attestations: "write", "pull-requests": "read" });
-    assert.deepEqual(job.concurrency, { group: "ai-gateway-dev-publish", "cancel-in-progress": false });
     const lintVersion = /^golangci-lint = "([^"]+)"$/m.exec(readFileSync(resolve(root, "mise.toml"), "utf8"))?.[1];
     assert.ok(lintVersion, "missing golangci-lint pin");
     assert.deepEqual(job.with, {
@@ -137,17 +152,18 @@ describe("candidate-source workflow gates", () => {
     const packageManager = (path: string) => (JSON.parse(readFileSync(resolve(root, path), "utf8")) as { packageManager?: string }).packageManager;
     assert.ok(packageManager("package.json"), "missing root packageManager");
     assert.equal(packageManager("ai-gateway/package.json"), packageManager("package.json"), "the shared workflow installs pnpm from the plugin package.json");
-    for (const other of Object.keys(jobs).filter((name) => name !== publish)) {
-      assert.equal(jobs[other]!.uses, undefined, `${other} must not call a reusable workflow`);
+
+    for (const name of Object.keys(jobs)) {
+      assert.equal(jobs[name]!.uses, undefined, `${name}: publication must not lengthen or cancel the required CI run`);
     }
     const workflows = resolve(root, ".github/workflows");
-    for (const file of readdirSync(workflows).filter((name) => name !== "ci.yml")) {
+    for (const file of readdirSync(workflows).filter((name) => name !== publishFile)) {
       assert.doesNotMatch(readFileSync(resolve(workflows, file), "utf8"), /plugin-ci-workflows/, `${file} must not publish the plugin`);
     }
   });
 
   it("keeps the required source checks and workers without image automation", () => {
-    assert.deepEqual(Object.keys(jobs).sort(), [...source, "build-test", "lint", "plugin-validation", publish].sort());
+    assert.deepEqual(Object.keys(jobs).sort(), [...source, "build-test", "lint", "plugin-validation"].sort());
     assert.deepEqual(workflow.on.push, { branches: ["main"], tags: ["ai-gateway/v*"] });
     assert.ok(Object.hasOwn(workflow.on, "pull_request"));
     assert.deepEqual(Object.keys(workflow.on).sort(), ["pull_request", "push"]);

@@ -327,31 +327,6 @@ jobs:
           path: ai-gateway/dist
           if-no-files-found: error
 
-  publish-ai-gateway-dev:
-    name: Publish AI Gateway plugin to the dev catalog
-    needs: [ci, race, docs-lint, module-resolution, parity-baseline, integration-test, conformance-test, plugin-validation]
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'grafana/ai-sdk' }}
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-      pull-requests: read
-    concurrency:
-      group: ai-gateway-dev-publish
-      cancel-in-progress: false
-    uses: grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v12.0.1
-    with:
-      branch: ${{ github.sha }}
-      environment: dev
-      scopes: grafana_cloud
-      plugin-directory: ai-gateway
-      plugin-version-suffix: ${{ github.sha }}
-      backend-build-target: buildPlugin
-      golangci-lint-version: "2.15.0"
-      run-plugin-validator: true
-      run-playwright: false
-      trigger-argo: false
-
   conformance-test:
     runs-on: ubuntu-latest
     permissions:

@@ -16,19 +16,17 @@
 
 ## 3. Dev catalog publication job
 
-- [x] 3.1 Add the `publish-ai-gateway-dev` job to `.github/workflows/ci.yml`. It calls `grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v12.0.1` with the inputs, `needs`, main-only guard, job permissions and concurrency from design.md. Verify with `actionlint` (or the repository's workflow lint) on the file.
-- [x] 3.2 Extend `test/conformance/tools/ci-workflow.test.mts`:
-  - add the job to the expected job set;
-  - assert its `needs` cover the source jobs and `plugin-validation`;
-  - assert the main-only canonical guard (no tags, no PRs);
-  - assert the tag-form `uses`, the exact `with` inputs and the permissions;
-  - assert `cancel-in-progress: false` concurrency;
-  - assert that no other job or workflow calls `cd.yml`;
-  - replace the "no publication jobs" assertion with these checks.
+- [x] 3.1 Add `.github/workflows/publish-ai-gateway-dev.yml`: a `source-ci` gate job that runs `release/tooling/gateway-publication-gate.mjs`, and a `publish` job that calls `grafana/plugin-ci-workflows/.github/workflows/cd.yml@ci-cd-workflows/v12.0.1` with the inputs, job permissions and workflow-level concurrency from design.md. Leave `ci.yml` without a publication job. Verify with `actionlint` on both files.
+- [x] 3.2 Add the gate to the release tooling: `GATEWAY_PUBLICATION_JOBS` (source jobs plus `Validate AI Gateway plugin`), a `jobs` option on `waitForToolingCI`, and the canonical-push checks in the gate script. Verify with `npm test --prefix release/tooling`: the gate rejects missing, failed, cancelled and skipped plugin validation, and non-canonical events.
+- [x] 3.3 Extend `test/conformance/tools/ci-workflow.test.mts`:
+  - assert the publish workflow's trigger (`main` pushes only), `permissions: {}` and `cancel-in-progress: false` concurrency;
+  - assert the gate's repository guard, read-only permissions and script, and the plugin-validation job name it depends on;
+  - assert the publish job needs the gate with no `if`, the tag-form `uses`, the exact `with` inputs, the permissions and no `secrets`;
+  - assert that ci.yml calls no reusable workflow and no other workflow calls the shared workflows.
 
-  Verify that `mise run test-ci-workflow` passes, and that it fails when you drop a `needs` entry or switch `uses` to a branch ref.
-- [x] 3.3 Before merge, run the shared workflow's backend commands locally from `ai-gateway/`: `golangci-lint run --timeout=5m` with the pinned version, `mage -v testRace` and `mage -v buildPlugin`. Verify all three pass.
-- [x] 3.4 Document dev publication in `CONTRIBUTING.md`:
+  Verify that `mise run test-ci-workflow` passes, and that it fails when you drop `needs`, add `always()` or a `pull_request` trigger, switch `uses` to a branch ref, allow cancel-in-progress, replace the gate command, or rename the plugin-validation job.
+- [x] 3.4 Before merge, run the shared workflow's backend commands locally from `ai-gateway/`: `golangci-lint run --timeout=5m` with the pinned version, `mage -v testRace` and `mage -v buildPlugin`. Verify all three pass.
+- [x] 3.5 Document dev publication in `CONTRIBUTING.md`:
   - the trigger and version format `<package.json version>+<sha>`;
   - the `grafana_cloud` scope and the gates;
   - serialized runs, and the one-time credential and runner prerequisites;

@@ -579,21 +579,25 @@ SDK's Go module dependency graph.
   module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
   changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
   the app manifest source for `pnpm generate:kinds`.
-- **Gateway dev publication:** after every required check and plugin validation
-  pass for a push to `main`, the `publish-ai-gateway-dev` job publishes the plugin
-  to the dev plugin catalog through Grafana's shared plugin CI/CD workflow, which
-  is pinned to a release tag. The version is the `ai-gateway/package.json`
-  version followed by `+` and the full commit SHA, such as
-  `0.1.0-alpha.1+<sha>`, with the `grafana_cloud` scope, and its
+- **Gateway dev publication:** for each push to `main`, the [publish
+  workflow](.github/workflows/publish-ai-gateway-dev.yml) waits until the push's
+  CI run shows every required source check and plugin validation succeeded, then
+  publishes the plugin to the dev plugin catalog through Grafana's shared plugin
+  CI/CD workflow, which is pinned to a release tag. The version is the
+  `ai-gateway/package.json` version followed by `+` and the full commit SHA, such
+  as `0.1.0-alpha.1+<sha>`, with the `grafana_cloud` scope, and its
   `SOURCE_REVISION` is that commit. The shared workflow lints, tests, builds,
-  validates, scans and signs the package again before publishing. Publications
-  run one at a time: a newer publication replaces one that is still waiting, so
-  not every commit is published, and publish order can differ from push order.
-  The job summary of the push's CI run shows the published version. The shared
-  workflow creates the dev catalog stub if it is missing; the repository needs
-  access to the shared signing and publishing credentials and to the shared
-  workflow's self-hosted runner labels. Publication does not deploy or run the plugin, publish to the ops or prod catalogs, or
-  create tags or releases.
+  validates, scans and signs the package again before publishing. Publications run
+  one at a time in push order: a newer push replaces one that is still waiting, so
+  not every commit is published. The publish run's summary shows the published
+  version. Publication runs outside the CI workflow, so it never delays or changes
+  the CI evidence that release automation reads. The publish run waits about 20
+  minutes for CI. If CI passes only after a re-run past that window, re-run the
+  publish run by hand, but only while its commit is still the newest on `main`.
+  The shared workflow creates the dev catalog stub if it is missing; the
+  repository needs access to the shared signing and publishing credentials and to
+  the shared workflow's self-hosted runner labels. Publication does not deploy or
+  run the plugin, publish to the ops or prod catalogs, or create tags or releases.
 
 Every `go.mod` replaces each first-party module in its
 build graph with that module's directory, so builds in this repository always use

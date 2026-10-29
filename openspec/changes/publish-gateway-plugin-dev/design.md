@@ -53,14 +53,12 @@ Use `GITHUB_SHA` as the revision when `GITHUB_ACTIONS=true` and `git rev-parse H
 
 For pull requests, `GITHUB_SHA` is the merge commit that actions/checkout checks out. That matches today's attribution.
 
-### Publish from a job in `ci.yml`, not a separate workflow
+### Publish from a separate push workflow gated on CI evidence
 
-Add a `publish-ai-gateway-dev` job to `ci.yml` that calls `cd.yml@ci-cd-workflows/v12.0.1`.
+Add `.github/workflows/publish-ai-gateway-dev.yml`, triggered on `push` to `main`, with two jobs:
 
-- **Gating:**
-  - `needs` the required source jobs (`ci`, `race`, `docs-lint`, `module-resolution`, `parity-baseline`, `integration-test`, `conformance-test`) and `plugin-validation`.
-  - Runs only on a push to `refs/heads/main` in `grafana/ai-sdk`. Tag pushes are excluded.
-- **Inputs:**
+- **`source-ci` (gate):** runs only in `grafana/ai-sdk` with `contents`, `actions` and `checks` read. It runs `release/tooling/gateway-publication-gate.mjs`, which reuses the release tooling's `waitForToolingCI`/`successfulRun` evidence check. It waits up to 20 minutes for the ci.yml `push` run of the same commit on `main` in this repository, then requires each source job (`ci`, `race`, `docs-lint`, `module-resolution`, `parity-baseline`, `integration-test`, `conformance-test`) and `Validate AI Gateway plugin` to have succeeded.
+- **`publish`:** `needs` the gate and calls `cd.yml@ci-cd-workflows/v12.0.1` with:
   - `plugin-directory: ai-gateway`
   - `branch: ${{ github.sha }}`
   - `environment: dev`
@@ -71,14 +69,16 @@ Add a `publish-ai-gateway-dev` job to `ci.yml` that calls `cd.yml@ci-cd-workflow
   - `run-playwright: false`
   - `trigger-argo: false`
   - `golangci-lint-version` equal to the mise pin
-- **Permissions:** granted at job level as `contents: write`, `id-token: write`, `attestations: write` and `pull-requests: read`. `cd.yml` declares these and cannot run with less. The workflow-level `permissions: {}` stays.
+
+  It is granted `contents: write`, `id-token: write`, `attestations: write` and `pull-requests: read` at job level, which `cd.yml` declares and cannot run with less. The workflow-level `permissions: {}` stays.
 
 Alternatives:
 
-- **A separate `publish.yml` triggered on push.** Rejected because it does not wait for repository CI, which violates `candidate-source-ci`.
+- **A job inside `ci.yml`.** Rejected because live release automation uses the whole ci.yml push run as evidence: it waits at most 20 minutes for the run to complete with `success` or `failure`, and rejects `cancelled`. A publish job inside that run lengthens it past the wait and can end it `cancelled` when a newer publication supersedes it.
 - **`workflow_run` after CI succeeds.** Rejected because the shared workflow does not trust that event, so it would not sign or publish.
+- **An ungated separate workflow.** Rejected because it does not wait for repository CI, which violates `candidate-source-ci`.
 
-Passing `branch: github.sha` pins the shared checkout to the gated commit, even if `main` moves while the run waits.
+The gate reads evidence through the read-only release tooling client, so a failed, skipped, cancelled or missing required job, or a timeout, fails the gate and skips publication. Passing `branch: github.sha` pins the shared checkout to the gated commit, even if `main` moves while the run waits.
 
 ### Pin the shared workflow by tag
 
@@ -86,7 +86,7 @@ The repository pins actions by commit SHA, but the shared workflow fails on SHA 
 
 ### Serialize publications
 
-Give the job a concurrency group of its own, `ai-gateway-dev-publish`, with `cancel-in-progress: false`. A started publication finishes. GitHub keeps only the newest pending job in the group, so an older waiting publication is superseded. The group applies only once a run's gates have passed, and gates finish at different times per push, so publish order is not guaranteed to follow push order. A deployment that tracks the latest catalog version (#612) must account for that, for example by pinning versions from CI.
+Give the publish workflow a workflow-level concurrency group, `ai-gateway-dev-publish`, with `cancel-in-progress: false`. A started run finishes. Runs enter the group when they are created at push time, and GitHub keeps only the newest pending run, so an older waiting push is superseded and publications follow push order. A deployment that tracks the latest catalog version (#612) relies on that order. A superseded publish run ends `cancelled`, which affects only this workflow, not the ci.yml evidence.
 
 ### Skip the shared Playwright run and keep both validators
 
@@ -113,9 +113,10 @@ The plugin-validation gate already runs the end-to-end tests against a pinned Gr
   - match the `golangci-lint` version to the mise pin;
   - run the same command locally before merge;
   - the race job already covers these packages with `-short`.
-- **The first publish needs one-time setup.** The shared workflow creates the `grafana-aigateway-app` dev catalog stub when it is missing, but the repository must be allowed to use the shared signing and publishing credentials and the self-hosted runner labels the shared workflow runs on (`ubuntu-arm64-small`, `ubuntu-x64-small`, `ubuntu-x64-large`). Both are listed as prerequisites; without runner access the publish job stays queued. Until they are done, publish runs fail (missing credentials) or stay queued (missing runner access); merges and the required jobs are unaffected, but a queued publish keeps the ci.yml run in progress.
-- **The repository Actions policy applies to the whole shared call tree.** GitHub validates every job of `cd.yml` and its nested workflows when `ci.yml` starts, so one denied action version anywhere in the shared workflow fails all of Build & Test, including on pull requests. `ci-cd-workflows/v9.0.0` hit this through a denied `create-github-app-token` version. Check any pin upgrade against the policy before merging it.
-- **Version order depends on publish order.** Versions that differ only in `+<sha>` have equal semver precedence, so "latest" depends on publish order. Serialized publication prevents concurrent publishes but not out-of-order ones; see "Serialize publications".
+- **The first publish needs one-time setup.** The shared workflow creates the `grafana-aigateway-app` dev catalog stub when it is missing, but the repository must be allowed to use the shared signing and publishing credentials and the self-hosted runner labels the shared workflow runs on (`ubuntu-arm64-small`, `ubuntu-x64-small`, `ubuntu-x64-large`). Both are listed as prerequisites; without runner access the publish job stays queued. Until they are done, publish runs fail (missing credentials) or stay queued (missing runner access); merges and the required jobs are unaffected, and the ci.yml run is unaffected.
+- **The repository Actions policy applies to the whole shared call tree.** GitHub validates every job of `cd.yml` and its nested workflows when the calling workflow starts, so one denied action version anywhere in the shared workflow fails the whole run at startup. That was how ci.yml failed on pull requests while publication lived there. `ci-cd-workflows/v9.0.0` hit this through a denied `create-github-app-token` version. Check any pin upgrade against the policy before merging it.
+- **Version order depends on publish order.** Versions that differ only in `+<sha>` have equal semver precedence, so "latest" depends on publish order. Workflow-level serialization keeps publish order equal to push order; see "Serialize publications".
+- **The gate fails closed slowly, and does not wait for re-runs.** When source CI fails, the gate polls for its full 20-minute budget before failing. Because of the workflow-level group, later pushes wait behind it, and pushes that arrive in that window collapse to the newest one. If CI passes only after a re-run past that window, the commit is not published automatically; a maintainer re-runs its publish run, and only while the commit is still the newest on `main`, so push order holds.
 - **The catalog grows by one version per `main` push.** This is acceptable for dev.
 
 ## Migration Plan

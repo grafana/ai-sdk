@@ -4,7 +4,7 @@
 
 ### Requirement: Gateway publication is independently gated
 
-Gateway compilation against published first-party versions SHALL NOT block plugin release or main deployment. Gateway publication SHALL run only within the required CI run of an eligible push, after its source, manifest-aligned requirement, boundary and plugin-validation jobs pass for that revision. Deployment SHALL follow publication.
+Gateway compilation against published first-party versions SHALL NOT block plugin release or main deployment. Gateway publication SHALL run only for an eligible push after that push's required CI run shows its source, manifest-aligned requirement, boundary and plugin-validation jobs succeeded for that revision. Publication SHALL NOT run inside, delay or change the conclusion of the required CI run. Deployment SHALL follow publication.
 
 #### Scenario: Unready Gateway artifact
 
@@ -22,7 +22,12 @@ Gateway compilation against published first-party versions SHALL NOT block plugi
 - **WHEN** a required candidate-source check, build, plugin validation, requirement or boundary check fails, is skipped or is cancelled
 - **THEN** Gateway publication and deployment SHALL remain blocked
 
-#### Scenario: Publication outside the gated run
+#### Scenario: Publication without CI evidence
 
-- **WHEN** a workflow other than the required CI run of the push, or a run for a pull request, would publish the Gateway
+- **WHEN** publication would run for a pull request, or before the push's required CI run shows every required source and plugin-validation job succeeded for that commit
 - **THEN** no publication SHALL occur
+
+#### Scenario: Release evidence is unaffected
+
+- **WHEN** a Gateway publication runs, waits or is superseded for a `main` push
+- **THEN** that push's required CI run SHALL complete and conclude exactly as it would without publication
