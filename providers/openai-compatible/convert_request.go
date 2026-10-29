@@ -834,7 +834,7 @@ func (m *model) convertResponseFormat(format *provider.ResponseFormat, opts Open
 		return &responseFormat{Type: "json_object"}, []provider.Warning{{
 			Type:    provider.WarnUnsupported,
 			Feature: "responseFormat",
-			Details: "JSON schema response format requires WithStructuredOutputs(true); using json_object.",
+			Details: "JSON response format schema is only supported with structuredOutputs",
 		}}
 	}
 

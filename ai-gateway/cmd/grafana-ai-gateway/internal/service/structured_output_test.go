@@ -21,7 +21,7 @@ const (
 var (
 	structuredOutputNames      = []string{"", `,"name":""`, `,"name":"answer"`}
 	compatibleJSONObjectFormat = map[string]any{"type": "json_object"}
-	compatibleSchemaWarning    = provider.Warning{Type: provider.WarnUnsupported, Feature: responseFormatFeature, Details: "JSON schema response format requires WithStructuredOutputs(true); using json_object."}
+	compatibleSchemaWarning    = provider.Warning{Type: provider.WarnUnsupported, Feature: responseFormatFeature, Details: "JSON response format schema is only supported with structuredOutputs"}
 )
 
 func TestStructuredOutput_NativeRequests(t *testing.T) {
