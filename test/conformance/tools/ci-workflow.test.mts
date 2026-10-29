@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { parseAllDocuments, parseDocument } from "yaml";
@@ -8,13 +8,16 @@ import { parseAllDocuments, parseDocument } from "yaml";
 const root = resolve(import.meta.dirname, "../../..");
 const document = parseDocument(readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8"));
 assert.deepEqual(document.errors, []);
-const workflow = document.toJS() as { concurrency: { group: string; "cancel-in-progress": string }; on: { push: { branches: string[]; tags?: string[] }; pull_request: unknown }; jobs: Record<string, { if?: string; needs?: string | string[]; permissions?: Record<string, string>; "continue-on-error"?: boolean; steps: Array<{ name?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown>; "continue-on-error"?: boolean }> }> };
+const workflow = document.toJS() as { concurrency: { group: string; "cancel-in-progress": string }; on: { push: { branches: string[]; tags?: string[] }; pull_request: unknown }; jobs: Record<string, { name?: string; if?: string; needs?: string | string[]; permissions?: Record<string, string>; concurrency?: unknown; secrets?: unknown; uses?: string; with?: Record<string, unknown>; "continue-on-error"?: boolean; steps?: Array<{ name?: string; if?: string; run?: string; uses?: string; env?: Record<string, string>; with?: Record<string, unknown>; "continue-on-error"?: boolean }> }> };
 const jobs = workflow.jobs;
 const source = ["ci", "race", "docs-lint", "module-resolution", "parity-baseline", "integration-test", "conformance-test"];
 const pushGuard = "${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) && github.repository == 'grafana/ai-sdk' }}";
+const publishFile = "publish-ai-gateway-dev.yml";
+const sharedCD = /^grafana\/plugin-ci-workflows\/\.github\/workflows\/cd\.yml@ci-cd-workflows\/v\d+\.\d+\.\d+$/;
 const normalize = (value: string | undefined) => value?.replace(/\s+/g, " ").trim();
 const needs = (job: string) => [jobs[job]!.needs ?? []].flat();
-const commands = (job: string) => jobs[job]!.steps.map((step) => step.run ?? "").join("\n");
+const steps = (job: string) => jobs[job]!.steps ?? [];
+const commands = (job: string) => steps(job).map((step) => step.run ?? "").join("\n");
 const dependencies = (job: string) => {
   const seen = new Set<string>();
   const pending = [...needs(job)];
@@ -65,10 +68,10 @@ describe("candidate-source workflow gates", () => {
     const job = jobs["plugin-validation"];
     assert.ok(job, "missing plugin validation job");
     assert.equal(job.if, undefined, "plugin validation must run on PR and push");
-    const steps = job.steps;
-    assert.ok(steps.some((step) => step.uses?.startsWith("actions/checkout@") && step.with?.["persist-credentials"] === false));
-    assert.ok(steps.every((step) => step["continue-on-error"] !== true));
-    const clean = steps.find((step) => step.name === "Verify clean plugin source at the artifact revision")!;
+    const jobSteps = steps("plugin-validation");
+    assert.ok(jobSteps.some((step) => step.uses?.startsWith("actions/checkout@") && step.with?.["persist-credentials"] === false));
+    assert.ok(jobSteps.every((step) => step["continue-on-error"] !== true));
+    const clean = jobSteps.find((step) => step.name === "Verify clean plugin source at the artifact revision")!;
     assert.equal(normalize(clean.if), "${{ github.event_name == 'push' }}");
     assert.match(clean.run!, /git rev-parse HEAD.*GITHUB_SHA/);
     assert.match(clean.run!, /git status --porcelain --untracked-files=all/);
@@ -81,14 +84,17 @@ describe("candidate-source workflow gates", () => {
       position = next;
     }
     assert.match(commands("plugin-validation"), /git status --porcelain --untracked-files=all -- ai-gateway\)"/);
-    const e2e = steps.find((step) => step.run === "mise run test-ai-gateway-e2e")!;
+    const e2e = jobSteps.find((step) => step.run === "mise run test-ai-gateway-e2e")!;
     assert.match(e2e.env?.GRAFANA_VERSION ?? "", /^nightly@sha256:[0-9a-f]{64}$/);
-    const build = steps.find((step) => step.run === "mise run build-ai-gateway-plugin")!;
-    assert.equal(build.env?.AI_GATEWAY_VCS_REF, "${{ github.sha }}");
-    const caches = steps.filter((step) => step.uses?.startsWith("actions/cache@"));
-    assert.equal(caches.length, 2, "plugin validation caches Go and pnpm");
+    const build = jobSteps.find((step) => step.run === "mise run build-ai-gateway-plugin")!;
+    assert.equal(build.env, undefined, "the build derives its source revision from the checkout");
+    const caches = jobSteps.filter((step) => step.uses?.startsWith("actions/cache@"));
+    assert.equal(caches.length, 1, "plugin validation caches pnpm directly");
+    const goCache = jobSteps.find((step) => step.uses === "./.github/actions/cache-go")!;
+    assert.ok(goCache, "plugin validation uses isolated module and build caches");
+    assert.equal(normalize(goCache.with?.["lookup-only"] as string), "${{ startsWith(github.ref, 'refs/tags/') }}");
     for (const cache of caches) assert.equal(normalize(cache.with?.["lookup-only"] as string), "${{ startsWith(github.ref, 'refs/tags/') }}");
-    const keep = steps.at(-1)!;
+    const keep = jobSteps.at(-1)!;
     assert.match(keep.uses!, /^actions\/upload-artifact@[0-9a-f]{40}$/);
     assert.equal(normalize(keep.if), pushGuard);
     assert.equal(keep.with?.path, "ai-gateway/dist");
@@ -96,12 +102,67 @@ describe("candidate-source workflow gates", () => {
   });
 
   it("has no image, publication or deployment jobs", () => {
-    for (const job of ["image-validation", "publish-ai-gateway-image", "deploy-ai-gateway"]) assert.equal(jobs[job], undefined, job);
+    for (const job of ["image-validation", "publish-ai-gateway-image", "publish-ai-gateway-dev", "deploy-ai-gateway"]) assert.equal(jobs[job], undefined, job);
     for (const job of Object.keys(jobs)) {
       assert.doesNotMatch(commands(job), /docker|Dockerfile|ghcr\.io/i, job);
-      for (const step of jobs[job]!.steps) assert.doesNotMatch(step.uses ?? "", /docker\/|trigger-argo-workflow/, job);
+      for (const step of steps(job)) assert.doesNotMatch(step.uses ?? "", /docker\/|trigger-argo-workflow/, job);
     }
     assert.doesNotMatch(readFileSync(resolve(root, "mise.toml"), "utf8"), /Dockerfile|build-ai-gateway-image|test-ai-gateway-image-source/);
+  });
+
+  it("publishes to the dev catalog only after source CI for canonical main pushes", () => {
+    const publishDocument = parseDocument(readFileSync(resolve(root, ".github/workflows", publishFile), "utf8"));
+    assert.deepEqual(publishDocument.errors, []);
+    const publishing = publishDocument.toJS() as { on: unknown; permissions: unknown; concurrency: unknown; jobs: typeof jobs };
+    assert.deepEqual(publishing.on, { push: { branches: ["main"] } });
+    assert.deepEqual(publishing.permissions, {});
+    assert.deepEqual(publishing.concurrency, { group: "ai-gateway-dev-publish", "cancel-in-progress": false });
+    assert.deepEqual(Object.keys(publishing.jobs).sort(), ["publish", "source-ci"]);
+
+    const gate = publishing.jobs["source-ci"]!;
+    assert.equal(gate.if, "${{ github.repository == 'grafana/ai-sdk' }}");
+    assert.deepEqual(gate.permissions, { contents: "read", actions: "read", checks: "read" });
+    assert.ok(gate.steps!.some((step) => step.uses?.startsWith("actions/checkout@") && step.with?.["persist-credentials"] === false));
+    assert.ok(gate.steps!.every((step) => step["continue-on-error"] !== true));
+    const wait = gate.steps!.at(-1)!;
+    assert.equal(wait.run, "node release/tooling/gateway-publication-gate.mjs");
+    assert.deepEqual(wait.env, { GH_READ_TOKEN: "${{ github.token }}" });
+    assert.equal(jobs["plugin-validation"]!.name, "Validate AI Gateway plugin", "the gate requires plugin validation by its job name");
+
+    const job = publishing.jobs.publish!;
+    assert.deepEqual(job.needs, "source-ci");
+    assert.equal(job.if, undefined, "publication must not run when the gate fails or is skipped");
+    assert.match(job.uses ?? "", sharedCD, "pin the shared workflow to a release tag");
+    assert.equal(job.steps, undefined);
+    assert.equal(job.secrets, undefined, "the shared workflow reads its credentials through OIDC");
+    assert.notEqual(job["continue-on-error"], true);
+    assert.deepEqual(job.permissions, { contents: "write", "id-token": "write", attestations: "write", "pull-requests": "read" });
+    const lintVersion = /^golangci-lint = "([^"]+)"$/m.exec(readFileSync(resolve(root, "mise.toml"), "utf8"))?.[1];
+    assert.ok(lintVersion, "missing golangci-lint pin");
+    assert.deepEqual(job.with, {
+      branch: "${{ github.sha }}",
+      environment: "dev",
+      scopes: "grafana_cloud",
+      "plugin-directory": "ai-gateway",
+      "plugin-version-suffix": "${{ github.sha }}",
+      "backend-build-target": "buildPlugin",
+      "golangci-lint-version": lintVersion,
+      "run-plugin-validator": true,
+      "run-playwright": false,
+      "trigger-argo": false,
+    });
+    assert.match(readFileSync(resolve(root, "ai-gateway/Magefile.go"), "utf8"), /^func BuildPlugin\(\) error \{$/m);
+    const packageManager = (path: string) => (JSON.parse(readFileSync(resolve(root, path), "utf8")) as { packageManager?: string }).packageManager;
+    assert.ok(packageManager("package.json"), "missing root packageManager");
+    assert.equal(packageManager("ai-gateway/package.json"), packageManager("package.json"), "the shared workflow installs pnpm from the plugin package.json");
+
+    for (const name of Object.keys(jobs)) {
+      assert.equal(jobs[name]!.uses, undefined, `${name}: publication must not lengthen or cancel the required CI run`);
+    }
+    const workflows = resolve(root, ".github/workflows");
+    for (const file of readdirSync(workflows).filter((name) => name !== publishFile)) {
+      assert.doesNotMatch(readFileSync(resolve(workflows, file), "utf8"), /plugin-ci-workflows/, `${file} must not publish the plugin`);
+    }
   });
 
   it("keeps the required source checks and workers without image automation", () => {
@@ -113,7 +174,7 @@ describe("candidate-source workflow gates", () => {
       dependencies(job);
       assert.notEqual(jobs[job]!.permissions?.packages, "write");
       assert.doesNotMatch(commands(job), /docker (build|buildx|run|login|push)|build-ai-gateway-image|test-ai-gateway-image-source/);
-      assert.ok(jobs[job]!.steps.every((step) => !step.uses?.startsWith("docker/")));
+      assert.ok(steps(job).every((step) => !step.uses?.startsWith("docker/")));
     }
   });
 
@@ -131,9 +192,9 @@ describe("candidate-source workflow gates", () => {
     for (const worker of ["build-test", "lint"]) {
       assert.equal(jobs[worker]!.if, undefined);
       assert.notEqual(jobs[worker]!["continue-on-error"], true);
-      assert.ok(jobs[worker]!.steps.every((step) => step["continue-on-error"] !== true));
+      assert.ok(steps(worker).every((step) => step["continue-on-error"] !== true));
     }
-    const gate = jobs.ci!.steps[0] as { env: Record<string, string> };
+    const gate = steps("ci")[0] as { env: Record<string, string> };
     assert.deepEqual(gate.env, {
       BUILD_TEST_RESULT: "${{ needs.build-test.result }}",
       LINT_RESULT: "${{ needs.lint.result }}",
@@ -151,22 +212,26 @@ describe("candidate-source workflow gates", () => {
   it("refreshes isolated build caches for every Go job", () => {
     const cacheDocument = parseDocument(readFileSync(resolve(root, ".github/actions/cache-go/action.yml"), "utf8"));
     assert.deepEqual(cacheDocument.errors, []);
-    const cache = cacheDocument.toJS() as { runs: { using: string; steps: Array<{ uses?: string; with?: { key: string; path: string; "restore-keys": string } }> } };
+    const cache = cacheDocument.toJS() as { inputs: { "lookup-only": { default: string } }; runs: { using: string; steps: Array<{ uses?: string; with?: { key: string; path: string; "restore-keys": string; "lookup-only": string } }> } };
     assert.equal(cache.runs.using, "composite");
+    assert.equal(cache.inputs["lookup-only"].default, "false");
     const caches = cache.runs.steps.filter((step) => step.uses?.startsWith("actions/cache@"));
     assert.equal(caches.length, 2);
     assert.notEqual(caches[0]!.with!.path, caches[1]!.with!.path);
     for (const step of caches) {
+      assert.equal(step.with!["lookup-only"], "${{ inputs.lookup-only }}");
+      assert.ok(step.with!.key.includes("${{ runner.arch }}"));
       assert.ok(step.with!.key.includes("${{ github.job }}"));
       assert.ok(step.with!.key.includes("${{ steps.paths.outputs.version }}"));
     }
+    assert.ok(!caches[0]!.with!.key.includes("${{ github.sha }}"));
     assert.ok(caches[1]!.with!.key.endsWith("-${{ github.sha }}"));
     assert.ok(!caches[1]!.with!["restore-keys"].includes("${{ github.sha }}"));
     for (const job of ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "conformance-test"]) {
-      const steps = jobs[job]!.steps;
-      const cacheIndex = steps.findIndex((step) => step.uses === "./.github/actions/cache-go");
-      assert.ok(cacheIndex > steps.findIndex((step) => step.uses?.startsWith("actions/checkout@")), job);
-      assert.ok(cacheIndex < steps.findIndex((step) => step.run), job);
+      const jobSteps = steps(job);
+      const cacheIndex = jobSteps.findIndex((step) => step.uses === "./.github/actions/cache-go");
+      assert.ok(cacheIndex > jobSteps.findIndex((step) => step.uses?.startsWith("actions/checkout@")), job);
+      assert.ok(cacheIndex < jobSteps.findIndex((step) => step.run), job);
     }
   });
 });

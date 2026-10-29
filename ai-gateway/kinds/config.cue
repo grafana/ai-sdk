@@ -24,7 +24,7 @@ config: {
 	codegen: {
 		// Generated Go types land alongside the plugin backend.
 		goEnabled: true
-		goGenPath: "cmd/grafana-ai-gateway/internal/"
+		goGenPath: "pkg/internal/"
 		// Generated TypeScript types land in the frontend source dir.
 		tsGenPath:                      "src/generated/"
 		enableK8sPostProcessing:        false
