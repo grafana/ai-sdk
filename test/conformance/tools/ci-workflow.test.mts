@@ -41,7 +41,7 @@ describe("candidate-source workflow gates", () => {
   it("keeps candidate-source checks blocking without standalone prerequisites", () => {
     for (const job of source) {
       assert.ok(jobs[job], `missing source check ${job}`);
-      assert.equal(jobs[job]!.if, job === "ci" ? "${{ always() }}" : undefined, `${job} must run on PR and push`);
+      assert.equal(jobs[job]!.if, job === "ci" ? "${{ always() }}" : job === "docs-lint" ? undefined : "${{ !cancelled() }}", `${job} must run on PR and push`);
       const required = dependencies(job);
       assert.ok(!required.has("plugin-validation"), `${job} depends on the artifact gate`);
       for (const path of [job, ...required]) {
@@ -64,12 +64,12 @@ describe("candidate-source workflow gates", () => {
   it("validates the plugin package on pull requests and keeps it only for eligible pushes", () => {
     const job = jobs["plugin-validation"];
     assert.ok(job, "missing plugin validation job");
-    assert.equal(job.if, undefined, "plugin validation must run on PR and push");
+    assert.equal(job.if, "${{ !cancelled() }}", "plugin validation must run despite classification failure");
     const steps = job.steps;
     assert.ok(steps.some((step) => step.uses?.startsWith("actions/checkout@") && step.with?.["persist-credentials"] === false));
     assert.ok(steps.every((step) => step["continue-on-error"] !== true));
     const clean = steps.find((step) => step.name === "Verify clean plugin source at the artifact revision")!;
-    assert.equal(normalize(clean.if), "${{ github.event_name == 'push' }}");
+    assert.equal(normalize(clean.if), "${{ (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') && (github.event_name == 'push') }}");
     assert.match(clean.run!, /git rev-parse HEAD.*GITHUB_SHA/);
     assert.match(clean.run!, /git status --porcelain --untracked-files=all/);
     const order = ["generate:kinds", "mise run test-ai-gateway-frontend", "mise run build-ai-gateway-plugin", "mise run validate-ai-gateway-plugin", "mise run test-ai-gateway-e2e", "mise run test-ai-gateway\n", "mise run test-ai-gateway-command"];
@@ -105,7 +105,7 @@ describe("candidate-source workflow gates", () => {
   });
 
   it("keeps the required source checks and workers without image automation", () => {
-    assert.deepEqual(Object.keys(jobs).sort(), [...source, "build-test", "lint", "plugin-validation"].sort());
+    assert.deepEqual(Object.keys(jobs).sort(), [...source, "build-test", "lint", "plugin-validation", "changes"].sort());
     assert.deepEqual(workflow.on.push, { branches: ["main"], tags: ["ai-gateway/v*"] });
     assert.ok(Object.hasOwn(workflow.on, "pull_request"));
     assert.deepEqual(Object.keys(workflow.on).sort(), ["pull_request", "push"]);
@@ -126,10 +126,10 @@ describe("candidate-source workflow gates", () => {
 
   it("fails the ci gate unless both independent workers succeed", () => {
     assert.deepEqual(needs("ci"), ["build-test", "lint"]);
-    assert.deepEqual(needs("build-test"), []);
-    assert.deepEqual(needs("lint"), []);
+    assert.deepEqual(needs("build-test"), ["changes"]);
+    assert.deepEqual(needs("lint"), ["changes"]);
     for (const worker of ["build-test", "lint"]) {
-      assert.equal(jobs[worker]!.if, undefined);
+      assert.equal(jobs[worker]!.if, "${{ !cancelled() }}");
       assert.notEqual(jobs[worker]!["continue-on-error"], true);
       assert.ok(jobs[worker]!.steps.every((step) => step["continue-on-error"] !== true));
     }
@@ -166,7 +166,54 @@ describe("candidate-source workflow gates", () => {
       const steps = jobs[job]!.steps;
       const cacheIndex = steps.findIndex((step) => step.uses === "./.github/actions/cache-go");
       assert.ok(cacheIndex > steps.findIndex((step) => step.uses?.startsWith("actions/checkout@")), job);
-      assert.ok(cacheIndex < steps.findIndex((step) => step.run), job);
+      assert.ok(cacheIndex < steps.findIndex((step) => step.run && step.name !== "Report documentation-only selection"), job);
     }
+  });
+});
+
+
+describe("documentation-only CI selection", () => {
+  const guard = "github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true'";
+  const workers = ["build-test", "lint", "race", "module-resolution", "parity-baseline", "integration-test", "plugin-validation", "conformance-test"];
+
+  it("only bypasses heavy steps for an explicitly successful docs-only PR classification", () => {
+    for (const worker of workers) {
+      const job = jobs[worker]!;
+      assert.deepEqual(needs(worker), ["changes"]);
+      assert.equal(job.if, "${{ !cancelled() }}");
+      assert.notEqual(job["continue-on-error"], true);
+      assert.equal(job.steps[0]?.name, "Report documentation-only selection");
+      for (const step of job.steps) {
+        if (step.name === "Report documentation-only selection") {
+          assert.equal(step.if, "${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}");
+          assert.ok(step.run?.startsWith("echo "));
+        } else if (step.name === "Keep validated plugin package") {
+          assert.equal(normalize(step.if), pushGuard);
+        } else {
+          assert.ok(step.if?.includes(guard), `${worker}: ${step.name ?? step.uses} lacks fail-closed guard`);
+        }
+      }
+    }
+    const expression = guard.replaceAll("github.event_name", "event").replaceAll("needs.changes.result", "result").replaceAll("needs.changes.outputs.docs_only", "output");
+    const run = new Function("event", "result", "output", `return ${expression}`);
+    for (const event of ["pull_request", "push"]) {
+      for (const result of ["success", "failure", "cancelled", "skipped", ""]) {
+        for (const output of ["true", "false", "", undefined]) {
+          assert.equal(run(event, result, output), !(event === "pull_request" && result === "success" && output === "true"));
+        }
+      }
+    }
+  });
+
+  it("always lints documentation and compares the complete PR trees without API file limits", () => {
+    assert.equal(jobs["docs-lint"]!.if, undefined);
+    assert.deepEqual(needs("docs-lint"), []);
+    assert.ok(jobs["docs-lint"]!.steps.every(step => step.if === undefined));
+    const checkout = jobs.changes!.steps.find(step => step.uses?.startsWith("actions/checkout@"))!;
+    assert.equal(checkout.with?.["fetch-depth"], 0);
+    const classifier = jobs.changes!.steps.find(step => step.run?.includes("ci_docs_only.py"))!;
+    assert.equal(classifier.env?.BASE_SHA, "${{ github.event.pull_request.base.sha }}");
+    assert.equal(classifier.env?.HEAD_SHA, "${{ github.event.pull_request.head.sha }}");
+    assert.match(readFileSync(resolve(root, "mise.toml"), "utf8"), /python3 -m unittest discover -s scripts -p test_ci_docs_only.py/);
   });
 });

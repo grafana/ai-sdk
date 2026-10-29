@@ -13,6 +13,24 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Classify narrative documentation changes
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/ci_docs_only.py
+
   ci:
     runs-on: ubuntu-latest
     needs: [build-test, lint]
@@ -25,60 +43,83 @@ jobs:
         run: test "$BUILD_TEST_RESULT" = success && test "$LINT_RESULT" = success
 
   build-test:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Report documentation-only selection
+        if: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+        run: echo "Narrative documentation only; documentation lint remains required."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           persist-credentials: false
 
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
       - uses: ./.github/actions/cache-go
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
 
       - name: Check formatting
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run fmt-check
 
       - name: Validate release configuration
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run release-check
 
       - name: Test locked release tooling
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: |
           npm ci --prefix release/tooling --ignore-scripts
           npm test --prefix release/tooling
 
       - name: Vet
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run vet
 
       - name: Build
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run build
 
       - name: Test
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-short
 
   lint:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Report documentation-only selection
+        if: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+        run: echo "Narrative documentation only; documentation lint remains required."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           persist-credentials: false
 
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
       - uses: ./.github/actions/cache-go
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ runner.temp }}/golangci-lint
@@ -87,28 +128,38 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-golangci-${{ hashFiles('mise.toml', '.golangci.yml', '**/go.mod', '**/go.sum') }}-
 
       - name: Lint
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         env:
           GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint
         run: mise run lint
 
   race:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Report documentation-only selection
+        if: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+        run: echo "Narrative documentation only; documentation lint remains required."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           persist-credentials: false
 
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
       - uses: ./.github/actions/cache-go
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
 
       - name: Test with the race detector
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-race
 
   docs-lint:
@@ -130,61 +181,85 @@ jobs:
         run: mise run lint-docs
 
   module-resolution:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Report documentation-only selection
+        if: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+        run: echo "Narrative documentation only; documentation lint remains required."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           persist-credentials: false
 
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
       - uses: ./.github/actions/cache-go
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
 
       - name: Test module policy fixtures
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-module-policy
 
       - name: Test CI source and artifact gates
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-ci-workflow
 
       - name: Verify AI Gateway module and license boundary
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run verify-ai-gateway-boundary
 
       - name: Verify first-party module requirements
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run verify-module-requirements
 
       - name: Verify SDK isolation from Gateway source
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run verify-sdk-gateway-isolation
 
   parity-baseline:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Report documentation-only selection
+        if: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+        run: echo "Narrative documentation only; documentation lint remains required."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           persist-credentials: false
 
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
       - uses: ./.github/actions/cache-go
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
 
       - name: Validate parity baseline
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run validate-parity-baseline
 
       - name: Verify ProviderWire V4 contract
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-providerwire-v4
 
       - name: Fetch pinned upstream fixtures
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: |
           commit=$(awk '/^  commit:/ { print $2 }' test/conformance/upstream.yaml)
           git init "$RUNNER_TEMP/vercel-ai"
@@ -192,35 +267,47 @@ jobs:
           git -C "$RUNNER_TEMP/vercel-ai" fetch --depth=1 origin "$commit"
 
       - name: Validate parity coverage
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         env:
           AI_SDK_UPSTREAM_ROOT: ${{ runner.temp }}/vercel-ai
         run: mise run parity-coverage
 
       - name: Report provider API shape parity
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run parity-provider-shape
 
   integration-test:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Report documentation-only selection
+        if: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+        run: echo "Narrative documentation only; documentation lint remains required."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           persist-credentials: false
 
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
       - uses: ./.github/actions/cache-go
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
 
       - name: Resolve pnpm store path
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ steps.pnpm-store.outputs.path }}
@@ -229,37 +316,47 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Integration tests
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-integration
 
   plugin-validation:
     name: Validate AI Gateway plugin
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Report documentation-only selection
+        if: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+        run: echo "Narrative documentation only; documentation lint remains required."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           persist-credentials: false
 
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
       - name: Verify clean plugin source at the artifact revision
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') && (github.event_name == 'push') }}
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain --untracked-files=all)"
 
       - name: Resolve Go cache paths
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         id: go-cache
         run: |
           echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
           echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: |
@@ -271,10 +368,12 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Resolve pnpm store path
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ steps.pnpm-store.outputs.path }}
@@ -283,29 +382,34 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Verify generated app manifest
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: |
           mise deps install --only test
           pnpm --filter ./ai-gateway generate:kinds
           test -z "$(git status --porcelain --untracked-files=all -- ai-gateway)"
 
       - name: Frontend checks
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-ai-gateway-frontend
 
       - name: Build plugin package
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         env:
           AI_GATEWAY_VCS_REF: ${{ github.sha }}
         run: mise run build-ai-gateway-plugin
 
       - name: Validate plugin package
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run validate-ai-gateway-plugin
 
       - name: Plugin end-to-end tests
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         env:
           GRAFANA_VERSION: nightly@sha256:5d4bd69f298a7d45b3e14e93d65cd4636cc77619eea120bc1d065662c1b1ceb3
         run: mise run test-ai-gateway-e2e
 
       - name: Keep the Playwright report of a failed run
-        if: ${{ failure() }}
+        if: ${{ (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') && (failure()) }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: grafana-aigateway-app-playwright-report-${{ github.sha }}
@@ -313,9 +417,11 @@ jobs:
           if-no-files-found: ignore
 
       - name: Gateway tests
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-ai-gateway
 
       - name: Plugin test host suites
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         run: mise run test-ai-gateway-command
 
       - name: Keep validated plugin package
@@ -330,27 +436,37 @@ jobs:
           if-no-files-found: error
 
   conformance-test:
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Report documentation-only selection
+        if: ${{ github.event_name == 'pull_request' && needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+        run: echo "Narrative documentation only; documentation lint remains required."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           persist-credentials: false
 
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           cache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           version: "2026.5.4"
           experimental: true
 
       - uses: ./.github/actions/cache-go
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
 
       - name: Resolve pnpm store path
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         with:
           lookup-only: ${{ startsWith(github.ref, 'refs/tags/') }}
           path: ${{ steps.pnpm-store.outputs.path }}
@@ -359,6 +475,7 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Conformance tests
+        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         id: conformance
         run: |
           set +e
@@ -366,7 +483,7 @@ jobs:
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Conformance test summary
-        if: always() && steps.conformance.outcome != 'skipped'
+        if: ${{ (github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true') && (always() && steps.conformance.outcome != 'skipped') }}
         run: |
           PASS=$(grep -c -e "--- PASS:.*/" conformance-output.txt 2>/dev/null || true)
           FAIL=$(grep -c -e "--- FAIL:.*/" conformance-output.txt 2>/dev/null || true)
