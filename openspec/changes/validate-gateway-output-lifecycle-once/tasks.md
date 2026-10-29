@@ -2,9 +2,9 @@
 
 ## 1. Runtime-path evidence before the removal (commit 1)
 
-- [ ] 1.1 Add `providerwire/v4/invalid_output_test.go` with the stream table (every case from `streamAgreementCases`, a hard-coded `rejectAt`, history encoded as a prompt). Each rejected case's body must equal the body of `parts[:rejectAt]` plus a nil-source part; each accepted case must end without a terminal error (D4). Verify with `go test -run TestInvalidOutput ./providerwire/v4/` from `ai-gateway/` on the current code.
-- [ ] 1.2 Add the unary table to the same file (every case from `unaryAgreementCases`, a hard-coded verdict): 500 internal document with selected-attempt metadata, or 200. Move `TestLifecycleAgreement_StreamFrames` and `TestLifecycleAgreement_UnaryDocuments` there under names without "Agreement". Verify that the same `go test` command passes.
-- [ ] 1.3 Re-check the `execution` tables, then add only the missing rows listed in D4: a repeated active reasoning start in `stream_validation_test.go`, a provider-executed custom part in `unary_validation_test.go`, and client-call duplicates and mismatched results in `history_test.go`. Verify with `go test ./internal/execution/`.
+- [x] 1.1 Add `providerwire/v4/invalid_output_test.go` with the stream table (every case from `streamAgreementCases`, a hard-coded `rejectAt`, history encoded as a prompt). Each rejected case's body must equal the body of `parts[:rejectAt]` plus a nil-source part; each accepted case must end without a terminal error (D4). Verify with `go test -run TestInvalidOutput ./providerwire/v4/` from `ai-gateway/` on the current code.
+- [x] 1.2 Add the unary table to the same file (every case from `unaryAgreementCases`, a hard-coded verdict): 500 internal document with selected-attempt metadata, or 200. Move `TestLifecycleAgreement_StreamFrames` and `TestLifecycleAgreement_UnaryDocuments` there under names without "Agreement". Verify that the same `go test` command passes.
+- [x] 1.3 Re-check the `execution` tables, then add only the missing rows listed in D4: a repeated active reasoning start in `stream_validation_test.go`, a provider-executed custom part in `unary_validation_test.go`, and client-call duplicates and mismatched results in `history_test.go`. Verify with `go test ./internal/execution/`.
 - [ ] 1.4 Commit `test(ai-gateway): cover invalid output through the ProviderWire handler` after `go test -race ./...` passes in `ai-gateway/`.
 
 ## 2. Remove ProviderWire's second evaluation (commit 2)

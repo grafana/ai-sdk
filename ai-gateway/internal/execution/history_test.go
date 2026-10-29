@@ -45,6 +45,8 @@ func TestRebuildToolHistory(t *testing.T) {
 		{name: "first call not provider-executed", prompt: []provider.Message{assistant(historyCall("call", "f", false), historyCall("call", "f", true))}, invalid: true},
 		{name: "re-emission not provider-executed", prompt: []provider.Message{assistant(historyCall("call", "f", true), historyCall("call", "f", false))}, invalid: true},
 		{name: "mismatched result", prompt: []provider.Message{assistant(historyCall("call", "f", true), historyResult("call", "other"))}, invalid: true},
+		{name: "repeated client call", prompt: []provider.Message{assistant(historyCall("call", "f", false), historyCall("call", "f", false))}, invalid: true},
+		{name: "mismatched client result", prompt: []provider.Message{assistant(historyCall("call", "f", false), historyResult("call", "other"))}, invalid: true},
 		{name: "repeated result", prompt: []provider.Message{assistant(historyCall("call", "f", true), historyResult("call", "f"), historyResult("call", "f"))}, invalid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
