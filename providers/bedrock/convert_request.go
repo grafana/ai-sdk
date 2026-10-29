@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"strings"
 
 	"github.com/grafana/ai-sdk/internal/anthropicschema"
 	"github.com/grafana/ai-sdk/internal/jsonschema"
