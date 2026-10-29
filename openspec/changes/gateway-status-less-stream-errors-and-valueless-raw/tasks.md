@@ -105,8 +105,8 @@ The Go capture serializes `APICallError.statusCode` as `0` (no `omitempty` at `p
 
 ## 7. Integration checks
 
-- [ ] 7.1 Run `mise run fmt`, `mise run vet`, `mise run lint`, `mise run test`, `mise run test-race`, `mise run parity-check` (`mise.toml:421-428`: `validate-parity-baseline`, `parity-coverage`, `parity-provider-shape`, `test-providerwire-v4`, `test-conformance`) and `mise run test-ai-gateway-source-integration`. All must pass. Provider goldens and the parity baseline stay unchanged (`git diff --stat test/conformance` is empty).
-- [ ] 7.2 Run `openspec validate gateway-status-less-stream-errors-and-valueless-raw --strict`. It must pass.
+- [x] 7.1 Run `mise run fmt`, `mise run vet`, `mise run lint`, `mise run test`, `mise run test-race`, `mise run parity-check` (`mise.toml:421-428`: `validate-parity-baseline`, `parity-coverage`, `parity-provider-shape`, `test-providerwire-v4`, `test-conformance`) and `mise run test-ai-gateway-source-integration`. All must pass. Provider goldens and the parity baseline stay unchanged (`git diff --stat test/conformance` is empty).
+- [x] 7.2 Run `openspec validate gateway-status-less-stream-errors-and-valueless-raw --strict`. It must pass.
 
 ## Workflow follow-up
 
