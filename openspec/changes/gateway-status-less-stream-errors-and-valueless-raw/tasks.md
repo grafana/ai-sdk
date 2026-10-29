@@ -2,14 +2,13 @@
 
 Each numbered group is one commit. In every group, write the tests first and confirm they fail. After each group, `cd ai-gateway && go test ./...` and `mise run test-grafana` must pass. Do not record, hand-write or edit provider `input*.chunks.txt` fixtures.
 
-## 1. Confirm open decisions
+## 1. Delivery order (client first)
 
-- [ ] 1.1 Record nara's answers to design "Decisions for nara" in the PR description:
-  - **Rollout order:** release the tolerant `providers/grafana` client first (client-only PR, or at least a client release before the Gateway deploys), or accept the version-skew window in design Risks.
-  - **Document names (D2):** `provider_error` and `provider stream error`.
-  - **Privacy (D7):** decided from evidence; native text stays out of base fields, and `error.data.nativeError` stays under gateway-attempt-failure-evidence. This does not block starting implementation.
+- [ ] 1.1 Deliver as two PRs, following design "Confirmed decisions":
+  - **PR A, client:** group 5 and task 6.3 (raw SSE wire against the Go client only). Release `providers/grafana` through its normal release path.
+  - **PR B, Gateway:** groups 2, 3 and 4, tasks 6.1 and 6.2, and group 7. Start after PR A merges; ship after the client release. Its contract tests build the client from source (`ai-gateway/go.mod` replace), and it bumps the `providers/grafana` requirement in `ai-gateway/go.mod` to the released version.
 
-  Verify: the PR description names the confirmed choices before group 2 merges. If client-first is chosen, the Gateway deploy waits for the client release.
+  Verify: each PR passes its own checks on `main`. PR B's description names the minimum Go client version.
 
 ## 2. Status-less provider stream error on the server
 
@@ -108,9 +107,8 @@ The Go capture serializes `APICallError.statusCode` as `0` (no `omitempty` at `p
 
 - [ ] 7.1 Run `mise run fmt`, `mise run vet`, `mise run lint`, `mise run test`, `mise run test-race`, `mise run parity-check` (`mise.toml:421-428`: `validate-parity-baseline`, `parity-coverage`, `parity-provider-shape`, `test-providerwire-v4`, `test-conformance`) and `mise run test-ai-gateway-source-integration`. All must pass. Provider goldens and the parity baseline stay unchanged (`git diff --stat test/conformance` is empty).
 - [ ] 7.2 Run `openspec validate gateway-status-less-stream-errors-and-valueless-raw --strict`. It must pass.
-- [ ] 7.3 Matrix acceptance, after #201 is rebased on this change (or this change on #201, whichever lands second). Remove these rows from any `providerPartsAllowlist` or Gateway skip list that #201 adds. Run `GRAFANA_VERSION=<pinned tag> mise run test-conformance-gateway` (Docker). Confirm that both client rows of `anthropic/upstream/spliced-message-start` and `openai/upstream/parallel-tool-call-wrapper` pass and that no other row regresses. Record the result in the PR that lands second.
 
 ## Workflow follow-up
 
-- Choose the PR title release type for both `ai-gateway` and `providers/grafana` per CONTRIBUTING "Releases and independent modules". Follow the rollout order recorded in task 1.1, and note the minimum Go client version for the new stream shapes in the PR description.
-- Archive this change in the implementing PR, as CONTRIBUTING requires for PRs that touch `openspec/`.
+- Choose each PR title release type (`providers/grafana` for PR A, `ai-gateway` for PR B) per CONTRIBUTING "Releases and independent modules". Follow the delivery order in task 1.1.
+- Archive this change in PR B, the last implementing PR, as CONTRIBUTING requires for PRs that touch `openspec/`.

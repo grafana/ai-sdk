@@ -2,7 +2,7 @@
 
 ## Why
 
-Direct providers emit two native stream shapes that ProviderWire V4 rewrites today. One is an in-stream provider error with no HTTP status, which becomes a retryable `502 upstream failure`. The other is a raw part without a value, which is dropped. When a provider stream ends right after an error part without a `finish`, the Gateway also adds a synthetic `500 internal error`. The #201 gateway conformance matrix shows all three differences against the registered upstream goldens (#564), in both client rows of `anthropic/upstream/spliced-message-start` and `openai/upstream/parallel-tool-call-wrapper`.
+Direct providers emit two native stream shapes that ProviderWire V4 rewrites today. One is an in-stream provider error with no HTTP status, which becomes a retryable `502 upstream failure`. The other is a raw part without a value, which is dropped. When a provider stream ends right after an error part without a `finish`, the Gateway also adds a synthetic `500 internal error`. Comparing Gateway output with the registered upstream goldens shows all three differences (#564), for both registered clients, on `anthropic/upstream/spliced-message-start` and `openai/upstream/parallel-tool-call-wrapper`.
 
 ## What Changes
 
@@ -40,6 +40,6 @@ None.
   - the registered upstream baseline (`ai` 7.0.143, `@ai-sdk/gateway` 4.0.116, `@ai-sdk/provider` 4.0.29, `@ai-sdk/openai` 4.0.96, `@ai-sdk/anthropic` 4.0.82);
   - provider recordings, `knownGaps` and `PARITY.md`;
   - the TypeScript client, because `@ai-sdk/gateway` enqueues decoded parts unchanged.
-- **Compatibility:** already released `providers/grafana` clients treat both new shapes as terminal protocol errors. They expose nothing, but on streams that continue after a status-less error they lose the later content and finish. The recommended rollout releases the client before the Gateway; see design.md, Risks and "Decisions for nara".
+- **Compatibility:** already released `providers/grafana` clients treat both new shapes as terminal protocol errors. They expose nothing, but on streams that continue after a status-less error they lose the later content and finish. Rollout releases the client before the Gateway; see design.md, Risks and "Confirmed decisions".
 - **Consumers:** root `fallback` with `WithBufferedStream` no longer falls back on these errors, because they are not retryable, and `middleware/prometheus` reports `status_code` `none` instead of `502`.
-- **Dependency:** final matrix acceptance depends on the unmerged gateway conformance matrix (#201).
+- **Evidence:** all acceptance evidence lives on `main` (Go unit tests, stream-event schema tests and the pinned-client contract suite). No external conformance harness is required.

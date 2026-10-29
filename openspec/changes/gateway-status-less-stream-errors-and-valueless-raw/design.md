@@ -45,7 +45,7 @@ See proposal.md (Why) for the motivation. Reference: the registered baseline in 
 
 **Goals:**
 
-- Both client rows of the two matrix rows match the direct goldens. The comparator (`test/conformance/provider_parts.go:148-156`) keeps an error's detail only when `statusCode > 0`.
+- For the part sequences of `anthropic/upstream/spliced-message-start` and `openai/upstream/parallel-tool-call-wrapper`, both clients receive the shapes the direct goldens show: a status-less error, a value-less raw part, and a clean end after a final error. The provider-parts comparator (`test/conformance/provider_parts.go:148-156`) keeps an error's detail only when `statusCode > 0`, so these are the only facts that must match. On-`main` unit and contract tests pin them.
 - Every existing status-bearing, transport, cancellation, timeout and malformed-status classification is byte-identical.
 - No new exported Go API.
 
@@ -100,7 +100,7 @@ Alternative considered: copying the native `IsRetryable`. Rejected, because the 
 
 - **Behavior.** When raw output was requested and `bytes.TrimSpace(part.RawValue)` is empty, the handler writes `{"type":"raw"}`.
 - **Implementation.** The event omits `rawValue` (`omitempty` on `streamRawEvent.RawValue`), and `validStreamEvent` accepts the empty case.
-- **Unchanged.** Non-empty values still go through `projectRawValue`, and a value that fails projection is still dropped. The matrix rows do not need this case: Go adapters never pass invalid JSON as a value. The duplicate-key and UTF-8 drops protect the credential projection.
+- **Unchanged.** Non-empty values still go through `projectRawValue`, and a value that fails projection is still dropped. The affected rows do not need this case: Go adapters never pass invalid JSON as a value. The duplicate-key and UTF-8 drops protect the credential projection.
 - **Alternative: turn unusable non-empty values into value-less markers too.** This would follow upstream more closely, but it changes the projection contract and is outside #564.
 - **Schema.** `raw.required` becomes `["type"]`. `{"type":"raw","rawValue":null}` keeps today's behavior: `null` is a valid JSON value.
 
@@ -135,9 +135,9 @@ Alternative considered: copying the native `IsRetryable`. Rejected, because the 
 - **Raw.** `stream.go:376` drops the `value.RawValue == nil` rejection, so the `PartRaw` carries a nil `RawValue`. Filtering at `:112` is unchanged.
 - **API.** No `GatewayErrorCategory` is added and no exported symbol changes.
 
-### D7. Privacy boundary — decision for nara, decided from evidence
+### D7. Privacy boundary (confirmed)
 
-This is recorded as decided from evidence, not as a gate on starting implementation. The issue scopes privacy to text "exposed by the new shapes", and `openspec/specs/gateway-attempt-failure-evidence/spec.md:56` already governs `nativeError` for every committed error. nara confirms it in review (task 1.1).
+The issue scopes privacy to text "exposed by the new shapes", and `openspec/specs/gateway-attempt-failure-evidence/spec.md:56` already governs `nativeError` for every committed error. nara confirmed this reading.
 
 The new shapes add no native exposure:
 
@@ -161,7 +161,7 @@ If the stricter reading is intended, that would mean no `nativeError` for this c
     - a new testserver scenario in `runtime-integration.test.ts`, which exercises status-less errors, a value-less raw part and close after an error in both clients;
     - the raw-SSE fixture in `go-client-differential.test.ts:457-472`;
     - the updated raw expectations in `runtime-integration.test.ts:720-746`, because the existing testserver `raw` scenario (`testserver/providerwire_v4.go:282`) already emits a value-less part.
-- **Matrix acceptance.** `mise run test-conformance-gateway` exists only on the unmerged #201 branch (`origin/nrbrd/ai-gateway-conformance`). Whichever PR lands second runs the matrix and confirms the four row × client results. No provider fixtures are recorded or edited.
+- **Acceptance.** The on-`main` tests above are the full acceptance evidence; no external conformance harness is a dependency. The scenarios in tasks 3.1, 6.1 and 6.3 reproduce the part sequences of the two affected rows as provider stream parts in unit and contract tests. No provider `input*.chunks.txt` fixtures are recorded or edited.
 - **Parity records.** `knownGaps` and `PARITY.md` do not change. Neither mentions these rows, and the "AI Gateway" surface keeps its status and evidence location.
 - **Divergence classification.** The three rewrites were Gateway spec rules (fixed safe errors, dropped value-less raw parts, synthetic close error), not `knownGaps` entries. Their effect on these rows is now a parity-preserving Go adaptation. Two intentional deviations remain:
   - the fixed message replaces native error text; the comparator ignores it for status-less errors;
@@ -171,23 +171,22 @@ If the stricter reading is intended, that would mean no `nativeError` for this c
 
 - **Version skew.** `ai-gateway` and `providers/grafana` release independently (`release-please-config.json`), so shipping both in one PR does not control which reaches users first.
   - *Effect:* a released client rejects `provider_error`: status 0 matches no `registeredError` entry (`providers/grafana/errors.go:100-117`), and the stream ends at one terminal protocol error. On the OpenAI recoverable-parse path the direct stream continues after the error (`providers/openai/convert_stream.go:49-54`), so an old client that works today loses all later content and the finish. That is a functional regression, not only fail-closed. Raw-requesting old clients also stop at a value-less raw event. Nothing leaks.
-  - *Mitigation:* release the tolerant client first, as a client-only PR or at least a client release before the Gateway deploys, then ship the Gateway. Client-first is safe because the new client still decodes old 502 documents. The TS client is unaffected. The choice between client-first and accepting the skew window is a decision for nara (below).
+  - *Mitigation:* release the tolerant client first, as a client-only PR or at least a client release before the Gateway deploys, then ship the Gateway. Client-first is safe because the new client still decodes old 502 documents. The TS client is unaffected. Client-first is the confirmed rollout (below).
 - **Retryability flip.** A status-0 error whose cause is neither `net.Error` nor `url.Error` now reports `retryable:false`. One example is a body-truncation error that OpenAI wraps with `IsRetryable=true` (`providers/openai/stream_preflight.go:233-241`). `net.Error` and `url.Error` causes keep upstream or timeout.
   - *Effect:* the Gateway's server fallback is unaffected: it decides on the native `IsRetryable` and never replays after the first part. But in-stream `retryable` is not purely informational. Root `fallback.WithBufferedStream` returns the first in-stream `PartError`'s `APICallError` (`fallback/buffered_stream.go:106-111`), and `DefaultDecider` returns `IsRetryable` (`fallback/fallback.go:337-349`); `test/integration/testserver/scenario_buffered_fallback.go` uses this. A buffered consumer of a Gateway-backed model used to fall back on these errors (502, retryable) and now stops.
   - *Mitigation:* classified as an intentional deviation in D8, and documented in the provider guide's retry guidance (task 2.4).
 - **Metrics label.** Go-client consumers using `middleware/prometheus` see `status_code` change from `502` to `none` for these errors (`middleware/prometheus/errors.go:82-84`).
 - **A stream may now end without finish and without a Gateway error.** Both clients already treat clean EOF without finish as completion, and core synthesizes an error finish, as the direct `expected.jsonl` shows.
   - *Mitigation:* the architecture walkthrough and provider guide describe the rule.
-- **Matrix evidence depends on #201.** *Mitigation:* the unit and contract tests above pin every shape the comparator inspects. Task 6 records the #201 run.
 
 ## Migration Plan
 
-No data migration is needed. Recommended rollout: release `providers/grafana` first, then deploy the Gateway (see Risks, Version skew). Roll back by reverting the PR. Gateway and client changes are independent of stored state. An updated client keeps decoding old 502 documents, so a Gateway rollback is safe for it.
+No data migration is needed. Rollout: release `providers/grafana` (PR A) first, then ship the Gateway (PR B); see Risks, Version skew. Roll back by reverting PR B. Gateway and client changes are independent of stored state. An updated client keeps decoding old 502 documents, so a Gateway rollback is safe for it.
 
-## Decisions for nara
+## Confirmed decisions
 
-Recorded in task 1.1 and the PR description:
+nara confirmed:
 
-1. **Rollout order.** Release the tolerant Go client before the Gateway deploys (recommended), or accept the version-skew window described in Risks.
-2. **Document names (D2).** `provider_error` and `provider stream error`.
-3. **Privacy (D7).** Decided from evidence; nara confirms in review.
+1. **Rollout order.** Client first: the tolerant `providers/grafana` client is released before the Gateway change ships (tasks group 1).
+2. **Document names (D2).** `provider_error`, `provider stream error`, type `internal_server_error`.
+3. **Privacy (D7).** Native text stays out of base fields and new members; `error.data.nativeError` stays under gateway-attempt-failure-evidence.
