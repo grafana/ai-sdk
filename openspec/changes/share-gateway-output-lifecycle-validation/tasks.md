@@ -78,8 +78,8 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
 
 ## 5. Test adapter evidence
 
-- [ ] 5.1 Make `testadapter.Run` report `WaitInvalidOutput` and unary `ErrInvalidOutput` in `Outcome`, as an invalid-output flag and the number of accepted parts (design D9). Verify with `go test -race ./internal/...`.
-- [ ] 5.2 Add a prompt field to the scenario in `internal/execution/adapter_test.go` (`:223-239`; `request` at `:325-346` always sends `"prompt": []`), encoded both as the wire prompt and as `provider.Message` values. Make `assertProviderWire` accept a `finish` frame before a terminal error and check that the terminal error is the last frame. Extend `TestTestAdapter_MatchesProviderWire` with rows for:
+- [x] 5.1 Make `testadapter.Run` report `WaitInvalidOutput` and unary `ErrInvalidOutput` in `Outcome`, as an invalid-output flag and the number of accepted parts (design D9). Verify with `go test -race ./internal/...`.
+- [x] 5.2 Add a prompt field to the scenario in `internal/execution/adapter_test.go` (`:223-239`; `request` at `:325-346` always sends `"prompt": []`), encoded both as the wire prompt and as `provider.Message` values. Make `assertProviderWire` accept a `finish` frame before a terminal error and check that the terminal error is the last frame. Extend `TestTestAdapter_MatchesProviderWire` with rows for:
   - a first-part and a later-part violation for each stream rule class, including the segment rules;
   - a multi-segment stream that ends cleanly, and one that closes after a later metadata;
   - content after a `finish`;
