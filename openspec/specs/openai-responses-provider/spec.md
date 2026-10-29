@@ -5,9 +5,7 @@ Define the OpenAI Responses API provider module, including request conversion,
 tool preparation, response and stream mapping, provider options, error handling,
 and conformance expectations needed to stay aligned with Vercel's upstream AI
 SDK behavior.
-
 ## Requirements
-
 ### Requirement: Provider construction and identity
 
 The `providers/openai` Go module SHALL expose `NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel` and `NewResponsesWithClient(client openai.Client, modelID string, opts ...Option) provider.LanguageModel`, backed by Responses via `github.com/openai/openai-go`. Both SHALL implement provider.LanguageModel, report v4 and the supplied modelID, accept functional options, and neither panic nor call the network during construction.
@@ -138,13 +136,13 @@ Assistant calls SHALL become function_call or corresponding built-in call items 
 
 ### Requirement: Function result output conversion
 
-Ordinary results SHALL use function_call_output with original call_id and existing result caller. Scalar text/error-text/JSON/error-JSON/execution-denied SHALL retain string and output-schema JSON encoding rules. Scalar output SHALL remain string unless a selected active OpenAI/Azure breakpoint wraps it in input_text with prompt_cache_breakpoint.
+Ordinary results SHALL use function_call_output with original call_id and existing result caller. Scalar error-text and error-JSON SHALL serialize as JSON objects with one error property containing the original text or JSON value, regardless of output schema. Text, JSON and execution-denied SHALL retain their existing string and output-schema encoding rules. Conversion SHALL NOT mutate caller inputs. Scalar output SHALL remain string unless a selected active OpenAI/Azure breakpoint wraps it in input_text with prompt_cache_breakpoint.
 
 #### Scenario: Scalar results retain cache precedence and schema encoding
 - **WHEN** a function output is text, JSON, error-text, error-JSON, or execution-denied and both its output and tool-result part carry distinct active-namespace cache breakpoints
 - **THEN** its `function_call_output.output` is an `input_text` array carrying the output-level breakpoint and the correctly encoded scalar text
 - **AND** without an output-level breakpoint the result-part breakpoint applies, and without either breakpoint output remains a string
-- **AND** a function tool with an output schema quotes text/error-text/denial as JSON string literals, while JSON/error-JSON remains JSON-serialized and denial without a reason uses the default reason
+- **AND** a function tool with an output schema quotes text/denial as JSON string literals, while successful JSON remains JSON-serialized and errors retain their JSON object envelope and denial without a reason uses the default reason
 
 #### Scenario: Generic multipart text and file content
 - **WHEN** a generic function result contains mixed text, image data/URL, and non-image file data/URL content elements with per-element cache options
@@ -164,7 +162,7 @@ Ordinary results SHALL use function_call_output with original call_id and existi
 
 ### Requirement: Custom tool result output conversion
 
-Configured custom results SHALL retain custom_tool_call_output and original call_id. Scalar text/error-text/JSON/error-JSON/execution-denied SHALL stay strings unless a selected active-namespace breakpoint (output before result part) makes an input_text array. Multipart text, inline image/file data and image/file URLs SHALL retain typed content, image detail and per-content cache options.
+Configured custom results SHALL retain custom_tool_call_output and original call_id. Error-text and error-JSON SHALL serialize as JSON objects containing the original value under error, independent of output schemas and without mutating caller inputs. Scalar text/error-text/JSON/error-JSON/execution-denied SHALL stay strings unless a selected active-namespace breakpoint (output before result part) makes an input_text array. Multipart text, inline image/file data and image/file URLs SHALL retain typed content, image detail and per-content cache options.
 
 #### Scenario: Custom scalar breakpoint and output identity
 - **WHEN** a custom tool result has a scalar output with output-level or result-part active-namespace cache breakpoint
@@ -179,7 +177,7 @@ Configured custom results SHALL retain custom_tool_call_output and original call
 
 ### Requirement: Parallel wrapper function result serialization
 
-Grouped parallel function results SHALL retain wrapper call_id, child index order and continuation behavior. Each child SHALL undergo ordinary result conversion: scalar strings stay strings, multipart typed arrays become JSON strings; wrapper SHALL join strings with newlines. Unsupported multipart items SHALL warn without reordering. Hosted-tool and invalid/incomplete group dispatch SHALL remain unchanged.
+Grouped parallel function results SHALL retain wrapper call_id, child index order and continuation behavior. Each child SHALL undergo ordinary result conversion, including JSON error envelopes for failed children: scalar strings stay strings, multipart typed arrays become JSON strings; wrapper SHALL join strings with newlines. Unsupported multipart items SHALL warn without reordering. Hosted-tool and invalid/incomplete group dispatch SHALL remain unchanged.
 
 #### Scenario: Ordered multipart and scalar children
 - **WHEN** a grouped parallel wrapper receives child results out of index order, including generic multipart output with an uploaded reference and a scalar child
@@ -190,6 +188,21 @@ Grouped parallel function results SHALL retain wrapper call_id, child index orde
 - **WHEN** one or more grouped parallel children have selected scalar output/result-part cache breakpoints
 - **THEN** the wrapper output is an ordered array of `input_text` child strings with later children newline-prefixed and each selected breakpoint on its corresponding element
 - **AND** multipart child result/output-level cache options do not cause wrapper-level breakpoints
+
+#### Scenario: Error values survive unary and streaming continuation
+- **WHEN** function, custom or applicable parallel children return error-text or error-json, including empty text, null, scalar or structured JSON
+- **THEN** unary and streaming requests contain serialized objects with an error property preserving the value
+- **AND** successful text/JSON, execution-denied and multipart outputs retain their distinct behavior
+- **AND** active OpenAI/Azure cache hints wrap the serialized error while inactive namespace hints are ignored
+
+#### Scenario: Error envelopes preserve HTML characters
+- **WHEN** error-text or error-json contains `<`, `>` or `&`
+- **THEN** the serialized error envelope preserves those characters without HTML escaping, matching the registered upstream JSON.stringify behavior
+
+#### Scenario: Malformed Go error JSON retains the failure
+- **WHEN** a Go tool result supplies nonempty malformed JSON bytes as error-json
+- **THEN** conversion falls back to a JSON object with the original text as a string under error
+- **AND** this Go adaptation preserves the failure signal without mutating the caller's bytes; nil and empty byte slices continue to serialize as null
 
 ### Requirement: Reasoning conversion
 

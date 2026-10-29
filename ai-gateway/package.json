@@ -2,6 +2,7 @@
   "name": "@grafana/aigateway-app",
   "version": "0.1.0-alpha.1",
   "private": true,
+  "packageManager": "pnpm@12.15.0",
   "scripts": {
     "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",
     "dev": "webpack -w -c ./.config/webpack/webpack.config.ts --env development",
