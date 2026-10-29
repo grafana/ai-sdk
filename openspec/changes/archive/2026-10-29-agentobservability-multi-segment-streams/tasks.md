@@ -7,8 +7,8 @@
     - two segments each emit text and reasoning with ID `"0"` and end in `PartFinish`;
     - output is the segment-1 parts followed by separate segment-2 parts, in observed order;
     - a tool call in segment 1 with its result in segment 2 still pairs.
-  - Multi-finish usage is covered by task 6.3 (`TestStreamRecorder_UsageAcrossFinishesUsesLastFinish`).
-  - `TestStreamRecorder_MultiSegment_LastFinishAndIdentity` (regression pin: passes before and after the change):
+  - Multi-finish usage is covered by task 6.3 (`TestStreamRecorder_MultiSegment/LastFinishUsageAndIdentity`).
+  - `TestStreamRecorder_MultiSegment/LastFinishUsageAndIdentity` (its identity and finish-reason assertions pass before and after the change):
     - the last finish reason maps to `StopReason`;
     - the last non-empty response ID and model win.
 - [x] 1.2 Implement design D4 and verify that 1.1 and the existing `TestStreamRecorder_*` tests pass (`go test ./...` in the module).
@@ -16,7 +16,7 @@
   - `streamOutputRef` holds the text or reasoning accumulator pointer, and `buildOutput` reads through it instead of `r.texts[ref.id]`/`r.reasonings[ref.id]`.
   - Tool accumulators stay keyed for the whole stream.
   - Update the `StreamRecorder` godoc for segment handling.
-- [x] 1.3 Add a multi-finish usage test next to the existing usage test (`TestStreamRecorder_UsageAcrossFinishes…`). Task 6.3 sets its final expectation to the last finish's usage. Verify with `go test -run TestStreamRecorder_Usage ./...`.
+- [x] 1.3 Add multi-finish usage assertions to `TestStreamRecorder_MultiSegment/LastFinishUsageAndIdentity`. Task 6.3 sets its final expectation to the last finish's usage. Verify with `go test -run TestStreamRecorder_MultiSegment ./...`.
 
 ## 2. Recording finalization (`middleware/agentobservability/recording.go`)
 
@@ -104,7 +104,7 @@
 - [x] 6.2 Implement design D2 in `Aggregator` (segment state, last closed segment, finish-reported counters) and verify with `go test -race ./internal/streamusage/`.
 - [x] 6.3 Update the consumer tests to the new rule. Each keeps its purpose:
   - the provisional-lower usage tests in `middleware/logger` (`TestMiddleware_StreamUsageTakesFinishCounters`), `middleware/prometheus` (`TestStreamUsageTakesFinishCounters`) and `middleware/agentobservability` (`TestStreamRecorder_UsageTakesFinishCounters`) expect the finish counters, with `NoCache` from the earlier part;
-  - `TestStreamRecorder_UsageAcrossFinishesUsesLastFinish` and `TestRecordingMiddleware_StreamMultiSegment_OneGeneration` expect 4/9;
+  - `TestStreamRecorder_MultiSegment/LastFinishUsageAndIdentity` and `TestRecordingMiddleware_StreamMultiSegment_OneGeneration` expect 4/9;
   - `TestRecordingMiddleware_RequestedStreamLifecycle` and the stream case of `TestRecordingMiddleware_InclusiveUsageExport` use a finish without usage, so their split-usage expectations stay;
   - `TestModelObservationChain_SequentialSegments` (task 4.1).
 - [x] 6.4 Update the usage sentences in `docs/middleware/structured-logging.md`, `docs/middleware/prometheus.md` and `docs/middleware/agent-observability.md`, and the export paragraph in `ai-gateway/docs/text-observability.md`. Verify with `mise run lint-docs`.

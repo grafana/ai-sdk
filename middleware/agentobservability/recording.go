@@ -147,7 +147,7 @@ func wrapRecordingStream(ctx context.Context, opts RecordingOptions, p middlewar
 	streamRec := NewStreamRecorder(start, p.Params)
 	streamRec.identitySource = opts.IdentitySource
 	if upstream == nil {
-		recorder.SetResult(filterGeneration(streamRec.Generation(), start, streamRec.finishReasonForFilter(), opts.GenerationFilter), nil)
+		recorder.SetResult(filterGeneration(streamRec.Generation(), start, provider.FinishReason{}, opts.GenerationFilter), nil)
 		finishRecordingAndComplete(recorder, opts.OnRecordError, complete)
 		return nil, nil
 	}
@@ -205,18 +205,15 @@ func runStreamTee(
 	var recordErr error
 	finalized := false
 	finishSeen := false
-	errorSinceFinish := false
 	var snapshot *streamState
 	captureSnapshot := func() {
 		snapshot = nil
 		defer streamrecover.Recover(func() {})
-		state := streamRec.snapshot()
+		state := streamRec.currentState()
+		state.completedAt = time.Now().UTC()
 		snapshot = &state
 	}
 	finalize := func(contextEnded bool) {
-		if finalized {
-			return
-		}
 		finalized = true
 		defer streamrecover.Recover(func() {})
 		var state streamState
@@ -225,7 +222,7 @@ func runStreamTee(
 		case contextEnded && !finishSeen:
 			state = streamRec.currentState()
 			callErr = ctx.Err()
-		case contextEnded && snapshot != nil && !errorSinceFinish:
+		case contextEnded && snapshot != nil:
 			state = *snapshot
 			callErr = state.callError
 		default:
@@ -255,11 +252,6 @@ func runStreamTee(
 		recordErr = endRecording(recorder)
 	}
 	defer func() {
-		// The recorder ends before the consumer channel closes, so a consumer
-		// that reads to EOF observes a recorded generation. A finish does not
-		// end it, so a consumer that stops at finish and closes the shared
-		// client must wait for OnRecordComplete first; one that cancels still
-		// records the finished segments from the last-finish snapshot.
 		// Lifecycle callbacks run only after close so consumer callbacks cannot
 		// delay downstream completion.
 		if !finalized {
@@ -288,10 +280,9 @@ streamLoop:
 			switch {
 			case part.Type == provider.PartFinish:
 				finishSeen = true
-				errorSinceFinish = false
 				captureSnapshot()
 			case part.Type == provider.PartError && part.APICallError != nil:
-				errorSinceFinish = true
+				snapshot = nil
 			}
 			if drainTimeout > 0 && ctx.Err() != nil {
 				canceled = true

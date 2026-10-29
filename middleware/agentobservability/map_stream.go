@@ -19,7 +19,7 @@ import (
 //
 // A stream may carry several response segments, each ending in its own
 // PartFinish. The recorder observes all of them into one generation: usage
-// keeps the strongest value per counter, the last finish reason and last
+// is the last finish's segment usage, the last finish reason and last
 // non-empty response identity win, and each segment's text and reasoning
 // parts are appended in observed order.
 //
@@ -379,8 +379,9 @@ func (s streamState) finishReasonValue() provider.FinishReason {
 	return *s.finishReason
 }
 
-// state copies the accumulated stream state. The caller holds r.mu.
-func (r *StreamRecorder) state() streamState {
+func (r *StreamRecorder) currentState() streamState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	usage, hasUsage := r.usage.Usage()
 	state := streamState{
 		output:        r.buildOutput(),
@@ -396,23 +397,6 @@ func (r *StreamRecorder) state() streamState {
 		finishReason := *r.finishReason
 		state.finishReason = &finishReason
 	}
-	return state
-}
-
-func (r *StreamRecorder) currentState() streamState {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.state()
-}
-
-// snapshot captures the stream state at a PartFinish, completed at the time
-// of capture, so the finished segments can be recorded if the request context
-// ends before upstream closes.
-func (r *StreamRecorder) snapshot() streamState {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	state := r.state()
-	state.completedAt = time.Now().UTC()
 	return state
 }
 
@@ -477,18 +461,6 @@ func (r *StreamRecorder) generationFrom(state streamState) agento11y.Generation 
 		gen.StopReason = finishReasonToAgento11yStop(*state.finishReason)
 	}
 	return gen
-}
-
-func (r *StreamRecorder) finishReasonForFilter() provider.FinishReason {
-	if r == nil {
-		return provider.FinishReason{}
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.finishReason == nil {
-		return provider.FinishReason{}
-	}
-	return *r.finishReason
 }
 
 // buildOutput assembles a single assistant message plus optional tool messages

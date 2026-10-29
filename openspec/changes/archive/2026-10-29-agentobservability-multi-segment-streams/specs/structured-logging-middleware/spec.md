@@ -9,7 +9,7 @@
 - **GIVEN** usage is split across multiple stream parts
 - **AND** the finish part omits some normalized counters
 - **WHEN** the stream completes
-- **THEN** the terminal log record SHALL contain the counters the finish reports and, for the counters it omits, the strongest values observed before it, under shared streaming usage aggregation
+- **THEN** the terminal log record SHALL contain the counters the finish reports and, for the counters it omits, the strongest values observed earlier in its response segment, under shared streaming usage aggregation
 
 #### Scenario: Stream usage follows the last finish
 

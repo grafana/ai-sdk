@@ -200,7 +200,7 @@ Recording SHALL map supported prompt, generated, and streamed `file` / `reasonin
 - **GIVEN** usage is split across multiple stream parts
 - **AND** the finish part omits some normalized counters
 - **WHEN** the recorder produces a generation
-- **THEN** its usage SHALL contain the counters the finish reports and, for the counters it omits, the strongest values observed before it, as supported by the Agent Observability usage schema
+- **THEN** its usage SHALL contain the counters the finish reports and, for the counters it omits, the strongest values observed earlier in its response segment, as supported by the Agent Observability usage schema
 
 #### Scenario: Multi-finish usage follows the last finish
 

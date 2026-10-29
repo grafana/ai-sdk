@@ -121,6 +121,34 @@ func TestAggregator(t *testing.T) {
 		assert.Equal(t, 2, *usage.OutputTokens.Total)
 	})
 
+	t.Run("a later segment does not inherit counters from an earlier one", func(t *testing.T) {
+		cacheRead := 30
+		aggregate := observeAll(
+			provider.StreamPart{Type: provider.PartResponseMeta, Usage: &provider.Usage{
+				InputTokens: provider.InputTokenUsage{CacheRead: &cacheRead},
+				Raw:         json.RawMessage(`{"segment":1}`),
+			}},
+			provider.StreamPart{Type: provider.PartFinish, Usage: tokens(7, 2)},
+			provider.StreamPart{Type: provider.PartFinish, Usage: tokens(4, 9)},
+		)
+
+		usage, ok := aggregate.Usage()
+		require.True(t, ok)
+		assert.Equal(t, 4, *usage.InputTokens.Total)
+		assert.Nil(t, usage.InputTokens.CacheRead)
+		assert.Empty(t, usage.Raw)
+	})
+
+	t.Run("an empty last segment reports no usage", func(t *testing.T) {
+		aggregate := observeAll(
+			provider.StreamPart{Type: provider.PartFinish, Usage: tokens(7, 2)},
+			provider.StreamPart{Type: provider.PartFinish},
+		)
+
+		_, ok := aggregate.Usage()
+		assert.False(t, ok)
+	})
+
 	t.Run("latest non-empty raw usage wins before a finish", func(t *testing.T) {
 		aggregate := observeAll(
 			provider.StreamPart{Usage: &provider.Usage{Raw: json.RawMessage(`{"sequence":1}`)}},

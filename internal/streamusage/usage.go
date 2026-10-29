@@ -31,7 +31,7 @@ func (a *Aggregator) Observe(part provider.StreamPart) {
 	if part.Type == provider.PartFinish {
 		closed := a.segment
 		if part.Usage != nil {
-			closed.replace(*part.Usage)
+			closed.merge(*part.Usage, reportedTokenCount)
 		}
 		a.last = closed
 		a.finished = true
@@ -39,7 +39,7 @@ func (a *Aggregator) Observe(part provider.StreamPart) {
 		return
 	}
 	if part.Usage != nil {
-		a.segment.keepGreatest(*part.Usage)
+		a.segment.merge(*part.Usage, maxTokenCount)
 	}
 }
 
@@ -55,29 +55,15 @@ func (a *Aggregator) Usage() (provider.Usage, bool) {
 	return cloneUsage(selected.usage), true
 }
 
-func (s *segmentUsage) keepGreatest(usage provider.Usage) {
+func (s *segmentUsage) merge(usage provider.Usage, pick func(current, observed *int) *int) {
 	s.observed = true
-	s.usage.InputTokens.Total = maxTokenCount(s.usage.InputTokens.Total, usage.InputTokens.Total)
-	s.usage.InputTokens.NoCache = maxTokenCount(s.usage.InputTokens.NoCache, usage.InputTokens.NoCache)
-	s.usage.InputTokens.CacheRead = maxTokenCount(s.usage.InputTokens.CacheRead, usage.InputTokens.CacheRead)
-	s.usage.InputTokens.CacheWrite = maxTokenCount(s.usage.InputTokens.CacheWrite, usage.InputTokens.CacheWrite)
-	s.usage.OutputTokens.Total = maxTokenCount(s.usage.OutputTokens.Total, usage.OutputTokens.Total)
-	s.usage.OutputTokens.Text = maxTokenCount(s.usage.OutputTokens.Text, usage.OutputTokens.Text)
-	s.usage.OutputTokens.Reasoning = maxTokenCount(s.usage.OutputTokens.Reasoning, usage.OutputTokens.Reasoning)
-	if len(usage.Raw) > 0 {
-		s.usage.Raw = cloneRaw(usage.Raw)
-	}
-}
-
-func (s *segmentUsage) replace(usage provider.Usage) {
-	s.observed = true
-	s.usage.InputTokens.Total = reportedTokenCount(s.usage.InputTokens.Total, usage.InputTokens.Total)
-	s.usage.InputTokens.NoCache = reportedTokenCount(s.usage.InputTokens.NoCache, usage.InputTokens.NoCache)
-	s.usage.InputTokens.CacheRead = reportedTokenCount(s.usage.InputTokens.CacheRead, usage.InputTokens.CacheRead)
-	s.usage.InputTokens.CacheWrite = reportedTokenCount(s.usage.InputTokens.CacheWrite, usage.InputTokens.CacheWrite)
-	s.usage.OutputTokens.Total = reportedTokenCount(s.usage.OutputTokens.Total, usage.OutputTokens.Total)
-	s.usage.OutputTokens.Text = reportedTokenCount(s.usage.OutputTokens.Text, usage.OutputTokens.Text)
-	s.usage.OutputTokens.Reasoning = reportedTokenCount(s.usage.OutputTokens.Reasoning, usage.OutputTokens.Reasoning)
+	s.usage.InputTokens.Total = pick(s.usage.InputTokens.Total, usage.InputTokens.Total)
+	s.usage.InputTokens.NoCache = pick(s.usage.InputTokens.NoCache, usage.InputTokens.NoCache)
+	s.usage.InputTokens.CacheRead = pick(s.usage.InputTokens.CacheRead, usage.InputTokens.CacheRead)
+	s.usage.InputTokens.CacheWrite = pick(s.usage.InputTokens.CacheWrite, usage.InputTokens.CacheWrite)
+	s.usage.OutputTokens.Total = pick(s.usage.OutputTokens.Total, usage.OutputTokens.Total)
+	s.usage.OutputTokens.Text = pick(s.usage.OutputTokens.Text, usage.OutputTokens.Text)
+	s.usage.OutputTokens.Reasoning = pick(s.usage.OutputTokens.Reasoning, usage.OutputTokens.Reasoning)
 	if len(usage.Raw) > 0 {
 		s.usage.Raw = cloneRaw(usage.Raw)
 	}

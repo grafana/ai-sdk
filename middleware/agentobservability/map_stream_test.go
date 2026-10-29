@@ -78,26 +78,6 @@ func TestStreamRecorder_UsageTakesFinishCounters(t *testing.T) {
 	assert.Equal(t, agento11y.TokenInputSemanticsInclusive, usage.InputSemantics)
 }
 
-func TestStreamRecorder_UsageAcrossFinishesUsesLastFinish(t *testing.T) {
-	usage := func(input, output int) *provider.Usage {
-		return &provider.Usage{
-			InputTokens:  provider.InputTokenUsage{Total: intPtr(input)},
-			OutputTokens: provider.OutputTokenUsage{Total: intPtr(output)},
-		}
-	}
-	toolCalls := provider.FinishReason{Unified: provider.FinishReasonToolCalls}
-	stop := provider.FinishReason{Unified: provider.FinishReasonStop}
-	r := newRecorderForStreamTest()
-	r.Observe(provider.StreamPart{Type: provider.PartFinish, FinishReason: &toolCalls, Usage: usage(7, 2)})
-	r.Observe(provider.StreamPart{Type: provider.PartResponseMeta, Usage: usage(4, 2)})
-	r.Observe(provider.StreamPart{Type: provider.PartFinish, FinishReason: &stop, Usage: usage(4, 9)})
-
-	gen := r.Generation()
-	assert.Equal(t, int64(4), gen.Usage.InputTokens)
-	assert.Equal(t, int64(9), gen.Usage.OutputTokens)
-	assert.Equal(t, int64(13), gen.Usage.TotalTokens)
-}
-
 func TestStreamRecorder_ServerToolUsageMetadata(t *testing.T) {
 	r := newRecorderForStreamTest()
 	r.Observe(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{
@@ -694,17 +674,20 @@ func TestStreamRecorder_MultiSegment(t *testing.T) {
 		assert.Equal(t, "lookup", gen.Output[1].Name)
 	})
 
-	t.Run("LastFinishAndIdentity", func(t *testing.T) {
+	t.Run("LastFinishUsageAndIdentity", func(t *testing.T) {
 		r := newRecorderForStreamTest()
 		r.Observe(provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "msg-1", ModelID: "claude-1"})
-		r.Observe(provider.StreamPart{Type: provider.PartFinish, FinishReason: &toolCalls})
+		r.Observe(segmentFinish(provider.FinishReasonToolCalls, 7, 2))
 		r.Observe(provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "msg-2", ModelID: "claude-2"})
 		r.Observe(provider.StreamPart{Type: provider.PartResponseMeta})
-		r.Observe(provider.StreamPart{Type: provider.PartFinish, FinishReason: &stop})
+		r.Observe(segmentFinish(provider.FinishReasonStop, 4, 9))
 
 		gen := r.Generation()
 		assert.Equal(t, "end_turn", gen.StopReason)
 		assert.Equal(t, "msg-2", gen.ResponseID)
 		assert.Equal(t, "claude-2", gen.ResponseModel)
+		assert.Equal(t, int64(4), gen.Usage.InputTokens)
+		assert.Equal(t, int64(9), gen.Usage.OutputTokens)
+		assert.Equal(t, int64(13), gen.Usage.TotalTokens)
 	})
 }

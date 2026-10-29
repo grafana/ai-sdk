@@ -112,7 +112,7 @@ These rules are already how `Observe` behaves (see Context): finish reason, resp
 
 Raw usage follows D2: the last finish's non-empty raw payload, or otherwise the latest in that segment. So the `server_tool_use` metadata that `metadataFromUsage` derives from Raw reflects the last message, and Anthropic raw resets per message. The Gateway drops raw-usage metadata in `filterAgentGeneration`.
 
-The other provider metadata is not recorded by `StreamRecorder`, so it needs no rule. `hooks.go` has no stream-finish logic, and `finishReasonForFilter` already returns the latest reason.
+The other provider metadata is not recorded by `StreamRecorder`, so it needs no rule. `hooks.go` has no stream-finish logic, and the generation filter receives the recorded state's finish reason, the latest one.
 
 ### D4. Text and reasoning accumulators restart at each finish
 

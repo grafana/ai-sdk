@@ -237,7 +237,7 @@ Status labels SHALL be `success`, `error`, or `canceled`. Error type labels SHAL
 - **GIVEN** usage is split across multiple stream parts
 - **AND** the finish part omits some normalized counters
 - **WHEN** the stream completes
-- **THEN** token counters SHALL increment from the counters the finish reports and, for the counters it omits, the strongest values observed before it
+- **THEN** token counters SHALL increment from the counters the finish reports and, for the counters it omits, the strongest values observed earlier in its response segment
 
 #### Scenario: Stream usage follows the last finish
 
