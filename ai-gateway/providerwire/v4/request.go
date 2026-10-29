@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -146,14 +145,6 @@ func mapRequest(request wireRequest) (provider.CallOptions, *requestFailure) {
 		options.Reasoning = reasoning
 	}
 	return options, nil
-}
-
-func unresolvedProviderCalls(prompt []provider.Message) (map[string]string, *requestFailure) {
-	history, err := execution.RebuildToolHistory(prompt)
-	if err != nil {
-		return nil, invalidMappingFailure()
-	}
-	return map[string]string(history), nil
 }
 
 func mapWireMessage(message wireMessage) (provider.Message, *requestFailure) {

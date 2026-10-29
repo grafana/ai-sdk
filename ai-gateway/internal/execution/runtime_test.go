@@ -596,10 +596,6 @@ func invalidThenReady(t *testing.T) (chan provider.StreamPart, *atomic.Int64) {
 	return parts, &produced
 }
 
-func finishStreamPart() provider.StreamPart {
-	return provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
-}
-
 func closedStream(parts ...provider.StreamPart) chan provider.StreamPart {
 	stream := make(chan provider.StreamPart, len(parts))
 	for _, part := range parts {
@@ -652,7 +648,7 @@ func TestStreamNext_Validation(t *testing.T) {
 	})
 
 	t.Run("close after finish is finished", func(t *testing.T) {
-		stream, model := establish(t, t.Context(), closedStream(provider.StreamPart{Type: provider.PartResponseMeta}, finishStreamPart(), provider.StreamPart{Type: provider.PartRaw}, provider.StreamPart{Type: provider.PartError}), testLimits())
+		stream, model := establish(t, t.Context(), closedStream(provider.StreamPart{Type: provider.PartResponseMeta}, validFinish(), provider.StreamPart{Type: provider.PartRaw}, provider.StreamPart{Type: provider.PartError}), testLimits())
 		types, wait := drainParts(t, stream)
 		assert.Equal(t, []provider.StreamPartType{provider.PartResponseMeta, provider.PartFinish, provider.PartRaw, provider.PartError}, types)
 		assert.Equal(t, WaitFinished, wait)
@@ -663,7 +659,7 @@ func TestStreamNext_Validation(t *testing.T) {
 	})
 
 	t.Run("later segments are delivered", func(t *testing.T) {
-		segment := []provider.StreamPart{{Type: provider.PartResponseMeta}, {Type: provider.PartTextStart, ID: "0"}, {Type: provider.PartTextEnd, ID: "0"}, finishStreamPart()}
+		segment := []provider.StreamPart{{Type: provider.PartResponseMeta}, {Type: provider.PartTextStart, ID: "0"}, {Type: provider.PartTextEnd, ID: "0"}, validFinish()}
 		stream, _ := establish(t, t.Context(), closedStream(append(append([]provider.StreamPart{}, segment...), segment...)...), testLimits())
 		types, wait := drainParts(t, stream)
 		assert.Len(t, types, 2*len(segment))
@@ -672,7 +668,7 @@ func TestStreamNext_Validation(t *testing.T) {
 
 	for name, parts := range map[string][]provider.StreamPart{
 		"close before any finish":      {{Type: provider.PartTextStart, ID: "t"}, {Type: provider.PartTextEnd, ID: "t"}},
-		"close after a later metadata": {finishStreamPart(), {Type: provider.PartResponseMeta}},
+		"close after a later metadata": {validFinish(), {Type: provider.PartResponseMeta}},
 		"close with only pass-through": {{Type: provider.PartRaw}, {Type: provider.PartError}},
 	} {
 		t.Run(name+" is closed", func(t *testing.T) {
@@ -686,7 +682,7 @@ func TestStreamNext_Validation(t *testing.T) {
 		limits := testLimits()
 		limits.StreamIdleDuration = 20 * time.Millisecond
 		parts := make(chan provider.StreamPart, 1)
-		parts <- finishStreamPart()
+		parts <- validFinish()
 		stream, _ := establish(t, t.Context(), parts, limits)
 		_, wait := stream.Next()
 		require.Equal(t, WaitPart, wait)
@@ -694,21 +690,20 @@ func TestStreamNext_Validation(t *testing.T) {
 		assert.Equal(t, WaitIdleTimeout, wait)
 	})
 
-	t.Run("cancellation after finish keeps its outcome", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		parts := make(chan provider.StreamPart, 1)
-		parts <- finishStreamPart()
-		stream, _ := establish(t, ctx, parts, testLimits())
-		_, wait := stream.Next()
-		require.Equal(t, WaitPart, wait)
-		cancel()
-		_, wait = stream.Next()
-		assert.Equal(t, WaitCanceled, wait)
-	})
+	for _, ending := range endingContexts(t) {
+		t.Run(ending.name+" after finish keeps its outcome", func(t *testing.T) {
+			parts := make(chan provider.StreamPart, 1)
+			parts <- validFinish()
+			stream, _ := establish(t, ending.ctx(), parts, testLimits())
+			_, wait := stream.Next()
+			require.Equal(t, WaitPart, wait)
+			_, wait = stream.Next()
+			assert.Equal(t, ending.wait, wait)
+		})
+	}
 
 	t.Run("history seeds the stream", func(t *testing.T) {
-		parts := closedStream(provider.StreamPart{Type: provider.PartToolResult, ToolCallID: "hosted", ToolName: "search", Result: json.RawMessage(`{}`)}, finishStreamPart())
+		parts := closedStream(toolResult("hosted", "search", `{}`), validFinish())
 		model := &generateModel{stream: func(context.Context) (*provider.StreamResult, error) {
 			return &provider.StreamResult{Stream: parts}, nil
 		}}

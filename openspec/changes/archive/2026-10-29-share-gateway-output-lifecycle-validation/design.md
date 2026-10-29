@@ -132,7 +132,7 @@ stream.Next() (part, Wait)                                 // + WaitInvalidOutpu
 - ProviderWire holds no copy of any rule, but its internals still evaluate them through `execution`, so the white-box tests stay unchanged:
   - `newStreamState(history)` owns its own `StreamValidator`, seeded from a copy of the history, and `processStreamPart` consults it before its representation checks;
   - `mapUnarySuccess` calls `ValidateGenerateResult` with its context's history;
-  - `unresolvedProviderCalls` stays as a thin wrapper over `RebuildToolHistory`, with today's signature and its non-nil empty map.
+  - `unresolvedProviderCalls` stays as a thin wrapper over `RebuildToolHistory`, with today's signature and its non-nil empty map. It moves to a test file, because only the white-box tests call it once the handler uses `call.ToolHistory()`.
 - **`phase` stays as a projection.** The white-box tests read `state.phase == segmentFinished` after a `finish` (`reasoning_test.go`, `metadata_test.go`, `generated_file_test.go`). `processStreamPart` sets `phase` from its validator's `SegmentFinished` after each accepted part. Nothing in ProviderWire decides on it: the clean close comes from `WaitFinished` (D4). `quiescent`, `startSegment`, `allowedAfterFinish` and the ID and tool maps are removed.
 - ProviderWire's instance sees exactly the provider parts the runtime saw, never the synthetic start. Each part is checked exactly once:
   - `runStream` consults the validator only in its first-part real `stream-start` branch (`stream.go:331-346`);
