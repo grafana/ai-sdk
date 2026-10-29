@@ -277,6 +277,15 @@ knownGaps:
       language models. The Go OpenAI provider intentionally exposes only its
       Responses adapter, so Chat-only request/output behavior (including audio
       transcript fallback) is outside the current supported provider surface.
+  - id: openai-compatible-user-file-reference-evidence
+    surface: provider-openai-compatible
+    status: gap
+    description: Uploaded user-file references resolve the configured provider
+      namespace and emit file.file_id, including empty identifiers. Synthetic
+      unary and streaming request tests cover exact namespaces, pre-I/O errors,
+      media independence, ordering, metadata and input immutability. No recorded
+      or imported fixture establishes live server acceptance of file IDs;
+      multipart tool-result support remains separate.
   - id: openai-incomplete-stream
     surface: provider-openai
     status: intentional-deviation

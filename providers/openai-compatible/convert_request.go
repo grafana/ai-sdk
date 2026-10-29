@@ -26,7 +26,7 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		return nil, warnings, err
 	}
 
-	messages, err := convertPrompt(opts.Prompt)
+	messages, err := convertPrompt(opts.Prompt, providerOptionsName(m.providerName))
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -325,7 +325,7 @@ func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
 	}
 }
 
-func convertPrompt(prompt []provider.Message) ([]chatMessage, error) {
+func convertPrompt(prompt []provider.Message, providerName string) ([]chatMessage, error) {
 	messages := make([]chatMessage, 0, len(prompt))
 	for _, msg := range prompt {
 		switch msg.Role {
@@ -340,7 +340,7 @@ func convertPrompt(prompt []provider.Message) ([]chatMessage, error) {
 			}
 			messages = append(messages, chatMessage{Role: "system", Content: text, ExtraFields: extra})
 		case provider.RoleUser:
-			converted, extra, err := convertUserContent(msg.Content, msg.ProviderOptions)
+			converted, extra, err := convertUserContent(msg.Content, msg.ProviderOptions, providerName)
 			if err != nil {
 				return nil, err
 			}
@@ -375,7 +375,7 @@ func collectText(parts []provider.ContentPart, role string) (string, error) {
 	return b.String(), nil
 }
 
-func convertUserContent(parts []provider.ContentPart, messageOptions provider.ProviderOptions) (any, map[string]any, error) {
+func convertUserContent(parts []provider.ContentPart, messageOptions provider.ProviderOptions, providerName string) (any, map[string]any, error) {
 	if len(parts) == 1 && parts[0].Type == provider.ContentPartTypeText {
 		extra, err := openAICompatibleMetadata(parts[0].ProviderOptions)
 		return parts[0].Text, extra, err
@@ -396,7 +396,7 @@ func convertUserContent(parts []provider.ContentPart, messageOptions provider.Pr
 		case provider.ContentPartTypeText:
 			out = append(out, chatContentPart{Type: "text", Text: part.Text, ExtraFields: partExtra})
 		case provider.ContentPartTypeFile:
-			converted, err := convertFileContent(part)
+			converted, err := convertFileContent(part, providerName)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -531,12 +531,23 @@ func convertToolMessages(parts []provider.ContentPart) ([]chatMessage, error) {
 	return messages, nil
 }
 
-func convertFileContent(part provider.ContentPart) (chatContentPart, error) {
+func convertFileContent(part provider.ContentPart, providerName string) (chatContentPart, error) {
 	if part.Data == nil {
 		return chatContentPart{}, fmt.Errorf("openai: file part has no data")
 	}
 	if err := part.Data.Validate(); err != nil {
 		return chatContentPart{}, fmt.Errorf("openai: invalid file part: %w", err)
+	}
+	if part.Data.IsReference() {
+		var reference map[string]string
+		if err := json.Unmarshal(part.Data.Reference, &reference); err != nil {
+			return chatContentPart{}, fmt.Errorf("openai: decoding file reference: %w", err)
+		}
+		id, ok := reference[providerName]
+		if !ok {
+			return chatContentPart{}, fmt.Errorf("openai: no file reference for provider %q", providerName)
+		}
+		return chatContentPart{Type: "file", File: &filePart{FileID: &id}}, nil
 	}
 	var err error
 	part, err = normalizeDataURLFilePart(part)
