@@ -471,6 +471,28 @@ describe("Go and exact-pinned Gateway differential", () => {
     }
   });
 
+  it("matches status-less provider errors, value-less raw parts, and EOF after a final error", async () => {
+    const statusLess = { type: "error", error: { message: "provider stream error", type: "internal_server_error", param: null, code: "provider_error", retryable: false } };
+    const values = [{ type: "text-start", id: "a" }, { type: "raw" }, statusLess, { type: "text-delta", id: "a", delta: "after error" }, { type: "raw" }, statusLess];
+    for (const includeRawChunks of [false, true]) {
+      const server = await endpoint(values.map((value) => `data: ${JSON.stringify(value)}\n\n`).join(""), 200, "text/event-stream");
+      try {
+        const options: LanguageModelV4CallOptions = { prompt: [], ...(includeRawChunks ? { includeRawChunks: true } : {}) };
+        const ts = await createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant").doStream(options);
+        const parts: unknown[] = []; for await (const part of ts.stream) parts.push(part);
+        const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: "stream", options });
+        assert.equal(go.error, undefined);
+        const normalize = (part: any) => part.type === "error" ? { type: part.type, message: part.error.message, statusCode: part.error.statusCode || undefined, retryable: part.error.isRetryable ?? part.error.retryable } : part;
+        assert.deepEqual(go.parts.map(normalize), parts.map(normalize));
+        const types = includeRawChunks ? ["text-start", "raw", "error", "text-delta", "raw", "error"] : ["text-start", "error", "text-delta", "error"];
+        assert.deepEqual(go.parts.map((part: any) => part.type), types);
+        for (const part of go.parts.filter((part: any) => part.type === "error") as any[]) {
+          assert.deepEqual(normalize(part), { type: "error", message: "provider stream error", statusCode: undefined, retryable: false });
+        }
+      } finally { await server.stop(); }
+    }
+  });
+
   it("matches all registered status categories and retryability", async () => {
     const cases = [[400,"invalid_request_error","invalid_request"],[401,"authentication_error","authentication_error"],[403,"forbidden","forbidden"],[404,"model_not_found","model_not_found"],[429,"rate_limit_exceeded","rate_limit_exceeded"],[424,"failed_dependency","failed_dependency"],[500,"internal_server_error","internal_error"],[502,"internal_server_error","upstream_error"],[503,"internal_server_error","overloaded"],[504,"internal_server_error","timeout"],[499,"internal_server_error","canceled"]] as const;
     for (const [status, type, code] of cases) {

@@ -73,7 +73,7 @@ Each numbered group is one commit. In every group, write the tests first and con
 
 ## 5. Go client decoding
 
-- [ ] 5.1 Add failing tests in `providers/grafana`:
+- [x] 5.1 Add failing tests in `providers/grafana`:
   - in `errors_test.go`: the status-less document becomes a `PartError` with `StatusCode` 0, `IsRetryable` false, the public message, and `Data` kept exactly. `"statusCode": null` is accepted for `provider_error` only.
   - These all yield one terminal protocol `PartError`:
     - `provider_error` with an integer `statusCode`, including an explicit `0`;
@@ -84,7 +84,7 @@ Each numbered group is one commit. In every group, write the tests first and con
   - in `TestModel_StreamEOF`: EOF directly after a status-less error closes cleanly.
 
   Verify: `mise run test-grafana` fails only on these cases.
-- [ ] 5.2 Implement design D6: make `wireStreamError.StatusCode` an `*int`, accept the status-less registry entry only for SSE, set `IsRetryable` explicitly to false, and accept an absent `rawValue`. Add no exported symbol. Verify: `mise run test-grafana` and `cd providers/grafana && go test -race ./...` pass (`mise run test-race` does not cover this module). `go doc github.com/grafana/ai-sdk/providers/grafana` shows no API difference from `main`.
+- [x] 5.2 Implement design D6: make `wireStreamError.StatusCode` an `*int`, accept the status-less registry entry only for SSE, set `IsRetryable` explicitly to false, and accept an absent `rawValue`. Add no exported symbol. Verify: `mise run test-grafana` and `cd providers/grafana && go test -race ./...` pass (`mise run test-race` does not cover this module). `go doc github.com/grafana/ai-sdk/providers/grafana` shows no API difference from `main`.
 
 ## 6. Pinned-client contract evidence
 
@@ -101,7 +101,7 @@ The Go capture serializes `APICallError.statusCode` as `0` (no `omitempty` at `p
 
   Add a `runtime-integration.test.ts` test for raw requested and not requested. Both clients must get the same part order, the fixed base fields with no `statusCode` and `retryable` false, no native text in base fields, a governed `nativeError` only if present, no trailing internal error, and frames valid under `validateStreamEvent`. Verify: `mise run test-ai-gateway-source-integration` passes.
 - [ ] 6.2 Update `runtime-integration.test.ts:720-746`. The existing `raw` scenario's value-less part (`testserver/providerwire_v4.go:282`) now produces three requested raw events: both clients see a value-less raw in second position and the HTTP frame count is 3. Verify: `mise run test-providerwire-v4` passes.
-- [ ] 6.3 Extend `go-client-differential.test.ts`, next to the fixture at `:457-472`, with a raw SSE wire containing the status-less error, a value-less raw event and EOF right after a final error. Both clients must normalize to the same parts, and the Go client must report no error. Verify: `mise run test-providerwire-v4` passes.
+- [x] 6.3 Extend `go-client-differential.test.ts`, next to the fixture at `:457-472`, with a raw SSE wire containing the status-less error, a value-less raw event and EOF right after a final error. Both clients must normalize to the same parts, and the Go client must report no error. Verify: `mise run test-providerwire-v4` passes.
 
 ## 7. Integration checks
 
