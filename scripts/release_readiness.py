@@ -174,6 +174,13 @@ def json_stream(raw):
         raw = raw[end:]
 
 
+def candidate_base(pr):
+    parents = run("git", "show", "-s", "--format=%P", "HEAD").split()
+    if len(parents) != 2 or parents[1] != pr["head"]["sha"]:
+        raise ValueError("checkout must be a merge of the base and current PR head")
+    return parents[0]
+
+
 def verify_candidate(pr, base, head):
     if pr["base"]["sha"] != base:
         raise ValueError("release PR base is stale; update it against current canonical main")
@@ -321,7 +328,7 @@ def main():
     if args.evidence:
         args.evidence.unlink(missing_ok=True)
     pr = json.loads(Path(args.pull_request).read_text())
-    base = pr["base"]["sha"]
+    base = candidate_base(pr)
     after = json.loads(Path(MANIFEST).read_text())
     base_files = tree(base)
     if MANIFEST not in base_files:

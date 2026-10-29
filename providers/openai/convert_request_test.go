@@ -514,9 +514,9 @@ func TestBuildParams_OutputSchemaTextResultsAreJSONEncoded(t *testing.T) {
 	input := body["input"].([]any)
 	require.Len(t, input, 4)
 	assert.Equal(t, `"The weather is sunny"`, input[0].(map[string]any)["output"])
-	assert.Equal(t, `"Error: boom"`, input[1].(map[string]any)["output"])
+	assert.Equal(t, `{"error":"Error: boom"}`, input[1].(map[string]any)["output"])
 	assert.Equal(t, `"User denied the tool execution"`, input[2].(map[string]any)["output"])
-	assert.Equal(t, "Error: unchanged", input[3].(map[string]any)["output"])
+	assert.Equal(t, `{"error":"Error: unchanged"}`, input[3].(map[string]any)["output"])
 }
 
 func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
