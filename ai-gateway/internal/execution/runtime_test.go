@@ -566,3 +566,14 @@ func TestStreamClose_Drain(t *testing.T) {
 		assert.Equal(t, settled, produced.Load())
 	})
 }
+
+func TestCall_ModelID(t *testing.T) {
+	runtime := newRuntime(t, func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+		return Selection{ID: "canonical", Model: &generateModel{}}, nil
+	}, testLimits())
+	call, err := runtime.Call(t.Context(), "alias", provider.CallOptions{})
+	require.NoError(t, err)
+	defer call.Close()
+	assert.Equal(t, "canonical", call.ModelID())
+	assert.Nil(t, call.View(nil).Overview)
+}
