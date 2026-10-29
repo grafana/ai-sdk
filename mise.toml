@@ -72,8 +72,7 @@ run = """
 mise deps install --only test
 rm -rf ai-gateway/dist
 pnpm --filter ./ai-gateway build
-(cd ai-gateway && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly -trimpath" mage -v build:linux build:linuxARM64)
-bash ai-gateway/scripts/package-licenses.sh
+(cd ai-gateway && mage -v buildPlugin)
 """
 
 [tasks.test-ai-gateway-frontend]
