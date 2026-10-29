@@ -352,15 +352,15 @@ func TestStreamMetrics_UnknownChunkTypesUseClosedOtherLabel(t *testing.T) {
 	assertNoLabelContains(t, reg, "secret-novel-type")
 }
 
-func TestStreamUsageAggregatesEveryPart(t *testing.T) {
+func TestStreamUsageTakesFinishCounters(t *testing.T) {
 	reg := promclient.NewRegistry()
 	mw, err := Middleware(Options{Registerer: reg})
 	require.NoError(t, err)
 
 	inputTotal, inputNoCache, cacheRead, cacheWrite := 120, 80, 30, 10
 	outputTotal, outputText, outputReasoning := 50, 30, 20
-	provisionalInput, provisionalCacheRead, provisionalCacheWrite := 100, 20, 5
-	provisionalOutput, provisionalText, provisionalReasoning := 45, 25, 15
+	finishInput, finishCacheRead, finishCacheWrite := 100, 15, 5
+	finishOutput, finishText, finishReasoning := 45, 25, 15
 	parts := []provider.StreamPart{
 		{Type: provider.PartResponseMeta, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{
 			Total: &inputTotal, NoCache: &inputNoCache, CacheRead: &cacheRead, CacheWrite: &cacheWrite,
@@ -370,10 +370,10 @@ func TestStreamUsageAggregatesEveryPart(t *testing.T) {
 		}}},
 		{Type: provider.PartFinish, Usage: &provider.Usage{
 			InputTokens: provider.InputTokenUsage{
-				Total: &provisionalInput, CacheRead: &provisionalCacheRead, CacheWrite: &provisionalCacheWrite,
+				Total: &finishInput, CacheRead: &finishCacheRead, CacheWrite: &finishCacheWrite,
 			},
 			OutputTokens: provider.OutputTokenUsage{
-				Total: &provisionalOutput, Text: &provisionalText, Reasoning: &provisionalReasoning,
+				Total: &finishOutput, Text: &finishText, Reasoning: &finishReasoning,
 			},
 		}},
 	}
@@ -388,13 +388,13 @@ func TestStreamUsageAggregatesEveryPart(t *testing.T) {
 	drain(result.Stream)
 
 	want := map[string]int{
-		tokenTypeInput:           inputTotal,
+		tokenTypeInput:           finishInput,
 		tokenTypeInputNoCache:    inputNoCache,
-		tokenTypeInputCacheRead:  cacheRead,
-		tokenTypeInputCacheWrite: cacheWrite,
-		tokenTypeOutput:          outputTotal,
-		tokenTypeOutputText:      outputText,
-		tokenTypeOutputReasoning: outputReasoning,
+		tokenTypeInputCacheRead:  finishCacheRead,
+		tokenTypeInputCacheWrite: finishCacheWrite,
+		tokenTypeOutput:          finishOutput,
+		tokenTypeOutputText:      finishText,
+		tokenTypeOutputReasoning: finishReasoning,
 	}
 	for tokenType, count := range want {
 		assertCounter(t, reg, metricTokensTotal, map[string]string{

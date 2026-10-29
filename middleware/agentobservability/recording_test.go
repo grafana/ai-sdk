@@ -847,7 +847,7 @@ func TestRecordingMiddleware_StreamMultiSegment_OneGeneration(t *testing.T) {
 	require.Equal(t, 1, env.RequestCount())
 	gen := env.SingleGenerationJSON(t)
 	assert.Nil(t, gen["call_error"])
-	assertUsage(t, gen, "7", "9")
+	assertUsage(t, gen, "4", "9")
 	assert.Equal(t, "end_turn", gen["stop_reason"])
 	assert.Equal(t, "msg-2", gen["response_id"])
 	output, ok := gen["output"].([]any)

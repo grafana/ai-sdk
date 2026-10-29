@@ -7,7 +7,7 @@ A streaming recording SHALL produce one generation per call and observe every pa
 - **GIVEN** a stream carries two response segments, each starting with response metadata and ending with a `PartFinish` that reports its own usage and finish reason
 - **WHEN** upstream closes after the second finish
 - **THEN** exactly one generation SHALL be recorded
-- **AND** it SHALL carry the second finish's reason, the strongest normalized usage counters across both segments, and output from both segments in observed order
+- **AND** it SHALL carry the second finish's reason, the second segment's usage, and output from both segments in observed order
 - **AND** its completion time SHALL NOT precede the observation of the second finish, and its first-token time SHALL be the first segment's first semantic output
 
 #### Scenario: Single-finish stream with nothing after the finish
@@ -66,16 +66,16 @@ When the request context ends after at least one `PartFinish` was observed, canc
 #### Scenario: Stream usage preserves strongest values
 
 - **GIVEN** usage is split across multiple stream parts
-- **AND** a later finish part omits or reports lower provisional normalized counters
+- **AND** the finish part omits some normalized counters
 - **WHEN** the recorder produces a generation
-- **THEN** its usage SHALL use the independently aggregated strongest normalized counters supported by the Agent Observability usage schema
+- **THEN** its usage SHALL contain the counters the finish reports and, for the counters it omits, the strongest values observed before it, as supported by the Agent Observability usage schema
 
-#### Scenario: Multi-finish usage keeps strongest values
+#### Scenario: Multi-finish usage follows the last finish
 
 - **GIVEN** a stream emits several `PartFinish` parts, each reporting usage
 - **WHEN** the recorder produces a generation
-- **THEN** each normalized counter SHALL be the strongest value observed across every usage-bearing part of every segment
-- **AND** counters SHALL NOT be summed across finish parts
+- **THEN** its usage SHALL be the last finish's segment usage under shared streaming usage aggregation
+- **AND** counters SHALL NOT be summed or take the greatest value across segments
 
 #### Scenario: Later finish reason wins
 

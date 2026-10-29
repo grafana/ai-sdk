@@ -318,14 +318,14 @@ func TestRecordingMiddleware_BoundedDrainContinuouslyReadyCancellation(t *testin
 
 func TestRecordingMiddleware_RequestedStreamLifecycle(t *testing.T) {
 	env := testkit.NewEnv(t)
-	input, output, weaker := 12, 7, 1
+	input, output := 12, 7
 	finish := provider.FinishReason{Unified: provider.FinishReasonStop}
 	apiErr := provider.NewAPICallError(provider.APICallErrorOptions{Message: "provider failure", StatusCode: 503})
 	parts := []provider.StreamPart{
 		{Type: provider.PartResponseMeta, Provider: "private-provider", ModelID: "private-model", ResponseID: "private-response", Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: &input}}},
 		{Type: provider.PartError, APICallError: apiErr, Usage: &provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &output}}},
 		{Type: provider.PartTextDelta, Delta: "later text"},
-		{Type: provider.PartFinish, FinishReason: &finish, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: &weaker}, OutputTokens: provider.OutputTokenUsage{Total: &weaker}}},
+		{Type: provider.PartFinish, FinishReason: &finish},
 	}
 	model := &mockLanguageModel{provider_: "grafana", modelID: "grafana/assistant",
 		doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {

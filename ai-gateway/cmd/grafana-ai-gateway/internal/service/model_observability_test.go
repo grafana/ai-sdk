@@ -1254,14 +1254,15 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 		logEvent        string
 		logOutcome      string
 		metricLabels    string
-		generationOut   int
+		usageIn         int
+		usageOut        int
 		generationStop  provider.UnifiedFinishReason
 		generationError string
 	}{
-		{name: "normal close", parts: segments, idle: 5 * time.Second, logEvent: "aisdk.model.stream.finish", logOutcome: "success", metricLabels: `error_type="none",finish_reason="stop"`, generationOut: outputSecond, generationStop: provider.FinishReasonStop},
-		{name: "deadline stall after finish", parts: segments[:5], stall: true, idle: 5 * time.Second, deadline: 100 * time.Millisecond, wireErrors: 1, logEvent: "aisdk.model.stream.error", logOutcome: "timeout", metricLabels: `error_type="context_deadline_exceeded"`, generationOut: outputFirst, generationStop: provider.FinishReasonToolCalls},
-		{name: "idle stall after finish", parts: segments[:5], stall: true, idle: 50 * time.Millisecond, wireErrors: 1, logEvent: "aisdk.model.stream.cancelled", logOutcome: "cancelled", metricLabels: `error_type="context_canceled"`, generationOut: outputFirst, generationStop: provider.FinishReasonToolCalls},
-		{name: "provider error before finish, then deadline stall", parts: append([]provider.StreamPart{providerError}, segments[:5]...), stall: true, idle: 5 * time.Second, deadline: 100 * time.Millisecond, wireErrors: 2, logEvent: "aisdk.model.stream.error", logOutcome: "error", metricLabels: `error_type="context_deadline_exceeded"`, generationOut: outputFirst, generationStop: provider.FinishReasonToolCalls, generationError: "server_error"},
+		{name: "normal close", parts: segments, idle: 5 * time.Second, logEvent: "aisdk.model.stream.finish", logOutcome: "success", metricLabels: `error_type="none",finish_reason="stop"`, usageIn: inputSecond, usageOut: outputSecond, generationStop: provider.FinishReasonStop},
+		{name: "deadline stall after finish", parts: segments[:5], stall: true, idle: 5 * time.Second, deadline: 100 * time.Millisecond, wireErrors: 1, logEvent: "aisdk.model.stream.error", logOutcome: "timeout", metricLabels: `error_type="context_deadline_exceeded"`, usageIn: inputFirst, usageOut: outputFirst, generationStop: provider.FinishReasonToolCalls},
+		{name: "idle stall after finish", parts: segments[:5], stall: true, idle: 50 * time.Millisecond, wireErrors: 1, logEvent: "aisdk.model.stream.cancelled", logOutcome: "cancelled", metricLabels: `error_type="context_canceled"`, usageIn: inputFirst, usageOut: outputFirst, generationStop: provider.FinishReasonToolCalls},
+		{name: "provider error before finish, then deadline stall", parts: append([]provider.StreamPart{providerError}, segments[:5]...), stall: true, idle: 5 * time.Second, deadline: 100 * time.Millisecond, wireErrors: 2, logEvent: "aisdk.model.stream.error", logOutcome: "error", metricLabels: `error_type="context_deadline_exceeded"`, usageIn: inputFirst, usageOut: outputFirst, generationStop: provider.FinishReasonToolCalls, generationError: "server_error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := testkit.NewEnv(t, func(configuration *agento11y.Config) {
@@ -1326,9 +1327,9 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 				}
 			}
 			assert.Equal(t, tc.logOutcome, finish["ai_sdk.outcome"])
+			assert.Equal(t, float64(tc.usageIn), finish["ai_sdk.usage.input_tokens.total"])
+			assert.Equal(t, float64(tc.usageOut), finish["ai_sdk.usage.output_tokens.total"])
 			if !tc.stall {
-				assert.Equal(t, float64(inputFirst), finish["ai_sdk.usage.input_tokens.total"])
-				assert.Equal(t, float64(outputSecond), finish["ai_sdk.usage.output_tokens.total"])
 				assert.Equal(t, string(provider.FinishReasonStop), finish["ai_sdk.finish_reason"])
 			}
 			metrics := testMetrics(t, telemetry)
@@ -1343,8 +1344,8 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 			require.Eventually(t, func() bool { return env.RequestCount() == 1 }, time.Second, time.Millisecond)
 			env.Shutdown(t)
 			generation := env.SingleGenerationJSON(t)
-			assert.Equal(t, strconv.Itoa(inputFirst), testkit.StringValue(t, generation, "usage", "input_tokens"))
-			assert.Equal(t, strconv.Itoa(tc.generationOut), testkit.StringValue(t, generation, "usage", "output_tokens"))
+			assert.Equal(t, strconv.Itoa(tc.usageIn), testkit.StringValue(t, generation, "usage", "input_tokens"))
+			assert.Equal(t, strconv.Itoa(tc.usageOut), testkit.StringValue(t, generation, "usage", "output_tokens"))
 			assert.Equal(t, string(tc.generationStop), generation["stop_reason"])
 			if tc.generationError == "" {
 				assert.Empty(t, generation["call_error"])

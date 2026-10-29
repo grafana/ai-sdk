@@ -47,12 +47,12 @@ func TestStreamRecorder_TextOnlyStream(t *testing.T) {
 	assert.Equal(t, "end_turn", gen.StopReason)
 }
 
-func TestStreamRecorder_UsageAggregatesEveryPart(t *testing.T) {
+func TestStreamRecorder_UsageTakesFinishCounters(t *testing.T) {
 	r := newRecorderForStreamTest()
 	inputTotal, inputNoCache, cacheRead, cacheWrite := 120, 80, 30, 10
 	outputTotal, outputText, outputReasoning := 50, 30, 20
-	provisionalInput, provisionalCacheRead, provisionalCacheWrite := 100, 20, 5
-	provisionalOutput, provisionalText, provisionalReasoning := 45, 25, 15
+	finishInput, finishCacheRead, finishCacheWrite := 100, 15, 5
+	finishOutput, finishText, finishReasoning := 45, 25, 15
 	r.Observe(provider.StreamPart{Type: provider.PartResponseMeta, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{
 		Total: &inputTotal, NoCache: &inputNoCache, CacheRead: &cacheRead, CacheWrite: &cacheWrite,
 	}}})
@@ -61,24 +61,24 @@ func TestStreamRecorder_UsageAggregatesEveryPart(t *testing.T) {
 	}}})
 	r.Observe(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{
 		InputTokens: provider.InputTokenUsage{
-			Total: &provisionalInput, CacheRead: &provisionalCacheRead, CacheWrite: &provisionalCacheWrite,
+			Total: &finishInput, CacheRead: &finishCacheRead, CacheWrite: &finishCacheWrite,
 		},
 		OutputTokens: provider.OutputTokenUsage{
-			Total: &provisionalOutput, Text: &provisionalText, Reasoning: &provisionalReasoning,
+			Total: &finishOutput, Text: &finishText, Reasoning: &finishReasoning,
 		},
 	}})
 
 	usage := r.Generation().Usage
-	assert.Equal(t, int64(inputTotal), usage.InputTokens)
-	assert.Equal(t, int64(outputTotal), usage.OutputTokens)
-	assert.Equal(t, int64(inputTotal+outputTotal), usage.TotalTokens)
-	assert.Equal(t, int64(cacheRead), usage.CacheReadInputTokens)
-	assert.Equal(t, int64(cacheWrite), usage.CacheWriteInputTokens)
-	assert.Equal(t, int64(outputReasoning), usage.ReasoningTokens)
+	assert.Equal(t, int64(finishInput), usage.InputTokens)
+	assert.Equal(t, int64(finishOutput), usage.OutputTokens)
+	assert.Equal(t, int64(finishInput+finishOutput), usage.TotalTokens)
+	assert.Equal(t, int64(finishCacheRead), usage.CacheReadInputTokens)
+	assert.Equal(t, int64(finishCacheWrite), usage.CacheWriteInputTokens)
+	assert.Equal(t, int64(finishReasoning), usage.ReasoningTokens)
 	assert.Equal(t, agento11y.TokenInputSemanticsInclusive, usage.InputSemantics)
 }
 
-func TestStreamRecorder_UsageAcrossFinishesKeepsStrongest(t *testing.T) {
+func TestStreamRecorder_UsageAcrossFinishesUsesLastFinish(t *testing.T) {
 	usage := func(input, output int) *provider.Usage {
 		return &provider.Usage{
 			InputTokens:  provider.InputTokenUsage{Total: intPtr(input)},
@@ -93,9 +93,9 @@ func TestStreamRecorder_UsageAcrossFinishesKeepsStrongest(t *testing.T) {
 	r.Observe(provider.StreamPart{Type: provider.PartFinish, FinishReason: &stop, Usage: usage(4, 9)})
 
 	gen := r.Generation()
-	assert.Equal(t, int64(7), gen.Usage.InputTokens)
+	assert.Equal(t, int64(4), gen.Usage.InputTokens)
 	assert.Equal(t, int64(9), gen.Usage.OutputTokens)
-	assert.Equal(t, int64(16), gen.Usage.TotalTokens)
+	assert.Equal(t, int64(13), gen.Usage.TotalTokens)
 }
 
 func TestStreamRecorder_ServerToolUsageMetadata(t *testing.T) {

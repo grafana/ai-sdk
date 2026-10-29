@@ -100,8 +100,10 @@ export.
 ## Record generation relationships
 
 Recording captures unary and streaming generations, including results, usage,
-and errors. Streaming usage combines every usage-bearing part and preserves the
-greatest value observed for each normalized counter. Input totals are marked as
+and errors. Streaming usage comes from the last `finish`: each counter it
+reports wins, and counters it omits keep the greatest value seen in that
+response. Before any `finish`, each counter keeps its greatest observed value.
+Input totals are marked as
 cache-inclusive in exported generations, spans, and token metrics; cache reads
 and writes are already included and are not added again. Context helpers relate
 parent, child, and linked generations across agents and tool workflows. Use
@@ -110,9 +112,9 @@ other provider-bound metadata.
 
 A stream can carry several responses or messages, each ending in its own
 `finish`. Recording covers all of them in one generation, with the last finish
-reason and the strongest usage counters across the whole stream. Providers such
-as Anthropic carry earlier output counts into later messages, so usage is not
-summed and can understate a multi-message total. The generation is recorded when
+reason and the last message's usage, as upstream `streamText` reports it. Usage
+is not summed across messages, so it can understate a multi-message total. The
+generation is recorded when
 the stream closes or its context ends, not at the first `finish`. Drain the
 stream to the end, or wait for `OnRecordComplete`, before you close a shared
 client. A consumer that stops at `finish` and cancels still records the finished

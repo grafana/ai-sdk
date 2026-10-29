@@ -73,8 +73,8 @@ agento11y_token = $__file{/run/secrets/agento11y-token}
 
 The export includes the model, timing, token usage and how the call ended, but
 no content. When one stream carries several messages or responses, one export
-covers all of them, with the last finish reason. When the stream closes
-normally, its usage matches logs and metrics. If a stream stalls or is canceled
+covers all of them, with the last finish reason and the last message's usage,
+the same usage that logs and metrics report. If a stream stalls or is canceled
 after a message finished, the export records the finished messages without a
 timeout or cancellation error; logs and metrics still record the timeout or
 cancellation. If the collector is slow or unavailable, model calls continue and

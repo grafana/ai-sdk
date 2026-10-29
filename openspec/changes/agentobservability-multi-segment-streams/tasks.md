@@ -7,9 +7,7 @@
     - two segments each emit text and reasoning with ID `"0"` and end in `PartFinish`;
     - output is the segment-1 parts followed by separate segment-2 parts, in observed order;
     - a tool call in segment 1 with its result in segment 2 still pairs.
-  - `TestStreamRecorder_MultiSegment_UsageKeepsStrongest` (regression pin: passes before and after the change, because `StreamRecorder` already observes every part):
-    - two finishes, 7/2 then 4/9, plus a `PartResponseMeta` with usage in segment 2;
-    - expect input 7 and output 9, never summed.
+  - Multi-finish usage is covered by task 6.3 (`TestStreamRecorder_UsageAcrossFinishesUsesLastFinish`).
   - `TestStreamRecorder_MultiSegment_LastFinishAndIdentity` (regression pin: passes before and after the change):
     - the last finish reason maps to `StopReason`;
     - the last non-empty response ID and model win.
@@ -18,14 +16,14 @@
   - `streamOutputRef` holds the text or reasoning accumulator pointer, and `buildOutput` reads through it instead of `r.texts[ref.id]`/`r.reasonings[ref.id]`.
   - Tool accumulators stay keyed for the whole stream.
   - Update the `StreamRecorder` godoc for segment handling.
-- [x] 1.3 Extend `TestStreamRecorder_UsageAggregatesEveryPart`, or add a table case next to it, to cover a multi-finish stream whose later finish reports lower counters. It must keep the strongest values (the spec scenario "Multi-finish usage keeps strongest values"). Verify with `go test -run TestStreamRecorder_Usage ./...`.
+- [x] 1.3 Add a multi-finish usage test next to the existing usage test (`TestStreamRecorder_UsageAcrossFinishes…`). Task 6.3 sets its final expectation to the last finish's usage. Verify with `go test -run TestStreamRecorder_Usage ./...`.
 
 ## 2. Recording finalization (`middleware/agentobservability/recording.go`)
 
 - [x] 2.1 Write `recording_test.go` tests that use `testkit.NewEnv` and wait for `OnRecordComplete` before `Shutdown`. Run them against the current code: fail-first tests must fail, and regression pins must pass before and after the change.
   - `TestRecordingMiddleware_StreamMultiSegment_OneGeneration` (fail-first): two segments, then close. Expect:
     - exactly one export;
-    - strongest usage and the second finish's stop reason;
+    - the second finish's usage (task 6.3) and stop reason;
     - output from both segments;
     - `completed_at` not before the observation of the second finish;
     - first-token time from segment 1, read from the env metrics or spans (time-to-first-token), with a measurable gap between segments.
@@ -55,7 +53,7 @@
   - Rewrite the deferred comment and the `RecordingMiddleware` godoc to describe the new timing contract and when to wait for `OnRecordComplete`.
 - [x] 2.4 Update `docs/middleware/agent-observability.md` "Record generation relationships". Verify with `mise run lint-docs`. Describe:
   - one generation for streams with several finishes;
-  - strongest-value usage and its multi-segment understatement;
+  - last-finish usage (task 6.4 rewrites the usage sentence);
   - the last finish reason;
   - draining to EOF or waiting for `OnRecordComplete` before closing the client.
 
@@ -69,15 +67,15 @@
 ## 4. Gateway spec, test and docs
 
 - [x] 4.1 Update `TestModelObservationChain_SequentialSegments` in `ai-gateway/cmd/grafana-ai-gateway/internal/service/model_observability_test.go` (design D6). Today every case asserts generation input 7, output 2 and `stop_reason` "tool_calls". Verify with `cd ai-gateway && go test -race -run TestModelObservationChain_SequentialSegments ./cmd/grafana-ai-gateway/internal/service/...`.
-  - `normal close` (fail-first): generation input 7 (`inputFirst`), output 9 (`outputSecond`) and `stop_reason` "stop", matching the log record's strongest usage and finish reason.
+  - `normal close` (fail-first): generation input 4 (`inputSecond`), output 9 (`outputSecond`) and `stop_reason` "stop", matching the log record's usage and finish reason (task 6.3).
   - `deadline stall after finish` and `idle stall after finish` (regression pins): generation input 7, output 2 and "tool_calls", and assert no `call_error` (`assert.Empty(t, generation["call_error"])`).
-  - Add a table field for per-case generation expectations (input, output, stop reason, call error) instead of the shared assertions.
+  - Add table fields for per-case usage (input, output), generation stop reason and call error instead of the shared assertions. Assert the same usage on the log record in every case.
   - Keep the wire, log and metric assertions of the three existing cases unchanged.
   - Add the case `provider error before finish, then deadline stall`. Its parts are a `PartError` carrying `provider.NewAPICallError` with status 503 and a message without private values, followed by `segments[:5]`. Use `stall: true`, `deadline: 100 * time.Millisecond` and `idle: 5 * time.Second`. Expect:
     - wire body: one `finish` and two `error` frames (the forwarded provider error and the terminal timeout); compare the finish position with the last error frame;
     - log event `aisdk.model.stream.error` with outcome "error" (the logger keeps the first `PartError`, `middleware/logger/stream.go:132-135`), and metric labels `error_type="context_deadline_exceeded"` and `status="canceled"`;
     - generation `call_error` "server_error" (the agento11y metadata-only classification of a 503), input 7, output 2 and "tool_calls".
-- [x] 4.2 Replace the limitation sentence in `ai-gateway/docs/text-observability.md` "Export to Agent Observability" (:75-77, "When one stream carries several messages or responses, the export currently records only the first one's usage and finish reason; logs and metrics cover the whole stream."). State instead that one export covers every message or response in the stream, with the last finish reason and the same usage as logs and metrics when the stream closes normally. Verify with `mise run lint-docs`.
+- [x] 4.2 Replace the limitation sentence in `ai-gateway/docs/text-observability.md` "Export to Agent Observability" (:75-77, "When one stream carries several messages or responses, the export currently records only the first one's usage and finish reason; logs and metrics cover the whole stream."). State instead that one export covers every message or response in the stream, with the last finish reason and the last message's usage, the same usage logs and metrics report. Verify with `mise run lint-docs`.
 - [x] 4.3 Check the Gateway architecture docs for first-segment export wording; no edit is expected. Re-run `rg -n -i "segment|first finish|agent observability" docs/concepts/gateway-architecture.md docs/concepts/gateway-glossary.md`. Today the only hits are runtime descriptions, not the export:
   - `docs/concepts/gateway-architecture.md:223-228`, the stream lifecycle paragraph ("Each `response-metadata` part starts a response segment and each `finish` ends one");
   - `docs/concepts/gateway-glossary.md:52`, the "Response segment" entry ("A `finish` ends a segment, not the stream").
@@ -90,10 +88,27 @@
 - [x] 5.1 Run `mise run fmt-check`, `mise run vet`, `mise run lint`, `mise run test` and `mise run test-race`, and confirm they pass.
 - [x] 5.2 Run `mise run validate-parity-baseline` and confirm that `git status test/conformance` is clean: no fixture or expectation changes.
 - [x] 5.3 Run `openspec validate agentobservability-multi-segment-streams --strict` and confirm it passes.
-- [ ] 5.4 Confirm release intent: run `mise run release-preview` and check that only `middleware/agentobservability` gets a library release, at the next alpha. Note any Gateway plugin attribution caused by the `ai-gateway` test and doc edits.
-  - PR title: `feat(agentobservability)!: record every response segment of one stream`.
-  - The PR body carries a `BREAKING CHANGE:` footer describing the timing contract (design D5), links #582, and records the parity classification (design D8).
-- [ ] 5.5 Open the follow-up issue for exact per-message stream usage, with the `programmatic-tool-calling` evidence and the options from design D2. Link it from the PR description.
+- [ ] 5.4 Confirm release intent: run `mise run release-preview` and check that the root module, `middleware/logger`, `middleware/prometheus` and `middleware/agentobservability` get library releases, at the next alpha. Note any Gateway plugin attribution caused by the `ai-gateway` test and doc edits.
+  - PR title: `feat(middleware)!: record every response segment of one stream`.
+  - The PR body carries a `BREAKING CHANGE:` footer describing the usage rule (design D2) and the timing contract (design D5), links #582, and records the parity classification (design D8).
+
+## 6. Last-finish stream usage (`internal/streamusage`)
+
+- [x] 6.1 Rewrite `internal/streamusage/usage_test.go` first and confirm the new cases fail against the current aggregator. Cases:
+  - before any finish, the greatest value per counter (pin);
+  - finish counters replace lower provisional ones, and counters the finish omits keep the segment's greatest value;
+  - a finish without usage closes the segment with its greatest counters;
+  - across several finishes the last segment wins, including Anthropic's carried output on response metadata (fixture-shaped 3369/725, then 4551/725 metadata and a 4551/197 finish, gives 4551/197);
+  - usage after the last finish does not change the aggregate;
+  - raw usage: latest non-empty before a finish, and the finish's raw payload when it reports one.
+- [x] 6.2 Implement design D2 in `Aggregator` (segment state, last closed segment, finish-reported counters) and verify with `go test -race ./internal/streamusage/`.
+- [x] 6.3 Update the consumer tests to the new rule. Each keeps its purpose:
+  - the provisional-lower usage tests in `middleware/logger` (`TestMiddleware_StreamUsageTakesFinishCounters`), `middleware/prometheus` (`TestStreamUsageTakesFinishCounters`) and `middleware/agentobservability` (`TestStreamRecorder_UsageTakesFinishCounters`) expect the finish counters, with `NoCache` from the earlier part;
+  - `TestStreamRecorder_UsageAcrossFinishesUsesLastFinish` and `TestRecordingMiddleware_StreamMultiSegment_OneGeneration` expect 4/9;
+  - `TestRecordingMiddleware_RequestedStreamLifecycle` and the stream case of `TestRecordingMiddleware_InclusiveUsageExport` use a finish without usage, so their split-usage expectations stay;
+  - `TestModelObservationChain_SequentialSegments` (task 4.1).
+- [x] 6.4 Update the usage sentences in `docs/middleware/structured-logging.md`, `docs/middleware/prometheus.md` and `docs/middleware/agent-observability.md`, and the export paragraph in `ai-gateway/docs/text-observability.md`. Verify with `mise run lint-docs`.
+- [x] 6.5 Re-run task 5.1's checks and `mise run test-ai-gateway`.
 
 ## Workflow follow-up
 
