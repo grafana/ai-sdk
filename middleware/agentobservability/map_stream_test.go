@@ -78,6 +78,26 @@ func TestStreamRecorder_UsageAggregatesEveryPart(t *testing.T) {
 	assert.Equal(t, agento11y.TokenInputSemanticsInclusive, usage.InputSemantics)
 }
 
+func TestStreamRecorder_UsageAcrossFinishesKeepsStrongest(t *testing.T) {
+	usage := func(input, output int) *provider.Usage {
+		return &provider.Usage{
+			InputTokens:  provider.InputTokenUsage{Total: intPtr(input)},
+			OutputTokens: provider.OutputTokenUsage{Total: intPtr(output)},
+		}
+	}
+	toolCalls := provider.FinishReason{Unified: provider.FinishReasonToolCalls}
+	stop := provider.FinishReason{Unified: provider.FinishReasonStop}
+	r := newRecorderForStreamTest()
+	r.Observe(provider.StreamPart{Type: provider.PartFinish, FinishReason: &toolCalls, Usage: usage(7, 2)})
+	r.Observe(provider.StreamPart{Type: provider.PartResponseMeta, Usage: usage(4, 2)})
+	r.Observe(provider.StreamPart{Type: provider.PartFinish, FinishReason: &stop, Usage: usage(4, 9)})
+
+	gen := r.Generation()
+	assert.Equal(t, int64(7), gen.Usage.InputTokens)
+	assert.Equal(t, int64(9), gen.Usage.OutputTokens)
+	assert.Equal(t, int64(16), gen.Usage.TotalTokens)
+}
+
 func TestStreamRecorder_ServerToolUsageMetadata(t *testing.T) {
 	r := newRecorderForStreamTest()
 	r.Observe(provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{
@@ -635,4 +655,56 @@ func TestStreamRecorder_NilSafe(t *testing.T) {
 	assert.True(t, r.FirstChunkAt().IsZero())
 	assert.Nil(t, r.CallError())
 	assert.Equal(t, agento11y.Generation{}, r.Generation())
+}
+
+func TestStreamRecorder_MultiSegment(t *testing.T) {
+	toolCalls := provider.FinishReason{Unified: provider.FinishReasonToolCalls}
+	stop := provider.FinishReason{Unified: provider.FinishReasonStop}
+	t.Run("ReusedIDsAppendSeparateParts", func(t *testing.T) {
+		r := newRecorderForStreamTest()
+		for _, part := range []provider.StreamPart{
+			{Type: provider.PartReasoningStart, ID: "0"},
+			{Type: provider.PartReasoningDelta, ID: "0", Delta: "think one"},
+			{Type: provider.PartTextStart, ID: "0"},
+			{Type: provider.PartTextDelta, ID: "0", Delta: "first"},
+			{Type: provider.PartToolCall, ToolCallID: "call-1", ToolName: "lookup", Input: `{"q":"x"}`},
+			{Type: provider.PartFinish, FinishReason: &toolCalls},
+			{Type: provider.PartReasoningStart, ID: "0"},
+			{Type: provider.PartReasoningDelta, ID: "0", Delta: "think two"},
+			{Type: provider.PartTextStart, ID: "0"},
+			{Type: provider.PartTextDelta, ID: "0", Delta: "second"},
+			{Type: provider.PartToolResult, ToolCallID: "call-1", ToolName: "lookup", Result: json.RawMessage(`"sunny"`)},
+			{Type: provider.PartFinish, FinishReason: &stop},
+		} {
+			r.Observe(part)
+		}
+
+		gen := r.Generation()
+		require.Len(t, gen.Output, 2)
+		parts := gen.Output[0].Parts
+		require.Len(t, parts, 5)
+		assert.Equal(t, "think one", parts[0].Thinking)
+		assert.Equal(t, "first", parts[1].Text)
+		assert.Equal(t, agento11y.PartKindToolCall, parts[2].Kind)
+		assert.Equal(t, "think two", parts[3].Thinking)
+		assert.Equal(t, "second", parts[4].Text)
+		require.Len(t, gen.Output[1].Parts, 1)
+		require.NotNil(t, gen.Output[1].Parts[0].ToolResult)
+		assert.Equal(t, "call-1", gen.Output[1].Parts[0].ToolResult.ToolCallID)
+		assert.Equal(t, "lookup", gen.Output[1].Name)
+	})
+
+	t.Run("LastFinishAndIdentity", func(t *testing.T) {
+		r := newRecorderForStreamTest()
+		r.Observe(provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "msg-1", ModelID: "claude-1"})
+		r.Observe(provider.StreamPart{Type: provider.PartFinish, FinishReason: &toolCalls})
+		r.Observe(provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "msg-2", ModelID: "claude-2"})
+		r.Observe(provider.StreamPart{Type: provider.PartResponseMeta})
+		r.Observe(provider.StreamPart{Type: provider.PartFinish, FinishReason: &stop})
+
+		gen := r.Generation()
+		assert.Equal(t, "end_turn", gen.StopReason)
+		assert.Equal(t, "msg-2", gen.ResponseID)
+		assert.Equal(t, "claude-2", gen.ResponseModel)
+	})
 }

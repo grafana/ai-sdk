@@ -108,6 +108,16 @@ parent, child, and linked generations across agents and tool workflows. Use
 these helpers for generation relationships and reserve generic enrichment for
 other provider-bound metadata.
 
+A stream can carry several responses or messages, each ending in its own
+`finish`. Recording covers all of them in one generation, with the last finish
+reason and the strongest usage counters across the whole stream. Providers such
+as Anthropic carry earlier output counts into later messages, so usage is not
+summed and can understate a multi-message total. The generation is recorded when
+the stream closes or its context ends, not at the first `finish`. Drain the
+stream to the end, or wait for `OnRecordComplete`, before you close a shared
+client. A consumer that stops at `finish` and cancels still records the finished
+messages without a cancellation error.
+
 For gateway providers, response metadata can identify the backend model while
 transport metadata retains the gateway identity. This supports provider and cost
 attribution for routed calls.

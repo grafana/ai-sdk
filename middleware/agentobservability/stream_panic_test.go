@@ -53,3 +53,55 @@ func TestRecordingMiddleware_FinalizePanic(t *testing.T) {
 	}
 	assert.Equal(t, parts, got)
 }
+
+func TestRecordingMiddleware_FinalizePanic_MultiSegment(t *testing.T) {
+	stop := provider.FinishReason{Unified: provider.FinishReasonStop}
+	parts := []provider.StreamPart{
+		{Type: provider.PartTextDelta, ID: "0", Delta: "first"},
+		{Type: provider.PartFinish, FinishReason: &stop},
+		{Type: provider.PartTextDelta, ID: "0", Delta: "second"},
+		{Type: provider.PartFinish, FinishReason: &stop},
+	}
+	for _, tc := range []struct {
+		name   string
+		cancel bool
+	}{
+		{name: "upstream close"},
+		{name: "cancel after finish", cancel: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testkit.NewEnv(t, func(config *agento11y.Config) {
+				config.Tracer = panicTracer{}
+			})
+			upstream := make(chan provider.StreamPart, len(parts))
+			for _, part := range parts {
+				upstream <- part
+			}
+			if tc.cancel {
+				t.Cleanup(func() { close(upstream) })
+			} else {
+				close(upstream)
+			}
+			model := &mockLanguageModel{provider_: "grafana", modelID: "grafana/assistant",
+				doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: upstream}, nil
+				},
+			}
+			wrapped := middleware.Wrap(middleware.WrapOptions{Model: model, Middleware: []middleware.Middleware{RecordingMiddleware(RecordingOptions{
+				ClientResolver: func(context.Context) *agento11y.Client { return env.Client },
+			})}})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			result, err := wrapped.DoStream(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
+			require.NoError(t, err)
+			var got []provider.StreamPart
+			for part := range result.Stream {
+				got = append(got, part)
+				if tc.cancel && len(got) == len(parts) {
+					cancel()
+				}
+			}
+			assert.Equal(t, parts, got)
+		})
+	}
+}
