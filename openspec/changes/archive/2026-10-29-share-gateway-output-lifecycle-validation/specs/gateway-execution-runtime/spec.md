@@ -166,7 +166,7 @@ Every Gateway API adapter SHALL execute language-model requests through the shar
 - **THEN** neither SHALL require changes to the runtime, the selector or the other adapter
 
 ### Requirement: Stream wait outcomes
-Each wait for a stream part SHALL return exactly one outcome: a part, closed, canceled, deadline, idle timeout, invalid output or finished. Deadline and canceled SHALL follow the request context's error. The idle duration SHALL start when setup returns the stream and restart at each later wait, after the adapter has represented the previous part. Every outcome other than a part SHALL cancel the model context before it is returned. Finished SHALL be a terminal success with no error. Invalid output and finished SHALL be sticky: a later wait SHALL return the same outcome without reading from the provider.
+Each wait for a stream part SHALL return exactly one outcome: a part, closed, canceled, deadline, idle timeout, invalid output or finished. Deadline and canceled SHALL follow the request context's error. The idle duration SHALL start when setup returns the stream and restart at each later wait, after the adapter has represented the previous part. Every outcome other than a part SHALL cancel the model context before it is returned. Invalid output and finished SHALL be sticky.
 
 #### Scenario: Each outcome
 - **WHEN** a part arrives, the stream closes without a finished segment, the request is canceled, the deadline expires, no part arrives within the idle duration, a part violates a lifecycle rule or the stream closes after an accepted finish
@@ -185,7 +185,7 @@ Each wait for a stream part SHALL return exactly one outcome: a part, closed, ca
 - **THEN** the wait SHALL return the same outcome without reading from the provider
 
 ### Requirement: Closed failure classification
-The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, timeout, cancellation or internal. Invalid request MAY carry a closed reason: reserved provider options or protected call header. Classification SHALL never panic. Selection classification SHALL classify inconsistent tool history as invalid request with no reason, and provider classification SHALL classify invalid output as internal.
+The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, timeout, cancellation or internal. Invalid request MAY carry a closed reason: reserved provider options or protected call header. Classification SHALL never panic.
 
 #### Scenario: Selection errors
 - **WHEN** selection fails with account access denied, invalid BYOK credentials, an invalid BYOK selector, an unsupported gateway control, reserved provider options or an unknown model
