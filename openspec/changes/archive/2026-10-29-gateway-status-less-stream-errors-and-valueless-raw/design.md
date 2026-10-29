@@ -119,7 +119,7 @@ Alternative considered: copying the native `IsRetryable`. Rejected, because the 
 - **Alternative: after any earlier error.** Rejected. When content follows the error, the synthetic error is the only truncation signal.
 - **Test adapter.** It keeps reporting `WaitClosed` as internal: clean EOF is a ProviderWire state-machine rule, not a runtime classification. The adapter cross-check (`adapter_test.go`) has no close-after-error scenario.
 - **Existing Gateway tests.** Every service row whose stream ends with a provider error frame and then closes loses its trailing `internal_error`:
-  - `cmd/grafana-ai-gateway/internal/service/fallback_acceptance_test.go:52` "tool input then error": `[stream-start, tool-input-start, error, error]` / `["overloaded","internal_error"]` becomes `[stream-start, tool-input-start, error]` / `["overloaded"]`;
+  - `pkg/internal/service/fallback_acceptance_test.go:52` "tool input then error": `[stream-start, tool-input-start, error, error]` / `["overloaded","internal_error"]` becomes `[stream-start, tool-input-start, error]` / `["overloaded"]`;
   - `fallback_acceptance_test.go:286` "postcommit_error_close": `[stream-start, error, error]` becomes `[stream-start, error]`;
   - `generated_file_test.go:29` "file then error": `[stream-start, file, error, error]` becomes `[stream-start, file, error]`;
   - `providerwire/v4/stream_segments_replay_test.go` "overlapping-message-start" (from sequential response segments, #583): the written events now equal the direct golden, which ends with the provider error, instead of gaining a trailing `internal_error`.

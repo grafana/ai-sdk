@@ -33,7 +33,7 @@ None.
   - `providerwire/v4` (errors, error documents, stream state machine, `schema/stream_event.json`);
   - the contract testserver and TypeScript contract tests under `test/providerwire-v4`;
   - the test-only adapter's documents;
-  - the `cmd/grafana-ai-gateway/internal/service` fallback-acceptance and generated-file tests, whose error-then-close rows lose their trailing `internal_error`.
+  - the `pkg/internal/service` fallback-acceptance and generated-file tests, whose error-then-close rows lose their trailing `internal_error`.
 - **Apache `providers/grafana`:** stream error and raw decoding. There is no exported API change.
 - **Docs:** the Grafana Gateway provider guide and the Gateway architecture walkthrough.
 - **Unchanged:**

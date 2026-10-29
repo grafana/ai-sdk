@@ -44,14 +44,14 @@ Each numbered group is one commit. In every group, write the tests first and con
   - an error, then an idle timeout: the timeout document;
   - a close with no error: unchanged.
 
-  Update the service rows in `cmd/grafana-ai-gateway/internal/service` whose stream ends with a provider error frame and then closes:
+  Update the service rows in `pkg/internal/service` whose stream ends with a provider error frame and then closes:
   - `fallback_acceptance_test.go:52` ("tool input then error"): expect `[stream-start, tool-input-start, error]` and `["overloaded"]`;
   - `fallback_acceptance_test.go:286` ("postcommit_error_close"): expect `[stream-start, error]`;
   - `generated_file_test.go:29` ("file then error"): expect `[stream-start, file, error]`;
   - `providerwire/v4/stream_segments_replay_test.go` ("overlapping-message-start"): expect the direct golden's event count, ending with the provider error.
 
   Verify: the new and updated cases fail.
-- [x] 3.2 Implement design D5 with a `streamState` flag that is set after a written provider error frame and cleared after any other written frame, and checked on `WaitClosed`. Verify: `cd ai-gateway && go test -race ./providerwire/v4/... ./cmd/grafana-ai-gateway/internal/service/...` passes, including `stream_tools_test.go` "premature EOF".
+- [x] 3.2 Implement design D5 with a `streamState` flag that is set after a written provider error frame and cleared after any other written frame, and checked on `WaitClosed`. Verify: `cd ai-gateway && go test -race ./providerwire/v4/... ./pkg/internal/service/...` passes, including `stream_tools_test.go` "premature EOF".
 - [x] 3.3 Update `docs/concepts/gateway-architecture.md` ("Streaming, failures, and the point of no return"):
   - in the premature EOF sentence, say that a stream that ends right after a provider error event ends cleanly;
   - in the flowchart (`:199-213`), add an edge from `read` to `cleanup` labelled "provider closed right after a provider error event".
