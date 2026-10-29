@@ -52,7 +52,7 @@ func (m *optionsModel) DoStream(_ context.Context, options provider.CallOptions)
 		return nil, err
 	}
 	parts := make(chan provider.StreamPart, 1)
-	parts <- provider.StreamPart{Type: provider.PartFinish}
+	parts <- provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
 	close(parts)
 	return &provider.StreamResult{Stream: parts}, nil
 }

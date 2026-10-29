@@ -26,7 +26,7 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
 
 ## 2. Shared stream validator in `Stream.Next`
 
-- [ ] 2.1 Add `StreamValidator` to `internal/execution`, seeded from a copy of `ToolHistory`. Move the generic stream rules unchanged from `stream.go`, `stream_tools.go` and `reasoning.go` as they are after #583 (design D3, D7): start position, response segments and quiescence, the parts allowed after a `finish`, per-segment text and reasoning IDs, stream-wide tool and approval IDs, tool phases and history, tool-result JSON, approvals, finish preconditions, registered finish reason and unknown types. Error and raw parts change no segment, text, reasoning or tool state, but consume the start position. `SegmentFinished` reports the finished phase. The validator is nil-safe for every pointer field (design D1). Add a table test with one row per rule, including:
+- [x] 2.1 Add `StreamValidator` to `internal/execution`, seeded from a copy of `ToolHistory`. Move the generic stream rules unchanged from `stream.go`, `stream_tools.go` and `reasoning.go` as they are after #583 (design D3, D7): start position, response segments and quiescence, the parts allowed after a `finish`, per-segment text and reasoning IDs, stream-wide tool and approval IDs, tool phases and history, tool-result JSON, approvals, finish preconditions, registered finish reason and unknown types. Error and raw parts change no segment, text, reasoning or tool state, but consume the start position. `SegmentFinished` reports the finished phase. The validator is nil-safe for every pointer field (design D1). Add a table test with one row per rule, including:
   - metadata and `finish` while text, reasoning or tool input is open or a preview is pending, in the stream or in history;
   - consecutive and late metadata opening segments; text and reasoning IDs reused in a later segment; a tool ID reused in a later segment; a result in a later segment;
   - after a `finish`: metadata, raw and error accepted; content, a second `finish` and `stream-start` rejected;
@@ -35,11 +35,11 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
   - two validators seeded from one history stay independent, and the history is unchanged.
 
   Verify with `go test -race ./internal/execution/...`.
-- [ ] 2.2 Add `ErrInvalidOutput`, `WaitInvalidOutput` and `WaitFinished` (design D3, D4, D5):
+- [x] 2.2 Add `ErrInvalidOutput`, `WaitInvalidOutput` and `WaitFinished` (design D3, D4, D5):
   - `Wait.Err` returns `ErrInvalidOutput` and nil respectively; update its doc (`runtime.go:208`) to say nil for `WaitPart` and `WaitFinished`;
   - `ClassifyProvider` maps `ErrInvalidOutput` to internal;
   - `Call.View(ErrInvalidOutput)` projects the success view;
-  - `Stream.Next` validates each part with the call's history, closes the stream on a violation and returns `WaitInvalidOutput`, sticky without reading. A provider close returns `WaitFinished` when the segment is finished and `WaitClosed` otherwise. Idle, deadline and cancellation are unchanged in every phase.
+  - `Stream.Next` validates each part with the call's history, closes the stream on a violation and returns `WaitInvalidOutput`. A provider close returns `WaitFinished` when the segment is finished and `WaitClosed` otherwise. Invalid output and finished are sticky without reading. Idle, deadline and cancellation are unchanged in every phase.
 
   In the same commit, so that a clean close stays clean: ProviderWire's `consumeStreamParts` returns on `WaitFinished` instead of checking `WaitClosed` with its phase (`stream.go:363`), and the test adapter returns success on `WaitFinished` instead of tracking `finished` (`internal/testadapter/adapter.go:63-82`).
 
@@ -47,7 +47,7 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
 
   Add runtime tests:
   - a violation cancels and starts one drain, without returning the part; a repeated wait returns invalid output without reading, and a repeated close starts no second drain;
-  - close after a `finish` returns finished, also with raw and error parts after it; close after a later metadata returns closed;
+  - close after a `finish` returns finished, also with raw and error parts after it, and a repeated wait returns finished again; close after a later metadata returns closed;
   - idle timeout and cancellation after a `finish` keep their outcomes;
   - a later segment and pass-through parts are delivered;
   - the single-candidate selected view;
