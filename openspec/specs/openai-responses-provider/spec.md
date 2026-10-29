@@ -195,6 +195,15 @@ Grouped parallel function results SHALL retain wrapper call_id, child index orde
 - **AND** successful text/JSON, execution-denied and multipart outputs retain their distinct behavior
 - **AND** active OpenAI/Azure cache hints wrap the serialized error while inactive namespace hints are ignored
 
+#### Scenario: Error envelopes preserve HTML characters
+- **WHEN** error-text or error-json contains `<`, `>` or `&`
+- **THEN** the serialized error envelope preserves those characters without HTML escaping, matching the registered upstream JSON.stringify behavior
+
+#### Scenario: Malformed Go error JSON retains the failure
+- **WHEN** a Go tool result supplies nonempty malformed JSON bytes as error-json
+- **THEN** conversion falls back to a JSON object with the original text as a string under error
+- **AND** this Go adaptation preserves the failure signal without mutating the caller's bytes; nil and empty byte slices continue to serialize as null
+
 ### Requirement: Reasoning conversion
 
 Assistant reasoning SHALL become reasoning items with encrypted_content and summary, or item_reference when store=true with an ID. Active conversation/previousResponseId SHALL skip reasoning with IDs. Reasoning parts of one assistant message sharing an item ID SHALL produce at most one input item. Missing IDs SHALL fall back to encrypted_content; store=false reasoning items without encrypted content SHALL be filtered from the request with one warning.

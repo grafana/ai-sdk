@@ -62,6 +62,8 @@ func TestModel_ToolErrorResults(t *testing.T) {
 		{"json null", provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`null`)}, `null`, false},
 		{"json empty string", provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`""`)}, `""`, false},
 		{"error text", provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "E42\n\"failed\""}, `{"error":"E42\n\"failed\""}`, false},
+		{"error text HTML characters", provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "got <nil> & x>y"}, `{"error":"got <nil> & x>y"}`, false},
+		{"error JSON HTML characters", provider.ToolResultOutput{Type: provider.ToolOutputErrorJSON, JSON: json.RawMessage(`{"message":"got <nil> & x>y"}`)}, `{"error":{"message":"got <nil> & x>y"}}`, false},
 		{"empty error text", provider.ToolResultOutput{Type: provider.ToolOutputErrorText}, `{"error":""}`, false},
 		{"error object", provider.ToolResultOutput{Type: provider.ToolOutputErrorJSON, JSON: json.RawMessage(`{"code":"E42","details":[1,false,null]}`)}, `{"error":{"code":"E42","details":[1,false,null]}}`, false},
 		{"nested error", provider.ToolResultOutput{Type: provider.ToolOutputErrorJSON, JSON: json.RawMessage(`{"error":"E42"}`)}, `{"error":{"error":"E42"}}`, false},
@@ -178,6 +180,26 @@ func TestModel_ParallelToolErrorResults(t *testing.T) {
 					assertToolResultRequest(t, namespace, streaming, provider.CallOptions{Prompt: []provider.Message{provider.NewToolMessage(parts[1], parts[0])}, ProviderOptions: options, Tools: tools}, []any{map[string]any{"type": "function_call_output", "call_id": "call_parallel", "output": want}})
 				})
 			}
+		}
+	}
+}
+
+func TestToolResultOutputString_InvalidErrorJSON(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"invalid token", "not json", `{"error":"not json"}`},
+		{"truncated object", `{"message":"<nil> & x>y"`, `{"error":"{\"message\":\"<nil> & x>y\""}`},
+		{"whitespace", " \n", `{"error":" \n"}`},
+	} {
+		for _, schema := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/schema=%t", tc.name, schema), func(t *testing.T) {
+				out := provider.ToolResultOutput{Type: provider.ToolOutputErrorJSON, JSON: json.RawMessage(tc.input)}
+				assert.Equal(t, tc.want, toolResultOutputString(&out, schema))
+				assert.Equal(t, tc.input, string(out.JSON))
+			})
 		}
 	}
 }
