@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/routing"
-	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 )
 
 var (
@@ -36,10 +34,9 @@ type Destination struct {
 }
 
 // Request is a decoded BYOK request: the requested destination followed by one
-// destination per fallback model, in order, and the provider start timeouts.
+// destination per fallback model, in order.
 type Request struct {
 	Destinations []Destination
-	Timeouts     map[Provider]time.Duration
 }
 
 type requestAccount struct {
@@ -51,8 +48,7 @@ type requestAccount struct {
 // returns the destinations of selector and of each fallback model in
 // controls.Models. An invalid selector, requested or fallback, wraps
 // [ErrInvalidSelector]; invalid accounts, or a destination without accounts,
-// wrap [ErrInvalidRequest]; a provider timeout for an unsupported provider is
-// [execution.ErrProviderTimeouts].
+// wrap [ErrInvalidRequest].
 func DecodeRequest(selector string, controls routing.Controls, approvedBaseURLs map[Provider][]string) (Request, error) {
 	selected, model, ok := parseSelector(selector)
 	if !ok {
@@ -74,14 +70,7 @@ func DecodeRequest(selector string, controls routing.Controls, approvedBaseURLs 
 	if err != nil {
 		return Request{}, err
 	}
-	timeouts := make(map[Provider]time.Duration, len(controls.ProviderTimeouts))
-	for name, milliseconds := range controls.ProviderTimeouts {
-		if !supportedProvider(Provider(name)) {
-			return Request{}, execution.ErrProviderTimeouts
-		}
-		timeouts[Provider(name)] = time.Duration(milliseconds) * time.Millisecond
-	}
-	request := Request{Destinations: []Destination{requested}, Timeouts: timeouts}
+	request := Request{Destinations: []Destination{requested}}
 	for _, fallback := range controls.Models {
 		name, model, ok := parseSelector(fallback)
 		if !ok {

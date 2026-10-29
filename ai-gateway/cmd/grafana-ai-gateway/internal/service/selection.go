@@ -86,15 +86,13 @@ func selectBYOK(id string, controls routing.Controls, options BYOKOptions) (exec
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	var destinations []execution.RequestAccounts
-	group := -1
-	for _, placement := range placements {
-		if placement.Group != group {
-			group = placement.Group
-			destination := request.Destinations[group]
-			destinations = append(destinations, execution.RequestAccounts{Provider: string(destination.Provider), ModelID: destination.Model})
+	expected := make([]execution.ExpectedAttempt, len(placements))
+	for i, placement := range placements {
+		destination := request.Destinations[placement.Group]
+		expected[i] = execution.ExpectedAttempt{
+			ModelID:     string(destination.Provider) + "/" + destination.Model,
+			Destination: catalog.ConfiguredCandidate{Provider: string(destination.Provider), ModelID: destination.Model},
 		}
-		destinations[len(destinations)-1].Count++
 	}
-	return execution.AccountSelection(id, model, destinations), nil
+	return execution.AccountSelection(id, model, expected), nil
 }

@@ -3,7 +3,6 @@ package execution
 import (
 	"context"
 	"errors"
-	"slices"
 	"sync"
 
 	"github.com/grafana/ai-sdk/fallback"
@@ -12,10 +11,11 @@ import (
 
 // attemptCapture records one call's fallback attempts until its outcome is decided.
 type attemptCapture struct {
-	requested string
-	canonical string
-	groups    []modelGroup
-	redactor  SummaryRedactor
+	requested   string
+	canonical   string
+	attribution attribution
+	expected    []ExpectedAttempt
+	redactor    SummaryRedactor
 
 	mu       sync.Mutex
 	entered  bool
@@ -24,31 +24,10 @@ type attemptCapture struct {
 }
 
 // newAttemptCapture prepares the capture for selected. Every selection is
-// captured, and only selections with model groups are projected into an
+// captured, and only selections with attribution are projected into an
 // overview.
 func newAttemptCapture(requested string, selected Selection, redactor SummaryRedactor) *attemptCapture {
-	attempts := &attemptCapture{redactor: redactor}
-	if len(selected.groups) != 0 {
-		attempts.requested = requested
-		attempts.groups = cloneGroups(selected.groups)
-		if selected.groups[0].accounts == nil {
-			attempts.canonical = selected.ID
-		}
-	}
-	return attempts
-}
-
-func cloneGroups(groups []modelGroup) []modelGroup {
-	cloned := make([]modelGroup, len(groups))
-	for i, group := range groups {
-		cloned[i] = group
-		cloned[i].candidates = slices.Clone(group.candidates)
-		if group.accounts != nil {
-			accounts := *group.accounts
-			cloned[i].accounts = &accounts
-		}
-	}
-	return cloned
+	return &attemptCapture{requested: requested, canonical: selected.ID, attribution: selected.attribution, expected: selected.expected, redactor: redactor}
 }
 
 // withObserver returns ctx with the request-scoped fallback observer attached.
@@ -97,7 +76,7 @@ func (a *attemptCapture) view(err error) (view View) {
 			view.Overview = nil
 		}
 	}()
-	if len(attempts) == 0 && configuredCandidateCount(a.groups) == 1 && entered {
+	if len(attempts) == 0 && a.attribution == attributionConfigured && len(a.expected) == 1 && entered {
 		outcome := fallback.AttemptSelected
 		if err != nil {
 			outcome = fallback.AttemptFailed
@@ -107,13 +86,12 @@ func (a *attemptCapture) view(err error) (view View) {
 		}
 		attempts = []fallback.Attempt{{Index: 1, Outcome: outcome, SourceErr: err}}
 	}
-	view.Overview = projectGroups(a.requested, a.canonical, attempts, a.groups)
+	view.Overview = projectExpected(a.requested, a.canonical, attempts, a.attribution, a.expected)
 	if view.Overview != nil {
 		for i := range view.Overview.Attempts {
 			attempt := &view.Overview.Attempts[i]
 			attempt.Error = a.redactor.Redact(attempt.Error)
 		}
-		view.Routing = projectRouting(view.Overview, a.groups)
 	}
 	return view
 }
@@ -122,9 +100,6 @@ func (a *attemptCapture) view(err error) (view View) {
 type View struct {
 	// Overview is the published attempt overview, or nil when none is published.
 	Overview *Overview
-	// Routing groups the overview's attempts by model, or is nil when they
-	// cannot be assigned to the call's models.
-	Routing  *Routing
 	redactor SummaryRedactor
 }
 
@@ -139,11 +114,5 @@ func (view View) Current(err *provider.APICallError) *Failure {
 
 // Metadata returns the execution metadata for an error document.
 func (view View) Metadata() provider.ProviderMetadata {
-	return view.Enrich(nil)
-}
-
-// Enrich returns original with the view's execution and routing metadata, or
-// nil when the view publishes no overview.
-func (view View) Enrich(original provider.ProviderMetadata) provider.ProviderMetadata {
-	return Metadata(view.Overview, view.Routing, original)
+	return Metadata(view.Overview, nil)
 }

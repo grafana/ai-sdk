@@ -14,17 +14,16 @@ type namespace struct {
 }
 
 // Metadata builds optional execution attribution without changing native inputs.
-// It places the overview under gateway.execution, its routing summary, when
-// present, under gateway.routing, and always relocates a native gateway value
-// under gateway.nativeMetadata. It returns nil when the overview is absent or
-// cannot be encoded; a routing summary without an overview is ignored. The
-// caller validates the original output first and encodes the enriched output
-// once.
-func Metadata(overview *Overview, routing *Routing, original provider.ProviderMetadata) provider.ProviderMetadata {
+// It places the overview under gateway.execution and its routing summary under
+// gateway.routing, and always relocates a native gateway value under
+// gateway.nativeMetadata. It returns nil when the overview is absent or cannot
+// be encoded. The caller validates the original output first and encodes the
+// enriched output once.
+func Metadata(overview *Overview, original provider.ProviderMetadata) provider.ProviderMetadata {
 	if overview == nil {
 		return nil
 	}
-	encoded, err := json.Marshal(namespace{Execution: overview, Routing: routing, NativeMetadata: original["gateway"]})
+	encoded, err := json.Marshal(namespace{Execution: overview, Routing: projectRouting(overview), NativeMetadata: original["gateway"]})
 	if err != nil {
 		return nil
 	}

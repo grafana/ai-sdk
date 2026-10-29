@@ -2,7 +2,6 @@ package grafana
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -95,7 +94,8 @@ func ExampleNewWithServiceAccountToken() {
 }
 
 // Routing controls try fallback models and prefer or restrict providers for
-// one call. The routing metadata reports which models and providers were tried.
+// one call. providerMetadata.gateway.routing reports which models and providers
+// were tried.
 func ExampleGatewayOptions() {
 	client, err := NewWithServiceAccountToken(ServiceAccountConfig{
 		Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
@@ -121,29 +121,5 @@ func ExampleGatewayOptions() {
 		fmt.Println(err)
 		return
 	}
-	gateway, err := GatewayMetadataFrom(result.ProviderMetadata)
-	if err != nil || gateway == nil || gateway.Routing == nil {
-		fmt.Println("no routing metadata")
-		return
-	}
-	for _, model := range gateway.Routing.ModelAttempts {
-		fmt.Println(model.ModelID, model.Success)
-	}
-}
-
-// GatewayMetadataFromError reads the attempts of a failed call.
-func ExampleGatewayMetadataFromError() {
-	failed := provider.NewAPICallError(provider.APICallErrorOptions{
-		Message: "service overloaded",
-		Data:    json.RawMessage(`{"providerMetadata":{"gateway":{"execution":{"requestedModelId":"assistant","attempts":[{"provider":"anthropic","modelId":"claude","outcome":"failed","error":{"message":"overloaded","statusCode":529}}]}}}}`),
-	})
-	gateway, err := GatewayMetadataFromError(failed)
-	if err != nil || gateway == nil {
-		fmt.Println("no gateway metadata")
-		return
-	}
-	for _, attempt := range gateway.Execution.Attempts {
-		fmt.Println(attempt.Provider, attempt.Outcome, attempt.Error.StatusCode)
-	}
-	// Output: anthropic failed 529
+	fmt.Println(string(result.ProviderMetadata["gateway"]))
 }

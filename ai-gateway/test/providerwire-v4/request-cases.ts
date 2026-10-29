@@ -528,7 +528,6 @@ export const routingGatewayOptions = {
     anthropic: [{ apiKey: "dummy-anthropic" }],
     openai: [{ apiKey: "dummy-openai-first", organization: "org-customer", project: "proj-customer" }, { apiKey: "dummy-openai-second" }],
   },
-  providerTimeouts: { byok: { anthropic: 2000, openai: 5000 } },
 } satisfies GatewayProviderOptions;
 
 async function routingCapture(): Promise<SemanticRequest[]> {

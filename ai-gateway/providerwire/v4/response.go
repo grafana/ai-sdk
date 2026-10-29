@@ -53,8 +53,8 @@ type unaryToolResult struct {
 }
 
 type unaryMappingContext struct {
-	history   map[string]string
-	execution execution.View
+	history  map[string]string
+	overview *execution.Overview
 }
 
 type unaryToolState struct {
@@ -299,7 +299,7 @@ func (h *handler) writeUnarySuccess(w http.ResponseWriter, result *provider.Gene
 		return false
 	}
 	if len(contexts) > 0 {
-		if metadata := contexts[0].execution.Enrich(mapped.Metadata); metadata != nil {
+		if metadata := execution.Metadata(contexts[0].overview, mapped.Metadata); metadata != nil {
 			mapped.Metadata = metadata
 		}
 	}

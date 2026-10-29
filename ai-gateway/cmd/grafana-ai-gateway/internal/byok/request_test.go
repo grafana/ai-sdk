@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/routing"
-	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,7 +34,7 @@ func newAll(request Request, client *http.Client) (provider.LanguageModel, error
 
 func TestDecodeRequest_FallbackModels(t *testing.T) {
 	const accounts = `"byok":{"anthropic":[{"apiKey":"a1"},{"apiKey":"a2"}],"openai":[{"apiKey":"o1"}]}`
-	got, err := decodeGateway("anthropic/x", json.RawMessage(`{`+accounts+`,"models":["openai/y","anthropic/z/w"],"providerTimeouts":{"byok":{"anthropic":2000}}}`), nil)
+	got, err := decodeGateway("anthropic/x", json.RawMessage(`{`+accounts+`,"models":["openai/y","anthropic/z/w"]}`), nil)
 	require.NoError(t, err)
 	require.Len(t, got.Destinations, 3)
 	for i, want := range []struct {
@@ -57,7 +55,6 @@ func TestDecodeRequest_FallbackModels(t *testing.T) {
 		}
 		assert.Equal(t, want.keys, keys)
 	}
-	assert.Equal(t, map[Provider]time.Duration{Anthropic: 2 * time.Second}, got.Timeouts)
 }
 
 func TestDecodeRequest_RoutingRefusals(t *testing.T) {
@@ -70,8 +67,6 @@ func TestDecodeRequest_RoutingRefusals(t *testing.T) {
 		{name: "fallback without split", raw: `{` + accounts + `,"models":["configured-alias"]}`, want: ErrInvalidSelector},
 		{name: "fallback with unsupported provider", raw: `{` + accounts + `,"models":["bedrock/y"]}`, want: ErrInvalidSelector},
 		{name: "fallback with empty model", raw: `{` + accounts + `,"models":["anthropic/"]}`, want: ErrInvalidSelector},
-		{name: "timeout for unsupported provider", raw: `{` + accounts + `,"providerTimeouts":{"byok":{"bedrock":1000}}}`, want: execution.ErrProviderTimeouts},
-		{name: "timeout provider case variant", raw: `{` + accounts + `,"providerTimeouts":{"byok":{"Anthropic":1000}}}`, want: execution.ErrProviderTimeouts},
 		{name: "requested credentials precede fallback", raw: `{"byok":{"openai":[{"apiKey":"o"}]},"models":["bedrock/y"]}`, want: ErrInvalidRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

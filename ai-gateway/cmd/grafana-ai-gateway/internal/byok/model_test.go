@@ -339,14 +339,21 @@ func TestDecodeRequest(t *testing.T) {
 			assert.Empty(t, got)
 		})
 	}
+	for _, raw := range []string{`{"BYOK":{"openai":[{"apiKey":"k"}]}}`, `{"byok":{"openai":[{"apiKey":"other"}]},"Byok":{"openai":[{"apiKey":"k"}]}}`} {
+		t.Run("case variant control/"+raw, func(t *testing.T) {
+			got, err := decodeGateway("openai/model", json.RawMessage(raw), nil)
+			require.NoError(t, err)
+			require.Len(t, got.Destinations, 1)
+			require.Len(t, got.Destinations[0].Accounts, 1)
+			assert.Equal(t, "k", got.Destinations[0].Accounts[0].APIKey)
+		})
+	}
 	for _, tc := range []struct {
 		raw  string
 		want error
 	}{
 		{`[]`, execution.ErrRoutingControls},
 		{`{"byok":{"openai":[{"apiKey":"valid"}]}} {}`, execution.ErrRoutingControls},
-		{`{"BYOK":{"openai":[{"apiKey":"dummy-secret"}]}}`, execution.ErrUnsupportedGatewayControl},
-		{`{"byok":{"openai":[{"apiKey":"valid"}]},"BYOK":{"openai":[{"apiKey":"dummy-secret"}]}}`, execution.ErrUnsupportedGatewayControl},
 		{`{"byok":{"openai":[{"apiKey":"valid"}]},"modelMappings":{}}`, execution.ErrUnsupportedGatewayControl},
 		{`{"byok":{"openai":[{"apiKey":"valid"}]},"dummy-secret-control":true}`, execution.ErrUnsupportedGatewayControl},
 		{`{"byok":{"openai":[{"apiKey":"valid"}]},"sort":"cost"}`, execution.ErrUnsupportedGatewayControl},

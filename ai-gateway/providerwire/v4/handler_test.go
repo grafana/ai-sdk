@@ -282,9 +282,8 @@ func TestRequestSelection_ValidationErrors(t *testing.T) {
 	}{
 		{name: "accounts", err: execution.ErrInvalidBYOK, message: "providerOptions.gateway.byok requires supported provider arrays with valid accounts"},
 		{name: "selector", err: execution.ErrInvalidBYOKSelector, message: "BYOK requires a supported provider/model selector"},
-		{name: "controls", err: execution.ErrUnsupportedGatewayControl, message: "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials"},
+		{name: "controls", err: execution.ErrUnsupportedGatewayControl, message: "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"},
 		{name: "routing controls", err: execution.ErrRoutingControls, message: "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"},
-		{name: "provider timeouts", err: execution.ErrProviderTimeouts, message: "providerOptions.gateway.providerTimeouts.byok must map anthropic or openai to whole milliseconds from 1 to 600000"},
 		{name: "no candidates", err: execution.ErrNoRoutingCandidates, message: "providerOptions.gateway.only excludes every candidate"},
 		{name: "attempt bound", err: execution.ErrRoutingAttemptBound, message: "routing exceeds the bound of 8 provider attempts"},
 		{name: "fallback model", err: execution.ErrUnknownFallbackModel, status: http.StatusNotFound, code: "model_not_found", message: "a providerOptions.gateway.models entry is not an available model"},

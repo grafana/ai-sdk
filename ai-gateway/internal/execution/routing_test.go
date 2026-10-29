@@ -2,6 +2,7 @@ package execution
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
@@ -17,11 +18,11 @@ func TestAttemptCapture_Routing(t *testing.T) {
 	failed := func(index int) fallback.Attempt {
 		return fallback.Attempt{Index: index, Provider: "native", ModelID: "native", Outcome: fallback.AttemptFailed, SourceErr: overloaded, WillFallback: true}
 	}
-	configured := []ConfiguredModel{
-		{RequestedID: "a", CanonicalID: "A", Candidates: []catalog.ConfiguredCandidate{{Provider: "openai", ModelID: "a1", ProviderInstance: "one"}}},
-		{RequestedID: "b", CanonicalID: "B", Candidates: []catalog.ConfiguredCandidate{{Provider: "anthropic", ModelID: "b1", ProviderInstance: "two"}, {Provider: "openai", ModelID: "b2", ProviderInstance: "three"}}},
-		{RequestedID: "c", CanonicalID: "C", Candidates: []catalog.ConfiguredCandidate{{Provider: "openai", ModelID: "c1", ProviderInstance: "four"}}},
-	}
+	configured := slices.Concat(
+		configuredAttempts("a", "A", catalog.ConfiguredCandidate{Provider: "openai", ModelID: "a1", ProviderInstance: "one"}),
+		configuredAttempts("b", "B", catalog.ConfiguredCandidate{Provider: "anthropic", ModelID: "b1", ProviderInstance: "two"}, catalog.ConfiguredCandidate{Provider: "openai", ModelID: "b2", ProviderInstance: "three"}),
+		configuredAttempts("c", "C", catalog.ConfiguredCandidate{Provider: "openai", ModelID: "c1", ProviderInstance: "four"}),
+	)
 	for _, tc := range []struct {
 		name      string
 		selection Selection
@@ -53,7 +54,7 @@ func TestAttemptCapture_Routing(t *testing.T) {
 		},
 		{
 			name:      "all attempts fail",
-			selection: ConfiguredSelection("A", &generateModel{}, configured[:2]),
+			selection: ConfiguredSelection("A", &generateModel{}, configured[:3]),
 			decisions: []fallback.Attempt{failed(1), failed(2), {Index: 3, Provider: "native", ModelID: "native", Outcome: fallback.AttemptFailed, SourceErr: limited}},
 			want: &Routing{
 				OriginalModelID: "a", CanonicalSlug: "A", ResolvedProvider: "openai",
@@ -76,7 +77,7 @@ func TestAttemptCapture_Routing(t *testing.T) {
 		},
 		{
 			name:      "BYOK model attempts",
-			selection: AccountSelection("anthropic/x", &generateModel{}, []RequestAccounts{{Provider: "anthropic", ModelID: "x", Count: 1}, {Provider: "openai", ModelID: "y", Count: 1}}),
+			selection: AccountSelection("anthropic/x", &generateModel{}, slices.Concat(accountAttempts("anthropic", "x", 1), accountAttempts("openai", "y", 1))),
 			decisions: []fallback.Attempt{
 				{Index: 1, Provider: "anthropic", ModelID: "x", Outcome: fallback.AttemptFailed, SourceErr: overloaded, WillFallback: true},
 				{Index: 2, Provider: "openai", ModelID: "y", Outcome: fallback.AttemptSelected},
@@ -101,19 +102,18 @@ func TestAttemptCapture_Routing(t *testing.T) {
 			},
 		},
 		{
-			name:      "group mismatch publishes neither",
+			name:      "attempts outnumbering expected attempts publish neither",
 			selection: ConfiguredSelection("A", &generateModel{}, configured[:1]),
 			decisions: []fallback.Attempt{failed(1), {Index: 2, Outcome: fallback.AttemptSelected}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			attempts := newAttemptCapture(tc.selection.groups[0].requested, tc.selection, SummaryRedactor{})
+			attempts := newAttemptCapture(tc.selection.expected[0].ModelID, tc.selection, SummaryRedactor{})
 			attempts.enter()
 			for _, decision := range tc.decisions {
 				attempts.observe(t.Context(), decision)
 			}
 			view := attempts.view(nil)
-			assert.Equal(t, tc.want, view.Routing)
 			if tc.want == nil {
 				assert.Nil(t, view.Overview)
 				assert.Nil(t, view.Metadata())
@@ -124,21 +124,36 @@ func TestAttemptCapture_Routing(t *testing.T) {
 			var placed namespace
 			require.NoError(t, json.Unmarshal(view.Metadata()["gateway"], &placed))
 			assert.Equal(t, tc.want, placed.Routing)
-			assert.Equal(t, view.Overview, placed.Execution)
+			execution, err := json.Marshal(view.Overview)
+			require.NoError(t, err)
+			placedExecution, err := json.Marshal(placed.Execution)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(execution), string(placedExecution))
 		})
 	}
 }
 
-func TestAttemptCapture_RoutingForOpenGroup(t *testing.T) {
-	attempts := newAttemptCapture("alias", ConfiguredSelection("public", &generateModel{}, []ConfiguredModel{{RequestedID: "alias", CanonicalID: "public"}}), SummaryRedactor{})
+func TestAttemptCapture_RoutingWithoutExpectedAttempts(t *testing.T) {
+	attempts := newAttemptCapture("alias", ConfiguredSelection("public", &generateModel{}, nil), SummaryRedactor{})
 	attempts.observe(t.Context(), fallback.Attempt{Index: 1, Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected})
-	view := attempts.view(nil)
-	require.NotNil(t, view.Routing)
-	assert.Equal(t, []ModelAttempt{{ModelID: "alias", CanonicalSlug: "public", Success: true, ProviderAttemptCount: 1, ProviderAttempts: []ProviderAttempt{{Provider: "native", Success: true}}}}, view.Routing.ModelAttempts)
+	var placed namespace
+	require.NoError(t, json.Unmarshal(attempts.view(nil).Metadata()["gateway"], &placed))
+	require.NotNil(t, placed.Routing)
+	assert.Equal(t, []ModelAttempt{{ModelID: "alias", CanonicalSlug: "public", Success: true, ProviderAttemptCount: 1, ProviderAttempts: []ProviderAttempt{{Provider: "native", Success: true}}}}, placed.Routing.ModelAttempts)
 }
 
-func TestMetadata_RoutingRequiresOverview(t *testing.T) {
-	assert.Nil(t, Metadata(nil, &Routing{OriginalModelID: "a"}, nil))
-	metadata := Metadata(&Overview{RequestedModelID: "a", Attempts: []Attempt{{Provider: "p", ModelID: "m", Outcome: fallback.AttemptSelected}}}, nil, nil)
-	assert.NotContains(t, string(metadata["gateway"]), "routing")
+func configuredAttempts(modelID, canonical string, candidates ...catalog.ConfiguredCandidate) []ExpectedAttempt {
+	expected := make([]ExpectedAttempt, len(candidates))
+	for i, candidate := range candidates {
+		expected[i] = ExpectedAttempt{ModelID: modelID, CanonicalID: canonical, Destination: candidate}
+	}
+	return expected
+}
+
+func accountAttempts(providerName, modelID string, count int) []ExpectedAttempt {
+	expected := make([]ExpectedAttempt, count)
+	for i := range expected {
+		expected[i] = ExpectedAttempt{ModelID: providerName + "/" + modelID, Destination: catalog.ConfiguredCandidate{Provider: providerName, ModelID: modelID}}
+	}
+	return expected
 }

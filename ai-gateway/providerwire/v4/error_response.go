@@ -62,7 +62,7 @@ var publicErrors = [...]errorDefinition{
 	},
 	safeGatewayControl: {
 		status:  http.StatusBadRequest,
-		message: "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials",
+		message: "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials",
 		kind:    errorInvalidRequest,
 		code:    codeInvalidRequest,
 	},
@@ -136,36 +136,6 @@ var publicErrors = [...]errorDefinition{
 		code:      codeForbidden,
 		retryable: false,
 	},
-	safeRoutingControls: {
-		status:  http.StatusBadRequest,
-		message: "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported",
-		kind:    errorInvalidRequest,
-		code:    codeInvalidRequest,
-	},
-	safeProviderTimeouts: {
-		status:  http.StatusBadRequest,
-		message: "providerOptions.gateway.providerTimeouts.byok must map anthropic or openai to whole milliseconds from 1 to 600000",
-		kind:    errorInvalidRequest,
-		code:    codeInvalidRequest,
-	},
-	safeNoCandidates: {
-		status:  http.StatusBadRequest,
-		message: "providerOptions.gateway.only excludes every candidate",
-		kind:    errorInvalidRequest,
-		code:    codeInvalidRequest,
-	},
-	safeAttemptBound: {
-		status:  http.StatusBadRequest,
-		message: "routing exceeds the bound of 8 provider attempts",
-		kind:    errorInvalidRequest,
-		code:    codeInvalidRequest,
-	},
-	safeFallbackModelNotFound: {
-		status:  http.StatusNotFound,
-		message: "a providerOptions.gateway.models entry is not an available model",
-		kind:    errorModelNotFound,
-		code:    codeModelNotFound,
-	},
 }
 
 type errorResponse struct {
@@ -194,7 +164,7 @@ func definitionForError(value safeError) errorDefinition {
 		return publicErrors[safeInternal]
 	}
 	definition := publicErrors[value.category]
-	if value.category == safeInvalidRequest {
+	if value.category == safeInvalidRequest || value.category == safeModelNotFound {
 		if message := requestFailureMessage(value.reason); message != "" {
 			definition.message = message
 		}
@@ -216,6 +186,14 @@ func requestFailureMessage(reason requestFailureReason) string {
 		return "reserved provider option namespace"
 	case policyProtectedCallHeader:
 		return "protected call header"
+	case routingControls:
+		return "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"
+	case routingNoCandidates:
+		return "providerOptions.gateway.only excludes every candidate"
+	case routingAttemptBound:
+		return "routing exceeds the bound of 8 provider attempts"
+	case routingFallbackModel:
+		return "a providerOptions.gateway.models entry is not an available model"
 	default:
 		return ""
 	}

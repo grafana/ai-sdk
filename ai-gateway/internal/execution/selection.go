@@ -13,74 +13,53 @@ import (
 
 // Selection is the executable model a selector chose for one request, with its
 // logical identity. A selection built by [CatalogSelector],
-// [ConfiguredSelection] or [AccountSelection] carries the ordered model groups
-// its execution overview is projected from; any other selection publishes no
-// overview.
+// [ConfiguredSelection] or [AccountSelection] carries the expected attempts its
+// execution overview is projected from; any other selection publishes no overview.
 type Selection struct {
-	ID     string
-	Model  provider.LanguageModel
-	groups []modelGroup
+	ID          string
+	Model       provider.LanguageModel
+	attribution attribution
+	expected    []ExpectedAttempt
 }
 
-// modelGroup is one model of a selection's chain and the destinations its
-// attempts are expected to reach, in attempt order. A configured group has
-// candidates, or none when only decision identity is known; a request-account
-// group has accounts.
-type modelGroup struct {
-	requested  string
-	canonical  string
-	candidates []catalog.ConfiguredCandidate
-	accounts   *RequestAccounts
-}
+type attribution uint8
 
-// ConfiguredModel is one catalog model of a configured selection: the ID the
-// request named, its canonical ID and its destinations in attempt order.
-type ConfiguredModel struct {
-	RequestedID string
+const (
+	attributionNone attribution = iota
+	attributionConfigured
+	attributionAccounts
+)
+
+// ExpectedAttempt is the destination one attempt of a selection's chain is
+// expected to reach and the model whose chain the attempt belongs to.
+type ExpectedAttempt struct {
+	// ModelID is the requested model ID or models entry, as sent.
+	ModelID string
+	// CanonicalID is the model's canonical ID, empty for request accounts.
 	CanonicalID string
-	Candidates  []catalog.ConfiguredCandidate
+	// Destination is the expected destination. A request-account destination
+	// has only a provider and model.
+	Destination catalog.ConfiguredCandidate
 }
 
-// ConfiguredSelection returns the selection for model, which tries the
-// candidates of models in order. id is the requested model's canonical ID,
-// which is the overview's canonical identity even when none of that model's
-// candidates were composed. The overview attributes each attempt to the
-// configured candidate at its position.
-func ConfiguredSelection(id string, model provider.LanguageModel, models []ConfiguredModel) Selection {
-	selected := Selection{ID: id, Model: model, groups: make([]modelGroup, 0, len(models))}
-	for _, configured := range models {
-		selected.groups = append(selected.groups, modelGroup{
-			requested:  configured.RequestedID,
-			canonical:  configured.CanonicalID,
-			candidates: slices.Clone(configured.Candidates),
-		})
-	}
-	return selected
-}
-
-// RequestAccounts is one native destination and the number of ordered accounts
-// a request supplied for it.
-type RequestAccounts struct {
-	Provider string
-	ModelID  string
-	Count    int
+// ConfiguredSelection returns the selection for model, which tries the expected
+// attempts in order. id is the requested model's canonical ID, which is the
+// overview's canonical identity even when none of that model's candidates were
+// composed. The overview attributes each attempt to the configured destination
+// expected at its position; without expected attempts, attempts keep their
+// decision identity.
+func ConfiguredSelection(id string, model provider.LanguageModel, expected []ExpectedAttempt) Selection {
+	return Selection{ID: id, Model: model, attribution: attributionConfigured, expected: slices.Clone(expected)}
 }
 
 // AccountSelection returns the selection for model, which tries the request's
-// accounts in order, destination by destination. Its overview names the call's
-// requested model ID, has no canonical model or provider instance, and lists
-// each account attempt with its native destination. An attempt for another
-// destination than the one at its position, or more attempts than accounts,
-// omits the overview.
-func AccountSelection(id string, model provider.LanguageModel, destinations []RequestAccounts) Selection {
-	selected := Selection{ID: id, Model: model, groups: make([]modelGroup, 0, len(destinations))}
-	for _, accounts := range destinations {
-		selected.groups = append(selected.groups, modelGroup{
-			requested: accounts.Provider + "/" + accounts.ModelID,
-			accounts:  &accounts,
-		})
-	}
-	return selected
+// accounts in the order of expected. Its overview names the call's requested
+// model ID, has no canonical model or provider instance, and lists each account
+// attempt with its native destination. An attempt for another destination than
+// the one expected at its position, or more attempts than expected, omits the
+// overview.
+func AccountSelection(id string, model provider.LanguageModel, expected []ExpectedAttempt) Selection {
+	return Selection{ID: id, Model: model, attribution: attributionAccounts, expected: slices.Clone(expected)}
 }
 
 // RequestSelector chooses the model for a request from its model ID, its mapped
@@ -101,8 +80,6 @@ var (
 	ErrAccountAccess = errors.New("execution: account access denied")
 	// ErrRoutingControls reports malformed models, order or only controls.
 	ErrRoutingControls = errors.New("execution: invalid routing controls")
-	// ErrProviderTimeouts reports an invalid providerTimeouts.byok map.
-	ErrProviderTimeouts = errors.New("execution: invalid provider timeouts")
 	// ErrNoRoutingCandidates reports an only filter that excludes every candidate.
 	ErrNoRoutingCandidates = errors.New("execution: routing excludes every candidate")
 	// ErrRoutingAttemptBound reports a composed chain above the attempt bound.
@@ -125,11 +102,11 @@ func CatalogSelector(resolver catalog.ModelResolver) RequestSelector {
 		if err != nil {
 			return Selection{}, err
 		}
-		return ConfiguredSelection(resolved.ID, resolved.Model, []ConfiguredModel{{
-			RequestedID: modelID,
-			CanonicalID: resolved.ID,
-			Candidates:  resolved.Candidates,
-		}}), nil
+		expected := make([]ExpectedAttempt, len(resolved.Candidates))
+		for i, candidate := range resolved.Candidates {
+			expected[i] = ExpectedAttempt{ModelID: modelID, CanonicalID: resolved.ID, Destination: candidate}
+		}
+		return ConfiguredSelection(resolved.ID, resolved.Model, expected), nil
 	}
 }
 

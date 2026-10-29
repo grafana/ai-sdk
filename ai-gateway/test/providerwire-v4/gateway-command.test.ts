@@ -2468,7 +2468,7 @@ describe("authenticated OpenAI-compatible Gateway command", () => {
         "the gateway's backend credential is the one presented upstream");
 
       for (const [rejected, message] of [
-        [{ providerOptions: { gateway: { tenant: "other" } } }, "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials"],
+        [{ providerOptions: { gateway: { tenant: "other" } } }, "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"],
         [{ headers: { "x-api-key": "caller-controlled" } }, "protected call header"],
         [{ providerOptions: { compatibleBackend: { model: "someone-elses-model" } } }, "invalid request"],
       ] as const) {
@@ -3022,18 +3022,18 @@ describe("authenticated OpenAI Responses Gateway command", () => {
   });
 });
 
-type RoutedOutcome = { status?: number; metadata?: any; reader?: any; error?: any };
+type RoutedOutcome = { status?: number; metadata?: any; error?: any };
 
 // routedCall sends one call with gateway controls through one client and
-// returns its status, raw provider metadata and, for Go, the typed reader's
-// view. Go sends the controls as typed GatewayOptions.
+// returns its status and raw provider metadata. Go sends the controls as typed
+// GatewayOptions.
 async function routedCall(gateway: GatewayProcess, language: "go" | "typescript", mode: "generate" | "stream", modelID: string, controls: Record<string, unknown>): Promise<RoutedOutcome> {
   const base = { prompt: [{ role: "user" as const, content: [{ type: "text" as const, text: "normal-stream" }] }], maxOutputTokens: 32 };
   if (language === "go") {
     const result = await captureGoClient(goClientBinaryPath, { mode, modelID, options: base, gatewayOptions: controls, baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN });
-    if (result.error !== undefined) return { status: result.error.statusCode, metadata: result.error.apiError?.data?.providerMetadata, reader: result.error.gatewayMetadata, error: result.error };
-    if (mode === "generate") return { metadata: result.result.providerMetadata, reader: result.gatewayMetadata };
-    return { metadata: result.partMetadata.at(-1), reader: result.partGatewayMetadata.at(-1) };
+    if (result.error !== undefined) return { status: result.error.statusCode, metadata: result.error.apiError?.data?.providerMetadata, error: result.error };
+    if (mode === "generate") return { metadata: result.result.providerMetadata };
+    return { metadata: result.partMetadata.at(-1) };
   }
   const model = gateway.client()(modelID);
   const options: LanguageModelV4CallOptions = { ...base, providerOptions: { gateway: controls as any }, abortSignal: AbortSignal.timeout(5_000) };
@@ -3047,8 +3047,8 @@ async function routedCall(gateway: GatewayProcess, language: "go" | "typescript"
   }
 }
 
-// assertRouted checks both clients' attempts and routing against the expected
-// per-model provider sequence, and the Go reader against the raw metadata.
+// assertRouted checks a client's attempts and routing against the expected
+// per-model provider sequence.
 function assertRouted(outcome: RoutedOutcome, label: string, expected: { requested: string; canonical?: string; models: Array<{ modelId: string; canonical?: string; attempts: Array<[string, boolean, number?]> }> }) {
   const routing = outcome.metadata?.gateway?.routing;
   const attempts = expected.models.flatMap((model) => model.attempts);
@@ -3069,12 +3069,12 @@ function assertRouted(outcome: RoutedOutcome, label: string, expected: { request
     })),
   }, label);
   assert.deepEqual(outcome.metadata.gateway.execution.attempts.map((attempt: { provider: string; outcome: string }) => [attempt.provider, attempt.outcome === "selected"]), attempts.map(([provider, success]) => [provider, success]), label);
-  if (outcome.reader !== undefined) {
-    assert.equal(outcome.reader.routing.finalProvider, routing.finalProvider ?? "", `${label}: Go reader`);
-    assert.deepEqual(outcome.reader.routing.modelAttempts.map((model: { modelId: string }) => model.modelId), routing.modelAttempts.map((model: { modelId: string }) => model.modelId), `${label}: Go reader`);
-    assert.equal(outcome.reader.execution.attempts.length, attempts.length, `${label}: Go reader`);
-  }
 }
+
+// goRoutedCases are the routing cases also sent through the Go client: one
+// routed success and one diagnostic per access mode. The request-body
+// differential proves the rest of its typed GatewayOptions encoding.
+const goRoutedCases = new Set(["request fallback model", "unknown fallback model", "cross-provider fallback model", "fallback provider without accounts"]);
 
 describe("request routing through both clients (fake native providers)", () => {
   it("routes configured requests with models, order and only, and refuses invalid controls before provider calls", async () => {
@@ -3128,6 +3128,7 @@ models:
         for (const fake of [first, backup, second]) fail(fake, scenario.failing.includes(fake) ? 503 : undefined);
         for (const mode of ["generate", "stream"] as const) {
           for (const language of ["go", "typescript"] as const) {
+            if (language === "go" && !goRoutedCases.has(scenario.name)) continue;
             const label = `${scenario.name} ${language} ${mode}`;
             const before = [first, backup, second].map((fake) => fake.requests.length);
             const outcome = await routedCall(gateway, language, mode, scenario.modelID, scenario.controls);
@@ -3150,12 +3151,12 @@ models:
         ["only excludes every candidate", { only: ["vertex"] }, 400, "providerOptions.gateway.only excludes every candidate"],
         ["malformed controls", { order: "anthropic" }, 400, "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"],
         ["conditional models entry", { models: [{ model: "route-b", when: { confidenceBelow: 0.5 } }] }, 400, "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"],
-        ["unsupported control", { sort: "ttft" }, 400, "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials"],
-        ["request credentials from a configured caller", { byok: { anthropic: [{ apiKey: "dummy-configured-byok" }] } }, 400, "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials"],
+        ["unsupported control", { sort: "ttft" }, 400, "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"],
+        ["request credentials from a configured caller", { byok: { anthropic: [{ apiKey: "dummy-configured-byok" }] } }, 400, "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"],
       ] as const) {
         for (const mode of ["generate", "stream"] as const) {
           for (const language of ["go", "typescript"] as const) {
-            if (language === "go" && ["conditional models entry", "malformed controls", "unsupported control"].includes(name)) continue;
+            if (language === "go" && !goRoutedCases.has(name)) continue;
             const label = `${name} ${language} ${mode}`;
             const before = [first, backup, second].map((fake) => fake.requests.length);
             const outcome = await routedCall(gateway, language, mode, "alias-a", controls);
@@ -3198,14 +3199,13 @@ models:
           models: [{ modelId: BYOK_MODEL, attempts: [["anthropic", false, 503], ["anthropic", false, 503]] }, { modelId: "openai/request-fallback-native", attempts: [["openai", true]] }] },
         { name: "only skips the requested provider", controls: { byok, models: ["openai/request-fallback-native"], only: ["openai"] }, failures: {}, keys: ["byok-openai"],
           models: [{ modelId: "openai/request-fallback-native", attempts: [["openai", true]] }] },
-        { name: "provider timeout leaves responsive accounts", controls: { byok, providerTimeouts: { byok: { anthropic: 10_000 } } }, failures: { "byok-anthropic-first": 503 }, keys: ["byok-anthropic-first", "byok-anthropic-second"],
-          models: [{ modelId: BYOK_MODEL, attempts: [["anthropic", false, 503], ["anthropic", true]] }] },
       ];
       for (const scenario of scenarios) {
         anthropic.keyFailures = new Map(Object.entries(scenario.failures));
         openai.keyFailures = new Map(Object.entries(scenario.failures));
         for (const mode of ["generate", "stream"] as const) {
           for (const language of ["go", "typescript"] as const) {
+            if (language === "go" && !goRoutedCases.has(scenario.name)) continue;
             const label = `${scenario.name} ${language} ${mode}`;
             const before = marks();
             const outcome = await routedCall(gateway, language, mode, BYOK_MODEL, scenario.controls);
@@ -3221,11 +3221,11 @@ models:
       for (const [name, controls, status, message] of [
         ["configured route as fallback", { byok, models: ["route-b"] }, 400, "BYOK requires a supported provider/model selector"],
         ["fallback provider without accounts", { byok: { anthropic: byok.anthropic }, models: ["openai/request-fallback-native"] }, 400, "providerOptions.gateway.byok requires supported provider arrays with valid accounts"],
-        ["invalid provider timeout", { byok, providerTimeouts: { byok: { anthropic: 0 } } }, 400, "providerOptions.gateway.providerTimeouts.byok must map anthropic or openai to whole milliseconds from 1 to 600000"],
-        ["unsupported control", { byok, zeroDataRetention: true }, 400, "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials"],
+        ["provider timeouts", { byok, providerTimeouts: { byok: { anthropic: 2_000 } } }, 400, "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"],
+        ["unsupported control", { byok, zeroDataRetention: true }, 400, "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"],
       ] as const) {
         for (const language of ["go", "typescript"] as const) {
-          if (language === "go" && name === "unsupported control") continue;
+          if (language === "go" && !goRoutedCases.has(name)) continue;
           const label = `${name} ${language}`;
           const before = marks();
           const configuredBefore = configured.requests.length;

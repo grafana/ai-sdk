@@ -19,11 +19,6 @@ const (
 	safeInternal
 	safePermission
 	safeBYOKDiscovery
-	safeRoutingControls
-	safeProviderTimeouts
-	safeNoCandidates
-	safeAttemptBound
-	safeFallbackModelNotFound
 )
 
 type safeError struct {
@@ -47,24 +42,7 @@ var safeCategories = [...]safeErrorCategory{
 	execution.CategoryInternal:         safeInternal,
 }
 
-var routingErrors = map[execution.Reason]safeErrorCategory{
-	execution.ReasonRoutingControls:  safeRoutingControls,
-	execution.ReasonProviderTimeouts: safeProviderTimeouts,
-	execution.ReasonNoCandidates:     safeNoCandidates,
-	execution.ReasonAttemptBound:     safeAttemptBound,
-}
-
 func safeErrorFor(category execution.Category, reason execution.Reason) safeError {
-	switch {
-	case category == execution.CategoryInvalidRouting:
-		routing, ok := routingErrors[reason]
-		if !ok {
-			return safeError{category: safeInternal}
-		}
-		return safeError{category: routing}
-	case category == execution.CategoryModelNotFound && reason == execution.ReasonFallbackModel:
-		return safeError{category: safeFallbackModelNotFound}
-	}
 	if int(category) >= len(safeCategories) || safeCategories[category] == 0 {
 		return safeError{category: safeInternal}
 	}
@@ -74,6 +52,14 @@ func safeErrorFor(category execution.Category, reason execution.Reason) safeErro
 		value.reason = policyReservedProviderOptions
 	case execution.ReasonProtectedCallHeader:
 		value.reason = policyProtectedCallHeader
+	case execution.ReasonRoutingControls:
+		value.reason = routingControls
+	case execution.ReasonNoCandidates:
+		value.reason = routingNoCandidates
+	case execution.ReasonAttemptBound:
+		value.reason = routingAttemptBound
+	case execution.ReasonFallbackModel:
+		value.reason = routingFallbackModel
 	}
 	return value
 }

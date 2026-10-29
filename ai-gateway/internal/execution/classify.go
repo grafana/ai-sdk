@@ -29,14 +29,10 @@ const (
 	CategoryTimeout
 	CategoryCancellation
 	CategoryInternal
-	// CategoryInvalidRouting reports routing controls that cannot route the
-	// call. It always carries a routing reason.
-	CategoryInvalidRouting
 )
 
-// Reason refines [CategoryInvalidRequest] for host policy refusals,
-// [CategoryInvalidRouting] for routing refusals and [CategoryModelNotFound] for
-// unknown fallback models.
+// Reason refines [CategoryInvalidRequest] for host policy and routing refusals
+// and [CategoryModelNotFound] for unknown fallback models.
 type Reason uint8
 
 const (
@@ -48,8 +44,6 @@ const (
 	ReasonProtectedCallHeader
 	// ReasonRoutingControls reports malformed models, order or only controls.
 	ReasonRoutingControls
-	// ReasonProviderTimeouts reports an invalid providerTimeouts.byok map.
-	ReasonProviderTimeouts
 	// ReasonNoCandidates reports an only filter that excludes every candidate.
 	ReasonNoCandidates
 	// ReasonAttemptBound reports a composed chain above the attempt bound.
@@ -84,13 +78,11 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 	case errors.Is(err, ErrProtectedCallHeader):
 		return CategoryInvalidRequest, ReasonProtectedCallHeader
 	case errors.Is(err, ErrRoutingControls):
-		return CategoryInvalidRouting, ReasonRoutingControls
-	case errors.Is(err, ErrProviderTimeouts):
-		return CategoryInvalidRouting, ReasonProviderTimeouts
+		return CategoryInvalidRequest, ReasonRoutingControls
 	case errors.Is(err, ErrNoRoutingCandidates):
-		return CategoryInvalidRouting, ReasonNoCandidates
+		return CategoryInvalidRequest, ReasonNoCandidates
 	case errors.Is(err, ErrRoutingAttemptBound):
-		return CategoryInvalidRouting, ReasonAttemptBound
+		return CategoryInvalidRequest, ReasonAttemptBound
 	case errors.Is(err, ErrUnknownFallbackModel):
 		return CategoryModelNotFound, ReasonFallbackModel
 	case errors.Is(err, catalog.ErrUnknownModel):

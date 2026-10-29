@@ -500,7 +500,7 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if !validMetadata(event.metadata) {
 			return streamPartAdapterFailure
 		}
-		if metadata := state.execution.Enrich(event.metadata); metadata != nil {
+		if metadata := execution.Metadata(state.execution.Overview, event.metadata); metadata != nil {
 			event.metadata = metadata
 		}
 		frame, ok := encodeStreamFrame(event)

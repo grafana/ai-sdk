@@ -53,18 +53,12 @@ func (c *Catalog) selectRouted(ctx context.Context, id string, controls routing.
 	}
 	candidates := make([]provider.LanguageModel, 0, len(placements))
 	descriptors := make([]config.Primary, 0, len(placements))
-	var models []execution.ConfiguredModel
-	group := -1
+	expected := make([]execution.ExpectedAttempt, 0, len(placements))
 	for _, placement := range placements {
 		route := c.routes[resolved[placement.Group].ID]
 		candidates = append(candidates, route.candidates[placement.Candidate])
 		descriptors = append(descriptors, route.descriptors[placement.Candidate])
-		if placement.Group != group {
-			group = placement.Group
-			models = append(models, execution.ConfiguredModel{RequestedID: names[group], CanonicalID: resolved[group].ID})
-		}
-		last := &models[len(models)-1]
-		last.Candidates = append(last.Candidates, route.identities[placement.Candidate])
+		expected = append(expected, execution.ExpectedAttempt{ModelID: names[placement.Group], CanonicalID: resolved[placement.Group].ID, Destination: route.identities[placement.Candidate]})
 	}
 	lower, err := composeCandidates(candidates, descriptors, c.physical)
 	if err != nil {
@@ -74,5 +68,5 @@ func (c *Catalog) selectRouted(ctx context.Context, id string, controls routing.
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	return execution.ConfiguredSelection(requested.ID, model, models), nil
+	return execution.ConfiguredSelection(requested.ID, model, expected), nil
 }

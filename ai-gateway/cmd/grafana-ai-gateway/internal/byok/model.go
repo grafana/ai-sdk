@@ -28,9 +28,8 @@ func (r Request) Groups() []routing.Group {
 }
 
 // New returns the model that tries request's accounts in the order of
-// placements, each against its own destination and under its provider's start
-// timeout. An all-Anthropic chain also checks native options before any
-// attempt.
+// placements, each against its own destination. An all-Anthropic chain also
+// checks native options before any attempt.
 func New(request Request, placements []routing.Placement, client *http.Client) (provider.LanguageModel, error) {
 	if len(placements) == 0 || len(placements) > config.MaxProviderAttempts {
 		return nil, ErrInvalidRequest
@@ -54,7 +53,6 @@ func New(request Request, placements []routing.Placement, client *http.Client) (
 		if err != nil {
 			return nil, err
 		}
-		candidate = withStartTimeout(candidate, request.Timeouts[destination.Provider])
 		allAnthropic = allAnthropic && destination.Provider == Anthropic
 		candidates = append(candidates, candidate)
 	}

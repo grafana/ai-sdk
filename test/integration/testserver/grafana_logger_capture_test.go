@@ -80,40 +80,6 @@ func TestModel_BYOKLoggerCapture(t *testing.T) {
 	}
 }
 
-func TestModel_TypedBYOKLoggerCapture(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
-		assert.Contains(t, string(body), `"apiKey":"dummy-first"`)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"hello"}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}}}`)
-	}))
-	defer srv.Close()
-	p, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{Token: "glsa_dummy", BaseURL: srv.URL + "/api/v1/aisdk"})
-	require.NoError(t, err)
-	base, err := p.LanguageModel("openai/native")
-	require.NoError(t, err)
-	var logs bytes.Buffer
-	model := logmiddleware.Wrap(base, logmiddleware.Options{Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Capture: logmiddleware.CaptureOptions{ProviderOptions: true, RequestBody: true, MaxJSONBytes: 8192}})
-	options := grafana.GatewayOptions{
-		Models: []string{"anthropic/fallback"},
-		BYOK: map[string][]grafana.BYOKAccount{
-			"openai":    {{APIKey: "dummy-first", Organization: "dummy-organization", Project: "dummy-project"}},
-			"anthropic": {{APIKey: "dummy-second"}},
-		},
-		ProviderTimeouts: &grafana.ProviderTimeouts{BYOK: map[string]int{"openai": 5000}},
-	}
-	_, err = model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}, ProviderOptions: provider.ProviderOptions{options.ProviderKey(): options}})
-	require.NoError(t, err)
-	for _, key := range []string{"dummy-first", "dummy-second"} {
-		assert.NotContains(t, logs.String(), key)
-	}
-	assert.Contains(t, logs.String(), "[REDACTED]")
-	for _, value := range []string{"dummy-organization", "dummy-project", "anthropic/fallback", "providerTimeouts", "5000"} {
-		assert.Contains(t, logs.String(), value)
-	}
-}
-
 func TestModel_ConsumerMiddlewareObservesRouting(t *testing.T) {
 	const gateway = `{"execution":{"requestedModelId":"alias","canonicalModelId":"public","attempts":[{"provider":"openai","modelId":"a1","providerInstance":"one","outcome":"failed","error":{"message":"busy","statusCode":503}},{"provider":"anthropic","modelId":"b1","providerInstance":"two","outcome":"selected"}]},` +
 		`"routing":{"originalModelId":"alias","canonicalSlug":"public","resolvedProvider":"openai","finalProvider":"anthropic","modelAttemptCount":2,"totalProviderAttemptCount":2,"modelAttempts":[` +
@@ -134,10 +100,7 @@ func TestModel_ConsumerMiddlewareObservesRouting(t *testing.T) {
 			model := logmiddleware.Wrap(base, logmiddleware.Options{Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Capture: logmiddleware.CaptureOptions{ProviderMetadata: capture, MaxJSONBytes: 8192}})
 			result, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}, ProviderOptions: provider.ProviderOptions{"gateway": grafana.GatewayOptions{Models: []string{"backup"}}}})
 			require.NoError(t, err)
-			read, err := grafana.GatewayMetadataFrom(result.ProviderMetadata)
-			require.NoError(t, err)
-			require.NotNil(t, read)
-			assert.Equal(t, "anthropic", read.Routing.FinalProvider)
+			assert.JSONEq(t, gateway, string(result.ProviderMetadata["gateway"]))
 			assert.JSONEq(t, `{"native":"kept"}`, string(result.ProviderMetadata["anthropic"]))
 			if capture {
 				assert.Contains(t, logs.String(), "finalProvider")

@@ -41,27 +41,24 @@ type ProviderAttempt struct {
 	StatusCode int    `json:"statusCode,omitempty"`
 }
 
-// projectRouting groups overview's attempts by the model groups expected at
-// their positions. It returns nil when an attempt cannot be assigned.
-func projectRouting(overview *Overview, groups []modelGroup) *Routing {
-	slots, open, ok := groupSlots(groups)
-	if !ok || (!open && len(overview.Attempts) > len(slots)) {
-		return nil
-	}
+// projectRouting groups overview's attempts by the model whose chain each
+// belongs to.
+func projectRouting(overview *Overview) *Routing {
 	routing := &Routing{
 		OriginalModelID:           overview.RequestedModelID,
 		CanonicalSlug:             overview.CanonicalModelID,
 		TotalProviderAttemptCount: len(overview.Attempts),
 	}
-	group := -1
 	for i, attempt := range overview.Attempts {
-		index := 0
-		if !open {
-			index = slots[i].group
+		modelID, canonical := overview.RequestedModelID, overview.CanonicalModelID
+		if attempt.fallbackModel != "" {
+			modelID, canonical = attempt.fallbackModel, attempt.fallbackCanonical
 		}
-		if index != group {
-			group = index
-			routing.ModelAttempts = append(routing.ModelAttempts, ModelAttempt{ModelID: groups[group].requested, CanonicalSlug: groups[group].canonical})
+		if i == 0 {
+			routing.ResolvedProvider = attempt.Provider
+		}
+		if len(routing.ModelAttempts) == 0 || routing.ModelAttempts[len(routing.ModelAttempts)-1].ModelID != modelID {
+			routing.ModelAttempts = append(routing.ModelAttempts, ModelAttempt{ModelID: modelID, CanonicalSlug: canonical})
 		}
 		selected := attempt.Outcome == fallback.AttemptSelected
 		providerAttempt := ProviderAttempt{Provider: attempt.Provider, Success: selected}
@@ -77,8 +74,5 @@ func projectRouting(overview *Overview, groups []modelGroup) *Routing {
 		}
 	}
 	routing.ModelAttemptCount = len(routing.ModelAttempts)
-	if len(overview.Attempts) != 0 {
-		routing.ResolvedProvider = overview.Attempts[0].Provider
-	}
 	return routing
 }

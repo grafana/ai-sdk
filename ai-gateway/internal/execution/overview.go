@@ -23,6 +23,12 @@ type Attempt struct {
 	ProviderInstance string                  `json:"providerInstance,omitempty"`
 	Outcome          fallback.AttemptOutcome `json:"outcome"`
 	Error            *Failure                `json:"error,omitempty"`
+
+	// fallbackModel and fallbackCanonical name the models entry, as sent, and
+	// its canonical ID, whose chain the attempt belongs to. Both are empty for an
+	// attempt of the requested model.
+	fallbackModel     string
+	fallbackCanonical string
 }
 
 // Failure contains optional candidate-local native error fields.
@@ -39,93 +45,52 @@ type Failure struct {
 // read them. Mixed or unfinished observation is omitted rather than treated as
 // complete.
 func Project(requested, canonical string, decisions []fallback.Attempt, candidates []catalog.ConfiguredCandidate) *Overview {
-	return projectGroups(requested, canonical, decisions, []modelGroup{{requested: requested, canonical: canonical, candidates: candidates}})
+	expected := make([]ExpectedAttempt, len(candidates))
+	for i, candidate := range candidates {
+		expected[i] = ExpectedAttempt{ModelID: requested, CanonicalID: canonical, Destination: candidate}
+	}
+	return projectExpected(requested, canonical, decisions, attributionConfigured, expected)
 }
 
-// projectGroups converts one invocation's decisions into an optional overview,
-// attributing the decision at each position to the destination its model groups
-// expect there. Configured groups require canonical, the requested model's
-// canonical identity, and replace decision identity with the configured
-// candidate's. Request-account groups have no canonical identity and must match
-// the decision's native destination. Decisions that outnumber the expected
-// destinations, or groups of both kinds, omit the overview.
-func projectGroups(requested, canonical string, decisions []fallback.Attempt, groups []modelGroup) *Overview {
-	slots, open, ok := groupSlots(groups)
-	if !ok {
-		return nil
-	}
-	if groups[0].accounts != nil {
+// projectExpected converts one invocation's decisions into an optional
+// overview, attributing the decision at each position to the attempt expected
+// there. Configured attribution requires canonical, the requested model's
+// canonical identity, and replaces decision identity with the expected
+// destination; without expected attempts, decisions keep their identity.
+// Account attribution has no canonical identity and requires each decision to
+// match its expected destination. Decisions that outnumber the expected
+// attempts omit the overview.
+func projectExpected(requested, canonical string, decisions []fallback.Attempt, kind attribution, expected []ExpectedAttempt) *Overview {
+	switch kind {
+	case attributionConfigured:
+		if canonical == "" || !utf8.ValidString(canonical) {
+			return nil
+		}
+	case attributionAccounts:
 		canonical = ""
-	} else if canonical == "" || !utf8.ValidString(canonical) {
+	default:
 		return nil
 	}
 	return project(requested, canonical, decisions, func(i int, attempt *Attempt) bool {
-		if open {
-			return true
+		if len(expected) == 0 {
+			return kind == attributionConfigured
 		}
-		if i >= len(slots) {
+		if i >= len(expected) {
 			return false
 		}
-		switch slot := slots[i]; {
-		case slot.candidate != nil:
-			attempt.Provider, attempt.ModelID, attempt.ProviderInstance = slot.candidate.Provider, slot.candidate.ModelID, slot.candidate.ProviderInstance
-			return true
-		default:
-			return attempt.Provider == slot.accounts.Provider && attempt.ModelID == slot.accounts.ModelID
+		want := expected[i]
+		if kind == attributionAccounts {
+			if attempt.Provider != want.Destination.Provider || attempt.ModelID != want.Destination.ModelID {
+				return false
+			}
+		} else {
+			attempt.Provider, attempt.ModelID, attempt.ProviderInstance = want.Destination.Provider, want.Destination.ModelID, want.Destination.ProviderInstance
 		}
+		if want.ModelID != requested {
+			attempt.fallbackModel, attempt.fallbackCanonical = want.ModelID, want.CanonicalID
+		}
+		return true
 	})
-}
-
-// groupSlot is one expected attempt position of a selection's chain.
-type groupSlot struct {
-	group     int
-	candidate *catalog.ConfiguredCandidate
-	accounts  *RequestAccounts
-}
-
-// groupSlots flattens groups into their expected attempt positions. A single
-// configured group without candidates is open: its positions take decision
-// identity and are unbounded. Mixed configured and account groups, or an open
-// group among others, are invalid.
-func groupSlots(groups []modelGroup) (slots []groupSlot, open bool, ok bool) {
-	if len(groups) == 0 {
-		return nil, false, false
-	}
-	accounts := groups[0].accounts != nil
-	for i, group := range groups {
-		if (group.accounts != nil) != accounts {
-			return nil, false, false
-		}
-		if accounts {
-			for range group.accounts.Count {
-				slots = append(slots, groupSlot{group: i, accounts: group.accounts})
-			}
-			continue
-		}
-		if len(group.candidates) == 0 {
-			if len(groups) != 1 {
-				return nil, false, false
-			}
-			return nil, true, true
-		}
-		for j := range group.candidates {
-			slots = append(slots, groupSlot{group: i, candidate: &group.candidates[j]})
-		}
-	}
-	return slots, false, true
-}
-
-// configuredCandidateCount returns the number of configured candidates across
-// groups, or zero for request-account groups.
-func configuredCandidateCount(groups []modelGroup) int {
-	count := 0
-	for _, group := range groups {
-		if group.accounts != nil {
-			return 0
-		}
-		count += len(group.candidates)
-	}
-	return count
 }
 
 // project validates decision order and outcomes; identify sets or checks each

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
@@ -114,7 +115,7 @@ func TestProject_SelectedErrorPartsNotDuplicated(t *testing.T) {
 	assert.Nil(t, got.Attempts[0].Error)
 }
 
-func TestProjectGroups_ModelGroups(t *testing.T) {
+func TestProjectExpected_FallbackModels(t *testing.T) {
 	failure := provider.NewAPICallError(provider.APICallErrorOptions{Message: "overloaded", StatusCode: 503})
 	failed := func(index int, providerName, modelID string) fallback.Attempt {
 		return fallback.Attempt{Index: index, Provider: providerName, ModelID: modelID, Outcome: fallback.AttemptFailed, SourceErr: failure, WillFallback: true}
@@ -122,24 +123,23 @@ func TestProjectGroups_ModelGroups(t *testing.T) {
 	selected := func(index int, providerName, modelID string) fallback.Attempt {
 		return fallback.Attempt{Index: index, Provider: providerName, ModelID: modelID, Outcome: fallback.AttemptSelected}
 	}
-	configured := []modelGroup{
-		{requested: "alias", canonical: "first", candidates: []catalog.ConfiguredCandidate{{Provider: "openai", ModelID: "a1", ProviderInstance: "one"}, {Provider: "anthropic", ModelID: "a2", ProviderInstance: "two"}}},
-		{requested: "second", canonical: "second", candidates: []catalog.ConfiguredCandidate{{Provider: "anthropic", ModelID: "b1", ProviderInstance: "three"}}},
-	}
-	accounts := []modelGroup{
-		{requested: "anthropic/x", accounts: &RequestAccounts{Provider: "anthropic", ModelID: "x", Count: 2}},
-		{requested: "openai/y", accounts: &RequestAccounts{Provider: "openai", ModelID: "y", Count: 1}},
-	}
+	configured := slices.Concat(
+		configuredAttempts("alias", "first", catalog.ConfiguredCandidate{Provider: "openai", ModelID: "a1", ProviderInstance: "one"}, catalog.ConfiguredCandidate{Provider: "anthropic", ModelID: "a2", ProviderInstance: "two"}),
+		configuredAttempts("second", "second", catalog.ConfiguredCandidate{Provider: "anthropic", ModelID: "b1", ProviderInstance: "three"}),
+	)
+	accounts := slices.Concat(accountAttempts("anthropic", "x", 2), accountAttempts("openai", "y", 1))
 	for _, tc := range []struct {
 		name      string
-		groups    []modelGroup
+		kind      attribution
+		expected  []ExpectedAttempt
 		decisions []fallback.Attempt
 		want      []Attempt
 		canonical string
 	}{
 		{
 			name:      "configured second model selected",
-			groups:    configured,
+			kind:      attributionConfigured,
+			expected:  configured,
 			decisions: []fallback.Attempt{failed(1, "native", "ignored"), failed(2, "native", "ignored"), selected(3, "native", "ignored")},
 			canonical: "first",
 			want: []Attempt{
@@ -150,25 +150,29 @@ func TestProjectGroups_ModelGroups(t *testing.T) {
 		},
 		{
 			name:      "requested model filtered out keeps its canonical identity",
-			groups:    configured[1:],
+			kind:      attributionConfigured,
+			expected:  configured[2:],
 			decisions: []fallback.Attempt{selected(1, "native", "ignored")},
 			canonical: "first",
 			want:      []Attempt{{Provider: "anthropic", ModelID: "b1", ProviderInstance: "three", Outcome: fallback.AttemptSelected}},
 		},
 		{
 			name:      "configured attempts outnumber candidates",
-			groups:    configured,
+			kind:      attributionConfigured,
+			expected:  configured,
 			canonical: "first",
 			decisions: []fallback.Attempt{failed(1, "n", "m"), failed(2, "n", "m"), failed(3, "n", "m"), selected(4, "n", "m")},
 		},
 		{
 			name:      "configured selection without canonical identity",
-			groups:    configured,
+			kind:      attributionConfigured,
+			expected:  configured,
 			decisions: []fallback.Attempt{selected(1, "n", "m")},
 		},
 		{
 			name:      "accounts second model selected",
-			groups:    accounts,
+			kind:      attributionAccounts,
+			expected:  accounts,
 			decisions: []fallback.Attempt{failed(1, "anthropic", "x"), failed(2, "anthropic", "x"), selected(3, "openai", "y")},
 			want: []Attempt{
 				{Provider: "anthropic", ModelID: "x", Outcome: fallback.AttemptFailed},
@@ -178,27 +182,19 @@ func TestProjectGroups_ModelGroups(t *testing.T) {
 		},
 		{
 			name:      "account attempt at another model's position",
-			groups:    accounts,
+			kind:      attributionAccounts,
+			expected:  accounts,
 			decisions: []fallback.Attempt{failed(1, "anthropic", "x"), selected(2, "openai", "y")},
 		},
 		{
 			name:      "account attempts outnumber accounts",
-			groups:    accounts,
+			kind:      attributionAccounts,
+			expected:  accounts,
 			decisions: []fallback.Attempt{failed(1, "anthropic", "x"), failed(2, "anthropic", "x"), failed(3, "openai", "y"), selected(4, "openai", "y")},
-		},
-		{
-			name:      "mixed group kinds",
-			groups:    []modelGroup{configured[0], accounts[1]},
-			decisions: []fallback.Attempt{selected(1, "openai", "a1")},
-		},
-		{
-			name:      "open group among others",
-			groups:    []modelGroup{{requested: "alias", canonical: "first"}, configured[1]},
-			decisions: []fallback.Attempt{selected(1, "openai", "a1")},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := projectGroups("alias", tc.canonical, tc.decisions, tc.groups)
+			got := projectExpected("alias", tc.canonical, tc.decisions, tc.kind, tc.expected)
 			if tc.want == nil {
 				assert.Nil(t, got)
 				return
@@ -213,7 +209,7 @@ func TestProjectGroups_ModelGroups(t *testing.T) {
 					require.NotNil(t, attempt.Error)
 					assert.Equal(t, "overloaded", attempt.Error.Message)
 				}
-				attempt.Error = nil
+				attempt.Error, attempt.fallbackModel, attempt.fallbackCanonical = nil, "", ""
 				assert.Equal(t, want, attempt)
 			}
 		})
@@ -239,10 +235,10 @@ func TestAttemptCapture_ConcurrentModelGroups(t *testing.T) {
 			if err != nil {
 				return
 			}
-			selected := ConfiguredSelection("first", chain, []ConfiguredModel{
-				{RequestedID: "alias", CanonicalID: "first", Candidates: []catalog.ConfiguredCandidate{{Provider: "openai", ModelID: "a1", ProviderInstance: "one"}}},
-				{RequestedID: "second", CanonicalID: "second", Candidates: []catalog.ConfiguredCandidate{{Provider: "anthropic", ModelID: "b1", ProviderInstance: "two"}}},
-			})
+			selected := ConfiguredSelection("first", chain, slices.Concat(
+				configuredAttempts("alias", "first", catalog.ConfiguredCandidate{Provider: "openai", ModelID: "a1", ProviderInstance: "one"}),
+				configuredAttempts("second", "second", catalog.ConfiguredCandidate{Provider: "anthropic", ModelID: "b1", ProviderInstance: "two"}),
+			))
 			attempts := newAttemptCapture("alias", selected, SummaryRedactor{})
 			attempts.enter()
 			_, err = chain.DoGenerate(attempts.withObserver(t.Context()), provider.CallOptions{})
@@ -266,11 +262,11 @@ func TestAttemptCapture_ConcurrentModelGroups(t *testing.T) {
 }
 
 func TestConfiguredSelection_Identity(t *testing.T) {
-	candidates := []catalog.ConfiguredCandidate{{Provider: "openai", ModelID: "a1", ProviderInstance: "one"}}
-	selected := ConfiguredSelection("first", &generateModel{modelID: "a1"}, []ConfiguredModel{{RequestedID: "alias", CanonicalID: "first", Candidates: candidates}})
-	candidates[0].ModelID = "mutated"
+	expected := configuredAttempts("alias", "first", catalog.ConfiguredCandidate{Provider: "openai", ModelID: "a1", ProviderInstance: "one"})
+	selected := ConfiguredSelection("first", &generateModel{modelID: "a1"}, expected)
+	expected[0].Destination.ModelID = "mutated"
 	assert.Equal(t, "first", selected.ID)
 	assert.True(t, validSelection(selected))
-	assert.Equal(t, "a1", selected.groups[0].candidates[0].ModelID)
+	assert.Equal(t, "a1", selected.expected[0].Destination.ModelID)
 	assert.False(t, validSelection(ConfiguredSelection("", &generateModel{}, nil)))
 }

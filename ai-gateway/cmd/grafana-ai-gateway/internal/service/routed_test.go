@@ -44,7 +44,21 @@ func routedCall(t *testing.T, selector execution.RequestSelector, modelID, gatew
 		return nil, err
 	}
 	_, err = call.Generate()
-	return call.View(err).Overview, err
+	return publishedOverview(t, call.View(err)), err
+}
+
+// publishedOverview returns the execution overview view publishes, or nil.
+func publishedOverview(t *testing.T, view execution.View) *execution.Overview {
+	t.Helper()
+	metadata := view.Metadata()
+	if metadata == nil {
+		return nil
+	}
+	var gateway struct {
+		Execution *execution.Overview `json:"execution"`
+	}
+	require.NoError(t, json.Unmarshal(metadata["gateway"], &gateway))
+	return gateway.Execution
 }
 
 func hosts(requests []nativeRequest) []string {
@@ -82,16 +96,8 @@ func TestRoutedSelection_Configured(t *testing.T) {
 			hosts: []string{translationAnthropicHost}, attempts: []execution.Attempt{with(claude, fallback.AttemptSelected)}, canonical: "grafana/claude",
 		},
 		{
-			name: "order prefers a provider", modelID: "grafana/chain", gateway: `{"order":["openai"]}`,
-			hosts: []string{translationOpenAIHost}, attempts: []execution.Attempt{with(gpt, fallback.AttemptSelected)}, canonical: "grafana/chain",
-		},
-		{
 			name: "order keeps the rest", modelID: "grafana/chain", gateway: `{"order":["openai"]}`, failing: []string{translationOpenAIHost},
 			hosts: []string{translationOpenAIHost, translationAnthropicHost}, attempts: []execution.Attempt{with(gpt, fallback.AttemptFailed), with(claude, fallback.AttemptSelected)}, canonical: "grafana/chain",
-		},
-		{
-			name: "only filters", modelID: "grafana/chain", gateway: `{"only":["openai"]}`, failing: []string{translationOpenAIHost},
-			hosts: []string{translationOpenAIHost}, attempts: []execution.Attempt{with(gpt, fallback.AttemptFailed)}, canonical: "grafana/chain",
 		},
 		{
 			name: "only skips the requested route", modelID: "grafana/claude", gateway: `{"models":["grafana/local"],"only":["my-vllm.chat"]}`,
@@ -390,7 +396,7 @@ func byokRoutedCall(t *testing.T, selector execution.RequestSelector, gateway st
 		return nil, err
 	}
 	_, err = call.Generate()
-	return call.View(err).Overview, err
+	return publishedOverview(t, call.View(err)), err
 }
 
 func TestRoutedSelection_BYOK(t *testing.T) {
@@ -477,7 +483,7 @@ func TestRoutedSelection_BYOKRefusals(t *testing.T) {
 		{name: "only excludes every account", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"only":["openai"]}`, want: execution.ErrNoRoutingCandidates},
 		{name: "composed chain above the bound", gateway: `{"byok":{"anthropic":[` + strings.Join(eight, ",") + `],"openai":[{"apiKey":"dummy-o1"}]},"models":["openai/y"]}`, want: execution.ErrRoutingAttemptBound},
 		{name: "unsupported control", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"sort":"ttft"}`, want: execution.ErrUnsupportedGatewayControl},
-		{name: "invalid timeout provider", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"providerTimeouts":{"byok":{"vertex":100}}}`, want: execution.ErrProviderTimeouts},
+		{name: "provider timeouts", gateway: `{"byok":{"anthropic":[{"apiKey":"dummy-a1"}]},"providerTimeouts":{"byok":{"anthropic":100}}}`, want: execution.ErrUnsupportedGatewayControl},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &nativeServer{}

@@ -14,10 +14,9 @@
 // service module and never retries Gateway requests itself.
 //
 // GatewayOptions sends Gateway host controls under providerOptions.gateway:
-// fallback models, provider order and filters, request-supplied accounts and
-// their provider start timeouts. GatewayMetadataFrom and
-// GatewayMetadataFromError read the Gateway's execution and routing
-// attribution from returned provider metadata and errors.
+// fallback models, provider order and filters, and request-supplied accounts.
+// The Gateway's execution and routing attribution is returned unchanged under
+// providerMetadata.gateway.
 //
 // The Gateway owns response and stream size limits, so the client has no
 // configurable limits. Callers bound requests through their http.Client and the

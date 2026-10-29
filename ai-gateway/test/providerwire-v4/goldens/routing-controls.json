@@ -52,12 +52,6 @@
                 "apiKey": "dummy-openai-second"
               }
             ]
-          },
-          "providerTimeouts": {
-            "byok": {
-              "anthropic": 2000,
-              "openai": 5000
-            }
           }
         },
         "anthropic": {
@@ -119,12 +113,6 @@
                 "apiKey": "dummy-openai-second"
               }
             ]
-          },
-          "providerTimeouts": {
-            "byok": {
-              "anthropic": 2000,
-              "openai": 5000
-            }
           }
         },
         "anthropic": {
