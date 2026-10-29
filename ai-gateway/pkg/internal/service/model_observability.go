@@ -1,0 +1,372 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"log/slog"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/grafana/agento11y/go/agento11y"
+	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
+	"github.com/grafana/ai-sdk/middleware"
+	agentmiddleware "github.com/grafana/ai-sdk/middleware/agentobservability"
+	logmiddleware "github.com/grafana/ai-sdk/middleware/logger"
+	metricsmiddleware "github.com/grafana/ai-sdk/middleware/prometheus"
+	"github.com/grafana/ai-sdk/provider"
+)
+
+const maxAgentDiagnosticBytes = 2048
+
+// AgentObservabilityRuntime owns the optional process-wide recording client.
+type AgentObservabilityRuntime struct {
+	client     *agento11y.Client
+	telemetry  *Telemetry
+	mu         sync.Mutex
+	recordings sync.WaitGroup
+	closing    bool
+	closeOnce  sync.Once
+}
+
+// agentExportTuning holds the exporter's queueing, batching and retry policy.
+type agentExportTuning struct {
+	queueSize       int
+	batchSize       int
+	payloadMaxBytes int
+	maxRetries      int
+	initialBackoff  time.Duration
+	maxBackoff      time.Duration
+	exportTimeout   time.Duration
+	flushInterval   time.Duration
+}
+
+var defaultAgentExportTuning = agentExportTuning{
+	queueSize:       2000,
+	batchSize:       100,
+	payloadMaxBytes: 16 << 20,
+	maxRetries:      5,
+	initialBackoff:  100 * time.Millisecond,
+	maxBackoff:      5 * time.Second,
+	exportTimeout:   10 * time.Second,
+	flushInterval:   time.Second,
+}
+
+// NewAgentObservabilityRuntime consumes prevalidated settings and the
+// resolved bearer credential and constructs one metadata-only hooks-disabled
+// client. Callers reject the SDK's ambient configuration layer first. A disabled development
+// configuration returns a no-op runtime.
+func NewAgentObservabilityRuntime(settings config.AgentObservabilitySettings, secret string, telemetry *Telemetry) (*AgentObservabilityRuntime, error) {
+	return newAgentObservabilityRuntime(settings, secret, telemetry, defaultAgentExportTuning)
+}
+
+func newAgentObservabilityRuntime(settings config.AgentObservabilitySettings, secret string, telemetry *Telemetry, tuning agentExportTuning) (runtime *AgentObservabilityRuntime, err error) {
+	if telemetry == nil {
+		return nil, fmt.Errorf("gateway service: telemetry is required")
+	}
+	runtime = &AgentObservabilityRuntime{
+		telemetry: telemetry,
+	}
+	if !settings.Enabled {
+		return runtime, nil
+	}
+	protocol := agento11y.GenerationExportProtocolGRPC
+	if settings.Protocol == config.AgentObservabilityHTTP {
+		protocol = agento11y.GenerationExportProtocolHTTP
+	}
+	insecure := !settings.TLS
+	clientConfig := agento11y.Config{
+		GenerationExport: agento11y.GenerationExportConfig{
+			Protocol:                   protocol,
+			Endpoint:                   settings.Endpoint,
+			Auth:                       agento11y.AuthConfig{Mode: agento11y.ExportAuthModeBearer, BearerToken: secret},
+			Insecure:                   new(insecure),
+			GRPCMaxSendMessageBytes:    tuning.payloadMaxBytes,
+			GRPCMaxReceiveMessageBytes: tuning.payloadMaxBytes,
+			BatchSize:                  tuning.batchSize,
+			FlushInterval:              tuning.flushInterval,
+			QueueSize:                  tuning.queueSize,
+			MaxRetries:                 tuning.maxRetries,
+			InitialBackoff:             tuning.initialBackoff,
+			MaxBackoff:                 tuning.maxBackoff,
+			PayloadMaxBytes:            tuning.payloadMaxBytes,
+			ExportTimeout:              tuning.exportTimeout,
+		},
+		EnableExperimentalFeatures: new(false),
+		Hooks:                      agento11y.HooksConfig{Enabled: false},
+		ContentCapture:             agento11y.ContentCaptureModeMetadataOnly,
+		Debug:                      new(false),
+		Logger:                     log.New(agentDiagnosticWriter{telemetry: telemetry}, "", 0),
+	}
+	defer func() {
+		if recover() != nil {
+			runtime = nil
+			err = fmt.Errorf("gateway service: constructing agent observability client failed")
+		}
+	}()
+	runtime.client = agento11y.NewClient(clientConfig)
+	return runtime, nil
+}
+
+// Close waits for in-flight recordings, flushes and shuts the client down.
+// Each step ends at ctx's deadline or its configured timeout, whichever is
+// first, and later recordings are dropped. It never returns raw SDK errors to
+// process logging.
+func (runtime *AgentObservabilityRuntime) Close(ctx context.Context) {
+	if runtime == nil || runtime.client == nil {
+		return
+	}
+	runtime.closeOnce.Do(func() {
+		runtime.mu.Lock()
+		runtime.closing = true
+		runtime.mu.Unlock()
+		if !runtime.waitForRecordings(ctx) {
+			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
+		}
+		if err := runtime.client.Flush(ctx); err != nil {
+			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
+		}
+		if err := runtime.client.Shutdown(ctx); err != nil {
+			runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
+		}
+	})
+}
+
+func (runtime *AgentObservabilityRuntime) acquireClient(context.Context) *agento11y.Client {
+	if runtime == nil {
+		return nil
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if runtime.client == nil {
+		return nil
+	}
+	if runtime.closing {
+		runtime.telemetry.observeAgentExportFailure(agentExportFailureShutdown)
+		return nil
+	}
+	runtime.recordings.Add(1)
+	return runtime.client
+}
+
+func (runtime *AgentObservabilityRuntime) recordingComplete() {
+	runtime.recordings.Done()
+}
+
+func (runtime *AgentObservabilityRuntime) waitForRecordings(ctx context.Context) bool {
+	done := make(chan struct{})
+	go func() {
+		runtime.recordings.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (runtime *AgentObservabilityRuntime) recordError(err error) {
+	if runtime == nil || err == nil {
+		return
+	}
+	class := agentExportFailureUnknown
+	switch {
+	case errors.Is(err, agento11y.ErrQueueFull):
+		class = agentExportFailureQueue
+	case errors.Is(err, agento11y.ErrValidationFailed):
+		class = agentExportFailureSerialization
+	case errors.Is(err, agento11y.ErrClientShutdown):
+		class = agentExportFailureShutdown
+	}
+	runtime.telemetry.observeAgentExportFailure(class)
+}
+
+type agentDiagnosticWriter struct {
+	telemetry *Telemetry
+}
+
+func (writer agentDiagnosticWriter) Write(message []byte) (int, error) {
+	class := agentExportFailureClass("")
+	diagnosticBytes := message
+	if len(diagnosticBytes) > maxAgentDiagnosticBytes {
+		diagnosticBytes = diagnosticBytes[:maxAgentDiagnosticBytes]
+	}
+	diagnostic := strings.ToLower(string(diagnosticBytes))
+	switch {
+	case strings.HasPrefix(diagnostic, "agento11y generation rejected id="):
+		// The SDK also emits one terminal batch failure for these details.
+		// Ignore the per-generation line to avoid double counting a rejection.
+		return len(message), nil
+	case strings.HasPrefix(diagnostic, "agento11y generation export failed: generation export rejected:"):
+		class = agentExportFailureRejected
+	case strings.HasPrefix(diagnostic, "agento11y: generation sanitization failed"),
+		strings.HasPrefix(diagnostic, "agento11y metric instrument init failed"):
+		class = agentExportFailureSerialization
+	case strings.HasPrefix(diagnostic, "agento11y export flush on shutdown failed"):
+		class = agentExportFailureShutdown
+	case strings.HasPrefix(diagnostic, "agento11y generation export failed"),
+		strings.HasPrefix(diagnostic, "agento11y generation exporter init failed"):
+		class = agentExportFailureTransport
+	case strings.Contains(diagnostic, "failed"), strings.Contains(diagnostic, "failure"):
+		class = agentExportFailureUnknown
+	default:
+		return len(message), nil
+	}
+	writer.telemetry.observeAgentExportFailure(class)
+	return len(message), nil
+}
+
+// NewModelObservabilityFactory constructs shared middleware once and returns a
+// catalog factory that adds the fixed logical chain around each lower model.
+func NewModelObservabilityFactories(telemetry *Telemetry, logger *slog.Logger, runtime *AgentObservabilityRuntime, drainTimeout time.Duration) (ModelFactory, ModelFactory, error) {
+	if telemetry == nil || logger == nil || drainTimeout <= 0 {
+		return nil, nil, fmt.Errorf("gateway service: invalid model observability dependency")
+	}
+	metrics, err := metricsmiddleware.Middleware(metricsmiddleware.Options{
+		Registerer:                telemetry.Registerer(),
+		IdentitySource:            metricsmiddleware.IdentityRequested,
+		StreamDrainTimeout:        drainTimeout,
+		DisableStreamChunkMetrics: false,
+		NormalizeModel: func(provider, model string) string {
+			if provider != "grafana" {
+				return "byok"
+			}
+			return model
+		},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("gateway service: registering model metrics: %w", err)
+	}
+	loggerOptions := logmiddleware.Options{
+		Logger:             logger,
+		DynamicAttrs:       observationLogAttrs,
+		Redactor:           closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.ConfiguredAccounts),
+		IdentitySource:     logmiddleware.IdentityRequested,
+		StreamDrainTimeout: drainTimeout,
+	}
+	chain := modelObservationChain{
+		contextBridge:    observationBridgeMiddleware(),
+		structuredLogger: logmiddleware.Middleware(loggerOptions),
+		prometheus:       metrics,
+	}
+	if runtime != nil && runtime.client != nil {
+		recording := agentmiddleware.RecordingMiddleware(agentmiddleware.RecordingOptions{
+			IdentitySource:     agentmiddleware.IdentityRequested,
+			ContextSource:      agentmiddleware.ContextProvidedOnly,
+			StreamDrainTimeout: drainTimeout,
+			ClientResolver:     runtime.acquireClient,
+			ContextProvider: func(ctx context.Context) agentmiddleware.ContextInfo {
+				return agentmiddleware.ContextInfo{Metadata: observationMetadata(ctx)}
+			},
+			GenerationFilter: filterAgentGeneration,
+			OnRecordError:    runtime.recordError,
+			OnRecordComplete: runtime.recordingComplete,
+		})
+		chain.agentRecording = &recording
+	}
+
+	configured := func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+		return chain.wrap(canonicalID, lower)
+	}
+	byokChain := chain
+	loggerOptions.Redactor = closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.RequestBYOK)
+	byokChain.structuredLogger = logmiddleware.Middleware(loggerOptions)
+	byok := func(requestID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+		identity := middleware.Wrap(middleware.WrapOptions{Model: lower, ProviderID: lower.Provider(), ModelID: requestID})
+		return byokChain.observe(identity), nil
+	}
+	return configured, byok, nil
+}
+
+type modelObservationChain struct {
+	contextBridge    middleware.Middleware
+	agentRecording   *middleware.Middleware
+	structuredLogger middleware.Middleware
+	prometheus       middleware.Middleware
+}
+
+func (chain modelObservationChain) wrap(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+	identity, err := identityModelFactory(canonicalID, lower)
+	if err != nil {
+		return nil, err
+	}
+	return chain.observe(identity), nil
+}
+
+func (chain modelObservationChain) observe(identity provider.LanguageModel) provider.LanguageModel {
+	observers := make([]middleware.Middleware, 0, 4)
+	observers = append(observers, chain.contextBridge)
+	if chain.agentRecording != nil {
+		observers = append(observers, *chain.agentRecording)
+	}
+	observers = append(observers, chain.structuredLogger, chain.prometheus)
+	return middleware.Wrap(middleware.WrapOptions{Model: identity, Middleware: observers})
+}
+
+var allowedAgentMetadataKeys = map[string]struct{}{
+	"gateway.correlation_id": {},
+	"gateway.caller_service": {},
+	"gateway.namespace":      {},
+}
+
+// filterAgentGeneration removes every metadata/tag/identity field not owned by
+// the Gateway observation contract. Content structure remains intact for the
+// client's metadata-only transformation, while provider options and raw usage
+// metadata are discarded in favor of normalized Generation.Usage.
+func filterAgentGeneration(input agentmiddleware.GenerationFilterInput) agento11y.Generation {
+	generation := input.Generation
+	generation.Usage.InputSemantics = agento11y.TokenInputSemanticsInclusive
+	metadata := make(map[string]any, len(allowedAgentMetadataKeys))
+	for key := range allowedAgentMetadataKeys {
+		value, ok := generation.Metadata[key]
+		if !ok {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok || boundedObservationValue(text) == "" {
+			continue
+		}
+		metadata[key] = text
+	}
+	generation.Metadata = metadata
+	generation.Tags = nil
+	generation.UserID = ""
+	generation.AgentName = ""
+	generation.AgentVersion = ""
+	generation.ResponseID = ""
+	generation.ResponseModel = ""
+	generation.ConversationID = ""
+	generation.ConversationTitle = ""
+	generation.ParentGenerationIDs = nil
+	generation.MaxTokens = nil
+	generation.Temperature = nil
+	generation.TopP = nil
+	generation.ToolChoice = nil
+	generation.Tools = nil
+	generation.Input = nil
+	generation.Output = nil
+	generation.ThinkingEnabled = nil
+	generation.EffectiveVersion = ""
+	generation.CallError = ""
+	generation.StopReason = unifiedAgentStopReason(input.FinishReason)
+	return generation
+}
+
+func unifiedAgentStopReason(reason provider.FinishReason) string {
+	switch reason.Unified {
+	case provider.FinishReasonStop,
+		provider.FinishReasonLength,
+		provider.FinishReasonContentFilter,
+		provider.FinishReasonToolCalls,
+		provider.FinishReasonError,
+		provider.FinishReasonOther:
+		return string(reason.Unified)
+	default:
+		return ""
+	}
+}

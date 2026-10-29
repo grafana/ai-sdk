@@ -11,14 +11,14 @@ credentials for each request (BYOK).
 The protocol the client speaks and the provider the Gateway calls are separate
 choices. They still need compatible capabilities: translating a request does
 not make a provider support another provider's tools or options. This walkthrough
-follows the runnable `grafana-ai-gateway` command. For setup, see
+follows the Gateway plugin backend in `ai-gateway/pkg`. For setup, see
 [calling Gateway](../providers/grafana-gateway.md) and
 [installing the plugin](../../ai-gateway/README.md). Unfamiliar terms have
 [definitions and aliases in the glossary](gateway-glossary.md).
 
 ## The pieces and their boundaries
 
-The shipped command accepts **ProviderWire V4**, the model-call protocol used by
+The shipped plugin backend accepts **ProviderWire V4**, the model-call protocol used by
 the Go Grafana provider and the server-side Vercel Gateway client. It is not the
 browser UI message stream protocol. A Go application can consume Gateway output
 and then produce a separate [UI message stream](wire-protocol.md) for React.
@@ -32,7 +32,7 @@ flowchart LR
     go[Go Grafana provider]
     ts[Vercel Gateway client]
   end
-  subgraph gateway[Grafana AI Gateway command]
+  subgraph gateway[Grafana AI Gateway plugin backend]
     host[HTTP routing and authentication]
     subgraph ingress[Inbound protocol]
       pw[ProviderWire V4 decoder and response encoder]
@@ -65,7 +65,7 @@ flowchart LR
   routing --> compatible --> apis
 ```
 
-The command composes its routes from one route table. Each entry names a
+The plugin backend composes its routes from one route table. Each entry names a
 method, a path under the prefix `/apis/{group}/{version}/namespaces/{namespace}`,
 a telemetry label, the adapter's handler and the adapter's host-error writer.
 Every entry gets the same access decision and request telemetry, and a refused
@@ -83,10 +83,10 @@ models into its document. The
 supplies and what the host provides. The plugin host owns transport and any
 operational endpoints, so there are no separate listeners and no `/live`,
 `/ready`, or `/metrics` routes here. See the
-[routes](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/routes.go) and
-[plugin composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/gateway.go).
+[routes](../../ai-gateway/pkg/internal/gateway/routes.go) and
+[plugin composition](../../ai-gateway/pkg/internal/gateway/gateway.go).
 
-**Other inbound protocols are not wired into this command.** In particular,
+**Other inbound protocols are not wired into this plugin backend.** In particular,
 `/v1/chat/completions`, `/v1/messages`, and `/v1/responses` are not registered
 routes. An outbound Anthropic provider does not establish Claude Code support;
 an outbound Responses provider does not establish Codex support. Those clients
@@ -137,7 +137,7 @@ sequenceDiagram
    or refused access. The delegated identity names the caller; provider
    credentials authorize the later native API call. See
    [authentication](../guides/gateway-authentication.md) and the
-   [access decision](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access.go).
+   [access decision](../../ai-gateway/pkg/internal/auth/access.go).
 2. **ProviderWire translates the request.** The handler validates protocol
    headers, reads the whole body, which the platform's route message size
    bounds, checks UTF-8 and the request schema, and maps
@@ -156,7 +156,7 @@ sequenceDiagram
    caller, so each adapter needs one runtime. For configured access it
    delegates to `CatalogSelector` to resolve `assistant` or an alias to its
    canonical model. This private path rejects reserved Gateway controls; its
-   caller cannot switch to request accounts. See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go),
+   caller cannot switch to request accounts. See [service selection](../../ai-gateway/pkg/internal/service/selection.go),
    [catalog selection](../../ai-gateway/internal/execution/selection.go), and the
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** Logical observation surrounds the
@@ -168,8 +168,8 @@ sequenceDiagram
    options into its provider's HTTP request and converts the response back into
    SDK values. Native options remain provider-specific; not every candidate
    consumes every namespace. See
-   [catalog construction](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/catalog.go)
-   and [model observation](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/model_observability.go).
+   [catalog construction](../../ai-gateway/pkg/internal/service/catalog.go)
+   and [model observation](../../ai-gateway/pkg/internal/service/model_observability.go).
 5. **ProviderWire returns the result.** Unary calls use `DoGenerate`, then map
    and encode the complete response once before writing success. Streaming calls use `DoStream` and the lifecycle below. This handler
    does not run the SDK's application tool loop: consumer-owned function calls
@@ -194,7 +194,7 @@ Configured Gateway fallback uses the default
 eligible setup failure or a stream that closes before its first part. The first
 received part selects the candidate, even if it is only `stream-start` or an
 error event. Later errors do not restart the chain. The SDK also offers opt-in
-complete-stream buffering, but the command's catalog does not enable it.
+complete-stream buffering, but the plugin backend's catalog does not enable it.
 
 ```mermaid
 flowchart TD
@@ -270,7 +270,7 @@ summary redaction is not a general filter for generated content or secrets.
 
 ## Existing code versus deployed capabilities
 
-The command serves two account paths through one selector and one runtime.
+The plugin backend serves two account paths through one selector and one runtime.
 The access decision chooses the path from the `access_mode` and the verified
 token, not from a caller choosing a different model name:
 
@@ -280,25 +280,25 @@ token, not from a caller choosing a different model name:
   service. They cannot switch to request accounts.
 - **BYOK:** in `cloud` mode, other verified identities get request-scoped
   access; the selector decodes the provider/model destination and credentials
-  from the call-level `gateway.byok` controls. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
+  from the call-level `gateway.byok` controls. The [BYOK engine](../../ai-gateway/pkg/internal/byok/model.go)
   constructs an Anthropic or OpenAI model with request-local accounts and
   observation, and the selection carries the destination and account count
   that the BYOK execution overview is checked against. It does not consult the
   configured catalog or fall back to server-held keys. This host supplies no custom base-URL approval map.
 
-See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go)
+See [service selection](../../ai-gateway/pkg/internal/service/selection.go)
 and [authentication configuration](../guides/gateway-authentication.md).
 `Decide` refuses a token whose namespace does not cover the route namespace, so
 a caller cannot reach another namespace's account path. Source and synthetic
 tests establish service wiring, not production network isolation or live-provider
 acceptance.
-Reusable middleware supports policy hooks, but this command does not install
+Reusable middleware supports policy hooks, but this plugin backend does not install
 every available SDK policy or an aggregate admission controller.
 
 This walkthrough is grounded in the router, process composition, handler, and
 catalog linked above. Useful regression evidence includes
-[access decision tests](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access_test.go),
-[configured fallback tests](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/fallback_acceptance_test.go),
+[access decision tests](../../ai-gateway/pkg/internal/auth/access_test.go),
+[configured fallback tests](../../ai-gateway/pkg/internal/service/fallback_acceptance_test.go),
 and [stream lifecycle tests](../../ai-gateway/providerwire/v4/stream_test.go).
 The [parity coverage map](../../test/conformance/PARITY.md) distinguishes client
 protocol evidence, synthetic native-provider tests, and live-provider evidence.

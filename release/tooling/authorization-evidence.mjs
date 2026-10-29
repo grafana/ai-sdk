@@ -3,6 +3,7 @@ import { REPO, REPOSITORY_ID, BOT_ID, SHA } from './merged-candidates.mjs';
 
 export const SOURCE_JOBS = ['ci', 'race', 'docs-lint', 'module-resolution',
   'parity-baseline', 'integration-test', 'conformance-test'];
+export const GATEWAY_PUBLICATION_JOBS = [...SOURCE_JOBS, 'Validate AI Gateway plugin'];
 
 export function verifyMergedIdentity(candidate, head) {
   const { pr } = candidate;
