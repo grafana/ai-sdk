@@ -204,10 +204,10 @@ flowchart TD
   setup -->|usable stream returned| commit[Commit HTTP 200 and SSE headers]
   commit --> read[Read and validate provider parts]
   commit -->|flush failure| cleanup
-  read -->|valid part| frame[Encode complete SSE frame and flush]
+  read -->|valid part, including a finish| frame[Encode complete SSE frame and flush]
   frame -->|continue| read
-  frame -->|valid finish| cleanup[Cancel model context and bounded drain]
-  read -->|terminal failure or cancellation| terminal[Attempt terminal SSE error]
+  read -->|provider close after a finish| cleanup[Cancel model context and bounded drain]
+  read -->|terminal failure, premature close, idle, deadline or cancellation| terminal[Attempt terminal SSE error]
   terminal --> cleanup
   frame -->|write or flush failure| cleanup
 ```
@@ -219,6 +219,13 @@ each part and owns the idle timer and cleanup. The
 [ProviderWire stream encoder](../../ai-gateway/providerwire/v4/stream.go) supplies an empty
 `stream-start` when needed, checks event ordering and validity, and writes
 complete `data: <JSON>` frames separated by a blank line.
+
+One provider stream can carry several native responses or messages. Each
+`response-metadata` part starts a response segment and each `finish` ends one,
+so a stream may contain several of both. A `finish` does not end the stream:
+the stream ends when the provider closes it, and that close is clean only
+when the last part other than raw parts and provider errors is a `finish`. Idle time, the deadline and cancellation still end
+with their terminal error, even after a written `finish`.
 
 A provider error event can be followed by more content and a valid finish. It
 is different from a handler-terminal failure such as invalid ordering,

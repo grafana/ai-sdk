@@ -35,4 +35,26 @@ describe("provider error after partial output", () => {
       });
     }
   });
+
+  it("reports an error after a finish as the finish reason", async () => {
+    const response = await fetchScenario("ui-stream-error-after-finish");
+    expect(response.status).toBe(200);
+    const chunks: UIMessageChunk[] = [];
+    for await (const parsed of parseJsonEventStream({ stream: response.body!, schema: uiMessageChunkSchema })) {
+      expect(parsed.success).toBe(true);
+      if (parsed.success) chunks.push(parsed.value);
+    }
+    expect(chunks.map(chunk => chunk.type)).toEqual(["start", "start-step", "text-start", "text-delta", "text-end", "error", "finish-step", "finish"]);
+    expect(chunks.filter(chunk => chunk.type === "error")).toEqual([{ type: "error", errorText: "intentional stream error" }]);
+    expect(chunks.at(-1)).toEqual({ type: "finish", finishReason: "error" });
+
+    const errors: unknown[] = [];
+    let message: UIMessage | undefined;
+    for await (const next of readUIMessageStream({
+      stream: new ReadableStream<UIMessageChunk>({ start(controller) { chunks.forEach(chunk => controller.enqueue(chunk)); controller.close(); } }),
+      onError: error => errors.push(error),
+    })) message = next;
+    expect(errors).toHaveLength(1);
+    expect(message?.parts.find(part => part.type === "text")).toMatchObject({ text: "complete", state: "done" });
+  });
 });
