@@ -90,7 +90,7 @@ Each numbered group is one commit. In every group, write the tests first and con
 
 The Go capture serializes `APICallError.statusCode` as `0` (no `omitempty` at `provider/api_call_error.go:30`; whole parts emitted at `providers/grafana/internal/capture/main.go:184`), while the TS client has no `statusCode`. Every cross-client normalizer in 6.1 and 6.3, including the one at `go-client-differential.test.ts:467`, must treat `0` as absent.
 
-- [ ] 6.1 Add a status-less testserver scenario in `ai-gateway/test/providerwire-v4/testserver/providerwire_v4.go` and register it in the model list (`:473`). It emits, in order:
+- [x] 6.1 Add a status-less testserver scenario in `ai-gateway/test/providerwire-v4/testserver/providerwire_v4.go` and register it in the model list (`:473`). It emits, in order:
   - stream-start;
   - a value-less raw part;
   - a status-0 error with a hostile native message;
