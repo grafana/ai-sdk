@@ -155,7 +155,7 @@ Adapters SHALL NOT own output lifecycle rules. They own checks about their own r
 ## MODIFIED Requirements
 
 ### Requirement: Shared adapter runtime
-Every Gateway API adapter SHALL execute language-model requests through the shared execution runtime. The runtime SHALL NOT write HTTP responses, set status codes or headers, or encode wire documents. Adapters SHALL own representation, encoding, framing, response commitment and error documents. The runtime SHALL own output lifecycle validation. The runtime SHALL NOT be a public Go package.
+Every Gateway API adapter SHALL execute language-model requests through the shared execution runtime. The runtime SHALL NOT write HTTP responses, set status codes or headers, or encode wire documents. Adapters SHALL own representation, encoding, framing, response commitment, error documents and their own protocol state machine. The runtime SHALL own provider output lifecycle validation. The runtime SHALL NOT be a public Go package.
 
 #### Scenario: Runtime outcomes are protocol-neutral
 - **WHEN** a call fails or succeeds through the runtime
