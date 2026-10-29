@@ -545,6 +545,7 @@ func validStreamUnifiedFinishReason(reason provider.UnifiedFinishReason) bool {
 		provider.FinishReasonContentFilter,
 		provider.FinishReasonToolCalls,
 		provider.FinishReasonError,
+		provider.FinishReasonInterrupted,
 		provider.FinishReasonOther:
 		return true
 	default:

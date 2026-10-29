@@ -9,6 +9,7 @@ import (
 
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/auth"
 	logmiddleware "github.com/grafana/ai-sdk/middleware/logger"
+	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -96,4 +97,19 @@ func TestClosedModelLogRedactor_DelegatePanicFailsClosed(t *testing.T) {
 	})
 	assert.Empty(t, attrs)
 	assert.Empty(t, closedModelLogRedactor(nil, gatewayauth.ConfiguredAccounts).RedactAttrs(context.Background(), logmiddleware.EventGenerateError, nil))
+}
+
+func TestAllowModelLogAttrs_FinishReasons(t *testing.T) {
+	for _, reason := range []provider.UnifiedFinishReason{
+		provider.FinishReasonStop,
+		provider.FinishReasonLength,
+		provider.FinishReasonContentFilter,
+		provider.FinishReasonToolCalls,
+		provider.FinishReasonError,
+		provider.FinishReasonInterrupted,
+		provider.FinishReasonOther,
+	} {
+		attrs := []slog.Attr{slog.String("ai_sdk.finish_reason", string(reason))}
+		assert.Equal(t, attrs, allowModelLogAttrs(attrs, gatewayauth.ConfiguredAccounts), reason)
+	}
 }

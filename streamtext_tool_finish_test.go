@@ -12,7 +12,7 @@ import (
 )
 
 func TestStreamText_ToolExecutionFinishReason(t *testing.T) {
-	for _, reason := range []provider.UnifiedFinishReason{provider.FinishReasonStop, provider.FinishReasonToolCalls, provider.FinishReasonLength, provider.FinishReasonContentFilter, provider.FinishReasonError, provider.FinishReasonOther, ""} {
+	for _, reason := range []provider.UnifiedFinishReason{provider.FinishReasonStop, provider.FinishReasonToolCalls, provider.FinishReasonLength, provider.FinishReasonContentFilter, provider.FinishReasonError, provider.FinishReasonInterrupted, provider.FinishReasonOther, ""} {
 		for _, approval := range []ToolApprovalStatus{ToolApprovalNotApplicable, ToolApprovalApproved, ToolApprovalUserApproval, ToolApprovalDenied} {
 			t.Run(string(reason)+"/"+string(approval), func(t *testing.T) {
 				var requests, executions, decisions atomic.Int32
@@ -54,7 +54,7 @@ func TestStreamText_ToolExecutionFinishReason(t *testing.T) {
 					wantExecutions = 1
 				}
 				wantRequests := int32(1)
-				if wantExecutions == 1 || approval == ToolApprovalDenied {
+				if reason != provider.FinishReasonInterrupted && (wantExecutions == 1 || approval == ToolApprovalDenied) {
 					wantRequests = 2
 				}
 				assert.Equal(t, wantExecutions, executions.Load())
@@ -73,5 +73,51 @@ func TestStreamText_ToolExecutionFinishReason(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestStreamText_InterruptedPreservesOutput(t *testing.T) {
+	for _, choice := range []provider.ToolChoice{{Type: provider.ToolChoiceRequired}, {Type: provider.ToolChoiceTool, ToolName: "lookup"}} {
+		t.Run(string(choice.Type), func(t *testing.T) {
+			usage := &provider.Usage{InputTokens: provider.InputTokenUsage{Total: intPtr(3)}, OutputTokens: provider.OutputTokenUsage{Total: intPtr(2)}}
+			metadata := provider.ProviderMetadata{"test": json.RawMessage(`{"partial":true}`)}
+			model := effectiveToolChoiceModel([]provider.StreamPart{
+				{Type: provider.PartTextStart, ID: "1"},
+				{Type: provider.PartTextDelta, ID: "1", Delta: "Let me check"},
+				{Type: provider.PartTextEnd, ID: "1"},
+				{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonInterrupted}, Usage: usage, ProviderMetadata: metadata},
+			})
+			var errs []error
+			var stepFinishes, finishes []provider.UnifiedFinishReason
+			result := StreamText(t.Context(), model,
+				WithModelMessages(provider.UserText("test")),
+				WithToolChoice(choice),
+				WithTools(ToolSet{"lookup": {}}),
+				OnError(func(err error) { errs = append(errs, err) }),
+				OnStepFinish(func(state OnStepFinishState) { stepFinishes = append(stepFinishes, state.FinishReason.Unified) }),
+				OnFinish(func(state OnFinishState) { finishes = append(finishes, state.FinishReason.Unified) }),
+			)
+			var finishChunk *UIMessageChunk
+			for chunk := range result.ToUIMessageStream() {
+				switch chunk.Type {
+				case ChunkError:
+					t.Fatalf("unexpected error chunk: %s", chunk.ErrorText)
+				case ChunkFinish:
+					finishChunk = &chunk
+				}
+			}
+
+			require.NoError(t, result.Err())
+			assert.Empty(t, errs)
+			assert.Equal(t, "Let me check", result.Text())
+			assert.Equal(t, provider.FinishReason{Unified: provider.FinishReasonInterrupted}, result.FinishReason())
+			assert.Equal(t, *usage, result.Usage())
+			assert.Equal(t, metadata, result.ProviderMetadata())
+			assert.Equal(t, []provider.UnifiedFinishReason{provider.FinishReasonInterrupted}, stepFinishes)
+			assert.Equal(t, []provider.UnifiedFinishReason{provider.FinishReasonInterrupted}, finishes)
+			require.NotNil(t, finishChunk)
+			assert.Equal(t, string(provider.FinishReasonInterrupted), finishChunk.FinishReason)
+			assert.Equal(t, 1, model.callCount)
+		})
 	}
 }

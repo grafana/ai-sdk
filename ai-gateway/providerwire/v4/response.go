@@ -219,6 +219,7 @@ func mapUnarySuccess(result *provider.GenerateResult, contexts ...unaryMappingCo
 		provider.FinishReasonContentFilter,
 		provider.FinishReasonToolCalls,
 		provider.FinishReasonError,
+		provider.FinishReasonInterrupted,
 		provider.FinishReasonOther:
 	default:
 		return unarySuccess{}, errInvalidUnarySuccess
