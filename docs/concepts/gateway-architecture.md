@@ -262,6 +262,54 @@ for access and privacy boundaries, and
 metrics, and exporters. Native diagnostics can contain provider-authored text;
 summary redaction is not a general filter for generated content or secrets.
 
+## Customer telemetry contracts
+
+The internal [customer telemetry package](../../ai-gateway/cmd/grafana-ai-gateway/internal/customertelemetry/doc.go)
+defines validation and policy contracts for future delivery to a customer's own
+stack. It is not connected to request handling: changing a client's Gateway URL
+does not yet activate this delivery. Existing operator telemetry continues through
+the paths described above.
+
+The contracts separate three decisions:
+
+| Decision | Source and boundary |
+| --- | --- |
+| Where can a signal go? | A destination snapshot belongs to the authorized namespace and carries separate endpoints and opaque ingestion identities for generations, traces, metrics, and logs. A missing signal is unavailable. |
+| May it be recorded? | An effective policy combines authoritative signal eligibility, mandatory service limits, and optional customer preferences. An endpoint alone grants no permission. |
+| Which ingestion authority will it use? | A deployment-owned credential reference and rotation version are independent of recording policy. The contract carries no secret and does not reuse caller authentication or provider keys. |
+
+An eligible signal with no customer preference receives the fixed
+`metadata-only-v1` profile. Unknown eligibility, an explicit disablement, and
+failed policy reads cannot enable recording. Expired policies and destinations
+cannot be used for new recording; snapshots from another namespace cannot be
+combined into a delivery target. Future policy resources can supply preferences
+through this boundary without requiring a resource for customers using defaults.
+
+The profile permits metadata-only generations and correlated model spans. It
+excludes prompt, output, reasoning and tool content, raw errors, arbitrary
+attributes, raw request/response data, and private provider/backend details.
+Customer log recording is disabled even if a log destination is available.
+
+The default metric profile is fixed:
+
+| Instrument | Allowed dimensions |
+| --- | --- |
+| `gen_ai.client.operation.duration` | Operation name, closed error classification |
+| `gen_ai.client.token.usage` | Operation name, token type |
+| `gen_ai.client.time_to_first_token` | Operation name |
+
+Dimension values must be normalized classifications, not arbitrary client or
+provider text. No model or customer identity dimension is enabled. Usage and
+first-token measurements depend on available observations; the profile does not
+invent missing values. Expanding captured content, instruments, or dimensions
+requires explicit compatibility review.
+
+These are executable permission contracts, not an exporter implementation or
+proof of Cloud ingestion. Discovery field mappings, transport credentials,
+export filtering, cache refresh, and exporter lifecycle remain separate work.
+No customer settings API, log exporter, full agent-workflow trace, or billing
+accounting is supplied by this package.
+
 ## Existing code versus deployed capabilities
 
 The command serves two account paths through one selector and one runtime.
@@ -299,8 +347,8 @@ protocol evidence, synthetic native-provider tests, and live-provider evidence.
 
 The registered upstream reference is recorded in
 [upstream.yaml](../../test/conformance/upstream.yaml), including
-`@ai-sdk/gateway` 4.0.103 and `@ai-sdk/provider` 4.0.21. The corresponding
-[upstream Gateway client](https://github.com/vercel/ai/blob/eb77f09e3c06c28e860d92e0de941b143c2eecec/packages/gateway/src/gateway-language-model.ts)
+`@ai-sdk/gateway` 4.0.116 and `@ai-sdk/provider` 4.0.29. The corresponding
+[upstream Gateway client](https://github.com/vercel/ai/blob/b7f6255acaae7724adc0fd37aac3dae3f3466578/packages/gateway/src/gateway-language-model.ts)
 serializes model calls and reads JSON or SSE. It establishes the client-facing
 protocol, not Vercel's private hosted-service implementation or Grafana's
 routing policy.
