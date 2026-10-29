@@ -7,6 +7,12 @@
 // capabilities are rejected before provider invocation, and unsupported stream
 // part families terminate through the closed safe-error dialect.
 //
+// A stream may carry several response segments. Each response-metadata part
+// starts a segment and each finish ends one; text and reasoning IDs are unique
+// within a segment, while tool and approval IDs are unique within the stream.
+// The stream ends when the provider closes it: a close after a finish ends
+// cleanly, and any other close is a premature terminal error.
+//
 // The runtime selects and invokes the model, bounds stream idle and drain time,
 // and classifies failures; this package maps each failure category to its
 // document and owns commitment and the stream state machine. Neither limits

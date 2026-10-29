@@ -246,8 +246,7 @@ func TestStreamingRuntimeTextStateAndUnsupportedParts(t *testing.T) {
 		name  string
 		parts []provider.StreamPart
 	}{
-		{name: "duplicate metadata", parts: []provider.StreamPart{{Type: provider.PartResponseMeta}, {Type: provider.PartResponseMeta}}},
-		{name: "late metadata", parts: []provider.StreamPart{{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextEnd, ID: "a"}, {Type: provider.PartResponseMeta}}},
+		{name: "metadata then close", parts: []provider.StreamPart{{Type: provider.PartResponseMeta}}},
 		{name: "negative timestamp year", parts: []provider.StreamPart{{Type: provider.PartResponseMeta, Timestamp: time.Date(-1, time.January, 1, 0, 0, 0, 0, time.UTC)}}},
 		{name: "five digit timestamp year", parts: []provider.StreamPart{{Type: provider.PartResponseMeta, Timestamp: time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC)}}},
 		{name: "empty id", parts: []provider.StreamPart{{Type: provider.PartTextStart}}},
@@ -278,6 +277,25 @@ func TestStreamingRuntimeTextStateAndUnsupportedParts(t *testing.T) {
 			assert.NotContains(t, response.Body.String(), `"type":"finish"`)
 		})
 	}
+
+	t.Run("repeated and late metadata open segments", func(t *testing.T) {
+		for name, parts := range map[string][]provider.StreamPart{
+			"duplicate metadata": {{Type: provider.PartResponseMeta}, {Type: provider.PartResponseMeta}, finishPart()},
+			"late metadata":      {{Type: provider.PartTextStart, ID: "a"}, {Type: provider.PartTextEnd, ID: "a"}, {Type: provider.PartResponseMeta}, finishPart()},
+		} {
+			t.Run(name, func(t *testing.T) {
+				harness := newRuntimeHarness(t, testLimits())
+				harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+					return &provider.StreamResult{Stream: makeStream(parts...)}, nil
+				}
+				body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+				requireStreamBodyMatchesSchema(t, body)
+				assert.NotContains(t, body, `"type":"error"`)
+				assert.Contains(t, body, `"type":"response-metadata"`)
+				assert.Contains(t, body, `"type":"finish"`)
+			})
+		}
+	})
 
 	t.Run("metadata accepts RFC3339 year boundaries", func(t *testing.T) {
 		for _, year := range []int{0, 9999} {
@@ -336,7 +354,7 @@ func TestStreamingRuntimePartVolumeAndTerminalAuthority(t *testing.T) {
 		assert.NotContains(t, body, `"code":"internal_error"`)
 	})
 
-	t.Run("finish is final without waiting for close", func(t *testing.T) {
+	t.Run("content after finish fails without waiting for close", func(t *testing.T) {
 		stream := make(chan provider.StreamPart, 2)
 		stream <- finishPart()
 		stream <- provider.StreamPart{Type: provider.PartTextStart, ID: "post-finish-private"}
@@ -347,7 +365,8 @@ func TestStreamingRuntimePartVolumeAndTerminalAuthority(t *testing.T) {
 		start := time.Now()
 		response := harness.serve(streamRequest(`{"prompt":[]}`))
 		assert.Less(t, time.Since(start), 500*time.Millisecond)
-		assert.True(t, strings.HasSuffix(response.Body.String(), "data: {\"type\":\"finish\",\"usage\":{\"inputTokens\":{},\"outputTokens\":{}},\"finishReason\":{\"unified\":\"stop\"}}\n\n"))
+		finish := "data: {\"type\":\"finish\",\"usage\":{\"inputTokens\":{},\"outputTokens\":{}},\"finishReason\":{\"unified\":\"stop\"}}\n\n"
+		assert.True(t, strings.HasSuffix(response.Body.String(), finish+string(canonicalInternalStreamErrorFrame)))
 		assert.NotContains(t, response.Body.String(), "post-finish-private")
 	})
 }
@@ -977,7 +996,8 @@ func TestProviderMetadata_Lifecycle(t *testing.T) {
 		assert.Contains(t, body, `"future":{"final":true}`)
 		assert.Equal(t, 1, strings.Count(body, `"type":"finish"`))
 		assert.NotContains(t, body, "late-private")
-		assert.NotContains(t, body, `"type":"error"`)
+		assert.Equal(t, 1, strings.Count(body, `"code":"internal_error"`))
+		assert.Less(t, strings.Index(body, `"type":"finish"`), strings.Index(body, `"type":"error"`))
 	})
 }
 
@@ -1153,11 +1173,12 @@ func TestStreamCustomContent_Output(t *testing.T) {
 		assert.Contains(t, body, `data: {"type":"custom","kind":"example.bare"}`)
 	})
 
-	t.Run("response metadata after custom fails", func(t *testing.T) {
+	t.Run("response metadata after custom opens a segment", func(t *testing.T) {
 		body := serve(t, custom("example.kind", nil), provider.StreamPart{Type: provider.PartResponseMeta, ModelID: "m"}, finishPart())
-		assert.Equal(t, 1, strings.Count(body, `"code":"internal_error"`))
-		assert.NotContains(t, body, `"type":"response-metadata"`)
-		assert.NotContains(t, body, `"type":"finish"`)
+		requireStreamBodyMatchesSchema(t, body)
+		assert.NotContains(t, body, `"type":"error"`)
+		assert.Less(t, strings.Index(body, `"type":"custom"`), strings.Index(body, `"type":"response-metadata"`))
+		assert.Contains(t, body, `"type":"finish"`)
 	})
 
 	t.Run("synthetic message_start shape after response metadata", func(t *testing.T) {

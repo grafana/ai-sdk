@@ -1226,3 +1226,120 @@ func TestCustomContentTelemetry_Disposition(t *testing.T) {
 		})
 	}
 }
+
+func TestModelObservationChain_SequentialSegments(t *testing.T) {
+	inputFirst, outputFirst, inputSecond, outputSecond := 7, 2, 4, 9
+	toolCalls := provider.FinishReason{Unified: provider.FinishReasonToolCalls}
+	stop := provider.FinishReason{Unified: provider.FinishReasonStop}
+	segments := []provider.StreamPart{
+		{Type: provider.PartResponseMeta, ResponseID: "msg_1"},
+		{Type: provider.PartTextStart, ID: "0"},
+		{Type: provider.PartTextDelta, ID: "0", Delta: "one"},
+		{Type: provider.PartTextEnd, ID: "0"},
+		{Type: provider.PartFinish, FinishReason: &toolCalls, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: &inputFirst}, OutputTokens: provider.OutputTokenUsage{Total: &outputFirst}}},
+		{Type: provider.PartResponseMeta, ResponseID: "msg_2"},
+		{Type: provider.PartTextStart, ID: "0"},
+		{Type: provider.PartTextDelta, ID: "0", Delta: "two"},
+		{Type: provider.PartTextEnd, ID: "0"},
+		{Type: provider.PartFinish, FinishReason: &stop, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: &inputSecond}, OutputTokens: provider.OutputTokenUsage{Total: &outputSecond}}},
+	}
+	for _, tc := range []struct {
+		name         string
+		parts        []provider.StreamPart
+		stall        bool
+		idle         time.Duration
+		deadline     time.Duration
+		logEvent     string
+		logOutcome   string
+		metricLabels string
+	}{
+		{name: "normal close", parts: segments, idle: 5 * time.Second, logEvent: "aisdk.model.stream.finish", logOutcome: "success", metricLabels: `error_type="none",finish_reason="stop"`},
+		{name: "deadline stall after finish", parts: segments[:5], stall: true, idle: 5 * time.Second, deadline: 100 * time.Millisecond, logEvent: "aisdk.model.stream.error", logOutcome: "timeout", metricLabels: `error_type="context_deadline_exceeded"`},
+		{name: "idle stall after finish", parts: segments[:5], stall: true, idle: 50 * time.Millisecond, logEvent: "aisdk.model.stream.cancelled", logOutcome: "cancelled", metricLabels: `error_type="context_canceled"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testkit.NewEnv(t, func(configuration *agento11y.Config) {
+				configuration.ContentCapture = agento11y.ContentCaptureModeMetadataOnly
+				configuration.Hooks = agento11y.HooksConfig{Enabled: false}
+			})
+			var logs lockedBuffer
+			logger := slog.New(slog.NewJSONHandler(&logs, nil))
+			telemetry, err := NewTelemetry(logger)
+			require.NoError(t, err)
+			runtime := &AgentObservabilityRuntime{client: env.Client, telemetry: telemetry}
+			factory, _, err := NewModelObservabilityFactories(telemetry, logger, runtime, 10*time.Millisecond)
+			require.NoError(t, err)
+			model, err := factory("grafana/assistant", &observabilityTestModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+				stream := make(chan provider.StreamPart, len(tc.parts))
+				for _, part := range tc.parts {
+					stream <- part
+				}
+				if tc.stall {
+					go func() { <-ctx.Done(); close(stream) }()
+				} else {
+					close(stream)
+				}
+				return &provider.StreamResult{Stream: stream}, nil
+			}})
+			require.NoError(t, err)
+			handler, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(&accountCatalogSpy{model: model}), Limits: execution.Limits{StreamIdleDuration: tc.idle, StreamDrainDuration: 100 * time.Millisecond}})
+			require.NoError(t, err)
+			ctx := t.Context()
+			if tc.deadline > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tc.deadline)
+				defer cancel()
+			}
+			request := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[]}`)).WithContext(ctx)
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set(providerv4.HeaderSpecificationVersion, providerv4.SpecificationVersion)
+			request.Header.Set(providerv4.HeaderModelID, "configured-canonical")
+			request.Header.Set(providerv4.HeaderStreaming, "true")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			require.Equal(t, http.StatusOK, response.Code)
+			body := response.Body.String()
+			finishes, wireErrors := 2, 0
+			if tc.stall {
+				finishes, wireErrors = 1, 1
+			}
+			assert.Equal(t, finishes, strings.Count(body, `"type":"finish"`))
+			assert.Equal(t, wireErrors, strings.Count(body, `"type":"error"`))
+			if tc.stall {
+				assert.Contains(t, body, `"code":"timeout"`)
+				assert.Less(t, strings.LastIndex(body, `"type":"finish"`), strings.Index(body, `"type":"error"`))
+			}
+
+			require.Eventually(t, func() bool { return countModelLogEvent(t, logs.String(), tc.logEvent) == 1 }, time.Second, time.Millisecond)
+			var finish map[string]any
+			for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+				var record map[string]any
+				require.NoError(t, json.Unmarshal([]byte(line), &record))
+				if record["ai_sdk.event"] == tc.logEvent {
+					finish = record
+				}
+			}
+			assert.Equal(t, tc.logOutcome, finish["ai_sdk.outcome"])
+			if !tc.stall {
+				assert.Equal(t, float64(inputFirst), finish["ai_sdk.usage.input_tokens.total"])
+				assert.Equal(t, float64(outputSecond), finish["ai_sdk.usage.output_tokens.total"])
+				assert.Equal(t, string(provider.FinishReasonStop), finish["ai_sdk.finish_reason"])
+			}
+			metrics := testMetrics(t, telemetry)
+			assert.Equal(t, 1, strings.Count(metrics, "aisdk_model_requests_total{"))
+			assert.Contains(t, metrics, tc.metricLabels)
+			status := `status="success"`
+			if tc.stall {
+				status = `status="canceled"`
+			}
+			assert.Contains(t, metrics, status)
+
+			require.Eventually(t, func() bool { return env.RequestCount() == 1 }, time.Second, time.Millisecond)
+			env.Shutdown(t)
+			generation := env.SingleGenerationJSON(t)
+			assert.Equal(t, strconv.Itoa(inputFirst), testkit.StringValue(t, generation, "usage", "input_tokens"))
+			assert.Equal(t, strconv.Itoa(outputFirst), testkit.StringValue(t, generation, "usage", "output_tokens"))
+			assert.Equal(t, string(provider.FinishReasonToolCalls), generation["stop_reason"])
+		})
+	}
+}

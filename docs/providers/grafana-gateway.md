@@ -328,6 +328,10 @@ Use returned sources and text citations to display references, and warnings to
 identify unsupported settings. See the [source guide](../../ai-gateway/docs/sources.md) for citation
 handling. Keep sensitive warning text and response details out of public logs.
 
+One stream can carry several `response-metadata` and `finish` events when the
+provider returns several messages or responses in one call. The stream ends
+when the provider closes it, not at the first `finish`.
+
 Response IDs and model names come from the provider and can differ from the
 model you selected. Use them to diagnose a call, not to pick the next model.
 Some providers leave them out. With `GenerateText` and `StreamText`, read them
@@ -337,7 +341,7 @@ from the response metadata after the call. With `model.DoGenerate`, they are in
 ## Inspect execution overviews and failures
 
 Calls return a `gateway.execution` entry in the provider metadata of the
-result or the stream's finish. It names the model you selected and lists each
+result or each stream finish. It names the model you selected and lists each
 attempt in order, with its provider, model, outcome and, for a failure, the
 provider's error message, type, code and status. In Go, read it from
 `ProviderMetadata`; in TypeScript, from `providerMetadata`. Each call has its

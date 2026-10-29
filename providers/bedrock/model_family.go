@@ -103,12 +103,63 @@ func rejectsSamplingParameters(modelID string) bool {
 	return !olderClaude4ModelPattern.MatchString(modelID)
 }
 
-func rejectsNativeStructuredOutput(modelID string) bool {
-	return rejectsNewerSchemaFields(modelID) || strings.Contains(modelID, "claude-sonnet-4-6") || strings.Contains(modelID, "claude-haiku-4-5")
+var knownClaudeModelMarkers = []string{
+	"claude-sonnet-5",
+	"claude-opus-5",
+	"claude-haiku-5-5",
+	"claude-fable-5",
+	"claude-opus-4-8",
+	"claude-opus-4-7",
+	"claude-sonnet-4-6",
+	"claude-opus-4-6",
+	"claude-sonnet-4-5",
+	"claude-opus-4-5",
+	"claude-haiku-4-5",
+	"claude-opus-4-1",
+	"claude-3-haiku",
 }
 
-func usesJSONInstructionForStructuredOutput(modelID string) bool {
-	return rejectsNewerSchemaFields(modelID)
+// isKnownClaudeModel mirrors getModelCapabilities isKnownModel from
+// @ai-sdk/anthropic 4.0.82, which upstream @ai-sdk/amazon-bedrock 5.0.118
+// reuses for structured-output routing.
+func isKnownClaudeModel(modelID string) bool {
+	for _, marker := range knownClaudeModelMarkers {
+		if strings.Contains(modelID, marker) {
+			return true
+		}
+	}
+	return olderClaude4ModelPattern.MatchString(modelID)
+}
+
+var strictToolLegacyClaudePattern = regexp.MustCompile(`claude-(?:instant|v?2|3)(?:[-.:]|$)`)
+
+var strictToolClaudeModelPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`claude-(?:opus|sonnet)-4(?:-\d{8})?(?:-v\d+)?(?:[:.]|$)`),
+	regexp.MustCompile(`claude-opus-4-(?:1|5|6)(?:[-.:]|$)`),
+	regexp.MustCompile(`claude-sonnet-4-(?:5|6)(?:[-.:]|$)`),
+	regexp.MustCompile(`claude-haiku-4-5(?:[-.:]|$)`),
+}
+
+var unreliableNativeStructuredOutputPattern = regexp.MustCompile(`claude-(?:sonnet-4-6|haiku-4-5)(?:[-.:]|$)`)
+
+// supportsStrictTools reports whether Bedrock accepts tool `strict` for the
+// model. Only known supported Claude generations qualify; non-Claude IDs and
+// opaque inference profiles keep strict support. Mirrors upstream
+// amazon-bedrock-anthropic-model-support.ts (@ai-sdk/amazon-bedrock 5.0.118).
+func supportsStrictTools(modelID string) bool {
+	if !strings.Contains(modelID, "claude-") || strictToolLegacyClaudePattern.MatchString(modelID) {
+		return true
+	}
+	for _, pattern := range strictToolClaudeModelPatterns {
+		if pattern.MatchString(modelID) {
+			return true
+		}
+	}
+	return false
+}
+
+func supportsNativeStructuredOutput(modelID string) bool {
+	return supportsStrictTools(modelID) && !unreliableNativeStructuredOutputPattern.MatchString(modelID)
 }
 
 // rejectsForcedToolUse reports Anthropic models that reject tool_choice

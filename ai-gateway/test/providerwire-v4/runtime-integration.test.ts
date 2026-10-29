@@ -12,10 +12,11 @@ import {
   GatewayModelNotFoundError,
 } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import { parseJsonEventStream, safeValidateTypes } from "@ai-sdk/provider-utils";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
 import { fileInputGoldenCase } from "./request-cases";
 import { validateStreamEvent, validateUnarySuccess } from "./schema";
-import { generateText, Output, jsonSchema, stepCountIs, streamText, tool, wrapLanguageModel } from "ai";
+import { generateText, Output, jsonSchema, stepCountIs, streamText, tool, uiMessageChunkSchema, wrapLanguageModel } from "ai";
 import packageManifest from "./package.json" with { type: "json" };
 import { buildTools, loadConfig, mockId, normalizeRequestSnapshot, writeRequestSnapshots } from "../../../test/conformance/tools/common.mts";
 
@@ -23,6 +24,7 @@ const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = resolve(TEST_DIR, "testserver");
 const POLL_INTERVAL_MS = 10;
 const POLL_TIMEOUT_MS = 15_000;
+const CONFORMANCE_DEFAULT_PROMPT = "test";
 
 let serverProcess: ChildProcess | undefined;
 let temporaryDirectory: string;
@@ -761,21 +763,30 @@ describe("authentic metadata replay with unchanged direct expectations", () => {
     { id: "tool-call", family: "anthropic", path: "anthropic/recorded/tool-call" },
     { id: "thinking-tool-signature-roundtrip", family: "anthropic", path: "anthropic/recorded/thinking-tool-signature-roundtrip" },
     { id: "openai-reasoning-text", family: "openai", path: "openai/recorded/reasoning-text" },
+    { id: "anthropic-programmatic-tool-calling", family: "anthropic", path: "anthropic/upstream/programmatic-tool-calling" },
+    { id: "anthropic-tool-search-bm25", family: "anthropic", path: "anthropic/upstream/tool-search-bm25" },
+    { id: "anthropic-tool-search-regex", family: "anthropic", path: "anthropic/upstream/tool-search-regex" },
+    { id: "anthropic-tool-search-deferred-bm25", family: "anthropic", path: "anthropic/upstream/tool-search-deferred-bm25" },
+    { id: "anthropic-tool-search-deferred-regex", family: "anthropic", path: "anthropic/upstream/tool-search-deferred-regex" },
+    { id: "openai-reasoning-encrypted-content", family: "openai", path: "openai/upstream/reasoning-encrypted-content" },
+    { id: "openai-shell", family: "openai", path: "openai/upstream/shell" },
   ]) {
     it(`replays ${fixture.path} through both clients without rewriting inputs or expectations`, async () => {
       const dir = resolve(TEST_DIR, `../../../test/conformance/${fixture.path}`);
       const cfg = loadConfig(dir);
+      const prompt = cfg.prompt ?? CONFORMANCE_DEFAULT_PROMPT;
       const lines = (name: string) => readFileSync(join(dir, name), "utf8").trim().split("\n").map(line => JSON.parse(line));
       const expectedChunks = lines("expected.jsonl");
       const expectedRequests = lines("expected-requests.jsonl");
       const captured = async () => await (await fetch(`${baseURL}/recorded-usage/${fixture.id}/requests`)).json() as { count: number; requests: Array<{ method: string; url: string; headers: Record<string, string[]>; body: string }> };
       const before = (await captured()).count;
-      const result = streamText({ model: createGateway({ apiKey: "runtime-test-key", baseURL: `${baseURL}/recorded-usage` })(fixture.id), prompt: cfg.prompt!, ...(cfg.system ? { instructions: cfg.system } : {}), tools: buildTools(cfg.tools, cfg.providerTools), providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"], stopWhen: stepCountIs(cfg.stopWhenStepCount ?? 1), maxRetries: 0, _internal: { generateId: mockId("id") } });
+      const result = streamText({ model: createGateway({ apiKey: "runtime-test-key", baseURL: `${baseURL}/recorded-usage` })(fixture.id), prompt, ...(cfg.system ? { instructions: cfg.system } : {}), tools: buildTools(cfg.tools, cfg.providerTools), providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"], stopWhen: stepCountIs(cfg.stopWhenStepCount ?? 1), maxRetries: 0, _internal: { generateId: mockId("id") } });
       const actualChunks = [];
       for await (const chunk of result.toUIMessageStream()) actualChunks.push(JSON.parse(JSON.stringify(chunk)));
       assert.deepEqual(actualChunks, expectedChunks);
       const definitions = Object.entries(cfg.tools ?? {}).map(([name, definition]) => ({ type: "function", name, description: definition.description, inputSchema: definition.inputSchema, ...(definition.strict != null ? { strict: definition.strict } : {}), ...(definition.providerOptions ? { providerOptions: definition.providerOptions } : {}) }));
-      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/recorded-usage`, accessToken: "runtime-test-key", modelID: fixture.id, mode: "recorded-ui", instructions: cfg.system ?? "", steps: cfg.stopWhenStepCount ?? 1, toolResults: Object.fromEntries(Object.entries(cfg.tools ?? {}).map(([name, definition]) => [name, definition.mockResults ?? []])), options: { prompt: [{ role: "user", content: [{ type: "text", text: cfg.prompt }] }], providerOptions: cfg.providerOptions, tools: definitions } });
+      const providerDefinitions = Object.entries(cfg.providerTools ?? {}).map(([name, definition]) => ({ type: "provider", name, id: definition.id, ...(definition.args ? { args: definition.args } : {}) }));
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/recorded-usage`, accessToken: "runtime-test-key", modelID: fixture.id, mode: "recorded-ui", instructions: cfg.system ?? "", steps: cfg.stopWhenStepCount ?? 1, toolResults: Object.fromEntries(Object.entries(cfg.tools ?? {}).map(([name, definition]) => [name, definition.mockResults ?? []])), options: { prompt: [{ role: "user", content: [{ type: "text", text: prompt }] }], providerOptions: cfg.providerOptions, tools: [...definitions, ...providerDefinitions] } });
       assert.equal(go.error, undefined);
       assert.deepEqual(go.chunks, expectedChunks);
       const requests = (await captured()).requests.slice(before);
@@ -794,6 +805,51 @@ describe("authentic metadata replay with unchanged direct expectations", () => {
         }
       } finally {
         rmSync(snapshotDir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+describe("sequential response segments through the real handler", () => {
+  for (const shape of ["anthropic", "openai"] as const) {
+    it(`delivers every ${shape}-shaped segment to both clients`, async () => {
+      const modelID = `sequential-segments-${shape}`;
+      const response = await fetch(`${baseURL}/providerwire-v4/language-model`, { method: "POST", headers: { "content-type": "application/json", "ai-language-model-specification-version": "4", "ai-language-model-id": modelID, "ai-language-model-streaming": "true" }, body: JSON.stringify({ prompt: [] }) });
+      const frames = (await response.text()).split("\n\n").filter(Boolean).map((frame) => JSON.parse(frame.slice("data: ".length)));
+      for (const frame of frames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
+      const finishes = shape === "anthropic" ? 2 : 1;
+      assert.equal(frames.filter((frame) => frame.type === "response-metadata").length, 2);
+      assert.equal(frames.filter((frame) => frame.type === "finish").length, finishes);
+      assert.equal(frames.some((frame) => frame.type === "error"), false);
+      assert.equal(frames.at(-1).type, "finish");
+
+      const ts = await collect((await model(modelID).doStream({ prompt: [] })).stream);
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID, mode: "stream", options: { prompt: [] } });
+      assert.equal(go.error, undefined);
+      const lastUsage = (parts: any[]) => parts.filter((part) => part.type === "finish").at(-1).usage;
+      assert.deepEqual(lastUsage(ts).inputTokens.total, 5);
+      assert.deepEqual(lastUsage(ts).outputTokens.total, 6);
+      assert.deepEqual(lastUsage(go.parts).inputTokens.total, 5);
+      assert.deepEqual(lastUsage(go.parts).outputTokens.total, 6);
+      assert.deepEqual(ts.filter((part) => part.type === "finish").length, finishes);
+      assert.deepEqual(go.parts.filter((part: { type: string }) => part.type === "finish").length, finishes);
+
+      const result = streamText({ model: model(modelID), prompt: "test", maxRetries: 0, _internal: { generateId: mockId("id") } });
+      const tsChunks = [];
+      for await (const parsed of parseJsonEventStream({ stream: result.toUIMessageStreamResponse().body!, schema: uiMessageChunkSchema })) {
+        assert.equal(parsed.success, true);
+        if (parsed.success) tsChunks.push(JSON.parse(JSON.stringify(parsed.value)));
+      }
+      const goUI = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID, mode: "recorded-ui", steps: 1, options: { prompt: [{ role: "user", content: [{ type: "text", text: "test" }] }] } });
+      assert.equal(goUI.error, undefined);
+      for (const chunk of goUI.chunks) assert.equal((await safeValidateTypes({ value: chunk, schema: uiMessageChunkSchema })).success, true, JSON.stringify(chunk));
+      assert.deepEqual(goUI.chunks, tsChunks);
+      const deltas = tsChunks.filter((chunk: any) => chunk.type === "text-delta").map((chunk: any) => chunk.delta);
+      assert.deepEqual(deltas, ["first ", "second"]);
+      if (shape === "anthropic") {
+        const textIDs = (parts: any[]) => parts.filter((part) => part.type === "text-start").map((part) => part.id);
+        assert.deepEqual(textIDs(ts), ["0", "0"]);
+        assert.deepEqual(textIDs(go.parts), ["0", "0"]);
       }
     });
   }

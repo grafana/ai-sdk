@@ -993,7 +993,9 @@ func TestProviderMetadata_RuntimeFailureAndFinishAuthority(t *testing.T) {
 	}
 	body := h.serve(streamRequest(`{"prompt":[]}`)).Body.String()
 	assert.Contains(t, body, `"future":{"final":true}`)
-	assert.NotContains(t, body, `"type":"error"`)
+	assert.Equal(t, 1, strings.Count(body, `"type":"error"`))
+	assert.Equal(t, 1, strings.Count(body, `"code":"internal_error"`))
+	assert.Less(t, strings.Index(body, `"type":"finish"`), strings.Index(body, `"type":"error"`))
 	assert.NotContains(t, body, "late")
 }
 

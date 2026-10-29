@@ -90,10 +90,10 @@ func TestSourcesStreamingLifecycle(t *testing.T) {
 	}{
 		{"interleaved", []provider.StreamPart{{Type: provider.PartTextStart, ID: "text"}, source, {Type: provider.PartTextDelta, ID: "text", Delta: "text"}, source, {Type: provider.PartTextEnd, ID: "text"}, finishPart()}, false},
 		{"only source", []provider.StreamPart{source, finishPart()}, false},
-		{"late metadata", []provider.StreamPart{source, {Type: provider.PartResponseMeta}}, true},
+		{"late metadata", []provider.StreamPart{source, {Type: provider.PartResponseMeta}, finishPart()}, false},
 		{"nil source", []provider.StreamPart{{Type: provider.PartSource}}, true},
 		{"error continuation", []provider.StreamPart{source, {Type: provider.PartError}, source, finishPart()}, true},
-		{"post finish", []provider.StreamPart{finishPart(), source}, false},
+		{"post finish", []provider.StreamPart{finishPart(), source}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			harness := newRuntimeHarness(t, testLimits())
@@ -105,6 +105,10 @@ func TestSourcesStreamingLifecycle(t *testing.T) {
 			assert.Equal(t, tc.failure, strings.Contains(body, `"type":"error"`))
 			if tc.name != "nil source" && tc.name != "post finish" {
 				assert.Contains(t, body, `"fileId":"secret"`)
+			}
+			if tc.name == "late metadata" {
+				assert.Less(t, strings.Index(body, `"type":"source"`), strings.Index(body, `"type":"response-metadata"`))
+				assert.Contains(t, body, `"type":"finish"`)
 			}
 			if tc.name == "interleaved" || tc.name == "error continuation" {
 				assert.Equal(t, 2, strings.Count(body, `"id":"native-id"`))

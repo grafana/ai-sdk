@@ -1308,6 +1308,7 @@ loop:
 		case provider.PartError:
 			terminated = true
 			providerFailed = true
+			step.FinishReason.Unified = provider.FinishReasonError
 			// Synthesize a non-retryable APICallError when a producer emits
 			// a PartError without a populated APICallError. Wire boundaries
 			// MUST always carry an *APICallError so the orchestration layer
