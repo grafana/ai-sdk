@@ -330,10 +330,16 @@ done
 [tasks.test-integration]
 description = "Run cross-language candidate-source integration tests"
 run = """
+mise run test-sdk-integration
+mise run test-ai-gateway-command
+"""
+
+[tasks.test-sdk-integration]
+description = "Run SDK cross-language integration tests against candidate source"
+run = """
 mise deps install --only test
 (cd test/integration/testserver && go test ./...)
 (cd test && pnpm --filter @ai-sdk/test-integration test)
-mise run test-ai-gateway-command
 """
 
 [tasks.test-cli]

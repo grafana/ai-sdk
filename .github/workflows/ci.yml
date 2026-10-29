@@ -229,7 +229,7 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Integration tests
-        run: mise run test-integration
+        run: mise run test-sdk-integration
 
   plugin-validation:
     name: Validate AI Gateway plugin
