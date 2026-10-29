@@ -359,10 +359,10 @@ func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, cal
 func (h *handler) consumeStreamParts(w http.ResponseWriter, stream *execution.Stream, state *streamState) {
 	for {
 		part, wait := stream.Next()
+		if wait == execution.WaitFinished {
+			return
+		}
 		if wait != execution.WaitPart {
-			if wait == execution.WaitClosed && state.phase == segmentFinished {
-				return
-			}
 			h.writeStreamTerminalForWait(w, wait, state.execution)
 			return
 		}

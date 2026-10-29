@@ -172,12 +172,13 @@ func (c *Call) Stream() (*Stream, error) {
 		return nil, errInternal
 	}
 	return &Stream{
-		ctx:    c.ctx,
-		model:  modelContext,
-		cancel: cancel,
-		parts:  result.Stream,
-		idle:   time.NewTimer(c.limits.StreamIdleDuration),
-		limits: c.limits,
+		ctx:       c.ctx,
+		model:     modelContext,
+		cancel:    cancel,
+		parts:     result.Stream,
+		idle:      time.NewTimer(c.limits.StreamIdleDuration),
+		limits:    c.limits,
+		validator: NewStreamValidator(c.history),
 	}, nil
 }
 
@@ -199,7 +200,7 @@ func (c *Call) abandon(cancel context.CancelFunc, result *provider.StreamResult)
 }
 
 // View seals the call's attempt capture and projects it for an outcome that
-// failed with err, or succeeded when err is nil.
+// failed with err, or succeeded when err is nil or [ErrInvalidOutput].
 func (c *Call) View(err error) View { return c.attempts.view(err) }
 
 // Close seals the call's attempt capture.
@@ -214,13 +215,22 @@ const (
 	WaitCanceled
 	WaitDeadline
 	WaitIdleTimeout
+	// WaitInvalidOutput reports a part that broke an output lifecycle rule. The
+	// part is not delivered.
+	WaitInvalidOutput
+	// WaitFinished reports that the provider closed the stream after a finish.
+	// It is a terminal success, which adapters do not classify.
+	WaitFinished
 )
 
-// Err returns the error a terminal wait outcome stands for, and nil for WaitPart.
+// Err returns the error a terminal wait outcome stands for, and nil for
+// WaitPart and WaitFinished.
 func (w Wait) Err() error {
 	switch w {
-	case WaitPart:
+	case WaitPart, WaitFinished:
 		return nil
+	case WaitInvalidOutput:
+		return ErrInvalidOutput
 	case WaitCanceled:
 		return context.Canceled
 	case WaitDeadline, WaitIdleTimeout:
@@ -233,20 +243,32 @@ func (w Wait) Err() error {
 // Stream is an established model stream. Its methods must be called from one
 // goroutine, and Close must be called once the adapter is done.
 type Stream struct {
-	ctx      context.Context
-	model    context.Context
-	cancel   context.CancelFunc
-	parts    <-chan provider.StreamPart
-	idle     *time.Timer
-	limits   Limits
-	waited   bool
-	closeAll sync.Once
+	ctx       context.Context
+	model     context.Context
+	cancel    context.CancelFunc
+	parts     <-chan provider.StreamPart
+	idle      *time.Timer
+	limits    Limits
+	validator *StreamValidator
+	terminal  Wait
+	waited    bool
+	closeAll  sync.Once
 }
 
-// Next waits for the next part. The idle duration restarts on each call after
-// the first, so it measures the time since the previous part was handled.
-// Every outcome other than [WaitPart] cancels the model context first.
+// Next waits for the next part and validates it with the call's
+// [StreamValidator]. The idle duration restarts on each call after the first,
+// so it measures the time since the previous part was handled. Every outcome
+// other than [WaitPart] cancels the model context first.
+//
+// A part that breaks a lifecycle rule closes the stream and returns
+// [WaitInvalidOutput] without the part. A provider close returns
+// [WaitFinished] when the last lifecycle part was a finish, and [WaitClosed]
+// otherwise. Invalid output and finished are sticky: later calls return them
+// again without reading.
 func (s *Stream) Next() (provider.StreamPart, Wait) {
+	if s.terminal != 0 {
+		return provider.StreamPart{}, s.terminal
+	}
 	if s.waited {
 		s.idle.Reset(s.limits.StreamIdleDuration)
 	}
@@ -254,9 +276,18 @@ func (s *Stream) Next() (provider.StreamPart, Wait) {
 	select {
 	case part, ok := <-s.parts:
 		if ok {
+			if s.validator.Check(part) != nil {
+				s.Close()
+				s.terminal = WaitInvalidOutput
+				return provider.StreamPart{}, WaitInvalidOutput
+			}
 			return part, WaitPart
 		}
 		s.cancel()
+		if s.validator.SegmentFinished() {
+			s.terminal = WaitFinished
+			return provider.StreamPart{}, WaitFinished
+		}
 		return provider.StreamPart{}, WaitClosed
 	case <-s.model.Done():
 		s.cancel()

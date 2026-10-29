@@ -80,7 +80,7 @@ stream.Next() (part, Wait)                                 // + WaitInvalidOutpu
 
 ### D4. The runtime decides how a stream ends
 
-- A provider close returns `WaitFinished` when the validator's segment is finished, and `WaitClosed` otherwise. Both cancel the model context first, as every non-part outcome does. `WaitFinished` is a terminal success with a nil error. A later `Next` reads the closed channel again and returns the same outcome.
+- A provider close returns `WaitFinished` when the validator's segment is finished, and `WaitClosed` otherwise. Both cancel the model context first, as every non-part outcome does. `WaitFinished` is a terminal success with a nil error, and sticky like `WaitInvalidOutput`: once the model context is canceled, a fresh read could race the closed channel against the canceled context, so a later `Next` returns the recorded outcome without reading. `WaitClosed` keeps today's behavior.
 - Idle timeout, deadline and cancellation keep their outcomes in every phase, including after a `finish`. This is #583's D5: a stall between segments must never look like a complete response.
 - ProviderWire ends cleanly on `WaitFinished` and writes the terminal error for `WaitClosed` as today. The test adapter reports success on `WaitFinished` and drops its `finished` flag.
 - **Alternative: keep the decision in each adapter.** Rejected: it is a lifecycle rule, and the test adapter already had to copy it.

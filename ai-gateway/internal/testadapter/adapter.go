@@ -60,25 +60,21 @@ func (a *Adapter) Run(ctx context.Context, modelID string, options provider.Call
 	}
 	defer stream.Close()
 	result := Outcome{Committed: true}
-	finished := false
 	for first := true; ; first = false {
 		part, wait := stream.Next()
 		if first {
 			result.Overview = call.View(wait.Err()).Overview
 		}
-		if wait != execution.WaitPart {
-			if wait != execution.WaitClosed || !finished {
-				result.Category = execution.ClassifyProvider(wait.Err())
-			}
+		switch wait {
+		case execution.WaitPart:
+		case execution.WaitFinished:
+			return result
+		default:
+			result.Category = execution.ClassifyProvider(wait.Err())
 			return result
 		}
-		switch part.Type {
-		case provider.PartError:
+		if part.Type == provider.PartError {
 			result.PartErrors = append(result.PartErrors, execution.ClassifyStreamPart(part.APICallError))
-		case provider.PartFinish:
-			finished = true
-		case provider.PartResponseMeta:
-			finished = false
 		}
 	}
 }

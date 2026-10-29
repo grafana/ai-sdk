@@ -81,6 +81,7 @@ func TestClassifyProvider(t *testing.T) {
 		{"net timeout", testNetError{timeout: true}, CategoryTimeout},
 		{"url error", &url.Error{Op: "Post", URL: "https://private", Err: testNetError{}}, CategoryUpstream},
 		{"dial error", &net.OpError{Op: "dial", Net: "tcp", Addr: testAddr("private:443"), Err: errors.New("refused")}, CategoryUpstream},
+		{"invalid output", fmt.Errorf("wrapped: %w", ErrInvalidOutput), CategoryInternal},
 		{"other", errors.New("private internal"), CategoryInternal},
 		{"nil", nil, CategoryInternal},
 		{"panicking error", panicError{}, CategoryInternal},

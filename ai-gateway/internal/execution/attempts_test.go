@@ -110,6 +110,7 @@ func TestAttemptCapture_View(t *testing.T) {
 		{name: "not entered", candidates: 1},
 		{name: "direct selected", candidates: 1, entered: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{name: "direct failed", candidates: 1, entered: true, err: failure, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed}},
+		{name: "direct invalid output", candidates: 1, entered: true, err: fmt.Errorf("wrapped: %w", ErrInvalidOutput), outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{name: "rejected direct canceled", candidates: 1, entered: true, err: context.Canceled, discard: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptCanceled}},
 		{name: "rejected before entry", candidates: 1, discard: true},
 		{name: "fallback selected", candidates: 2, entered: true, attempts: []fallback.Attempt{
