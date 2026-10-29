@@ -443,7 +443,14 @@ func applyAnthropicPassThroughs(addFields map[string]any, inf **inferenceConfig,
 
 func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.ReasoningEffort, explicit *ReasoningConfig, warnings *[]provider.Warning) *ReasoningConfig {
 	if reasoning == provider.ReasoningProviderDefault {
-		return explicit
+		return cloneReasoningConfig(explicit)
+	}
+	if explicit != nil && explicit.Type == "disabled" {
+		resolved := cloneReasoningConfig(explicit)
+		resolved.BudgetTokens = 0
+		resolved.budgetTokensPresent = false
+		resolved.MaxReasoningEffort = ""
+		return resolved
 	}
 
 	var resolved *ReasoningConfig
@@ -462,15 +469,10 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 			})
 			return nil
 		}
-		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, isAnthropic, reasoning, warnings), explicit)
+		resolved = mergeReasoningConfig(deriveReasoningConfig(modelID, isAnthropic, reasoning, explicit, warnings), explicit)
 		if !isAnthropic && isNova2ReasoningModel(modelID) && resolved != nil && resolved.Type == "" {
 			resolved.Type = "enabled"
 		}
-	}
-	if resolved != nil && resolved.Type == "disabled" {
-		resolved.BudgetTokens = 0
-		resolved.budgetTokensPresent = false
-		resolved.MaxReasoningEffort = ""
 	}
 	return resolved
 }
@@ -523,7 +525,7 @@ func mergeReasoningConfig(derived, explicit *ReasoningConfig) *ReasoningConfig {
 	return merged
 }
 
-func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.ReasoningEffort, warnings *[]provider.Warning) *ReasoningConfig {
+func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.ReasoningEffort, explicit *ReasoningConfig, warnings *[]provider.Warning) *ReasoningConfig {
 	if reasoning == provider.ReasoningProviderDefault {
 		return nil
 	}
@@ -535,6 +537,9 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 	}
 	if isAnthropic {
 		if supportsAdaptiveThinking(modelID) {
+			if explicit != nil && explicit.MaxReasoningEffort != "" {
+				return &ReasoningConfig{Type: "adaptive"}
+			}
 			effort, ok := reasoningEffort(reasoning, warnings)
 			if !ok {
 				*warnings = append(*warnings, provider.Warning{
@@ -546,6 +551,9 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 			}
 			return &ReasoningConfig{Type: "adaptive", MaxReasoningEffort: effort}
 		}
+		if explicit != nil && (explicit.BudgetTokens != 0 || explicit.budgetTokensPresent) {
+			return &ReasoningConfig{Type: "enabled"}
+		}
 		budget, ok := reasoningBudget(modelID, reasoning)
 		if !ok {
 			*warnings = append(*warnings, provider.Warning{
@@ -556,6 +564,9 @@ func deriveReasoningConfig(modelID string, isAnthropic bool, reasoning provider.
 			return nil
 		}
 		return &ReasoningConfig{Type: "enabled", BudgetTokens: budget}
+	}
+	if explicit != nil && explicit.MaxReasoningEffort != "" {
+		return nil
 	}
 	effortReasoning := reasoning
 	if isNova2ReasoningModel(modelID) && (reasoning == provider.ReasoningXHigh || reasoning == provider.ReasoningMax) {

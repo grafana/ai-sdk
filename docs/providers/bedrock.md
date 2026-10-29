@@ -123,6 +123,14 @@ without strict-tool support when caller tools are present.
 Reasoning, structured output, cache controls, and other provider options may be
 supported by one family and ignored with a warning by another.
 
+When portable reasoning and an explicit Bedrock reasoning configuration are both
+supplied, explicit effort or budget takes precedence. Only missing values are
+derived, so warnings describe the settings actually used. Explicit disabled
+thinking suppresses portable reasoning and removes its budget and effort;
+provider-default reasoning leaves explicit controls as supplied. Request
+preparation preserves caller configuration for reuse across calls. Both the
+`amazonBedrock` namespace and legacy `bedrock` namespace follow these rules.
+
 Cache points can be set on a message or on a single content part, and remain
 attached only when that message or part contributes content to the Converse
 request. When no prepared tools are active, tool calls and results
@@ -132,7 +140,8 @@ and unsigned reasoning also cannot create cache-only messages. A synthetic JSON
 response tool counts as an active tool.
 
 Claude Sonnet 5.5 rejects disabled thinking and forced tool use. For
-`claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking,
+`claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking
+unless an explicit disabled configuration takes precedence,
 a `required` or named tool choice is sent as `auto` with a warning, and a JSON
 schema response uses a system-prompt instruction instead of the forced JSON
 tool.
