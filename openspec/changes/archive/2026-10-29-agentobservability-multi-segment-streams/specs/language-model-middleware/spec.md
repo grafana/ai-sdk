@@ -2,7 +2,12 @@
 
 ### Requirement: Normalized streaming usage aggregation
 
-Stream-summary middleware SHALL share normalized usage aggregation and observe every part with non-nil `Usage`, regardless of type. A `PartFinish` SHALL close a response segment. A closed segment's usage SHALL take each normalized counter (input total, input without cache, cache-read input, cache-write input, output total, output text, output reasoning) from its finish part when the finish reports that counter, and otherwise the greatest value observed for it in that segment. Once a finish was observed, the aggregate SHALL be the last closed segment's usage; usage on parts after the last finish SHALL NOT change it. Before any finish, each counter SHALL independently retain its greatest observed value. `Usage.Raw` SHALL follow the same selection with the latest non-empty payload in place of the greatest value; omission SHALL NOT clear it (no provider-independent raw merge). This matches upstream `streamText`, where each model call end replaces the step usage.
+Stream-summary middleware SHALL share normalized usage aggregation over every part with non-nil `Usage`, regardless of type. A `PartFinish` SHALL close a response segment, whose usage takes each normalized counter from the finish when it reports it, and otherwise the greatest value observed in that segment. Once a finish was observed, the aggregate SHALL be the last closed segment's usage. Before any finish, each counter SHALL retain its greatest observed value.
+
+#### Scenario: Counters are selected independently
+- **WHEN** stream parts report usage
+- **THEN** input total, input without cache, cache-read input, cache-write input, output total, output text and output reasoning SHALL each be selected independently by these rules
+- **AND** `Usage.Raw` SHALL follow the same selection with the latest non-empty payload in place of the greatest value, without a provider-independent raw merge
 
 #### Scenario: Split usage across stream parts
 - **WHEN** an early stream part reports input and cache counters

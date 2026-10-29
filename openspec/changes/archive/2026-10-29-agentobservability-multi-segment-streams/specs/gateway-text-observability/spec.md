@@ -47,7 +47,7 @@ When upstream closure and downstream cancellation are both observable at finaliz
 
 ### Requirement: Logical text lifecycle semantics
 
-Unary observation SHALL start immediately before the shared model invocation and finalize once after its result or pre-result error. Streaming observation SHALL start immediately before stream setup. Logs and metrics SHALL finalize once after normal channel close, provider error observation, premature close, downstream cancellation, or timeout as represented at the model boundary. A stream with several response segments SHALL remain one logical call, and its Agent Observability generation SHALL finalize under "Agent Observability generation covers every response segment" and "Agent Observability generation after a finish".
+Unary observation SHALL start immediately before the shared model invocation and finalize once after its result or pre-result error. Streaming observation SHALL start immediately before stream setup. Logs and metrics SHALL finalize once after normal channel close, provider error observation, premature close, downstream cancellation, or timeout as represented at the model boundary. A stream with several response segments SHALL remain one logical call.
 
 #### Scenario: Stream error precedes later finish
 - **WHEN** a stream emits usage, a provider error part, later text, and finish before closing
