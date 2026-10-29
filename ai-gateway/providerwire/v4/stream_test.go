@@ -416,6 +416,11 @@ func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {
 				wantError: `"error":{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":true}`,
 			},
 			{
+				name:      "no status plain cause is provider stream",
+				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{Message: "ordinary native message", Cause: errors.New("ordinary native cause")}),
+				wantError: `"error":{"message":"provider stream error","type":"internal_server_error","param":null,"code":"provider_error","retryable":false}`,
+			},
+			{
 				name:      "valid http 200 error remains upstream",
 				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusOK, Message: "ordinary native message", Cause: context.DeadlineExceeded}),
 				wantError: `"error":{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":true}`,
@@ -436,6 +441,7 @@ func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {
 				assert.Equal(t, 1, strings.Count(body, `"type":"error"`))
 				assert.Contains(t, body, `"type":"finish"`)
 				assert.NotContains(t, body, "private")
+				assertNoNativeTextInBaseErrors(t, body, "ordinary native")
 			})
 		}
 	})
@@ -1216,4 +1222,25 @@ func TestStreamCustomContent_Output(t *testing.T) {
 		assert.Contains(t, response.Body.String(), secret)
 		assert.Contains(t, response.Body.String(), `"type":"finish"`)
 	})
+}
+
+func assertNoNativeTextInBaseErrors(t *testing.T, body, native string) {
+	t.Helper()
+	for _, line := range strings.Split(body, "\n") {
+		data, ok := strings.CutPrefix(line, "data: ")
+		if !ok {
+			continue
+		}
+		var event struct {
+			Type  provider.StreamPartType    `json:"type"`
+			Error map[string]json.RawMessage `json:"error"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(data), &event))
+		if event.Type != provider.PartError {
+			continue
+		}
+		for _, field := range []string{"message", "type", "param", "code", "statusCode", "retryable"} {
+			assert.NotContains(t, string(event.Error[field]), native, field)
+		}
+	}
 }

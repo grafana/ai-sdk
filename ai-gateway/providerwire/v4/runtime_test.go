@@ -870,6 +870,7 @@ func TestPublicError_FixedBytes(t *testing.T) {
 		{"timeout", safeError{category: safeTimeout}, 504, canonicalTimeoutError, canonicalTimeoutStreamErrorFrame},
 		{"canceled", safeError{category: safeCancellation}, 499, canonicalCancellationError, canonicalCancellationStreamErrorFrame},
 		{"internal", safeError{category: safeInternal}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
+		{"provider stream", safeError{category: safeProviderStream}, 500, canonicalInternalError, canonicalProviderStreamErrorFrame},
 		{"permission", safeError{category: safePermission}, 403, canonicalPermissionError, canonicalInternalStreamErrorFrame},
 		{"zero", safeError{}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},
 		{"unknown", safeError{category: 255}, 500, canonicalInternalError, canonicalInternalStreamErrorFrame},

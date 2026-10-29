@@ -384,6 +384,13 @@ Use `errors.Is` to detect cancellation and deadlines. Use `errors.As` with
 `*provider.APICallError` to check whether a call can be retried. The client
 does not retry on its own; configure retries in your application.
 
+A stream error part whose `APICallError` has `StatusCode` 0 and the message
+`provider stream error` means the provider reported an error inside its stream.
+It is not retryable: `IsRetryable` is false, so the root `fallback` package with
+`WithBufferedStream` does not fall back on it. Later parts of the same stream
+remain readable, and the stream can end right after the error without a finish
+part.
+
 The Gateway limits provider response sizes and stream idle time, and Grafana
 limits request size and duration, so the client has no size limits to
 configure. To bound a call yourself, use the

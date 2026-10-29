@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -57,6 +58,7 @@ var (
 	canonicalTimeoutStreamErrorFrame      = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"request timed out\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"timeout\",\"statusCode\":504,\"retryable\":true}}\n\n")
 	canonicalCancellationStreamErrorFrame = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"request canceled\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"canceled\",\"statusCode\":499,\"retryable\":false}}\n\n")
 	canonicalInternalStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"internal error\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"internal_error\",\"statusCode\":500,\"retryable\":true}}\n\n")
+	canonicalProviderStreamErrorFrame     = []byte("data: {\"type\":\"error\",\"error\":{\"message\":\"provider stream error\",\"type\":\"internal_server_error\",\"param\":null,\"code\":\"provider_error\",\"retryable\":false}}\n\n")
 )
 
 type wireSchemaValidator struct {
@@ -149,6 +151,7 @@ func TestStreamEventSchema(t *testing.T) {
 		canonicalTimeoutStreamErrorFrame,
 		canonicalCancellationStreamErrorFrame,
 		canonicalInternalStreamErrorFrame,
+		canonicalProviderStreamErrorFrame,
 	} {
 		valid = append(valid, string(frame[len("data: "):len(frame)-len("\n\n")]))
 	}
@@ -178,10 +181,32 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"custom","kind":"example.kind","providerMetadata":{"ns":[]}}`,
 		`{"type":"custom","kind":"example.kind","id":"extra"}`,
 	}
+	providerStream := string(canonicalProviderStreamErrorFrame[len("data: ") : len(canonicalProviderStreamErrorFrame)-len("\n\n")])
+	invalid = append(invalid,
+		strings.Replace(providerStream, `"retryable":false`, `"statusCode":500,"retryable":false`, 1),
+		strings.Replace(providerStream, `"retryable":false`, `"statusCode":null,"retryable":false`, 1),
+		strings.Replace(providerStream, `"retryable":false`, `"retryable":true`, 1),
+		strings.Replace(providerStream, "provider stream error", "upstream failure", 1),
+		strings.Replace(providerStream, "internal_server_error", "failed_dependency", 1),
+	)
+	for _, frame := range [][]byte{
+		canonicalRateLimitStreamErrorFrame,
+		canonicalOverloadStreamErrorFrame,
+		canonicalDependencyStreamErrorFrame,
+		canonicalUpstreamStreamErrorFrame,
+		canonicalTimeoutStreamErrorFrame,
+		canonicalCancellationStreamErrorFrame,
+		canonicalInternalStreamErrorFrame,
+	} {
+		document := string(frame[len("data: ") : len(frame)-len("\n\n")])
+		invalid = append(invalid, statusCodeMember.ReplaceAllString(document, ""))
+	}
 	for _, document := range invalid {
 		assert.Error(t, compiled.Validate(json.RawMessage(document)), document)
 	}
 }
+
+var statusCodeMember = regexp.MustCompile(`"statusCode":\d+,`)
 
 func TestErrorSchema(t *testing.T) {
 	compiled := compileWireSchema(t, errorSchemaJSON)

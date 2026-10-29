@@ -12,7 +12,7 @@ Each numbered group is one commit. In every group, write the tests first and con
 
 ## 2. Status-less provider stream error on the server
 
-- [ ] 2.1 Add the failing tests:
+- [x] 2.1 Add the failing tests:
   - In `internal/execution/classify_test.go`: change the `"zero status"` row (`:103`) so its stream column is `CategoryProviderStream`. Add stream rows for a status-0 error with a plain cause (still provider stream), a wrapped deadline (timeout) and a wrapped cancellation (cancellation). Keep every unary column unchanged.
   - In `providerwire/v4/schema_test.go`: add `canonicalProviderStreamErrorFrame` next to the other frames (`:56`). Add `TestStreamEventSchema` cases:
     - valid: the status-less document;
@@ -22,7 +22,7 @@ Each numbered group is one commit. In every group, write the tests first and con
   - In `providerwire/v4/runtime_test.go` `TestPublicError_FixedBytes` (`:856-889`): add `{"provider stream", safeError{category: safeProviderStream}, 500, canonicalInternalError, canonicalProviderStreamErrorFrame}`. The row proves HTTP → internal 500 and stream → `provider_error` frame.
 
   Verify: `cd ai-gateway && go test ./internal/execution/... ./providerwire/v4/...` fails only on these cases.
-- [ ] 2.2 Implement design D1–D3:
+- [x] 2.2 Implement design D1–D3:
   - append `execution.CategoryProviderStream` with its godoc after `CategoryInternal`;
   - make it the status-0 fallback in `ClassifyStreamPart`;
   - append `safeProviderStream` after `safeBYOKDiscovery` and add its `safeCategories` entry;
@@ -35,8 +35,8 @@ Each numbered group is one commit. In every group, write the tests first and con
     - add a `provider_error` `allOf` entry whose `then` has `"not":{"required":["statusCode"]}` plus const message, type and `retryable:false`.
 
   Verify: `cd ai-gateway && go test -race ./internal/execution/... ./providerwire/v4/...` passes.
-- [ ] 2.3 In `internal/execution/adapter_test.go`, add an "in-band status-less stream error" scenario that expects `PartErrors: [CategoryProviderStream]` and ends with a valid finish, because `assertProviderWire` requires a finish when `Category == 0` (`:136`). Add its `unaryDocuments` entry `{0, "provider_error", "provider stream error"}`. Verify: `cd ai-gateway && go test ./internal/execution/...` passes.
-- [ ] 2.4 Update `docs/providers/grafana-gateway.md` ("Bound work and handle errors", retry guidance at `:378-381`). Say that a stream error can carry code `provider_error` with no status, that it is not retryable, so `*provider.APICallError.IsRetryable` is false and root `fallback` with `WithBufferedStream` does not fall back on it, and that later parts remain readable. Verify: `mise run lint-docs` passes.
+- [x] 2.3 In `internal/execution/adapter_test.go`, add an "in-band status-less stream error" scenario that expects `PartErrors: [CategoryProviderStream]` and ends with a valid finish, because `assertProviderWire` requires a finish when `Category == 0` (`:136`). Add its `unaryDocuments` entry `{0, "provider_error", "provider stream error"}`. Verify: `cd ai-gateway && go test ./internal/execution/...` passes.
+- [x] 2.4 Update `docs/providers/grafana-gateway.md` ("Bound work and handle errors", retry guidance at `:378-381`). Say that a stream error can carry code `provider_error` with no status, that it is not retryable, so `*provider.APICallError.IsRetryable` is false and root `fallback` with `WithBufferedStream` does not fall back on it, and that later parts remain readable. Verify: `mise run lint-docs` passes.
 
 ## 3. Clean EOF after a provider error
 

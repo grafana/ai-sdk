@@ -287,12 +287,12 @@
         "type": { "const": "error" },
         "error": {
           "type": "object",
-          "required": ["message", "type", "param", "code", "statusCode", "retryable"],
+          "required": ["message", "type", "param", "code", "retryable"],
           "properties": {
-            "message": { "enum": ["invalid request", "authentication failed", "forbidden", "model not found", "rate limit exceeded", "service overloaded", "failed dependency", "upstream failure", "request timed out", "request canceled", "internal error"] },
+            "message": { "enum": ["invalid request", "authentication failed", "forbidden", "model not found", "rate limit exceeded", "service overloaded", "failed dependency", "upstream failure", "request timed out", "request canceled", "internal error", "provider stream error"] },
             "type": { "enum": ["invalid_request_error", "authentication_error", "forbidden", "model_not_found", "rate_limit_exceeded", "internal_server_error", "failed_dependency"] },
             "param": { "type": "null" },
-            "code": { "enum": ["invalid_request", "authentication_error", "forbidden", "model_not_found", "rate_limit_exceeded", "overloaded", "failed_dependency", "upstream_error", "timeout", "canceled", "internal_error"] },
+            "code": { "enum": ["invalid_request", "authentication_error", "forbidden", "model_not_found", "rate_limit_exceeded", "overloaded", "failed_dependency", "upstream_error", "timeout", "canceled", "internal_error", "provider_error"] },
             "statusCode": { "type": "integer", "minimum": 100, "maximum": 599 },
             "retryable": { "type": "boolean" },
             "data": {
@@ -315,7 +315,8 @@
             { "if": { "properties": { "code": { "const": "upstream_error" } } }, "then": { "properties": { "message": { "const": "upstream failure" }, "type": { "const": "internal_server_error" }, "statusCode": { "const": 502 }, "retryable": { "const": true } } } },
             { "if": { "properties": { "code": { "const": "timeout" } } }, "then": { "properties": { "message": { "const": "request timed out" }, "type": { "const": "internal_server_error" }, "statusCode": { "const": 504 }, "retryable": { "const": true } } } },
             { "if": { "properties": { "code": { "const": "canceled" } } }, "then": { "properties": { "message": { "const": "request canceled" }, "type": { "const": "internal_server_error" }, "statusCode": { "const": 499 }, "retryable": { "const": false } } } },
-            { "if": { "properties": { "code": { "const": "internal_error" } } }, "then": { "properties": { "message": { "const": "internal error" }, "type": { "const": "internal_server_error" }, "statusCode": { "const": 500 }, "retryable": { "const": true } } } }
+            { "if": { "properties": { "code": { "const": "internal_error" } } }, "then": { "properties": { "message": { "const": "internal error" }, "type": { "const": "internal_server_error" }, "statusCode": { "const": 500 }, "retryable": { "const": true } } } },
+            { "if": { "properties": { "code": { "const": "provider_error" } } }, "then": { "properties": { "message": { "const": "provider stream error" }, "type": { "const": "internal_server_error" }, "retryable": { "const": false } }, "not": { "required": ["statusCode"] } }, "else": { "required": ["statusCode"] } }
           ],
           "additionalProperties": false
         }
