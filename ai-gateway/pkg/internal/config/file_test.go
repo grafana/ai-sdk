@@ -32,7 +32,14 @@ func TestParseModelCatalog_StrictBoundedDocument(t *testing.T) {
 		assert.Equal(t, []string{"assistant"}, file.Models["grafana/assistant"].Aliases)
 	})
 
+	t.Run("single-line JSON", func(t *testing.T) {
+		file, err := ParseModelCatalog(`{"providers":{"anthropic-primary":{"type":"anthropic","apiKeyEnv":"ANTHROPIC_API_KEY"}},"models":{"grafana/assistant":{"name":"Grafana Assistant","primary":{"provider":"anthropic-primary","model":"claude-test"},"aliases":["assistant"]}}}`)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"assistant"}, file.Models["grafana/assistant"].Aliases)
+	})
+
 	t.Run("exact limit", func(t *testing.T) {
+		require.Equal(t, 64<<10, MaxModelCatalogBytes)
 		padded := minimalConfigYAML + "#" + strings.Repeat("x", MaxModelCatalogBytes-len(minimalConfigYAML)-1)
 		require.Len(t, padded, MaxModelCatalogBytes)
 		_, err := ParseModelCatalog(padded)
@@ -42,7 +49,7 @@ func TestParseModelCatalog_StrictBoundedDocument(t *testing.T) {
 	t.Run("over limit", func(t *testing.T) {
 		oversized := minimalConfigYAML + "#" + strings.Repeat("x", MaxModelCatalogBytes-len(minimalConfigYAML))
 		_, err := ParseModelCatalog(oversized)
-		require.EqualError(t, err, fmt.Sprintf("config: GF_PLUGIN_MODEL_CATALOG exceeds %d bytes", MaxModelCatalogBytes))
+		require.EqualError(t, err, "config: GF_PLUGIN_MODEL_CATALOG exceeds 65536 bytes")
 	})
 
 	tests := []struct {

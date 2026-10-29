@@ -10,7 +10,7 @@ Grafana's shared plugin validator refuses to publish the Gateway because the plu
 - Keep the same strict, single-document YAML validation and secret-safe errors; bound the setting at 64 KiB instead of the former 1 MiB file limit, well below the 128 KiB a single Linux environment variable can hold.
 - Self-hosted Grafana keeps a catalog file through Grafana's `$__file{}` expansion: `model_catalog = $__file{/etc/grafana/aigateway/models.yaml}`. Environment-only hosts set `GF_PLUGIN_MODEL_CATALOG` directly.
 - A leftover `config_file` setting is ignored; startup then fails because `model_catalog` is missing.
-- Update the local development configuration, tests and operator documentation. The end-to-end discovery test uses the largest catalog that fits the new bound; a configured catalog can no longer produce a discovery response above 1 MiB, and the discovery handler unit test keeps that no-cap evidence.
+- Update the local development configuration, tests and operator documentation. The end-to-end discovery test still proves a response above 1 MiB: an openai-compatible `providerName` is declared once but repeated in every candidate, so a catalog within the bound encodes well above it.
 
 Catalog resources managed through the App Platform API are a separate, larger design and out of scope.
 

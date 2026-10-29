@@ -24,7 +24,7 @@ The Gateway SHALL read settings, including the bounded strict model catalog docu
 #### Scenario: Startup failure is logged with its reason
 - **WHEN** configuration or construction fails at startup
 - **THEN** the Gateway SHALL log the failure with its reason before exiting
-- **AND** the reason SHALL name the failing setting or provider without its value, the model catalog contents or credentials
+- **AND** the reason SHALL name the failing setting or provider without the setting's whole value or credentials; it MAY name catalog keys and identifiers such as model IDs, provider names and `apiKeyEnv` variable names
 
 #### Scenario: Environment-only startup
 - **WHEN** the host starts the plugin with no arguments and a valid environment, including the model catalog

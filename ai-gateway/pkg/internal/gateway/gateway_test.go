@@ -129,6 +129,9 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 		{name: "invalid model catalog", change: func(env map[string]string) {
 			env["GF_PLUGIN_MODEL_CATALOG"] += "unknown: backend-private\n"
 		}, message: "invalid YAML fields or values"},
+		{name: "oversized model catalog", change: func(env map[string]string) {
+			env["GF_PLUGIN_MODEL_CATALOG"] += "#" + strings.Repeat("x", 64<<10)
+		}, message: "GF_PLUGIN_MODEL_CATALOG exceeds 65536 bytes"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

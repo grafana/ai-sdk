@@ -89,7 +89,10 @@ file with `$__file{}` or from Grafana's environment with `$__env{}`.
 The Gateway reads the catalog from the `model_catalog` setting, never from a
 file. `$__file{}` makes Grafana read the file when Grafana starts, so restart
 Grafana after you change it. Hosts that configure plugins through the
-environment set `GF_PLUGIN_MODEL_CATALOG` to the catalog YAML instead.
+environment set `GF_PLUGIN_MODEL_CATALOG` to the catalog YAML instead; if their
+settings cannot contain newlines, pass the catalog as single-line JSON, which is
+also valid YAML. If the file that `$__file{}` names is missing or unreadable,
+Grafana itself fails to start.
 
 The Gateway checks its settings and the catalog when Grafana starts it. If
 something is wrong, it does not start, and Grafana's log says why.

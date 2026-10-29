@@ -818,21 +818,22 @@ describe("authenticated Anthropic Gateway command", () => {
       } finally { await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => fake.stop()); }
     });
   }
-  it("serves the complete configured catalog at the model catalog bound without inference", async () => {
+  it("serves the complete configured catalog above the former response cap without inference", async () => {
     const fake = await FakeAnthropic.start();
     let gateway: GatewayProcess | undefined;
     try {
-      const candidates = Array.from({ length: 8 }, (_, i) => ({ providerInstance: "anthropic-primary", provider: "anthropic", providerModelId: `${i}-` + '"'.repeat(256) }));
-      const routes = Array.from({ length: 24 }, (_, i) => ({ id: `public-${String(i).padStart(3, "0")}`, aliases: [`alias-${i}`] }));
-      const config = `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fake.url}\nmodels:\n` + routes.map(route => `  ${route.id}:\n    name: Model\n    primary:\n      provider: anthropic-primary\n      model: '${candidates[0].providerModelId}'\n    fallback:\n${candidates.slice(1).map(candidate => `      - provider: anthropic-primary\n        model: '${candidate.providerModelId}'\n`).join("")}    aliases: [${route.aliases[0]}]\n`).join("");
-      assert.ok(Buffer.byteLength(config) > 60_000 && Buffer.byteLength(config) <= MODEL_CATALOG_MAX_BYTES);
+      const providerName = "compat" + '"'.repeat(2_000);
+      const candidates = Array.from({ length: 8 }, (_, i) => ({ providerInstance: "compat", provider: providerName, providerModelId: `model-${i}` }));
+      const routes = Array.from({ length: 40 }, (_, i) => ({ id: `public-${String(i).padStart(3, "0")}`, aliases: [`alias-${i}`] }));
+      const config = `providers:\n  compat:\n    type: openai-compatible\n    apiKeyEnv: GATEWAY_TEST_COMPATIBLE_KEY\n    baseURL: ${fake.url}\n    providerName: '${providerName}'\nmodels:\n` + routes.map(route => `  ${route.id}:\n    name: Model\n    primary:\n      provider: compat\n      model: ${candidates[0].providerModelId}\n    fallback:\n${candidates.slice(1).map(candidate => `      - provider: compat\n        model: ${candidate.providerModelId}\n`).join("")}    aliases: [${route.aliases[0]}]\n`).join("");
+      assert.ok(Buffer.byteLength(config) <= MODEL_CATALOG_MAX_BYTES);
       gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "access-token", config);
       const baseURL = gateway.baseURL;
       const headers = { Authorization: `Bearer ${TEST_TOKEN}` };
       const response = await fetch(`${baseURL}/config`, { headers });
       assert.equal(response.status, 200);
       const body = await response.text();
-      assert.ok(Buffer.byteLength(body) > Buffer.byteLength(config));
+      assert.ok(Buffer.byteLength(body) > 1_048_576);
       const document = JSON.parse(body);
       assert.equal(document.models.length, routes.length);
       assert.deepEqual(document.models.map((model: { id: string }) => model.id), routes.map(route => route.id));
