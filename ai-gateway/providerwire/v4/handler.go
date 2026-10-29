@@ -84,17 +84,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeFailure(w, failure)
 		return
 	}
-	history, failure := unresolvedProviderCalls(options.Prompt)
-	if failure != nil {
-		h.writeFailure(w, failure)
-		return
-	}
 	call, err := h.runtime.Call(r.Context(), validated.modelID, options)
 	if err != nil {
 		h.writeSafeError(w, safeErrorFromResolution(err), nil)
 		return
 	}
 	defer call.Close()
+	history := call.ToolHistory()
 	if validated.mode == executionStreaming {
 		h.serveStream(w, call, options, history)
 		return

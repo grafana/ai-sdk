@@ -40,6 +40,7 @@ func TestClassifySelection(t *testing.T) {
 		category Category
 		reason   Reason
 	}{
+		{"inconsistent tool history", fmt.Errorf("wrapped: %w", ErrInvalidToolHistory), CategoryInvalidRequest, ReasonNone},
 		{"account access", fmt.Errorf("wrapped: %w", ErrAccountAccess), CategoryPermission, ReasonNone},
 		{"byok credentials", ErrInvalidBYOK, CategoryBYOKCredentials, ReasonNone},
 		{"byok selector", ErrInvalidBYOKSelector, CategoryBYOKSelector, ReasonNone},
@@ -80,6 +81,7 @@ func TestClassifyProvider(t *testing.T) {
 		{"net timeout", testNetError{timeout: true}, CategoryTimeout},
 		{"url error", &url.Error{Op: "Post", URL: "https://private", Err: testNetError{}}, CategoryUpstream},
 		{"dial error", &net.OpError{Op: "dial", Net: "tcp", Addr: testAddr("private:443"), Err: errors.New("refused")}, CategoryUpstream},
+		{"invalid output", fmt.Errorf("wrapped: %w", ErrInvalidOutput), CategoryInternal},
 		{"other", errors.New("private internal"), CategoryInternal},
 		{"nil", nil, CategoryInternal},
 		{"panicking error", panicError{}, CategoryInternal},

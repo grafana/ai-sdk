@@ -202,9 +202,9 @@ flowchart TD
   request -->|rejected| httpError[HTTP error before commitment]
   setup -->|setup fails| httpError
   setup -->|usable stream returned| commit[Commit HTTP 200 and SSE headers]
-  commit --> read[Read and validate provider parts]
+  commit --> read[Runtime reads and validates the part lifecycle]
   commit -->|flush failure| cleanup
-  read -->|valid part, including a finish| frame[Encode complete SSE frame and flush]
+  read -->|valid part, including a finish| frame[Check representation, encode complete SSE frame and flush]
   frame -->|continue| read
   read -->|provider close after a finish| cleanup[Cancel model context and bounded drain]
   read -->|terminal failure, premature close, idle, deadline or cancellation| terminal[Attempt terminal SSE error]
@@ -215,9 +215,15 @@ flowchart TD
 For configured fallback, `DoStream` waits for candidate selection before
 returning the usable stream. For a direct model, the handler may commit HTTP
 success before the first provider part arrives. The execution runtime waits for
-each part and owns the idle timer and cleanup. The
+each part and owns the idle timer and cleanup. It also
+[validates the output lifecycle](../../ai-gateway/internal/execution/stream_validation.go)
+of every part, seeded from the prompt's tool history: event ordering, response
+segments, text, reasoning and tool phases, and the finish preconditions. A
+violation ends the stream as invalid output. The runtime also decides how the
+stream ends, so every adapter treats a close after a `finish` the same way. The
 [ProviderWire stream encoder](../../ai-gateway/providerwire/v4/stream.go) supplies an empty
-`stream-start` when needed, checks event ordering and validity, and writes
+`stream-start` when needed, checks its representation and content, such as
+valid UTF-8, metadata shape and the JavaScript safe-integer range, and writes
 complete `data: <JSON>` frames separated by a blank line.
 
 One provider stream can carry several native responses or messages. Each

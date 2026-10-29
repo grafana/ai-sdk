@@ -58,33 +58,13 @@ func validReasoningFile(data *provider.StreamFileData, mediaType string) bool {
 	return data != nil && data.Validate() == nil && utf8.ValidString(mediaType) && utf8.ValidString(data.Base64) && utf8.ValidString(data.URL) && (data.OriginalURL == nil || utf8.ValidString(*data.OriginalURL))
 }
 
-func (h *handler) processReasoningPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
+func (h *handler) processReasoningPart(w http.ResponseWriter, part provider.StreamPart) streamPartResult {
 	event := streamEvent{typeName: part.Type, id: part.ID, delta: part.Delta, metadata: part.ProviderMetadata, mediaType: part.MediaType, fileData: part.Data}
-	switch part.Type {
-	case provider.PartReasoningStart:
-		if part.ID == "" {
-			return streamPartAdapterFailure
-		}
-		if _, exists := state.segmentReasoningIDs[part.ID]; exists {
-			return streamPartAdapterFailure
-		}
-	case provider.PartReasoningDelta, provider.PartReasoningEnd:
-		if _, active := state.reasoningIDs[part.ID]; !active {
-			return streamPartAdapterFailure
-		}
-	}
 	switch h.emitStreamEvent(w, event) {
 	case streamWriteEncodingFailure:
 		return streamPartAdapterFailure
 	case streamWriteWriterFailure:
 		return streamPartWriterFailure
-	}
-	if part.Type == provider.PartReasoningStart {
-		state.reasoningIDs[part.ID] = struct{}{}
-		state.segmentReasoningIDs[part.ID] = struct{}{}
-	}
-	if part.Type == provider.PartReasoningEnd {
-		delete(state.reasoningIDs, part.ID)
 	}
 	return streamPartContinue
 }
