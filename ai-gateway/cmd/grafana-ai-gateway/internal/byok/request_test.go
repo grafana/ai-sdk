@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/cmd/grafana-ai-gateway/internal/routing"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,4 +81,42 @@ func TestDecodeRequest_RoutingRefusals(t *testing.T) {
 			assert.NotContains(t, err.Error(), "dummy-secret")
 		})
 	}
+}
+
+func TestDecodeRequest_LargeFallbackAccounts(t *testing.T) {
+	const fallbackAccounts = 1000
+	openai := make([]map[string]string, fallbackAccounts)
+	for i := range openai {
+		openai[i] = map[string]string{"apiKey": "dummy-o"}
+	}
+	models := make([]string, 0, 2*fallbackAccounts)
+	for range fallbackAccounts {
+		models = append(models, "openai/backup", "anthropic/x")
+	}
+	models = append(models, "openai/other")
+	raw, err := json.Marshal(map[string]any{
+		"byok":   map[string]any{"anthropic": []map[string]string{{"apiKey": "dummy-a1"}}, "openai": openai},
+		"models": models,
+		"only":   []string{"anthropic"},
+	})
+	require.NoError(t, err)
+	got, err := decodeGateway("anthropic/x", raw, nil)
+	require.NoError(t, err)
+	selectors := make([]string, len(got.Destinations))
+	for i, destination := range got.Destinations {
+		selectors[i] = destination.Selector()
+	}
+	assert.Equal(t, []string{"anthropic/x", "openai/backup", "openai/other"}, selectors)
+	require.Len(t, got.Destinations[1].Accounts, fallbackAccounts)
+	assert.Same(t, &got.Destinations[1].Accounts[0], &got.Destinations[2].Accounts[0])
+	groups := got.Groups()
+	require.Len(t, groups, 3)
+	for _, group := range groups[1:] {
+		assert.Len(t, group.Candidates, config.MaxProviderAttempts+1)
+	}
+	placements, err := routing.Compose(groups, &[]string{"anthropic"}, nil, config.MaxProviderAttempts)
+	require.NoError(t, err)
+	assert.Equal(t, []routing.Placement{{Group: 0, Candidate: 0}}, placements)
+	_, err = routing.Compose(groups, &[]string{"openai"}, nil, config.MaxProviderAttempts)
+	require.ErrorIs(t, err, execution.ErrRoutingAttemptBound)
 }

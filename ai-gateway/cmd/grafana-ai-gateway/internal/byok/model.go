@@ -15,12 +15,15 @@ import (
 
 // Groups returns one routing group per destination, keyed by its selector,
 // with one candidate per account. Accounts are never treated as repeated
-// destinations.
+// destinations. A group lists at most one candidate more than the attempt
+// bound: its candidates share one provider, so routing keeps all or none of
+// them, and a kept group above the bound fails composition either way.
 func (r Request) Groups() []routing.Group {
 	groups := make([]routing.Group, len(r.Destinations))
 	for i, destination := range r.Destinations {
-		groups[i] = routing.Group{Key: destination.Selector(), Candidates: make([]routing.Candidate, len(destination.Accounts))}
-		for j := range destination.Accounts {
+		count := min(len(destination.Accounts), config.MaxProviderAttempts+1)
+		groups[i] = routing.Group{Key: destination.Selector(), Candidates: make([]routing.Candidate, count)}
+		for j := range count {
 			groups[i].Candidates[j] = routing.Candidate{Provider: string(destination.Provider)}
 		}
 	}

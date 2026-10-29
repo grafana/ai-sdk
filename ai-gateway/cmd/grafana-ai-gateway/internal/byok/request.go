@@ -53,7 +53,8 @@ type requestAccount struct {
 // [ErrInvalidSelector]; invalid accounts, a destination without accounts, or
 // more requested-provider accounts than the attempt bound wrap
 // [ErrInvalidRequest]. Fallback destinations are bounded by routing
-// composition instead.
+// composition instead. A repeated selector is decoded once, and destinations
+// of the same provider share one read-only account slice.
 func DecodeRequest(selector string, controls routing.Controls, approvedBaseURLs map[Provider][]string) (Request, error) {
 	selected, model, ok := parseSelector(selector)
 	if !ok {
@@ -66,12 +67,17 @@ func DecodeRequest(selector string, controls routing.Controls, approvedBaseURLs 
 	if accountsByProvider == nil {
 		return Request{}, fmt.Errorf("%w: gateway.byok requires accounts", ErrInvalidRequest)
 	}
+	configs := make(map[Provider][]nativemodel.Config, len(accountsByProvider))
 	for name, accounts := range accountsByProvider {
 		if err := validateAccounts(name, accounts, approvedBaseURLs); err != nil {
 			return Request{}, err
 		}
+		configs[name] = make([]nativemodel.Config, len(accounts))
+		for i, account := range accounts {
+			configs[name][i] = account.Config
+		}
 	}
-	requested, err := destination(selected, model, accountsByProvider)
+	requested, err := destination(selected, model, configs)
 	if err != nil {
 		return Request{}, err
 	}
@@ -79,12 +85,17 @@ func DecodeRequest(selector string, controls routing.Controls, approvedBaseURLs 
 		return Request{}, fmt.Errorf("%w: gateway.byok allows at most %d accounts for the selected provider", ErrInvalidRequest, config.MaxProviderAttempts)
 	}
 	request := Request{Destinations: []Destination{requested}}
+	seen := map[string]bool{selector: true}
 	for _, fallback := range controls.Models {
 		name, model, ok := parseSelector(fallback)
 		if !ok {
 			return Request{}, ErrInvalidSelector
 		}
-		next, err := destination(name, model, accountsByProvider)
+		if seen[fallback] {
+			continue
+		}
+		seen[fallback] = true
+		next, err := destination(name, model, configs)
 		if err != nil {
 			return Request{}, err
 		}
@@ -133,14 +144,10 @@ func validateAccounts(name Provider, accounts []requestAccount, approvedBaseURLs
 	return nil
 }
 
-func destination(name Provider, model string, accountsByProvider map[Provider][]requestAccount) (Destination, error) {
-	supplied := accountsByProvider[name]
-	if len(supplied) == 0 {
+func destination(name Provider, model string, configs map[Provider][]nativemodel.Config) (Destination, error) {
+	accounts := configs[name]
+	if len(accounts) == 0 {
 		return Destination{}, fmt.Errorf("%w: gateway.byok requires accounts for each named provider", ErrInvalidRequest)
-	}
-	accounts := make([]nativemodel.Config, len(supplied))
-	for i, account := range supplied {
-		accounts[i] = account.Config
 	}
 	return Destination{Provider: name, Model: model, Accounts: accounts}, nil
 }
