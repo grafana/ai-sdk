@@ -725,13 +725,13 @@ describe("explicit raw output through the real handler", () => {
       const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "raw", mode: "stream", options });
       assert.equal(go.error, undefined);
       const expectedTypes = includeRawChunks
-        ? ["stream-start", "raw", "text-start", "text-delta", "raw", "text-end", "finish"]
+        ? ["stream-start", "raw", "text-start", "raw", "text-delta", "raw", "text-end", "finish"]
         : ["stream-start", "text-start", "text-delta", "text-end", "finish"];
       assert.deepEqual(ts.map(part => part.type), expectedTypes);
       assert.deepEqual(go.parts.map((part: { type: string }) => part.type), expectedTypes);
       const tsRaw = ts.flatMap(part => part.type === "raw" ? [part.rawValue] : []);
       const goRaw = go.parts.flatMap((part: { type: string; rawValue?: unknown }) => part.type === "raw" ? [part.rawValue] : []);
-      assert.deepEqual(tsRaw, includeRawChunks ? [projectedEcho, { type: "message_stop" }] : []);
+      assert.deepEqual(tsRaw, includeRawChunks ? [projectedEcho, undefined, { type: "message_stop" }] : []);
       assert.deepEqual(goRaw, tsRaw);
 
       const http = await fetch(`${baseURL}/providerwire-v4/language-model`, {
@@ -744,7 +744,8 @@ describe("explicit raw output through the real handler", () => {
       assert.doesNotMatch(text, /private-/);
       const frames = text.trim().split("\n\n").map(frame => JSON.parse(frame.slice("data: ".length)));
       for (const frame of frames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
-      assert.equal(frames.filter(frame => frame.type === "raw").length, includeRawChunks ? 2 : 0);
+      assert.equal(frames.filter(frame => frame.type === "raw").length, includeRawChunks ? 3 : 0);
+      if (includeRawChunks) assert.deepEqual(frames.filter(frame => frame.type === "raw")[1], { type: "raw" });
     });
   }
 

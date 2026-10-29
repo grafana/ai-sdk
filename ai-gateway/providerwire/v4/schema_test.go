@@ -142,6 +142,7 @@ func TestStreamEventSchema(t *testing.T) {
 		`{"type":"raw","rawValue":{"type":"response.created","sequence_number":0}}`,
 		`{"type":"raw","rawValue":null}`,
 		`{"type":"raw","rawValue":["native",1]}`,
+		`{"type":"raw"}`,
 	}
 	for _, frame := range [][]byte{
 		canonicalRateLimitStreamErrorFrame,
@@ -160,7 +161,6 @@ func TestStreamEventSchema(t *testing.T) {
 	}
 	invalid := []string{
 		`{"type":"stream-start"}`,
-		`{"type":"raw"}`,
 		`{"type":"raw","rawValue":{},"extra":true}`,
 		`{"type":"stream-start","warnings":[{"type":"other"}]}`,
 		`{"type":"response-metadata","modelId":null}`,

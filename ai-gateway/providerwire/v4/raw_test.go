@@ -19,7 +19,8 @@ func TestProjectRawValue(t *testing.T) {
 		want   string
 		absent bool
 	}{
-		{name: "no value", raw: "", absent: true},
+		{name: "no value", raw: "", want: ""},
+		{name: "whitespace-only value", raw: " \n\t", want: ""},
 		{name: "invalid JSON", raw: `{"type":`, absent: true},
 		{name: "event without tools is unchanged", raw: `{"type":"content_block_delta","delta":{"text":"<b>"}}`, want: `{"type":"content_block_delta","delta":{"text":"<b>"}}`},
 		{name: "non-object value is unchanged", raw: `["tools",1]`, want: `["tools",1]`},
@@ -114,6 +115,7 @@ func TestRuntimeRawOutput(t *testing.T) {
 			{Type: provider.PartTextStart, ID: "a"},
 			// A native frame that was not valid JSON reaches the Gateway without a value.
 			{Type: provider.PartRaw},
+			{Type: provider.PartRaw, RawValue: json.RawMessage(" \n")},
 			// Adapters check JSON syntax only, so invalid UTF-8 can arrive.
 			{Type: provider.PartRaw, RawValue: json.RawMessage("{\"delta\":\"\xff\"}")},
 			{Type: provider.PartTextDelta, ID: "a", Delta: "hello"},
@@ -190,10 +192,13 @@ func testRequestedRawParts(t *testing.T, parts []provider.StreamPart) {
 			raws = append(raws, string(event.RawValue))
 		}
 	}
-	assert.Equal(t, []string{"stream-start", "raw", "text-start", "text-delta", "raw", "text-end", "finish"}, types)
+	assert.Equal(t, []string{"stream-start", "raw", "text-start", "raw", "raw", "text-delta", "raw", "text-end", "finish"}, types)
 	assert.Equal(t, []string{
 		`{"response":{"tools":[{"headers":null,"server_url":"https://mcp.example/mcp","type":"mcp"}]},"type":"response.created"}`,
+		"",
+		"",
 		`{"type":"message_stop"}`,
 	}, raws)
+	assert.Equal(t, 2, strings.Count(body, `data: {"type":"raw"}`+"\n\n"))
 	assert.NotContains(t, body, "secret")
 }

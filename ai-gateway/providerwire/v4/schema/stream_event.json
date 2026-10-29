@@ -273,7 +273,7 @@
     },
     "raw": {
       "type": "object",
-      "required": ["type", "rawValue"],
+      "required": ["type"],
       "properties": {
         "type": { "const": "raw" },
         "rawValue": {}

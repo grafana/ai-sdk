@@ -63,13 +63,13 @@ Each numbered group is one commit. In every group, write the tests first and con
 
 ## 4. Value-less raw events
 
-- [ ] 4.1 Add failing tests:
+- [x] 4.1 Add failing tests:
   - in `providerwire/v4/raw_test.go`: the requested-raw expectations write `{"type":"raw"}` at the position of the value-less part (`:115-116`). A whitespace-only value is also value-less. Invalid UTF-8 and duplicate-key values are still dropped. Unrequested parts are still absent.
   - in `schema_test.go`: move `{"type":"raw"}` from the `TestStreamEventSchema` invalid list (`:160`) to the valid list.
 
   Verify: the new expectations fail.
-- [ ] 4.2 Implement design D4: add `omitempty` to `streamRawEvent.RawValue`, accept the empty value in `validStreamEvent` and the `PartRaw` branch, and set `raw.required` to `["type"]` in `schema/stream_event.json`. Update the `projectRawValue` godoc (`raw.go:23-29`), which still gives the old drop rationale for value-less parts. Verify: `cd ai-gateway && go test -race ./providerwire/v4/...` passes.
-- [ ] 4.3 Update `docs/providers/grafana-gateway.md` ("Inspect raw provider events"). A native event that is not valid JSON now arrives as a raw part without a value. One that repeats a key or is not valid UTF-8 is skipped. Verify: `mise run lint-docs` passes.
+- [x] 4.2 Implement design D4: add `omitempty` to `streamRawEvent.RawValue`, accept the empty value in `validStreamEvent` and the `PartRaw` branch, and set `raw.required` to `["type"]` in `schema/stream_event.json`. Update the `projectRawValue` godoc (`raw.go:23-29`), which still gives the old drop rationale for value-less parts. Verify: `cd ai-gateway && go test -race ./providerwire/v4/...` passes.
+- [x] 4.3 Update `docs/providers/grafana-gateway.md` ("Inspect raw provider events"). A native event that is not valid JSON now arrives as a raw part without a value. One that repeats a key or is not valid UTF-8 is skipped. Verify: `mise run lint-docs` passes.
 
 ## 5. Go client decoding
 
@@ -100,7 +100,7 @@ The Go capture serializes `APICallError.statusCode` as `0` (no `omitempty` at `p
   - close without finish.
 
   Add a `runtime-integration.test.ts` test for raw requested and not requested. Both clients must get the same part order, the fixed base fields with no `statusCode` and `retryable` false, no native text in base fields, a governed `nativeError` only if present, no trailing internal error, and frames valid under `validateStreamEvent`. Verify: `mise run test-ai-gateway-source-integration` passes.
-- [ ] 6.2 Update `runtime-integration.test.ts:720-746`. The existing `raw` scenario's value-less part (`testserver/providerwire_v4.go:282`) now produces three requested raw events: both clients see a value-less raw in second position and the HTTP frame count is 3. Verify: `mise run test-providerwire-v4` passes.
+- [x] 6.2 Update `runtime-integration.test.ts:720-746`. The existing `raw` scenario's value-less part (`testserver/providerwire_v4.go:282`) now produces three requested raw events: both clients see a value-less raw in second position and the HTTP frame count is 3. Verify: `mise run test-providerwire-v4` passes.
 - [x] 6.3 Extend `go-client-differential.test.ts`, next to the fixture at `:457-472`, with a raw SSE wire containing the status-less error, a value-less raw event and EOF right after a final error. Both clients must normalize to the same parts, and the Go client must report no error. Verify: `mise run test-providerwire-v4` passes.
 
 ## 7. Integration checks

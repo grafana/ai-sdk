@@ -25,8 +25,9 @@ return no raw output.
 Raw events are for debugging. Their shape is whatever the provider sends and can
 change without notice, so do not build application logic on them. Events keep
 their JSON values but not their exact bytes: whitespace, key order and escaping
-can differ from the provider's. An event that is not valid JSON, or that repeats
-an object key, is skipped. Provider error events pass through, so they can
+can differ from the provider's. An event that is not valid JSON arrives as a raw
+part without a value. An event that repeats an object key or is not valid UTF-8
+is skipped. Provider error events pass through, so they can
 contain more detail than the Gateway's own errors. Treat raw events as
 sensitive. The Gateway does not log or export them.
 

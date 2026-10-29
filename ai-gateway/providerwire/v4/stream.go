@@ -67,7 +67,7 @@ type streamCustomEvent struct {
 
 type streamRawEvent struct {
 	Type     provider.StreamPartType `json:"type"`
-	RawValue json.RawMessage         `json:"rawValue"`
+	RawValue json.RawMessage         `json:"rawValue,omitempty"`
 }
 
 type streamFinishEvent struct {
@@ -185,8 +185,6 @@ func validStreamEvent(value streamEvent) bool {
 		return value.source != nil
 	case provider.PartToolApprovalRequest:
 		return value.id != "" && value.approvalID != ""
-	case provider.PartRaw:
-		return len(value.rawValue) > 0
 	case provider.PartFinish:
 		return validRawUsage(value.rawUsage)
 	default:
