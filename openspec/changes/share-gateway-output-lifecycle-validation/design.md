@@ -156,13 +156,13 @@ stream.Next() (part, Wait)                                 // + WaitInvalidOutpu
 - **Test adapter:**
   - it maps `WaitFinished` to success with a zero category and drops its `finished` flag, because `ClassifyProvider(nil)` is internal (`classify.go:85-87`);
   - its `Outcome` reports invalid output and the number of accepted parts;
-  - `TestTestAdapter_MatchesProviderWire` (`internal/execution/adapter_test.go:370`) gains rows per rule class, with segment, history, unary and after-finish rows. It leaves out the content-validity classes of D7 on purpose.
+  - `TestTestAdapter_MatchesProviderWire` (`internal/execution/adapter_test.go:375`) gains rows per rule class, with segment, history, unary and after-finish rows. It leaves out the content-validity classes of D7 on purpose.
   - `assertProviderWire` accepts a `finish` frame before a terminal error, which #583 made valid, and checks that the terminal error is the last frame.
 - **Parity count.** The test adapter's count is the parts `Next` delivered as `WaitPart` before `WaitInvalidOutput`. ProviderWire's count is the provider parts it processed before its internal terminal error, read from its frames: one frame per processed part, plus the leading `stream-start` frame, where
   - a real first `stream-start` is both a processed part and the leading frame, so it adds no extra frame;
-  - a raw part with `includeRaw` off is processed and writes no frame;
+  - a raw part with `includeRaw` off is processed and writes no frame, so the harness, which does not request raw chunks, takes the raw count from the scenario input;
   - an error part and a `finish` each write one frame.
-- **Harness prompt.** The scenario struct has no prompt; the request always sends `"prompt": []` (`adapter_test.go:217-232`, `:320-341`). A prompt field, encoded both as the wire prompt and as `provider.Message` values for the test adapter, carries the history and inconsistent-history rows.
+- **Harness prompt.** The scenario struct has no prompt; the request always sends `"prompt": []` (`adapter_test.go:223-239`, `:325-346`). A prompt field, encoded both as the wire prompt and as `provider.Message` values for the test adapter, carries the history and inconsistent-history rows.
 
 ### D10. No upstream parity change
 
