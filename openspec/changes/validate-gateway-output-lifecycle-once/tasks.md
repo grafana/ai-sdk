@@ -25,8 +25,8 @@
 
 ## 3. Track checks
 
-- [ ] 3.1 Run `mise run check`, `mise run lint`, `mise run parity-check`, `mise run test-integration`, `mise run test-ai-gateway` and `mise run test-providerwire-v4`, and record the results for the PR description.
-- [ ] 3.2 Run `openspec validate validate-gateway-output-lifecycle-once --strict` and verify that it passes.
+- [x] 3.1 Run `mise run check`, `mise run lint`, `mise run parity-check`, `mise run test-integration`, `mise run test-ai-gateway` and `mise run test-providerwire-v4`, and record the results for the PR description.
+- [x] 3.2 Run `openspec validate validate-gateway-output-lifecycle-once --strict` and verify that it passes.
 
 ## Workflow follow-up
 
