@@ -32,7 +32,7 @@
 
 - [x] 4.1 Document `supportsStructuredOutputs` in `ai-gateway/README.md` "Configure models" (L73-75), next to the `baseURL` sentence. Say that it is only for `openai-compatible`, defaults to `false`, sends JSON-schema response formats, and should be enabled only for backends verified to support them. Verify that the README renders and stays within its current section.
 - [x] 4.2 In `docs/providers/grafana-gateway.md` "Structured output" (L258-260), qualify the sentence that says compatible providers always use JSON mode with a warning. With `supportsStructuredOutputs` they follow the schema, and they keep JSON mode with a warning without it. Verify the page links remain valid.
-- [ ] 4.3 Confirm that `docs/concepts/gateway-architecture.md` and `docs/concepts/gateway-glossary.md` need no change. Neither describes structured outputs or per-provider capabilities, and no flow, boundary or term changes. Record the result in the PR description, or update them if drift is found.
+- [x] 4.3 Confirm that `docs/concepts/gateway-architecture.md` and `docs/concepts/gateway-glossary.md` need no change. Neither describes structured outputs or per-provider capabilities, and no flow, boundary or term changes. Record the result in the PR description, or update them if drift is found.
 - [x] 4.4 Confirm no docs or godoc quote the old off-path warning text (`grep -rn "requires WithStructuredOutputs(true)"` outside `openspec/` returns nothing).
 
 ## 5. Integration validation
