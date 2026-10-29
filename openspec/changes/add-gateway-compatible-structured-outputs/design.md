@@ -1,6 +1,6 @@
 ## Context
 
-See proposal.md (Why). Current state, checked on this worktree:
+See proposal.md (Why). State before this change, checked on this worktree:
 
 - `config/file.go:33-39` `Provider` has camelCase YAML keys, and `LoadFile` decodes them strictly with `KnownFields(true)` (L108). `ResolvedProvider` (L57-62) is built in exactly one place, `ResolveProviderSecrets` (L253).
 - `Validate` (L135-159) switches on the provider type. Its only type-restricted field today is `providerName`, rejected on `anthropic` and `openai` at L136-139 with `config: providers.%s.providerName is only supported for openai-compatible providers`.
@@ -25,14 +25,15 @@ Upstream baseline: `@ai-sdk/openai-compatible` 3.0.71 (`test/conformance/upstrea
 
 **Goals:**
 - Give operators a way to set upstream's per-provider construction capability, with the same default and the same request shape.
-- Keep existing catalogs byte-for-byte unchanged in behavior.
+- Keep existing catalogs unchanged in request behavior.
+- Match upstream's off-path warning `details` text.
 
 **Non-Goals:**
-- Any change to `providers/openai-compatible`: its mapping, defaults or warning text.
+- Any change to the `providers/openai-compatible` response-format mapping or defaults. Only the off-path warning `details` text changes (Decision 4).
 - A `strictJsonSchema` catalog key. Upstream reads it per call, and the Gateway already forwards per-call compatible options.
 - Detecting the capability automatically or probing the backend.
 - Exposing the capability through configured discovery. Discovery output is unchanged.
-- Shipping the #201 harness on main, or making its matrix run part of this change's required proof (see Decision 4).
+- Gateway conformance matrix harness changes. They are separate work.
 
 ## Decisions
 
@@ -40,22 +41,22 @@ Upstream baseline: `@ai-sdk/openai-compatible` 3.0.71 (`test/conformance/upstrea
    - Alternative: `*bool`, which would let validation reject any presence of the key on non-compatible types, including explicit `false`. Rejected. `providerName` accepts its zero value silently on every type. Explicit `false` there is harmless, so a pointer and nil checks would add complexity without benefit.
 2. **Validation: only `true` is rejected on `anthropic` and `openai`.** The check goes in the existing `case "anthropic", "openai"` branch and uses the providerName message pattern: `config: providers.%s.supportsStructuredOutputs is only supported for openai-compatible providers`. Startup fails before readiness, like every other config error.
 3. **Always pass the option.** The catalog calls `WithStructuredOutputs(providerConfig.SupportsStructuredOutputs)` unconditionally, the same way `WithProviderName` is passed. A `false` value equals the provider default, so existing catalogs are unchanged. Each fallback candidate reads its own provider's setting, because construction is per descriptor (`catalog.go:46-73`).
-4. **Harness toggle.** #201 (draft, branch `nrbrd/ai-gateway-conformance`) owns the matrix harness. Its `catalog()` in `test/conformance/tools/gateway-runtime.mts` adds `providerName` when `r.provider === "openai-compatible"` (branch L95), and the toggle is one more key in that conditional. It therefore enables the setting for every compatible matrix row, not only `structured-json-output`. This change must be green on its own.
-   - If #201 has merged when this change is implemented, update `catalog()` and its test here. Then verify with `mise run test-conformance-gateway` that the whole `openai-compatible` matrix stays green and both client rows of `openai-compatible/recorded/structured-json-output` now pass.
-   - Otherwise this change merges first so the key exists, and the toggle and that same verification go into #201. Only the #201 matrix-row verification is then pending #201.
+4. **Align the off-path warning with upstream.** `convertResponseFormat` (`convert_request.go:833-839`) uses upstream 3.0.71's `details`, `JSON response format schema is only supported with structuredOutputs`, keeping type `unsupported`, feature `responseFormat` and the `json_object` fallback. The provider gains a port of upstream's "should forward json response format as \"json_object\" and omit schema when structuredOutputs are disabled" test, unary and streaming, asserting the request body and the exact warning. The Gateway builds the provider from same-revision source (`ai-gateway/go.mod` replace), so one change keeps both modules green.
+   - Alternative: keep the Go text and track the divergence separately. Rejected: this change exercises exactly this path, and fixing it here leaves no open divergence on it.
 5. **Evidence: deterministic tests, no new fixtures.** No provider `input*.chunks.txt` is added or changed.
    - Service tests use real `BuildCatalog` construction with the fake HTTP backend, unary and streaming. The setting is chosen per resolved provider through an additive helper or option, so the existing `nativeOptionsRequest` callers keep their behavior.
    - Setting-on case across direct and fallback and the three name variants: `json_schema` shape, and `strict == true` by default because the body's `strictJsonSchema:false` is under the `openai` namespace, which the compatible model does not read.
    - Per-call override: with the setting on, `providerOptions.myVllm.strictJsonSchema:false` gives `strict == false`. The raw `my-vllm` key is not used because it adds a deprecation warning.
    - Mixed fallback: the failing primary (503 at `/primary`) and the serving fallback have opposite settings. Each recorded request's `response_format.type` matches its own provider's setting, and the output carries no `responseFormat` unsupported warning when the serving candidate has the setting on.
-   - Warnings are asserted structurally (type `unsupported`, feature `responseFormat`), not by substring. The setting-off case keeps asserting the unchanged details text, which pins the unchanged off path.
+   - Warnings are asserted structurally (type `unsupported`, feature `responseFormat`), not by substring. The setting-off case asserts upstream's exact details text, which pins the aligned off path.
    - Client-level proof on main: `gateway-command.test.ts` adds a compatible provider with `supportsStructuredOutputs: true`, backed by `FakeCompatible`, and runs generate and stream through the Go and TypeScript clients. `FakeCompatible` returns fixed non-JSON text ("hello from fake compatible", L3804/L3814) and finishes streams only when the body contains the `normal-stream` marker (L3770, L3812). The test therefore adds an additive `structuredOutput` flag to `FakeCompatible` that returns `{"value":"ok"}` in place of both the unary content (L3804) and the stream delta (L3814), mirroring `FakeOpenAI.structuredOutput` (L3829, L3920), and uses the `normal-stream` prompt for streaming. The `json_schema` and no-warning assertions apply only to the low-level calls that carry the suite's schema response format (suite L92-96): the Go `generate`/`stream` capture modes and TypeScript `doGenerate`/`doStream`. For those calls it asserts the recorded `response_format.type` is `json_schema` and that no `responseFormat` unsupported warning is returned; a missing `warnings` field (Go `omitempty`) counts as empty. The suite's high-level calls (TypeScript `Output.json()` at L141/L165 and Go `structured-*` via `output.JSON(output.WithName(""))` at `providers/grafana/internal/capture/main.go:140,145`) send no schema (`output/json.go:30-36`), so their recorded backend requests are expected to be `json_object`; they only prove that `{"value":"ok"}` parses.
 
 ### Parity classification
 
 - Setting default `false`, the `json_schema` shape, the name default only when absent, and `strict` defaulting to `true` per call: **parity-preserving**. The Go provider already matches upstream, and this change only makes the switch reachable.
 - Expressing the setting as a YAML catalog key instead of a constructor argument: **parity-preserving Go adaptation**. The Gateway is a Go extension, and an operator catalog is its construction surface.
-- The off-path warning `details` text differs from upstream (Go `JSON schema response format requires WithStructuredOutputs(true); using json_object.` vs upstream 3.0.71 `JSON response format schema is only supported with structuredOutputs`). The type and feature match. Classification: **implementation bug**, a pre-existing provider implementation divergence in `providers/openai-compatible`, not introduced here. It is **out of scope** for #561 because the issue's acceptance requires the off path to be unchanged. No fixture covers the off path (the golden enables the setting). Task 5.4 files or links an `upstream-sync` issue for it, and the PR references that issue. `knownGaps` is unchanged.
+- The off-path warning `details` text differed from upstream (Go `JSON schema response format requires WithStructuredOutputs(true); using json_object.` vs upstream 3.0.71 `JSON response format schema is only supported with structuredOutputs`). The type and feature already matched. Classification: **implementation bug**, a pre-existing divergence in `providers/openai-compatible`, fixed here (Decision 4). No fixture covers the off path (the golden enables the setting), so the ported provider test is the regression evidence. `knownGaps` had no entry for it and stays unchanged.
+- Issue #561 asked for the off-path warning to stay unchanged. The maintainer chose to align it with upstream instead, so the off path changes only in `details`.
 
 ### PARITY.md / knownGaps
 
@@ -73,8 +74,7 @@ No edit is expected. The `AI Gateway | Go extension | mixed` row (`PARITY.md:46`
 
 - [An operator enables the setting for a backend that cannot handle `json_schema`] → The backend returns its own error through existing safe error handling. Docs say to enable the setting only after verifying the backend, matching the direct provider guidance.
 - [Explicit `false` on a non-compatible type is accepted silently] → This is intentional and consistent with `providerName`. It has no effect on behavior.
-- [The matrix acceptance is unprovable on main until #201 lands] → Decision 4 splits the work. On main, the change is covered by service tests and the client-level `gateway-command.test.ts` case through both clients (Decision 5). Only the #201 matrix-row verification remains pending on #201.
-- [The #201 toggle enables the setting for every compatible matrix row] → The #201 verification covers the whole `openai-compatible` matrix, not only `structured-json-output` (Decision 4).
+- [A caller matches on the old warning `details` text] → `details` is human-readable text; type and feature are unchanged. The new text matches upstream, which TypeScript callers already see.
 
 ## Migration Plan
 

@@ -29,4 +29,4 @@ The Gateway SHALL transport structured output using existing text response and s
 #### Scenario: Compatible backend without structured outputs
 - **WHEN** a request with a response schema reaches an `openai-compatible` candidate whose provider does not enable `supportsStructuredOutputs`
 - **THEN** the backend SHALL receive `response_format` of type `json_object`
-- **AND** the Gateway output SHALL carry the existing `responseFormat` unsupported warning unchanged
+- **AND** the Gateway output SHALL carry a `responseFormat` unsupported warning with details `JSON response format schema is only supported with structuredOutputs`, matching upstream
