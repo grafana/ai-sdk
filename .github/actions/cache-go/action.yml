@@ -1,5 +1,9 @@
 name: Cache Go
 description: Cache module downloads and refresh each job's compiled packages per revision
+inputs:
+  lookup-only:
+    description: Check for cache entries without restoring them
+    default: "false"
 runs:
   using: composite
   steps:
@@ -14,6 +18,7 @@ runs:
     - name: Cache Go modules
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
+        lookup-only: ${{ inputs.lookup-only }}
         path: ${{ steps.paths.outputs.modules }}
         key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-modules-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum') }}
         restore-keys: |
@@ -22,6 +27,7 @@ runs:
     - name: Cache Go build results
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
+        lookup-only: ${{ inputs.lookup-only }}
         path: ${{ steps.paths.outputs.build }}
         key: ${{ runner.os }}-${{ runner.arch }}-${{ steps.paths.outputs.version }}-build-v2-${{ github.job }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-${{ github.sha }}
         restore-keys: |

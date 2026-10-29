@@ -21,7 +21,7 @@ const BYOK_MODEL = "anthropic/request-only-native";
 const BYOK_OPTIONS = { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }] } } };
 
 const AI_GATEWAY_ROOT = resolve(import.meta.dirname, "../..");
-const COMMAND_DIR = resolve(AI_GATEWAY_ROOT, "cmd/grafana-ai-gateway");
+const BACKEND_DIR = resolve(AI_GATEWAY_ROOT, "pkg");
 const HOST_DIR = resolve(AI_GATEWAY_ROOT, "test/platformhost/cmd/plugin-host");
 const READY_TIMEOUT_MS = 30_000;
 const ROUTE_DEADLINE = "60s";
@@ -41,7 +41,7 @@ before(() => {
   binaryPath = join(buildDirectory, "grafana-ai-gateway");
   nativeProxyBinaryPath = join(buildDirectory, "grafana-ai-gateway-native-proxy");
   hostBinaryPath = join(buildDirectory, "plugin-host");
-  for (const [binary, tags, directory] of [[binaryPath, [], COMMAND_DIR], [nativeProxyBinaryPath, ["-tags=gatewaytest"], COMMAND_DIR], [hostBinaryPath, [], HOST_DIR]] as const) {
+  for (const [binary, tags, directory] of [[binaryPath, [], BACKEND_DIR], [nativeProxyBinaryPath, ["-tags=gatewaytest"], BACKEND_DIR], [hostBinaryPath, [], HOST_DIR]] as const) {
     execFileSync("go", ["build", ...tags, "-o", binary, "."], {
       cwd: directory,
       stdio: "pipe",
@@ -1946,7 +1946,7 @@ describe("authenticated Anthropic Gateway command", () => {
     const source = readFileSync(import.meta.filename, "utf8");
     const imports = source.split("\n").filter((line) => line.startsWith("import ")).join("\n");
     assert.ok(source.includes('spawn(hostBinaryPath, ["--plugin", binary'));
-    assert.doesNotMatch(imports, /cmd\/grafana-ai-gateway\/internal/);
+    assert.doesNotMatch(imports, /pkg\/internal/);
     assert.doesNotMatch(imports, /providerwire|gateway\/catalog/);
   });
 

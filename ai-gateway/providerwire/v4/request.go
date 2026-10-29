@@ -151,54 +151,6 @@ func mapRequest(request wireRequest) (provider.CallOptions, *requestFailure) {
 	return options, nil
 }
 
-type historicalToolCall struct {
-	reemitted        bool
-	name             string
-	providerExecuted bool
-	completed        bool
-}
-
-func unresolvedProviderCalls(prompt []provider.Message) (map[string]string, *requestFailure) {
-	calls := make(map[string]historicalToolCall)
-	orphanResults := make(map[string]struct{})
-	for _, message := range prompt {
-		for _, part := range message.Content {
-			switch part.Type {
-			case provider.ContentPartTypeToolCall:
-				if previous, exists := calls[part.ToolCallID]; exists {
-					if previous.completed || previous.reemitted || !previous.providerExecuted || !part.ProviderExecuted || previous.name != part.ToolName {
-						return nil, invalidMappingFailure()
-					}
-					previous.reemitted = true
-					calls[part.ToolCallID] = previous
-					continue
-				}
-				if _, exists := orphanResults[part.ToolCallID]; exists {
-					return nil, invalidMappingFailure()
-				}
-				calls[part.ToolCallID] = historicalToolCall{name: part.ToolName, providerExecuted: part.ProviderExecuted}
-			case provider.ContentPartTypeToolResult:
-				if call, exists := calls[part.ToolCallID]; exists {
-					if call.name != part.ToolName || call.completed {
-						return nil, invalidMappingFailure()
-					}
-					call.completed = true
-					calls[part.ToolCallID] = call
-				} else {
-					orphanResults[part.ToolCallID] = struct{}{}
-				}
-			}
-		}
-	}
-	pending := make(map[string]string)
-	for id, call := range calls {
-		if call.providerExecuted && !call.completed {
-			pending[id] = call.name
-		}
-	}
-	return pending, nil
-}
-
 func mapWireMessage(message wireMessage) (provider.Message, *requestFailure) {
 	messageOptions, failure := mapWireProviderOptions(message.ProviderOptions)
 	if failure != nil {

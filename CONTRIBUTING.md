@@ -564,8 +564,13 @@ SDK's Go module dependency graph.
   explicit activation under #245. `MODULE=providers/anthropic mise run verify-module`
   downloads, verifies, builds and tests one module; `mise run verify-modules` runs
   every module.
-- **Gateway plugin:** Gateway builds the plugin backend from same-revision SDK
-  source through the replacements in `ai-gateway/go.mod`. Plugin validation runs on pull
+- **Gateway plugin:** Gateway builds the plugin backend in `ai-gateway/pkg`, the
+  standard plugin backend root, from same-revision SDK source through the
+  replacements in `ai-gateway/go.mod`. `mage -v buildPlugin` builds the Linux
+  backends into the built frontend package and adds the license inventory and
+  `SOURCE_REVISION`; `mise run build-ai-gateway-plugin` and the shared plugin
+  workflow both use it. `SOURCE_REVISION` is the checked-out commit in GitHub
+  Actions and `local-unverified` elsewhere. Plugin validation runs on pull
   requests and pushes: manifest regeneration, `mise run test-ai-gateway-frontend`,
   `mise run build-ai-gateway-plugin`, `mise run test-ai-gateway-e2e`,
   `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
@@ -574,6 +579,25 @@ SDK's Go module dependency graph.
   module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
   changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
   the app manifest source for `pnpm generate:kinds`.
+- **Gateway dev publication:** for each push to `main`, the [publish
+  workflow](.github/workflows/publish-ai-gateway-dev.yml) waits until the push's
+  CI run shows every required source check and plugin validation succeeded, then
+  publishes the plugin to the dev plugin catalog through Grafana's shared plugin
+  CI/CD workflow, which is pinned to a release tag. The version is the
+  `ai-gateway/package.json` version followed by `+` and the full commit SHA, such
+  as `0.1.0-alpha.1+<sha>`, with the `grafana_cloud` scope, and its
+  `SOURCE_REVISION` is that commit. The shared workflow lints, tests, builds,
+  validates, scans and signs the package again before publishing. Publications run
+  one at a time in push order: a newer push replaces one that is still waiting, so
+  not every commit is published. The publish run's summary shows the published
+  version. Publication runs outside the CI workflow, so it never delays or changes
+  the CI evidence that release automation reads. The publish run waits about 20
+  minutes for CI. If CI passes only after a re-run past that window, re-run the
+  publish run by hand, but only while its commit is still the newest on `main`.
+  Publishing needs a `grafana-aigateway-app` plugin stub with the Grafana Labs
+  signature level in the dev catalog, which exists; the shared workflow brings its
+  own credentials and runners. Publication does not deploy or run the plugin,
+  publish to the ops or prod catalogs, or create tags or releases.
 
 Every `go.mod` replaces each first-party module in its
 build graph with that module's directory, so builds in this repository always use

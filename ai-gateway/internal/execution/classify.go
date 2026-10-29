@@ -52,9 +52,9 @@ const (
 	ReasonFallbackModel
 )
 
-// ClassifySelection classifies an error returned by [Runtime.Call]: a policy
-// refusal, a host sentinel, a catalog error, or otherwise as
-// [ClassifyProvider] does.
+// ClassifySelection classifies an error returned by [Runtime.Call]: invalid
+// tool history, a policy refusal, a host sentinel, a catalog error, or
+// otherwise as [ClassifyProvider] does.
 func ClassifySelection(err error) (category Category, reason Reason) {
 	defer func() {
 		if recover() != nil {
@@ -65,6 +65,8 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 		return CategoryInternal, ReasonNone
 	}
 	switch {
+	case errors.Is(err, ErrInvalidToolHistory):
+		return CategoryInvalidRequest, ReasonNone
 	case errors.Is(err, ErrAccountAccess):
 		return CategoryPermission, ReasonNone
 	case errors.Is(err, ErrInvalidBYOK):
@@ -103,7 +105,7 @@ func ClassifyProvider(err error) (category Category) {
 		return CategoryInternal
 	}
 	switch {
-	case errors.Is(err, ErrTranslation):
+	case errors.Is(err, ErrTranslation), errors.Is(err, ErrInvalidOutput):
 		return CategoryInternal
 	case errors.Is(err, catalog.ErrUnsupportedRequest):
 		return CategoryInvalidRequest

@@ -106,9 +106,11 @@ func assertProviderWire(t *testing.T, response *httptest.ResponseRecorder, want 
 	frames := strings.Split(strings.TrimSuffix(response.Body.String(), "\n\n"), "\n\n")
 	var errors []wireError
 	var finish *wireError
+	var last string
 	for _, frame := range frames {
 		var event wireError
 		require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(frame, "data: ")), &event))
+		last = event.Type
 		switch event.Type {
 		case "error":
 			errors = append(errors, event)
@@ -125,7 +127,7 @@ func assertProviderWire(t *testing.T, response *httptest.ResponseRecorder, want 
 		wantCodes = append(wantCodes, unaryDocuments[category].code)
 	}
 	if want.Category != 0 {
-		require.Nil(t, finish, "a terminal failure has no finish")
+		require.Equal(t, "error", last, "a terminal failure ends with its error")
 		wantCodes = append(wantCodes, unaryDocuments[want.Category].code)
 		last := errors[len(errors)-1]
 		var metadata provider.ProviderMetadata
@@ -220,9 +222,35 @@ func finishPart() provider.StreamPart {
 	return provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
 }
 
+// prompt is one conversation in both forms: the ProviderWire request JSON and
+// the provider messages it maps to.
+type prompt struct {
+	wire     json.RawMessage
+	messages []provider.Message
+}
+
+func hostedCall() provider.ContentPart {
+	part := provider.ToolCallPart("hosted", "search", json.RawMessage(`{}`))
+	part.ProviderExecuted = true
+	return part
+}
+
+var (
+	pendingPrompt = prompt{
+		wire:     json.RawMessage(`[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"hosted","toolName":"search","input":{},"providerExecuted":true}]}]`),
+		messages: []provider.Message{provider.NewAssistantMessage(hostedCall())},
+	}
+	inconsistentPrompt = prompt{
+		wire:     json.RawMessage(`[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"hosted","toolName":"search","input":{},"providerExecuted":true},{"type":"tool-result","toolCallId":"hosted","toolName":"other","output":{"type":"text","value":"done"}}]}]`),
+		messages: []provider.Message{provider.NewAssistantMessage(hostedCall(), provider.ToolResultPart("hosted", "other", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "done"}))},
+	}
+)
+
 type scenario struct {
 	name       string
 	streaming  bool
+	prompt     *prompt
+	parts      []provider.StreamPart
 	headers    map[string]string
 	options    map[string]string
 	ctx        func(*testing.T) context.Context
@@ -314,6 +342,9 @@ func (sc scenario) runtime(t *testing.T, models []*probe) *execution.Runtime {
 
 func (sc scenario) callOptions() provider.CallOptions {
 	options := provider.CallOptions{Headers: sc.headers}
+	if sc.prompt != nil {
+		options.Prompt = sc.prompt.messages
+	}
 	if len(sc.options) > 0 {
 		options.ProviderOptions = make(provider.ProviderOptions, len(sc.options))
 		for namespace, raw := range sc.options {
@@ -326,6 +357,9 @@ func (sc scenario) callOptions() provider.CallOptions {
 func (sc scenario) request(t *testing.T, ctx context.Context) *http.Request {
 	t.Helper()
 	body := map[string]any{"prompt": []any{}}
+	if sc.prompt != nil {
+		body["prompt"] = sc.prompt.wire
+	}
 	if sc.headers != nil {
 		body["headers"] = sc.headers
 	}
@@ -365,6 +399,52 @@ func (sc scenario) assertModels(t *testing.T, models []*probe) {
 			}
 		}
 	}
+}
+
+// streamed is a configured stream of parts over one candidate.
+func streamed(name string, want outcome, parts ...provider.StreamPart) scenario {
+	return scenario{name: name, streaming: true, configured: true, parts: parts, calls: []int32{1}, drained: true, want: want,
+		attempts: []fallback.AttemptOutcome{fallback.AttemptSelected},
+		models: one(func(p *probe) {
+			p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) { return p.parts(ctx, parts...) }
+		})}
+}
+
+// invalidStream is a stream the runtime refuses after accepted parts.
+func invalidStream(name string, accepted int, parts ...provider.StreamPart) scenario {
+	return streamed(name, outcome{Category: execution.CategoryInternal, Committed: true, InvalidOutput: true, Parts: accepted}, parts...)
+}
+
+func streamPart(kind provider.StreamPartType, id string) provider.StreamPart {
+	return provider.StreamPart{Type: kind, ID: id}
+}
+
+func toolCall(id string, providerExecuted bool) provider.StreamPart {
+	return provider.StreamPart{Type: provider.PartToolCall, ToolCallID: id, ToolName: "search", Input: `{}`, ProviderExecuted: providerExecuted}
+}
+
+func toolResult(id string) provider.StreamPart {
+	return provider.StreamPart{Type: provider.PartToolResult, ToolCallID: id, ToolName: "search", Result: json.RawMessage(`{}`)}
+}
+
+func approval(callID, approvalID string) provider.StreamPart {
+	return provider.StreamPart{Type: provider.PartToolApprovalRequest, ToolCallID: callID, ApprovalID: approvalID}
+}
+
+// providerWireFrames is the number of frames ProviderWire writes for the
+// first accepted parts of a stream refused as invalid output: its leading
+// stream-start, which a real first stream-start part also produces, one frame
+// per other part except raw parts, which it drops unless requested, and the
+// terminal error.
+func providerWireFrames(parts []provider.StreamPart, accepted int) int {
+	frames := 2
+	for i, part := range parts[:accepted] {
+		if part.Type == provider.PartRaw || (i == 0 && part.Type == provider.PartStreamStart) {
+			continue
+		}
+		frames++
+	}
+	return frames
 }
 
 type resolver struct{ resolved catalog.ResolvedModel }
@@ -494,6 +574,74 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 			want: outcome{Category: execution.CategoryInvalidRequest, Reason: execution.ReasonProtectedCallHeader}},
 		{name: "configured gateway controls", options: map[string]string{"gateway": `{"byok":{}}`}, configured: true, models: one(nil), calls: []int32{0},
 			want: outcome{Category: execution.CategoryInvalidRequest, Reason: execution.ReasonReservedProviderOptions}},
+		invalidStream("repeated stream-start", 1, provider.StreamPart{Type: provider.PartStreamStart}, provider.StreamPart{Type: provider.PartStreamStart}),
+		invalidStream("stream-start after raw", 1, provider.StreamPart{Type: provider.PartRaw}, provider.StreamPart{Type: provider.PartStreamStart}),
+		invalidStream("metadata after content", 1, streamPart(provider.PartTextStart, "t"), provider.StreamPart{Type: provider.PartResponseMeta}),
+		invalidStream("metadata with open reasoning", 2, provider.StreamPart{Type: provider.PartStreamStart}, streamPart(provider.PartReasoningStart, "r"), provider.StreamPart{Type: provider.PartResponseMeta}),
+		invalidStream("tool ID reused in a later segment", 2, toolCall("segment", false), provider.StreamPart{Type: provider.PartResponseMeta}, toolCall("segment", false)),
+		invalidStream("content after finish", 3, streamPart(provider.PartTextStart, "t"), streamPart(provider.PartTextEnd, "t"), finishPart(), streamPart(provider.PartTextStart, "late")),
+		invalidStream("second finish", 2, finishPart(), provider.StreamPart{Type: provider.PartRaw}, finishPart()),
+		invalidStream("text delta first", 0, streamPart(provider.PartTextDelta, "t")),
+		invalidStream("overlapping text", 1, streamPart(provider.PartTextStart, "t"), streamPart(provider.PartTextStart, "u")),
+		invalidStream("reasoning delta first", 0, streamPart(provider.PartReasoningDelta, "r")),
+		invalidStream("reused reasoning ID", 2, streamPart(provider.PartReasoningStart, "r"), streamPart(provider.PartReasoningEnd, "r"), streamPart(provider.PartReasoningStart, "r")),
+		invalidStream("tool result first", 0, toolResult("c")),
+		invalidStream("repeated tool call", 1, toolCall("c", false), toolCall("c", false)),
+		invalidStream("approval first", 0, approval("c", "a")),
+		invalidStream("repeated approval", 2, toolCall("c", true), approval("c", "a"), approval("c", "b")),
+		invalidStream("finish first without usage", 0, provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}),
+		invalidStream("finish with active text", 1, streamPart(provider.PartTextStart, "t"), finishPart()),
+		invalidStream("unknown part first", 0, provider.StreamPart{Type: "future"}),
+		func() scenario {
+			sc := invalidStream("unknown part after an error", 2, provider.StreamPart{Type: provider.PartStreamStart}, provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 429, Message: "native failure"})}, provider.StreamPart{Type: "future"})
+			sc.want.PartErrors = []execution.Category{execution.CategoryRateLimit}
+			return sc
+		}(),
+		streamed("two segments", outcome{Committed: true},
+			provider.StreamPart{Type: provider.PartResponseMeta}, streamPart(provider.PartTextStart, "0"), streamPart(provider.PartTextEnd, "0"), finishPart(),
+			provider.StreamPart{Type: provider.PartRaw},
+			provider.StreamPart{Type: provider.PartResponseMeta}, streamPart(provider.PartTextStart, "0"), streamPart(provider.PartTextEnd, "0"), finishPart()),
+		{name: "close after a later metadata", streaming: true, configured: true, calls: []int32{1},
+			want: outcome{Category: execution.CategoryInternal, Committed: true}, attempts: []fallback.AttemptOutcome{fallback.AttemptSelected},
+			models: one(func(p *probe) {
+				p.stream = func(context.Context, *probe) (*provider.StreamResult, error) {
+					parts := make(chan provider.StreamPart, 2)
+					parts <- finishPart()
+					parts <- provider.StreamPart{Type: provider.PartResponseMeta}
+					close(parts)
+					return &provider.StreamResult{Stream: parts}, nil
+				}
+			})},
+		func() scenario {
+			sc := streamed("stall after finish until cancellation", outcome{Category: execution.CategoryCancellation, Committed: true}, finishPart(), provider.StreamPart{Type: provider.PartRaw})
+			sc.ctx = canceling
+			return sc
+		}(),
+		func() scenario {
+			sc := streamed("history-seeded stream result", outcome{Committed: true}, toolResult("hosted"), finishPart())
+			sc.prompt = &pendingPrompt
+			return sc
+		}(),
+		{name: "history-seeded unary result", configured: true, prompt: &pendingPrompt, calls: []int32{1}, attempts: []fallback.AttemptOutcome{fallback.AttemptSelected},
+			models: one(func(p *probe) {
+				p.generate = func(context.Context) (*provider.GenerateResult, error) {
+					return &provider.GenerateResult{
+						Content:      []provider.GenerateContentPart{{Type: provider.ContentToolResult, ToolCallID: "hosted", ToolName: "search", Result: json.RawMessage(`{}`)}},
+						FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop},
+					}, nil
+				}
+			})},
+		{name: "inconsistent history", configured: true, prompt: &inconsistentPrompt, models: one(nil), calls: []int32{0},
+			want: outcome{Category: execution.CategoryInvalidRequest}},
+		{name: "inconsistent history while streaming", streaming: true, configured: true, prompt: &inconsistentPrompt, models: one(nil), calls: []int32{0},
+			want: outcome{Category: execution.CategoryInvalidRequest}},
+		{name: "unary invalid output", configured: true, calls: []int32{1}, attempts: []fallback.AttemptOutcome{fallback.AttemptSelected},
+			want: outcome{Category: execution.CategoryInternal, InvalidOutput: true},
+			models: one(func(p *probe) {
+				p.generate = func(context.Context) (*provider.GenerateResult, error) {
+					return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: "future"}}, nil
+				}
+			})},
 	} {
 		t.Run(sc.name, func(t *testing.T) {
 			models := sc.models()
@@ -503,6 +651,10 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 			assert.Equal(t, sc.want.Reason, got.Reason)
 			assert.Equal(t, sc.want.Committed, got.Committed)
 			assert.Equal(t, sc.want.PartErrors, got.PartErrors)
+			assert.Equal(t, sc.want.InvalidOutput, got.InvalidOutput)
+			if sc.want.InvalidOutput && sc.streaming {
+				assert.Equal(t, sc.want.Parts, got.Parts, "accepted parts")
+			}
 			var attempts []fallback.AttemptOutcome
 			if got.Overview != nil {
 				for _, attempt := range got.Overview.Attempts {
@@ -524,6 +676,10 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 			handler.ServeHTTP(response, sc.request(t, sc.context(t)))
 			sc.assertModels(t, models)
 			assertProviderWire(t, response, got)
+			if got.InvalidOutput && got.Committed {
+				frames := strings.Split(strings.TrimSuffix(response.Body.String(), "\n\n"), "\n\n")
+				assert.Len(t, frames, providerWireFrames(sc.parts, got.Parts), "ProviderWire stops at the same part")
+			}
 		})
 	}
 }

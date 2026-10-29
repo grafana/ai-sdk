@@ -247,10 +247,17 @@ func TestBuildRequest_FunctionToolStrict(t *testing.T) {
 		{name: "true", modelID: testAnthropicModel, strict: &strictTrue, want: &strictTrue},
 		{name: "false", modelID: testAnthropicModel, strict: &strictFalse, want: &strictFalse},
 		{name: "unsupported opus 4.7 true", modelID: "anthropic.claude-opus-4-7", strict: &strictTrue, wantWarning: true},
-		{name: "unsupported opus 4.8 false", modelID: "anthropic.claude-opus-4-8", strict: &strictFalse, wantWarning: true},
+		{name: "unsupported opus 4.8 false", modelID: "anthropic.claude-opus-4-8", strict: &strictFalse},
 		{name: "unsupported regional opus 5 true", modelID: "us.anthropic.claude-opus-5", strict: &strictTrue, wantWarning: true},
-		{name: "unsupported fable 5 false", modelID: "eu.anthropic.claude-fable-5", strict: &strictFalse, wantWarning: true},
+		{name: "unsupported fable 5 false", modelID: "eu.anthropic.claude-fable-5", strict: &strictFalse},
+		{name: "unsupported future claude false", modelID: "us.anthropic.claude-opus-6-v1:0", strict: &strictFalse},
 		{name: "unsupported sonnet 5 true", modelID: "anthropic.claude-sonnet-5", strict: &strictTrue, wantWarning: true},
+		{name: "unsupported future claude true", modelID: "us.anthropic.claude-opus-6-v1:0", strict: &strictTrue, wantWarning: true},
+		{name: "unsupported future minor claude true", modelID: "us.anthropic.claude-opus-4-9-v1:0", strict: &strictTrue, wantWarning: true},
+		{name: "unsupported haiku 5.5 true", modelID: "us.anthropic.claude-haiku-5-5", strict: &strictTrue, wantWarning: true},
+		{name: "dated sonnet 4 true", modelID: "anthropic.claude-sonnet-4-20250514-v1:0", strict: &strictTrue, want: &strictTrue},
+		{name: "legacy claude true", modelID: "anthropic.claude-3-haiku-20240307-v1:0", strict: &strictTrue, want: &strictTrue},
+		{name: "non-claude true", modelID: "mistral.mistral-large-2407-v1:0", strict: &strictTrue, want: &strictTrue},
 	}
 
 	for _, tc := range tests {
@@ -1946,8 +1953,8 @@ func TestBuildRequest_MultipleSystemMessagesSeparatedWarns(t *testing.T) {
 }
 
 func TestBuildRequest_NativeStructuredOutputWhenThinkingEnabled(t *testing.T) {
-	// An older Anthropic model that does NOT match supportsNativeStructuredOutput
-	// markers, but with thinking enabled, should still use native structured
+	// An older Anthropic model without supportsStructuredOutputCapability, but
+	// with thinking enabled, should still use native structured
 	// output (matching upstream's modelSupportsStructuredOutput || isThinkingEnabled).
 	schema := json.RawMessage(`{"type":"object"}`)
 	bo := BedrockOptions{ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 1024}}
