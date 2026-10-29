@@ -570,8 +570,11 @@ SDK's Go module dependency graph.
   `mise run build-ai-gateway-plugin`, `mise run test-ai-gateway-e2e`,
   `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
   pushes keep the validated package, built from a clean checkout of the push
-  revision, as a workflow artifact. Gateway is not published as a standalone Go
-  module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
+  revision, as a workflow artifact. Full Gateway Go source tests run in parallel
+  with the plugin build and checks. The `Validate AI Gateway plugin` check waits
+  for both jobs to succeed before retaining the validated package; the build
+  job hands off a separate, short-lived candidate artifact. Gateway is not published
+  as a standalone Go module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
   changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
   the app manifest source for `pnpm generate:kinds`.
 
