@@ -195,7 +195,7 @@ func TestCallGenerate(t *testing.T) {
 		t.Run("late result after "+ending.name+" is discarded", func(t *testing.T) {
 			model := &generateModel{generate: func(ctx context.Context) (*provider.GenerateResult, error) {
 				<-ctx.Done()
-				return &provider.GenerateResult{}, nil
+				return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 			}}
 			call := newCall(t, ending.ctx(), model, testLimits())
 			result, err := call.Generate()
@@ -283,7 +283,7 @@ func TestRuntime_ConcurrentCallsAreIsolated(t *testing.T) {
 			if failFirst {
 				return nil, failing
 			}
-			return &provider.GenerateResult{}, nil
+			return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 		}}
 		model, err := fallback.New(first, &generateModel{modelID: "B"})
 		require.NoError(t, err)
@@ -328,7 +328,7 @@ func TestRuntime_ConcurrentAccountCallsAreIsolated(t *testing.T) {
 		if strings.HasPrefix(key, "fails") {
 			return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "rejected " + key, IsRetryable: new(true)})
 		}
-		return &provider.GenerateResult{}, nil
+		return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	}}
 	second := &generateModel{modelID: "model"}
 	shared, err := fallback.New(first, second)

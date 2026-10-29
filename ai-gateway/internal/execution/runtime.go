@@ -122,7 +122,9 @@ func validSelection(selected Selection) (valid bool) {
 
 // Generate invokes the model once. A panic or a missing result fails as
 // internal, and a result returned after the context ended is discarded in
-// favor of the context's error.
+// favor of the context's error. A result that breaks an output lifecycle rule,
+// checked with [ValidateGenerateResult] against the call's tool history, fails
+// with [ErrInvalidOutput].
 func (c *Call) Generate() (*provider.GenerateResult, error) {
 	if err := c.ctx.Err(); err != nil {
 		return nil, err
@@ -133,6 +135,9 @@ func (c *Call) Generate() (*provider.GenerateResult, error) {
 	if ctxErr := c.ctx.Err(); ctxErr != nil {
 		c.attempts.discard()
 		return nil, ctxErr
+	}
+	if err == nil && ValidateGenerateResult(result, c.history) != nil {
+		return nil, ErrInvalidOutput
 	}
 	return result, err
 }

@@ -57,15 +57,6 @@ type unaryMappingContext struct {
 	overview *execution.Overview
 }
 
-type unaryToolState struct {
-	historical       bool
-	providerExecuted bool
-	approvalID       string
-	name             string
-	preview          bool
-	final            bool
-}
-
 type unaryFinishReason struct {
 	Unified provider.UnifiedFinishReason `json:"unified"`
 	Raw     string                       `json:"raw,omitempty"`
@@ -100,7 +91,11 @@ type unarySuccess struct {
 }
 
 func mapUnarySuccess(result *provider.GenerateResult, contexts ...unaryMappingContext) (unarySuccess, error) {
-	if result == nil || !validMetadata(result.ProviderMetadata) {
+	var context unaryMappingContext
+	if len(contexts) != 0 {
+		context = contexts[0]
+	}
+	if execution.ValidateGenerateResult(result, context.history) != nil || !validMetadata(result.ProviderMetadata) {
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
 	for _, part := range result.Content {
@@ -129,19 +124,7 @@ func mapUnarySuccess(result *provider.GenerateResult, contexts ...unaryMappingCo
 		}
 		mapped.Response = &identity
 	}
-	var context unaryMappingContext
-	if len(contexts) != 0 {
-		context = contexts[0]
-	}
-	states := make(map[string]unaryToolState, len(context.history))
-	for id, name := range context.history {
-		states[id] = unaryToolState{name: name, providerExecuted: true, historical: true}
-	}
-	approvals := make(map[string]struct{})
 	for _, part := range result.Content {
-		if part.Type != provider.ContentToolCall && part.Type != provider.ContentToolResult && (part.ProviderExecuted || (part.Dynamic != nil && *part.Dynamic) || (part.Preliminary != nil && *part.Preliminary)) {
-			return unarySuccess{}, errInvalidUnarySuccess
-		}
 		switch part.Type {
 		case provider.ContentSource:
 			source, err := mapSource(unarySource(part))
@@ -173,54 +156,25 @@ func mapUnarySuccess(result *provider.GenerateResult, contexts ...unaryMappingCo
 				mapped.Content = append(mapped.Content, reasoningFilePart{Type: string(part.Type), MediaType: part.MediaType, Data: projectReasoningFile(data), Metadata: part.ProviderMetadata})
 			}
 		case provider.ContentToolCall:
-			if part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || !utf8.Valid(part.Input) || (part.Preliminary != nil && *part.Preliminary) {
+			if !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || !utf8.Valid(part.Input) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			if prior, exists := states[part.ToolCallID]; exists && (!prior.historical || prior.final || prior.preview || !part.ProviderExecuted || prior.name != part.ToolName) {
-				return unarySuccess{}, errInvalidUnarySuccess
-			}
-			states[part.ToolCallID] = unaryToolState{name: part.ToolName, providerExecuted: part.ProviderExecuted, approvalID: states[part.ToolCallID].approvalID}
 			mapped.Content = append(mapped.Content, unaryToolCall{Type: provider.ContentToolCall, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Input: string(part.Input), ProviderExecuted: part.ProviderExecuted, Dynamic: part.Dynamic, Metadata: part.ProviderMetadata})
 		case provider.ContentToolApprovalRequest:
-			state, exists := states[part.ToolCallID]
-			_, duplicate := approvals[part.ApprovalID]
-			if !exists || !state.providerExecuted || state.final || state.preview || state.approvalID != "" || duplicate || part.ApprovalID == "" || !utf8.ValidString(part.ApprovalID) || !utf8.ValidString(part.ToolCallID) {
+			if !utf8.ValidString(part.ApprovalID) || !utf8.ValidString(part.ToolCallID) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			state.approvalID = part.ApprovalID
-			states[part.ToolCallID] = state
-			approvals[part.ApprovalID] = struct{}{}
 			mapped.Content = append(mapped.Content, approvalRequestEvent{Type: "tool-approval-request", ApprovalID: part.ApprovalID, ToolCallID: part.ToolCallID, Metadata: part.ProviderMetadata})
 		case provider.ContentToolResult:
-			state, exists := states[part.ToolCallID]
-			if !exists || state.name != part.ToolName || state.final || part.ToolCallID == "" || part.ToolName == "" || !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || len(part.Result) == 0 || !utf8.Valid(part.Result) || !json.Valid(part.Result) || bytes.Equal(bytes.TrimSpace(part.Result), []byte("null")) {
+			if !utf8.ValidString(part.ToolCallID) || !utf8.ValidString(part.ToolName) || !utf8.Valid(part.Result) {
 				return unarySuccess{}, errInvalidUnarySuccess
 			}
-			state.preview = part.Preliminary != nil && *part.Preliminary
-			state.final = !state.preview
-			states[part.ToolCallID] = state
 			mapped.Content = append(mapped.Content, unaryToolResult{Type: provider.ContentToolResult, ToolCallID: part.ToolCallID, ToolName: part.ToolName, Result: part.Result, IsError: part.IsError, Dynamic: part.Dynamic, Preliminary: part.Preliminary, Metadata: part.ProviderMetadata})
 		default:
 			return unarySuccess{}, errInvalidUnarySuccess
 		}
 	}
-	for _, state := range states {
-		if state.preview {
-			return unarySuccess{}, errInvalidUnarySuccess
-		}
-	}
 	if !utf8.ValidString(result.FinishReason.Raw) {
-		return unarySuccess{}, errInvalidUnarySuccess
-	}
-
-	switch result.FinishReason.Unified {
-	case provider.FinishReasonStop,
-		provider.FinishReasonLength,
-		provider.FinishReasonContentFilter,
-		provider.FinishReasonToolCalls,
-		provider.FinishReasonError,
-		provider.FinishReasonOther:
-	default:
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
 

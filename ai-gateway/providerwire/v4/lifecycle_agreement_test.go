@@ -229,3 +229,89 @@ func TestLifecycleAgreement_StreamFrames(t *testing.T) {
 		})
 	}
 }
+
+type unaryAgreementCase struct {
+	name    string
+	history execution.ToolHistory
+	result  *provider.GenerateResult
+}
+
+func agreementGenerate(reason provider.UnifiedFinishReason, content ...provider.GenerateContentPart) *provider.GenerateResult {
+	return &provider.GenerateResult{Content: content, FinishReason: provider.FinishReason{Unified: reason}}
+}
+
+func unaryAgreementCall(id, name string, providerExecuted bool) provider.GenerateContentPart {
+	return provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: id, ToolName: name, Input: json.RawMessage(`{}`), ProviderExecuted: providerExecuted}
+}
+
+func unaryAgreementResult(id, name, result string, preliminary bool) provider.GenerateContentPart {
+	part := provider.GenerateContentPart{Type: provider.ContentToolResult, ToolCallID: id, ToolName: name, Result: json.RawMessage(result)}
+	if preliminary {
+		part.Preliminary = new(true)
+	}
+	return part
+}
+
+func unaryAgreementApproval(callID, approvalID string) provider.GenerateContentPart {
+	return provider.GenerateContentPart{Type: provider.ContentToolApprovalRequest, ToolCallID: callID, ApprovalID: approvalID}
+}
+
+func unaryAgreementCases() []unaryAgreementCase {
+	stop := provider.FinishReasonStop
+	text := provider.GenerateContentPart{Type: provider.ContentText, Text: "ok"}
+	pending := execution.ToolHistory{"hosted": "search"}
+	return []unaryAgreementCase{
+		{name: "valid text", result: agreementGenerate(stop, text)},
+		{name: "nil result"},
+		{name: "unregistered finish reason", result: agreementGenerate("future", text)},
+		{name: "unknown content type", result: agreementGenerate(stop, provider.GenerateContentPart{Type: "future"})},
+		{name: "provider-executed text", result: agreementGenerate(stop, provider.GenerateContentPart{Type: provider.ContentText, Text: "ok", ProviderExecuted: true})},
+		{name: "dynamic custom part", result: agreementGenerate(stop, provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "vendor.kind", Dynamic: new(true)})},
+		{name: "call without ID", result: agreementGenerate(stop, unaryAgreementCall("", "f", false))},
+		{name: "repeated call", result: agreementGenerate(stop, unaryAgreementCall("c", "f", true), unaryAgreementCall("c", "f", true))},
+		{name: "result for an unknown call", result: agreementGenerate(stop, unaryAgreementResult("c", "f", `{}`, false))},
+		{name: "result with another name", result: agreementGenerate(stop, unaryAgreementCall("c", "f", false), unaryAgreementResult("c", "g", `{}`, false))},
+		{name: "null result", result: agreementGenerate(stop, unaryAgreementCall("c", "f", false), unaryAgreementResult("c", "f", `null`, false))},
+		{name: "preview without final", result: agreementGenerate(stop, unaryAgreementCall("c", "f", true), unaryAgreementResult("c", "f", `{}`, true))},
+		{name: "preview then final", result: agreementGenerate(stop, unaryAgreementCall("c", "f", true), unaryAgreementResult("c", "f", `{}`, true), unaryAgreementResult("c", "f", `{}`, false))},
+		{name: "history result", history: pending, result: agreementGenerate(stop, unaryAgreementResult("hosted", "search", `{}`, false))},
+		{name: "history re-emission", history: pending, result: agreementGenerate(stop, unaryAgreementCall("hosted", "search", true), unaryAgreementResult("hosted", "search", `{}`, false))},
+		{name: "second history re-emission", history: pending, result: agreementGenerate(stop, unaryAgreementCall("hosted", "search", true), unaryAgreementCall("hosted", "search", true))},
+		{name: "history approval", history: pending, result: agreementGenerate(stop, unaryAgreementApproval("hosted", "approval"))},
+		{name: "approval of a client call", result: agreementGenerate(stop, unaryAgreementCall("c", "f", false), unaryAgreementApproval("c", "a"))},
+		{name: "reused approval ID", result: agreementGenerate(stop, unaryAgreementCall("c", "f", true), unaryAgreementCall("d", "f", true), unaryAgreementApproval("c", "a"), unaryAgreementApproval("d", "a"))},
+	}
+}
+
+func TestLifecycleAgreement_Unary(t *testing.T) {
+	for _, tc := range unaryAgreementCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			runtimeErr := execution.ValidateGenerateResult(tc.result, tc.history)
+			_, mapErr := mapUnarySuccess(tc.result, unaryMappingContext{history: tc.history})
+			assert.Equal(t, runtimeErr != nil, mapErr != nil)
+		})
+	}
+}
+
+// TestLifecycleAgreement_UnaryDocuments shows that the order of lifecycle and
+// representation checks cannot be observed.
+func TestLifecycleAgreement_UnaryDocuments(t *testing.T) {
+	invalidText := provider.GenerateContentPart{Type: provider.ContentText, Text: string([]byte{0xff})}
+	results := map[string]*provider.GenerateResult{
+		"lifecycle":      agreementGenerate("future", provider.GenerateContentPart{Type: provider.ContentText, Text: "ok"}),
+		"representation": agreementGenerate(provider.FinishReasonStop, invalidText),
+		"both":           agreementGenerate("future", invalidText),
+	}
+	bodies := make(map[string]string, len(results))
+	for name, result := range results {
+		harness := newRuntimeHarness(t, testLimits())
+		harness.resolver.resolved.Candidates = []catalog.ConfiguredCandidate{{Provider: "native", ProviderInstance: "configured", ModelID: "backend"}}
+		harness.model.generate = func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return result, nil }
+		response := harness.serve(validRequest(`{"prompt":[]}`))
+		require.Equal(t, 500, response.Code, name)
+		bodies[name] = response.Body.String()
+	}
+	assert.Contains(t, bodies["lifecycle"], `"outcome":"selected"`)
+	assert.Equal(t, bodies["representation"], bodies["lifecycle"])
+	assert.Equal(t, bodies["representation"], bodies["both"])
+}
