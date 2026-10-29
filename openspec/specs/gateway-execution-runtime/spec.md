@@ -40,7 +40,7 @@ At the start of a call, the runtime SHALL remove the call-level `gateway` provid
 
 #### Scenario: Configured selector refuses gateway controls
 - **WHEN** configured selection receives call-level `gateway` controls
-- **THEN** the call SHALL fail with the invalid-request category and the reserved-provider-options reason, with zero model calls
+- **THEN** it SHALL apply `models`, `order` and `only` under gateway-request-routing, and SHALL fail any other control with the unsupported-gateway-control category, with zero model calls
 
 ### Requirement: Protected call headers
 Before selection, the runtime SHALL refuse a call whose headers include a credential-bearing name, compared without case sensitivity, with the invalid-request category and the protected-call-header reason. The set SHALL include at least `authorization`, `proxy-authorization`, `x-access-token`, `x-grafana-id`, `x-api-key`, `api-key`, `openai-api-key`, `anthropic-api-key`, `openai-organization`, `openai-project`, `x-scope-orgid`, `x-cloud-org-id` and `x-access-policy-id`.
@@ -129,11 +129,15 @@ Closing a stream SHALL cancel the model context and start one asynchronous drain
 - **THEN** no second drain SHALL start
 
 ### Requirement: Closed failure classification
-The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, timeout, cancellation or internal. Invalid request MAY carry a closed reason: reserved provider options or protected call header. Classification SHALL never panic.
+The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, timeout, cancellation or internal. Invalid request MAY carry a closed reason: reserved provider options, protected call header, routing controls, no candidates or attempt bound. Model not found MAY carry the fallback-model reason. Classification SHALL never panic.
 
 #### Scenario: Selection errors
 - **WHEN** selection fails with account access denied, invalid BYOK credentials, an invalid BYOK selector, an unsupported gateway control, reserved provider options or an unknown model
 - **THEN** the category SHALL be permission, BYOK credentials, BYOK selector, unsupported gateway control, invalid request with the reserved reason, or model not found respectively, and any other error SHALL be classified as a provider error
+
+#### Scenario: Routing selection errors
+- **WHEN** selection fails with malformed routing controls, a filter that excludes every candidate, a composed chain above the attempt bound or an unknown fallback model
+- **THEN** the category SHALL be invalid request with the routing-controls, no-candidates or attempt-bound reason respectively, or model not found with the fallback-model reason
 
 #### Scenario: Provider errors
 - **WHEN** invocation or setup fails
@@ -146,10 +150,10 @@ The runtime SHALL classify every failure into one closed category: invalid reque
 
 #### Scenario: Adapter documents
 - **WHEN** ProviderWire encodes a failure
-- **THEN** it SHALL choose its fixed document from the category and reason alone, and the documents SHALL equal those written before this change
+- **THEN** it SHALL choose its fixed document from the category and reason alone, and every document other than the unsupported-gateway-control message and the new routing documents SHALL equal those written before this change
 
 ### Requirement: Request-local attempt capture
-Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured calls SHALL publish the same execution overview as before. BYOK calls SHALL publish their captured attempts with request-account attribution. Selections with neither attribution SHALL NOT publish an overview.
+Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry the attempt expected at each chain position, with its destination and the requested ID or `models` entry it belongs to, and SHALL publish an overview checked against them. Selections with no attribution SHALL NOT publish an overview.
 
 #### Scenario: Concurrent calls are isolated
 - **WHEN** two calls run concurrently on one runtime with different fallback outcomes
@@ -158,6 +162,14 @@ Every selection SHALL get its own attempt capture, scoped to the call's context.
 #### Scenario: BYOK attempts
 - **WHEN** a BYOK call tries two accounts and the second is selected
 - **THEN** the capture SHALL hold a failed then a selected attempt, and the response SHALL carry an overview with the requested selector, no canonical identity and those two native attempts in order
+
+#### Scenario: Routed configured attempts
+- **WHEN** a configured call routed across two models tries one candidate of each and the second is selected
+- **THEN** the overview SHALL list both attempts with their configured identities and the requested model's canonical ID, and the routing summary SHALL group them by model
+
+#### Scenario: Routed BYOK attempts
+- **WHEN** a BYOK call routed across `anthropic/x` and `openai/y` observes an attempt whose native identity does not match the destination expected at its position
+- **THEN** no overview SHALL be published
 
 #### Scenario: Attempt after sealing
 - **WHEN** an attempt is observed after the call's outcome was decided
@@ -190,11 +202,15 @@ The execution package godoc SHALL state what the runtime owns and what each adap
 - **THEN** they SHALL find the runtime's responsibilities, the adapter's responsibilities, and the owner of the idle and drain limits
 
 ### Requirement: Access-aware selection
-One selector SHALL serve every access mode, so each adapter needs one runtime. It SHALL branch on the verified caller's account access. Configured access SHALL resolve through the catalog and refuse call-level `gateway` controls. BYOK access SHALL decode request accounts from those controls. Any other access SHALL fail with the permission category.
+One selector SHALL serve every access mode, so each adapter needs one runtime. It SHALL branch on the verified caller's account access. Configured access SHALL resolve through the catalog and apply routing controls under gateway-request-routing. BYOK access SHALL decode request accounts and routing controls from those controls. Any other access SHALL fail with the permission category.
 
 #### Scenario: Configured access
 - **WHEN** a configured caller calls a catalog model without `gateway` controls
 - **THEN** the selector SHALL resolve it through the catalog and invoke only configured accounts
+
+#### Scenario: Configured routed access
+- **WHEN** a configured caller sends `models`, `order` or `only`
+- **THEN** the selector SHALL resolve every named model through the catalog and compose only configured candidates
 
 #### Scenario: BYOK access
 - **WHEN** a BYOK caller sends valid `gateway.byok` accounts
