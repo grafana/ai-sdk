@@ -22,7 +22,7 @@ Each numbered group is one commit. In every group, write the tests first and con
   - append `execution.CategoryProviderStream` with its godoc after `CategoryInternal`;
   - make it the status-0 fallback in `ClassifyStreamPart`;
   - append `safeProviderStream` after `safeBYOKDiscovery` and add its `safeCategories` entry;
-  - add `codeProviderError` and the `publicErrors` definition (status 0, `internal_server_error`, `retryable:false`);
+  - add `codeProviderStream` and the `publicErrors` definition (status 0, `internal_server_error`, `retryable:false`);
   - add the category to the `streamErrorResponse` allowlist;
   - in `encodeHTTPError` (`error_response.go:198-207`) only, map the provider-stream category to `safeInternal` before resolving the definition. Leave `definitionForError` a plain lookup, because `streamErrorResponse` calls it (`:215`);
   - in `schema/stream_event.json`:

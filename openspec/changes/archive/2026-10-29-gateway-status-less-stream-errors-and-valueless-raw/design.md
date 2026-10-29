@@ -106,7 +106,7 @@ Alternative considered: copying the native `IsRetryable`. Rejected, because the 
 
 ### D5. Clean EOF after a provider error frame
 
-- **State.** `streamState` gains `lastEventProviderError`. It is set after a `PartError` frame is fully written and cleared after any other frame is written.
+- **State.** `streamState` gains `afterProviderError`. It is set after a `PartError` frame is fully written and cleared after any other frame is written.
 - **Close.** On `WaitClosed` with the flag set, the handler returns without writing. The deferred `stream.Close()` (`stream.go:204`) still cancels and drains.
 - **Any written error frame counts.** This includes a nil `APICallError` reduced to an in-place internal frame (`providerwire/v4/stream_test.go:132-160`); implementations must not narrow the flag to particular categories.
 - **What does not count.** Parts that write nothing, such as unrequested or unusable raw parts, do not touch the flag. The handler's own synthesized `stream-start` is written before any provider error, so it cannot follow one.

@@ -113,10 +113,13 @@ func TestStreamError_EvidenceRetention(t *testing.T) {
 const statusLessStreamError = `{"message":"provider stream error","type":"internal_server_error","param":null,"code":"provider_error","retryable":false`
 
 func TestStreamError_StatusLess(t *testing.T) {
-	for _, tc := range []struct{ name, fields string }{
-		{"absent status", ""},
-		{"null status", `,"statusCode":null`},
-		{"data", `,"data":{"nativeError":{"message":"[redacted]"}}`},
+	for _, tc := range []struct {
+		name, fields string
+		data         json.RawMessage
+	}{
+		{"absent status", "", nil},
+		{"null status", `,"statusCode":null`, nil},
+		{"data", `,"data":{"nativeError":{"message":"[redacted]"}}`, json.RawMessage(`{"nativeError":{"message":"[redacted]"}}`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			part, err := decodeStreamPart([]byte(`{"type":"error","error":` + statusLessStreamError + tc.fields + `}}`))
@@ -126,11 +129,7 @@ func TestStreamError_StatusLess(t *testing.T) {
 			assert.Equal(t, 0, part.APICallError.StatusCode)
 			assert.False(t, part.APICallError.IsRetryable)
 			assert.Equal(t, "provider stream error", part.APICallError.Message)
-			if tc.name == "data" {
-				assert.Equal(t, json.RawMessage(`{"nativeError":{"message":"[redacted]"}}`), part.APICallError.Data)
-			} else {
-				assert.Nil(t, part.APICallError.Data)
-			}
+			assert.Equal(t, tc.data, part.APICallError.Data)
 		})
 	}
 	upstream := `{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error","retryable":true`

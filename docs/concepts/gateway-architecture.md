@@ -206,8 +206,7 @@ flowchart TD
   commit -->|flush failure| cleanup
   read -->|valid part, including a finish| frame[Encode complete SSE frame and flush]
   frame -->|continue| read
-  read -->|provider close after a finish| cleanup[Cancel model context and bounded drain]
-  read -->|provider close right after a provider error event| cleanup
+  read -->|provider close after a finish or right after a provider error event| cleanup[Cancel model context and bounded drain]
   read -->|terminal failure, premature close, idle, deadline or cancellation| terminal[Attempt terminal SSE error]
   terminal --> cleanup
   frame -->|write or flush failure| cleanup
@@ -226,15 +225,14 @@ One provider stream can carry several native responses or messages. Each
 so a stream may contain several of both. A `finish` does not end the stream:
 the stream ends when the provider closes it, and that close is clean only
 when the last part other than raw parts and provider errors is a `finish`, or
-when the last written event is a provider error. Idle time, the deadline and
+when the last written event is a provider error, as the direct provider stream
+does. Idle time, the deadline and
 cancellation still end with their terminal error, even after a written
 `finish`.
 
 A provider error event can be followed by more content and a valid finish. It
 is different from a handler-terminal failure such as invalid ordering,
-premature EOF, an invalid value, or a deadline. A provider stream that ends
-right after a provider error event ends cleanly, without a finish or a
-synthetic error, as the direct provider stream does. After commitment, failures
+premature EOF, an invalid value, or a deadline. After commitment, failures
 must be represented in the stream if the writer is still usable; they cannot
 change the HTTP status. A disconnected client may receive no final error at all.
 Cancellation propagates through contexts, and cleanup drains remaining parts

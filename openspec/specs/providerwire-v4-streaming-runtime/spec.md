@@ -659,15 +659,15 @@ The response SHALL end at provider close, at a terminal adapter or runtime failu
 - **THEN** the response SHALL end at clean EOF without `[DONE]` or another event
 
 #### Scenario: Close without a finish
-- **WHEN** the provider closes its stream before any valid finish
+- **WHEN** the provider closes its stream before any valid finish and the last written event is not a provider error event
 - **THEN** the handler SHALL attempt one synthetic internal error and SHALL NOT synthesize a finish or block end
 
 #### Scenario: Close after a new segment opens
-- **WHEN** the provider closes its stream after a valid finish followed by response-metadata
+- **WHEN** the provider closes its stream after a valid finish followed by response-metadata, and the last written event is not a provider error event
 - **THEN** the handler SHALL attempt one synthetic internal error after the metadata and SHALL NOT synthesize a finish
 
 ### Requirement: Timeout and cancellation after a finish
-Idle timeout, request deadline expiry and request cancellation SHALL keep their normal terminal behavior after a written finish; only provider close SHALL depend on the last lifecycle part. The handler SHALL cancel provider work before encoding the terminal event and write it after the finish: a timeout error for idle timeout or deadline expiry, or a cancellation error only while the writer is still usable. The finish SHALL NOT be retracted.
+Idle timeout, request deadline expiry and request cancellation SHALL keep their normal terminal behavior after a written finish; only provider close SHALL depend on the last lifecycle part or a trailing provider error event. The handler SHALL cancel provider work before encoding the terminal event and write it after the finish: a timeout error for idle timeout or deadline expiry, or a cancellation error only while the writer is still usable. The finish SHALL NOT be retracted.
 
 #### Scenario: Idle after a finish
 - **WHEN** a provider writes a valid finish and then neither emits nor closes until the idle timeout
