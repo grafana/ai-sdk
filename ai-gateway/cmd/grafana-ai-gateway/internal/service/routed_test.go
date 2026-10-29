@@ -164,6 +164,7 @@ func TestRoutedSelection_ConfiguredRefusals(t *testing.T) {
 }
 
 func TestRoutedSelection_AttemptBound(t *testing.T) {
+	require.Equal(t, 8, config.MaxProviderAttempts, "the ProviderWire attempt-bound message names this bound")
 	file := config.File{Providers: map[string]config.Provider{"local": {Type: "openai-compatible"}}, Models: map[string]config.Model{}}
 	var fallbacks []string
 	for i := range config.MaxProviderAttempts + 1 {

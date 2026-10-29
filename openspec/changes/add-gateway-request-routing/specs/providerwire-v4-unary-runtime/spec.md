@@ -62,9 +62,8 @@ Routing and gateway-control failures SHALL use fixed ProviderWire documents with
 #### Scenario: Routing documents
 - **WHEN** selection fails with each routing outcome
 - **THEN** the documents SHALL be:
-  - unsupported gateway control: HTTP 400, `invalid_request_error`, `invalid_request`, "unsupported gateway control; supported controls are models, order and only, plus byok and providerTimeouts.byok for request credentials"
+  - unsupported gateway control: HTTP 400, `invalid_request_error`, `invalid_request`, "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"
   - routing controls: HTTP 400, `invalid_request_error`, `invalid_request`, "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"
-  - provider timeouts: HTTP 400, `invalid_request_error`, `invalid_request`, "providerOptions.gateway.providerTimeouts.byok must map anthropic or openai to whole milliseconds from 1 to 600000"
   - no candidates: HTTP 400, `invalid_request_error`, `invalid_request`, "providerOptions.gateway.only excludes every candidate"
   - attempt bound: HTTP 400, `invalid_request_error`, `invalid_request`, "routing exceeds the bound of 8 provider attempts"
   - fallback model not found: HTTP 404, `model_not_found`, `model_not_found`, "a providerOptions.gateway.models entry is not an available model"

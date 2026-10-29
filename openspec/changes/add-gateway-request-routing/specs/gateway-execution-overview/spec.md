@@ -24,7 +24,7 @@ Enrichment SHALL place the overview under `gateway.execution` and its routing su
 ## ADDED Requirements
 
 ### Requirement: Routing summary projection
-The routing summary SHALL be a pure projection of the published overview and the call's ordered model groups. It SHALL use a subset of Vercel's documented `gateway.routing` field names: `originalModelId`, `canonicalSlug`, `resolvedProvider`, `finalProvider`, `modelAttemptCount`, `totalProviderAttemptCount` and `modelAttempts`. It SHALL add no fact that the overview lacks.
+The routing summary SHALL be a pure projection of the published overview, with each attempt grouped under the model its chain position was composed from. It SHALL use a subset of Vercel's documented `gateway.routing` field names: `originalModelId`, `canonicalSlug`, `resolvedProvider`, `finalProvider`, `modelAttemptCount`, `totalProviderAttemptCount` and `modelAttempts`. It SHALL add no fact that the overview lacks.
 
 #### Scenario: Configured fallback model serves the call
 - **WHEN** a call requested alias `a`, its route `A` had one failed candidate, and `models` entry `b` resolved to route `B`, whose anthropic candidate was selected
@@ -62,8 +62,8 @@ Each `providerAttempts` entry SHALL contain `provider` and `success`, plus `stat
 - **THEN** its provider attempt SHALL have `success` false and `statusCode` 429, and the full summary SHALL remain only in `gateway.execution`
 
 ### Requirement: Routing summary validity
-The routing summary SHALL be omitted, with the overview kept, when the overview's attempts cannot be assigned to the call's model groups in order. It SHALL never invent or reorder attempts, and SHALL describe the same attempts as `gateway.execution`.
+The routing summary SHALL be published exactly when the overview is, on the same carrier. It SHALL never invent or reorder attempts, and SHALL describe the same attempts as `gateway.execution`.
 
-#### Scenario: Group mismatch
-- **WHEN** the observed attempts outnumber the candidates of the call's model groups
-- **THEN** `gateway.routing` SHALL be absent and `gateway.execution` SHALL follow its own validity rules
+#### Scenario: Overview omitted
+- **WHEN** the observed attempts outnumber the attempts the call's chain expected
+- **THEN** neither `gateway.execution` nor `gateway.routing` SHALL be published

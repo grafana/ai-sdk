@@ -19,7 +19,7 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **AND** Supported provider-map keys SHALL be exactly anthropic and openai.
 - **AND** Each decoded key SHALL be nonempty. The shared provider attempt bound of 8 under gateway-resource-policy SHALL apply to the selected provider's array, and to the composed routed chain under gateway-request-routing, as execution attempt policy rather than JSON grammar; an unused provider array SHALL NOT be rejected for its length.
 - **AND** Decoding SHALL use provider-to-account maps and ordinary typed Go decoding without blanket unknown-field rejection.
-- **AND** The accepted Gateway controls SHALL be exactly lowercase byok plus the routing controls and providerTimeouts.byok defined by gateway-request-routing, as emitted by the supported clients; BYOK and other case variants SHALL fail.
+- **AND** The accepted Gateway controls SHALL be byok plus the routing controls defined by gateway-request-routing, matched as ordinary Go decoding matches struct fields; the supported clients emit the lowercase names.
 - **AND** Account fields SHALL use the canonical client names apiKey, baseURL, organization and project.
 - **AND** Account struct fields SHALL retain standard Go case-insensitive matching; namespace/map keys and discriminator values SHALL NOT be normalized.
 - **AND** Null strings SHALL retain their ordinary Go value, and duplicate members SHALL follow ordinary Go decoding.
@@ -85,7 +85,7 @@ Unsupported credentials, mappings and controls SHALL fail with non-secret diagno
 
 #### Scenario: Unsupported-control policy
 - **WHEN** BYOK input contains provider, mapping or routing controls
-- **THEN** Unsupported provider selection, meaningful modelMappings, Azure/Vertex/Bedrock/compatible credential families and requested unsupported Gateway controls SHALL fail before provider I/O with actionable diagnostics. Unrelated additive account fields SHALL NOT cause failure. models, order, only and providerTimeouts.byok SHALL follow gateway-request-routing; every other Gateway control SHALL remain unsupported.
+- **THEN** Unsupported provider selection, meaningful modelMappings, Azure/Vertex/Bedrock/compatible credential families and requested unsupported Gateway controls SHALL fail before provider I/O with actionable diagnostics. Unrelated additive account fields SHALL NOT cause failure. models, order and only SHALL follow gateway-request-routing; every other Gateway control, including providerTimeouts, SHALL remain unsupported.
 - **AND** Nested gateway namespaces SHALL NOT be interpreted as credential controls.
 - **AND** Native options or body headers SHALL NOT override credential source, destination or the selected model.
 
@@ -95,14 +95,15 @@ Unsupported credentials, mappings and controls SHALL fail with non-secret diagno
 
 #### Scenario: Canonical credential control
 - **WHEN** a request supplies BYOK or another case variant, alone or alongside canonical byok
-- **THEN** decoding SHALL fail before execution rather than accept an undocumented alias outside the capture boundary
+- **THEN** it SHALL decode as the byok control under ordinary Go decoding, with the last duplicate member winning
+- **AND** the call-level gateway namespace, not the member name, SHALL remain the capture boundary: the runtime SHALL remove it before any model, middleware or telemetry
 
 #### Scenario: Routing controls accompany valid BYOK
-- **WHEN** valid credentials accompany gateway.order, gateway.only, gateway.models or gateway.providerTimeouts.byok
+- **WHEN** valid credentials accompany gateway.order, gateway.only or gateway.models
 - **THEN** the request SHALL be routed under gateway-request-routing
 
 #### Scenario: Unsupported control accompanies valid BYOK
-- **WHEN** valid credentials accompany gateway.sort, another unsupported control or a providerTimeouts member other than byok
+- **WHEN** valid credentials accompany gateway.sort, gateway.providerTimeouts or another unsupported control
 - **THEN** the request SHALL fail before I/O without suggesting that the control was applied
 
 ### Requirement: Ordered credentials reuse default fallback

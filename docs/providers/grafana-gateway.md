@@ -269,11 +269,7 @@ Which names you can use depends on how you call the Gateway:
   provider accounts.
 - With your own keys, `models` entries are `provider/model` selectors, and you
   must send keys under `byok` for each provider you name. The Gateway never
-  uses its own provider accounts for your calls. With your own keys, set
-  `providerTimeouts.byok` to limit how long, in milliseconds (1 to 600000), a
-  provider may take to start responding before the Gateway tries your next
-  account or model. Once the provider has started responding, the limit no
-  longer applies.
+  uses its own provider accounts for your calls.
 
 The controls never add destinations: you can only reach models and accounts
 you could already call directly. A call tries at most 8 providers in total;
@@ -287,14 +283,13 @@ The Gateway checks the controls before calling any provider, and rejects:
 - with configured models, a `models` entry it cannot find, with a model not
   found error;
 - with your own keys, a `models` entry that is not a supported
-  `provider/model` selector or names a provider you sent no keys for, or a
-  `providerTimeouts.byok` value outside the range, with an invalid request
-  error;
+  `provider/model` selector or names a provider you sent no keys for, with an
+  invalid request error;
 - an `only` list that leaves no provider, a list with an entry that is not a
   non-empty string, a conditional `models` entry, or a call that would try more
   than 8 providers, with an invalid request error;
-- any other control, such as `sort`, `user`, `tags` or `zeroDataRetention`,
-  with an invalid request error, rather than ignoring it.
+- any other control, such as `sort`, `user`, `tags`, `zeroDataRetention` or
+  `providerTimeouts`, with an invalid request error, rather than ignoring it.
 
 The Go client does not check these values itself, and its `GatewayOptions`
 has only the controls the Gateway supports. To see how a call was routed, read
@@ -435,28 +430,13 @@ flag and, for a failure, the provider's `statusCode`. Models the call never
 reached are not listed. Unlike Vercel's, it has no timings, costs, credential
 types or providers that were not tried.
 
-In Go, `grafana.GatewayMetadataFrom` reads both from a result's or stream
-part's `ProviderMetadata`, and `grafana.GatewayMetadataFromError` reads them
-from a returned error or a stream error part's `APICallError`:
-
-```go
-gateway, err := grafana.GatewayMetadataFrom(result.ProviderMetadata)
-if err != nil {
-	return err
-}
-if gateway != nil && gateway.Routing != nil {
-	fmt.Println("answered by", gateway.Routing.FinalProvider)
-}
-```
-
 Errors carry the same information:
 
-- An HTTP error has it in `providerMetadata` in the error body. In Go, use
-  `grafana.GatewayMetadataFromError`, or read `*provider.APICallError.Data`.
+- An HTTP error has it in `providerMetadata` in the error body. In Go, read
+  `*provider.APICallError.Data`.
 - A stream error has `error.data.providerMetadata` and, when available, the
-  provider's error in `error.data.nativeError`. In Go, use
-  `grafana.GatewayMetadataFromError` with the part's `APICallError`. The
-  stream's later parts remain readable.
+  provider's error in `error.data.nativeError`. In Go, read the part's
+  `APICallError.Data`. The stream's later parts remain readable.
 
 Overviews are best-effort: a missing overview does not mean no provider was
 tried. A call the Gateway rejects before trying any account, such as one with

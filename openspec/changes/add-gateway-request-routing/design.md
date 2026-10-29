@@ -13,7 +13,7 @@ See proposal.md for motivation, and `specs/gateway-request-routing` for the cont
   - `configuredSelection{candidates}`;
   - `RequestAccounts{Provider, ModelID, Count}` from #420.
 - The attempt capture projects the flat `Overview` from it. `execution.Metadata` places `gateway.execution` and relocates native `gateway` to `gateway.nativeMetadata`. Every ProviderWire carrier (unary success, error documents, stream finish, committed stream errors) already calls it.
-- The pinned `@ai-sdk/gateway@4.0.116` client posts `providerOptions` unchanged (`gateway-language-model.ts`; registered tests pass `order` and `providerTimeouts` through). The pinned repo's `00-ai-gateway.mdx` documents the `models`/`order`/`only` semantics. A recorded `harness-fx` fixture shows the service's `gateway.routing` shape. vercel.com was unreachable from the sandbox, so the current service docs were not re-read.
+- The pinned `@ai-sdk/gateway@4.0.116` client posts `providerOptions` unchanged (`gateway-language-model.ts`; registered tests pass `order` through). The pinned repo's `00-ai-gateway.mdx` documents the `models`/`order`/`only` semantics. A recorded `harness-fx` fixture shows the service's `gateway.routing` shape. vercel.com was unreachable from the sandbox, so the current service docs were not re-read.
 
 ## Goals / Non-Goals
 
@@ -29,14 +29,14 @@ See proposal.md for motivation, and `specs/gateway-request-routing` for the cont
 
 ## Decisions
 
-### D1. One control decoder, exact top-level keys
-A service-local decoder reads call-level `gateway` into `map[string]json.RawMessage`, so control names are matched exactly (Go struct decoding would fold case). It checks the keys against the caller's access mode, then decodes each value:
-- `models` is decoded as `[]json.RawMessage`. A non-string entry is either an object (the conditional form) or malformed, and both fail with routing-controls.
-- `order` and `only` are decoded as `[]string`.
-- `providerTimeouts` is decoded as a map whose only member is `byok`.
-- `byok` keeps `byok.DecodeRequest`'s existing validation.
+### D1. One control decoder, ordinary Go decoding
+A service-local decoder first checks the call-level `gateway` member names against the caller's access mode, matching them as Go struct decoding does (case-insensitively), so an unsupported control gets its own document. It then decodes the object into a `Controls` struct with ordinary `encoding/json`:
+- `models`, `order` and `only` are `[]string`, with `only` a pointer so `[]` differs from absent. A non-array, a non-string entry (including a conditional `models` object) or an empty or null entry fails with routing-controls.
+- `byok` stays raw and keeps `byok.DecodeRequest`'s existing validation.
 
-Validation order follows the spec's diagnostic precedence. For BYOK, the existing credential and selector errors come after routing-controls and before fallback-model checks.
+The order of checks is decode, resolve, compose, so the diagnostics are deterministic without a separate precedence rule.
+- *Alternative: exact-case keys through a hand-written decoder.* Rejected. The repository's canonical-casing rule asks for ordinary Go decoding, and the call-level `gateway` namespace, which the runtime strips before any model or telemetry, is the capture boundary rather than a member name.
+- *Alternative: `DisallowUnknownFields`.* Rejected. Its error has no type, so telling an unsupported control from a malformed one would need string matching.
 - *Alternative: extend `byok.DecodeRequest` for both modes.* Rejected. Configured callers must not go through credential decoding.
 
 ### D2. Physical route table beside the catalog
@@ -51,16 +51,16 @@ The pure function is table-tested. It applies to both modes: BYOK groups have on
 - *Alternative: nest the prebuilt route models inside an outer fallback.* Rejected. It would wrap logical middleware per route and nest fallbacks, which breaks attribution (#420 D2) and cannot filter inside a route.
 - *Alternative: truncate at the bound.* Rejected. It would hide which candidates were dropped.
 
-### D4. Selection attribution becomes ordered model groups
-`configuredSelection` and `RequestAccounts` are replaced by an ordered list of model groups, each holding its requested ID and expected destinations:
-- configured groups also hold the canonical ID and `ConfiguredCandidate` identities;
-- BYOK groups hold the native provider, model and account count.
+### D4. Selection attribution becomes expected attempts
+`configuredSelection` and `RequestAccounts` are replaced by one flat list of expected attempts, one per composed chain position. Each holds the requested ID or `models` entry it belongs to, that model's canonical ID (configured only) and its expected destination:
+- configured destinations are the `ConfiguredCandidate` identities, which replace decision identity;
+- BYOK destinations are the native provider and model, which each decision must match.
 
-`CatalogSelector` produces one group. `Project` and `projectAccounts` check decisions position by position against the flattened groups, keeping the fail-closed checks from #420 D2. The overview stays flat and unchanged on the wire. For routed configured calls, `canonicalModelId` is the primary's canonical ID.
-- *Alternative: a separate routing attribution next to the existing ones.* Rejected. That would mean two sources of attempt identity for the same capture.
+The selectors build the list in the same loop that composes the chain. `CatalogSelector` produces one entry per configured candidate, or none for a resolver without candidate identities, whose attempts keep their decision identity. Projection checks decisions position by position, keeping the fail-closed checks from #420 D2. The overview stays flat and unchanged on the wire. For routed configured calls, `canonicalModelId` is the primary's canonical ID.
+- *Alternative: ordered model groups.* Rejected. The groups were flattened for attribution and regrouped for routing, and allowed mixed or open groups that no selector produces.
 
 ### D5. `gateway.routing` is projected from the overview
-`attemptCapture.view` projects `Routing` from the validated overview and the groups, and `View` carries it. `execution.Metadata` gains the routing argument, so every carrier picks it up with no adapter changes. Projection is omitted, while the overview is kept, when the attempts can't be assigned to groups in order.
+Projection records, on each attempt of a fallback model, that model's ID and canonical ID in unexported fields, so they never reach the wire. `execution.Metadata` derives `gateway.routing` from the overview alone and places it next to `gateway.execution`, so every carrier picks it up with no adapter or signature change. Routing is therefore published exactly when the overview is.
 
 Field names follow the subset of the fixture's shape defined in the spec. `success` means "selected", matching the overview's semantics. Timestamps, request IDs, costs, credential type and `planningReasoning` are excluded, consistent with the overview contract and #420's "no credential-source field". `gateway_execution.json` gains an optional `routing` definition, and the strict TypeScript schema test covers it.
 - *Alternative: emit routing only when controls are present.* Rejected. Vercel emits it on every call, and consumers would otherwise need two code paths.
@@ -72,63 +72,40 @@ Field names follow the subset of the fixture's shape defined in the spec. `succe
 The request-level Anthropic `nativeoptions` check stays outside the chain only when every composed candidate is Anthropic, which preserves today's zero-attempt refusal. Mixed chains rely on the per-candidate check that #581 already added, as configured mixed chains do.
 - *Alternative: always pre-check Anthropic options.* Rejected. It would refuse a request because of a later candidate the call might never reach.
 
-### D7. Provider start timeout via a first-response-byte trace
-Each BYOK account candidate for a listed provider is wrapped, inside fallback and outside translation, with a start-timeout model. Per attempt, the wrapper:
-- derives a cancel-cause context carrying an `httptrace.ClientTrace`;
-- starts a timer, which `GotFirstResponseByte` stops exactly once;
-- when the timer fires first, cancels the attempt context with a timeout cause.
-
-The attempt then returns a single-chain error whose message is fixed and which unwraps to `context.DeadlineExceeded`. As a result:
-- the failure summary carries the message;
-- `ClassifyProvider` reports timeout;
-- `DefaultDecider` treats the error as eligible;
-- `fallback.decision` still sees the parent context live, so request cancellation stays authoritative.
-
-The same "start responding" point (the first response byte) applies to unary and streaming calls, and it is observable through the shared transport, which forwards the request context. The attempt context is released when the parent ends, so no relay goroutine is needed.
-- *Alternative: bound the whole unary attempt.* Rejected. It would cut off long but healthy generations.
-- *Alternative: time to the first stream part.* Rejected. It needs a peek, has no unary equivalent, and the upstream docs say "start responding".
+### D7. `providerTimeouts.byok` is deferred
+#316 calls the BYOK provider timeout a follow-up whose semantics must be verified before implementation, and the current Vercel service docs could not be re-read from the sandbox. The control stays refused with the unsupported-control document. A later change can add it, for example as a first-response-byte bound per attempt.
 
 ### D8. Closed categories and fixed documents
-`execution` adds an invalid-routing category with reasons (routing controls, provider timeouts, no candidates, attempt bound) and a fallback-model reason on model-not-found. ProviderWire maps these to the fixed documents in the `providerwire-v4-unary-runtime` delta, and the unsupported-control message changes. Configured callers that send unsupported controls now get `ErrUnsupportedGatewayControl`. `ErrReservedProviderOptions` is kept for `CatalogSelector` and policy encoding failures.
+`execution` adds routing reasons (routing controls, no candidates, attempt bound) to the existing invalid-request category and a fallback-model reason on model-not-found. ProviderWire maps them through its existing reason-to-message path to the fixed documents in the `providerwire-v4-unary-runtime` delta, and the unsupported-control message changes. Configured callers that send unsupported controls now get `ErrUnsupportedGatewayControl`. `ErrReservedProviderOptions` is kept for `CatalogSelector` and policy encoding failures.
 
 ### D9. Go client `GatewayOptions`
 `providers/grafana` exports `GatewayOptions` with `ProviderKey() == "gateway"`, following the typed-option pattern of `anthropic.AnthropicOptions`. It is encoded by the client's existing `projectOptions` path through `json.Marshal`, with no new codec. The fields are:
 - `Models`, `Order`, `Only []string`, all `omitzero`, so a nil slice is absent while an explicit empty `Only` is kept;
-- `BYOK map[string][]BYOKAccount`, where an account has `APIKey`, `BaseURL`, `Organization` and `Project` (`apiKey`, `baseURL`, ... with `omitempty`, except the key);
-- `ProviderTimeouts *ProviderTimeouts{BYOK map[string]int}`.
+- `BYOK map[string][]BYOKAccount`, where an account has `APIKey`, `BaseURL`, `Organization` and `Project` (`apiKey`, `baseURL`, ... with `omitempty`, except the key).
 
 Provider keys stay plain strings, because the Gateway owns the supported set. The module must not import `ai-gateway`, so the types are client-owned.
 - *Alternative: mirror all upstream fields.* Rejected. The Gateway always refuses those fields (decision 1a).
 - *Alternative: validate before sending.* Rejected. The Gateway is the only authority (decision 3a), and upstream's language model doesn't validate either.
 
-### D10. Go client metadata readers
-`GatewayMetadataFrom(provider.ProviderMetadata) (*GatewayMetadata, error)` and `GatewayMetadataFromError(error) (*GatewayMetadata, error)` return nil and nil on absence.
-- `GatewayMetadata` holds `Execution *ExecutionOverview` and `Routing *Routing`.
-- The overview, attempt and failure types mirror the server JSON. `Outcome` is a typed `AttemptOutcome` string with `failed`, `selected` and `canceled` constants, and the failure `Code` stays `json.RawMessage`.
-- `Routing` mirrors the spec's field subset.
-
-The error reader uses `errors.As` to find the `*provider.APICallError`. It decodes `Data` and reads top-level `providerMetadata` (unary and setup documents) or `error.data.providerMetadata` (stream error frames), using the document shapes the client already retains. Decoding is ordinary `encoding/json` on a copy, and the metadata decoding contract is unchanged.
-- *Alternative: hook decoding into the client's result mapping.* Rejected. Metadata stays opaque under `gateway-provider-metadata`, and a reader works equally on results the caller stored.
-- *Alternative: separate execution and routing readers.* Rejected. They are one Gateway projection and are published together.
+### D10. No Go client metadata readers
+The client returns `gateway.execution` and `gateway.routing` as opaque provider metadata, as upstream does. #316 only requires that both clients receive them.
+- *Alternative: typed readers for results and errors.* Rejected for this change. They add public types that must track `gateway_execution.json`, for a projection callers can decode themselves.
 
 ### D11. Evidence plan
 - **Go:**
   - pure composition table tests;
-  - control decoder cases, covering precedence and exact keys;
+  - control decoder cases, covering case variants and refusals;
   - projection and routing unit and race tests;
   - service selector tests with fake native HTTP for Anthropic, OpenAI and compatible candidates, asserting the native request bodies and attempt order;
-  - timeout tests with a fake server that delays headers, plus a context-cancellation race;
   - physical-record correlation tests.
-- **Both registered clients:** `gateway-command.test.ts` drives the real command, in configured (self-hosted) and cloud BYOK modes, through the pinned client and the Go client. It covers configured-only, request-only and combined routing, unary and streaming, diagnostics and routing metadata.
+- **Both registered clients:** `gateway-command.test.ts` drives the real command, in configured (self-hosted) and cloud BYOK modes. The pinned client covers configured-only, request-only and combined routing, unary and streaming, diagnostics and routing metadata; the Go client covers one routed success and one diagnostic per access mode.
   - Cross-population cases prove that no other credentials or endpoints are used.
   - Fakes with per-key failures come from #420.
   - A consumer-middleware case checks that metadata reaches Go middleware independently of server capture.
-  - Go client cases use `GatewayOptions` and the metadata readers. Differential captures compare them with the pinned client's equivalent `GatewayProviderOptions` bodies (`go-client-differential.test.ts`).
+  - Go client cases use `GatewayOptions`. Differential captures compare them with the pinned client's equivalent `GatewayProviderOptions` bodies (`go-client-differential.test.ts`).
 - **Go client unit tests:**
   - option encoding: nil versus empty `Only`, omitted account fields, equivalence with raw options;
-  - readers: absence, malformed members, numeric codes, unary, finish and stream-error carriers;
-  - public-surface and module-isolation tests;
-  - a logger test showing typed `apiKey` redaction.
+  - public-surface and module-isolation tests.
 - **Provenance:** all provider responses are synthetic. No `test/conformance` inputs change, and `knownGaps` is unchanged; the capability spec records the support boundary. The parity classification is a Gateway extension behind pinned-client pass-through.
 - **Checks:** `mise run test-ai-gateway-command`, `mise run test-providerwire-v4`, plugin validation, `mise run parity-check` and the module checks.
 
@@ -137,8 +114,8 @@ The error reader uses `errors.As` to find the `*provider.APICallError`. It decod
 - [The logical observation chain is now built per routed request] → It is cheap middleware wrapping, as BYOK already does per request. Unrouted calls keep the prebuilt model.
 - [Every published overview now carries `gateway.routing`, which changes existing response bytes] → The change is additive within a Gateway-owned namespace that both clients treat as opaque. Exact-metadata tests are updated deliberately.
 - [Message and category changes for unsupported controls] → Marked BREAKING in the proposal. Status, type and code stay invalid-request.
-- [A native SDK issues a request without the attempt context, so the trace never fires] → The timeout then fires and the attempt fails safely. Fake-server tests for both adapters catch it.
-- [The client's metadata types drift from the server JSON] → The command evidence decodes real Gateway responses with the readers, and `gateway_execution.json` remains the shared reference.
+- [Accepting case-variant control names changes `main`'s BYOK rule, which refused `BYOK`] → The runtime strips the whole call-level `gateway` namespace before any model, middleware or telemetry, and the logging redactor matches `apiKey` case-insensitively, so the capture boundary is unchanged.
+- [The attempt-bound message repeats the bound of 8 owned by the host config] → A service test pins the host bound to the number the message names.
 - [Slug mismatch with Vercel (for example `vertex` or `bedrock`)] → These slugs have no configured candidates here, so they simply don't match. The docs list the slugs that exist.
 - [Skipping repeated tuples can hide a route an operator expected to retry] → The spec documents it, and it matches the startup rule against duplicate tuples within a route.
 

@@ -18,21 +18,20 @@ At the start of a call, the runtime SHALL remove the call-level `gateway` provid
 - **THEN** it SHALL apply `models`, `order` and `only` under gateway-request-routing, and SHALL fail any other control with the unsupported-gateway-control category, with zero model calls
 
 ### Requirement: Closed failure classification
-The runtime SHALL classify every failure into one closed category: invalid request, invalid routing, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, timeout, cancellation or internal. Invalid request MAY carry a closed reason: reserved provider options or protected call header. Invalid routing SHALL carry one closed reason: routing controls, provider timeouts, no candidates or attempt bound. Model not found MAY carry the fallback-model reason. Classification SHALL never panic.
+The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, timeout, cancellation or internal. Invalid request MAY carry a closed reason: reserved provider options, protected call header, routing controls, no candidates or attempt bound. Model not found MAY carry the fallback-model reason. Classification SHALL never panic.
 
 #### Scenario: Selection errors
 - **WHEN** selection fails with account access denied, invalid BYOK credentials, an invalid BYOK selector, an unsupported gateway control, reserved provider options or an unknown model
 - **THEN** the category SHALL be permission, BYOK credentials, BYOK selector, unsupported gateway control, invalid request with the reserved reason, or model not found respectively, and any other error SHALL be classified as a provider error
 
 #### Scenario: Routing selection errors
-- **WHEN** selection fails with malformed routing controls, an invalid provider timeout map, a filter that excludes every candidate, a composed chain above the attempt bound or an unknown fallback model
-- **THEN** the category SHALL be invalid routing with the routing-controls, provider-timeouts, no-candidates or attempt-bound reason respectively, or model not found with the fallback-model reason
+- **WHEN** selection fails with malformed routing controls, a filter that excludes every candidate, a composed chain above the attempt bound or an unknown fallback model
+- **THEN** the category SHALL be invalid request with the routing-controls, no-candidates or attempt-bound reason respectively, or model not found with the fallback-model reason
 
 #### Scenario: Provider errors
 - **WHEN** invocation or setup fails
 - **THEN** an unsupported request or unsupported functionality SHALL be invalid request, context cancellation SHALL be cancellation, an expired deadline SHALL be timeout, provider status 408 or 504 SHALL be timeout, 429 rate limit, 503 or 529 overload, another 4xx failed dependency and any other status upstream
 - **AND** a transport error SHALL be timeout when it reports a timeout and upstream otherwise, and any other error SHALL be internal
-- **AND** an expired BYOK provider start timeout SHALL be timeout
 
 #### Scenario: In-band stream errors
 - **WHEN** a stream error part carries a provider error with no status
@@ -43,7 +42,7 @@ The runtime SHALL classify every failure into one closed category: invalid reque
 - **THEN** it SHALL choose its fixed document from the category and reason alone, and every document other than the unsupported-gateway-control message and the new routing documents SHALL equal those written before this change
 
 ### Requirement: Request-local attempt capture
-Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry their ordered model groups, each with its requested ID and expected destinations, and SHALL publish an overview checked against them. Selections with no attribution SHALL NOT publish an overview.
+Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry the attempt expected at each chain position, with its destination and the requested ID or `models` entry it belongs to, and SHALL publish an overview checked against them. Selections with no attribution SHALL NOT publish an overview.
 
 #### Scenario: Concurrent calls are isolated
 - **WHEN** two calls run concurrently on one runtime with different fallback outcomes
@@ -58,7 +57,7 @@ Every selection SHALL get its own attempt capture, scoped to the call's context.
 - **THEN** the overview SHALL list both attempts with their configured identities and the requested model's canonical ID, and the routing summary SHALL group them by model
 
 #### Scenario: Routed BYOK attempts
-- **WHEN** a BYOK call routed across `anthropic/x` and `openai/y` observes an attempt whose native identity matches neither group's destination at its position
+- **WHEN** a BYOK call routed across `anthropic/x` and `openai/y` observes an attempt whose native identity does not match the destination expected at its position
 - **THEN** no overview SHALL be published
 
 #### Scenario: Attempt after sealing

@@ -2,20 +2,24 @@
 
 ## Purpose
 
-Let authorized Gateway callers route one request across their own authorized models and providers with the Vercel Gateway `models`, `order` and `only` controls, and BYOK callers bound provider start time, without adding destinations or a second request dialect.
+Let authorized Gateway callers route one request across their own authorized models and providers with the Vercel Gateway `models`, `order` and `only` controls, without adding destinations or a second request dialect.
 
 ## ADDED Requirements
 
 ### Requirement: Routing control grammar
-The Gateway SHALL accept call-level `providerOptions.gateway.models`, `order` and `only` as arrays of nonempty strings, decoded with ordinary Go JSON decoding. An absent, null or empty `models` or `order` SHALL mean the control is absent. Field names and array values SHALL be compared exactly, without case folding or trimming. Controls at any other scope SHALL remain ordinary namespaces.
+The Gateway SHALL accept call-level `providerOptions.gateway.models`, `order` and `only` as arrays of nonempty strings, decoded with ordinary Go JSON decoding, including its case-insensitive field matching and last-duplicate-wins members. An absent, null or empty `models` or `order` SHALL mean the control is absent. Array values SHALL be compared exactly, without case folding or trimming. Controls at any other scope SHALL remain ordinary namespaces.
 
 #### Scenario: Pinned client controls reach selection
 - **WHEN** the registered TypeScript Gateway client or the Go Grafana client sends `models`, `order` and `only`
 - **THEN** the selector SHALL receive them unchanged from the request body, with no custom request dialect or header
 
 #### Scenario: Malformed control
-- **WHEN** `models`, `order` or `only` is not an array, or contains a non-string or an empty string
+- **WHEN** `models`, `order` or `only` is not an array, or contains a non-string, a null or an empty string
 - **THEN** the call SHALL fail with the fixed routing-controls document and zero provider requests
+
+#### Scenario: Case variant control name
+- **WHEN** a caller sends `Models` or `ONLY`
+- **THEN** ordinary Go JSON decoding SHALL match it to the `models` or `only` control
 
 #### Scenario: Conditional models entry
 - **WHEN** a `models` entry is an object such as `{ "model": ..., "when": ... }`
@@ -26,14 +30,14 @@ The Gateway SHALL accept call-level `providerOptions.gateway.models`, `order` an
 - **THEN** the candidate's options, middleware and telemetry SHALL NOT contain `models`, `order`, `only` or any other call-level `gateway` member
 
 ### Requirement: Supported control set
-For configured access, the accepted controls SHALL be `models`, `order` and `only`. For BYOK access, they SHALL be `byok`, `models`, `order`, `only` and `providerTimeouts` with only its `byok` member. Any other control, member or case variant SHALL fail with the fixed unsupported-control document before provider I/O.
+For configured access, the accepted controls SHALL be `models`, `order` and `only`. For BYOK access, they SHALL be `byok`, `models`, `order` and `only`. Any other control, including `providerTimeouts`, SHALL fail with the fixed unsupported-control document before provider I/O. Control names SHALL match as ordinary Go JSON decoding matches struct fields.
 
 #### Scenario: Unsupported Vercel control
-- **WHEN** either access mode sends `sort`, `has`, `zeroDataRetention`, `disallowPromptTraining`, `user`, `tags`, `caching`, `serviceTier`, `quotaEntityId` or `idempotencyKey`
+- **WHEN** either access mode sends `sort`, `has`, `providerTimeouts`, `zeroDataRetention`, `disallowPromptTraining`, `user`, `tags`, `caching`, `serviceTier`, `quotaEntityId` or `idempotencyKey`
 - **THEN** the call SHALL fail with the unsupported-control document and SHALL NOT silently ignore the control
 
 #### Scenario: Credential control from a configured caller
-- **WHEN** a configured caller sends `byok` or `providerTimeouts`
+- **WHEN** a configured caller sends `byok`
 - **THEN** the call SHALL fail with the unsupported-control document, with zero catalog resolutions and zero provider requests
 
 #### Scenario: Unsupported control document
@@ -144,9 +148,9 @@ Routing failures that are known from the request and the caller's catalog SHALL 
 - **WHEN** a configured `models` entry is not a public route ID or alias
 - **THEN** the response SHALL be HTTP 404 model_not_found with the fixed fallback-model-not-found message
 
-#### Scenario: Diagnostic precedence
-- **WHEN** a request has an unsupported control, malformed routing controls, an unknown requested model and an unknown fallback model at once
-- **THEN** the call SHALL fail with the first applicable of: unsupported control, routing controls, the existing model-not-found document for the requested model, fallback model not found, no candidates, attempt bound
+#### Scenario: Deterministic diagnostics
+- **WHEN** a request has several routing problems at once
+- **THEN** the same request SHALL always fail with the same one fixed document
 
 #### Scenario: Diagnostics carry no overview
 - **WHEN** a routing diagnostic ends the call
@@ -160,7 +164,7 @@ The composed chain, after filtering and skipping repeats, SHALL contain at most 
 - **THEN** the first SHALL run normally and the second SHALL fail with the fixed attempt-bound document and zero provider requests
 
 ### Requirement: Unchanged execution without routing controls
-A call without `models`, `order`, `only` or `providerTimeouts` SHALL execute exactly as before this change: configured calls use their startup-composed route model and BYOK calls use their selected provider's accounts.
+A call without `models`, `order` or `only` SHALL execute exactly as before this change: configured calls use their startup-composed route model and BYOK calls use their selected provider's accounts.
 
 #### Scenario: Plain configured call
 - **WHEN** a configured caller sends no gateway controls
@@ -199,29 +203,6 @@ Routing SHALL reuse the existing fallback selection: a unary result or the first
 - **WHEN** the request is canceled while an attempt is in progress
 - **THEN** no later attempt SHALL start and the abandoned attempt SHALL be cleaned up within the existing drain bound
 
-### Requirement: BYOK provider start timeout
-`providerTimeouts.byok` SHALL map supported BYOK provider slugs to whole milliseconds from 1 to 600000. Each attempt for a listed provider SHALL fail as an eligible timeout if its provider has not sent the first response byte by then. The bound SHALL have no effect afterwards.
-
-#### Scenario: Slow account falls through
-- **WHEN** `providerTimeouts.byok.anthropic` is 2000, the first Anthropic account sends no response bytes for 2000 ms and a second account answers
-- **THEN** the first attempt SHALL be canceled and recorded as failed with a timeout summary, and the second SHALL be selected
-
-#### Scenario: Timeout after the provider started responding
-- **WHEN** a provider sends its first response byte before the timeout and then takes longer than the timeout to finish a unary result or stream
-- **THEN** the attempt SHALL continue, under the request deadline and stream idle limit only
-
-#### Scenario: Last attempt times out
-- **WHEN** the last candidate's provider start timeout expires
-- **THEN** the call SHALL fail with the timeout category and carry the overview of all attempts
-
-#### Scenario: Invalid timeout map
-- **WHEN** `providerTimeouts.byok` names an unsupported provider, or a value that is not a whole number from 1 to 600000
-- **THEN** the call SHALL fail with the fixed provider-timeouts document and zero provider requests
-
-#### Scenario: Request cancellation is not a provider timeout
-- **WHEN** the request is canceled before a provider start timeout expires
-- **THEN** the call SHALL end with the cancellation category and no later attempt SHALL start
-
 ### Requirement: Routing observation independence
 Routing metadata returned to the caller SHALL NOT depend on server observability capture settings. Consumer middleware around the Go Grafana client SHALL observe returned routing and native metadata through its own configuration. Server capture policy SHALL NOT strip returned routing or provider data.
 
@@ -233,8 +214,8 @@ Routing metadata returned to the caller SHALL NOT depend on server observability
 Evidence SHALL use both registered clients against the real command with fake native providers, and SHALL assert actual native requests and attempt order. Synthetic routing faults SHALL stay in focused tests, not recorded fixtures. Vercel service behavior SHALL be reported as design reference, separately from pinned-client compatibility evidence.
 
 #### Scenario: Both clients route through the command
-- **WHEN** configured-only, request-only and combined routing scenarios run through the pinned TypeScript client and the Go client, in unary and streaming modes, for configured and BYOK access
-- **THEN** both clients SHALL observe the same attempt order, native requests, routing metadata and diagnostics
+- **WHEN** configured-only, request-only and combined routing scenarios run through the pinned TypeScript client, in unary and streaming modes, for configured and BYOK access, and one routed success and one diagnostic per access mode also run through the Go client
+- **THEN** each client SHALL observe the expected attempt order, native requests, routing metadata and diagnostics, and the request-body differential SHALL prove the Go client sends the same controls as the pinned client
 
 #### Scenario: Account boundary evidence
 - **WHEN** BYOK and configured callers each send controls naming the other population's destinations

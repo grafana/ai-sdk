@@ -291,10 +291,9 @@ token, not from a caller choosing a different model name:
   from the call-level `gateway.byok` controls, plus one destination per
   `gateway.models` selector. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
   constructs one chain of request-local Anthropic or OpenAI accounts, ordered by
-  the same routing composition, with each listed provider's
-  `providerTimeouts.byok` bound until its first response byte. The selection
-  carries each destination and its account count, which the BYOK execution
-  overview is checked against. It does not consult the
+  the same routing composition. The selection carries the destination expected
+  at each attempt position, which the BYOK execution overview is checked
+  against. It does not consult the
   configured catalog or fall back to server-held keys. This host supplies no custom base-URL approval map.
 
 See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go)
