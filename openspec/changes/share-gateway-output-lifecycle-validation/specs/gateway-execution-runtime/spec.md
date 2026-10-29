@@ -53,7 +53,7 @@ The runtime SHALL validate each provider part before an adapter receives it. The
 - **THEN** the wait SHALL return invalid output, while concurrent reasoning blocks with distinct IDs, and text or reasoning IDs reused in a later segment, SHALL be accepted
 
 #### Scenario: Tool phases
-- **WHEN** a tool part has an empty ID or a missing tool name, skips or repeats a phase, changes the tool name, reuses a tool ID in any segment, starts input for an ID pending in history, carries a forbidden provider-executed, dynamic or preliminary flag, re-emits a history call without the provider-executed flag or a second time, or has an empty, invalid or `null` result
+- **WHEN** a tool part has an empty ID or a missing tool name, skips or repeats a phase, changes the tool name, reuses a tool ID in any segment, starts input for an ID seeded from history in any phase, carries a forbidden provider-executed, dynamic or preliminary flag, re-emits a history call without the provider-executed flag or a second time, or has an empty, invalid or `null` result
 - **THEN** the wait SHALL return invalid output
 
 #### Scenario: Results across segments and from history
@@ -61,7 +61,7 @@ The runtime SHALL validate each provider part before an adapter receives it. The
 - **THEN** the part SHALL be accepted
 
 #### Scenario: Approvals
-- **WHEN** an approval names a call that is not a provider-executed call awaiting its first result, or one already approved, reuses an approval ID anywhere in the stream, or carries a provider-executed, dynamic or preliminary flag
+- **WHEN** an approval names a call that is not a provider-executed call awaiting its first result, or one already approved, has an empty approval ID or reuses one anywhere in the stream, is provider-executed, or carries any dynamic or preliminary value, even false
 - **THEN** the wait SHALL return invalid output
 
 #### Scenario: Finish preconditions
@@ -77,7 +77,7 @@ The runtime SHALL validate each provider part before an adapter receives it. The
 - **THEN** the runtime SHALL deliver it without changing segment, text, reasoning or tool state, and it SHALL still consume the start position, so a later `stream-start` SHALL return invalid output
 
 ### Requirement: Invalid output outcome
-On invalid output in a stream, the runtime SHALL cancel the model context and start the stream's one drain before returning. Its error SHALL be classified as internal. The attempt view for invalid output, streamed or unary, SHALL equal the view of a successful call. No part of the rejected output SHALL be delivered to the adapter.
+On invalid output in a stream, the runtime SHALL cancel the model context and start the stream's one drain before returning. Its error SHALL be classified as internal. The attempt view for invalid output, streamed or unary, SHALL equal the view of a successful call. The violating part SHALL NOT be delivered to the adapter.
 
 #### Scenario: Drain on invalid output
 - **WHEN** a stream part violates a lifecycle rule and the provider keeps sending parts
