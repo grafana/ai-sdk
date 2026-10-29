@@ -2,7 +2,6 @@ package execution
 
 import (
 	"errors"
-	"maps"
 
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -69,11 +68,4 @@ func RebuildToolHistory(prompt []provider.Message) (ToolHistory, error) {
 		}
 	}
 	return pending, nil
-}
-
-func (h ToolHistory) clone() ToolHistory {
-	if h == nil {
-		return make(ToolHistory)
-	}
-	return maps.Clone(h)
 }

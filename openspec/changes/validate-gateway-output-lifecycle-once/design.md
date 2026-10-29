@@ -52,7 +52,7 @@
 ### D3. Remove `Call.ToolHistory`
 
 - After D1 and D2, its only callers are an `execution` test (`history_test.go:96-108`, "valid history is exposed as a copy"). The runtime seeds its own validators from `c.history`.
-- The accessor is removed, and so is that subtest. The "History is not shared" scenario stays covered by the two-validators test in `history_test.go`.
+- The accessor is removed, and so is that subtest. `ToolHistory.clone`, which only the accessor used, is removed too, along with its test. Each validator already copies history into its own state. The "History is not shared" scenario stays covered by `TestStreamValidator_HistoryIsNotShared`.
 - **Alternative: keep it for a future adapter.** Rejected (YAGNI): the modified spec says adapters do not evaluate lifecycle rules, so an accessor would only invite a second evaluation again.
 
 ### D4. Where each moved assertion lands

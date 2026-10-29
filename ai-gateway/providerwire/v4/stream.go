@@ -194,7 +194,7 @@ func validStreamEvent(value streamEvent) bool {
 	}
 }
 
-func (h *handler) serveStream(w http.ResponseWriter, call *execution.Call, options provider.CallOptions, history execution.ToolHistory) {
+func (h *handler) serveStream(w http.ResponseWriter, call *execution.Call, options provider.CallOptions) {
 	stream, err := call.Stream()
 	if err != nil {
 		view := call.View(err)
@@ -205,7 +205,7 @@ func (h *handler) serveStream(w http.ResponseWriter, call *execution.Call, optio
 	if !commitStreamResponse(w) {
 		return
 	}
-	h.runStream(w, stream, call, history, options.IncludeRawChunks)
+	h.runStream(w, stream, call, options.IncludeRawChunks)
 }
 
 func commitStreamResponse(w http.ResponseWriter) (ok bool) {
@@ -251,27 +251,14 @@ const (
 	streamPartWriterFailure
 )
 
-type segmentPhase uint8
-
-const (
-	segmentOpen segmentPhase = iota
-	segmentFinished
-)
-
 type streamState struct {
-	validator *execution.StreamValidator
 	execution execution.View
-	phase     segmentPhase
 	// includeRaw records that the caller requested raw stream parts. Raw parts
 	// are dropped otherwise, including any an adapter emits unrequested.
 	includeRaw bool
 }
 
-func newStreamState(history execution.ToolHistory) *streamState {
-	return &streamState{validator: execution.NewStreamValidator(history)}
-}
-
-func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, call *execution.Call, history execution.ToolHistory, includeRaw bool) {
+func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, call *execution.Call, includeRaw bool) {
 	part, wait := stream.Next()
 	view := call.View(wait.Err())
 	if wait != execution.WaitPart {
@@ -282,10 +269,8 @@ func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, cal
 		return
 	}
 
-	state := newStreamState(history)
-	state.execution = view
-	state.includeRaw = includeRaw
-	if part.Type == provider.PartStreamStart && state.validator.Check(part) == nil {
+	state := &streamState{execution: view, includeRaw: includeRaw}
+	if part.Type == provider.PartStreamStart {
 		result := streamWriteEncodingFailure
 		if warnings, err := mapWarnings(part.Warnings); err == nil {
 			result = h.emitStreamEvent(w, streamEvent{typeName: provider.PartStreamStart, warnings: warnings})
@@ -342,13 +327,6 @@ func (h *handler) handleStreamPartResult(w http.ResponseWriter, stream *executio
 }
 
 func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
-	if state.validator.Check(part) != nil {
-		return streamPartAdapterFailure
-	}
-	state.phase = segmentOpen
-	if state.validator.SegmentFinished() {
-		state.phase = segmentFinished
-	}
 	switch part.Type {
 	case provider.PartToolApprovalRequest:
 		return h.processApprovalRequest(w, part)
@@ -468,8 +446,6 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			return streamPartWriterFailure
 		}
 		return streamPartContinue
-	case provider.PartStreamStart:
-		return streamPartAdapterFailure
 	default:
 		return streamPartAdapterFailure
 	}

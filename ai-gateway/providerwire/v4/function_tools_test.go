@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
 	"github.com/stretchr/testify/assert"
@@ -194,9 +195,9 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 				return
 			}
 			opts := harness.model.receivedOptions()
-			pending, failure := unresolvedProviderCalls(opts.Prompt)
-			require.Nil(t, failure)
-			assert.Equal(t, tc.pending, pending)
+			pending, err := execution.RebuildToolHistory(opts.Prompt)
+			require.NoError(t, err)
+			assert.Equal(t, execution.ToolHistory(tc.pending), pending)
 			if tc.name == "provider continuation" {
 				parts := opts.Prompt[0].Content
 				assert.True(t, parts[0].ProviderExecuted)
@@ -208,14 +209,14 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 	}
 	t.Run("gateway namespace beside MCP metadata", func(t *testing.T) {
 		const call = `{"type":"tool-call","toolCallId":"call","toolName":"echo","input":{},"providerExecuted":true,"providerOptions":{%s"anthropic":{"type":"mcp-tool-use","serverName":"echo"}}}`
-		pending := make([]map[string]string, 0, 2)
+		pending := make([]execution.ToolHistory, 0, 2)
 		for _, extra := range []string{``, `"gateway":{"marker":true},`} {
 			harness := newRuntimeHarness(t, testLimits())
 			response := harness.serve(validRequest(`{"prompt":[{"role":"assistant","content":[` + fmt.Sprintf(call, extra) + `]}]}`))
 			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 			opts := harness.model.receivedOptions()
-			calls, failure := unresolvedProviderCalls(opts.Prompt)
-			require.Nil(t, failure)
+			calls, err := execution.RebuildToolHistory(opts.Prompt)
+			require.NoError(t, err)
 			pending = append(pending, calls)
 			if extra != "" {
 				assert.Contains(t, opts.Prompt[0].Content[0].ProviderOptions, "gateway")
@@ -224,16 +225,6 @@ func TestRuntimeProviderToolHistory(t *testing.T) {
 		}
 		assert.Equal(t, pending[0], pending[1])
 	})
-}
-
-func TestUnresolvedProviderCalls_RejectsAmbiguousHistory(t *testing.T) {
-	for _, prompt := range [][]provider.Message{
-		{provider.NewAssistantMessage(provider.ToolCallPart("call", "echo", json.RawMessage(`{}`)), provider.ToolCallPart("call", "echo", json.RawMessage(`{}`)))},
-		{provider.NewAssistantMessage(provider.ToolCallPart("call", "echo", json.RawMessage(`{}`)), provider.ToolResultPart("call", "other", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "bad"}))},
-	} {
-		_, failure := unresolvedProviderCalls(prompt)
-		require.NotNil(t, failure)
-	}
 }
 
 func TestRuntimeFunctionTools_Boundaries(t *testing.T) {

@@ -82,12 +82,9 @@ func TestUnarySuccessValidation(t *testing.T) {
 		negative := -1
 		tooLarge := maxJavaScriptSafeInteger + 1
 		tests := []*provider.GenerateResult{
-			nil,
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}},
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "undotted"}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}},
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "invalid." + string([]byte{0xff})}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}},
-			{Content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "example.kind", ProviderExecuted: true}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}},
-			{Content: []provider.GenerateContentPart{{Type: provider.ContentText}}, FinishReason: provider.FinishReason{Unified: provider.UnifiedFinishReason("future")}},
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentText}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{InputTokens: provider.InputTokenUsage{Total: &negative}}},
 			{Content: []provider.GenerateContentPart{{Type: provider.ContentText}}, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}, Usage: provider.Usage{OutputTokens: provider.OutputTokenUsage{Total: &tooLarge}}},
 		}
@@ -98,7 +95,7 @@ func TestUnarySuccessValidation(t *testing.T) {
 	})
 }
 
-func TestUnaryProviderToolResult_LargeAndPreliminary(t *testing.T) {
+func TestUnaryProviderToolResult_Large(t *testing.T) {
 	call := provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: "call", ToolName: "echo", Input: json.RawMessage(`{}`)}
 	result := provider.GenerateContentPart{Type: provider.ContentToolResult, ToolCallID: "call", ToolName: "echo", Result: json.RawMessage(`{"data":"` + strings.Repeat("a", 9<<20) + `"}`)}
 	result.ProviderMetadata = provider.ProviderMetadata{"private": json.RawMessage(`{"secret":"` + strings.Repeat("x", 1000) + `"}`)}
@@ -109,10 +106,6 @@ func TestUnaryProviderToolResult_LargeAndPreliminary(t *testing.T) {
 	body, ok := marshalUnarySuccess(mapped)
 	require.True(t, ok)
 	assert.Greater(t, len(body), 9<<20)
-	result.Preliminary = new(true)
-	value.Content = []provider.GenerateContentPart{call, result}
-	_, err = mapUnarySuccess(value)
-	require.Error(t, err)
 }
 
 func TestUnarySuccess_NoSizeLimit(t *testing.T) {
