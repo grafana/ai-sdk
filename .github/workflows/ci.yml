@@ -279,8 +279,6 @@ jobs:
         run: mise run test-ai-gateway-frontend
 
       - name: Build plugin package
-        env:
-          AI_GATEWAY_VCS_REF: ${{ github.sha }}
         run: mise run build-ai-gateway-plugin
 
       - name: Validate plugin package

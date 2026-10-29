@@ -9,7 +9,12 @@ repo_root=$(git rev-parse --show-toplevel)
 gateway=$repo_root/ai-gateway
 dist=$gateway/dist
 licenses=$dist/licenses
-revision=${AI_GATEWAY_VCS_REF:-local-unverified}
+revision=local-unverified
+source_revision='local-unverified: development build from an unverified working tree'
+if [[ "${GITHUB_ACTIONS:-}" == true && "$(git -C "$repo_root" rev-parse HEAD)" == "${GITHUB_SHA:-}" ]]; then
+  revision=$GITHUB_SHA
+  source_revision=$GITHUB_SHA
+fi
 
 fail() { echo "$*" >&2; exit 1; }
 
@@ -18,12 +23,7 @@ rm -rf "$licenses"
 mkdir -p "$licenses/grafana-ai-gateway" "$licenses/grafana-ai-sdk"
 cp "$gateway/LICENSE" "$gateway/NOTICE" "$licenses/grafana-ai-gateway/"
 cp "$repo_root/LICENSE" "$repo_root/NOTICE" "$licenses/grafana-ai-sdk/"
-if [[ "$revision" == local-unverified ]]; then
-  printf 'local-unverified: development build from an unverified working tree\n' >"$dist/SOURCE_REVISION"
-else
-  [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || fail "AI_GATEWAY_VCS_REF must be a full commit SHA"
-  printf '%s\n' "$revision" >"$dist/SOURCE_REVISION"
-fi
+printf '%s\n' "$source_revision" >"$dist/SOURCE_REVISION"
 
 copy_license_files() {
   local source=$1 destination=$2 file
@@ -41,7 +41,7 @@ for platform in linux/amd64 linux/arm64; do
   modules=$(cd "$gateway" && GOFLAGS="-mod=readonly" GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 \
     go list -deps -tags arrow_json_stdlib \
     -f '{{with .Module}}{{.Path}}{{"\t"}}{{if or .Replace (not .Version)}}local{{else}}{{.Version}}{{end}}{{"\t"}}{{if .Sum}}{{.Sum}}{{else}}-{{end}}{{"\t"}}{{.Dir}}{{end}}' \
-    ./cmd/grafana-ai-gateway | sort -u)
+    ./pkg | sort -u)
   : >"$output/THIRD_PARTY_MODULES.txt"
   while IFS=$'\t' read -r module version checksum directory; do
     [[ -n "$module" ]] || continue
