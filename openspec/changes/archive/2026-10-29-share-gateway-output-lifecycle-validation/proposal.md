@@ -34,7 +34,7 @@ Every provider-output lifecycle rule lives inside ProviderWire V4's stream state
   Consequence: the test adapter would forward a recovered panic as a provider error part today. Whether these checks move to the runtime is an Open Question for nara (design).
 - **ProviderWire also keeps its representation checks and plumbing:** UTF-8, metadata, citation and raw-usage shape, the JavaScript safe-integer bound, raw-part projection and the `includeRaw` drop, the synthetic `stream-start` and its warnings, the execution overview on every `finish`, and encoding failures. Its internal state machine and mapper delegate every lifecycle rule to the same execution validators, so ProviderWire holds no copy of any rule. Its `phase` field stays only as a projection of its validator, because existing white-box tests read it.
 - **Test adapter.** It consumes the invalid-output and finished outcomes and drops its own phase tracking. Parity scenarios show that it receives invalid output at the same part as ProviderWire. They leave out the content-validity classes above on purpose, because the runtime does not check them.
-- **Docs.** The execution package godoc, the architecture walkthrough and the glossary name the runtime as the owner of output lifecycle validation and of the clean-close decision, and no longer give adapters a "protocol state machine".
+- **Docs.** The execution package godoc, the architecture walkthrough and the glossary name the runtime as the owner of output lifecycle validation and of the clean-close decision. Adapters keep their own protocol state machine, as #394 intends; it is their protocol, not the provider output lifecycle.
 
 ## Capabilities
 

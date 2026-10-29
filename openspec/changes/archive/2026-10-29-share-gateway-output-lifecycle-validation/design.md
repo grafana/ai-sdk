@@ -125,7 +125,7 @@ stream.Next() (part, Wait)                                 // + WaitInvalidOutpu
   - the execution overview on every `finish` (#583 D7);
   - encoding and writer failures.
 - **Kept in ProviderWire (adapter plumbing):** the synthetic `stream-start`; the validator only enforces the position.
-- **Ownership wording.** The MODIFIED "Shared adapter runtime" requirement gives adapters representation, encoding, framing, commitment and error documents, and gives the runtime output lifecycle validation. The main spec's Purpose line (`openspec/specs/gateway-execution-runtime/spec.md:4`) still gives adapters a "protocol state machine". A delta cannot modify Purpose, so it is updated when the change is archived and synced.
+- **Ownership wording.** The MODIFIED "Shared adapter runtime" requirement gives adapters representation, encoding, framing, commitment, error documents and their own protocol state machine, and gives the runtime provider output lifecycle validation. #394 keeps the protocol state machine with each adapter: it is the adapter's own protocol, such as Chat's chunk sequencing, not the provider output lifecycle. The main spec's Purpose line (`openspec/specs/gateway-execution-runtime/spec.md:4`) is updated in the same words when the change is archived and synced.
 
 ### D8. ProviderWire delegates to the same validators
 

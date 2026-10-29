@@ -92,9 +92,9 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
 
 ## 6. Documentation
 
-- [x] 6.1 Update the `internal/execution` package godoc: the runtime owns tool-history reconstruction, stream and unary lifecycle validation, invalid output and the clean-close decision, and adapters own representation checks. Drop "protocol state machine" from the adapter list (`internal/execution/doc.go:20-21`), which becomes request mapping, representation, wire encoding, framing, error documents and response commitment. Update the `providerwire/v4/doc.go` sentences that describe its segment rules and say it owns "the stream state machine", so they say the runtime enforces the segment lifecycle and ProviderWire owns representation and its stream encoding. Verify with `go doc ./internal/execution` and `go vet ./internal/execution/... ./providerwire/v4/...`.
+- [x] 6.1 Update the `internal/execution` package godoc: the runtime owns tool-history reconstruction, stream and unary lifecycle validation, invalid output and the clean-close decision, and adapters own representation checks. Make the adapter list (`internal/execution/doc.go:20-21`) request mapping, representation, wire encoding, framing, error documents, response commitment and their own protocol state machine, and state that provider output lifecycle rules belong to the runtime. Update the `providerwire/v4/doc.go` sentences that describe its segment rules and say it owns "the stream state machine", so they say the runtime enforces the segment lifecycle and ProviderWire owns representation and its stream encoding. Verify with `go doc ./internal/execution` and `go vet ./internal/execution/... ./providerwire/v4/...`.
 - [x] 6.2 In `docs/concepts/gateway-architecture.md`, change the stream flowchart and the paragraph on the ProviderWire stream encoder so the runtime validates the lifecycle, including segments, and decides the clean close, and ProviderWire checks representation. In `docs/concepts/gateway-glossary.md`:
-  - extend the execution-runtime row (`:18`) and drop "its protocol state machine" from its adapter list;
+  - extend the execution-runtime row (`:18`), keeping "its own protocol state machine" in its adapter list;
   - point the "Response segment" row at the runtime validator;
   - add an "Output lifecycle validation; invalid output" row linking the validator source.
 
@@ -111,4 +111,4 @@ No commit may edit an existing ProviderWire test file. `git diff --name-status o
 ## Workflow follow-up
 
 - Open a draft PR titled `refactor(ai-gateway): share provider output lifecycle validation`, based on `main`, linking #483, #394 and #583.
-- Archive the change in the same PR before merge, and verify the synced `gateway-execution-runtime` spec. When syncing, update its Purpose line (`openspec/specs/gateway-execution-runtime/spec.md:4`), which still gives adapters a "protocol state machine" (design D7).
+- Archive the change in the same PR before merge, and verify the synced `gateway-execution-runtime` spec. When syncing, update its Purpose line (`openspec/specs/gateway-execution-runtime/spec.md:4`) to add provider output lifecycle validation to the runtime (design D7).
