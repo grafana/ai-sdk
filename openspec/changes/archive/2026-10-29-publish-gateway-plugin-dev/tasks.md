@@ -42,7 +42,7 @@
 
 ## Workflow follow-up
 
-- Prerequisite (maintainer): confirm that the repository may use the shared signing and publishing credentials and the shared workflow's self-hosted runner labels. The shared workflow creates the dev catalog stub if it is missing.
+- Prerequisite (maintainer): create the `grafana-aigateway-app` plugin stub in the dev catalog with the Grafana Labs signature level (done). No runner or credential onboarding is needed.
 - After merge, check the first `main` run:
   - the version `<version>+<sha>` is in the dev catalog with the `grafana_cloud` scope;
   - the shared lint, tests, build, validator and trufflehog passed;

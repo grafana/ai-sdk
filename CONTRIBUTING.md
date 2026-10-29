@@ -594,10 +594,10 @@ SDK's Go module dependency graph.
   the CI evidence that release automation reads. The publish run waits about 20
   minutes for CI. If CI passes only after a re-run past that window, re-run the
   publish run by hand, but only while its commit is still the newest on `main`.
-  The shared workflow creates the dev catalog stub if it is missing; the
-  repository needs access to the shared signing and publishing credentials and to
-  the shared workflow's self-hosted runner labels. Publication does not deploy or
-  run the plugin, publish to the ops or prod catalogs, or create tags or releases.
+  Publishing needs a `grafana-aigateway-app` plugin stub with the Grafana Labs
+  signature level in the dev catalog, which exists; the shared workflow brings its
+  own credentials and runners. Publication does not deploy or run the plugin,
+  publish to the ops or prod catalogs, or create tags or releases.
 
 Every `go.mod` replaces each first-party module in its
 build graph with that module's directory, so builds in this repository always use
