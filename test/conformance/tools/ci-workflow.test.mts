@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { parseAllDocuments, parseDocument } from "yaml";
 
@@ -14,6 +15,9 @@ const source = ["ci", "race", "docs-lint", "module-resolution", "parity-baseline
 const pushGuard = "${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) && github.repository == 'grafana/ai-sdk' }}";
 const publishFile = "publish-ai-gateway-dev.yml";
 const sharedCD = /^grafana\/plugin-ci-workflows\/\.github\/workflows\/cd\.yml@ci-cd-workflows\/v\d+\.\d+\.\d+$/;
+const publishDocument = parseDocument(readFileSync(resolve(root, ".github/workflows", publishFile), "utf8"));
+assert.deepEqual(publishDocument.errors, []);
+const publishing = publishDocument.toJS() as { on: unknown; permissions: unknown; concurrency: unknown; jobs: typeof jobs };
 const normalize = (value: string | undefined) => value?.replace(/\s+/g, " ").trim();
 const needs = (job: string) => [jobs[job]!.needs ?? []].flat();
 const steps = (job: string) => jobs[job]!.steps ?? [];
@@ -111,13 +115,10 @@ describe("candidate-source workflow gates", () => {
   });
 
   it("publishes to the dev catalog only after source CI for canonical main pushes", () => {
-    const publishDocument = parseDocument(readFileSync(resolve(root, ".github/workflows", publishFile), "utf8"));
-    assert.deepEqual(publishDocument.errors, []);
-    const publishing = publishDocument.toJS() as { on: unknown; permissions: unknown; concurrency: unknown; jobs: typeof jobs };
     assert.deepEqual(publishing.on, { push: { branches: ["main"] } });
     assert.deepEqual(publishing.permissions, {});
     assert.deepEqual(publishing.concurrency, { group: "ai-gateway-dev-publish", "cancel-in-progress": false });
-    assert.deepEqual(Object.keys(publishing.jobs).sort(), ["publish", "source-ci"]);
+    assert.deepEqual(Object.keys(publishing.jobs).sort(), ["publish", "source-ci", "update-plugin-version"]);
 
     const gate = publishing.jobs["source-ci"]!;
     assert.equal(gate.if, "${{ github.repository == 'grafana/ai-sdk' }}");
@@ -162,6 +163,82 @@ describe("candidate-source workflow gates", () => {
     const workflows = resolve(root, ".github/workflows");
     for (const file of readdirSync(workflows).filter((name) => name !== publishFile)) {
       assert.doesNotMatch(readFileSync(resolve(workflows, file), "utf8"), /plugin-ci-workflows/, `${file} must not publish the plugin`);
+    }
+  });
+
+  it("pins exactly the published version in dev after a successful publication", () => {
+    const job = publishing.jobs["update-plugin-version"]!;
+    assert.equal(job.needs, "publish");
+    assert.equal(job.if, "${{ github.repository == 'grafana/ai-sdk' }}", "no status function, so a failed or skipped publish skips the pin");
+    assert.deepEqual(job.permissions, { contents: "read", "id-token": "write" });
+    assert.equal(job.uses, undefined);
+    assert.equal(job.secrets, undefined);
+    const pinSteps = job.steps!;
+    assert.ok(pinSteps.every((step) => step["continue-on-error"] !== true && step.if === undefined));
+    assert.deepEqual(pinSteps.map((step) => step.uses?.replace(/@[0-9a-f]{40}$/, "")), [
+      "grafana/shared-workflows/actions/login-to-gar",
+      "grafana/shared-workflows/actions/create-github-app-token",
+      undefined,
+    ], "pin shared actions by commit SHA");
+    assert.deepEqual(pinSteps[1]!.with, { github_app: "updater-for-ci", permission_set: "deploy" });
+    const pin = pinSteps[2]!;
+    assert.deepEqual(pin.env, {
+      GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}",
+      PLUGIN_VERSION: "${{ fromJSON(needs.publish.outputs.plugin).version }}",
+    });
+    assert.doesNotMatch(pin.run!, /\$\{\{/, "pass expressions through env");
+
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    const run = (version: string) => {
+      const stub = mkdtempSync(join(tmpdir(), "pin-"));
+      try {
+        writeFileSync(join(stub, "docker"), `#!/usr/bin/env bash\nprintf '%s\\0' "$@" > "${stub}/args"\nprintf '%s' "$GITHUB_TOKEN" > "${stub}/token"\n`);
+        chmodSync(join(stub, "docker"), 0o755);
+        const result = spawnSync("bash", ["-c", pin.run!], {
+          env: {
+            ...process.env,
+            PATH: `${stub}:${process.env.PATH}`,
+            GITHUB_TOKEN: "test-token",
+            PLUGIN_VERSION: version,
+            GITHUB_SHA: sha,
+            GITHUB_SERVER_URL: "https://github.com",
+            GITHUB_REPOSITORY: "grafana/ai-sdk",
+            GITHUB_RUN_ID: "42",
+          },
+        });
+        const called = existsSync(join(stub, "args"));
+        return {
+          status: result.status,
+          args: called ? readFileSync(join(stub, "args"), "utf8").split("\0").slice(0, -1) : undefined,
+          token: called ? readFileSync(join(stub, "token"), "utf8") : undefined,
+        };
+      } finally {
+        rmSync(stub, { recursive: true, force: true });
+      }
+    };
+
+    const version = `0.1.0-alpha.1+${sha}`;
+    const published = run(version);
+    assert.equal(published.status, 0);
+    assert.equal(published.token, "test-token");
+    const config = published.args!.find((arg) => arg.startsWith("CONFIG_JSON="));
+    assert.deepEqual(published.args, ["run", "--rm", "-e", "GITHUB_TOKEN", "-e", config, "us-docker.pkg.dev/grafanalabs-global/docker-deployment-tools-prod/updater"]);
+    assert.deepEqual(JSON.parse(config!.slice("CONFIG_JSON=".length)), {
+      pull_request_branch_prefix: "auto-merge/updater/grafana-aigateway-app/dev",
+      pull_request_enabled: true,
+      pull_request_existing_strategy: "replace",
+      pull_request_message: "Created by https://github.com/grafana/ai-sdk/actions/runs/42. This PR will auto-merge once CI has passed.",
+      update_jsonnet_attribute_configs: [{
+        file_path: "ksonnet/environments/appplugins/grafana-aigateway-app/versions.libsonnet",
+        jsonnet_key: "dev",
+        jsonnet_value: version,
+      }],
+    });
+
+    for (const mismatch of ["", `+${sha}`, "0.1.0-alpha.1", `0.1.0-alpha.1+${"f".repeat(40)}`, `${version}-dirty`]) {
+      const refused = run(mismatch);
+      assert.notEqual(refused.status, 0, mismatch);
+      assert.equal(refused.args, undefined, `${mismatch}: must not request a pin`);
     }
   });
 

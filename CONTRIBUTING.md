@@ -596,8 +596,21 @@ SDK's Go module dependency graph.
   publish run by hand, but only while its commit is still the newest on `main`.
   Publishing needs a `grafana-aigateway-app` plugin stub with the Grafana Labs
   signature level in the dev catalog, which exists; the shared workflow brings its
-  own credentials and runners. Publication does not deploy or run the plugin,
-  publish to the ops or prod catalogs, or create tags or releases.
+  own credentials and runners. Publication does not publish to the ops or prod
+  catalogs, or create tags or releases.
+- **Gateway dev rollout:** the deployment repository pins the plugin version that
+  each environment's plugin backend runs. After a successful dev publication, the
+  publish workflow opens an auto-merge pull request there that pins dev to exactly
+  the version just published; the pull request links back to the publish run. A
+  newer publication replaces a pin pull request that has not merged yet. Once the
+  pin merges and is applied, the dev plugin backend restarts on that version, so
+  dev runs a commit only after its pin pull request merged. Ops and prod pins are
+  not changed. The pin needs a one-time grant in the deployment repository that
+  lets this workflow open those pull requests, and an existing dev pin to update;
+  without the grant the pin job fails, and without the pin it opens no pull
+  request. To roll dev back, pin an earlier published `<version>+<sha>` in the
+  deployment repository. The next `main` publication replaces that pin, so also
+  revert the faulty commit on `main` to keep dev on a good version.
 
 Every `go.mod` replaces each first-party module in its
 build graph with that module's directory, so builds in this repository always use
