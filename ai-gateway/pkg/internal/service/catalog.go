@@ -23,15 +23,36 @@ type modelConstructor func(config nativemodel.Config, modelID string, client *ht
 // fallback without changing the logical wrapper.
 type ModelFactory func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error)
 
+// Catalog is the configured model catalog. It also keeps each route's
+// physical candidates, the same instances its prebuilt model uses, so a
+// request's routing controls can compose them.
+type Catalog struct {
+	catalog.Catalog
+	routes   map[string]physicalRoute
+	factory  ModelFactory
+	physical *PhysicalAttemptSink
+}
+
+// physicalRoute is one configured route's candidates in configured order.
+type physicalRoute struct {
+	descriptors []config.Primary
+	candidates  []provider.LanguageModel
+}
+
 // BuildCatalog constructs every configured model exactly once.
-func BuildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, factory ModelFactory, physical ...*PhysicalAttemptSink) (catalog.Catalog, error) {
+func BuildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, factory ModelFactory, physical ...*PhysicalAttemptSink) (*Catalog, error) {
 	return buildCatalog(file, providers, client, nativemodel.NewAnthropic, factory, physical...)
 }
 
-func buildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, construct modelConstructor, factory ModelFactory, physical ...*PhysicalAttemptSink) (catalog.Catalog, error) {
+func buildCatalog(file config.File, providers map[string]config.ResolvedProvider, client *http.Client, construct modelConstructor, factory ModelFactory, physical ...*PhysicalAttemptSink) (*Catalog, error) {
 	if factory == nil {
 		return nil, fmt.Errorf("gateway service: model factory is required")
 	}
+	var sink *PhysicalAttemptSink
+	if len(physical) != 0 {
+		sink = physical[0]
+	}
+	routes := make(map[string]physicalRoute, len(file.Models))
 	ids := make([]string, 0, len(file.Models))
 	for id := range file.Models {
 		ids = append(ids, id)
@@ -98,19 +119,11 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			})
 			candidates = append(candidates, candidate)
 		}
-		lower := candidates[0]
-		if len(candidates) > 1 {
-			ordered, err := fallback.New(candidates...)
-			if err != nil {
-				return nil, err
-			}
-			var sink *PhysicalAttemptSink
-			if len(physical) != 0 {
-				sink = physical[0]
-			}
-			ordered.WithDecider(execution.FallbackDecider).WithAttemptObserver(physicalAttemptObserver(descriptors, sink))
-			lower = ordered
+		lower, err := composeCandidates(candidates, descriptors, sink)
+		if err != nil {
+			return nil, err
 		}
+		routes[id] = physicalRoute{descriptors: descriptors, candidates: candidates}
 		model, err := factory(id, lower)
 		if err != nil {
 			return nil, fmt.Errorf("gateway service: composing model %q: %w", id, err)
@@ -129,7 +142,24 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			Model: model,
 		})
 	}
-	return catalog.NewStatic(entries)
+	static, err := catalog.NewStatic(entries)
+	if err != nil {
+		return nil, err
+	}
+	return &Catalog{Catalog: static, routes: routes, factory: factory, physical: sink}, nil
+}
+
+// composeCandidates returns the only candidate, or an ordered fallback chain
+// over candidates whose physical attempts are recorded against descriptors.
+func composeCandidates(candidates []provider.LanguageModel, descriptors []config.Primary, sink *PhysicalAttemptSink) (provider.LanguageModel, error) {
+	if len(candidates) == 1 {
+		return candidates[0], nil
+	}
+	ordered, err := fallback.New(candidates...)
+	if err != nil {
+		return nil, err
+	}
+	return ordered.WithDecider(execution.FallbackDecider).WithAttemptObserver(physicalAttemptObserver(descriptors, sink)), nil
 }
 
 func identityModelFactory(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {

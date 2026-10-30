@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -327,7 +328,7 @@ func (sc scenario) runtime(t *testing.T, models []*probe) *execution.Runtime {
 		chain, err := fallback.New(languageModels...)
 		require.NoError(t, err)
 		selector = func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
-			return execution.AccountSelection(id, chain, execution.RequestAccounts{Provider: "native", ModelID: models[0].id, Count: len(models)}), nil
+			return execution.AccountSelection(id, chain, slices.Repeat([]execution.ExpectedAttempt{{ModelID: id, Destination: catalog.ConfiguredCandidate{Provider: "native", ModelID: models[0].id}}}, len(models))), nil
 		}
 	default:
 		selector = func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {

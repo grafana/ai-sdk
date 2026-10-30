@@ -23,6 +23,12 @@ type Attempt struct {
 	ProviderInstance string                  `json:"providerInstance,omitempty"`
 	Outcome          fallback.AttemptOutcome `json:"outcome"`
 	Error            *Failure                `json:"error,omitempty"`
+
+	// fallbackModel and fallbackCanonical name the models entry, as sent, and
+	// its canonical ID, whose chain the attempt belongs to. Both are empty for an
+	// attempt of the requested model.
+	fallbackModel     string
+	fallbackCanonical string
 }
 
 // Failure contains optional candidate-local native error fields.
@@ -39,31 +45,47 @@ type Failure struct {
 // read them. Mixed or unfinished observation is omitted rather than treated as
 // complete.
 func Project(requested, canonical string, decisions []fallback.Attempt, candidates []catalog.ConfiguredCandidate) *Overview {
-	if canonical == "" || !utf8.ValidString(canonical) {
+	return projectExpected(requested, canonical, decisions, attributionConfigured, configuredExpected(requested, canonical, candidates))
+}
+
+// projectExpected converts one invocation's decisions into an optional
+// overview, attributing the decision at each position to the attempt expected
+// there. Configured attribution requires canonical, the requested model's
+// canonical identity, and replaces decision identity with the expected
+// destination; without expected attempts, decisions keep their identity.
+// Account attribution has no canonical identity and requires each decision to
+// match its expected destination. Decisions that outnumber the expected
+// attempts omit the overview.
+func projectExpected(requested, canonical string, decisions []fallback.Attempt, kind attribution, expected []ExpectedAttempt) *Overview {
+	switch kind {
+	case attributionConfigured:
+		if canonical == "" || !utf8.ValidString(canonical) {
+			return nil
+		}
+	case attributionAccounts:
+		canonical = ""
+	default:
 		return nil
 	}
 	return project(requested, canonical, decisions, func(i int, attempt *Attempt) bool {
-		if len(candidates) == 0 {
-			return true
+		if len(expected) == 0 {
+			return kind == attributionConfigured
 		}
-		if i >= len(candidates) {
+		if i >= len(expected) {
 			return false
 		}
-		candidate := candidates[i]
-		attempt.Provider, attempt.ModelID, attempt.ProviderInstance = candidate.Provider, candidate.ModelID, candidate.ProviderInstance
+		want := expected[i]
+		if kind == attributionAccounts {
+			if attempt.Provider != want.Destination.Provider || attempt.ModelID != want.Destination.ModelID {
+				return false
+			}
+		} else {
+			attempt.Provider, attempt.ModelID, attempt.ProviderInstance = want.Destination.Provider, want.Destination.ModelID, want.Destination.ProviderInstance
+		}
+		if want.ModelID != requested {
+			attempt.fallbackModel, attempt.fallbackCanonical = want.ModelID, want.CanonicalID
+		}
 		return true
-	})
-}
-
-// projectAccounts converts one request-account invocation's decisions into an
-// optional overview without canonical identity. Every decision must name the
-// accounts' native destination, and decisions must not outnumber the accounts.
-func projectAccounts(requested string, decisions []fallback.Attempt, accounts RequestAccounts) *Overview {
-	if len(decisions) > accounts.Count {
-		return nil
-	}
-	return project(requested, "", decisions, func(_ int, attempt *Attempt) bool {
-		return attempt.Provider == accounts.Provider && attempt.ModelID == accounts.ModelID
 	})
 }
 

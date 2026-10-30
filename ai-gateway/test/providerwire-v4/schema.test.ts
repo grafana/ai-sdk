@@ -69,6 +69,18 @@ describe("Gateway execution metadata schema", () => {
     },
     nativeMetadata: { execution: { native: true }, empty: {}, null: null, privateNativeField: "opaque" },
   };
+  const routing = {
+    originalModelId: "assistant",
+    canonicalSlug: "grafana/assistant",
+    resolvedProvider: "anthropic",
+    finalProvider: "openai",
+    modelAttemptCount: 2,
+    totalProviderAttemptCount: 2,
+    modelAttempts: [
+      { modelId: "assistant", canonicalSlug: "grafana/assistant", success: false, providerAttemptCount: 1, providerAttempts: [{ provider: "anthropic", success: false, statusCode: 503 }] },
+      { modelId: "grafana/backup", canonicalSlug: "grafana/backup", success: true, providerAttemptCount: 1, providerAttempts: [{ provider: "openai", success: true }] },
+    ],
+  };
 
   for (const [name, value] of [
     ["selected candidate", namespace],
@@ -80,6 +92,9 @@ describe("Gateway execution metadata schema", () => {
       { provider: "openai", modelId: "gpt-5", outcome: "failed", error: { message: "overloaded", statusCode: 503 } },
       { provider: "openai", modelId: "gpt-5", outcome: "selected" },
     ] } }],
+    ["routing summary", { ...namespace, routing }],
+    ["routing without a selected attempt", { ...namespace, routing: { ...routing, finalProvider: undefined, modelAttempts: [{ ...routing.modelAttempts[0] }] } }],
+    ["request-account routing without canonical slugs", { ...namespace, routing: { ...routing, canonicalSlug: undefined, modelAttempts: [{ modelId: "openai/gpt-5", success: true, providerAttemptCount: 1, providerAttempts: [{ provider: "openai", success: true }] }] } }],
   ] as const) {
     it(`accepts ${name}`, () => {
       assert.equal(validateGatewayMetadata(value), true, formatValidationErrors(validateGatewayMetadata.errors));
@@ -101,6 +116,19 @@ describe("Gateway execution metadata schema", () => {
   ] as const) {
     it(`rejects ${name}`, () => {
       assert.equal(validateGatewayMetadata({ ...namespace, execution }), false);
+    });
+  }
+
+  for (const [name, value] of [
+    ["routing timestamps", { ...routing, modelAttempts: [{ ...routing.modelAttempts[0], providerAttempts: [{ provider: "anthropic", success: false, startTime: 1 }] }] }],
+    ["routing credential type", { ...routing, modelAttempts: [{ ...routing.modelAttempts[0], providerAttempts: [{ provider: "anthropic", success: false, credentialType: "byok" }] }] }],
+    ["routing planning prose", { ...routing, planningReasoning: "planned" }],
+    ["routing unrun candidates", { ...routing, fallbacksAvailable: ["bedrock"] }],
+    ["empty model attempts", { ...routing, modelAttempts: [] }],
+    ["missing original model", { ...routing, originalModelId: undefined }],
+  ] as const) {
+    it(`rejects ${name}`, () => {
+      assert.equal(validateGatewayMetadata({ ...namespace, routing: value }), false);
     });
   }
 });

@@ -24,12 +24,57 @@
       },
       "additionalProperties": false
     },
+    "routing": {
+      "description": "Optional routing summary of the execution overview, grouped by model, using a subset of the Vercel AI Gateway's documented gateway.routing fields. It describes the same attempts as execution and adds only the model each attempt belongs to.",
+      "type": "object",
+      "required": ["originalModelId", "resolvedProvider", "modelAttemptCount", "totalProviderAttemptCount", "modelAttempts"],
+      "properties": {
+        "originalModelId": { "type": "string", "minLength": 1 },
+        "canonicalSlug": { "type": "string", "minLength": 1 },
+        "resolvedProvider": { "type": "string", "minLength": 1 },
+        "finalProvider": { "type": "string", "minLength": 1 },
+        "modelAttemptCount": { "type": "integer", "minimum": 1 },
+        "totalProviderAttemptCount": { "type": "integer", "minimum": 1 },
+        "modelAttempts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/modelAttempt" }
+        }
+      },
+      "additionalProperties": false
+    },
     "nativeMetadata": {
       "description": "The complete original native gateway value, relocated without treating its fields as Gateway execution facts."
     }
   },
   "additionalProperties": false,
   "$defs": {
+    "modelAttempt": {
+      "type": "object",
+      "required": ["modelId", "success", "providerAttemptCount", "providerAttempts"],
+      "properties": {
+        "modelId": { "type": "string", "minLength": 1 },
+        "canonicalSlug": { "type": "string", "minLength": 1 },
+        "success": { "type": "boolean" },
+        "providerAttemptCount": { "type": "integer", "minimum": 1 },
+        "providerAttempts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/providerAttempt" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "providerAttempt": {
+      "type": "object",
+      "required": ["provider", "success"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "success": { "type": "boolean" },
+        "statusCode": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
     "attempt": {
       "type": "object",
       "required": ["provider", "modelId", "outcome"],

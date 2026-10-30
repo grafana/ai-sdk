@@ -24,8 +24,8 @@
 //   - how a stream ends: a provider close after a finish is [WaitFinished],
 //     a terminal success, and any other close is [WaitClosed];
 //   - the closed failure categories and reasons;
-//   - request-local attempt capture, projected into an overview for
-//     configured selections and for [AccountSelection] request accounts.
+//   - request-local attempt capture, projected into an overview from the
+//     expected attempts of [ConfiguredSelection] and [AccountSelection].
 //
 // Adapters own request mapping, representation, wire encoding, framing, their
 // error documents, response commitment and their own protocol state machine,

@@ -17,6 +17,10 @@ const (
 	capabilityProviderOptions     requestFailureReason = "provider-options"
 	policyReservedProviderOptions requestFailureReason = "reserved-provider-options"
 	policyProtectedCallHeader     requestFailureReason = "protected-call-header"
+	routingControls               requestFailureReason = "routing-controls"
+	routingNoCandidates           requestFailureReason = "routing-no-candidates"
+	routingAttemptBound           requestFailureReason = "routing-attempt-bound"
+	routingFallbackModel          requestFailureReason = "routing-fallback-model"
 )
 
 type wireRequest struct {

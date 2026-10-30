@@ -137,7 +137,7 @@ The BYOK engine SHALL select a supported native provider/model from request data
 - **THEN** the request SHALL fail with a bounded capability/field diagnostic before provider construction
 
 ### Requirement: Vercel-shaped credential ingestion
-The host SHALL validate the complete call-level gateway.byok map with ordinary typed Go decoding, including unused accounts, canonical controls, required keys and the selected provider's account count. Only selected-provider accounts SHALL become eligible; request and native-header bounds SHALL remain shared.
+The host SHALL validate the complete call-level gateway.byok map with ordinary typed Go decoding, including unused accounts, canonical controls, required keys and the selected provider's account count. Only accounts of the selected provider and of the providers named by gateway-request-routing fallback models SHALL become eligible; request and native-header bounds SHALL remain shared.
 
 #### Scenario: Complete credential validation policy
 - **WHEN** call-level BYOK controls are decoded before execution
@@ -147,13 +147,13 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **AND** Unrelated additive account fields SHALL be ignored by ordinary Go decoding without applying them to native construction.
 - **AND** Optional null values SHALL follow ordinary Go string decoding.
 - **AND** Omitted/empty baseURL SHALL select the native default; omitted/empty organization/project SHALL remain unset without ambient defaults.
-- **AND** Multiple supported provider entries SHALL be accepted and validated, but only the header-selected provider's credentials SHALL be eligible.
+- **AND** Multiple supported provider entries SHALL be accepted and validated, but only the credentials of the header-selected provider and of providers named by `models` entries SHALL be eligible.
 - **AND** Empty/missing BYOK or missing credentials for that provider SHALL fail before provider I/O.
 - **AND** The entire supplied BYOK map SHALL be validated before execution, including unused entries.
 - **AND** Supported provider-map keys SHALL be exactly anthropic and openai.
-- **AND** Each decoded key SHALL be nonempty. The shared provider attempt bound of 8 under gateway-resource-policy SHALL apply only to the selected provider's array, as execution attempt policy rather than JSON grammar; an unused provider array SHALL NOT be rejected for its length.
+- **AND** Each decoded key SHALL be nonempty. The shared provider attempt bound of 8 under gateway-resource-policy SHALL apply to the selected provider's array, and to the composed routed chain under gateway-request-routing, as execution attempt policy rather than JSON grammar; an unused provider array SHALL NOT be rejected for its length.
 - **AND** Decoding SHALL use provider-to-account maps and ordinary typed Go decoding without blanket unknown-field rejection.
-- **AND** The only accepted Gateway control SHALL be exactly lowercase byok, as emitted by the supported clients; BYOK and other case variants SHALL fail.
+- **AND** The accepted Gateway controls SHALL be byok plus the routing controls defined by gateway-request-routing, matched as ordinary Go decoding matches struct fields; the supported clients emit the lowercase names.
 - **AND** Account fields SHALL use the canonical client names apiKey, baseURL, organization and project.
 - **AND** Account struct fields SHALL retain standard Go case-insensitive matching; namespace/map keys and discriminator values SHALL NOT be normalized.
 - **AND** Null strings SHALL retain their ordinary Go value, and duplicate members SHALL follow ordinary Go decoding.
@@ -210,12 +210,16 @@ The host SHALL validate the complete call-level gateway.byok map with ordinary t
 - **WHEN** the header selects OpenAI but only Anthropic credentials are supplied
 - **THEN** selection SHALL fail without changing provider or checking configured/environment keys
 
+#### Scenario: Fallback model provider accounts become eligible
+- **WHEN** the header selects anthropic/x, `models` is ["openai/y"], and byok supplies Anthropic and OpenAI accounts
+- **THEN** both providers' accounts SHALL be eligible, each only for its own provider's models, in array order
+
 ### Requirement: Unsupported controls fail explicitly
 Unsupported credentials, mappings and controls SHALL fail with non-secret diagnostics before I/O. Native options and headers SHALL NOT override the selected account, model or destination.
 
 #### Scenario: Unsupported-control policy
 - **WHEN** BYOK input contains provider, mapping or routing controls
-- **THEN** Unsupported provider selection, meaningful modelMappings, Azure/Vertex/Bedrock/compatible credential families and requested unsupported Gateway controls SHALL fail before provider I/O with actionable diagnostics. Unrelated additive account fields SHALL NOT cause failure. models/order/only and providerTimeouts.byok remain unsupported pending separate routing delivery.
+- **THEN** Unsupported provider selection, meaningful modelMappings, Azure/Vertex/Bedrock/compatible credential families and requested unsupported Gateway controls SHALL fail before provider I/O with actionable diagnostics. Unrelated additive account fields SHALL NOT cause failure. models, order and only SHALL follow gateway-request-routing; every other Gateway control, including providerTimeouts, SHALL remain unsupported.
 - **AND** Nested gateway namespaces SHALL NOT be interpreted as credential controls.
 - **AND** Native options or body headers SHALL NOT override credential source, destination or the selected model.
 
@@ -225,10 +229,15 @@ Unsupported credentials, mappings and controls SHALL fail with non-secret diagno
 
 #### Scenario: Canonical credential control
 - **WHEN** a request supplies BYOK or another case variant, alone or alongside canonical byok
-- **THEN** decoding SHALL fail before execution rather than accept an undocumented alias outside the capture boundary
+- **THEN** it SHALL decode as the byok control under ordinary Go decoding, with the last duplicate member winning
+- **AND** the call-level gateway namespace, not the member name, SHALL remain the capture boundary: the runtime SHALL remove it before any model, middleware or telemetry
 
 #### Scenario: Routing controls accompany valid BYOK
-- **WHEN** valid credentials accompany an unsupported gateway.order or gateway.providerTimeouts control
+- **WHEN** valid credentials accompany gateway.order, gateway.only or gateway.models
+- **THEN** the request SHALL be routed under gateway-request-routing
+
+#### Scenario: Unsupported control accompanies valid BYOK
+- **WHEN** valid credentials accompany gateway.sort, gateway.providerTimeouts or another unsupported control
 - **THEN** the request SHALL fail before I/O without suggesting that the control was applied
 
 ### Requirement: Service-approved account destinations
@@ -318,11 +327,11 @@ Configured and request-only models SHALL share consumption-backed native protect
 - **THEN** the adapter SHALL receive ordinary options without changing the selected model, account or destination
 
 ### Requirement: Ordered credentials reuse default fallback
-Ordered selected-provider accounts SHALL reuse the default fallback policy without a second retry layer. Attempts SHALL share the deadline and stop after cancellation or commitment; account failures SHALL retain safe native classification without substitution or exactly-once claims.
+Ordered request accounts, for the selected model and any routed fallback models, SHALL reuse the default fallback policy without a second retry layer. Attempts SHALL share the deadline and stop after cancellation or commitment; account failures SHALL retain safe native classification without substitution or exactly-once claims.
 
 #### Scenario: Credential fallback policy
 - **WHEN** a request-only model executes its ordered account candidates
-- **THEN** The host SHALL compose selected-provider credentials with the existing fallback module and its default decider, one request-scoped candidate per key for the same provider/model in array order.
+- **THEN** The host SHALL compose selected-provider credentials with the existing fallback module and its default decider, one request-scoped candidate per key in array order, for the selected provider/model and then for each routed fallback model under gateway-request-routing.
 - **AND** Each candidate SHALL be invoked at most once, with native SDK retries disabled and one shared execution deadline.
 - **AND** No BYOK-specific rejection decider or HTTP-rejection provenance gate SHALL be introduced.
 - **AND** Client SDKs SHALL NOT add an account-retry layer.
@@ -334,12 +343,16 @@ Ordered selected-provider accounts SHALL reuse the default fallback policy witho
 - **AND** Any first native stream part, including an error part, SHALL commit the candidate; later errors SHALL NOT trigger replay.
 - **AND** Stopped or exhausted attempts SHALL retain existing fallback error propagation and privacy-safe ProviderWire classification, without a blanket exhaustion status or exposure of raw joined errors.
 - **AND** Native account failures SHALL NOT become Gateway-authentication failures.
-- **AND** No configured account, another provider, another request's key or ambient credential SHALL become eligible.
+- **AND** No configured account, provider without a routed model, another request's key or ambient credential SHALL become eligible.
 - **AND** Unknown pre-commit failures may follow provider-side work; no exactly-once execution or charging guarantee SHALL be claimed.
 
 #### Scenario: Retryable failure advances
 - **WHEN** the first candidate returns a retryable API error such as a classified 429 or 503 before unary success or any stream part and the second succeeds
 - **THEN** the second candidate SHALL run once with the same provider/model and supported request content
+
+#### Scenario: Last account of a model fails before a fallback model
+- **WHEN** every account of the selected model fails eligibly and a routed fallback model has accounts
+- **THEN** the fallback model's first account SHALL run next with its own provider, model and key
 
 #### Scenario: Non-retryable authentication failure stops
 - **WHEN** the first candidate returns a non-retryable 401/403 API error

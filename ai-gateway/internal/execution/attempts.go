@@ -3,21 +3,19 @@ package execution
 import (
 	"context"
 	"errors"
-	"slices"
 	"sync"
 
-	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 )
 
 // attemptCapture records one call's fallback attempts until its outcome is decided.
 type attemptCapture struct {
-	requested  string
-	canonical  string
-	candidates []catalog.ConfiguredCandidate
-	accounts   *RequestAccounts
-	redactor   SummaryRedactor
+	requested   string
+	canonical   string
+	attribution attribution
+	expected    []ExpectedAttempt
+	redactor    SummaryRedactor
 
 	mu       sync.Mutex
 	entered  bool
@@ -26,20 +24,10 @@ type attemptCapture struct {
 }
 
 // newAttemptCapture prepares the capture for selected. Every selection is
-// captured, and only configured and request-account selections are projected
-// into an overview.
+// captured, and only selections with attribution are projected into an
+// overview.
 func newAttemptCapture(requested string, selected Selection, redactor SummaryRedactor) *attemptCapture {
-	attempts := &attemptCapture{redactor: redactor}
-	switch {
-	case selected.configured != nil:
-		attempts.requested = requested
-		attempts.canonical = selected.ID
-		attempts.candidates = slices.Clone(selected.configured.candidates)
-	case selected.accounts != nil:
-		attempts.requested = requested
-		attempts.accounts = selected.accounts
-	}
-	return attempts
+	return &attemptCapture{requested: requested, canonical: selected.ID, attribution: selected.attribution, expected: selected.expected, redactor: redactor}
 }
 
 // withObserver returns ctx with the request-scoped fallback observer attached.
@@ -89,7 +77,7 @@ func (a *attemptCapture) view(err error) (view View) {
 			view.Overview = nil
 		}
 	}()
-	if len(attempts) == 0 && len(a.candidates) == 1 && entered {
+	if len(attempts) == 0 && a.attribution == attributionConfigured && len(a.expected) == 1 && entered {
 		outcome, source := fallback.AttemptSelected, error(nil)
 		if err != nil && !errors.Is(err, ErrInvalidOutput) {
 			outcome, source = fallback.AttemptFailed, err
@@ -99,11 +87,7 @@ func (a *attemptCapture) view(err error) (view View) {
 		}
 		attempts = []fallback.Attempt{{Index: 1, Outcome: outcome, SourceErr: source}}
 	}
-	if a.accounts != nil {
-		view.Overview = projectAccounts(a.requested, attempts, *a.accounts)
-	} else {
-		view.Overview = Project(a.requested, a.canonical, attempts, a.candidates)
-	}
+	view.Overview = projectExpected(a.requested, a.canonical, attempts, a.attribution, a.expected)
 	if view.Overview != nil {
 		for i := range view.Overview.Attempts {
 			attempt := &view.Overview.Attempts[i]

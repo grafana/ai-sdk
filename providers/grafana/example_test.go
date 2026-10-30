@@ -2,7 +2,6 @@ package grafana
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -76,13 +75,6 @@ func ExampleNewWithServiceAccountToken() {
 		fmt.Println(err)
 		return
 	}
-	credentials, err := json.Marshal(map[string]any{
-		"byok": map[string]any{"openai": []map[string]string{{"apiKey": os.Getenv("OPENAI_API_KEY")}}},
-	})
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
 	model, err := client.LanguageModel("openai/gpt-5")
 	if err != nil {
 		fmt.Println(err)
@@ -90,11 +82,44 @@ func ExampleNewWithServiceAccountToken() {
 	}
 	result, err := aisdk.GenerateText(context.Background(), model,
 		aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
-		aisdk.WithProviderOptions(provider.RawProviderOption{Key: "gateway", Raw: credentials}),
+		aisdk.WithProviderOptions(GatewayOptions{
+			BYOK: map[string][]BYOKAccount{"openai": {{APIKey: os.Getenv("OPENAI_API_KEY")}}},
+		}),
 	)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	fmt.Println(result.Text)
+}
+
+// Routing controls try fallback models and prefer or restrict providers for
+// one call. providerMetadata.gateway.routing reports which models and providers
+// were tried.
+func ExampleGatewayOptions() {
+	client, err := NewWithServiceAccountToken(ServiceAccountConfig{
+		Token:   os.Getenv("GRAFANA_SERVICE_ACCOUNT_TOKEN"),
+		BaseURL: exampleRoutePrefix,
+	})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	model, err := client.LanguageModel("grafana/assistant")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	result, err := aisdk.GenerateText(context.Background(), model,
+		aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
+		aisdk.WithProviderOptions(GatewayOptions{
+			Models: []string{"grafana/backup"},
+			Order:  []string{"anthropic"},
+		}),
+	)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(string(result.ProviderMetadata["gateway"]))
 }
