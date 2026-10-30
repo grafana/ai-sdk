@@ -59,3 +59,50 @@ jobs:
       run-plugin-validator: true
       run-playwright: false
       trigger-argo: false
+
+  update-plugin-version:
+    name: Pin the published version in dev
+    needs: publish
+    if: ${{ github.repository == 'grafana/ai-sdk' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Authenticate to GAR
+        uses: grafana/shared-workflows/actions/login-to-gar@afad5c7621e788905e6417f05b492972685ab1eb # login-to-gar/v1.0.4
+
+      - name: Generate GitHub token
+        id: generate-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@5bbb526b1728ca57fbe1750c4c27ab6ab06171c2 # create-github-app-token/v1.0.0
+        with:
+          github_app: updater-for-ci
+          permission_set: deploy
+
+      - name: Open the dev version pin pull request
+        env:
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+          PLUGIN_VERSION: ${{ fromJSON(needs.publish.outputs.plugin).version }}
+        run: |
+          set -euo pipefail
+          if [[ "$PLUGIN_VERSION" != ?*"+$GITHUB_SHA" ]]; then
+            echo "::error::published version '$PLUGIN_VERSION' does not end in +$GITHUB_SHA"
+            exit 1
+          fi
+          config=$(jq -n \
+            --arg version "$PLUGIN_VERSION" \
+            --arg msg "Created by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. This PR will auto-merge once CI has passed." \
+            '{
+              pull_request_branch_prefix: "auto-merge/updater/grafana-aigateway-app/dev",
+              pull_request_enabled: true,
+              pull_request_existing_strategy: "replace",
+              pull_request_message: $msg,
+              update_jsonnet_attribute_configs: [{
+                file_path: "ksonnet/environments/appplugins/grafana-aigateway-app/versions.libsonnet",
+                jsonnet_key: "dev",
+                jsonnet_value: $version
+              }]
+            }')
+          docker run --rm -e GITHUB_TOKEN -e CONFIG_JSON="$config" \
+            us-docker.pkg.dev/grafanalabs-global/docker-deployment-tools-prod/updater
