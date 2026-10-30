@@ -34,6 +34,9 @@ type Provider struct {
 	BaseURL   string `yaml:"baseURL,omitempty"`
 	// ProviderName overrides the openai-compatible provider identifier.
 	ProviderName string `yaml:"providerName,omitempty"`
+	// SupportsStructuredOutputs enables JSON-schema response formats for an
+	// openai-compatible provider.
+	SupportsStructuredOutputs bool `yaml:"supportsStructuredOutputs,omitempty"`
 }
 
 // Model configures one canonical public model and its aliases.
@@ -53,10 +56,11 @@ type Primary struct {
 
 // ResolvedProvider contains one startup-resolved provider secret.
 type ResolvedProvider struct {
-	Type         string
-	APIKey       string
-	BaseURL      string
-	ProviderName string
+	Type                      string
+	APIKey                    string
+	BaseURL                   string
+	ProviderName              string
+	SupportsStructuredOutputs bool
 }
 
 // ParseModelCatalog validates exactly one bounded strict YAML model catalog
@@ -104,6 +108,9 @@ func (file File) Validate() error {
 		case "anthropic", "openai":
 			if provider.ProviderName != "" {
 				return fmt.Errorf("config: providers.%s.providerName is only supported for openai-compatible providers", name)
+			}
+			if provider.SupportsStructuredOutputs {
+				return fmt.Errorf("config: providers.%s.supportsStructuredOutputs is only supported for openai-compatible providers", name)
 			}
 		case "openai-compatible":
 			if provider.ProviderName != "" && strings.TrimSpace(provider.ProviderName) == "" {
@@ -218,7 +225,7 @@ func (file File) ResolveProviderSecrets(lookupEnv LookupEnv) (map[string]Resolve
 			}
 			values[provider.APIKeyEnv] = value
 		}
-		resolved[name] = ResolvedProvider{Type: provider.Type, APIKey: value, BaseURL: provider.BaseURL, ProviderName: provider.ProviderName}
+		resolved[name] = ResolvedProvider{Type: provider.Type, APIKey: value, BaseURL: provider.BaseURL, ProviderName: provider.ProviderName, SupportsStructuredOutputs: provider.SupportsStructuredOutputs}
 	}
 	return resolved, nil
 }

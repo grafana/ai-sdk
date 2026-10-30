@@ -321,8 +321,9 @@ the Gateway in generated and streamed calls. Schemas need an object at the
 root. The model returns JSON text, and the SDK parses and validates it.
 
 Schema support depends on the provider. OpenAI and Anthropic models follow the
-schema natively. Models from OpenAI-compatible providers use JSON mode and
-return a warning when you supply a schema.
+schema natively. Models from OpenAI-compatible providers follow the schema when
+the operator sets `supportsStructuredOutputs: true` on that provider. Otherwise
+they use JSON mode and return a warning when you supply a schema.
 
 `provider.ResponseFormat.Name` is a pointer: use `new("answer")` to set a name.
 See the [provider reference](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#ResponseFormat).

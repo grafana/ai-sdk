@@ -214,7 +214,80 @@ models:
       await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => primary.stop(), () => secondary.stop());
     }
   });
+
+  it("sends JSON-schema response formats to compatible backends that enable structured outputs through both clients", async () => {
+    const compatible = await FakeCompatible.start();
+    compatible.structuredOutput = true;
+    const config = `providers:
+  structured-compatible:
+    type: openai-compatible
+    apiKeyEnv: GATEWAY_TEST_COMPATIBLE_KEY
+    baseURL: ${compatible.url}/v1
+    supportsStructuredOutputs: true
+models:
+  structured-compatible-route:
+    name: Structured compatible output
+    primary:
+      provider: structured-compatible
+      model: backend-private
+`;
+    let gateway: GatewayProcess | undefined;
+    try {
+      gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", config);
+      const modelID = "structured-compatible-route";
+      const options: LanguageModelV4CallOptions = {
+        prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }],
+        maxOutputTokens: 64,
+        responseFormat: { type: "json", name: "", schema: { type: "object", properties: { value: { type: "string" } } } },
+      };
+      for (const mode of ["generate", "stream"] as const) {
+        for (const language of ["go", "typescript"] as const) {
+          const before = compatible.requests.length;
+          let warnings: readonly any[] | undefined;
+          if (language === "go") {
+            const low = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID, mode, options });
+            assert.equal(low.error, undefined);
+            warnings = mode === "generate" ? low.result.warnings : streamStartWarnings(low.parts);
+            const high = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID, mode: `structured-${mode}`, options });
+            assert.equal(high.error, undefined);
+            assert.equal(high.text, '{"value":"ok"}');
+          } else {
+            const model = gateway.client()(modelID);
+            if (mode === "generate") {
+              warnings = (await model.doGenerate(options)).warnings;
+            } else {
+              warnings = streamStartWarnings(await collectGatewayStream((await model.doStream(options)).stream));
+            }
+            const highOptions: { model: LanguageModelV4; prompt: string; maxOutputTokens: number; maxRetries: number; output: ReturnType<typeof Output.json> } = { model: gateway.client()(modelID), prompt: "normal-stream", maxOutputTokens: 64, maxRetries: 0, output: Output.json() };
+            if (mode === "generate") {
+              assert.deepEqual((await generateText(highOptions)).output, { value: "ok" });
+            } else {
+              const high = streamText(highOptions);
+              await high.consumeStream();
+              assert.deepEqual(await high.output, { value: "ok" });
+            }
+          }
+          assert.deepEqual(responseFormatWarnings(warnings), [], `${language} ${mode}: responseFormat warning`);
+          const formats = compatible.requests.slice(before).map((request) => (request.body.response_format as { type?: string } | undefined)?.type);
+          assert.deepEqual(formats, ["json_schema", "json_object"], `${language} ${mode}: backend response formats`);
+        }
+      }
+      assert.deepEqual(compatible.violations, []);
+    } finally {
+      await settleCleanup(...(gateway ? [() => gateway!.stop()] : []), () => compatible.stop());
+    }
+  });
 });
+
+function streamStartWarnings(parts: readonly any[]): readonly any[] | undefined {
+  const start = parts.find((part) => part.type === "stream-start");
+  assert.ok(start, "stream has no stream-start part");
+  return start.warnings;
+}
+
+function responseFormatWarnings(warnings: readonly any[] | undefined): unknown[] {
+  return (warnings ?? []).filter((warning) => warning.type === "unsupported" && warning.feature === "responseFormat");
+}
 
 describe("output-derived metadata continuation", () => {
   for (const family of ["anthropic", "openai", "compatible"] as const) {
@@ -3969,6 +4042,7 @@ class FakeAnthropic {
 
 class FakeCompatible {
   metadata = false;
+  structuredOutput = false;
   readonly url: string;
   readonly requests: FakeRequest[] = [];
   readonly violations: string[] = [];
@@ -4039,7 +4113,7 @@ class FakeCompatible {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({
         id: "chatcmpl-test", object: "chat.completion", created: 1, model: "backend-private",
-        choices: [{ index: 0, message: { role: "assistant", content: "hello from fake compatible" }, finish_reason: "stop" }],
+        choices: [{ index: 0, message: { role: "assistant", content: this.structuredOutput ? '{"value":"ok"}' : "hello from fake compatible" }, finish_reason: "stop" }],
         usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 },
       }));
       return;
@@ -4049,7 +4123,7 @@ class FakeCompatible {
     response.flushHeaders();
     if (marker === "normal-stream") {
       const chunk = (fields: Record<string, unknown>) => `data: ${JSON.stringify({ id: "chatcmpl-test", object: "chat.completion.chunk", created: 1, model: "backend-private", ...fields })}\n\n`;
-      response.write(chunk({ choices: [{ index: 0, delta: { role: "assistant", content: "hello from fake compatible stream" }, finish_reason: null }] }));
+      response.write(chunk({ choices: [{ index: 0, delta: { role: "assistant", content: this.structuredOutput ? '{"value":"ok"}' : "hello from fake compatible stream" }, finish_reason: null }] }));
       response.write(chunk({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }));
       response.write(chunk({ choices: [], usage: { prompt_tokens: 2, completion_tokens: 6, total_tokens: 8 } }));
       response.end("data: [DONE]\n\n");

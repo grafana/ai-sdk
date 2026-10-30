@@ -89,6 +89,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 					openaicompatible.WithBaseURL(providerConfig.BaseURL),
 					openaicompatible.WithHTTPClient(client),
 					openaicompatible.WithProviderName(providerConfig.ProviderName),
+					openaicompatible.WithStructuredOutputs(providerConfig.SupportsStructuredOutputs),
 					// ProviderWire finish parts carry usage, so streams must request it.
 					openaicompatible.WithIncludeUsage(true),
 				)
