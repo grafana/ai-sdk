@@ -53,7 +53,6 @@ type unaryToolResult struct {
 }
 
 type unaryMappingContext struct {
-	history  execution.ToolHistory
 	overview *execution.Overview
 }
 
@@ -90,12 +89,8 @@ type unarySuccess struct {
 	Metadata     provider.ProviderMetadata `json:"providerMetadata,omitzero"`
 }
 
-func mapUnarySuccess(result *provider.GenerateResult, contexts ...unaryMappingContext) (unarySuccess, error) {
-	var context unaryMappingContext
-	if len(contexts) != 0 {
-		context = contexts[0]
-	}
-	if execution.ValidateGenerateResult(result, context.history) != nil || !validMetadata(result.ProviderMetadata) {
+func mapUnarySuccess(result *provider.GenerateResult) (unarySuccess, error) {
+	if !validMetadata(result.ProviderMetadata) {
 		return unarySuccess{}, errInvalidUnarySuccess
 	}
 	for _, part := range result.Content {
@@ -248,7 +243,7 @@ func validRawUsage(raw json.RawMessage) bool {
 }
 
 func (h *handler) writeUnarySuccess(w http.ResponseWriter, result *provider.GenerateResult, contexts ...unaryMappingContext) bool {
-	mapped, err := mapUnarySuccess(result, contexts...)
+	mapped, err := mapUnarySuccess(result)
 	if err != nil {
 		return false
 	}

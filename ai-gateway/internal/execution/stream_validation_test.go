@@ -107,6 +107,7 @@ func streamRuleCases() []streamRuleCase {
 		{name: "concurrent reasoning", parts: []provider.StreamPart{streamPart(provider.PartReasoningStart, "a"), streamPart(provider.PartReasoningStart, "b"), streamPart(provider.PartReasoningDelta, "a"), streamPart(provider.PartReasoningEnd, "b"), streamPart(provider.PartReasoningEnd, "a"), validFinish()}, rejectAt: -1},
 		{name: "empty reasoning ID", parts: []provider.StreamPart{streamPart(provider.PartReasoningStart, "")}, rejectAt: 0},
 		{name: "reused reasoning ID", parts: []provider.StreamPart{streamPart(provider.PartReasoningStart, "r"), streamPart(provider.PartReasoningEnd, "r"), streamPart(provider.PartReasoningStart, "r")}, rejectAt: 2},
+		{name: "repeated active reasoning ID", parts: []provider.StreamPart{streamPart(provider.PartReasoningStart, "r"), streamPart(provider.PartReasoningStart, "r")}, rejectAt: 1},
 		{name: "reasoning delta without start", parts: []provider.StreamPart{streamPart(provider.PartReasoningDelta, "r")}, rejectAt: 0},
 		{name: "reasoning end without start", parts: []provider.StreamPart{streamPart(provider.PartReasoningEnd, "r")}, rejectAt: 0},
 
