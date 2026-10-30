@@ -1,13 +1,13 @@
 {
-  ".": "0.1.0-alpha.5",
-  "providers/openai": "0.1.0-alpha.2",
-  "middleware/logger": "0.1.0-alpha.2",
-  "providers/anthropic": "0.1.0-alpha.3",
-  "providers/openai-compatible": "0.1.0-alpha.2",
+  ".": "0.1.0-alpha.6",
+  "providers/openai": "0.1.0-alpha.3",
+  "middleware/logger": "0.1.0-alpha.3",
+  "providers/anthropic": "0.1.0-alpha.4",
+  "providers/openai-compatible": "0.1.0-alpha.3",
   "middleware/enrichment": "0.1.0-alpha.1",
-  "providers/grafana": "0.1.0-alpha.2",
-  "middleware/agentobservability": "0.1.0-alpha.2",
-  "middleware/prometheus": "0.1.0-alpha.2",
-  "providers/azure": "0.1.0-alpha.1",
-  "providers/bedrock": "0.1.0-alpha.2"
+  "providers/grafana": "0.1.0-alpha.3",
+  "middleware/agentobservability": "0.1.0-alpha.3",
+  "middleware/prometheus": "0.1.0-alpha.3",
+  "providers/azure": "0.1.0-alpha.2",
+  "providers/bedrock": "0.1.0-alpha.3"
 }

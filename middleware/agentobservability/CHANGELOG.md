@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/middleware/agentobservability/v0.1.0-alpha.2...middleware/agentobservability/v0.1.0-alpha.3) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **middleware:** A stream recording is no longer enqueued before its first `finish` is forwarded. Consumers that close or shut down the shared agento11y client after reading a `finish` must drain the stream to EOF or wait for `RecordingOptions.OnRecordComplete`. A consumer that stops at `finish` and cancels still records a successful generation. Stream usage in logs, metrics and Agent Observability now comes from the last `finish`: a finish reporting a lower counter than an earlier part of the same response wins, and a multi-finish stream reports the last finish's usage instead of the greatest value across the stream.
+
+### Features
+
+* **middleware:** record every response segment of one stream ([#614](https://github.com/grafana/ai-sdk/issues/614)) ([03c01b2](https://github.com/grafana/ai-sdk/commit/03c01b2a81c1a16b052de171fe86a292dd69424b))
+* **parity:** advance pinned upstream to ai 7.0.153 ([#610](https://github.com/grafana/ai-sdk/issues/610)) ([fd3f743](https://github.com/grafana/ai-sdk/commit/fd3f743a213e3f049e7ffbfe65025f58a182867b))
+
+
+### Bug Fixes
+
+* **agentobservability:** seed explicit conversation before provider calls ([#584](https://github.com/grafana/ai-sdk/issues/584)) ([1312f59](https://github.com/grafana/ai-sdk/commit/1312f595e3793c81139c8015043710427e535663))
+
 ## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/middleware/agentobservability/v0.1.0-alpha.1...middleware/agentobservability/v0.1.0-alpha.2) (2026-10-28)
 
 

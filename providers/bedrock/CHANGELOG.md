@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/bedrock/v0.1.0-alpha.2...providers/bedrock/v0.1.0-alpha.3) (2026-10-30)
+
+
+### Bug Fixes
+
+* **bedrock:** use instruction fallback for unknown Claude structured output ([#559](https://github.com/grafana/ai-sdk/issues/559)) ([88bd0e2](https://github.com/grafana/ai-sdk/commit/88bd0e287681bf5e7116e98e81cc8971420703ce))
+
 ## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/bedrock/v0.1.0-alpha.1...providers/bedrock/v0.1.0-alpha.2) (2026-10-28)
 
 

@@ -5,11 +5,11 @@ go 1.27.3
 require (
 	github.com/anthropics/anthropic-sdk-go v1.80.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.10
-	github.com/grafana/ai-sdk v0.1.0-alpha.5
-	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.3
-	github.com/grafana/ai-sdk/providers/bedrock v0.1.0-alpha.2
-	github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.2
-	github.com/grafana/ai-sdk/providers/openai-compatible v0.1.0-alpha.2
+	github.com/grafana/ai-sdk v0.1.0-alpha.6
+	github.com/grafana/ai-sdk/providers/anthropic v0.1.0-alpha.4
+	github.com/grafana/ai-sdk/providers/bedrock v0.1.0-alpha.3
+	github.com/grafana/ai-sdk/providers/openai v0.1.0-alpha.3
+	github.com/grafana/ai-sdk/providers/openai-compatible v0.1.0-alpha.3
 	github.com/openai/openai-go/v3 v3.76.0
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1

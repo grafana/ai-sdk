@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/grafana/v0.1.0-alpha.2...providers/grafana/v0.1.0-alpha.3) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* the unsupported-gateway-control error message now lists the supported controls. Configured callers that send `byok` or any other unsupported control now get the unsupported-control document instead of the reserved-provider-options document. Status, type and code stay HTTP 400 `invalid_request_error` / `invalid_request`. Control names now match case-insensitively, as ordinary Go decoding does, so `BYOK` is accepted as `byok` instead of refused.
+* **ai-gateway:** forward sequential response segments in one stream ([#583](https://github.com/grafana/ai-sdk/issues/583))
+
+### Features
+
+* **ai-gateway:** carry status-less provider stream errors and value-less raw parts ([#611](https://github.com/grafana/ai-sdk/issues/611)) ([256fe71](https://github.com/grafana/ai-sdk/commit/256fe711457d8ce6208a7c5ce99ca6e504596f8a))
+* **ai-gateway:** forward sequential response segments in one stream ([#583](https://github.com/grafana/ai-sdk/issues/583)) ([c0a7a6f](https://github.com/grafana/ai-sdk/commit/c0a7a6f7f33650b057754a4bcfee1af776038403))
+* **parity:** advance pinned upstream to ai 7.0.153 ([#610](https://github.com/grafana/ai-sdk/issues/610)) ([fd3f743](https://github.com/grafana/ai-sdk/commit/fd3f743a213e3f049e7ffbfe65025f58a182867b))
+* support Vercel-compatible request routing in the Gateway and Grafana client ([#596](https://github.com/grafana/ai-sdk/issues/596)) ([01e6e56](https://github.com/grafana/ai-sdk/commit/01e6e56e20150a5aef8772f3f2620941de76cc90))
+
+
+### Bug Fixes
+
+* **security/unknown/providers/grafana:** update module golang.org/x/net to v0.62.0 [security] ([#575](https://github.com/grafana/ai-sdk/issues/575)) ([5ec038b](https://github.com/grafana/ai-sdk/commit/5ec038b2460b10575c341a870404553b3a94e7b5))
+
 ## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/grafana/v0.1.0-alpha.1...providers/grafana/v0.1.0-alpha.2) (2026-10-28)
 
 

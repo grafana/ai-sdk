@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/openai/v0.1.0-alpha.2...providers/openai/v0.1.0-alpha.3) (2026-10-30)
+
+
+### Features
+
+* **parity:** advance pinned upstream to ai 7.0.153 ([#610](https://github.com/grafana/ai-sdk/issues/610)) ([fd3f743](https://github.com/grafana/ai-sdk/commit/fd3f743a213e3f049e7ffbfe65025f58a182867b))
+
+
+### Bug Fixes
+
+* **openai:** preserve tool failure output semantics ([#586](https://github.com/grafana/ai-sdk/issues/586)) ([3c57fbd](https://github.com/grafana/ai-sdk/commit/3c57fbdea596026874c59c0e7319b090f84f2725))
+
 ## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/openai/v0.1.0-alpha.1...providers/openai/v0.1.0-alpha.2) (2026-10-28)
 
 
