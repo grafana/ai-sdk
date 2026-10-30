@@ -28,8 +28,9 @@ const (
 const SettingEnvironmentPrefix = "GF_PLUGIN_"
 
 const (
-	// MaxFileBytes bounds the model configuration file.
-	MaxFileBytes = 1 << 20
+	// MaxModelCatalogBytes bounds the model catalog setting. It stays well
+	// below the 128 KiB a single environment variable can hold on Linux.
+	MaxModelCatalogBytes = 64 << 10
 	// ProviderResponseHeaderTimeout bounds the wait for a model provider's
 	// response headers.
 	ProviderResponseHeaderTimeout = 10 * time.Second
@@ -42,6 +43,9 @@ const (
 	// bound limits how far fast failures amplify.
 	MaxProviderAttempts = 8
 )
+
+// ModelCatalogSetting is the setting key of the YAML model catalog document.
+const ModelCatalogSetting = "model_catalog"
 
 // AgentObservabilityTokenSetting is the setting key of the Agent
 // Observability bearer token. The token is read only by ResolveAuthSecret,
@@ -58,7 +62,7 @@ type AgentObservabilitySettings struct {
 
 // Settings contains every plugin setting.
 type Settings struct {
-	ConfigFile         string
+	ModelCatalog       string
 	Access             auth.AccessPolicy
 	AgentObservability AgentObservabilitySettings
 }
@@ -111,7 +115,7 @@ func (e *environment) bool(key string, fallback bool) bool {
 func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 	env := environment{lookup: lookupEnv}
 	settings := Settings{
-		ConfigFile: env.string("config_file", ""),
+		ModelCatalog: env.string(ModelCatalogSetting, ""),
 		AgentObservability: AgentObservabilitySettings{
 			Enabled:  env.bool("agento11y_enabled", false),
 			Protocol: AgentObservabilityProtocol(env.string("agento11y_protocol", string(AgentObservabilityGRPC))),
@@ -135,8 +139,8 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 
 // Validate validates the settings without performing I/O.
 func (settings Settings) Validate() error {
-	if strings.TrimSpace(settings.ConfigFile) == "" {
-		return fmt.Errorf("config: config file is required")
+	if strings.TrimSpace(settings.ModelCatalog) == "" {
+		return fmt.Errorf("config: %s is required", SettingName(ModelCatalogSetting))
 	}
 	if err := settings.AgentObservability.validate(); err != nil {
 		return err

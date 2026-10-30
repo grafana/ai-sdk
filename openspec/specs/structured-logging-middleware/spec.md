@@ -3,7 +3,9 @@
 ## Purpose
 
 Provide an opt-in provider-layer structured logging middleware for language model calls, with stable event records, privacy-first capture defaults, and dependency isolation from the root ai-sdk module.
+
 ## Requirements
+
 ### Requirement: Nested logger middleware module
 
 The repository SHALL provide `middleware/logger`, a nested Go module at `github.com/grafana/ai-sdk/middleware/logger`, depending only on root ai-sdk and the standard library, not OpenTelemetry SDKs, Agent Observability, gRPC, vendor SDKs, provider modules, or third-party logging libraries. Root ai-sdk SHALL NOT import it; root-only consumers SHALL gain no logger-specific dependencies or public API.
@@ -204,9 +206,15 @@ Capture and redaction SHALL preserve original parameters, results and request me
 #### Scenario: Stream usage preserves strongest values
 
 - **GIVEN** usage is split across multiple stream parts
-- **AND** a later finish part omits or reports lower provisional normalized counters
+- **AND** the finish part omits some normalized counters
 - **WHEN** the stream completes
-- **THEN** the terminal log record SHALL contain the independently aggregated strongest normalized counters
+- **THEN** the terminal log record SHALL contain the counters the finish reports and, for the counters it omits, the strongest values observed earlier in its response segment, under shared streaming usage aggregation
+
+#### Scenario: Stream usage follows the last finish
+
+- **GIVEN** a stream emits several finish parts, each reporting its own usage
+- **WHEN** the stream completes
+- **THEN** the terminal log record SHALL contain the last finish's segment usage, not a sum or the greatest value across segments
 
 #### Scenario: Stream success tees unmodified parts
 

@@ -84,11 +84,6 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeFailure(w, failure)
 		return
 	}
-	history, failure := unresolvedProviderCalls(options.Prompt)
-	if failure != nil {
-		h.writeFailure(w, failure)
-		return
-	}
 	call, err := h.runtime.Call(r.Context(), validated.modelID, options)
 	if err != nil {
 		h.writeSafeError(w, safeErrorFromResolution(err), nil)
@@ -96,7 +91,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer call.Close()
 	if validated.mode == executionStreaming {
-		h.serveStream(w, call, options, history)
+		h.serveStream(w, call, options)
 		return
 	}
 	result, err := call.Generate()
@@ -106,7 +101,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := call.View(nil)
-	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{history: history, overview: view.Overview}) {
+	if result == nil || !h.writeUnarySuccess(w, result, unaryMappingContext{overview: view.Overview}) {
 		h.writeSafeError(w, safeError{category: safeInternal}, view.Metadata())
 	}
 }

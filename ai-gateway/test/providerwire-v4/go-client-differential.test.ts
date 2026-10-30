@@ -8,7 +8,7 @@ import { generateText } from "ai";
 import { createGateway } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
-import { comprehensiveGoldenCase, fileInputGoldenCase } from "./request-cases";
+import { comprehensiveGoldenCase, fileInputGoldenCase, routingGatewayOptions } from "./request-cases";
 import { assertValidRequest } from "./schema";
 
 let directory: string;
@@ -276,6 +276,29 @@ describe("Go and exact-pinned Gateway differential", () => {
       assert.deepEqual(ts.warnings, unary.warnings); assert.deepEqual(go.result.warnings, ts.warnings);
     } finally { await server.stop(); }
   });
+
+  for (const [name, gateway] of [
+    ["routing and request-account controls", routingGatewayOptions],
+    ["explicit empty only", { only: [] }],
+  ] as const) {
+    for (const streaming of [false, true]) it(`matches typed GatewayOptions with pinned GatewayProviderOptions for ${name} (streaming=${streaming})`, async () => {
+      const body = streaming ? 'data: {"type":"stream-start","warnings":[]}\n\ndata: [DONE]\n\n' : JSON.stringify(unary);
+      const server = await endpoint(body, 200, streaming ? "text/event-stream" : "application/json");
+      try {
+        const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "route" }] }], providerOptions: { gateway: structuredClone(gateway), anthropic: { sendReasoning: false } } };
+        const model = createGateway({ apiKey: "test-key", baseURL: server.baseURL, headers: { "x-access-token": "access-token" } })("grafana/assistant");
+        if (streaming) { for await (const _part of (await model.doStream(options)).stream) { /* drain */ } } else await model.doGenerate(options);
+        const go = await captureGoClient(binary, {
+          baseURL: server.baseURL, accessToken: "access-token", modelID: "grafana/assistant", mode: streaming ? "stream" : "generate",
+          options: { prompt: options.prompt, providerOptions: { anthropic: { sendReasoning: false } } }, gatewayOptions: gateway,
+        });
+        assert.equal(go.error, undefined);
+        assert.equal(server.requests.length, 2);
+        assert.deepEqual(semanticRequest(server.requests[1]!), semanticRequest(server.requests[0]!));
+        assert.deepEqual((server.requests[1]!.body as { providerOptions: unknown }).providerOptions, { gateway, anthropic: { sendReasoning: false } });
+      } finally { await server.stop(); }
+    });
+  }
 
   it("decodes relevant variant fields without rejecting unrelated fields", async () => {
     const tools = [

@@ -42,8 +42,9 @@ flowchart LR
       select[Account-access selection]
       catalog[Public model catalog]
       byok[Cloud request accounts: Anthropic or OpenAI]
+      compose[Request routing: models, order, only]
       logical[Logical model observation]
-      routing[Configured primary and ordered fallback]
+      routing[Configured or request-composed ordered candidates]
     end
     subgraph outbound[Outbound provider adapters]
       anthropic[Anthropic Messages]
@@ -57,7 +58,9 @@ flowchart LR
   host --> pw
   pw --> runtime --> select
   select -->|private| catalog --> logical --> routing
+  catalog -->|routing controls| compose --> logical
   select -->|Cloud| byok
+  byok -->|routing controls| compose
   byok --> anthropic
   byok --> openai
   routing --> anthropic --> apis
@@ -155,8 +158,17 @@ sequenceDiagram
    model execution. One access-aware selector, `NewSelector`, serves every
    caller, so each adapter needs one runtime. For configured access it
    delegates to `CatalogSelector` to resolve `assistant` or an alias to its
-   canonical model. This private path rejects reserved Gateway controls; its
-   caller cannot switch to request accounts. See [service selection](../../ai-gateway/pkg/internal/service/selection.go),
+   canonical model. When the call carries `gateway.models`, `order` or `only`,
+   the selector instead resolves every named model through the catalog and
+   composes one request chain from the candidates built at startup: each
+   model's candidates in order, filtered by `only` and then moved to the front
+   by `order`, with repeated models and destinations skipped and at most 8
+   attempts. That chain gets the same logical observation, under the requested
+   model's canonical identity, as a configured route. Invalid or unknown
+   controls fail here, before any provider call. This private path refuses
+   request credentials; its caller cannot switch to request accounts. See
+   [service selection](../../ai-gateway/pkg/internal/service/selection.go),
+   [request routing](../../ai-gateway/pkg/internal/service/routed.go),
    [catalog selection](../../ai-gateway/internal/execution/selection.go), and the
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** Logical observation surrounds the
@@ -202,9 +214,9 @@ flowchart TD
   request -->|rejected| httpError[HTTP error before commitment]
   setup -->|setup fails| httpError
   setup -->|usable stream returned| commit[Commit HTTP 200 and SSE headers]
-  commit --> read[Read and validate provider parts]
+  commit --> read[Runtime reads and validates the part lifecycle]
   commit -->|flush failure| cleanup
-  read -->|valid part, including a finish| frame[Encode complete SSE frame and flush]
+  read -->|valid part, including a finish| frame[Check representation, encode complete SSE frame and flush]
   frame -->|continue| read
   read -->|provider close after a finish| cleanup[Cancel model context and bounded drain]
   read -->|terminal failure, premature close, idle, deadline or cancellation| terminal[Attempt terminal SSE error]
@@ -215,9 +227,15 @@ flowchart TD
 For configured fallback, `DoStream` waits for candidate selection before
 returning the usable stream. For a direct model, the handler may commit HTTP
 success before the first provider part arrives. The execution runtime waits for
-each part and owns the idle timer and cleanup. The
+each part and owns the idle timer and cleanup. It also
+[validates the output lifecycle](../../ai-gateway/internal/execution/stream_validation.go)
+of every part, seeded from the prompt's tool history: event ordering, response
+segments, text, reasoning and tool phases, and the finish preconditions. A
+violation ends the stream as invalid output. The runtime also decides how the
+stream ends, so every adapter treats a close after a `finish` the same way. The
 [ProviderWire stream encoder](../../ai-gateway/providerwire/v4/stream.go) supplies an empty
-`stream-start` when needed, checks event ordering and validity, and writes
+`stream-start` when needed, checks its representation and content, such as
+valid UTF-8, metadata shape and the JavaScript safe-integer range, and writes
 complete `data: <JSON>` frames separated by a blank line.
 
 One provider stream can carry several native responses or messages. Each
@@ -239,7 +257,8 @@ performed by a remote provider or tool.
 Each resource limit has one owner. Grafana's plugin host owns the request
 deadline, the request size, admission and, through the container, process
 memory. The Gateway keeps only what it owns: 8 provider attempts per request,
-checked when the catalog loads and when request keys are decoded; 16 MiB per
+checked when the catalog loads, when request keys are decoded and when routing
+controls compose a chain; 16 MiB per
 decompressed provider response that is not a stream, in the model transport;
 and stream idle time and cleanup in the execution runtime. No API adapter
 rejects or truncates output because of its size. See the
@@ -251,8 +270,9 @@ One HTTP request can contain several physical provider attempts but one logical
 model call. Logs and metrics describe those different scopes. Optional client
 execution overviews describe observed selection decisions: configured
 identities for configured models, and the requested destination with each
-account attempt for BYOK calls. They do not prove that a selected stream
-completed. Token usage is
+account attempt for BYOK calls. The routing summary next to each overview
+groups the same attempts by the models the call's chain was composed from.
+They do not prove that a selected stream completed. Token usage is
 provider-reported accounting, not a complete count of all remote work after
 retries or interrupted calls.
 
@@ -274,10 +294,12 @@ token, not from a caller choosing a different model name:
   service. They cannot switch to request accounts.
 - **BYOK:** in `cloud` mode, other verified identities get request-scoped
   access; the selector decodes the provider/model destination and credentials
-  from the call-level `gateway.byok` controls. The [BYOK engine](../../ai-gateway/pkg/internal/byok/model.go)
-  constructs an Anthropic or OpenAI model with request-local accounts and
-  observation, and the selection carries the destination and account count
-  that the BYOK execution overview is checked against. It does not consult the
+  from the call-level `gateway.byok` controls, plus one destination per
+  `gateway.models` selector. The [BYOK engine](../../ai-gateway/pkg/internal/byok/model.go)
+  constructs one chain of request-local Anthropic or OpenAI accounts, ordered by
+  the same routing composition. The selection carries the destination expected
+  at each attempt position, which the BYOK execution overview is checked
+  against. It does not consult the
   configured catalog or fall back to server-held keys. This host supplies no custom base-URL approval map.
 
 See [service selection](../../ai-gateway/pkg/internal/service/selection.go)
@@ -299,11 +321,11 @@ protocol evidence, synthetic native-provider tests, and live-provider evidence.
 
 The registered upstream reference is recorded in
 [upstream.yaml](../../test/conformance/upstream.yaml), including
-`@ai-sdk/gateway` 4.0.103 and `@ai-sdk/provider` 4.0.21. The corresponding
-[upstream Gateway client](https://github.com/vercel/ai/blob/eb77f09e3c06c28e860d92e0de941b143c2eecec/packages/gateway/src/gateway-language-model.ts)
-serializes model calls and reads JSON or SSE. It establishes the client-facing
-protocol, not Vercel's private hosted-service implementation or Grafana's
-routing policy.
+`@ai-sdk/gateway` 4.0.116 and `@ai-sdk/provider` 4.0.29. The corresponding
+[upstream Gateway client](https://github.com/vercel/ai/blob/b7f6255acaae7724adc0fd37aac3dae3f3466578/packages/gateway/src/gateway-language-model.ts)
+serializes model calls, forwards `providerOptions.gateway` routing controls
+unchanged, and reads JSON or SSE. It establishes the client-facing protocol,
+not Vercel's private hosted-service implementation or Grafana's routing policy.
 
 ---
 

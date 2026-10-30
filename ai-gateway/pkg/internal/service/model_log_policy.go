@@ -113,6 +113,7 @@ func allowModelLogAttr(attr slog.Attr, access gatewayauth.AccountAccess) bool {
 			string(provider.FinishReasonContentFilter),
 			string(provider.FinishReasonToolCalls),
 			string(provider.FinishReasonError),
+			string(provider.FinishReasonInterrupted),
 			string(provider.FinishReasonOther),
 		)
 	case "ai_sdk.model", "gen_ai.request.model":

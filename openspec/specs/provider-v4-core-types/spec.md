@@ -55,7 +55,7 @@ The `aggregateUsage` function SHALL sum every `InputTokens` and `OutputTokens` f
 - **AND** breakdown fields no step reported SHALL be nil
 
 ### Requirement: FinishReason as struct with Unified and Raw
-The `FinishReason` type SHALL be a struct with two fields: `Unified` (type `UnifiedFinishReason`) and `Raw` (type `string`). The `UnifiedFinishReason` type SHALL be a `string` type alias with constants: `stop`, `length`, `content-filter`, `tool-calls`, `error`, `other`.
+The `FinishReason` type SHALL be a struct with two fields: `Unified` (type `UnifiedFinishReason`) and `Raw` (type `string`). The `UnifiedFinishReason` type SHALL be a `string` type alias with constants: `stop`, `length`, `content-filter`, `tool-calls`, `error`, `interrupted`, `other`. `interrupted` reports a provider stream that ended without a completion signal; its output may be incomplete.
 
 #### Scenario: FinishReason struct shape
 - **WHEN** a provider returns a finish reason
@@ -63,7 +63,7 @@ The `FinishReason` type SHALL be a struct with two fields: `Unified` (type `Unif
 
 #### Scenario: FinishReason constants
 - **WHEN** code references finish reason constants
-- **THEN** it SHALL use `UnifiedFinishReason` typed constants: `FinishReasonStop`, `FinishReasonLength`, `FinishReasonContentFilter`, `FinishReasonToolCalls`, `FinishReasonError`, `FinishReasonOther`
+- **THEN** it SHALL use `UnifiedFinishReason` typed constants: `FinishReasonStop`, `FinishReasonLength`, `FinishReasonContentFilter`, `FinishReasonToolCalls`, `FinishReasonError`, `FinishReasonInterrupted`, `FinishReasonOther`
 
 #### Scenario: FinishReason JSON serialization
 - **WHEN** a `FinishReason` is serialized to JSON

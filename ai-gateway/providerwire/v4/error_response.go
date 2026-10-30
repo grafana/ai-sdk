@@ -62,7 +62,7 @@ var publicErrors = [...]errorDefinition{
 	},
 	safeGatewayControl: {
 		status:  http.StatusBadRequest,
-		message: "unsupported gateway control; only gateway.byok is supported",
+		message: "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials",
 		kind:    errorInvalidRequest,
 		code:    codeInvalidRequest,
 	},
@@ -164,7 +164,7 @@ func definitionForError(value safeError) errorDefinition {
 		return publicErrors[safeInternal]
 	}
 	definition := publicErrors[value.category]
-	if value.category == safeInvalidRequest {
+	if value.category == safeInvalidRequest || value.category == safeModelNotFound {
 		if message := requestFailureMessage(value.reason); message != "" {
 			definition.message = message
 		}
@@ -186,6 +186,14 @@ func requestFailureMessage(reason requestFailureReason) string {
 		return "reserved provider option namespace"
 	case policyProtectedCallHeader:
 		return "protected call header"
+	case routingControls:
+		return "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"
+	case routingNoCandidates:
+		return "providerOptions.gateway.only excludes every candidate"
+	case routingAttemptBound:
+		return "routing exceeds the bound of 8 provider attempts"
+	case routingFallbackModel:
+		return "a providerOptions.gateway.models entry is not an available model"
 	default:
 		return ""
 	}

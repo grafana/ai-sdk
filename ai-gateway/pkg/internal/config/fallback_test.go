@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadFile_OrderedDirectFallback(t *testing.T) {
+func TestParseModelCatalog_OrderedDirectFallback(t *testing.T) {
 	valid := strings.Replace(minimalConfigYAML, "models:", "  backup:\n    type: anthropic\n    apiKeyEnv: BACKUP_KEY\nmodels:", 1)
 	valid += "    fallback:\n      - provider: backup\n        model: second\n      - provider: anthropic-primary\n        model: third\n"
-	file, err := LoadFile(writeConfigFile(t, valid), 1<<20)
+	file, err := ParseModelCatalog(valid)
 	require.NoError(t, err)
 	require.NoError(t, file.Validate())
 	for _, tc := range []struct{ name, body string }{
@@ -26,7 +26,7 @@ func TestLoadFile_OrderedDirectFallback(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			prefix := valid[:strings.Index(valid, "    fallback:")]
-			_, err := LoadFile(writeConfigFile(t, prefix+"    fallback:\n"+tc.body), 1<<20)
+			_, err := ParseModelCatalog(prefix + "    fallback:\n" + tc.body)
 			require.Error(t, err)
 			assert.NotContains(t, err.Error(), "BACKUP_KEY")
 		})

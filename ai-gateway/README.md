@@ -34,12 +34,13 @@ client.
    allow_loading_unsigned_plugins = grafana-aigateway-app
 
    [plugin.grafana-aigateway-app]
-   config_file = /etc/grafana/aigateway/models.yaml
+   model_catalog = $__file{/etc/grafana/aigateway/models.yaml}
    access_mode = self-hosted
    anthropic_api_key = $__file{/run/secrets/anthropic-api-key}
    ```
 
-3. Create the model catalog in `config_file`, as described in the next section.
+3. Create the model catalog file that `model_catalog` reads, as described in
+   the next section.
 4. Restart Grafana and enable **Grafana AI Gateway** under
    **Administration > Plugins and data > Plugins**.
 
@@ -89,6 +90,14 @@ an environment variable named `GF_PLUGIN_<KEY>`, so `anthropic_api_key` becomes
 `GF_PLUGIN_ANTHROPIC_API_KEY`. Keep provider keys there and read them from a
 file with `$__file{}` or from Grafana's environment with `$__env{}`.
 
+The Gateway reads the catalog from the `model_catalog` setting, never from a
+file. `$__file{}` makes Grafana read the file when Grafana starts, so restart
+Grafana after you change it. Hosts that configure plugins through the
+environment set `GF_PLUGIN_MODEL_CATALOG` to the catalog YAML instead; if their
+settings cannot contain newlines, pass the catalog as single-line JSON, which is
+also valid YAML. If the file that `$__file{}` names is missing or unreadable,
+Grafana itself fails to start.
+
 The Gateway checks its settings and the catalog when Grafana starts it. If
 something is wrong, it does not start, and Grafana's log says why.
 
@@ -108,7 +117,7 @@ something is wrong, it does not start, and Grafana's log says why.
 
 | Setting | Description |
 |---|---|
-| `config_file` | Path to the model catalog. Required. |
+| `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Required. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
@@ -129,7 +138,7 @@ format, not the Gateway's.
 | 16 MiB per provider response that is not streamed, after decompression | Gateway |
 | 10 seconds for a provider to send response headers; provider redirects are not followed | Gateway |
 | 30 seconds without activity in a stream | Gateway |
-| 1 MiB model catalog file; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName` and each `provider` and `model` value | Gateway, at startup |
+| 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName` and each `provider` and `model` value | Gateway, at startup |
 
 ### Request duration
 
@@ -176,8 +185,8 @@ Then work from `ai-gateway/`:
 | After changing | Run |
 | --- | --- |
 | The frontend | `pnpm dev`, and keep it running. The page reloads on each change. |
-| The backend in `pkg/` or `provisioning/aigateway/models.yaml` | `mage -v build:linux` (`build:linuxARM64` on arm64), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin. |
-| `provisioning/grafana.ini` | `docker compose restart grafana` |
+| The backend in `pkg/` | `mage -v build:linux` (`build:linuxARM64` on arm64), then `docker compose exec grafana pkill -f gpx_aigateway`. Grafana restarts the plugin. |
+| `provisioning/grafana.ini` or `provisioning/aigateway/models.yaml` | `docker compose restart grafana` |
 
 The Gateway refuses Grafana's anonymous sign-in. Create a service account token
 to call it:

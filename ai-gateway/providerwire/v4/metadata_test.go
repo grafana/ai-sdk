@@ -80,14 +80,11 @@ func TestProviderMetadata_StreamScopes(t *testing.T) {
 			finish,
 		}
 		h := &handler{}
-		state := newStreamState(nil)
+		state := &streamState{}
 		w := httptest.NewRecorder()
-		for i, part := range parts {
+		for _, part := range parts {
 			before := w.Body.Len()
 			require.Equal(t, streamPartContinue, h.processStreamPart(w, state, part), part.Type)
-			if i == len(parts)-1 {
-				require.Equal(t, segmentFinished, state.phase)
-			}
 			var decoded map[string]json.RawMessage
 			require.NoError(t, json.Unmarshal([]byte(strings.TrimSuffix(strings.TrimPrefix(w.Body.String()[before:], "data: "), "\n\n")), &decoded))
 			checkMetadataPresence(t, metadata, decoded["providerMetadata"])
