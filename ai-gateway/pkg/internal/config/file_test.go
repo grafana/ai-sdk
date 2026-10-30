@@ -2,8 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,25 +24,32 @@ models:
       - assistant
 `
 
-func TestLoadFile_StrictBoundedDocument(t *testing.T) {
-	t.Run("valid below and exact limit", func(t *testing.T) {
-		path := writeConfigFile(t, minimalConfigYAML)
-		for _, limit := range []int64{int64(len(minimalConfigYAML) + 1), int64(len(minimalConfigYAML))} {
-			file, err := LoadFile(path, limit)
-			require.NoError(t, err)
-			require.Len(t, file.Models, 1)
-			assert.Equal(t, []string{"assistant"}, file.Models["grafana/assistant"].Aliases)
-		}
+func TestParseModelCatalog_StrictBoundedDocument(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		file, err := ParseModelCatalog(minimalConfigYAML)
+		require.NoError(t, err)
+		require.Len(t, file.Models, 1)
+		assert.Equal(t, []string{"assistant"}, file.Models["grafana/assistant"].Aliases)
+	})
+
+	t.Run("single-line JSON", func(t *testing.T) {
+		file, err := ParseModelCatalog(`{"providers":{"anthropic-primary":{"type":"anthropic","apiKeyEnv":"ANTHROPIC_API_KEY"}},"models":{"grafana/assistant":{"name":"Grafana Assistant","primary":{"provider":"anthropic-primary","model":"claude-test"},"aliases":["assistant"]}}}`)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"assistant"}, file.Models["grafana/assistant"].Aliases)
+	})
+
+	t.Run("exact limit", func(t *testing.T) {
+		require.Equal(t, 64<<10, MaxModelCatalogBytes)
+		padded := minimalConfigYAML + "#" + strings.Repeat("x", MaxModelCatalogBytes-len(minimalConfigYAML)-1)
+		require.Len(t, padded, MaxModelCatalogBytes)
+		_, err := ParseModelCatalog(padded)
+		require.NoError(t, err)
 	})
 
 	t.Run("over limit", func(t *testing.T) {
-		_, err := LoadFile(writeConfigFile(t, minimalConfigYAML), int64(len(minimalConfigYAML)-1))
-		require.Error(t, err)
-	})
-
-	t.Run("regular file required", func(t *testing.T) {
-		_, err := LoadFile(t.TempDir(), 1024)
-		require.Error(t, err)
+		oversized := minimalConfigYAML + "#" + strings.Repeat("x", MaxModelCatalogBytes-len(minimalConfigYAML))
+		_, err := ParseModelCatalog(oversized)
+		require.EqualError(t, err, "config: GF_PLUGIN_MODEL_CATALOG exceeds 65536 bytes")
 	})
 
 	tests := []struct {
@@ -71,20 +76,20 @@ func TestLoadFile_StrictBoundedDocument(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := LoadFile(writeConfigFile(t, tc.yaml), 1<<20)
+			_, err := ParseModelCatalog(tc.yaml)
 			require.Error(t, err)
 		})
 	}
 }
 
-func TestLoadFile_RejectsLegacyAuthenticationBlocks(t *testing.T) {
+func TestParseModelCatalog_RejectsLegacyAuthenticationBlocks(t *testing.T) {
 	for name, block := range map[string]string{
 		"jwt auth":        "auth:\n  type: jwt\n  jwt:\n    jwksURL: https://private-jwks.example/keys\n",
 		"static-key auth": "auth:\n  type: static-key\n  staticKey:\n    identities:\n      private-identity:\n        keyEnv: PRIVATE_KEY_ENV\n",
 		"cloud server":    "server:\n  cloud:\n    enabled: false\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := LoadFile(writeConfigFile(t, minimalConfigYAML+block), 1<<20)
+			_, err := ParseModelCatalog(minimalConfigYAML + block)
 			require.EqualError(t, err, "config: invalid YAML fields or values")
 		})
 	}
@@ -189,16 +194,9 @@ func TestResolveProviderSecrets(t *testing.T) {
 	}
 }
 
-func TestLoadFile_OpenAIProviderBaseURLOptional(t *testing.T) {
-	_, err := LoadFile(writeConfigFile(t, strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai\n", 1)), 1<<20)
+func TestParseModelCatalog_OpenAIProviderBaseURLOptional(t *testing.T) {
+	_, err := ParseModelCatalog(strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai\n", 1))
 	require.NoError(t, err)
-}
-
-func writeConfigFile(t *testing.T, contents string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "models.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
-	return path
 }
 
 func cloneFile(file File) File {
@@ -213,23 +211,23 @@ func cloneFile(file File) File {
 	return result
 }
 
-func TestLoadFile_OpenAICompatibleProvider(t *testing.T) {
+func TestParseModelCatalog_OpenAICompatibleProvider(t *testing.T) {
 	yaml := strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: ollama\n", 1)
-	file, err := LoadFile(writeConfigFile(t, yaml), 1<<20)
+	file, err := ParseModelCatalog(yaml)
 	require.NoError(t, err)
 	resolved, err := file.ResolveProviderSecrets(func(string) (string, bool) { return "key", true })
 	require.NoError(t, err)
 	assert.Equal(t, ResolvedProvider{Type: "openai-compatible", APIKey: "key", BaseURL: "http://127.0.0.1:11434/v1", ProviderName: "ollama"}, resolved["anthropic-primary"])
 }
 
-func TestLoadFile_GrafanaProviderNameIsOrdinary(t *testing.T) {
+func TestParseModelCatalog_GrafanaProviderNameIsOrdinary(t *testing.T) {
 	yaml := strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: grafana\n", 1)
-	file, err := LoadFile(writeConfigFile(t, yaml), 1<<20)
+	file, err := ParseModelCatalog(yaml)
 	require.NoError(t, err)
 	assert.Equal(t, "grafana", file.Providers["anthropic-primary"].ProviderName)
 }
 
-func TestLoadFile_ProviderErrorsNameTheField(t *testing.T) {
+func TestParseModelCatalog_ProviderErrorsNameTheField(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		yaml string
@@ -243,7 +241,7 @@ func TestLoadFile_ProviderErrorsNameTheField(t *testing.T) {
 		{name: "reserved provider name with padding", yaml: fmt.Sprintf(strings.Replace(minimalConfigYAML, "    type: anthropic\n", "    type: openai-compatible\n    baseURL: http://127.0.0.1:11434/v1\n    providerName: %s\n", 1), `" gateway"`), want: "providers.anthropic-primary.providerName"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := LoadFile(writeConfigFile(t, tc.yaml), 1<<20)
+			_, err := ParseModelCatalog(tc.yaml)
 			require.ErrorContains(t, err, tc.want)
 		})
 	}

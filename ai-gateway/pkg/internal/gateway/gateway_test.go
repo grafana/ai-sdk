@@ -46,10 +46,10 @@ func newStartupEnvironment(t *testing.T, providerURL string) *startupEnvironment
 	require.NoError(t, err)
 	return &startupEnvironment{
 		values: map[string]string{
-			"GF_PLUGIN_CONFIG_FILE": writeModelConfig(t, providerURL, false),
-			"GF_PLUGIN_ACCESS_MODE": "cloud",
-			"GRAFANA_JWKS":          string(keys),
-			"ANTHROPIC_SECRET":      providerSecret,
+			"GF_PLUGIN_MODEL_CATALOG": modelCatalog(providerURL, false),
+			"GF_PLUGIN_ACCESS_MODE":   "cloud",
+			"GRAFANA_JWKS":            string(keys),
+			"ANTHROPIC_SECRET":        providerSecret,
 		},
 		secrets: map[string]int{},
 	}
@@ -123,9 +123,15 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 		{name: "unsupported provider scheme", url: "ftp://provider.example", message: "must use http or https"},
 		{name: "credential-bearing provider endpoint", url: "https://user:password@provider.example", message: "userinfo"},
 		{name: "malformed credential-bearing provider endpoint", url: "https://user:password@provider.example:port", message: "not a valid URL"},
-		{name: "missing configuration file", change: func(env map[string]string) {
-			env["GF_PLUGIN_CONFIG_FILE"] += ".missing"
-		}, message: "file does not exist"},
+		{name: "missing model catalog", change: func(env map[string]string) {
+			delete(env, "GF_PLUGIN_MODEL_CATALOG")
+		}, message: "GF_PLUGIN_MODEL_CATALOG is required"},
+		{name: "invalid model catalog", change: func(env map[string]string) {
+			env["GF_PLUGIN_MODEL_CATALOG"] += "unknown: backend-private\n"
+		}, message: "invalid YAML fields or values"},
+		{name: "oversized model catalog", change: func(env map[string]string) {
+			env["GF_PLUGIN_MODEL_CATALOG"] += "#" + strings.Repeat("x", 64<<10)
+		}, message: "GF_PLUGIN_MODEL_CATALOG exceeds 65536 bytes"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -143,7 +149,7 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 			_, logs, err := env.start(t)
 			require.ErrorContains(t, err, tc.message)
 			assert.Empty(t, env.secrets)
-			for _, private := range []string{providerSecret, "private=ambient", "password", env.values["GF_PLUGIN_CONFIG_FILE"]} {
+			for _, private := range []string{providerSecret, "private=ambient", "password", "backend-private"} {
 				assert.NotContains(t, err.Error(), private)
 				assert.NotContains(t, logs, private)
 			}
@@ -162,13 +168,11 @@ func TestNew_RejectsInvalidRoutesBeforeSecrets(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := newStartupEnvironment(t, "https://provider.example")
-			path := env.values["GF_PLUGIN_CONFIG_FILE"]
-			data, err := os.ReadFile(path)
-			require.NoError(t, err)
-			changed := strings.Replace(string(data), tc.old, tc.replacement, 1)
-			require.NotEqual(t, string(data), changed)
-			require.NoError(t, os.WriteFile(path, []byte(changed), 0o600))
-			_, _, err = env.start(t)
+			catalog := env.values["GF_PLUGIN_MODEL_CATALOG"]
+			changed := strings.Replace(catalog, tc.old, tc.replacement, 1)
+			require.NotEqual(t, catalog, changed)
+			env.values["GF_PLUGIN_MODEL_CATALOG"] = changed
+			_, _, err := env.start(t)
 			require.ErrorContains(t, err, "config:")
 			assert.Empty(t, env.secrets)
 		})
@@ -280,7 +284,7 @@ func launchPlugin(t *testing.T, binary string, env map[string]string) *pluginPro
 	require.NoError(t, err)
 	fake := newFakeAnthropic(t)
 	environment := []string{
-		"GF_PLUGIN_CONFIG_FILE=" + writeModelConfig(t, fake.server.URL, false),
+		"GF_PLUGIN_MODEL_CATALOG=" + modelCatalog(fake.server.URL, false),
 		"GF_PLUGIN_ACCESS_MODE=cloud",
 		"GF_PLUGIN_ACCESS_INTERNAL_SERVICES=" + testInternalService,
 		"ANTHROPIC_SECRET=" + providerSecret,
