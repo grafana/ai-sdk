@@ -1243,19 +1243,26 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 		{Type: provider.PartTextEnd, ID: "0"},
 		{Type: provider.PartFinish, FinishReason: &stop, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: &inputSecond}, OutputTokens: provider.OutputTokenUsage{Total: &outputSecond}}},
 	}
+	providerError := provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "upstream overloaded", StatusCode: http.StatusServiceUnavailable})}
 	for _, tc := range []struct {
-		name         string
-		parts        []provider.StreamPart
-		stall        bool
-		idle         time.Duration
-		deadline     time.Duration
-		logEvent     string
-		logOutcome   string
-		metricLabels string
+		name            string
+		parts           []provider.StreamPart
+		stall           bool
+		idle            time.Duration
+		deadline        time.Duration
+		wireErrors      int
+		logEvent        string
+		logOutcome      string
+		metricLabels    string
+		usageIn         int
+		usageOut        int
+		generationStop  provider.UnifiedFinishReason
+		generationError string
 	}{
-		{name: "normal close", parts: segments, idle: 5 * time.Second, logEvent: "aisdk.model.stream.finish", logOutcome: "success", metricLabels: `error_type="none",finish_reason="stop"`},
-		{name: "deadline stall after finish", parts: segments[:5], stall: true, idle: 5 * time.Second, deadline: 100 * time.Millisecond, logEvent: "aisdk.model.stream.error", logOutcome: "timeout", metricLabels: `error_type="context_deadline_exceeded"`},
-		{name: "idle stall after finish", parts: segments[:5], stall: true, idle: 50 * time.Millisecond, logEvent: "aisdk.model.stream.cancelled", logOutcome: "cancelled", metricLabels: `error_type="context_canceled"`},
+		{name: "normal close", parts: segments, idle: 5 * time.Second, logEvent: "aisdk.model.stream.finish", logOutcome: "success", metricLabels: `error_type="none",finish_reason="stop"`, usageIn: inputSecond, usageOut: outputSecond, generationStop: provider.FinishReasonStop},
+		{name: "deadline stall after finish", parts: segments[:5], stall: true, idle: 5 * time.Second, deadline: 100 * time.Millisecond, wireErrors: 1, logEvent: "aisdk.model.stream.error", logOutcome: "timeout", metricLabels: `error_type="context_deadline_exceeded"`, usageIn: inputFirst, usageOut: outputFirst, generationStop: provider.FinishReasonToolCalls},
+		{name: "idle stall after finish", parts: segments[:5], stall: true, idle: 50 * time.Millisecond, wireErrors: 1, logEvent: "aisdk.model.stream.cancelled", logOutcome: "cancelled", metricLabels: `error_type="context_canceled"`, usageIn: inputFirst, usageOut: outputFirst, generationStop: provider.FinishReasonToolCalls},
+		{name: "provider error before finish, then deadline stall", parts: append([]provider.StreamPart{providerError}, segments[:5]...), stall: true, idle: 5 * time.Second, deadline: 100 * time.Millisecond, wireErrors: 2, logEvent: "aisdk.model.stream.error", logOutcome: "error", metricLabels: `error_type="context_deadline_exceeded"`, usageIn: inputFirst, usageOut: outputFirst, generationStop: provider.FinishReasonToolCalls, generationError: "server_error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := testkit.NewEnv(t, func(configuration *agento11y.Config) {
@@ -1299,15 +1306,15 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 			handler.ServeHTTP(response, request)
 			require.Equal(t, http.StatusOK, response.Code)
 			body := response.Body.String()
-			finishes, wireErrors := 2, 0
+			finishes := 2
 			if tc.stall {
-				finishes, wireErrors = 1, 1
+				finishes = 1
 			}
 			assert.Equal(t, finishes, strings.Count(body, `"type":"finish"`))
-			assert.Equal(t, wireErrors, strings.Count(body, `"type":"error"`))
+			assert.Equal(t, tc.wireErrors, strings.Count(body, `"type":"error"`))
 			if tc.stall {
 				assert.Contains(t, body, `"code":"timeout"`)
-				assert.Less(t, strings.LastIndex(body, `"type":"finish"`), strings.Index(body, `"type":"error"`))
+				assert.Less(t, strings.LastIndex(body, `"type":"finish"`), strings.LastIndex(body, `"type":"error"`))
 			}
 
 			require.Eventually(t, func() bool { return countModelLogEvent(t, logs.String(), tc.logEvent) == 1 }, time.Second, time.Millisecond)
@@ -1320,9 +1327,9 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 				}
 			}
 			assert.Equal(t, tc.logOutcome, finish["ai_sdk.outcome"])
+			assert.Equal(t, float64(tc.usageIn), finish["ai_sdk.usage.input_tokens.total"])
+			assert.Equal(t, float64(tc.usageOut), finish["ai_sdk.usage.output_tokens.total"])
 			if !tc.stall {
-				assert.Equal(t, float64(inputFirst), finish["ai_sdk.usage.input_tokens.total"])
-				assert.Equal(t, float64(outputSecond), finish["ai_sdk.usage.output_tokens.total"])
 				assert.Equal(t, string(provider.FinishReasonStop), finish["ai_sdk.finish_reason"])
 			}
 			metrics := testMetrics(t, telemetry)
@@ -1337,9 +1344,14 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 			require.Eventually(t, func() bool { return env.RequestCount() == 1 }, time.Second, time.Millisecond)
 			env.Shutdown(t)
 			generation := env.SingleGenerationJSON(t)
-			assert.Equal(t, strconv.Itoa(inputFirst), testkit.StringValue(t, generation, "usage", "input_tokens"))
-			assert.Equal(t, strconv.Itoa(outputFirst), testkit.StringValue(t, generation, "usage", "output_tokens"))
-			assert.Equal(t, string(provider.FinishReasonToolCalls), generation["stop_reason"])
+			assert.Equal(t, strconv.Itoa(tc.usageIn), testkit.StringValue(t, generation, "usage", "input_tokens"))
+			assert.Equal(t, strconv.Itoa(tc.usageOut), testkit.StringValue(t, generation, "usage", "output_tokens"))
+			assert.Equal(t, string(tc.generationStop), generation["stop_reason"])
+			if tc.generationError == "" {
+				assert.Empty(t, generation["call_error"])
+			} else {
+				assert.Contains(t, generation["call_error"], tc.generationError)
+			}
 		})
 	}
 }

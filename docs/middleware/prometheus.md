@@ -55,8 +55,11 @@ The middleware records:
 - time to first stream output;
 - optional stream-part counts and inter-chunk delay.
 
-Streaming token metrics combine every usage-bearing part and preserve the
-greatest value observed independently for each normalized counter.
+Streaming token metrics come from the last `finish`: each counter it reports
+wins, and counters it omits keep the greatest value seen in that response.
+Before any `finish`, each counter keeps its greatest observed value. When a
+stream carries several messages, usage is the last message's, as upstream
+`streamText` reports it, not a sum.
 
 `GenerateText` calls providers through the streaming path, so provider
 middleware may observe it as a stream operation. Use orchestration-level
