@@ -54,13 +54,16 @@ type Call struct {
 	ctx      context.Context
 	model    provider.LanguageModel
 	options  provider.CallOptions
+	history  ToolHistory
 	attempts *attemptCapture
 	limits   Limits
 }
 
-// Call applies host request policy and selects the model for a request. It
-// refuses protected call headers with [ErrProtectedCallHeader], and removes the
-// call-level [ControlNamespace] from options to pass it to the selector. A
+// Call rebuilds the prompt's tool history, applies host request policy and
+// selects the model for a request. It fails inconsistent history with
+// [ErrInvalidToolHistory] before anything else. It then refuses protected call
+// headers with [ErrProtectedCallHeader], and removes the call-level
+// [ControlNamespace] from options to pass it to the selector. A
 // context that has ended before or during selection decides the outcome, and
 // its error is returned. A translator set with [WithTranslator] reaches every
 // physical attempt of this call only.
@@ -68,6 +71,10 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 	var config callConfig
 	for _, apply := range callOptions {
 		apply(&config)
+	}
+	history, err := RebuildToolHistory(options.Prompt)
+	if err != nil {
+		return nil, err
 	}
 	options, gateway, err := applyPolicy(options)
 	if err != nil {
@@ -84,8 +91,12 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 		return nil, err
 	}
 	attempts := newAttemptCapture(modelID, selected, r.redactor)
-	return &Call{ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, attempts: attempts, limits: r.limits}, nil
+	return &Call{ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, history: history, attempts: attempts, limits: r.limits}, nil
 }
+
+// ToolHistory returns a copy of the call's pending provider-executed tool
+// calls, rebuilt from its prompt.
+func (c *Call) ToolHistory() ToolHistory { return c.history.clone() }
 
 func (r *Runtime) selectModel(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (selected Selection, err error) {
 	defer func() {
@@ -111,7 +122,9 @@ func validSelection(selected Selection) (valid bool) {
 
 // Generate invokes the model once. A panic or a missing result fails as
 // internal, and a result returned after the context ended is discarded in
-// favor of the context's error.
+// favor of the context's error. A result that breaks an output lifecycle rule,
+// checked with [ValidateGenerateResult] against the call's tool history, fails
+// with [ErrInvalidOutput].
 func (c *Call) Generate() (*provider.GenerateResult, error) {
 	if err := c.ctx.Err(); err != nil {
 		return nil, err
@@ -122,6 +135,9 @@ func (c *Call) Generate() (*provider.GenerateResult, error) {
 	if ctxErr := c.ctx.Err(); ctxErr != nil {
 		c.attempts.discard()
 		return nil, ctxErr
+	}
+	if err == nil && ValidateGenerateResult(result, c.history) != nil {
+		return nil, ErrInvalidOutput
 	}
 	return result, err
 }
@@ -161,12 +177,13 @@ func (c *Call) Stream() (*Stream, error) {
 		return nil, errInternal
 	}
 	return &Stream{
-		ctx:    c.ctx,
-		model:  modelContext,
-		cancel: cancel,
-		parts:  result.Stream,
-		idle:   time.NewTimer(c.limits.StreamIdleDuration),
-		limits: c.limits,
+		ctx:       c.ctx,
+		model:     modelContext,
+		cancel:    cancel,
+		parts:     result.Stream,
+		idle:      time.NewTimer(c.limits.StreamIdleDuration),
+		limits:    c.limits,
+		validator: NewStreamValidator(c.history),
 	}, nil
 }
 
@@ -188,7 +205,7 @@ func (c *Call) abandon(cancel context.CancelFunc, result *provider.StreamResult)
 }
 
 // View seals the call's attempt capture and projects it for an outcome that
-// failed with err, or succeeded when err is nil.
+// failed with err, or succeeded when err is nil or [ErrInvalidOutput].
 func (c *Call) View(err error) View { return c.attempts.view(err) }
 
 // Close seals the call's attempt capture.
@@ -203,13 +220,22 @@ const (
 	WaitCanceled
 	WaitDeadline
 	WaitIdleTimeout
+	// WaitInvalidOutput reports a part that broke an output lifecycle rule. The
+	// part is not delivered.
+	WaitInvalidOutput
+	// WaitFinished reports that the provider closed the stream after a finish.
+	// It is a terminal success, which adapters do not classify.
+	WaitFinished
 )
 
-// Err returns the error a terminal wait outcome stands for, and nil for WaitPart.
+// Err returns the error a terminal wait outcome stands for, and nil for
+// WaitPart and WaitFinished.
 func (w Wait) Err() error {
 	switch w {
-	case WaitPart:
+	case WaitPart, WaitFinished:
 		return nil
+	case WaitInvalidOutput:
+		return ErrInvalidOutput
 	case WaitCanceled:
 		return context.Canceled
 	case WaitDeadline, WaitIdleTimeout:
@@ -222,20 +248,32 @@ func (w Wait) Err() error {
 // Stream is an established model stream. Its methods must be called from one
 // goroutine, and Close must be called once the adapter is done.
 type Stream struct {
-	ctx      context.Context
-	model    context.Context
-	cancel   context.CancelFunc
-	parts    <-chan provider.StreamPart
-	idle     *time.Timer
-	limits   Limits
-	waited   bool
-	closeAll sync.Once
+	ctx       context.Context
+	model     context.Context
+	cancel    context.CancelFunc
+	parts     <-chan provider.StreamPart
+	idle      *time.Timer
+	limits    Limits
+	validator *StreamValidator
+	terminal  Wait
+	waited    bool
+	closeAll  sync.Once
 }
 
-// Next waits for the next part. The idle duration restarts on each call after
-// the first, so it measures the time since the previous part was handled.
-// Every outcome other than [WaitPart] cancels the model context first.
+// Next waits for the next part and validates it with the call's
+// [StreamValidator]. The idle duration restarts on each call after the first,
+// so it measures the time since the previous part was handled. Every outcome
+// other than [WaitPart] cancels the model context first.
+//
+// A part that breaks a lifecycle rule closes the stream and returns
+// [WaitInvalidOutput] without the part. A provider close returns
+// [WaitFinished] when the last lifecycle part was a finish, and [WaitClosed]
+// otherwise. Invalid output and finished are sticky: later calls return them
+// again without reading.
 func (s *Stream) Next() (provider.StreamPart, Wait) {
+	if s.terminal != 0 {
+		return provider.StreamPart{}, s.terminal
+	}
 	if s.waited {
 		s.idle.Reset(s.limits.StreamIdleDuration)
 	}
@@ -243,9 +281,18 @@ func (s *Stream) Next() (provider.StreamPart, Wait) {
 	select {
 	case part, ok := <-s.parts:
 		if ok {
+			if s.validator.Check(part) != nil {
+				s.Close()
+				s.terminal = WaitInvalidOutput
+				return provider.StreamPart{}, WaitInvalidOutput
+			}
 			return part, WaitPart
 		}
 		s.cancel()
+		if s.validator.SegmentFinished() {
+			s.terminal = WaitFinished
+			return provider.StreamPart{}, WaitFinished
+		}
 		return provider.StreamPart{}, WaitClosed
 	case <-s.model.Done():
 		s.cancel()

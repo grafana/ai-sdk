@@ -195,7 +195,7 @@ func TestCallGenerate(t *testing.T) {
 		t.Run("late result after "+ending.name+" is discarded", func(t *testing.T) {
 			model := &generateModel{generate: func(ctx context.Context) (*provider.GenerateResult, error) {
 				<-ctx.Done()
-				return &provider.GenerateResult{}, nil
+				return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 			}}
 			call := newCall(t, ending.ctx(), model, testLimits())
 			result, err := call.Generate()
@@ -283,7 +283,7 @@ func TestRuntime_ConcurrentCallsAreIsolated(t *testing.T) {
 			if failFirst {
 				return nil, failing
 			}
-			return &provider.GenerateResult{}, nil
+			return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 		}}
 		model, err := fallback.New(first, &generateModel{modelID: "B"})
 		require.NoError(t, err)
@@ -328,7 +328,7 @@ func TestRuntime_ConcurrentAccountCallsAreIsolated(t *testing.T) {
 		if strings.HasPrefix(key, "fails") {
 			return nil, provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "rejected " + key, IsRetryable: new(true)})
 		}
-		return &provider.GenerateResult{}, nil
+		return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 	}}
 	second := &generateModel{modelID: "model"}
 	shared, err := fallback.New(first, second)
@@ -464,12 +464,12 @@ func establish(t *testing.T, ctx context.Context, parts <-chan provider.StreamPa
 func TestStreamNext_Outcomes(t *testing.T) {
 	t.Run("part then closed", func(t *testing.T) {
 		parts := make(chan provider.StreamPart, 1)
-		parts <- provider.StreamPart{Type: provider.PartTextDelta}
+		parts <- provider.StreamPart{Type: provider.PartRaw}
 		close(parts)
 		stream, model := establish(t, t.Context(), parts, testLimits())
 		part, wait := stream.Next()
 		assert.Equal(t, WaitPart, wait)
-		assert.Equal(t, provider.PartTextDelta, part.Type)
+		assert.Equal(t, provider.PartRaw, part.Type)
 		assert.NoError(t, model().Err())
 		_, wait = stream.Next()
 		assert.Equal(t, WaitClosed, wait)
@@ -514,7 +514,7 @@ func TestStreamNext_Outcomes(t *testing.T) {
 			defer close(parts)
 			for range 6 {
 				time.Sleep(50 * time.Millisecond)
-				parts <- provider.StreamPart{Type: provider.PartTextDelta}
+				parts <- provider.StreamPart{Type: provider.PartRaw}
 			}
 		}()
 		stream, _ := establish(t, t.Context(), parts, limits)
@@ -565,4 +565,164 @@ func TestStreamClose_Drain(t *testing.T) {
 		time.Sleep(4 * limits.StreamDrainDuration)
 		assert.Equal(t, settled, produced.Load())
 	})
+}
+
+// invalidThenReady returns a stream that sends one invalid part and then
+// always has a raw part ready, and the number of raw parts taken so far.
+func invalidThenReady(t *testing.T) (chan provider.StreamPart, *atomic.Int64) {
+	parts := make(chan provider.StreamPart)
+	var produced atomic.Int64
+	stop, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case parts <- provider.StreamPart{Type: provider.PartTextDelta, ID: "inactive"}:
+		case <-stop:
+			return
+		}
+		for {
+			select {
+			case parts <- provider.StreamPart{Type: provider.PartRaw}:
+				produced.Add(1)
+			case <-stop:
+				return
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(stop)
+		<-stopped
+	})
+	return parts, &produced
+}
+
+func closedStream(parts ...provider.StreamPart) chan provider.StreamPart {
+	stream := make(chan provider.StreamPart, len(parts))
+	for _, part := range parts {
+		stream <- part
+	}
+	close(stream)
+	return stream
+}
+
+// drainParts waits until Next returns something other than a part, and
+// returns the delivered part types and that outcome.
+func drainParts(t *testing.T, stream *Stream) ([]provider.StreamPartType, Wait) {
+	t.Helper()
+	var types []provider.StreamPartType
+	for {
+		part, wait := stream.Next()
+		if wait != WaitPart {
+			return types, wait
+		}
+		types = append(types, part.Type)
+	}
+}
+
+func TestStreamNext_Validation(t *testing.T) {
+	t.Run("invalid output cancels and drains once", func(t *testing.T) {
+		limits := testLimits()
+		limits.StreamDrainDuration = 25 * time.Millisecond
+		parts, produced := invalidThenReady(t)
+		stream, model := establish(t, t.Context(), parts, limits)
+		part, wait := stream.Next()
+		assert.Equal(t, WaitInvalidOutput, wait)
+		assert.Equal(t, provider.StreamPart{}, part)
+		assert.ErrorIs(t, wait.Err(), ErrInvalidOutput)
+		assert.Error(t, model().Err())
+		require.Eventually(t, func() bool { return produced.Load() > 0 }, testTimeout, time.Millisecond)
+		time.Sleep(4 * limits.StreamDrainDuration)
+		settled := produced.Load()
+		_, wait = stream.Next()
+		assert.Equal(t, WaitInvalidOutput, wait, "invalid output is sticky")
+		stream.Close()
+		time.Sleep(4 * limits.StreamDrainDuration)
+		assert.Equal(t, settled, produced.Load(), "no wait or close reads again")
+	})
+
+	t.Run("pass-through parts consume the start position", func(t *testing.T) {
+		stream, _ := establish(t, t.Context(), closedStream(provider.StreamPart{Type: provider.PartRaw}, provider.StreamPart{Type: provider.PartError}, provider.StreamPart{Type: provider.PartStreamStart}), testLimits())
+		types, wait := drainParts(t, stream)
+		assert.Equal(t, []provider.StreamPartType{provider.PartRaw, provider.PartError}, types)
+		assert.Equal(t, WaitInvalidOutput, wait)
+	})
+
+	t.Run("close after finish is finished", func(t *testing.T) {
+		stream, model := establish(t, t.Context(), closedStream(provider.StreamPart{Type: provider.PartResponseMeta}, validFinish(), provider.StreamPart{Type: provider.PartRaw}, provider.StreamPart{Type: provider.PartError}), testLimits())
+		types, wait := drainParts(t, stream)
+		assert.Equal(t, []provider.StreamPartType{provider.PartResponseMeta, provider.PartFinish, provider.PartRaw, provider.PartError}, types)
+		assert.Equal(t, WaitFinished, wait)
+		assert.NoError(t, wait.Err())
+		assert.Error(t, model().Err())
+		_, wait = stream.Next()
+		assert.Equal(t, WaitFinished, wait)
+	})
+
+	t.Run("later segments are delivered", func(t *testing.T) {
+		segment := []provider.StreamPart{{Type: provider.PartResponseMeta}, {Type: provider.PartTextStart, ID: "0"}, {Type: provider.PartTextEnd, ID: "0"}, validFinish()}
+		stream, _ := establish(t, t.Context(), closedStream(append(append([]provider.StreamPart{}, segment...), segment...)...), testLimits())
+		types, wait := drainParts(t, stream)
+		assert.Len(t, types, 2*len(segment))
+		assert.Equal(t, WaitFinished, wait)
+	})
+
+	for name, parts := range map[string][]provider.StreamPart{
+		"close before any finish":      {{Type: provider.PartTextStart, ID: "t"}, {Type: provider.PartTextEnd, ID: "t"}},
+		"close after a later metadata": {validFinish(), {Type: provider.PartResponseMeta}},
+		"close with only pass-through": {{Type: provider.PartRaw}, {Type: provider.PartError}},
+	} {
+		t.Run(name+" is closed", func(t *testing.T) {
+			stream, _ := establish(t, t.Context(), closedStream(parts...), testLimits())
+			_, wait := drainParts(t, stream)
+			assert.Equal(t, WaitClosed, wait)
+		})
+	}
+
+	t.Run("idle time after finish keeps its outcome", func(t *testing.T) {
+		limits := testLimits()
+		limits.StreamIdleDuration = 20 * time.Millisecond
+		parts := make(chan provider.StreamPart, 1)
+		parts <- validFinish()
+		stream, _ := establish(t, t.Context(), parts, limits)
+		_, wait := stream.Next()
+		require.Equal(t, WaitPart, wait)
+		_, wait = stream.Next()
+		assert.Equal(t, WaitIdleTimeout, wait)
+	})
+
+	for _, ending := range endingContexts(t) {
+		t.Run(ending.name+" after finish keeps its outcome", func(t *testing.T) {
+			parts := make(chan provider.StreamPart, 1)
+			parts <- validFinish()
+			stream, _ := establish(t, ending.ctx(), parts, testLimits())
+			_, wait := stream.Next()
+			require.Equal(t, WaitPart, wait)
+			_, wait = stream.Next()
+			assert.Equal(t, ending.wait, wait)
+		})
+	}
+
+	t.Run("history seeds the stream", func(t *testing.T) {
+		parts := closedStream(toolResult("hosted", "search", `{}`), validFinish())
+		model := &generateModel{stream: func(context.Context) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: parts}, nil
+		}}
+		prompt := []provider.Message{provider.NewAssistantMessage(historyCall("hosted", "search", true))}
+		call, err := newRuntime(t, directSelector(model), testLimits()).Call(t.Context(), "id", provider.CallOptions{Prompt: prompt})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		stream, err := call.Stream()
+		require.NoError(t, err)
+		t.Cleanup(stream.Close)
+		types, wait := drainParts(t, stream)
+		assert.Equal(t, []provider.StreamPartType{provider.PartToolResult, provider.PartFinish}, types)
+		assert.Equal(t, WaitFinished, wait)
+	})
+}
+
+func TestWait_Err(t *testing.T) {
+	assert.NoError(t, WaitPart.Err())
+	assert.NoError(t, WaitFinished.Err())
+	assert.ErrorIs(t, WaitInvalidOutput.Err(), ErrInvalidOutput)
+	assert.Equal(t, CategoryInternal, ClassifyProvider(WaitInvalidOutput.Err()))
 }

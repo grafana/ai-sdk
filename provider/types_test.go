@@ -18,6 +18,7 @@ func TestFinishReasonConstants(t *testing.T) {
 		{FinishReasonContentFilter, "content-filter"},
 		{FinishReasonToolCalls, "tool-calls"},
 		{FinishReasonError, "error"},
+		{FinishReasonInterrupted, "interrupted"},
 		{FinishReasonOther, "other"},
 	}
 	for _, tc := range cases {
