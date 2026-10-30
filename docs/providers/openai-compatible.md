@@ -56,6 +56,14 @@ Use static headers and query parameters for service configuration. Keep
 server with substantially different messages, streaming events, or tool
 semantics needs a dedicated provider.
 
+When a rewrite needs to explain a compatibility adjustment, use
+[`WithRequestTransformAndWarnings`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/openai-compatible#WithRequestTransformAndWarnings).
+Append to the warnings received by the callback to retain conversion warnings.
+These warnings reach direct provider results and core generation or streaming
+results. Both transform options replace the same callback: the last option wins,
+and a nil callback disables it. A model can invoke the callback concurrently, so
+synchronize any mutable state captured by the callback.
+
 Per-call `OpenAIOptions` cover compatible reasoning and schema settings where
 the server supports them. Unsupported values may be ignored or rejected by the
 server, so include the target implementation in integration tests.
