@@ -204,6 +204,7 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 		ToolConfig:                        pt.toolConfig,
 		AdditionalModelRequestFields:      compactMap(addRequestFields),
 		AdditionalModelResponseFieldPaths: addRespPaths,
+		RequestMetadata:                   bo.RequestMetadata,
 		ServiceTier:                       st,
 	}
 
