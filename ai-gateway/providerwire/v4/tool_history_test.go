@@ -6,8 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
-	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,12 +40,4 @@ func TestRuntimeToolHistory_InvalidRequestDocument(t *testing.T) {
 			})
 		}
 	}
-}
-
-func unresolvedProviderCalls(prompt []provider.Message) (map[string]string, *requestFailure) {
-	history, err := execution.RebuildToolHistory(prompt)
-	if err != nil {
-		return nil, invalidMappingFailure()
-	}
-	return map[string]string(history), nil
 }

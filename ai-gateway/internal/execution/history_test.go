@@ -45,6 +45,8 @@ func TestRebuildToolHistory(t *testing.T) {
 		{name: "first call not provider-executed", prompt: []provider.Message{assistant(historyCall("call", "f", false), historyCall("call", "f", true))}, invalid: true},
 		{name: "re-emission not provider-executed", prompt: []provider.Message{assistant(historyCall("call", "f", true), historyCall("call", "f", false))}, invalid: true},
 		{name: "mismatched result", prompt: []provider.Message{assistant(historyCall("call", "f", true), historyResult("call", "other"))}, invalid: true},
+		{name: "repeated client call", prompt: []provider.Message{assistant(historyCall("call", "f", false), historyCall("call", "f", false))}, invalid: true},
+		{name: "mismatched client result", prompt: []provider.Message{assistant(historyCall("call", "f", false), historyResult("call", "other"))}, invalid: true},
 		{name: "repeated result", prompt: []provider.Message{assistant(historyCall("call", "f", true), historyResult("call", "f"), historyResult("call", "f"))}, invalid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -58,14 +60,6 @@ func TestRebuildToolHistory(t *testing.T) {
 			assert.Equal(t, tc.pending, history)
 		})
 	}
-}
-
-func TestToolHistory_Clone(t *testing.T) {
-	history := ToolHistory{"call": "code"}
-	copied := history.clone()
-	copied["other"] = "f"
-	assert.Equal(t, ToolHistory{"call": "code"}, history)
-	assert.Equal(t, ToolHistory{}, ToolHistory(nil).clone())
 }
 
 func TestRuntimeCall_ToolHistory(t *testing.T) {
@@ -93,17 +87,4 @@ func TestRuntimeCall_ToolHistory(t *testing.T) {
 			assert.Zero(t, selector.model.callCount())
 		})
 	}
-
-	t.Run("valid history is exposed as a copy", func(t *testing.T) {
-		selector := &recordingSelector{model: &generateModel{}}
-		call, err := newRuntime(t, selector.selector(), testLimits()).Call(t.Context(), "id", provider.CallOptions{Prompt: []provider.Message{assistant(historyCall("call", "code", true))}})
-		require.NoError(t, err)
-		t.Cleanup(call.Close)
-		history := call.ToolHistory()
-		assert.Equal(t, ToolHistory{"call": "code"}, history)
-		delete(history, "call")
-		history["other"] = "f"
-		assert.Equal(t, ToolHistory{"call": "code"}, call.ToolHistory())
-		assert.Equal(t, int32(1), selector.calls.Load())
-	})
 }

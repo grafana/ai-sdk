@@ -54,6 +54,7 @@ func unaryRuleCases() []unaryRuleCase {
 		{name: "dynamic custom part", content: []provider.GenerateContentPart{{Type: provider.ContentCustom, Dynamic: new(true)}}, invalid: true},
 		{name: "preliminary reasoning", content: []provider.GenerateContentPart{{Type: provider.ContentReasoning, Preliminary: new(true)}}, invalid: true},
 		{name: "false flags on a non-tool part", content: []provider.GenerateContentPart{withContent(text, func(p *provider.GenerateContentPart) { p.Dynamic, p.Preliminary = new(false), new(false) })}},
+		{name: "interrupted finish reason", content: []provider.GenerateContentPart{text}, reason: new(provider.FinishReasonInterrupted)},
 		{name: "unregistered finish reason", content: []provider.GenerateContentPart{text}, reason: new(provider.UnifiedFinishReason("future")), invalid: true},
 		{name: "empty finish reason", content: []provider.GenerateContentPart{text}, reason: new(provider.UnifiedFinishReason("")), invalid: true},
 

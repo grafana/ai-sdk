@@ -578,7 +578,7 @@ func TestStream_ToolSearchOutputUsesHostedCallID(t *testing.T) {
 func TestStream_ShellUsesProviderToolSchema(t *testing.T) {
 	parts := collectPartsWithBuildResult(t, buildResult{isShellProviderExecuted: true},
 		`{"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"type":"shell_call","id":"sh_1","call_id":"call_1","status":"completed","action":{"commands":["echo hi"],"timeout_ms":1000,"max_output_length":2048}}}`,
-		`{"type":"response.output_item.done","sequence_number":2,"output_index":1,"item":{"type":"shell_call_output","id":"sho_1","call_id":"call_1","status":"completed","output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exit_code":0},"created_by":"sdk-only"}]}}`,
+		`{"type":"response.output_item.done","sequence_number":2,"output_index":1,"item":{"type":"shell_call_output","id":"sho_1","call_id":"call_1","status":"completed","max_output_length":2048,"output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exit_code":0},"created_by":"sdk-only"}]}}`,
 	)
 
 	var toolCall, toolResult *provider.StreamPart
@@ -592,8 +592,8 @@ func TestStream_ShellUsesProviderToolSchema(t *testing.T) {
 	}
 	require.NotNil(t, toolCall)
 	require.NotNil(t, toolResult)
-	assert.JSONEq(t, `{"action":{"commands":["echo hi"]}}`, toolCall.Input)
-	assert.JSONEq(t, `{"output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`, string(toolResult.Result))
+	assert.Equal(t, `{"action":{"commands":["echo hi"],"timeoutMs":1000,"maxOutputLength":2048}}`, toolCall.Input)
+	assert.JSONEq(t, `{"maxOutputLength":2048,"output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`, string(toolResult.Result))
 }
 
 func TestStream_Compaction(t *testing.T) {

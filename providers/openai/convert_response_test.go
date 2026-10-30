@@ -513,15 +513,15 @@ func TestConvertResponse_ShellUsesProviderToolSchema(t *testing.T) {
 		"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"completed",
 		"output":[
 			{"type":"shell_call","id":"sh_1","call_id":"call_1","status":"completed","action":{"commands":["echo hi"],"timeout_ms":1000,"max_output_length":2048}},
-			{"type":"shell_call_output","id":"sho_1","call_id":"call_1","status":"completed","output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exit_code":0},"created_by":"sdk-only"}]}
+			{"type":"shell_call_output","id":"sho_1","call_id":"call_1","status":"completed","max_output_length":2048,"output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exit_code":0},"created_by":"sdk-only"}]}
 		],
 		"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}
 	}`)
 
 	res := mustConvertResponse(t, resp, buildResult{isShellProviderExecuted: true})
 	require.Len(t, res.Content, 2)
-	assert.JSONEq(t, `{"action":{"commands":["echo hi"]}}`, string(res.Content[0].Input))
-	assert.JSONEq(t, `{"output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`, string(res.Content[1].Result))
+	assert.Equal(t, `{"action":{"commands":["echo hi"],"timeoutMs":1000,"maxOutputLength":2048}}`, string(res.Content[0].Input))
+	assert.JSONEq(t, `{"maxOutputLength":2048,"output":[{"stdout":"hi\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`, string(res.Content[1].Result))
 }
 
 func TestConvertResponse_ApplyPatchDeleteOmitsDiff(t *testing.T) {

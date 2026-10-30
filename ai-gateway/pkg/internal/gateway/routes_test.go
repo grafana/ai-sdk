@@ -10,8 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -136,8 +134,7 @@ func (f *fakeAnthropic) recorded() []string {
 	return values
 }
 
-func writeModelConfig(t *testing.T, baseURL string, fallback bool) string {
-	t.Helper()
+func modelCatalog(baseURL string, fallback bool) string {
 	contents := fmt.Sprintf(`providers:
   anthropic-primary:
     type: anthropic
@@ -156,9 +153,7 @@ models:
         model: backend-fallback
 `
 	}
-	path := filepath.Join(t.TempDir(), "models.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
-	return path
+	return contents
 }
 
 type harness struct {
@@ -197,9 +192,9 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	require.NoError(t, err)
 	anthropic := newFakeAnthropic(t)
 	env := map[string]string{
-		"GF_PLUGIN_CONFIG_FILE": writeModelConfig(t, anthropic.server.URL, options.fallback),
-		"GRAFANA_JWKS":          string(keys),
-		"ANTHROPIC_SECRET":      providerSecret,
+		"GF_PLUGIN_MODEL_CATALOG": modelCatalog(anthropic.server.URL, options.fallback),
+		"GRAFANA_JWKS":            string(keys),
+		"ANTHROPIC_SECRET":        providerSecret,
 	}
 	if topology == platformhost.TopologyCloud {
 		env["GF_PLUGIN_ACCESS_MODE"] = "cloud"

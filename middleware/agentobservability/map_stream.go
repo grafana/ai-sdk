@@ -17,6 +17,12 @@ import (
 // stream channel, and at end-of-stream Generation() returns the final
 // payload to hand to agento11y.GenerationRecorder.SetResult.
 //
+// A stream may carry several response segments, each ending in its own
+// PartFinish. The recorder observes all of them into one generation: usage
+// is the last finish's segment usage, the last finish reason and last
+// non-empty response identity win, and each segment's text and reasoning
+// parts are appended in observed order.
+//
 // A StreamRecorder is owned by a single recording goroutine. Observe is not
 // safe for concurrent invocation; Generation() / FirstChunkAt() are safe to
 // call once the recording goroutine has stopped feeding observations.
@@ -32,9 +38,11 @@ type StreamRecorder struct {
 	// FirstChunkAt so the middleware can call recorder.SetFirstTokenAt.
 	firstChunkAt time.Time
 
-	// Per-step accumulators. Streams may emit multiple text/reasoning blocks
-	// keyed by an ID (text-start / text-end frame them); we maintain a map so
-	// concurrent IDs accumulate correctly.
+	// Per-segment accumulators. Streams may emit multiple text/reasoning
+	// blocks keyed by an ID (text-start / text-end frame them); we maintain a
+	// map so concurrent IDs accumulate correctly. A PartFinish ends the
+	// segment and starts fresh maps, so a provider that reuses IDs in its next
+	// response appends new parts instead of merging into earlier ones.
 	texts                map[string]*streamTextAcc
 	reasonings           map[string]*streamTextAcc
 	toolCalls            []*streamToolCallAcc
@@ -59,7 +67,7 @@ type StreamRecorder struct {
 
 type streamOutputRef struct {
 	partType   provider.StreamPartType
-	id         string
+	text       *streamTextAcc
 	toolIndex  int
 	mediaIndex int
 }
@@ -211,6 +219,8 @@ func (r *StreamRecorder) Observe(part provider.StreamPart) {
 			fr := *part.FinishReason
 			r.finishReason = &fr
 		}
+		r.texts = map[string]*streamTextAcc{}
+		r.reasonings = map[string]*streamTextAcc{}
 
 	case provider.PartResponseMeta:
 		if r.identitySource == IdentityRequested {
@@ -282,7 +292,7 @@ func (r *StreamRecorder) ensureText(id string) *streamTextAcc {
 	}
 	acc := &streamTextAcc{}
 	r.texts[id] = acc
-	r.outputOrder = append(r.outputOrder, streamOutputRef{partType: provider.PartTextStart, id: id})
+	r.outputOrder = append(r.outputOrder, streamOutputRef{partType: provider.PartTextStart, text: acc})
 	return acc
 }
 
@@ -292,7 +302,7 @@ func (r *StreamRecorder) ensureReasoning(id string) *streamTextAcc {
 	}
 	acc := &streamTextAcc{}
 	r.reasonings[id] = acc
-	r.outputOrder = append(r.outputOrder, streamOutputRef{partType: provider.PartReasoningStart, id: id})
+	r.outputOrder = append(r.outputOrder, streamOutputRef{partType: provider.PartReasoningStart, text: acc})
 	return acc
 }
 
@@ -347,6 +357,49 @@ func (r *StreamRecorder) appendToolCall(id, name string) *streamToolCallAcc {
 	return acc
 }
 
+// streamState is the stream-derived part of a generation: what Observe has
+// accumulated, without the request fields derived from the prompt.
+type streamState struct {
+	output        []agento11y.Message
+	usage         provider.Usage
+	hasUsage      bool
+	finishReason  *provider.FinishReason
+	responseID    string
+	responseModel string
+	response      generationModelIdentity
+	callError     error
+	firstChunkAt  time.Time
+	completedAt   time.Time
+}
+
+func (s streamState) finishReasonValue() provider.FinishReason {
+	if s.finishReason == nil {
+		return provider.FinishReason{}
+	}
+	return *s.finishReason
+}
+
+func (r *StreamRecorder) currentState() streamState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	usage, hasUsage := r.usage.Usage()
+	state := streamState{
+		output:        r.buildOutput(),
+		usage:         usage,
+		hasUsage:      hasUsage,
+		responseID:    r.responseID,
+		responseModel: r.responseModel,
+		response:      r.response,
+		callError:     r.callError,
+		firstChunkAt:  r.firstChunkAt,
+	}
+	if r.finishReason != nil {
+		finishReason := *r.finishReason
+		state.finishReason = &finishReason
+	}
+	return state
+}
+
 // Generation returns the final agento11y.Generation derived from the seed plus
 // the accumulated stream state. Idempotent: callers may invoke it multiple
 // times (e.g. once at end-of-stream and once on error fallback) and receive
@@ -355,19 +408,20 @@ func (r *StreamRecorder) Generation() agento11y.Generation {
 	if r == nil {
 		return agento11y.Generation{}
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	return r.generationFrom(r.currentState())
+}
 
+// generationFrom composes a Generation from the call's prompt-derived fields
+// and the given stream state. A zero completedAt leaves completion to End.
+func (r *StreamRecorder) generationFrom(state streamState) agento11y.Generation {
 	// Compose Generation from CallOptions identically to MapGenerateResult,
 	// using the accumulated output instead of result.Content.
 	system, input := messagesToAgento11yWithTools(r.params.Prompt, r.params.Tools)
 	controls := controlsFromCallOptions(r.params)
 
-	output := r.buildOutput()
-	usage, hasUsage := r.usage.Usage()
 	metadata := mergeMetadata(r.seed.Metadata, metadataFromProviderOptions(r.params))
-	if hasUsage {
-		metadata = mergeMetadata(metadata, metadataFromUsage(usage))
+	if state.hasUsage {
+		metadata = mergeMetadata(metadata, metadataFromUsage(state.usage))
 	}
 
 	gen := agento11y.Generation{
@@ -377,7 +431,7 @@ func (r *StreamRecorder) Generation() agento11y.Generation {
 		ParentGenerationIDs: cloneStringSlice(r.seed.ParentGenerationIDs),
 		SystemPrompt:        system,
 		Input:               input,
-		Output:              output,
+		Output:              state.output,
 		Tools:               toolsToAgento11y(r.params.Tools),
 		MaxTokens:           controls.MaxTokens,
 		Temperature:         controls.Temperature,
@@ -386,38 +440,27 @@ func (r *StreamRecorder) Generation() agento11y.Generation {
 		ThinkingEnabled:     thinkingEnabledFromAnthropic(r.params.ProviderOptions),
 		Tags:                cloneStringMap(r.seed.Tags),
 		Metadata:            metadata,
+		CompletedAt:         state.completedAt,
 	}
-	if r.responseID != "" {
-		gen.ResponseID = r.responseID
+	if state.responseID != "" {
+		gen.ResponseID = state.responseID
 	}
 	gen.ResponseModel = r.seed.Model.Name
-	if r.responseModel != "" {
-		gen.ResponseModel = r.responseModel
+	if state.responseModel != "" {
+		gen.ResponseModel = state.responseModel
 	}
-	applyModelIdentity(&gen, modelIdentityFromStart(r.seed), r.response)
+	applyModelIdentity(&gen, modelIdentityFromStart(r.seed), state.response)
 	if r.identitySource == IdentityRequested {
 		gen.ResponseModel = ""
 	}
 
-	if hasUsage {
-		gen.Usage = usageToAgento11y(usage)
+	if state.hasUsage {
+		gen.Usage = usageToAgento11y(state.usage)
 	}
-	if r.finishReason != nil {
-		gen.StopReason = finishReasonToAgento11yStop(*r.finishReason)
+	if state.finishReason != nil {
+		gen.StopReason = finishReasonToAgento11yStop(*state.finishReason)
 	}
 	return gen
-}
-
-func (r *StreamRecorder) finishReasonForFilter() provider.FinishReason {
-	if r == nil {
-		return provider.FinishReason{}
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.finishReason == nil {
-		return provider.FinishReason{}
-	}
-	return *r.finishReason
 }
 
 // buildOutput assembles a single assistant message plus optional tool messages
@@ -429,20 +472,18 @@ func (r *StreamRecorder) buildOutput() []agento11y.Message {
 	for _, ref := range r.outputOrder {
 		switch ref.partType {
 		case provider.PartReasoningStart:
-			acc := r.reasonings[ref.id]
-			if acc.text.Len() == 0 {
+			if ref.text.text.Len() == 0 {
 				continue
 			}
-			part := agento11y.ThinkingPart(acc.text.String())
+			part := agento11y.ThinkingPart(ref.text.text.String())
 			part.Metadata.ProviderType = "thinking"
 			parts = append(parts, part)
 
 		case provider.PartTextStart:
-			acc := r.texts[ref.id]
-			if acc.text.Len() == 0 {
+			if ref.text.text.Len() == 0 {
 				continue
 			}
-			parts = append(parts, agento11y.TextPart(acc.text.String()))
+			parts = append(parts, agento11y.TextPart(ref.text.text.String()))
 
 		case provider.PartToolCall:
 			acc := r.toolCalls[ref.toolIndex]

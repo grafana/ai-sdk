@@ -30,10 +30,9 @@
 // Adapters own request mapping, representation, wire encoding, framing, their
 // error documents, response commitment and their own protocol state machine,
 // such as how their protocol sequences chunks. They keep the checks their own
-// representation needs, such as valid UTF-8 or a numeric range, but no
-// provider output lifecycle rule; an adapter that evaluates those rules
-// internally uses its own [StreamValidator]. The runtime never writes HTTP
-// responses.
+// representation needs, such as valid UTF-8 or a numeric range, but evaluate
+// no provider output lifecycle rule: they act on the outcome the runtime
+// returns. The runtime never writes HTTP responses.
 //
 // An adapter that maps its API semantics to native options passes a
 // [Translator] to [Runtime.Call] with [WithTranslator]. The host wraps every

@@ -107,6 +107,7 @@ func streamRuleCases() []streamRuleCase {
 		{name: "concurrent reasoning", parts: []provider.StreamPart{streamPart(provider.PartReasoningStart, "a"), streamPart(provider.PartReasoningStart, "b"), streamPart(provider.PartReasoningDelta, "a"), streamPart(provider.PartReasoningEnd, "b"), streamPart(provider.PartReasoningEnd, "a"), validFinish()}, rejectAt: -1},
 		{name: "empty reasoning ID", parts: []provider.StreamPart{streamPart(provider.PartReasoningStart, "")}, rejectAt: 0},
 		{name: "reused reasoning ID", parts: []provider.StreamPart{streamPart(provider.PartReasoningStart, "r"), streamPart(provider.PartReasoningEnd, "r"), streamPart(provider.PartReasoningStart, "r")}, rejectAt: 2},
+		{name: "repeated active reasoning ID", parts: []provider.StreamPart{streamPart(provider.PartReasoningStart, "r"), streamPart(provider.PartReasoningStart, "r")}, rejectAt: 1},
 		{name: "reasoning delta without start", parts: []provider.StreamPart{streamPart(provider.PartReasoningDelta, "r")}, rejectAt: 0},
 		{name: "reasoning end without start", parts: []provider.StreamPart{streamPart(provider.PartReasoningEnd, "r")}, rejectAt: 0},
 
@@ -170,6 +171,9 @@ func streamRuleCases() []streamRuleCase {
 		{name: "finish with warnings", parts: []provider.StreamPart{withPart(validFinish(), func(p *provider.StreamPart) { p.Warnings = []provider.Warning{{Type: provider.WarnUnsupported}} })}, rejectAt: 0},
 		{name: "finish without a reason", parts: []provider.StreamPart{withPart(validFinish(), func(p *provider.StreamPart) { p.FinishReason = nil })}, rejectAt: 0},
 		{name: "finish without usage", parts: []provider.StreamPart{withPart(validFinish(), func(p *provider.StreamPart) { p.Usage = nil })}, rejectAt: 0},
+		{name: "interrupted finish reason", parts: []provider.StreamPart{withPart(validFinish(), func(p *provider.StreamPart) {
+			p.FinishReason = &provider.FinishReason{Unified: provider.FinishReasonInterrupted}
+		})}, rejectAt: -1},
 		{name: "unregistered finish reason", parts: []provider.StreamPart{withPart(validFinish(), func(p *provider.StreamPart) { p.FinishReason = &provider.FinishReason{Unified: "future"} })}, rejectAt: 0},
 		{name: "finish ignores a closed client call", parts: []provider.StreamPart{toolCall("c", "f", false), streamPart(provider.PartTextStart, "t"), streamPart(provider.PartTextEnd, "t"), validFinish()}, rejectAt: -1},
 

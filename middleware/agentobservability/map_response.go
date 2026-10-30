@@ -209,9 +209,7 @@ func finishReasonToAgento11yStop(reason provider.FinishReason) string {
 		return stopReasonToolUse
 	case provider.FinishReasonError:
 		return stopReasonError
-	case provider.FinishReasonContentFilter:
-		return stopReasonOther
-	case provider.FinishReasonOther:
+	case provider.FinishReasonContentFilter, provider.FinishReasonInterrupted, provider.FinishReasonOther:
 		return stopReasonOther
 	default:
 		return ""

@@ -6,10 +6,8 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
-	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -25,31 +23,62 @@ func (panicTracer) Start(ctx context.Context, _ string, _ ...trace.SpanStartOpti
 }
 
 func TestRecordingMiddleware_FinalizePanic(t *testing.T) {
-	env := testkit.NewEnv(t, func(config *agento11y.Config) {
-		config.Tracer = panicTracer{}
-	})
-	parts := []provider.StreamPart{
-		{Type: provider.PartTextDelta, Delta: "hello"},
-		{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}},
-	}
-	model := &mockLanguageModel{provider_: "grafana", modelID: "grafana/assistant",
-		doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-			ch := make(chan provider.StreamPart, len(parts))
-			for _, part := range parts {
-				ch <- part
-			}
-			close(ch)
-			return &provider.StreamResult{Stream: ch}, nil
+	stop := provider.FinishReason{Unified: provider.FinishReasonStop}
+	for _, tc := range []struct {
+		name   string
+		parts  []provider.StreamPart
+		cancel bool
+	}{
+		{
+			name: "single segment",
+			parts: []provider.StreamPart{
+				{Type: provider.PartTextDelta, Delta: "hello"},
+				{Type: provider.PartFinish, FinishReason: &stop},
+			},
 		},
+		{
+			name: "multi segment upstream close",
+			parts: []provider.StreamPart{
+				{Type: provider.PartTextDelta, ID: "0", Delta: "first"},
+				{Type: provider.PartFinish, FinishReason: &stop},
+				{Type: provider.PartTextDelta, ID: "0", Delta: "second"},
+				{Type: provider.PartFinish, FinishReason: &stop},
+			},
+		},
+		{
+			name: "multi segment cancel after finish",
+			parts: []provider.StreamPart{
+				{Type: provider.PartTextDelta, ID: "0", Delta: "first"},
+				{Type: provider.PartFinish, FinishReason: &stop},
+				{Type: provider.PartTextDelta, ID: "0", Delta: "second"},
+				{Type: provider.PartFinish, FinishReason: &stop},
+			},
+			cancel: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testkit.NewEnv(t, func(config *agento11y.Config) {
+				config.Tracer = panicTracer{}
+			})
+			upstream := make(chan provider.StreamPart, len(tc.parts))
+			for _, part := range tc.parts {
+				upstream <- part
+			}
+			if tc.cancel {
+				t.Cleanup(func() { close(upstream) })
+			} else {
+				close(upstream)
+			}
+			stream := startRecordedStream(t, env, upstream, 0)
+
+			var got []provider.StreamPart
+			for part := range stream.result.Stream {
+				got = append(got, part)
+				if tc.cancel && len(got) == len(tc.parts) {
+					stream.cancel()
+				}
+			}
+			assert.Equal(t, tc.parts, got)
+		})
 	}
-	wrapped := middleware.Wrap(middleware.WrapOptions{Model: model, Middleware: []middleware.Middleware{RecordingMiddleware(RecordingOptions{
-		ClientResolver: func(context.Context) *agento11y.Client { return env.Client },
-	})}})
-	result, err := wrapped.DoStream(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
-	require.NoError(t, err)
-	var got []provider.StreamPart
-	for part := range result.Stream {
-		got = append(got, part)
-	}
-	assert.Equal(t, parts, got)
 }

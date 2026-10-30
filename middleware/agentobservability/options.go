@@ -129,6 +129,8 @@ type RecordingOptions struct {
 	OnRecordError RecordErrorHandler
 	// OnRecordComplete runs once after End, regardless of recorder outcome. It
 	// can be used by process owners to bound shutdown around active recordings.
+	// A stream recording ends at upstream close or context end, not at a
+	// finish, so wait for it before closing a shared client mid-stream.
 	OnRecordComplete RecordCompleteHandler
 	// GenerationFilter applies a final consumer-owned observation policy to
 	// mapped unary and stream generations. Nil preserves existing behavior.

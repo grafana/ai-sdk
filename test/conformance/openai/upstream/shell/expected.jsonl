@@ -1,6 +1,6 @@
 {"type":"start"}
 {"type":"start-step"}
-{"type":"tool-input-available","toolCallId":"call_pbxjNs1tMJUahLZKAS9qLtvw","toolName":"shell","input":{"action":{"commands":["ls -a ~/Desktop"]}},"providerMetadata":{"openai":{"itemId":"sh_0434d6d64b12b08900692f639c9f0481959c30e03ca0bb2ef8"}}}
+{"type":"tool-input-available","toolCallId":"call_pbxjNs1tMJUahLZKAS9qLtvw","toolName":"shell","input":{"action":{"commands":["ls -a ~/Desktop"],"maxOutputLength":8912}},"providerMetadata":{"openai":{"itemId":"sh_0434d6d64b12b08900692f639c9f0481959c30e03ca0bb2ef8"}}}
 {"type":"text-start","id":"msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b","providerMetadata":{"openai":{"itemId":"msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b"}}}
 {"type":"text-delta","id":"msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b","delta":"Here"}
 {"type":"text-delta","id":"msg_0434d6d64b12b08900692f639dc53c819594ea97586113d73b","delta":" are"}

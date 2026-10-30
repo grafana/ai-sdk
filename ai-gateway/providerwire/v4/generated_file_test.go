@@ -30,11 +30,10 @@ func TestGeneratedFileProjectionAndValidity(t *testing.T) {
 		_, ok = encodeStreamFrame(event)
 		require.True(t, ok)
 		h := &handler{}
-		state := newStreamState(nil)
+		state := &streamState{}
 		w := httptest.NewRecorder()
 		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: event.fileData, ProviderMetadata: event.metadata}))
 		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, finishPart()))
-		require.Equal(t, segmentFinished, state.phase)
 		requireStreamBodyMatchesSchema(t, w.Body.String())
 	}
 }
@@ -58,7 +57,7 @@ func TestGeneratedFileInvalidAndAggregate(t *testing.T) {
 	large := &provider.StreamFileData{Bytes: make([]byte, 2<<20)}
 	w := httptest.NewRecorder()
 	h := &handler{}
-	require.Equal(t, streamPartContinue, h.processStreamPart(w, newStreamState(nil), provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: large}))
+	require.Equal(t, streamPartContinue, h.processStreamPart(w, &streamState{}, provider.StreamPart{Type: provider.PartFile, MediaType: "image/png", Data: large}))
 	require.Greater(t, w.Body.Len(), 2<<20)
 }
 

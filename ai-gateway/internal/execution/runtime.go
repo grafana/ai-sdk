@@ -94,10 +94,6 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 	return &Call{ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, history: history, attempts: attempts, limits: r.limits}, nil
 }
 
-// ToolHistory returns a copy of the call's pending provider-executed tool
-// calls, rebuilt from its prompt.
-func (c *Call) ToolHistory() ToolHistory { return c.history.clone() }
-
 func (r *Runtime) selectModel(ctx context.Context, modelID string, options provider.CallOptions, gateway json.RawMessage) (selected Selection, err error) {
 	defer func() {
 		if recover() != nil {

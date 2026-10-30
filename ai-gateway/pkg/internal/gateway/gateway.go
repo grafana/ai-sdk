@@ -67,7 +67,7 @@ func New(options Options) (*Gateway, error) {
 	if err := settings.AgentObservability.ValidateAmbientEnvironment(os.LookupEnv); err != nil {
 		return nil, err
 	}
-	file, err := config.LoadFile(settings.ConfigFile, config.MaxFileBytes)
+	file, err := config.ParseModelCatalog(settings.ModelCatalog)
 	if err != nil {
 		return nil, err
 	}
