@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.0-alpha.6](https://github.com/grafana/ai-sdk/compare/v0.1.0-alpha.5...v0.1.0-alpha.6) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **middleware:** A stream recording is no longer enqueued before its first `finish` is forwarded. Consumers that close or shut down the shared agento11y client after reading a `finish` must drain the stream to EOF or wait for `RecordingOptions.OnRecordComplete`. A consumer that stops at `finish` and cancels still records a successful generation. Stream usage in logs, metrics and Agent Observability now comes from the last `finish`: a finish reporting a lower counter than an earlier part of the same response wins, and a multi-finish stream reports the last finish's usage instead of the greatest value across the stream.
+* **ai-gateway:** forward sequential response segments in one stream ([#583](https://github.com/grafana/ai-sdk/issues/583))
+
+### Features
+
+* **ai-gateway:** forward sequential response segments in one stream ([#583](https://github.com/grafana/ai-sdk/issues/583)) ([c0a7a6f](https://github.com/grafana/ai-sdk/commit/c0a7a6f7f33650b057754a4bcfee1af776038403))
+* **middleware:** record every response segment of one stream ([#614](https://github.com/grafana/ai-sdk/issues/614)) ([03c01b2](https://github.com/grafana/ai-sdk/commit/03c01b2a81c1a16b052de171fe86a292dd69424b))
+* **parity:** advance pinned upstream to ai 7.0.153 ([#610](https://github.com/grafana/ai-sdk/issues/610)) ([fd3f743](https://github.com/grafana/ai-sdk/commit/fd3f743a213e3f049e7ffbfe65025f58a182867b))
+
 ## [0.1.0-alpha.5](https://github.com/grafana/ai-sdk/compare/v0.1.0-alpha.4...v0.1.0-alpha.5) (2026-10-28)
 
 

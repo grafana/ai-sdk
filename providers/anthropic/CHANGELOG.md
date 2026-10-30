@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.0-alpha.4](https://github.com/grafana/ai-sdk/compare/providers/anthropic/v0.1.0-alpha.3...providers/anthropic/v0.1.0-alpha.4) (2026-10-30)
+
+
+### Features
+
+* **parity:** advance pinned upstream to ai 7.0.153 ([#610](https://github.com/grafana/ai-sdk/issues/610)) ([fd3f743](https://github.com/grafana/ai-sdk/commit/fd3f743a213e3f049e7ffbfe65025f58a182867b))
+
+
+### Bug Fixes
+
+* **anthropic:** retain tool-search errors during assistant-history replay ([#560](https://github.com/grafana/ai-sdk/issues/560)) ([e55060c](https://github.com/grafana/ai-sdk/commit/e55060c7732364b08908115f465703caac13dcef))
+
 ## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/anthropic/v0.1.0-alpha.2...providers/anthropic/v0.1.0-alpha.3) (2026-10-28)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.3](https://github.com/grafana/ai-sdk/compare/providers/openai-compatible/v0.1.0-alpha.2...providers/openai-compatible/v0.1.0-alpha.3) (2026-10-30)
+
+
+### Features
+
+* **ai-gateway:** configure openai-compatible structured outputs per provider ([#597](https://github.com/grafana/ai-sdk/issues/597)) ([25932dd](https://github.com/grafana/ai-sdk/commit/25932ddaeeb9764a4ab1b01a9e49b2850f02bbaf))
+
 ## [0.1.0-alpha.2](https://github.com/grafana/ai-sdk/compare/providers/openai-compatible/v0.1.0-alpha.1...providers/openai-compatible/v0.1.0-alpha.2) (2026-10-28)
 
 
