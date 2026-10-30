@@ -364,6 +364,7 @@ func unifiedAgentStopReason(reason provider.FinishReason) string {
 		provider.FinishReasonContentFilter,
 		provider.FinishReasonToolCalls,
 		provider.FinishReasonError,
+		provider.FinishReasonInterrupted,
 		provider.FinishReasonOther:
 		return string(reason.Unified)
 	default:

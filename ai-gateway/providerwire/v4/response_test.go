@@ -69,6 +69,7 @@ func TestUnarySuccessValidation(t *testing.T) {
 			provider.FinishReasonContentFilter,
 			provider.FinishReasonToolCalls,
 			provider.FinishReasonError,
+			provider.FinishReasonInterrupted,
 			provider.FinishReasonOther,
 		} {
 			result := validGenerateResult()
