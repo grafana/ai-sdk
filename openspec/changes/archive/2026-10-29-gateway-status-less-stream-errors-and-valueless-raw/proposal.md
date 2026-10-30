@@ -8,7 +8,7 @@ Direct providers emit two native stream shapes that ProviderWire V4 rewrites tod
 
 - **Status-less stream error.** An in-stream provider error whose `APICallError` has status 0 and no cancellation, deadline or transport cause is written as a new fixed safe error document. The document has no `statusCode`, the fixed message `provider stream error`, type `internal_server_error`, code `provider_error`, and `retryable: false`. It replaces today's implicit `upstream` fallback for that case only. Status-bearing, malformed-status, cancellation, timeout and transport classification do not change. Unary and stream-setup classification do not change.
 - **Value-less raw part.** When the caller requested raw output, a `PartRaw` with no value is written as `{"type":"raw"}`. Values that are invalid JSON, invalid UTF-8, or repeat a key are still dropped.
-- **Clean EOF after a provider error.** When the provider closes its stream and the last frame written was a provider error frame, the response ends at clean EOF. Any other premature close keeps its single synthetic internal error.
+- **Clean EOF after a provider error.** When the provider closes its stream and a provider error part follows the last lifecycle part, the execution runtime reports a new closed-after-error outcome and the response ends at clean EOF. Any other premature close keeps its single synthetic internal error.
 - **Go client.** `providers/grafana` accepts the status-less document only for its registered type and code. It yields a `PartError` whose `APICallError` has status 0 and is not retryable. It also accepts `{"type":"raw"}` and yields a `PartRaw` with a nil value when raw output was requested. No public Go API is added.
 - **Schema and evidence.** The production stream-event schema accepts both shapes. Go handler and client tests and the pinned-client contract tests cover them. Both clients are shown to receive no native error text in base error fields.
 - **Superseded rationale.** The fixed-document rule stays, extended by one document. The drop rule for value-less raw parts is removed. Premature EOF stays a terminal internal error except right after a provider error frame.
@@ -21,8 +21,8 @@ None.
 
 ### Modified Capabilities
 
-- `providerwire-v4-streaming-runtime`: changes in-stream provider errors (adds the status-less base shape and classification) and premature close (clean EOF right after a provider error frame).
-- `gateway-execution-runtime`: the closed failure classification gains a stream-only provider-stream category for status-less in-band errors.
+- `providerwire-v4-streaming-runtime`: changes in-stream provider errors (adds the status-less base shape and classification) and premature close (clean EOF after a trailing provider error part).
+- `gateway-execution-runtime`: the closed failure classification gains a stream-only provider-stream category for status-less in-band errors. Stream end gains the closed-after-error outcome.
 - `gateway-raw-output`: a requested raw part without a value is written as `{"type":"raw"}` instead of being dropped.
 - `grafana-gateway-client`: decodes the status-less stream error and the value-less raw part.
 

@@ -192,7 +192,7 @@ func validStreamEvent(value streamEvent) bool {
 	}
 }
 
-func (h *handler) serveStream(w http.ResponseWriter, call *execution.Call, options provider.CallOptions, history map[string]string) {
+func (h *handler) serveStream(w http.ResponseWriter, call *execution.Call, options provider.CallOptions) {
 	stream, err := call.Stream()
 	if err != nil {
 		view := call.View(err)
@@ -203,7 +203,7 @@ func (h *handler) serveStream(w http.ResponseWriter, call *execution.Call, optio
 	if !commitStreamResponse(w) {
 		return
 	}
-	h.runStream(w, stream, call, history, options.IncludeRawChunks)
+	h.runStream(w, stream, call, options.IncludeRawChunks)
 }
 
 func commitStreamResponse(w http.ResponseWriter) (ok bool) {
@@ -249,73 +249,14 @@ const (
 	streamPartWriterFailure
 )
 
-type segmentPhase uint8
-
-const (
-	segmentOpen segmentPhase = iota
-	segmentFinished
-)
-
 type streamState struct {
-	approvalIDs         map[string]struct{}
-	execution           execution.View
-	phase               segmentPhase
-	activeID            string
-	segmentTextIDs      map[string]struct{}
-	tools               map[string]toolStreamState
-	history             map[string]toolStreamState
-	reasoningIDs        map[string]struct{}
-	segmentReasoningIDs map[string]struct{}
+	execution execution.View
 	// includeRaw records that the caller requested raw stream parts. Raw parts
 	// are dropped otherwise, including any an adapter emits unrequested.
 	includeRaw bool
-	// afterProviderError records that the last written event was a forwarded
-	// provider error, so a provider close ends the response cleanly.
-	afterProviderError bool
 }
 
-func newStreamState(history map[string]string) *streamState {
-	const capacity = 64
-	state := &streamState{segmentTextIDs: make(map[string]struct{}, capacity), tools: make(map[string]toolStreamState, capacity), history: make(map[string]toolStreamState, len(history)), reasoningIDs: make(map[string]struct{}, capacity), segmentReasoningIDs: make(map[string]struct{}, capacity)}
-	for id, name := range history {
-		state.history[id] = toolStreamState{name: name, phase: toolCallEmitted, providerExecuted: true}
-	}
-	return state
-}
-
-func (s *streamState) quiescent() bool {
-	if s.activeID != "" || len(s.reasoningIDs) != 0 {
-		return false
-	}
-	for _, tool := range s.tools {
-		if tool.phase == toolInputOpen || tool.phase == toolResultPreliminary {
-			return false
-		}
-	}
-	for _, tool := range s.history {
-		if tool.phase == toolResultPreliminary {
-			return false
-		}
-	}
-	return true
-}
-
-func (s *streamState) startSegment() {
-	s.phase = segmentOpen
-	clear(s.segmentTextIDs)
-	clear(s.segmentReasoningIDs)
-}
-
-func allowedAfterFinish(partType provider.StreamPartType) bool {
-	switch partType {
-	case provider.PartResponseMeta, provider.PartRaw, provider.PartError:
-		return true
-	default:
-		return false
-	}
-}
-
-func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, call *execution.Call, history map[string]string, includeRaw bool) {
+func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, call *execution.Call, includeRaw bool) {
 	part, wait := stream.Next()
 	view := call.View(wait.Err())
 	if wait != execution.WaitPart {
@@ -326,9 +267,7 @@ func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, cal
 		return
 	}
 
-	state := newStreamState(history)
-	state.execution = view
-	state.includeRaw = includeRaw
+	state := &streamState{execution: view, includeRaw: includeRaw}
 	if part.Type == provider.PartStreamStart {
 		result := streamWriteEncodingFailure
 		if warnings, err := mapWarnings(part.Warnings); err == nil {
@@ -360,10 +299,10 @@ func (h *handler) runStream(w http.ResponseWriter, stream *execution.Stream, cal
 func (h *handler) consumeStreamParts(w http.ResponseWriter, stream *execution.Stream, state *streamState) {
 	for {
 		part, wait := stream.Next()
+		if wait == execution.WaitFinished || wait == execution.WaitClosedAfterError {
+			return
+		}
 		if wait != execution.WaitPart {
-			if wait == execution.WaitClosed && (state.phase == segmentFinished || state.afterProviderError) {
-				return
-			}
 			h.writeStreamTerminalForWait(w, wait, state.execution)
 			return
 		}
@@ -386,17 +325,11 @@ func (h *handler) handleStreamPartResult(w http.ResponseWriter, stream *executio
 }
 
 func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, part provider.StreamPart) streamPartResult {
-	if state.phase == segmentFinished && !allowedAfterFinish(part.Type) {
-		return streamPartAdapterFailure
-	}
-	if part.Type != provider.PartError && part.Type != provider.PartRaw {
-		state.afterProviderError = false
-	}
 	switch part.Type {
 	case provider.PartToolApprovalRequest:
-		return h.processApprovalRequest(w, state, part)
+		return h.processApprovalRequest(w, part)
 	case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd, provider.PartReasoningFile, provider.PartFile:
-		return h.processReasoningPart(w, state, part)
+		return h.processReasoningPart(w, part)
 	case provider.PartSource:
 		if part.Source == nil {
 			return streamPartAdapterFailure
@@ -421,11 +354,8 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		}
 		return streamPartContinue
 	case provider.PartToolInputStart, provider.PartToolInputDelta, provider.PartToolInputEnd, provider.PartToolCall, provider.PartToolResult:
-		return h.processToolStreamPart(w, state, part)
+		return h.processToolStreamPart(w, part)
 	case provider.PartResponseMeta:
-		if !state.quiescent() {
-			return streamPartAdapterFailure
-		}
 		event := streamEvent{typeName: provider.PartResponseMeta, id: part.ResponseID, modelID: part.ModelID, timestamp: part.Timestamp}
 		if result := h.emitStreamEvent(w, event); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
@@ -433,13 +363,9 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			}
 			return streamPartWriterFailure
 		}
-		state.startSegment()
 		return streamPartContinue
 	case provider.PartTextStart:
-		if state.activeID != "" || part.ID == "" || !utf8.ValidString(part.ID) {
-			return streamPartAdapterFailure
-		}
-		if _, exists := state.segmentTextIDs[part.ID]; exists {
+		if !utf8.ValidString(part.ID) {
 			return streamPartAdapterFailure
 		}
 		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartTextStart, id: part.ID, metadata: part.ProviderMetadata}); result != streamWriteSuccess {
@@ -448,13 +374,8 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			}
 			return streamPartWriterFailure
 		}
-		state.segmentTextIDs[part.ID] = struct{}{}
-		state.activeID = part.ID
 		return streamPartContinue
 	case provider.PartTextDelta:
-		if state.activeID == "" || part.ID != state.activeID {
-			return streamPartAdapterFailure
-		}
 		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartTextDelta, id: part.ID, delta: part.Delta, metadata: part.ProviderMetadata}); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
@@ -463,16 +384,12 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		}
 		return streamPartContinue
 	case provider.PartTextEnd:
-		if state.activeID == "" || part.ID != state.activeID {
-			return streamPartAdapterFailure
-		}
 		if result := h.emitStreamEvent(w, streamEvent{typeName: provider.PartTextEnd, id: part.ID, citations: part.Citations, metadata: part.ProviderMetadata}); result != streamWriteSuccess {
 			if result == streamWriteEncodingFailure {
 				return streamPartAdapterFailure
 			}
 			return streamPartWriterFailure
 		}
-		state.activeID = ""
 		return streamPartContinue
 	case provider.PartError:
 		if part.APICallError != nil && streamrecover.Is(part.APICallError) {
@@ -484,13 +401,9 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if !h.emitSafeStreamError(w, value, metadata, current) {
 			return streamPartWriterFailure
 		}
-		state.afterProviderError = true
 		return streamPartContinue
 	case provider.PartFinish:
-		if !state.quiescent() || len(part.Warnings) != 0 || part.FinishReason == nil || part.Usage == nil {
-			return streamPartAdapterFailure
-		}
-		if !validStreamFinishReason(*part.FinishReason) {
+		if !utf8.ValidString(part.FinishReason.Raw) {
 			return streamPartAdapterFailure
 		}
 		inputUsage, err := mapInputUsage(part.Usage.InputTokens)
@@ -515,7 +428,6 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		if !writeCompleteStreamFrame(w, frame) {
 			return streamPartWriterFailure
 		}
-		state.phase = segmentFinished
 		return streamPartContinue
 	case provider.PartRaw:
 		if !state.includeRaw {
@@ -531,30 +443,9 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 			}
 			return streamPartWriterFailure
 		}
-		state.afterProviderError = false
 		return streamPartContinue
-	case provider.PartStreamStart:
-		return streamPartAdapterFailure
 	default:
 		return streamPartAdapterFailure
-	}
-}
-
-func validStreamFinishReason(reason provider.FinishReason) bool {
-	return utf8.ValidString(reason.Raw) && validStreamUnifiedFinishReason(reason.Unified)
-}
-
-func validStreamUnifiedFinishReason(reason provider.UnifiedFinishReason) bool {
-	switch reason {
-	case provider.FinishReasonStop,
-		provider.FinishReasonLength,
-		provider.FinishReasonContentFilter,
-		provider.FinishReasonToolCalls,
-		provider.FinishReasonError,
-		provider.FinishReasonOther:
-		return true
-	default:
-		return false
 	}
 }
 

@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -36,6 +34,9 @@ type Provider struct {
 	BaseURL   string `yaml:"baseURL,omitempty"`
 	// ProviderName overrides the openai-compatible provider identifier.
 	ProviderName string `yaml:"providerName,omitempty"`
+	// SupportsStructuredOutputs enables JSON-schema response formats for an
+	// openai-compatible provider.
+	SupportsStructuredOutputs bool `yaml:"supportsStructuredOutputs,omitempty"`
 }
 
 // Model configures one canonical public model and its aliases.
@@ -55,56 +56,27 @@ type Primary struct {
 
 // ResolvedProvider contains one startup-resolved provider secret.
 type ResolvedProvider struct {
-	Type         string
-	APIKey       string
-	BaseURL      string
-	ProviderName string
+	Type                      string
+	APIKey                    string
+	BaseURL                   string
+	ProviderName              string
+	SupportsStructuredOutputs bool
 }
 
-// fileError reports a file operation failure by its class, without the path
-// the underlying error names.
-func fileError(operation string, err error) error {
-	for _, class := range []error{fs.ErrNotExist, fs.ErrPermission} {
-		if errors.Is(err, class) {
-			return fmt.Errorf("config: %s file: %w", operation, class)
-		}
+// ParseModelCatalog validates exactly one bounded strict YAML model catalog
+// document. Failures never include the document.
+func ParseModelCatalog(document string) (File, error) {
+	if len(document) > MaxModelCatalogBytes {
+		return File{}, fmt.Errorf("config: %s exceeds %d bytes", SettingName(ModelCatalogSetting), MaxModelCatalogBytes)
 	}
-	return fmt.Errorf("config: %s file failed", operation)
-}
-
-// LoadFile reads and validates exactly one bounded strict YAML document.
-func LoadFile(path string, maxBytes int64) (File, error) {
-	if maxBytes <= 0 || maxBytes == int64(^uint64(0)>>1) {
-		return File{}, fmt.Errorf("config: maximum file bytes are unsafe")
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return File{}, fileError("inspecting", err)
-	}
-	if !info.Mode().IsRegular() {
-		return File{}, fmt.Errorf("config: path is not a regular file")
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return File{}, fileError("opening", err)
-	}
-	defer func() { _ = file.Close() }()
-
-	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
-	if err != nil {
-		return File{}, fileError("reading", err)
-	}
-	if int64(len(data)) > maxBytes {
-		return File{}, fmt.Errorf("config: file exceeds %d bytes", maxBytes)
-	}
-	var document yaml.Node
-	if err := yaml.Unmarshal(data, &document); err != nil {
+	var node yaml.Node
+	if err := yaml.Unmarshal([]byte(document), &node); err != nil {
 		return File{}, fmt.Errorf("config: invalid YAML document")
 	}
-	if err := validateDocumentShape(&document); err != nil {
+	if err := validateDocumentShape(&node); err != nil {
 		return File{}, err
 	}
-	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+	decoder := yaml.NewDecoder(strings.NewReader(document))
 	decoder.KnownFields(true)
 	var result File
 	if err := decoder.Decode(&result); err != nil {
@@ -136,6 +108,9 @@ func (file File) Validate() error {
 		case "anthropic", "openai":
 			if provider.ProviderName != "" {
 				return fmt.Errorf("config: providers.%s.providerName is only supported for openai-compatible providers", name)
+			}
+			if provider.SupportsStructuredOutputs {
+				return fmt.Errorf("config: providers.%s.supportsStructuredOutputs is only supported for openai-compatible providers", name)
 			}
 		case "openai-compatible":
 			if provider.ProviderName != "" && strings.TrimSpace(provider.ProviderName) == "" {
@@ -250,7 +225,7 @@ func (file File) ResolveProviderSecrets(lookupEnv LookupEnv) (map[string]Resolve
 			}
 			values[provider.APIKeyEnv] = value
 		}
-		resolved[name] = ResolvedProvider{Type: provider.Type, APIKey: value, BaseURL: provider.BaseURL, ProviderName: provider.ProviderName}
+		resolved[name] = ResolvedProvider{Type: provider.Type, APIKey: value, BaseURL: provider.BaseURL, ProviderName: provider.ProviderName, SupportsStructuredOutputs: provider.SupportsStructuredOutputs}
 	}
 	return resolved, nil
 }

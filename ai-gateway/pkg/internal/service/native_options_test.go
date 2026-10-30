@@ -502,6 +502,11 @@ func TestNativeMCP_ActualCandidateConsumption(t *testing.T) {
 
 func nativeOptionsRequest(t *testing.T, backend, body string, streaming, configuredFallback bool, factories ...ModelFactory) (*httptest.ResponseRecorder, []map[string]any) {
 	t.Helper()
+	return nativeOptionsRequestWithProviders(t, backend, body, streaming, configuredFallback, nil, factories...)
+}
+
+func nativeOptionsRequestWithProviders(t *testing.T, backend, body string, streaming, configuredFallback bool, configure func(map[string]config.ResolvedProvider), factories ...ModelFactory) (*httptest.ResponseRecorder, []map[string]any) {
+	t.Helper()
 	var mu sync.Mutex
 	var requests []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -532,10 +537,14 @@ func nativeOptionsRequest(t *testing.T, backend, body string, streaming, configu
 		model.Primary.Provider = "primary"
 		model.Fallback = []config.Primary{{Provider: "native", Model: "backend"}}
 	}
-	created, err := BuildCatalog(config.File{Models: map[string]config.Model{"public": model}}, map[string]config.ResolvedProvider{
+	providers := map[string]config.ResolvedProvider{
 		"native":  {Type: backend, APIKey: "native-key", BaseURL: server.URL, ProviderName: "my-vllm.chat"},
 		"primary": {Type: backend, APIKey: "native-key", BaseURL: server.URL + "/primary", ProviderName: "my-vllm.chat"},
-	}, server.Client(), factory)
+	}
+	if configure != nil {
+		configure(providers)
+	}
+	created, err := BuildCatalog(config.File{Models: map[string]config.Model{"public": model}}, providers, server.Client(), factory)
 	require.NoError(t, err)
 	handler, err := newWireHandler(execution.Config{Selector: execution.CatalogSelector(created), Limits: serviceTestLimits()})
 	require.NoError(t, err)

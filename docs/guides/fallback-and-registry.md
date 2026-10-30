@@ -119,8 +119,8 @@ The parent request deadline and cancellation still take precedence. This option
 affects `DoStream`, including Go `GenerateText`; it does not change `DoGenerate`.
 
 Selection waits for the stream to close after a successful finish part. Leading
-or later error events, missing finish and attempt timeouts reach the configured
-fallback decider. Failed partial output and usage are discarded. A successful
+or later error events, missing or interrupted finish and attempt timeouts reach
+the configured fallback decider. Failed partial output and usage are discarded. A successful
 candidate's parts, response metadata and usage are replayed unchanged. Buffer
 limit errors stop the default chain; a custom decider can choose otherwise.
 

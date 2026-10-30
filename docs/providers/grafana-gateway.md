@@ -177,23 +177,16 @@ Grafana Cloud. Select the provider's own model as `provider/model`, such as
 `openai/gpt-5`, and send your key with every call:
 
 ```go
-credentials, err := json.Marshal(map[string]any{
-	"byok": map[string]any{
-		"openai": []map[string]string{{"apiKey": apiKey}},
-	},
-})
-if err != nil {
-	return err
-}
 model, err := client.LanguageModel("openai/gpt-5")
 if err != nil {
 	return err
 }
 result, err := aisdk.GenerateText(ctx, model,
 	aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
-	aisdk.WithProviderOptions(provider.RawProviderOption{
-		Key: "gateway",
-		Raw: credentials,
+	aisdk.WithProviderOptions(grafana.GatewayOptions{
+		BYOK: map[string][]grafana.BYOKAccount{
+			"openai": {{APIKey: apiKey}},
+		},
 	}),
 )
 if err != nil {
@@ -231,6 +224,78 @@ Calls with your own key do not use the Gateway's configured models or aliases.
 To see which of your accounts were tried, read the
 [execution overview](#inspect-execution-overviews-and-failures).
 
+## Route a call to other models and providers
+
+For one call, you can name fallback models and prefer or restrict providers.
+These controls use the same names as the Vercel AI Gateway, under
+`providerOptions.gateway`:
+
+- `models` lists fallback model IDs. The Gateway tries the model you selected
+  first, with all of its providers, then each listed model in order.
+- `order` lists providers to try first. Within each model, matching providers
+  move to the front in that order, and the others follow in their usual order.
+  It does not remove providers.
+- `only` lists the only providers to use. It applies to each model before
+  `order`. A model with none of these providers is skipped.
+
+```go
+result, err := aisdk.GenerateText(ctx, model,
+	aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
+	aisdk.WithProviderOptions(grafana.GatewayOptions{
+		Models: []string{"grafana/backup"},
+		Order:  []string{"anthropic"},
+	}),
+)
+```
+
+```ts
+import type { GatewayProviderOptions } from "@ai-sdk/gateway";
+import { generateText } from "ai";
+
+const result = await generateText({
+  model: gateway("grafana/assistant"),
+  prompt: "Summarize this incident.",
+  providerOptions: {
+    gateway: { models: ["grafana/backup"], order: ["anthropic"] } satisfies GatewayProviderOptions,
+  },
+});
+```
+
+Which names you can use depends on how you call the Gateway:
+
+- With configured models, `models` entries are model IDs or aliases from
+  [model discovery](#discover-and-select-public-models). Provider names are the
+  `provider` values discovery reports for each model, such as `anthropic`,
+  `openai` or a compatible provider's name, not the names of configured
+  provider accounts.
+- With your own keys, `models` entries are `provider/model` selectors, and you
+  must send keys under `byok` for each provider you name. The Gateway never
+  uses its own provider accounts for your calls.
+
+The controls never add destinations: you can only reach models and accounts
+you could already call directly. A call tries at most 8 providers in total;
+each provider and model is tried once, even when several routes share it.
+Everything else about the call still applies to every attempt: each provider
+reads its own options, such as `anthropic` or `openai`, and the
+[fallback rules](#configure-fallback) about committed output are the same.
+
+The Gateway checks the controls before calling any provider, and rejects:
+
+- with configured models, a `models` entry it cannot find, with a model not
+  found error;
+- with your own keys, a `models` entry that is not a supported
+  `provider/model` selector or names a provider you sent no keys for, with an
+  invalid request error;
+- an `only` list that leaves no provider, a list with an entry that is not a
+  non-empty string, a conditional `models` entry, or a call that would try more
+  than 8 providers, with an invalid request error;
+- any other control, such as `sort`, `user`, `tags`, `zeroDataRetention` or
+  `providerTimeouts`, with an invalid request error, rather than ignoring it.
+
+The Go client does not check these values itself, and its `GatewayOptions`
+has only the controls the Gateway supports. To see how a call was routed, read
+the [routing summary](#inspect-execution-overviews-and-failures).
+
 ## Keep credentials out of logs
 
 Call options and request details can contain the provider keys you send. Do
@@ -257,8 +322,9 @@ the Gateway in generated and streamed calls. Schemas need an object at the
 root. The model returns JSON text, and the SDK parses and validates it.
 
 Schema support depends on the provider. OpenAI and Anthropic models follow the
-schema natively. Models from OpenAI-compatible providers use JSON mode and
-return a warning when you supply a schema.
+schema natively. Models from OpenAI-compatible providers follow the schema when
+the operator sets `supportsStructuredOutputs: true` on that provider. Otherwise
+they use JSON mode and return a warning when you supply a schema.
 
 `provider.ResponseFormat.Name` is a pointer: use `new("answer")` to set a name.
 See the [provider reference](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#ResponseFormat).
@@ -356,6 +422,16 @@ own error summary. The overview has no account or key field; use the
 attempt's position to match it to your list. A provider's error text can still
 repeat your key, as described below.
 
+Next to it, `gateway.routing` groups the same attempts by model, using field
+names from the Vercel AI Gateway: `originalModelId`, `canonicalSlug` for
+configured models, `resolvedProvider` (the first provider tried),
+`finalProvider` (the one that answered, absent when none did), and
+`modelAttempts`. Each model attempt has its `modelId` as you sent it, a
+`success` flag and its `providerAttempts`, each with a `provider`, a `success`
+flag and, for a failure, the provider's `statusCode`. Models the call never
+reached are not listed. Unlike Vercel's, it has no timings, costs, credential
+types or providers that were not tried.
+
 Errors carry the same information:
 
 - An HTTP error has it in `providerMetadata` in the error body. In Go, read
@@ -366,9 +442,10 @@ Errors carry the same information:
 
 Overviews are best-effort: a missing overview does not mean no provider was
 tried. A call the Gateway rejects before trying any account, such as one with
-missing or malformed `gateway.byok` credentials or unsupported options, has no
-overview. A selected
-attempt means the provider started answering, not that the stream completed.
+missing or malformed `gateway.byok` credentials, unsupported options or
+invalid routing controls, has no overview. A selected attempt, or a provider
+attempt with `success`, means the provider started answering, not that the
+stream completed.
 
 The Gateway replaces its own configured provider keys with `[REDACTED]` in
 error summaries. It does not change your own provider key if a provider repeats

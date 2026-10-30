@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1175,7 +1176,7 @@ func TestInvocation_ConfiguredKeySummaries(t *testing.T) {
 					ordered = chain
 				}
 				selector = func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
-					return execution.AccountSelection(id, ordered, execution.RequestAccounts{Provider: "private-provider", ModelID: "private-backend-model", Count: len(models)}), nil
+					return execution.AccountSelection(id, ordered, slices.Repeat([]execution.ExpectedAttempt{{ModelID: id, Destination: catalog.ConfiguredCandidate{Provider: "private-provider", ModelID: "private-backend-model"}}}, len(models))), nil
 				}
 			}
 			keys := []string{"server-key", "unused-key"}
@@ -1380,7 +1381,7 @@ func TestRequestSelection_NativeSummaries(t *testing.T) {
 				require.NoError(t, err)
 				h, err := newWireHandler(execution.Config{Limits: testLimits(), Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
 					if accounts {
-						return execution.AccountSelection("request/model", ordered, execution.RequestAccounts{Provider: "private-provider", ModelID: "private-backend-model", Count: 1}), nil
+						return execution.AccountSelection("request/model", ordered, []execution.ExpectedAttempt{{ModelID: " public/model ", Destination: catalog.ConfiguredCandidate{Provider: "private-provider", ModelID: "private-backend-model"}}}), nil
 					}
 					return execution.Selection{ID: "request/model", Model: ordered}, nil
 				}})
@@ -1421,14 +1422,16 @@ func TestRequestSelection_NativeSummaries(t *testing.T) {
 				}
 				selected := `{"requestedModelId":" public/model ","attempts":[{"provider":"private-provider","modelId":"private-backend-model","outcome":"selected"}]}`
 				failed := `{"requestedModelId":" public/model ","attempts":[{"provider":"private-provider","modelId":"private-backend-model","outcome":"failed","error":{"message":"unconfigured-native-detail","statusCode":503}}]}`
+				selectedRouting := `{"originalModelId":" public/model ","resolvedProvider":"private-provider","finalProvider":"private-provider","modelAttemptCount":1,"totalProviderAttemptCount":1,"modelAttempts":[{"modelId":" public/model ","success":true,"providerAttemptCount":1,"providerAttempts":[{"provider":"private-provider","success":true}]}]}`
+				failedRouting := `{"originalModelId":" public/model ","resolvedProvider":"private-provider","modelAttemptCount":1,"totalProviderAttemptCount":1,"modelAttempts":[{"modelId":" public/model ","success":false,"providerAttemptCount":1,"providerAttempts":[{"provider":"private-provider","success":false,"statusCode":503}]}]}`
 				switch {
 				case tc.failSetup:
-					assert.Contains(t, body, `"providerMetadata":{"gateway":{"execution":`+failed+`}}`)
+					assert.Contains(t, body, `"providerMetadata":{"gateway":{"execution":`+failed+`,"routing":`+failedRouting+`}}`)
 				case tc.streaming:
-					assert.Contains(t, body, `"data":{"providerMetadata":{"gateway":{"execution":`+selected+`}}`)
-					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"nativeMetadata":{"opaque":"native-value"}}`)
+					assert.Contains(t, body, `"data":{"providerMetadata":{"gateway":{"execution":`+selected+`,"routing":`+selectedRouting+`}}`)
+					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"routing":`+selectedRouting+`,"nativeMetadata":{"opaque":"native-value"}}`)
 				default:
-					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"nativeMetadata":{"opaque":"native-value"}}`)
+					assert.Contains(t, body, `"gateway":{"execution":`+selected+`,"routing":`+selectedRouting+`,"nativeMetadata":{"opaque":"native-value"}}`)
 				}
 				assert.NotContains(t, body, "canonicalModelId")
 				assert.NotContains(t, body, "providerInstance")

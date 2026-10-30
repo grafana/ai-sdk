@@ -104,12 +104,15 @@ Alternative considered: copying the native `IsRetryable`. Rejected, because the 
 - **Alternative: turn unusable non-empty values into value-less markers too.** This would follow upstream more closely, but it changes the projection contract and is outside #564.
 - **Schema.** `raw.required` becomes `["type"]`. `{"type":"raw","rawValue":null}` keeps today's behavior: `null` is a valid JSON value.
 
-### D5. Clean EOF after a provider error frame
+### D5. Clean EOF after a trailing provider error
 
-- **State.** `streamState` gains `afterProviderError`. It is set after a `PartError` frame is fully written and cleared after any other frame is written.
-- **Close.** On `WaitClosed` with the flag set, the handler returns without writing. The deferred `stream.Close()` (`stream.go:204`) still cancels and drains.
-- **Any written error frame counts.** This includes a nil `APICallError` reduced to an in-place internal frame (`providerwire/v4/stream_test.go:132-160`); implementations must not narrow the flag to particular categories.
-- **What does not count.** Parts that write nothing, such as unrequested or unusable raw parts, do not touch the flag. The handler's own synthesized `stream-start` is written before any provider error, so it cannot follow one.
+- **Owner.** The execution runtime decides how a stream ends (gateway-execution-runtime "Stream end decided by the runtime", from #609 and #622), so the rule lives there, not in ProviderWire.
+- **State.** `StreamValidator` gains `trailingError`. An accepted error part sets it, a raw part leaves it, and any other accepted part clears it. A refused part changes nothing.
+- **Close.** On provider close, `Stream.Next` returns `WaitFinished` when the last lifecycle part was a finish, otherwise `WaitClosedAfterError` when the flag is set, otherwise `WaitClosed`. `WaitClosedAfterError.Err()` is nil, because the error part already reported the failure. ProviderWire and the test adapter end the stream without writing on it. The deferred `stream.Close()` still cancels and drains.
+- **Any error part counts.** This includes a nil `APICallError`, which ProviderWire reduces to an in-place internal frame; implementations must not narrow the rule to particular categories.
+- **Raw parts do not count.** They are not lifecycle parts, so an error followed by raw parts and a close ends cleanly whether or not ProviderWire writes them. This replaces the earlier ProviderWire rule based on the last written frame, which the runtime cannot see.
+- **Alternative: keep the ProviderWire flag.** Rejected after #622: adapters must not evaluate lifecycle rules, and the runtime owns the clean-close decision.
+- **Alternative: reuse `WaitFinished`.** Rejected: it means a close after a finish, and keeping a separate outcome lets observers tell the two apart.
 - **Unchanged:**
   - canceled, deadline and idle waits;
   - adapter failures, including `streamrecover` panics, which are terminal and not forwarded errors;
@@ -117,7 +120,7 @@ Alternative considered: copying the native `IsRetryable`. Rejected, because the 
 - **Open blocks.** The flag is not tied to lifecycle state. In the spliced row the stream ends while a tool input is still open, and no closure is synthesized. This matches the direct stream and the "Adapter failure does not manufacture lifecycle completion" rule.
 - **Alternative: only after status-less errors.** Rejected. "Error, then end" is the same native fact for any category, and a 429-then-close stream would still gain a `500` that the direct provider does not emit.
 - **Alternative: after any earlier error.** Rejected. When content follows the error, the synthetic error is the only truncation signal.
-- **Test adapter.** It keeps reporting `WaitClosed` as internal: clean EOF is a ProviderWire state-machine rule, not a runtime classification. The adapter cross-check (`adapter_test.go`) has no close-after-error scenario.
+- **Test adapter.** It treats `WaitClosedAfterError` like `WaitFinished` and reports no category.
 - **Existing Gateway tests.** Every service row whose stream ends with a provider error frame and then closes loses its trailing `internal_error`:
   - `pkg/internal/service/fallback_acceptance_test.go:52` "tool input then error": `[stream-start, tool-input-start, error, error]` / `["overloaded","internal_error"]` becomes `[stream-start, tool-input-start, error]` / `["overloaded"]`;
   - `fallback_acceptance_test.go:286` "postcommit_error_close": `[stream-start, error, error]` becomes `[stream-start, error]`;
@@ -191,3 +194,4 @@ nara confirmed:
 1. **Delivery.** One PR carries the client and the Gateway changes (tasks group 1).
 2. **Document names (D2).** `provider_error`, `provider stream error`, type `internal_server_error`.
 3. **Privacy (D7).** Native text stays out of base fields and new members; `error.data.nativeError` stays under gateway-attempt-failure-evidence.
+4. **Clean-close owner (D5).** After #622 moved the clean-close decision into the runtime, the rule moved there too, with a new `WaitClosedAfterError` outcome. Raw parts no longer affect it.

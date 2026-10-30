@@ -54,6 +54,14 @@ func safeErrorFor(category execution.Category, reason execution.Reason) safeErro
 		value.reason = policyReservedProviderOptions
 	case execution.ReasonProtectedCallHeader:
 		value.reason = policyProtectedCallHeader
+	case execution.ReasonRoutingControls:
+		value.reason = routingControls
+	case execution.ReasonNoCandidates:
+		value.reason = routingNoCandidates
+	case execution.ReasonAttemptBound:
+		value.reason = routingAttemptBound
+	case execution.ReasonFallbackModel:
+		value.reason = routingFallbackModel
 	}
 	return value
 }

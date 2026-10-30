@@ -95,7 +95,7 @@ func markTranslation(target execution.Target, options provider.CallOptions) (pro
 	return options, nil
 }
 
-func translationCatalog(t *testing.T, client *http.Client) catalog.Catalog {
+func translationCatalog(t *testing.T, client *http.Client) *Catalog {
 	t.Helper()
 	file := config.File{
 		Providers: map[string]config.Provider{"anthropic-primary": {Type: "anthropic"}, "openai-backup": {Type: "openai"}, "local": {Type: "openai-compatible"}, "unnamed": {Type: "openai-compatible"}},

@@ -10,6 +10,8 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/byok"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -21,13 +23,20 @@ type BYOKOptions struct {
 	Factory ModelFactory
 }
 
+// ConfiguredModels resolves configured models and composes a request's routed
+// chain over their candidates. [Catalog] implements it.
+type ConfiguredModels interface {
+	catalog.ModelResolver
+	selectRouted(ctx context.Context, id string, controls routing.Controls) (execution.Selection, error)
+}
+
 // NewSelector returns the selector for every access mode. Configured callers
-// resolve through resolver and cannot send gateway controls. BYOK callers,
-// when byokOptions is set, build a model from the request accounts in those
-// controls. Every other caller fails with [execution.ErrAccountAccess]. It
-// returns nil for a nil resolver.
-func NewSelector(resolver catalog.ModelResolver, byokOptions *BYOKOptions) execution.RequestSelector {
-	selectConfigured := execution.CatalogSelector(resolver)
+// resolve through models, and their routing controls compose a request chain
+// over configured candidates. BYOK callers, when byokOptions is set, build a
+// model from the request accounts and routing controls. Every other caller
+// fails with [execution.ErrAccountAccess]. It returns nil for nil models.
+func NewSelector(models ConfiguredModels, byokOptions *BYOKOptions) execution.RequestSelector {
+	selectConfigured := execution.CatalogSelector(models)
 	if selectConfigured == nil {
 		return nil
 	}
@@ -35,17 +44,28 @@ func NewSelector(resolver catalog.ModelResolver, byokOptions *BYOKOptions) execu
 		caller, _ := gatewayauth.CallerFromContext(ctx)
 		switch {
 		case caller.AccountAccess() == gatewayauth.ConfiguredAccounts:
-			return selectConfigured(ctx, id, options, gateway)
+			controls, err := routing.Decode(gateway, routing.ConfiguredAccess)
+			if err != nil {
+				return execution.Selection{}, err
+			}
+			if controls.Routed() {
+				return models.selectRouted(ctx, id, controls)
+			}
+			return selectConfigured(ctx, id, options, nil)
 		case caller.AccountAccess() == gatewayauth.RequestBYOK && byokOptions != nil:
-			return selectBYOK(id, gateway, *byokOptions)
+			controls, err := routing.Decode(gateway, routing.RequestAccountAccess)
+			if err != nil {
+				return execution.Selection{}, err
+			}
+			return selectBYOK(id, controls, *byokOptions)
 		default:
 			return execution.Selection{}, execution.ErrAccountAccess
 		}
 	}
 }
 
-func selectBYOK(id string, gateway json.RawMessage, options BYOKOptions) (execution.Selection, error) {
-	request, err := byok.DecodeRequest(id, gateway, nil)
+func selectBYOK(id string, controls routing.Controls, options BYOKOptions) (execution.Selection, error) {
+	request, err := byok.DecodeRequest(id, controls, nil)
 	switch {
 	case errors.Is(err, byok.ErrInvalidSelector):
 		return execution.Selection{}, execution.ErrInvalidBYOKSelector
@@ -54,7 +74,11 @@ func selectBYOK(id string, gateway json.RawMessage, options BYOKOptions) (execut
 	case err != nil:
 		return execution.Selection{}, err
 	}
-	lower, err := byok.New(request.Provider, request.Model, request.Accounts, options.Client)
+	placements, err := routing.Compose(request.Groups(), controls.Only, controls.Order, config.MaxProviderAttempts)
+	if err != nil {
+		return execution.Selection{}, err
+	}
+	lower, err := byok.New(request, placements, options.Client)
 	if err != nil {
 		return execution.Selection{}, err
 	}
@@ -62,9 +86,13 @@ func selectBYOK(id string, gateway json.RawMessage, options BYOKOptions) (execut
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	return execution.AccountSelection(id, model, execution.RequestAccounts{
-		Provider: string(request.Provider),
-		ModelID:  request.Model,
-		Count:    len(request.Accounts),
-	}), nil
+	expected := make([]execution.ExpectedAttempt, len(placements))
+	for i, placement := range placements {
+		destination := request.Destinations[placement.Group]
+		expected[i] = execution.ExpectedAttempt{
+			ModelID:     destination.Selector(),
+			Destination: catalog.ConfiguredCandidate{Provider: string(destination.Provider), ModelID: destination.Model},
+		}
+	}
+	return execution.AccountSelection(id, model, expected), nil
 }

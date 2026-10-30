@@ -327,7 +327,7 @@
       "type": "object",
       "required": ["unified"],
       "properties": {
-        "unified": { "enum": ["stop", "length", "content-filter", "tool-calls", "error", "other"] },
+        "unified": { "enum": ["stop", "length", "content-filter", "tool-calls", "error", "interrupted", "other"] },
         "raw": { "type": "string" }
       },
       "additionalProperties": false

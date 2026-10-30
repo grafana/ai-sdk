@@ -276,12 +276,25 @@ func TestRequestSelection_ValidationErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		err     error
+		status  int
+		code    string
 		message string
 	}{
 		{name: "accounts", err: execution.ErrInvalidBYOK, message: "providerOptions.gateway.byok requires supported provider arrays with valid accounts"},
 		{name: "selector", err: execution.ErrInvalidBYOKSelector, message: "BYOK requires a supported provider/model selector"},
-		{name: "controls", err: execution.ErrUnsupportedGatewayControl, message: "unsupported gateway control; only gateway.byok is supported"},
+		{name: "controls", err: execution.ErrUnsupportedGatewayControl, message: "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"},
+		{name: "routing controls", err: execution.ErrRoutingControls, message: "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"},
+		{name: "no candidates", err: execution.ErrNoRoutingCandidates, message: "providerOptions.gateway.only excludes every candidate"},
+		{name: "attempt bound", err: execution.ErrRoutingAttemptBound, message: "routing exceeds the bound of 8 provider attempts"},
+		{name: "fallback model", err: execution.ErrUnknownFallbackModel, status: http.StatusNotFound, code: "model_not_found", message: "a providerOptions.gateway.models entry is not an available model"},
 	} {
+		if tc.status == 0 {
+			tc.status, tc.code = http.StatusBadRequest, "invalid_request"
+		}
+		kind := "invalid_request_error"
+		if tc.code == "model_not_found" {
+			kind = tc.code
+		}
 		for _, streaming := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/streaming=%t", tc.name, streaming), func(t *testing.T) {
 				model := &recordingModel{}
@@ -294,9 +307,9 @@ func TestRequestSelection_ValidationErrors(t *testing.T) {
 				r.Header.Set(HeaderStreaming, strconv.FormatBool(streaming))
 				w := httptest.NewRecorder()
 				h.ServeHTTP(w, r)
-				assert.Equal(t, http.StatusBadRequest, w.Code)
+				assert.Equal(t, tc.status, w.Code)
 				assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
-				assert.JSONEq(t, fmt.Sprintf(`{"error":{"message":%q,"type":"invalid_request_error","param":null,"code":"invalid_request"}}`, tc.message), w.Body.String())
+				assert.JSONEq(t, fmt.Sprintf(`{"error":{"message":%q,"type":%q,"param":null,"code":%q}}`, tc.message, kind, tc.code), w.Body.String())
 				assert.Zero(t, model.callCount())
 			})
 		}

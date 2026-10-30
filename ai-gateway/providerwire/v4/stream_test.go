@@ -445,6 +445,19 @@ func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("interrupted finish is forwarded", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
+		interrupted := finishPart()
+		interrupted.FinishReason = &provider.FinishReason{Unified: provider.FinishReasonInterrupted}
+		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: makeStream(interrupted)}, nil
+		}
+		body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+		assert.Contains(t, body, `"finishReason":{"unified":"interrupted"}`)
+		assert.NotContains(t, body, `"type":"error"`)
+		requireStreamBodyMatchesSchema(t, body)
+	})
+
 	negative := -1
 	tooLarge := maxJavaScriptSafeInteger + 1
 	invalidUTF8 := string([]byte{0xff})
@@ -505,7 +518,8 @@ func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {
 			{"nil api error", false, []provider.StreamPart{{Type: provider.PartError}}, []string{"stream-start", "error"}, []string{"internal_error"}},
 			{"unrequested raw after error", false, []provider.StreamPart{statusLess, raw}, []string{"stream-start", "error"}, []string{"provider_error"}},
 			{"unusable requested raw after error", true, []provider.StreamPart{statusLess, duplicateKeyRaw}, []string{"stream-start", "error"}, []string{"provider_error"}},
-			{"requested raw after error", true, []provider.StreamPart{statusLess, raw}, []string{"stream-start", "error", "raw", "error"}, []string{"provider_error", "internal_error"}},
+			{"requested raw after error", true, []provider.StreamPart{statusLess, raw}, []string{"stream-start", "error", "raw"}, []string{"provider_error"}},
+			{"error in a new segment", false, []provider.StreamPart{finishPart(), {Type: provider.PartResponseMeta}, statusLess}, []string{"stream-start", "finish", "response-metadata", "error"}, []string{"provider_error"}},
 			{"content after error", false, []provider.StreamPart{statusLess, {Type: provider.PartTextStart, ID: "a"}}, []string{"stream-start", "error", "text-start", "error"}, []string{"provider_error", "internal_error"}},
 			{"no error", false, []provider.StreamPart{{Type: provider.PartTextStart, ID: "a"}}, []string{"stream-start", "text-start", "error"}, []string{"internal_error"}},
 		} {
