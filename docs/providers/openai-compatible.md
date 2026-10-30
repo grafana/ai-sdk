@@ -49,6 +49,29 @@ Some servers reject streaming `stream_options`; usage metadata is therefore
 opt-in. JSON-schema response formats are also opt-in because not every server
 implements them correctly.
 
+## Reuse uploaded files
+
+When your server accepts uploaded file IDs, pass a user file part with
+[`ReferenceDataContent`](https://pkg.go.dev/github.com/grafana/ai-sdk/provider#ReferenceDataContent):
+
+```go
+file := provider.FilePart("application/pdf", provider.ReferenceDataContent(
+	json.RawMessage(`{"custom-provider":"file-123"}`),
+))
+```
+
+For a model configured with `WithProviderName("custom-provider.chat")`, the
+adapter selects the exact `custom-provider` entry and sends `file.file_id`.
+It uses the trimmed segment before the first dot; it does not camel-case or
+otherwise normalize reference keys. The default namespace is `openai-compatible`.
+A missing entry fails before the request is sent, while an explicitly empty
+ID remains empty for the server to validate. Media type and filename do not
+change the reference representation.
+
+This supports user messages; it does not upload files or enable multipart tool
+results. Synthetic request tests cover conversion, but each target server must
+support the emitted file-ID format.
+
 ## Adapt small request differences
 
 Use static headers and query parameters for service configuration. Keep
