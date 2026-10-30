@@ -167,6 +167,12 @@ func TestArrayOutput_ParsePartial(t *testing.T) {
 	v, ok = out.ParsePartial(`{"elements":[{"name":"Paris","population":2161000},{"name":"Lon`)
 	require.True(t, ok)
 	require.Len(t, v.([]json.RawMessage), 1, "repaired partial drops the final element")
+
+	v, ok = out.ParsePartial(`{"elements":[`)
+	require.True(t, ok)
+	data, err := json.Marshal(v)
+	require.NoError(t, err)
+	assert.JSONEq(t, `[]`, string(data), "an empty partial is an empty array, not null")
 }
 
 func TestArrayOutput_Bounds(t *testing.T) {

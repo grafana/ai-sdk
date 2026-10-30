@@ -885,7 +885,19 @@ func (r *StreamTextResult) processStep(
 	var warnings []provider.Warning
 	responseMeta := provider.ResponseMetadata{ID: generateConfigID(cfg), ModelID: stepModel.ModelID}
 	var responseHeaders map[string]string
-	var textBuilder strings.Builder
+	// Step text joins each text block in the order it first appeared, as
+	// upstream's step content does, rather than in delta arrival order.
+	var textBlocks []*strings.Builder
+	textBlockByID := make(map[string]*strings.Builder)
+	textBlock := func(id string) *strings.Builder {
+		block, ok := textBlockByID[id]
+		if !ok {
+			block = &strings.Builder{}
+			textBlockByID[id] = block
+			textBlocks = append(textBlocks, block)
+		}
+		return block
+	}
 	var reasoningBlocks []ReasoningOutput
 	type activeReasoningBlock struct {
 		text             strings.Builder
@@ -907,7 +919,7 @@ func (r *StreamTextResult) processStep(
 	var outputTextChunkID string
 	var outputTextChunk strings.Builder
 	var outputTextMeta provider.ProviderMetadata
-	var lastPublishedOutput string
+	r.lastPartialJSON = ""
 
 	r.emit(StreamStartStep{Warnings: warnings, Request: streamResult.Request})
 
@@ -969,6 +981,9 @@ loop:
 		switch part.Type {
 		case provider.PartTextStart, provider.PartTextDelta, provider.PartTextEnd:
 			part.ID = remapStreamPartID(part, textPartIDs, r.usedTextIDs, cfg)
+			if cfg.output != nil && outputTextChunkID == "" {
+				outputTextChunkID = part.ID
+			}
 		case provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
 			part.ID = remapStreamPartID(part, reasoningPartIDs, r.usedReasoningIDs, cfg)
 		}
@@ -984,6 +999,7 @@ loop:
 				Type:            provider.ContentPartTypeText,
 				ProviderOptions: providerMetadataToOptions(part.ProviderMetadata),
 			})
+			textBlock(part.ID)
 			tsp := StreamTextStart{ID: part.ID, ProviderMetadata: part.ProviderMetadata}
 			r.emit(tsp)
 			r.callOnChunk(cfg, tsp)
@@ -995,12 +1011,11 @@ loop:
 					step.responseContent[idx].ProviderOptions = providerMetadataToOptions(part.ProviderMetadata)
 				}
 			}
-			textBuilder.WriteString(part.Delta)
+			block := textBlock(part.ID)
+			block.WriteString(part.Delta)
 
 			if cfg.output != nil {
-				if outputTextChunkID == "" {
-					outputTextChunkID = part.ID
-				} else if part.ID != outputTextChunkID {
+				if part.ID != outputTextChunkID {
 					tsp := StreamTextDelta{ID: part.ID, Text: part.Delta, ProviderMetadata: part.ProviderMetadata}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
@@ -1016,9 +1031,7 @@ loop:
 					r.callOnChunk(cfg, tsp)
 					continue
 				}
-				parsed := r.emitPartialOutput(cfg.output, textBuilder.String())
-				if parsed != lastPublishedOutput && parsed != "" {
-					lastPublishedOutput = parsed
+				if r.emitPartialOutput(cfg.output, block.String()) {
 					tsp := StreamTextDelta{ID: outputTextChunkID, Text: outputTextChunk.String(), ProviderMetadata: outputTextMeta}
 					r.emit(tsp)
 					r.callOnChunk(cfg, tsp)
@@ -1342,7 +1355,11 @@ loop:
 		r.callOnChunk(cfg, tsp)
 	}
 
-	step.Text = textBuilder.String()
+	var stepText strings.Builder
+	for _, block := range textBlocks {
+		stepText.WriteString(block.String())
+	}
+	step.Text = stepText.String()
 	step.Reasoning = reasoningBlocks
 	for _, output := range reasoningBlocks {
 		if text, ok := output.(ReasoningTextOutput); ok {
@@ -2091,10 +2108,10 @@ func (r *StreamTextResult) abort(ctx context.Context, cfg *streamConfig) {
 	r.callOnChunk(cfg, part)
 }
 
-func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
+func (r *StreamTextResult) emitPartialOutput(out Output, text string) bool {
 	v, ok := out.ParsePartial(text)
 	if !ok {
-		return ""
+		return false
 	}
 	if elements, isSlice := v.([]json.RawMessage); isSlice {
 		var overflow error
@@ -2128,16 +2145,16 @@ func (r *StreamTextResult) emitPartialOutput(out Output, text string) string {
 		var err error
 		data, err = json.Marshal(v)
 		if err != nil {
-			return ""
+			return false
 		}
 	}
 	canonical, err := canonicalPartialJSON(data)
 	if err != nil || canonical == r.lastPartialJSON {
-		return ""
+		return false
 	}
 	r.lastPartialJSON = canonical
 	r.partialOutputStream.send(data)
-	return canonical
+	return true
 }
 
 func canonicalPartialJSON(data json.RawMessage) (string, error) {
