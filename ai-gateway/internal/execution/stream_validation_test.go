@@ -171,6 +171,9 @@ func streamRuleCases() []streamRuleCase {
 		{name: "finish with warnings", parts: []provider.StreamPart{withPart(validFinish(), func(p *provider.StreamPart) { p.Warnings = []provider.Warning{{Type: provider.WarnUnsupported}} })}, rejectAt: 0},
 		{name: "finish without a reason", parts: []provider.StreamPart{withPart(validFinish(), func(p *provider.StreamPart) { p.FinishReason = nil })}, rejectAt: 0},
 		{name: "finish without usage", parts: []provider.StreamPart{withPart(validFinish(), func(p *provider.StreamPart) { p.Usage = nil })}, rejectAt: 0},
+		{name: "interrupted finish reason", parts: []provider.StreamPart{withPart(validFinish(), func(p *provider.StreamPart) {
+			p.FinishReason = &provider.FinishReason{Unified: provider.FinishReasonInterrupted}
+		})}, rejectAt: -1},
 		{name: "unregistered finish reason", parts: []provider.StreamPart{withPart(validFinish(), func(p *provider.StreamPart) { p.FinishReason = &provider.FinishReason{Unified: "future"} })}, rejectAt: 0},
 		{name: "finish ignores a closed client call", parts: []provider.StreamPart{toolCall("c", "f", false), streamPart(provider.PartTextStart, "t"), streamPart(provider.PartTextEnd, "t"), validFinish()}, rejectAt: -1},
 

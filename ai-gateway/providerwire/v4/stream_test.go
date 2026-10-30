@@ -440,6 +440,19 @@ func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("interrupted finish is forwarded", func(t *testing.T) {
+		harness := newRuntimeHarness(t, testLimits())
+		interrupted := finishPart()
+		interrupted.FinishReason = &provider.FinishReason{Unified: provider.FinishReasonInterrupted}
+		harness.model.stream = func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: makeStream(interrupted)}, nil
+		}
+		body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+		assert.Contains(t, body, `"finishReason":{"unified":"interrupted"}`)
+		assert.NotContains(t, body, `"type":"error"`)
+		requireStreamBodyMatchesSchema(t, body)
+	})
+
 	negative := -1
 	tooLarge := maxJavaScriptSafeInteger + 1
 	invalidUTF8 := string([]byte{0xff})

@@ -3,7 +3,9 @@
 ## Purpose
 
 Define the dependency-isolated Prometheus middleware module for provider-level ai-sdk model metrics.
+
 ## Requirements
+
 ### Requirement: Nested Go module for Prometheus middleware
 
 `middleware/prometheus/` SHALL be a separate module: `module github.com/grafana/ai-sdk/middleware/prometheus`, `replace github.com/grafana/ai-sdk => ../../`, following nested middleware conventions. It SHALL depend on root ai-sdk and the Prometheus Go client. Root ai-sdk SHALL NOT import it or gain `github.com/prometheus/client_golang`. Docs SHALL state that these local/client-side provider-call metrics do not configure remote hosted-service metrics controls.
@@ -197,7 +199,7 @@ Default `IdentityPreferResponse` SHALL select response metadata for final metric
 
 ### Requirement: Bounded status and error classification
 
-Status labels SHALL be `success`, `error`, or `canceled`. Error type labels SHALL be `none`, `api_call_error`, `context_canceled`, `context_deadline_exceeded`, `provider_stream_error`, or `other`. Status code SHALL be the decimal HTTP status from `*provider.APICallError`, or `none` if unavailable. Finish reason SHALL be unified `stop`, `length`, `content-filter`, `tool-calls`, `error`, or `other`, or `none` if unavailable.
+Status labels SHALL be `success`, `error`, or `canceled`. Error type labels SHALL be `none`, `api_call_error`, `context_canceled`, `context_deadline_exceeded`, `provider_stream_error`, or `other`. Status code SHALL be the decimal HTTP status from `*provider.APICallError`, or `none` if unavailable. Finish reason SHALL be unified `stop`, `length`, `content-filter`, `tool-calls`, `error`, `interrupted`, or `other`, or `none` if unavailable. Unknown unified values SHALL map to `other`.
 
 #### Scenario: API call error status code is recorded
 

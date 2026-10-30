@@ -65,6 +65,33 @@ describe("SSE wire format", () => {
     });
   });
 
+  it("preserves an interrupted finish reason without an error", async () => {
+    const res = await fetchScenario("finish-reason-interrupted");
+    const stream = parseJsonEventStream({
+      stream: res.body!,
+      schema: uiMessageChunkSchema,
+    });
+
+    const chunks: UIMessageChunk[] = [];
+    for await (const value of stream) {
+      expect(value.success).toBe(true);
+      if (value.success) chunks.push(value.value);
+    }
+
+    expect(chunks.filter((c) => c.type === "error")).toEqual([]);
+    expect(chunks.filter((c) => c.type === "start-step")).toHaveLength(1);
+    expect(chunks).toContainEqual({
+      type: "tool-input-available",
+      toolCallId: "call-1",
+      toolName: "lookup",
+      input: { city: "Paris" },
+    });
+    expect(chunks.at(-1)).toEqual({
+      type: "finish",
+      finishReason: "interrupted",
+    });
+  });
+
   it("preserves metadata-only structured text deltas", async () => {
     const res = await fetchScenario("text-metadata-only-delta");
     const stream = parseJsonEventStream({

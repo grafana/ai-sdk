@@ -30,3 +30,19 @@ func TestAPICallErrorOutcome_NormalizesStatusCode(t *testing.T) {
 		})
 	}
 }
+
+func TestFinishReasonLabel(t *testing.T) {
+	for _, reason := range []provider.UnifiedFinishReason{
+		provider.FinishReasonStop,
+		provider.FinishReasonLength,
+		provider.FinishReasonContentFilter,
+		provider.FinishReasonToolCalls,
+		provider.FinishReasonError,
+		provider.FinishReasonInterrupted,
+		provider.FinishReasonOther,
+	} {
+		assert.Equal(t, string(reason), finishReasonLabel(provider.FinishReason{Unified: reason}))
+	}
+	assert.Equal(t, finishReasonNone, finishReasonLabel(provider.FinishReason{}))
+	assert.Equal(t, string(provider.FinishReasonOther), finishReasonLabel(provider.FinishReason{Unified: "future"}))
+}

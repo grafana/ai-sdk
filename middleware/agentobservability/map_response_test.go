@@ -421,6 +421,7 @@ func TestFinishReasonToAgento11yStop(t *testing.T) {
 		{"tool-calls", provider.FinishReason{Unified: provider.FinishReasonToolCalls}, stopReasonToolUse},
 		{"content-filter", provider.FinishReason{Unified: provider.FinishReasonContentFilter}, stopReasonOther},
 		{"error", provider.FinishReason{Unified: provider.FinishReasonError}, stopReasonError},
+		{"interrupted", provider.FinishReason{Unified: provider.FinishReasonInterrupted}, stopReasonOther},
 		{"other", provider.FinishReason{Unified: provider.FinishReasonOther}, stopReasonOther},
 		{
 			"raw preserved when present",

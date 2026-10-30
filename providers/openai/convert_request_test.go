@@ -659,7 +659,7 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 				},
 				provider.ToolResultPart("call_shell", "terminal", &provider.ToolResultOutput{
 					Type: provider.ToolOutputJSON,
-					JSON: json.RawMessage(`{"output":[{"stdout":"hello","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`),
+					JSON: json.RawMessage(`{"maxOutputLength":10000,"output":[{"stdout":"hello","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`),
 				}),
 			)},
 			Tools:           []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDShell, Name: "terminal"}},
@@ -675,6 +675,7 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 		output := input[1].(map[string]any)
 		assert.Equal(t, "shell_call_output", output["type"])
 		assert.Equal(t, "call_shell", output["call_id"])
+		assert.Equal(t, float64(10000), output["max_output_length"])
 	})
 
 	t.Run("stored shell call pairs with reconstructed output", func(t *testing.T) {
@@ -692,7 +693,7 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 					Type:       provider.ContentPartTypeToolResult,
 					ToolCallID: "call_shell",
 					ToolName:   "terminal",
-					Output:     &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"output":[{"stdout":"x86_64\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`)},
+					Output:     &provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"maxOutputLength":10000,"output":[{"stdout":"x86_64\n","stderr":"","outcome":{"type":"exit","exitCode":0}}]}`)},
 				}),
 			},
 			Tools: []provider.Tool{{Type: provider.ToolTypeProvider, ID: toolIDShell, Name: "terminal"}},
@@ -704,6 +705,7 @@ func TestBuildParams_ProviderToolContinuationTaxonomy(t *testing.T) {
 		output := input[1].(map[string]any)
 		assert.Equal(t, "shell_call_output", output["type"])
 		assert.Equal(t, "call_shell", output["call_id"])
+		assert.Equal(t, float64(10000), output["max_output_length"])
 	})
 
 	t.Run("apply patch call and output retain provider taxonomy", func(t *testing.T) {
@@ -957,13 +959,35 @@ func TestBuildParams_ProviderToolContinuationFlexibleSchemas(t *testing.T) {
 	assert.Equal(t, 1.5, input[0].(map[string]any)["action"].(map[string]any)["timeout_ms"])
 	assert.Equal(t, 2.5, input[1].(map[string]any)["action"].(map[string]any)["max_output_length"])
 	assert.Equal(t, 3.5, input[2].(map[string]any)["output"].([]any)[0].(map[string]any)["outcome"].(map[string]any)["exit_code"])
+	assert.NotContains(t, input[2].(map[string]any), "max_output_length")
 	assert.Equal(t, "future_tool", input[3].(map[string]any)["tools"].([]any)[0].(map[string]any)["type"])
 }
 
-func TestShellInput_OnlyExposesCommands(t *testing.T) {
+func TestShellInput_ForwardsExecutionControls(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "present", raw: `{"commands":["echo hi"],"timeout_ms":1000.5,"max_output_length":2048}`, want: `{"action":{"commands":["echo hi"],"timeoutMs":1000.5,"maxOutputLength":2048}}`},
+		{name: "null", raw: `{"commands":["echo hi"],"timeout_ms":null,"max_output_length":null}`, want: `{"action":{"commands":["echo hi"]}}`},
+		{name: "absent", raw: `{"commands":["echo hi"]}`, want: `{"action":{"commands":["echo hi"]}}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, string(shellInput(tc.raw, nil)))
+		})
+	}
+}
+
+func TestShellOutput_RoundTripsMaxOutputLength(t *testing.T) {
 	assert.JSONEq(t,
-		`{"action":{"commands":["echo hi"]}}`,
-		string(shellInput(`{"commands":["echo hi"],"timeout_ms":1000.5,"max_output_length":2048.5}`, nil)),
+		`{"maxOutputLength":10000,"output":[]}`,
+		string(shellOutput(`{"type":"shell_call_output","call_id":"c","max_output_length":10000,"output":[]}`)),
+	)
+	assert.JSONEq(t,
+		`{"output":[]}`,
+		string(shellOutput(`{"type":"shell_call_output","call_id":"c","max_output_length":null,"output":[]}`)),
 	)
 }
 
