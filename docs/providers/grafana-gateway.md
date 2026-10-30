@@ -25,8 +25,9 @@ return no raw output.
 Raw events are for debugging. Their shape is whatever the provider sends and can
 change without notice, so do not build application logic on them. Events keep
 their JSON values but not their exact bytes: whitespace, key order and escaping
-can differ from the provider's. An event that is not valid JSON, or that repeats
-an object key, is skipped. Provider error events pass through, so they can
+can differ from the provider's. An event that is not valid JSON arrives as a raw
+part without a value. An event that repeats an object key or is not valid UTF-8
+is skipped. Provider error events pass through, so they can
 contain more detail than the Gateway's own errors. Treat raw events as
 sensitive. The Gateway does not log or export them.
 
@@ -460,6 +461,13 @@ Use `errors.Is` to detect cancellation and deadlines. Use `errors.As` with
 `*grafana.GatewayError` for the Gateway's error category and code, or with
 `*provider.APICallError` to check whether a call can be retried. The client
 does not retry on its own; configure retries in your application.
+
+A stream error part whose `APICallError` has `StatusCode` 0 and the message
+`provider stream error` means the provider reported an error inside its stream.
+It is not retryable: `IsRetryable` is false, so the root `fallback` package with
+`WithBufferedStream` does not fall back on it. Later parts of the same stream
+remain readable, and the stream can end right after the error without a finish
+part.
 
 The Gateway limits provider response sizes and stream idle time, and Grafana
 limits request size and duration, so the client has no size limits to

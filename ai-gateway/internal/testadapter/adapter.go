@@ -72,7 +72,7 @@ func (a *Adapter) Run(ctx context.Context, modelID string, options provider.Call
 		}
 		switch wait {
 		case execution.WaitPart:
-		case execution.WaitFinished:
+		case execution.WaitFinished, execution.WaitClosedAfterError:
 			return result
 		default:
 			result.Category = execution.ClassifyProvider(wait.Err())

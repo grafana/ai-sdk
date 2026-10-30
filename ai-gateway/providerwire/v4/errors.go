@@ -19,6 +19,7 @@ const (
 	safeInternal
 	safePermission
 	safeBYOKDiscovery
+	safeProviderStream
 )
 
 type safeError struct {
@@ -40,6 +41,7 @@ var safeCategories = [...]safeErrorCategory{
 	execution.CategoryTimeout:          safeTimeout,
 	execution.CategoryCancellation:     safeCancellation,
 	execution.CategoryInternal:         safeInternal,
+	execution.CategoryProviderStream:   safeProviderStream,
 }
 
 func safeErrorFor(category execution.Category, reason execution.Reason) safeError {

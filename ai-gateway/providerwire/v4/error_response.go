@@ -31,6 +31,7 @@ const (
 	codeTimeout        errorCode = "timeout"
 	codeCancellation   errorCode = "canceled"
 	codeInternal       errorCode = "internal_error"
+	codeProviderStream errorCode = "provider_error"
 )
 
 type errorDefinition struct {
@@ -136,6 +137,12 @@ var publicErrors = [...]errorDefinition{
 		code:      codeForbidden,
 		retryable: false,
 	},
+	safeProviderStream: {
+		message:   "provider stream error",
+		kind:      errorInternal,
+		code:      codeProviderStream,
+		retryable: false,
+	},
 }
 
 type errorResponse struct {
@@ -204,6 +211,9 @@ func (definition errorDefinition) fields() publicError {
 }
 
 func encodeHTTPError(value safeError, metadata provider.ProviderMetadata) (int, []byte) {
+	if value.category == safeProviderStream {
+		value = safeError{category: safeInternal}
+	}
 	definition := definitionForError(value)
 	response := errorResponse{Error: definition.fields(), Metadata: metadata}
 	body, err := json.Marshal(response)
@@ -216,7 +226,7 @@ func encodeHTTPError(value safeError, metadata provider.ProviderMetadata) (int, 
 
 func streamErrorResponse(value safeError) errorResponse {
 	switch value.category {
-	case safeRateLimit, safeOverload, safeFailedDependency, safeUpstream, safeTimeout, safeCancellation:
+	case safeRateLimit, safeOverload, safeFailedDependency, safeUpstream, safeTimeout, safeCancellation, safeProviderStream:
 	default:
 		value = safeError{category: safeInternal}
 	}

@@ -131,13 +131,12 @@ func TestStreamingSegments_SyntheticAnthropicReplay(t *testing.T) {
 		parts, expected := readSyntheticAnthropicParts(t, "overlapping-message-start")
 		require.Equal(t, string(provider.PartError), expected[len(expected)-1]["type"])
 		events := replayWrittenEvents(t, parts)
-		require.Equal(t, len(expected)+1, len(events), "written event count")
+		require.Equal(t, len(expected), len(events), "written event count")
 		for i := range expected[:len(expected)-1] {
 			assert.Equal(t, expected[i], events[i], "part %d", i)
 		}
-		for _, event := range events[len(expected)-1:] {
-			assert.Equal(t, "error", event["type"])
-			assert.Equal(t, string(codeInternal), event["error"].(map[string]any)["code"])
-		}
+		last := events[len(events)-1]
+		assert.Equal(t, "error", last["type"])
+		assert.Equal(t, string(codeInternal), last["error"].(map[string]any)["code"])
 	})
 }

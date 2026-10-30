@@ -22,7 +22,8 @@
 //     [ValidateGenerateResult] in [Call.Generate]. A violation fails with
 //     [ErrInvalidOutput], or [WaitInvalidOutput] for a stream;
 //   - how a stream ends: a provider close after a finish is [WaitFinished],
-//     a terminal success, and any other close is [WaitClosed];
+//     a terminal success, a close after an error part with no lifecycle part
+//     since is [WaitClosedAfterError], and any other close is [WaitClosed];
 //   - the closed failure categories and reasons;
 //   - request-local attempt capture, projected into an overview from the
 //     expected attempts of [ConfiguredSelection] and [AccountSelection].

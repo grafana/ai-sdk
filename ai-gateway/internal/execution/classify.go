@@ -29,6 +29,10 @@ const (
 	CategoryTimeout
 	CategoryCancellation
 	CategoryInternal
+	// CategoryProviderStream is an in-band provider stream error without an
+	// HTTP status or a cancellation, deadline or transport cause. Only
+	// [ClassifyStreamPart] returns it.
+	CategoryProviderStream
 )
 
 // Reason refines [CategoryInvalidRequest] for host policy and routing refusals
@@ -155,7 +159,7 @@ func ClassifyStreamPart(err error) (category Category) {
 			if category, ok := classifyTransport(err); ok {
 				return category
 			}
-			return CategoryUpstream
+			return CategoryProviderStream
 		}
 		if apiError.StatusCode < 100 || apiError.StatusCode > 599 {
 			return CategoryInternal

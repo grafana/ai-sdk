@@ -35,11 +35,12 @@ type streamTool struct {
 // run concurrently but never reuse an ID within their segment; the tool input,
 // call, preview, result and approval phases, with tool and approval IDs unique
 // within the stream; and a finish with no warnings, a finish reason, usage and
-// a registered unified finish reason. Error and raw parts change no state other
-// than the start position.
+// a registered unified finish reason. Error and raw parts change no lifecycle
+// state other than the start position.
 type StreamValidator struct {
 	started         bool
 	segmentFinished bool
+	trailingError   bool
 	activeText      string
 	textIDs         map[string]struct{}
 	reasoning       map[string]struct{}
@@ -72,6 +73,13 @@ func (v *StreamValidator) Check(part provider.StreamPart) error {
 		return ErrInvalidOutput
 	}
 	v.started = true
+	switch part.Type {
+	case provider.PartError:
+		v.trailingError = true
+	case provider.PartRaw:
+	default:
+		v.trailingError = false
+	}
 	return nil
 }
 
@@ -79,6 +87,11 @@ func (v *StreamValidator) Check(part provider.StreamPart) error {
 // finish, so that a provider close now ends the stream cleanly. Raw and error
 // parts are not lifecycle parts.
 func (v *StreamValidator) SegmentFinished() bool { return v.segmentFinished }
+
+// TrailingError reports whether an error part was accepted after the last
+// lifecycle part, so that a provider close now ends the stream after an error
+// the stream already carries.
+func (v *StreamValidator) TrailingError() bool { return v.trailingError }
 
 func (v *StreamValidator) check(part provider.StreamPart) bool {
 	if v.segmentFinished && !allowedAfterFinish(part.Type) {

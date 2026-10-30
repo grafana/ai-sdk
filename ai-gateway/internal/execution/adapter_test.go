@@ -43,6 +43,7 @@ var unaryDocuments = map[execution.Category]document{
 	execution.CategoryTimeout:          {504, "timeout", "request timed out"},
 	execution.CategoryCancellation:     {499, "canceled", "request canceled"},
 	execution.CategoryInternal:         {500, "internal_error", "internal error"},
+	execution.CategoryProviderStream:   {0, "provider_error", "provider stream error"},
 }
 
 var reasonMessages = map[execution.Reason]string{
@@ -540,6 +541,14 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
 					failure := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 429, Message: "native failure"})
+					return p.parts(ctx, provider.StreamPart{Type: provider.PartError, APICallError: failure}, finishPart())
+				}
+			})},
+		{name: "in-band status-less stream error", streaming: true, calls: []int32{1}, drained: true,
+			want: outcome{Committed: true, PartErrors: []execution.Category{execution.CategoryProviderStream}},
+			models: one(func(p *probe) {
+				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
+					failure := provider.NewAPICallError(provider.APICallErrorOptions{Message: "native failure"})
 					return p.parts(ctx, provider.StreamPart{Type: provider.PartError, APICallError: failure}, finishPart())
 				}
 			})},
