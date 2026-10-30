@@ -56,12 +56,35 @@ describe("candidate-source workflow gates", () => {
     }
     assert.match(commands("parity-baseline"), /test-providerwire-v4/);
     assert.match(commands("conformance-test"), /test-conformance/);
-    assert.match(commands("integration-test"), /test-integration/);
+    assert.match(commands("integration-test"), /mise run test-sdk-integration\b/);
     for (const task of ["fmt-check", "release-check", "vet", "build", "test-short"]) {
       assert.match(commands("build-test"), new RegExp(`mise run ${task}\\b`));
     }
     assert.match(commands("lint"), /mise run lint/);
     assert.match(commands("race"), /mise run test-race/);
+  });
+
+  it("runs Gateway command tests once in CI while preserving the local integration task", () => {
+    const mise = readFileSync(resolve(root, "mise.toml"), "utf8");
+    const task = (name: string) => {
+      const section = mise.split(`[tasks.${name}]`)[1];
+      assert.ok(section, `missing task ${name}`);
+      return section.split(/\n\[/)[0]!;
+    };
+    assert.match(task("test-integration"), /mise run test-sdk-integration\s+mise run test-ai-gateway-command/);
+    const sdk = task("test-sdk-integration");
+    assert.match(sdk, /cd test\/integration\/testserver && go test \.\/\.\.\./);
+    assert.match(sdk, /pnpm --filter @ai-sdk\/test-integration test/);
+    assert.doesNotMatch(sdk, /test-ai-gateway-command|test:command/);
+    const allCommands = Object.keys(jobs).map(commands).join("\n");
+    assert.doesNotMatch(allCommands, /mise run test-integration\b/);
+    assert.equal(allCommands.match(/mise run test-ai-gateway-command\b/g)?.length, 1);
+    const plugin = jobs["plugin-validation"]!;
+    assert.notEqual(plugin["continue-on-error"], true);
+    const command = plugin.steps.find((step) => step.run === "mise run test-ai-gateway-command");
+    assert.ok(command);
+    assert.equal(command.if, undefined, "command tests must gate every validated package");
+    assert.notEqual(command["continue-on-error"], true);
   });
 
   it("validates the plugin package on pull requests and keeps it only for eligible pushes", () => {
