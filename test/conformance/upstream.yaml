@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: b7f6255acaae7724adc0fd37aac3dae3f3466578
+  commit: 612be2311464804d1e4897afacbf8f3fc2f6d9e3
   packageSource: npm
-  verifiedAt: 2026-10-20
+  verifiedAt: 2026-10-29
 packages:
-  ai: 7.0.143
-  "@ai-sdk/anthropic": 4.0.82
-  "@ai-sdk/amazon-bedrock": 5.0.118
-  "@ai-sdk/gateway": 4.0.116
-  "@ai-sdk/openai": 4.0.96
-  "@ai-sdk/openai-compatible": 3.0.71
-  "@ai-sdk/provider": 4.0.29
-  "@ai-sdk/provider-utils": 5.0.62
-  "@ai-sdk/react": 4.0.147
+  ai: 7.0.153
+  "@ai-sdk/anthropic": 4.0.88
+  "@ai-sdk/amazon-bedrock": 5.0.124
+  "@ai-sdk/gateway": 4.0.126
+  "@ai-sdk/openai": 4.0.102
+  "@ai-sdk/openai-compatible": 3.0.78
+  "@ai-sdk/provider": 4.0.34
+  "@ai-sdk/provider-utils": 5.0.68
+  "@ai-sdk/react": 4.0.157
 verification:
   status: enforced
   conformanceScope: full
@@ -157,7 +157,7 @@ knownGaps:
     status: intentional-deviation
     description: Go rejects clean frame-boundary EOF before messageStop with a
       retryable APICallError and no finish or synthesized incomplete tool call.
-      The registered upstream reference emits finish with other and
+      The registered upstream reference emits finish with interrupted and
       no raw reason instead. EOF after messageStop remains valid without
       metadata, including empty or unmapped stop reasons. Synthetic HTTP and
       frame tests cover this transport failure; no provider recording is claimed.
@@ -282,8 +282,9 @@ knownGaps:
     status: intentional-deviation
     description: Legacy nested-error envelopes terminate stream consumption. A
       plain EOF without a terminal or error event does not synthesize a provider
-      finish, preserving Go's incomplete-stream distinction; complete upstream
-      EOF parity is not claimed.
+      finish, preserving Go's incomplete-stream distinction, where the registered
+      upstream reference emits finish with interrupted; complete upstream EOF
+      parity is not claimed.
   - id: sdk-final-outbound-request-body
     surface: provider-contract
     status: documented-deviation
@@ -294,6 +295,15 @@ knownGaps:
       payloads. Both adapters limit stream startup to 64 data frames and 1 MiB
       before handoff; overflow fails setup without truncating evidence or
       enabling retries.
+  - id: speech-model-surface
+    surface: provider-contract
+    status: gap
+    description: Upstream provider v4 and ai expose speech generation models,
+      including the experimental streaming speech contract, experimental_streamSpeech
+      orchestration and the Gateway speech WebSocket transport in the current
+      registered baseline. The Go port currently scopes provider parity to
+      LanguageModel surfaces and does not expose speech generation APIs, streaming
+      speech orchestration or conformance coverage.
   - id: speech-translation-model-surface
     surface: provider-contract
     status: gap

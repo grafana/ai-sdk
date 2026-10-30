@@ -199,7 +199,7 @@ Default `IdentityPreferResponse` SHALL select response metadata for final metric
 
 ### Requirement: Bounded status and error classification
 
-Status labels SHALL be `success`, `error`, or `canceled`. Error type labels SHALL be `none`, `api_call_error`, `context_canceled`, `context_deadline_exceeded`, `provider_stream_error`, or `other`. Status code SHALL be the decimal HTTP status from `*provider.APICallError`, or `none` if unavailable. Finish reason SHALL be unified `stop`, `length`, `content-filter`, `tool-calls`, `error`, or `other`, or `none` if unavailable.
+Status labels SHALL be `success`, `error`, or `canceled`. Error type labels SHALL be `none`, `api_call_error`, `context_canceled`, `context_deadline_exceeded`, `provider_stream_error`, or `other`. Status code SHALL be the decimal HTTP status from `*provider.APICallError`, or `none` if unavailable. Finish reason SHALL be unified `stop`, `length`, `content-filter`, `tool-calls`, `error`, `interrupted`, or `other`, or `none` if unavailable. Unknown unified values SHALL map to `other`.
 
 #### Scenario: API call error status code is recorded
 

@@ -79,7 +79,8 @@ func (a *attemptCapture) discard() {
 }
 
 // view seals the capture and projects it for an outcome that failed with err,
-// or succeeded when err is nil. Attempts observed afterwards are ignored.
+// or succeeded when err is nil or [ErrInvalidOutput]. Attempts observed
+// afterwards are ignored.
 func (a *attemptCapture) view(err error) (view View) {
 	entered, attempts := a.seal()
 	view = View{redactor: a.redactor}
@@ -89,14 +90,14 @@ func (a *attemptCapture) view(err error) (view View) {
 		}
 	}()
 	if len(attempts) == 0 && len(a.candidates) == 1 && entered {
-		outcome := fallback.AttemptSelected
-		if err != nil {
-			outcome = fallback.AttemptFailed
+		outcome, source := fallback.AttemptSelected, error(nil)
+		if err != nil && !errors.Is(err, ErrInvalidOutput) {
+			outcome, source = fallback.AttemptFailed, err
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				outcome = fallback.AttemptCanceled
 			}
 		}
-		attempts = []fallback.Attempt{{Index: 1, Outcome: outcome, SourceErr: err}}
+		attempts = []fallback.Attempt{{Index: 1, Outcome: outcome, SourceErr: source}}
 	}
 	if a.accounts != nil {
 		view.Overview = projectAccounts(a.requested, attempts, *a.accounts)
