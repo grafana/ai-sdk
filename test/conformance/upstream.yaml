@@ -107,6 +107,16 @@ knownGaps:
       tests cover supported models, streaming and non-streaming requests, and
       the absence of forced tool choice and synthetic tools. Organization policy
       must enable structured outputs; no live Vertex recording is claimed.
+  - id: anthropic-vertex-provider-baseline
+    surface: provider-anthropic
+    status: gap
+    description: Upstream ships Anthropic on Vertex in @ai-sdk/google-vertex,
+      which this baseline does not register. Go NewVertex and
+      NewVertexWithCredentials compose the shared Anthropic adapter, so request
+      conversion follows the registered @ai-sdk/anthropic. Vertex URL
+      construction, authentication and model ID resolution have synthetic tests
+      only, not upstream google-vertex comparison. No live Vertex recording is
+      claimed.
   - id: array-element-stream-overflow
     surface: core-streamtext
     status: documented-deviation
