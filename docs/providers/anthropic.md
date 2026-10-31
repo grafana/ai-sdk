@@ -53,6 +53,14 @@ if err != nil {
 }
 ```
 
+To authenticate with a service account key instead, pass the key file's JSON
+to `NewVertexWithCredentials`. It accepts only `service_account` keys, checks
+the private key during setup and never consults Application Default
+Credentials. Set a custom HTTP client with `WithHTTPClient`, which carries both
+the token exchange and the Vertex requests. A client passed through
+`WithRequestOptions` replaces the authorized client, so Vertex requests would
+go out without credentials.
+
 Use the model IDs supported by the selected Anthropic or Vertex endpoint. The
 package exposes model-ID helpers for discovery; availability still depends on
 your account and region.
