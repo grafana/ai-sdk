@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -20,6 +21,14 @@ func WithRequestOptions(opts ...option.RequestOption) Option {
 	return func(m *model) {
 		m.requestOpts = append(m.requestOpts, opts...)
 	}
+}
+
+// WithHTTPClient sets the HTTP client for model requests. On Vertex,
+// authorization is layered onto it; a client passed through
+// [WithRequestOptions] instead replaces the authorized client and sends
+// unauthenticated requests.
+func WithHTTPClient(client *http.Client) Option {
+	return func(m *model) { m.httpClient = client }
 }
 
 // StructuredOutputMode controls how Anthropic JSON response formats are requested.
