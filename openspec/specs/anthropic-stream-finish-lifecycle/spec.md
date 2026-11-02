@@ -7,7 +7,7 @@ Define when the Anthropic streaming adapter emits `PartFinish`, so direct `DoStr
 
 ### Requirement: One finish per completed message
 
-The Anthropic stream adapter SHALL emit exactly one `PartFinish` for each `message_stop`, and no `PartFinish` for any other event. The finish SHALL carry the finish reason, usage and provider metadata accumulated for that message.
+The Anthropic stream adapter SHALL emit exactly one `PartFinish` for each `message_stop`, and no `PartFinish` for any other event. The finish SHALL carry the finish reason, usage and provider metadata accumulated for that message. The only other finish is the end-of-stream interrupted finish defined below.
 
 #### Scenario: Several deltas, one finish
 - **WHEN** one message contains three `message_delta` events followed by `message_stop`
@@ -38,18 +38,6 @@ With raw chunks requested, the adapter SHALL emit each frame's raw part before a
 #### Scenario: Raw order for a normal message
 - **WHEN** a message with a `message_delta` and `message_stop` is streamed with raw chunks enabled
 - **THEN** the parts SHALL appear in the order raw `message_delta`, raw `message_stop`, `PartFinish`
-
-### Requirement: No finish without message_stop
-
-The adapter SHALL NOT synthesize a `PartFinish` for a message that has not received `message_stop`.
-
-#### Scenario: End of stream after delta
-- **WHEN** the response body ends after a `message_delta` without `message_stop`
-- **THEN** the stream SHALL contain no `PartFinish` for that message
-
-#### Scenario: Overlapping messages remain invalid
-- **WHEN** a `message_start` for a different message ID arrives while another message is open
-- **THEN** the stream SHALL emit an error part and no `PartFinish` for either message
 
 ### Requirement: Error frames do not end the stream
 
@@ -128,3 +116,31 @@ Finish provider metadata SHALL be built from state that lives for the whole stre
 - **WHEN** a second message's delta reports no `iterations` after a first message's delta did
 - **THEN** the second finish SHALL repeat the first message's iterations in provider metadata and in the token totals
 - **AND** its raw `usage` metadata SHALL contain only the second message's usage
+
+### Requirement: Interrupted finish after partial output
+
+When the response body ends cleanly after output since the last `response-metadata` or `PartFinish`, and no error part was emitted, the adapter SHALL append one `PartFinish` with unified reason `interrupted` and no raw reason. Output is a non-empty text, reasoning or tool-input delta, or a tool call. The finish SHALL repeat the previous finish's usage and provider metadata, or carry empty usage. Cancellation SHALL NOT produce it.
+
+#### Scenario: End of stream after partial text
+- **WHEN** the body ends after a non-empty `text_delta` without `message_stop`
+- **THEN** the stream SHALL end with one `PartFinish` whose unified reason is `interrupted`, with empty usage
+
+#### Scenario: End of stream after a delta without message_stop
+- **WHEN** the body ends after `message_delta` and before `message_stop`
+- **THEN** the stream SHALL end with an `interrupted` finish, not the delta's finish reason
+
+#### Scenario: Interrupted later message
+- **WHEN** a completed message is followed by a message cut off after output
+- **THEN** the stream SHALL contain the completed message's finish and an `interrupted` finish repeating its usage and provider metadata
+
+#### Scenario: No output since the last boundary
+- **WHEN** the body ends after only `message_start`, empty deltas, or a new `message_start` following a completed message
+- **THEN** no interrupted finish SHALL be emitted and existing empty-stream handling SHALL apply
+
+#### Scenario: Errors keep their path
+- **WHEN** an error part was emitted anywhere in the stream before the body ends
+- **THEN** no interrupted finish SHALL be emitted
+
+#### Scenario: Overlapping messages remain invalid
+- **WHEN** a `message_start` for a different message ID arrives while another message is open
+- **THEN** the stream SHALL emit an error part and no `PartFinish` for either message

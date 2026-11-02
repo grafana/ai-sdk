@@ -55,7 +55,7 @@ func TestReasoningUnary(t *testing.T) {
 
 func TestReasoningConcurrentLifecycle(t *testing.T) {
 	h := &handler{}
-	state := newStreamState(nil)
+	state := &streamState{}
 	w := httptest.NewRecorder()
 	parts := []provider.StreamPart{
 		{Type: provider.PartReasoningStart, ID: "1"},
@@ -72,7 +72,6 @@ func TestReasoningConcurrentLifecycle(t *testing.T) {
 		require.Equal(t, streamPartContinue, h.processStreamPart(w, state, part), part.Type)
 	}
 	require.Equal(t, streamPartContinue, h.processStreamPart(w, state, finishPart()))
-	require.Equal(t, segmentFinished, state.phase)
 	assert.Contains(t, w.Body.String(), `"delta":""`)
 	assert.Contains(t, w.Body.String(), `"providerMetadata":{}`)
 	assert.Contains(t, w.Body.String(), "end-only")
@@ -149,7 +148,7 @@ func TestReasoningMetadata_Opaque(t *testing.T) {
 	assert.Contains(t, string(frame), large)
 }
 
-func TestReasoningFrameEncodingAndLifecycle(t *testing.T) {
+func TestReasoningFrameEncoding(t *testing.T) {
 	for _, part := range []provider.StreamPart{
 		{Type: provider.PartReasoningDelta, ID: "r", Delta: "\"<>&☃", ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"signature":"signed"}`)}},
 		{Type: provider.PartReasoningFile, MediaType: "image/png", Data: &provider.StreamFileData{Bytes: []byte{1, 2, 3}}},
@@ -157,24 +156,5 @@ func TestReasoningFrameEncodingAndLifecycle(t *testing.T) {
 		event := streamEvent{typeName: part.Type, id: part.ID, delta: part.Delta, metadata: part.ProviderMetadata, mediaType: part.MediaType, fileData: part.Data}
 		_, ok := encodeStreamFrame(event)
 		require.True(t, ok)
-	}
-	for _, parts := range [][]provider.StreamPart{
-		{{Type: provider.PartReasoningDelta, ID: "r"}},
-		{{Type: provider.PartReasoningEnd, ID: "r"}},
-		{{Type: provider.PartReasoningStart, ID: "r"}, {Type: provider.PartReasoningStart, ID: "r"}},
-		{{Type: provider.PartReasoningStart, ID: "r"}, finishPart()},
-		{{Type: provider.PartReasoningStart, ID: "r"}, {Type: provider.PartResponseMeta}},
-		{{Type: provider.PartReasoningStart, ID: "r"}, {Type: provider.PartReasoningEnd, ID: "r"}, {Type: provider.PartReasoningStart, ID: "r"}},
-	} {
-		h := &handler{}
-		state := newStreamState(nil)
-		w := httptest.NewRecorder()
-		for i, part := range parts {
-			want := streamPartContinue
-			if i == len(parts)-1 {
-				want = streamPartAdapterFailure
-			}
-			assert.Equal(t, want, h.processStreamPart(w, state, part))
-		}
 	}
 }

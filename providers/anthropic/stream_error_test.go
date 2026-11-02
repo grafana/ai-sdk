@@ -336,7 +336,7 @@ func TestStreamText_TruncatedAfterMessageDelta(t *testing.T) {
 		wantFinish provider.UnifiedFinishReason
 	}{
 		{name: "complete stream", events: transportEvents, wantFinish: provider.FinishReasonStop},
-		{name: "ends after message_delta", events: transportEvents[:5], wantFinish: provider.FinishReasonOther},
+		{name: "ends after message_delta", events: transportEvents[:5], wantFinish: provider.FinishReasonInterrupted},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
@@ -354,6 +354,78 @@ func TestStreamText_TruncatedAfterMessageDelta(t *testing.T) {
 			require.Len(t, result.Steps(), 1)
 			assert.Equal(t, tc.wantFinish, result.Steps()[0].FinishReason.Unified)
 			assert.Equal(t, "hello", result.Text())
+		})
+	}
+}
+
+func TestDoStream_InterruptedFinish(t *testing.T) {
+	messageStart := func(id, content string) string {
+		return fmt.Sprintf(`{"type":"message_start","message":{"id":%q,"type":"message","role":"assistant","model":"claude-sonnet-4-6","content":%s,"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":1}}}`, id, content)
+	}
+	blockStart := func(block string) string {
+		return fmt.Sprintf(`{"type":"content_block_start","index":0,"content_block":%s}`, block)
+	}
+	blockDelta := func(delta string) string {
+		return fmt.Sprintf(`{"type":"content_block_delta","index":0,"delta":%s}`, delta)
+	}
+	const (
+		textBlock  = `{"type":"text","text":""}`
+		toolBlock  = `{"type":"tool_use","id":"tool-1","name":"test-tool","input":{}}`
+		blockStop  = `{"type":"content_block_stop","index":0}`
+		endTurn    = `{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":3}}`
+		stop       = `{"type":"message_stop"}`
+		errorFrame = `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`
+	)
+	completed := []string{messageStart("msg-previous", "[]"), blockStart(textBlock), blockDelta(`{"type":"text_delta","text":"Previous"}`), blockStop, endTurn, stop}
+	stopFinish := provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "end_turn"}
+	interrupted := provider.FinishReason{Unified: provider.FinishReasonInterrupted}
+
+	for _, tc := range []struct {
+		name   string
+		events []string
+		want   []provider.FinishReason
+	}{
+		{name: "metadata only", events: []string{messageStart("msg", "[]")}},
+		{name: "empty text", events: []string{messageStart("msg", "[]"), blockStart(textBlock), blockDelta(`{"type":"text_delta","text":""}`)}},
+		{name: "empty reasoning", events: []string{messageStart("msg", "[]"), blockStart(`{"type":"thinking","thinking":""}`), blockDelta(`{"type":"thinking_delta","thinking":""}`)}},
+		{name: "empty tool input", events: []string{messageStart("msg", "[]"), blockStart(toolBlock), blockDelta(`{"type":"input_json_delta","partial_json":""}`)}},
+		{name: "later message without output", events: append(append([]string{}, completed...), messageStart("msg-current", "[]")), want: []provider.FinishReason{stopFinish}},
+		{name: "partial text", events: []string{messageStart("msg", "[]"), blockStart(textBlock), blockDelta(`{"type":"text_delta","text":"Partial"}`)}, want: []provider.FinishReason{interrupted}},
+		{name: "partial reasoning", events: []string{messageStart("msg", "[]"), blockStart(`{"type":"thinking","thinking":""}`), blockDelta(`{"type":"thinking_delta","thinking":"Thinking"}`)}, want: []provider.FinishReason{interrupted}},
+		{name: "partial tool input", events: []string{messageStart("msg", "[]"), blockStart(toolBlock), blockDelta(`{"type":"input_json_delta","partial_json":"{"}`)}, want: []provider.FinishReason{interrupted}},
+		{name: "prepopulated tool call", events: []string{messageStart("msg", "["+toolBlock+"]")}, want: []provider.FinishReason{interrupted}},
+		{name: "partial later message", events: append(append([]string{}, completed...), messageStart("msg-current", "[]"), blockStart(textBlock), blockDelta(`{"type":"text_delta","text":"Partial"}`)), want: []provider.FinishReason{stopFinish, interrupted}},
+		{name: "error after partial output", events: []string{messageStart("msg", "[]"), blockStart(textBlock), blockDelta(`{"type":"text_delta","text":"Partial"}`), errorFrame}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+				response := transportResponse(r, true)
+				response.Body = io.NopCloser(strings.NewReader(transportSSE(tc.events)))
+				return response, nil
+			})}
+			model := New("test-key", "claude-sonnet-4-6", WithRequestOptions(option.WithMaxRetries(0), option.WithHTTPClient(client)))
+
+			result, err := model.DoStream(t.Context(), provider.CallOptions{})
+			require.NoError(t, err)
+			var finishes []provider.StreamPart
+			for part := range result.Stream {
+				if part.Type == provider.PartFinish {
+					finishes = append(finishes, part)
+				}
+			}
+			var reasons []provider.FinishReason
+			for _, finish := range finishes {
+				reasons = append(reasons, *finish.FinishReason)
+			}
+			assert.Equal(t, tc.want, reasons)
+			switch {
+			case len(finishes) == 2:
+				assert.Equal(t, finishes[0].Usage, finishes[1].Usage)
+				assert.Equal(t, finishes[0].ProviderMetadata, finishes[1].ProviderMetadata)
+			case len(finishes) == 1 && finishes[0].FinishReason.Unified == provider.FinishReasonInterrupted:
+				assert.Equal(t, &provider.Usage{}, finishes[0].Usage)
+				assert.Nil(t, finishes[0].ProviderMetadata)
+			}
 		})
 	}
 }

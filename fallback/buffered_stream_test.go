@@ -53,6 +53,7 @@ func TestBufferedStream_RecoversWithoutLeakingFailedOutput(t *testing.T) {
 		{"error after finish", append(completedParts(), provider.StreamPart{Type: provider.PartError, APICallError: retryable})},
 		{"empty EOF", nil},
 		{"finish error", []provider.StreamPart{{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonError}}}},
+		{"finish interrupted", []provider.StreamPart{{Type: provider.PartTextDelta, ID: "failed", Delta: "discard me"}, {Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonInterrupted}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var attempts []Attempt

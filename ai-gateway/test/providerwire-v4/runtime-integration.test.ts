@@ -725,13 +725,13 @@ describe("explicit raw output through the real handler", () => {
       const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "raw", mode: "stream", options });
       assert.equal(go.error, undefined);
       const expectedTypes = includeRawChunks
-        ? ["stream-start", "raw", "text-start", "text-delta", "raw", "text-end", "finish"]
+        ? ["stream-start", "raw", "text-start", "raw", "text-delta", "raw", "text-end", "finish"]
         : ["stream-start", "text-start", "text-delta", "text-end", "finish"];
       assert.deepEqual(ts.map(part => part.type), expectedTypes);
       assert.deepEqual(go.parts.map((part: { type: string }) => part.type), expectedTypes);
       const tsRaw = ts.flatMap(part => part.type === "raw" ? [part.rawValue] : []);
       const goRaw = go.parts.flatMap((part: { type: string; rawValue?: unknown }) => part.type === "raw" ? [part.rawValue] : []);
-      assert.deepEqual(tsRaw, includeRawChunks ? [projectedEcho, { type: "message_stop" }] : []);
+      assert.deepEqual(tsRaw, includeRawChunks ? [projectedEcho, undefined, { type: "message_stop" }] : []);
       assert.deepEqual(goRaw, tsRaw);
 
       const http = await fetch(`${baseURL}/providerwire-v4/language-model`, {
@@ -744,7 +744,8 @@ describe("explicit raw output through the real handler", () => {
       assert.doesNotMatch(text, /private-/);
       const frames = text.trim().split("\n\n").map(frame => JSON.parse(frame.slice("data: ".length)));
       for (const frame of frames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
-      assert.equal(frames.filter(frame => frame.type === "raw").length, includeRawChunks ? 2 : 0);
+      assert.equal(frames.filter(frame => frame.type === "raw").length, includeRawChunks ? 3 : 0);
+      if (includeRawChunks) assert.deepEqual(frames.filter(frame => frame.type === "raw")[1], { type: "raw" });
     });
   }
 
@@ -1061,6 +1062,49 @@ describe("real ProviderWire V4 streaming runtime", () => {
       assert.equal((timeout.error as { code: string }).code, "timeout");
     }
   });
+
+  for (const includeRawChunks of [false, true]) {
+    it(`carries status-less provider errors and value-less raw parts and ends after a final error (includeRawChunks: ${includeRawChunks})`, async () => {
+      const options: LanguageModelV4CallOptions = { prompt: [], ...(includeRawChunks ? { includeRawChunks } : {}) };
+      const ts = await collect((await model("stream-status-less").doStream(options)).stream);
+      const go = await captureGoClient(goClientBinary, { baseURL: `${baseURL}/providerwire-v4`, accessToken: "runtime-test-key", modelID: "stream-status-less", mode: "stream", options });
+      assert.equal(go.error, undefined);
+      const expectedTypes = includeRawChunks
+        ? ["stream-start", "raw", "error", "text-start", "text-delta", "text-end", "raw", "error"]
+        : ["stream-start", "error", "text-start", "text-delta", "text-end", "error"];
+      assert.deepEqual(ts.map(part => part.type), expectedTypes);
+      assert.deepEqual(go.parts.map((part: { type: string }) => part.type), expectedTypes);
+      for (const part of ts.filter(part => part.type === "raw")) assert.deepEqual(part, { type: "raw" });
+      for (const part of go.parts.filter((part: { type: string }) => part.type === "raw")) assert.deepEqual(part, { type: "raw" });
+
+      const tsErrors = ts.flatMap(part => part.type === "error" ? [part.error as Record<string, unknown>] : []);
+      const goErrors = go.parts.flatMap((part: { type: string; error?: Record<string, unknown> }) => part.type === "error" ? [part.error!] : []);
+      assert.equal(tsErrors.length, 2);
+      assert.equal(goErrors.length, 2);
+      for (const [index, { data, ...base }] of tsErrors.entries()) {
+        assert.deepEqual(base, { message: "provider stream error", type: "internal_server_error", param: null, code: "provider_error", retryable: false });
+        const { data: goData, ...goBase } = goErrors[index]!;
+        assert.equal(goBase.message, "provider stream error");
+        assert.equal(goBase.statusCode || undefined, undefined);
+        assert.equal(goBase.isRetryable, false);
+        assert.doesNotMatch(JSON.stringify(goBase), /private/);
+        assert.deepEqual(goData, data);
+        assert.deepEqual(data, { nativeError: { message: "private native stream failure" } });
+      }
+
+      const http = await fetch(`${baseURL}/providerwire-v4/language-model`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "ai-language-model-specification-version": "4", "ai-language-model-id": "stream-status-less", "ai-language-model-streaming": "true" },
+        body: JSON.stringify(options),
+      });
+      assert.equal(http.status, 200);
+      const frames = (await http.text()).trim().split("\n\n").map(frame => JSON.parse(frame.slice("data: ".length)));
+      for (const frame of frames) assert.equal(validateStreamEvent(frame), true, JSON.stringify(validateStreamEvent.errors));
+      assert.deepEqual(frames.map(frame => frame.type), expectedTypes);
+      assert.equal(frames.some(frame => frame.type === "error" && frame.error.code !== "provider_error"), false);
+      assert.equal(frames.some(frame => frame.type === "error" && "statusCode" in frame.error), false);
+    });
+  }
 
   it("propagates abort after stream establishment", async () => {
     const initial = await stats();

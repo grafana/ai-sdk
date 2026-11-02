@@ -72,8 +72,7 @@ run = """
 mise deps install --only test
 rm -rf ai-gateway/dist
 pnpm --filter ./ai-gateway build
-(cd ai-gateway && GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=readonly -trimpath" mage -v build:linux build:linuxARM64)
-bash ai-gateway/scripts/package-licenses.sh
+(cd ai-gateway && mage -v buildPlugin)
 """
 
 [tasks.test-ai-gateway-frontend]
@@ -330,16 +329,10 @@ done
 [tasks.test-integration]
 description = "Run cross-language candidate-source integration tests"
 run = """
-mise run test-sdk-integration
-mise run test-ai-gateway-command
-"""
-
-[tasks.test-sdk-integration]
-description = "Run SDK cross-language integration tests against candidate source"
-run = """
 mise deps install --only test
 (cd test/integration/testserver && go test ./...)
 (cd test && pnpm --filter @ai-sdk/test-integration test)
+mise run test-ai-gateway-command
 """
 
 [tasks.test-cli]

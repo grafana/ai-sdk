@@ -160,6 +160,8 @@ func TestStreamText_EffectiveToolChoice(t *testing.T) {
 		{name: "filtered empty tools", choice: named, opts: []StreamOption{WithActiveTools()}, wantError: true},
 		{name: "length with call", choice: named, calls: []provider.StreamPart{call("c1", "lookup")}, finish: provider.FinishReasonLength},
 		{name: "error finish without call", choice: required, finish: provider.FinishReasonError, wantError: true},
+		{name: "interrupted required without call", choice: required, finish: provider.FinishReasonInterrupted},
+		{name: "interrupted named miss", choice: named, calls: []provider.StreamPart{call("c1", "other")}, finish: provider.FinishReasonInterrupted},
 		{name: "duplicate selected overwritten", choice: named, calls: []provider.StreamPart{call("c1", "lookup"), call("c1", "other")}, wantError: true},
 		{name: "duplicate selected last", choice: named, calls: []provider.StreamPart{call("c1", "other"), call("c1", "lookup")}, finish: provider.FinishReasonLength},
 	} {
