@@ -31,6 +31,7 @@ const (
 	codeTimeout        errorCode = "timeout"
 	codeCancellation   errorCode = "canceled"
 	codeInternal       errorCode = "internal_error"
+	codeProviderStream errorCode = "provider_error"
 )
 
 type errorDefinition struct {
@@ -62,7 +63,7 @@ var publicErrors = [...]errorDefinition{
 	},
 	safeGatewayControl: {
 		status:  http.StatusBadRequest,
-		message: "unsupported gateway control; only gateway.byok is supported",
+		message: "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials",
 		kind:    errorInvalidRequest,
 		code:    codeInvalidRequest,
 	},
@@ -136,6 +137,12 @@ var publicErrors = [...]errorDefinition{
 		code:      codeForbidden,
 		retryable: false,
 	},
+	safeProviderStream: {
+		message:   "provider stream error",
+		kind:      errorInternal,
+		code:      codeProviderStream,
+		retryable: false,
+	},
 }
 
 type errorResponse struct {
@@ -164,7 +171,7 @@ func definitionForError(value safeError) errorDefinition {
 		return publicErrors[safeInternal]
 	}
 	definition := publicErrors[value.category]
-	if value.category == safeInvalidRequest {
+	if value.category == safeInvalidRequest || value.category == safeModelNotFound {
 		if message := requestFailureMessage(value.reason); message != "" {
 			definition.message = message
 		}
@@ -186,6 +193,14 @@ func requestFailureMessage(reason requestFailureReason) string {
 		return "reserved provider option namespace"
 	case policyProtectedCallHeader:
 		return "protected call header"
+	case routingControls:
+		return "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"
+	case routingNoCandidates:
+		return "providerOptions.gateway.only excludes every candidate"
+	case routingAttemptBound:
+		return "routing exceeds the bound of 8 provider attempts"
+	case routingFallbackModel:
+		return "a providerOptions.gateway.models entry is not an available model"
 	default:
 		return ""
 	}
@@ -196,6 +211,9 @@ func (definition errorDefinition) fields() publicError {
 }
 
 func encodeHTTPError(value safeError, metadata provider.ProviderMetadata) (int, []byte) {
+	if value.category == safeProviderStream {
+		value = safeError{category: safeInternal}
+	}
 	definition := definitionForError(value)
 	response := errorResponse{Error: definition.fields(), Metadata: metadata}
 	body, err := json.Marshal(response)
@@ -208,7 +226,7 @@ func encodeHTTPError(value safeError, metadata provider.ProviderMetadata) (int, 
 
 func streamErrorResponse(value safeError) errorResponse {
 	switch value.category {
-	case safeRateLimit, safeOverload, safeFailedDependency, safeUpstream, safeTimeout, safeCancellation:
+	case safeRateLimit, safeOverload, safeFailedDependency, safeUpstream, safeTimeout, safeCancellation, safeProviderStream:
 	default:
 		value = safeError{category: safeInternal}
 	}

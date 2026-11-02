@@ -152,7 +152,7 @@ activated independently and SHALL NOT gate library activation.
 #### Scenario: Incomplete Gateway integration
 
 - **WHEN** Gateway application delivery integration is incomplete
-- **THEN** Gateway publication remains disabled
+- **THEN** versioned Gateway publication remains disabled, while dev catalog publication of `main` builds follows the `gateway-plugin-publication` capability
 - **AND** independently verified libraries can activate after their prerequisites and explicit approval
 
 ### Requirement: Publishable module validation
