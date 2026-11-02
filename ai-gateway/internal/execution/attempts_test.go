@@ -44,7 +44,7 @@ func (m *generateModel) DoGenerate(ctx context.Context, _ provider.CallOptions) 
 	if m.generate != nil {
 		return m.generate(ctx)
 	}
-	return &provider.GenerateResult{}, nil
+	return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 }
 
 func (m *generateModel) DoStream(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
@@ -81,9 +81,8 @@ func TestAttemptCapture_ConfiguredSelection(t *testing.T) {
 	selected := selectConfigured(t, resolved)
 	resolved.Candidates[0].ModelID = "mutated"
 	attempts := newAttemptCapture("alias", selected, SummaryRedactor{})
-	selected.configured.candidates[0].ModelID = "mutated-again"
 	assert.Equal(t, "canonical", attempts.canonical)
-	assert.Equal(t, "backend", attempts.candidates[0].ModelID)
+	assert.Equal(t, "backend", attempts.expected[0].Destination.ModelID)
 	encoded, err := json.Marshal(selected)
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), "configured")
@@ -110,6 +109,7 @@ func TestAttemptCapture_View(t *testing.T) {
 		{name: "not entered", candidates: 1},
 		{name: "direct selected", candidates: 1, entered: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{name: "direct failed", candidates: 1, entered: true, err: failure, outcomes: []fallback.AttemptOutcome{fallback.AttemptFailed}},
+		{name: "direct invalid output", candidates: 1, entered: true, err: fmt.Errorf("wrapped: %w", ErrInvalidOutput), outcomes: []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		{name: "rejected direct canceled", candidates: 1, entered: true, err: context.Canceled, discard: true, outcomes: []fallback.AttemptOutcome{fallback.AttemptCanceled}},
 		{name: "rejected before entry", candidates: 1, discard: true},
 		{name: "fallback selected", candidates: 2, entered: true, attempts: []fallback.Attempt{
@@ -242,16 +242,14 @@ func TestAttemptCapture_ProjectionAfterSeal(t *testing.T) {
 }
 
 func TestAccountSelection(t *testing.T) {
-	accounts := RequestAccounts{Provider: "native", ModelID: "model", Count: 2}
-	selected := AccountSelection("native/model", &generateModel{modelID: "model"}, accounts)
+	expected := accountAttempts("native", "model", 2)
+	selected := AccountSelection("native/model", &generateModel{modelID: "model"}, expected)
+	expected[0].Destination.ModelID = "mutated"
 	assert.True(t, validSelection(selected))
-	assert.Nil(t, selected.configured)
-	require.NotNil(t, selected.accounts)
-	assert.Equal(t, RequestAccounts{Provider: "native", ModelID: "model", Count: 2}, *selected.accounts)
+	assert.Equal(t, accountAttempts("native", "model", 2), selected.expected)
 	attempts := newAttemptCapture("native/model", selected, SummaryRedactor{})
-	assert.Equal(t, RequestAccounts{Provider: "native", ModelID: "model", Count: 2}, *attempts.accounts)
-	assert.Empty(t, attempts.canonical)
-	assert.Empty(t, attempts.candidates)
+	assert.Equal(t, attributionAccounts, attempts.attribution)
+	assert.Equal(t, accountAttempts("native", "model", 2), attempts.expected)
 }
 
 func TestAttemptCapture_AccountProjection(t *testing.T) {
@@ -264,7 +262,7 @@ func TestAttemptCapture_AccountProjection(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		failures []error
-		accounts RequestAccounts
+		accounts []ExpectedAttempt
 		cancel   bool
 		observed []fallback.Attempt
 		calls    []int
@@ -276,18 +274,18 @@ func TestAttemptCapture_AccountProjection(t *testing.T) {
 		{name: "noneligible", failures: []error{rejected, nil}, calls: []int{1, 0}, want: []expected{{fallback.AttemptFailed, "account rejected"}}},
 		{name: "exhausted", failures: []error{retryable, retryable}, calls: []int{1, 1}, want: []expected{{fallback.AttemptFailed, "account overloaded"}, {fallback.AttemptFailed, "account overloaded"}}},
 		{name: "canceled", failures: []error{retryable, nil}, cancel: true, calls: []int{1, 0}, want: []expected{{fallback.AttemptCanceled, "account overloaded"}}},
-		{name: "mismatched provider", failures: []error{retryable, nil}, accounts: RequestAccounts{Provider: "other", ModelID: "model", Count: 2}, calls: []int{1, 1}},
-		{name: "mismatched model", failures: []error{retryable, nil}, accounts: RequestAccounts{Provider: "native", ModelID: "other", Count: 2}, calls: []int{1, 1}},
-		{name: "account overflow", failures: []error{retryable, nil}, accounts: RequestAccounts{Provider: "native", ModelID: "model", Count: 1}, calls: []int{1, 1}},
-		{name: "zero attempts", accounts: RequestAccounts{Provider: "native", ModelID: "model", Count: 1}},
-		{name: "mixed calls", accounts: RequestAccounts{Provider: "native", ModelID: "model", Count: 2}, observed: []fallback.Attempt{
+		{name: "mismatched provider", failures: []error{retryable, nil}, accounts: accountAttempts("other", "model", 2), calls: []int{1, 1}},
+		{name: "mismatched model", failures: []error{retryable, nil}, accounts: accountAttempts("native", "other", 2), calls: []int{1, 1}},
+		{name: "account overflow", failures: []error{retryable, nil}, accounts: accountAttempts("native", "model", 1), calls: []int{1, 1}},
+		{name: "zero attempts", accounts: accountAttempts("native", "model", 1)},
+		{name: "mixed calls", accounts: accountAttempts("native", "model", 2), observed: []fallback.Attempt{
 			{Index: 1, Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected},
 			{Index: 1, Provider: "native", ModelID: "model", Outcome: fallback.AttemptSelected},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.accounts == (RequestAccounts{}) {
-				tc.accounts = RequestAccounts{Provider: "native", ModelID: "model", Count: len(tc.failures)}
+			if tc.accounts == nil {
+				tc.accounts = accountAttempts("native", "model", len(tc.failures))
 			}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -300,7 +298,7 @@ func TestAttemptCapture_AccountProjection(t *testing.T) {
 					if failure != nil {
 						return nil, failure
 					}
-					return &provider.GenerateResult{}, nil
+					return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 				}})
 			}
 			attempts := newAttemptCapture("native/model", AccountSelection("native/model", &generateModel{modelID: "model"}, tc.accounts), SummaryRedactor{})

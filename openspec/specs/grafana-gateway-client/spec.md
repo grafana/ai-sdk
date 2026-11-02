@@ -267,9 +267,15 @@ The client SHALL ignore an SSE data payload exactly equal to `[DONE]`, SHALL tre
 - **WHEN** a valid raw part arrives and `IncludeRawChunks` is true
 - **THEN** the bounded raw value SHALL be delivered unchanged
 
+#### Scenario: Raw part has no value
+- **WHEN** the event `{"type":"raw"}` with no `rawValue` member arrives
+- **THEN** it SHALL be a valid raw part rather than a protocol error
+- **AND** it SHALL be delivered in order as a `PartRaw` with a nil `RawValue` when `IncludeRawChunks` is true, and consumed but not delivered otherwise
+
 #### Scenario: Clean EOF occurs without finish
 - **WHEN** a valid stream or `[DONE]` is followed by transport EOF before any finish
 - **THEN** the client SHALL close cleanly to match the registered client's observable EOF behavior
+- **AND** this SHALL include EOF directly after a stream error event, with no further part manufactured
 
 ### Requirement: Client stream finish and optional native identity normalization
 
@@ -828,3 +834,67 @@ Valid JSON with lone or paired escaped surrogates SHALL be accepted, with raw-ob
 #### Scenario: Raw usage escape preservation
 - **WHEN** usage.raw contains a lone escaped UTF-16 surrogate in a valid object
 - **THEN** the escape SHALL be accepted and retained unchanged
+
+### Requirement: Status-less stream error decoding
+
+The client SHALL accept an SSE error event without `statusCode` only when its type is `internal_server_error` and its code is `provider_error`, and SHALL require `retryable` to be present and false. That event SHALL become an ordered `PartError` whose `APICallError` has status 0, is not retryable, carries the public message, and retains supplied `error.data` exactly. Every other registered code SHALL still require its registered status.
+
+#### Scenario: Status-less provider error is received
+- **WHEN** a stream contains `{"type":"error","error":{"message":"provider stream error","type":"internal_server_error","param":null,"code":"provider_error","retryable":false}}` followed by valid parts
+- **THEN** the client SHALL deliver a `PartError` with `APICallError.StatusCode` 0, `IsRetryable` false and message `provider stream error`, and then deliver the later parts in order
+
+#### Scenario: Status-less provider error has a null status
+- **WHEN** the `provider_error` document carries `"statusCode": null`
+- **THEN** the client SHALL treat the status as absent under ordinary Go decoding and decode the event as a status-less provider error
+
+#### Scenario: Status-less document is inconsistent
+- **WHEN** the `provider_error` document carries an integer `statusCode`, omits `retryable`, or sets `retryable` to true
+- **THEN** the client SHALL emit one terminal non-retryable protocol PartError and close
+
+#### Scenario: Another code omits its status
+- **WHEN** an SSE error event with any other registered code, such as `upstream_error`, omits `statusCode` or sets it to `null`
+- **THEN** the client SHALL emit one terminal non-retryable protocol PartError and close
+
+#### Scenario: HTTP error uses the stream-only code
+- **WHEN** a non-2xx HTTP response carries the `provider_error` code
+- **THEN** the client SHALL NOT accept it as a registered category and SHALL return the bounded local protocol error
+
+### Requirement: Typed Gateway request options
+The client SHALL export `GatewayOptions`, a provider option for the `gateway` namespace with `Models`, `Order`, `Only` and `BYOK`. BYOK accounts SHALL expose `APIKey`, `BaseURL`, `Organization` and `Project`. It SHALL NOT expose controls the Gateway refuses. Raw `gateway` options SHALL keep working unchanged.
+
+#### Scenario: Typed and raw options are equivalent
+- **WHEN** a call carries `GatewayOptions` with models, order, only and ordered BYOK accounts for two providers
+- **THEN** the request body SHALL be semantically equal to the same call with the equivalent raw `gateway` option
+
+#### Scenario: Unset fields are absent
+- **WHEN** a `GatewayOptions` field is unset
+- **THEN** its member SHALL be absent from the request, and unset BYOK account fields SHALL be absent from their account object
+
+#### Scenario: Explicit empty only is preserved
+- **WHEN** `Only` is set to an empty, non-nil list
+- **THEN** the request SHALL carry `"only": []`, so the Gateway applies its exclude-every-candidate rule
+
+### Requirement: Gateway options match the pinned client
+For every representable value, a call with `GatewayOptions` SHALL produce the same semantic request body and outer headers as the registered TypeScript Gateway client given the equivalent `providerOptions.gateway` object, in unary and streaming modes.
+
+#### Scenario: Differential request capture
+- **WHEN** the Go client with `GatewayOptions` and the pinned client with the equivalent `GatewayProviderOptions` value send the same call
+- **THEN** their captured request bodies SHALL match, including array order and BYOK account order
+
+### Requirement: Gateway options are not validated by the client
+The client SHALL encode `GatewayOptions` without checking model IDs, slugs, account fields or control combinations. It SHALL NOT apply routing itself, resolve or probe fallback models, or issue more than one Gateway request per invocation. The Gateway's documents SHALL be returned through the existing error classification.
+
+#### Scenario: Unknown fallback model reaches the Gateway
+- **WHEN** a caller's `Models` names a model the Gateway cannot find
+- **THEN** the client SHALL send it unchanged and return the Gateway's fallback-model-not-found error as a `GatewayError` with the model-not-found category
+
+#### Scenario: Routed call is one Gateway request
+- **WHEN** a call carries `Models` with three entries
+- **THEN** the client SHALL issue exactly one Gateway request and SHALL NOT contact any listed model itself
+
+### Requirement: Gateway client routing support boundary
+`GatewayOptions` SHALL be documented as a Go adaptation of the supported subset of upstream `GatewayProviderOptions`. The client SHALL return `gateway.execution` and `gateway.routing` unchanged as provider metadata, as upstream does, without typed readers.
+
+#### Scenario: Routing metadata is passed through
+- **WHEN** a result, stream part or error carries Gateway routing metadata
+- **THEN** the client SHALL return it unchanged in `ProviderMetadata` or the `*provider.APICallError` data, and the documentation SHALL state that metadata is best-effort, that absence does not mean no attempt ran, and that a successful attempt means selection rather than completion

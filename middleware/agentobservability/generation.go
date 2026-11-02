@@ -42,6 +42,7 @@ func buildGenerationStart(ctx context.Context, providerName, modelID string, ctx
 			Name:     modelID,
 		},
 		ID:                  GenerationIDFromContext(ctx),
+		ConversationID:      ctxInfo.ConversationID,
 		ParentGenerationIDs: ParentGenerationIDsFromContext(ctx),
 		UserID:              ctxInfo.UserID,
 		AgentName:           ctxInfo.AgentName,

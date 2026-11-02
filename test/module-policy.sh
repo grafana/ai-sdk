@@ -157,7 +157,7 @@ candidate=$fixture/candidate.go
 overlay=$fixture/overlay.json
 printf 'package provider\nvar _ = candidateSourceOnlyMarker\n' >"$candidate"
 jq -n --arg source "$repo_root/provider/doc.go" --arg candidate "$candidate" '{Replace:{($source):$candidate}}' >"$overlay"
-for root in ai-gateway/cmd/grafana-ai-gateway ai-gateway/test/providerwire-v4/testserver; do
+for root in ai-gateway/pkg ai-gateway/test/providerwire-v4/testserver; do
   assert_fails candidateSourceOnlyMarker bash -c 'cd "$1" && GOFLAGS=-mod=readonly go build -overlay "$2" -o "$3" .' \
     bash "$repo_root/$root" "$overlay" "$fixture/gateway"
 done

@@ -64,8 +64,14 @@ func readGatewayError(ctx context.Context, resp *http.Response, limit int64) err
 	return mapGatewayError(&envelope.Error, resp.StatusCode, string(body), body)
 }
 
+const statusLessStreamErrorCode = "provider_error"
+
+func (value *wireError) validPublicFields() bool {
+	return value.Message != nil && validPublicText(*value.Message) && string(value.Param) == "null"
+}
+
 func mapGatewayError(value *wireError, status int, responseBody string, data json.RawMessage) error {
-	if value.Message == nil || !validPublicText(*value.Message) || string(value.Param) != "null" || !registeredError(value.Type, value.Code, status) {
+	if !value.validPublicFields() || !registeredError(value.Type, value.Code, status) {
 		return protocolError("grafana: invalid Gateway error fields", status, nil)
 	}
 	cause := provider.NewAPICallError(provider.APICallErrorOptions{Message: *value.Message, StatusCode: status, ResponseBody: responseBody, Data: data})
@@ -74,7 +80,7 @@ func mapGatewayError(value *wireError, status int, responseBody string, data jso
 
 type wireStreamError struct {
 	wireError
-	StatusCode int             `json:"statusCode"`
+	StatusCode *int            `json:"statusCode"`
 	Retryable  *bool           `json:"retryable"`
 	Data       json.RawMessage `json:"data"`
 }
@@ -87,14 +93,29 @@ func decodeStreamError(data []byte) (*provider.APICallError, error) {
 		return nil, err
 	}
 	value := envelope.Error
-	if value.Retryable == nil {
-		return nil, protocolError("grafana: missing stream error retryability", value.StatusCode, nil)
+	status := 0
+	if value.StatusCode != nil {
+		status = *value.StatusCode
 	}
-	gateway, ok := mapGatewayError(&value.wireError, value.StatusCode, "", value.Data).(*GatewayError)
+	if value.Retryable == nil {
+		return nil, protocolError("grafana: missing stream error retryability", status, nil)
+	}
+	if value.StatusCode == nil {
+		return decodeStatusLessStreamError(&value)
+	}
+	gateway, ok := mapGatewayError(&value.wireError, status, "", value.Data).(*GatewayError)
 	if !ok || gateway.IsRetryable != *value.Retryable {
-		return nil, protocolError("grafana: invalid stream error fields", value.StatusCode, nil)
+		return nil, protocolError("grafana: invalid stream error fields", status, nil)
 	}
 	return gateway.cause, nil
+}
+
+func decodeStatusLessStreamError(value *wireStreamError) (*provider.APICallError, error) {
+	if !value.validPublicFields() || value.Type != GatewayInternalServer || value.Code != statusLessStreamErrorCode || *value.Retryable {
+		return nil, protocolError("grafana: invalid stream error fields", 0, nil)
+	}
+	retryable := false
+	return provider.NewAPICallError(provider.APICallErrorOptions{Message: *value.Message, IsRetryable: &retryable, Data: value.Data}), nil
 }
 
 func registeredError(category GatewayErrorCategory, code string, status int) bool {

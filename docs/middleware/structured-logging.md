@@ -31,8 +31,11 @@ provider registry when every resolved model should use the same policy.
 
 Default records include call identity, provider/model identity, duration,
 outcome, request summaries, usage, finish reason, warnings, response metadata,
-and stream timing/counts. Streaming usage combines every usage-bearing part and
-preserves the greatest value observed for each normalized counter. Error records
+and stream timing/counts. Streaming usage comes from the last `finish`: each
+counter it reports wins, and counters it omits keep the greatest value seen in
+that response. Before any `finish`, each counter keeps its greatest observed
+value. When a stream carries several messages, usage is the last message's, as
+upstream `streamText` reports it, not a sum. Error records
 retain structured classification, Go type, HTTP status, and retryability when
 available. Prompt text, output text, reasoning, tool payloads, files, headers,
 bodies, provider options, raw chunks, and opaque error messages are not captured

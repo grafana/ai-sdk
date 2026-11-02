@@ -572,9 +572,14 @@ func shellCallOutputItem(part provider.ContentPart) (*responses.ResponseInputIte
 		return nil, nil
 	}
 	var output struct {
-		Output *[]map[string]json.RawMessage `json:"output"`
+		MaxOutputLength json.RawMessage               `json:"maxOutputLength"`
+		Output          *[]map[string]json.RawMessage `json:"output"`
 	}
 	if err := json.Unmarshal(part.Output.JSON, &output); err != nil {
+		return nil, fmt.Errorf("openai: parsing shell output: %w", err)
+	}
+	maxOutputLength, err := optionalNumber(output.MaxOutputLength, "maxOutputLength")
+	if err != nil {
 		return nil, fmt.Errorf("openai: parsing shell output: %w", err)
 	}
 	if output.Output == nil {
@@ -615,11 +620,15 @@ func shellCallOutputItem(part provider.ContentPart) (*responses.ResponseInputIte
 		}
 		contents = append(contents, map[string]any{"stdout": stdout, "stderr": stderr, "outcome": convertedOutcome})
 	}
-	encoded, err := json.Marshal(map[string]any{
+	outputItem := map[string]any{
 		"type":    "shell_call_output",
 		"call_id": part.ToolCallID,
 		"output":  contents,
-	})
+	}
+	if maxOutputLength != nil {
+		outputItem["max_output_length"] = *maxOutputLength
+	}
+	encoded, err := json.Marshal(outputItem)
 	if err != nil {
 		return nil, fmt.Errorf("openai: marshaling shell output: %w", err)
 	}

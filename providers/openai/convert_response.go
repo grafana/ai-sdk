@@ -394,20 +394,31 @@ func (br buildResult) webSearchCustomToolName() string {
 	return br.toolNameMapping.toCustomToolName("web_search")
 }
 
+type shellInputAction struct {
+	Commands        []string `json:"commands"`
+	TimeoutMs       *float64 `json:"timeoutMs,omitempty"`
+	MaxOutputLength *float64 `json:"maxOutputLength,omitempty"`
+}
+
 func shellInput(raw string, commands []string) json.RawMessage {
 	var value struct {
-		Commands []string `json:"commands"`
+		Commands        []string `json:"commands"`
+		TimeoutMs       *float64 `json:"timeout_ms"`
+		MaxOutputLength *float64 `json:"max_output_length"`
 	}
 	if json.Unmarshal([]byte(raw), &value) != nil {
 		value.Commands = commands
 	}
-	input, _ := marshalToolInput(map[string]any{"action": map[string]any{"commands": value.Commands}})
+	input, _ := marshalToolInput(struct {
+		Action shellInputAction `json:"action"`
+	}{Action: shellInputAction{Commands: value.Commands, TimeoutMs: value.TimeoutMs, MaxOutputLength: value.MaxOutputLength}})
 	return input
 }
 
 func shellOutput(raw string) json.RawMessage {
 	var item struct {
-		Output []struct {
+		MaxOutputLength *float64 `json:"max_output_length"`
+		Output          []struct {
 			Stdout  string `json:"stdout"`
 			Stderr  string `json:"stderr"`
 			Outcome struct {
@@ -429,7 +440,10 @@ func shellOutput(raw string) json.RawMessage {
 			"outcome": outcome,
 		})
 	}
-	result, _ := json.Marshal(map[string]any{"output": output})
+	result, _ := json.Marshal(struct {
+		MaxOutputLength *float64         `json:"maxOutputLength,omitempty"`
+		Output          []map[string]any `json:"output"`
+	}{MaxOutputLength: item.MaxOutputLength, Output: output})
 	return result
 }
 
