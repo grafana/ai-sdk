@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -42,6 +43,7 @@ var unaryDocuments = map[execution.Category]document{
 	execution.CategoryTimeout:          {504, "timeout", "request timed out"},
 	execution.CategoryCancellation:     {499, "canceled", "request canceled"},
 	execution.CategoryInternal:         {500, "internal_error", "internal error"},
+	execution.CategoryProviderStream:   {0, "provider_error", "provider stream error"},
 }
 
 var reasonMessages = map[execution.Reason]string{
@@ -327,7 +329,7 @@ func (sc scenario) runtime(t *testing.T, models []*probe) *execution.Runtime {
 		chain, err := fallback.New(languageModels...)
 		require.NoError(t, err)
 		selector = func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
-			return execution.AccountSelection(id, chain, execution.RequestAccounts{Provider: "native", ModelID: models[0].id, Count: len(models)}), nil
+			return execution.AccountSelection(id, chain, slices.Repeat([]execution.ExpectedAttempt{{ModelID: id, Destination: catalog.ConfiguredCandidate{Provider: "native", ModelID: models[0].id}}}, len(models))), nil
 		}
 	default:
 		selector = func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (execution.Selection, error) {
@@ -539,6 +541,14 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 			models: one(func(p *probe) {
 				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
 					failure := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 429, Message: "native failure"})
+					return p.parts(ctx, provider.StreamPart{Type: provider.PartError, APICallError: failure}, finishPart())
+				}
+			})},
+		{name: "in-band status-less stream error", streaming: true, calls: []int32{1}, drained: true,
+			want: outcome{Committed: true, PartErrors: []execution.Category{execution.CategoryProviderStream}},
+			models: one(func(p *probe) {
+				p.stream = func(ctx context.Context, p *probe) (*provider.StreamResult, error) {
+					failure := provider.NewAPICallError(provider.APICallErrorOptions{Message: "native failure"})
 					return p.parts(ctx, provider.StreamPart{Type: provider.PartError, APICallError: failure}, finishPart())
 				}
 			})},

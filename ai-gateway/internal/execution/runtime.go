@@ -222,13 +222,17 @@ const (
 	// WaitFinished reports that the provider closed the stream after a finish.
 	// It is a terminal success, which adapters do not classify.
 	WaitFinished
+	// WaitClosedAfterError reports that the provider closed the stream after an
+	// error part with no lifecycle part since. The error part already reported
+	// the failure, so adapters end the stream without classifying the close.
+	WaitClosedAfterError
 )
 
 // Err returns the error a terminal wait outcome stands for, and nil for
-// WaitPart and WaitFinished.
+// WaitPart, WaitFinished and WaitClosedAfterError.
 func (w Wait) Err() error {
 	switch w {
-	case WaitPart, WaitFinished:
+	case WaitPart, WaitFinished, WaitClosedAfterError:
 		return nil
 	case WaitInvalidOutput:
 		return ErrInvalidOutput
@@ -263,9 +267,10 @@ type Stream struct {
 //
 // A part that breaks a lifecycle rule closes the stream and returns
 // [WaitInvalidOutput] without the part. A provider close returns
-// [WaitFinished] when the last lifecycle part was a finish, and [WaitClosed]
-// otherwise. Invalid output and finished are sticky: later calls return them
-// again without reading.
+// [WaitFinished] when the last lifecycle part was a finish,
+// [WaitClosedAfterError] when an error part followed the last lifecycle part,
+// and [WaitClosed] otherwise. Invalid output and finished are sticky: later
+// calls return them again without reading.
 func (s *Stream) Next() (provider.StreamPart, Wait) {
 	if s.terminal != 0 {
 		return provider.StreamPart{}, s.terminal
@@ -288,6 +293,9 @@ func (s *Stream) Next() (provider.StreamPart, Wait) {
 		if s.validator.SegmentFinished() {
 			s.terminal = WaitFinished
 			return provider.StreamPart{}, WaitFinished
+		}
+		if s.validator.TrailingError() {
+			return provider.StreamPart{}, WaitClosedAfterError
 		}
 		return provider.StreamPart{}, WaitClosed
 	case <-s.model.Done():

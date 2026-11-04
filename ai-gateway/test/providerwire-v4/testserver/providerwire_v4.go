@@ -339,6 +339,17 @@ func (m *providerWireV4Model) DoStream(ctx context.Context, options provider.Cal
 		stream <- provider.StreamPart{Type: provider.PartFinish, Usage: &provider.Usage{}, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}
 		close(stream)
 		return &provider.StreamResult{Stream: stream}, nil
+	case "stream-status-less":
+		return &provider.StreamResult{Stream: scenarioStream(
+			provider.StreamPart{Type: provider.PartStreamStart},
+			provider.StreamPart{Type: provider.PartRaw},
+			provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "private native stream failure"})},
+			provider.StreamPart{Type: provider.PartTextStart, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartTextDelta, ID: "text-1", Delta: "after error"},
+			provider.StreamPart{Type: provider.PartTextEnd, ID: "text-1"},
+			provider.StreamPart{Type: provider.PartRaw},
+			provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "private native stream failure"})},
+		)}, nil
 	case "stream-timeout", "stream-blocking":
 		if m.kind == "stream-blocking" {
 			m.stats.streamBlockingCalls.Add(1)
@@ -472,8 +483,8 @@ type providerWireV4Scenario struct {
 
 func newProviderWireV4Scenario() (*providerWireV4Scenario, error) {
 	stats := &providerWireV4Stats{}
-	entries := make([]catalog.StaticEntry, 0, 31)
-	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "citations", "custom", "unsupported-functionality", "success", "raw", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error", "sequential-segments-anthropic", "sequential-segments-openai"} {
+	entries := make([]catalog.StaticEntry, 0, 32)
+	for _, id := range []string{"generated-files", "structured", "structured-invalid", "native-values", "native-empty", "native-partial", "native-absent", "reasoning-files", "reasoning", "sources", "citations", "custom", "unsupported-functionality", "success", "raw", "raw-usage", "raw-usage-empty", "blocking", "stream-errors", "stream-status-less", "stream-timeout", "stream-blocking", "unary-tools", "unary-tools-provider-executed", "unary-tools-dynamic", "stream-tools", "stream-tool-results", "stream-tool-arguments", "hosted-deferred", "hosted-deferred-error", "sequential-segments-anthropic", "sequential-segments-openai"} {
 		entries = append(entries, catalog.StaticEntry{
 			Info:  catalog.ModelInfo{ID: id},
 			Model: &providerWireV4Model{kind: id, stats: stats},

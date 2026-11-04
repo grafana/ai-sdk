@@ -8,23 +8,33 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativeoptions"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 )
 
-func New(name Provider, modelID string, accounts []nativemodel.Config, client *http.Client) (provider.LanguageModel, error) {
-	var construct func(nativemodel.Config, string, *http.Client) provider.LanguageModel
-	var validate func(provider.CallOptions) error
-	var target execution.TargetType
-	switch name {
-	case Anthropic:
-		construct, validate, target = nativemodel.NewAnthropic, nativeoptions.Anthropic, execution.TargetAnthropic
-	case OpenAI:
-		construct, target = nativemodel.NewOpenAI, execution.TargetOpenAI
-	default:
-		return nil, ErrInvalidSelector
+// Groups returns one routing group per destination, keyed by its selector,
+// with one candidate per account. Accounts are never treated as repeated
+// destinations. A group lists at most one candidate more than the attempt
+// bound: its candidates share one provider, so routing keeps all or none of
+// them, and a kept group above the bound fails composition either way.
+func (r Request) Groups() []routing.Group {
+	groups := make([]routing.Group, len(r.Destinations))
+	for i, destination := range r.Destinations {
+		count := min(len(destination.Accounts), config.MaxProviderAttempts+1)
+		groups[i] = routing.Group{Key: destination.Selector(), Candidates: make([]routing.Candidate, count)}
+		for j := range count {
+			groups[i].Candidates[j] = routing.Candidate{Provider: string(destination.Provider)}
+		}
 	}
-	if modelID == "" || len(accounts) == 0 || len(accounts) > config.MaxProviderAttempts {
+	return groups
+}
+
+// New returns the model that tries request's accounts in the order of
+// placements, each against its own destination. An all-Anthropic chain also
+// checks native options before any attempt.
+func New(request Request, placements []routing.Placement, client *http.Client) (provider.LanguageModel, error) {
+	if len(placements) == 0 || len(placements) > config.MaxProviderAttempts {
 		return nil, ErrInvalidRequest
 	}
 	if client == nil {
@@ -32,21 +42,45 @@ func New(name Provider, modelID string, accounts []nativemodel.Config, client *h
 	}
 	ownedClient := *client
 	ownedClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	candidates := make([]provider.LanguageModel, 0, len(accounts))
-	for _, account := range accounts {
-		candidate := construct(account, modelID, &ownedClient)
-		if validate != nil {
-			candidate = nativeoptions.Model{LanguageModel: candidate, Validate: validate}
+	candidates := make([]provider.LanguageModel, 0, len(placements))
+	allAnthropic := true
+	for _, placement := range placements {
+		if placement.Group < 0 || placement.Group >= len(request.Destinations) {
+			return nil, ErrInvalidRequest
 		}
-		candidates = append(candidates, execution.Translate(candidate, execution.Target{Type: target, ModelID: modelID}))
+		destination := request.Destinations[placement.Group]
+		if destination.Model == "" || placement.Candidate < 0 || placement.Candidate >= len(destination.Accounts) {
+			return nil, ErrInvalidRequest
+		}
+		candidate, err := newCandidate(destination, destination.Accounts[placement.Candidate], &ownedClient)
+		if err != nil {
+			return nil, err
+		}
+		allAnthropic = allAnthropic && destination.Provider == Anthropic
+		candidates = append(candidates, candidate)
 	}
 	model, err := fallback.New(candidates...)
 	if err != nil {
 		return nil, err
 	}
 	chain := model.WithDecider(execution.FallbackDecider)
-	if validate != nil {
-		return nativeoptions.Model{LanguageModel: chain, Validate: validate}, nil
+	if allAnthropic {
+		return nativeoptions.Model{LanguageModel: chain, Validate: nativeoptions.Anthropic}, nil
 	}
 	return chain, nil
+}
+
+func newCandidate(destination Destination, account nativemodel.Config, client *http.Client) (provider.LanguageModel, error) {
+	var candidate provider.LanguageModel
+	var target execution.TargetType
+	switch destination.Provider {
+	case Anthropic:
+		candidate = nativeoptions.Model{LanguageModel: nativemodel.NewAnthropic(account, destination.Model, client), Validate: nativeoptions.Anthropic}
+		target = execution.TargetAnthropic
+	case OpenAI:
+		candidate, target = nativemodel.NewOpenAI(account, destination.Model, client), execution.TargetOpenAI
+	default:
+		return nil, ErrInvalidSelector
+	}
+	return execution.Translate(candidate, execution.Target{Type: target, ModelID: destination.Model}), nil
 }

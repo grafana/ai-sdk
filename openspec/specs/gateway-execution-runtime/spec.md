@@ -40,7 +40,7 @@ At the start of a call, the runtime SHALL remove the call-level `gateway` provid
 
 #### Scenario: Configured selector refuses gateway controls
 - **WHEN** configured selection receives call-level `gateway` controls
-- **THEN** the call SHALL fail with the invalid-request category and the reserved-provider-options reason, with zero model calls
+- **THEN** it SHALL apply `models`, `order` and `only` under gateway-request-routing, and SHALL fail any other control with the unsupported-gateway-control category, with zero model calls
 
 ### Requirement: Protected call headers
 Before selection, the runtime SHALL refuse a call whose headers include a credential-bearing name, compared without case sensitivity, with the invalid-request category and the protected-call-header reason. The set SHALL include at least `authorization`, `proxy-authorization`, `x-access-token`, `x-grafana-id`, `x-api-key`, `api-key`, `openai-api-key`, `anthropic-api-key`, `openai-organization`, `openai-project`, `x-scope-orgid`, `x-cloud-org-id` and `x-access-policy-id`.
@@ -133,24 +133,32 @@ Closing a stream SHALL cancel the model context and start one asynchronous drain
 - **THEN** no second drain SHALL start
 
 ### Requirement: Closed failure classification
-The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, timeout, cancellation or internal. Invalid request MAY carry a closed reason: reserved provider options or protected call header. Classification SHALL never panic.
+The runtime SHALL classify every failure into one closed category: invalid request, BYOK credentials, BYOK selector, unsupported gateway control, model not found, permission, rate limit, overload, failed dependency, upstream, provider stream, timeout, cancellation or internal. Invalid request MAY carry a closed reason: reserved provider options, protected call header, routing controls, no candidates or attempt bound. Model not found MAY carry the fallback-model reason.
 
 #### Scenario: Selection errors
 - **WHEN** selection fails with account access denied, invalid BYOK credentials, an invalid BYOK selector, an unsupported gateway control, reserved provider options or an unknown model
 - **THEN** the category SHALL be permission, BYOK credentials, BYOK selector, unsupported gateway control, invalid request with the reserved reason, or model not found respectively, and any other error SHALL be classified as a provider error
 
+#### Scenario: Routing selection errors
+- **WHEN** selection fails with malformed routing controls, a filter that excludes every candidate, a composed chain above the attempt bound or an unknown fallback model
+- **THEN** the category SHALL be invalid request with the routing-controls, no-candidates or attempt-bound reason respectively, or model not found with the fallback-model reason
+
 #### Scenario: Provider errors
 - **WHEN** invocation or setup fails
 - **THEN** an unsupported request or unsupported functionality SHALL be invalid request, context cancellation SHALL be cancellation, an expired deadline SHALL be timeout, provider status 408 or 504 SHALL be timeout, 429 rate limit, 503 or 529 overload, another 4xx failed dependency and any other status upstream
 - **AND** a transport error SHALL be timeout when it reports a timeout and upstream otherwise, and any other error SHALL be internal
+- **AND** a provider error with no status that is not cancellation, timeout or a transport error SHALL otherwise remain upstream and SHALL never be provider stream
 
 #### Scenario: In-band stream errors
 - **WHEN** a stream error part carries a provider error with no status
-- **THEN** it SHALL be cancellation, timeout, the transport category or upstream, and a status outside 100–599 SHALL be internal
+- **THEN** it SHALL be cancellation, timeout or the transport category when it wraps the corresponding cause, and provider stream otherwise
+- **AND** no other classification SHALL produce provider stream, and no classification SHALL panic
+- **AND** a status outside 100–599 SHALL be internal, and a valid status SHALL use the same status mapping as provider errors
 
 #### Scenario: Adapter documents
 - **WHEN** ProviderWire encodes a failure
-- **THEN** it SHALL choose its fixed document from the category and reason alone, and the documents SHALL equal those written before this change
+- **THEN** it SHALL choose its fixed document from the category and reason alone, and every document other than the unsupported-gateway-control message, the new routing documents and the provider-stream document SHALL equal those written before this change
+- **AND** provider stream SHALL use the fixed status-less stream document defined by providerwire-v4-streaming-runtime
 
 #### Scenario: Inconsistent tool history
 - **WHEN** a call fails because its prompt tool history is inconsistent
@@ -161,7 +169,7 @@ The runtime SHALL classify every failure into one closed category: invalid reque
 - **THEN** provider classification SHALL return internal
 
 ### Requirement: Request-local attempt capture
-Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured calls SHALL publish the same execution overview as before. BYOK calls SHALL publish their captured attempts with request-account attribution. Selections with neither attribution SHALL NOT publish an overview.
+Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry the attempt expected at each chain position, with its destination and the requested ID or `models` entry it belongs to, and SHALL publish an overview checked against them. Selections with no attribution SHALL NOT publish an overview.
 
 #### Scenario: Concurrent calls are isolated
 - **WHEN** two calls run concurrently on one runtime with different fallback outcomes
@@ -170,6 +178,14 @@ Every selection SHALL get its own attempt capture, scoped to the call's context.
 #### Scenario: BYOK attempts
 - **WHEN** a BYOK call tries two accounts and the second is selected
 - **THEN** the capture SHALL hold a failed then a selected attempt, and the response SHALL carry an overview with the requested selector, no canonical identity and those two native attempts in order
+
+#### Scenario: Routed configured attempts
+- **WHEN** a configured call routed across two models tries one candidate of each and the second is selected
+- **THEN** the overview SHALL list both attempts with their configured identities and the requested model's canonical ID, and the routing summary SHALL group them by model
+
+#### Scenario: Routed BYOK attempts
+- **WHEN** a BYOK call routed across `anthropic/x` and `openai/y` observes an attempt whose native identity does not match the destination expected at its position
+- **THEN** no overview SHALL be published
 
 #### Scenario: Attempt after sealing
 - **WHEN** an attempt is observed after the call's outcome was decided
@@ -214,11 +230,15 @@ The execution package godoc SHALL state what the runtime owns and what each adap
 - **THEN** they SHALL find the runtime's responsibilities, the adapter's responsibilities, and the owner of the idle and drain limits and of output lifecycle validation
 
 ### Requirement: Access-aware selection
-One selector SHALL serve every access mode, so each adapter needs one runtime. It SHALL branch on the verified caller's account access. Configured access SHALL resolve through the catalog and refuse call-level `gateway` controls. BYOK access SHALL decode request accounts from those controls. Any other access SHALL fail with the permission category.
+One selector SHALL serve every access mode, so each adapter needs one runtime. It SHALL branch on the verified caller's account access. Configured access SHALL resolve through the catalog and apply routing controls under gateway-request-routing. BYOK access SHALL decode request accounts and routing controls from those controls. Any other access SHALL fail with the permission category.
 
 #### Scenario: Configured access
 - **WHEN** a configured caller calls a catalog model without `gateway` controls
 - **THEN** the selector SHALL resolve it through the catalog and invoke only configured accounts
+
+#### Scenario: Configured routed access
+- **WHEN** a configured caller sends `models`, `order` or `only`
+- **THEN** the selector SHALL resolve every named model through the catalog and compose only configured candidates
 
 #### Scenario: BYOK access
 - **WHEN** a BYOK caller sends valid `gateway.byok` accounts
@@ -382,23 +402,28 @@ On invalid output in a stream, the runtime SHALL cancel the model context and st
 - **THEN** it SHALL write the same frames as before this change, including the synthetic `stream-start`, any written `finish`, and one internal terminal error with the same execution metadata
 
 ### Requirement: Stream end decided by the runtime
-The runtime SHALL decide whether a provider close ends a stream cleanly. A close after an accepted `finish`, with no lifecycle part since, SHALL return the finished outcome, a terminal success with no error that adapters SHALL NOT classify as a failure. Any other close SHALL return the closed outcome. Idle timeout, deadline and cancellation SHALL keep their outcomes after a `finish`.
+The runtime SHALL decide whether a provider close ends a stream cleanly. A close after an accepted `finish`, with no lifecycle part since, SHALL return the finished outcome, a terminal success with no error that adapters SHALL NOT classify as a failure. Otherwise, a close after an accepted error part with no lifecycle part since SHALL return the closed-after-error outcome, which adapters SHALL NOT classify. Any other close SHALL return the closed outcome.
 
 #### Scenario: Close after finish
 - **WHEN** the provider closes the stream after a valid `finish`, with only raw or provider error parts after it
 - **THEN** the wait SHALL return finished, and the call SHALL be reported as a success
 
 #### Scenario: Premature close
-- **WHEN** the provider closes the stream before any `finish`, or after a `response-metadata` that followed the last `finish`
+- **WHEN** the provider closes the stream before any `finish`, or after a `response-metadata` that followed the last `finish`, with no error part after the last lifecycle part
 - **THEN** the wait SHALL return closed
 
+#### Scenario: Close after an error
+- **WHEN** the provider closes the stream after an error part, with only raw or error parts after it and no `finish` as the last lifecycle part
+- **THEN** the wait SHALL return closed after error with a nil error, because the error part already reported the failure, and adapters SHALL end the stream without a terminal error
+- **AND** a lifecycle part after the error SHALL make a later close return closed again
+
 #### Scenario: Stall after finish
-- **WHEN** the idle duration expires, the deadline passes or the request is canceled after an accepted `finish` and before the provider closes
+- **WHEN** the idle duration expires, the deadline passes or the request is canceled after an accepted `finish` or error part and before the provider closes
 - **THEN** the wait SHALL return idle timeout, deadline or canceled respectively, as before this change
 
 #### Scenario: ProviderWire end of stream
-- **WHEN** ProviderWire's stream ends with finished, closed or a context outcome
-- **THEN** it SHALL write the same frames as before this change: nothing more after finished, and its terminal error otherwise
+- **WHEN** ProviderWire's stream ends with finished, closed after error, closed or a context outcome
+- **THEN** it SHALL write nothing more after finished or closed after error, and its terminal error otherwise
 
 ### Requirement: Shared unary output validation
 Before returning a unary result, the runtime SHALL check call uniqueness and result correlation (both including history), approvals, previews left pending at the end, a registered unified finish reason and the flags on non-tool parts. It SHALL validate only a non-nil result returned with no error. A violation SHALL fail the call with the invalid-output error. The rules SHALL be those ProviderWire enforced before this change.
