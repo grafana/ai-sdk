@@ -2,13 +2,19 @@ package anthropic
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"io"
+	"maps"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -60,17 +66,26 @@ func jsonResponse(request *http.Request, body string) *http.Response {
 
 func serviceAccountJSON(t *testing.T, credentialType string) []byte {
 	t.Helper()
+	return serviceAccountKey(t, map[string]string{"type": credentialType})
+}
+
+// serviceAccountKey returns a service account key with a fresh PKCS #8 RSA key,
+// with fields replacing the defaults.
+func serviceAccountKey(t *testing.T, fields map[string]string) []byte {
+	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	encoded := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: must(x509.MarshalPKCS8PrivateKey(key))})
-	raw, err := json.Marshal(map[string]string{
-		"type":           credentialType,
+	values := map[string]string{
+		"type":           "service_account",
 		"project_id":     "key-project",
 		"private_key_id": "key-1",
 		"private_key":    string(encoded),
 		"client_email":   "gateway@key-project.iam.gserviceaccount.com",
 		"token_uri":      fakeTokenURL,
-	})
+	}
+	maps.Copy(values, fields)
+	raw, err := json.Marshal(values)
 	require.NoError(t, err)
 	return raw
 }
@@ -120,6 +135,54 @@ func TestNewVertexWithCredentials(t *testing.T) {
 		assert.NotContains(t, err.Error(), "secret-material")
 	})
 
+	t.Run("without a client ignores the ambient quota project", func(t *testing.T) {
+		t.Setenv("GOOGLE_CLOUD_QUOTA_PROJECT", "ambient-quota-project")
+		var mu sync.Mutex
+		var quotaProjects []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Path == "/token" {
+				_, _ = io.WriteString(w, `{"access_token":"vertex-token","token_type":"Bearer","expires_in":3600}`)
+				return
+			}
+			mu.Lock()
+			quotaProjects = append(quotaProjects, r.Header.Get("X-Goog-User-Project"))
+			mu.Unlock()
+			_, _ = io.WriteString(w, `{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+		}))
+		defer server.Close()
+		key := serviceAccountKey(t, map[string]string{"token_uri": server.URL + "/token"})
+		m, err := NewVertexWithCredentials(context.Background(), "us-east5", "configured-project", "claude-sonnet-4-5", key,
+			WithRequestOptions(option.WithBaseURL(server.URL), option.WithMaxRetries(0)))
+		require.NoError(t, err)
+		generateHello(t, m)
+		assert.Equal(t, []string{""}, quotaProjects)
+	})
+
+	t.Run("checks the private key encoding", func(t *testing.T) {
+		rsaKey := must(rsa.GenerateKey(rand.Reader, 2048))
+		ecKey := must(ecdsa.GenerateKey(elliptic.P256(), rand.Reader))
+		for _, tc := range []struct {
+			name  string
+			block *pem.Block
+			valid bool
+		}{
+			{"PKCS #1 RSA", &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(rsaKey)}, true},
+			{"PKCS #8 EC", &pem.Block{Type: "PRIVATE KEY", Bytes: must(x509.MarshalPKCS8PrivateKey(ecKey))}, false},
+			{"PEM with a garbage body", &pem.Block{Type: "PRIVATE KEY", Bytes: []byte("garbage")}, false},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				key := serviceAccountKey(t, map[string]string{"private_key": string(pem.EncodeToMemory(tc.block))})
+				_, err := NewVertexWithCredentials(context.Background(), "us-east5", "configured-project", "claude-sonnet-4-5", key)
+				if tc.valid {
+					assert.NoError(t, err)
+				} else {
+					assert.ErrorContains(t, err, "private key")
+				}
+			})
+		}
+	})
+
 	t.Run("requires location and project", func(t *testing.T) {
 		for _, tc := range []struct{ location, project string }{{"", "configured-project"}, {"us-east5", ""}} {
 			_, err := NewVertexWithCredentials(context.Background(), tc.location, tc.project, "claude-sonnet-4-5", serviceAccountJSON(t, "service_account"))
@@ -141,6 +204,33 @@ func TestNewVertex_WithHTTPClientKeepsAuthorization(t *testing.T) {
 	generateHello(t, m)
 	require.Len(t, fake.requests, 1)
 	assert.Equal(t, "Bearer adc-token", fake.requests[0].authorization)
+}
+
+func TestNewVertex_LocationMustBeOneDNSLabel(t *testing.T) {
+	for _, location := range []string{"evil.test/x?", "attacker.example#", "us-east5 ", "us-east5\n", "-us", "us_east5"} {
+		t.Run(location, func(t *testing.T) {
+			_, err := NewVertexWithCredentials(context.Background(), location, "configured-project", "claude-sonnet-4-5", serviceAccountJSON(t, "service_account"))
+			require.ErrorContains(t, err, "single DNS label")
+			_, err = NewVertex(context.Background(), location, "configured-project", "claude-sonnet-4-5")
+			require.ErrorContains(t, err, "single DNS label")
+		})
+	}
+	for _, location := range []string{"us-east5", "global", "us", "eu", "europe-west1"} {
+		assert.NoError(t, checkVertexLocation(location), location)
+	}
+}
+
+func TestNewVertex_WithHTTPClientCarriesTokenExchange(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "key.json")
+	require.NoError(t, os.WriteFile(path, serviceAccountJSON(t, "service_account"), 0o600))
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", path)
+	fake := &fakeVertex{}
+	m, err := NewVertex(context.Background(), "us-east5", "configured-project", "claude-sonnet-4-5", WithHTTPClient(&http.Client{Transport: fake}), WithRequestOptions(option.WithMaxRetries(0)))
+	require.NoError(t, err)
+	generateHello(t, m)
+	require.Len(t, fake.tokens, 1)
+	require.Len(t, fake.requests, 1)
+	assert.Equal(t, "Bearer vertex-token", fake.requests[0].authorization)
 }
 
 func TestNew_WithHTTPClient(t *testing.T) {

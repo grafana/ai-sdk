@@ -53,13 +53,22 @@ if err != nil {
 }
 ```
 
-To authenticate with a service account key instead, pass the key file's JSON
-to `NewVertexWithCredentials`. It accepts only `service_account` keys, checks
-the private key during setup and never consults Application Default
-Credentials. Set a custom HTTP client with `WithHTTPClient`, which carries both
-the token exchange and the Vertex requests. A client passed through
-`WithRequestOptions` replaces the authorized client, so Vertex requests would
-go out without credentials.
+To authenticate with a service account key instead of Application Default
+Credentials, pass the key file's JSON:
+
+```go
+model, err := anthropic.NewVertexWithCredentials(
+	ctx, "us-east5", "my-project", "claude-sonnet-5", keyJSON,
+	anthropic.WithHTTPClient(egressClient),
+)
+```
+
+The private key is parsed during setup, but Google checks the key only on the
+first model call, so a disabled or revoked key fails there. The key's
+`token_uri` is used as given, so load keys only from a trusted source. Pass a
+custom client with `WithHTTPClient`, not `WithRequestOptions`. See the
+[package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/anthropic#NewVertexWithCredentials)
+for accepted key types and what the client carries.
 
 Use the model IDs supported by the selected Anthropic or Vertex endpoint. The
 package exposes model-ID helpers for discovery; availability still depends on
