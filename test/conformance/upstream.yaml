@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: 612be2311464804d1e4897afacbf8f3fc2f6d9e3
+  commit: e197b50b5ddd21b121b704710bddd945970b4d34
   packageSource: npm
-  verifiedAt: 2026-10-29
+  verifiedAt: 2026-10-30
 packages:
-  ai: 7.0.153
-  "@ai-sdk/anthropic": 4.0.88
-  "@ai-sdk/amazon-bedrock": 5.0.124
-  "@ai-sdk/gateway": 4.0.126
-  "@ai-sdk/openai": 4.0.102
-  "@ai-sdk/openai-compatible": 3.0.78
+  ai: 7.0.154
+  "@ai-sdk/anthropic": 4.0.89
+  "@ai-sdk/amazon-bedrock": 5.0.125
+  "@ai-sdk/gateway": 4.0.127
+  "@ai-sdk/openai": 4.0.103
+  "@ai-sdk/openai-compatible": 3.0.79
   "@ai-sdk/provider": 4.0.34
-  "@ai-sdk/provider-utils": 5.0.68
-  "@ai-sdk/react": 4.0.157
+  "@ai-sdk/provider-utils": 5.0.69
+  "@ai-sdk/react": 4.0.158
 verification:
   status: enforced
   conformanceScope: full
@@ -273,10 +273,19 @@ knownGaps:
   - id: openai-chat-provider
     surface: provider-openai
     status: gap
-    description: Upstream OpenAI exposes both Chat Completions and Responses
-      language models. The Go OpenAI provider intentionally exposes only its
-      Responses adapter, so Chat-only request/output behavior (including audio
-      transcript fallback) is outside the current supported provider surface.
+    description: Upstream OpenAI exposes Chat Completions, legacy Completions
+      and Responses language models. The Go OpenAI provider intentionally exposes
+      only its Responses adapter, so Chat-only and Completions-only request/output
+      behavior (including audio transcript fallback and completion prompt
+      validation) is outside the current supported provider surface.
+  - id: openai-compatible-completion-model
+    surface: provider-openai-compatible
+    status: gap
+    description: Upstream @ai-sdk/openai-compatible exposes a legacy /completions
+      language model next to its chat model. The Go OpenAI-compatible provider
+      targets /chat/completions only, so completion prompt conversion, its
+      validation errors and completion response parsing are outside the current
+      supported provider surface.
   - id: openai-incomplete-stream
     surface: provider-openai
     status: intentional-deviation
@@ -320,6 +329,16 @@ knownGaps:
       provider-executed, rejected, denied and executed calls, so the field is
       deterministic across runs. UI chunks, step content and the next provider
       request keep their existing order.
+  - id: telemetry-integration-surface
+    surface: core-streamtext
+    status: gap
+    description: Upstream ai exposes a telemetry integration contract for
+      generation calls, including the telemetry option, Telemetry and dispatcher
+      callbacks, the diagnostics tracing channel and its event payloads such as
+      aiVersion and step errors. The Go port does not expose this integration
+      surface or its event payloads. Go provider middleware such as Agent
+      Observability, Prometheus and logger is a separate Go extension and is not
+      evidence of upstream telemetry parity.
   - id: transcription-model-surface
     surface: provider-contract
     status: gap
