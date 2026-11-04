@@ -1,18 +1,18 @@
 upstream:
   repository: https://github.com/vercel/ai
-  commit: e197b50b5ddd21b121b704710bddd945970b4d34
+  commit: 028a025398782f4938303f48fbeee45c79af544b
   packageSource: npm
-  verifiedAt: 2026-10-30
+  verifiedAt: 2026-11-04
 packages:
-  ai: 7.0.154
-  "@ai-sdk/anthropic": 4.0.89
-  "@ai-sdk/amazon-bedrock": 5.0.125
-  "@ai-sdk/gateway": 4.0.127
-  "@ai-sdk/openai": 4.0.103
-  "@ai-sdk/openai-compatible": 3.0.79
-  "@ai-sdk/provider": 4.0.34
-  "@ai-sdk/provider-utils": 5.0.69
-  "@ai-sdk/react": 4.0.158
+  ai: 7.0.159
+  "@ai-sdk/anthropic": 4.0.94
+  "@ai-sdk/amazon-bedrock": 5.0.130
+  "@ai-sdk/gateway": 4.0.132
+  "@ai-sdk/openai": 4.0.106
+  "@ai-sdk/openai-compatible": 3.0.82
+  "@ai-sdk/provider": 4.0.35
+  "@ai-sdk/provider-utils": 5.0.72
+  "@ai-sdk/react": 4.0.163
 verification:
   status: enforced
   conformanceScope: full
@@ -171,13 +171,14 @@ knownGaps:
   - id: bedrock-sonnet-5-5-reasoning-none
     surface: provider-bedrock
     status: documented-deviation
-    description: Upstream @ai-sdk/amazon-bedrock 5.0.99 maps reasoning none to
-      disabled, which omits the thinking field, so claude-sonnet-5-5 runs adaptive
-      thinking at its default effort. Go sends thinking type between_tools, the
-      model's lowest setting, matching the Anthropic provider; Bedrock Converse
-      accepts it at low, medium, and high effort. Go also accepts
-      reasoningConfig.type between_tools, which upstream does not, and lowers
-      xhigh or max effort to high for it, as the Anthropic provider does.
+    description: Go sends thinking type between_tools for reasoning none on
+      claude-sonnet-5-5, the model's lowest setting, matching the Anthropic
+      provider. Historical @ai-sdk/amazon-bedrock 5.0.99 omitted the thinking
+      field instead; the registered reference now also substitutes
+      between_tools, so the remaining deviation is that Go also accepts
+      reasoningConfig.type between_tools, which the registered option schema
+      rejects, and lowers xhigh or max effort to high for it, as the Anthropic
+      provider does.
   - id: bedrock-tool-result-file-urls
     surface: provider-bedrock
     status: intentional-deviation
