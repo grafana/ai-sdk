@@ -63,6 +63,12 @@ second call
   → model continues with the outcome
 ```
 
+When the last tool message repeats a decision for the same tool call, the SDK
+collects only the first eligible response, even if later responses disagree or
+refer to another approval request for that call. Existing results in that message
+prevent duplicate execution; results in earlier messages do not provide
+cross-request deduplication.
+
 Provider-executed tools, such as OpenAI MCP calls, receive the decision through
 the provider. For a denied provider-executed call, `GenerateText` also adds an
 execution-denied result to `ResponseMessages` that carries the approval ID;
