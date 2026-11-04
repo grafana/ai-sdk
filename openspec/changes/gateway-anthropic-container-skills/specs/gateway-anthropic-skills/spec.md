@@ -22,7 +22,7 @@ A configured candidate (route `primary` or `fallback` entry) SHALL accept an opt
 - **THEN** that candidate SHALL refuse every non-empty container skills list, as before this change
 
 ### Requirement: Strict skills policy validation
-Configuration loading SHALL fail before secret resolution or provider construction when a policy is on a candidate whose provider type is not `anthropic`, or when `allow` is empty. It SHALL also fail when an entry has an unknown type, an empty, blank, invalid UTF-8 or over-128-byte `skillId` or version, a repeated `(type, skillId)`, a repeated version, or an empty `versions` list. Strict YAML SHALL reject unknown policy fields, and errors SHALL NOT echo values.
+Model catalog validation (the `model_catalog` setting) SHALL fail before secret resolution or provider construction when a policy is on a candidate whose provider type is not `anthropic`, or when `allow` is empty. It SHALL also fail when an entry has an unknown type, an empty, blank, invalid UTF-8 or over-128-byte `skillId` or version, a repeated `(type, skillId)`, a repeated version, or an empty `versions` list. Strict YAML SHALL reject unknown policy fields, and errors SHALL NOT echo values.
 
 #### Scenario: Policy on an unsupported provider type
 - **WHEN** an `openai` or `openai-compatible` candidate declares `skills`
@@ -35,6 +35,17 @@ Configuration loading SHALL fail before secret resolution or provider constructi
 #### Scenario: Candidate duplicate detection is unchanged
 - **WHEN** two fallback entries share provider and model but carry different policies
 - **THEN** startup SHALL reject the repeated candidate as before
+
+### Requirement: Single skills policy per destination
+All configured candidates, in any route, that name the same provider instance and backend model SHALL carry an equal skills policy (compared as sets, ignoring order) or all omit it. Otherwise model catalog validation SHALL fail before secret resolution, naming the conflicting candidate paths without values, so routing's destination dedup cannot change which policy applies.
+
+#### Scenario: Shared destination with differing policies
+- **WHEN** route `a`'s primary and route `b`'s fallback both name provider `anthropic-main` and model `claude-x`, and only one of them declares `skills`, or both declare different allow lists
+- **THEN** startup SHALL fail with a diagnostic naming both candidate paths and no skill IDs
+
+#### Scenario: Shared destination with equal policies
+- **WHEN** two routes name the same provider instance and backend model with allow lists that differ only in entry or version order
+- **THEN** the catalog SHALL load, and a routed call that skips the repeated destination SHALL apply the same policy whichever placement is kept
 
 ### Requirement: Static skill request bounds
 Each native Anthropic attempt SHALL validate any non-empty skills list in the `AnthropicOptions` the adapter consumes, before native I/O in both modes. The list SHALL have at most 8 entries. Each type SHALL be checked first and SHALL be `anthropic` or `custom`. Each resolved skill ID SHALL be non-empty valid UTF-8 of at most 128 bytes; an empty version SHALL count as omitted, and any other version SHALL meet the same bound. Resolved `(type, ID)` pairs SHALL be distinct.
@@ -70,6 +81,10 @@ On a configured candidate, every requested skill SHALL match an allow entry by t
 - **WHEN** no candidate of a configured route allows the requested skills
 - **THEN** the call SHALL return the fixed invalid-request error and no candidate SHALL make a native request
 
+#### Scenario: Routed chain uses each candidate's own policy
+- **WHEN** a configured caller calls an unpolicied route with `gateway.models` naming a route whose candidate, on a different destination, allows the requested skills
+- **THEN** the unpolicied candidate SHALL make no native request, the routed chain SHALL advance, and the policied candidate SHALL serve the request under its own policy, granting nothing the caller could not get by calling that route directly
+
 ### Requirement: BYOK skills admission
 Request-account (BYOK) invocation SHALL NOT consult configured skills policies. It SHALL admit `anthropic` and `custom` skills and `container.id` that satisfy the static bounds, before any account attempt and again on each account after translation, in unary and streaming modes.
 
@@ -78,8 +93,12 @@ Request-account (BYOK) invocation SHALL NOT consult configured skills policies. 
 - **THEN** the native request on the caller's account SHALL carry both unchanged, regardless of any configured policy
 
 #### Scenario: BYOK bounds violation
-- **WHEN** an Anthropic BYOK call sends skills that violate the static bounds
+- **WHEN** an all-Anthropic BYOK chain receives skills that violate the static bounds
 - **THEN** it SHALL return the existing unsupported-request error with zero account attempts and no overview
+
+#### Scenario: BYOK bounds violation in a mixed routed chain
+- **WHEN** a routed BYOK chain with an Anthropic account and an OpenAI fallback model receives skills that violate the static bounds
+- **THEN** the Anthropic attempt SHALL fail before its native request, and the OpenAI candidate SHALL serve the request
 
 ### Requirement: Operator-account skill scoping
 Configured-mode custom skills SHALL be treated as operator-owned resources shared with every caller of the allowing candidate. The Gateway SHALL NOT offer per-tenant or per-namespace skill scoping. Documentation SHALL state that listed custom skills are shared by all callers of that candidate, and that skill-generated files remain in the operator's account.

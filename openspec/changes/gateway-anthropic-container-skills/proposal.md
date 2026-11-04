@@ -15,11 +15,12 @@ Custom skills and container IDs are resources of the operator's Anthropic accoun
   - A request with skills but no `code_execution_20250825`/`_20260120` tool gets upstream's `other` warning: "code execution tool is required when using skills".
 - **Candidate skills policy (ai-gateway config):**
   - Adds an optional per-candidate `skills.allow` list on a route's `primary` and on each `fallback` entry. Each entry has a `type` (`anthropic` or `custom`), a `skillId` and optional `versions`.
-  - The policy is valid only on `anthropic` provider candidates and is checked at load.
+  - The policy is valid only on `anthropic` provider candidates and is checked when the `model_catalog` setting is parsed (`config.ParseModelCatalog`).
+  - Every candidate, in any route, that names the same provider instance and backend model carries an equal policy or none, so request routing's destination dedup cannot change which policy applies *(confirm with nara)*.
   - Absent policy means deny, which is today's behavior.
 - **Native enforcement (`nativeoptions`):**
   - Static bounds apply in both modes: at most 8 skills, known type first, then a non-empty resolved ID of at most 128 bytes, an optional version (empty means omitted) of at most 128 bytes, and distinct entries. A custom skill without `providerReference.anthropic` is malformed.
-  - Configured candidates also enforce their allowlist and refuse `container.id` combined with skills.
+  - Configured candidates also enforce their allowlist and refuse `container.id` combined with skills. Routed chains (`gateway.models`/`order`/`only`, #596) apply each candidate's own policy per attempt.
   - Refusal uses the existing `catalog.ErrUnsupportedRequest` before native I/O, without echoing IDs.
 - **BYOK (request-account) mode:**
   - Admits `anthropic` and `custom` skills and `container.id` subject only to the static bounds. These are the key holder's own resources.
@@ -33,7 +34,7 @@ Custom skills and container IDs are resources of the operator's Anthropic accoun
 
 ### New Capabilities
 
-- `gateway-anthropic-skills`: covers the operator policy for Anthropic container skills per configured candidate, the request bounds, BYOK admission, account scoping and evidence boundaries.
+- `gateway-anthropic-skills`: covers the operator policy for Anthropic container skills per configured candidate, its per-destination consistency under request routing, the request bounds, BYOK admission, account scoping and evidence boundaries.
 
 ### Modified Capabilities
 
@@ -45,14 +46,15 @@ Custom skills and container IDs are resources of the operator's Anthropic accoun
 ## Impact
 
 - **Code:**
-  - `providers/anthropic`: `options.go:221-232` and `convert_request.go:3103-3122`.
-  - `ai-gateway/cmd/grafana-ai-gateway/internal`: `config/file.go:51-54`, `nativeoptions/options.go:42-81`, `service/catalog.go:55-61` and `byok/model.go:17-21`, plus tests.
+  - `providers/anthropic`: `options.go:221-232` and `convert_request.go:218-220,3139-3158`.
+  - `ai-gateway/pkg/internal`: `config/file.go:51-55,99-209`, `nativeoptions/options.go:42-81`, `service/catalog.go:76-82` and `byok/model.go:67-69,78`, plus tests.
 - **API:**
   - Breaking for `providers/anthropic` Go callers: typed `ContainerSkillType`, new `ContainerSkill.ProviderReference` and a skill-ID resolver; custom skills set only through `skillId` now fail. The PR title carries breaking intent (`feat!:` or a `BREAKING CHANGE:` footer, `CONTRIBUTING.md:518-527`).
   - A new strict-YAML candidate field. Existing configs load unchanged.
-- **Modules:** one PR may carry the provider and Gateway changes. The Gateway builds from same-revision SDK source through the `ai-gateway/go.mod` replace directives (`CONTRIBUTING.md:567-568`), and libraries release together from one release PR (`CONTRIBUTING.md:536-540`); there is no manual publication order or tagging. Run `mise run tidy`, commit any `go.mod`/`go.sum` changes, and validate with `MODULE=providers/anthropic mise run verify-module`.
+- **Modules:** one PR may carry the provider and Gateway changes. The Gateway builds from same-revision SDK source through the `ai-gateway/go.mod` replace directives (`CONTRIBUTING.md:567-569`), and libraries release together from one release PR (`CONTRIBUTING.md:536-540`); there is no manual publication order or tagging. Run `mise run tidy`, commit any `go.mod`/`go.sum` changes, and validate with `MODULE=providers/anthropic mise run verify-module`.
 - **Merge gating (option (a)):** this change archives on merge together with WP1-WP3, the spec deltas and the docs. Its evidence is the Go and TS command tests plus the direct Go replay of the pptx fixture, so it does not wait for #201. WP1 and WP2 may merge earlier only as their own PRs without an unarchived OpenSpec change; WP3 merges only with the spec deltas and the archive. A follow-up, delivered with or after #201, updates `test/conformance/tools/gateway-runtime.mts` and owns issue acceptance #1. #563 stays open until it lands, so this PR must not close #563 (design "Work packages and delivery").
-- **Baseline:** `@ai-sdk/anthropic` 4.0.82 (`test/conformance/upstream.yaml:8`). No pins or recorded fixtures change.
+- **Baseline:** `@ai-sdk/anthropic` 4.0.94 (`test/conformance/upstream.yaml:8`); skills behavior is unchanged since 4.0.82. No pins or recorded fixtures change.
 - **Related issues:**
   - Overlaps #216 ("custom skill providerReference"). Update #216 to drop the skills items.
   - The matrix follow-up depends on #201. This change does not.
+  - #562 faces the same routed-dedup issue for its candidate fallbacks policy; the consistency rule should cover both (design D9).
