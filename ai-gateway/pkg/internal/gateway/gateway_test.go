@@ -102,7 +102,6 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 			env["GF_PLUGIN_ACCESS_MODE"] = "self-hosted"
 			env["GF_PLUGIN_ACCESS_INTERNAL_SERVICES"] = "svc-a"
 		}, message: "requires cloud access mode"},
-		{name: "no signing keys", change: func(env map[string]string) { delete(env, "GRAFANA_JWKS") }, message: "GRAFANA_JWKS_URL or GRAFANA_JWKS"},
 		{name: "no signing keys with insecure skip", change: func(env map[string]string) {
 			delete(env, "GRAFANA_JWKS")
 			env[plugin.EnvVarInsecureSkipAuthentication] = "true"
@@ -153,6 +152,38 @@ func TestNew_ValidatesBeforeSecrets(t *testing.T) {
 				assert.NotContains(t, err.Error(), private)
 				assert.NotContains(t, logs, private)
 			}
+		})
+	}
+}
+
+func TestNew_StartsIdleWithoutSigningKeys(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(map[string]string)
+	}{
+		{name: "valid settings"},
+		{name: "no settings", change: func(env map[string]string) { clear(env) }},
+		{name: "invalid settings", change: func(env map[string]string) {
+			env["GF_PLUGIN_ACCESS_MODE"] = "hybrid"
+			env["GF_PLUGIN_MODEL_CATALOG"] += "unknown: backend-private\n"
+		}},
+		{name: "insecure skip disabled", change: func(env map[string]string) { env[plugin.EnvVarInsecureSkipAuthentication] = "false" }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newStartupEnvironment(t, "https://provider.example")
+			delete(env.values, "GRAFANA_JWKS")
+			if tc.change != nil {
+				tc.change(env.values)
+			}
+			gw, logs, err := env.start(t)
+			require.NoError(t, err)
+			assert.True(t, gw.Idle())
+			assert.Nil(t, gw.Handler())
+			assert.Nil(t, gw.Authenticator())
+			assert.Empty(t, env.secrets)
+			assert.Empty(t, logs)
+			gw.Close()
 		})
 	}
 }
@@ -225,6 +256,7 @@ func TestNew_EnvironmentOnlyStartup(t *testing.T) {
 			tc.change(env.values)
 			gw, logs, err := env.start(t)
 			require.NoError(t, err)
+			assert.False(t, gw.Idle())
 			require.NotNil(t, gw.Handler())
 			require.NotNil(t, gw.Authenticator())
 			if _, enabled := env.values["GF_PLUGIN_AGENTO11Y_TOKEN"]; enabled {
@@ -334,6 +366,43 @@ func TestPluginProcess_ServesThroughThePluginProtocol(t *testing.T) {
 	assert.NotContains(t, string(metrics), providerSecret)
 
 	assert.Less(t, p.process.Stop(), 2*time.Second)
+}
+
+func TestPluginProcess_StartsIdleWithoutSigningKeys(t *testing.T) {
+	binary := buildPlugin(t)
+	data := manifestdata.LocalManifest().ManifestData
+	host, err := platformhost.New(platformhost.Config{Topology: platformhost.TopologyCloud, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion})
+	require.NoError(t, err)
+	logs := &syncBuffer{}
+	process, err := host.LaunchPlugin(platformhost.PluginConfig{
+		Binary:             binary,
+		WithoutSigningKeys: true,
+		Logger:             hclog.New(&hclog.LoggerOptions{Name: "plugin", Level: hclog.Info, Output: logs, JSONFormat: true}),
+	})
+	require.NoError(t, err)
+	server := httptest.NewServer(host.Handler(process.RouteClient()))
+	t.Cleanup(func() {
+		server.Close()
+		process.Stop()
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	status, _, err := process.CheckHealth(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "OK", status)
+
+	token, err := host.ServiceToken(testInternalService, testNamespace)
+	require.NoError(t, err)
+	route := server.URL + strings.Replace(RoutePrefix(), "{namespace}", testNamespace, 1) + "/language-model"
+	code, body := do(t, languageRequest(t, ctx, route, unaryBody, false, accessToken(token)))
+	assert.Equal(t, http.StatusInternalServerError, code, body)
+	assert.Contains(t, body, "plugin has no authenticator configured")
+
+	process.Stop()
+	assert.Contains(t, logs.String(), `"event":"plugin_idle"`)
+	assert.Contains(t, logs.String(), "no authenticator configured")
+	assert.NotContains(t, logs.String(), "startup_failure")
 }
 
 func TestPluginProcess_LogsThroughTheHostProtocol(t *testing.T) {
