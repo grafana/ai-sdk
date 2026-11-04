@@ -59,14 +59,14 @@ Each native Anthropic attempt of a configured candidate SHALL resolve the `Anthr
 - **THEN** the translated options SHALL be checked against that candidate's policy before its native request
 
 ### Requirement: Gateway server-fallback support boundaries
-The allowlist, distinctness and exact-byte rules SHALL be intentional Gateway support boundaries: registered `@ai-sdk/anthropic` 4.0.82 forwards any non-empty array, including repeated models, without an allowlist. Distinctness caps the server-side generations one request can bill to the operator account at the allowlist size, without a new count constant. Exact-byte matching treats model IDs as opaque.
+The allowlist, distinctness and exact-byte rules SHALL be intentional Gateway support boundaries: registered `@ai-sdk/anthropic` 4.0.94 forwards any non-empty array, including repeated models, without an allowlist. Distinctness caps the server-side generations one request can bill to the operator account at the allowlist size, without a new count constant. Exact-byte matching treats model IDs as opaque.
 
 #### Scenario: Requests upstream would forward
 - **WHEN** a chain repeats an allowlisted model with different `thinking`, or names a case or whitespace variant of an allowlisted model
 - **THEN** the attempt SHALL be refused before its native request, as for any disallowed chain
 
 ### Requirement: Server-side fallback stays inside one Gateway attempt
-Server-side fallback SHALL run within one Gateway attempt and one outbound request. Each configured candidate SHALL apply only its own policy, including candidates chosen by any future request router. A policy refusal SHALL fail that candidate before its native request; the existing Gateway fallback decider SHALL then decide advancement as for any unsupported-request error. No new retry layer or cross-candidate pre-validation SHALL be added.
+Server-side fallback SHALL run within one Gateway attempt and one outbound request. Each configured candidate SHALL apply only its own policy. A policy refusal SHALL fail that candidate before its native request; the existing Gateway fallback decider SHALL then decide advancement as for any unsupported-request error. No new retry layer or cross-candidate pre-validation SHALL be added.
 
 #### Scenario: Primary refuses and fallback candidate allows
 - **WHEN** the primary has no policy, the next candidate allows the requested chain and the call sends that chain
@@ -75,6 +75,17 @@ Server-side fallback SHALL run within one Gateway attempt and one outbound reque
 #### Scenario: No candidate allows the request
 - **WHEN** every candidate's policy refuses the requested fallbacks
 - **THEN** the call SHALL return the fixed invalid-request error with no native request
+
+### Requirement: Server-side fallback across routed attempts
+A request routed under gateway-request-routing SHALL apply, at each attempt, the policy of the configured candidate that attempt was composed from, as that capability's candidate-native request semantics require. When routes share a destination, the policy of the candidate composed first SHALL apply, because a repeated destination is attempted once.
+
+#### Scenario: Requested route refuses and a fallback model allows
+- **WHEN** route `A` has no policy, route `B` has a different destination and allows the requested chain, and the call to `A` sends that chain with `models: [B]`
+- **THEN** `A`'s candidates SHALL make no native request, `B`'s candidate SHALL receive the chain, and the overview SHALL list `A`'s failed attempts then `B`'s selected attempt
+
+#### Scenario: Routes share a destination with different policies
+- **WHEN** routes `A` (no policy) and `B` (allowing the chain) each have only one candidate, both on the same provider instance and backend model, and a call sends the chain to `A` with `models: [B]`, or to `B` with `models: [A]`
+- **THEN** the call to `A` SHALL fail with the fixed invalid-request error and no native request, and the call to `B` SHALL send the chain in one native request through `B`'s candidate
 
 ### Requirement: Server-side fallback evidence boundary
 Acceptance SHALL use synthetic native requests for policy cases. For allowed requests it SHALL replay the two recorded fixtures `anthropic/recorded/server-side-fallback-{chain,default}`, unchanged, through the real Gateway command with both registered clients. The test SHALL configure a fixed policy per fixture and SHALL NOT derive it from the request. Evidence SHALL NOT claim live refusal-triggered hops, Anthropic's `"default"` choice or billing of fallback-served turns.

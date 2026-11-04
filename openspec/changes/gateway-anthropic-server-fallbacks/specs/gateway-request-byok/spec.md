@@ -25,12 +25,12 @@ Request-only invocation SHALL retain shared consumption-backed guards before att
 - **THEN** the native adapter SHALL receive the MCP configuration and history without consulting configured accounts
 
 ### Requirement: Shared native execution protections
-Configured and request-only models SHALL share consumption-backed native protection. Valid Anthropic MCP/history and inert markers SHALL survive; unsupported consumed execution controls in the request SHALL fail before any account attempt, and those produced by per-attempt translation SHALL fail that account's attempt before its native request, without new field inventories or adapter changes.
+Configured and request-only models SHALL share consumption-backed native protection. Valid Anthropic MCP/history and inert markers SHALL survive; unsupported consumed execution controls in the request SHALL fail before any account attempt when every composed destination is Anthropic, and otherwise each Anthropic account's attempt SHALL fail before its native request; those produced by per-attempt translation SHALL fail that account's attempt before its native request, without new field inventories or adapter changes.
 
 #### Scenario: Native consumption policy
 - **WHEN** an Anthropic request-only model receives native options and history
 - **THEN** Configured and BYOK construction SHALL share the existing consumption-backed native-option checks, applied to each candidate or account after per-attempt option translation; BYOK SHALL also apply them to the request before its first account attempt.
-- **AND** Anthropic BYOK invocation SHALL validate consumed MCP configuration and provider-owned history under gateway-anthropic-mcp, and refuse container skills and native server-side fallback before any account attempt, and again on each account after translation, in both unary and streaming modes.
+- **AND** Anthropic BYOK invocation SHALL validate consumed MCP configuration and provider-owned history under gateway-anthropic-mcp, and refuse container skills and native server-side fallback before any account attempt when every composed destination is Anthropic, and otherwise on each Anthropic account before its native request, and again on each account after translation, in both unary and streaming modes.
 - **AND** BYOK native server-side fallback refusal SHALL hold regardless of any configured candidate's gateway-anthropic-server-fallbacks policy; BYOK SHALL have no server-fallback policy of its own.
 - **AND** Valid MCP configuration/history and inert local markers SHALL retain their native semantics.
 - **AND** These checks SHALL NOT introduce a provider-field inventory or change the native SDK adapters.
@@ -54,3 +54,7 @@ Configured and request-only models SHALL share consumption-backed native protect
 #### Scenario: Configured policy does not reach BYOK
 - **WHEN** a configured candidate allows `claude-opus-4-8` with `allowDefault: true`, and an Anthropic BYOK call sends either a chain naming `claude-opus-4-8` or `"default"`, in unary or streaming mode
 - **THEN** the BYOK call SHALL return the existing unsupported-request error with zero account attempts and no overview
+
+#### Scenario: Routed fallback-model accounts refuse
+- **WHEN** an Anthropic BYOK call sends a chain or `"default"` with `models: ["anthropic/y"]`, or with `models: ["openai/y"]`, in unary or streaming mode
+- **THEN** the all-Anthropic chain SHALL return the existing unsupported-request error with zero account attempts and no overview, and in the mixed chain each Anthropic account SHALL fail before its native request, so no native request SHALL carry server-side fallback

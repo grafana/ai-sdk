@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Request-local attempt capture
-Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. The runtime SHALL record the selected output's served model identity, as defined by gateway-execution-overview, including markers observed after sealing, without changing the sealed attempts list. Configured calls SHALL publish the same attempts in the same order as before, differing only by `servedModelId` when one was recorded. BYOK calls SHALL publish their captured attempts with request-account attribution. Selections with neither attribution SHALL NOT publish an overview.
+Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry the attempt expected at each chain position, with its destination and the requested ID or `models` entry it belongs to, and SHALL publish an overview checked against them. The runtime SHALL record the selected output's served model identity, as defined by gateway-execution-overview, including markers observed after sealing, without changing the sealed attempts list or that check. Selections with no attribution SHALL NOT publish an overview.
 
 #### Scenario: Concurrent calls are isolated
 - **WHEN** two calls run concurrently on one runtime with different fallback outcomes
@@ -12,6 +12,14 @@ Every selection SHALL get its own attempt capture, scoped to the call's context.
 #### Scenario: BYOK attempts
 - **WHEN** a BYOK call tries two accounts and the second is selected
 - **THEN** the capture SHALL hold a failed then a selected attempt, and the response SHALL carry an overview with the requested selector, no canonical identity and those two native attempts in order
+
+#### Scenario: Routed configured attempts
+- **WHEN** a configured call routed across two models tries one candidate of each and the second is selected
+- **THEN** the overview SHALL list both attempts with their configured identities and the requested model's canonical ID, and the routing summary SHALL group them by model
+
+#### Scenario: Routed BYOK attempts
+- **WHEN** a BYOK call routed across `anthropic/x` and `openai/y` observes an attempt whose native identity does not match the destination expected at its position
+- **THEN** no overview SHALL be published
 
 #### Scenario: Attempt after sealing
 - **WHEN** an attempt is observed after the call's outcome was decided
