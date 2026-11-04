@@ -184,21 +184,27 @@ describe("candidate-source workflow gates", () => {
     const pin = pinSteps[2]!;
     assert.deepEqual(pin.env, {
       GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}",
+      GH_TOKEN: "${{ github.token }}",
       PLUGIN_VERSION: "${{ fromJSON(needs.publish.outputs.plugin).version }}",
     });
     assert.doesNotMatch(pin.run!, /\$\{\{/, "pass expressions through env");
 
     const sha = "0123456789abcdef0123456789abcdef01234567";
-    const run = (version: string) => {
+    const newer = "fedcba9876543210fedcba9876543210fedcba98";
+    const run = (version: string, head: string | null = sha) => {
       const stub = mkdtempSync(join(tmpdir(), "pin-"));
       try {
         writeFileSync(join(stub, "docker"), `#!/usr/bin/env bash\nprintf '%s\\0' "$@" > "${stub}/args"\nprintf '%s' "$GITHUB_TOKEN" > "${stub}/token"\n`);
+        writeFileSync(join(stub, "gh"), `#!/usr/bin/env bash\nprintf '%s\\0' "$GH_TOKEN" "$@" > "${stub}/gh-args"\n[ -n "$STUB_HEAD" ] || exit 1\nprintf '%s\\n' "$STUB_HEAD"\n`);
         chmodSync(join(stub, "docker"), 0o755);
+        chmodSync(join(stub, "gh"), 0o755);
         const result = spawnSync("bash", ["-c", pin.run!], {
           env: {
             ...process.env,
             PATH: `${stub}:${process.env.PATH}`,
             GITHUB_TOKEN: "test-token",
+            GH_TOKEN: "read-token",
+            STUB_HEAD: head ?? "",
             PLUGIN_VERSION: version,
             GITHUB_SHA: sha,
             GITHUB_SERVER_URL: "https://github.com",
@@ -209,6 +215,8 @@ describe("candidate-source workflow gates", () => {
         const called = existsSync(join(stub, "args"));
         return {
           status: result.status,
+          stdout: result.stdout.toString(),
+          headLookup: existsSync(join(stub, "gh-args")) ? readFileSync(join(stub, "gh-args"), "utf8").split("\0").slice(0, -1) : undefined,
           args: called ? readFileSync(join(stub, "args"), "utf8").split("\0").slice(0, -1) : undefined,
           token: called ? readFileSync(join(stub, "token"), "utf8") : undefined,
         };
@@ -220,6 +228,7 @@ describe("candidate-source workflow gates", () => {
     const version = `0.1.0-alpha.1+${sha}`;
     const published = run(version);
     assert.equal(published.status, 0);
+    assert.deepEqual(published.headLookup, ["read-token", "api", "repos/grafana/ai-sdk/git/ref/heads/main", "--jq", ".object.sha"]);
     assert.equal(published.token, "test-token");
     const config = published.args!.find((arg) => arg.startsWith("CONFIG_JSON="));
     assert.deepEqual(published.args, ["run", "--rm", "-e", "GITHUB_TOKEN", "-e", config, "us-docker.pkg.dev/grafanalabs-global/docker-deployment-tools-prod/updater"]);
@@ -239,6 +248,17 @@ describe("candidate-source workflow gates", () => {
       const refused = run(mismatch);
       assert.notEqual(refused.status, 0, mismatch);
       assert.equal(refused.args, undefined, `${mismatch}: must not request a pin`);
+    }
+
+    const retriedAfterNewerPin = run(version, newer);
+    assert.equal(retriedAfterNewerPin.status, 0, "a superseded commit is expected, not a failure");
+    assert.equal(retriedAfterNewerPin.args, undefined, "a superseded commit must not replace a newer pin");
+    assert.match(retriedAfterNewerPin.stdout, new RegExp(`^::notice::.*${newer}`, "m"));
+
+    for (const head of [null, "not-a-sha"]) {
+      const unknown = run(version, head);
+      assert.notEqual(unknown.status, 0, `${head}`);
+      assert.equal(unknown.args, undefined, `${head}: must not pin without knowing the head of main`);
     }
   });
 

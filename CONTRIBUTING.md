@@ -602,7 +602,10 @@ SDK's Go module dependency graph.
   each environment's plugin backend runs. After a successful dev publication, the
   publish workflow opens an auto-merge pull request there that pins dev to exactly
   the version just published; the pull request links back to the publish run. A
-  newer publication replaces a pin pull request that has not merged yet. Once the
+  newer publication replaces a pin pull request that has not merged yet. Only a
+  commit that is still the head of `main` is pinned: a run whose commit was
+  superseded, including a rerun of an older run, skips the pin with a notice, so
+  it never moves dev back. Once the
   pin merges and is applied, the dev plugin backend restarts on that version, so
   dev runs a commit only after its pin pull request merged. Ops and prod pins are
   not changed. The pin needs a one-time grant in the deployment repository that

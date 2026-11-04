@@ -8,6 +8,7 @@ Each `main` push publishes a new Gateway plugin version to the dev catalog, but 
 
 - After a successful dev publication, the publish workflow opens an auto-merge pull request in the deployment repository that pins the dev environment to exactly the version just published. A newer publication replaces an earlier pull request that has not merged.
 - The job refuses to pin a version that does not end in `+<sha>` of the published commit.
+- The job pins only while the published commit is still the head of `main`. A rerun of an older publication skips the pin, so it cannot replace a newer pin or roll dev back.
 - Pull requests, forks and failed or skipped publications open no pull request. Ops and prod pins are unchanged.
 - Maintainer documentation describes how a published version reaches dev and how to roll back by pinning an earlier published version.
 

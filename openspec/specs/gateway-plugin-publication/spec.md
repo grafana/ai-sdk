@@ -65,7 +65,7 @@ Maintainer documentation SHALL describe how a `main` commit becomes a dev catalo
 - **THEN** the documentation SHALL describe pinning an earlier published version, and that the next `main` publication replaces that pin unless the faulty commit is reverted
 
 ### Requirement: Dev version pin request
-After a version is published to the dev catalog, the publish workflow SHALL open an auto-merge pull request in the deployment repository that pins the dev environment to exactly that version, replacing any earlier pin pull request that has not merged. It SHALL refuse a version that does not end in `+` and the published commit SHA. Pull requests, forks and failed or skipped publications SHALL NOT request a pin.
+After a version is published to the dev catalog, the publish workflow SHALL open an auto-merge pull request in the deployment repository that pins the dev environment to exactly that version, replacing any earlier pin pull request that has not merged. It SHALL request the pin only while the published commit is the head of `main` and the version ends in `+` and that commit's SHA. Pull requests, forks and failed or skipped publications SHALL NOT request a pin.
 
 #### Scenario: Publication requests the dev pin
 - **WHEN** commit `<sha>` is published to the dev catalog as `0.1.0-alpha.1+<sha>`
@@ -74,6 +74,15 @@ After a version is published to the dev catalog, the publish workflow SHALL open
 #### Scenario: Newer publication replaces an open pin
 - **WHEN** a pin pull request for an earlier version has not merged and a newer version is published
 - **THEN** the pin pull request SHALL be replaced by one for the newer version
+
+#### Scenario: Superseded commit requests no pin
+- **WHEN** commit A's pin request is retried after a newer commit B was pushed to `main`
+- **THEN** A's run SHALL succeed without requesting a pin
+- **AND** the pin requested for B SHALL remain
+
+#### Scenario: Head of main is unknown
+- **WHEN** the head of `main` cannot be read when the pin is requested
+- **THEN** the job SHALL fail without requesting a pin
 
 #### Scenario: Failed publication requests no pin
 - **WHEN** the dev publication for a commit fails or is skipped

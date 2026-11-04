@@ -83,12 +83,22 @@ jobs:
       - name: Open the dev version pin pull request
         env:
           GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           PLUGIN_VERSION: ${{ fromJSON(needs.publish.outputs.plugin).version }}
         run: |
           set -euo pipefail
           if [[ "$PLUGIN_VERSION" != ?*"+$GITHUB_SHA" ]]; then
             echo "::error::published version '$PLUGIN_VERSION' does not end in +$GITHUB_SHA"
             exit 1
+          fi
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [[ ! "$head" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::could not read the head of main"
+            exit 1
+          fi
+          if [[ "$head" != "$GITHUB_SHA" ]]; then
+            echo "::notice::skipping the dev pin: main moved from $GITHUB_SHA to $head, whose run pins its own version"
+            exit 0
           fi
           config=$(jq -n \
             --arg version "$PLUGIN_VERSION" \
