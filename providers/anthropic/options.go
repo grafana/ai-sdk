@@ -20,10 +20,11 @@ func WithRequestOptions(opts ...option.RequestOption) Option {
 	}
 }
 
-// WithHTTPClient sets the HTTP client for model requests. On Vertex,
-// authorization is layered onto it; a client passed through
-// [WithRequestOptions] instead replaces the authorized client and sends
-// unauthenticated requests.
+// WithHTTPClient sets the HTTP client for model requests and, on Vertex, for
+// the OAuth token requests of key-based credentials. Metadata-server
+// credentials use their own client. On Vertex, authorization is layered onto
+// the client; a client passed through [WithRequestOptions] instead replaces
+// the authorized client and sends unauthenticated requests.
 func WithHTTPClient(client *http.Client) Option {
 	return func(m *model) { m.httpClient = client }
 }
