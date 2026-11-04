@@ -2,7 +2,7 @@
   "name": "@grafana/aigateway-app",
   "version": "0.1.0-alpha.1",
   "private": true,
-  "packageManager": "pnpm@12.15.0",
+  "packageManager": "pnpm@12.16.1",
   "scripts": {
     "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",
     "dev": "webpack -w -c ./.config/webpack/webpack.config.ts --env development",
@@ -72,12 +72,12 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@emotion/css": "11.10.6",
-    "@grafana/data": "13.2.3",
-    "@grafana/i18n": "13.2.3",
-    "@grafana/runtime": "13.2.3",
-    "@grafana/schema": "13.2.3",
-    "@grafana/ui": "13.2.3",
+    "@emotion/css": "11.13.5",
+    "@grafana/data": "13.3.0",
+    "@grafana/i18n": "13.3.0",
+    "@grafana/runtime": "13.3.0",
+    "@grafana/schema": "13.3.0",
+    "@grafana/ui": "13.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^6.22.0",
