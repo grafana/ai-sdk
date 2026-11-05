@@ -72,6 +72,21 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
             isAnthropic ? req.headers['x-api-key'] : req.headers.authorization,
             isAnthropic ? 'fake-key' : 'Bearer fake-key'
           );
+          if (backend === 'openai-compatible' && body.tools?.[0]?.type === 'custom') {
+            assert.deepEqual(body.tools[0].custom.format, { type: 'grammar', grammar: { syntax: 'regex', definition: '[a-z]+' } });
+            assert.deepEqual(body.tool_choice, { type: 'custom', custom: { name: 'uppercase' } });
+            if (!body.stream) {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ id: 'custom-call', model: body.model, choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'custom-1', type: 'custom', custom: { name: 'uppercase', input: 'hello' } }] }, finish_reason: 'tool_calls' }] }));
+            } else {
+              res.setHeader('Content-Type', 'text/event-stream');
+              for (const delta of [{ tool_calls: [{ index: 0, id: 'custom-1', type: 'custom', custom: { name: 'uppercase', input: 'hel' } }] }, { tool_calls: [{ index: 0, custom: { input: 'lo' } }] }]) {
+                res.write(`data: ${JSON.stringify({ id: 'custom-call', model: body.model, choices: [{ delta }] })}\n\n`);
+              }
+              res.end(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`);
+            }
+            return;
+          }
           const tool =
             !!body.tools?.length &&
             !JSON.stringify(body.messages ?? body.input).includes('tool_result') &&
@@ -383,6 +398,25 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
               if (extension?.warnings?.some((w) => w.feature === 'seed')) seen = true;
             }
             assert.ok(seen);
+          }
+          if (backend === 'openai-compatible') {
+            const customTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [{ type: 'custom', custom: { name: 'uppercase', format: { type: 'grammar', grammar: { syntax: 'regex', definition: '[a-z]+' } } } }];
+            const toolChoice = { type: 'custom' as const, custom: { name: 'uppercase' } };
+            const custom = await client.chat.completions.create({ model: 'chat', messages, tools: customTools, tool_choice: toolChoice });
+            const call = custom.choices[0].message.tool_calls?.[0];
+            assert.ok(call?.type === 'custom');
+            assert.equal(call.custom.input, 'hello');
+            const continuation = await client.chat.completions.create({ model: 'chat', messages: [...messages, custom.choices[0].message, { role: 'tool', tool_call_id: call.id, content: call.custom.input.toUpperCase() }] });
+            assert.equal(continuation.choices[0].message.content, 'hello');
+            assert.equal(requests.at(-1)?.messages[1].tool_calls[0].custom.input, 'hello');
+            const stream = await client.chat.completions.create({ model: 'chat', messages, tools: customTools, tool_choice: toolChoice, stream: true });
+            let input = '';
+            for await (const chunk of stream) {
+              for (const choice of chunk.choices) {
+                for (const delta of choice.delta.tool_calls ?? []) input += (delta as unknown as { custom?: { input?: string } }).custom?.input ?? '';
+              }
+            }
+            assert.equal(input, 'hello');
           }
           const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             {

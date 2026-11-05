@@ -25,6 +25,7 @@ const (
 	roleTool      role = "tool"
 	roleFunction  role = "function"
 	kindFunction  kind = "function"
+	kindCustom    kind = "custom"
 	kindText      kind = "text"
 	kindRefusal   kind = "refusal"
 	kindJSON      kind = "json_object"
@@ -80,8 +81,9 @@ type function struct {
 	Strict      *bool           `json:"strict"`
 }
 type tool struct {
-	Type     kind      `json:"type"`
-	Function *function `json:"function"`
+	Type     kind                             `json:"type"`
+	Function *function                        `json:"function"`
+	Custom   *openaicompatible.ChatCustomTool `json:"custom"`
 }
 type callFunction struct {
 	Name      string `json:"name"`
@@ -90,7 +92,8 @@ type callFunction struct {
 type toolCall struct {
 	ID       string       `json:"id"`
 	Type     kind         `json:"type"`
-	Function callFunction `json:"function"`
+	Function callFunction `json:"function,omitzero"`
+	Custom   *customCall  `json:"custom,omitempty"`
 }
 type responseFormat struct {
 	Type       kind `json:"type"`
@@ -209,6 +212,7 @@ func mapRequest(data []byte) (mappedRequest, error) {
 		}
 	}
 	pending := map[string]string{}
+	customHistory := map[string]bool{}
 	used := map[string]bool{}
 	for _, m := range r.Messages {
 		if m.Role != roleTool && len(pending) > 0 {
@@ -253,12 +257,21 @@ func mapRequest(data []byte) (mappedRequest, error) {
 				p.Content = append(p.Content, provider.TextPart(*m.Refusal))
 			}
 			for _, call := range m.ToolCalls {
-				if call.Type != kindFunction || call.ID == "" || len(call.ID) > 256 || used[call.ID] || !namePattern.MatchString(call.Function.Name) || !jsonObject([]byte(call.Function.Arguments)) {
+				if !validHistoryCall(call) || call.ID == "" || len(call.ID) > 256 || used[call.ID] || !namePattern.MatchString(call.name()) {
 					return r, errRequest
 				}
 				used[call.ID] = true
-				pending[call.ID] = call.Function.Name
-				p.Content = append(p.Content, provider.ToolCallPart(call.ID, call.Function.Name, json.RawMessage(call.Function.Arguments)))
+				pending[call.ID] = call.name()
+				input := json.RawMessage(call.arguments())
+				if call.Type == kindCustom {
+					input, _ = json.Marshal(call.arguments())
+				}
+				part := provider.ToolCallPart(call.ID, call.name(), input)
+				if call.Type == kindCustom {
+					part.ProviderOptions = customHistoryMarker()
+					customHistory[call.ID] = true
+				}
+				p.Content = append(p.Content, part)
 			}
 		case roleTool:
 			if m.ToolCallID == nil || pending[*m.ToolCallID] == "" {
@@ -278,6 +291,9 @@ func mapRequest(data []byte) (mappedRequest, error) {
 				}
 			}
 			p.Content = []provider.ContentPart{provider.ToolResultPart(*m.ToolCallID, pending[*m.ToolCallID], &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: text})}
+			if customHistory[*m.ToolCallID] {
+				p.Content[0].ProviderOptions = customHistoryMarker()
+			}
 			delete(pending, *m.ToolCallID)
 		default:
 			return r, errRequest
@@ -290,7 +306,22 @@ func mapRequest(data []byte) (mappedRequest, error) {
 	names := map[string]bool{}
 	r.toolValidators = map[string]*chatSchema{}
 	for _, t := range r.Tools {
-		if t.Type != kindFunction || t.Function == nil || !namePattern.MatchString(t.Function.Name) || names[t.Function.Name] {
+		if t.Type == kindCustom {
+			if t.Custom == nil || t.Function != nil || t.Custom.Validate() != nil || !namePattern.MatchString(t.Custom.Name) || names[t.Custom.Name] {
+				return r, errRequest
+			}
+			names[t.Custom.Name] = true
+			args := map[string]json.RawMessage{}
+			if t.Custom.Description != nil {
+				args["description"], _ = json.Marshal(*t.Custom.Description)
+			}
+			if t.Custom.Format != nil {
+				args["format"], _ = json.Marshal(t.Custom.Format)
+			}
+			r.options.Tools = append(r.options.Tools, provider.Tool{Type: provider.ToolTypeProvider, ID: "openai.custom", Name: t.Custom.Name, Args: args})
+			continue
+		}
+		if t.Type != kindFunction || t.Function == nil || t.Custom != nil || !namePattern.MatchString(t.Function.Name) || names[t.Function.Name] {
 			return r, errRequest
 		}
 		f := t.Function
@@ -320,15 +351,27 @@ func mapRequest(data []byte) (mappedRequest, error) {
 			}
 		} else {
 			var named struct {
-				Type     kind `json:"type"`
+				Type   kind `json:"type"`
+				Custom *struct {
+					Name string `json:"name"`
+				} `json:"custom"`
 				Function struct {
 					Name string `json:"name"`
 				} `json:"function"`
 			}
-			if decodeStrict(r.ToolChoice, &named) != nil || named.Type != kindFunction || !names[named.Function.Name] {
+			if decodeStrict(r.ToolChoice, &named) != nil {
 				return r, errRequest
 			}
-			r.options.ToolChoice = &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: named.Function.Name}
+			name := named.Function.Name
+			if named.Type == kindCustom && named.Custom != nil && name == "" {
+				name = named.Custom.Name
+			} else if named.Type != kindFunction || named.Custom != nil {
+				return r, errRequest
+			}
+			if !names[name] || (named.Type == kindCustom) != r.customTool(name) {
+				return r, errRequest
+			}
+			r.options.ToolChoice = &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: name}
 		}
 	} else if len(r.Tools) > 0 {
 		r.options.ToolChoice = &provider.ToolChoice{Type: provider.ToolChoiceAuto}

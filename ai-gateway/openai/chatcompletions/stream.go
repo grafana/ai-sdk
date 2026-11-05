@@ -19,7 +19,12 @@ type toolDelta struct {
 	Index    int           `json:"index"`
 	ID       string        `json:"id,omitempty"`
 	Type     kind          `json:"type,omitempty"`
-	Function functionDelta `json:"function"`
+	Function functionDelta `json:"function,omitzero"`
+	Custom   *customDelta  `json:"custom,omitempty"`
+}
+type customDelta struct {
+	Name  string  `json:"name,omitempty"`
+	Input *string `json:"input,omitempty"`
 }
 type functionDelta struct {
 	Name      string  `json:"name,omitempty"`
@@ -117,12 +122,15 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 		}
 		return nil, nil
 	case provider.PartToolInputStart:
-		if p.ID == "" || len(p.ID) > 256 || !utf8.ValidString(p.ID) || !namePattern.MatchString(p.ToolName) || s.tools[p.ID] != nil || p.ProviderExecuted || boolValue(p.Dynamic) || (p.InputEncoding != "" && p.InputEncoding != provider.ToolInputEncodingJSON) {
+		if p.ID == "" || len(p.ID) > 256 || !utf8.ValidString(p.ID) || !namePattern.MatchString(p.ToolName) || s.tools[p.ID] != nil || p.ProviderExecuted || boolValue(p.Dynamic) || (p.InputEncoding != "" && p.InputEncoding != provider.ToolInputEncodingJSON && p.InputEncoding != provider.ToolInputEncodingText) || (p.InputEncoding == provider.ToolInputEncodingText) != r.customTool(p.ToolName) {
 			return nil, errOutput
 		}
 		t := &toolState{call: toolCall{ID: p.ID, Type: kindFunction, Function: callFunction{Name: p.ToolName}}, index: s.toolOffset + len(s.tools)}
+		if r.customTool(p.ToolName) {
+			t.call = toolCall{ID: p.ID, Type: kindCustom, Custom: &customCall{Name: p.ToolName}}
+		}
 		s.tools[p.ID] = t
-		return &delta{ToolCalls: []toolDelta{{Index: t.index, ID: t.call.ID, Type: kindFunction, Function: functionDelta{Name: p.ToolName, Arguments: ptr("")}}}}, nil
+		return &delta{ToolCalls: []toolDelta{t.wireDelta("", true)}}, nil
 	case provider.PartToolInputDelta:
 		t := s.tools[p.ID]
 		if t == nil || t.ended || t.final {
@@ -132,7 +140,7 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 		if p.Delta == "" {
 			return nil, nil
 		}
-		return &delta{ToolCalls: []toolDelta{{Index: t.index, Function: functionDelta{Arguments: ptr(p.Delta)}}}}, nil
+		return &delta{ToolCalls: []toolDelta{t.wireDelta(p.Delta, false)}}, nil
 	case provider.PartToolInputEnd:
 		t := s.tools[p.ID]
 		if t == nil || t.ended || t.final {
@@ -141,21 +149,24 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 		t.ended = true
 		return nil, nil
 	case provider.PartToolCall:
-		call := toolCall{ID: p.ToolCallID, Type: kindFunction, Function: callFunction{Name: p.ToolName, Arguments: p.Input}}
+		call, err := r.outputCall(p.ToolCallID, p.ToolName, p.Input)
+		if err != nil {
+			return nil, err
+		}
 		if p.ProviderExecuted || boolValue(p.Dynamic) || boolValue(p.Preliminary) || validateCall(call, r) != nil {
 			return nil, errOutput
 		}
 		if t := s.tools[p.ToolCallID]; t != nil {
-			if t.final || !t.ended || t.call.Function.Name != call.Function.Name {
+			if t.final || !t.ended || t.call.name() != call.name() || t.call.Type != call.Type {
 				return nil, errOutput
 			}
-			if t.arguments.Len() == 0 && call.Function.Arguments == "{}" {
+			if call.Type == kindFunction && t.arguments.Len() == 0 && call.arguments() == "{}" {
 				t.arguments.WriteString("{}")
 				t.call = call
 				t.final = true
 				return &delta{ToolCalls: []toolDelta{{Index: t.index, Function: functionDelta{Arguments: ptr("{}")}}}}, nil
 			}
-			if t.arguments.String() != call.Function.Arguments {
+			if t.arguments.String() != call.arguments() {
 				return nil, errOutput
 			}
 			t.call = call
@@ -163,8 +174,8 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 			return nil, nil
 		}
 		t := &toolState{call: call, index: s.toolOffset + len(s.tools), ended: true, final: true}
-		s.tools[p.ToolCallID] = t
-		return &delta{ToolCalls: []toolDelta{{Index: t.index, ID: call.ID, Type: kindFunction, Function: functionDelta{Name: call.Function.Name, Arguments: ptr(call.Function.Arguments)}}}}, nil
+		s.tools[call.ID] = t
+		return &delta{ToolCalls: []toolDelta{t.wireDelta(call.arguments(), true)}}, nil
 	default:
 		return nil, errOutput
 	}
@@ -527,4 +538,24 @@ func sumOptional(a, b *int) *int {
 		return nil
 	}
 	return ptr(*a + *b)
+}
+
+func (t *toolState) wireDelta(input string, identity bool) toolDelta {
+	out := toolDelta{Index: t.index}
+	if identity {
+		out.ID = t.call.ID
+		out.Type = t.call.Type
+	}
+	if t.call.Type == kindCustom {
+		out.Custom = &customDelta{Input: &input}
+		if identity {
+			out.Custom.Name = t.call.name()
+		}
+	} else {
+		out.Function.Arguments = &input
+		if identity {
+			out.Function.Name = t.call.name()
+		}
+	}
+	return out
 }
