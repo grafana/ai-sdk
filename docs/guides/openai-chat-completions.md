@@ -138,3 +138,8 @@ preserved under `grafana.sources`; citations are preserved under
 appear as standard `message.annotations` or `delta.annotations`. Sources without
 positions do not receive fabricated text spans. Positions retain the native
 provider's indexing convention.
+
+The compatible backend preserves native refusal and token log-probability fields
+in their standard Chat locations. Refusals are valid responses to structured-output
+requests and are not parsed as JSON. Native audio/prediction token counters remain
+available in usage details, preserving absent counters versus reported zero.
