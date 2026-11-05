@@ -5,7 +5,9 @@ Define the OpenAI Responses API provider module, including request conversion,
 tool preparation, response and stream mapping, provider options, error handling,
 and conformance expectations needed to stay aligned with Vercel's upstream AI
 SDK behavior.
+
 ## Requirements
+
 ### Requirement: Provider construction and identity
 
 The `providers/openai` Go module SHALL expose `NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel` and `NewResponsesWithClient(client openai.Client, modelID string, opts ...Option) provider.LanguageModel`, backed by Responses via `github.com/openai/openai-go`. Both SHALL implement provider.LanguageModel, report v4 and the supplied modelID, accept functional options, and neither panic nor call the network during construction.
@@ -1095,3 +1097,29 @@ Shell tool calls SHALL expose `action.timeout_ms` and `action.max_output_length`
 #### Scenario: Output length round trip
 - **WHEN** a shell tool result contains `maxOutputLength: 10000`
 - **THEN** the next request's `shell_call_output` SHALL contain `max_output_length: 10000`, and SHALL omit it when the result has none
+
+### Requirement: Prompt-cache TTL and prewarming
+The provider SHALL expose typed prompt-cache TTL values for 30m and 12h, optional request prewarm, and optional breakpoint TTL. Unsupported nonempty request TTLs SHALL fail before HTTP. Breakpoint TTLs SHALL retain upstream passthrough behavior. Shared adapters, including Mantle, SHALL use the same conversion and validation.
+
+#### Scenario: Go zero-value TTL omission
+- **WHEN** TTL is the Go zero value, including empty/null TTL decoded from raw JSON
+- **THEN** it is omitted from the request
+- **AND** this intentional Go decoding boundary does not claim upstream strict raw-option parsing parity
+
+#### Scenario: Request TTL and explicit prewarm
+- **WHEN** generate or stream is called with a supported TTL and prewarm true or false
+- **THEN** prompt_cache_options preserves those values, including explicit false
+- **AND** omitted options remain omitted
+
+#### Scenario: Unsupported request TTL
+- **WHEN** generate or stream receives promptCacheOptions.ttl of 24h
+- **THEN** it returns a validation error before any HTTP request
+
+#### Scenario: Per-part breakpoint TTL
+- **WHEN** supported system, user text/image/file or tool-result text/image/file content carries a 12h breakpoint
+- **THEN** its prompt_cache_breakpoint contains ttl 12h at the existing breakpoint location
+
+#### Scenario: Empty prewarm response
+- **WHEN** a completed provider DoGenerate or DoStream prewarm response has no output and reports cache writes
+- **THEN** it finishes successfully without content
+- **AND** normalized usage and raw cache_write_tokens_details are retained
