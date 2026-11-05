@@ -898,3 +898,19 @@ The client SHALL encode `GatewayOptions` without checking model IDs, slugs, acco
 #### Scenario: Routing metadata is passed through
 - **WHEN** a result, stream part or error carries Gateway routing metadata
 - **THEN** the client SHALL return it unchanged in `ProviderMetadata` or the `*provider.APICallError` data, and the documentation SHALL state that metadata is best-effort, that absence does not mean no attempt ran, and that a successful attempt means selection rather than completion
+
+### Requirement: Go-only execution controls remain outside ProviderWire
+
+The client SHALL reject `RejectUnsupported: true` and `ChoiceCount` values outside
+zero or one before sending a ProviderWire request. Zero and one retain the ordinary
+single-choice request shape. Neither Go-only field SHALL appear in JSON. The
+reviewed CallOptions declaration evidence SHALL include these local controls
+without changing the pinned V4 request contract.
+
+#### Scenario: Native alternatives cannot cross a ProviderWire boundary
+- **WHEN** a caller requests multiple choices or strict unsupported-setting policy
+- **THEN** encoding fails instead of silently dropping the requested semantics
+
+#### Scenario: Explicit single choice uses the pinned request shape
+- **WHEN** ChoiceCount is zero or one and RejectUnsupported is false
+- **THEN** neither field is serialized in the Gateway client request
