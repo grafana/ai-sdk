@@ -122,7 +122,7 @@ func (m *model) runChoicesStream(ctx context.Context, endpoint string, requestBo
 			fail(err)
 			return
 		}
-		if err := validateStreamChunk(parsed); err != nil {
+		if err := validateStreamChunk(parsed, preserveChat); err != nil {
 			fail(err)
 			return
 		}

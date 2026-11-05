@@ -49,6 +49,7 @@ type streamToolCall struct {
 	finished         bool
 	providerMetadata provider.ProviderMetadata
 	custom           bool
+	encodingKnown    bool
 }
 
 func (m *model) runStream(ctx context.Context, endpoint string, requestBody []byte, body io.Reader, headers http.Header, warnings []provider.Warning, includeRaw bool, metadataKey string, out chan<- provider.StreamPart, preserveChat bool, counts ...int) {
@@ -127,7 +128,7 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 			state.emitRecoverableError(streamDecodeError(endpoint, err))
 			continue
 		}
-		if err := validateStreamChunk(chunk); err != nil {
+		if err := validateStreamChunk(chunk, preserveChat); err != nil {
 			state.emitRecoverableError(streamDecodeError(endpoint, err))
 			continue
 		}
@@ -177,7 +178,7 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 	}
 }
 
-func validateStreamChunk(chunk chatCompletionResponse) error {
+func validateStreamChunk(chunk chatCompletionResponse, preserveChat ...bool) error {
 	if chunk.Choices == nil {
 		return errors.New("response chunk contained no choices")
 	}
@@ -190,7 +191,10 @@ func validateStreamChunk(chunk chatCompletionResponse) error {
 		}
 		for _, toolCall := range choice.Delta.ToolCalls {
 			if toolCall.Function == nil && toolCall.Custom == nil {
-				return errors.New("stream tool call missing function")
+				nativeIdentity := len(preserveChat) > 0 && preserveChat[0] && toolCall.Index != nil && (toolCall.Type == "" || toolCall.Type == "function" || toolCall.Type == "custom")
+				if !nativeIdentity {
+					return errors.New("stream tool call missing function")
+				}
 			}
 		}
 	}
@@ -274,17 +278,23 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 }
 
 func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
-	custom := delta.Custom != nil
+	custom := delta.Custom != nil || delta.Type == "custom"
+	encodingKnown := delta.Custom != nil || delta.Function != nil || delta.Type != ""
 	if custom {
 		if delta.Function != nil || (delta.Type != "" && delta.Type != "custom") {
 			s.emitError(streamDecodeError(s.endpoint, errors.New("invalid custom call union")))
 			return true
 		}
-		delta.Function = &toolCallDeltaFunc{Name: delta.Custom.Name, Arguments: delta.Custom.Input}
+		if delta.Custom != nil {
+			delta.Function = &toolCallDeltaFunc{Name: delta.Custom.Name, Arguments: delta.Custom.Input}
+		}
+	}
+	if delta.Function == nil {
+		delta.Function = &toolCallDeltaFunc{}
 	}
 	state := s.resolveToolCall(delta)
 	if state == nil {
-		state = &streamToolCall{custom: custom}
+		state = &streamToolCall{custom: custom, encodingKnown: encodingKnown}
 		s.toolCalls = append(s.toolCalls, state)
 		if delta.Index == nil && delta.Function.Name == nil {
 			if delta.ID != nil {
@@ -313,9 +323,13 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 	}
 	s.latestToolCall = state
 
-	if state.custom != custom {
+	if encodingKnown && state.encodingKnown && state.custom != custom {
 		s.emitError(streamDecodeError(s.endpoint, errors.New("tool call encoding changed")))
 		return true
+	}
+	if encodingKnown {
+		state.custom = custom
+		state.encodingKnown = true
 	}
 	if state.finished {
 		return true

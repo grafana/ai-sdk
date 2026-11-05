@@ -191,3 +191,8 @@ common tool list. Its mode must agree with an explicit common `ToolChoice`.
 The builder derives native function/custom references without accepting a raw
 `tool_choice` replacement. All tool definitions remain in the native request;
 unknown names, duplicates and conflicting modes fail before provider I/O.
+
+The opt-in native Chat decoder accepts indexed tool identity fragments before a
+function/custom payload arrives. It retains the selected input encoding across
+identity-only chunks and rejects subsequent encoding changes. The default pinned
+provider decoder keeps its existing validation contract.
