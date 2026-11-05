@@ -1,6 +1,8 @@
 package grafana
 
 import (
+	"encoding/json"
+
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -14,6 +16,10 @@ func TestRequestRejectsGoOnlyCapabilities(t *testing.T) {
 	for _, count := range []int{0, 1} {
 		raw, err := encodeRequest(provider.CallOptions{ChoiceCount: count})
 		require.NoError(t, err)
-		require.NotContains(t, string(raw), "ChoiceCount")
+		var fields map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(raw, &fields))
+		for _, field := range []string{"ChoiceCount", "choiceCount", "RejectUnsupported", "rejectUnsupported"} {
+			require.NotContains(t, fields, field)
+		}
 	}
 }
