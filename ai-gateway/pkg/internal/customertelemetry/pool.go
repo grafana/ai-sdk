@@ -74,6 +74,7 @@ type Binding[T any] struct {
 	gate        *ExportGate
 	lastUsed    time.Time
 	refs        int
+	waiters     int
 	retired     bool
 	closing     bool
 	quarantined bool
@@ -189,6 +190,16 @@ func (p *Pool[T]) Update(stack Stack, signal Signal, destinations Destinations, 
 // releases this waiter. Old bindings cannot acquire after rotation or revocation.
 func (b *Binding[T]) Acquire(ctx context.Context) (*Lease[T], error) {
 	p := b.pool
+	p.mu.Lock()
+	b.waiters++
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		b.waiters--
+		b.lastUsed = time.Now()
+		p.notify()
+		p.mu.Unlock()
+	}()
 	for {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -263,7 +274,10 @@ func (p *Pool[T]) start(b *Binding[T]) {
 		}
 		if ctx.Err() != nil {
 			b.failure = ErrPoolTimeout
-			p.retire(b, true)
+			b.gate.revoke()
+			if !b.retired {
+				p.replaceGate(b)
+			}
 		}
 		if b.failure != nil {
 			b.retryAt = time.Now().Add(p.options.RetryInterval)
@@ -316,14 +330,18 @@ func (p *Pool[T]) cleanup(b *Binding[T]) {
 			b.gate.revoke()
 			delete(p.all, b)
 		} else if !b.retired {
-			b.gate.mu.Lock()
-			until := b.gate.until
-			b.gate.mu.Unlock()
-			b.gate.revoke()
-			b.gate = newExportGate(b.target.Destination.Endpoint, until, p.options.ExportTimeout)
+			p.replaceGate(b)
 		}
 		p.notify()
 	}()
+}
+
+func (p *Pool[T]) replaceGate(b *Binding[T]) {
+	b.gate.mu.Lock()
+	until := b.gate.until
+	b.gate.mu.Unlock()
+	b.gate.revoke()
+	b.gate = newExportGate(b.target.Destination.Endpoint, until, p.options.ExportTimeout)
 }
 
 func (p *Pool[T]) maintain() {
@@ -341,7 +359,7 @@ func (p *Pool[T]) maintain() {
 			if !b.gate.valid() {
 				p.retire(b, true)
 			}
-			if b.refs == 0 && !now.Before(b.lastUsed.Add(p.options.IdleRetention)) {
+			if b.refs == 0 && b.waiters == 0 && !now.Before(b.lastUsed.Add(p.options.IdleRetention)) && !now.Before(b.retryAt) {
 				p.retire(b, false)
 			}
 			force := p.closed && !now.Before(p.deadline)

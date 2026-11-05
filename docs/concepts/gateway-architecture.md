@@ -381,7 +381,11 @@ retiring clients; already-delivered bytes cannot be retracted.
 
 Current, constructing, retiring, and closing resources all count toward capacity.
 Shutdown errors quarantine capacity while the pool is open because complete
-teardown is unproven. Idle clients retire; old clients close after their final lease
+teardown is unproven. Pending acquisitions count as activity, including while a
+client is being constructed. Failed construction retains its retry cooldown
+across unchanged configuration updates and idle cleanup; a timed-out attempt's
+export gate stays revoked even when a later attempt receives a fresh gate.
+Idle clients retire; old clients close after their final lease
 unless the bounded shutdown period has elapsed. Late construction is cleaned up,
 and non-cooperative construction or shutdown remains charged until it returns.
 The pool owns no additional payload queue or export retry loop.
