@@ -152,3 +152,24 @@ func TestResourceStorageLifecycleIsolationAndExpiry(t *testing.T) {
 	require.NoError(t, restarted.Sweep(t.Context()))
 	require.Empty(t, objects)
 }
+
+func TestReadinessRejectsUnprovisionedKindAndDeniedAccess(t *testing.T) {
+	for _, status := range []int{403, 404, 503} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, http.MethodGet, r.Method)
+				require.Contains(t, r.URL.Path, "/namespaces/tenant/")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Status", "apiVersion": "v1", "status": "Failure", "code": status})
+			}))
+			defer server.Close()
+			registry := k8s.NewClientRegistry(rest.Config{Host: server.URL}, k8s.DefaultClientConfig())
+			client, err := registry.ClientFor(stored.Kind())
+			require.NoError(t, err)
+			store := New()
+			store.Bind(client)
+			require.ErrorIs(t, store.Ready(t.Context(), chat.StorageScope{Namespace: "tenant", Owner: "alice"}), chat.ErrCompletionStorageUnavailable)
+		})
+	}
+}

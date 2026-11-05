@@ -62,9 +62,10 @@ type AgentObservabilitySettings struct {
 
 // Settings contains every plugin setting.
 type Settings struct {
-	ModelCatalog       string
-	Access             auth.AccessPolicy
-	AgentObservability AgentObservabilitySettings
+	CompletionRetention time.Duration
+	ModelCatalog        string
+	Access              auth.AccessPolicy
+	AgentObservability  AgentObservabilitySettings
 }
 
 // SettingName returns the environment variable of a plugin setting key, as
@@ -114,8 +115,13 @@ func (e *environment) bool(key string, fallback bool) bool {
 // ParseSettings reads and validates the plugin settings from the environment.
 func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 	env := environment{lookup: lookupEnv}
+	retention, err := time.ParseDuration(env.string("completion_retention", "720h"))
+	if err != nil || retention < time.Minute || retention > 365*24*time.Hour {
+		return Settings{}, fmt.Errorf("config: completion_retention must be between 1m and 8760h")
+	}
 	settings := Settings{
-		ModelCatalog: env.string(ModelCatalogSetting, ""),
+		CompletionRetention: retention,
+		ModelCatalog:        env.string(ModelCatalogSetting, ""),
 		AgentObservability: AgentObservabilitySettings{
 			Enabled:  env.bool("agento11y_enabled", false),
 			Protocol: AgentObservabilityProtocol(env.string("agento11y_protocol", string(AgentObservabilityGRPC))),

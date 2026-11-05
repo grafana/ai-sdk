@@ -28,7 +28,22 @@ type Store struct {
 	now    func() time.Time
 }
 
-func (s *Store) Ready(context.Context) error { _, err := s.backend(); return err }
+func (s *Store) Ready(ctx context.Context, scope chat.StorageScope) error {
+	if !validScope(scope) {
+		return chat.ErrCompletionStorageUnavailable
+	}
+	client, err := s.backend()
+	if err != nil {
+		return err
+	}
+	probe, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, err = client.List(probe, scope.Namespace, resource.ListOptions{Limit: 1, LabelFilters: []string{ownerLabel + "=" + digest(scope.Owner)}})
+	if err != nil {
+		return chat.ErrCompletionStorageUnavailable
+	}
+	return nil
+}
 
 func New() *Store { return &Store{now: time.Now} }
 

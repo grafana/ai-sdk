@@ -109,6 +109,24 @@
                             }
                         },
                         "/v1/chat/completions": {
+                            "get": {
+                                "operationId": "listChatCompletions",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Stored Chat Completions list"
+                                    }
+                                }
+                            },
                             "post": {
                                 "operationId": "createChatCompletion",
                                 "parameters": [
@@ -124,6 +142,82 @@
                                 "responses": {
                                     "default": {
                                         "description": "OpenAI Chat Completions response"
+                                    }
+                                }
+                            }
+                        },
+                        "/v1/chat/completions/{completion_id}": {
+                            "get": {
+                                "operationId": "getChatCompletion",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Stored Chat Completion"
+                                    }
+                                }
+                            },
+                            "post": {
+                                "operationId": "updateChatCompletion",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Updated metadata"
+                                    }
+                                }
+                            },
+                            "delete": {
+                                "operationId": "deleteChatCompletion",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Deleted Chat Completion"
+                                    }
+                                }
+                            }
+                        },
+                        "/v1/chat/completions/{completion_id}/messages": {
+                            "get": {
+                                "operationId": "getChatCompletionMessages",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Stored input messages"
                                     }
                                 }
                             }
@@ -193,6 +287,24 @@
                             }
                         },
                         "/namespaces/{namespace}/v1/chat/completions": {
+                            "get": {
+                                "operationId": "listChatCompletions",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Stored Chat Completions list"
+                                    }
+                                }
+                            },
                             "parameters": [
                                 {
                                     "in": "path",
@@ -221,6 +333,102 @@
                                     }
                                 }
                             }
+                        },
+                        "/namespaces/{namespace}/v1/chat/completions/{completion_id}": {
+                            "delete": {
+                                "operationId": "deleteChatCompletion",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Deleted Chat Completion"
+                                    }
+                                }
+                            },
+                            "get": {
+                                "operationId": "getChatCompletion",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Stored Chat Completion"
+                                    }
+                                }
+                            },
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ],
+                            "post": {
+                                "operationId": "updateChatCompletion",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Updated metadata"
+                                    }
+                                }
+                            }
+                        },
+                        "/namespaces/{namespace}/v1/chat/completions/{completion_id}/messages": {
+                            "get": {
+                                "operationId": "getChatCompletionMessages",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "Stored input messages"
+                                    }
+                                }
+                            },
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -234,7 +442,12 @@
                 "routes": [
                     "getConfig",
                     "createLanguageModel",
-                    "createChatCompletion"
+                    "createChatCompletion",
+                    "listChatCompletions",
+                    "getChatCompletion",
+                    "updateChatCompletion",
+                    "deleteChatCompletion",
+                    "getChatCompletionMessages"
                 ]
             }
         },

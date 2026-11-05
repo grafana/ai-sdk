@@ -260,11 +260,21 @@ func TestOfficialSDKRealCommand(t *testing.T) {
 				}
 			}
 		}
+	})
+	t.Run("storage unavailable fails before native I/O", func(t *testing.T) {
+		// This command harness has no app resource backend. A valid stored
+		// request must fail readiness before invoking the model in either mode.
 		before := fake.count()
-		_, err := client.Chat.Completions.New(context.Background(), sdkParams(t, `,"store":true`))
+		params := sdkParams(t, `,"store":true`)
+		_, err := client.Chat.Completions.New(t.Context(), params)
 		var api *openai.Error
 		require.ErrorAs(t, err, &api)
-		assert.Equal(t, 400, api.StatusCode)
+		assert.Equal(t, http.StatusServiceUnavailable, api.StatusCode)
+		stream := client.Chat.Completions.NewStreaming(t.Context(), params)
+		assert.False(t, stream.Next())
+		require.ErrorAs(t, stream.Err(), &api)
+		assert.Equal(t, http.StatusServiceUnavailable, api.StatusCode)
+		require.NoError(t, stream.Close())
 		assert.Equal(t, before, fake.count())
 	})
 	t.Run("legacy functions and continuation", func(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"k8s.io/client-go/rest"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -174,6 +175,7 @@ func lookup(values map[string]string) func(string) (string, bool) {
 }
 
 type harnessOptions struct {
+	kubeConfig    rest.Config
 	routeDeadline time.Duration
 	fallback      bool
 }
@@ -207,7 +209,7 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry})
 	require.NoError(t, err)
 	provider := gw.Provider()
-	built, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData})
+	built, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData, KubeConfig: options.kubeConfig})
 	require.NoError(t, err)
 	served, err := host.ServeInProcess(grpcplugin.ServeOpts{RouteServer: appadapter.NewRouteAdapter(built), Authenticator: gw.Authenticator(), PluginID: PluginID})
 	require.NoError(t, err)
@@ -642,5 +644,23 @@ func TestGateway_ChatCompletionsSelfHosted(t *testing.T) {
 	status, response := do(t, chatRequest(t, h.url("v1/chat/completions"), body, anonymous))
 	assert.Equal(t, http.StatusForbidden, status, response)
 	assert.Contains(t, response, `"error"`)
+	assert.Equal(t, before, h.anthropic.requests.Load())
+}
+
+func TestGateway_StoredRoutesRequireVerifiedOwnerAndBackend(t *testing.T) {
+	h := newHarness(t, platformhost.TopologySelfHosted)
+	user := session(h.host.AddSession(types.TypeUser, "storage-user", testNamespace))
+	before := h.anthropic.requests.Load()
+	status, response := do(t, chatRequest(t, h.url("v1/chat/completions"), `{"model":"public","messages":[{"role":"user","content":"hello"}],"store":true}`, user))
+	assert.Equal(t, http.StatusServiceUnavailable, status, response)
+	assert.Equal(t, before, h.anthropic.requests.Load(), "unbound durable storage must fail before billable generation")
+	anonymous := session(h.host.AddSession(types.TypeAnonymous, "anonymous", testNamespace))
+	for _, path := range []string{"v1/chat/completions", "v1/chat/completions/secret", "v1/chat/completions/secret/messages"} {
+		request, err := http.NewRequest(http.MethodGet, h.url(path), nil)
+		require.NoError(t, err)
+		anonymous(request)
+		status, response = do(t, request)
+		assert.Equal(t, http.StatusForbidden, status, response)
+	}
 	assert.Equal(t, before, h.anthropic.requests.Load())
 }
