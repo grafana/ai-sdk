@@ -30,7 +30,11 @@ func TestMultimodal_NativeRequests(t *testing.T) {
 	const content = `[{"type":"text","text":"inspect"},{"type":"image_url","image_url":{"url":"https://example.test/image.png?signature=synthetic","detail":"original"}},{"type":"image_url","image_url":{"url":"data:image/png;base64,aGVsbG8=","detail":"low"}},{"type":"file","file":{"file_data":"data:application/pdf;base64,JVBERi0=","filename":"report.pdf"}},{"type":"file","file":{"file_id":"file-uploaded"}}]`
 	for _, target := range []execution.Target{{Type: execution.TargetOpenAI}, {Type: execution.TargetAnthropic}, {Type: execution.TargetOpenAICompatible, ProviderName: "custom-vendor.chat"}} {
 		t.Run(string(target.Type), func(t *testing.T) {
-			r, err := mapRequest([]byte(`{"model":"alias","messages":[{"role":"user","content":` + content + `}]}`))
+			requestContent := content
+			if target.Type == execution.TargetAnthropic {
+				requestContent = strings.ReplaceAll(strings.ReplaceAll(content, `"detail":"original"`, `"detail":"auto"`), `"detail":"low"`, `"detail":"auto"`)
+			}
+			r, err := mapRequest([]byte(`{"model":"alias","messages":[{"role":"user","content":` + requestContent + `}]}`))
 			require.NoError(t, err)
 			before, err := json.Marshal(r.options)
 			require.NoError(t, err)

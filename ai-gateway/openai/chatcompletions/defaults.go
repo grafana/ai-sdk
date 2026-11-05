@@ -15,6 +15,9 @@ import (
 func chatTranslator(r mappedRequest) execution.Translator {
 	return func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
 		options.RejectUnsupported = true
+		if err := r.validateMessageCapabilities(target); err != nil {
+			return provider.CallOptions{}, err
+		}
 		var err error
 		options, err = translateMedia(target, options)
 		if err != nil {
