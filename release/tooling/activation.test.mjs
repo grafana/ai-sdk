@@ -3,8 +3,9 @@ import test from 'node:test';
 import { GitHub, Manifest } from 'release-please';
 import { readFileSync } from 'node:fs';
 import { fixture, base, config } from './authorization-fixture.mjs';
-import { SOURCE_JOBS } from './authorization-evidence.mjs';
+import { GATEWAY_PUBLICATION_JOBS, SOURCE_JOBS } from './authorization-evidence.mjs';
 import { activationContext, selectInventory, verifyProtections, waitForToolingCI, preparationTransport, prepareLibraries } from './activation.mjs';
+import { main as publicationGate, publicationCommit, requireSourceCI } from './gateway-publication-gate.mjs';
 
 const approval = { id: 1, updatedAt: '2026-10-22T00:00:00Z' };
 const env = { RELEASE_LIBRARY_MODE: 'root', GITHUB_REPOSITORY: 'grafana/ai-sdk',
@@ -309,4 +310,36 @@ test('changed snoozed release uses the pinned labeled creation path and actual r
   const label = requests.findIndex(r => r.method === 'POST' && r.path.endsWith('/issues/100/labels'));
   const unsnooze = requests.findIndex(r => r.method === 'DELETE');
   assert.ok(label >= 0 && unsnooze > label, 'retire old snooze only after labeling the replacement');
+});
+
+test('Gateway publication requires successful source and plugin validation jobs', async () => {
+  assert.deepEqual(GATEWAY_PUBLICATION_JOBS, [...SOURCE_JOBS, 'Validate AI Gateway plugin']);
+  const { github } = fixture();
+  const original = github.octokit.paginate;
+  let validation = null;
+  github.octokit.paginate = async (route, params) => {
+    const result = await original(route, params);
+    if (validation && /attempts/.test(route)) result.push({ ...result[0], name: 'Validate AI Gateway plugin', conclusion: validation });
+    return result;
+  };
+  const sha = 'c'.repeat(40);
+  await waitForToolingCI(github, sha, { attempts: 1 });
+  await assert.rejects(requireSourceCI(github, sha, { attempts: 1 }), /Validate AI Gateway plugin/);
+  for (const conclusion of ['failure', 'cancelled', 'skipped']) {
+    validation = conclusion;
+    await assert.rejects(requireSourceCI(github, sha, { attempts: 1 }), /must succeed/);
+  }
+  validation = 'success';
+  await requireSourceCI(github, sha, { attempts: 1 });
+});
+
+test('Gateway publication gate runs only for canonical main pushes', async () => {
+  const push = { GITHUB_REPOSITORY: 'grafana/ai-sdk', GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main',
+    GITHUB_SHA: 'c'.repeat(40) };
+  assert.equal(publicationCommit(push), push.GITHUB_SHA);
+  for (const change of [{ GITHUB_REPOSITORY: 'fork/ai-sdk' }, { GITHUB_EVENT_NAME: 'pull_request' },
+    { GITHUB_EVENT_NAME: 'workflow_run' }, { GITHUB_REF: 'refs/tags/ai-gateway/v1.0.0' }, { GITHUB_SHA: 'main' }]) {
+    assert.throws(() => publicationCommit({ ...push, ...change }), { code: 'ERR_ASSERTION' }, JSON.stringify(change));
+  }
+  await assert.rejects(publicationGate(push), /Actions read credential/);
 });

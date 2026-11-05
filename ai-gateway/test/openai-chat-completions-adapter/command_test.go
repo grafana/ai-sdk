@@ -128,7 +128,7 @@ func startCommand(t *testing.T, backend, topology string, customConfig ...string
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "gateway")
 	hostBinary := filepath.Join(dir, "plugin-host")
-	for _, target := range []struct{ binary, source string }{{binary, "../../cmd/grafana-ai-gateway"}, {hostBinary, "../platformhost/cmd/plugin-host"}} {
+	for _, target := range []struct{ binary, source string }{{binary, "../../pkg"}, {hostBinary, "../platformhost/cmd/plugin-host"}} {
 		build := exec.Command("go", "build", "-race", "-mod=readonly", "-o", target.binary, target.source)
 		build.Env = append(os.Environ(), "GOWORK=off")
 		output, err := build.CombinedOutput()
@@ -138,8 +138,6 @@ func startCommand(t *testing.T, backend, topology string, customConfig ...string
 	if len(customConfig) > 0 {
 		config = customConfig[0]
 	}
-	configPath := filepath.Join(dir, "models.yaml")
-	require.NoError(t, os.WriteFile(configPath, []byte(config), 0600))
 	cmd := exec.Command(hostBinary, "--plugin", binary, "--topology", topology, "--namespace", "stacks-1", "--service-account-token", testToken, "--route-deadline", "10s")
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
@@ -147,7 +145,7 @@ func startCommand(t *testing.T, backend, topology string, customConfig ...string
 			cmd.Env = append(cmd.Env, entry)
 		}
 	}
-	cmd.Env = append(cmd.Env, "CHAT_COMPLETIONS_ADAPTER_TEST_KEY=fake-backend-key", "GF_PLUGIN_CONFIG_FILE="+configPath, "GF_PLUGIN_ACCESS_MODE="+topology)
+	cmd.Env = append(cmd.Env, "CHAT_COMPLETIONS_ADAPTER_TEST_KEY=fake-backend-key", "GF_PLUGIN_MODEL_CATALOG="+config, "GF_PLUGIN_ACCESS_MODE="+topology)
 	if topology == "cloud" {
 		cmd.Env = append(cmd.Env, "GF_PLUGIN_ACCESS_INTERNAL_SERVICES=integration")
 	}

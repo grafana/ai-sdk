@@ -307,7 +307,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				return
 			}
 			_, terminal := stream.Next()
-			if terminal != execution.WaitClosed {
+			if terminal != execution.WaitFinished {
 				if terminal == execution.WaitPart {
 					fail(502)
 				} else if terminal != execution.WaitCanceled {

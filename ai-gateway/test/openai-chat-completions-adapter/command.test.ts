@@ -1,7 +1,7 @@
 // Synthetic deterministic integration upstreams, not provider recordings.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -13,7 +13,7 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
   const binary = join(directory, 'gateway');
   const hostBinary = join(directory, 'plugin-host');
   try {
-    execFileSync('go', ['build', '-race', '-mod=readonly', '-o', binary, './cmd/grafana-ai-gateway'], {
+    execFileSync('go', ['build', '-race', '-mod=readonly', '-o', binary, './pkg'], {
       cwd: resolve(import.meta.dirname, '../..'),
       env: { ...process.env, GOWORK: 'off' },
       stdio: 'pipe',
@@ -293,7 +293,7 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
           {
             env: {
               ...env,
-              GF_PLUGIN_CONFIG_FILE: config,
+              GF_PLUGIN_MODEL_CATALOG: readFileSync(config, 'utf8'),
               GF_PLUGIN_ACCESS_MODE: 'self-hosted',
               CHAT_COMPLETIONS_ADAPTER_JS_KEY: 'fake-key',
             },

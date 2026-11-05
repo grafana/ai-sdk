@@ -1,4 +1,4 @@
-// Package streamusage aggregates normalized usage reported across provider stream parts.
+// Package streamusage selects the normalized usage reported across provider stream parts.
 package streamusage
 
 import (
@@ -7,39 +7,74 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-// Aggregator preserves the greatest observed value for each normalized token
-// counter. Raw retains the most recently observed non-empty provider payload.
+// Aggregator selects the normalized usage of a provider stream. A PartFinish
+// closes a response segment: each counter comes from the finish when it
+// reports one, and otherwise from the greatest value observed in that
+// segment. Once a finish was observed the aggregate is the last closed
+// segment's usage, matching upstream streamText, where each model call end
+// replaces the step usage; usage after the last finish does not change it.
+// Before any finish each counter keeps its greatest observed value. Raw
+// follows the same selection with the latest non-empty payload.
 type Aggregator struct {
+	segment  segmentUsage
+	last     segmentUsage
+	finished bool
+}
+
+type segmentUsage struct {
 	usage    provider.Usage
 	observed bool
 }
 
 // Observe folds a stream part's usage into the aggregate regardless of part type.
 func (a *Aggregator) Observe(part provider.StreamPart) {
-	if part.Usage == nil {
+	if part.Type == provider.PartFinish {
+		closed := a.segment
+		if part.Usage != nil {
+			closed.merge(*part.Usage, reportedTokenCount)
+		}
+		a.last = closed
+		a.finished = true
+		a.segment = segmentUsage{}
 		return
 	}
-
-	usage := part.Usage
-	a.observed = true
-	a.usage.InputTokens.Total = maxTokenCount(a.usage.InputTokens.Total, usage.InputTokens.Total)
-	a.usage.InputTokens.NoCache = maxTokenCount(a.usage.InputTokens.NoCache, usage.InputTokens.NoCache)
-	a.usage.InputTokens.CacheRead = maxTokenCount(a.usage.InputTokens.CacheRead, usage.InputTokens.CacheRead)
-	a.usage.InputTokens.CacheWrite = maxTokenCount(a.usage.InputTokens.CacheWrite, usage.InputTokens.CacheWrite)
-	a.usage.OutputTokens.Total = maxTokenCount(a.usage.OutputTokens.Total, usage.OutputTokens.Total)
-	a.usage.OutputTokens.Text = maxTokenCount(a.usage.OutputTokens.Text, usage.OutputTokens.Text)
-	a.usage.OutputTokens.Reasoning = maxTokenCount(a.usage.OutputTokens.Reasoning, usage.OutputTokens.Reasoning)
-	if len(usage.Raw) > 0 {
-		a.usage.Raw = cloneRaw(usage.Raw)
+	if part.Usage != nil {
+		a.segment.merge(*part.Usage, maxTokenCount)
 	}
 }
 
 // Usage returns the aggregated usage and whether any usage was observed.
 func (a *Aggregator) Usage() (provider.Usage, bool) {
-	if !a.observed {
+	selected := a.segment
+	if a.finished {
+		selected = a.last
+	}
+	if !selected.observed {
 		return provider.Usage{}, false
 	}
-	return cloneUsage(a.usage), true
+	return cloneUsage(selected.usage), true
+}
+
+func (s *segmentUsage) merge(usage provider.Usage, pick func(current, observed *int) *int) {
+	s.observed = true
+	s.usage.InputTokens.Total = pick(s.usage.InputTokens.Total, usage.InputTokens.Total)
+	s.usage.InputTokens.NoCache = pick(s.usage.InputTokens.NoCache, usage.InputTokens.NoCache)
+	s.usage.InputTokens.CacheRead = pick(s.usage.InputTokens.CacheRead, usage.InputTokens.CacheRead)
+	s.usage.InputTokens.CacheWrite = pick(s.usage.InputTokens.CacheWrite, usage.InputTokens.CacheWrite)
+	s.usage.OutputTokens.Total = pick(s.usage.OutputTokens.Total, usage.OutputTokens.Total)
+	s.usage.OutputTokens.Text = pick(s.usage.OutputTokens.Text, usage.OutputTokens.Text)
+	s.usage.OutputTokens.Reasoning = pick(s.usage.OutputTokens.Reasoning, usage.OutputTokens.Reasoning)
+	if len(usage.Raw) > 0 {
+		s.usage.Raw = cloneRaw(usage.Raw)
+	}
+}
+
+func reportedTokenCount(current, reported *int) *int {
+	if reported == nil {
+		return current
+	}
+	value := *reported
+	return &value
 }
 
 func maxTokenCount(current, observed *int) *int {

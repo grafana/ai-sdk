@@ -318,7 +318,7 @@ func TestNativeContract_StreamingSDK(t *testing.T) {
 			meta := provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "native-id", ModelID: "native-model", Timestamp: time.Unix(123, 0)}
 			index := 1
 			if late {
-				index = 3
+				index = 4
 			}
 			parts = append(parts[:index], append([]provider.StreamPart{meta}, parts[index:]...)...)
 			server := httptest.NewServer(testHandler(t, &fakeModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
@@ -393,7 +393,7 @@ func TestStreamingNativeMetadataCustomParts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			parts := textParts()
 			meta := provider.StreamPart{Type: provider.PartCustom, Kind: tc.kind, ProviderMetadata: provider.ProviderMetadata{"anthropic": json.RawMessage(`{"id":"native-id","model":"native-model","usage":{"input_tokens":3}}`)}}
-			parts = append([]provider.StreamPart{{Type: provider.PartResponseMeta, ResponseID: "native-id", ModelID: "native-model"}, meta}, parts...)
+			parts = append([]provider.StreamPart{parts[0], {Type: provider.PartResponseMeta, ResponseID: "native-id", ModelID: "native-model"}, meta}, parts[1:]...)
 			h := testHandler(t, &fakeModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 				return partsStream(parts...), nil
 			}})

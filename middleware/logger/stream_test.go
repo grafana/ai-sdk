@@ -93,11 +93,11 @@ func TestMiddleware_StreamSuccessTeesUnmodifiedParts(t *testing.T) {
 	}
 }
 
-func TestMiddleware_StreamUsageAggregatesEveryPart(t *testing.T) {
+func TestMiddleware_StreamUsageTakesFinishCounters(t *testing.T) {
 	inputTotal, inputNoCache, cacheRead, cacheWrite := 120, 80, 30, 10
 	outputTotal, outputText, outputReasoning := 50, 30, 20
-	provisionalInput, provisionalCacheRead, provisionalCacheWrite := 100, 20, 5
-	provisionalOutput, provisionalText, provisionalReasoning := 45, 25, 15
+	finishInput, finishCacheRead, finishCacheWrite := 100, 15, 5
+	finishOutput, finishText, finishReasoning := 45, 25, 15
 	parts := []provider.StreamPart{
 		{Type: provider.PartResponseMeta, Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{
 			Total: &inputTotal, NoCache: &inputNoCache, CacheRead: &cacheRead, CacheWrite: &cacheWrite,
@@ -107,10 +107,10 @@ func TestMiddleware_StreamUsageAggregatesEveryPart(t *testing.T) {
 		}}},
 		{Type: provider.PartFinish, Usage: &provider.Usage{
 			InputTokens: provider.InputTokenUsage{
-				Total: &provisionalInput, CacheRead: &provisionalCacheRead, CacheWrite: &provisionalCacheWrite,
+				Total: &finishInput, CacheRead: &finishCacheRead, CacheWrite: &finishCacheWrite,
 			},
 			OutputTokens: provider.OutputTokenUsage{
-				Total: &provisionalOutput, Text: &provisionalText, Reasoning: &provisionalReasoning,
+				Total: &finishOutput, Text: &finishText, Reasoning: &finishReasoning,
 			},
 		}},
 	}
@@ -128,13 +128,13 @@ func TestMiddleware_StreamUsageAggregatesEveryPart(t *testing.T) {
 		t.Fatalf("expected 2 records, got %d", len(records))
 	}
 	attrs := records[1].AttrsMap()
-	assertAttr(t, attrs, "ai_sdk.usage.input_tokens.total", int64(inputTotal))
+	assertAttr(t, attrs, "ai_sdk.usage.input_tokens.total", int64(finishInput))
 	assertAttr(t, attrs, "ai_sdk.usage.input_tokens.no_cache", int64(inputNoCache))
-	assertAttr(t, attrs, "ai_sdk.usage.input_tokens.cache_read", int64(cacheRead))
-	assertAttr(t, attrs, "ai_sdk.usage.input_tokens.cache_write", int64(cacheWrite))
-	assertAttr(t, attrs, "ai_sdk.usage.output_tokens.total", int64(outputTotal))
-	assertAttr(t, attrs, "ai_sdk.usage.output_tokens.text", int64(outputText))
-	assertAttr(t, attrs, "ai_sdk.usage.output_tokens.reasoning", int64(outputReasoning))
+	assertAttr(t, attrs, "ai_sdk.usage.input_tokens.cache_read", int64(finishCacheRead))
+	assertAttr(t, attrs, "ai_sdk.usage.input_tokens.cache_write", int64(finishCacheWrite))
+	assertAttr(t, attrs, "ai_sdk.usage.output_tokens.total", int64(finishOutput))
+	assertAttr(t, attrs, "ai_sdk.usage.output_tokens.text", int64(finishText))
+	assertAttr(t, attrs, "ai_sdk.usage.output_tokens.reasoning", int64(finishReasoning))
 }
 
 func TestMiddleware_StreamOpenErrorLogsAndPropagates(t *testing.T) {

@@ -11,14 +11,14 @@ credentials for each request (BYOK).
 The protocol the client speaks and the provider the Gateway calls are separate
 choices. They still need compatible capabilities: translating a request does
 not make a provider support another provider's tools or options. This walkthrough
-follows the runnable `grafana-ai-gateway` command. For setup, see
+follows the Gateway plugin backend in `ai-gateway/pkg`. For setup, see
 [calling Gateway](../providers/grafana-gateway.md) and
 [installing the plugin](../../ai-gateway/README.md). Unfamiliar terms have
 [definitions and aliases in the glossary](gateway-glossary.md).
 
 ## The pieces and their boundaries
 
-The shipped command accepts **ProviderWire V4**, used by the Go Grafana provider
+The shipped plugin backend accepts **ProviderWire V4**, used by the Go Grafana provider
 and server-side Vercel Gateway client, and a **Chat Completions subset** for
 official OpenAI clients. These are separate adapters over one execution runtime.
 Neither is the
@@ -35,7 +35,7 @@ flowchart LR
     ts[Vercel Gateway client]
     chatclient[Official OpenAI clients]
   end
-  subgraph gateway[Grafana AI Gateway command]
+  subgraph gateway[Grafana AI Gateway plugin backend]
     host[HTTP routing and authentication]
     subgraph ingress[Inbound protocol]
       pw[ProviderWire V4 decoder and response encoder]
@@ -46,8 +46,9 @@ flowchart LR
       select[Account-access selection]
       catalog[Public model catalog]
       byok[Cloud request accounts: Anthropic or OpenAI]
+      compose[Request routing: models, order, only]
       logical[Logical model observation]
-      routing[Configured primary and ordered fallback]
+      routing[Configured or request-composed ordered candidates]
     end
     subgraph outbound[Outbound provider adapters]
       anthropic[Anthropic Messages]
@@ -63,7 +64,9 @@ flowchart LR
   host --> chat --> runtime
   pw --> runtime --> select
   select -->|private| catalog --> logical --> routing
+  catalog -->|routing controls| compose --> logical
   select -->|Cloud| byok
+  byok -->|routing controls| compose
   byok --> anthropic
   byok --> openai
   routing --> anthropic --> apis
@@ -71,7 +74,7 @@ flowchart LR
   routing --> compatible --> apis
 ```
 
-The command composes its routes from one route table. Each entry names a
+The plugin backend composes its routes from one route table. Each entry names a
 method, a path under the prefix `/apis/{group}/{version}/namespaces/{namespace}`,
 a telemetry label, the adapter's handler and the adapter's host-error writer.
 Every entry gets the same access decision and request telemetry, and a refused
@@ -89,8 +92,8 @@ models into its document. The
 supplies and what the host provides. The plugin host owns transport and any
 operational endpoints, so there are no separate listeners and no `/live`,
 `/ready`, or `/metrics` routes here. See the
-[routes](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/routes.go) and
-[plugin composition](../../ai-gateway/cmd/grafana-ai-gateway/internal/gateway/gateway.go).
+[routes](../../ai-gateway/pkg/internal/gateway/routes.go) and
+[plugin composition](../../ai-gateway/pkg/internal/gateway/gateway.go).
 
 The [Chat Completions adapter](../guides/openai-chat-completions.md) maps its
 supported request subset into the same execution runtime. Its call-scoped
@@ -151,7 +154,7 @@ sequenceDiagram
    or refused access. The delegated identity names the caller; provider
    credentials authorize the later native API call. See
    [authentication](../guides/gateway-authentication.md) and the
-   [access decision](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access.go).
+   [access decision](../../ai-gateway/pkg/internal/auth/access.go).
 2. **ProviderWire translates the request.** The handler validates protocol
    headers, reads the whole body, which the platform's route message size
    bounds, checks UTF-8 and the request schema, and maps
@@ -169,8 +172,17 @@ sequenceDiagram
    model execution. One access-aware selector, `NewSelector`, serves every
    caller, so each adapter needs one runtime. For configured access it
    delegates to `CatalogSelector` to resolve `assistant` or an alias to its
-   canonical model. This private path rejects reserved Gateway controls; its
-   caller cannot switch to request accounts. See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go),
+   canonical model. When the call carries `gateway.models`, `order` or `only`,
+   the selector instead resolves every named model through the catalog and
+   composes one request chain from the candidates built at startup: each
+   model's candidates in order, filtered by `only` and then moved to the front
+   by `order`, with repeated models and destinations skipped and at most 8
+   attempts. That chain gets the same logical observation, under the requested
+   model's canonical identity, as a configured route. Invalid or unknown
+   controls fail here, before any provider call. This private path refuses
+   request credentials; its caller cannot switch to request accounts. See
+   [service selection](../../ai-gateway/pkg/internal/service/selection.go),
+   [request routing](../../ai-gateway/pkg/internal/service/routed.go),
    [catalog selection](../../ai-gateway/internal/execution/selection.go), and the
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** Logical observation surrounds the
@@ -182,8 +194,8 @@ sequenceDiagram
    options into its provider's HTTP request and converts the response back into
    SDK values. Native options remain provider-specific; not every candidate
    consumes every namespace. See
-   [catalog construction](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/catalog.go)
-   and [model observation](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/model_observability.go).
+   [catalog construction](../../ai-gateway/pkg/internal/service/catalog.go)
+   and [model observation](../../ai-gateway/pkg/internal/service/model_observability.go).
 5. **ProviderWire returns the result.** Unary calls use `DoGenerate`, then map
    and encode the complete response once before writing success. Streaming calls use `DoStream` and the lifecycle below. This handler
    does not run the SDK's application tool loop: consumer-owned function calls
@@ -208,7 +220,7 @@ Configured Gateway fallback uses the default
 eligible setup failure or a stream that closes before its first part. The first
 received part selects the candidate, even if it is only `stream-start` or an
 error event. Later errors do not restart the chain. The SDK also offers opt-in
-complete-stream buffering, but the command's catalog does not enable it.
+complete-stream buffering, but the plugin backend's catalog does not enable it.
 
 ```mermaid
 flowchart TD
@@ -216,11 +228,11 @@ flowchart TD
   request -->|rejected| httpError[HTTP error before commitment]
   setup -->|setup fails| httpError
   setup -->|usable stream returned| commit[Commit HTTP 200 and SSE headers]
-  commit --> read[Read and validate provider parts]
+  commit --> read[Runtime reads and validates the part lifecycle]
   commit -->|flush failure| cleanup
-  read -->|valid part, including a finish| frame[Encode complete SSE frame and flush]
+  read -->|valid part, including a finish| frame[Check representation, encode complete SSE frame and flush]
   frame -->|continue| read
-  read -->|provider close after a finish| cleanup[Cancel model context and bounded drain]
+  read -->|provider close after a finish or right after a provider error event| cleanup[Cancel model context and bounded drain]
   read -->|terminal failure, premature close, idle, deadline or cancellation| terminal[Attempt terminal SSE error]
   terminal --> cleanup
   frame -->|write or flush failure| cleanup
@@ -229,17 +241,26 @@ flowchart TD
 For configured fallback, `DoStream` waits for candidate selection before
 returning the usable stream. For a direct model, the handler may commit HTTP
 success before the first provider part arrives. The execution runtime waits for
-each part and owns the idle timer and cleanup. The
+each part and owns the idle timer and cleanup. It also
+[validates the output lifecycle](../../ai-gateway/internal/execution/stream_validation.go)
+of every part, seeded from the prompt's tool history: event ordering, response
+segments, text, reasoning and tool phases, and the finish preconditions. A
+violation ends the stream as invalid output. The runtime also decides how the
+stream ends, so every adapter treats a close after a `finish`, or right after a
+provider error, the same way. The
 [ProviderWire stream encoder](../../ai-gateway/providerwire/v4/stream.go) supplies an empty
-`stream-start` when needed, checks event ordering and validity, and writes
+`stream-start` when needed, checks its representation and content, such as
+valid UTF-8, metadata shape and the JavaScript safe-integer range, and writes
 complete `data: <JSON>` frames separated by a blank line.
 
 One provider stream can carry several native responses or messages. Each
 `response-metadata` part starts a response segment and each `finish` ends one,
 so a stream may contain several of both. A `finish` does not end the stream:
 the stream ends when the provider closes it, and that close is clean only
-when the last part other than raw parts and provider errors is a `finish`. Idle time, the deadline and cancellation still end
-with their terminal error, even after a written `finish`.
+when the last part other than raw parts and provider errors is a `finish`, or
+when a provider error follows that part, as the direct provider stream does.
+Idle time, the deadline and cancellation still end with their terminal error,
+even after a written `finish`.
 
 A provider error event can be followed by more content and a valid finish. It
 is different from a handler-terminal failure such as invalid ordering,
@@ -253,7 +274,8 @@ performed by a remote provider or tool.
 Each resource limit has one owner. Grafana's plugin host owns the request
 deadline, the request size, admission and, through the container, process
 memory. The Gateway keeps only what it owns: 8 provider attempts per request,
-checked when the catalog loads and when request keys are decoded; 16 MiB per
+checked when the catalog loads, when request keys are decoded and when routing
+controls compose a chain; 16 MiB per
 decompressed provider response that is not a stream, in the model transport;
 and stream idle time and cleanup in the execution runtime. No API adapter
 rejects or truncates output because of its size. See the
@@ -265,8 +287,9 @@ One HTTP request can contain several physical provider attempts but one logical
 model call. Logs and metrics describe those different scopes. Optional client
 execution overviews describe observed selection decisions: configured
 identities for configured models, and the requested destination with each
-account attempt for BYOK calls. They do not prove that a selected stream
-completed. Token usage is
+account attempt for BYOK calls. The routing summary next to each overview
+groups the same attempts by the models the call's chain was composed from.
+They do not prove that a selected stream completed. Token usage is
 provider-reported accounting, not a complete count of all remote work after
 retries or interrupted calls.
 
@@ -278,7 +301,7 @@ summary redaction is not a general filter for generated content or secrets.
 
 ## Existing code versus deployed capabilities
 
-The command serves two account paths through one selector and one runtime.
+The plugin backend serves two account paths through one selector and one runtime.
 The access decision chooses the path from the `access_mode` and the verified
 token, not from a caller choosing a different model name:
 
@@ -288,36 +311,38 @@ token, not from a caller choosing a different model name:
   service. They cannot switch to request accounts.
 - **BYOK:** in `cloud` mode, other verified identities get request-scoped
   access; the selector decodes the provider/model destination and credentials
-  from the call-level `gateway.byok` controls. The [BYOK engine](../../ai-gateway/cmd/grafana-ai-gateway/internal/byok/model.go)
-  constructs an Anthropic or OpenAI model with request-local accounts and
-  observation, and the selection carries the destination and account count
-  that the BYOK execution overview is checked against. It does not consult the
+  from the call-level `gateway.byok` controls, plus one destination per
+  `gateway.models` selector. The [BYOK engine](../../ai-gateway/pkg/internal/byok/model.go)
+  constructs one chain of request-local Anthropic or OpenAI accounts, ordered by
+  the same routing composition. The selection carries the destination expected
+  at each attempt position, which the BYOK execution overview is checked
+  against. It does not consult the
   configured catalog or fall back to server-held keys. This host supplies no custom base-URL approval map.
 
-See [service selection](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/selection.go)
+See [service selection](../../ai-gateway/pkg/internal/service/selection.go)
 and [authentication configuration](../guides/gateway-authentication.md).
 `Decide` refuses a token whose namespace does not cover the route namespace, so
 a caller cannot reach another namespace's account path. Source and synthetic
 tests establish service wiring, not production network isolation or live-provider
 acceptance.
-Reusable middleware supports policy hooks, but this command does not install
+Reusable middleware supports policy hooks, but this plugin backend does not install
 every available SDK policy or an aggregate admission controller.
 
 This walkthrough is grounded in the router, process composition, handler, and
 catalog linked above. Useful regression evidence includes
-[access decision tests](../../ai-gateway/cmd/grafana-ai-gateway/internal/auth/access_test.go),
-[configured fallback tests](../../ai-gateway/cmd/grafana-ai-gateway/internal/service/fallback_acceptance_test.go),
+[access decision tests](../../ai-gateway/pkg/internal/auth/access_test.go),
+[configured fallback tests](../../ai-gateway/pkg/internal/service/fallback_acceptance_test.go),
 and [stream lifecycle tests](../../ai-gateway/providerwire/v4/stream_test.go).
 The [parity coverage map](../../test/conformance/PARITY.md) distinguishes client
 protocol evidence, synthetic native-provider tests, and live-provider evidence.
 
 The registered upstream reference is recorded in
 [upstream.yaml](../../test/conformance/upstream.yaml), including
-`@ai-sdk/gateway` 4.0.103 and `@ai-sdk/provider` 4.0.21. The corresponding
-[upstream Gateway client](https://github.com/vercel/ai/blob/eb77f09e3c06c28e860d92e0de941b143c2eecec/packages/gateway/src/gateway-language-model.ts)
-serializes model calls and reads JSON or SSE. It establishes the client-facing
-protocol, not Vercel's private hosted-service implementation or Grafana's
-routing policy.
+`@ai-sdk/gateway` 4.0.116 and `@ai-sdk/provider` 4.0.29. The corresponding
+[upstream Gateway client](https://github.com/vercel/ai/blob/b7f6255acaae7724adc0fd37aac3dae3f3466578/packages/gateway/src/gateway-language-model.ts)
+serializes model calls, forwards `providerOptions.gateway` routing controls
+unchanged, and reads JSON or SSE. It establishes the client-facing protocol,
+not Vercel's private hosted-service implementation or Grafana's routing policy.
 
 ---
 

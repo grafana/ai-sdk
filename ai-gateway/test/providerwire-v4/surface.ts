@@ -198,5 +198,6 @@ export const finishReasons = {
   "content-filter": true,
   "tool-calls": true,
   error: true,
+  interrupted: true,
   other: true,
 } as const satisfies Witness<LanguageModelV4FinishReason["unified"]>;

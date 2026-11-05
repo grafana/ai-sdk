@@ -22,11 +22,12 @@ var rawCredentialQueryKeys = map[string]struct{}{
 
 // projectRawValue returns the value to write for a requested raw stream part,
 // or false when the part carries nothing safe to forward. A part whose native
-// frame was not valid JSON reaches the Gateway with no value; a
-// LanguageModelV4 raw part requires one and the Go client rejects a raw event
-// without it, so such parts are dropped. Values that are not UTF-8 or that repeat an object key are dropped
-// too: the first cannot be framed, and readers disagree on which duplicate
-// wins, so a projected copy could still show another reader a credential.
+// frame was not valid JSON reaches the Gateway with no value; it projects to
+// no value and is written as a raw event without one, as LanguageModelV4
+// providers emit it. Values that are not UTF-8 or that repeat an object key
+// are dropped: the first cannot be framed, and readers disagree on which
+// duplicate wins, so a projected copy could still show another reader a
+// credential.
 //
 // Raw values are native provider events, so the evidence decision's rule for
 // native bodies applies: remove the credential-bearing fields that the
@@ -37,7 +38,10 @@ var rawCredentialQueryKeys = map[string]struct{}{
 // userinfo or authentication query keys in server_url.
 func projectRawValue(raw json.RawMessage) (json.RawMessage, bool) {
 	value := bytes.TrimSpace(raw)
-	if len(value) == 0 || !utf8.Valid(value) || !json.Valid(value) || hasDuplicateKeys(value) {
+	if len(value) == 0 {
+		return nil, true
+	}
+	if !utf8.Valid(value) || !json.Valid(value) || hasDuplicateKeys(value) {
 		return nil, false
 	}
 	decoder := json.NewDecoder(bytes.NewReader(value))

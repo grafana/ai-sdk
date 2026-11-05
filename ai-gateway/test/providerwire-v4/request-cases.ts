@@ -1,4 +1,4 @@
-import { createGateway } from "@ai-sdk/gateway";
+import { createGateway, type GatewayProviderOptions } from "@ai-sdk/gateway";
 import type { LanguageModelV4, LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { createCaptureFetch, drainStream, type SemanticRequest } from "./capture.ts";
 
@@ -518,6 +518,33 @@ async function sequenceCapture(): Promise<SemanticRequest[]> {
   });
 }
 
+// routingGatewayOptions are the supported Gateway routing and request-account
+// controls, typed by the registered client's exported GatewayProviderOptions.
+export const routingGatewayOptions = {
+  models: ["grafana/backup", "grafana/last"],
+  order: ["openai", "anthropic"],
+  only: ["anthropic", "openai"],
+  byok: {
+    anthropic: [{ apiKey: "dummy-anthropic" }],
+    openai: [{ apiKey: "dummy-openai-first", organization: "org-customer", project: "proj-customer" }, { apiKey: "dummy-openai-second" }],
+  },
+} satisfies GatewayProviderOptions;
+
+async function routingCapture(): Promise<SemanticRequest[]> {
+  const options: LanguageModelV4CallOptions = {
+    prompt: [{ role: "user", content: [{ type: "text", text: "route" }] }],
+    providerOptions: { gateway: routingGatewayOptions, anthropic: { sendReasoning: false } },
+  };
+  return captureCalls({
+    modelId: "grafana/assistant",
+    calls: async (model) => {
+      await generate(model, options);
+      await stream(model, options);
+      await generate(model, { ...options, providerOptions: { gateway: { only: [] } satisfies GatewayProviderOptions } });
+    },
+  });
+}
+
 export const scalarGoldenCase: RequestGoldenCase = {
   name: "scalar presence",
   fileName: "scalar-presence.json",
@@ -564,6 +591,12 @@ export const sequenceGoldenCase: RequestGoldenCase = {
   capture: sequenceCapture,
 };
 
+export const routingGoldenCase: RequestGoldenCase = {
+  name: "routing controls",
+  fileName: "routing-controls.json",
+  capture: routingCapture,
+};
+
 export const requestGoldenCases: RequestGoldenCase[] = [
   scalarGoldenCase,
   comprehensiveGoldenCase,
@@ -574,4 +607,5 @@ export const requestGoldenCases: RequestGoldenCase[] = [
   streamingGoldenCase,
   headersGoldenCase,
   sequenceGoldenCase,
+  routingGoldenCase,
 ];

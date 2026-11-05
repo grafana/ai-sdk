@@ -118,7 +118,7 @@ func TestHandler_SafeErrors(t *testing.T) {
 		{"upstream", nil, &provider.APICallError{StatusCode: 403, Message: "secret"}, 424},
 		{"rate limit", nil, &provider.APICallError{StatusCode: 429, Message: "secret"}, 429},
 		{"nil response", nil, nil, 500},
-		{"invalid response", &provider.GenerateResult{}, nil, 502},
+		{"invalid response", &provider.GenerateResult{}, nil, 500},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := testHandler(t, &fakeModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {

@@ -4,6 +4,7 @@ import { useChat, useCompletion, useObject } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
+  lastAssistantMessageIsCompleteWithToolCalls,
   readUIMessageStream,
   uiMessageChunkSchema,
   type ChatStatus,
@@ -196,6 +197,44 @@ function AgentToolProbe() {
       />
       <div data-testid="agent-tool-state">{JSON.stringify(messages)}</div>
       <div data-testid="agent-tool-history">{JSON.stringify(history)}</div>
+    </div>
+  );
+}
+
+function InterruptedToolProbe() {
+  const [requests, setRequests] = useState(0);
+  const [finishReasons, setFinishReasons] = useState<(string | null)[]>([]);
+  const countingFetch = useCallback<typeof fetch>((input, init) => {
+    setRequests(current => current + 1);
+    return fetch(input, init);
+  }, []);
+  const { messages, sendMessage, addToolOutput, status } = useChat({
+    transport: new DefaultChatTransport({
+      api: `${getServerUrl()}/scenario/finish-reason-interrupted`,
+      fetch: countingFetch,
+    }),
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    onFinish: result => setFinishReasons(current => [...current, result.finishReason ?? null]),
+  });
+
+  return (
+    <div>
+      <button
+        data-testid="interrupted-send"
+        onClick={() =>
+          sendMessage({ role: "user", parts: [{ type: "text", text: "Weather?" }] })
+        }
+      />
+      <button
+        data-testid="interrupted-output"
+        onClick={() =>
+          void addToolOutput({ tool: "lookup", toolCallId: "call-1", output: "sunny" })
+        }
+      />
+      <div data-testid="interrupted-status">{status}</div>
+      <div data-testid="interrupted-requests">{requests}</div>
+      <div data-testid="interrupted-finish">{JSON.stringify(finishReasons)}</div>
+      <div data-testid="interrupted-state">{JSON.stringify(messages)}</div>
     </div>
   );
 }
@@ -409,6 +448,32 @@ describe("React hook interop", () => {
       expect(screen.getByTestId("chat-error").textContent).toBe(expectedError);
       expect(screen.getByTestId("chat-status").textContent).toBe("error");
     });
+  });
+
+  it("useChat does not automatically continue an interrupted response after a late tool output", async () => {
+    render(<InterruptedToolProbe />);
+
+    screen.getByTestId("interrupted-send").click();
+    await waitFor(() => {
+      expect(readProbe<string[]>("interrupted-finish")).toEqual(["interrupted"]);
+      expect(screen.getByTestId("interrupted-status").textContent).toBe("ready");
+    });
+    const tool = () =>
+      readProbe<AgentToolMessage[]>("interrupted-state")
+        .flatMap(message => message.parts)
+        .find(part => part.type === "tool-lookup");
+    expect(tool()).toMatchObject({ state: "input-available", input: { city: "Paris" } });
+    expect(assistantText(readProbe<AgentToolMessage[]>("interrupted-state"))).toBe("Let me check");
+
+    screen.getByTestId("interrupted-output").click();
+    await waitFor(() => {
+      expect(tool()).toMatchObject({ state: "output-available", output: "sunny" });
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    expect(screen.getByTestId("interrupted-requests").textContent).toBe("1");
+    expect(screen.getByTestId("interrupted-status").textContent).toBe("ready");
+    expect(readProbe<string[]>("interrupted-finish")).toEqual(["interrupted"]);
   });
 
   it("useChat stop retains partial output and returns to ready", async () => {
