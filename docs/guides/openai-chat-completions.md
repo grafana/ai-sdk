@@ -143,3 +143,8 @@ The compatible backend preserves native refusal and token log-probability fields
 in their standard Chat locations. Refusals are valid responses to structured-output
 requests and are not parsed as JSON. Native audio/prediction token counters remain
 available in usage details, preserving absent counters versus reported zero.
+
+Validation applies to the complete public stream: structured JSON must remain valid
+after concatenation, and `parallel_tool_calls:false` permits only one call across
+all native segments. The shared runtime rejects duplicate native tool IDs. A response containing calls ends with `tool_calls` unless it was interrupted
+by a token limit or content filter.
