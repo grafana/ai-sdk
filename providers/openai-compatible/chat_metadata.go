@@ -13,6 +13,7 @@ import (
 // Unary results carry complete values. Custom streaming parts carry deltas; the
 // finish part carries final usage. It is opt-in and never contains raw response data.
 type ChatCompletionMetadata struct {
+	Audio    *ChatCompletionAudio    `json:"audio,omitempty"`
 	Refusal  *string                 `json:"refusal,omitempty"`
 	Logprobs *ChatCompletionLogprobs `json:"logprobs,omitempty"`
 	Usage    *ChatCompletionUsage    `json:"usage,omitempty"`
@@ -65,10 +66,12 @@ func decodeChatCompletionMetadata(data []byte, streaming bool) (ChatCompletionMe
 	var envelope struct {
 		Choices []struct {
 			Message struct {
-				Refusal *string `json:"refusal"`
+				Refusal *string              `json:"refusal"`
+				Audio   *ChatCompletionAudio `json:"audio"`
 			} `json:"message"`
 			Delta struct {
-				Refusal *string `json:"refusal"`
+				Refusal *string              `json:"refusal"`
+				Audio   *ChatCompletionAudio `json:"audio"`
 			} `json:"delta"`
 			Logprobs *ChatCompletionLogprobs `json:"logprobs"`
 		} `json:"choices"`
@@ -84,11 +87,18 @@ func decodeChatCompletionMetadata(data []byte, streaming bool) (ChatCompletionMe
 	result.Usage = envelope.Usage
 	if len(envelope.Choices) > 0 {
 		choice := envelope.Choices[0]
+		result.Audio = choice.Message.Audio
 		result.Refusal = choice.Message.Refusal
 		if streaming {
+			result.Audio = choice.Delta.Audio
 			result.Refusal = choice.Delta.Refusal
 		}
 		result.Logprobs = choice.Logprobs
+	}
+	if result.Audio != nil && !streaming {
+		if err := result.Audio.ValidateComplete(); err != nil {
+			return ChatCompletionMetadata{}, err
+		}
 	}
 	if err := result.Validate(); err != nil {
 		return ChatCompletionMetadata{}, err
@@ -99,6 +109,11 @@ func decodeChatCompletionMetadata(data []byte, streaming bool) (ChatCompletionMe
 // Validate checks the typed metadata before a codec publishes it.
 func (m ChatCompletionMetadata) Validate() error {
 	invalid := errors.New("openai: invalid Chat completion metadata")
+	if m.Audio != nil {
+		if err := m.Audio.Validate(); err != nil {
+			return err
+		}
+	}
 	if m.Refusal != nil && !utf8.ValidString(*m.Refusal) {
 		return invalid
 	}
@@ -146,7 +161,7 @@ func validTokenProbability(p ChatCompletionTokenProbability) bool {
 }
 
 func withChatCompletionMetadata(metadata provider.ProviderMetadata, chat ChatCompletionMetadata) provider.ProviderMetadata {
-	if chat.Refusal == nil && chat.Logprobs == nil && chat.Usage == nil {
+	if chat.Audio == nil && chat.Refusal == nil && chat.Logprobs == nil && chat.Usage == nil {
 		return metadata
 	}
 	if metadata == nil {
