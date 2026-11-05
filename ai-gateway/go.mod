@@ -10,7 +10,7 @@ ignore (
 require (
 	github.com/anthropics/anthropic-sdk-go v1.80.0
 	github.com/go-jose/go-jose/v4 v4.1.6
-	github.com/grafana/agento11y/go v0.19.0
+	github.com/grafana/agento11y/go v0.20.0
 	github.com/grafana/ai-sdk v0.1.0-alpha.5
 	github.com/grafana/ai-sdk/middleware/agentobservability v0.1.0-alpha.2
 	github.com/grafana/ai-sdk/middleware/logger v0.1.0-alpha.2
