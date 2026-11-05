@@ -62,7 +62,7 @@ The Gateway SHALL NOT create network listeners or HTTP servers of its own beyond
 - **THEN** no Gateway handler SHALL serve the request
 
 ### Requirement: Host-compatible configuration
-The Gateway SHALL read settings, including the bounded strict model catalog document, as `GF_PLUGIN_<KEY>` variables, which Grafana derives from its plugin configuration section, without command-line arguments or file access. Operator documentation SHALL state how each host supplies them. Configuration SHALL NOT accept authentication, listener or Cloud-ingress settings, and invalid configuration SHALL fail plugin startup before any request is served, without exposing secret values.
+The Gateway SHALL read settings, including the bounded strict model catalog document, as `GF_PLUGIN_<KEY>` variables, which Grafana derives from its plugin configuration section, without command-line arguments or file access. Operator documentation SHALL state how each host supplies them. Configuration SHALL NOT accept authentication, listener or Cloud-ingress settings. Invalid configuration SHALL fail startup of a non-idle Gateway before any request is served, without exposing secrets.
 
 #### Scenario: Legacy authentication blocks are present
 - **WHEN** the model catalog contains an `auth` or `server` block
@@ -89,11 +89,19 @@ The Gateway SHALL read settings, including the bounded strict model catalog docu
 - **WHEN** the host starts the plugin with no arguments and a valid environment, including the model catalog
 - **THEN** the Gateway SHALL construct its catalog, BYOK factories and telemetry, and serve requests
 
+#### Scenario: Host without platform signing keys
+- **WHEN** a host such as a Grafana Cloud stack's own Grafana starts the plugin without a platform signing-key source or any Gateway settings
+- **THEN** the plugin SHALL keep running idle instead of exiting
+
 ### Requirement: Plugin health reporting
-The plugin health check SHALL be served only after configuration, the catalog, telemetry and request handlers are constructed; construction failure SHALL end startup instead. Health results SHALL use fixed messages without configuration values, endpoints or credentials.
+The plugin health check SHALL be served only after configuration, the catalog, telemetry and request handlers are constructed, or after the Gateway started idle without a platform signing-key source; construction failure SHALL end startup instead. Health results SHALL use fixed messages without configuration values, endpoints or credentials.
 
 #### Scenario: Health after successful startup
 - **WHEN** the host checks plugin health after startup completes
+- **THEN** the result SHALL be healthy with a fixed message
+
+#### Scenario: Health of an idle Gateway
+- **WHEN** the host checks the health of a Gateway that started idle
 - **THEN** the result SHALL be healthy with a fixed message
 
 ### Requirement: Host-owned lifecycle and bounded final flush

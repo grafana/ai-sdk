@@ -101,6 +101,13 @@ Grafana itself fails to start.
 The Gateway checks its settings and the catalog when Grafana starts it. If
 something is wrong, it does not start, and Grafana's log says why.
 
+The Gateway serves requests only when Grafana gives it the platform signing
+keys, `GRAFANA_JWKS_URL` or `GRAFANA_JWKS`, to verify callers. Without them,
+it starts idle: it ignores its settings, serves nothing, and Grafana's log
+warns that plugin requests will be rejected. A Grafana Cloud stack's own Grafana
+runs the Gateway this way, because the platform serves the Gateway API
+elsewhere.
+
 ## Choose who can use it
 
 `access_mode` decides who can use the configured models:
