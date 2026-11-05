@@ -109,7 +109,7 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 		}
 		t := &toolState{call: toolCall{ID: p.ID, Type: kindFunction, Function: callFunction{Name: p.ToolName}}, index: s.toolOffset + len(s.tools)}
 		s.tools[p.ID] = t
-		return &delta{ToolCalls: []toolDelta{{Index: t.index, ID: p.ID, Type: kindFunction, Function: functionDelta{Name: p.ToolName, Arguments: ptr("")}}}}, nil
+		return &delta{ToolCalls: []toolDelta{{Index: t.index, ID: t.call.ID, Type: kindFunction, Function: functionDelta{Name: p.ToolName, Arguments: ptr("")}}}}, nil
 	case provider.PartToolInputDelta:
 		t := s.tools[p.ID]
 		if t == nil || t.ended || t.final {
@@ -150,7 +150,7 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 			return nil, nil
 		}
 		t := &toolState{call: call, index: s.toolOffset + len(s.tools), ended: true, final: true}
-		s.tools[call.ID] = t
+		s.tools[p.ToolCallID] = t
 		return &delta{ToolCalls: []toolDelta{{Index: t.index, ID: call.ID, Type: kindFunction, Function: functionDelta{Name: call.Function.Name, Arguments: ptr(call.Function.Arguments)}}}}, nil
 	default:
 		return nil, errOutput
@@ -262,6 +262,9 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 		return emit(delta{Role: roleAssistant}, nil, nil, false)
 	}
 	state := streamState{textIDs: map[string]bool{}, tools: map[string]*toolState{}}
+	var allText strings.Builder
+	var allTools []toolCall
+	refused := false
 	var final *string
 	var finalMetadata provider.ProviderMetadata
 	var total *usage
@@ -276,6 +279,25 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			viewed = true
 		}
 		if wait == execution.WaitFinished && final != nil {
+			if len(allTools) > 0 && *final == "stop" {
+				*final = "tool_calls"
+			}
+			if r.Parallel != nil && !*r.Parallel && len(allTools) > 1 || requiresTool(r) && len(allTools) == 0 && *final == "stop" {
+				fail(502)
+				return
+			}
+			if !partialFinish(*final) {
+				for _, tool := range allTools {
+					if validateCallArguments(tool, r) != nil {
+						fail(502)
+						return
+					}
+				}
+			}
+			if !refused && r.validateText(allText.String(), *final) != nil {
+				fail(502)
+				return
+			}
 			pending = executionDiagnostics(pending, view, finalMetadata)
 			if !open() || !emit(delta{}, final, nil, false) {
 				return
@@ -361,7 +383,11 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			continue
 		}
 		if part.Type == provider.PartFinish {
-			f, u, err := state.finish(part, r)
+			segmentRequest := r
+			segmentRequest.jsonOutput = false
+			segmentRequest.Parallel = nil
+			segmentRequest.options.ToolChoice = nil
+			f, u, err := state.finish(part, segmentRequest)
 			if err != nil {
 				fail(502)
 				return
@@ -372,6 +398,11 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				return
 			}
 			finalMetadata = part.ProviderMetadata
+			allText.WriteString(state.text.String())
+			refused = refused || state.refused
+			for _, tool := range state.tools {
+				allTools = append(allTools, tool.call)
+			}
 			final = &f
 			if u == nil {
 				usageKnown = false
@@ -383,8 +414,8 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 					return
 				}
 			}
-			// Runtime owns native segment boundaries. Reused native item IDs
-			// receive fresh public tool indices in the next segment.
+			// Runtime owns native segment boundaries and global tool identities.
+			// New calls retain distinct public indices across segments.
 			state = streamState{toolOffset: state.toolOffset + len(state.tools), textIDs: map[string]bool{}, tools: map[string]*toolState{}}
 			continue
 		}
