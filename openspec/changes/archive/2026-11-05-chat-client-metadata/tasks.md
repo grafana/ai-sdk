@@ -1,0 +1,4 @@
+- [x] Enable typed compatible metadata and project unary/stream fields.
+- [x] Preserve missing versus zero counters and aggregate known details.
+- [x] Test structured-output refusal and token metadata delivery.
+- [x] Update guide and OpenSpec.
