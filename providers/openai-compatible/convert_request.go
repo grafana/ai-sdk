@@ -672,6 +672,12 @@ func convertToolMessages(parts []provider.ContentPart) ([]chatMessage, error) {
 		if err != nil {
 			return nil, err
 		}
+		if marker, ok := extra["customTool"]; ok {
+			if _, valid := marker.(bool); !valid {
+				return nil, fmt.Errorf("openai: invalid custom tool history marker")
+			}
+			delete(extra, "customTool")
+		}
 		messages = append(messages, chatMessage{
 			Role:        "tool",
 			ToolCallID:  part.ToolCallID,
