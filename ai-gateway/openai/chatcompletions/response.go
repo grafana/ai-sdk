@@ -51,6 +51,7 @@ type choice struct {
 	Logprobs any           `json:"logprobs"`
 }
 type completion struct {
+	Metadata          map[string]string          `json:"metadata,omitzero"`
 	Moderation        *compatible.ChatModeration `json:"moderation,omitempty"`
 	ServiceTier       *string                    `json:"service_tier,omitempty"`
 	SystemFingerprint *string                    `json:"system_fingerprint,omitempty"`
@@ -199,6 +200,7 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	out.ServiceTier = native.ServiceTier
 	out.SystemFingerprint = native.SystemFingerprint
 	out.Moderation = native.Moderation
+	out.Metadata = native.Metadata
 	msg := outputMessage{Role: roleAssistant, Refusal: native.Refusal, Audio: native.Audio, Annotations: nativeAnnotations(native.Annotations)}
 	var content strings.Builder
 	hasText := false
