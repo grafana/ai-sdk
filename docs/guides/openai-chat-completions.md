@@ -60,6 +60,11 @@ Chat defaults are applied to each native fallback candidate, including
 `store: false` and function strictness;
 they do not change ProviderWire requests.
 
+Structured response and function schemas support self-contained JSON Schema,
+including local references and unions produced by SDK helpers such as
+`zodResponseFormat`. Schema compilation never loads external files or URLs.
+Omitting function parameters declares a function with an empty parameter list.
+
 Response IDs and model names describe the selected native response. Streaming
 identity is frozen once public content starts. Late native metadata and warnings
 can appear in the `grafana` extension on individual chunks. SDK accumulators may

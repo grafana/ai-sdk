@@ -359,6 +359,9 @@ importers:
       typescript:
         specifier: 7.0.2
         version: 7.0.2
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
   ai-gateway/test/providerwire-v4:
     dependencies:

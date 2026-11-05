@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import OpenAI from 'openai';
+import { zodResponseFormat } from 'openai/helpers/zod';
+import { z } from 'zod';
 
 test('official JavaScript SDK against platform plugin: Responses, compatible and Anthropic', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'chat-completions-adapter-js-'));
@@ -496,6 +498,11 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
               },
             });
             assert.deepEqual(JSON.parse(completion.choices[0].message.content!), { answer: 'yes' });
+            const parsed = await client.chat.completions.parse({
+              model: 'chat', messages,
+              response_format: zodResponseFormat(z.object({ answer: z.union([z.string(), z.null()]) }), 'answer'),
+            });
+            assert.deepEqual(parsed.choices[0].message.parsed, { answer: 'yes' });
             holdNext = true;
             const upstreamCancelled = new Promise<void>((resolve) => (cancelled = resolve));
             const before = requests.length;
