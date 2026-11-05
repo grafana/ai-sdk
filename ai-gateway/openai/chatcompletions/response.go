@@ -21,10 +21,14 @@ type usage struct {
 	CompletionDetails *completionDetails `json:"completion_tokens_details,omitempty"`
 }
 type promptDetails struct {
-	Audio  *int `json:"audio_tokens,omitempty"`
-	Cached *int `json:"cached_tokens,omitempty"`
+	CacheWrite *int `json:"cache_write_tokens,omitempty"`
+	Image      *int `json:"image_tokens,omitempty"`
+	Text       *int `json:"text_tokens,omitempty"`
+	Audio      *int `json:"audio_tokens,omitempty"`
+	Cached     *int `json:"cached_tokens,omitempty"`
 }
 type completionDetails struct {
+	Text               *int `json:"text_tokens,omitempty"`
 	Audio              *int `json:"audio_tokens,omitempty"`
 	AcceptedPrediction *int `json:"accepted_prediction_tokens,omitempty"`
 	RejectedPrediction *int `json:"rejected_prediction_tokens,omitempty"`

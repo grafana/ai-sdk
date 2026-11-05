@@ -261,3 +261,8 @@ Native compatible routes support `prompt_cache_options` and explicit
 adapter retains original part boundaries without changing text or identities.
 Responses and Anthropic reject these Chat cache controls before I/O because the
 selected provider transports do not preserve their exact semantics.
+
+Native usage details preserve prompt cache-write, image and text counts and
+completion text counts. Missing counters remain absent, explicit zeros remain
+zero, and counters exceeding their corresponding prompt/completion total are
+rejected as invalid provider output.
