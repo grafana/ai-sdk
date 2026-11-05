@@ -101,6 +101,10 @@ type OpenAIOptions struct {
 	// true when structured outputs are enabled and a schema is provided.
 	StrictJSONSchema *bool `json:"strictJsonSchema,omitempty"`
 
+	// PreserveChatCompletionMetadata retains validated Chat-only output fields.
+	// This local codec option is not sent to the provider.
+	PreserveChatCompletionMetadata *bool `json:"preserveChatCompletionMetadata,omitempty"`
+
 	extraFields map[string]any
 }
 
