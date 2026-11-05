@@ -109,6 +109,10 @@ type OpenAIOptions struct {
 	Modalities []string                    `json:"modalities,omitempty"`
 	Audio      *ChatCompletionAudioOptions `json:"audio,omitempty"`
 
+	// Prediction and WebSearchOptions configure native Chat generation.
+	Prediction       *ChatPrediction       `json:"prediction,omitempty"`
+	WebSearchOptions *ChatWebSearchOptions `json:"web_search_options,omitempty"`
+
 	extraFields map[string]any
 }
 
