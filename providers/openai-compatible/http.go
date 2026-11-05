@@ -116,6 +116,9 @@ func (m *model) prepareRequest(params provider.CallOptions, streaming bool) ([]p
 	if err != nil {
 		return warnings, nil, "", err
 	}
+	if err := params.CheckUnsupportedWarnings(warnings); err != nil {
+		return warnings, nil, "", err
+	}
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		return warnings, nil, "", fmt.Errorf("openai: marshaling request: %w", err)

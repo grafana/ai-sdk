@@ -16,23 +16,24 @@ import (
 type requestObject map[string]any
 
 type requestCallOptionsFields struct {
-	ChoiceCount      int                      `json:"-"`
-	Prompt           []provider.Message       `json:"prompt,omitempty"`
-	Tools            []provider.Tool          `json:"tools,omitempty"`
-	ToolChoice       *provider.ToolChoice     `json:"toolChoice,omitempty"`
-	MaxOutputTokens  *int                     `json:"maxOutputTokens,omitempty"`
-	Temperature      *float64                 `json:"temperature,omitempty"`
-	TopP             *float64                 `json:"topP,omitempty"`
-	TopK             *int                     `json:"topK,omitempty"`
-	PresencePenalty  *float64                 `json:"presencePenalty,omitempty"`
-	FrequencyPenalty *float64                 `json:"frequencyPenalty,omitempty"`
-	StopSequences    []string                 `json:"stopSequences,omitempty"`
-	ResponseFormat   *provider.ResponseFormat `json:"responseFormat,omitempty"`
-	Seed             *int                     `json:"seed,omitempty"`
-	Reasoning        provider.ReasoningEffort `json:"reasoning,omitempty"`
-	IncludeRawChunks bool                     `json:"includeRawChunks,omitempty"`
-	Headers          map[string]string        `json:"headers,omitempty"`
-	ProviderOptions  provider.ProviderOptions `json:"providerOptions,omitempty"`
+	RejectUnsupported bool                     `json:"-"`
+	ChoiceCount       int                      `json:"-"`
+	Prompt            []provider.Message       `json:"prompt,omitempty"`
+	Tools             []provider.Tool          `json:"tools,omitempty"`
+	ToolChoice        *provider.ToolChoice     `json:"toolChoice,omitempty"`
+	MaxOutputTokens   *int                     `json:"maxOutputTokens,omitempty"`
+	Temperature       *float64                 `json:"temperature,omitempty"`
+	TopP              *float64                 `json:"topP,omitempty"`
+	TopK              *int                     `json:"topK,omitempty"`
+	PresencePenalty   *float64                 `json:"presencePenalty,omitempty"`
+	FrequencyPenalty  *float64                 `json:"frequencyPenalty,omitempty"`
+	StopSequences     []string                 `json:"stopSequences,omitempty"`
+	ResponseFormat    *provider.ResponseFormat `json:"responseFormat,omitempty"`
+	Seed              *int                     `json:"seed,omitempty"`
+	Reasoning         provider.ReasoningEffort `json:"reasoning,omitempty"`
+	IncludeRawChunks  bool                     `json:"includeRawChunks,omitempty"`
+	Headers           map[string]string        `json:"headers,omitempty"`
+	ProviderOptions   provider.ProviderOptions `json:"providerOptions,omitempty"`
 }
 
 var _ = requestCallOptionsFields(provider.CallOptions{})
@@ -40,7 +41,7 @@ var _ = requestCallOptionsFields(provider.CallOptions{})
 var errRequest = errors.New("grafana: invalid or unrepresentable request")
 
 func encodeRequest(opts provider.CallOptions) ([]byte, error) {
-	if opts.ChoiceCount < 0 || opts.ChoiceCount > 1 {
+	if opts.RejectUnsupported || opts.ChoiceCount < 0 || opts.ChoiceCount > 1 {
 		return nil, errRequest
 	}
 	if err := provider.ValidateTools(opts.Tools); err != nil {
