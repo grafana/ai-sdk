@@ -125,3 +125,9 @@ confirms the stream ended. Native raw transport events do not interrupt delivery
 Usage is summed across segments; if a segment omits token totals, the final usage
 is unknown instead of an incomplete total. Later native response identities remain
 available in `grafana.native_response`.
+
+Execution attribution is exposed in `grafana.provider_metadata.gateway`, using
+the same runtime projection and credential redaction as ProviderWire. Native
+provider metadata is preserved, with a colliding native `gateway` value relocated
+to `gateway.nativeMetadata`. Stream-native failures may include a redacted
+`grafana.native_error`; the standard OpenAI error fields remain stable.
