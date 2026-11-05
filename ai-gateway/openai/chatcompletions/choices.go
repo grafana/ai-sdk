@@ -7,6 +7,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
+	compatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 func mapGenerateChoices(result *provider.GenerateResult, r mappedRequest, id, model string, created int64) (completion, error) {
@@ -51,6 +52,7 @@ func mapGenerateChoices(result *provider.GenerateResult, r mappedRequest, id, mo
 	if err != nil || nativeUsage(out.Usage, metadata.Usage) != nil {
 		return out, errOutput
 	}
+	out.Moderation = metadata.Moderation
 	if metadata.ServiceTier != nil {
 		out.ServiceTier = metadata.ServiceTier
 	}
@@ -95,6 +97,7 @@ func (h *handler) serveChoicesStream(ctx context.Context, w http.ResponseWriter,
 	viewed, anyOpened, complete := false, false, false
 	var total *usage
 	var serviceTier, fingerprint *string
+	var moderation *compatible.ChatModeration
 	var finalMetadata provider.ProviderMetadata
 	emit := func(index int, d delta, finish *string, probabilities any, usage *usage, empty bool) bool {
 		if r.legacyFunctions {
@@ -107,7 +110,7 @@ func (h *handler) serveChoicesStream(ctx context.Context, w http.ResponseWriter,
 				finish = ptr(legacyFinish(*finish))
 			}
 		}
-		c := chunk{ServiceTier: serviceTier, SystemFingerprint: fingerprint, ID: id, Object: "chat.completion.chunk", Created: created, Model: model, Choices: []chunkChoice{{Index: index, Delta: d, Finish: finish, Logprobs: probabilities}}, Usage: usage, Grafana: pending}
+		c := chunk{Moderation: moderation, ServiceTier: serviceTier, SystemFingerprint: fingerprint, ID: id, Object: "chat.completion.chunk", Created: created, Model: model, Choices: []chunkChoice{{Index: index, Delta: d, Finish: finish, Logprobs: probabilities}}, Usage: usage, Grafana: pending}
 		if empty {
 			c.Choices = []chunkChoice{}
 		}
@@ -213,6 +216,9 @@ func (h *handler) serveChoicesStream(ctx context.Context, w http.ResponseWriter,
 					fail(502)
 					return
 				}
+				if native.Moderation != nil {
+					moderation = native.Moderation
+				}
 				if native.ServiceTier != nil {
 					serviceTier = native.ServiceTier
 				}
@@ -250,6 +256,9 @@ func (h *handler) serveChoicesStream(ctx context.Context, w http.ResponseWriter,
 				return
 			}
 			native, _ := chatMetadata(part.ProviderMetadata)
+			if native.Moderation != nil {
+				moderation = native.Moderation
+			}
 			if native.ServiceTier != nil {
 				serviceTier = native.ServiceTier
 			}
