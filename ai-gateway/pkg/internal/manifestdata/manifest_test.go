@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,9 +32,11 @@ func TestManifest_DeclaresOnlyGatewayRoutes(t *testing.T) {
 		assert.Empty(t, role.Kinds, "public roles must not expose stored conversation resources")
 	}
 	assert.Equal(t, map[string][]string{
-		"/namespaces/{namespace}/config":              {http.MethodGet},
-		"/namespaces/{namespace}/language-model":      {http.MethodPost},
-		"/namespaces/{namespace}/v1/chat/completions": {http.MethodPost},
+		"/namespaces/{namespace}/config":                                       {http.MethodGet},
+		"/namespaces/{namespace}/language-model":                               {http.MethodPost},
+		"/namespaces/{namespace}/v1/chat/completions":                          {http.MethodGet, http.MethodPost},
+		"/namespaces/{namespace}/v1/chat/completions/{completion_id}":          {http.MethodDelete, http.MethodGet, http.MethodPost},
+		"/namespaces/{namespace}/v1/chat/completions/{completion_id}/messages": {http.MethodGet},
 	}, operations(version.OpenAPI.Paths))
 }
 
@@ -68,6 +71,7 @@ func operations(paths map[string]spec3.PathProps) map[string][]string {
 				methods = append(methods, method)
 			}
 		}
+		sort.Strings(methods)
 		result[path] = methods
 	}
 	return result

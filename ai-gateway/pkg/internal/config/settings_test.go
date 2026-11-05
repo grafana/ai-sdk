@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/stretchr/testify/assert"
@@ -17,8 +18,9 @@ func TestParseSettings_Defaults(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	assert.Equal(t, Settings{
-		ModelCatalog: minimalConfigYAML,
-		Access:       auth.AccessPolicy{Mode: auth.AccessModeCloud},
+		CompletionRetention: 30 * 24 * time.Hour,
+		ModelCatalog:        minimalConfigYAML,
+		Access:              auth.AccessPolicy{Mode: auth.AccessModeCloud},
 		AgentObservability: AgentObservabilitySettings{
 			Enabled:  true,
 			Protocol: AgentObservabilityGRPC,
@@ -347,4 +349,19 @@ func mapLookup(values map[string]string) LookupEnv {
 		value, ok := values[name]
 		return value, ok
 	}
+}
+
+func TestCompletionRetentionBounds(t *testing.T) {
+	for _, value := range []string{"0", "0s", "-1h", "1s", "8761h", "private-value"} {
+		env := baseSettingsEnvironment()
+		env["GF_PLUGIN_COMPLETION_RETENTION"] = value
+		_, err := ParseSettings(mapLookup(env))
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "private-value")
+	}
+	env := baseSettingsEnvironment()
+	env["GF_PLUGIN_COMPLETION_RETENTION"] = "2h"
+	settings, err := ParseSettings(mapLookup(env))
+	require.NoError(t, err)
+	require.Equal(t, 2*time.Hour, settings.CompletionRetention)
 }

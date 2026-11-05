@@ -107,6 +107,7 @@ type responseFormat struct {
 }
 type mappedRequest struct {
 	allowedToolNames []string
+	originalMessages []json.RawMessage
 	request
 	options         provider.CallOptions
 	validator       *chatSchema
@@ -162,10 +163,17 @@ func mapRequest(data []byte) (mappedRequest, error) {
 	if decodeStrict(data, &r.request) != nil {
 		return r, errRequest
 	}
+	var original struct {
+		Messages []json.RawMessage `json:"messages"`
+	}
+	if json.Unmarshal(data, &original) != nil {
+		return r, errRequest
+	}
+	r.originalMessages = original.Messages
 	if err := r.normalizeLegacy(); err != nil {
 		return r, err
 	}
-	if r.Model == "" || len(r.Model) > 256 || len(r.Messages) == 0 || len(r.Messages) > 1024 || len(r.Tools) > 128 || (r.N != nil && (*r.N < 1 || *r.N > 128)) || boolValue(r.Store) || (r.StreamOptions != nil && !boolValue(r.Stream)) {
+	if r.Model == "" || len(r.Model) > 256 || len(r.Messages) == 0 || len(r.Messages) > 1024 || len(r.Tools) > 128 || (r.N != nil && (*r.N < 1 || *r.N > 128)) || (r.StreamOptions != nil && !boolValue(r.Stream)) {
 		return r, errRequest
 	}
 	if r.TopLogprobs != nil && !boolValue(r.Logprobs) {
