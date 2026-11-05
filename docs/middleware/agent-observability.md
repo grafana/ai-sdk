@@ -151,3 +151,12 @@ between content export and metadata-only spans.
 ---
 
 ← [Prometheus metrics](prometheus.md) · [Docs index](../README.md) · [Production checklist →](../best-practices/production.md)
+
+Native alternatives requested through the Go-only `ChoiceCount` extension are
+recorded as separate output messages, ordered by choice index. Text, reasoning,
+and tool IDs are accumulated independently for each choice. Generation metadata
+`ai_sdk.choices` identifies each choice's `index`, `output_start`, `output_count`,
+and `finish_reason`; output ranges refer to the generation's message array.
+Only the global `choices-finish` carries billable usage. The generation stop
+reason is shared when all choices agree, and `other` when their reasons differ.
+Cancellation before that global finish remains a call error.

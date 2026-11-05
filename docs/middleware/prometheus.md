@@ -104,3 +104,8 @@ metrics and controls are outside its scope.
 ---
 
 ← [Context enrichment](context-enrichment.md) · [Docs index](../README.md) · [Agent Observability →](agent-observability.md)
+
+Native alternatives share one request and one aggregate usage observation.
+Indexed choice finishes do not add token usage. The global `choices-finish` has
+its own bounded chunk-type label; choice indexes are never metric labels. When
+choice finish reasons differ, the request finish-reason label is `other`.
