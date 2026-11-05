@@ -29,10 +29,15 @@ SHALL fail.
 - **THEN** the adapter maps the result to that function's name and call ID;
   an orphan result is refused.
 
-#### Scenario: Structured response name and restricted schema
+#### Scenario: Structured response name and self-contained schema
 - **WHEN** a supported JSON schema response format supplies its required name
 - **THEN** the mapped provider response format preserves the name's presence;
-  external references or unsupported schema vocabulary are refused.
+  local references, unions and nested schema vocabulary are retained. External
+  resource loading is disabled during compilation.
+
+#### Scenario: Function with no parameters
+- **WHEN** a function declaration omits parameters
+- **THEN** the adapter supplies an empty object parameter schema.
 
 ### Requirement: Candidate-local Chat defaults
 

@@ -1,0 +1,2 @@
+# Design
+Use the existing jsonschema/v6 dependency rather than a second restricted vocabulary. An empty SchemeURLLoader rejects external file, relative-file and network resources while allowing references within the submitted document and embedded standard metaschemas. The adapter retains its closed request envelope. Provider-specific supported schema subsets remain the selected provider's responsibility.
