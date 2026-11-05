@@ -36,6 +36,10 @@ const PluginID = "grafana-aigateway-app"
 // finalFlushBudget bounds the telemetry flush after the plugin host stops the plugin.
 const finalFlushBudget = time.Second
 
+// insecureSkipAuthenticationEnabled is the value with which the plugin host
+// enables plugin.EnvVarInsecureSkipAuthentication.
+const insecureSkipAuthenticationEnabled = "true"
+
 // Options supplies the plugin host environment and process-wide sinks.
 type Options struct {
 	LookupEnv  config.LookupEnv
@@ -43,7 +47,8 @@ type Options struct {
 	Registerer prometheus.Registerer
 }
 
-// Gateway is the constructed plugin.
+// Gateway is the constructed plugin. An idle Gateway has no handler,
+// authenticator or sinks.
 type Gateway struct {
 	handler       http.Handler
 	authenticator authn.Authenticator
@@ -53,13 +58,25 @@ type Gateway struct {
 // New validates settings and constructs every Gateway dependency before any
 // request can be served. Configuration is validated before any secret is
 // read, and failures are secret-safe.
+//
+// Without platform signing keys, New returns an idle Gateway without reading
+// any other setting: hosts that never delegate requests to the plugin, such
+// as a Grafana that routes the Gateway API elsewhere, need no Gateway
+// configuration, and the plugin host rejects every request.
 func New(options Options) (*Gateway, error) {
 	lookupEnv := options.LookupEnv
+	keys, err := gatewayauth.SigningKeys(lookupEnv)
+	if errors.Is(err, gatewayauth.ErrNoSigningKeys) {
+		return newIdle(lookupEnv)
+	}
+	if err != nil {
+		return nil, err
+	}
 	settings, err := config.ParseSettings(lookupEnv)
 	if err != nil {
 		return nil, err
 	}
-	authenticator, err := newAuthenticator(lookupEnv)
+	authenticator, err := gatewayauth.NewPlatformAuthenticator(gatewayauth.PlatformConfig{PluginID: PluginID, Group: manifestdata.LocalManifest().ManifestData.Group, Keys: keys})
 	if err != nil {
 		return nil, err
 	}
@@ -185,21 +202,25 @@ func newLanguageHandler(config execution.Config) (http.Handler, error) {
 	return providerv4.New(runtime)
 }
 
-func newAuthenticator(lookupEnv config.LookupEnv) (authn.Authenticator, error) {
-	keys, err := gatewayauth.SigningKeys(lookupEnv)
-	if errors.Is(err, gatewayauth.ErrNoSigningKeys) {
-		return nil, fmt.Errorf("config: set %s or %s to verify platform tokens", plugin.EnvVarGrafanaJWKSURL, plugin.EnvVarGrafanaJWKS)
+// newIdle returns the idle Gateway. It refuses to start when unverified
+// requests are requested instead, since the plugin host would then serve them.
+func newIdle(lookupEnv config.LookupEnv) (*Gateway, error) {
+	if skip, _ := lookupEnv(plugin.EnvVarInsecureSkipAuthentication); skip == insecureSkipAuthenticationEnabled {
+		return nil, fmt.Errorf("config: set %s or %s to verify platform tokens; %s is not supported", plugin.EnvVarGrafanaJWKSURL, plugin.EnvVarGrafanaJWKS, plugin.EnvVarInsecureSkipAuthentication)
 	}
-	if err != nil {
-		return nil, err
-	}
-	return gatewayauth.NewPlatformAuthenticator(gatewayauth.PlatformConfig{PluginID: PluginID, Group: manifestdata.LocalManifest().ManifestData.Group, Keys: keys})
+	return &Gateway{}, nil
 }
 
-// Handler returns the ProviderWire route handler for the plugin route adapter.
+// Idle reports whether the Gateway started without platform signing keys.
+// An idle Gateway serves no requests.
+func (g *Gateway) Idle() bool { return g.authenticator == nil }
+
+// Handler returns the ProviderWire route handler for the plugin route
+// adapter, or nil when the Gateway is idle.
 func (g *Gateway) Handler() http.Handler { return g.handler }
 
-// Authenticator returns the plugin authenticator for delegated access tokens.
+// Authenticator returns the plugin authenticator for delegated access tokens,
+// or nil when the Gateway is idle.
 func (g *Gateway) Authenticator() authn.Authenticator { return g.authenticator }
 
 // Provider returns the app-sdk provider whose app serves Handler.
@@ -211,5 +232,10 @@ func (g *Gateway) Provider() app.Provider {
 
 // Close flushes Agent Observability and attempt records concurrently for at
 // most the final flush budget, then releases them. Later records are dropped
-// and counted.
-func (g *Gateway) Close() { g.sinks.close() }
+// and counted. Closing an idle Gateway does nothing.
+func (g *Gateway) Close() {
+	if g.Idle() {
+		return
+	}
+	g.sinks.close()
+}
