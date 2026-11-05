@@ -495,12 +495,16 @@ func addUsage(total, next *usage) error {
 	if total.PromptDetails != nil && next.PromptDetails != nil {
 		total.PromptDetails.Cached = sumOptional(total.PromptDetails.Cached, next.PromptDetails.Cached)
 		total.PromptDetails.Audio = sumOptional(total.PromptDetails.Audio, next.PromptDetails.Audio)
+		total.PromptDetails.CacheWrite = sumOptional(total.PromptDetails.CacheWrite, next.PromptDetails.CacheWrite)
+		total.PromptDetails.Image = sumOptional(total.PromptDetails.Image, next.PromptDetails.Image)
+		total.PromptDetails.Text = sumOptional(total.PromptDetails.Text, next.PromptDetails.Text)
 	} else {
 		total.PromptDetails = nil
 	}
 	if total.CompletionDetails != nil && next.CompletionDetails != nil {
 		total.CompletionDetails.Reasoning = sumOptional(total.CompletionDetails.Reasoning, next.CompletionDetails.Reasoning)
 		total.CompletionDetails.Audio = sumOptional(total.CompletionDetails.Audio, next.CompletionDetails.Audio)
+		total.CompletionDetails.Text = sumOptional(total.CompletionDetails.Text, next.CompletionDetails.Text)
 		total.CompletionDetails.AcceptedPrediction = sumOptional(total.CompletionDetails.AcceptedPrediction, next.CompletionDetails.AcceptedPrediction)
 		total.CompletionDetails.RejectedPrediction = sumOptional(total.CompletionDetails.RejectedPrediction, next.CompletionDetails.RejectedPrediction)
 	} else {
