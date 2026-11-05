@@ -81,8 +81,9 @@ type filePart struct {
 }
 
 type chatTool struct {
-	Type     string       `json:"type"`
-	Function toolFunction `json:"function"`
+	Type     string          `json:"type"`
+	Function toolFunction    `json:"function,omitzero"`
+	Custom   *ChatCustomTool `json:"custom,omitempty"`
 }
 
 type toolFunction struct {
@@ -95,7 +96,8 @@ type toolFunction struct {
 type chatToolCall struct {
 	ID           string           `json:"id"`
 	Type         string           `json:"type"`
-	Function     toolCallFunction `json:"function"`
+	Function     toolCallFunction `json:"function,omitzero"`
+	Custom       *chatCustomCall  `json:"custom,omitempty"`
 	ExtraContent *extraContent    `json:"extra_content,omitempty"`
 	ExtraFields  map[string]any   `json:"-"`
 }
@@ -184,11 +186,12 @@ type chatDeltaMessage struct {
 }
 
 type chatToolCallDelta struct {
-	Index        *int               `json:"index"`
-	ID           *string            `json:"id"`
-	Type         string             `json:"type"`
-	Function     *toolCallDeltaFunc `json:"function"`
-	ExtraContent *extraContent      `json:"extra_content,omitempty"`
+	Index        *int                 `json:"index"`
+	ID           *string              `json:"id"`
+	Type         string               `json:"type"`
+	Function     *toolCallDeltaFunc   `json:"function"`
+	Custom       *chatCustomCallDelta `json:"custom"`
+	ExtraContent *extraContent        `json:"extra_content,omitempty"`
 }
 
 type toolCallDeltaFunc struct {

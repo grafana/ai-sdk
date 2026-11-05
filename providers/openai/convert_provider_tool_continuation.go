@@ -107,6 +107,12 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 		return &item, nil
 	}
 	po := ctx.partOptions(part)
+	if po.CustomTool {
+		var input string
+		if json.Unmarshal(part.Input, &input) != nil {
+			return nil, fmt.Errorf("openai: custom history input must encode text")
+		}
+	}
 	if ctx.hasConversation && po.ItemID != "" {
 		return nil, nil
 	}
@@ -155,7 +161,7 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 	providerDefined := (ctx.hasLocalShellTool && toolName == "local_shell") ||
 		(ctx.hasShellTool && toolName == "shell") ||
 		(ctx.hasApplyPatchTool && toolName == "apply_patch") ||
-		ctx.isCustomProviderTool(toolName)
+		(ctx.isCustomProviderTool(toolName) || ctx.partOptions(part).CustomTool)
 	if ctx.hasPreviousResponseID && ctx.store && po.ItemID != "" && providerDefined {
 		return nil, nil
 	}
@@ -171,7 +177,7 @@ func convertAssistantToolCall(part provider.ContentPart, ctx inputConversionCont
 		return shellCallItem(part, po.ItemID)
 	case ctx.hasApplyPatchTool && toolName == "apply_patch":
 		return applyPatchCallItem(part, po.ItemID)
-	case ctx.isCustomProviderTool(toolName):
+	case (ctx.isCustomProviderTool(toolName) || ctx.partOptions(part).CustomTool):
 		item := responses.ResponseInputItemParamOfCustomToolCall(part.ToolCallID, customToolInput(part.Input), toolName)
 		if po.ItemID != "" {
 			item.OfCustomToolCall.ID = param.NewOpt(po.ItemID)
@@ -267,7 +273,7 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 	}
 
 	toolName := ctx.toolNameMapping.toProviderToolName(part.ToolName)
-	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied && !ctx.isCustomProviderTool(toolName) {
+	if part.Output != nil && part.Output.Type == provider.ToolOutputExecutionDenied && !ctx.isCustomProviderTool(toolName) && !ctx.partOptions(part).CustomTool {
 		caller := ctx.partOptions(part).Caller
 		if (caller != nil && caller.Type == OpenAIToolCallerProgram) || ctx.programmaticToolCallIDs[part.ToolCallID] {
 			return nil, nil, fmt.Errorf("openai: unsupported functionality: execution-denied results for programmatic tool calls")
@@ -290,7 +296,7 @@ func convertProviderToolResult(part provider.ContentPart, ctx inputConversionCon
 	case ctx.hasApplyPatchTool && toolName == "apply_patch" && part.Output != nil && part.Output.Type == provider.ToolOutputJSON:
 		item, err := applyPatchCallOutputItem(part)
 		return item, nil, err
-	case ctx.isCustomProviderTool(toolName):
+	case (ctx.isCustomProviderTool(toolName) || ctx.partOptions(part).CustomTool):
 		item, warnings := customToolCallOutputItem(part, ctx)
 		return item, warnings, nil
 	default:

@@ -128,3 +128,8 @@ settings are dropped with warnings where the request can proceed. Inspect
 ---
 
 ← [Amazon Bedrock](bedrock.md) · [Docs index](../README.md) · [OpenAI-compatible →](openai-compatible.md)
+
+`OpenAIPartOptions.CustomTool` retains the type of a historical custom call or
+result when the current request omits tool declarations. Custom call input must
+encode a JSON string, as in native Responses custom output. The marker changes
+neither the common tool name nor call ID; it does not add a tool declaration.
