@@ -19,7 +19,8 @@ type generationModelIdentity struct {
 
 // BuildGenerationStart assembles the agento11y.GenerationStart for a single
 // model call. The middleware passes this to client.StartGeneration or
-// client.StartStreamingGeneration before invoking the inner model.
+// client.StartStreamingGeneration before invoking the inner model. The returned
+// provider is bedrock for amazon-bedrock and vertex for anthropic.vertex.
 //
 // Field resolution order (highest precedence first):
 //
@@ -38,7 +39,7 @@ func BuildGenerationStart(ctx context.Context, providerName, modelID string, ctx
 func buildGenerationStart(ctx context.Context, providerName, modelID string, ctxInfo ContextInfo, source ContextSource) agento11y.GenerationStart {
 	start := agento11y.GenerationStart{
 		Model: agento11y.ModelRef{
-			Provider: providerName,
+			Provider: agento11yProviderName(providerName),
 			Name:     modelID,
 		},
 		ID:                  GenerationIDFromContext(ctx),
@@ -86,10 +87,10 @@ func MapGenerateResult(params provider.CallOptions, result *provider.GenerateRes
 }
 
 func mapGenerateResultWithStart(params provider.CallOptions, result *provider.GenerateResult, ctxInfo ContextInfo, start agento11y.GenerationStart) agento11y.Generation {
-	return mapGenerateResultWithIdentity(params, result, ctxInfo, start, IdentityPreferResponse)
+	return mapGenerateResultWithIdentity(params, result, ctxInfo, start, IdentityPreferResponse, modelIdentityFromStart(start))
 }
 
-func mapGenerateResultWithIdentity(params provider.CallOptions, result *provider.GenerateResult, ctxInfo ContextInfo, start agento11y.GenerationStart, identity IdentitySource) agento11y.Generation {
+func mapGenerateResultWithIdentity(params provider.CallOptions, result *provider.GenerateResult, ctxInfo ContextInfo, start agento11y.GenerationStart, identity IdentitySource, transport generationModelIdentity) agento11y.Generation {
 	system, input := messagesToAgento11yWithTools(params.Prompt, params.Tools)
 	controls := controlsFromCallOptions(params)
 	metadata := mergeMetadata(ctxInfo.Metadata, metadataFromProviderOptions(params))
@@ -98,7 +99,6 @@ func mapGenerateResultWithIdentity(params provider.CallOptions, result *provider
 	}
 
 	generation := agento11y.Generation{
-		ResponseModel:       start.Model.Name,
 		UserID:              ctxInfo.UserID,
 		AgentName:           ctxInfo.AgentName,
 		AgentVersion:        ctxInfo.AgentVersion,
@@ -116,6 +116,7 @@ func mapGenerateResultWithIdentity(params provider.CallOptions, result *provider
 	}
 
 	if result != nil {
+		generation.ResponseModel = start.Model.Name
 		generation.Output = contentToAgento11yOutputWithTools(result.Content, params.Tools)
 		generation.Usage = usageToAgento11y(result.Usage)
 		generation.StopReason = finishReasonToAgento11yStop(result.FinishReason)
@@ -124,12 +125,12 @@ func mapGenerateResultWithIdentity(params provider.CallOptions, result *provider
 			if result.Response.ModelID != "" {
 				generation.ResponseModel = result.Response.ModelID
 			}
-			applyModelIdentity(&generation, modelIdentityFromStart(start), modelIdentityFromResponse(result.Response.Provider, result.Response.ModelID))
+			applyModelIdentity(&generation, modelIdentityFromStart(start), modelIdentityFromResponse(result.Response.Provider, result.Response.ModelID), transport)
 		}
 	}
 	if identity == IdentityRequested {
 		generation.ResponseModel = ""
-		applyModelIdentity(&generation, modelIdentityFromStart(start), generationModelIdentity{})
+		applyModelIdentity(&generation, modelIdentityFromStart(start), generationModelIdentity{}, transport)
 	}
 	return generation
 }
@@ -138,15 +139,21 @@ func modelIdentityFromStart(start agento11y.GenerationStart) generationModelIden
 	return generationModelIdentity{provider: start.Model.Provider, model: start.Model.Name}
 }
 
+func wrappedModelIdentity(model provider.LanguageModel) generationModelIdentity {
+	return generationModelIdentity{provider: model.Provider(), model: model.ModelID()}
+}
+
 func modelIdentityFromResponse(providerName, modelID string) generationModelIdentity {
-	return generationModelIdentity{provider: providerName, model: modelID}
+	return generationModelIdentity{provider: agento11yProviderName(providerName), model: modelID}
 }
 
 func (m generationModelIdentity) complete() bool {
 	return m.provider != "" && m.model != ""
 }
 
-func applyModelIdentity(gen *agento11y.Generation, seed, response generationModelIdentity) {
+// seed and response use normalized provider names for comparison; transport is
+// written to metadata unchanged, so RecordingMiddleware keeps the AI SDK name.
+func applyModelIdentity(gen *agento11y.Generation, seed, response, transport generationModelIdentity) {
 	if gen == nil {
 		return
 	}
@@ -159,16 +166,16 @@ func applyModelIdentity(gen *agento11y.Generation, seed, response generationMode
 		gen.Model = agento11y.ModelRef{Provider: final.provider, Name: final.model}
 	}
 	if responseComplete && seed.complete() && seed != response {
-		addTransportMetadata(gen, seed)
+		addTransportMetadata(gen, transport)
 	}
 }
 
-func addTransportMetadata(gen *agento11y.Generation, seed generationModelIdentity) {
+func addTransportMetadata(gen *agento11y.Generation, transport generationModelIdentity) {
 	if gen.Metadata == nil {
 		gen.Metadata = map[string]any{}
 	}
-	gen.Metadata[transportProviderMetadataKey] = seed.provider
-	gen.Metadata[transportModelMetadataKey] = seed.model
+	gen.Metadata[transportProviderMetadataKey] = transport.provider
+	gen.Metadata[transportModelMetadataKey] = transport.model
 }
 
 // mergeMetadata returns the union of two metadata maps. Override entries win

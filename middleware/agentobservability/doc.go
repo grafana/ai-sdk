@@ -13,8 +13,9 @@
 // Two middleware values can be composed independently:
 //
 //   - [RecordingMiddleware] records unary and streaming generations.
-//   - [HooksMiddleware] evaluates a preflight hook and can allow, deny, or
-//     transform a provider call.
+//   - [HooksMiddleware] evaluates a preflight hook and can allow or deny a
+//     provider call. Non-empty transforms fail with [ErrHookTransformFailed]
+//     because agento11y v0.19 discards malformed response parts before validation.
 //
 // [Stack] returns the canonical hooks-then-recording order. [Wrap] applies that
 // stack to one model.
@@ -37,12 +38,22 @@
 //
 // # OpenTelemetry
 //
-// The underlying SDK owns the canonical generation span, including its
-// agento11y.generation.id attribute. This module opens only
-// [SpanNameHooksPreflight] for hook evaluation. That span's aisdk.hooks.*
-// attribute keys are ai-sdk's own; the SDK neither produces nor reads them. It
-// also carries the gen_ai.provider.name and gen_ai.request.model
-// semantic-convention attributes, which the SDK sets on its generation span too.
+// The resolved agento11y client selects the generation export protocol. With
+// gRPC or HTTP it emits a generateText or streamText metadata span. With
+// GenerationExportProtocolOTel and EnableExperimentalFeatures it emits one
+// chat <model> generation span, marked with agento11y.record="true". Without
+// EnableExperimentalFeatures the client exports no generation. Recording does
+// not add a second span.
+//
+// Applications configure the client's TracerProvider, sampling, destination,
+// content capture, and Flusher outside the middleware. Recording does not
+// flush per request. See docs/middleware/agent-observability.md for flush and
+// shutdown order.
+//
+// This module opens only [SpanNameHooksPreflight] for hook evaluation. Its
+// aisdk.hooks.* keys belong to ai-sdk; the client neither produces nor reads
+// them. Its gen_ai.provider.name values match the OTel generation span, and
+// gen_ai.request.model is the wrapped model ID.
 //
 // # Example
 //
