@@ -75,6 +75,9 @@ func WithGenerateID(fn func() string) Option {
 // CallOptions.ProviderOptions["openai"]. Field names and semantics mirror
 // upstream Vercel AI SDK's openaiLanguageModelResponsesOptionsSchema.
 type OpenAIResponsesOptions struct {
+	// PreserveRefusal exposes native refusal metadata and stream deltas. This
+	// Go extension is disabled by default and never sent to the native API.
+	PreserveRefusal bool `json:"preserveRefusal,omitempty"`
 	// Conversation is an OpenAI Conversation id. Mutually exclusive with
 	// PreviousResponseID.
 	Conversation string `json:"conversation,omitempty"`

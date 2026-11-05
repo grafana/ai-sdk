@@ -62,6 +62,8 @@ func sortedReasoningSummaryIndices(summaryParts map[int64]reasoningSummaryState)
 // streamAdapter holds mutable per-stream state and converts Responses SSE
 // events into provider.StreamParts.
 type streamAdapter struct {
+	refusals            map[refusalKey]*strings.Builder
+	refusalOrder        []refusalKey
 	warnings            []provider.Warning
 	br                  buildResult
 	requestBody         responses.ResponseNewParams
@@ -142,6 +144,14 @@ func (a *streamAdapter) handleEvent(event responses.ResponseStreamEventUnion, ch
 	case responses.ResponseOutputItemAddedEvent:
 		a.handleOutputItemAdded(e, ch)
 
+	case responses.ResponseRefusalDeltaEvent:
+		if a.br.preserveRefusal {
+			a.appendRefusal(refusalKey{e.OutputIndex, e.ContentIndex}, e.Delta, ch)
+		}
+	case responses.ResponseRefusalDoneEvent:
+		if a.br.preserveRefusal {
+			a.finishRefusal(refusalKey{e.OutputIndex, e.ContentIndex}, e.Refusal, ch)
+		}
 	case responses.ResponseTextDeltaEvent:
 		itemID := a.resolveOptionalOutputItemID(e.ItemID, e.OutputIndex, e.JSON.OutputIndex.Valid())
 		ch <- provider.StreamPart{Type: provider.PartTextDelta, ID: itemID, Delta: e.Delta}
@@ -383,6 +393,9 @@ func (a *streamAdapter) handleOutputItemAdded(e responses.ResponseOutputItemAdde
 func (a *streamAdapter) handleOutputItemDone(e responses.ResponseOutputItemDoneEvent, ch chan<- provider.StreamPart) {
 	switch v := e.Item.AsAny().(type) {
 	case responses.ResponseOutputMessage:
+		if a.br.preserveRefusal {
+			a.observeMessageRefusals(e.OutputIndex, v, ch)
+		}
 		itemID := a.resolveOutputItemID(v.ID, e.OutputIndex)
 		phase := string(v.Phase)
 		if phase == "" {
@@ -836,11 +849,20 @@ func (a *streamAdapter) flush(ch chan<- provider.StreamPart) {
 		created.ID = a.responseID
 		resp = &created
 	}
+	metadata := responseMeta(a.providerOptionsName, resp, a.logprobs)
+	if a.br.preserveRefusal {
+		for index, item := range resp.Output {
+			if message, ok := item.AsAny().(responses.ResponseOutputMessage); ok {
+				a.observeMessageRefusals(int64(index), message, ch)
+			}
+		}
+		metadata = withResponsesMetadata(metadata, a.providerOptionsName, a.refusalMetadata())
+	}
 	usage := convertResponseUsage(resp.Usage)
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,
 		FinishReason:     &a.finishReason,
 		Usage:            &usage,
-		ProviderMetadata: responseMeta(a.providerOptionsName, resp, a.logprobs),
+		ProviderMetadata: metadata,
 	}
 }
