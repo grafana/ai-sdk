@@ -42,3 +42,18 @@ reason; each alternative SHALL retain its own native finish reason.
 #### Scenario: Different finish reasons
 - **WHEN** one choice stops and another reaches its token limit
 - **THEN** each keeps its reason while native token usage is reported once.
+
+### Requirement: Native compatible execution
+
+The compatible provider SHALL issue one request with native n, preserve every
+choice index and decode interleaved deltas into independent native choice state.
+It SHALL NOT implement alternatives by issuing several requests.
+
+#### Scenario: Native multiple-choice response
+- **WHEN** an opted-in native response contains all requested indexed choices
+- **THEN** each choice's text, reasoning, tools, refusal, log probabilities and
+  finish reason remain associated with that choice and aggregate usage appears once.
+
+#### Scenario: Invalid native index or incomplete stream
+- **WHEN** native output duplicates, omits or exceeds the requested indices
+- **THEN** decoding fails without emitting an aggregate successful finish.

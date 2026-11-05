@@ -10,7 +10,10 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-func parseGenerateResponse(body []byte, headers http.Header, providerName, metadataKey string, generateID func() string, preserveChat bool) (*provider.GenerateResult, error) {
+func parseGenerateResponse(body []byte, headers http.Header, providerName, metadataKey string, generateID func() string, preserveChat bool, counts ...int) (*provider.GenerateResult, error) {
+	if len(counts) > 0 && counts[0] > 1 {
+		return parseGenerateChoices(body, headers, providerName, metadataKey, generateID, preserveChat, counts[0])
+	}
 	var parsed chatCompletionResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("openai: decoding response: %w", err)
