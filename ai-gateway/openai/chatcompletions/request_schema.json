@@ -700,6 +700,124 @@
           "type": "null"
         }
       ]
+    },
+    "user": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "safety_identifier": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "prompt_cache_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "service_tier": {
+      "anyOf": [
+        {
+          "enum": [
+            "auto",
+            "default",
+            "flex",
+            "priority",
+            "fast",
+            "scale"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "prompt_cache_retention": {
+      "anyOf": [
+        {
+          "enum": [
+            "in_memory",
+            "24h"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "logit_bias": {
+      "anyOf": [
+        {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "type": "number",
+            "minimum": -100,
+            "maximum": 100
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "logprobs": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "top_logprobs": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [
