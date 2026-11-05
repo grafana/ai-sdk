@@ -353,7 +353,7 @@ func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, e
 
 	out := make(map[string]any)
 	for k, rawValue := range fields {
-		if strings.EqualFold(k, "maxTokensField") || strings.EqualFold(k, "allowedTools") {
+		if strings.EqualFold(k, "maxTokensField") || strings.EqualFold(k, "allowedTools") || strings.EqualFold(k, "preserveChatCompletionMetadata") {
 			continue
 		}
 		if _, known := openAIOptionFields[k]; known {
@@ -615,6 +615,8 @@ func openAICompatibleMetadata(opts provider.ProviderOptions) (map[string]any, er
 	switch image := opts["openaiCompatible"].(type) {
 	case ImageOptions:
 		return map[string]any{"imageDetail": image.Detail}, nil
+	case ChatCompletionFileOptions:
+		return nil, nil
 	}
 
 	if value, ok := opts["openaiCompatible"].(ChatCompletionMessageOptions); ok {
@@ -636,6 +638,11 @@ func openAICompatibleMetadata(opts provider.ProviderOptions) (map[string]any, er
 	}
 	if !ok || len(meta) == 0 {
 		return nil, nil
+	}
+	for key := range meta {
+		if strings.EqualFold(key, "preserveNativeFile") {
+			delete(meta, key)
+		}
 	}
 	return meta, validateCachePartMetadata(meta)
 }
@@ -695,6 +702,13 @@ func convertFileContent(part provider.ContentPart, providerName string) (chatCon
 	if err := part.Data.Validate(); err != nil {
 		return chatContentPart{}, fmt.Errorf("openai: invalid file part: %w", err)
 	}
+	native, err := nativeFileRequested(part.ProviderOptions)
+	if err != nil {
+		return chatContentPart{}, err
+	}
+	if native {
+		return nativeChatFile(part, providerName)
+	}
 	if part.Data.IsReference() {
 		var reference map[string]string
 		if err := json.Unmarshal(part.Data.Reference, &reference); err != nil {
@@ -706,7 +720,6 @@ func convertFileContent(part provider.ContentPart, providerName string) (chatCon
 		}
 		return chatContentPart{Type: "file", File: &filePart{FileID: &id}}, nil
 	}
-	var err error
 	part, err = normalizeDataURLFilePart(part)
 	if err != nil {
 		return chatContentPart{}, err
