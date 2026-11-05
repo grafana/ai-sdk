@@ -24,6 +24,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
+	modelsapi "github.com/grafana/ai-sdk/ai-gateway/openai/models"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/discovery"
@@ -217,7 +218,7 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 		return nil, err
 	}
 	discoveryHandler := discovery.New(catalog, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
-	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat))
+	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language, chat, discovery.New(catalog, modelsapi.Projection{}, chatcompletions.NewHostErrorWriter()), discovery.NewResource(catalog, modelsapi.Projection{}, chatcompletions.NewHostErrorWriter())))
 }
 
 // newIdle returns the idle Gateway. It refuses to start when unverified
