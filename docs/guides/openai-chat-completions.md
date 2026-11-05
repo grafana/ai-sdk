@@ -266,3 +266,9 @@ Native usage details preserve prompt cache-write, image and text counts and
 completion text counts. Missing counters remain absent, explicit zeros remain
 zero, and counters exceeding their corresponding prompt/completion total are
 rejected as invalid provider output.
+
+
+For compatible targets, Chat preserves the distinction between `max_tokens` and
+`max_completion_tokens`. Both use the common validated output budget; only the
+native field name differs. Shared native-option guards reject raw overrides of
+either exact native key. Native JSON keys remain case-sensitive.
