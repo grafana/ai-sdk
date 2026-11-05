@@ -13,6 +13,7 @@ import (
 )
 
 type streamState struct {
+	choiceIndex     *int
 	ctx             context.Context
 	out             chan<- provider.StreamPart
 	endpoint        string
@@ -50,7 +51,11 @@ type streamToolCall struct {
 	custom           bool
 }
 
-func (m *model) runStream(ctx context.Context, endpoint string, requestBody []byte, body io.Reader, headers http.Header, warnings []provider.Warning, includeRaw bool, metadataKey string, out chan<- provider.StreamPart, preserveChat bool) {
+func (m *model) runStream(ctx context.Context, endpoint string, requestBody []byte, body io.Reader, headers http.Header, warnings []provider.Warning, includeRaw bool, metadataKey string, out chan<- provider.StreamPart, preserveChat bool, counts ...int) {
+	if len(counts) > 0 && counts[0] > 1 {
+		m.runChoicesStream(ctx, endpoint, requestBody, body, headers, warnings, includeRaw, metadataKey, out, preserveChat, counts[0])
+		return
+	}
 	state := &streamState{
 		ctx:              ctx,
 		out:              out,
@@ -223,37 +228,37 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 	}
 	if reasoning != "" {
 		if !s.reasoningActive {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningStart, ID: "reasoning-0"}) {
+			if !s.send(provider.StreamPart{Type: provider.PartReasoningStart, ID: "reasoning-0"}) {
 				return false
 			}
 			s.reasoningActive = true
 		}
-		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: reasoning}) {
+		if !s.send(provider.StreamPart{Type: provider.PartReasoningDelta, ID: "reasoning-0", Delta: reasoning}) {
 			return false
 		}
 	}
 
 	if delta.Content != "" {
 		if s.reasoningActive {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {
+			if !s.send(provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {
 				return false
 			}
 			s.reasoningActive = false
 		}
 		if !s.textActive {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextStart, ID: "txt-0"}) {
+			if !s.send(provider.StreamPart{Type: provider.PartTextStart, ID: "txt-0"}) {
 				return false
 			}
 			s.textActive = true
 		}
-		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextDelta, ID: "txt-0", Delta: delta.Content}) {
+		if !s.send(provider.StreamPart{Type: provider.PartTextDelta, ID: "txt-0", Delta: delta.Content}) {
 			return false
 		}
 	}
 
 	if len(delta.ToolCalls) > 0 {
 		if s.reasoningActive {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {
+			if !s.send(provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"}) {
 				return false
 			}
 			s.reasoningActive = false
@@ -333,7 +338,7 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 		argument = *delta.Function.Arguments
 		if state.started {
 			state.args += argument
-			return sendStreamPart(s.ctx, s.out, provider.StreamPart{
+			return s.send(provider.StreamPart{
 				Type:  provider.PartToolInputDelta,
 				ID:    state.id,
 				Delta: argument,
@@ -353,7 +358,7 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 			state.finished = true
 			return true
 		}
-		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+		if !s.send(provider.StreamPart{
 			Type:          provider.PartToolInputStart,
 			ID:            state.id,
 			ToolName:      state.name,
@@ -363,7 +368,7 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 		}
 		state.started = true
 		if state.args != "" {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+			if !s.send(provider.StreamPart{
 				Type:  provider.PartToolInputDelta,
 				ID:    state.id,
 				Delta: state.args,
@@ -395,11 +400,11 @@ func (s *streamState) resolveToolCall(delta chatToolCallDelta) *streamToolCall {
 
 func (s *streamState) flush() {
 	if s.reasoningActive {
-		_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"})
+		_ = s.send(provider.StreamPart{Type: provider.PartReasoningEnd, ID: "reasoning-0"})
 		s.reasoningActive = false
 	}
 	if s.textActive {
-		_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartTextEnd, ID: "txt-0"})
+		_ = s.send(provider.StreamPart{Type: provider.PartTextEnd, ID: "txt-0"})
 		s.textActive = false
 	}
 
@@ -422,7 +427,7 @@ func (s *streamState) flush() {
 			continue
 		}
 		if !tc.started {
-			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+			if !s.send(provider.StreamPart{
 				Type:          provider.PartToolInputStart,
 				ID:            tc.id,
 				ToolName:      tc.name,
@@ -431,7 +436,7 @@ func (s *streamState) flush() {
 				return
 			}
 			if tc.args != "" {
-				if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+				if !s.send(provider.StreamPart{
 					Type:  provider.PartToolInputDelta,
 					ID:    tc.id,
 					Delta: tc.args,
@@ -462,7 +467,7 @@ func (s *streamState) flush() {
 	if usage == nil {
 		usage = &provider.Usage{}
 	}
-	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
+	_ = s.send(provider.StreamPart{
 		Type:             provider.PartFinish,
 		FinishReason:     &s.finishReason,
 		Usage:            usage,
@@ -471,7 +476,7 @@ func (s *streamState) flush() {
 }
 
 func (s *streamState) finishToolCall(tc *streamToolCall) bool {
-	if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+	if !s.send(provider.StreamPart{
 		Type: provider.PartToolInputEnd,
 		ID:   tc.id,
 	}) {
@@ -484,7 +489,7 @@ func (s *streamState) finishToolCall(tc *streamToolCall) bool {
 	} else if strings.TrimSpace(input) == "" {
 		input = "{}"
 	}
-	if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
+	if !s.send(provider.StreamPart{
 		Type:             provider.PartToolCall,
 		ToolCallID:       tc.id,
 		ToolName:         tc.name,
@@ -500,7 +505,7 @@ func (s *streamState) finishToolCall(tc *streamToolCall) bool {
 func (s *streamState) emitProviderError(err *provider.APICallError) {
 	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	s.finishReasonSet = true
-	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
+	_ = s.send(provider.StreamPart{
 		Type:         provider.PartError,
 		APICallError: err,
 	})
@@ -514,10 +519,15 @@ func (s *streamState) emitError(err *provider.APICallError) {
 func (s *streamState) emitRecoverableError(err *provider.APICallError) {
 	s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
 	s.finishReasonSet = true
-	_ = sendStreamPart(s.ctx, s.out, provider.StreamPart{
+	_ = s.send(provider.StreamPart{
 		Type:         provider.PartError,
 		APICallError: err,
 	})
+}
+
+func (s *streamState) send(part provider.StreamPart) bool {
+	part.ChoiceIndex = s.choiceIndex
+	return sendStreamPart(s.ctx, s.out, part)
 }
 
 func sendStreamPart(ctx context.Context, ch chan<- provider.StreamPart, part provider.StreamPart) bool {

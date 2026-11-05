@@ -55,7 +55,7 @@ func (m *model) doGenerate(ctx context.Context, params provider.CallOptions) (*p
 		return nil, wrapAPIError(resp.StatusCode, endpoint, bodyBytes, resp.Header, respBody)
 	}
 
-	result, err := parseGenerateResponse(respBody, resp.Header, m.providerName, metadataKey, m.generateID, preserveChat)
+	result, err := parseGenerateResponse(respBody, resp.Header, m.providerName, metadataKey, m.generateID, preserveChat, params.ChoiceCount)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (m *model) doStream(ctx context.Context, params provider.CallOptions) (*pro
 		defer close(ch)
 		defer streamrecover.Close(resp.Body)
 		defer streamrecover.Recover(func() { sendStreamPart(ctx, ch, streamrecover.Part()) })
-		m.runStream(ctx, endpoint, bodyBytes, resp.Body, resp.Header, warnings, params.IncludeRawChunks, metadataKey, ch, preserveChat)
+		m.runStream(ctx, endpoint, bodyBytes, resp.Body, resp.Header, warnings, params.IncludeRawChunks, metadataKey, ch, preserveChat, params.ChoiceCount)
 	}()
 
 	return &provider.StreamResult{
