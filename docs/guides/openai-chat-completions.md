@@ -41,16 +41,36 @@ retry policy with the application's side effects and overall deadline in mind.
 
 ## Access and supported behavior
 
-Self-hosted users and service accounts use the configured catalog. In cloud
-mode only allowlisted internal service callers can use this adapter; cloud
-user and service-account requests lack the required BYOK controls and receive
-HTTP 400 from shared selection, without native provider I/O. A caller rejected
-by the host access policy receives HTTP 403. Internal service access tokens use
-the platform's `X-Access-Token` header without an `Authorization` header; configure
-the SDK's request headers for that caller type. Request-scoped provider keys
-(BYOK) are not supported. Provider credentials come from the Gateway's configured
-providers. See [Gateway authentication](gateway-authentication.md) for the
-platform credential contract.
+Self-hosted users and allowlisted internal cloud services use the configured
+catalog. Cloud users and service accounts can provide request-scoped provider
+accounts through the `providerOptions.gateway` extension. The shared selector
+validates those accounts and applies the same routing, fallback and credential
+redaction as ProviderWire. Credentials are removed before native model calls;
+the host identity still comes from the platform token. A caller rejected by the
+host access policy receives HTTP 403. Internal service access tokens use the
+platform's `X-Access-Token` header without an `Authorization` header.
+See [Gateway authentication](gateway-authentication.md) for the access contract.
+
+In TypeScript, pass the extension alongside the standard SDK request fields:
+
+```typescript
+const request = {
+  model: "openai/gpt-4.1",
+  messages: [{ role: "user" as const, content: "Hello" }],
+  providerOptions: {
+    gateway: { byok: { openai: [{ apiKey: process.env.OPENAI_API_KEY }] } },
+  },
+};
+const result = await client.chat.completions.create(request);
+```
+
+The Go client accepts the same object with
+`option.WithJSONSet("providerOptions", providerOptions)` as a per-call option.
+Each namespace must be a JSON object. Provider-specific options such as
+`openai.user` or `anthropic.container` remain available, subject to the shared
+native guards. Chat's explicit fields and defaults take precedence over the
+corresponding native options. The `gateway` namespace is case-sensitive;
+configured-account callers cannot use it to supply BYOK credentials.
 
 The adapter supports text, client-executed function tools, tool-result
 continuations, JSON output, and streaming for one choice. It does not execute

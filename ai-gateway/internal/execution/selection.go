@@ -20,6 +20,7 @@ type Selection struct {
 	Model       provider.LanguageModel
 	attribution attribution
 	expected    []ExpectedAttempt
+	apiKeys     []string
 }
 
 type attribution uint8
@@ -57,9 +58,10 @@ func ConfiguredSelection(id string, model provider.LanguageModel, expected []Exp
 // model ID, has no canonical model or provider instance, and lists each account
 // attempt with its native destination. An attempt for another destination than
 // the one expected at its position, or more attempts than expected, omits the
-// overview.
-func AccountSelection(id string, model provider.LanguageModel, expected []ExpectedAttempt) Selection {
-	return Selection{ID: id, Model: model, attribution: attributionAccounts, expected: slices.Clone(expected)}
+// overview. API keys from validated accounts are copied for request-local native
+// failure summary redaction; they are never part of the published selection.
+func AccountSelection(id string, model provider.LanguageModel, expected []ExpectedAttempt, apiKeys ...string) Selection {
+	return Selection{ID: id, Model: model, attribution: attributionAccounts, expected: slices.Clone(expected), apiKeys: slices.Clone(apiKeys)}
 }
 
 // RequestSelector chooses the model for a request from its model ID, its mapped

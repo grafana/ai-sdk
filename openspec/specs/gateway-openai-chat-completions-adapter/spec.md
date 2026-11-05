@@ -273,7 +273,7 @@ catalog wrapper, access dispatcher, execution worker or drain loop.
 ### Requirement: Shared access and error boundaries
 
 Chat SHALL preserve the host's configured/BYOK/refused access decisions.
-Configured callers SHALL use the catalog. Chat SHALL expose no BYOK controls;
+Configured callers SHALL use the catalog.
 BYOK-only callers without those controls SHALL receive the shared invalid-BYOK
 outcome with zero native I/O. Host failures SHALL use the adapter's host-error
 writer; pre-plugin failures MAY use the platform format.
@@ -296,6 +296,23 @@ writer; pre-plugin failures MAY use the platform format.
 #### Scenario: Platform rejects before the plugin
 - **WHEN** platform authentication or transport limits reject a request
 - **THEN** the response need not use a Chat error envelope.
+
+### Requirement: Shared provider options
+
+Chat SHALL accept object-valued `providerOptions` namespaces, including `gateway`
+controls. The runtime SHALL remove controls before native invocation and apply
+its existing access, validation, routing, fallback and redaction policy.
+Native guards SHALL run after Chat defaults are merged into the selected namespace.
+
+#### Scenario: BYOK accounts and fallback
+- **WHEN** a cloud BYOK caller sends valid `providerOptions.gateway.byok` accounts
+- **THEN** the shared selector executes those accounts, including eligible fallback
+  attempts, without placing credentials in native JSON bodies or public errors.
+
+#### Scenario: Native options retain shared guards
+- **WHEN** Chat includes native provider options alongside its standard fields
+- **THEN** unrelated native fields survive translation, Chat defaults take precedence,
+  and prohibited native routing or schema overrides are rejected before native I/O.
 
 ### Requirement: Official Chat clients through the plugin protocol
 
