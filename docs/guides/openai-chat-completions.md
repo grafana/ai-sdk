@@ -282,3 +282,9 @@ and cache reuse compared with sending all definitions. Custom tools remain
 unsupported on Anthropic. An empty `auto` subset disables tool calls; an empty
 `required` subset is rejected. Output membership is checked before emitting tool
 start or argument deltas, as well as on complete tool calls.
+
+Responses-backed Chat requests preserve native refusals automatically. Unary
+responses expose `message.refusal` with null content when no text was generated;
+streams expose refusal deltas exactly once, including when the refusal arrives
+only in the final native snapshot. A refusal can validly replace requested JSON
+schema output or required tool calls and does not become a gateway output error.

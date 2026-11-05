@@ -56,7 +56,7 @@ func TestNativeContract_SchemaAndDefaults(t *testing.T) {
 		namespace string
 		want      string
 	}{
-		{execution.TargetOpenAI, "", `{"openai":{"store":false,"strictJsonSchema":false,"parallelToolCalls":false}}`},
+		{execution.TargetOpenAI, "", `{"openai":{"store":false,"strictJsonSchema":false,"parallelToolCalls":false,"preserveRefusal":true}}`},
 		{execution.TargetOpenAICompatible, "custom-vendor", `{"custom-vendor":{"store":false,"strictJsonSchema":false,"parallel_tool_calls":false,"preserveChatCompletionMetadata":true}}`},
 		{execution.TargetOpenAICompatible, "openai", `{"openai":{"store":false,"strictJsonSchema":false,"parallel_tool_calls":false,"preserveChatCompletionMetadata":true}}`},
 		{execution.TargetAnthropic, "", `{"anthropic":{"disableParallelToolUse":true}}`},

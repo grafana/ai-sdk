@@ -244,7 +244,7 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	if r.Parallel != nil && !*r.Parallel && len(msg.ToolCalls) > 1 {
 		return out, errOutput
 	}
-	if requiresTool(r) && len(msg.ToolCalls) == 0 && finish == "stop" {
+	if native.Refusal == nil && requiresTool(r) && len(msg.ToolCalls) == 0 && finish == "stop" {
 		return out, errOutput
 	}
 	if !partialFinish(finish) && (len(msg.ToolCalls) > 0) != (finish == "tool_calls") {
@@ -255,7 +255,7 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 			return out, err
 		}
 	}
-	if hasText || len(msg.ToolCalls) == 0 && native.Audio == nil {
+	if hasText || len(msg.ToolCalls) == 0 && native.Audio == nil && native.Refusal == nil {
 		msg.Content = &text
 	}
 	out.Usage, err = mapUsage(result.Usage)
