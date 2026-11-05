@@ -2428,6 +2428,7 @@ func collectToolApprovals(msgs []provider.Message) ([]collectedToolApproval, []c
 
 	var approved []collectedToolApproval
 	var denied []collectedToolApproval
+	collectedToolCallIDs := make(map[string]bool)
 	for _, response := range last.Content {
 		if response.Type != provider.ContentPartTypeToolApprovalResponse {
 			continue
@@ -2450,6 +2451,10 @@ func collectToolApprovals(msgs []provider.Message) ([]collectedToolApproval, []c
 				ApprovalID: request.ApprovalID,
 			}
 		}
+		if collectedToolCallIDs[toolCall.ToolCallID] {
+			continue
+		}
+		collectedToolCallIDs[toolCall.ToolCallID] = true
 		approval := collectedToolApproval{
 			request:               request,
 			response:              response,
