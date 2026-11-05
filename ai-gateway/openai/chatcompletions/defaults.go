@@ -58,6 +58,9 @@ func chatTranslator(r mappedRequest) execution.Translator {
 		default:
 			return provider.CallOptions{}, execution.ErrTranslation
 		}
+		if err := r.translateParameters(target, values); err != nil {
+			return provider.CallOptions{}, err
+		}
 		if len(values) == 0 {
 			return options, nil
 		}

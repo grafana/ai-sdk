@@ -397,7 +397,11 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			if !open() {
 				return
 			}
-			logprobs = native.Logprobs
+			logprobs, err = r.projectLogprobs(part.ProviderMetadata, native.Logprobs)
+			if err != nil {
+				fail(502)
+				return
+			}
 			if !emit(delta{Refusal: native.Refusal, Audio: native.Audio}, nil, nil, false) {
 				return
 			}
@@ -417,6 +421,20 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			if err != nil || nativeUsage(u, native.Usage) != nil {
 				fail(502)
 				return
+			}
+			projected, err := r.projectLogprobs(part.ProviderMetadata, native.Logprobs)
+			if err != nil {
+				fail(502)
+				return
+			}
+			if projected != nil {
+				if !open() {
+					return
+				}
+				logprobs = projected
+				if !emit(delta{}, nil, nil, false) {
+					return
+				}
 			}
 			finalMetadata = part.ProviderMetadata
 			allText.WriteString(state.text.String())
