@@ -345,6 +345,10 @@ Unary compatible responses preserve the native top-level `metadata` map for one
 or multiple choices. The returned native value is used even if it differs from
 the submitted request metadata; an empty returned map remains empty.
 
+Responses routes likewise retain actual native response metadata through the
+provider's typed opt-in metadata codec. No request metadata is echoed when the
+native response omits it.
+
 ---
 
 [Prev: Gateway authentication](gateway-authentication.md) · [Docs index](../README.md) · [Next: Gateway architecture](../concepts/gateway-architecture.md)

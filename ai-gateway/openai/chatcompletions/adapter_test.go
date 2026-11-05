@@ -67,7 +67,7 @@ func TestRequestDefaultsAndRejections(t *testing.T) {
 			assert.Equal(t, strings.Contains(strict, "true"), *r.options.Tools[0].Strict)
 			b, err := json.Marshal(r.options.ProviderOptions)
 			require.NoError(t, err)
-			assert.JSONEq(t, `{"openai":{"store":false,"strictJsonSchema":false,"preserveRefusal":true}}`, string(b))
+			assert.JSONEq(t, `{"openai":{"store":false,"strictJsonSchema":false,"preserveRefusal":true,"preserveResponseMetadata":true}}`, string(b))
 		})
 	}
 	for _, extra := range []string{`,"n":0`, `,"n":129`, `,"store":true`, `,"temperature":3`, `,"max_tokens":0`, `,"max_tokens":1,"max_completion_tokens":2`, `,"audio":{}`, `,"stream_options":{}`, `,"tool_choice":"required"`, `,"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object","$ref":"https://private/"}}}}`, `,"Model":"other"`} {
