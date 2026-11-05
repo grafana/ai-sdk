@@ -1,6 +1,9 @@
 package openaicompatible
 
-import "net/http"
+import (
+	"github.com/grafana/ai-sdk/provider"
+	"net/http"
+)
 
 // Option configures an OpenAI-compatible model instance.
 type Option func(*model)
@@ -92,6 +95,9 @@ type OpenAIOptions struct {
 	// MaxTokensField selects the native name for CallOptions.MaxOutputTokens.
 	// It is a local selector, never a second token budget. Empty uses max_tokens.
 	MaxTokensField MaxTokensField `json:"maxTokensField,omitempty"`
+
+	// AllowedTools restricts the common tool list without replacing declarations.
+	AllowedTools *AllowedToolsOption `json:"allowedTools,omitempty"`
 	// User is forwarded as the OpenAI-compatible `user` request field.
 	User string `json:"user,omitempty"`
 	// ReasoningEffort overrides CallOptions.Reasoning and is sent as
@@ -159,3 +165,9 @@ const (
 	// MaxTokensFieldCompletion selects max_completion_tokens for reasoning APIs.
 	MaxTokensFieldCompletion MaxTokensField = "max_completion_tokens"
 )
+
+// AllowedToolsOption selects declared tool names under the common auto/required mode.
+type AllowedToolsOption struct {
+	ToolNames []string                `json:"toolNames"`
+	Mode      provider.ToolChoiceType `json:"mode,omitempty"`
+}

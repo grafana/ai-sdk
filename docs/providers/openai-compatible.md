@@ -185,3 +185,9 @@ The local `OpenAIOptions.MaxTokensField` selector chooses the native key for
 unchanged default), while `MaxTokensFieldCompletion` emits
 `max_completion_tokens`. The selector carries no separate budget and is consumed
 locally; it is never forwarded to the endpoint.
+
+`OpenAIOptions.AllowedTools` restricts calls to names already declared in the
+common tool list. Its mode must agree with an explicit common `ToolChoice`.
+The builder derives native function/custom references without accepting a raw
+`tool_choice` replacement. All tool definitions remain in the native request;
+unknown names, duplicates and conflicting modes fail before provider I/O.
