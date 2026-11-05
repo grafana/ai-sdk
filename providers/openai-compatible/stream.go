@@ -151,7 +151,7 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 				state.chatUsage = chat.Usage
 				chat.Usage = nil
 			}
-			if chat.Refusal != nil || chat.Logprobs != nil {
+			if chat.Audio != nil || chat.Refusal != nil || chat.Logprobs != nil {
 				if !sendStreamPart(ctx, out, provider.StreamPart{Type: provider.PartCustom, Kind: "openai-compatible.chat-completion", ProviderMetadata: withChatCompletionMetadata(nil, chat)}) {
 					return
 				}

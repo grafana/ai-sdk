@@ -27,6 +27,10 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		return nil, warnings, err
 	}
 
+	if err := validateChatAudioOptions(openAIOpts); err != nil {
+		return nil, warnings, err
+	}
+
 	messages, err := convertPrompt(opts.Prompt, providerOptionsName(m.providerName))
 	if err != nil {
 		return nil, warnings, err
@@ -40,6 +44,12 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		"messages": messages,
 	}
 
+	if len(openAIOpts.Modalities) > 0 {
+		body["modalities"] = openAIOpts.Modalities
+	}
+	if openAIOpts.Audio != nil {
+		body["audio"] = openAIOpts.Audio
+	}
 	if openAIOpts.User != "" {
 		body["user"] = openAIOpts.User
 	}
@@ -274,6 +284,8 @@ var openAIOptionFields = map[string]struct{}{
 	"textVerbosity":                  {},
 	"strictJsonSchema":               {},
 	"preserveChatCompletionMetadata": {},
+	"audio":                          {},
+	"modalities":                     {},
 }
 
 func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, error) {
@@ -305,6 +317,12 @@ func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, e
 }
 
 func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
+	if src.Modalities != nil {
+		dst.Modalities = src.Modalities
+	}
+	if src.Audio != nil {
+		dst.Audio = src.Audio
+	}
 	if src.PreserveChatCompletionMetadata != nil {
 		dst.PreserveChatCompletionMetadata = src.PreserveChatCompletionMetadata
 	}
@@ -438,6 +456,10 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 		return chatMessage{}, err
 	}
 
+	if err := validateAudioHistory(messageExtra); err != nil {
+		return chatMessage{}, err
+	}
+
 	for _, part := range parts {
 		switch part.Type {
 		case provider.ContentPartTypeText:
@@ -484,6 +506,10 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 
 	content := text.String()
 	msg := chatMessage{Role: "assistant", Content: content, ExtraFields: messageExtra}
+	if content == "" && messageExtra["audio"] != nil {
+		var nullContent *string
+		msg.Content = nullContent
+	}
 	if len(toolCalls) > 0 {
 		if content == "" {
 			var nullContent *string
@@ -503,6 +529,12 @@ func openAICompatibleMetadata(opts provider.ProviderOptions) (map[string]any, er
 		return map[string]any{"imageDetail": image.Detail}, nil
 	}
 
+	if value, ok := opts["openaiCompatible"].(ChatCompletionMessageOptions); ok {
+		if value.Audio == nil {
+			return nil, nil
+		}
+		return map[string]any{"audio": value.Audio}, nil
+	}
 	meta, ok, err := provider.ResolveOption[map[string]any](opts, "openaiCompatible")
 	if err != nil {
 		return nil, fmt.Errorf("openai: reading openaiCompatible provider metadata: %w", err)
