@@ -701,3 +701,12 @@ The adapter SHALL validate cumulative native audio identity and required field p
 - **THEN** the adapter SHALL accept a normally finished choice only after all required fields have appeared
 - **AND** conflicting IDs or expiry timestamps SHALL fail the stream
 - **AND** length or content-filter interruption MAY leave incomplete audio
+
+### Requirement: Discover public virtual models using OpenAI clients
+The gateway SHALL expose read-only OpenAI model list and retrieve operations using the caller-visible catalog and existing discovery access policy.
+
+#### Scenario: List and retrieve public IDs and aliases
+- **WHEN** an authorized configured caller lists models or retrieves a public ID or alias
+- **THEN** the response SHALL use OpenAI model objects, deduplicated sorted public IDs, virtual owner `grafana` and unknown creation timestamp `0`
+- **AND** encoded slash IDs SHALL be retrievable without exposing native provider metadata or invoking providers
+- **AND** an absent or invisible model SHALL return an OpenAI 404 error envelope

@@ -108,6 +108,8 @@ func (*HostErrorWriter) WriteHostError(w http.ResponseWriter, category host.Erro
 	switch category {
 	case host.ErrorPermission:
 		status = 403
+	case host.ErrorModelNotFound:
+		status = http.StatusNotFound
 	case host.ErrorBYOKDiscovery:
 		status = 400
 	}
