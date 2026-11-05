@@ -46,6 +46,9 @@ func translateMessages(r mappedRequest, target execution.Target, options provide
 			extra["role"] = "developer"
 		}
 		if m.Role == roleAssistant {
+			if m.Audio != nil {
+				extra["audio"] = m.Audio
+			}
 			content, refusal := compatibleAssistantContent(m, options.Prompt[i].Content)
 			if refusal != nil {
 				extra["refusal"] = *refusal
