@@ -131,3 +131,10 @@ the same runtime projection and credential redaction as ProviderWire. Native
 provider metadata is preserved, with a colliding native `gateway` value relocated
 to `gateway.nativeMetadata`. Stream-native failures may include a redacted
 `grafana.native_error`; the standard OpenAI error fields remain stable.
+
+Retrieved sources no longer invalidate an otherwise valid completion. They are
+preserved under `grafana.sources`; citations are preserved under
+`grafana.citations`. URL citations with native start/end positions additionally
+appear as standard `message.annotations` or `delta.annotations`. Sources without
+positions do not receive fabricated text spans. Positions retain the native
+provider's indexing convention.
