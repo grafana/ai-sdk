@@ -28,7 +28,7 @@ func TestOfficialClientAudioOutput(t *testing.T) {
 		assert.Equal(t, []string{"audio"}, body.Modalities)
 		if body.Stream {
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = w.Write([]byte("data: " + `{"id":"audio-response","choices":[{"index":0,"delta":{"audio":{"id":"audio-1","data":"AAEC","transcript":"hello","expires_at":2000000000}},"finish_reason":null}]}` + "\n\ndata: " + `{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n\ndata: [DONE]\n\n"))
+			_, _ = w.Write([]byte("data: " + `{"id":"audio-response","choices":[{"index":0,"delta":{"audio":{"id":"audio-1","data":"AAEC","transcript":"hello"}},"finish_reason":null}]}` + "\n\ndata: " + `{"choices":[{"index":0,"delta":{"audio":{"expires_at":2000000000}},"finish_reason":null}]}` + "\n\ndata: " + `{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n\ndata: [DONE]\n\n"))
 			return
 		}
 		_, _ = w.Write([]byte(`{"id":"audio-response","choices":[{"index":0,"message":{"role":"assistant","content":null,"audio":{"id":"audio-1","data":"AAEC","transcript":"hello","expires_at":2000000000}},"finish_reason":"stop"}]}`))
