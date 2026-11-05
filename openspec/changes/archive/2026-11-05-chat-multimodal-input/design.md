@@ -1,0 +1,7 @@
+# Design
+
+The Chat union maps text to TextPart and media to FilePart. HTTP(S) images remain URLs; base64 data URLs are decoded into the selected inline-data arm after MIME/base64 validation. Raw file_data derives MIME from the filename or the decoded bytes. File IDs enter a common reference and are copied into the selected target's exact namespace for each physical attempt. An uploaded ID must exist in the native account receiving it; this change does not copy uploaded files between accounts.
+
+Image detail uses the existing Responses part option and the new typed compatible ImageOptions. It never replaces image_url via opaque metadata. Anthropic has no image-resolution option. Capability checks belong to this Chat translation: audio cannot silently disappear in Anthropic, and unsupported Responses inline media cannot masquerade as valid Chat audio. Compatible supports WAV/MP3, images, PDF and text-file mapping; Responses supports images/PDF, and Anthropic supports its existing image/PDF/plain-text shapes. Uploaded file references follow each native reference converter.
+
+The pinned baseline remains ai7.0.159/provider4.0.35/openai-compatible3.0.82. Exact installed source confirms compatible media conversion and metadata spread. Official openai-go3.76 includes image detail original. Native transport capture tests use synthetic payloads and no external network; they prove request conversion, not provider acceptance. Existing shared image_url/type/file/input_audio guards stay unchanged and are tested against both typed detail and raw replacement attempts.
