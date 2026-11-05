@@ -108,3 +108,16 @@ Scores SHALL be finite probabilities and result/error unions SHALL be validated.
 #### Scenario: Invalid moderation score
 - **WHEN** native moderation reports a score outside zero through one
 - **THEN** decoding fails instead of publishing invalid metadata
+
+### Requirement: Exact native cache boundaries
+The provider SHALL retain validated native cache options and content breakpoints.
+Local typed text-boundary metadata SHALL only reconstruct arrays whose text
+concatenation exactly equals the common message and SHALL not be sent upstream.
+
+#### Scenario: Text boundary cannot change content or identity
+- **WHEN** local cache text metadata changes text or includes a role or tool ID field
+- **THEN** request construction fails before I/O
+
+#### Scenario: Singleton user text boundary
+- **WHEN** a single user text part has an explicit breakpoint
+- **THEN** the provider retains the content array and its breakpoint
