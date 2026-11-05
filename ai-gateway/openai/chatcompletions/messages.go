@@ -7,19 +7,24 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 
 	"github.com/grafana/ai-sdk/provider"
+	compatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 func textContent(raw json.RawMessage, assistant bool) ([]provider.ContentPart, error) {
 	var parts []struct {
-		Type    kind    `json:"type"`
-		Text    *string `json:"text"`
-		Refusal *string `json:"refusal"`
+		Breakpoint *compatible.ChatCacheBreakpoint `json:"prompt_cache_breakpoint"`
+		Type       kind                            `json:"type"`
+		Text       *string                         `json:"text"`
+		Refusal    *string                         `json:"refusal"`
 	}
 	if decodeStrict(raw, &parts) != nil {
 		return nil, errRequest
 	}
 	result := make([]provider.ContentPart, 0, len(parts))
 	for _, p := range parts {
+		if p.Breakpoint.Validate() != nil || (p.Type != kindText && p.Breakpoint != nil) {
+			return nil, errRequest
+		}
 		switch {
 		case p.Type == kindText && p.Text != nil && p.Refusal == nil:
 			result = append(result, provider.TextPart(*p.Text))
@@ -55,13 +60,14 @@ func translateMessages(r mappedRequest, target execution.Target, options provide
 				options.Prompt[i].Content = content
 			}
 		}
+		applyCacheRequest(m, &options.Prompt[i], extra)
 		if len(extra) == 0 {
 			continue
 		}
 		raw, _ := json.Marshal(extra)
 		metadata := provider.ProviderOptions{"openaiCompatible": provider.RawProviderOption{Key: "openaiCompatible", Raw: raw}}
 		options.Prompt[i].ProviderOptions = metadata
-		if m.Role == roleUser && len(options.Prompt[i].Content) == 1 && options.Prompt[i].Content[0].Type == provider.ContentPartTypeText {
+		if m.Role == roleUser && len(options.Prompt[i].Content) == 1 && options.Prompt[i].Content[0].Type == provider.ContentPartTypeText && !r.hasCacheBreakpoints() {
 			options.Prompt[i].Content = slices.Clone(options.Prompt[i].Content)
 			options.Prompt[i].Content[0].ProviderOptions = metadata
 		}
