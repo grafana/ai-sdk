@@ -31,9 +31,11 @@ var ErrCompletionStorageUnavailable = errors.New("chat completions: storage unav
 // scope and expiry, including list and metadata updates. Implementations must not
 // allow a read-modify-write update to resurrect a deleted or expired record.
 type CompletionStore interface {
+	// Ready rejects an unbound durable backend before a billable model call.
+	Ready(context.Context) error
 	Create(context.Context, StorageScope, StoredCompletion) error
 	Get(context.Context, StorageScope, string) (StoredCompletion, error)
-	List(context.Context, StorageScope) ([]StoredCompletion, error)
+	List(context.Context, StorageScope, StorageListOptions) (StoredCompletionPage, error)
 	UpdateMetadata(context.Context, StorageScope, string, map[string]string) (StoredCompletion, error)
 	Delete(context.Context, StorageScope, string) error
 }
@@ -45,4 +47,17 @@ type StorageConfig struct {
 	Store        CompletionStore
 	ResolveScope func(context.Context) (StorageScope, bool)
 	Retention    time.Duration
+}
+
+// StorageListOptions describes a stable created-time/ID ordered page.
+type StorageListOptions struct {
+	Limit      int
+	After      string
+	Descending bool
+	Model      string
+	Metadata   map[string]string
+}
+type StoredCompletionPage struct {
+	Records []StoredCompletion
+	HasMore bool
 }

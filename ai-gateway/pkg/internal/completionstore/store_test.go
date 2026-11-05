@@ -105,9 +105,9 @@ func TestResourceStorageLifecycleIsolationAndExpiry(t *testing.T) {
 	require.ErrorIs(t, store.Delete(t.Context(), bob, record.ID), chat.ErrStoredCompletionNotFound)
 	_, err = store.UpdateMetadata(t.Context(), bob, record.ID, map[string]string{"hijack": "yes"})
 	require.ErrorIs(t, err, chat.ErrStoredCompletionNotFound)
-	list, err := store.List(t.Context(), bob)
+	list, err := store.List(t.Context(), bob, chat.StorageListOptions{Limit: 20})
 	require.NoError(t, err)
-	require.Empty(t, list)
+	require.Empty(t, list.Records)
 	restarted := New()
 	restarted.now = func() time.Time { return now }
 	restarted.Bind(client)
@@ -118,9 +118,29 @@ func TestResourceStorageLifecycleIsolationAndExpiry(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "two", updated.Metadata["label"])
 	require.Contains(t, string(updated.Completion), `"label":"two"`)
-	list, err = restarted.List(t.Context(), alice)
+	list, err = restarted.List(t.Context(), alice, chat.StorageListOptions{Limit: 20})
 	require.NoError(t, err)
-	require.Len(t, list, 1)
+	require.Len(t, list.Records, 1)
+	for _, id := range []string{"chatcmpl-z", "chatcmpl-b", "chatcmpl-a"} {
+		copy := record
+		copy.ID = id
+		copy.Metadata = map[string]string{"label": "paged"}
+		require.NoError(t, restarted.Create(t.Context(), alice, copy))
+	}
+	page, err := restarted.List(t.Context(), alice, chat.StorageListOptions{Limit: 1, Metadata: map[string]string{"label": "paged"}})
+	require.NoError(t, err)
+	require.True(t, page.HasMore)
+	require.Equal(t, "chatcmpl-a", page.Records[0].ID)
+	page, err = restarted.List(t.Context(), alice, chat.StorageListOptions{Limit: 1, After: page.Records[0].ID, Metadata: map[string]string{"label": "paged"}})
+	require.NoError(t, err)
+	require.Equal(t, "chatcmpl-b", page.Records[0].ID)
+	page, err = restarted.List(t.Context(), alice, chat.StorageListOptions{Limit: 1, Descending: true, Metadata: map[string]string{"label": "paged"}})
+	require.NoError(t, err)
+	require.Equal(t, "chatcmpl-z", page.Records[0].ID)
+	page, err = restarted.List(t.Context(), alice, chat.StorageListOptions{Limit: 20, Metadata: map[string]string{"missing": ""}})
+	require.NoError(t, err)
+	require.Empty(t, page.Records)
+
 	require.NoError(t, restarted.Delete(t.Context(), alice, record.ID))
 	require.NoError(t, restarted.Create(t.Context(), alice, record))
 	now = time.Unix(1061, 0)

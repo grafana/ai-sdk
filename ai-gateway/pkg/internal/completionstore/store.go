@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/json"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,8 @@ type Store struct {
 	client resource.Client
 	now    func() time.Time
 }
+
+func (s *Store) Ready(context.Context) error { _, err := s.backend(); return err }
 
 func New() *Store { return &Store{now: time.Now} }
 
@@ -111,25 +114,48 @@ func (s *Store) Get(ctx context.Context, scope chat.StorageScope, id string) (ch
 	}
 	return decode(object)
 }
-func (s *Store) List(ctx context.Context, scope chat.StorageScope) ([]chat.StoredCompletion, error) {
+func (s *Store) List(ctx context.Context, scope chat.StorageScope, query chat.StorageListOptions) (chat.StoredCompletionPage, error) {
+	empty := chat.StoredCompletionPage{}
 	if !validScope(scope) {
-		return nil, chat.ErrStoredCompletionNotFound
+		return empty, chat.ErrStoredCompletionNotFound
+	}
+	if query.Limit < 1 || query.Limit > 100 {
+		return empty, chat.ErrCompletionStorageUnavailable
 	}
 	client, err := s.backend()
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
-	var result []chat.StoredCompletion
-	options := resource.ListOptions{Limit: 100, LabelFilters: []string{ownerLabel + "=" + digest(scope.Owner)}}
+	before := func(a, b chat.StoredCompletion) bool {
+		if a.Created == b.Created {
+			if query.Descending {
+				return a.ID > b.ID
+			}
+			return a.ID < b.ID
+		}
+		if query.Descending {
+			return a.Created > b.Created
+		}
+		return a.Created < b.Created
+	}
+	var cursor chat.StoredCompletion
+	if query.After != "" {
+		cursor, err = s.Get(ctx, scope, query.After)
+		if err != nil {
+			return empty, err
+		}
+	}
+	selected := make([]chat.StoredCompletion, 0, query.Limit+1)
+	options := resource.ListOptions{Limit: 10, LabelFilters: []string{ownerLabel + "=" + digest(scope.Owner)}}
 	for {
 		list, err := client.List(ctx, scope.Namespace, options)
 		if err != nil {
-			return nil, storageError(err)
+			return empty, storageError(err)
 		}
 		for _, raw := range list.GetItems() {
 			object, ok := raw.(*stored.StoredChatCompletion)
 			if !ok || object.Namespace != scope.Namespace || object.Spec.Owner != digest(scope.Owner) {
-				return nil, chat.ErrCompletionStorageUnavailable
+				return empty, chat.ErrCompletionStorageUnavailable
 			}
 			if object.Spec.ExpiresAt <= s.now().Unix() {
 				_ = client.Delete(ctx, resource.Identifier{Namespace: object.Namespace, Name: object.Name}, resource.DeleteOptions{Preconditions: resource.DeleteOptionsPreconditions{ResourceVersion: object.ResourceVersion}})
@@ -137,16 +163,44 @@ func (s *Store) List(ctx context.Context, scope chat.StorageScope) ([]chat.Store
 			}
 			record, err := decode(object)
 			if err != nil {
-				return nil, err
+				return empty, err
 			}
-			result = append(result, record)
+			if query.After != "" && !before(cursor, record) || query.Model != "" && query.Model != record.Model {
+				continue
+			}
+			match := true
+			for key, value := range query.Metadata {
+				if actual, exists := record.Metadata[key]; !exists || actual != value {
+					match = false
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+			index := sort.Search(len(selected), func(i int) bool { return before(record, selected[i]) })
+			if index > query.Limit {
+				continue
+			}
+			selected = append(selected, chat.StoredCompletion{})
+			copy(selected[index+1:], selected[index:])
+			selected[index] = record
+			if len(selected) > query.Limit+1 {
+				selected = selected[:query.Limit+1]
+			}
 		}
 		options.Continue = list.GetContinue()
 		if options.Continue == "" {
-			return result, nil
+			break
 		}
 	}
+	page := chat.StoredCompletionPage{Records: selected, HasMore: len(selected) > query.Limit}
+	if page.HasMore {
+		page.Records = page.Records[:query.Limit]
+	}
+	return page, nil
 }
+
 func (s *Store) UpdateMetadata(ctx context.Context, scope chat.StorageScope, id string, metadata map[string]string) (chat.StoredCompletion, error) {
 	client, object, err := s.object(ctx, scope, id)
 	if err != nil {
@@ -197,7 +251,7 @@ func (s *Store) Sweep(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	options := resource.ListOptions{Limit: 100}
+	options := resource.ListOptions{Limit: 10}
 	for {
 		list, err := client.List(ctx, resource.NamespaceAll, options)
 		if err != nil {
