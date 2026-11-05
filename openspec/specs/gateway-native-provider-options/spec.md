@@ -37,6 +37,10 @@ The Gateway SHALL protect credentials, authorized accounts and destinations, res
 - **THEN** the actual bypass SHALL fail safely before external provider I/O unless existing native precedence already prevents it
 - **AND** no unauthorized native request SHALL be emitted
 
+#### Scenario: Developer instruction role
+- **WHEN** an existing system instruction supplies exactly `role: developer` in consumed compatible message metadata
+- **THEN** the instruction role is preserved; other role replacements and content or tool overrides remain refused before native I/O
+
 #### Scenario: Same spelling is ordinary in a non-consuming scope
 - **WHEN** an ordinary field with a protected-looking name occurs in a namespace or scope that cannot cause that native bypass
 - **THEN** it SHALL remain available to native interpretation rather than fail under a universal spelling rule
