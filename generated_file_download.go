@@ -160,7 +160,7 @@ func validateGeneratedFileURL(parsed *url.URL) error {
 		return fmt.Errorf("generated file URL is not a credential-free HTTP(S) URL")
 	}
 	host := strings.TrimRight(strings.ToLower(parsed.Hostname()), ".")
-	if host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") {
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") {
 		return fmt.Errorf("generated file URL hostname is not public")
 	}
 	if address, err := netip.ParseAddr(host); err == nil && !isPublicGeneratedFileAddress(address) {
