@@ -89,6 +89,9 @@ func WithGenerateID(gen func() string) Option {
 // OpenAIOptions carries OpenAI-compatible provider-specific request options
 // from CallOptions.ProviderOptions["openaiCompatible"].
 type OpenAIOptions struct {
+	// MaxTokensField selects the native name for CallOptions.MaxOutputTokens.
+	// It is a local selector, never a second token budget. Empty uses max_tokens.
+	MaxTokensField MaxTokensField `json:"maxTokensField,omitempty"`
 	// User is forwarded as the OpenAI-compatible `user` request field.
 	User string `json:"user,omitempty"`
 	// ReasoningEffort overrides CallOptions.Reasoning and is sent as
@@ -146,3 +149,13 @@ type ImageOptions struct {
 
 // ProviderKey returns the image option namespace.
 func (ImageOptions) ProviderKey() string { return "openaiCompatible" }
+
+// MaxTokensField selects the native Chat token-limit field.
+type MaxTokensField string
+
+const (
+	// MaxTokensFieldLegacy preserves the pinned max_tokens default.
+	MaxTokensFieldLegacy MaxTokensField = "max_tokens"
+	// MaxTokensFieldCompletion selects max_completion_tokens for reasoning APIs.
+	MaxTokensFieldCompletion MaxTokensField = "max_completion_tokens"
+)
