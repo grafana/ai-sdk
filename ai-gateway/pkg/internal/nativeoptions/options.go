@@ -140,7 +140,11 @@ func Compatible(options provider.CallOptions, providerName string) error {
 	}
 	for _, message := range options.Prompt {
 		switch message.Role {
-		case provider.RoleSystem, provider.RoleAssistant:
+		case provider.RoleSystem:
+			if err := compatibleInstructionFields(message.ProviderOptions); err != nil {
+				return err
+			}
+		case provider.RoleAssistant:
 			if err := refuseCompatibleMessageFields(message.ProviderOptions); err != nil {
 				return err
 			}
@@ -173,6 +177,20 @@ func Compatible(options provider.CallOptions, providerName string) error {
 		}
 	}
 	return nil
+}
+
+func compatibleInstructionFields(options provider.ProviderOptions) error {
+	metadata, _, err := provider.ResolveOption[map[string]json.RawMessage](options, "openaiCompatible")
+	if err != nil {
+		return err
+	}
+	if raw, ok := metadata["role"]; ok {
+		var role string
+		if json.Unmarshal(raw, &role) != nil || role != "developer" {
+			return catalog.ErrUnsupportedRequest
+		}
+	}
+	return refuseNativeFields(options, "openaiCompatible", "content", "tool_calls", "tool_call_id", "function_call", "reasoning_content")
 }
 
 func refuseCompatibleMessageFields(options provider.ProviderOptions) error {

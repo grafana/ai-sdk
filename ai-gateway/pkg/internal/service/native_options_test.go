@@ -136,6 +136,16 @@ func TestNativeOptions_ConsumedRequests(t *testing.T) {
 					},
 				},
 				{
+					name: "compatible developer instruction", backend: "openai-compatible",
+					body: `{"prompt":[{"role":"system","content":"policy","providerOptions":{"openaiCompatible":{"role":"developer","name":"policy"}}},{"role":"user","content":[{"type":"text","text":"hello"}]}]}`,
+					check: func(t *testing.T, body map[string]any) {
+						message := body["messages"].([]any)[0].(map[string]any)
+						assert.Equal(t, "developer", message["role"])
+						assert.Equal(t, "policy", message["content"])
+						assert.Equal(t, "policy", message["name"])
+					},
+				},
+				{
 					name: "compatible nested extensions", backend: "openai-compatible",
 					body: `{"providerOptions":{"my-vllm":{"user":"raw","extension":{"ignored":true}},"openaiCompatible":{"user":"fixed"},"myVllm":{"user":"camel","extension":{"null":null,"false":false,"zero":0,"empty":"","array":[],"object":{}},"headers":{"Authorization":"ordinary"}},"anthropic":{"model":"irrelevant"}},"prompt":[{"role":"user","providerOptions":{"openaiCompatible":{"priority":"high"}},"content":[{"type":"text","text":"one","providerOptions":{"openaiCompatible":{"sentiment":"positive","nested":{}}}},{"type":"text","text":"two"}]}]}`,
 					check: func(t *testing.T, body map[string]any) {
