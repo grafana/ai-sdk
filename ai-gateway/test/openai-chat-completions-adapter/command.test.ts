@@ -73,17 +73,18 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
             isAnthropic ? 'fake-key' : 'Bearer fake-key'
           );
           if (backend === 'openai-compatible' && body.tools?.[0]?.type === 'custom') {
+            const choices = (choice: object) => Array.from({ length: body.n ?? 1 }, (_, index) => ({ ...choice, index }));
             assert.deepEqual(body.tools[0].custom.format, { type: 'grammar', grammar: { syntax: 'regex', definition: '[a-z]+' } });
             assert.deepEqual(body.tool_choice, { type: 'custom', custom: { name: 'uppercase' } });
             if (!body.stream) {
               res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ id: 'custom-call', model: body.model, choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'custom-1', type: 'custom', custom: { name: 'uppercase', input: 'hello' } }] }, finish_reason: 'tool_calls' }] }));
+              res.end(JSON.stringify({ id: 'custom-call', model: body.model, choices: choices({ message: { role: 'assistant', content: null, tool_calls: [{ id: 'custom-1', type: 'custom', custom: { name: 'uppercase', input: 'hello' } }] }, finish_reason: 'tool_calls' }) }));
             } else {
               res.setHeader('Content-Type', 'text/event-stream');
               for (const delta of [{ tool_calls: [{ index: 0, id: 'custom-1', type: 'custom', custom: { name: 'uppercase', input: 'hel' } }] }, { tool_calls: [{ index: 0, custom: { input: 'lo' } }] }]) {
-                res.write(`data: ${JSON.stringify({ id: 'custom-call', model: body.model, choices: [{ delta }] })}\n\n`);
+                res.write(`data: ${JSON.stringify({ id: 'custom-call', model: body.model, choices: choices({ delta }) })}\n\n`);
               }
-              res.end(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`);
+              res.end(`data: ${JSON.stringify({ choices: choices({ delta: {}, finish_reason: 'tool_calls' }) })}\n\ndata: [DONE]\n\n`);
             }
             return;
           }
@@ -422,21 +423,33 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
           if (backend === 'openai-compatible') {
             const customTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [{ type: 'custom', custom: { name: 'uppercase', format: { type: 'grammar', grammar: { syntax: 'regex', definition: '[a-z]+' } } } }];
             const toolChoice = { type: 'custom' as const, custom: { name: 'uppercase' } };
-            const custom = await client.chat.completions.create({ model: 'chat', messages, tools: customTools, tool_choice: toolChoice });
+            for (const n of [1,2]) {
+            const custom = await client.chat.completions.create({ model: 'chat', messages, n, tools: customTools, tool_choice: toolChoice });
+            assert.equal(custom.choices.length,n);
+            for (const choice of custom.choices) {
+              const alternative = choice.message.tool_calls?.[0];
+              assert.ok(alternative?.type === "custom");
+              assert.equal(alternative.custom.input,"hello");
+            }
             const call = custom.choices[0].message.tool_calls?.[0];
             assert.ok(call?.type === 'custom');
             assert.equal(call.custom.input, 'hello');
             const continuation = await client.chat.completions.create({ model: 'chat', messages: [...messages, custom.choices[0].message, { role: 'tool', tool_call_id: call.id, content: call.custom.input.toUpperCase() }] });
             assert.equal(continuation.choices[0].message.content, 'hello');
             assert.equal(requests.at(-1)?.messages[1].tool_calls[0].custom.input, 'hello');
-            const stream = await client.chat.completions.create({ model: 'chat', messages, tools: customTools, tool_choice: toolChoice, stream: true });
-            let input = '';
+            const stream = await client.chat.completions.create({ model: 'chat', messages, n, tools: customTools, tool_choice: toolChoice, stream: true });
+            const inputs = new Map<number,string>();
             for await (const chunk of stream) {
               for (const choice of chunk.choices) {
-                for (const delta of choice.delta.tool_calls ?? []) input += (delta as unknown as { custom?: { input?: string } }).custom?.input ?? '';
+                for (const delta of choice.delta.tool_calls ?? []) {
+                  assert.equal(delta.index,0);
+                  inputs.set(choice.index, (inputs.get(choice.index) ?? '') + ((delta as unknown as { custom?: { input?: string } }).custom?.input ?? ''));
+                }
               }
             }
-            assert.equal(input, 'hello');
+            assert.equal(inputs.size,n);
+            for (const input of inputs.values()) assert.equal(input, 'hello');
+            }
           }
           const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             {
