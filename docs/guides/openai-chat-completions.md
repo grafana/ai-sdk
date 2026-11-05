@@ -415,6 +415,11 @@ Responses routes likewise retain actual native response metadata through the
 provider's typed opt-in metadata codec. No request metadata is echoed when the
 native response omits it.
 
+For compatible Chat targets, user `file` parts preserve their native union:
+`file_data` stays a file even for text MIME types, and `filename` is retained with
+both inline data and `file_id`. Cache breakpoints on these parts survive unary
+and streaming requests. This uses the common file's validated identity and data.
+
 ---
 
 [Prev: Gateway authentication](gateway-authentication.md) · [Docs index](../README.md) · [Next: Gateway architecture](../concepts/gateway-architecture.md)
