@@ -339,6 +339,10 @@ fields are rejected rather than silently ignored. Native search is available
 through compatible `web_search_options`; application tools
 are executed by the client.
 
+Unary compatible responses preserve the native top-level `metadata` map for one
+or multiple choices. The returned native value is used even if it differs from
+the submitted request metadata; an empty returned map remains empty.
+
 ---
 
 [Prev: Gateway authentication](gateway-authentication.md) · [Docs index](../README.md) · [Next: Gateway architecture](../concepts/gateway-architecture.md)

@@ -667,3 +667,11 @@ delta. A previously streamed refusal SHALL NOT be duplicated by final metadata.
 #### Scenario: Final-only refusal with strict output controls
 - **WHEN** a choice finishes with native refusal metadata without a prior refusal delta
 - **THEN** Chat emits the refusal once and can finish successfully despite requested JSON or required tool output
+
+### Requirement: Actual completion metadata
+The adapter SHALL project the native response metadata map on unary completions
+with one or multiple choices without synthesizing it from request parameters.
+
+#### Scenario: Request and response metadata differ
+- **WHEN** the native response returns a different metadata map from the submitted request
+- **THEN** the official client receives the actual native response map
