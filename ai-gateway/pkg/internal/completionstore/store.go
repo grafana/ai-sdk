@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/json"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	chat "github.com/grafana/ai-sdk/ai-gateway/openai/chatcompletions"
 	stored "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/storedchatcompletion/v1alpha1"
 	"github.com/grafana/grafana-app-sdk/resource"
+	"go.opentelemetry.io/otel/trace"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -26,6 +28,8 @@ type Store struct {
 	client resource.Client
 	now    func() time.Time
 }
+
+func (s *Store) Ready(context.Context) error { _, err := s.backend(); return err }
 
 func New() *Store { return &Store{now: time.Now} }
 
@@ -70,7 +74,7 @@ func (s *Store) Create(ctx context.Context, scope chat.StorageScope, record chat
 	object.TypeMeta = metav1.TypeMeta{APIVersion: "aigateway.ext.grafana.app/v1alpha1", Kind: "StoredChatCompletion"}
 	object.ObjectMeta = metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace, Labels: map[string]string{ownerLabel: digest(scope.Owner)}}
 	object.Spec = stored.Spec{Owner: digest(scope.Owner), Id: record.ID, Created: record.Created, ExpiresAt: record.ExpiresAt, Model: record.Model, Record: string(raw)}
-	if _, err = client.Create(ctx, key, object, resource.CreateOptions{}); err != nil {
+	if _, err = client.Create(serviceContext(ctx), key, object, resource.CreateOptions{}); err != nil {
 		return storageError(err)
 	}
 	return nil
@@ -83,7 +87,7 @@ func (s *Store) object(ctx context.Context, scope chat.StorageScope, id string) 
 	if err != nil {
 		return nil, nil, err
 	}
-	raw, err := client.Get(ctx, identifier(scope, id))
+	raw, err := client.Get(serviceContext(ctx), identifier(scope, id))
 	if err != nil {
 		return nil, nil, storageError(err)
 	}
@@ -92,7 +96,7 @@ func (s *Store) object(ctx context.Context, scope chat.StorageScope, id string) 
 		return nil, nil, chat.ErrStoredCompletionNotFound
 	}
 	if object.Spec.ExpiresAt <= s.now().Unix() {
-		_ = client.Delete(ctx, identifier(scope, id), resource.DeleteOptions{Preconditions: resource.DeleteOptionsPreconditions{ResourceVersion: object.ResourceVersion}})
+		_ = client.Delete(serviceContext(ctx), identifier(scope, id), resource.DeleteOptions{Preconditions: resource.DeleteOptionsPreconditions{ResourceVersion: object.ResourceVersion}})
 		return nil, nil, chat.ErrStoredCompletionNotFound
 	}
 	return client, object, nil
@@ -111,42 +115,93 @@ func (s *Store) Get(ctx context.Context, scope chat.StorageScope, id string) (ch
 	}
 	return decode(object)
 }
-func (s *Store) List(ctx context.Context, scope chat.StorageScope) ([]chat.StoredCompletion, error) {
+func (s *Store) List(ctx context.Context, scope chat.StorageScope, query chat.StorageListOptions) (chat.StoredCompletionPage, error) {
+	empty := chat.StoredCompletionPage{}
 	if !validScope(scope) {
-		return nil, chat.ErrStoredCompletionNotFound
+		return empty, chat.ErrStoredCompletionNotFound
+	}
+	if query.Limit < 1 || query.Limit > 100 {
+		return empty, chat.ErrCompletionStorageUnavailable
 	}
 	client, err := s.backend()
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
-	var result []chat.StoredCompletion
-	options := resource.ListOptions{Limit: 100, LabelFilters: []string{ownerLabel + "=" + digest(scope.Owner)}}
-	for {
-		list, err := client.List(ctx, scope.Namespace, options)
+	before := func(a, b chat.StoredCompletion) bool {
+		if a.Created == b.Created {
+			if query.Descending {
+				return a.ID > b.ID
+			}
+			return a.ID < b.ID
+		}
+		if query.Descending {
+			return a.Created > b.Created
+		}
+		return a.Created < b.Created
+	}
+	var cursor chat.StoredCompletion
+	if query.After != "" {
+		cursor, err = s.Get(ctx, scope, query.After)
 		if err != nil {
-			return nil, storageError(err)
+			return empty, err
+		}
+	}
+	selected := make([]chat.StoredCompletion, 0, query.Limit+1)
+	options := resource.ListOptions{Limit: 10, LabelFilters: []string{ownerLabel + "=" + digest(scope.Owner)}}
+	for {
+		list, err := client.List(serviceContext(ctx), scope.Namespace, options)
+		if err != nil {
+			return empty, storageError(err)
 		}
 		for _, raw := range list.GetItems() {
 			object, ok := raw.(*stored.StoredChatCompletion)
 			if !ok || object.Namespace != scope.Namespace || object.Spec.Owner != digest(scope.Owner) {
-				return nil, chat.ErrCompletionStorageUnavailable
+				return empty, chat.ErrCompletionStorageUnavailable
 			}
 			if object.Spec.ExpiresAt <= s.now().Unix() {
-				_ = client.Delete(ctx, resource.Identifier{Namespace: object.Namespace, Name: object.Name}, resource.DeleteOptions{Preconditions: resource.DeleteOptionsPreconditions{ResourceVersion: object.ResourceVersion}})
+				_ = client.Delete(serviceContext(ctx), resource.Identifier{Namespace: object.Namespace, Name: object.Name}, resource.DeleteOptions{Preconditions: resource.DeleteOptionsPreconditions{ResourceVersion: object.ResourceVersion}})
 				continue
 			}
 			record, err := decode(object)
 			if err != nil {
-				return nil, err
+				return empty, err
 			}
-			result = append(result, record)
+			if query.After != "" && !before(cursor, record) || query.Model != "" && query.Model != record.Model {
+				continue
+			}
+			match := true
+			for key, value := range query.Metadata {
+				if actual, exists := record.Metadata[key]; !exists || actual != value {
+					match = false
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+			index := sort.Search(len(selected), func(i int) bool { return before(record, selected[i]) })
+			if index > query.Limit {
+				continue
+			}
+			selected = append(selected, chat.StoredCompletion{})
+			copy(selected[index+1:], selected[index:])
+			selected[index] = record
+			if len(selected) > query.Limit+1 {
+				selected = selected[:query.Limit+1]
+			}
 		}
 		options.Continue = list.GetContinue()
 		if options.Continue == "" {
-			return result, nil
+			break
 		}
 	}
+	page := chat.StoredCompletionPage{Records: selected, HasMore: len(selected) > query.Limit}
+	if page.HasMore {
+		page.Records = page.Records[:query.Limit]
+	}
+	return page, nil
 }
+
 func (s *Store) UpdateMetadata(ctx context.Context, scope chat.StorageScope, id string, metadata map[string]string) (chat.StoredCompletion, error) {
 	client, object, err := s.object(ctx, scope, id)
 	if err != nil {
@@ -174,7 +229,7 @@ func (s *Store) UpdateMetadata(ctx context.Context, scope chat.StorageScope, id 
 		return record, chat.ErrCompletionStorageUnavailable
 	}
 	object.Spec.Record = string(raw)
-	if _, err = client.Update(ctx, identifier(scope, id), object, resource.UpdateOptions{ResourceVersion: object.ResourceVersion}); err != nil {
+	if _, err = client.Update(serviceContext(ctx), identifier(scope, id), object, resource.UpdateOptions{ResourceVersion: object.ResourceVersion}); err != nil {
 		return chat.StoredCompletion{}, storageError(err)
 	}
 	return record, nil
@@ -184,7 +239,7 @@ func (s *Store) Delete(ctx context.Context, scope chat.StorageScope, id string) 
 	if err != nil {
 		return err
 	}
-	if err = client.Delete(ctx, identifier(scope, id), resource.DeleteOptions{Preconditions: resource.DeleteOptionsPreconditions{ResourceVersion: object.ResourceVersion}}); err != nil {
+	if err = client.Delete(serviceContext(ctx), identifier(scope, id), resource.DeleteOptions{Preconditions: resource.DeleteOptionsPreconditions{ResourceVersion: object.ResourceVersion}}); err != nil {
 		return storageError(err)
 	}
 	return nil
@@ -197,9 +252,9 @@ func (s *Store) Sweep(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	options := resource.ListOptions{Limit: 100}
+	options := resource.ListOptions{Limit: 10}
 	for {
-		list, err := client.List(ctx, resource.NamespaceAll, options)
+		list, err := client.List(serviceContext(ctx), resource.NamespaceAll, options)
 		if err != nil {
 			return storageError(err)
 		}
@@ -209,7 +264,7 @@ func (s *Store) Sweep(ctx context.Context) error {
 				return chat.ErrCompletionStorageUnavailable
 			}
 			if object.Spec.ExpiresAt <= s.now().Unix() {
-				err = client.Delete(ctx, resource.Identifier{Namespace: object.Namespace, Name: object.Name}, resource.DeleteOptions{Preconditions: resource.DeleteOptionsPreconditions{ResourceVersion: object.ResourceVersion}})
+				err = client.Delete(serviceContext(ctx), resource.Identifier{Namespace: object.Namespace, Name: object.Name}, resource.DeleteOptions{Preconditions: resource.DeleteOptionsPreconditions{ResourceVersion: object.ResourceVersion}})
 				if err != nil && !apierrors.IsNotFound(err) {
 					return storageError(err)
 				}
@@ -223,3 +278,13 @@ func (s *Store) Sweep(ctx context.Context) error {
 }
 
 var _ chat.CompletionStore = (*Store)(nil)
+
+// The app-sdk exchanges caller AuthInfo or legacy ID tokens found in context.
+// Private storage uses the app identity after the host verifies the explicit
+// owner/namespace scope; retain cancellation and tracing without delegating caller values.
+type operationContext struct{ context.Context }
+
+func (operationContext) Value(any) any { return nil }
+func serviceContext(ctx context.Context) context.Context {
+	return trace.ContextWithSpan(operationContext{ctx}, trace.SpanFromContext(ctx))
+}

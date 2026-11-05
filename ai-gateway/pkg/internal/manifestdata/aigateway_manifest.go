@@ -34,11 +34,12 @@ var appManifestData = app.ManifestData{
 			Served: true,
 			Kinds: []app.ManifestVersionKind{
 				{
-					Kind:       "StoredChatCompletion",
-					Plural:     "StoredChatCompletions",
-					Scope:      "Namespaced",
-					Conversion: false,
-					Schema:     &versionSchemaStoredChatCompletionv1alpha1,
+					Kind:         "StoredChatCompletion",
+					Plural:       "StoredChatCompletions",
+					Scope:        "Namespaced",
+					Conversion:   false,
+					FolderScoped: func(b bool) *bool { return &b }(false),
+					Schema:       &versionSchemaStoredChatCompletionv1alpha1,
 				},
 			},
 			// nolint:staticcheck

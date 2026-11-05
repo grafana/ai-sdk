@@ -18,6 +18,7 @@
                         "plural": "StoredChatCompletions",
                         "scope": "Namespaced",
                         "userReadable": false,
+                        "folderScoped": false,
                         "schemas": {
                             "StoredChatCompletion": {
                                 "properties": {

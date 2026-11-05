@@ -25,6 +25,8 @@ func TestManifest_DeclaresOnlyGatewayRoutes(t *testing.T) {
 	assert.True(t, version.Served)
 	require.Len(t, version.Kinds, 1)
 	assert.Equal(t, "StoredChatCompletion", version.Kinds[0].Kind)
+	require.NotNil(t, version.Kinds[0].FolderScoped)
+	assert.False(t, *version.Kinds[0].FolderScoped, "stored completions belong to authenticated callers, not folders")
 	for _, role := range data.Roles {
 		assert.Empty(t, role.Kinds, "public roles must not expose stored conversation resources")
 	}

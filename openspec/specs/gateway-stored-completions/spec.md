@@ -33,3 +33,16 @@ deletes so concurrent mutations cannot resurrect removed records.
 - **WHEN** retention has elapsed
 - **THEN** the record is unavailable immediately
 - **AND** cleanup removes its durable resource.
+
+### Requirement: Bounded stable listing
+
+Stored completion listing SHALL filter by verified owner, model and metadata,
+order by creation time with ID as a deterministic tie-breaker, and support
+ascending/descending limit/after pagination. The backend SHALL scan resource
+pages while retaining at most limit plus one complete records. An unbound
+backend SHALL be rejected before billable model I/O.
+
+#### Scenario: Duplicate timestamps and sparse metadata
+- **WHEN** records share timestamps and a metadata filter is supplied
+- **THEN** ID ordering is deterministic and absent metadata does not match an empty string
+- **AND** the after cursor is resolved only within the caller's scope.

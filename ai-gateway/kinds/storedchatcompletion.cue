@@ -3,6 +3,7 @@ package kinds
 storedChatCompletion: {
  kind: "StoredChatCompletion"
  plural: "storedchatcompletions"
+ folderScoped: false
  current: "v1alpha1"
  versions: v1alpha1: {
   schema: spec: {
