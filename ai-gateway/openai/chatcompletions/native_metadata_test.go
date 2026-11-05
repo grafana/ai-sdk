@@ -68,3 +68,31 @@ func TestResponsesLogprobsReachChat(t *testing.T) {
 		assert.Contains(t, w.Body.String(), `"logprobs":{"content":[{"token":"hello","logprob":-0.1,"bytes":null,"top_logprobs":[]}]`)
 	}
 }
+
+func TestNativeResponseFields(t *testing.T) {
+	metadata := provider.ProviderMetadata{"openaiCompatible": json.RawMessage(`{"chatCompletion":{"service_tier":"priority","system_fingerprint":"fp_native","annotations":[{"type":"url_citation","url_citation":{"start_index":0,"end_index":5,"url":"https://example.com","title":"Example"}}]}}`)}
+	for _, streaming := range []bool{false, true} {
+		f := &fakeModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
+			r := textResult()
+			r.ProviderMetadata = metadata
+			return r, nil
+		}, stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			parts := textParts()
+			parts = append(parts[:4], append([]provider.StreamPart{{Type: provider.PartCustom, Kind: "openai-compatible.chat-completion", ProviderMetadata: metadata}}, parts[4:]...)...)
+			return partsStream(parts...), nil
+		}}
+		body := basic
+		if streaming {
+			body = strings.TrimSuffix(body, "}") + `,"stream":true}`
+		}
+		req := httptest.NewRequest("POST", Path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		testHandler(t, f).ServeHTTP(w, req)
+		require.Equal(t, 200, w.Code)
+		assert.NotContains(t, w.Body.String(), `"error"`)
+		assert.Contains(t, w.Body.String(), `"service_tier":"priority"`)
+		assert.Contains(t, w.Body.String(), `"system_fingerprint":"fp_native"`)
+		assert.Contains(t, w.Body.String(), `"annotations":[{"type":"url_citation"`)
+	}
+}

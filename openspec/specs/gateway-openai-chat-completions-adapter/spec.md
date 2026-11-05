@@ -493,3 +493,15 @@ Anthropic controls SHALL fail explicitly instead of being ignored.
 - **WHEN** Responses is asked for logprobs with zero alternatives
 - **THEN** translation requests the minimum positive count required by the pinned normalizer
 - **AND** the projection helper removes alternatives beyond the client's requested count without changing native metadata
+
+### Requirement: Native response identity details
+The adapter SHALL preserve reported service tier, system fingerprint and native
+Chat URL annotations. It SHALL NOT synthesize these fields from request controls.
+
+#### Scenario: Actual tier differs from requested tier
+- **WHEN** the provider reports an execution tier
+- **THEN** the Chat response exposes that reported tier
+
+#### Scenario: Malformed native annotation
+- **WHEN** a native annotation omits required text positions
+- **THEN** typed output decoding fails instead of fabricating a span

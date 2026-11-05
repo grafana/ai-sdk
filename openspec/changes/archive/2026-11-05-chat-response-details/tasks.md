@@ -1,0 +1,4 @@
+- [x] Decode and validate typed native fields in unary and streaming metadata.
+- [x] Project standard Chat fields including Responses service tier.
+- [x] Test required citation positions and HTTP/SSE projections.
+- [x] Update documentation and OpenSpec.

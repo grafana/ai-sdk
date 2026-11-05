@@ -15,6 +15,15 @@ func chatMetadata(metadata provider.ProviderMetadata) (compatible.ChatCompletion
 			return ns.ChatCompletion, errOutput
 		}
 	}
+	if ns.ChatCompletion.ServiceTier == nil && len(metadata["openai"]) > 0 {
+		var responses struct {
+			ServiceTier *string `json:"serviceTier"`
+		}
+		if json.Unmarshal(metadata["openai"], &responses) != nil {
+			return ns.ChatCompletion, errOutput
+		}
+		ns.ChatCompletion.ServiceTier = responses.ServiceTier
+	}
 	if ns.ChatCompletion.Validate() != nil {
 		return ns.ChatCompletion, errOutput
 	}
@@ -54,4 +63,16 @@ func nativeUsage(u *usage, native *compatible.ChatCompletionUsage) error {
 		u.CompletionDetails.RejectedPrediction = d.RejectedPredictionTokens
 	}
 	return nil
+}
+
+func nativeAnnotations(values []compatible.ChatCompletionAnnotation) []annotation {
+	if values == nil {
+		return nil
+	}
+	result := make([]annotation, len(values))
+	for i, a := range values {
+		c := a.URLCitation
+		result[i] = annotation{Type: a.Type, URLCitation: urlCitation{StartIndex: *c.StartIndex, EndIndex: *c.EndIndex, Title: c.Title, URL: c.URL}}
+	}
+	return result
 }
