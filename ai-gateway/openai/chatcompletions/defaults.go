@@ -3,6 +3,7 @@ package chatcompletions
 import (
 	"encoding/json"
 	"maps"
+	"slices"
 	"strings"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
@@ -13,6 +14,7 @@ import (
 
 func chatTranslator(r mappedRequest) execution.Translator {
 	return func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+		options.RejectUnsupported = true
 		var err error
 		options, err = translateMedia(target, options)
 		if err != nil {
@@ -41,6 +43,14 @@ func chatTranslator(r mappedRequest) execution.Translator {
 				values["parallelToolCalls"] = *r.Parallel
 			}
 		case execution.TargetAnthropic:
+			// Omitting false preserves Anthropic's non-strict default, including
+			// models that do not expose a strict tool flag at all.
+			options.Tools = slices.Clone(options.Tools)
+			for i := range options.Tools {
+				if options.Tools[i].Strict != nil && !*options.Tools[i].Strict {
+					options.Tools[i].Strict = nil
+				}
+			}
 			namespace = "anthropic"
 			if r.Parallel != nil {
 				values["disableParallelToolUse"] = !*r.Parallel

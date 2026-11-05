@@ -215,31 +215,26 @@ func TestOfficialSDKRealCommand(t *testing.T) {
 		assert.Equal(t, false, fake.last()["store"])
 		assert.Equal(t, "gpt-4.1", fake.last()["model"])
 	})
-	t.Run("warning extension through official SDK", func(t *testing.T) {
+	t.Run("unsupported options fail before native I/O through official SDK", func(t *testing.T) {
+		fake.mu.Lock()
+		before := len(fake.requests)
+		fake.mu.Unlock()
 		params := sdkParams(t, `,"seed":7`)
-		response, err := client.Chat.Completions.New(context.Background(), params)
-		require.NoError(t, err)
-		field, ok := response.JSON.ExtraFields["grafana"]
-		require.True(t, ok)
-		var extension struct {
-			Warnings []struct{ Type, Feature string }
-		}
-		require.NoError(t, json.Unmarshal([]byte(field.Raw()), &extension))
-		require.NotEmpty(t, extension.Warnings)
-		assert.Equal(t, "seed", extension.Warnings[0].Feature)
-		stream := client.Chat.Completions.NewStreaming(context.Background(), params)
-		seen := false
-		for stream.Next() {
-			chunk := stream.Current()
-			if field, ok := chunk.JSON.ExtraFields["grafana"]; ok {
-				require.NoError(t, json.Unmarshal([]byte(field.Raw()), &extension))
-				seen = true
-			}
-		}
-		require.NoError(t, stream.Err())
+		_, err := client.Chat.Completions.New(t.Context(), params)
+		var apiErr *openai.Error
+		require.ErrorAs(t, err, &apiErr)
+		assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+		stream := client.Chat.Completions.NewStreaming(t.Context(), params)
+		assert.False(t, stream.Next())
+		require.ErrorAs(t, stream.Err(), &apiErr)
+		assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
 		require.NoError(t, stream.Close())
-		assert.True(t, seen)
+		fake.mu.Lock()
+		after := len(fake.requests)
+		fake.mu.Unlock()
+		assert.Equal(t, before, after)
 	})
+
 	tools := `,"tools":[{"type":"function","function":{"name":"weather","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}]`
 	t.Run("raw semantic defaults across modes", func(t *testing.T) {
 		for _, stream := range []bool{false, true} {
