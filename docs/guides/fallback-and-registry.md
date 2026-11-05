@@ -295,3 +295,8 @@ resolved model.
 ---
 
 ← [Retry and timeout](retry-and-timeout.md) · [Docs index](../README.md) · [Middleware →](../middleware/overview.md)
+
+For opt-in native alternatives (`ChoiceCount > 1`), buffered fallback waits for
+all requested indexed finishes and the global `choices-finish` before accepting
+a candidate. A stream that closes after only an individual choice remains
+incomplete and can fall back under the configured policy.
