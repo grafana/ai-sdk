@@ -54,12 +54,16 @@ type ChatCompletionUsage struct {
 
 // ChatCompletionPromptTokensDetails describes native input accounting.
 type ChatCompletionPromptTokensDetails struct {
-	CachedTokens *int `json:"cached_tokens,omitempty"`
-	AudioTokens  *int `json:"audio_tokens,omitempty"`
+	CacheWriteTokens *int `json:"cache_write_tokens,omitempty"`
+	ImageTokens      *int `json:"image_tokens,omitempty"`
+	TextTokens       *int `json:"text_tokens,omitempty"`
+	CachedTokens     *int `json:"cached_tokens,omitempty"`
+	AudioTokens      *int `json:"audio_tokens,omitempty"`
 }
 
 // ChatCompletionOutputTokensDetails describes native output accounting.
 type ChatCompletionOutputTokensDetails struct {
+	TextTokens               *int `json:"text_tokens,omitempty"`
 	ReasoningTokens          *int `json:"reasoning_tokens,omitempty"`
 	AudioTokens              *int `json:"audio_tokens,omitempty"`
 	AcceptedPredictionTokens *int `json:"accepted_prediction_tokens,omitempty"`
@@ -161,10 +165,10 @@ func (m ChatCompletionMetadata) Validate() error {
 	if u := m.Usage; u != nil {
 		counts := []*int{u.PromptTokens, u.CompletionTokens, u.TotalTokens}
 		if d := u.PromptTokensDetails; d != nil {
-			counts = append(counts, d.CachedTokens, d.AudioTokens)
+			counts = append(counts, d.CachedTokens, d.AudioTokens, d.CacheWriteTokens, d.ImageTokens, d.TextTokens)
 		}
 		if d := u.CompletionTokensDetails; d != nil {
-			counts = append(counts, d.ReasoningTokens, d.AudioTokens, d.AcceptedPredictionTokens, d.RejectedPredictionTokens)
+			counts = append(counts, d.ReasoningTokens, d.AudioTokens, d.AcceptedPredictionTokens, d.RejectedPredictionTokens, d.TextTokens)
 		}
 		for _, count := range counts {
 			if count != nil && *count < 0 {
