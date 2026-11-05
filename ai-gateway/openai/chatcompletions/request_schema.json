@@ -4,7 +4,9 @@
   "properties": {
     "providerOptions": {
       "type": "object",
-      "additionalProperties": {"type": "object"}
+      "additionalProperties": {
+        "type": "object"
+      }
     },
     "model": {
       "type": "string"
@@ -20,7 +22,8 @@
               "user",
               "assistant",
               "tool",
-              "developer"
+              "developer",
+              "function"
             ]
           },
           "content": {
@@ -180,6 +183,29 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "function_call": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "arguments": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "arguments"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         },
@@ -517,6 +543,70 @@
             }
           },
           "required": [],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "functions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parameters": {
+            "type": "object"
+          },
+          "strict": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 128
+    },
+    "function_call": {
+      "anyOf": [
+        {
+          "enum": [
+            "none",
+            "auto"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
           "additionalProperties": false
         },
         {

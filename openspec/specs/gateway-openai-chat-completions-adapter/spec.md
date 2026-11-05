@@ -433,3 +433,25 @@ SHALL preserve the original block-local spans in diagnostic citations.
 
 - **WHEN** an uncited block contains `é😀` and the next block has native span 0–2
 - **THEN** the Chat annotation spans 2–4 and diagnostic citation retains 0–2
+### Requirement: Legacy function compatibility
+
+Chat SHALL normalize deprecated functions and function_call request controls and
+function-role history to common function tools. Legacy requests SHALL receive
+function_call message/delta fields and finish reasons. Conflicting modern tool
+controls or parallel legacy calls SHALL be rejected.
+
+#### Scenario: Legacy function continuation
+- **WHEN** a client declares functions, receives a function_call and supplies the
+  corresponding assistant history and function-role result
+- **THEN** each native backend receives matching common tool-call/result IDs,
+  while the client can continue using the legacy wire shape.
+
+#### Scenario: Legacy streaming
+- **WHEN** a legacy request streams a function call
+- **THEN** name and argument fragments appear under delta.function_call and the
+  final reason is function_call, without tool_calls fields or synthetic IDs.
+
+#### Scenario: Conflicting controls
+- **WHEN** functions or function_call occur with tools, tool_choice or enabled
+  parallel_tool_calls
+- **THEN** Chat returns an invalid request before native I/O.
