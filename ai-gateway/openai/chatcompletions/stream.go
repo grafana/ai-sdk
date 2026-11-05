@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
@@ -220,6 +219,10 @@ func (s *streamState) finish(p provider.StreamPart, r mappedRequest) (string, *u
 }
 
 func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *execution.Call, r mappedRequest, id, modelID string, created int64) {
+	if r.options.ChoiceCount > 1 {
+		h.serveChoicesStream(ctx, w, call, r, id, modelID, created)
+		return
+	}
 	stream, err := call.Stream()
 	if err != nil {
 		if !errors.Is(err, context.Canceled) {
@@ -228,37 +231,12 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 		return
 	}
 	defer stream.Close()
-	controller := http.NewResponseController(w)
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := controller.SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
-			WriteError(w, 500)
-			return
-		}
+	write, closeWriter, err := newStreamWriter(ctx, w)
+	if err != nil {
+		WriteError(w, 500)
+		return
 	}
-	watchDone := make(chan struct{})
-	watchStopped := make(chan struct{})
-	go func() {
-		defer close(watchStopped)
-		select {
-		case <-ctx.Done():
-			_ = controller.SetWriteDeadline(time.Now())
-		case <-watchDone:
-		}
-	}()
-	defer func() { close(watchDone); <-watchStopped }()
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Accel-Buffering", "no")
-	write := func(data []byte) bool {
-		frame := append(append([]byte("data: "), data...), []byte("\n\n")...)
-		if ctx.Err() != nil {
-			return false
-		}
-		if _, err := w.Write(frame); err != nil {
-			return false
-		}
-		return controller.Flush() == nil
-	}
+	defer closeWriter()
 	var pending *diagnostics
 	var logprobs any
 	var serviceTier, fingerprint *string
@@ -408,24 +386,18 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			return
 		}
 		if part.Type == provider.PartCustom && part.Kind == "openai-compatible.chat-completion" {
-			native, err := chatMetadata(part.ProviderMetadata)
+			d, probabilities, err := state.nativeDelta(r, part.ProviderMetadata)
 			if err != nil {
 				fail(502)
 				return
 			}
+			native, _ := chatMetadata(part.ProviderMetadata)
 			nativeIdentity(native)
-			if native.Refusal != nil {
-				state.refused = true
-			}
 			if !open() {
 				return
 			}
-			logprobs, err = r.projectLogprobs(part.ProviderMetadata, native.Logprobs)
-			if err != nil {
-				fail(502)
-				return
-			}
-			if !emit(delta{Refusal: native.Refusal, Audio: native.Audio, Annotations: nativeAnnotations(native.Annotations)}, nil, nil, false) {
+			logprobs = probabilities
+			if !emit(d, nil, nil, false) {
 				return
 			}
 			continue
