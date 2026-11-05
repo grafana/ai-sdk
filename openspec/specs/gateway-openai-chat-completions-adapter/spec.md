@@ -541,3 +541,17 @@ Other transports SHALL reject unsupported controls before provider I/O.
 #### Scenario: Unsupported transport
 - **WHEN** a Responses or Anthropic route receives native Chat prediction or search controls
 - **THEN** it returns a capability error rather than dropping the controls
+
+### Requirement: Public stream obfuscation
+The adapter SHALL include cryptographically random padding on public completion
+chunks by default and when explicitly enabled. Explicit false SHALL omit padding.
+Padding SHALL be regenerated after projection and normalize serialized sizes to
+64-byte boundaries without changing completion fields.
+
+#### Scenario: Official client disables padding
+- **WHEN** a client streams with include_obfuscation false
+- **THEN** no completion or usage chunk includes obfuscation
+
+#### Scenario: Enabled padding
+- **WHEN** two identical public chunks are serialized with obfuscation enabled
+- **THEN** they contain different random padding and retain identical completion data
