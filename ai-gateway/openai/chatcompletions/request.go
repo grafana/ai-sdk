@@ -169,6 +169,9 @@ func mapRequest(data []byte) (mappedRequest, error) {
 	if r.TopLogprobs != nil && !boolValue(r.Logprobs) {
 		return r, errRequest
 	}
+	if r.Prediction.Validate() != nil || r.WebSearchOptions.Validate() != nil {
+		return r, errRequest
+	}
 	if err := r.validateAudioRequest(); err != nil {
 		return r, err
 	}

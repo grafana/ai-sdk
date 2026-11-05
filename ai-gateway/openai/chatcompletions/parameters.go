@@ -3,18 +3,22 @@ package chatcompletions
 import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
+	compatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 type chatParameters struct {
-	User                 *string            `json:"user"`
-	SafetyIdentifier     *string            `json:"safety_identifier"`
-	ServiceTier          *string            `json:"service_tier"`
-	PromptCacheKey       *string            `json:"prompt_cache_key"`
-	PromptCacheRetention *string            `json:"prompt_cache_retention"`
-	Metadata             map[string]string  `json:"metadata"`
-	LogitBias            map[string]float64 `json:"logit_bias"`
-	Logprobs             *bool              `json:"logprobs"`
-	TopLogprobs          *int               `json:"top_logprobs"`
+	Prediction           *compatible.ChatPrediction       `json:"prediction"`
+	WebSearchOptions     *compatible.ChatWebSearchOptions `json:"web_search_options"`
+	Verbosity            *string                          `json:"verbosity"`
+	User                 *string                          `json:"user"`
+	SafetyIdentifier     *string                          `json:"safety_identifier"`
+	ServiceTier          *string                          `json:"service_tier"`
+	PromptCacheKey       *string                          `json:"prompt_cache_key"`
+	PromptCacheRetention *string                          `json:"prompt_cache_retention"`
+	Metadata             map[string]string                `json:"metadata"`
+	LogitBias            map[string]float64               `json:"logit_bias"`
+	Logprobs             *bool                            `json:"logprobs"`
+	TopLogprobs          *int                             `json:"top_logprobs"`
 }
 
 func (r mappedRequest) translateParameters(target execution.Target, values map[string]any) error {
@@ -27,6 +31,9 @@ func (r mappedRequest) translateParameters(target execution.Target, values map[s
 		{"service_tier", "serviceTier", r.ServiceTier},
 		{"prompt_cache_key", "promptCacheKey", r.PromptCacheKey},
 		{"prompt_cache_retention", "promptCacheRetention", r.PromptCacheRetention},
+	}
+	if err := r.translateExtendedParameters(target, values); err != nil {
+		return err
 	}
 	switch target.Type {
 	case execution.TargetOpenAICompatible:
@@ -80,6 +87,28 @@ func (r mappedRequest) translateParameters(target execution.Target, values map[s
 		if len(r.Metadata) > 0 || len(r.LogitBias) > 0 || boolValue(r.Logprobs) {
 			return provider.ErrUnsupportedFunctionality
 		}
+	}
+	return nil
+}
+
+func (r mappedRequest) translateExtendedParameters(target execution.Target, values map[string]any) error {
+	if r.Verbosity != nil {
+		if target.Type == execution.TargetAnthropic {
+			return provider.ErrUnsupportedFunctionality
+		}
+		values["textVerbosity"] = *r.Verbosity
+	}
+	if r.Prediction == nil && r.WebSearchOptions == nil {
+		return nil
+	}
+	if target.Type != execution.TargetOpenAICompatible {
+		return provider.ErrUnsupportedFunctionality
+	}
+	if r.Prediction != nil {
+		values["prediction"] = r.Prediction
+	}
+	if r.WebSearchOptions != nil {
+		values["web_search_options"] = r.WebSearchOptions
 	}
 	return nil
 }

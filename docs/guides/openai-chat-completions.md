@@ -239,3 +239,10 @@ tool themselves and return its result using the ordinary tool-message call ID;
 custom call history remains valid even when the follow-up omits tool declarations.
 Anthropic targets reject this capability before native invocation. Grammar
 compilation and generation constraints are enforced by the selected native API.
+
+`verbosity` maps to the native text verbosity setting on compatible and Responses
+backends. Native compatible backends also accept validated `prediction` (text or
+text parts) and `web_search_options` (search context and approximate location).
+These options are forwarded with their native semantics; unsupported models can
+still reject them. Responses and Anthropic return a capability error for these
+Chat-only prediction/search controls before I/O; Anthropic also rejects verbosity.
