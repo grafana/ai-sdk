@@ -13,6 +13,14 @@ import (
 	"github.com/grafana/grafana-app-sdk/app"
 	"github.com/grafana/grafana-app-sdk/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	storedchatcompletionv1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/storedchatcompletion/v1alpha1"
+)
+
+var (
+	rawSchemaStoredChatCompletionv1alpha1     = []byte(`{"StoredChatCompletion":{"properties":{"spec":{"$ref":"#/components/schemas/spec"}},"required":["spec"]},"spec":{"additionalProperties":false,"properties":{"created":{"type":"integer"},"expiresAt":{"type":"integer"},"id":{"type":"string"},"model":{"type":"string"},"owner":{"type":"string"},"record":{"description":"JSON contains the sanitized public record, never provider credentials.","type":"string"}},"required":["owner","id","created","expiresAt","model","record"],"type":"object"}}`)
+	versionSchemaStoredChatCompletionv1alpha1 app.VersionSchema
+	_                                         = json.Unmarshal(rawSchemaStoredChatCompletionv1alpha1, &versionSchemaStoredChatCompletionv1alpha1)
 )
 
 var appManifestData = app.ManifestData{
@@ -24,7 +32,15 @@ var appManifestData = app.ManifestData{
 		{
 			Name:   "v1alpha1",
 			Served: true,
-			Kinds:  []app.ManifestVersionKind{},
+			Kinds: []app.ManifestVersionKind{
+				{
+					Kind:       "StoredChatCompletion",
+					Plural:     "StoredChatCompletions",
+					Scope:      "Namespaced",
+					Conversion: false,
+					Schema:     &versionSchemaStoredChatCompletionv1alpha1,
+				},
+			},
 			// nolint:staticcheck
 			Routes: func() app.ManifestVersionRoutes {
 				var routes app.ManifestVersionRoutes
@@ -43,34 +59,26 @@ var appManifestData = app.ManifestData{
 		},
 	},
 	Roles: map[string]app.ManifestRole{
-		"aigateway:admin": {
-			Title:       "AI Gateway Admin",
-			Description: "Allows all actions on ",
+		"aigateway:client": {
+			Title:       "AI Gateway Client",
+			Description: "Use authenticated Gateway protocol routes",
 			Kinds:       []app.ManifestRoleKind{},
-			Routes:      []string{},
-		},
-		"aigateway:editor": {
-			Title:       "AI Gateway Editor",
-			Description: "Create, Read, Update, and Delete ",
-			Kinds:       []app.ManifestRoleKind{},
-			Routes:      []string{},
-		},
-		"aigateway:reader": {
-			Title:       "AI Gateway Reader",
-			Description: "Read ",
-			Kinds:       []app.ManifestRoleKind{},
-			Routes:      []string{},
+			Routes: []string{
+				"getConfig",
+				"createLanguageModel",
+				"createChatCompletion",
+			},
 		},
 	},
 	RoleBindings: &app.ManifestRoleBindings{
 		Viewer: []string{
-			"aigateway:reader",
+			"aigateway:client",
 		},
 		Editor: []string{
-			"aigateway:editor",
+			"aigateway:client",
 		},
 		Admin: []string{
-			"aigateway:admin",
+			"aigateway:client",
 		},
 	},
 }
@@ -83,7 +91,9 @@ func RemoteManifest() app.Manifest {
 	return app.NewAPIServerManifest("aigateway")
 }
 
-var kindVersionToGoType = map[string]resource.Kind{}
+var kindVersionToGoType = map[string]resource.Kind{
+	"StoredChatCompletion/v1alpha1": storedchatcompletionv1alpha1.Kind(),
+}
 
 // ManifestGoTypeAssociator returns the associated resource.Kind instance for a given Kind and Version, if one exists.
 // If there is no association for the provided Kind and Version, exists will return false.

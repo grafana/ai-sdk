@@ -12,7 +12,60 @@
             {
                 "name": "v1alpha1",
                 "served": true,
-                "kinds": [],
+                "kinds": [
+                    {
+                        "kind": "StoredChatCompletion",
+                        "plural": "StoredChatCompletions",
+                        "scope": "Namespaced",
+                        "userReadable": false,
+                        "schemas": {
+                            "StoredChatCompletion": {
+                                "properties": {
+                                    "spec": {
+                                        "$ref": "#/components/schemas/spec"
+                                    }
+                                },
+                                "required": [
+                                    "spec"
+                                ]
+                            },
+                            "spec": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "created": {
+                                        "type": "integer"
+                                    },
+                                    "expiresAt": {
+                                        "type": "integer"
+                                    },
+                                    "id": {
+                                        "type": "string"
+                                    },
+                                    "model": {
+                                        "type": "string"
+                                    },
+                                    "owner": {
+                                        "type": "string"
+                                    },
+                                    "record": {
+                                        "description": "JSON contains the sanitized public record, never provider credentials.",
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "owner",
+                                    "id",
+                                    "created",
+                                    "expiresAt",
+                                    "model",
+                                    "record"
+                                ],
+                                "type": "object"
+                            }
+                        },
+                        "conversion": false
+                    }
+                ],
                 "routes": {
                     "namespaced": {
                         "/config": {
@@ -175,28 +228,25 @@
         ],
         "preferredVersion": "v1alpha1",
         "roles": {
-            "aigateway:admin": {
-                "title": "AI Gateway Admin",
-                "description": "Allows all actions on "
-            },
-            "aigateway:editor": {
-                "title": "AI Gateway Editor",
-                "description": "Create, Read, Update, and Delete "
-            },
-            "aigateway:reader": {
-                "title": "AI Gateway Reader",
-                "description": "Read "
+            "aigateway:client": {
+                "title": "AI Gateway Client",
+                "description": "Use authenticated Gateway protocol routes",
+                "routes": [
+                    "getConfig",
+                    "createLanguageModel",
+                    "createChatCompletion"
+                ]
             }
         },
         "roleBindings": {
             "viewer": [
-                "aigateway:reader"
+                "aigateway:client"
             ],
             "editor": [
-                "aigateway:editor"
+                "aigateway:client"
             ],
             "admin": [
-                "aigateway:admin"
+                "aigateway:client"
             ]
         }
     }
