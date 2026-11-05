@@ -431,7 +431,10 @@ jobs:
           if-no-files-found: ignore
 
       - name: Plugin test host suites
-        if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
+        if: >-
+          ${{ github.event_name == 'push' &&
+              (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/ai-gateway/v')) &&
+              github.repository == 'grafana/ai-sdk' }}
         run: mise run test-ai-gateway-command
 
       - name: Archive candidate plugin package
