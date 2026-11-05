@@ -33,6 +33,7 @@ func chatTranslator(r mappedRequest) execution.Translator {
 		values := map[string]any{}
 		switch target.Type {
 		case execution.TargetOpenAI:
+			values["preserveRefusal"] = true
 			namespace = "openai"
 			values["store"] = false
 			values["strictJsonSchema"] = r.strictOutput

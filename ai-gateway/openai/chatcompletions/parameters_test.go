@@ -22,7 +22,7 @@ func TestChatScalarNativeMapping(t *testing.T) {
 		key, want string
 	}{
 		{execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: "custom.chat"}, "custom", `{"user":"u","safety_identifier":"safe","service_tier":"priority","prompt_cache_key":"cache","prompt_cache_retention":"24h","metadata":{"tag":"test"},"logprobs":true,"top_logprobs":2,"store":false,"strictJsonSchema":false,"preserveChatCompletionMetadata":true}`},
-		{execution.Target{Type: execution.TargetOpenAI}, "openai", `{"user":"u","safetyIdentifier":"safe","serviceTier":"priority","promptCacheKey":"cache","promptCacheRetention":"24h","metadata":{"tag":"test"},"logprobs":2,"store":false,"strictJsonSchema":false}`},
+		{execution.Target{Type: execution.TargetOpenAI}, "openai", `{"user":"u","safetyIdentifier":"safe","serviceTier":"priority","promptCacheKey":"cache","promptCacheRetention":"24h","metadata":{"tag":"test"},"logprobs":2,"store":false,"strictJsonSchema":false,"preserveRefusal":true}`},
 	} {
 		options, err := chatTranslator(r)(tc.target, r.options)
 		require.NoError(t, err)

@@ -203,7 +203,7 @@ func (s *streamState) finish(p provider.StreamPart, r mappedRequest) (string, *u
 	if r.Parallel != nil && !*r.Parallel && len(s.tools) > 1 {
 		return "", nil, errOutput
 	}
-	if requiresTool(r) && len(s.tools) == 0 && f == "stop" {
+	if !s.refused && requiresTool(r) && len(s.tools) == 0 && f == "stop" {
 		return "", nil, errOutput
 	}
 	if !partialFinish(f) && (len(s.tools) > 0) != (f == "tool_calls") {
@@ -310,7 +310,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			if len(allTools) > 0 && *final == "stop" {
 				*final = "tool_calls"
 			}
-			if r.Parallel != nil && !*r.Parallel && len(allTools) > 1 || requiresTool(r) && len(allTools) == 0 && *final == "stop" {
+			if r.Parallel != nil && !*r.Parallel && len(allTools) > 1 || !refused && requiresTool(r) && len(allTools) == 0 && *final == "stop" {
 				fail(502)
 				return
 			}
@@ -392,7 +392,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			_ = write(errorBody(categoryStatus(execution.ClassifyStreamPart(part.APICallError)), detail))
 			return
 		}
-		if part.Type == provider.PartCustom && part.Kind == "openai-compatible.chat-completion" {
+		if part.Type == provider.PartCustom && (part.Kind == "openai-compatible.chat-completion" || part.Kind == "openai.responses-refusal") {
 			d, probabilities, err := state.nativeDelta(r, part.ProviderMetadata)
 			if err != nil {
 				fail(502)
@@ -425,6 +425,12 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				return
 			}
 			nativeIdentity(native)
+			if native.Refusal != nil && !state.refused {
+				state.refused = true
+				if !open() || !emit(delta{Refusal: native.Refusal}, nil, nil, false) {
+					return
+				}
+			}
 			projected, err := r.projectLogprobs(part.ProviderMetadata, native.Logprobs)
 			if err != nil {
 				fail(502)
