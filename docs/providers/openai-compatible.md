@@ -72,6 +72,16 @@ This supports user messages; it does not upload files or enable multipart tool
 results. Synthetic request tests cover conversion, but each target server must
 support the emitted file-ID format.
 
+## Control input image detail
+
+Attach [`ImageOptions`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/openai-compatible#ImageOptions)
+to an image file part to select its native resolution. This Go extension writes
+`image_url.detail` while keeping the file's URL intact. It accepts the native
+`auto`, `low`, `high` and `original` modes; model support remains server-specific.
+The semantic `imageDetail` option is consumed locally, rather than sent as an
+extra content-part field. Raw metadata overlays retain their existing standalone
+provider behavior; Gateway policy still refuses overrides of `image_url`.
+
 ## Adapt small request differences
 
 Use static headers and query parameters for service configuration. Keep

@@ -65,7 +65,8 @@ func (p chatContentPart) MarshalJSON() ([]byte, error) {
 }
 
 type imageURLPart struct {
-	URL string `json:"url"`
+	URL    string      `json:"url"`
+	Detail ImageDetail `json:"detail,omitempty"`
 }
 
 type inputAudioPart struct {

@@ -21,6 +21,15 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: compatible-typed-image-detail
+    surface: provider-openai-compatible
+    status: intentional-deviation
+    description: Go accepts typed per-image imageDetail and emits image_url.detail
+      without replacing the builder-owned URL. The pinned compatible converter
+      only exposes raw content metadata overlays. The semantic imageDetail field
+      is consumed locally; other raw overlays retain their direct-provider
+      behavior. Synthetic generation and streaming request tests cover the
+      mapping and invalid-value rejection, not live model acceptance.
   - id: agent-ui-validation-schemas
     surface: core-agent
     status: gap
