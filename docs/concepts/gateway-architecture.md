@@ -355,7 +355,9 @@ the cache's bounded outcomes; no Cloud response format is assumed here.
 
 Entry count is bounded, with at most one outstanding resolver call per component
 per entry. Background refresh does not extend idle retention. Idle entries are
-reclaimed once their actual resolver calls return. A timed-out call that ignores
+reclaimed once their actual resolver calls return and their minimum retry
+spacing has elapsed. Idle entries retained for that cooldown do not refresh and
+still count toward capacity. A timed-out call that ignores
 cancellation remains charged to capacity and cannot spawn replacement calls.
 The owner must close the cache with a finite shutdown deadline; closure cancels
 lookups, wakes waiters, and stops admission and maintenance. Real adapters must

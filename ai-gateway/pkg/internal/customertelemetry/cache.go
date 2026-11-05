@@ -79,10 +79,11 @@ type cacheValue struct {
 }
 
 type cacheSlot struct {
-	value   cacheValue
-	outcome LookupOutcome
-	next    time.Time
-	pending *cacheAttempt
+	value      cacheValue
+	outcome    LookupOutcome
+	next       time.Time
+	retryUntil time.Time
+	pending    *cacheAttempt
 }
 
 type cacheAttempt struct {
@@ -345,11 +346,14 @@ func (c *Cache) apply(entry *cacheEntry, kind cacheComponent, value cacheValue, 
 	}
 	slot.outcome = outcome
 	slot.next = now.Add(delay)
+	slot.retryUntil = now.Add(c.options.RetryInterval)
 }
 
 func (c *Cache) prune(now time.Time) {
 	for stack, entry := range c.entries {
-		if !now.Before(entry.lastUsed.Add(c.options.IdleRetention)) && entry.slots[0].pending == nil && entry.slots[1].pending == nil {
+		if !now.Before(entry.lastUsed.Add(c.options.IdleRetention)) &&
+			entry.slots[0].pending == nil && entry.slots[1].pending == nil &&
+			!now.Before(entry.slots[0].retryUntil) && !now.Before(entry.slots[1].retryUntil) {
 			delete(c.entries, stack)
 		}
 	}
