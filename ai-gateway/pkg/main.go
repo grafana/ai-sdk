@@ -25,7 +25,11 @@ func run() int {
 		logger.Error("gateway plugin failed to start", "class", "startup_failure", "reason", err.Error())
 		return 1
 	}
-	logger.Info("gateway plugin lifecycle", "event", "plugin_started")
+	if gw.Idle() {
+		logger.Info("gateway plugin lifecycle", "event", "plugin_idle", "reason", "no platform signing keys configured: serving no requests")
+	} else {
+		logger.Info("gateway plugin lifecycle", "event", "plugin_started")
+	}
 	err = plugin.Run(gw.Provider(), plugin.WithPluginID(gateway.PluginID), plugin.WithAuthenticator(gw.Authenticator()))
 	gw.Close()
 	logger.Info("gateway plugin lifecycle", "event", "plugin_stopped")

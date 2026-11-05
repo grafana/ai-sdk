@@ -79,3 +79,35 @@ func TestModel_BYOKLoggerCapture(t *testing.T) {
 		}
 	}
 }
+
+func TestModel_ConsumerMiddlewareObservesRouting(t *testing.T) {
+	const gateway = `{"execution":{"requestedModelId":"alias","canonicalModelId":"public","attempts":[{"provider":"openai","modelId":"a1","providerInstance":"one","outcome":"failed","error":{"message":"busy","statusCode":503}},{"provider":"anthropic","modelId":"b1","providerInstance":"two","outcome":"selected"}]},` +
+		`"routing":{"originalModelId":"alias","canonicalSlug":"public","resolvedProvider":"openai","finalProvider":"anthropic","modelAttemptCount":2,"totalProviderAttemptCount":2,"modelAttempts":[` +
+		`{"modelId":"alias","canonicalSlug":"public","success":false,"providerAttemptCount":1,"providerAttempts":[{"provider":"openai","success":false,"statusCode":503}]},` +
+		`{"modelId":"backup","canonicalSlug":"backup","success":true,"providerAttemptCount":1,"providerAttempts":[{"provider":"anthropic","success":true}]}]}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"content":[{"type":"text","text":"hello"}],"finishReason":{"unified":"stop"},"usage":{"inputTokens":{},"outputTokens":{}},"providerMetadata":{"gateway":`+gateway+`,"anthropic":{"native":"kept"}}}`)
+	}))
+	defer srv.Close()
+	p, err := grafana.NewWithServiceAccountToken(grafana.ServiceAccountConfig{Token: "glsa_dummy", BaseURL: srv.URL + "/api/v1/aisdk"})
+	require.NoError(t, err)
+	base, err := p.LanguageModel("alias")
+	require.NoError(t, err)
+	for _, capture := range []bool{false, true} {
+		t.Run(strconv.FormatBool(capture), func(t *testing.T) {
+			var logs bytes.Buffer
+			model := logmiddleware.Wrap(base, logmiddleware.Options{Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Capture: logmiddleware.CaptureOptions{ProviderMetadata: capture, MaxJSONBytes: 8192}})
+			result, err := model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{}, ProviderOptions: provider.ProviderOptions{"gateway": grafana.GatewayOptions{Models: []string{"backup"}}}})
+			require.NoError(t, err)
+			assert.JSONEq(t, gateway, string(result.ProviderMetadata["gateway"]))
+			assert.JSONEq(t, `{"native":"kept"}`, string(result.ProviderMetadata["anthropic"]))
+			if capture {
+				assert.Contains(t, logs.String(), "finalProvider")
+				assert.Contains(t, logs.String(), "modelAttempts")
+			} else {
+				assert.NotContains(t, logs.String(), "finalProvider")
+			}
+		})
+	}
+}

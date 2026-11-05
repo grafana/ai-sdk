@@ -222,6 +222,30 @@ func TestStreamValidator_SegmentFinished(t *testing.T) {
 	assert.True(t, validator.SegmentFinished(), "a refused part changes nothing")
 }
 
+func TestStreamValidator_TrailingError(t *testing.T) {
+	validator := NewStreamValidator(nil)
+	steps := []struct {
+		part     provider.StreamPart
+		trailing bool
+	}{
+		{part: provider.StreamPart{Type: provider.PartError}, trailing: true},
+		{part: provider.StreamPart{Type: provider.PartRaw}, trailing: true},
+		{part: provider.StreamPart{Type: provider.PartTextStart, ID: "t"}},
+		{part: provider.StreamPart{Type: provider.PartError}, trailing: true},
+		{part: provider.StreamPart{Type: provider.PartTextEnd, ID: "t"}},
+		{part: validFinish()},
+		{part: provider.StreamPart{Type: provider.PartError}, trailing: true},
+		{part: provider.StreamPart{Type: provider.PartResponseMeta}},
+	}
+	for i, step := range steps {
+		assert.NoError(t, validator.Check(step.part), i)
+		assert.Equal(t, step.trailing, validator.TrailingError(), i)
+	}
+	assert.NoError(t, validator.Check(provider.StreamPart{Type: provider.PartError}))
+	assert.ErrorIs(t, validator.Check(provider.StreamPart{Type: provider.PartTextDelta, ID: "unknown"}), ErrInvalidOutput)
+	assert.True(t, validator.TrailingError(), "a refused part changes nothing")
+}
+
 func TestStreamValidator_HistoryIsNotShared(t *testing.T) {
 	history := ToolHistory{"hosted": "search"}
 	first, second := NewStreamValidator(history), NewStreamValidator(history)

@@ -8,7 +8,7 @@ import { generateText } from "ai";
 import { createGateway } from "@ai-sdk/gateway";
 import type { LanguageModelV4CallOptions } from "@ai-sdk/provider";
 import { buildGoClientCapture, captureGoClient } from "./go-client-capture";
-import { comprehensiveGoldenCase, fileInputGoldenCase } from "./request-cases";
+import { comprehensiveGoldenCase, fileInputGoldenCase, routingGatewayOptions } from "./request-cases";
 import { assertValidRequest } from "./schema";
 
 let directory: string;
@@ -277,6 +277,29 @@ describe("Go and exact-pinned Gateway differential", () => {
     } finally { await server.stop(); }
   });
 
+  for (const [name, gateway] of [
+    ["routing and request-account controls", routingGatewayOptions],
+    ["explicit empty only", { only: [] }],
+  ] as const) {
+    for (const streaming of [false, true]) it(`matches typed GatewayOptions with pinned GatewayProviderOptions for ${name} (streaming=${streaming})`, async () => {
+      const body = streaming ? 'data: {"type":"stream-start","warnings":[]}\n\ndata: [DONE]\n\n' : JSON.stringify(unary);
+      const server = await endpoint(body, 200, streaming ? "text/event-stream" : "application/json");
+      try {
+        const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "route" }] }], providerOptions: { gateway: structuredClone(gateway), anthropic: { sendReasoning: false } } };
+        const model = createGateway({ apiKey: "test-key", baseURL: server.baseURL, headers: { "x-access-token": "access-token" } })("grafana/assistant");
+        if (streaming) { for await (const _part of (await model.doStream(options)).stream) { /* drain */ } } else await model.doGenerate(options);
+        const go = await captureGoClient(binary, {
+          baseURL: server.baseURL, accessToken: "access-token", modelID: "grafana/assistant", mode: streaming ? "stream" : "generate",
+          options: { prompt: options.prompt, providerOptions: { anthropic: { sendReasoning: false } } }, gatewayOptions: gateway,
+        });
+        assert.equal(go.error, undefined);
+        assert.equal(server.requests.length, 2);
+        assert.deepEqual(semanticRequest(server.requests[1]!), semanticRequest(server.requests[0]!));
+        assert.deepEqual((server.requests[1]!.body as { providerOptions: unknown }).providerOptions, { gateway, anthropic: { sendReasoning: false } });
+      } finally { await server.stop(); }
+    });
+  }
+
   it("decodes relevant variant fields without rejecting unrelated fields", async () => {
     const tools = [
       { type: "tool-call", toolCallId: "call", toolName: "echo", input: "{}", providerExecuted: true, dynamic: false, result: false, preliminary: {}, isError: [] },
@@ -467,6 +490,28 @@ describe("Go and exact-pinned Gateway differential", () => {
         const normalize = (part: any) => part.type === "error" ? { type: part.type, message: part.error.message, statusCode: part.error.statusCode, retryable: part.error.isRetryable ?? part.error.retryable } : part;
         assert.deepEqual(go.parts.map(normalize), parts.map(normalize));
         assert.deepEqual(go.parts.map((part: any) => part.type), ["text-start", "error", "text-delta"]);
+      } finally { await server.stop(); }
+    }
+  });
+
+  it("matches status-less provider errors, value-less raw parts, and EOF after a final error", async () => {
+    const statusLess = { type: "error", error: { message: "provider stream error", type: "internal_server_error", param: null, code: "provider_error", retryable: false } };
+    const values = [{ type: "text-start", id: "a" }, { type: "raw" }, statusLess, { type: "text-delta", id: "a", delta: "after error" }, { type: "raw" }, statusLess];
+    for (const includeRawChunks of [false, true]) {
+      const server = await endpoint(values.map((value) => `data: ${JSON.stringify(value)}\n\n`).join(""), 200, "text/event-stream");
+      try {
+        const options: LanguageModelV4CallOptions = { prompt: [], ...(includeRawChunks ? { includeRawChunks: true } : {}) };
+        const ts = await createGateway({ apiKey: "test", baseURL: server.baseURL })("assistant").doStream(options);
+        const parts: unknown[] = []; for await (const part of ts.stream) parts.push(part);
+        const go = await captureGoClient(binary, { baseURL: server.baseURL, accessToken: "token", modelID: "assistant", mode: "stream", options });
+        assert.equal(go.error, undefined);
+        const normalize = (part: any) => part.type === "error" ? { type: part.type, message: part.error.message, statusCode: part.error.statusCode || undefined, retryable: part.error.isRetryable ?? part.error.retryable } : part;
+        assert.deepEqual(go.parts.map(normalize), parts.map(normalize));
+        const types = includeRawChunks ? ["text-start", "raw", "error", "text-delta", "raw", "error"] : ["text-start", "error", "text-delta", "error"];
+        assert.deepEqual(go.parts.map((part: any) => part.type), types);
+        for (const part of go.parts.filter((part: any) => part.type === "error") as any[]) {
+          assert.deepEqual(normalize(part), { type: "error", message: "provider stream error", statusCode: undefined, retryable: false });
+        }
       } finally { await server.stop(); }
     }
   });

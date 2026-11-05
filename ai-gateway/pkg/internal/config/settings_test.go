@@ -10,15 +10,15 @@ import (
 
 func TestParseSettings_Defaults(t *testing.T) {
 	settings, err := ParseSettings(mapLookup(map[string]string{
-		"GF_PLUGIN_CONFIG_FILE":        "/tmp/models.yaml",
+		"GF_PLUGIN_MODEL_CATALOG":      minimalConfigYAML,
 		"GF_PLUGIN_ACCESS_MODE":        "cloud",
 		"GF_PLUGIN_AGENTO11Y_ENABLED":  "true",
 		"GF_PLUGIN_AGENTO11Y_ENDPOINT": "collector.example:4317",
 	}))
 	require.NoError(t, err)
 	assert.Equal(t, Settings{
-		ConfigFile: "/tmp/models.yaml",
-		Access:     auth.AccessPolicy{Mode: auth.AccessModeCloud},
+		ModelCatalog: minimalConfigYAML,
+		Access:       auth.AccessPolicy{Mode: auth.AccessModeCloud},
 		AgentObservability: AgentObservabilitySettings{
 			Enabled:  true,
 			Protocol: AgentObservabilityGRPC,
@@ -34,7 +34,7 @@ func TestParseSettings_EnvironmentBindings(t *testing.T) {
 		value string
 		check func(*testing.T, Settings)
 	}{
-		{env: "GF_PLUGIN_CONFIG_FILE", value: "/etc/models.yaml", check: func(t *testing.T, s Settings) { assert.Equal(t, "/etc/models.yaml", s.ConfigFile) }},
+		{env: "GF_PLUGIN_MODEL_CATALOG", value: "models: {}\n", check: func(t *testing.T, s Settings) { assert.Equal(t, "models: {}\n", s.ModelCatalog) }},
 		{env: "GF_PLUGIN_ACCESS_MODE", value: "self-hosted", check: func(t *testing.T, s Settings) { assert.Equal(t, auth.AccessModeSelfHosted, s.Access.Mode) }},
 		{env: "GF_PLUGIN_AGENTO11Y_PROTOCOL", value: "http", check: func(t *testing.T, s Settings) {
 			assert.Equal(t, AgentObservabilityHTTP, s.AgentObservability.Protocol)
@@ -110,7 +110,7 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		name   string
 		mutate func(*Settings)
 	}{
-		{name: "config file", mutate: func(s *Settings) { s.ConfigFile = " " }},
+		{name: "model catalog", mutate: func(s *Settings) { s.ModelCatalog = " \n" }},
 		{name: "agento11y protocol", mutate: func(s *Settings) { s.AgentObservability.Protocol = "other" }},
 		{name: "agento11y endpoint", mutate: func(s *Settings) { s.AgentObservability.Endpoint = "" }},
 		{name: "agento11y endpoint credentials", mutate: func(s *Settings) {
@@ -135,7 +135,7 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 func TestParseSettings_IgnoresRemovedSettings(t *testing.T) {
 	values := baseSettingsEnvironment()
 	for _, name := range []string{
-		"GRAFANA_AI_GATEWAY_CONFIG_FILE", "GRAFANA_AI_GATEWAY_ACCESS_MODE",
+		"GRAFANA_AI_GATEWAY_CONFIG_FILE", "GRAFANA_AI_GATEWAY_ACCESS_MODE", "GF_PLUGIN_CONFIG_FILE",
 		"GF_PLUGIN_CONFIG_MAX_BYTES", "GF_PLUGIN_AGENTO11Y_QUEUE_SIZE", "GF_PLUGIN_PROVIDERWIRE_STREAM_PARTS",
 		"GF_PLUGIN_OBSERVATION_REGION",
 	} {
@@ -335,7 +335,7 @@ func TestParseSettings_AgentObservabilityTransportSecurityIsExplicit(t *testing.
 
 func baseSettingsEnvironment() map[string]string {
 	return map[string]string{
-		"GF_PLUGIN_CONFIG_FILE":        "/tmp/models.yaml",
+		"GF_PLUGIN_MODEL_CATALOG":      minimalConfigYAML,
 		"GF_PLUGIN_ACCESS_MODE":        "cloud",
 		"GF_PLUGIN_AGENTO11Y_ENABLED":  "true",
 		"GF_PLUGIN_AGENTO11Y_ENDPOINT": "collector.example:4317",

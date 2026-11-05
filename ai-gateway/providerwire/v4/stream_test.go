@@ -416,6 +416,11 @@ func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {
 				wantError: `"error":{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":true}`,
 			},
 			{
+				name:      "no status plain cause is provider stream",
+				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{Message: "ordinary native message", Cause: errors.New("ordinary native cause")}),
+				wantError: `"error":{"message":"provider stream error","type":"internal_server_error","param":null,"code":"provider_error","retryable":false}`,
+			},
+			{
 				name:      "valid http 200 error remains upstream",
 				apiError:  provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusOK, Message: "ordinary native message", Cause: context.DeadlineExceeded}),
 				wantError: `"error":{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":true}`,
@@ -492,6 +497,56 @@ func TestStreamingRuntimeProviderErrorsAndFinishValidation(t *testing.T) {
 		assert.Equal(t, 1, strings.Count(body, `"code":"internal_error"`))
 		assert.NotContains(t, body, `"type":"text-end"`)
 		assert.NotContains(t, body, `"type":"finish"`)
+	})
+
+	t.Run("provider close right after a provider error ends cleanly", func(t *testing.T) {
+		statusLess := provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "ordinary native message"})}
+		rateLimited := provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusTooManyRequests, Message: "ordinary native message"})}
+		toolStart := provider.StreamPart{Type: provider.PartToolInputStart, ID: "call", ToolName: "lookup"}
+		raw := provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"native":true}`)}
+		duplicateKeyRaw := provider.StreamPart{Type: provider.PartRaw, RawValue: json.RawMessage(`{"a":1,"a":2}`)}
+		for _, tc := range []struct {
+			name       string
+			includeRaw bool
+			parts      []provider.StreamPart
+			types      []string
+			codes      []string
+		}{
+			{"open tool input then error", false, []provider.StreamPart{toolStart, statusLess}, []string{"stream-start", "tool-input-start", "error"}, []string{"provider_error"}},
+			{"error as first part", false, []provider.StreamPart{statusLess}, []string{"stream-start", "error"}, []string{"provider_error"}},
+			{"status-bearing error", false, []provider.StreamPart{rateLimited}, []string{"stream-start", "error"}, []string{"rate_limit_exceeded"}},
+			{"nil api error", false, []provider.StreamPart{{Type: provider.PartError}}, []string{"stream-start", "error"}, []string{"internal_error"}},
+			{"unrequested raw after error", false, []provider.StreamPart{statusLess, raw}, []string{"stream-start", "error"}, []string{"provider_error"}},
+			{"unusable requested raw after error", true, []provider.StreamPart{statusLess, duplicateKeyRaw}, []string{"stream-start", "error"}, []string{"provider_error"}},
+			{"requested raw after error", true, []provider.StreamPart{statusLess, raw}, []string{"stream-start", "error", "raw"}, []string{"provider_error"}},
+			{"error in a new segment", false, []provider.StreamPart{finishPart(), {Type: provider.PartResponseMeta}, statusLess}, []string{"stream-start", "finish", "response-metadata", "error"}, []string{"provider_error"}},
+			{"content after error", false, []provider.StreamPart{statusLess, {Type: provider.PartTextStart, ID: "a"}}, []string{"stream-start", "error", "text-start", "error"}, []string{"provider_error", "internal_error"}},
+			{"no error", false, []provider.StreamPart{{Type: provider.PartTextStart, ID: "a"}}, []string{"stream-start", "text-start", "error"}, []string{"internal_error"}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				body := serveSegmentParts(t, tc.includeRaw, tc.parts...)
+				assert.Equal(t, tc.types, segmentFrameTypes(t, body))
+				assert.Equal(t, tc.codes, segmentErrorCodes(t, body))
+			})
+		}
+	})
+
+	t.Run("idle timeout after a provider error keeps the timeout document", func(t *testing.T) {
+		limits := testLimits()
+		limits.StreamIdleDuration = 25 * time.Millisecond
+		harness := newRuntimeHarness(t, limits)
+		harness.model.stream = func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+			stream := make(chan provider.StreamPart)
+			go func() {
+				defer close(stream)
+				stream <- provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: "ordinary native message"})}
+				<-ctx.Done()
+			}()
+			return &provider.StreamResult{Stream: stream}, nil
+		}
+		body := harness.serve(streamRequest(`{"prompt":[]}`)).Body.String()
+		assert.Equal(t, []string{"stream-start", "error", "error"}, segmentFrameTypes(t, body))
+		assert.Equal(t, []string{"provider_error", "timeout"}, segmentErrorCodes(t, body))
 	})
 }
 

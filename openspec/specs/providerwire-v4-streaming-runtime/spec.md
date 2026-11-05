@@ -268,7 +268,7 @@ Known usage counts SHALL be non-negative JavaScript-safe integers and SHALL use 
 
 ### Requirement: Ordered non-terminal provider errors
 
-Each provider `PartError`, before or after a finish, SHALL be independently reduced through the closed safe-error classification and emitted in place with base fields `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`.
+Each provider `PartError`, before or after a finish, SHALL be independently reduced through the closed safe-error classification and emitted in place with base fields `{"type":"error","error":{"message":string,"type":string,"param":null,"code":string,"statusCode":integer,"retryable":boolean}}`. The provider-stream category SHALL use its own fixed base fields with no `statusCode` member.
 
 #### Scenario: Ordered non-terminal provider errors policy
 - **WHEN** the runtime encodes the corresponding response or stream event
@@ -298,7 +298,17 @@ Each provider `PartError`, before or after a finish, SHALL be independently redu
 - **WHEN** an `APICallError` has status zero and wraps a timeout-capable transport error
 - **THEN** it SHALL reduce to the canonical timeout error
 - **AND** a status-zero `APICallError` with an ordinary network or DNS cause SHALL reduce to the canonical upstream error
+- **AND** a status-zero `APICallError` that wraps context cancellation or an expired deadline SHALL reduce to the canonical cancellation or timeout error respectively
+- **AND** a status-zero `APICallError` with no cancellation, deadline or transport cause SHALL reduce to the status-less provider-stream error rather than the canonical upstream error
 - **AND** a valid status-bearing provider error, including an SSE error reported with HTTP status 200, SHALL retain status-based classification
+
+#### Scenario: Status-less provider error is written in place
+- **WHEN** a provider emits a status-less error, as for a stream frame that failed to parse, followed by valid content and finish
+- **THEN** both clients SHALL receive an error event whose base fields are exactly `{"type":"error","error":{"message":"provider stream error","type":"internal_server_error","param":null,"code":"provider_error","retryable":false}}`, with no `statusCode` member, followed by every later event in provider order
+
+#### Scenario: Status-less provider error carries native text
+- **WHEN** a status-less provider error carries a native message, native status text or provider account detail
+- **THEN** none of that text SHALL appear in the error event's base fields, and optional `error.data` SHALL follow gateway-attempt-failure-evidence exactly as for any other provider error
 
 ### Requirement: Provider error canonical fallback and privacy exclusions
 
@@ -311,7 +321,7 @@ Nil, malformed, or unclassifiable provider error values SHALL reduce to the cano
 
 ### Requirement: Synthetic terminal adapter errors
 
-Unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior, before and after a written finish. A provider close SHALL be premature unless the last lifecycle part is a valid finish. Ordinary generated files, approvals and unsupported tool behavior SHALL remain unsupported.
+Unsupported families, lifecycle violations, invalid output, premature close, mapping or framing failure, timeout and cancellation SHALL retain existing bounded terminal error behavior, before and after a written finish. A provider close SHALL be premature unless it ends cleanly under "Stream completion on provider close". Ordinary generated files, approvals and unsupported tool behavior SHALL remain unsupported.
 
 #### Scenario: Reasoning lifecycle violation
 - **WHEN** reasoning ends without a matching active start, reuses an ended reasoning ID within its segment, or remains open at finish
@@ -642,22 +652,22 @@ After a valid finish, only response-metadata, raw parts under gateway-raw-output
 - **THEN** the raw part SHALL be written when requested and dropped otherwise, and the next segment SHALL be accepted
 
 ### Requirement: Stream completion on provider close
-The response SHALL end at provider close, at a terminal adapter or runtime failure, at idle timeout, request deadline or cancellation, or at writer failure, not at a finish. Lifecycle parts SHALL be every part except raw parts and provider error parts. Provider close SHALL be a clean EOF without `[DONE]` only when the last lifecycle part is a valid finish; otherwise the handler SHALL attempt one synthetic premature-close internal error.
+The response SHALL end at provider close, at a terminal adapter or runtime failure, at idle timeout, request deadline or cancellation, or at writer failure, not at a finish. Lifecycle parts SHALL be every part except raw parts and provider error parts. Provider close SHALL be a clean EOF without `[DONE]` only when the last lifecycle part is a valid finish or a provider error part follows the last lifecycle part; otherwise the handler SHALL attempt one synthetic premature-close internal error.
 
 #### Scenario: Close after a finish
 - **WHEN** the provider closes its stream after a valid finish that is the last lifecycle part
 - **THEN** the response SHALL end at clean EOF without `[DONE]` or another event
 
 #### Scenario: Close without a finish
-- **WHEN** the provider closes its stream before any valid finish
+- **WHEN** the provider closes its stream before any valid finish and no provider error part follows the last lifecycle part
 - **THEN** the handler SHALL attempt one synthetic internal error and SHALL NOT synthesize a finish or block end
 
 #### Scenario: Close after a new segment opens
-- **WHEN** the provider closes its stream after a valid finish followed by response-metadata
+- **WHEN** the provider closes its stream after a valid finish followed by response-metadata, and no provider error part follows the metadata
 - **THEN** the handler SHALL attempt one synthetic internal error after the metadata and SHALL NOT synthesize a finish
 
 ### Requirement: Timeout and cancellation after a finish
-Idle timeout, request deadline expiry and request cancellation SHALL keep their normal terminal behavior after a written finish; only provider close SHALL depend on the last lifecycle part. The handler SHALL cancel provider work before encoding the terminal event and write it after the finish: a timeout error for idle timeout or deadline expiry, or a cancellation error only while the writer is still usable. The finish SHALL NOT be retracted.
+Idle timeout, request deadline expiry and request cancellation SHALL keep their normal terminal behavior after a written finish; only provider close SHALL depend on the last lifecycle part or a trailing provider error part. The handler SHALL cancel provider work before encoding the terminal event and write it after the finish: a timeout error for idle timeout or deadline expiry, or a cancellation error only while the writer is still usable. The finish SHALL NOT be retracted.
 
 #### Scenario: Idle after a finish
 - **WHEN** a provider writes a valid finish and then neither emits nor closes until the idle timeout
@@ -715,3 +725,32 @@ Automated evidence SHALL include focused raw-wire and schema tests for the segme
 #### Scenario: Fixture inputs remain authentic
 - **WHEN** the sequential evidence is produced
 - **THEN** no `input*.chunks.txt`, `expected-provider-parts.jsonl`, `expected.jsonl` or `expected-requests.jsonl` file SHALL be modified, split or skipped
+
+### Requirement: Clean end after a provider error
+
+When the provider closes its stream and a provider error part follows the last lifecycle part, the runtime SHALL report the closed-after-error outcome and the handler SHALL end the response at clean EOF, whether or not a finish was written earlier. It SHALL NOT write a synthetic terminal error, finish or block closure. Raw parts are not lifecycle parts, so they SHALL NOT change this outcome, whether or not they are written. This rule SHALL apply to a provider error of any safe category.
+
+#### Scenario: Provider closes right after an error
+- **WHEN** a provider emits stream-start, opens a tool-input or text block, emits an error part and then closes its stream without finish
+- **THEN** the provider error SHALL be the last event, the response SHALL end at clean EOF, and no `internal_error` event, block closure or finish SHALL be written
+
+#### Scenario: Error is the first part and the stream closes
+- **WHEN** the first provider part is an error and the provider then closes its stream
+- **THEN** the response SHALL contain the normalized stream-start and that error, then end at clean EOF
+
+#### Scenario: Lifecycle part follows the error before close
+- **WHEN** a provider emits an error part, then a lifecycle part that is not a valid finish, and then closes
+- **THEN** the handler SHALL write exactly one synthetic terminal internal error after the later event, as for any other premature close
+
+#### Scenario: Raw part follows the error
+- **WHEN** a provider emits an error part, then a raw part, and then closes
+- **THEN** the response SHALL end at clean EOF, with the raw event after the error when raw output was requested and its value is usable, and with the error as the last event otherwise
+
+#### Scenario: Close without a trailing provider error
+- **WHEN** the provider closes, the last lifecycle part is not a valid finish, and no provider error part follows it, including a close before the first part
+- **THEN** the existing single synthetic terminal internal error SHALL be written
+
+#### Scenario: Other terminal outcomes after an error
+- **WHEN** request cancellation, the request deadline or the idle timeout ends the stream after a provider error part
+- **THEN** the handler SHALL keep the existing cancellation or timeout terminal behavior
+- **AND** when such an outcome becomes ready concurrently with the provider close, either outcome MAY win, subject to the existing "Streaming terminal authority and scheduler race boundary" requirement
