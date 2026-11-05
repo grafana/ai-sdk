@@ -556,6 +556,78 @@
                 "type"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "const": "allowed_tools"
+                },
+                "allowed_tools": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "auto",
+                        "required"
+                      ]
+                    },
+                    "tools": {
+                      "type": "array",
+                      "maxItems": 128,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "enum": [
+                              "function",
+                              "custom"
+                            ]
+                          },
+                          "function": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "custom": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "tools"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "type",
+                "allowed_tools"
+              ],
+              "additionalProperties": false
             }
           ]
         },
