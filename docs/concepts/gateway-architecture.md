@@ -96,7 +96,9 @@ operational endpoints, so there are no separate listeners and no `/live`,
 [plugin composition](../../ai-gateway/pkg/internal/gateway/gateway.go).
 
 The [Chat Completions adapter](../guides/openai-chat-completions.md) maps its
-supported request subset into the same execution runtime. Its call-scoped
+supported request subset into the same execution runtime. User media becomes
+common file parts; per-attempt translation selects native file-reference
+namespaces and image detail without bypassing native field guards. Its call-scoped
 translator applies defaults per native fallback candidate. It supplies its own
 response/error projection and no BYOK controls; the shared selector therefore
 rejects Cloud user and service-account calls without provider accounts with

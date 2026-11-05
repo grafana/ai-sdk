@@ -43,6 +43,29 @@ SHALL fail.
 - **WHEN** history contains developer instructions, names, refusal history or multipart text tool results
 - **THEN** developer instructions map to system messages, refusal text remains in history, and tool text parts concatenate in order; compatible Chat candidates retain native developer, name and refusal fields.
 
+### Requirement: User multimodal inputs
+
+The adapter SHALL map user image URLs, inline audio and file data or IDs into
+common file parts, retaining order and inline filenames. Per-attempt translation
+SHALL select the native reference namespace without mutating the source prompt.
+Image detail SHALL use a typed compatible option, never a raw URL override.
+A native transport unable to represent the input SHALL fail before native I/O.
+
+#### Scenario: Images and PDF across backends
+- **WHEN** a user sends images, PDF data and an uploaded file ID
+- **THEN** Responses, Anthropic and compatible requests retain their native media
+  representations; Responses and compatible requests retain image detail.
+
+#### Scenario: Audio capability
+- **WHEN** a user sends WAV or MP3 audio
+- **THEN** a compatible Chat attempt forwards input_audio and a Responses or
+  Anthropic attempt fails without sending or discarding the audio.
+
+#### Scenario: Protected image URL
+- **WHEN** a compatible input supplies typed image detail
+- **THEN** the native image URL still comes from the common file part and raw
+  image_url, type, file and input_audio overrides remain refused by Gateway policy.
+
 ### Requirement: Candidate-local Chat defaults
 
 The adapter SHALL supply an execution.Translator per call, copying options and
