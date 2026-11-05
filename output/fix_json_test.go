@@ -201,3 +201,26 @@ func TestFixJSON_Regression(t *testing.T) {
 			fixJSON(`{"type":"div","children":[{"type":"Card","props":{}`))
 	})
 }
+
+func TestFixJSON_InitialArrayMinus(t *testing.T) {
+
+	for _, tc := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"initial minus", `[-`, `[]`},
+		{"space before minus", `[ -`, `[]`},
+		{"nested array", `[[1], [-`, `[[1], []]`},
+		{"array in object", `{"a": [-`, `{"a": []}`},
+		{"negative number", `[-1`, `[-1]`},
+		{"empty array", `[`, `[]`},
+		{"whitespace only", "[ \t\n", `[]`},
+		{"subsequent minus", `[1,-`, `[1]`},
+		{"object minus", `{"a":-`, `{}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, fixJSON(tc.input))
+		})
+	}
+}

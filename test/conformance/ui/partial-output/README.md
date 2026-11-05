@@ -12,6 +12,8 @@ recordings. `generate.mts` replays them through `streamText` from the
 
 | Case | Output | What it pins |
 |---|---|---|
+| `initial-array-minus` | `Output.object` | A first delta ending in `[-` emits the empty-array partial and its UI text immediately |
+| `split-array-minus` | `Output.object` | A separate minus delta preserves the empty-array partial without republishing it |
 | `empty-array` | `Output.array` | The first partial, before any valid element, is `[]` |
 | `multi-step-repeat` | `Output.object` | Step 2 republishes the partial step 1 ended on, and its text-delta boundaries follow its own partials |
 | `interleaved-text` | `Output.object` | Partials parse only the first text part while another part's delta arrives between its deltas, and step text joins whole parts |

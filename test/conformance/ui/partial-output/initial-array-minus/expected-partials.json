@@ -1,0 +1,19 @@
+[
+  {
+    "series": "temp",
+    "values": []
+  },
+  {
+    "series": "temp",
+    "values": [
+      -3
+    ]
+  },
+  {
+    "series": "temp",
+    "values": [
+      -3,
+      4
+    ]
+  }
+]

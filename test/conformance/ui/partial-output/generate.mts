@@ -16,7 +16,16 @@ const nameSchema = jsonSchema({
   additionalProperties: false,
 });
 
+const seriesSchema = jsonSchema({
+  type: "object",
+  properties: { series: { type: "string" }, values: { type: "array", items: { type: "number" } } },
+  required: ["series", "values"],
+  additionalProperties: false,
+});
+
 const cases = {
+  "initial-array-minus": Output.object({ schema: seriesSchema }),
+  "split-array-minus": Output.object({ schema: seriesSchema }),
   "empty-array": Output.array({ element: nameSchema }),
   "multi-step-repeat": Output.object({ schema: nameSchema }),
   "interleaved-text": Output.object({ schema: nameSchema }),
