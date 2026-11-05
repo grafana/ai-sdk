@@ -44,6 +44,12 @@ knownGaps:
       This explicit local opt-in never reaches the native API and leaves default
       V4 behavior unchanged. Synthetic HTTP replay covers unary, delta, done and
       final-response paths, without claiming live-provider parity.
+  - id: reject-unsupported-request-options
+    surface: provider-contract
+    status: intentional-deviation
+    description: Go-only RejectUnsupported opts strict protocol adapters into
+      rejecting native request-build unsupported warnings before provider I/O.
+      Default V4 calls keep warnings; the option is not serialized on the wire.
   - id: compatible-typed-image-detail
     surface: provider-openai-compatible
     status: intentional-deviation

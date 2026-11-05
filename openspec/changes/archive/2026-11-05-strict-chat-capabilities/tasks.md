@@ -1,0 +1,4 @@
+- [x] Add Go-only strict unsupported-warning policy.
+- [x] Apply policy before I/O in the three native providers.
+- [x] Enable policy for Chat and test actual clients and native builders.
+- [x] Document unsupported sampling and the separate stored-completion gap.
