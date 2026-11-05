@@ -19,7 +19,7 @@ follows the Gateway plugin backend in `ai-gateway/pkg`. For setup, see
 ## The pieces and their boundaries
 
 The shipped plugin backend accepts **ProviderWire V4**, used by the Go Grafana provider
-and server-side Vercel Gateway client, and a **Chat Completions subset** for
+and server-side Vercel Gateway client, and a **Chat Completions adapter** for
 official OpenAI clients. These are separate adapters over one execution runtime.
 Neither is the
 browser UI message stream protocol. A Go application can consume Gateway output
@@ -96,12 +96,13 @@ operational endpoints, so there are no separate listeners and no `/live`,
 [plugin composition](../../ai-gateway/pkg/internal/gateway/gateway.go).
 
 The [Chat Completions adapter](../guides/openai-chat-completions.md) maps its
-supported request subset into the same execution runtime. User media becomes
+supported requests into the same execution runtime. User media becomes
 common file parts; per-attempt translation selects native file-reference
 namespaces and image detail without bypassing native field guards. Its call-scoped
 translator applies defaults per native fallback candidate. It supplies its own
-response/error projection and no BYOK controls; the shared selector therefore
-rejects Cloud user and service-account calls without provider accounts with
+response/error projection and accepts the shared `providerOptions.gateway`
+account and routing controls. The shared selector rejects Cloud user and
+service-account calls without provider accounts with
 HTTP 400 (`ErrInvalidBYOK`), before native I/O. Host access-policy refusal remains
 HTTP 403; the adapter does not add a separate access dispatcher.
 Self-hosted users/service accounts and allowlisted internal services use the

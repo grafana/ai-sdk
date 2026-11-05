@@ -3,13 +3,13 @@
 ## Purpose
 Define Chat request mapping, wire responses, error documents and protocol state
 over the shared Gateway runtime and host contract. #555/#579/#581 provide the
-execution, attempt and host boundaries; #483 shared lifecycle validation remains
-pending before readiness. Sequential native segments are refused explicitly,
-not silently truncated according to a different protocol's semantics.
+execution, attempt and host boundaries. Shared runtime lifecycle validation
+governs native segments; the adapter projects their complete content and usage
+into one public completion.
 
 ## Requirements
 
-### Requirement: Explicit unary request subset
+### Requirement: Explicit unary request contract
 
 The adapter SHALL validate a closed schema before typed mapping. It SHALL
 represent text, client-owned functions and continuations, structured response
@@ -187,11 +187,10 @@ fixed Chat error where the writer remains usable.
 - **THEN** the adapter emits a fixed upstream error where writable and does not
   emit `[DONE]`.
 
-#### Scenario: Additional native segment is refused
-- **WHEN** another part, metadata, start or finish follows the first finish
-  instead of channel closure
-- **THEN** Chat refuses the unsupported continuation without a successful
-  finish or `[DONE]`; it does not silently truncate or replay the response.
+#### Scenario: Additional validated native segment
+- **WHEN** another runtime-valid response segment follows the first finish
+- **THEN** Chat consumes its content and usage before emitting the single public
+  terminal finish and `[DONE]`; invalid lifecycle transitions still fail safely.
 
 ### Requirement: Streaming native identity and diagnostics
 
@@ -229,8 +228,8 @@ The handler SHALL use Call.Stream, Stream.Next and Stream.Close for setup,
 wait outcomes, cancellation and drain. It SHALL NOT implement a private setup
 worker, idle timer or drain loop. Runtime idle accounting SHALL follow native
 part activity, including metadata; Chat SHALL retain framing, commitment and
-its representation state. #483 shared lifecycle validation remains pending
-and SHALL NOT be claimed by this change.
+its representation state. The shared runtime SHALL validate native lifecycle
+transitions and authoritative completion before Chat emits a successful terminator.
 
 #### Scenario: Runtime activity owns idle
 - **WHEN** native metadata or reasoning parts arrive within each runtime idle
