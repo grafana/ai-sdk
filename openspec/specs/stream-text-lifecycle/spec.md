@@ -104,13 +104,18 @@ Matching upstream, which skips `onEnd` when aborted, cancellation SHALL call OnA
 
 ### Requirement: Step content preserves provider order
 
-StreamText SHALL build StepResult.Content and response content from recorded provider sequence. Text/reasoning/sources/regular files/tool calls/tool results/approval requests SHALL retain relative provider order and metadata. Locally created post-stream approvals/results SHALL append exactly once. Manually constructed state without recorded content SHALL use deterministic grouped fallback.
+StreamText SHALL build StepResult.Content and response content from recorded provider sequence. Text/reasoning/sources/regular files/tool calls/tool results/approval requests SHALL retain relative provider order and metadata. StepResult.Text SHALL join each text part's whole text in the order the parts first appeared, as upstream's step `text` does, not in delta arrival order. Locally created post-stream approvals/results SHALL append exactly once. Manually constructed state without recorded content SHALL use deterministic grouped fallback.
 
 #### Scenario: Provider content is interleaved
 
 - **WHEN** a provider emits files, tool calls, text, reasoning, sources, and provider tool results in an interleaved sequence
 - **THEN** `StepResult.Content` and response-message content SHALL preserve that sequence
 - **AND** each represented part SHALL retain its provider metadata
+
+#### Scenario: Text part deltas interleave
+
+- **WHEN** text parts `t1` and `t2` start in that order and their deltas arrive as `t1` `{"name":`, `t2` `note`, `t1` `"a"}`
+- **THEN** `StepResult.Text` SHALL be `{"name":"a"}note`
 
 #### Scenario: Empty recorded text remains step content
 
@@ -289,3 +294,19 @@ Within one model call, each provider error part SHALL set the step's unified fin
 
 - **WHEN** a provider stream emits an error and then a finish with reason `stop`
 - **THEN** the step finish reason SHALL be `stop`
+
+### Requirement: Interrupted steps end the invocation
+
+A step whose provider finish is `interrupted` SHALL keep its partial output, usage, provider metadata and finish reason, emit no error solely for the interruption, and end the invocation. Required and named tool choice SHALL NOT be enforced for it. Local tools SHALL NOT execute, and no subsequent model request SHALL start, even when approval denials would otherwise satisfy continuation.
+
+#### Scenario: Interrupted output without a required call
+- **WHEN** a step with required or named tool choice finishes `interrupted` with text and no matching call
+- **THEN** no tool-choice error SHALL be emitted, the text, usage and provider metadata SHALL be retained, step and invocation callbacks SHALL report `interrupted`, and the UI finish chunk SHALL carry `finishReason: "interrupted"`
+
+#### Scenario: Interrupted step with tool calls
+- **WHEN** a step finishes `interrupted` with local tool calls, whether approved, denied or without approval
+- **THEN** no tool SHALL execute and no further model request SHALL start
+
+#### Scenario: Frontend does not continue automatically
+- **WHEN** `useChat` receives a Go UI stream ending in an `interrupted` finish with a client tool call and the caller later adds its tool output
+- **THEN** `sendAutomaticallyWhen` SHALL NOT trigger another request

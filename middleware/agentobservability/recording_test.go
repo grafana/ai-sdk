@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
@@ -689,7 +690,7 @@ func TestHooksSpanTelemetryKeys(t *testing.T) {
 	assert.Equal(t, "aisdk.hooks.rule_id", SpanAttrHooksRuleID)
 }
 
-func TestRecordingMiddleware_StreamFinishIsRecordedBeforeDownstreamCancels(t *testing.T) {
+func TestRecordingMiddleware_StreamStopAtFinishThenCancelRecordsSuccess(t *testing.T) {
 	for _, drainTimeout := range []time.Duration{0, 10 * time.Millisecond} {
 		t.Run(drainTimeout.String(), func(t *testing.T) {
 			env := testkit.NewEnv(t)
@@ -698,35 +699,327 @@ func TestRecordingMiddleware_StreamFinishIsRecordedBeforeDownstreamCancels(t *te
 			upstream <- provider.StreamPart{Type: provider.PartTextStart, ID: "t0"}
 			upstream <- provider.StreamPart{Type: provider.PartFinish, FinishReason: &stop}
 			t.Cleanup(func() { close(upstream) })
-			model := &mockLanguageModel{
-				provider_: "anthropic",
-				modelID:   "claude",
-				doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
-					return &provider.StreamResult{Stream: upstream}, nil
-				},
-			}
-			wrapped := middleware.Wrap(middleware.WrapOptions{
-				Model: model,
-				Middleware: []middleware.Middleware{RecordingMiddleware(RecordingOptions{
-					ClientResolver:     func(context.Context) *agento11y.Client { return env.Client },
-					StreamDrainTimeout: drainTimeout,
-				})},
-			})
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			stream := startRecordedStream(t, env, upstream, drainTimeout)
 
-			result, err := wrapped.DoStream(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
-			require.NoError(t, err)
-			for part := range result.Stream {
-				if part.Type == provider.PartFinish {
-					break
-				}
-			}
-			cancel()
+			readUntil(t, stream.result.Stream, provider.PartFinish)
+			stream.cancel()
+			stream.waitRecorded(t)
 			require.NoError(t, env.Client.Shutdown(context.Background()))
 
 			gen := env.SingleGenerationJSON(t)
 			assert.Nil(t, gen["call_error"])
 		})
 	}
+}
+
+type recordedStream struct {
+	result   *provider.StreamResult
+	cancel   context.CancelFunc
+	recorded chan struct{}
+}
+
+func startRecordedStream(t *testing.T, env *testkit.Env, upstream <-chan provider.StreamPart, drainTimeout time.Duration) recordedStream {
+	t.Helper()
+	recorded := make(chan struct{})
+	model := &mockLanguageModel{
+		provider_: "anthropic",
+		modelID:   "claude",
+		doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: upstream}, nil
+		},
+	}
+	wrapped := middleware.Wrap(middleware.WrapOptions{
+		Model: model,
+		Middleware: []middleware.Middleware{RecordingMiddleware(RecordingOptions{
+			ClientResolver:     func(context.Context) *agento11y.Client { return env.Client },
+			StreamDrainTimeout: drainTimeout,
+			OnRecordComplete:   func() { close(recorded) },
+		})},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	result, err := wrapped.DoStream(ctx, provider.CallOptions{Prompt: []provider.Message{provider.UserText("hi")}})
+	require.NoError(t, err)
+	return recordedStream{result: result, cancel: cancel, recorded: recorded}
+}
+
+func (s recordedStream) waitRecorded(t *testing.T) {
+	t.Helper()
+	select {
+	case <-s.recorded:
+	case <-time.After(2 * time.Second):
+		t.Fatal("recording did not complete")
+	}
+}
+
+func readUntil(t *testing.T, stream <-chan provider.StreamPart, partType provider.StreamPartType) {
+	t.Helper()
+	for part := range stream {
+		if part.Type == partType {
+			return
+		}
+	}
+	t.Fatalf("stream closed before a %s part", partType)
+}
+
+func segmentFinish(reason provider.UnifiedFinishReason, input, output int) provider.StreamPart {
+	return provider.StreamPart{
+		Type:         provider.PartFinish,
+		FinishReason: &provider.FinishReason{Unified: reason},
+		Usage: &provider.Usage{
+			InputTokens:  provider.InputTokenUsage{Total: &input},
+			OutputTokens: provider.OutputTokenUsage{Total: &output},
+		},
+	}
+}
+
+func streamPartError(message string) provider.StreamPart {
+	return provider.StreamPart{
+		Type:         provider.PartError,
+		APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: message, StatusCode: 500}),
+	}
+}
+
+func generationTime(t *testing.T, gen map[string]any, key string) time.Time {
+	t.Helper()
+	value, ok := gen[key].(string)
+	require.True(t, ok, "generation has no %s", key)
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	require.NoError(t, err)
+	return parsed
+}
+
+func timeToFirstTokenSeconds(t *testing.T, env *testkit.Env) float64 {
+	t.Helper()
+	var metrics metricdata.ResourceMetrics
+	require.NoError(t, env.Metrics.Collect(context.Background(), &metrics))
+	for _, scope := range metrics.ScopeMetrics {
+		for _, metric := range scope.Metrics {
+			if metric.Name != "gen_ai.client.time_to_first_token" {
+				continue
+			}
+			histogram, ok := metric.Data.(metricdata.Histogram[float64])
+			require.True(t, ok)
+			require.Len(t, histogram.DataPoints, 1)
+			return histogram.DataPoints[0].Sum
+		}
+	}
+	t.Fatal("no time-to-first-token metric recorded")
+	return 0
+}
+
+func outputTexts(t *testing.T, gen map[string]any) []string {
+	t.Helper()
+	output, ok := gen["output"].([]any)
+	require.True(t, ok)
+	var texts []string
+	for _, message := range output {
+		parts, _ := message.(map[string]any)["parts"].([]any)
+		for _, part := range parts {
+			fields, _ := part.(map[string]any)
+			if text, ok := fields["text"].(string); ok {
+				texts = append(texts, text)
+			}
+		}
+	}
+	return texts
+}
+
+func assertUsage(t *testing.T, gen map[string]any, input, output string) {
+	t.Helper()
+	usage, ok := gen["usage"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, input, usage["input_tokens"])
+	assert.Equal(t, output, usage["output_tokens"])
+}
+
+func TestRecordingMiddleware_StreamMultiSegment_OneGeneration(t *testing.T) {
+	env := testkit.NewEnv(t)
+	upstream := make(chan provider.StreamPart, 8)
+	stream := startRecordedStream(t, env, upstream, 0)
+
+	upstream <- provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "msg-1"}
+	upstream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "0", Delta: "first"}
+	upstream <- segmentFinish(provider.FinishReasonToolCalls, 7, 2)
+	readUntil(t, stream.result.Stream, provider.PartFinish)
+	time.Sleep(20 * time.Millisecond)
+	secondSegmentAt := time.Now()
+	upstream <- provider.StreamPart{Type: provider.PartResponseMeta, ResponseID: "msg-2"}
+	upstream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "0", Delta: "second"}
+	readUntil(t, stream.result.Stream, provider.PartTextDelta)
+	secondFinishAt := time.Now()
+	upstream <- segmentFinish(provider.FinishReasonStop, 4, 9)
+	close(upstream)
+	for range stream.result.Stream {
+	}
+	stream.waitRecorded(t)
+	ttft := timeToFirstTokenSeconds(t, env)
+	require.NoError(t, env.Client.Shutdown(context.Background()))
+
+	require.Equal(t, 1, env.RequestCount())
+	gen := env.SingleGenerationJSON(t)
+	assert.Nil(t, gen["call_error"])
+	assertUsage(t, gen, "4", "9")
+	assert.Equal(t, "end_turn", gen["stop_reason"])
+	assert.Equal(t, "msg-2", gen["response_id"])
+	output, ok := gen["output"].([]any)
+	require.True(t, ok)
+	require.Len(t, output, 1)
+	parts := output[0].(map[string]any)["parts"].([]any)
+	require.Len(t, parts, 2)
+	assert.Equal(t, "first", parts[0].(map[string]any)["text"])
+	assert.Equal(t, "second", parts[1].(map[string]any)["text"])
+	assert.False(t, generationTime(t, gen, "completed_at").Before(secondFinishAt))
+	firstTokenAt := generationTime(t, gen, "started_at").Add(time.Duration(ttft * float64(time.Second)))
+	assert.True(t, firstTokenAt.Before(secondSegmentAt), "first-token time comes from the first segment")
+}
+
+func TestRecordingMiddleware_StreamContextEndsAfterFinish(t *testing.T) {
+	tests := []struct {
+		name       string
+		parts      []provider.StreamPart
+		readUntil  provider.StreamPartType
+		closeAfter bool
+		wantErr    string
+		wantFinish bool
+	}{
+		{
+			name:       "stall after finish records the snapshot",
+			parts:      []provider.StreamPart{segmentFinish(provider.FinishReasonToolCalls, 7, 2)},
+			readUntil:  provider.PartFinish,
+			wantFinish: true,
+		},
+		{
+			name: "context ends during the next segment records the snapshot",
+			parts: []provider.StreamPart{
+				segmentFinish(provider.FinishReasonToolCalls, 7, 2),
+				{Type: provider.PartResponseMeta, ResponseID: "msg-2", Usage: &provider.Usage{InputTokens: provider.InputTokenUsage{Total: intPtr(40)}}},
+				{Type: provider.PartReasoningDelta, ID: "0", Delta: "partial"},
+			},
+			readUntil:  provider.PartReasoningDelta,
+			wantFinish: true,
+		},
+		{
+			name:      "provider error after finish",
+			parts:     []provider.StreamPart{segmentFinish(provider.FinishReasonToolCalls, 7, 2), streamPartError("provider failed")},
+			readUntil: provider.PartError,
+			wantErr:   "provider failed",
+		},
+		{
+			name:       "provider error before finish",
+			parts:      []provider.StreamPart{streamPartError("provider failed"), segmentFinish(provider.FinishReasonToolCalls, 7, 2)},
+			readUntil:  provider.PartFinish,
+			wantErr:    "provider failed",
+			wantFinish: true,
+		},
+		{
+			name:       "upstream closes after the context ended",
+			parts:      []provider.StreamPart{segmentFinish(provider.FinishReasonToolCalls, 7, 2)},
+			readUntil:  provider.PartFinish,
+			closeAfter: true,
+			wantFinish: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testkit.NewEnv(t)
+			firstSegment := []provider.StreamPart{
+				{Type: provider.PartResponseMeta, ResponseID: "msg-1"},
+				{Type: provider.PartTextDelta, ID: "0", Delta: "first"},
+			}
+			upstream := make(chan provider.StreamPart, len(firstSegment)+len(tc.parts))
+			for _, part := range append(firstSegment, tc.parts...) {
+				upstream <- part
+			}
+			if !tc.closeAfter {
+				t.Cleanup(func() { close(upstream) })
+			}
+			stream := startRecordedStream(t, env, upstream, 0)
+
+			readUntil(t, stream.result.Stream, tc.readUntil)
+			time.Sleep(20 * time.Millisecond)
+			canceledAt := time.Now()
+			stream.cancel()
+			if tc.closeAfter {
+				close(upstream)
+			}
+			stream.waitRecorded(t)
+			require.NoError(t, env.Client.Shutdown(context.Background()))
+
+			gen := env.SingleGenerationJSON(t)
+			if tc.wantErr == "" {
+				assert.Nil(t, gen["call_error"])
+			} else {
+				callErr, _ := gen["call_error"].(string)
+				assert.Contains(t, callErr, tc.wantErr)
+				assert.NotContains(t, callErr, "context canceled")
+			}
+			assert.Equal(t, "tool_use", gen["stop_reason"])
+			assert.Equal(t, "msg-1", gen["response_id"])
+			assertUsage(t, gen, "7", "2")
+			assert.Equal(t, []string{"first"}, outputTexts(t, gen))
+			completedAt := generationTime(t, gen, "completed_at")
+			if tc.wantFinish {
+				assert.True(t, completedAt.Before(canceledAt), "completed when the finish was observed")
+			} else {
+				assert.False(t, completedAt.Before(canceledAt), "completed when the recording ended")
+			}
+		})
+	}
+}
+
+func TestRecordingMiddleware_StreamErrorAfterOnlyFinishThenClose_RecordsError(t *testing.T) {
+	env := testkit.NewEnv(t)
+	upstream := make(chan provider.StreamPart, 2)
+	upstream <- segmentFinish(provider.FinishReasonStop, 7, 2)
+	upstream <- streamPartError("provider failed")
+	close(upstream)
+	stream := startRecordedStream(t, env, upstream, 0)
+
+	for range stream.result.Stream {
+	}
+	stream.waitRecorded(t)
+	require.NoError(t, env.Client.Shutdown(context.Background()))
+
+	gen := env.SingleGenerationJSON(t)
+	callErr, _ := gen["call_error"].(string)
+	assert.Contains(t, callErr, "provider failed")
+}
+
+func TestRecordingMiddleware_StreamConsumerStopsReadingWithoutCancel(t *testing.T) {
+	t.Run("upstream closes", func(t *testing.T) {
+		env := testkit.NewEnv(t)
+		upstream := make(chan provider.StreamPart, 2)
+		upstream <- segmentFinish(provider.FinishReasonStop, 7, 2)
+		upstream <- provider.StreamPart{Type: provider.PartTextDelta, ID: "0", Delta: "after"}
+		close(upstream)
+		stream := startRecordedStream(t, env, upstream, 0)
+
+		readUntil(t, stream.result.Stream, provider.PartFinish)
+		stream.waitRecorded(t)
+		require.NoError(t, env.Client.Shutdown(context.Background()))
+		assert.Equal(t, []string{"after"}, outputTexts(t, env.SingleGenerationJSON(t)))
+	})
+
+	t.Run("upstream stays open", func(t *testing.T) {
+		env := testkit.NewEnv(t)
+		upstream := make(chan provider.StreamPart, 1)
+		upstream <- segmentFinish(provider.FinishReasonStop, 7, 2)
+		t.Cleanup(func() { close(upstream) })
+		stream := startRecordedStream(t, env, upstream, 0)
+
+		readUntil(t, stream.result.Stream, provider.PartFinish)
+		select {
+		case <-stream.recorded:
+			t.Fatal("recording ended at the finish")
+		case <-time.After(100 * time.Millisecond):
+		}
+		assert.Zero(t, env.RequestCount())
+		stream.cancel()
+		stream.waitRecorded(t)
+		require.NoError(t, env.Client.Shutdown(context.Background()))
+
+		gen := env.SingleGenerationJSON(t)
+		assert.Nil(t, gen["call_error"])
+	})
 }

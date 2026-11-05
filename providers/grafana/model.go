@@ -180,7 +180,7 @@ func decodeFinish(value *wireFinish) (provider.FinishReason, error) {
 		return provider.FinishReason{}, errors.New("grafana: missing finish reason")
 	}
 	switch value.Unified {
-	case provider.FinishReasonStop, provider.FinishReasonLength, provider.FinishReasonContentFilter, provider.FinishReasonToolCalls, provider.FinishReasonError, provider.FinishReasonOther:
+	case provider.FinishReasonStop, provider.FinishReasonLength, provider.FinishReasonContentFilter, provider.FinishReasonToolCalls, provider.FinishReasonError, provider.FinishReasonInterrupted, provider.FinishReasonOther:
 	default:
 		return provider.FinishReason{}, errors.New("grafana: invalid finish reason")
 	}

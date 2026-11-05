@@ -186,7 +186,7 @@ Call-level `gateway` controls SHALL be consumed only by the selector, and protec
 - **WHEN** the handler maps host controls, native options and call headers
 - **THEN** the handler SHALL map every provider-option namespace at every supported scope, including `gateway`, `grafana` and `grafana-ai-sdk`, as an ordinary opaque namespace.
 - **AND** The execution runtime SHALL remove call-level `gateway` before selection and pass it to the selector; it SHALL never reach native adapters as a provider option.
-- **AND** The configured selector SHALL reject call-level `gateway` controls with the fixed reserved-provider-options document, while request-only selection SHALL follow gateway-request-byok.
+- **AND** Configured and request-only selection SHALL apply call-level `gateway` controls under gateway-request-routing and gateway-request-byok, and SHALL refuse any other control with the fixed unsupported-gateway-control document.
 - **AND** Unknown ordinary namespaces and fields SHALL NOT be treated as host controls merely because they are unlisted.
 - **AND** The execution runtime SHALL refuse body-carried call headers whose name matches a credential-bearing header, compared without case sensitivity, covering the set gateway-execution-runtime lists.
 - **AND** The openai and openai-compatible providers apply call headers after setting their own authorization header, so an accepted credential-bearing header would choose the credential presented to those backends.
@@ -197,8 +197,8 @@ Call-level `gateway` controls SHALL be consumed only by the selector, and protec
 - **AND** These refusals SHALL use fixed documents that never echo the offending namespace, field name, header name or value.
 
 #### Scenario: Reserved namespace
-- **WHEN** a configured request carries call-level `providerOptions.gateway`
-- **THEN** the response SHALL be the fixed reserved-provider-options invalid-request document naming neither the namespace contents nor the caller's values
+- **WHEN** a configured request carries a call-level `providerOptions.gateway` member other than `models`, `order` or `only`
+- **THEN** the response SHALL be the fixed unsupported-gateway-control document naming neither the namespace contents nor the caller's values
 - **AND** no model SHALL be invoked
 
 #### Scenario: Former host namespaces are ordinary
@@ -617,3 +617,19 @@ The ProviderWire package SHALL expose a non-fallible, unconfigured host error wr
 #### Scenario: Host refuses BYOK discovery
 - **WHEN** authenticated BYOK discovery selects the closed unsupported category
 - **THEN** the writer SHALL emit the fixed HTTP 400 invalid-request discovery document without catalog access or caller-supplied prose
+
+### Requirement: Fixed routing error documents
+Routing and gateway-control failures SHALL use fixed ProviderWire documents with `param: null`, not retryable, chosen from category and reason alone. Their messages SHALL never echo supplied model IDs, slugs, numbers or control names.
+
+#### Scenario: Routing documents
+- **WHEN** selection fails with each routing outcome
+- **THEN** the documents SHALL be:
+  - unsupported gateway control: HTTP 400, `invalid_request_error`, `invalid_request`, "unsupported gateway control; supported controls are models, order and only, plus byok for request credentials"
+  - routing controls: HTTP 400, `invalid_request_error`, `invalid_request`, "providerOptions.gateway models, order and only must be arrays of nonempty strings; conditional models entries are unsupported"
+  - no candidates: HTTP 400, `invalid_request_error`, `invalid_request`, "providerOptions.gateway.only excludes every candidate"
+  - attempt bound: HTTP 400, `invalid_request_error`, `invalid_request`, "routing exceeds the bound of 8 provider attempts"
+  - fallback model not found: HTTP 404, `model_not_found`, `model_not_found`, "a providerOptions.gateway.models entry is not an available model"
+
+#### Scenario: Client classification of routing documents
+- **WHEN** the pinned TypeScript client and the Go client receive each routing document
+- **THEN** each SHALL classify it with its existing invalid-request or model-not-found error category, as not retryable

@@ -564,16 +564,59 @@ SDK's Go module dependency graph.
   explicit activation under #245. `MODULE=providers/anthropic mise run verify-module`
   downloads, verifies, builds and tests one module; `mise run verify-modules` runs
   every module.
-- **Gateway plugin:** Gateway builds the plugin backend from same-revision SDK
-  source through the replacements in `ai-gateway/go.mod`. Plugin validation runs on pull
+- **Gateway plugin:** Gateway builds the plugin backend in `ai-gateway/pkg`, the
+  standard plugin backend root, from same-revision SDK source through the
+  replacements in `ai-gateway/go.mod`. `mage -v buildPlugin` builds the Linux
+  backends into the built frontend package and adds the license inventory and
+  `SOURCE_REVISION`; `mise run build-ai-gateway-plugin` and the shared plugin
+  workflow both use it. `SOURCE_REVISION` is the checked-out commit in GitHub
+  Actions and `local-unverified` elsewhere. Plugin validation runs on pull
   requests and pushes: manifest regeneration, `mise run test-ai-gateway-frontend`,
   `mise run build-ai-gateway-plugin`, `mise run test-ai-gateway-e2e`,
   `mise run validate-ai-gateway-plugin` and the plugin test host suites. Eligible
   pushes keep the validated package, built from a clean checkout of the push
-  revision, as a workflow artifact. Gateway is not published as a standalone Go
-  module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
+  revision, as a workflow artifact. Full Gateway Go source tests run in parallel
+  with the plugin build and checks. The `Validate AI Gateway plugin` check waits
+  for both jobs to succeed before retaining the validated package; the build
+  job hands off a separate, short-lived candidate artifact. Gateway is not published
+  as a standalone Go module. The plugin follows the create-plugin scaffold: `ai-gateway/.config/`
   changes only through `create-plugin update`, and `ai-gateway/kinds/` holds
   the app manifest source for `pnpm generate:kinds`.
+- **Gateway dev publication:** for each push to `main`, the [publish
+  workflow](.github/workflows/publish-ai-gateway-dev.yml) waits until the push's
+  CI run shows every required source check and plugin validation succeeded, then
+  publishes the plugin to the dev plugin catalog through Grafana's shared plugin
+  CI/CD workflow, which is pinned to a release tag. The version is the
+  `ai-gateway/package.json` version followed by `+` and the full commit SHA, such
+  as `0.1.0-alpha.1+<sha>`, with the `grafana_cloud` scope, and its
+  `SOURCE_REVISION` is that commit. The shared workflow lints, tests, builds,
+  validates, scans and signs the package again before publishing. Publications run
+  one at a time in push order: a newer push replaces one that is still waiting, so
+  not every commit is published. The publish run's summary shows the published
+  version. Publication runs outside the CI workflow, so it never delays or changes
+  the CI evidence that release automation reads. The publish run waits about 20
+  minutes for CI. If CI passes only after a re-run past that window, re-run the
+  publish run by hand, but only while its commit is still the newest on `main`.
+  Publishing needs a `grafana-aigateway-app` plugin stub with the Grafana Labs
+  signature level in the dev catalog, which exists; the shared workflow brings its
+  own credentials and runners. Publication does not publish to the ops or prod
+  catalogs, or create tags or releases.
+- **Gateway dev rollout:** the deployment repository pins the plugin version that
+  each environment's plugin backend runs. After a successful dev publication, the
+  publish workflow opens an auto-merge pull request there that pins dev to exactly
+  the version just published; the pull request links back to the publish run. A
+  newer publication replaces a pin pull request that has not merged yet. Only a
+  commit that is still the head of `main` is pinned: a run whose commit was
+  superseded, including a rerun of an older run, skips the pin with a notice, so
+  it never moves dev back. Once the
+  pin merges and is applied, the dev plugin backend restarts on that version, so
+  dev runs a commit only after its pin pull request merged. Ops and prod pins are
+  not changed. The pin needs a one-time grant in the deployment repository that
+  lets this workflow open those pull requests, and an existing dev pin to update;
+  without the grant the pin job fails, and without the pin it opens no pull
+  request. To roll dev back, pin an earlier published `<version>+<sha>` in the
+  deployment repository. The next `main` publication replaces that pin, so also
+  revert the faulty commit on `main` to keep dev on a good version.
 
 Every `go.mod` replaces each first-party module in its
 build graph with that module's directory, so builds in this repository always use

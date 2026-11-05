@@ -64,9 +64,9 @@ func TestBuildParams_FunctionResultScalarBreakpoints(t *testing.T) {
 			want   string
 		}{
 			{name: "text", output: provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "ok"}, want: `"ok"`},
-			{name: "error text", output: provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "failed"}, want: `"failed"`},
+			{name: "error text", output: provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "failed"}, want: `{"error":"failed"}`},
 			{name: "json", output: provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"ok":true}`)}, want: `{"ok":true}`},
-			{name: "error json", output: provider.ToolResultOutput{Type: provider.ToolOutputErrorJSON, JSON: json.RawMessage(`{"error":"no"}`)}, want: `{"error":"no"}`},
+			{name: "error json", output: provider.ToolResultOutput{Type: provider.ToolOutputErrorJSON, JSON: json.RawMessage(`{"error":"no"}`)}, want: `{"error":{"error":"no"}}`},
 			{name: "denied", output: provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied}, want: `"Tool call execution denied."`},
 		} {
 			t.Run(namespace+"/"+tc.name, func(t *testing.T) {
@@ -242,8 +242,8 @@ func TestBuildParams_CustomResultParity(t *testing.T) {
 	}{
 		{output: provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "ok", ProviderOptions: breakpoint}, want: "ok"},
 		{output: provider.ToolResultOutput{Type: provider.ToolOutputJSON, JSON: json.RawMessage(`{"ok":true}`)}, want: `{"ok":true}`},
-		{output: provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "failed"}, want: "failed"},
-		{output: provider.ToolResultOutput{Type: provider.ToolOutputErrorJSON, JSON: json.RawMessage(`{"error":true}`)}, want: `{"error":true}`},
+		{output: provider.ToolResultOutput{Type: provider.ToolOutputErrorText, Text: "failed"}, want: `{"error":"failed"}`},
+		{output: provider.ToolResultOutput{Type: provider.ToolOutputErrorJSON, JSON: json.RawMessage(`{"error":true}`)}, want: `{"error":{"error":true}}`},
 		{output: provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied}, want: "Tool call execution denied."},
 	} {
 		out := tc.output

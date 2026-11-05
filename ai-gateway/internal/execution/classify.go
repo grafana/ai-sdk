@@ -29,9 +29,14 @@ const (
 	CategoryTimeout
 	CategoryCancellation
 	CategoryInternal
+	// CategoryProviderStream is an in-band provider stream error without an
+	// HTTP status or a cancellation, deadline or transport cause. Only
+	// [ClassifyStreamPart] returns it.
+	CategoryProviderStream
 )
 
-// Reason refines [CategoryInvalidRequest] for host policy refusals.
+// Reason refines [CategoryInvalidRequest] for host policy and routing refusals
+// and [CategoryModelNotFound] for unknown fallback models.
 type Reason uint8
 
 const (
@@ -41,11 +46,19 @@ const (
 	ReasonReservedProviderOptions
 	// ReasonProtectedCallHeader reports a credential-bearing call header.
 	ReasonProtectedCallHeader
+	// ReasonRoutingControls reports malformed models, order or only controls.
+	ReasonRoutingControls
+	// ReasonNoCandidates reports an only filter that excludes every candidate.
+	ReasonNoCandidates
+	// ReasonAttemptBound reports a composed chain above the attempt bound.
+	ReasonAttemptBound
+	// ReasonFallbackModel reports a models entry that is not an available model.
+	ReasonFallbackModel
 )
 
-// ClassifySelection classifies an error returned by [Runtime.Call]: a policy
-// refusal, a host sentinel, a catalog error, or otherwise as
-// [ClassifyProvider] does.
+// ClassifySelection classifies an error returned by [Runtime.Call]: invalid
+// tool history, a policy refusal, a host sentinel, a catalog error, or
+// otherwise as [ClassifyProvider] does.
 func ClassifySelection(err error) (category Category, reason Reason) {
 	defer func() {
 		if recover() != nil {
@@ -56,6 +69,8 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 		return CategoryInternal, ReasonNone
 	}
 	switch {
+	case errors.Is(err, ErrInvalidToolHistory):
+		return CategoryInvalidRequest, ReasonNone
 	case errors.Is(err, ErrAccountAccess):
 		return CategoryPermission, ReasonNone
 	case errors.Is(err, ErrInvalidBYOK):
@@ -68,6 +83,14 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 		return CategoryInvalidRequest, ReasonReservedProviderOptions
 	case errors.Is(err, ErrProtectedCallHeader):
 		return CategoryInvalidRequest, ReasonProtectedCallHeader
+	case errors.Is(err, ErrRoutingControls):
+		return CategoryInvalidRequest, ReasonRoutingControls
+	case errors.Is(err, ErrNoRoutingCandidates):
+		return CategoryInvalidRequest, ReasonNoCandidates
+	case errors.Is(err, ErrRoutingAttemptBound):
+		return CategoryInvalidRequest, ReasonAttemptBound
+	case errors.Is(err, ErrUnknownFallbackModel):
+		return CategoryModelNotFound, ReasonFallbackModel
 	case errors.Is(err, catalog.ErrUnknownModel):
 		return CategoryModelNotFound, ReasonNone
 	}
@@ -86,7 +109,7 @@ func ClassifyProvider(err error) (category Category) {
 		return CategoryInternal
 	}
 	switch {
-	case errors.Is(err, ErrTranslation):
+	case errors.Is(err, ErrTranslation), errors.Is(err, ErrInvalidOutput):
 		return CategoryInternal
 	case errors.Is(err, catalog.ErrUnsupportedRequest):
 		return CategoryInvalidRequest
@@ -136,7 +159,7 @@ func ClassifyStreamPart(err error) (category Category) {
 			if category, ok := classifyTransport(err); ok {
 				return category
 			}
-			return CategoryUpstream
+			return CategoryProviderStream
 		}
 		if apiError.StatusCode < 100 || apiError.StatusCode > 599 {
 			return CategoryInternal

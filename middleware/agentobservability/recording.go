@@ -48,6 +48,15 @@ var nilContextProviderLogger sync.Once
 // each part via a StreamRecorder, and records the assembled Generation when
 // upstream closes or the request context is canceled.
 //
+// A stream that carries several response segments, each ending in its own
+// PartFinish, records one Generation covering all of them. A finish does not
+// end the recording, so the Generation is enqueued before the tee channel
+// closes rather than before the finish is forwarded. Consumers that close or
+// shut down the shared agento11y client after reading a finish must drain the
+// stream to EOF or wait for RecordingOptions.OnRecordComplete first. A
+// consumer that stops at finish and cancels still records the finished
+// segments without a cancellation error.
+//
 // This middleware does NOT open its own OTel span. The agento11y client's
 // StartGeneration / StartStreamingGeneration already opens the canonical
 // generation span using gen_ai.* semantic conventions; wrapping that span
@@ -138,7 +147,7 @@ func wrapRecordingStream(ctx context.Context, opts RecordingOptions, p middlewar
 	streamRec := NewStreamRecorder(start, p.Params)
 	streamRec.identitySource = opts.IdentitySource
 	if upstream == nil {
-		recorder.SetResult(filterGeneration(streamRec.Generation(), start, streamRec.finishReasonForFilter(), opts.GenerationFilter), nil)
+		recorder.SetResult(filterGeneration(streamRec.Generation(), start, provider.FinishReason{}, opts.GenerationFilter), nil)
 		finishRecordingAndComplete(recorder, opts.OnRecordError, complete)
 		return nil, nil
 	}
@@ -172,9 +181,15 @@ func recordingContext(ctx context.Context, source ContextSource) context.Context
 }
 
 // runStreamTee shuttles parts from the inner-model stream to the consumer
-// while observing each event through the StreamRecorder. It finalizes the
-// recorder (SetResult and, for stream errors or cancellation, SetCallError)
-// once the upstream channel closes or the request context cancels.
+// while observing each event through the StreamRecorder. A stream may carry
+// several response segments, each ending in a PartFinish; every segment is
+// observed into one generation. The recorder ends once upstream closes or the
+// request context ends, before the consumer channel closes.
+//
+// When the context ends after a finish, the generation records the state
+// captured at the last finish, completed when that finish was observed, unless
+// a provider error followed it. Cancellation or timeout is the call error only
+// when no finish was observed; otherwise the latest provider error is.
 func runStreamTee(
 	ctx context.Context,
 	upstream <-chan provider.StreamPart,
@@ -189,22 +204,39 @@ func runStreamTee(
 ) {
 	var recordErr error
 	finalized := false
-	finalize := func(canceled bool) {
-		if finalized {
-			return
-		}
+	finishSeen := false
+	var snapshot *streamState
+	captureSnapshot := func() {
+		snapshot = nil
+		defer streamrecover.Recover(func() {})
+		state := streamRec.currentState()
+		state.completedAt = time.Now().UTC()
+		snapshot = &state
+	}
+	finalize := func(contextEnded bool) {
 		finalized = true
 		defer streamrecover.Recover(func() {})
-		if first := streamRec.FirstChunkAt(); !first.IsZero() {
-			recorder.SetFirstTokenAt(first)
+		var state streamState
+		var callErr error
+		switch {
+		case contextEnded && !finishSeen:
+			state = streamRec.currentState()
+			callErr = ctx.Err()
+		case contextEnded && snapshot != nil:
+			state = *snapshot
+			callErr = state.callError
+		default:
+			state = streamRec.currentState()
+			callErr = state.callError
 		}
-		if canceled {
-			recorder.SetCallError(ctx.Err())
-		} else if callErr := streamRec.CallError(); callErr != nil {
+		if !state.firstChunkAt.IsZero() {
+			recorder.SetFirstTokenAt(state.firstChunkAt)
+		}
+		if callErr != nil {
 			recorder.SetCallError(callErr)
 		}
 
-		gen := streamRec.Generation()
+		gen := streamRec.generationFrom(state)
 		// Carry caller-supplied identity into the final Generation in case the
 		// seed got normalized away by the recorder.
 		if gen.UserID == "" {
@@ -216,16 +248,12 @@ func runStreamTee(
 		if gen.AgentVersion == "" {
 			gen.AgentVersion = ctxInfo.AgentVersion
 		}
-		recorder.SetResult(filterGeneration(gen, streamRec.seed, streamRec.finishReasonForFilter(), generationFilter), nil)
+		recorder.SetResult(filterGeneration(gen, streamRec.seed, state.finishReasonValue(), generationFilter), nil)
 		recordErr = endRecording(recorder)
 	}
 	defer func() {
-		// A finish part finalizes and enqueues the generation before it is
-		// forwarded, so a consumer that stops at finish cannot cancel the stream
-		// or close the shared client ahead of the recording. Streams without one
-		// finalize when upstream closes or the context ends. Lifecycle callbacks
-		// run only after close so consumer callbacks cannot delay downstream
-		// completion.
+		// Lifecycle callbacks run only after close so consumer callbacks cannot
+		// delay downstream completion.
 		if !finalized {
 			finalized = true
 			recordErr = endRecording(recorder)
@@ -236,7 +264,6 @@ func runStreamTee(
 	}()
 
 	canceled := false
-	finished := false
 streamLoop:
 	for {
 		if drainTimeout > 0 && ctx.Err() != nil {
@@ -249,12 +276,13 @@ streamLoop:
 				canceled = ctx.Err() != nil
 				break streamLoop
 			}
-			if !finished {
-				streamRec.Observe(part)
-				if part.Type == provider.PartFinish {
-					finished = true
-					finalize(false)
-				}
+			streamRec.Observe(part)
+			switch {
+			case part.Type == provider.PartFinish:
+				finishSeen = true
+				captureSnapshot()
+			case part.Type == provider.PartError && part.APICallError != nil:
+				snapshot = nil
 			}
 			if drainTimeout > 0 && ctx.Err() != nil {
 				canceled = true

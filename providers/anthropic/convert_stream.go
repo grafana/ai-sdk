@@ -58,6 +58,44 @@ type streamAdapter struct {
 	responseHeaders      map[string]string
 }
 
+type interruptionTracker struct {
+	hasOutput      bool
+	hasStreamError bool
+	lastFinish     *provider.StreamPart
+}
+
+func (t *interruptionTracker) observe(part provider.StreamPart) {
+	switch part.Type {
+	case provider.PartResponseMeta:
+		t.hasOutput = false
+	case provider.PartFinish:
+		t.hasOutput = false
+		t.lastFinish = &part
+	case provider.PartError:
+		t.hasStreamError = true
+	case provider.PartTextDelta, provider.PartReasoningDelta, provider.PartToolInputDelta:
+		t.hasOutput = t.hasOutput || part.Delta != ""
+	case provider.PartToolCall:
+		t.hasOutput = true
+	}
+}
+
+func (t *interruptionTracker) finish() (provider.StreamPart, bool) {
+	if !t.hasOutput || t.hasStreamError {
+		return provider.StreamPart{}, false
+	}
+	finish := provider.StreamPart{
+		Type:         provider.PartFinish,
+		FinishReason: &provider.FinishReason{Unified: provider.FinishReasonInterrupted},
+		Usage:        &provider.Usage{},
+	}
+	if t.lastFinish != nil {
+		finish.Usage = t.lastFinish.Usage
+		finish.ProviderMetadata = t.lastFinish.ProviderMetadata
+	}
+	return finish, true
+}
+
 func optionalMessageString(value string, present bool) *string {
 	if !present {
 		return nil

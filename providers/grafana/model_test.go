@@ -717,3 +717,21 @@ func TestModel_UnaryCustomContent(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeGenerate_FinishReasons(t *testing.T) {
+	for _, reason := range []provider.UnifiedFinishReason{
+		provider.FinishReasonStop,
+		provider.FinishReasonLength,
+		provider.FinishReasonContentFilter,
+		provider.FinishReasonToolCalls,
+		provider.FinishReasonError,
+		provider.FinishReasonInterrupted,
+		provider.FinishReasonOther,
+	} {
+		result, err := decodeGenerate([]byte(`{"content":[],"finishReason":{"unified":"` + string(reason) + `"},"usage":{"inputTokens":{},"outputTokens":{}}}`))
+		require.NoError(t, err, reason)
+		assert.Equal(t, provider.FinishReason{Unified: reason}, result.FinishReason)
+	}
+	_, err := decodeGenerate([]byte(`{"content":[],"finishReason":{"unified":"future"},"usage":{"inputTokens":{},"outputTokens":{}}}`))
+	require.Error(t, err)
+}
