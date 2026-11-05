@@ -33,6 +33,9 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		return nil, warnings, err
 	}
 
+	if err := openAIOpts.Moderation.Validate(); err != nil {
+		return nil, warnings, err
+	}
 	if err := openAIOpts.Prediction.Validate(); err != nil {
 		return nil, warnings, err
 	}
@@ -56,6 +59,9 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		"messages": messages,
 	}
 
+	if openAIOpts.Moderation != nil {
+		body["moderation"] = openAIOpts.Moderation
+	}
 	if openAIOpts.Prediction != nil {
 		body["prediction"] = openAIOpts.Prediction
 	}
@@ -300,6 +306,7 @@ func toCamelCase(s string) string {
 }
 
 var openAIOptionFields = map[string]struct{}{
+	"moderation":                     {},
 	"prediction":                     {},
 	"web_search_options":             {},
 	"user":                           {},
@@ -340,6 +347,9 @@ func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, e
 }
 
 func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
+	if src.Moderation != nil {
+		dst.Moderation = src.Moderation
+	}
 	if src.Prediction != nil {
 		dst.Prediction = src.Prediction
 	}
