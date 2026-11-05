@@ -13,7 +13,8 @@ import (
 // ErrStreamBufferLimit indicates that a buffered attempt exceeded its byte or part limit.
 var ErrStreamBufferLimit = errors.New("fallback: stream buffer limit exceeded")
 
-// ErrIncompleteStream indicates that a buffered stream closed without a finish part.
+// ErrIncompleteStream indicates that a buffered stream closed without a successful
+// finish part, including streams whose finish reason is error or interrupted.
 var ErrIncompleteStream = errors.New("fallback: stream ended without finish")
 
 const maxBufferedStreamParts = 4096
@@ -113,7 +114,7 @@ func collectStream(ctx context.Context, result *provider.StreamResult, maxBytes 
 				if part.FinishReason == nil {
 					return nil, ErrInvalidResult
 				}
-				if part.FinishReason.Unified == provider.FinishReasonError {
+				if part.FinishReason.Unified == provider.FinishReasonError || part.FinishReason.Unified == provider.FinishReasonInterrupted {
 					return nil, ErrIncompleteStream
 				}
 				finished = true

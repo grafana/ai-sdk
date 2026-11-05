@@ -29,8 +29,7 @@ func TestRecordingMiddleware_InclusiveUsageExport(t *testing.T) {
 				doStream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 					parts := make(chan provider.StreamPart, 3)
 					parts <- provider.StreamPart{Type: provider.PartTextDelta, Delta: "hi", Usage: &usage}
-					provisional := provider.Usage{InputTokens: provider.InputTokenUsage{Total: intPtr(10)}, OutputTokens: provider.OutputTokenUsage{Total: intPtr(1)}}
-					parts <- provider.StreamPart{Type: provider.PartFinish, Usage: &provisional}
+					parts <- provider.StreamPart{Type: provider.PartFinish}
 					close(parts)
 					return &provider.StreamResult{Stream: parts}, nil
 				},

@@ -212,9 +212,9 @@ work is excluded. Release writes default off until explicit activation.
 Gateway has a separate application contract: main and versioned plugin packages build
 from same-revision source through the replacements in `ai-gateway/go.mod` and pass plugin build, licensing and validator checks,
 with no dependency on prior SDK tags. CI keeps the
-validated package of eligible pushes as a workflow artifact; this repository does not
-publish the plugin yet. Its release also updates `ai-gateway/package.json`, the plugin's
-version source. Gateway release readiness fails closed pending a plugin publication
+validated package of eligible pushes as a workflow artifact, and publishes `main` builds
+to the dev plugin catalog only; versioned plugin releases are not published yet. Its release also updates `ai-gateway/package.json`, the plugin's
+version source. Gateway release readiness fails closed pending a versioned plugin publication
 workflow. Gateway integration is separate: library readiness does not substitute for
 application/package readiness, and Gateway attribution and delivery do not gate library
 activation. Library protection settings and live publication follow the activation

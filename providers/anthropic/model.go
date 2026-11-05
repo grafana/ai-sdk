@@ -201,6 +201,7 @@ func consumeStream(ctx context.Context, items <-chan messageStreamItem, buffered
 		defer streamrecover.Recover(func() { parts <- streamrecover.Part() })
 		consumeStreamParts(ctx, items, buffered, parts, mapping, warnings, usesJsonResponseTool, citDocs, generateID, providerName, markCodeExecutionDynamic, responseHeaders)
 	}()
+	var interruption interruptionTracker
 	for {
 		select {
 		case <-ctx.Done():
@@ -208,8 +209,15 @@ func consumeStream(ctx context.Context, items <-chan messageStreamItem, buffered
 			return
 		case part, ok := <-parts:
 			if !ok {
+				if finish, interrupted := interruption.finish(); interrupted && ctx.Err() == nil {
+					select {
+					case ch <- finish:
+					case <-ctx.Done():
+					}
+				}
 				return
 			}
+			interruption.observe(part)
 			select {
 			case ch <- part:
 			case <-ctx.Done():

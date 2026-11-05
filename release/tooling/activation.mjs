@@ -58,9 +58,9 @@ export async function verifyProtections(github, approval, repositoryReader = git
   assert.ok(immutable, 'approved immutable tag ruleset is absent, changed, or conflicts with its approval');
 }
 
-export async function waitForToolingCI(github, sha, { attempts = 60, wait = () => sleep(20_000) } = {}) {
+export async function waitForToolingCI(github, sha, { attempts = 60, wait = () => sleep(20_000), jobs = SOURCE_JOBS } = {}) {
   for (let attempt = 0; attempt < attempts; attempt++) {
-    try { return await successfulRun(github, 'ci.yml', 'push', sha, 'main', SOURCE_JOBS); }
+    try { return await successfulRun(github, 'ci.yml', 'push', sha, 'main', jobs); }
     catch (error) {
       if (attempt === attempts - 1) throw error;
       await wait();

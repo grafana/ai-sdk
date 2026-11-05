@@ -19,6 +19,7 @@ const (
 	FinishReasonContentFilter UnifiedFinishReason = "content-filter"
 	FinishReasonToolCalls     UnifiedFinishReason = "tool-calls"
 	FinishReasonError         UnifiedFinishReason = "error"
+	FinishReasonInterrupted   UnifiedFinishReason = "interrupted"
 	FinishReasonOther         UnifiedFinishReason = "other"
 )
 

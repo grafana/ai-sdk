@@ -19,6 +19,7 @@ const (
 	safeInternal
 	safePermission
 	safeBYOKDiscovery
+	safeProviderStream
 )
 
 type safeError struct {
@@ -40,6 +41,7 @@ var safeCategories = [...]safeErrorCategory{
 	execution.CategoryTimeout:          safeTimeout,
 	execution.CategoryCancellation:     safeCancellation,
 	execution.CategoryInternal:         safeInternal,
+	execution.CategoryProviderStream:   safeProviderStream,
 }
 
 func safeErrorFor(category execution.Category, reason execution.Reason) safeError {
@@ -52,6 +54,14 @@ func safeErrorFor(category execution.Category, reason execution.Reason) safeErro
 		value.reason = policyReservedProviderOptions
 	case execution.ReasonProtectedCallHeader:
 		value.reason = policyProtectedCallHeader
+	case execution.ReasonRoutingControls:
+		value.reason = routingControls
+	case execution.ReasonNoCandidates:
+		value.reason = routingNoCandidates
+	case execution.ReasonAttemptBound:
+		value.reason = routingAttemptBound
+	case execution.ReasonFallbackModel:
+		value.reason = routingFallbackModel
 	}
 	return value
 }

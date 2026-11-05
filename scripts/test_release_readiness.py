@@ -130,12 +130,12 @@ class ReleaseReadinessTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, chdir(directory):
             Path(readiness.MANIFEST).write_text('{".": "0.1.0"}')
             for release in [False, True]:
-                pr = self.pr if release else {"user": {"id": 1}, "base": {"sha": "base"}, "head": {"ref": "fix"}, "title": "fix: bug"}
+                pr = self.pr if release else {"user": {"id": 1}, "base": {"sha": "base"}, "head": {"ref": "fix", "sha": "head"}, "title": "fix: bug"}
                 Path("pr.json").write_text(json.dumps(pr))
                 Path("evidence.json").write_text("stale evidence")
                 with patch("sys.argv", ["readiness", "--pull-request", "pr.json", "--evidence", "evidence.json"]), \
                      patch.object(readiness, "tree", return_value={readiness.MANIFEST: "blob"}), \
-                     patch.object(readiness, "run", side_effect=['{".": "0.1.0"}', json.dumps(self.config)]), \
+                     patch.object(readiness, "run", side_effect=["base head", '{".": "0.1.0"}', json.dumps(self.config)]), \
                      patch.object(readiness, "verify_requirements") as library:
                     if release:
                         with self.assertRaisesRegex(ValueError, "release must change component versions"):
@@ -144,6 +144,64 @@ class ReleaseReadinessTest(unittest.TestCase):
                         readiness.main()
                     library.assert_not_called()
                     self.assertFalse(Path("evidence.json").exists())
+
+    def test_candidate_base_requires_exact_merge_head(self):
+        for parents in ["", "base", "base old-head", "base head extra"]:
+            with self.subTest(parents=parents), patch.object(readiness, "run", return_value=parents):
+                with self.assertRaisesRegex(ValueError, "current PR head"):
+                    readiness.candidate_base(self.pr)
+        with patch.object(readiness, "run", return_value="new-base head"):
+            self.assertEqual(readiness.candidate_base(self.pr), "new-base")
+
+    def test_stale_api_base_classifies_only_changes_from_checkout_base(self):
+        for manifest_change in [False, True]:
+            with self.subTest(manifest_change=manifest_change), tempfile.TemporaryDirectory() as directory:
+                repo = Path(directory, "repo")
+                repo.mkdir()
+                git = self.git_repository(repo)
+                with chdir(repo):
+                    Path(readiness.MANIFEST).write_text('{".": "0.1.0"}')
+                    Path("release-please-config.json").write_text(json.dumps(self.config))
+                    git("add", ".")
+                    git("commit", "-qm", "old base")
+                    old_base = git("rev-parse", "HEAD")
+                    git("checkout", "-qb", "feature")
+                    Path("core.go").write_text("package core\n")
+                    if manifest_change:
+                        Path(readiness.MANIFEST).write_text('{".": "0.1.0", "providers/openai": "0.1.0"}')
+                    git("add", ".")
+                    git("commit", "-qm", "feature")
+                    head = git("rev-parse", "HEAD")
+                    git("checkout", "--detach", old_base)
+                    Path(readiness.MANIFEST).write_text('{".": "0.2.0"}')
+                    git("add", ".")
+                    git("commit", "-qm", "intervening release")
+                    if manifest_change:
+                        git("merge", "--no-ff", "--no-commit", "-s", "ours", head)
+                        Path(readiness.MANIFEST).write_text('{".": "0.2.0", "providers/openai": "0.1.0"}')
+                        git("add", ".")
+                        git("commit", "-qm", "merge")
+                    else:
+                        git("merge", "--no-ff", "-m", "merge", head)
+                    pr = copy.deepcopy(self.pr)
+                    pr["base"]["sha"], pr["head"]["sha"] = old_base, head
+                    pr["user"] = {"login": "contributor", "type": "User", "id": 1}
+                    pr["head"]["ref"], pr["title"] = "fix", "fix: bug"
+                    metadata = Path(directory, "pr.json")
+                    metadata.write_text(json.dumps(pr))
+                    evidence = Path(directory, "evidence.json")
+                    evidence.write_text("stale evidence")
+                    with patch("sys.argv", ["readiness", "--pull-request", str(metadata), "--evidence", str(evidence)]):
+                        if manifest_change:
+                            with self.assertRaisesRegex(ValueError, "dedicated release App"):
+                                readiness.main()
+                        else:
+                            readiness.main()
+                            pr["title"] = "chore: release main"
+                            metadata.write_text(json.dumps(pr))
+                            with self.assertRaisesRegex(ValueError, "release must change component versions"):
+                                readiness.main()
+                    self.assertFalse(evidence.exists())
 
     def test_generated_changelog_preserves_history(self):
         notes = "## 0.2.0 (2026-10-20)\n\n* Fix"
@@ -321,6 +379,13 @@ class ReleaseReadinessTest(unittest.TestCase):
                     self.assertEqual(record["toolingRevision"], base)
                     self.assertEqual(record["bodyDigest"], hashlib.sha256(pr["body"].encode()).hexdigest())
                     self.assertEqual(record["components"], {".": "0.2.0"})
+                    pr["base"]["sha"] = head
+                    metadata.write_text(json.dumps(pr))
+                    with self.assertRaisesRegex(ValueError, "release PR base is stale"):
+                        readiness.main()
+                    self.assertFalse(evidence.exists())
+                    pr["base"]["sha"] = base
+                    metadata.write_text(json.dumps(pr))
                     for failure in ["library", "live"]:
                         with self.subTest(failure=failure):
                             target = "verify_requirements" if failure == "library" else "verify_live_candidate"

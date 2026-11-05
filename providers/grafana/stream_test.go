@@ -162,6 +162,26 @@ func TestModel_StreamRawUsage(t *testing.T) {
 	}
 }
 
+func TestModel_StreamValueLessRaw(t *testing.T) {
+	for _, include := range []bool{true, false} {
+		t.Run(fmt.Sprint(include), func(t *testing.T) {
+			m := streamFromBody(t, io.NopCloser(strings.NewReader(sseFrame(`{"type":"raw"}`)+sseFrame(finishEvent))))
+			result, err := m.DoStream(context.Background(), provider.CallOptions{IncludeRawChunks: include})
+			require.NoError(t, err)
+			parts := collectParts(t, result)
+			if !include {
+				require.Len(t, parts, 1)
+				assert.Equal(t, provider.PartFinish, parts[0].Type)
+				return
+			}
+			require.Len(t, parts, 2)
+			assert.Equal(t, provider.PartRaw, parts[0].Type)
+			assert.Nil(t, parts[0].RawValue)
+			assert.Equal(t, provider.PartFinish, parts[1].Type)
+		})
+	}
+}
+
 func TestModel_StreamRawUsageSize(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -307,7 +327,7 @@ func TestModel_StreamEOF(t *testing.T) {
 		name, payload string
 		count         int
 	}{
-		{"empty", "", 0}, {"DONE", sseFrame("[DONE]"), 0}, {"finish", sseFrame(finishEvent), 1}, {"without finish", sseFrame(`{"type":"text-start","id":"a"}`), 1}, {"unterminated event", "data: {\"type\":\"text-start\",\"id\":\"a\"}", 0},
+		{"empty", "", 0}, {"DONE", sseFrame("[DONE]"), 0}, {"finish", sseFrame(finishEvent), 1}, {"without finish", sseFrame(`{"type":"text-start","id":"a"}`), 1}, {"after status-less error", sseFrame(`{"type":"text-start","id":"a"}`) + sseFrame(`{"type":"error","error":`+statusLessStreamError+`}}`), 2}, {"unterminated event", "data: {\"type\":\"text-start\",\"id\":\"a\"}", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := streamFromBody(t, io.NopCloser(strings.NewReader(tc.payload)))
@@ -316,7 +336,10 @@ func TestModel_StreamEOF(t *testing.T) {
 			parts := collectParts(t, result)
 			require.Len(t, parts, tc.count)
 			for _, part := range parts {
-				assert.NotEqual(t, provider.PartError, part.Type)
+				if part.Type == provider.PartError {
+					require.NotNil(t, part.APICallError)
+					assert.Equal(t, "provider stream error", part.APICallError.Message)
+				}
 			}
 		})
 	}
@@ -364,7 +387,7 @@ func TestModel_StreamInvalidEvents(t *testing.T) {
 		`{"type":"stream-start","warnings":[{"Type":"other","message":"safe"}]}`,
 		`{"type":"stream-start","warnings":[{"type":"other","Message":"safe"}]}`,
 		`{"type":"custom"}`, `{"type":"custom","kind":null}`, `{"type":"custom","kind":7}`, `{"type":"custom","kind":"x.y","providerMetadata":{"x":null}}`,
-		`{"type":"reasoning-start"}`, `{"type":"text-start"}`, `{"type":"text-delta","id":"a"}`, `{"type":"text-end","id":null}`, `{"type":"finish"}`, `{"type":"stream-start"}`, `{"type":"stream-start","warnings":[{"type":"unknown"}]}`, `{"type":"response-metadata","timestamp":"bad"}`, `{"type":"raw"}`, `{"type":"error","error":{"message":"bad"}}`, `{"type":"error","error":{"message":"safe","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":false}}`, `{"type":"text-delta","id":"a","delta":1}`, `{"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{"total":-1},"outputTokens":{}}}`, `{"type":`, "[DONE] ", "",
+		`{"type":"reasoning-start"}`, `{"type":"text-start"}`, `{"type":"text-delta","id":"a"}`, `{"type":"text-end","id":null}`, `{"type":"finish"}`, `{"type":"stream-start"}`, `{"type":"stream-start","warnings":[{"type":"unknown"}]}`, `{"type":"response-metadata","timestamp":"bad"}`, `{"type":"error","error":{"message":"bad"}}`, `{"type":"error","error":{"message":"safe","type":"internal_server_error","param":null,"code":"upstream_error","statusCode":502,"retryable":false}}`, `{"type":"text-delta","id":"a","delta":1}`, `{"type":"finish","finishReason":{"unified":"stop"},"usage":{"inputTokens":{"total":-1},"outputTokens":{}}}`, `{"type":`, "[DONE] ", "",
 	} {
 		name := event
 		if len(name) > 120 {

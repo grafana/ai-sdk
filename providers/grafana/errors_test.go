@@ -110,6 +110,43 @@ func TestStreamError_EvidenceRetention(t *testing.T) {
 	}
 }
 
+const statusLessStreamError = `{"message":"provider stream error","type":"internal_server_error","param":null,"code":"provider_error","retryable":false`
+
+func TestStreamError_StatusLess(t *testing.T) {
+	for _, tc := range []struct {
+		name, fields string
+		data         json.RawMessage
+	}{
+		{"absent status", "", nil},
+		{"null status", `,"statusCode":null`, nil},
+		{"data", `,"data":{"nativeError":{"message":"[redacted]"}}`, json.RawMessage(`{"nativeError":{"message":"[redacted]"}}`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part, err := decodeStreamPart([]byte(`{"type":"error","error":` + statusLessStreamError + tc.fields + `}}`))
+			require.NoError(t, err)
+			assert.Equal(t, provider.PartError, part.Type)
+			require.NotNil(t, part.APICallError)
+			assert.Equal(t, 0, part.APICallError.StatusCode)
+			assert.False(t, part.APICallError.IsRetryable)
+			assert.Equal(t, "provider stream error", part.APICallError.Message)
+			assert.Equal(t, tc.data, part.APICallError.Data)
+		})
+	}
+	upstream := `{"message":"upstream failure","type":"internal_server_error","param":null,"code":"upstream_error","retryable":true`
+	for _, body := range []string{
+		statusLessStreamError + `,"statusCode":0}`,
+		statusLessStreamError + `,"statusCode":502}`,
+		strings.Replace(statusLessStreamError, `,"retryable":false`, "", 1) + "}",
+		strings.Replace(statusLessStreamError, `"retryable":false`, `"retryable":true`, 1) + "}",
+		strings.Replace(statusLessStreamError, "internal_server_error", "invalid_request_error", 1) + "}",
+		upstream + "}",
+		upstream + `,"statusCode":null}`,
+	} {
+		_, err := decodeStreamPart([]byte(`{"type":"error","error":` + body + `}`))
+		require.Error(t, err, body)
+	}
+}
+
 func TestGatewayError_StandardJSONDecoding(t *testing.T) {
 	body := `{"Error":{"Message":"safe","Type":"internal_server_error","Code":"upstream_error","Param":null},"future":{"value":1e2}}`
 	model := developerEvidenceModel(t, http.StatusBadGateway, "application/json", body)
@@ -140,6 +177,7 @@ func TestGatewayError_InvalidEnvelopes(t *testing.T) {
 		{"unknown type", strings.Replace(valid, "invalid_request_error", "private-type", 1), 400},
 		{"unknown code", strings.Replace(valid, `"code":"invalid_request"`, `"code":"private-code"`, 1), 400},
 		{"wrong status", valid, 500},
+		{"stream-only code", `{"error":{"message":"provider stream error","type":"internal_server_error","param":null,"code":"provider_error"}}`, 500},
 		{"empty message", strings.Replace(valid, "safe", "", 1), 400},
 		{"missing param", strings.Replace(valid, `"param":null,`, "", 1), 400},
 		{"non-null param", strings.Replace(valid, `"param":null`, `"param":"private-path"`, 1), 400},
