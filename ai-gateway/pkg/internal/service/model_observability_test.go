@@ -1332,7 +1332,11 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 			if !tc.stall {
 				assert.Equal(t, string(provider.FinishReasonStop), finish["ai_sdk.finish_reason"])
 			}
-			metrics := testMetrics(t, telemetry)
+			var metrics string
+			require.Eventually(t, func() bool {
+				metrics = testMetrics(t, telemetry)
+				return strings.Contains(metrics, "aisdk_model_requests_total{")
+			}, time.Second, time.Millisecond)
 			assert.Equal(t, 1, strings.Count(metrics, "aisdk_model_requests_total{"))
 			assert.Contains(t, metrics, tc.metricLabels)
 			status := `status="success"`
