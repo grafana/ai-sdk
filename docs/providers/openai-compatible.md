@@ -167,3 +167,11 @@ input/output score or block policy. With Chat metadata preservation enabled,
 channels in unary responses and streaming custom metadata events. Invalid scores,
 missing required fields or invalid result unions fail decoding. This codec does
 not substitute local moderation for the native service.
+
+`PromptCacheOptions` preserves native implicit/explicit mode and request TTL.
+Content metadata can attach a validated `prompt_cache_breakpoint`; a singleton
+user text part with a breakpoint remains an array. For collapsed system,
+assistant or tool text, the local typed `ChatTextParts` marker restores boundaries
+only if its concatenated text equals the common message. The marker is consumed
+locally and cannot replace role, call identity or text. These cache extensions
+leave ordinary provider request snapshots unchanged.

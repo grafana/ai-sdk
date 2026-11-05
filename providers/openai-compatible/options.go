@@ -115,6 +115,8 @@ type OpenAIOptions struct {
 
 	Moderation *ChatModerationOptions `json:"moderation,omitempty"`
 
+	PromptCacheOptions *ChatPromptCacheOptions `json:"prompt_cache_options,omitempty"`
+
 	extraFields map[string]any
 }
 
