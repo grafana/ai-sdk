@@ -23,10 +23,17 @@ func cacheParts(m message) []cacheContentPart {
 }
 func (r mappedRequest) hasCacheBreakpoints() bool {
 	for _, m := range r.Messages {
-		for _, p := range cacheParts(m) {
-			if p.Breakpoint != nil {
-				return true
-			}
+		if messageHasCacheBreakpoint(m) {
+			return true
+		}
+	}
+	return false
+}
+
+func messageHasCacheBreakpoint(m message) bool {
+	for _, p := range cacheParts(m) {
+		if p.Breakpoint != nil {
+			return true
 		}
 	}
 	return false
@@ -64,8 +71,12 @@ func applyCacheRequest(m message, prompt *provider.Message, extra map[string]any
 			opts = provider.ProviderOptions{}
 		}
 		var native map[string]json.RawMessage
-		if current, ok := opts["openaiCompatible"].(provider.RawProviderOption); ok {
-			_ = json.Unmarshal(current.Raw, &native)
+		if current, ok := opts["openaiCompatible"]; ok {
+			data, _ := json.Marshal(current)
+			if rawOption, isRaw := current.(provider.RawProviderOption); isRaw {
+				data = rawOption.Raw
+			}
+			_ = json.Unmarshal(data, &native)
 		}
 		if native == nil {
 			native = map[string]json.RawMessage{}

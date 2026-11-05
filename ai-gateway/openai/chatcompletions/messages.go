@@ -67,7 +67,7 @@ func translateMessages(r mappedRequest, target execution.Target, options provide
 		raw, _ := json.Marshal(extra)
 		metadata := provider.ProviderOptions{"openaiCompatible": provider.RawProviderOption{Key: "openaiCompatible", Raw: raw}}
 		options.Prompt[i].ProviderOptions = metadata
-		if m.Role == roleUser && len(options.Prompt[i].Content) == 1 && options.Prompt[i].Content[0].Type == provider.ContentPartTypeText && !r.hasCacheBreakpoints() {
+		if m.Role == roleUser && len(options.Prompt[i].Content) == 1 && options.Prompt[i].Content[0].Type == provider.ContentPartTypeText && !messageHasCacheBreakpoint(m) {
 			options.Prompt[i].Content = slices.Clone(options.Prompt[i].Content)
 			options.Prompt[i].Content[0].ProviderOptions = metadata
 		}
