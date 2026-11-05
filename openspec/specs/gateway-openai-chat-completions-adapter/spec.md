@@ -563,3 +563,16 @@ on compatible routes and enable typed Chat result metadata preservation.
 #### Scenario: No equivalent moderation transport
 - **WHEN** Responses or Anthropic is selected for an inline moderation request
 - **THEN** the adapter returns a capability error before provider I/O
+
+### Requirement: Preserve explicit Chat text cache boundaries
+The adapter SHALL retain request cache options and explicit text breakpoints
+across system, developer, user, assistant and tool messages on compatible routes.
+Translation SHALL not mutate caller prompt content or options.
+
+#### Scenario: Official client continues a cached tool conversation
+- **WHEN** an official Go client submits cache-marked text arrays including tool results
+- **THEN** unary and streaming native requests preserve every text boundary and tool ID
+
+#### Scenario: Non-native cache transport
+- **WHEN** a request with explicit Chat cache controls selects another transport
+- **THEN** it fails with a capability error before provider I/O

@@ -7,19 +7,20 @@ import (
 )
 
 type chatParameters struct {
-	Moderation           *compatible.ChatModerationOptions `json:"moderation"`
-	Prediction           *compatible.ChatPrediction        `json:"prediction"`
-	WebSearchOptions     *compatible.ChatWebSearchOptions  `json:"web_search_options"`
-	Verbosity            *string                           `json:"verbosity"`
-	User                 *string                           `json:"user"`
-	SafetyIdentifier     *string                           `json:"safety_identifier"`
-	ServiceTier          *string                           `json:"service_tier"`
-	PromptCacheKey       *string                           `json:"prompt_cache_key"`
-	PromptCacheRetention *string                           `json:"prompt_cache_retention"`
-	Metadata             map[string]string                 `json:"metadata"`
-	LogitBias            map[string]float64                `json:"logit_bias"`
-	Logprobs             *bool                             `json:"logprobs"`
-	TopLogprobs          *int                              `json:"top_logprobs"`
+	PromptCacheOptions   *compatible.ChatPromptCacheOptions `json:"prompt_cache_options"`
+	Moderation           *compatible.ChatModerationOptions  `json:"moderation"`
+	Prediction           *compatible.ChatPrediction         `json:"prediction"`
+	WebSearchOptions     *compatible.ChatWebSearchOptions   `json:"web_search_options"`
+	Verbosity            *string                            `json:"verbosity"`
+	User                 *string                            `json:"user"`
+	SafetyIdentifier     *string                            `json:"safety_identifier"`
+	ServiceTier          *string                            `json:"service_tier"`
+	PromptCacheKey       *string                            `json:"prompt_cache_key"`
+	PromptCacheRetention *string                            `json:"prompt_cache_retention"`
+	Metadata             map[string]string                  `json:"metadata"`
+	LogitBias            map[string]float64                 `json:"logit_bias"`
+	Logprobs             *bool                              `json:"logprobs"`
+	TopLogprobs          *int                               `json:"top_logprobs"`
 }
 
 func (r mappedRequest) translateParameters(target execution.Target, values map[string]any) error {
@@ -99,11 +100,14 @@ func (r mappedRequest) translateExtendedParameters(target execution.Target, valu
 		}
 		values["textVerbosity"] = *r.Verbosity
 	}
-	if r.Prediction == nil && r.WebSearchOptions == nil && r.Moderation == nil {
+	if r.Prediction == nil && r.WebSearchOptions == nil && r.Moderation == nil && r.PromptCacheOptions == nil && !r.hasCacheBreakpoints() {
 		return nil
 	}
 	if target.Type != execution.TargetOpenAICompatible {
 		return provider.ErrUnsupportedFunctionality
+	}
+	if r.PromptCacheOptions != nil {
+		values["prompt_cache_options"] = r.PromptCacheOptions
 	}
 	if r.Moderation != nil {
 		values["moderation"] = r.Moderation

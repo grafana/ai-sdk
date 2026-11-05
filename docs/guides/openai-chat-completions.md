@@ -255,3 +255,9 @@ cryptographic randomness; no provider padding or content is reused.
 Inline `moderation` requests are supported on native compatible routes. The
 configured model and input/output policies are validated and passed to the native
 service. Other backends reject the option before I/O rather than skipping it.
+
+Native compatible routes support `prompt_cache_options` and explicit text
+`prompt_cache_breakpoint` boundaries, including tool-result text arrays. The
+adapter retains original part boundaries without changing text or identities.
+Responses and Anthropic reject these Chat cache controls before I/O because the
+selected provider transports do not preserve their exact semantics.
