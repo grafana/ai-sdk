@@ -15,11 +15,20 @@ import (
 // Refusal is a delta on openai.responses-refusal custom parts and the complete
 // refusal on generate results and finish metadata. Nil means no refusal.
 type ResponsesMetadata struct {
-	Refusal *string `json:"refusal,omitempty"`
+	Metadata map[string]string `json:"metadata,omitzero"`
+	Refusal  *string           `json:"refusal,omitempty"`
 }
 
 // Validate checks the typed native metadata without changing it.
 func (m ResponsesMetadata) Validate() error {
+	if len(m.Metadata) > 16 {
+		return fmt.Errorf("openai: invalid response metadata map")
+	}
+	for k, v := range m.Metadata {
+		if !utf8.ValidString(k) || !utf8.ValidString(v) || utf8.RuneCountInString(k) > 64 || utf8.RuneCountInString(v) > 512 {
+			return fmt.Errorf("openai: invalid response metadata map")
+		}
+	}
 	if m.Refusal != nil && !utf8.ValidString(*m.Refusal) {
 		return fmt.Errorf("openai: invalid refusal text")
 	}
@@ -40,7 +49,7 @@ func ParseResponsesMetadata(metadata provider.ProviderMetadata, namespace string
 }
 
 func withResponsesMetadata(metadata provider.ProviderMetadata, namespace string, m ResponsesMetadata) provider.ProviderMetadata {
-	if m.Refusal == nil {
+	if m.Refusal == nil && m.Metadata == nil {
 		return metadata
 	}
 	fields := map[string]json.RawMessage{}
@@ -135,4 +144,22 @@ func (a *streamAdapter) refusalMetadata() ResponsesMetadata {
 	}
 	refusal := text.String()
 	return ResponsesMetadata{Refusal: &refusal}
+}
+
+func responseUserMetadata(resp *responses.Response) (map[string]string, error) {
+	var fields struct {
+		Metadata map[string]string `json:"metadata"`
+	}
+	if raw := resp.RawJSON(); raw != "" {
+		if !utf8.ValidString(raw) {
+			return nil, fmt.Errorf("openai: invalid response metadata encoding")
+		}
+		if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+			return nil, fmt.Errorf("openai: invalid response metadata map: %w", err)
+		}
+	} else {
+		fields.Metadata = resp.Metadata
+	}
+	result := ResponsesMetadata{Metadata: fields.Metadata}
+	return fields.Metadata, result.Validate()
 }
