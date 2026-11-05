@@ -123,6 +123,12 @@ func (u *upstream) last() map[string]any {
 }
 func (u *upstream) count() int { u.mu.Lock(); defer u.mu.Unlock(); return len(u.requests) }
 
+// The host stops the plugin (go-plugin allows 2s), then drains HTTP (5s).
+// Both executables use -race; the host additionally sleeps 1s at exit by default.
+// Leave 2s for scheduling/reaping rather than timing the composed lifecycle with
+// the HTTP drain budget alone. The production shutdown budgets remain unchanged.
+const commandShutdownTimeout = 10 * time.Second
+
 func startCommand(t *testing.T, backend, topology string, customConfig ...string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -159,14 +165,15 @@ func startCommand(t *testing.T, backend, topology string, customConfig ...string
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {
+			started := time.Now()
 			_ = cmd.Process.Signal(os.Interrupt)
 			select {
 			case err := <-done:
 				assert.NoError(t, err, stderr.String())
-			case <-time.After(5 * time.Second):
+			case <-time.After(commandShutdownTimeout):
 				_ = cmd.Process.Kill()
 				assert.Error(t, <-done)
-				t.Error("shutdown exceeded bound")
+				t.Errorf("platform host shutdown exceeded composed budget %s (elapsed %s); stderr: %s", commandShutdownTimeout, time.Since(started), stderr.String())
 			}
 			assert.NotContains(t, stderr.String(), "fake-backend-key")
 		})
