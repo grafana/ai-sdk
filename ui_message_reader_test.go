@@ -1003,3 +1003,59 @@ func TestUIMessageMetadata_AssemblyAndModelHistory(t *testing.T) {
 	assert.NotNil(t, history[1].Content[0].ProviderOptions)
 	assert.Empty(t, history[1].Content[0].ProviderOptions)
 }
+
+func TestFixPartialJSON_InitialArrayMinus(t *testing.T) {
+
+	for _, tc := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"initial minus", `[-`, `[]`},
+		{"space before minus", `[ -`, `[]`},
+		{"nested array", `[[1], [-`, `[[1], []]`},
+		{"array in object", `{"a": [-`, `{"a": []}`},
+		{"negative number", `[-1`, `[-1]`},
+		{"empty array", `[`, `[]`},
+		{"whitespace only", "[ \t\n", `[]`},
+		{"subsequent minus", `[1,-`, `[1]`},
+		{"object minus", `{"a":-`, `{}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, fixPartialJSON(tc.input))
+		})
+	}
+}
+
+func TestStreamUIMessage_PartialToolInputInitialArrayMinus(t *testing.T) {
+	for _, dynamic := range []bool{false, true} {
+		t.Run(fmt.Sprint(dynamic), func(t *testing.T) {
+			messages := collectMessages(StreamUIMessage(chunks(
+				UIMessageChunk{Type: ChunkToolInputStart, ToolCallID: "c1", ToolName: "weather", Dynamic: &dynamic},
+				UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: "c1", InputTextDelta: `{"series":"temp","values":[`},
+				UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: "c1", InputTextDelta: `-`},
+				UIMessageChunk{Type: ChunkToolInputDelta, ToolCallID: "c1", InputTextDelta: `3,`},
+			)))
+			require.Len(t, messages, 4)
+			for i, want := range []string{
+				`{"series":"temp","values":[]}`,
+				`{"series":"temp","values":[]}`,
+				`{"series":"temp","values":[-3]}`,
+			} {
+				var input json.RawMessage
+				if dynamic {
+					part := requireDynamicToolPart(t, messages[i+1], 0)
+					assert.Equal(t, ToolStateInputStreaming, part.State)
+					input = part.Input
+				} else {
+					part := requireToolInvocationPart(t, messages[i+1], 0)
+					assert.Equal(t, ToolStateInputStreaming, part.State)
+					input = part.Input
+				}
+				assert.JSONEq(t, want, string(input), "snapshot %d", i+1)
+				_, err := json.Marshal(messages[i+1])
+				require.NoError(t, err)
+			}
+		})
+	}
+}

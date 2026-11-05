@@ -349,11 +349,17 @@ func TestUIConformance_PartialOutput(t *testing.T) {
 	require.NoError(t, err)
 	object, err := output.Object[any](nameSchema)
 	require.NoError(t, err)
+	seriesSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"series":{"type":"string"},"values":{"type":"array","items":{"type":"number"}}},"required":["series","values"],"additionalProperties":false}`))
+	require.NoError(t, err)
+	series, err := output.Object[any](seriesSchema)
+	require.NoError(t, err)
 	for _, tc := range []struct {
 		name string
 		out  aisdk.Output
 	}{
 		{"empty-array", array},
+		{"initial-array-minus", series},
+		{"split-array-minus", series},
 		{"multi-step-repeat", object},
 		{"interleaved-text", object},
 		{"first-text-start", object},

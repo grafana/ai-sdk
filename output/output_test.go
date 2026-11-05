@@ -582,3 +582,22 @@ func TestOutputNamePresence(t *testing.T) {
 		}
 	}
 }
+
+func TestObjectOutput_ParsePartialInitialArrayMinus(t *testing.T) {
+	out, err := Object[any](mustSchema(t, `{"type":"object"}`))
+	require.NoError(t, err)
+	var text string
+	for _, tc := range []struct {
+		delta string
+		want  string
+	}{
+		{`{"series":"temp","values":[`, `{"series":"temp","values":[]}`},
+		{`-`, `{"series":"temp","values":[]}`},
+		{`3,`, `{"series":"temp","values":[-3]}`},
+	} {
+		text += tc.delta
+		partial, ok := out.ParsePartial(text)
+		require.True(t, ok, "partial %q", text)
+		assert.JSONEq(t, tc.want, string(partial.(json.RawMessage)))
+	}
+}

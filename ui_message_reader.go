@@ -837,7 +837,6 @@ func fixPartialJSON(input string) string {
 				lastValidIndex = i
 				stack = stack[:len(stack)-1]
 			} else {
-				lastValidIndex = i
 				processValueStart(char, i, fixStateInsideArrayAfterValue)
 			}
 		case fixStateInsideArrayAfterValue:

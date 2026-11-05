@@ -184,7 +184,6 @@ func fixJSON(input string) string {
 				lastValidIndex = i
 				pop()
 			default:
-				lastValidIndex = i
 				processValueStart(ch, i, stateInsideArrayAfterValue)
 			}
 
