@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
+	compatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 type toolDelta struct {
@@ -25,12 +26,13 @@ type functionDelta struct {
 	Arguments *string `json:"arguments,omitempty"`
 }
 type delta struct {
-	FunctionCall *functionDelta `json:"function_call,omitempty"`
-	Refusal      *string        `json:"refusal,omitempty"`
-	Annotations  []annotation   `json:"annotations,omitempty"`
-	Role         role           `json:"role,omitempty"`
-	Content      *string        `json:"content,omitempty"`
-	ToolCalls    []toolDelta    `json:"tool_calls,omitempty"`
+	Audio        *compatible.ChatCompletionAudio `json:"audio,omitempty"`
+	FunctionCall *functionDelta                  `json:"function_call,omitempty"`
+	Refusal      *string                         `json:"refusal,omitempty"`
+	Annotations  []annotation                    `json:"annotations,omitempty"`
+	Role         role                            `json:"role,omitempty"`
+	Content      *string                         `json:"content,omitempty"`
+	ToolCalls    []toolDelta                     `json:"tool_calls,omitempty"`
 }
 type chunkChoice struct {
 	Index    int     `json:"index"`
@@ -396,7 +398,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				return
 			}
 			logprobs = native.Logprobs
-			if !emit(delta{Refusal: native.Refusal}, nil, nil, false) {
+			if !emit(delta{Refusal: native.Refusal, Audio: native.Audio}, nil, nil, false) {
 				return
 			}
 			continue

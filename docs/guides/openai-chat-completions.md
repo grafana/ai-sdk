@@ -205,3 +205,14 @@ Preceding text is counted in Unicode code points, including one for each emoji;
 native block-local indices are shifted without conversion. The `grafana.citations`
 extension retains the original local spans. This convention also applies across
 sequential native stream segments.
+Audio-capable compatible endpoints accept `modalities` and `audio` output
+parameters, including named or custom-ID voices. Assistant history can carry
+`audio: {"id": "..."}` alongside text, name and refusal. The native audio ID is
+preserved. Requests requiring audio output or audio history fail before provider
+I/O on Responses and Anthropic targets, whose current transports do not implement
+that Chat audio capability. Explicit text-only modalities remain usable there.
+
+For compatible audio models, unary output preserves `message.audio` and streaming
+preserves `delta.audio`, including IDs, expiration, encoded data and transcript.
+Audio-only unary responses retain `content:null`. The official Go client PoC covers
+audio request parameters and both output forms through native synthetic HTTP/SSE.

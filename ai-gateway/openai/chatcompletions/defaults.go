@@ -15,6 +15,10 @@ func chatTranslator(r mappedRequest) execution.Translator {
 		options, err = translateMedia(target, options)
 		if err != nil {
 			return provider.CallOptions{}, err
+
+		}
+		if r.needsNativeAudio() && target.Type != execution.TargetOpenAICompatible {
+			return provider.CallOptions{}, provider.ErrUnsupportedFunctionality
 		}
 		options = translateMessages(r, target, options)
 		namespace := target.ProviderName
@@ -34,6 +38,13 @@ func chatTranslator(r mappedRequest) execution.Translator {
 			}
 		case execution.TargetOpenAICompatible:
 			values["preserveChatCompletionMetadata"] = true
+			if r.Modalities != nil {
+				values["modalities"] = r.Modalities
+			}
+			if r.Audio != nil {
+				values["audio"] = r.Audio
+			}
+
 			namespace, _, _ = strings.Cut(namespace, ".")
 			namespace = strings.TrimSpace(namespace)
 			if namespace == "" {

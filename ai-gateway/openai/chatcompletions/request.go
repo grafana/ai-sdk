@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/grafana/ai-sdk/provider"
+	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 	"github.com/grafana/ai-sdk/schema"
 )
 
@@ -34,39 +35,42 @@ var namePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 var errRequest = errors.New("chat completions: invalid request")
 
 type request struct {
-	Functions           []function                 `json:"functions"`
-	FunctionChoice      json.RawMessage            `json:"function_call"`
-	ProviderOptions     map[string]json.RawMessage `json:"providerOptions"`
-	Model               string                     `json:"model"`
-	Messages            []message                  `json:"messages"`
-	Stream              *bool                      `json:"stream"`
-	N                   *int                       `json:"n"`
-	Store               *bool                      `json:"store"`
-	Temperature         *float64                   `json:"temperature"`
-	TopP                *float64                   `json:"top_p"`
-	FrequencyPenalty    *float64                   `json:"frequency_penalty"`
-	PresencePenalty     *float64                   `json:"presence_penalty"`
-	Seed                *int                       `json:"seed"`
-	MaxTokens           *int                       `json:"max_tokens"`
-	MaxCompletionTokens *int                       `json:"max_completion_tokens"`
-	Stop                json.RawMessage            `json:"stop"`
-	Tools               []tool                     `json:"tools"`
-	ToolChoice          json.RawMessage            `json:"tool_choice"`
-	Parallel            *bool                      `json:"parallel_tool_calls"`
-	Reasoning           provider.ReasoningEffort   `json:"reasoning_effort"`
-	ResponseFormat      *responseFormat            `json:"response_format"`
+	Modalities          []string                                     `json:"modalities"`
+	Audio               *openaicompatible.ChatCompletionAudioOptions `json:"audio"`
+	Functions           []function                                   `json:"functions"`
+	FunctionChoice      json.RawMessage                              `json:"function_call"`
+	ProviderOptions     map[string]json.RawMessage                   `json:"providerOptions"`
+	Model               string                                       `json:"model"`
+	Messages            []message                                    `json:"messages"`
+	Stream              *bool                                        `json:"stream"`
+	N                   *int                                         `json:"n"`
+	Store               *bool                                        `json:"store"`
+	Temperature         *float64                                     `json:"temperature"`
+	TopP                *float64                                     `json:"top_p"`
+	FrequencyPenalty    *float64                                     `json:"frequency_penalty"`
+	PresencePenalty     *float64                                     `json:"presence_penalty"`
+	Seed                *int                                         `json:"seed"`
+	MaxTokens           *int                                         `json:"max_tokens"`
+	MaxCompletionTokens *int                                         `json:"max_completion_tokens"`
+	Stop                json.RawMessage                              `json:"stop"`
+	Tools               []tool                                       `json:"tools"`
+	ToolChoice          json.RawMessage                              `json:"tool_choice"`
+	Parallel            *bool                                        `json:"parallel_tool_calls"`
+	Reasoning           provider.ReasoningEffort                     `json:"reasoning_effort"`
+	ResponseFormat      *responseFormat                              `json:"response_format"`
 	StreamOptions       *struct {
 		IncludeUsage *bool `json:"include_usage"`
 	} `json:"stream_options"`
 }
 type message struct {
-	FunctionCall *callFunction   `json:"function_call"`
-	Role         role            `json:"role"`
-	Name         *string         `json:"name"`
-	Refusal      *string         `json:"refusal"`
-	Content      json.RawMessage `json:"content"`
-	ToolCalls    []toolCall      `json:"tool_calls"`
-	ToolCallID   *string         `json:"tool_call_id"`
+	Audio        *openaicompatible.ChatCompletionAudioReference `json:"audio"`
+	FunctionCall *callFunction                                  `json:"function_call"`
+	Role         role                                           `json:"role"`
+	Name         *string                                        `json:"name"`
+	Refusal      *string                                        `json:"refusal"`
+	Content      json.RawMessage                                `json:"content"`
+	ToolCalls    []toolCall                                     `json:"tool_calls"`
+	ToolCallID   *string                                        `json:"tool_call_id"`
 }
 type function struct {
 	Name        string          `json:"name"`
@@ -158,6 +162,9 @@ func mapRequest(data []byte) (mappedRequest, error) {
 	if r.Model == "" || len(r.Model) > 256 || len(r.Messages) == 0 || len(r.Messages) > 1024 || len(r.Tools) > 128 || (r.N != nil && *r.N != 1) || boolValue(r.Store) || (r.StreamOptions != nil && !boolValue(r.Stream)) {
 		return r, errRequest
 	}
+	if err := r.validateAudioRequest(); err != nil {
+		return r, err
+	}
 	if r.MaxTokens != nil && r.MaxCompletionTokens != nil {
 		return r, errRequest
 	}
@@ -235,7 +242,7 @@ func mapRequest(data []byte) (mappedRequest, error) {
 					}
 					p.Content = parts
 				}
-			} else if m.Role != roleAssistant || (len(m.ToolCalls) == 0 && m.Refusal == nil) {
+			} else if m.Role != roleAssistant || (len(m.ToolCalls) == 0 && m.Refusal == nil && m.Audio == nil) {
 				return r, errRequest
 			}
 			if m.Refusal != nil {

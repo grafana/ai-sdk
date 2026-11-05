@@ -207,6 +207,26 @@
                 "type": "null"
               }
             ]
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -608,6 +628,73 @@
             "name"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "audio": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "format": {
+              "enum": [
+                "wav",
+                "aac",
+                "mp3",
+                "flac",
+                "opus",
+                "pcm16"
+              ]
+            },
+            "voice": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "format",
+            "voice"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "modalities": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "enum": [
+              "text",
+              "audio"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true
         },
         {
           "type": "null"
