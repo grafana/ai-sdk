@@ -25,11 +25,12 @@ type functionDelta struct {
 	Arguments *string `json:"arguments,omitempty"`
 }
 type delta struct {
-	Refusal     *string      `json:"refusal,omitempty"`
-	Annotations []annotation `json:"annotations,omitempty"`
-	Role        role         `json:"role,omitempty"`
-	Content     *string      `json:"content,omitempty"`
-	ToolCalls   []toolDelta  `json:"tool_calls,omitempty"`
+	FunctionCall *functionDelta `json:"function_call,omitempty"`
+	Refusal      *string        `json:"refusal,omitempty"`
+	Annotations  []annotation   `json:"annotations,omitempty"`
+	Role         role           `json:"role,omitempty"`
+	Content      *string        `json:"content,omitempty"`
+	ToolCalls    []toolDelta    `json:"tool_calls,omitempty"`
 }
 type chunkChoice struct {
 	Index    int     `json:"index"`
@@ -247,6 +248,16 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 	var logprobs any
 	opened := false
 	emit := func(d delta, finish *string, u *usage, empty bool) bool {
+		if r.legacyFunctions {
+			var err error
+			d, err = legacyDelta(d)
+			if err != nil {
+				return false
+			}
+			if finish != nil {
+				finish = ptr(legacyFinish(*finish))
+			}
+		}
 		c := chunk{ID: id, Object: "chat.completion.chunk", Created: created, Model: modelID, Choices: []chunkChoice{{Delta: d, Finish: finish, Logprobs: logprobs}}, Usage: u, Grafana: pending}
 		if empty {
 			c.Choices = []chunkChoice{}
