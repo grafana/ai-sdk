@@ -13,6 +13,7 @@ import (
 // Unary results carry complete values. Custom streaming parts carry deltas; the
 // finish part carries final usage. It is opt-in and never contains raw response data.
 type ChatCompletionMetadata struct {
+	Metadata          map[string]string          `json:"metadata,omitzero"`
 	Moderation        *ChatModeration            `json:"moderation,omitempty"`
 	ServiceTier       *string                    `json:"service_tier,omitempty"`
 	SystemFingerprint *string                    `json:"system_fingerprint,omitempty"`
@@ -72,9 +73,10 @@ type ChatCompletionOutputTokensDetails struct {
 
 func decodeChatCompletionMetadata(data []byte, streaming bool) (ChatCompletionMetadata, error) {
 	var envelope struct {
-		Moderation        *ChatModeration `json:"moderation"`
-		ServiceTier       *string         `json:"service_tier"`
-		SystemFingerprint *string         `json:"system_fingerprint"`
+		Metadata          map[string]string `json:"metadata"`
+		Moderation        *ChatModeration   `json:"moderation"`
+		ServiceTier       *string           `json:"service_tier"`
+		SystemFingerprint *string           `json:"system_fingerprint"`
 		Choices           []struct {
 			Message struct {
 				Annotations []ChatCompletionAnnotation `json:"annotations"`
@@ -97,6 +99,7 @@ func decodeChatCompletionMetadata(data []byte, streaming bool) (ChatCompletionMe
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return result, err
 	}
+	result.Metadata = envelope.Metadata
 	result.Moderation = envelope.Moderation
 	result.Usage = envelope.Usage
 	result.ServiceTier = envelope.ServiceTier
@@ -130,6 +133,14 @@ func (m ChatCompletionMetadata) Validate() error {
 		return err
 	}
 	invalid := errors.New("openai: invalid Chat completion metadata")
+	if len(m.Metadata) > 16 {
+		return invalid
+	}
+	for key, value := range m.Metadata {
+		if !utf8.ValidString(key) || !utf8.ValidString(value) || utf8.RuneCountInString(key) > 64 || utf8.RuneCountInString(value) > 512 {
+			return invalid
+		}
+	}
 	for _, v := range []*string{m.ServiceTier, m.SystemFingerprint} {
 		if v != nil && !utf8.ValidString(*v) {
 			return invalid
@@ -210,7 +221,7 @@ func withChatCompletionMetadata(metadata provider.ProviderMetadata, chat ChatCom
 
 // Empty reports whether there are any native fields to publish.
 func (m ChatCompletionMetadata) Empty() bool {
-	return m.Moderation == nil && m.Audio == nil && m.Refusal == nil && m.Logprobs == nil && m.Usage == nil && m.ServiceTier == nil && m.SystemFingerprint == nil && len(m.Annotations) == 0
+	return m.Metadata == nil && m.Moderation == nil && m.Audio == nil && m.Refusal == nil && m.Logprobs == nil && m.Usage == nil && m.ServiceTier == nil && m.SystemFingerprint == nil && len(m.Annotations) == 0
 }
 
 // ChatCompletionAnnotation preserves the native URL citation shape.

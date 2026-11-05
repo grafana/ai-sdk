@@ -138,3 +138,11 @@ SHALL be established by the first declared type or payload and SHALL remain stab
 #### Scenario: Two choices split identity and custom input
 - **WHEN** native choices reuse an ID but send indexed identity and custom input in separate chunks
 - **THEN** each choice emits its own text-encoded tool input and canonical final JSON string
+
+### Requirement: Native user metadata map
+Opt-in Chat metadata SHALL retain the actual response metadata string map,
+including an empty map, and validate its key/value limits.
+
+#### Scenario: Invalid native metadata value
+- **WHEN** response metadata contains a non-string value or exceeds its limits
+- **THEN** decoding fails rather than publishing malformed metadata
