@@ -19,7 +19,7 @@ func TestNativePredictionAndSearch(t *testing.T) {
 		assert.JSONEq(t, `{"type":"content","content":`+content+`}`, string(encoded))
 		require.IsType(t, &ChatWebSearchOptions{}, body["web_search_options"])
 	}
-	for _, content := range []string{`null`, `[]`, `[{"type":"image_url","text":"x"}]`, `[{"type":"text","text":"x","unknown":"x"}]`, `[{"type":"text","text":"x","prompt_cache_breakpoint":{"mode":"implicit"}}]`} {
+	for _, content := range []string{`null`, " \n null\t", `[]`, `[{"type":"image_url","text":"x"}]`, `[{"type":"text","text":"x","unknown":"x"}]`, `[{"type":"text","text":"x","prompt_cache_breakpoint":{"mode":"implicit"}}]`} {
 		require.Error(t, (&ChatPrediction{Type: "content", Content: json.RawMessage(content)}).Validate())
 	}
 	require.Error(t, (&ChatWebSearchOptions{SearchContextSize: "huge"}).Validate())
