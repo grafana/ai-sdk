@@ -34,3 +34,16 @@ Conflicting finalized text SHALL emit an error.
 
 - **WHEN** only the completed response supplies refusal text
 - **THEN** a custom refusal delta precedes finish
+
+### Requirement: Opt-in native response user metadata
+The Responses provider SHALL preserve validated native metadata maps on unary
+results and stream finish metadata when PreserveResponseMetadata is enabled.
+The option SHALL not appear in native requests or change default provider output.
+
+#### Scenario: Actual metadata map differs from the request
+- **WHEN** the native response contains an explicit metadata map
+- **THEN** ParseResponsesMetadata exposes that map without replacing it from request options
+
+#### Scenario: Invalid native metadata
+- **WHEN** metadata contains non-string values or violates native size limits
+- **THEN** opt-in decoding fails rather than coercing invalid values

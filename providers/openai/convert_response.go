@@ -373,9 +373,18 @@ func convertResponse(resp *responses.Response, br buildResult, generateID func()
 			Body: json.RawMessage(resp.RawJSON()),
 		},
 	}
+	nativeMetadata := ResponsesMetadata{}
 	if br.preserveRefusal {
-		result.ProviderMetadata = withResponsesMetadata(result.ProviderMetadata, providerOptionsName, responseRefusal(resp))
+		nativeMetadata = responseRefusal(resp)
 	}
+	if br.preserveResponseMetadata {
+		var err error
+		nativeMetadata.Metadata, err = responseUserMetadata(resp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	result.ProviderMetadata = withResponsesMetadata(result.ProviderMetadata, providerOptionsName, nativeMetadata)
 	return result, nil
 }
 
