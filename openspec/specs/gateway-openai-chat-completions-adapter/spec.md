@@ -613,3 +613,23 @@ SHALL be rejected by the shared guard, using exact case-sensitive native keys.
 - **WHEN** the Chat request supplies max_completion_tokens
 - **THEN** unary and streaming compatible calls emit that field only
 - **AND** a local selector is consumed without reaching the endpoint
+
+### Requirement: Restrict callable tools with a validated subset
+
+Chat SHALL accept allowed_tools selection with auto or required mode and validate
+each function/custom reference against declared names and types without duplicate
+references. Compatible and Responses attempts SHALL retain all definitions and
+send typed native subsets. Anthropic attempts SHALL filter current definitions
+without changing message history. The adapter SHALL reject output outside the
+subset before publishing tool starts, arguments, or complete calls.
+
+#### Scenario: A forbidden tool starts streaming
+
+- **WHEN** a native provider starts a tool outside the selected subset
+- **THEN** the adapter emits an error before exposing its name, ID or arguments
+
+#### Scenario: Only the current callable subset changes
+
+- **WHEN** historical calls reference tools outside the current subset
+- **THEN** their historical messages remain intact
+- **AND** current Anthropic tool definitions contain only selected functions

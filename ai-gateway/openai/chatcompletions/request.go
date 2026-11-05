@@ -106,6 +106,7 @@ type responseFormat struct {
 	} `json:"json_schema"`
 }
 type mappedRequest struct {
+	allowedToolNames []string
 	request
 	options         provider.CallOptions
 	validator       *chatSchema
@@ -357,28 +358,9 @@ func mapRequest(data []byte) (mappedRequest, error) {
 				return r, errRequest
 			}
 		} else {
-			var named struct {
-				Type   kind `json:"type"`
-				Custom *struct {
-					Name string `json:"name"`
-				} `json:"custom"`
-				Function struct {
-					Name string `json:"name"`
-				} `json:"function"`
+			if err := r.mapNamedOrAllowedChoice(names); err != nil {
+				return r, err
 			}
-			if decodeStrict(r.ToolChoice, &named) != nil {
-				return r, errRequest
-			}
-			name := named.Function.Name
-			if named.Type == kindCustom && named.Custom != nil && name == "" {
-				name = named.Custom.Name
-			} else if named.Type != kindFunction || named.Custom != nil {
-				return r, errRequest
-			}
-			if !names[name] || (named.Type == kindCustom) != r.customTool(name) {
-				return r, errRequest
-			}
-			r.options.ToolChoice = &provider.ToolChoice{Type: provider.ToolChoiceTool, ToolName: name}
 		}
 	} else if len(r.Tools) > 0 {
 		r.options.ToolChoice = &provider.ToolChoice{Type: provider.ToolChoiceAuto}

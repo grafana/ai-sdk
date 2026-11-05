@@ -272,3 +272,13 @@ For compatible targets, Chat preserves the distinction between `max_tokens` and
 `max_completion_tokens`. Both use the common validated output budget; only the
 native field name differs. Shared native-option guards reject raw overrides of
 either exact native key. Native JSON keys remain case-sensitive.
+
+Chat `tool_choice` supports `allowed_tools` with `auto` or `required` mode and
+function/custom references matching declared tools. Duplicate or undeclared
+references are rejected. Compatible and Responses targets retain full tool
+definitions and send a native allowed subset. Anthropic filters definitions for
+the current attempt and retains message history; this can change prompt context
+and cache reuse compared with sending all definitions. Custom tools remain
+unsupported on Anthropic. An empty `auto` subset disables tool calls; an empty
+`required` subset is rejected. Output membership is checked before emitting tool
+start or argument deltas, as well as on complete tool calls.
