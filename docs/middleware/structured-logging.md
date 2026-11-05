@@ -149,3 +149,9 @@ for ordering semantics.
 ---
 
 ← [Writing middleware](writing-middleware.md) · [Docs index](../README.md) · [Context enrichment →](context-enrichment.md)
+
+For native alternatives, captured response output uses `ai_sdk.response.choices`
+with the existing content and metadata capture controls. Stream-part logs include
+`ai_sdk.stream.choice_index` for indexed events. Summary usage comes from the
+single global `choices-finish`; differing choice finish reasons summarize as
+`other`. These log attributes do not change the ProviderWire JSON contract.
