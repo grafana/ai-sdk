@@ -153,3 +153,10 @@ custom input. The marker is consumed locally and does not override the common
 call ID or tool name. A current custom declaration supplies the same information
 when the marker is absent. This is an intentional extension over pinned compatible
 3.0.82; its synthetic tests do not claim live grammar-engine conformance.
+
+Native Chat predicted output and search controls are available through typed
+`OpenAIOptions.Prediction` and `WebSearchOptions`. Prediction accepts text or a
+nonempty array of validated text parts, including explicit cache breakpoints;
+search retains context-size and approximate-location controls. These extensions
+are validated before transport and do not change requests that omit them. Model
+support remains a native service decision.

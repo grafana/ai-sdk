@@ -33,6 +33,12 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		return nil, warnings, err
 	}
 
+	if err := openAIOpts.Prediction.Validate(); err != nil {
+		return nil, warnings, err
+	}
+	if err := openAIOpts.WebSearchOptions.Validate(); err != nil {
+		return nil, warnings, err
+	}
 	if err := validateChatAudioOptions(openAIOpts); err != nil {
 		return nil, warnings, err
 	}
@@ -50,6 +56,12 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		"messages": messages,
 	}
 
+	if openAIOpts.Prediction != nil {
+		body["prediction"] = openAIOpts.Prediction
+	}
+	if openAIOpts.WebSearchOptions != nil {
+		body["web_search_options"] = openAIOpts.WebSearchOptions
+	}
 	if len(openAIOpts.Modalities) > 0 {
 		body["modalities"] = openAIOpts.Modalities
 	}
@@ -288,6 +300,8 @@ func toCamelCase(s string) string {
 }
 
 var openAIOptionFields = map[string]struct{}{
+	"prediction":                     {},
+	"web_search_options":             {},
 	"user":                           {},
 	"reasoningEffort":                {},
 	"textVerbosity":                  {},
@@ -326,6 +340,12 @@ func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, e
 }
 
 func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
+	if src.Prediction != nil {
+		dst.Prediction = src.Prediction
+	}
+	if src.WebSearchOptions != nil {
+		dst.WebSearchOptions = src.WebSearchOptions
+	}
 	if src.Modalities != nil {
 		dst.Modalities = src.Modalities
 	}

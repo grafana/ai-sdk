@@ -82,3 +82,16 @@ requiring a current declaration or overriding common identity.
 #### Scenario: Stream encoding remains stable
 - **WHEN** a native tool call changes between function and custom encodings during its stream
 - **THEN** the provider emits an error instead of reinterpreting previous input fragments
+
+### Requirement: Native prediction and search parameters
+The provider SHALL validate typed native prediction and web-search controls
+before sending them. Prediction content SHALL be text or nonempty text parts;
+unknown prediction part properties SHALL fail validation.
+
+#### Scenario: Static prediction with an explicit breakpoint
+- **WHEN** predicted text parts include a valid explicit cache breakpoint
+- **THEN** the native prediction retains text and breakpoint values exactly
+
+#### Scenario: Invalid prediction union
+- **WHEN** prediction content is null, empty parts, or a non-text part
+- **THEN** request construction fails before network I/O
