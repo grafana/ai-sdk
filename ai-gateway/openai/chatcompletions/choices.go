@@ -93,6 +93,7 @@ func (h *handler) serveChoicesStream(ctx context.Context, w http.ResponseWriter,
 		states[i] = streamState{textIDs: map[string]bool{}, tools: map[string]*toolState{}}
 	}
 	var pending *diagnostics
+	contentDiagnostics := make([]*diagnostics, count)
 	var view execution.View
 	viewed, anyOpened, complete := false, false, false
 	var total *usage
@@ -110,7 +111,18 @@ func (h *handler) serveChoicesStream(ctx context.Context, w http.ResponseWriter,
 				finish = ptr(legacyFinish(*finish))
 			}
 		}
-		c := chunk{Moderation: moderation, ServiceTier: serviceTier, SystemFingerprint: fingerprint, ID: id, Object: "chat.completion.chunk", Created: created, Model: model, Choices: []chunkChoice{{Index: index, Delta: d, Finish: finish, Logprobs: probabilities}}, Usage: usage, Grafana: pending}
+		detail := pending
+		if !empty && contentDiagnostics[index] != nil {
+			if detail == nil {
+				detail = &diagnostics{}
+			} else {
+				copy := *detail
+				detail = &copy
+			}
+			detail.Sources = contentDiagnostics[index].Sources
+			detail.Citations = contentDiagnostics[index].Citations
+		}
+		c := chunk{Moderation: moderation, ServiceTier: serviceTier, SystemFingerprint: fingerprint, ID: id, Object: "chat.completion.chunk", Created: created, Model: model, Choices: []chunkChoice{{Index: index, Delta: d, Finish: finish, Logprobs: probabilities}}, Usage: usage, Grafana: detail}
 		if empty {
 			c.Choices = []chunkChoice{}
 		}
@@ -119,6 +131,9 @@ func (h *handler) serveChoicesStream(ctx context.Context, w http.ResponseWriter,
 			return false
 		}
 		pending = nil
+		if !empty {
+			contentDiagnostics[index] = nil
+		}
 		return true
 	}
 	open := func(index int) bool {
@@ -240,6 +255,17 @@ func (h *handler) serveChoicesStream(ctx context.Context, w http.ResponseWriter,
 		}
 		state := &states[index]
 		if part.Type == provider.PartFinish {
+			native, err := chatMetadata(part.ProviderMetadata)
+			if err != nil {
+				fail(502)
+				return
+			}
+			if native.Refusal != nil && !state.refused {
+				state.refused = true
+				if !open(index) || !emit(index, delta{Refusal: native.Refusal}, nil, nil, nil, false) {
+					return
+				}
+			}
 			f, _, err := state.finish(part, r)
 			if err != nil {
 				fail(502)
@@ -274,7 +300,7 @@ func (h *handler) serveChoicesStream(ctx context.Context, w http.ResponseWriter,
 			fail(502)
 			return
 		}
-		pending = sourceDiagnostics(pending, part.Source, part.Citations)
+		contentDiagnostics[index] = sourceDiagnostics(contentDiagnostics[index], part.Source, part.Citations)
 		d, err := state.consume(part, r)
 		if err != nil {
 			fail(502)
