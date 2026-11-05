@@ -76,9 +76,9 @@ describe("candidate-source workflow gates", () => {
     const mise = readFileSync(resolve(root, "mise.toml"), "utf8");
     const task = mise.split("[tasks.test-integration]")[1]!.split(/\n\[/)[0]!;
     assert.match(task, /mise run test-ai-gateway-command/);
-    const plugin = steps("plugin-validation");
+    const plugin = steps("plugin-build");
     const command = plugin.find((step) => step.run === "mise run test-ai-gateway-command");
-    const keep = plugin.find((step) => step.name === "Keep validated plugin package");
+    const keep = plugin.find((step) => step.name === "Keep candidate plugin package");
     assert.ok(command);
     assert.ok(keep);
     assert.equal(normalize(command.if), pushGuard);
