@@ -5,6 +5,7 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -22,6 +23,9 @@ func chatTranslator(r mappedRequest) execution.Translator {
 		}
 		if r.hasCustomTools() && target.Type == execution.TargetAnthropic {
 			return provider.CallOptions{}, provider.ErrUnsupportedFunctionality
+		}
+		if options.ChoiceCount > 1 && target.Type != execution.TargetOpenAICompatible {
+			return options, catalog.ErrUnsupportedRequest
 		}
 		options = translateMessages(r, target, options)
 		namespace := target.ProviderName

@@ -163,7 +163,7 @@ func mapRequest(data []byte) (mappedRequest, error) {
 	if err := r.normalizeLegacy(); err != nil {
 		return r, err
 	}
-	if r.Model == "" || len(r.Model) > 256 || len(r.Messages) == 0 || len(r.Messages) > 1024 || len(r.Tools) > 128 || (r.N != nil && *r.N != 1) || boolValue(r.Store) || (r.StreamOptions != nil && !boolValue(r.Stream)) {
+	if r.Model == "" || len(r.Model) > 256 || len(r.Messages) == 0 || len(r.Messages) > 1024 || len(r.Tools) > 128 || (r.N != nil && (*r.N < 1 || *r.N > 128)) || boolValue(r.Store) || (r.StreamOptions != nil && !boolValue(r.Stream)) {
 		return r, errRequest
 	}
 	if r.TopLogprobs != nil && !boolValue(r.Logprobs) {
@@ -199,6 +199,9 @@ func mapRequest(data []byte) (mappedRequest, error) {
 			}
 			r.options.ProviderOptions[namespace] = provider.RawProviderOption{Key: namespace, Raw: raw}
 		}
+	}
+	if r.N != nil {
+		r.options.ChoiceCount = *r.N
 	}
 	if present(r.Stop) {
 		var single string
