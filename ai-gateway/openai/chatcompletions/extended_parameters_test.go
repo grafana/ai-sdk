@@ -16,7 +16,7 @@ import (
 )
 
 func TestExtendedNativeParameters(t *testing.T) {
-	for _, suffix := range []string{`,"prediction":{"type":"content","content":"hello"}`, `,"prediction":{"type":"content","content":[{"type":"text","text":"hello","prompt_cache_breakpoint":{"mode":"explicit","ttl":"12h"}}]}`, `,"web_search_options":{"search_context_size":"high","user_location":{"type":"approximate","approximate":{"city":"Recife"}}}`} {
+	for _, suffix := range []string{`,"moderation":{"model":"omni","policy":{"input":{"mode":"block"},"output":{"mode":"score"}}}`, `,"prediction":{"type":"content","content":"hello"}`, `,"prediction":{"type":"content","content":[{"type":"text","text":"hello","prompt_cache_breakpoint":{"mode":"explicit","ttl":"12h"}}]}`, `,"web_search_options":{"search_context_size":"high","user_location":{"type":"approximate","approximate":{"city":"Recife"}}}`} {
 		r := requestWith(t, suffix)
 		opts, err := chatTranslator(r)(execution.Target{Type: execution.TargetOpenAICompatible, ProviderName: "custom.chat"}, r.options)
 		require.NoError(t, err)
@@ -54,6 +54,7 @@ func TestOfficialGoExtendedParametersNativeTransport(t *testing.T) {
 		assert.JSONEq(t, `{"type":"content","content":"hello"}`, string(body["prediction"]))
 		assert.JSONEq(t, `{"search_context_size":"high"}`, string(body["web_search_options"]))
 		assert.JSONEq(t, `"low"`, string(body["verbosity"]))
+		assert.JSONEq(t, `{"model":"omni","policy":{"input":{"mode":"block"}}}`, string(body["moderation"]))
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}`))
 	}))
 	defer native.Close()
@@ -68,7 +69,7 @@ func TestOfficialGoExtendedParametersNativeTransport(t *testing.T) {
 	defer server.Close()
 	client := openaisdk.NewClient(option.WithBaseURL(server.URL+"/v1"), option.WithAPIKey("test"), option.WithMaxRetries(0))
 	var params openaisdk.ChatCompletionNewParams
-	require.NoError(t, json.Unmarshal([]byte(basic[:len(basic)-1]+`,"prediction":{"type":"content","content":"hello"},"web_search_options":{"search_context_size":"high"},"verbosity":"low"}`), &params))
+	require.NoError(t, json.Unmarshal([]byte(basic[:len(basic)-1]+`,"prediction":{"type":"content","content":"hello"},"web_search_options":{"search_context_size":"high"},"verbosity":"low","moderation":{"model":"omni","policy":{"input":{"mode":"block"}}}}`), &params))
 	result, err := client.Chat.Completions.New(t.Context(), params)
 	require.NoError(t, err)
 	assert.Equal(t, "hello", result.Choices[0].Message.Content)
