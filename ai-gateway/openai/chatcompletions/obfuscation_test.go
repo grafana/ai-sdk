@@ -3,12 +3,15 @@ package chatcompletions
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
 	openaisdk "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -59,6 +62,34 @@ func TestOfficialGoObfuscationControl(t *testing.T) {
 		}
 		require.NoError(t, stream.Err())
 		require.NoError(t, stream.Close())
+		assert.Greater(t, count, 2)
+	}
+}
+
+func TestNativeChoicesObfuscationControl(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		f := &fakeModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
+			return partsStream(nativeChoiceParts()...), nil
+		}}
+		h := nativeChoiceHandler(t, execution.Translate(f, execution.Target{Type: execution.TargetOpenAICompatible}))
+		body := strings.TrimSuffix(choiceRequest(true), "}") + fmt.Sprintf(`,"stream_options":{"include_usage":true,"include_obfuscation":%t}}`, enabled)
+		req := httptest.NewRequest("POST", Path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		out := httptest.NewRecorder()
+		h.ServeHTTP(out, req)
+		require.Equal(t, 200, out.Code, out.Body.String())
+		require.Contains(t, out.Body.String(), "[DONE]")
+		count := 0
+		for _, line := range strings.Split(out.Body.String(), "\n") {
+			if !strings.HasPrefix(line, "data: {") {
+				continue
+			}
+			var c map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &c))
+			_, present := c["obfuscation"]
+			assert.Equal(t, enabled, present)
+			count++
+		}
 		assert.Greater(t, count, 2)
 	}
 }

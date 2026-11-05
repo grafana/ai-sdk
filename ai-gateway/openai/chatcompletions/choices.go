@@ -2,7 +2,6 @@ package chatcompletions
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -112,7 +111,7 @@ func (h *handler) serveChoicesStream(ctx context.Context, w http.ResponseWriter,
 		if empty {
 			c.Choices = []chunkChoice{}
 		}
-		data, err := json.Marshal(c)
+		data, err := r.marshalChunk(c)
 		if err != nil || !write(data) {
 			return false
 		}
