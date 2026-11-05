@@ -171,7 +171,7 @@ func (o *ArrayOutput[T]) ParsePartial(text string) (any, bool) {
 		elements = elements[:len(elements)-1]
 	}
 
-	var validElements []json.RawMessage
+	validElements := []json.RawMessage{}
 	for _, elem := range elements {
 		if err := o.elementSchema.Validate(elem); err == nil {
 			validElements = append(validElements, elem)

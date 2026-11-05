@@ -373,7 +373,7 @@ func decodeStreamPart(data []byte) (provider.StreamPart, error) {
 		part.FinishReason = &finish
 		part.Usage = &usage
 	case provider.PartRaw:
-		if decodeFields(data, &value, "rawValue") != nil || value.RawValue == nil {
+		if decodeFields(data, &value, "rawValue") != nil {
 			return invalid()
 		}
 		part.RawValue = value.RawValue

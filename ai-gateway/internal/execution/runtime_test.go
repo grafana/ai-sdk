@@ -210,7 +210,7 @@ func TestCallGenerate(t *testing.T) {
 		},
 		"request accounts": func(model provider.LanguageModel) RequestSelector {
 			return func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
-				return AccountSelection(id, model, RequestAccounts{Provider: "native", ModelID: "A", Count: 2}), nil
+				return AccountSelection(id, model, accountAttempts("native", "A", 2)), nil
 			}
 		},
 	} {
@@ -334,7 +334,7 @@ func TestRuntime_ConcurrentAccountCallsAreIsolated(t *testing.T) {
 	shared, err := fallback.New(first, second)
 	require.NoError(t, err)
 	runtime := newRuntime(t, func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
-		return AccountSelection(id, shared, RequestAccounts{Provider: "native", ModelID: "model", Count: 2}), nil
+		return AccountSelection(id, shared, accountAttempts("native", "model", 2)), nil
 	}, testLimits())
 	const calls = 32
 	views := make([]View, calls)
@@ -667,14 +667,29 @@ func TestStreamNext_Validation(t *testing.T) {
 	})
 
 	for name, parts := range map[string][]provider.StreamPart{
-		"close before any finish":      {{Type: provider.PartTextStart, ID: "t"}, {Type: provider.PartTextEnd, ID: "t"}},
-		"close after a later metadata": {validFinish(), {Type: provider.PartResponseMeta}},
-		"close with only pass-through": {{Type: provider.PartRaw}, {Type: provider.PartError}},
+		"close before any finish":           {{Type: provider.PartTextStart, ID: "t"}, {Type: provider.PartTextEnd, ID: "t"}},
+		"close after a later metadata":      {validFinish(), {Type: provider.PartResponseMeta}},
+		"close with only raw parts":         {{Type: provider.PartRaw}},
+		"close after content past an error": {{Type: provider.PartError}, {Type: provider.PartTextStart, ID: "t"}},
 	} {
 		t.Run(name+" is closed", func(t *testing.T) {
 			stream, _ := establish(t, t.Context(), closedStream(parts...), testLimits())
 			_, wait := drainParts(t, stream)
 			assert.Equal(t, WaitClosed, wait)
+		})
+	}
+
+	for name, parts := range map[string][]provider.StreamPart{
+		"close right after an error":            {{Type: provider.PartTextStart, ID: "t"}, {Type: provider.PartError}},
+		"close after an error and raw parts":    {{Type: provider.PartRaw}, {Type: provider.PartError}, {Type: provider.PartRaw}},
+		"close after an error in a new segment": {validFinish(), {Type: provider.PartResponseMeta}, {Type: provider.PartError}},
+	} {
+		t.Run(name+" is closed after an error", func(t *testing.T) {
+			stream, model := establish(t, t.Context(), closedStream(parts...), testLimits())
+			_, wait := drainParts(t, stream)
+			assert.Equal(t, WaitClosedAfterError, wait)
+			assert.NoError(t, wait.Err())
+			assert.Error(t, model().Err())
 		})
 	}
 
@@ -723,6 +738,7 @@ func TestStreamNext_Validation(t *testing.T) {
 func TestWait_Err(t *testing.T) {
 	assert.NoError(t, WaitPart.Err())
 	assert.NoError(t, WaitFinished.Err())
+	assert.NoError(t, WaitClosedAfterError.Err())
 	assert.ErrorIs(t, WaitInvalidOutput.Err(), ErrInvalidOutput)
 	assert.Equal(t, CategoryInternal, ClassifyProvider(WaitInvalidOutput.Err()))
 }
