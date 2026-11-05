@@ -68,6 +68,25 @@ describe("candidate-source workflow gates", () => {
     assert.match(commands("race"), /mise run test-race/);
   });
 
+  it("keeps command coverage required and repeats it only for retained plugin packages", () => {
+    const integration = steps("integration-test").find((step) => step.run === "mise run test-integration");
+    assert.ok(integration);
+    assert.equal(integration.if, undefined);
+    assert.notEqual(integration["continue-on-error"], true);
+    const mise = readFileSync(resolve(root, "mise.toml"), "utf8");
+    const task = mise.split("[tasks.test-integration]")[1]!.split(/\n\[/)[0]!;
+    assert.match(task, /mise run test-ai-gateway-command/);
+    const plugin = steps("plugin-build");
+    const command = plugin.find((step) => step.run === "mise run test-ai-gateway-command");
+    const keep = plugin.find((step) => step.name === "Keep candidate plugin package");
+    assert.ok(command);
+    assert.ok(keep);
+    assert.equal(normalize(command.if), pushGuard);
+    assert.equal(normalize(command.if), normalize(keep.if));
+    assert.notEqual(command["continue-on-error"], true);
+    assert.ok(plugin.indexOf(command) < plugin.indexOf(keep));
+  });
+
   it("validates the plugin package on pull requests and keeps it only for eligible pushes", () => {
     const job = jobs["plugin-build"];
     assert.ok(job, "missing plugin build job");
