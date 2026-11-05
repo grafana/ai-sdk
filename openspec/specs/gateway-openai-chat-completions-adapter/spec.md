@@ -344,3 +344,17 @@ metadata and SHALL relocate a native gateway namespace when adding execution met
 #### Scenario: Native gateway metadata collision
 - **WHEN** native output contains a gateway metadata namespace
 - **THEN** execution attribution preserves it under gateway.nativeMetadata
+
+### Requirement: Sources and citation output
+The adapter SHALL preserve retrieved sources and citations in optional diagnostics.
+URL citations with native spans SHALL also map to standard Chat annotations without
+inventing positions for other citations.
+
+#### Scenario: Native source after text
+- **WHEN** valid native text is followed by a retrieved URL or document source
+- **THEN** the response retains the text and publishes the source
+- **AND** streaming completes successfully
+
+#### Scenario: Citation without span
+- **WHEN** a native citation does not include text positions
+- **THEN** the citation remains in diagnostics without a fabricated Chat annotation

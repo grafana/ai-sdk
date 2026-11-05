@@ -25,9 +25,10 @@ type functionDelta struct {
 	Arguments *string `json:"arguments,omitempty"`
 }
 type delta struct {
-	Role      role        `json:"role,omitempty"`
-	Content   *string     `json:"content,omitempty"`
-	ToolCalls []toolDelta `json:"tool_calls,omitempty"`
+	Annotations []annotation `json:"annotations,omitempty"`
+	Role        role         `json:"role,omitempty"`
+	Content     *string      `json:"content,omitempty"`
+	ToolCalls   []toolDelta  `json:"tool_calls,omitempty"`
 }
 type chunkChoice struct {
 	Index    int     `json:"index"`
@@ -63,7 +64,7 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 		return nil, errOutput
 	}
 	switch p.Type {
-	case provider.PartRaw, provider.PartStreamStart, provider.PartResponseMeta, provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
+	case provider.PartSource, provider.PartRaw, provider.PartStreamStart, provider.PartResponseMeta, provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
 		return nil, nil
 	case provider.PartCustom:
 		if p.Kind == "anthropic.message_start" {
@@ -96,6 +97,9 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 			return nil, errOutput
 		}
 		s.textIDs[p.ID] = false
+		if annotations := mapCitations(p.Citations); len(annotations) > 0 {
+			return &delta{Annotations: annotations}, nil
+		}
 		return nil, nil
 	case provider.PartToolInputStart:
 		if p.ID == "" || len(p.ID) > 256 || !utf8.ValidString(p.ID) || !namePattern.MatchString(p.ToolName) || s.tools[p.ID] != nil || p.ProviderExecuted || boolValue(p.Dynamic) || (p.InputEncoding != "" && p.InputEncoding != provider.ToolInputEncodingJSON) {
@@ -356,6 +360,11 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			continue
 		}
 
+		if !validCitations(part.Citations) || part.Type == provider.PartSource && (part.Source == nil || !validSource(*part.Source)) {
+			fail(502)
+			return
+		}
+		pending = sourceDiagnostics(pending, part.Source, part.Citations)
 		d, err := state.consume(part, r)
 		if err != nil {
 			fail(502)
