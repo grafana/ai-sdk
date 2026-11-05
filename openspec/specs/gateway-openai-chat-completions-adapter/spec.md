@@ -599,3 +599,17 @@ its corresponding total.
 #### Scenario: Impossible detail count
 - **WHEN** an extended count is negative or exceeds its corresponding total
 - **THEN** the adapter rejects the provider output
+
+
+### Requirement: Preserve the native completion-token limit field
+
+Compatible Chat requests SHALL preserve whether the client supplied max_tokens
+or max_completion_tokens. The selected field SHALL carry the effective common
+MaxOutputTokens value. Raw provider-option overrides of either native token key
+SHALL be rejected by the shared guard, using exact case-sensitive native keys.
+
+#### Scenario: Reasoning client supplies a completion-token limit
+
+- **WHEN** the Chat request supplies max_completion_tokens
+- **THEN** unary and streaming compatible calls emit that field only
+- **AND** a local selector is consumed without reaching the endpoint
