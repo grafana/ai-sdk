@@ -110,7 +110,7 @@ func groupPromptBlocks(prompt []provider.Message) []promptBlock {
 func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) (convertedPrompt, []provider.Warning, error) {
 	var warnings []provider.Warning
 	var out convertedPrompt
-	documentCounter := 0
+	documentNames := documentNameState{}
 	if !hasAnyTools {
 		prompt, warnings = filterToolContentFromPrompt(prompt, warnings)
 	}
@@ -145,13 +145,13 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 				contentStart := len(content)
 				switch msg.Role {
 				case provider.RoleUser:
-					blocks, err := convertUserContent(msg.Content, &documentCounter, &warnings, isMistral)
+					blocks, err := convertUserContent(msg.Content, &documentNames, &warnings, isMistral)
 					if err != nil {
 						return convertedPrompt{}, warnings, err
 					}
 					content = append(content, blocks...)
 				case provider.RoleTool:
-					blocks, err := convertToolContent(msg.Content, &documentCounter, &warnings, isMistral)
+					blocks, err := convertToolContent(msg.Content, &documentNames, &warnings, isMistral)
 					if err != nil {
 						return convertedPrompt{}, warnings, err
 					}
@@ -173,7 +173,7 @@ func convertPrompt(prompt []provider.Message, isMistral bool, hasAnyTools bool) 
 			blockStart := len(out.Messages)
 			for messageIndex, msg := range block.messages {
 				trimLastText := blockIndex == len(blocks)-1 && messageIndex == len(block.messages)-1
-				segments, err := convertAssistantContent(msg.Content, &documentCounter, &warnings, isMistral, trimLastText)
+				segments, err := convertAssistantContent(msg.Content, &documentNames, &warnings, isMistral, trimLastText)
 				if err != nil {
 					return convertedPrompt{}, warnings, err
 				}
@@ -252,7 +252,7 @@ func convertSystemBlock(messages []provider.Message, warnings *[]provider.Warnin
 	return out, nil
 }
 
-func convertUserContent(parts []provider.ContentPart, documentCounter *int, warnings *[]provider.Warning, isMistral bool) ([]contentBlock, error) {
+func convertUserContent(parts []provider.ContentPart, documentNames *documentNameState, warnings *[]provider.Warning, isMistral bool) ([]contentBlock, error) {
 	var out []contentBlock
 	for _, p := range parts {
 		start := len(out)
@@ -269,14 +269,14 @@ func convertUserContent(parts []provider.ContentPart, documentCounter *int, warn
 			}
 
 		case provider.ContentPartTypeFile:
-			blocks, err := convertUserFilePart(p, documentCounter)
+			blocks, err := convertUserFilePart(p, documentNames)
 			if err != nil {
 				return nil, err
 			}
 			out = append(out, blocks...)
 
 		case provider.ContentPartTypeToolResult:
-			toolResult, err := buildToolResult(p, documentCounter, isMistral, warnings)
+			toolResult, err := buildToolResult(p, documentNames, isMistral, warnings)
 			if err != nil {
 				return nil, err
 			}
@@ -308,7 +308,7 @@ func appendPartCachePoint(content []contentBlock, opts provider.ProviderOptions)
 	return content, nil
 }
 
-func convertUserFilePart(p provider.ContentPart, documentCounter *int) ([]contentBlock, error) {
+func convertUserFilePart(p provider.ContentPart, documentNames *documentNameState) ([]contentBlock, error) {
 	if p.Data == nil {
 		return nil, nil
 	}
@@ -350,7 +350,7 @@ func convertUserFilePart(p provider.ContentPart, documentCounter *int) ([]conten
 		if !isFullMediaType(mediaType) {
 			mediaType = "text/plain"
 		}
-		block, err := buildDocumentContentBlock(p, mediaType, base64.StdEncoding.EncodeToString([]byte(p.Data.Text)), documentCounter)
+		block, err := buildDocumentContentBlock(p, mediaType, base64.StdEncoding.EncodeToString([]byte(p.Data.Text)), documentNames)
 		if err != nil {
 			return nil, err
 		}
@@ -392,7 +392,7 @@ func convertUserFilePart(p provider.ContentPart, documentCounter *int) ([]conten
 			Video: &videoBlock{Format: format, Source: videoSource{Bytes: b64}},
 		}}, nil
 	}
-	block, err := buildDocumentContentBlock(p, mediaType, b64, documentCounter)
+	block, err := buildDocumentContentBlock(p, mediaType, b64, documentNames)
 	if err != nil {
 		return nil, err
 	}
@@ -403,8 +403,8 @@ func unsupportedFunctionality(format string, args ...any) error {
 	return fmt.Errorf(format+": %w", append(args, provider.ErrUnsupportedFunctionality)...)
 }
 
-func buildDocumentContentBlock(p provider.ContentPart, mediaType, b64 string, documentCounter *int) (contentBlock, error) {
-	document, err := buildDocumentBlock(mediaType, filenameValue(p.Filename), b64, p.ProviderOptions, documentCounter)
+func buildDocumentContentBlock(p provider.ContentPart, mediaType, b64 string, documentNames *documentNameState) (contentBlock, error) {
+	document, err := buildDocumentBlock(mediaType, filenameValue(p.Filename), b64, p.ProviderOptions, documentNames)
 	if err != nil {
 		return contentBlock{}, err
 	}
@@ -418,7 +418,30 @@ func filenameValue(filename *string) string {
 	return *filename
 }
 
-func buildDocumentBlock(mediaType, filename, b64 string, providerOptions provider.ProviderOptions, documentCounter *int) (*documentBlock, error) {
+type documentNameState struct {
+	counter int
+	used    map[string]bool
+}
+
+func (s *documentNameState) next(filename string) string {
+	baseName := sanitizeDocumentName(filename)
+	if baseName == "" {
+		s.counter++
+		baseName = fmt.Sprintf("document-%d", s.counter)
+	}
+	name := baseName
+	for suffix := 2; s.used[name]; suffix++ {
+		suffixText := fmt.Sprintf(" (%d)", suffix)
+		name = strings.TrimSpace(baseName[:min(len(baseName), 200-len(suffixText))]) + suffixText
+	}
+	if s.used == nil {
+		s.used = make(map[string]bool)
+	}
+	s.used[name] = true
+	return name
+}
+
+func buildDocumentBlock(mediaType, filename, b64 string, providerOptions provider.ProviderOptions, documentNames *documentNameState) (*documentBlock, error) {
 	enableCitations, err := shouldEnableCitations(providerOptions)
 	if err != nil {
 		return nil, err
@@ -427,14 +450,9 @@ func buildDocumentBlock(mediaType, filename, b64 string, providerOptions provide
 	if !ok {
 		return nil, unsupportedFunctionality("bedrock: file media type %q is not supported", mediaType)
 	}
-	name := sanitizeDocumentName(filename)
-	if name == "" {
-		*documentCounter++
-		name = fmt.Sprintf("document-%d", *documentCounter)
-	}
 	document := &documentBlock{
 		Format: format,
-		Name:   name,
+		Name:   documentNames.next(filename),
 		Source: documentSource{Bytes: b64},
 	}
 	if enableCitations {
@@ -568,12 +586,12 @@ func hasSignature(data []byte, prefix []int) bool {
 	return true
 }
 
-func convertToolContent(parts []provider.ContentPart, documentCounter *int, warnings *[]provider.Warning, isMistral bool) ([]contentBlock, error) {
+func convertToolContent(parts []provider.ContentPart, documentNames *documentNameState, warnings *[]provider.Warning, isMistral bool) ([]contentBlock, error) {
 	var out []contentBlock
 	for _, p := range parts {
 		switch p.Type {
 		case provider.ContentPartTypeToolResult:
-			toolResult, err := buildToolResult(p, documentCounter, isMistral, warnings)
+			toolResult, err := buildToolResult(p, documentNames, isMistral, warnings)
 			if err != nil {
 				return nil, err
 			}
@@ -587,7 +605,7 @@ func convertToolContent(parts []provider.ContentPart, documentCounter *int, warn
 	return out, nil
 }
 
-func convertAssistantContent(parts []provider.ContentPart, documentCounter *int, warnings *[]provider.Warning, isMistral bool, trimLastText bool) ([]converseMessage, error) {
+func convertAssistantContent(parts []provider.ContentPart, documentNames *documentNameState, warnings *[]provider.Warning, isMistral bool, trimLastText bool) ([]converseMessage, error) {
 	var out []converseMessage
 	emit := func(role converseRole, block contentBlock) {
 		out = append(out, converseMessage{Role: role, Content: []contentBlock{block}})
@@ -635,7 +653,7 @@ func convertAssistantContent(parts []provider.ContentPart, documentCounter *int,
 			})
 
 		case provider.ContentPartTypeToolResult:
-			toolResult, err := buildToolResult(p, documentCounter, isMistral, warnings)
+			toolResult, err := buildToolResult(p, documentNames, isMistral, warnings)
 			if err != nil {
 				return nil, err
 			}
@@ -709,7 +727,7 @@ func trimECMAScriptWhitespace(text string) string {
 // block. Supported content outputs are mapped to text, image, and document
 // blocks; unsupported variants degrade to a single empty text block and emit
 // a warning.
-func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral bool, warnings *[]provider.Warning) (*toolResultBlock, error) {
+func buildToolResult(p provider.ContentPart, documentNames *documentNameState, isMistral bool, warnings *[]provider.Warning) (*toolResultBlock, error) {
 	out := &toolResultBlock{
 		ToolUseID: normalizeToolCallID(p.ToolCallID, isMistral),
 	}
@@ -811,7 +829,7 @@ func buildToolResult(p provider.ContentPart, documentCounter *int, isMistral boo
 					})
 					continue
 				}
-				document, err := buildDocumentBlock(mediaType, filenameValue(c.Filename), base64Data, c.ProviderOptions, documentCounter)
+				document, err := buildDocumentBlock(mediaType, filenameValue(c.Filename), base64Data, c.ProviderOptions, documentNames)
 				if err != nil {
 					return nil, err
 				}
