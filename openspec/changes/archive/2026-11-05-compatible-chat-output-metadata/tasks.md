@@ -1,0 +1,5 @@
+- [x] Compare registered upstream metadata normalization and coverage map.
+- [x] Preserve typed refusal/logprobs and usage with local opt-in.
+- [x] Reject invalid probabilities, byte arrays and negative counts.
+- [x] Test unary/stream and unchanged default behavior with synthetic payloads.
+- [x] Document extension and provider-boundary evidence limitation.

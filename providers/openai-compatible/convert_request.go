@@ -268,10 +268,11 @@ func toCamelCase(s string) string {
 }
 
 var openAIOptionFields = map[string]struct{}{
-	"user":             {},
-	"reasoningEffort":  {},
-	"textVerbosity":    {},
-	"strictJsonSchema": {},
+	"user":                           {},
+	"reasoningEffort":                {},
+	"textVerbosity":                  {},
+	"strictJsonSchema":               {},
+	"preserveChatCompletionMetadata": {},
 }
 
 func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, error) {
@@ -303,6 +304,9 @@ func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, e
 }
 
 func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
+	if src.PreserveChatCompletionMetadata != nil {
+		dst.PreserveChatCompletionMetadata = src.PreserveChatCompletionMetadata
+	}
 	if src.User != "" {
 		dst.User = src.User
 	}
