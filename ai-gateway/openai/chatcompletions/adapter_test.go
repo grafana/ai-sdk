@@ -30,11 +30,11 @@ func (f *fakeModel) DoGenerate(ctx context.Context, o provider.CallOptions) (*pr
 func (f *fakeModel) DoStream(ctx context.Context, o provider.CallOptions) (*provider.StreamResult, error) {
 	return f.stream(ctx, o)
 }
-func testHandler(t *testing.T, f *fakeModel) *handler {
+func testHandler(t *testing.T, f *fakeModel, keys ...string) *handler {
 	t.Helper()
 	c, err := catalog.NewStatic([]catalog.StaticEntry{{Info: catalog.ModelInfo{ID: "canonical", Aliases: []string{"alias"}}, Model: execution.Translate(f, execution.Target{Type: execution.TargetOpenAI})}})
 	require.NoError(t, err)
-	runtime, err := execution.New(execution.Config{Selector: execution.CatalogSelector(c), Limits: execution.DefaultLimits})
+	runtime, err := execution.New(execution.Config{Selector: execution.CatalogSelector(c), Limits: execution.DefaultLimits, ConfiguredAPIKeys: keys})
 	require.NoError(t, err)
 	h, err := New(runtime)
 	require.NoError(t, err)
