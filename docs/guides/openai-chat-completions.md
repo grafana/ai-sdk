@@ -148,3 +148,8 @@ Validation applies to the complete public stream: structured JSON must remain va
 after concatenation, and `parallel_tool_calls:false` permits only one call across
 all native segments. The shared runtime rejects duplicate native tool IDs. A response containing calls ends with `tool_calls` unless it was interrupted
 by a token limit or content filter.
+URL citation annotations use character offsets in the concatenated Chat text.
+Preceding text is counted in Unicode code points, including one for each emoji;
+native block-local indices are shifted without conversion. The `grafana.citations`
+extension retains the original local spans. This convention also applies across
+sequential native stream segments.

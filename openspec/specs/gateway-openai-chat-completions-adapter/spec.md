@@ -383,3 +383,13 @@ complete public response, not only each native segment. Tool identity validation
 #### Scenario: Tool calls precede a final text segment
 - **WHEN** earlier native segments contain client-executed tool calls
 - **THEN** a completed public response retains tool_calls as its finish reason
+### Requirement: Citation offsets in concatenated text
+
+The adapter SHALL shift native URL citation spans by the number of Unicode code
+points in preceding Chat text, including preceding native stream segments. It
+SHALL preserve the original block-local spans in diagnostic citations.
+
+#### Scenario: Unicode text precedes a cited block
+
+- **WHEN** an uncited block contains `é😀` and the next block has native span 0–2
+- **THEN** the Chat annotation spans 2–4 and diagnostic citation retains 0–2
