@@ -38,7 +38,7 @@ Candidate-local projection SHALL retain available native message, type, string-o
 
 #### Scenario: Small native failure summaries policy
 - **WHEN** a candidate-local native failure is summarized
-- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Pure projection SHALL NOT extract credentials from requests or diagnostic trees. Runtime delivery SHALL redact exact configured API-key matches from summary message, type and string code under gateway-attempt-failure-evidence; other provider-originated values SHALL remain available independently of logger field policy. Inputs SHALL remain unchanged. Malformed or unavailable diagnostics SHALL degrade optional fields without creating an error. Projection SHALL NOT take or apply a source byte limit; native body size is bounded by the outbound transport under gateway-resource-policy.
+- **THEN** It SHALL follow only a single error chain and SHALL NOT assign an arbitrary aggregate member to a candidate. It SHALL NOT publish original bodies, headers, request data, arbitrary causes or diagnostic details. Native JSON decoding SHALL be standard Go shallow decoding with numeric precision preserved. Pure projection SHALL NOT extract credentials from requests or diagnostic trees. Runtime delivery SHALL redact exact configured and validated request-account API-key matches from summary message, type and string code under gateway-attempt-failure-evidence; other provider-originated values SHALL remain available independently of logger field policy. Inputs SHALL remain unchanged. Malformed or unavailable diagnostics SHALL degrade optional fields without creating an error. Projection SHALL NOT take or apply a source byte limit; native body size is bounded by the outbound transport under gateway-resource-policy.
 
 #### Scenario: Original native failure survives cancellation
 - **WHEN** a canceled decision retains a candidate-native SourceErr
@@ -50,7 +50,7 @@ Candidate-local projection SHALL retain available native message, type, string-o
 
 #### Scenario: Provider echoes a credential in a summary
 - **WHEN** a provider-originated message, type or string code contains a credential value
-- **THEN** runtime delivery SHALL redact exact configured API-key matches and SHALL preserve caller-owned BYOK values that do not match configured keys, without mutating source errors; account authorization and request isolation SHALL remain unchanged
+- **THEN** runtime delivery SHALL redact exact configured and validated request-account API-key matches and SHALL preserve unrelated scalar values, without mutating source errors; account authorization and request isolation SHALL remain unchanged
 
 #### Scenario: Numeric code exceeds float precision
 - **WHEN** a native error supplies a large numeric code

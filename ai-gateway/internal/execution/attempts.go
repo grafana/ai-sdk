@@ -104,8 +104,8 @@ type View struct {
 	redactor SummaryRedactor
 }
 
-// Current summarizes an event-local native failure, with configured keys
-// redacted.
+// Current summarizes an event-local native failure, with configured and
+// request-account keys redacted.
 func (view View) Current(err *provider.APICallError) *Failure {
 	if err == nil {
 		return nil

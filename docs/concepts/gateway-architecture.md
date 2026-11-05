@@ -344,6 +344,14 @@ serializes model calls, forwards `providerOptions.gateway` routing controls
 unchanged, and reads JSON or SSE. It establishes the client-facing protocol,
 not Vercel's private hosted-service implementation or Grafana's routing policy.
 
+Native failure summaries redact exact operator-configured API keys and API keys
+from the validated request accounts. The selector passes request keys only to
+that call's summary policy; concurrent requests do not share them. This trades
+verbatim credential echoes for safe diagnostics, including failures before a
+successful fallback. It does not rewrite source errors, generated content or
+opaque provider metadata, and it does not inspect arbitrary request fields for
+secrets.
+
 ---
 
 ← [How a request runs](architecture.md) · [Docs index](../README.md) · [Gateway glossary →](gateway-glossary.md)

@@ -340,6 +340,18 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
           );
           assert.equal(unary.choices[0].message.content, 'hello');
           assert.equal(unary.usage?.total_tokens, 5);
+          const providerOptions = backend === 'anthropic'
+            ? { anthropic: { container: { id: 'sdk-container' } } }
+            : backend === 'openai' ? { openai: { user: 'sdk-user' } }
+            : { 'custom-vendor': { user: 'sdk-user' } };
+          const extended = { model: 'chat', messages, providerOptions };
+          await client.chat.completions.create(extended);
+          assert.deepEqual(backend === 'anthropic' ? requests.at(-1)!.container : requests.at(-1)!.user,
+            backend === 'anthropic' ? { id: 'sdk-container' } : 'sdk-user');
+          const extendedStream = await client.chat.completions.create({ ...extended, stream: true });
+          for await (const chunk of extendedStream) assert.equal(chunk.object, 'chat.completion.chunk');
+          assert.deepEqual(backend === 'anthropic' ? requests.at(-1)!.container : requests.at(-1)!.user,
+            backend === 'anthropic' ? { id: 'sdk-container' } : 'sdk-user');
           const history: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
             { role: 'developer', content: 'Follow the policy', name: 'policy' },
             { role: 'user', content: 'hello', name: 'alice' },

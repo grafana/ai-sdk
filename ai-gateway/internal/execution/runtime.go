@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -91,7 +92,11 @@ func (r *Runtime) Call(ctx context.Context, modelID string, options provider.Cal
 	if err != nil {
 		return nil, err
 	}
-	attempts := newAttemptCapture(modelID, selected, r.redactor)
+	redactor := r.redactor
+	if len(selected.apiKeys) > 0 {
+		redactor = NewSummaryRedactor(slices.Concat(r.redactor.keys, selected.apiKeys))
+	}
+	attempts := newAttemptCapture(modelID, selected, redactor)
 	return &Call{modelID: selected.ID, ctx: withTranslator(attempts.withObserver(ctx), config.translator), model: selected.Model, options: options, history: history, attempts: attempts, limits: r.limits}, nil
 }
 
