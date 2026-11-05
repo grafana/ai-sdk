@@ -251,3 +251,7 @@ Streaming includes transport-local random `obfuscation` padding by default. Set
 `stream_options.include_obfuscation` to `false` to omit it. Each public chunk,
 including the final usage chunk, is padded to a 64-byte boundary with fresh
 cryptographic randomness; no provider padding or content is reused.
+
+Inline `moderation` requests are supported on native compatible routes. The
+configured model and input/output policies are validated and passed to the native
+service. Other backends reject the option before I/O rather than skipping it.
