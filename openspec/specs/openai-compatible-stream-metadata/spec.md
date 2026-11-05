@@ -95,3 +95,16 @@ unknown prediction part properties SHALL fail validation.
 #### Scenario: Invalid prediction union
 - **WHEN** prediction content is null, empty parts, or a non-text part
 - **THEN** request construction fails before network I/O
+
+### Requirement: Native inline moderation
+The provider SHALL forward validated moderation configuration and, when Chat
+metadata preservation is enabled, retain typed native input/output outcomes.
+Scores SHALL be finite probabilities and result/error unions SHALL be validated.
+
+#### Scenario: Moderation accompanies a streamed completion
+- **WHEN** a native chunk contains valid input/output moderation outcomes
+- **THEN** the provider emits a typed Chat metadata custom part with both outcomes
+
+#### Scenario: Invalid moderation score
+- **WHEN** native moderation reports a score outside zero through one
+- **THEN** decoding fails instead of publishing invalid metadata

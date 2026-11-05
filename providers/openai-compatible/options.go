@@ -113,6 +113,8 @@ type OpenAIOptions struct {
 	Prediction       *ChatPrediction       `json:"prediction,omitempty"`
 	WebSearchOptions *ChatWebSearchOptions `json:"web_search_options,omitempty"`
 
+	Moderation *ChatModerationOptions `json:"moderation,omitempty"`
+
 	extraFields map[string]any
 }
 

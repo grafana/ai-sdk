@@ -160,3 +160,10 @@ nonempty array of validated text parts, including explicit cache breakpoints;
 search retains context-size and approximate-location controls. These extensions
 are validated before transport and do not change requests that omit them. Model
 support remains a native service decision.
+
+`OpenAIOptions.Moderation` forwards an explicit native moderation model and
+input/output score or block policy. With Chat metadata preservation enabled,
+`chatCompletion.moderation` retains validated results or typed errors for both
+channels in unary responses and streaming custom metadata events. Invalid scores,
+missing required fields or invalid result unions fail decoding. This codec does
+not substitute local moderation for the native service.
