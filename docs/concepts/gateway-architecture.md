@@ -288,7 +288,7 @@ summary redaction is not a general filter for generated content or secrets.
 ## Customer telemetry contracts
 
 The internal [customer telemetry package](../../ai-gateway/pkg/internal/customertelemetry/doc.go)
-defines validation, policy, and discovery-cache contracts for future delivery to a customer's own
+defines validation, policy, discovery and ordered delivery ownership for future delivery to a customer's own
 stack. It is not connected to request handling: changing a client's Gateway URL
 does not yet activate this delivery. Existing operator telemetry continues through
 the paths described above.
@@ -345,19 +345,24 @@ state and failures are rechecked at that retry interval. A short-lived snapshot
 can expire before the next allowed attempt; recording then stops until usable
 metadata returns. Destination and policy refresh are independent. Transient failure
 preserves each old snapshot only until its original expiry. Observed disablement,
-signal removal, authoritative denial, or invalid data takes effect for subsequent
-cache reads immediately. A failed read never restores recording defaults.
+signal removal, authoritative denial, or invalid data is published by the controller
+to delivery gates before the cache releases waiting requests. This includes
+background observations with no subsequent request. A failed read never restores
+recording defaults.
 
 Changes are observable only after refresh; this is not instantaneous revocation.
-Already-returned snapshots and future recorder leases need their own validity and
-lifecycle enforcement. Concrete adapters must map verified service responses to
+Already-returned snapshots remain immutable; the controller independently updates
+the live gates and never republishes snapshots supplied by requests. Concrete adapters must map verified service responses to
 the cache's bounded outcomes; no Cloud response format is assumed here.
 
 Entry count is bounded, with at most one outstanding resolver call per component
 per entry. Background refresh does not extend idle retention. Idle entries are
 reclaimed once their actual resolver calls return and their minimum retry
 spacing has elapsed. Idle entries retained for that cooldown do not refresh and
-still count toward capacity. A timed-out call that ignores
+still count toward capacity. Eviction revokes delivery authority even for a held
+lease: a recording longer than idle retention can lose telemetry while inference
+continues independently. Expiry is published even when refresh is pending or an
+idle entry cannot yet be removed. A timed-out call that ignores
 cancellation remains charged to capacity and cannot spawn replacement calls.
 The owner must close the cache with a finite shutdown deadline; closure cancels
 lookups, wakes waiters, and stops admission and maintenance. Real adapters must
@@ -365,12 +370,37 @@ honor cancellation and bound their transports because Go cannot terminate arbitr
 resolver code.
 
 The internal exporter pool owns typed clients through immutable bindings and
-recording leases. A configuration owner must publish authoritative snapshots in
-order for each stack; requests acquire from a published binding rather than
-reconciling arbitrary old snapshots. Matching transport settings reuse clients
+recording leases. A controller claims a fixed set of empty pools through typed
+deliveries. It publishes current metadata under the cache's existing update lock;
+attached pools refuse external updates. Deliveries resolve on demand, then select
+the current binding and policy under that same lock. Construction happens outside
+it. If rotation or revocation wins the acquisition race, recording is omitted.
+Matching transport settings reuse clients
 across policy revisions. Changed endpoints, ingestion identities, or credential
 versions install new bindings; existing recordings can finish on the old target
-while its authority remains valid. Stale bindings cannot acquire again.
+while its authority remains valid. Shorter authority also limits retiring clients,
+even if capacity prevents creating a replacement; refreshing the successor cannot
+extend their deadlines. Stale bindings cannot acquire again. A later acquisition
+can recreate a pool-idle binding or retry capacity using current cached metadata,
+without another revision or lookup. No extra per-stack publication map is retained.
+
+```mermaid
+flowchart LR
+  request[Authorized stack demand] --> delivery[Typed delivery]
+  delivery --> cache[Private discovery cache]
+  resolvers[Destination and policy resolvers] --> cache
+  cache -->|Accepted update, expiry, eviction| controller[Ordered controller]
+  controller -->|Publish without transport I/O| pool[Per-signal pool]
+  delivery -->|Acquire current binding and policy| pool
+  pool --> lease[Recording lease]
+  lease --> gate[Export gate]
+  gate --> receiver[Signal destination]
+```
+
+This is the internal composition exercised by tests; production routes do not
+yet instantiate it. Opaque revisions do not order publication. The controller
+serializes local acceptance, but cannot detect stale remote responses without an
+adapter consistency contract. Delivery across signals is not atomic.
 
 Factories resolve the exact deployment-owned credential reference and configure
 their supported SDK queues/retries. They must install the pool's export gate at
@@ -390,6 +420,11 @@ unless the bounded shutdown period has elapsed. Late construction is cleaned up,
 and non-cooperative construction or shutdown remains charged until it returns.
 The pool owns no additional payload queue or export retry loop.
 
+Controller shutdown first stops cache admission and publication, then closes all
+pools concurrently with waiting for resolver completion. A blocked resolver cannot
+delay the start of pool draining. Waiting uses the largest configured pool shutdown
+budget or an earlier caller deadline; repeated close does not extend pool deadlines.
+
 Local TLS receivers verify actual protobuf requests through the pinned OTLP HTTP
 exporter's supported client injection, including credential-version isolation,
 bounded SDK queues, retries, and blocked queued sends after revocation. The pinned
@@ -401,6 +436,10 @@ generation protocol or establish Cloud authentication.
 These are executable contracts, cache behavior, and client lifecycle, not production delivery
 or proof of Cloud ingestion. Discovery field mappings, transport credentials,
 export filtering, production wiring, and concrete per-signal adapters remain separate work.
+Recorder integration must enforce trusted capture fields before recording starts,
+the fixed metric profile, and independent signal eligibility even when signals
+share a transport. Passing a policy through this controller does not filter an SDK
+payload or establish generation ingestion.
 No customer settings API, log exporter, full agent-workflow trace, or billing
 accounting is supplied by this package.
 
