@@ -287,3 +287,18 @@ responses expose `message.refusal` with null content when no text was generated;
 streams expose refusal deltas exactly once, including when the refusal arrives
 only in the final native snapshot. A refusal can validly replace requested JSON
 schema output or required tool calls and does not become a gateway output error.
+
+Chat requests fail with HTTP 400 before native I/O if the selected provider
+would discard an option as unsupported. Responses rejects `stop`, `seed`,
+`presence_penalty`, and `frequency_penalty`; Anthropic rejects the latter three.
+Model-specific restrictions also apply, including unsupported sampling controls
+with reasoning and Anthropic's mutually exclusive `temperature` and `top_p`.
+Use a compatible Chat target when the native Chat API supports the requested
+controls. Other adapters retain their provider warning behavior.
+
+The current HTTP surface implements creation and streaming only. `store: true`
+is rejected; retrieve, list, update, delete, and stored-message routes are not
+implemented. Supporting those operations requires a host storage and ownership
+contract, not only forwarding `store` to a native provider. Unsupported create fields are rejected rather than silently ignored. Native
+search is available through compatible web_search_options; application tools
+are executed by the client.

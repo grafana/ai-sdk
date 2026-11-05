@@ -312,7 +312,7 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
             : '';
         writeFileSync(
           config,
-          `providers:\n  failing:\n    type: openai\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_JS_KEY\n    baseURL: http://127.0.0.1:${addr.port}/fail/v1\n  local:\n    type: ${backend}\n${backend === 'openai-compatible' ? '    providerName: custom-vendor\n' : ''}    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_JS_KEY\n    baseURL: ${baseURL}\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: local\n      model: ${backend === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o-mini'}\n    aliases: [chat]\n  public/mixed:\n    name: Mixed\n    primary:\n      provider: failing\n      model: gpt-4.1\n    fallback:\n      - provider: local\n        model: ${backend === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o-mini'}\n${fallbackConfig}`
+          `providers:\n  failing:\n    type: openai\n    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_JS_KEY\n    baseURL: http://127.0.0.1:${addr.port}/fail/v1\n  local:\n    type: ${backend}\n${backend === 'openai-compatible' ? '    providerName: custom-vendor\n    supportsStructuredOutputs: true\n' : ''}    apiKeyEnv: CHAT_COMPLETIONS_ADAPTER_JS_KEY\n    baseURL: ${baseURL}\nmodels:\n  public/chat:\n    name: Chat\n    primary:\n      provider: local\n      model: ${backend === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o-mini'}\n    aliases: [chat]\n  public/mixed:\n    name: Mixed\n    primary:\n      provider: failing\n      model: gpt-4.1\n    fallback:\n      - provider: local\n        model: ${backend === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o-mini'}\n${fallbackConfig}`
         );
         const env = Object.fromEntries(
           Object.entries(process.env).filter(
@@ -400,25 +400,15 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
             const sent = requests.at(-1)!;
             assert.deepEqual(sent.messages, history.map((m) => m.role === 'assistant' ? { ...m, content: '' } : m));
           }
-          if (backend === 'anthropic') {
-            const warned = await client.chat.completions.create({ model: 'chat', messages, seed: 7 });
-            const ext = (warned as typeof warned & { grafana: { warnings: { type: string; feature: string }[] } })
-              .grafana;
-            assert.ok(ext.warnings.some((w) => w.type === 'unsupported' && w.feature === 'seed'));
-            let seen = false;
-            const warningStream = await client.chat.completions.create({
-              model: 'chat',
-              messages,
-              seed: 7,
-              stream: true,
-            });
-            for await (const chunk of warningStream) {
-              assert.equal(chunk.id, 'msg_private');
-              assert.equal(chunk.model, 'claude-sonnet-4-20250514');
-              const extension = (chunk as typeof chunk & { grafana?: { warnings?: { feature: string }[] } }).grafana;
-              if (extension?.warnings?.some((w) => w.feature === 'seed')) seen = true;
+          if (backend !== 'openai-compatible') {
+            const unsupported = [{ seed: 7 }, { presence_penalty: 0 }, { frequency_penalty: 0 }, ...(backend === 'openai' ? [{ stop: 'END' }] : [{ temperature: 0.5, top_p: 0.5 }])];
+            for (const fields of unsupported) {
+              for (const stream of [false, true] as const) {
+                const before = requests.length;
+                await assert.rejects(() => client.chat.completions.create({ model: 'chat', messages, ...fields, stream }), (e: unknown) => e instanceof OpenAI.APIError && e.status === 400);
+                assert.equal(requests.length, before);
+              }
             }
-            assert.ok(seen);
           }
           if (backend === 'openai-compatible') {
             const customTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [{ type: 'custom', custom: { name: 'uppercase', format: { type: 'grammar', grammar: { syntax: 'regex', definition: '[a-z]+' } } } }];
