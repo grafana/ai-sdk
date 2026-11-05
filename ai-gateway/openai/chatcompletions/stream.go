@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -50,10 +51,11 @@ type toolState struct {
 	ended, final bool
 }
 type streamState struct {
-	text     strings.Builder
-	textSeen bool
-	textIDs  map[string]bool
-	tools    map[string]*toolState
+	toolOffset int
+	text       strings.Builder
+	textSeen   bool
+	textIDs    map[string]bool
+	tools      map[string]*toolState
 }
 
 func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, error) {
@@ -61,7 +63,7 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 		return nil, errOutput
 	}
 	switch p.Type {
-	case provider.PartStreamStart, provider.PartResponseMeta, provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
+	case provider.PartRaw, provider.PartStreamStart, provider.PartResponseMeta, provider.PartReasoningStart, provider.PartReasoningDelta, provider.PartReasoningEnd:
 		return nil, nil
 	case provider.PartCustom:
 		if p.Kind == "anthropic.message_start" {
@@ -99,7 +101,7 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 		if p.ID == "" || len(p.ID) > 256 || !utf8.ValidString(p.ID) || !namePattern.MatchString(p.ToolName) || s.tools[p.ID] != nil || p.ProviderExecuted || boolValue(p.Dynamic) || (p.InputEncoding != "" && p.InputEncoding != provider.ToolInputEncodingJSON) {
 			return nil, errOutput
 		}
-		t := &toolState{call: toolCall{ID: p.ID, Type: kindFunction, Function: callFunction{Name: p.ToolName}}, index: len(s.tools)}
+		t := &toolState{call: toolCall{ID: p.ID, Type: kindFunction, Function: callFunction{Name: p.ToolName}}, index: s.toolOffset + len(s.tools)}
 		s.tools[p.ID] = t
 		return &delta{ToolCalls: []toolDelta{{Index: t.index, ID: p.ID, Type: kindFunction, Function: functionDelta{Name: p.ToolName, Arguments: ptr("")}}}}, nil
 	case provider.PartToolInputDelta:
@@ -141,7 +143,7 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 			t.final = true
 			return nil, nil
 		}
-		t := &toolState{call: call, index: len(s.tools), ended: true, final: true}
+		t := &toolState{call: call, index: s.toolOffset + len(s.tools), ended: true, final: true}
 		s.tools[call.ID] = t
 		return &delta{ToolCalls: []toolDelta{{Index: t.index, ID: call.ID, Type: kindFunction, Function: functionDelta{Name: call.Function.Name, Arguments: ptr(call.Function.Arguments)}}}}, nil
 	default:
@@ -248,15 +250,31 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 		return emit(delta{Role: roleAssistant}, nil, nil, false)
 	}
 	state := streamState{textIDs: map[string]bool{}, tools: map[string]*toolState{}}
+	var final *string
+	var total *usage
+	usageKnown := true
 	for {
 		if ctx.Err() != nil {
 			return
 		}
 		part, wait := stream.Next()
+		if wait == execution.WaitFinished && final != nil {
+			if !open() || !emit(delta{}, final, nil, false) {
+				return
+			}
+			if r.StreamOptions != nil && boolValue(r.StreamOptions.IncludeUsage) {
+				if !usageKnown {
+					total = nil
+				}
+				if !emit(delta{}, nil, total, true) {
+					return
+				}
+			}
+			_ = write([]byte("[DONE]"))
+			return
+		}
 		if wait != execution.WaitPart {
-			if wait == execution.WaitClosed {
-				fail(502)
-			} else if wait != execution.WaitCanceled {
+			if wait != execution.WaitCanceled {
 				fail(categoryStatus(execution.ClassifyProvider(wait.Err())))
 			}
 			return
@@ -305,38 +323,23 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				fail(502)
 				return
 			}
-			_, terminal := stream.Next()
-			if terminal != execution.WaitFinished {
-				if terminal == execution.WaitPart {
-					fail(502)
-				} else if terminal != execution.WaitCanceled {
-					fail(categoryStatus(execution.ClassifyProvider(terminal.Err())))
-				}
-				return
-			}
-			if ctx.Err() != nil {
-				fail(504)
-				return
-			}
-			if !open() {
-				fail(502)
-				return
-			}
-			if !emit(delta{}, &f, nil, false) {
-				fail(502)
-				return
-			}
-			if r.StreamOptions != nil && boolValue(r.StreamOptions.IncludeUsage) {
-				if !emit(delta{}, nil, u, true) {
+			final = &f
+			if u == nil {
+				usageKnown = false
+			} else if total == nil {
+				total = u
+			} else {
+				if err := addUsage(total, u); err != nil {
 					fail(502)
 					return
 				}
 			}
-			if !write([]byte("[DONE]")) {
-				fail(502)
-			}
-			return
+			// Runtime owns native segment boundaries. Reused native item IDs
+			// receive fresh public tool indices in the next segment.
+			state = streamState{toolOffset: state.toolOffset + len(state.tools), textIDs: map[string]bool{}, tools: map[string]*toolState{}}
+			continue
 		}
+
 		d, err := state.consume(part, r)
 		if err != nil {
 			fail(502)
@@ -354,4 +357,26 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 
 		}
 	}
+}
+
+// addUsage adds independently billed native segments, omitting detail counters
+// when any segment did not report them.
+func addUsage(total, next *usage) error {
+	if next.Total > math.MaxInt-total.Total {
+		return errOutput
+	}
+	total.Prompt += next.Prompt
+	total.Completion += next.Completion
+	total.Total += next.Total
+	if total.PromptDetails != nil && next.PromptDetails != nil {
+		total.PromptDetails.Cached += next.PromptDetails.Cached
+	} else {
+		total.PromptDetails = nil
+	}
+	if total.CompletionDetails != nil && next.CompletionDetails != nil {
+		total.CompletionDetails.Reasoning += next.CompletionDetails.Reasoning
+	} else {
+		total.CompletionDetails = nil
+	}
+	return nil
 }
