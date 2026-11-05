@@ -32,6 +32,8 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
         let emptyArgumentsNext = false;
         let holdNext = false;
         let truncateNext = false;
+        let partialNext = false;
+        let emptyNext = false;
         let cancelled: (() => void) | undefined;
         const upstream = createServer(async (req, res) => {
           const chunks: Buffer[] = [];
@@ -75,7 +77,8 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
             !JSON.stringify(body.messages ?? body.input).includes('tool_result') &&
             !JSON.stringify(body.input ?? []).includes('function_call_output') &&
             !(body.messages ?? []).some((m: any) => m.role === 'tool');
-          const text = body.response_format || body.text ? '{"answer":"yes"}' : 'hello';
+          const text = emptyNext ? '' : body.response_format || body.text ? '{"answer":"yes"}' : 'hello';
+          emptyNext = false;
           if (backend === 'openai') {
             const item = tool
               ? {
@@ -226,15 +229,17 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
             res.end();
             return;
           }
+          const partial = partialNext;
+          partialNext = false;
           const call = {
             id: 'call_weather',
             type: 'function',
-            function: { name: 'weather', arguments: '{"city":"Rio"}' },
+            function: { name: 'weather', arguments: partial ? '{"city":' : '{"city":"Rio"}' },
           };
           const message = tool
             ? { role: 'assistant', content: null, tool_calls: [call] }
             : { role: 'assistant', content: text };
-          const finish = tool ? 'tool_calls' : 'stop';
+          const finish = partial ? 'length' : tool ? 'tool_calls' : 'stop';
           const base = { id: 'private', created: 1, model: body.model };
           if (!body.stream) {
             res.setHeader('Content-Type', 'application/json');
@@ -412,6 +417,29 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
               assert.equal(native.store, false);
               assert.ok(!('parallelToolCalls' in native));
             }
+          }
+          if (backend === 'openai-compatible') {
+            partialNext = true;
+            const partial = await client.chat.completions.create({ model: 'chat', messages, tools });
+            assert.equal(partial.choices[0].finish_reason, 'length');
+            const partialCall = partial.choices[0].message.tool_calls?.[0];
+            assert.ok(partialCall?.type === 'function');
+            assert.equal(partialCall.function.arguments, '{"city":');
+            partialNext = true;
+            const partialStream = await client.chat.completions.create({ model: 'chat', messages, tools, stream: true });
+            let argumentsText = '', terminal = '';
+            for await (const chunk of partialStream) {
+              for (const choice of chunk.choices) {
+                argumentsText += choice.delta.tool_calls?.[0]?.function?.arguments ?? '';
+                terminal = choice.finish_reason ?? terminal;
+              }
+            }
+            assert.equal(argumentsText, '{"city":');
+            assert.equal(terminal, 'length');
+            emptyNext = true;
+            const empty = await client.chat.completions.create({ model: 'chat', messages });
+            assert.equal(empty.choices[0].message.content, '');
+            assert.equal(empty.choices[0].finish_reason, 'stop');
           }
           const called = await client.chat.completions.create({ model: 'chat', messages, tools });
           assert.equal(called.choices[0].finish_reason, 'tool_calls');

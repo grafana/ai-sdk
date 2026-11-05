@@ -106,10 +106,22 @@ func (r mappedRequest) validateText(text, finish string) error {
 	return nil
 }
 func validateCall(call toolCall, r mappedRequest) error {
-	if call.ID == "" || len(call.ID) > 256 || !utf8.ValidString(call.ID) || !namePattern.MatchString(call.Function.Name) || !utf8.ValidString(call.Function.Arguments) || !jsonObject([]byte(call.Function.Arguments)) {
+	if call.ID == "" || len(call.ID) > 256 || !utf8.ValidString(call.ID) || !namePattern.MatchString(call.Function.Name) || !utf8.ValidString(call.Function.Arguments) {
 		return errOutput
 	}
 	if r.options.ToolChoice != nil && (r.options.ToolChoice.Type == provider.ToolChoiceNone || r.options.ToolChoice.Type == provider.ToolChoiceTool && r.options.ToolChoice.ToolName != call.Function.Name) {
+		return errOutput
+	}
+	for _, t := range r.options.Tools {
+		if t.Name == call.Function.Name {
+			return nil
+		}
+	}
+	return errOutput
+}
+
+func validateCallArguments(call toolCall, r mappedRequest) error {
+	if !jsonObject([]byte(call.Function.Arguments)) {
 		return errOutput
 	}
 	for _, t := range r.options.Tools {
@@ -160,7 +172,7 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 		case provider.ContentReasoning:
 		case provider.ContentToolCall:
 			call := toolCall{ID: p.ToolCallID, Type: kindFunction, Function: callFunction{Name: p.ToolName, Arguments: string(p.Input)}}
-			if p.ProviderExecuted || boolValue(p.Dynamic) || boolValue(p.Preliminary) || used[call.ID] || validateCall(call, r) != nil {
+			if p.ProviderExecuted || boolValue(p.Dynamic) || boolValue(p.Preliminary) || used[call.ID] || validateCall(call, r) != nil || (!partialFinish(finish) && validateCallArguments(call, r) != nil) {
 				return out, errOutput
 			}
 			used[call.ID] = true
@@ -170,16 +182,13 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 		}
 	}
 	text := content.String()
-	if text == "" && len(msg.ToolCalls) == 0 && finish == "stop" {
-		return out, errOutput
-	}
 	if r.Parallel != nil && !*r.Parallel && len(msg.ToolCalls) > 1 {
 		return out, errOutput
 	}
 	if requiresTool(r) && len(msg.ToolCalls) == 0 && finish == "stop" {
 		return out, errOutput
 	}
-	if (len(msg.ToolCalls) > 0) != (finish == "tool_calls") {
+	if !partialFinish(finish) && (len(msg.ToolCalls) > 0) != (finish == "tool_calls") {
 		return out, errOutput
 	}
 	if err = r.validateText(text, finish); err != nil {
@@ -199,3 +208,5 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 func requiresTool(r mappedRequest) bool {
 	return r.options.ToolChoice != nil && (r.options.ToolChoice.Type == provider.ToolChoiceRequired || r.options.ToolChoice.Type == provider.ToolChoiceTool)
 }
+
+func partialFinish(reason string) bool { return reason == "length" || reason == "content_filter" }
