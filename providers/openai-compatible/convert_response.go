@@ -21,12 +21,6 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 
 	choice := parsed.Choices[0]
 	content := make([]provider.GenerateContentPart, 0, 2+len(choice.Message.ToolCalls))
-	if choice.Message.Content != "" {
-		content = append(content, provider.GenerateContentPart{
-			Type: provider.ContentText,
-			Text: choice.Message.Content,
-		})
-	}
 	if choice.Message.ReasoningContent != "" {
 		content = append(content, provider.GenerateContentPart{
 			Type: provider.ContentReasoning,
@@ -36,6 +30,12 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 		content = append(content, provider.GenerateContentPart{
 			Type: provider.ContentReasoning,
 			Text: choice.Message.Reasoning,
+		})
+	}
+	if choice.Message.Content != "" {
+		content = append(content, provider.GenerateContentPart{
+			Type: provider.ContentText,
+			Text: choice.Message.Content,
 		})
 	}
 	for _, toolCall := range choice.Message.ToolCalls {
