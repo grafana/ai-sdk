@@ -67,3 +67,18 @@ assistant audio reference containing only its native ID.
 - **WHEN** an assistant message carries a valid native audio reference and no text
 - **THEN** the native request contains its audio ID and null content
 - **AND** audio bytes or unrelated fields are not accepted in the history reference
+
+### Requirement: Custom text tool transport
+The compatible provider SHALL map provider tool ID `openai.custom` into native
+custom declarations and named choices. It SHALL emit text-encoded streamed input
+and canonical JSON-string final calls, matching the existing Responses domain
+representation. A local custom history marker SHALL preserve type without
+requiring a current declaration or overriding common identity.
+
+#### Scenario: Grammar-constrained tool
+- **WHEN** a custom tool declares a native text or grammar format
+- **THEN** the provider retains its declaration and text input without wrapping it as a function argument object
+
+#### Scenario: Stream encoding remains stable
+- **WHEN** a native tool call changes between function and custom encodings during its stream
+- **THEN** the provider emits an error instead of reinterpreting previous input fragments
