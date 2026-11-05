@@ -12,7 +12,7 @@ manifest: {
 		title: "AI Gateway Client"
 		description: "Use authenticated Gateway protocol routes"
 		kinds: []
-		routes: ["getConfig", "createLanguageModel", "createChatCompletion", "listChatCompletions", "getChatCompletion", "updateChatCompletion", "deleteChatCompletion", "getChatCompletionMessages"]
+		routes: ["listModels", "getModel", "getConfig", "createLanguageModel", "createChatCompletion", "listChatCompletions", "getChatCompletion", "updateChatCompletion", "deleteChatCompletion", "getChatCompletionMessages"]
 	}
 	roleBindings: {
 		viewer: ["aigateway:client"]
@@ -28,6 +28,14 @@ v1alpha1: {
 	kinds: [storedChatCompletion & storedChatCompletion.versions.v1alpha1]
 	served: true
 	openapi: paths: {
+		"/namespaces/{namespace}/v1/models": get: {
+			operationId: "listModels"
+			responses: default: description: "OpenAI public model list"
+		}
+		"/namespaces/{namespace}/v1/models/{model}": get: {
+			operationId: "getModel"
+			responses: default: description: "OpenAI public model"
+		}
 		"/namespaces/{namespace}/config": get: {
 			operationId: "getConfig"
 			responses: default: description: "ProviderWire discovery response"

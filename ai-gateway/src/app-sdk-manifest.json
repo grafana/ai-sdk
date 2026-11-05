@@ -221,6 +221,46 @@
                                     }
                                 }
                             }
+                        },
+                        "/v1/models": {
+                            "get": {
+                                "operationId": "listModels",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "OpenAI public model list"
+                                    }
+                                }
+                            }
+                        },
+                        "/v1/models/{model}": {
+                            "get": {
+                                "operationId": "getModel",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "OpenAI public model"
+                                    }
+                                }
+                            }
                         }
                     }
                 },
@@ -429,6 +469,66 @@
                                     }
                                 }
                             ]
+                        },
+                        "/namespaces/{namespace}/v1/models": {
+                            "get": {
+                                "operationId": "listModels",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "OpenAI public model list"
+                                    }
+                                }
+                            },
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ]
+                        },
+                        "/namespaces/{namespace}/v1/models/{model}": {
+                            "get": {
+                                "operationId": "getModel",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "OpenAI public model"
+                                    }
+                                }
+                            },
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ]
                         }
                     }
                 }
@@ -440,6 +540,8 @@
                 "title": "AI Gateway Client",
                 "description": "Use authenticated Gateway protocol routes",
                 "routes": [
+                    "listModels",
+                    "getModel",
                     "getConfig",
                     "createLanguageModel",
                     "createChatCompletion",

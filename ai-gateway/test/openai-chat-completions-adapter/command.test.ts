@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import OpenAI from 'openai';
+import { verifyModelDiscovery } from './models-discovery';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 
@@ -367,6 +368,8 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
             baseURL: `${ready.url}${ready.routePrefix}/v1`,
             maxRetries: 0,
           });
+          await verifyModelDiscovery(client);
+          assert.equal(Number(requests.length), 0, "model discovery must not invoke providers");
           const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [{ role: 'user', content: 'hello' }];
           const unary = await client.chat.completions.create({ model: 'chat', messages });
           assert.equal(unary.model, backend === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o-mini');

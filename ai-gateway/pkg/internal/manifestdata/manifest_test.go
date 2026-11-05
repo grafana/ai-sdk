@@ -30,6 +30,8 @@ func TestManifest_DeclaresOnlyGatewayRoutes(t *testing.T) {
 		assert.Empty(t, role.Kinds, "public roles must not expose stored conversation resources")
 	}
 	assert.Equal(t, map[string][]string{
+		"/namespaces/{namespace}/v1/models":                                    {http.MethodGet},
+		"/namespaces/{namespace}/v1/models/{model}":                            {http.MethodGet},
 		"/namespaces/{namespace}/config":                                       {http.MethodGet},
 		"/namespaces/{namespace}/language-model":                               {http.MethodPost},
 		"/namespaces/{namespace}/v1/chat/completions":                          {http.MethodGet, http.MethodPost},
