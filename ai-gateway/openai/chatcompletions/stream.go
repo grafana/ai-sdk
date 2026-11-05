@@ -62,6 +62,7 @@ type toolState struct {
 	ended, final bool
 }
 type streamState struct {
+	audio       audioStreamState
 	refused     bool
 	toolOffset  int
 	text        strings.Builder
@@ -189,6 +190,9 @@ func (s *streamState) finish(p provider.StreamPart, r mappedRequest) (string, *u
 	f, err := finishReason(*p.FinishReason)
 	if err != nil {
 		return "", nil, err
+	}
+	if !partialFinish(f) && !s.audio.complete() {
+		return "", nil, errOutput
 	}
 	for _, active := range s.textIDs {
 		if active {
