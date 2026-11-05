@@ -13,9 +13,9 @@ func TestDenialReasonPresence(t *testing.T) {
 		if reason != nil {
 			want = *reason
 		}
-		count := 0
+		var names documentNameState
 		warnings := []provider.Warning{}
-		block, err := buildToolResult(provider.ToolResultPart("call", "lookup", output), &count, false, &warnings)
+		block, err := buildToolResult(provider.ToolResultPart("call", "lookup", output), &names, false, &warnings)
 		require.NoError(t, err)
 		require.Len(t, block.Content, 1)
 		require.NotNil(t, block.Content[0].Text)

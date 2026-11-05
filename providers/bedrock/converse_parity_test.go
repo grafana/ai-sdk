@@ -472,7 +472,7 @@ func TestConverseParity_DocumentNames(t *testing.T) {
 		{".txt", "document-1"},
 	} {
 		t.Run(tc.want, func(t *testing.T) {
-			doc, err := buildDocumentBlock("text/plain", tc.filename, "aGk=", nil, new(int))
+			doc, err := buildDocumentBlock("text/plain", tc.filename, "aGk=", nil, new(documentNameState))
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, doc.Name)
 		})

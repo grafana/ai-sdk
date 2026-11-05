@@ -8,9 +8,9 @@ import (
 )
 
 func TestReviewDenialEmptyNativeWire(t *testing.T) {
-	count := 0
+	var names documentNameState
 	var warnings []provider.Warning
-	out, err := buildToolResult(provider.ToolResultPart("c", "f", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: new("")}), &count, false, &warnings)
+	out, err := buildToolResult(provider.ToolResultPart("c", "f", &provider.ToolResultOutput{Type: provider.ToolOutputExecutionDenied, Reason: new("")}), &names, false, &warnings)
 	require.NoError(t, err)
 	raw, err := json.Marshal(out)
 	require.NoError(t, err)
