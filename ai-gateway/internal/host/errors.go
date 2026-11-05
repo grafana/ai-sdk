@@ -13,6 +13,8 @@ const (
 	ErrorInternal
 	// ErrorBYOKDiscovery reports that catalog discovery is unsupported for BYOK.
 	ErrorBYOKDiscovery
+	// ErrorModelNotFound reports a model absent from the caller-visible catalog.
+	ErrorModelNotFound
 )
 
 // ErrorWriter writes an adapter's fixed document for a host failure. A

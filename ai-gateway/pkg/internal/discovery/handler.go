@@ -21,6 +21,7 @@ type handler struct {
 	lister     catalog.ModelLister
 	projection host.DiscoveryProjection
 	errors     host.ErrorWriter
+	resource   host.DiscoveryResourceProjection
 }
 
 // New constructs a discovery handler. Configured callers get the projection of
@@ -29,6 +30,12 @@ type handler struct {
 // error. Listing and projection failures are written as internal errors.
 func New(lister catalog.ModelLister, projection host.DiscoveryProjection, errorWriter host.ErrorWriter) http.Handler {
 	return &handler{lister: lister, projection: projection, errors: errorWriter}
+}
+
+// NewResource retrieves a public model from the same caller-visible catalog and
+// access policy as discovery. The route supplies the decoded model path value.
+func NewResource(lister catalog.ModelLister, projection host.DiscoveryResourceProjection, errorWriter host.ErrorWriter) http.Handler {
+	return &handler{lister: lister, resource: projection, errors: errorWriter}
 }
 
 func (handler *handler) ServeHTTP(w http.ResponseWriter, request *http.Request) {
@@ -47,7 +54,17 @@ func (handler *handler) ServeHTTP(w http.ResponseWriter, request *http.Request) 
 		handler.errors.WriteHostError(w, host.ErrorInternal)
 		return
 	}
-	document, err := handler.safeProject(models)
+	var document []byte
+	if handler.resource != nil {
+		var found bool
+		document, found, err = handler.safeResource(models, request.PathValue("model"))
+		if err == nil && !found {
+			handler.errors.WriteHostError(w, host.ErrorModelNotFound)
+			return
+		}
+	} else {
+		document, err = handler.safeProject(models)
+	}
 	if err != nil {
 		handler.errors.WriteHostError(w, host.ErrorInternal)
 		return
@@ -73,4 +90,15 @@ func (handler *handler) safeProject(models []catalog.ModelInfo) (document []byte
 		}
 	}()
 	return handler.projection.ProjectDiscovery(models)
+}
+
+func (handler *handler) safeResource(models []catalog.ModelInfo, id string) (document []byte, found bool, err error) {
+	defer func() {
+		if recover() != nil {
+			document = nil
+			found = false
+			err = errProjectionPanicked
+		}
+	}()
+	return handler.resource.ProjectDiscoveryResource(models, id)
 }

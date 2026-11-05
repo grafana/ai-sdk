@@ -426,3 +426,13 @@ audio a second time. A normally completed audio response requires cumulative
 fail the stream. Length/content-filter interruption may leave partial audio.
 This follows the [native streaming audio contract](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events)
 and the complete audio object defined by [Chat create](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create).
+
+Model discovery uses the same caller-visible configured catalog as `/config`.
+`GET /v1/models` lists canonical public IDs and public aliases, sorted and
+ deduplicated; `GET /v1/models/{model}` retrieves either spelling. Encoded slashes
+inside a model ID are supported. Objects use `owned_by: "grafana"` for the virtual
+gateway model and `created: 0` because the catalog has no creation timestamp;
+zero is a convention, not an upstream creation date. Discovery exposes no
+provider account, credentials, native model IDs or fallback metadata and performs
+no provider request. Unknown or invisible models return the OpenAI 404 envelope.
+BYOK-only and denied callers retain the existing discovery access policy.
