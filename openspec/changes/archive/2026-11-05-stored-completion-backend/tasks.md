@@ -1,0 +1,4 @@
+- [x] Define scoped durable store contract and record.
+- [x] Generate private-by-role app resource kind.
+- [x] Implement resource CRUD, expiry and sweeper.
+- [x] Test real resource client against fake Kubernetes API across store restart.
