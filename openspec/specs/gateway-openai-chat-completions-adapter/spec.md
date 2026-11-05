@@ -576,3 +576,13 @@ Translation SHALL not mutate caller prompt content or options.
 #### Scenario: Non-native cache transport
 - **WHEN** a request with explicit Chat cache controls selects another transport
 - **THEN** it fails with a capability error before provider I/O
+
+### Requirement: Preserve multimodal cache options
+Compatible translation SHALL retain explicit breakpoints on user text, image,
+audio and file parts without replacing typed image fidelity or unrelated message
+metadata.
+
+#### Scenario: Original image detail with a cache boundary
+- **WHEN** a user image requests original detail and an explicit cache breakpoint
+- **THEN** unary and streaming native HTTP requests retain both properties
+- **AND** an unmarked named user message retains its name
