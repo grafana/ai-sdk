@@ -652,3 +652,19 @@ from structured-output validation and absent calls from required-tool validation
 
 - **WHEN** the final native snapshot first provides refusal text
 - **THEN** Chat emits that refusal before completion without duplicating it
+
+### Requirement: Indexed stream diagnostic and refusal isolation
+
+Content diagnostics SHALL remain associated with the choice that produced them,
+including when another choice emits content before that choice next emits a chunk.
+A refusal present only in an indexed finish's native metadata SHALL exempt that
+choice from JSON and required-tool completion checks and appear once as a refusal
+delta. A previously streamed refusal SHALL NOT be duplicated by final metadata.
+
+#### Scenario: Source before another choice's delta
+- **WHEN** choice zero emits a source and choice one emits the next text delta
+- **THEN** the source remains attached to a choice-zero chunk
+
+#### Scenario: Final-only refusal with strict output controls
+- **WHEN** a choice finishes with native refusal metadata without a prior refusal delta
+- **THEN** Chat emits the refusal once and can finish successfully despite requested JSON or required tool output
