@@ -105,6 +105,10 @@ type OpenAIOptions struct {
 	// This local codec option is not sent to the provider.
 	PreserveChatCompletionMetadata *bool `json:"preserveChatCompletionMetadata,omitempty"`
 
+	// Modalities and Audio request native Chat audio generation.
+	Modalities []string                    `json:"modalities,omitempty"`
+	Audio      *ChatCompletionAudioOptions `json:"audio,omitempty"`
+
 	extraFields map[string]any
 }
 

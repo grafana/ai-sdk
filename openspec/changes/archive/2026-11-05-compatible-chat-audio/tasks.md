@@ -1,0 +1,5 @@
+- [x] Compare pinned native audio handling with the Chat API shape.
+- [x] Preserve complete unary audio and optional streaming delta fields.
+- [x] Validate base64, expiration and typed request/history shapes.
+- [x] Test synthetic unary, stream, options and history continuation.
+- [x] Document native capability scope and opt-in behavior.

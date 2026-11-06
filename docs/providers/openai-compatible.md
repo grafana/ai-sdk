@@ -117,5 +117,21 @@ refusal and logprob deltas, and final usage on the `finish` part. Missing counte
 remain absent; unknown native fields are not copied. Existing metadata under the
 configured provider namespace remains available.
 
-This opt-in Go extension does not add multiple choices or audio output support.
+This opt-in Go extension does not add multiple choices.
 Its focused tests use synthetic native responses, not live provider recordings.
+
+### Native Chat audio
+
+`OpenAIOptions.Modalities` and `OpenAIOptions.Audio` request audio generation on
+compatible endpoints that support it. `ChatCompletionVoice` accepts a voice name
+or custom voice ID. Provider model availability remains native-server policy.
+Use `PreserveChatCompletionMetadata` to retain the generated audio under
+`chatCompletion.audio`: complete unary responses carry ID, expiration, base64 data
+and transcript; streaming custom parts retain only fields supplied in each delta.
+Base64 data, timestamps and text are validated before publication.
+
+For subsequent turns, attach `ChatCompletionMessageOptions` containing an
+`Audio` reference to the assistant message's `ProviderOptions`. Only the native
+audio ID is sent in history, with null content for audio-only messages. This
+extension deliberately preserves data omitted by the pinned upstream compatible
+normalizer; ordinary requests without audio retain their existing behavior.
