@@ -92,6 +92,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 					openaicompatible.WithStructuredOutputs(providerConfig.SupportsStructuredOutputs),
 					// ProviderWire finish parts carry usage, so streams must request it.
 					openaicompatible.WithIncludeUsage(true),
+					openaicompatible.WithChatCompletionMetadata(),
 				)
 				providerName := candidate.Provider()
 				validateOptions = func(options provider.CallOptions) error {

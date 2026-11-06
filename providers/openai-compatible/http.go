@@ -18,6 +18,7 @@ func (m *model) doGenerate(ctx context.Context, params provider.CallOptions) (*p
 		return nil, err
 	}
 	metadataKey := resolveMetadataKey(params.ProviderOptions, m.providerName)
+	preserveChat := m.preserveChatCompletionMetadata
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
@@ -50,11 +51,11 @@ func (m *model) doGenerate(ctx context.Context, params provider.CallOptions) (*p
 		return nil, wrapAPIError(resp.StatusCode, endpoint, bodyBytes, resp.Header, respBody)
 	}
 
-	result, err := parseGenerateResponse(respBody, resp.Header, m.providerName, metadataKey, m.generateID)
+	result, err := parseGenerateResponse(respBody, resp.Header, m.providerName, metadataKey, m.generateID, preserveChat)
 	if err != nil {
 		return nil, err
 	}
-	result.Warnings = warnings
+	result.Warnings = append(warnings, result.Warnings...)
 	result.Request = &provider.RequestMetadata{Body: json.RawMessage(bodyBytes)}
 	return result, nil
 }
@@ -65,6 +66,7 @@ func (m *model) doStream(ctx context.Context, params provider.CallOptions) (*pro
 		return nil, err
 	}
 	metadataKey := resolveMetadataKey(params.ProviderOptions, m.providerName)
+	preserveChat := m.preserveChatCompletionMetadata
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
@@ -91,7 +93,7 @@ func (m *model) doStream(ctx context.Context, params provider.CallOptions) (*pro
 		defer close(ch)
 		defer streamrecover.Close(resp.Body)
 		defer streamrecover.Recover(func() { sendStreamPart(ctx, ch, streamrecover.Part()) })
-		m.runStream(ctx, endpoint, bodyBytes, resp.Body, resp.Header, warnings, params.IncludeRawChunks, metadataKey, ch)
+		m.runStream(ctx, endpoint, bodyBytes, resp.Body, resp.Header, warnings, params.IncludeRawChunks, metadataKey, ch, preserveChat)
 	}()
 
 	return &provider.StreamResult{

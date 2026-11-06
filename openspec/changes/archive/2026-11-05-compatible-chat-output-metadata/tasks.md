@@ -1,0 +1,6 @@
+- [x] Compare registered upstream implementation and tests.
+- [x] Preserve refusal/logprobs through a constructor option and resolved namespace.
+- [x] Accumulate stream metadata at finish without custom content parts.
+- [x] Preserve Usage.Raw and tolerate malformed optional metadata.
+- [x] Cover HTTP wiring, multi-chunk streams, namespaces and frontend history.
+- [x] Record the extension and evidence limits in knownGaps and docs.

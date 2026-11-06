@@ -253,6 +253,12 @@ provider error, the same way. The
 valid UTF-8, metadata shape and the JavaScript safe-integer range, and writes
 complete `data: <JSON>` frames separated by a blank line.
 
+Configured OpenAI-compatible models enable Chat metadata preservation at
+construction in the shared catalog. ProviderWire carries refusal and logprobs in
+its existing provider-metadata envelope; the Chat adapter projects those fields
+at segment finish and reads native accounting from `Usage.Raw`. See the
+[Chat response guide](../guides/openai-chat-completions.md) for projection details.
+
 One provider stream can carry several native responses or messages. Each
 `response-metadata` part starts a response segment and each `finish` ends one,
 so a stream may contain several of both. A `finish` does not end the stream:
