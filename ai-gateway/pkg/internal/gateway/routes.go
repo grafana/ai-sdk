@@ -16,6 +16,7 @@ import (
 
 const (
 	routeChatCompletions = "chat_completions"
+	routeModels          = "models"
 	routeConfig          = "config"
 	routeLanguageModel   = "language_model"
 	routeUnmatched       = "unmatched"
@@ -42,9 +43,11 @@ func RoutePrefix() string {
 }
 
 // productionRoutes is the route table the committed manifest declares.
-func productionRoutes(discovery, language, chat http.Handler) []route {
+func productionRoutes(discovery, language, chat, models, model http.Handler) []route {
 	errorWriter := providerv4.NewHostErrorWriter()
 	return []route{
+		{method: http.MethodGet, path: "/v1/models", label: routeModels, handler: models, errors: chatcompletions.NewHostErrorWriter()},
+		{method: http.MethodGet, path: "/v1/models/{model}", label: routeModels, handler: model, errors: chatcompletions.NewHostErrorWriter()},
 		{method: http.MethodGet, path: "/config", label: routeConfig, handler: discovery, errors: errorWriter},
 		{method: http.MethodPost, path: "/language-model", label: routeLanguageModel, handler: languageModelPath(language), errors: errorWriter},
 		{method: http.MethodPost, path: chatcompletions.Path, label: routeChatCompletions, handler: chatCompletionsPath(chat), errors: chatcompletions.NewHostErrorWriter()},
