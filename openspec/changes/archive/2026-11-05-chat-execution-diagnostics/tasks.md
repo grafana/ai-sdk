@@ -1,0 +1,4 @@
+- [x] Project shared execution metadata on success and failure.
+- [x] Preserve native metadata and redact native stream failures.
+- [x] Test unary/stream success, failure, collisions and credential redaction.
+- [x] Document extension fields.
