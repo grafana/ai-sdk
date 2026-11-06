@@ -132,7 +132,9 @@ type ChatCompletionAudioReference struct {
 // ChatCompletionMessageOptions carries an assistant audio history reference.
 // Use it on Message.ProviderOptions, not CallOptions.ProviderOptions.
 type ChatCompletionMessageOptions struct {
-	Audio *ChatCompletionAudioReference `json:"audio,omitempty"`
+	ChatTextParts []ChatCacheTextPart           `json:"chatTextParts,omitempty"`
+	Breakpoint    *ChatCacheBreakpoint          `json:"prompt_cache_breakpoint,omitempty"`
+	Audio         *ChatCompletionAudioReference `json:"audio,omitempty"`
 }
 
 // ProviderKey returns the common compatible message metadata namespace.
