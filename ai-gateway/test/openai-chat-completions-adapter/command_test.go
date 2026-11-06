@@ -279,6 +279,40 @@ func TestOfficialSDKRealCommand(t *testing.T) {
 		assert.Equal(t, 400, api.StatusCode)
 		assert.Equal(t, before, fake.count())
 	})
+	t.Run("legacy functions and continuation", func(t *testing.T) {
+		extra := `,"functions":[{"name":"weather","parameters":{"type":"object","properties":{"city":{"type":"string"}}}}],"function_call":{"name":"weather"}`
+		params := sdkParams(t, extra)
+		result, err := client.Chat.Completions.New(t.Context(), params)
+		require.NoError(t, err)
+		assert.Equal(t, "function_call", result.Choices[0].FinishReason)
+		assert.Equal(t, "weather", result.Choices[0].Message.FunctionCall.Name) //nolint:staticcheck // Intentionally verify deprecated client compatibility.
+		assert.Empty(t, result.Choices[0].Message.ToolCalls)
+		continuation := sdkParams(t, extra)
+		continuation.FunctionCall = openai.ChatCompletionNewParamsFunctionCallUnion{}
+		var functionMessage openai.ChatCompletionMessageParamUnion
+		require.NoError(t, json.Unmarshal([]byte(`{"role":"function","name":"weather","content":"sunny"}`), &functionMessage))
+		continuation.Messages = append(continuation.Messages, result.Choices[0].Message.ToParam(), functionMessage)
+		next, err := client.Chat.Completions.New(t.Context(), continuation)
+		require.NoError(t, err)
+		assert.Equal(t, "hello", next.Choices[0].Message.Content)
+		stream := client.Chat.Completions.NewStreaming(t.Context(), params)
+		var name, args, finish string
+		for stream.Next() {
+			for _, choice := range stream.Current().Choices {
+				name += choice.Delta.FunctionCall.Name      //nolint:staticcheck // Intentionally verify deprecated client compatibility.
+				args += choice.Delta.FunctionCall.Arguments //nolint:staticcheck // Intentionally verify deprecated client compatibility.
+				if choice.FinishReason != "" {
+					finish = choice.FinishReason
+				}
+				assert.Empty(t, choice.Delta.ToolCalls)
+			}
+		}
+		require.NoError(t, stream.Err())
+		require.NoError(t, stream.Close())
+		assert.Equal(t, "weather", name)
+		assert.JSONEq(t, `{"city":"Rio"}`, args)
+		assert.Equal(t, "function_call", finish)
+	})
 	t.Run("tools strict default and continuation", func(t *testing.T) {
 		result, err := client.Chat.Completions.New(context.Background(), sdkParams(t, tools))
 		require.NoError(t, err)

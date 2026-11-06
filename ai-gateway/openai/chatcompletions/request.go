@@ -22,6 +22,7 @@ const (
 	roleUser      role = "user"
 	roleAssistant role = "assistant"
 	roleTool      role = "tool"
+	roleFunction  role = "function"
 	kindFunction  kind = "function"
 	kindText      kind = "text"
 	kindRefusal   kind = "refusal"
@@ -33,6 +34,8 @@ var namePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 var errRequest = errors.New("chat completions: invalid request")
 
 type request struct {
+	Functions           []function                 `json:"functions"`
+	FunctionChoice      json.RawMessage            `json:"function_call"`
 	ProviderOptions     map[string]json.RawMessage `json:"providerOptions"`
 	Model               string                     `json:"model"`
 	Messages            []message                  `json:"messages"`
@@ -57,12 +60,13 @@ type request struct {
 	} `json:"stream_options"`
 }
 type message struct {
-	Role       role            `json:"role"`
-	Name       *string         `json:"name"`
-	Refusal    *string         `json:"refusal"`
-	Content    json.RawMessage `json:"content"`
-	ToolCalls  []toolCall      `json:"tool_calls"`
-	ToolCallID *string         `json:"tool_call_id"`
+	FunctionCall *callFunction   `json:"function_call"`
+	Role         role            `json:"role"`
+	Name         *string         `json:"name"`
+	Refusal      *string         `json:"refusal"`
+	Content      json.RawMessage `json:"content"`
+	ToolCalls    []toolCall      `json:"tool_calls"`
+	ToolCallID   *string         `json:"tool_call_id"`
 }
 type function struct {
 	Name        string          `json:"name"`
@@ -94,11 +98,12 @@ type responseFormat struct {
 }
 type mappedRequest struct {
 	request
-	options        provider.CallOptions
-	validator      *schema.CompiledSchema
-	toolValidators map[string]*schema.CompiledSchema
-	jsonOutput     bool
-	strictOutput   bool
+	options         provider.CallOptions
+	validator       *schema.CompiledSchema
+	toolValidators  map[string]*schema.CompiledSchema
+	jsonOutput      bool
+	strictOutput    bool
+	legacyFunctions bool
 }
 
 //go:embed request_schema.json
@@ -144,7 +149,13 @@ func mapRequest(data []byte) (mappedRequest, error) {
 	if err != nil || validator.Validate(data) != nil {
 		return r, errRequest
 	}
-	if decodeStrict(data, &r.request) != nil || r.Model == "" || len(r.Model) > 256 || len(r.Messages) == 0 || len(r.Messages) > 1024 || len(r.Tools) > 128 || (r.N != nil && *r.N != 1) || boolValue(r.Store) || (r.StreamOptions != nil && !boolValue(r.Stream)) {
+	if decodeStrict(data, &r.request) != nil {
+		return r, errRequest
+	}
+	if err := r.normalizeLegacy(); err != nil {
+		return r, err
+	}
+	if r.Model == "" || len(r.Model) > 256 || len(r.Messages) == 0 || len(r.Messages) > 1024 || len(r.Tools) > 128 || (r.N != nil && *r.N != 1) || boolValue(r.Store) || (r.StreamOptions != nil && !boolValue(r.Stream)) {
 		return r, errRequest
 	}
 	if r.MaxTokens != nil && r.MaxCompletionTokens != nil {

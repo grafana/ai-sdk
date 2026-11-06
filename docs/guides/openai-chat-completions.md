@@ -115,6 +115,15 @@ Anthropic; compatible Chat candidates retain native role, name and refusal
 fields. Participant names have no corresponding common provider field outside
 compatible Chat. Message order is preserved.
 
+Existing clients using deprecated `functions` and `function_call` can continue
+using those fields, including assistant function-call history and `role: "function"`
+results. The adapter converts them to common function tools for native execution,
+then returns `message.function_call` or `delta.function_call` with the legacy
+`function_call` finish reason. Legacy mode permits one function call per choice.
+Mixing legacy request controls with `tools`, `tool_choice` or parallel calls is
+rejected instead of choosing one silently. Prefer the current tool fields for
+new clients.
+
 Structured response and function schemas support self-contained JSON Schema,
 including local references and unions produced by SDK helpers such as
 `zodResponseFormat`. Schema compilation never loads external files or URLs.

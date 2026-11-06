@@ -393,6 +393,31 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
               },
             },
           ];
+          const legacyFunctions = [{ name: 'weather', parameters: { type: 'object', properties: { city: { type: 'string' } } } }];
+          const legacyRequest = { model: 'public/mixed', messages, functions: legacyFunctions, function_call: { name: 'weather' } };
+          const legacy = await client.chat.completions.create(legacyRequest);
+          assert.equal(legacy.choices[0].finish_reason, 'function_call');
+          assert.equal(legacy.choices[0].message.function_call?.name, 'weather');
+          assert.deepEqual(JSON.parse(legacy.choices[0].message.function_call!.arguments), { city: 'Rio' });
+          assert.equal(legacy.choices[0].message.tool_calls, undefined);
+          const legacyHistory: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            ...messages, legacy.choices[0].message, { role: 'function', name: 'weather', content: 'sunny' },
+          ];
+          const legacyNext = await client.chat.completions.create({ model: 'chat', messages: legacyHistory, functions: legacyFunctions });
+          assert.equal(legacyNext.choices[0].message.content, 'hello');
+          const legacyStream = await client.chat.completions.create({ ...legacyRequest, stream: true });
+          let legacyArguments = '', legacyName = '', legacyFinish = '';
+          for await (const chunk of legacyStream) {
+            const choice = chunk.choices[0];
+            if (!choice) continue;
+            assert.equal(choice.delta.tool_calls, undefined);
+            legacyName += choice.delta.function_call?.name ?? '';
+            legacyArguments += choice.delta.function_call?.arguments ?? '';
+            legacyFinish = choice.finish_reason ?? legacyFinish;
+          }
+          assert.equal(legacyName, 'weather');
+          assert.deepEqual(JSON.parse(legacyArguments), { city: 'Rio' });
+          assert.equal(legacyFinish, 'function_call');
           for (const streaming of [false, true] as const) {
             const before = requests.length;
             if (streaming) {
