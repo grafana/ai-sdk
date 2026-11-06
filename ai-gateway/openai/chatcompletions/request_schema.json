@@ -133,7 +133,10 @@
                       "type": "string"
                     },
                     "type": {
-                      "const": "function"
+                      "enum": [
+                        "function",
+                        "custom"
+                      ]
                     },
                     "function": {
                       "type": "object",
@@ -150,12 +153,27 @@
                         "arguments"
                       ],
                       "additionalProperties": false
+                    },
+                    "custom": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "input": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "input"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
                     "id",
-                    "type",
-                    "function"
+                    "type"
                   ],
                   "additionalProperties": false
                 },
@@ -365,7 +383,10 @@
             "type": "object",
             "properties": {
               "type": {
-                "const": "function"
+                "enum": [
+                  "function",
+                  "custom"
+                ]
               },
               "function": {
                 "type": "object",
@@ -401,11 +422,59 @@
                   "name"
                 ],
                 "additionalProperties": false
+              },
+              "custom": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "text",
+                          "grammar"
+                        ]
+                      },
+                      "grammar": {
+                        "type": "object",
+                        "properties": {
+                          "syntax": {
+                            "enum": [
+                              "lark",
+                              "regex"
+                            ]
+                          },
+                          "definition": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "syntax",
+                          "definition"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
-              "type",
-              "function"
+              "type"
             ],
             "additionalProperties": false
           },
@@ -431,9 +500,24 @@
               "type": "object",
               "properties": {
                 "type": {
-                  "const": "function"
+                  "enum": [
+                    "function",
+                    "custom"
+                  ]
                 },
                 "function": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "custom": {
                   "type": "object",
                   "properties": {
                     "name": {
@@ -447,8 +531,7 @@
                 }
               },
               "required": [
-                "type",
-                "function"
+                "type"
               ],
               "additionalProperties": false
             }

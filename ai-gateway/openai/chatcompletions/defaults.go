@@ -20,6 +20,9 @@ func chatTranslator(r mappedRequest) execution.Translator {
 		if r.needsNativeAudio() && target.Type != execution.TargetOpenAICompatible {
 			return provider.CallOptions{}, provider.ErrUnsupportedFunctionality
 		}
+		if r.hasCustomTools() && target.Type == execution.TargetAnthropic {
+			return provider.CallOptions{}, provider.ErrUnsupportedFunctionality
+		}
 		options = translateMessages(r, target, options)
 		namespace := target.ProviderName
 		values := map[string]any{}

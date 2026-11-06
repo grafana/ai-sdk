@@ -256,3 +256,10 @@ Native compatible `system_fingerprint`, actual `service_tier`, and positioned UR
 annotations are preserved in standard response fields. Responses' reported
 service tier is also projected. Unknown values remain absent; request parameters
 are not substituted for native execution evidence.
+Custom tools accept `type: "custom"` with text or Lark/regex grammar formats and
+named custom tool choices. Compatible and Responses targets preserve their text
+inputs, streamed fragments and final custom call shape. Applications execute the
+tool themselves and return its result using the ordinary tool-message call ID;
+custom call history remains valid even when the follow-up omits tool declarations.
+Anthropic targets reject this capability before native invocation. Grammar
+compilation and generation constraints are enforced by the selected native API.
