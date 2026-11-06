@@ -121,6 +121,9 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 		}
 		return nil, nil
 	case provider.PartToolInputStart:
+		if !r.toolAllowed(p.ToolName) {
+			return nil, errOutput
+		}
 		if p.ID == "" || len(p.ID) > 256 || !utf8.ValidString(p.ID) || !namePattern.MatchString(p.ToolName) || s.tools[p.ID] != nil || p.ProviderExecuted || boolValue(p.Dynamic) || (p.InputEncoding != "" && p.InputEncoding != provider.ToolInputEncodingJSON && p.InputEncoding != provider.ToolInputEncodingText) || (p.InputEncoding == provider.ToolInputEncodingText) != r.customTool(p.ToolName) {
 			return nil, errOutput
 		}
