@@ -316,3 +316,17 @@ mapping/protocol-hop proof from live-provider or deployed-Grafana acceptance.
   until the caller cancels
 - **THEN** the client sees incremental output and cancellation reaches the
   provider through the shared runtime and plugin host.
+
+### Requirement: Native multi-segment streaming
+The adapter SHALL consume all runtime-validated native response segments before
+emitting a single Chat terminal finish and DONE sentinel. It SHALL preserve public
+identity and aggregate known per-segment token usage without inventing missing counts.
+
+#### Scenario: Reused native item identifiers
+- **WHEN** consecutive native segments reuse a text or tool item identifier
+- **THEN** text continues on the same Chat response and new tool calls receive distinct indices
+- **AND** raw native transport events do not terminate the response
+
+#### Scenario: Error after native finish
+- **WHEN** a native error follows a segment finish before stream closure
+- **THEN** the adapter emits an error and no successful DONE sentinel

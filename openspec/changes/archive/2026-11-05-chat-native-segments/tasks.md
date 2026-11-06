@@ -1,0 +1,4 @@
+- [x] Consume multiple runtime-validated segments and raw trailer events.
+- [x] Preserve one terminal finish and complete usage accounting.
+- [x] Cover synthetic multi-segment, missing usage, and trailing error cases.
+- [x] Document the public behavior.
