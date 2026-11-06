@@ -246,7 +246,11 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 		}
 		finish = legacyFinish(finish)
 	}
-	out.Choices = []choice{{Message: msg, Finish: finish, Logprobs: native.Logprobs}}
+	logprobs, err := r.projectLogprobs(result.ProviderMetadata, native.Logprobs)
+	if err != nil {
+		return out, err
+	}
+	out.Choices = []choice{{Message: msg, Finish: finish, Logprobs: logprobs}}
 	return out, nil
 }
 

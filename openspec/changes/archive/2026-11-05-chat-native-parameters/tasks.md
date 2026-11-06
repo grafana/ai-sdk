@@ -1,0 +1,5 @@
+- [x] Add documented request fields and schema validation.
+- [x] Translate compatible and Responses fields with explicit unsupported-target errors.
+- [x] Test actual native HTTP bodies and malformed request boundaries.
+- [x] Provide typed Responses logprob flattening and nonmutating alternative trimming.
+- [x] Parent integration: invoke projection helper on unary and streaming output.

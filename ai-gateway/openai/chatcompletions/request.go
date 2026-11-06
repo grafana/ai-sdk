@@ -35,6 +35,7 @@ var namePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 var errRequest = errors.New("chat completions: invalid request")
 
 type request struct {
+	chatParameters
 	Modalities          []string                                     `json:"modalities"`
 	Audio               *openaicompatible.ChatCompletionAudioOptions `json:"audio"`
 	Functions           []function                                   `json:"functions"`
@@ -160,6 +161,9 @@ func mapRequest(data []byte) (mappedRequest, error) {
 		return r, err
 	}
 	if r.Model == "" || len(r.Model) > 256 || len(r.Messages) == 0 || len(r.Messages) > 1024 || len(r.Tools) > 128 || (r.N != nil && *r.N != 1) || boolValue(r.Store) || (r.StreamOptions != nil && !boolValue(r.Stream)) {
+		return r, errRequest
+	}
+	if r.TopLogprobs != nil && !boolValue(r.Logprobs) {
 		return r, errRequest
 	}
 	if err := r.validateAudioRequest(); err != nil {
