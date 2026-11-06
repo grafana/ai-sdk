@@ -394,11 +394,18 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
             { role: 'assistant', content: null, refusal: 'Cannot do that' },
             { role: 'user', content: 'Try this instead' },
           ];
-          const withHistory = await client.chat.completions.create({ model: 'chat', messages: history });
-          assert.equal(withHistory.choices[0].message.content, 'hello');
           if (backend === 'openai-compatible') {
+            const withHistory = await client.chat.completions.create({ model: 'chat', messages: history });
+            assert.equal(withHistory.choices[0].message.content, 'hello');
             const sent = requests.at(-1)!;
             assert.deepEqual(sent.messages, history.map((m) => m.role === 'assistant' ? { ...m, content: '' } : m));
+          } else {
+            for (const stream of [false, true] as const) {
+              const before = requests.length;
+              await assert.rejects(() => client.chat.completions.create({ model: 'chat', messages: history, stream }),
+                (e: unknown) => e instanceof OpenAI.APIError && e.status === 400);
+              assert.equal(requests.length, before);
+            }
           }
           if (backend !== 'openai-compatible') {
             const unsupported = [{ seed: 7 }, { presence_penalty: 0 }, { frequency_penalty: 0 }, ...(backend === 'openai' ? [{ stop: 'END' }] : [{ temperature: 0.5, top_p: 0.5 }])];
