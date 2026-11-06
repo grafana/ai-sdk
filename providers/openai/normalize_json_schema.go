@@ -53,7 +53,8 @@ func normalizeOpenAISchemaNode(schema map[string]any, removed *openAISchemaRemov
 	if names, ok := schema["propertyNames"]; ok {
 		if names != nil {
 			namedSchema, isSchema := names.(map[string]any)
-			if !isSchema || namedSchema["type"] != "string" {
+			// Property names are always strings, so an omitted type is a string schema.
+			if typeValue, hasType := namedSchema["type"]; !isSchema || (hasType && typeValue != "string") {
 				return fmt.Errorf("openai: JSON Schema propertyNames that does not use a string schema")
 			}
 			removed.propertyNames = true
