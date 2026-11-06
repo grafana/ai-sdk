@@ -451,3 +451,11 @@ and streaming requests. This uses the common file's validated identity and data.
 ---
 
 [Prev: Gateway authentication](gateway-authentication.md) · [Docs index](../README.md) · [Next: Gateway architecture](../concepts/gateway-architecture.md)
+
+Streaming audio fields may arrive separately, including an expiry-only final
+update. Each choice tracks identity and field presence without buffering the
+audio a second time. A normally completed audio response requires cumulative
+`id`, `data`, `transcript` and `expires_at`; conflicting IDs or expiry timestamps
+fail the stream. Length/content-filter interruption may leave partial audio.
+This follows the [native streaming audio contract](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events)
+and the complete audio object defined by [Chat create](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create).

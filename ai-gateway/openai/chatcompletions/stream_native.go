@@ -13,6 +13,9 @@ func (s *streamState) nativeDelta(r mappedRequest, metadata provider.ProviderMet
 	if err != nil {
 		return delta{}, nil, err
 	}
+	if err := s.audio.consume(native.Audio); err != nil {
+		return delta{}, nil, err
+	}
 	if native.Refusal != nil {
 		s.refused = true
 	}
