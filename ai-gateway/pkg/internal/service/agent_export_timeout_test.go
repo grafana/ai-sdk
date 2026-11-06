@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -95,8 +94,11 @@ func TestAgentObservabilityRuntime_ExportAttemptTimeout(t *testing.T) {
 					t.Fatal("export attempt did not honor configured timeout")
 				}
 			}
-			require.Eventually(t, func() bool {
-				return strings.Contains(testMetrics(t, telemetry), `grafana_ai_gateway_agento11y_export_failures_total{class="transport"} 1`)
+			// Counter publication precedes the warning; wait for both before
+			// checking privacy so an absent warning cannot pass vacuously.
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				assert.Contains(collect, testMetrics(t, telemetry), `grafana_ai_gateway_agento11y_export_failures_total{class="transport"} 1`)
+				assert.Contains(collect, logs.String(), `"class":"transport"`)
 			}, time.Second, time.Millisecond)
 			for _, private := range []string{endpoint, "private-secret", "private-output"} {
 				assert.NotContains(t, logs.String(), private)

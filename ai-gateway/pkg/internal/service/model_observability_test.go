@@ -419,8 +419,11 @@ func TestNewAgentObservabilityRuntime_RejectedHTTPBatchIsOneFailOpenFailure(t *t
 	result, err := model.DoGenerate(context.Background(), provider.CallOptions{})
 	require.NoError(t, err)
 	assert.Same(t, expected, result)
-	require.Eventually(t, func() bool {
-		return strings.Contains(testMetrics(t, telemetry), `grafana_ai_gateway_agento11y_export_failures_total{class="rejected"} 1`)
+	// The exporter increments the counter before writing its warning. Observing
+	// the counter alone does not synchronize the subsequent log read.
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		assert.Contains(collect, testMetrics(t, telemetry), `grafana_ai_gateway_agento11y_export_failures_total{class="rejected"} 1`)
+		assert.Equal(collect, 1, strings.Count(logs.String(), "agent observability export failed"))
 	}, time.Second, 10*time.Millisecond)
 	metrics := testMetrics(t, telemetry)
 	assert.NotContains(t, metrics, `class="transport"`)
@@ -993,6 +996,13 @@ func TestNewModelObservabilityFactory_CanceledStreamsCloseWithinBoundedDrain(t *
 				<-producerDone
 			}
 			env.Shutdown(t)
+			// Cancellation lets the Agent observer finish while the logger and
+			// Prometheus observers independently drain. Neither its exported
+			// request nor its closed output is a barrier for those observers.
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				assert.Equal(collect, 1, countModelLogEvent(t, logs.String(), terminalEvent))
+				assert.Equal(collect, 1, strings.Count(testMetrics(t, telemetry), "aisdk_model_requests_total{"))
+			}, time.Second, time.Millisecond)
 			assert.Equal(t, 1, countModelLogEvent(t, logs.String(), terminalEvent))
 			metrics := testMetrics(t, telemetry)
 			assert.Equal(t, 1, strings.Count(metrics, "aisdk_model_requests_total{"))
@@ -1332,7 +1342,11 @@ func TestModelObservationChain_SequentialSegments(t *testing.T) {
 			if !tc.stall {
 				assert.Equal(t, string(provider.FinishReasonStop), finish["ai_sdk.finish_reason"])
 			}
-			metrics := testMetrics(t, telemetry)
+			var metrics string
+			require.Eventually(t, func() bool {
+				metrics = testMetrics(t, telemetry)
+				return strings.Contains(metrics, "aisdk_model_requests_total{")
+			}, time.Second, time.Millisecond)
 			assert.Equal(t, 1, strings.Count(metrics, "aisdk_model_requests_total{"))
 			assert.Contains(t, metrics, tc.metricLabels)
 			status := `status="success"`
