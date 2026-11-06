@@ -130,12 +130,14 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 			}
 			if t.arguments.Len() == 0 && call.Function.Arguments == "{}" {
 				t.arguments.WriteString("{}")
+				t.call = call
 				t.final = true
 				return &delta{ToolCalls: []toolDelta{{Index: t.index, Function: functionDelta{Arguments: ptr("{}")}}}}, nil
 			}
 			if t.arguments.String() != call.Function.Arguments {
 				return nil, errOutput
 			}
+			t.call = call
 			t.final = true
 			return nil, nil
 		}
@@ -154,16 +156,13 @@ func (s *streamState) finish(p provider.StreamPart, r mappedRequest) (string, *u
 	if err != nil {
 		return "", nil, err
 	}
-	if !s.textSeen && len(s.tools) == 0 && f == "stop" {
-		return "", nil, errOutput
-	}
 	for _, active := range s.textIDs {
 		if active {
 			return "", nil, errOutput
 		}
 	}
 	for _, tool := range s.tools {
-		if !tool.final {
+		if !tool.final || (!partialFinish(f) && validateCallArguments(tool.call, r) != nil) {
 			return "", nil, errOutput
 		}
 	}
@@ -173,7 +172,7 @@ func (s *streamState) finish(p provider.StreamPart, r mappedRequest) (string, *u
 	if requiresTool(r) && len(s.tools) == 0 && f == "stop" {
 		return "", nil, errOutput
 	}
-	if (len(s.tools) > 0) != (f == "tool_calls") {
+	if !partialFinish(f) && (len(s.tools) > 0) != (f == "tool_calls") {
 		return "", nil, errOutput
 	}
 	if err = r.validateText(s.text.String(), f); err != nil {

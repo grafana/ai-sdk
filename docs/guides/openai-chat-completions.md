@@ -77,6 +77,10 @@ identity is frozen once public content starts. Late native metadata and warnings
 can appear in the `grafana` extension on individual chunks. SDK accumulators may
 omit those extensions, so inspect individual chunks when they matter.
 
+Empty completions are valid. A token limit or content filter can leave function
+arguments incomplete: inspect `finish_reason` before parsing or executing a tool
+call. Successful complete strict tool calls remain schema-validated.
+
 ## Streaming and failures
 
 Use `Chat.Completions.NewStreaming` in Go or `stream: true` in TypeScript.

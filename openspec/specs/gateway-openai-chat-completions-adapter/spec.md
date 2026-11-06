@@ -88,6 +88,10 @@ content-filter partial output.
 - **THEN** the adapter returns a fixed upstream error instead of a successful
   completion; partial output ending for length is not required to validate.
 
+#### Scenario: Empty and interrupted completions
+- **WHEN** a valid result is empty or a function call ends with length or content_filter
+- **THEN** empty text remains a successful completion and partial argument strings retain their terminal reason; complete function output still requires valid arguments and strict-schema compliance.
+
 ### Requirement: Host-owned resources and safe failures
 
 The adapter SHALL obtain a Call from execution.Runtime and use Call.Generate
