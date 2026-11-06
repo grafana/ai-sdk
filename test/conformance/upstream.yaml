@@ -30,6 +30,14 @@ knownGaps:
       is consumed locally; other raw overlays retain their direct-provider
       behavior. Synthetic generation and streaming request tests cover the
       mapping and invalid-value rejection, not live model acceptance.
+  - id: native-multiple-choices
+    surface: provider-contract
+    status: intentional-deviation
+    description: Explicit Go-only ChoiceCount opts native Chat consumers into
+      indexed alternatives and an aggregate choices-finish stream event.
+      Defaults retain the pinned single-choice LanguageModelV4 behavior.
+      ChoiceCount, GenerateResult.Choices and StreamPart.ChoiceIndex are not
+      serialized as V4 fields; Gateway runtime rejects unsolicited alternatives.
   - id: agent-ui-validation-schemas
     surface: core-agent
     status: gap
