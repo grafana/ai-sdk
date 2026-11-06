@@ -41,13 +41,15 @@ type chunkChoice struct {
 	Logprobs any     `json:"logprobs"`
 }
 type chunk struct {
-	ID      string        `json:"id"`
-	Object  string        `json:"object"`
-	Created int64         `json:"created"`
-	Model   string        `json:"model"`
-	Choices []chunkChoice `json:"choices"`
-	Usage   *usage        `json:"usage"`
-	Grafana *diagnostics  `json:"grafana,omitempty"`
+	ServiceTier       *string       `json:"service_tier,omitempty"`
+	SystemFingerprint *string       `json:"system_fingerprint,omitempty"`
+	ID                string        `json:"id"`
+	Object            string        `json:"object"`
+	Created           int64         `json:"created"`
+	Model             string        `json:"model"`
+	Choices           []chunkChoice `json:"choices"`
+	Usage             *usage        `json:"usage"`
+	Grafana           *diagnostics  `json:"grafana,omitempty"`
 }
 type toolState struct {
 	call         toolCall
@@ -248,6 +250,15 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 	}
 	var pending *diagnostics
 	var logprobs any
+	var serviceTier, fingerprint *string
+	nativeIdentity := func(n compatible.ChatCompletionMetadata) {
+		if n.ServiceTier != nil {
+			serviceTier = n.ServiceTier
+		}
+		if n.SystemFingerprint != nil {
+			fingerprint = n.SystemFingerprint
+		}
+	}
 	opened := false
 	emit := func(d delta, finish *string, u *usage, empty bool) bool {
 		if r.legacyFunctions {
@@ -260,7 +271,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				finish = ptr(legacyFinish(*finish))
 			}
 		}
-		c := chunk{ID: id, Object: "chat.completion.chunk", Created: created, Model: modelID, Choices: []chunkChoice{{Delta: d, Finish: finish, Logprobs: logprobs}}, Usage: u, Grafana: pending}
+		c := chunk{ServiceTier: serviceTier, SystemFingerprint: fingerprint, ID: id, Object: "chat.completion.chunk", Created: created, Model: modelID, Choices: []chunkChoice{{Delta: d, Finish: finish, Logprobs: logprobs}}, Usage: u, Grafana: pending}
 		if empty {
 			c.Choices = []chunkChoice{}
 		}
@@ -391,6 +402,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				fail(502)
 				return
 			}
+			nativeIdentity(native)
 			if native.Refusal != nil {
 				state.refused = true
 			}
@@ -402,7 +414,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				fail(502)
 				return
 			}
-			if !emit(delta{Refusal: native.Refusal, Audio: native.Audio}, nil, nil, false) {
+			if !emit(delta{Refusal: native.Refusal, Audio: native.Audio, Annotations: nativeAnnotations(native.Annotations)}, nil, nil, false) {
 				return
 			}
 			continue
@@ -422,6 +434,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				fail(502)
 				return
 			}
+			nativeIdentity(native)
 			projected, err := r.projectLogprobs(part.ProviderMetadata, native.Logprobs)
 			if err != nil {
 				fail(502)

@@ -13,10 +13,13 @@ import (
 // Unary results carry complete values. Custom streaming parts carry deltas; the
 // finish part carries final usage. It is opt-in and never contains raw response data.
 type ChatCompletionMetadata struct {
-	Audio    *ChatCompletionAudio    `json:"audio,omitempty"`
-	Refusal  *string                 `json:"refusal,omitempty"`
-	Logprobs *ChatCompletionLogprobs `json:"logprobs,omitempty"`
-	Usage    *ChatCompletionUsage    `json:"usage,omitempty"`
+	ServiceTier       *string                    `json:"service_tier,omitempty"`
+	SystemFingerprint *string                    `json:"system_fingerprint,omitempty"`
+	Annotations       []ChatCompletionAnnotation `json:"annotations,omitempty"`
+	Audio             *ChatCompletionAudio       `json:"audio,omitempty"`
+	Refusal           *string                    `json:"refusal,omitempty"`
+	Logprobs          *ChatCompletionLogprobs    `json:"logprobs,omitempty"`
+	Usage             *ChatCompletionUsage       `json:"usage,omitempty"`
 }
 
 // ChatCompletionLogprobs preserves both native probability channels.
@@ -64,14 +67,18 @@ type ChatCompletionOutputTokensDetails struct {
 
 func decodeChatCompletionMetadata(data []byte, streaming bool) (ChatCompletionMetadata, error) {
 	var envelope struct {
-		Choices []struct {
+		ServiceTier       *string `json:"service_tier"`
+		SystemFingerprint *string `json:"system_fingerprint"`
+		Choices           []struct {
 			Message struct {
-				Refusal *string              `json:"refusal"`
-				Audio   *ChatCompletionAudio `json:"audio"`
+				Annotations []ChatCompletionAnnotation `json:"annotations"`
+				Refusal     *string                    `json:"refusal"`
+				Audio       *ChatCompletionAudio       `json:"audio"`
 			} `json:"message"`
 			Delta struct {
-				Refusal *string              `json:"refusal"`
-				Audio   *ChatCompletionAudio `json:"audio"`
+				Annotations []ChatCompletionAnnotation `json:"annotations"`
+				Refusal     *string                    `json:"refusal"`
+				Audio       *ChatCompletionAudio       `json:"audio"`
 			} `json:"delta"`
 			Logprobs *ChatCompletionLogprobs `json:"logprobs"`
 		} `json:"choices"`
@@ -85,11 +92,15 @@ func decodeChatCompletionMetadata(data []byte, streaming bool) (ChatCompletionMe
 		return result, err
 	}
 	result.Usage = envelope.Usage
+	result.ServiceTier = envelope.ServiceTier
+	result.SystemFingerprint = envelope.SystemFingerprint
 	if len(envelope.Choices) > 0 {
 		choice := envelope.Choices[0]
+		result.Annotations = choice.Message.Annotations
 		result.Audio = choice.Message.Audio
 		result.Refusal = choice.Message.Refusal
 		if streaming {
+			result.Annotations = choice.Delta.Annotations
 			result.Audio = choice.Delta.Audio
 			result.Refusal = choice.Delta.Refusal
 		}
@@ -109,6 +120,16 @@ func decodeChatCompletionMetadata(data []byte, streaming bool) (ChatCompletionMe
 // Validate checks the typed metadata before a codec publishes it.
 func (m ChatCompletionMetadata) Validate() error {
 	invalid := errors.New("openai: invalid Chat completion metadata")
+	for _, v := range []*string{m.ServiceTier, m.SystemFingerprint} {
+		if v != nil && !utf8.ValidString(*v) {
+			return invalid
+		}
+	}
+	for _, a := range m.Annotations {
+		if a.Validate() != nil {
+			return invalid
+		}
+	}
 	if m.Audio != nil {
 		if err := m.Audio.Validate(); err != nil {
 			return err
@@ -161,7 +182,7 @@ func validTokenProbability(p ChatCompletionTokenProbability) bool {
 }
 
 func withChatCompletionMetadata(metadata provider.ProviderMetadata, chat ChatCompletionMetadata) provider.ProviderMetadata {
-	if chat.Audio == nil && chat.Refusal == nil && chat.Logprobs == nil && chat.Usage == nil {
+	if chat.Empty() {
 		return metadata
 	}
 	if metadata == nil {
@@ -175,4 +196,32 @@ func withChatCompletionMetadata(metadata provider.ProviderMetadata, chat ChatCom
 	namespace["chatCompletion"], _ = json.Marshal(chat)
 	metadata["openaiCompatible"], _ = json.Marshal(namespace)
 	return metadata
+}
+
+// Empty reports whether there are any native fields to publish.
+func (m ChatCompletionMetadata) Empty() bool {
+	return m.Audio == nil && m.Refusal == nil && m.Logprobs == nil && m.Usage == nil && m.ServiceTier == nil && m.SystemFingerprint == nil && len(m.Annotations) == 0
+}
+
+// ChatCompletionAnnotation preserves the native URL citation shape.
+type ChatCompletionAnnotation struct {
+	Type        string                    `json:"type"`
+	URLCitation ChatCompletionURLCitation `json:"url_citation"`
+}
+
+// ChatCompletionURLCitation describes a native text span and URL.
+type ChatCompletionURLCitation struct {
+	StartIndex *int   `json:"start_index"`
+	EndIndex   *int   `json:"end_index"`
+	Title      string `json:"title"`
+	URL        string `json:"url"`
+}
+
+// Validate checks the annotation before it crosses a typed output boundary.
+func (a ChatCompletionAnnotation) Validate() error {
+	c := a.URLCitation
+	if a.Type != "url_citation" || c.StartIndex == nil || c.EndIndex == nil || *c.StartIndex < 0 || *c.EndIndex < *c.StartIndex || c.URL == "" || !utf8.ValidString(c.URL) || !utf8.ValidString(c.Title) {
+		return errors.New("openai: invalid Chat annotation")
+	}
+	return nil
 }
