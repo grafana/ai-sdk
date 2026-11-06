@@ -1,4 +1,5 @@
-- [x] Enable typed compatible metadata and project unary/stream fields.
-- [x] Preserve missing versus zero counters and aggregate known details.
-- [x] Test structured-output refusal and token metadata delivery.
-- [x] Update guide and OpenSpec.
+- [x] Enable the provider constructor option in the shared catalog.
+- [x] Project resolved-namespace refusal/logprobs at segment finish.
+- [x] Derive native usage details from Usage.Raw, preserving absent and zero.
+- [x] Preserve content after optional metadata errors.
+- [x] Test both adapters with the same HTTP-backed catalog and update specs/docs.

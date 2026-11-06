@@ -142,5 +142,11 @@ provider's indexing convention.
 
 The compatible backend preserves native refusal and token log-probability fields
 in their standard Chat locations. Refusals are valid responses to structured-output
-requests and are not parsed as JSON. Native audio/prediction token counters remain
-available in usage details, preserving absent counters versus reported zero.
+requests and are not parsed as JSON. Streaming publishes accumulated refusal and
+logprobs when the native segment finishes. Native audio, prediction and cache-write
+counters are projected from `Usage.Raw`, preserving absent counters versus zero.
+
+The shared Gateway catalog enables this extension at model construction. ProviderWire
+also carries the typed fields in its existing provider-metadata envelope; neither
+route needs a per-request flag or extra custom content parts. Invalid optional Chat
+metadata is omitted with diagnostics while ordinary content continues.

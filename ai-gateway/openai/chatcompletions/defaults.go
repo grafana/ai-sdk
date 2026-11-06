@@ -28,7 +28,6 @@ func chatTranslator(r mappedRequest) execution.Translator {
 				values["disableParallelToolUse"] = !*r.Parallel
 			}
 		case execution.TargetOpenAICompatible:
-			values["preserveChatCompletionMetadata"] = true
 			namespace, _, _ = strings.Cut(namespace, ".")
 			namespace = strings.TrimSpace(namespace)
 			if namespace == "" {
