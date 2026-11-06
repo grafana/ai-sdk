@@ -114,3 +114,15 @@ func TestChatParametersReachNativeRequest(t *testing.T) {
 		server.Close()
 	}
 }
+
+func TestChatStrictCapabilityPolicyPreservesToolSemantics(t *testing.T) {
+	r := requestWith(t, `,"tools":[{"type":"function","function":{"name":"plain","parameters":{"type":"object"}}},{"type":"function","function":{"name":"strict","parameters":{"type":"object"},"strict":true}}]`)
+	options, err := chatTranslator(r)(execution.Target{Type: execution.TargetAnthropic}, r.options)
+	require.NoError(t, err)
+	require.True(t, options.RejectUnsupported)
+	require.Nil(t, options.Tools[0].Strict)
+	require.NotNil(t, r.options.Tools[0].Strict)
+	require.False(t, *r.options.Tools[0].Strict)
+	require.NotNil(t, options.Tools[1].Strict)
+	require.True(t, *options.Tools[1].Strict)
+}
