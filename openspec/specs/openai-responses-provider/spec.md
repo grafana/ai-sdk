@@ -5,7 +5,9 @@ Define the OpenAI Responses API provider module, including request conversion,
 tool preparation, response and stream mapping, provider options, error handling,
 and conformance expectations needed to stay aligned with Vercel's upstream AI
 SDK behavior.
+
 ## Requirements
+
 ### Requirement: Provider construction and identity
 
 The `providers/openai` Go module SHALL expose `NewResponses(apiKey, modelID string, opts ...Option) provider.LanguageModel` and `NewResponsesWithClient(client openai.Client, modelID string, opts ...Option) provider.LanguageModel`, backed by Responses via `github.com/openai/openai-go`. Both SHALL implement provider.LanguageModel, report v4 and the supplied modelID, accept functional options, and neither panic nor call the network during construction.
@@ -1095,3 +1097,23 @@ Shell tool calls SHALL expose `action.timeout_ms` and `action.max_output_length`
 #### Scenario: Output length round trip
 - **WHEN** a shell tool result contains `maxOutputLength: 10000`
 - **THEN** the next request's `shell_call_output` SHALL contain `max_output_length: 10000`, and SHALL omit it when the result has none
+
+### Requirement: Function-tool options follow model identity
+The Responses provider SHALL select function-tool options by model identity: `azure` when the identity contains `azure`, otherwise `openai`. Absent or null Azure objects SHALL fall back to `openai`; present objects SHALL win without field merging. Declarations and output-schema history SHALL use the same selection. Typed and JSON-decoded options SHALL behave identically. Default OpenAI models SHALL ignore Azure function-tool options even when accepting legacy call-level Azure options.
+
+#### Scenario: Azure options take precedence
+- **WHEN** an Azure-identified model receives function-tool options under both keys
+- **THEN** generation and streaming declarations use only the Azure object, including explicit false values and empty objects
+- **AND** history text is JSON-string encoded only when the selected object declares an output schema
+
+#### Scenario: Azure options fall back
+- **WHEN** an Azure-identified model has an absent or null Azure function-tool options object
+- **THEN** generation and streaming declarations and history use the OpenAI object
+
+#### Scenario: Default OpenAI ignores Azure tool options
+- **WHEN** a default OpenAI model receives Azure function-tool options, including alongside Azure-only call-level options
+- **THEN** only the OpenAI function-tool options affect declarations and history
+
+#### Scenario: Typed namespace attachment survives JSON
+- **WHEN** callers attach `OpenAIToolOptions` directly as the `azure` map value and then round-trip the map through JSON
+- **THEN** namespace selection and outbound requests match the original typed options
