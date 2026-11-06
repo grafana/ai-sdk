@@ -1,0 +1,5 @@
+# Design
+The common provider contract has system but no developer role. Anthropic and Responses receive the common instruction semantics; compatible Chat retains developer through its existing metadata projection. Names live on the message or on its sole user text part as required by the pinned converter. Refusal text is retained for providers without a refusal-history arm; compatible receives refusal separately with empty content where the original content was null. Translation copies message/content slices before editing to isolate fallback attempts.
+
+## Guard audit
+At @ai-sdk/openai-compatible 3.0.82, the system-message converter spreads `openaiCompatible` metadata after role/content. The only admitted role override is the exact string `developer` on a common system message, retaining instruction ownership and original content. `user`, `assistant`, `tool`, null roles, and content/tool replacements remain refused. Unit negatives and the service's unary/streaming direct/fallback native-request matrix cover both dispositions. This guard is shared by ProviderWire and Chat; no trusted-option bypass or validation reordering is introduced.
