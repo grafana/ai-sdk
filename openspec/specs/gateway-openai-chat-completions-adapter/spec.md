@@ -358,3 +358,16 @@ inventing positions for other citations.
 #### Scenario: Citation without span
 - **WHEN** a native citation does not include text positions
 - **THEN** the citation remains in diagnostics without a fabricated Chat annotation
+
+### Requirement: Native Chat response fields
+The adapter SHALL project typed compatible-provider refusal, log-probability, and
+usage-detail metadata into standard Chat fields. A refusal SHALL not be rejected
+solely because it lacks requested structured JSON content.
+
+#### Scenario: Structured-output refusal
+- **WHEN** a compatible backend refuses a structured-output request
+- **THEN** unary and streaming clients receive refusal without a codec JSON error
+
+#### Scenario: Detailed token accounting
+- **WHEN** native output reports audio or prediction token counters
+- **THEN** standard Chat usage details preserve them including explicit zero

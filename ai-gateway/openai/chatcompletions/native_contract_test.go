@@ -57,8 +57,8 @@ func TestNativeContract_SchemaAndDefaults(t *testing.T) {
 		want      string
 	}{
 		{execution.TargetOpenAI, "", `{"openai":{"store":false,"strictJsonSchema":false,"parallelToolCalls":false}}`},
-		{execution.TargetOpenAICompatible, "custom-vendor", `{"custom-vendor":{"store":false,"strictJsonSchema":false,"parallel_tool_calls":false}}`},
-		{execution.TargetOpenAICompatible, "openai", `{"openai":{"store":false,"strictJsonSchema":false,"parallel_tool_calls":false}}`},
+		{execution.TargetOpenAICompatible, "custom-vendor", `{"custom-vendor":{"store":false,"strictJsonSchema":false,"parallel_tool_calls":false,"preserveChatCompletionMetadata":true}}`},
+		{execution.TargetOpenAICompatible, "openai", `{"openai":{"store":false,"strictJsonSchema":false,"parallel_tool_calls":false,"preserveChatCompletionMetadata":true}}`},
 		{execution.TargetAnthropic, "", `{"anthropic":{"disableParallelToolUse":true}}`},
 	} {
 		t.Run(string(tc.backend)+tc.namespace, func(t *testing.T) {
