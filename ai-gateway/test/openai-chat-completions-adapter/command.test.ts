@@ -244,6 +244,26 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
             res.end();
             return;
           }
+          if (body.n === 2) {
+            const base = { id: 'multi-native', model: body.model, created: 123 };
+            const usage = { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 };
+            const call = (index: number) => ({ id: 'same-call-id', type: 'function', function: { name: 'weather', arguments: JSON.stringify({ city: index ? 'Rio' : 'Lima' }) } });
+            const message = (index: number) => tool ? { role: 'assistant', content: null, tool_calls: [call(index)] } : { role: 'assistant', content: index ? 'second' : 'first' };
+            const reason = (index: number) => tool ? 'tool_calls' : index ? 'length' : 'stop';
+            if (!body.stream) {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ ...base, choices: [1, 0].map(index => ({ index, message: message(index), finish_reason: reason(index) })), usage }));
+              return;
+            }
+            res.setHeader('Content-Type', 'text/event-stream');
+            for (const index of [1, 0]) {
+              const delta = tool ? { tool_calls: [{ ...call(index), index: 0 }] } : { content: index ? 'second' : 'first' };
+              res.write(`data: ${JSON.stringify({ ...base, choices: [{ index, delta }] })}\n\n`);
+            }
+            for (const index of [1, 0]) res.write(`data: ${JSON.stringify({ ...base, choices: [{ index, delta: {}, finish_reason: reason(index) }] })}\n\n`);
+            res.end(`data: ${JSON.stringify({ ...base, choices: [], usage })}\n\ndata: [DONE]\n\n`);
+            return;
+          }
           const partial = partialNext;
           partialNext = false;
           const call = {
@@ -452,6 +472,45 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
           assert.equal(legacyName, 'weather');
           assert.deepEqual(JSON.parse(legacyArguments), { city: 'Rio' });
           assert.equal(legacyFinish, 'function_call');
+          if (backend === 'openai-compatible') {
+            for (const mode of ["text", "tools", "legacy"] as const) {
+              const withTools = mode !== "text";
+              const legacy = mode === "legacy";
+              const multi = { model: 'chat', messages, n: 2, ...(legacy ? { functions: tools.flatMap(tool => tool.type === "function" ? [tool.function] : []) } : withTools ? { tools } : {}) };
+              let before = requests.length;
+              const result = await client.chat.completions.create(multi);
+              assert.equal(requests.length, before + 1);
+              assert.equal(result.usage?.total_tokens, 7);
+              assert.deepEqual(result.choices.map(c => c.index), [1, 0]);
+              for (const choice of result.choices) {
+                if (withTools) {
+                  const call = choice.message.tool_calls?.[0];
+                  const fn = legacy ? choice.message.function_call : call?.type === "function" ? call.function : undefined;
+                  assert.ok(fn);
+                  assert.deepEqual(JSON.parse(fn.arguments), { city: choice.index ? 'Rio' : 'Lima' });
+                } else assert.equal(choice.message.content, choice.index ? 'second' : 'first');
+              }
+              before = requests.length;
+              const stream = await client.chat.completions.create({ ...multi, stream: true, stream_options: { include_usage: true } });
+              const assembled = new Map<number, string>(); const reasons = new Map<number, string>(); let total = 0, usageChunks = 0;
+              for await (const chunk of stream) {
+                if (chunk.usage) { total += chunk.usage.total_tokens; usageChunks++; }
+                for (const choice of chunk.choices) {
+                  const delta = legacy ? choice.delta.function_call?.arguments : withTools ? choice.delta.tool_calls?.[0]?.function?.arguments : choice.delta.content;
+                  assembled.set(choice.index, (assembled.get(choice.index) ?? '') + (delta ?? ''));
+                  if (choice.finish_reason) reasons.set(choice.index, choice.finish_reason);
+                }
+              }
+              assert.equal(requests.length, before + 1); assert.equal(total, 7); assert.equal(usageChunks, 1);
+              assert.equal(assembled.get(0), withTools ? '{"city":"Lima"}' : 'first');
+              assert.equal(assembled.get(1), withTools ? '{"city":"Rio"}' : 'second');
+              assert.equal(reasons.get(0), legacy ? 'function_call' : withTools ? 'tool_calls' : 'stop'); assert.equal(reasons.get(1), legacy ? 'function_call' : withTools ? 'tool_calls' : 'length');
+            }
+          } else {
+            const before = requests.length;
+            await assert.rejects(() => client.chat.completions.create({ model: 'chat', messages, n: 2 }), (e: unknown) => e instanceof OpenAI.APIError && e.status === 400);
+            assert.equal(requests.length, before);
+          }
           for (const streaming of [false, true] as const) {
             const before = requests.length;
             if (streaming) {
@@ -552,7 +611,7 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
           }
           const before = requests.length;
           await assert.rejects(
-            () => client.chat.completions.create({ model: 'chat', messages, n: 2 }),
+            () => client.chat.completions.create({ model: 'chat', messages, n: 129 }),
             (error) => error instanceof OpenAI.APIError && error.status === 400
           );
           assert.equal(requests.length, before);

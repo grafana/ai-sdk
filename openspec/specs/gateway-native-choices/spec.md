@@ -57,3 +57,23 @@ It SHALL NOT implement alternatives by issuing several requests.
 #### Scenario: Invalid native index or incomplete stream
 - **WHEN** native output duplicates, omits or exceeds the requested indices
 - **THEN** decoding fails without emitting an aggregate successful finish.
+
+### Requirement: Chat choice projection
+
+Chat SHALL map n to the typed opt-in and preserve each indexed native alternative
+in unary choices and interleaved chunks. It SHALL reuse ordinary output mapping
+and validation for each alternative. Unsupported native targets SHALL reject
+n greater than one before I/O, without emulating it through repeated calls.
+
+#### Scenario: Official SDK consumes two alternatives
+- **WHEN** an official Go or TypeScript client requests n equal to two
+- **THEN** one compatible request yields two distinct indexed outputs and one
+  aggregate usage result, even when tool IDs repeat across alternatives.
+
+#### Scenario: Stream fails or is canceled
+- **WHEN** any alternative violates lifecycle or the request is canceled
+- **THEN** the shared runtime terminates the stream and Chat emits no DONE marker.
+
+#### Scenario: ProviderWire remains single-choice
+- **WHEN** ProviderWire invokes a model without the Go-only opt-in
+- **THEN** it retains its existing V4 contract and rejects unsolicited alternatives.

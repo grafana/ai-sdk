@@ -354,6 +354,13 @@ verbatim credential echoes for safe diagnostics, including failures before a
 successful fallback. It does not rewrite source errors, generated content or
 opaque provider metadata, and it does not inspect arbitrary request fields for
 secrets.
+Native Chat alternatives are an explicit Go-only extension to the single-choice
+V4 domain. `ChoiceCount` selects one compatible request with native `n`; each
+indexed alternative gets its own runtime lifecycle validator seeded with the
+same prompt history. A final `choices-finish` carries native usage once, without
+inventing a shared finish reason. Chat projects the indices; default ProviderWire
+calls cannot opt in and reject unsolicited alternative output. Unsupported native
+targets fail before I/O rather than emulating alternatives with repeated calls.
 
 ---
 
