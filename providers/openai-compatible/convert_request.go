@@ -33,6 +33,9 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		return nil, warnings, err
 	}
 
+	if err := openAIOpts.PromptCacheOptions.Validate(); err != nil {
+		return nil, warnings, err
+	}
 	if err := openAIOpts.Moderation.Validate(); err != nil {
 		return nil, warnings, err
 	}
@@ -59,6 +62,9 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		"messages": messages,
 	}
 
+	if openAIOpts.PromptCacheOptions != nil {
+		body["prompt_cache_options"] = openAIOpts.PromptCacheOptions
+	}
 	if openAIOpts.Moderation != nil {
 		body["moderation"] = openAIOpts.Moderation
 	}
@@ -306,6 +312,7 @@ func toCamelCase(s string) string {
 }
 
 var openAIOptionFields = map[string]struct{}{
+	"prompt_cache_options":           {},
 	"moderation":                     {},
 	"prediction":                     {},
 	"web_search_options":             {},
@@ -347,6 +354,9 @@ func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, e
 }
 
 func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
+	if src.PromptCacheOptions != nil {
+		dst.PromptCacheOptions = src.PromptCacheOptions
+	}
 	if src.Moderation != nil {
 		dst.Moderation = src.Moderation
 	}
@@ -390,6 +400,7 @@ func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
 func convertPrompt(prompt []provider.Message, providerName string) ([]chatMessage, error) {
 	messages := make([]chatMessage, 0, len(prompt))
 	for _, msg := range prompt {
+		start := len(messages)
 		switch msg.Role {
 		case provider.RoleSystem:
 			text, err := collectText(msg.Content, "system")
@@ -422,6 +433,13 @@ func convertPrompt(prompt []provider.Message, providerName string) ([]chatMessag
 		default:
 			return nil, fmt.Errorf("openai: unsupported message role %q", msg.Role)
 		}
+		if len(messages)-start == 1 {
+			if err := restoreCacheTextParts(&messages[start], msg.ProviderOptions); err != nil {
+				return nil, err
+			}
+		} else if meta, err := openAICompatibleMetadata(msg.ProviderOptions); err != nil || meta["chatTextParts"] != nil {
+			return nil, fmt.Errorf("openai: ambiguous cache message boundaries")
+		}
 	}
 	return messages, nil
 }
@@ -438,7 +456,7 @@ func collectText(parts []provider.ContentPart, role string) (string, error) {
 }
 
 func convertUserContent(parts []provider.ContentPart, messageOptions provider.ProviderOptions, providerName string) (any, map[string]any, error) {
-	if len(parts) == 1 && parts[0].Type == provider.ContentPartTypeText {
+	if len(parts) == 1 && parts[0].Type == provider.ContentPartTypeText && !hasCacheBreakpoint(parts[0].ProviderOptions) {
 		extra, err := openAICompatibleMetadata(parts[0].ProviderOptions)
 		return parts[0].Text, extra, err
 	}
@@ -576,10 +594,17 @@ func openAICompatibleMetadata(opts provider.ProviderOptions) (map[string]any, er
 	}
 
 	if value, ok := opts["openaiCompatible"].(ChatCompletionMessageOptions); ok {
-		if value.Audio == nil {
-			return nil, nil
+		meta := map[string]any{}
+		if value.Audio != nil {
+			meta["audio"] = value.Audio
 		}
-		return map[string]any{"audio": value.Audio}, nil
+		if value.ChatTextParts != nil {
+			meta["chatTextParts"] = value.ChatTextParts
+		}
+		if value.Breakpoint != nil {
+			meta["prompt_cache_breakpoint"] = value.Breakpoint
+		}
+		return meta, validateCachePartMetadata(meta)
 	}
 	meta, ok, err := provider.ResolveOption[map[string]any](opts, "openaiCompatible")
 	if err != nil {
@@ -588,7 +613,7 @@ func openAICompatibleMetadata(opts provider.ProviderOptions) (map[string]any, er
 	if !ok || len(meta) == 0 {
 		return nil, nil
 	}
-	return meta, nil
+	return meta, validateCachePartMetadata(meta)
 }
 
 type googleOptions struct {
