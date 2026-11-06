@@ -478,3 +478,18 @@ delta.audio fields, including native identity, expiration, data and transcript.
 - **WHEN** the native compatible response contains audio without text
 - **THEN** the unary message retains null content and complete audio
 - **AND** streaming clients receive native incremental audio fields
+### Requirement: Native request controls
+The adapter SHALL map user, safety identifier, service tier, prompt cache identity
+and retention, metadata and logprob controls into native compatible and Responses
+options. Nonempty logit bias SHALL require a compatible Chat target. Unsupported
+Anthropic controls SHALL fail explicitly instead of being ignored.
+
+#### Scenario: Compatible scalar controls
+- **WHEN** a Chat request supplies supported scalar controls
+- **THEN** the native compatible body retains their canonical Chat field names
+- **AND** provider-local metadata preservation controls do not reach the native body
+
+#### Scenario: Selected-token probability adaptation
+- **WHEN** Responses is asked for logprobs with zero alternatives
+- **THEN** translation requests the minimum positive count required by the pinned normalizer
+- **AND** the projection helper removes alternatives beyond the client's requested count without changing native metadata

@@ -244,3 +244,10 @@ For compatible audio models, unary output preserves `message.audio` and streamin
 preserves `delta.audio`, including IDs, expiration, encoded data and transcript.
 Audio-only unary responses retain `content:null`. The official Go client PoC covers
 audio request parameters and both output forms through native synthetic HTTP/SSE.
+
+Chat request controls include user/safety identifiers, service tier, metadata,
+prompt-cache key/retention, logit bias and log-probability selection. The adapter
+maps supported equivalents to each native protocol and rejects unsupported
+capabilities before I/O. Responses logprobs are flattened into Chat token records;
+alternative counts are trimmed to the client's requested `top_logprobs` (zero by
+default), without mutating provider metadata.
