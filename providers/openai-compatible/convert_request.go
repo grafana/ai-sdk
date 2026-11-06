@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"mime"
 	"sort"
 	"strings"
@@ -404,6 +405,20 @@ func convertUserContent(parts []provider.ContentPart, messageOptions provider.Pr
 			if err != nil {
 				return nil, nil, err
 			}
+			if converted.ImageURL != nil {
+				imageOptions, _, err := provider.ResolveOption[ImageOptions](part.ProviderOptions, "openaiCompatible")
+				if err != nil {
+					return nil, nil, fmt.Errorf("openai: reading image options: %w", err)
+				}
+				switch imageOptions.Detail {
+				case "", ImageDetailAuto, ImageDetailLow, ImageDetailHigh, ImageDetailOriginal:
+				default:
+					return nil, nil, fmt.Errorf("openai: unsupported image detail %q", imageOptions.Detail)
+				}
+				converted.ImageURL.Detail = imageOptions.Detail
+				partExtra = maps.Clone(partExtra)
+				delete(partExtra, "imageDetail")
+			}
 			converted.ExtraFields = partExtra
 			out = append(out, converted)
 		default:
@@ -483,6 +498,11 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 }
 
 func openAICompatibleMetadata(opts provider.ProviderOptions) (map[string]any, error) {
+	switch image := opts["openaiCompatible"].(type) {
+	case ImageOptions:
+		return map[string]any{"imageDetail": image.Detail}, nil
+	}
+
 	meta, ok, err := provider.ResolveOption[map[string]any](opts, "openaiCompatible")
 	if err != nil {
 		return nil, fmt.Errorf("openai: reading openaiCompatible provider metadata: %w", err)

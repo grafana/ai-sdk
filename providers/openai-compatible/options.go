@@ -110,3 +110,27 @@ type OpenAIOptions struct {
 
 // ProviderKey returns the provider option namespace.
 func (OpenAIOptions) ProviderKey() string { return "openaiCompatible" }
+
+// ImageDetail selects how a compatible provider processes an input image.
+type ImageDetail string
+
+const (
+	// ImageDetailAuto lets the native provider choose image resolution.
+	ImageDetailAuto ImageDetail = "auto"
+	// ImageDetailOriginal requests original-resolution image processing.
+	ImageDetailOriginal ImageDetail = "original"
+	// ImageDetailLow requests low-resolution image processing.
+	ImageDetailLow ImageDetail = "low"
+	// ImageDetailHigh requests high-resolution image processing.
+	ImageDetailHigh ImageDetail = "high"
+)
+
+// ImageOptions configures a file part without replacing its builder-owned URL.
+// This typed Go extension maps imageDetail to image_url.detail and does not
+// forward imageDetail as a top-level native content-part field.
+type ImageOptions struct {
+	Detail ImageDetail `json:"imageDetail,omitempty"`
+}
+
+// ProviderKey returns the image option namespace.
+func (ImageOptions) ProviderKey() string { return "openaiCompatible" }
