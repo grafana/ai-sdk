@@ -84,7 +84,17 @@ func (i *instrumentation) wrapGenerate(ctx context.Context, p middleware.WrapGen
 	finalID := i.generateFinalIdentity(requested, result)
 	out := outcome{status: statusSuccess, errorType: errorTypeNone, statusCode: statusCodeNone, finishReason: finishReasonNone}
 	if result != nil {
-		out = successOutcome(result.FinishReason)
+		reason := result.FinishReason
+		if len(result.Choices) > 0 {
+			reason = result.Choices[0].FinishReason
+			for _, choice := range result.Choices[1:] {
+				if choice.FinishReason.Unified != reason.Unified {
+					reason = provider.FinishReason{Unified: provider.FinishReasonOther}
+					break
+				}
+			}
+		}
+		out = successOutcome(reason)
 	}
 	i.observeRequest(operationGenerate, finalID, out, duration)
 	if result != nil {

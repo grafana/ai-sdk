@@ -119,6 +119,11 @@ func mapGenerateResultWithIdentity(params provider.CallOptions, result *provider
 		generation.Output = contentToAgento11yOutputWithTools(result.Content, params.Tools)
 		generation.Usage = usageToAgento11y(result.Usage)
 		generation.StopReason = finishReasonToAgento11yStop(result.FinishReason)
+		choices := make([]generationChoice, 0, len(result.Choices))
+		for _, choice := range result.Choices {
+			choices = append(choices, generationChoice{index: choice.Index, output: contentToAgento11yOutputWithTools(choice.Content, params.Tools), finishReason: choice.FinishReason})
+		}
+		applyGenerationChoices(&generation, choices)
 		if result.Response != nil && identity != IdentityRequested {
 			generation.ResponseID = result.Response.ID
 			if result.Response.ModelID != "" {

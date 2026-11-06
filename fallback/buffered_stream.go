@@ -51,7 +51,7 @@ func (m *Model) doBufferedStream(ctx context.Context, params provider.CallOption
 		result, err := startStream(attemptCtx, candidate, params)
 		var parts []provider.StreamPart
 		if err == nil {
-			parts, err = collectStream(attemptCtx, result, m.streamBuffer.maxBytes)
+			parts, err = collectStream(attemptCtx, result, m.streamBuffer.maxBytes, params.ChoiceCount)
 		}
 		cancel()
 		if err != nil && result != nil && result.Stream != nil {
@@ -83,13 +83,14 @@ func (m *Model) doBufferedStream(ctx context.Context, params provider.CallOption
 	return nil, failedAttemptsError(failures)
 }
 
-func collectStream(ctx context.Context, result *provider.StreamResult, maxBytes int) ([]provider.StreamPart, error) {
+func collectStream(ctx context.Context, result *provider.StreamResult, maxBytes, choiceCount int) ([]provider.StreamPart, error) {
 	if result == nil || result.Stream == nil {
 		return nil, ErrInvalidResult
 	}
 	var parts []provider.StreamPart
 	var bytes int
 	finished := false
+	choices := map[int]bool{}
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -110,6 +111,17 @@ func collectStream(ctx context.Context, result *provider.StreamResult, maxBytes 
 				}
 				return nil, part.APICallError
 			}
+			if part.ChoiceIndex != nil {
+				if choiceCount < 2 || *part.ChoiceIndex < 0 || *part.ChoiceIndex >= choiceCount || finished || choices[*part.ChoiceIndex] {
+					return nil, ErrInvalidResult
+				}
+			}
+			if part.Type == provider.PartChoicesFinish {
+				if choiceCount < 2 || part.ChoiceIndex != nil || finished || len(choices) != choiceCount || part.Usage == nil {
+					return nil, ErrInvalidResult
+				}
+				finished = true
+			}
 			if part.Type == provider.PartFinish {
 				if part.FinishReason == nil {
 					return nil, ErrInvalidResult
@@ -117,7 +129,14 @@ func collectStream(ctx context.Context, result *provider.StreamResult, maxBytes 
 				if part.FinishReason.Unified == provider.FinishReasonError || part.FinishReason.Unified == provider.FinishReasonInterrupted {
 					return nil, ErrIncompleteStream
 				}
-				finished = true
+				if choiceCount > 1 {
+					if part.ChoiceIndex == nil {
+						return nil, ErrInvalidResult
+					}
+					choices[*part.ChoiceIndex] = true
+				} else {
+					finished = true
+				}
 			}
 			encoded, err := json.Marshal(part)
 			if err != nil {
