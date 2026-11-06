@@ -88,6 +88,9 @@ func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*p
 	if err != nil {
 		return nil, err
 	}
+	if err := params.CheckUnsupportedWarnings(warnings); err != nil {
+		return nil, err
+	}
 	var rawResponse *http.Response
 	var requestBody json.RawMessage
 	requestOpts := append(m.requestOptions(params.Headers), option.WithResponseInto(&rawResponse), option.WithMiddleware(captureRequestBody(&requestBody)))
@@ -148,6 +151,9 @@ func responseBodyError(resp *responses.Response, rawResponse *http.Response, bod
 func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*provider.StreamResult, error) {
 	body, warnings, br, err := m.buildParams(params)
 	if err != nil {
+		return nil, err
+	}
+	if err := params.CheckUnsupportedWarnings(warnings); err != nil {
 		return nil, err
 	}
 	var rawResponse *http.Response

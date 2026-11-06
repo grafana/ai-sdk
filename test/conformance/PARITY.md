@@ -48,3 +48,7 @@ Other records have their own homes:
 | Gateway native Chat adapter | Go extension | mixed | `ai-gateway/openai/chatcompletions`, `ai-gateway/test/openai-chat-completions-adapter` (official clients; synthetic native backends, not UI conformance) |
 | Baseline and fixture inventory | Conformance harness | automated | `mise run validate-parity-baseline`, `mise run parity-coverage` |
 | Published module dependencies | Conformance harness | automated | `mise run verify-module-requirements`, post-publication verification in `scripts/release_consumer.py` |
+
+Chat opts into Go-only `RejectUnsupported` to reject request-build unsupported
+warnings before I/O. Default V4 provider behavior remains unchanged; see
+`reject-unsupported-request-options` in the parity manifest.
