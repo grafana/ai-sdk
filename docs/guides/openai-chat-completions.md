@@ -106,7 +106,9 @@ Multiple choices use one native request, preserve their original indices and
 finish reasons, and report native usage once. Responses and Anthropic candidates
 reject `n > 1` with HTTP 400 before provider I/O because those APIs have no
 equivalent native operation. It does not execute
-functions, persist conversations, upload files, or provide hosted tools. Unsupported
+application functions, persist conversations, or upload files. Native compatible
+search is available through `web_search_options`; the selected service executes
+that search. Unsupported
 request fields fail before model invocation. The adapter supplies a call-scoped translator to the shared execution runtime.
 Chat defaults are applied to each native fallback candidate, including
 `store: false` and function strictness;
@@ -141,6 +143,42 @@ omit those extensions, so inspect individual chunks when they matter.
 Empty completions are valid. A token limit or content filter can leave function
 arguments incomplete: inspect `finish_reason` before parsing or executing a tool
 call. Successful complete strict tool calls remain schema-validated.
+
+## Native transport capabilities
+
+The table describes Gateway translation and projection. The selected native model
+must also support the requested feature. A capability error occurs before native
+I/O when the transport has no mapping; configured fallback does not make an
+unsupported capability available on every candidate.
+
+| Feature | Compatible Chat | OpenAI Responses | Anthropic |
+| --- | --- | --- | --- |
+| Text, streaming, function tools and continuation | Supported | Supported | Supported |
+| JSON output and self-contained schemas | Supported | Supported | Supported |
+| Images and PDF/file references | Supported | Supported | Supported |
+| Image detail | Preserved | Preserved | No equivalent control |
+| WAV/MP3 input and native audio output/history | Supported | Capability error | Capability error |
+| Multiple alternatives (`n > 1`) | Native, usage once | Capability error | Capability error |
+| Custom text tools | Supported | Supported | Capability error |
+| Log probabilities | Native Chat fields | Projected token records | Capability error |
+| Verbosity | Native setting | Native text setting | Capability error |
+| Prediction and `web_search_options` | Native settings | Capability error | Capability error |
+| Inline moderation | Native settings | Capability error | Capability error |
+| `max_tokens` / `max_completion_tokens` | Native key distinction retained | Common output budget | Common output budget |
+| `allowed_tools` | Native subset, full definitions | Native subset, full definitions | Filtered function definitions; history retained |
+| Structured-output refusal | Standard refusal fields | Standard refusal fields | Native transport behavior |
+| Prompt-cache options and part breakpoints | Native controls | Capability error | Capability error |
+| User/safety identifiers, cache key/retention | Native controls | Native equivalents | Capability error |
+| Metadata and service tier | Native controls | Native equivalents; `scale` rejected | Capability error |
+| Nonempty logit bias | Native control | Capability error | Capability error |
+| Extended usage details | Native counters retained | Available native counters | Available native counters |
+| Streaming obfuscation | Gateway padding | Gateway padding | Gateway padding |
+| Request-scoped accounts and routing | Shared selector policy | Shared selector policy | Shared selector policy |
+
+The adapter does not manage uploaded-file ownership or transfer files between
+accounts. Provider-specific settings remain subject to native guards and model
+capabilities. Conversation persistence and file upload are separate operations
+from this completion endpoint.
 
 ## Images, audio and files
 
@@ -199,10 +237,6 @@ access policy. This evidence does not establish deployment compatibility with a
 real Grafana host or live commercial provider behavior. Plugin artifact
 validation and Grafana end-to-end testing remain separate gates.
 
----
-
-[Prev: Gateway authentication](gateway-authentication.md) · [Docs index](../README.md) · [Next: Gateway architecture](../concepts/gateway-architecture.md)
-
 When a native provider emits several response segments, the adapter keeps one
 public completion identity and emits one terminal finish chunk after the runtime
 confirms the stream ended. Native raw transport events do not interrupt delivery.
@@ -212,7 +246,8 @@ available in `grafana.native_response`.
 
 Execution attribution is exposed in `grafana.provider_metadata.gateway`, using
 the same runtime projection and credential redaction as ProviderWire. Native
-provider metadata is preserved, with a colliding native `gateway` value relocated
+provider metadata is preserved as provider output, not passed through the failure
+summary redactor, with a colliding native `gateway` value relocated
 to `gateway.nativeMetadata`. Stream-native failures may include a redacted
 `grafana.native_error`; the standard OpenAI error fields remain stable.
 
@@ -220,8 +255,8 @@ Retrieved sources no longer invalidate an otherwise valid completion. They are
 preserved under `grafana.sources`; citations are preserved under
 `grafana.citations`. URL citations with native start/end positions additionally
 appear as standard `message.annotations` or `delta.annotations`. Sources without
-positions do not receive fabricated text spans. Positions retain the native
-provider's indexing convention.
+positions do not receive fabricated text spans. Native local spans remain in the extension; standard Chat annotation offsets
+follow the character convention below.
 
 The compatible backend preserves native refusal and token log-probability fields
 in their standard Chat locations. Refusals are valid responses to structured-output
@@ -327,6 +362,11 @@ controls. Other adapters retain their provider warning behavior.
 The current HTTP surface implements creation and streaming only. `store: true`
 is rejected; retrieve, list, update, delete, and stored-message routes are not
 implemented. Supporting those operations requires a host storage and ownership
-contract, not only forwarding `store` to a native provider. Unsupported create fields are rejected rather than silently ignored. Native
-search is available through compatible web_search_options; application tools
+contract, not only forwarding `store` to a native provider. Unsupported create
+fields are rejected rather than silently ignored. Native search is available
+through compatible `web_search_options`; application tools
 are executed by the client.
+
+---
+
+[Prev: Gateway authentication](gateway-authentication.md) · [Docs index](../README.md) · [Next: Gateway architecture](../concepts/gateway-architecture.md)
