@@ -289,7 +289,17 @@ func generateResultAttrs(result *provider.GenerateResult, capture CaptureOptions
 		return nil
 	}
 	attrs := make([]slog.Attr, 0, 16)
-	attrs = append(attrs, finishReasonAttrs(result.FinishReason)...)
+	reason := result.FinishReason
+	if len(result.Choices) > 0 {
+		reason = result.Choices[0].FinishReason
+		for _, choice := range result.Choices[1:] {
+			if choice.FinishReason.Unified != reason.Unified {
+				reason = provider.FinishReason{Unified: provider.FinishReasonOther}
+				break
+			}
+		}
+	}
+	attrs = append(attrs, finishReasonAttrs(reason)...)
 	attrs = append(attrs, usageAttrs(result.Usage)...)
 	attrs = append(attrs, warningAttrs(result.Warnings)...)
 	if result.Response != nil {
@@ -306,6 +316,24 @@ func generateResultAttrs(result *provider.GenerateResult, capture CaptureOptions
 	}
 	if shouldCaptureGeneratedContent(capture) && len(result.Content) > 0 {
 		attrs = appendJSONAttr(attrs, "ai_sdk.response.content", sanitizeGenerateContent(result.Content, capture), capture)
+	}
+	if len(result.Choices) > 0 && (shouldCaptureGeneratedContent(capture) || capture.ProviderMetadata) {
+		choices := make([]struct {
+			Index            int                            `json:"index"`
+			Content          []provider.GenerateContentPart `json:"content,omitempty"`
+			FinishReason     provider.FinishReason          `json:"finishReason"`
+			ProviderMetadata provider.ProviderMetadata      `json:"providerMetadata,omitempty"`
+		}, len(result.Choices))
+		for i, choice := range result.Choices {
+			choices[i].Index = choice.Index
+			choices[i].FinishReason = choice.FinishReason
+			choices[i].ProviderMetadata = choice.ProviderMetadata
+			choices[i].Content = sanitizeGenerateContent(choice.Content, capture)
+			if !capture.ProviderMetadata {
+				choices[i].ProviderMetadata = nil
+			}
+		}
+		attrs = appendJSONAttr(attrs, "ai_sdk.response.choices", choices, capture)
 	}
 	if capture.ProviderMetadata && len(result.ProviderMetadata) > 0 {
 		attrs = appendJSONAttr(attrs, "ai_sdk.provider_metadata", result.ProviderMetadata, capture)

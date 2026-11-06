@@ -262,9 +262,12 @@ func (s *streamSummary) observe(part provider.StreamPart) {
 			Provider:  part.Provider,
 			Timestamp: part.Timestamp,
 		}
-	case provider.PartFinish:
+	case provider.PartFinish, provider.PartChoicesFinish:
 		if part.FinishReason != nil {
 			finish := *part.FinishReason
+			if part.ChoiceIndex != nil && s.finish != nil && s.finish.Unified != finish.Unified {
+				finish = provider.FinishReason{Unified: provider.FinishReasonOther}
+			}
 			s.finish = &finish
 		}
 		if len(part.ProviderMetadata) > 0 {
@@ -320,6 +323,9 @@ func streamPartCountKey(typ provider.StreamPartType) string {
 
 func streamPartCaptureAttrs(part provider.StreamPart, capture CaptureOptions) []slog.Attr {
 	attrs := make([]slog.Attr, 0, 6)
+	if part.ChoiceIndex != nil {
+		attrs = append(attrs, slog.Int("ai_sdk.stream.choice_index", *part.ChoiceIndex))
+	}
 	if shouldCaptureStreamPart(part, capture) {
 		sanitized := sanitizeStreamPart(part, capture)
 		attrs = appendJSONAttr(attrs, "ai_sdk.stream.part", sanitized, capture)
