@@ -455,3 +455,26 @@ controls or parallel legacy calls SHALL be rejected.
 - **WHEN** functions or function_call occur with tools, tool_choice or enabled
   parallel_tool_calls
 - **THEN** Chat returns an invalid request before native I/O.
+### Requirement: Native Chat audio request mapping
+The adapter SHALL accept Chat output modalities/audio parameters and assistant
+audio history references. It SHALL preserve other assistant content and metadata.
+Targets lacking native Chat audio capability SHALL reject such requests before
+provider I/O rather than silently dropping audio.
+
+#### Scenario: Compatible audio generation with history
+- **WHEN** a request contains audio generation options and an assistant audio ID
+- **THEN** the compatible native request retains modalities, format, voice and audio ID
+- **AND** assistant text, participant name and refusal remain present
+
+#### Scenario: Unsupported audio transport
+- **WHEN** the selected Responses or Anthropic transport receives audio generation or audio history
+- **THEN** translation returns an invalid-request error before invoking the native model
+
+### Requirement: Native audio response projection
+Compatible audio output SHALL be preserved in standard Chat message.audio and
+delta.audio fields, including native identity, expiration, data and transcript.
+
+#### Scenario: Audio-only completion
+- **WHEN** the native compatible response contains audio without text
+- **THEN** the unary message retains null content and complete audio
+- **AND** streaming clients receive native incremental audio fields

@@ -1,0 +1,4 @@
+- [x] Accept audio request parameters and assistant audio references.
+- [x] Translate compatible requests without losing names, text or refusal.
+- [x] Reject unsupported target audio before unary/stream provider invocation.
+- [x] Verify exact synthetic native requests and schema boundary errors.
