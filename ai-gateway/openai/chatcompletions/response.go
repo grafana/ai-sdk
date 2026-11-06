@@ -47,15 +47,16 @@ type choice struct {
 	Logprobs any           `json:"logprobs"`
 }
 type completion struct {
-	ServiceTier       *string      `json:"service_tier,omitempty"`
-	SystemFingerprint *string      `json:"system_fingerprint,omitempty"`
-	ID                string       `json:"id"`
-	Object            string       `json:"object"`
-	Created           int64        `json:"created"`
-	Model             string       `json:"model"`
-	Choices           []choice     `json:"choices"`
-	Usage             *usage       `json:"usage,omitempty"`
-	Grafana           *diagnostics `json:"grafana,omitempty"`
+	Moderation        *compatible.ChatModeration `json:"moderation,omitempty"`
+	ServiceTier       *string                    `json:"service_tier,omitempty"`
+	SystemFingerprint *string                    `json:"system_fingerprint,omitempty"`
+	ID                string                     `json:"id"`
+	Object            string                     `json:"object"`
+	Created           int64                      `json:"created"`
+	Model             string                     `json:"model"`
+	Choices           []choice                   `json:"choices"`
+	Usage             *usage                     `json:"usage,omitempty"`
+	Grafana           *diagnostics               `json:"grafana,omitempty"`
 }
 
 func mapUsage(u provider.Usage) (*usage, error) {
@@ -190,6 +191,7 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	}
 	out.ServiceTier = native.ServiceTier
 	out.SystemFingerprint = native.SystemFingerprint
+	out.Moderation = native.Moderation
 	msg := outputMessage{Role: roleAssistant, Refusal: native.Refusal, Audio: native.Audio, Annotations: nativeAnnotations(native.Annotations)}
 	var content strings.Builder
 	hasText := false

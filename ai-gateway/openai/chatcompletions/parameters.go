@@ -7,18 +7,19 @@ import (
 )
 
 type chatParameters struct {
-	Prediction           *compatible.ChatPrediction       `json:"prediction"`
-	WebSearchOptions     *compatible.ChatWebSearchOptions `json:"web_search_options"`
-	Verbosity            *string                          `json:"verbosity"`
-	User                 *string                          `json:"user"`
-	SafetyIdentifier     *string                          `json:"safety_identifier"`
-	ServiceTier          *string                          `json:"service_tier"`
-	PromptCacheKey       *string                          `json:"prompt_cache_key"`
-	PromptCacheRetention *string                          `json:"prompt_cache_retention"`
-	Metadata             map[string]string                `json:"metadata"`
-	LogitBias            map[string]float64               `json:"logit_bias"`
-	Logprobs             *bool                            `json:"logprobs"`
-	TopLogprobs          *int                             `json:"top_logprobs"`
+	Moderation           *compatible.ChatModerationOptions `json:"moderation"`
+	Prediction           *compatible.ChatPrediction        `json:"prediction"`
+	WebSearchOptions     *compatible.ChatWebSearchOptions  `json:"web_search_options"`
+	Verbosity            *string                           `json:"verbosity"`
+	User                 *string                           `json:"user"`
+	SafetyIdentifier     *string                           `json:"safety_identifier"`
+	ServiceTier          *string                           `json:"service_tier"`
+	PromptCacheKey       *string                           `json:"prompt_cache_key"`
+	PromptCacheRetention *string                           `json:"prompt_cache_retention"`
+	Metadata             map[string]string                 `json:"metadata"`
+	LogitBias            map[string]float64                `json:"logit_bias"`
+	Logprobs             *bool                             `json:"logprobs"`
+	TopLogprobs          *int                              `json:"top_logprobs"`
 }
 
 func (r mappedRequest) translateParameters(target execution.Target, values map[string]any) error {
@@ -98,11 +99,15 @@ func (r mappedRequest) translateExtendedParameters(target execution.Target, valu
 		}
 		values["textVerbosity"] = *r.Verbosity
 	}
-	if r.Prediction == nil && r.WebSearchOptions == nil {
+	if r.Prediction == nil && r.WebSearchOptions == nil && r.Moderation == nil {
 		return nil
 	}
 	if target.Type != execution.TargetOpenAICompatible {
 		return provider.ErrUnsupportedFunctionality
+	}
+	if r.Moderation != nil {
+		values["moderation"] = r.Moderation
+		values["preserveChatCompletionMetadata"] = true
 	}
 	if r.Prediction != nil {
 		values["prediction"] = r.Prediction

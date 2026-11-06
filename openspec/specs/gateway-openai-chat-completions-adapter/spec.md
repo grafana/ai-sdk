@@ -555,3 +555,11 @@ Padding SHALL be regenerated after projection and normalize serialized sizes to
 #### Scenario: Enabled padding
 - **WHEN** two identical public chunks are serialized with obfuscation enabled
 - **THEN** they contain different random padding and retain identical completion data
+
+### Requirement: Native moderation request routing
+The adapter SHALL validate and preserve native inline moderation model/policies
+on compatible routes and enable typed Chat result metadata preservation.
+
+#### Scenario: No equivalent moderation transport
+- **WHEN** Responses or Anthropic is selected for an inline moderation request
+- **THEN** the adapter returns a capability error before provider I/O
