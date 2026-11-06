@@ -123,6 +123,9 @@ func (r mappedRequest) validateText(text, finish string) error {
 	return nil
 }
 func validateCall(call toolCall, r mappedRequest) error {
+	if !r.toolAllowed(call.name()) {
+		return errOutput
+	}
 	if call.ID == "" || len(call.ID) > 256 || !utf8.ValidString(call.ID) || !namePattern.MatchString(call.name()) || !utf8.ValidString(call.arguments()) {
 		return errOutput
 	}
