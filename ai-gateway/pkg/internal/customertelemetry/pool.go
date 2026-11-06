@@ -121,6 +121,7 @@ type Pool[T any] struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	closed        bool
+	owner         *Controller
 	deadline      time.Time
 	cleanupFailed bool
 	stop          chan struct{}
@@ -143,13 +144,21 @@ func NewPool[T any](factory ResourceFactory[T], options PoolOptions) (*Pool[T], 
 // returns a reusable binding, or revokes all its generations if state is invalid
 // or recording is disallowed. Matching transport settings refresh validity without
 // rebuilding. Changed settings retire the old binding even at capacity; callers
-// can retry Update after retirement frees capacity. No inference is invoked.
+// can retry Update after retirement frees capacity. Retiring validity can only
+// shorten. Attached pools accept publication only from their Controller.
 func (p *Pool[T]) Update(stack Stack, signal Signal, destinations Destinations, policy Policy) (*Binding[T], error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.owner != nil {
+		return nil, ErrBinding
+	}
+	return p.update(stack, signal, destinations, policy)
+}
+
+func (p *Pool[T]) update(stack Stack, signal Signal, destinations Destinations, policy Policy) (*Binding[T], error) {
 	if stack.namespace == "" || !validSignal(signal) {
 		return nil, ErrBinding
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.closed {
 		return nil, ErrPoolClosed
 	}
@@ -169,12 +178,18 @@ func (p *Pool[T]) Update(stack Stack, signal Signal, destinations Destinations, 
 	if policy.validUntil.Before(until) {
 		until = policy.validUntil
 	}
+	for b := range p.all {
+		if b.target.Stack == stack && b.target.Signal == signal && b.retired {
+			b.gate.limit(until)
+		}
+	}
 	if old := p.current[key]; old != nil {
 		if old.target.Destination == destination && old.gate.valid() {
 			old.gate.refresh(until)
 			return old, nil
 		}
 		p.retire(old, !old.gate.valid())
+		old.gate.limit(until)
 	}
 	p.notify()
 	if len(p.all) >= p.options.MaxResources {
