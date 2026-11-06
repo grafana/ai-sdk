@@ -146,3 +146,11 @@ including an empty map, and validate its key/value limits.
 #### Scenario: Invalid native metadata value
 - **WHEN** response metadata contains a non-string value or exceeds its limits
 - **THEN** decoding fails rather than publishing malformed metadata
+
+### Requirement: Preserve explicitly requested native Chat file unions
+The provider SHALL support a typed, per-part native-file codec option without changing default file conversion or deriving file identity from provider metadata.
+
+#### Scenario: Native text file and named reference
+- **WHEN** a common file part opts into native file encoding
+- **THEN** text bytes SHALL remain a native `file_data` union and references SHALL retain both `file_id` and their common filename
+- **AND** local codec flags SHALL never appear in the HTTP body, including JSON field capitalization aliases
