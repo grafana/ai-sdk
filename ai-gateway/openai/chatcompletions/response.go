@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/grafana/ai-sdk/provider"
+	compatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 var errOutput = errors.New("chat completions: unsupported or invalid output")
@@ -30,12 +31,13 @@ type completionDetails struct {
 	Reasoning          *int `json:"reasoning_tokens,omitempty"`
 }
 type outputMessage struct {
-	FunctionCall *callFunction `json:"function_call,omitempty"`
-	Refusal      *string       `json:"refusal,omitempty"`
-	Annotations  []annotation  `json:"annotations,omitempty"`
-	Role         role          `json:"role"`
-	Content      *string       `json:"content"`
-	ToolCalls    []toolCall    `json:"tool_calls,omitempty"`
+	Audio        *compatible.ChatCompletionAudio `json:"audio,omitempty"`
+	FunctionCall *callFunction                   `json:"function_call,omitempty"`
+	Refusal      *string                         `json:"refusal,omitempty"`
+	Annotations  []annotation                    `json:"annotations,omitempty"`
+	Role         role                            `json:"role"`
+	Content      *string                         `json:"content"`
+	ToolCalls    []toolCall                      `json:"tool_calls,omitempty"`
 }
 type choice struct {
 	Index    int           `json:"index"`
@@ -171,7 +173,10 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	if err != nil {
 		return out, err
 	}
-	msg := outputMessage{Role: roleAssistant, Refusal: native.Refusal}
+	if native.Audio != nil && native.Audio.ValidateComplete() != nil {
+		return out, errOutput
+	}
+	msg := outputMessage{Role: roleAssistant, Refusal: native.Refusal, Audio: native.Audio}
 	var content strings.Builder
 	hasText := false
 	textOffset := 0
@@ -224,7 +229,7 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 			return out, err
 		}
 	}
-	if hasText || len(msg.ToolCalls) == 0 {
+	if hasText || len(msg.ToolCalls) == 0 && native.Audio == nil {
 		msg.Content = &text
 	}
 	out.Usage, err = mapUsage(result.Usage)
