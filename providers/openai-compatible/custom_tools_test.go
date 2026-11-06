@@ -72,3 +72,19 @@ func TestInvalidCustomToolFormat(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestCustomToolResultMarkerIsLocal(t *testing.T) {
+	for _, marker := range []string{`true`, `false`, `"true"`} {
+		part := provider.ToolResultPart("c", "custom", &provider.ToolResultOutput{Type: provider.ToolOutputText, Text: "result"})
+		part.ProviderOptions = provider.ProviderOptions{"openaiCompatible": provider.RawProviderOption{Key: "openaiCompatible", Raw: json.RawMessage(`{"customTool":` + marker + `}`)}}
+		result, err := convertToolMessages([]provider.ContentPart{part})
+		if marker == `"true"` {
+			require.Error(t, err)
+			continue
+		}
+		require.NoError(t, err)
+		raw, err := json.Marshal(result)
+		require.NoError(t, err)
+		assert.JSONEq(t, `[{"role":"tool","content":"result","tool_call_id":"c"}]`, string(raw))
+	}
+}
