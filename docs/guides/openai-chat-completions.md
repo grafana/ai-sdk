@@ -251,3 +251,8 @@ maps supported equivalents to each native protocol and rejects unsupported
 capabilities before I/O. Responses logprobs are flattened into Chat token records;
 alternative counts are trimmed to the client's requested `top_logprobs` (zero by
 default), without mutating provider metadata.
+
+Native compatible `system_fingerprint`, actual `service_tier`, and positioned URL
+annotations are preserved in standard response fields. Responses' reported
+service tier is also projected. Unknown values remain absent; request parameters
+are not substituted for native execution evidence.

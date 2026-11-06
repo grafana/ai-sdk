@@ -135,3 +135,7 @@ For subsequent turns, attach `ChatCompletionMessageOptions` containing an
 audio ID is sent in history, with null content for audio-only messages. This
 extension deliberately preserves data omitted by the pinned upstream compatible
 normalizer; ordinary requests without audio retain their existing behavior.
+
+The opt-in Chat metadata projection also preserves native service tier, system
+fingerprint and URL annotations. Citation spans must be present and nonnegative;
+malformed annotations fail typed decoding instead of receiving invented indices.
