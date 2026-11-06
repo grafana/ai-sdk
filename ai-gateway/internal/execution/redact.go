@@ -6,13 +6,13 @@ import (
 	"strings"
 )
 
-// SummaryRedactor protects configured API keys in projected native failure fields.
+// SummaryRedactor protects API keys in projected native failure fields.
 type SummaryRedactor struct {
 	keys     []string
 	replacer *strings.Replacer
 }
 
-// NewSummaryRedactor copies configured keys into an immutable summary policy.
+// NewSummaryRedactor copies keys into an immutable summary policy.
 func NewSummaryRedactor(keys []string) SummaryRedactor {
 	keys = slices.Clone(keys)
 	slices.SortFunc(keys, func(a, b string) int {
