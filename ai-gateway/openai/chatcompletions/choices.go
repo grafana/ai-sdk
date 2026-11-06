@@ -53,6 +53,7 @@ func mapGenerateChoices(result *provider.GenerateResult, r mappedRequest, id, mo
 		return out, errOutput
 	}
 	out.Moderation = metadata.Moderation
+	out.Metadata = metadata.Metadata
 	if metadata.ServiceTier != nil {
 		out.ServiceTier = metadata.ServiceTier
 	}
