@@ -1,5 +1,6 @@
-- [x] Compare registered upstream metadata normalization and coverage map.
-- [x] Preserve typed refusal/logprobs and usage with local opt-in.
-- [x] Reject invalid probabilities, byte arrays and negative counts.
-- [x] Test unary/stream and unchanged default behavior with synthetic payloads.
-- [x] Document extension and provider-boundary evidence limitation.
+- [x] Compare registered upstream implementation and tests.
+- [x] Preserve refusal/logprobs through a constructor option and resolved namespace.
+- [x] Accumulate stream metadata at finish without custom content parts.
+- [x] Preserve Usage.Raw and tolerate malformed optional metadata.
+- [x] Cover HTTP wiring, multi-chunk streams, namespaces and frontend history.
+- [x] Record the extension and evidence limits in knownGaps and docs.

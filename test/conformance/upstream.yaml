@@ -21,6 +21,19 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: openai-compatible-chat-completion-metadata
+    surface: provider-openai-compatible
+    status: intentional-deviation
+    description: Go offers WithChatCompletionMetadata on the model constructor
+      rather than the upstream generic metadataExtractor hook. It retains
+      first-choice refusal and both logprob channels under chatCompletion in the
+      resolved provider namespace. Streams concatenate refusal and append logprobs
+      at finish without custom content parts; native accounting remains Usage.Raw.
+      Invalid extensions are dropped with unary warnings or non-retryable
+      recoverable stream errors, preserving content and later chunks. Synthetic
+      HTTP and frontend tests cover this extension; no live provider recording
+      or provider-boundary conformance is claimed. Default normalization and
+      provider-option passthrough remain unchanged.
   - id: agent-ui-validation-schemas
     surface: core-agent
     status: gap

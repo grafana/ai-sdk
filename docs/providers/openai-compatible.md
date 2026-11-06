@@ -83,6 +83,28 @@ Per-call `OpenAIOptions` cover compatible reasoning and schema settings where
 the server supports them. Unsupported values may be ignored or rejected by the
 server, so include the target implementation in integration tests.
 
+## Preserve Chat-specific output
+
+Construct the model with `WithChatCompletionMetadata()` when a protocol codec
+needs refusal or log probabilities. The setting belongs to the model, so clients
+cannot enable it through provider options and no client namespace is rewritten.
+Request probabilities through the configured provider namespace using native
+`logprobs` and `top_logprobs` passthrough fields.
+
+The resolved provider metadata namespace contains `chatCompletion`; use
+`ChatCompletionMetadataKey` and decode its value as `ChatCompletionMetadata`.
+Unary responses carry complete values. Streaming concatenates refusal fragments
+and appends both logprob channels, publishing them only on the finish part.
+There are no custom content parts, so these fields do not accumulate in message
+history or UI content. Native token accounting, including cache-write and audio
+counts and absent-versus-zero distinctions, remains in `Usage.Raw`.
+
+Only the first choice's metadata is decoded. Invalid extensions are dropped with
+a unary warning or a non-retryable recoverable stream error; ordinary content and
+later chunks remain available. Empty logprob objects are absent. The opt-in Go
+extension has synthetic HTTP and frontend coverage, not live provider recordings;
+default behavior remains unchanged. Multiple choices and audio output are not added.
+
 ## Reference
 
 - [`providers/openai-compatible`](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/openai-compatible)
@@ -91,21 +113,3 @@ server, so include the target implementation in integration tests.
 ---
 
 ← [OpenAI](openai.md) · [Docs index](../README.md) · [Writing a provider →](writing-a-provider.md)
-
-## Preserving Chat-specific output
-
-Set `OpenAIOptions.PreserveChatCompletionMetadata` to `true` when a protocol
-codec needs refusal, log probabilities or detailed Chat token accounting. This
-local option is not sent in the native request. The default remains the pinned
-upstream LanguageModel behavior.
-
-Validated fields are available as `openaiCompatible.chatCompletion` in provider
-metadata. Decode that value as `ChatCompletionMetadata` and validate it before
-projection. Unary results contain complete refusal/logprobs/usage values.
-Streaming emits `custom` parts with kind `openai-compatible.chat-completion` for
-refusal and logprob deltas, and final usage on the `finish` part. Missing counters
-remain absent; unknown native fields are not copied. Existing metadata under the
-configured provider namespace remains available.
-
-This opt-in Go extension does not add multiple choices or audio output support.
-Its focused tests use synthetic native responses, not live provider recordings.
