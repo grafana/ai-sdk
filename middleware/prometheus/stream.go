@@ -14,6 +14,7 @@ const streamBufferSize = 64
 type streamObservation struct {
 	responseIdentity  identity
 	finishReason      string
+	choiceFinishSeen  bool
 	usage             streamusage.Aggregator
 	streamError       *outcome
 	chunkCounts       map[string]int
@@ -154,7 +155,14 @@ func (o *streamObservation) observe(part provider.StreamPart, start, receivedAt 
 		}
 	case provider.PartFinish:
 		if part.FinishReason != nil {
-			o.finishReason = finishReasonLabel(*part.FinishReason)
+			reason := finishReasonLabel(*part.FinishReason)
+			if part.ChoiceIndex != nil {
+				if o.choiceFinishSeen && o.finishReason != reason {
+					reason = string(provider.FinishReasonOther)
+				}
+				o.choiceFinishSeen = true
+			}
+			o.finishReason = reason
 		}
 	case provider.PartError:
 		out := o.config.classifyStreamError(part.APICallError)
@@ -193,6 +201,7 @@ func streamChunkTypeLabel(partType provider.StreamPartType) string {
 		provider.PartStreamStart,
 		provider.PartResponseMeta,
 		provider.PartFinish,
+		provider.PartChoicesFinish,
 		provider.PartRaw,
 		provider.PartError,
 		provider.PartToolApprovalRequest,

@@ -100,6 +100,11 @@ interpreted correctly.
 This middleware records local client-side provider-call metrics. Remote service
 metrics and controls are outside its scope.
 
+Native alternatives share one request and one aggregate usage observation.
+Indexed choice finishes do not add token usage. The global `choices-finish` has
+its own bounded chunk-type label; choice indexes are never metric labels. When
+choice finish reasons differ, the request finish-reason label is `other`.
+
 ## Reference
 
 - [`middleware/prometheus`](https://pkg.go.dev/github.com/grafana/ai-sdk/middleware/prometheus)
