@@ -44,7 +44,7 @@ func (p *ChatPrediction) Validate() error {
 		return fmt.Errorf("openai: invalid prediction")
 	}
 	var text string
-	if json.Unmarshal(p.Content, &text) == nil && string(p.Content) != "null" {
+	if json.Unmarshal(p.Content, &text) == nil && !bytes.Equal(bytes.TrimSpace(p.Content), []byte("null")) {
 		return nil
 	}
 	var parts []struct {
