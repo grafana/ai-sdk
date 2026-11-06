@@ -33,24 +33,25 @@ var namePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 var errRequest = errors.New("chat completions: invalid request")
 
 type request struct {
-	Model               string                   `json:"model"`
-	Messages            []message                `json:"messages"`
-	Stream              *bool                    `json:"stream"`
-	N                   *int                     `json:"n"`
-	Store               *bool                    `json:"store"`
-	Temperature         *float64                 `json:"temperature"`
-	TopP                *float64                 `json:"top_p"`
-	FrequencyPenalty    *float64                 `json:"frequency_penalty"`
-	PresencePenalty     *float64                 `json:"presence_penalty"`
-	Seed                *int                     `json:"seed"`
-	MaxTokens           *int                     `json:"max_tokens"`
-	MaxCompletionTokens *int                     `json:"max_completion_tokens"`
-	Stop                json.RawMessage          `json:"stop"`
-	Tools               []tool                   `json:"tools"`
-	ToolChoice          json.RawMessage          `json:"tool_choice"`
-	Parallel            *bool                    `json:"parallel_tool_calls"`
-	Reasoning           provider.ReasoningEffort `json:"reasoning_effort"`
-	ResponseFormat      *responseFormat          `json:"response_format"`
+	ProviderOptions     map[string]json.RawMessage `json:"providerOptions"`
+	Model               string                     `json:"model"`
+	Messages            []message                  `json:"messages"`
+	Stream              *bool                      `json:"stream"`
+	N                   *int                       `json:"n"`
+	Store               *bool                      `json:"store"`
+	Temperature         *float64                   `json:"temperature"`
+	TopP                *float64                   `json:"top_p"`
+	FrequencyPenalty    *float64                   `json:"frequency_penalty"`
+	PresencePenalty     *float64                   `json:"presence_penalty"`
+	Seed                *int                       `json:"seed"`
+	MaxTokens           *int                       `json:"max_tokens"`
+	MaxCompletionTokens *int                       `json:"max_completion_tokens"`
+	Stop                json.RawMessage            `json:"stop"`
+	Tools               []tool                     `json:"tools"`
+	ToolChoice          json.RawMessage            `json:"tool_choice"`
+	Parallel            *bool                      `json:"parallel_tool_calls"`
+	Reasoning           provider.ReasoningEffort   `json:"reasoning_effort"`
+	ResponseFormat      *responseFormat            `json:"response_format"`
 	StreamOptions       *struct {
 		IncludeUsage *bool `json:"include_usage"`
 	} `json:"stream_options"`
@@ -165,6 +166,15 @@ func mapRequest(data []byte) (mappedRequest, error) {
 		}
 	}
 	r.options = provider.CallOptions{MaxOutputTokens: maxTokens, Temperature: r.Temperature, TopP: r.TopP, FrequencyPenalty: r.FrequencyPenalty, PresencePenalty: r.PresencePenalty, Seed: r.Seed, Reasoning: r.Reasoning}
+	if len(r.ProviderOptions) > 0 {
+		r.options.ProviderOptions = make(provider.ProviderOptions, len(r.ProviderOptions))
+		for namespace, raw := range r.ProviderOptions {
+			if !jsonObject(raw) {
+				return r, errRequest
+			}
+			r.options.ProviderOptions[namespace] = provider.RawProviderOption{Key: namespace, Raw: raw}
+		}
+	}
 	if present(r.Stop) {
 		var single string
 		if json.Unmarshal(r.Stop, &single) == nil {

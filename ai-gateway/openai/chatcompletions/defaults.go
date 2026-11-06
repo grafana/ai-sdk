@@ -45,7 +45,24 @@ func chatTranslator(r mappedRequest) execution.Translator {
 		if len(values) == 0 {
 			return options, nil
 		}
-		raw, err := json.Marshal(values)
+		merged := map[string]json.RawMessage{}
+		if existing := options.ProviderOptions[namespace]; existing != nil {
+			encoded, err := json.Marshal(existing)
+			if raw, ok := existing.(provider.RawProviderOption); ok {
+				encoded, err = raw.Raw, nil
+			}
+			if err != nil || json.Unmarshal(encoded, &merged) != nil || merged == nil {
+				return options, execution.ErrTranslation
+			}
+		}
+		for key, value := range values {
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				return options, err
+			}
+			merged[key] = encoded
+		}
+		raw, err := json.Marshal(merged)
 		if err != nil {
 			return options, err
 		}

@@ -94,5 +94,11 @@ func selectBYOK(id string, controls routing.Controls, options BYOKOptions) (exec
 			Destination: catalog.ConfiguredCandidate{Provider: string(destination.Provider), ModelID: destination.Model},
 		}
 	}
-	return execution.AccountSelection(id, model, expected), nil
+	var apiKeys []string
+	for _, destination := range request.Destinations {
+		for _, account := range destination.Accounts {
+			apiKeys = append(apiKeys, account.APIKey)
+		}
+	}
+	return execution.AccountSelection(id, model, expected, apiKeys...), nil
 }

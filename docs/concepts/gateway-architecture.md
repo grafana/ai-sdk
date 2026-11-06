@@ -98,9 +98,10 @@ operational endpoints, so there are no separate listeners and no `/live`,
 The [Chat Completions adapter](../guides/openai-chat-completions.md) maps its
 supported request subset into the same execution runtime. Its call-scoped
 translator applies defaults per native fallback candidate. It supplies its own
-response/error projection and no BYOK controls; the shared selector therefore
-rejects Cloud user and service-account calls without provider accounts with
-HTTP 400 (`ErrInvalidBYOK`), before native I/O. Host access-policy refusal remains
+response/error projection and accepts request accounts through
+`providerOptions.gateway.byok`. The shared selector validates those accounts for
+cloud users and service accounts; missing or invalid accounts produce HTTP 400
+(`ErrInvalidBYOK`) before native I/O. Host access-policy refusal remains
 HTTP 403; the adapter does not add a separate access dispatcher.
 Self-hosted users/service accounts and allowlisted internal services use the
 configured catalog. Chat parses its own request body; selection, execution,
@@ -343,6 +344,14 @@ The registered upstream reference is recorded in
 serializes model calls, forwards `providerOptions.gateway` routing controls
 unchanged, and reads JSON or SSE. It establishes the client-facing protocol,
 not Vercel's private hosted-service implementation or Grafana's routing policy.
+
+Native failure summaries redact exact operator-configured API keys and API keys
+from the validated request accounts. The selector passes request keys only to
+that call's summary policy; concurrent requests do not share them. This trades
+verbatim credential echoes for safe diagnostics, including failures before a
+successful fallback. It does not rewrite source errors, generated content or
+opaque provider metadata, and it does not inspect arbitrary request fields for
+secrets.
 
 ---
 

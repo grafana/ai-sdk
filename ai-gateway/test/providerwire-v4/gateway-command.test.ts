@@ -2050,9 +2050,9 @@ describe("Cloud BYOK attempt overviews (test-signed identities, dummy keys, fake
           native.keyFailures = new Map(Object.entries(scenario.failures));
           const expected = {
             requestedModelId: modelID,
-            attempts: scenario.attempts.map(([key, outcome, status]) => ({
+            attempts: scenario.attempts.map(([, outcome, status]) => ({
               provider: name, modelId: native.backendModel, outcome,
-              ...(status === undefined ? {} : { error: { message: `account failure ${key}`, type: accountFailureType(status), statusCode: status } }),
+              ...(status === undefined ? {} : { error: { message: "account failure [REDACTED]", type: accountFailureType(status), statusCode: status } }),
             })),
           };
           for (const mode of ["generate", "stream"] as const) {
@@ -2063,7 +2063,7 @@ describe("Cloud BYOK attempt overviews (test-signed identities, dummy keys, fake
               assert.deepEqual(metadata?.gateway?.execution, expected, label);
               assert.deepEqual(resources.keys().slice(before), scenario.attempts.map(([key]) => key), label);
               const encoded = JSON.stringify(metadata);
-              for (const absent of ['"canonicalModelId"', '"providerInstance"', UNUSED]) assert.ok(!encoded.includes(absent), `${label}: ${absent}`);
+              for (const absent of ['"canonicalModelId"', '"providerInstance"', UNUSED, ...scenario.keys]) assert.ok(!encoded.includes(absent), `${label}: ${absent}`);
             }
           }
         }
@@ -2085,7 +2085,7 @@ describe("Cloud BYOK attempt overviews (test-signed identities, dummy keys, fake
       const expected = {
         requestedModelId: resources.modelID,
         attempts: [
-          { provider: "openai", modelId: native.backendModel, outcome: "failed", error: { message: `preflight failure ${FIRST}`, type: "error", code: "overloaded", statusCode: 503 } },
+          { provider: "openai", modelId: native.backendModel, outcome: "failed", error: { message: "preflight failure [REDACTED]", type: "error", code: "overloaded", statusCode: 503 } },
           { provider: "openai", modelId: native.backendModel, outcome: "selected" },
         ],
       };
@@ -2117,7 +2117,7 @@ describe("Cloud BYOK attempt overviews (test-signed identities, dummy keys, fake
         assert.deepEqual(metadata?.gateway?.execution, {
           requestedModelId: resources.modelID,
           attempts: failed
-            ? [{ provider: "anthropic", modelId: native.backendModel, outcome: "failed", error: { message: `account failure ${first}`, type: "overloaded_error", statusCode: 503 } }, selected]
+            ? [{ provider: "anthropic", modelId: native.backendModel, outcome: "failed", error: { message: "account failure [REDACTED]", type: "overloaded_error", statusCode: 503 } }, selected]
             : [selected],
         }, first);
         const own = resources.keys().filter((key) => key === first || key === second);
@@ -2165,7 +2165,7 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
   for (const collision of [false, true]) {
-    it(`preserves Cloud BYOK echoes and protects configured summary keys, collision=${collision}`, async () => {
+    it(`redacts Cloud BYOK and configured summary keys, collision=${collision}`, async () => {
       const observer = await FakeAgentObservability.start();
       const configuredKey = collision ? "request-only-key" : "integration-anthropic-key";
       let resources: Awaited<ReturnType<typeof startCloudGateway>> | undefined;
@@ -2177,7 +2177,7 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
         const [native, gateway] = resources;
         native.streamErrorMessage = `provider-echo request-only-key ${configuredKey} integration-agento11y-key static-gateway-key backend-private`;
         const options = { ...cloudCall("normal-stream"), providerOptions: { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }, { apiKey: "unused-second-key" }] } } } };
-        const expected = { message: `provider-echo ${collision ? "[REDACTED]" : "request-only-key"} [REDACTED] [REDACTED] static-gateway-key backend-private`, type: "api_error", statusCode: 500 };
+        const expected = { message: "provider-echo [REDACTED] [REDACTED] [REDACTED] static-gateway-key backend-private", type: "api_error", statusCode: 500 };
         const ts = await collectStream((await gateway.client()(BYOK_MODEL).doStream(options)).stream);
         const go = await captureGoClient(goClientBinaryPath, { mode: "stream", modelID: BYOK_MODEL, options, baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN });
         assert.equal(go.error, undefined);
@@ -2227,7 +2227,7 @@ describe("Cloud BYOK through the platform host (test-signed identities, dummy na
         assert.equal(go.error?.category, "failed_dependency");
         const expected = { error: { message: "failed dependency", type: "failed_dependency", param: null, code: "failed_dependency" } };
         const rejected = { gateway: {
-          execution: { requestedModelId: BYOK_MODEL, attempts: [{ provider: "anthropic", modelId: "request-only-native", outcome: "failed", error: { message: "provider-secret-response request-only-key backend-private", type: "api_error", statusCode: 401 } }] },
+          execution: { requestedModelId: BYOK_MODEL, attempts: [{ provider: "anthropic", modelId: "request-only-native", outcome: "failed", error: { message: "provider-secret-response [REDACTED] backend-private", type: "api_error", statusCode: 401 } }] },
           routing: {
             originalModelId: BYOK_MODEL, resolvedProvider: "anthropic", modelAttemptCount: 1, totalProviderAttemptCount: 1,
             modelAttempts: [{ modelId: BYOK_MODEL, success: false, providerAttemptCount: 1, providerAttempts: [{ provider: "anthropic", success: false, statusCode: 401 }] }],

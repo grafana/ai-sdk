@@ -55,13 +55,13 @@ Request-only invocation SHALL retain shared consumption-backed guards before att
 - **THEN** the native adapter SHALL receive the MCP configuration and history without consulting configured accounts
 
 ### Requirement: BYOK capture policy is independent of returned data
-Host authorization, explicit credential sources and request isolation SHALL remain intact. Operator capture SHALL be independent of returned values. Gateway-produced summaries SHALL apply gateway-attempt-failure-evidence's configured provider/exporter key policy while retaining BYOK-only echoes and catalog-independent eligibility. BYOK attempts SHALL be captured request-locally in order and published under gateway-attempt-failure-evidence's request-account attribution.
+Host authorization, explicit credential sources and request isolation SHALL remain intact. Operator capture SHALL be independent of returned values. Gateway-produced summaries SHALL apply gateway-attempt-failure-evidence's configured and validated request-account API-key policy while retaining unrelated scalar values and catalog-independent eligibility. BYOK attempts SHALL be captured request-locally in order and published under gateway-attempt-failure-evidence's request-account attribution.
 
 #### Scenario: BYOK privacy and attribution policy
 - **WHEN** the host processes request-only credentials and observes execution
 - **THEN** Host controls SHALL be consumed for account selection rather than forwarded wholesale to native inference.
 - **AND** Logging SHALL use configured field-aware redaction; other exporters SHALL own their capture policies, and metric labels SHALL NOT contain credential payloads.
-- **AND** The host SHALL NOT inventory request credentials. Only Gateway-produced native summary fields SHALL apply the configured provider/exporter key policy; source errors, opaque metadata, ordinary content and unrelated BYOK echoes SHALL remain unchanged. Platform-delegated access tokens and other inbound platform credentials SHALL remain excluded.
+- **AND** The selector SHALL pass only validated account API keys to request-local summary redaction. Only Gateway-produced native summary fields SHALL apply this policy; source errors, opaque metadata, ordinary content and unrelated scalar echoes SHALL remain unchanged. Platform-delegated access tokens and other inbound platform credentials SHALL remain excluded.
 - **AND** The host SHALL NOT synthesize diagnostics from an internal credential store or another request's state.
 - **AND** Supported provider/model identity, application content and native response values SHALL remain available under their existing contracts.
 - **AND** Configured execution attribution SHALL remain independent of logical BYOK observation.
@@ -72,7 +72,7 @@ Host authorization, explicit credential sources and request isolation SHALL rema
 
 #### Scenario: Provider echoes the rejected key
 - **WHEN** a fake provider rejection includes the selected dummy API key in authentication-related error material
-- **THEN** native summaries in the overview and event-local errors SHALL retain that BYOK echo unless it exactly matches a configured provider/exporter key, without changing Gateway classification or account isolation
+- **THEN** native summaries in the overview and event-local errors SHALL redact that API-key echo using the validated selected request accounts, without changing Gateway classification or account isolation
 - **AND** logger sensitive-field policy and metadata-only exporter exclusions SHALL be tested independently from caller output
 
 #### Scenario: Ordinary application text resembles a key
