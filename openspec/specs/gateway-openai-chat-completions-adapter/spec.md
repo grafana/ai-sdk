@@ -693,3 +693,12 @@ The adapter SHALL preserve user file unions and filenames for compatible Chat ta
 - **WHEN** a user submits text MIME `file_data` or a `file_id` with a filename
 - **THEN** compatible unary and streaming requests SHALL retain the native file union, filename and any cache breakpoint
 - **AND** translating the request SHALL NOT mutate the original common prompt
+
+### Requirement: Validate cumulative streaming audio
+The adapter SHALL validate cumulative native audio identity and required field presence independently for each choice, without accumulating audio payloads solely for validation.
+
+#### Scenario: Fragmented audio completes normally
+- **WHEN** audio ID, data, transcript and expiry arrive in separate deltas
+- **THEN** the adapter SHALL accept a normally finished choice only after all required fields have appeared
+- **AND** conflicting IDs or expiry timestamps SHALL fail the stream
+- **AND** length or content-filter interruption MAY leave incomplete audio
