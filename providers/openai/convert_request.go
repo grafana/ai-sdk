@@ -13,7 +13,8 @@ import (
 // buildResult threads conversion metadata from buildParams out to the response
 // and stream converters.
 type buildResult struct {
-	preserveRefusal bool
+	preserveRefusal          bool
+	preserveResponseMetadata bool
 	// store is the resolved store flag (defaults true).
 	store                  bool
 	storeExplicitlyEnabled bool
@@ -151,6 +152,7 @@ func buildParamsWithConfig(modelID string, opts provider.CallOptions, providerOp
 	warnings = append(warnings, applyIncludeAndReasoning(&body, popts, resolvedEffort, isReasoning, restrictLogprobs, store, webSearchSourcesIncludeSupported, defaultReasoningSummary, &br)...)
 
 	br.preserveRefusal = popts.PreserveRefusal
+	br.preserveResponseMetadata = popts.PreserveResponseMetadata
 	return body, warnings, br, nil
 }
 
