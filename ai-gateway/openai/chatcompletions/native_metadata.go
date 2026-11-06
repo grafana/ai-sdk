@@ -40,20 +40,23 @@ func nativeUsage(u *usage, native *compatible.ChatCompletionUsage) error {
 		if u.PromptDetails == nil {
 			u.PromptDetails = &promptDetails{}
 		}
-		for _, count := range []*int{d.CachedTokens, d.AudioTokens} {
-			if count != nil && *count > u.Prompt {
+		for _, count := range []*int{d.CachedTokens, d.AudioTokens, d.CacheWriteTokens, d.ImageTokens, d.TextTokens} {
+			if count != nil && (*count < 0 || *count > u.Prompt) {
 				return errOutput
 			}
 		}
 		u.PromptDetails.Cached = d.CachedTokens
 		u.PromptDetails.Audio = d.AudioTokens
+		u.PromptDetails.CacheWrite = d.CacheWriteTokens
+		u.PromptDetails.Image = d.ImageTokens
+		u.PromptDetails.Text = d.TextTokens
 	}
 	if d := native.CompletionTokensDetails; d != nil {
 		if u.CompletionDetails == nil {
 			u.CompletionDetails = &completionDetails{}
 		}
-		for _, count := range []*int{d.ReasoningTokens, d.AudioTokens, d.AcceptedPredictionTokens, d.RejectedPredictionTokens} {
-			if count != nil && *count > u.Completion {
+		for _, count := range []*int{d.ReasoningTokens, d.AudioTokens, d.AcceptedPredictionTokens, d.RejectedPredictionTokens, d.TextTokens} {
+			if count != nil && (*count < 0 || *count > u.Completion) {
 				return errOutput
 			}
 		}
@@ -61,6 +64,7 @@ func nativeUsage(u *usage, native *compatible.ChatCompletionUsage) error {
 		u.CompletionDetails.Audio = d.AudioTokens
 		u.CompletionDetails.AcceptedPrediction = d.AcceptedPredictionTokens
 		u.CompletionDetails.RejectedPrediction = d.RejectedPredictionTokens
+		u.CompletionDetails.Text = d.TextTokens
 	}
 	return nil
 }

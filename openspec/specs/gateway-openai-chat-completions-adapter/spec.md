@@ -586,3 +586,16 @@ metadata.
 - **WHEN** a user image requests original detail and an explicit cache breakpoint
 - **THEN** unary and streaming native HTTP requests retain both properties
 - **AND** an unmarked named user message retains its name
+
+### Requirement: Extended native usage projection
+The adapter SHALL project native prompt cache-write/image/text counts and
+completion text counts, preserving field presence and validating each against
+its corresponding total.
+
+#### Scenario: Explicit zero and absent counts
+- **WHEN** a native completion reports zero text tokens and omits other extended counts
+- **THEN** the public result contains text_tokens zero and omits the missing fields
+
+#### Scenario: Impossible detail count
+- **WHEN** an extended count is negative or exceeds its corresponding total
+- **THEN** the adapter rejects the provider output
