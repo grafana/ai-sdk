@@ -13,10 +13,10 @@
     "update-goldens": "tsx update-goldens.ts"
   },
   "dependencies": {
-    "ai": "7.0.159",
-    "@ai-sdk/gateway": "4.0.132",
+    "ai": "7.0.162",
+    "@ai-sdk/gateway": "4.0.135",
     "@ai-sdk/provider": "4.0.35",
-    "@ai-sdk/provider-utils": "5.0.72",
+    "@ai-sdk/provider-utils": "5.0.74",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1"
   },

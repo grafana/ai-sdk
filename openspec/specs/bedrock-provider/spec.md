@@ -472,7 +472,7 @@ For custom `provider.CallOptions.Reasoning` other than `none`, Anthropic Bedrock
 
 ### Requirement: Native structured output for supported Anthropic models
 
-For JSON with a schema, the provider SHALL select native `output_config.format`, synthetic JSON tool, or JSON instruction by effective `structuredOutputMode`. `auto` SHALL use native output only for Anthropic models with reliable native support (strict-tool allowlist minus Sonnet 4.6, Haiku 4.5) and capability, thinking, or Anthropic family; `outputFormat` bypasses it. Outside `jsonTool`, unknown Claude IDs, and models lacking strict tools with caller tools, SHALL use the JSON instruction.
+For JSON schemas, the provider SHALL select native output, a JSON tool or a JSON instruction by effective `structuredOutputMode`. `auto` SHALL use native output only for representable schemas on Anthropic models with reliable native support (strict-tool allowlist minus Sonnet 4.6/Haiku 4.5) and capability, thinking, or Anthropic family; `outputFormat` bypasses it. Outside `jsonTool`, unknown Claude IDs, and models lacking strict tools with caller tools, SHALL use the JSON instruction.
 
 #### Scenario: Native JSON output on supported Anthropic model
 
@@ -497,8 +497,27 @@ For JSON with a schema, the provider SHALL select native `output_config.format`,
 
 #### Scenario: Known Claude outside native auto routing keeps JSON tool
 
-- **WHEN** Haiku 5.5 or a legacy Claude model receives a JSON response schema in `auto` mode without user tools and, for Haiku 5.5, with or without thinking
+- **WHEN** a legacy Claude model receives a JSON response schema in `auto` mode without user tools
 - **THEN** the synthetic `json` tool and required choice are emitted; legacy Claude with thinking uses native output
+
+#### Scenario: Claude 5 native output
+
+- **WHEN** Opus 5, Opus 5.5, Sonnet 5, Sonnet 5.5 or Haiku 5.5 receives a representable JSON response schema in `auto` mode, with or without thinking or user tools
+- **THEN** `output_config.format` contains the sanitized schema, no synthetic `json` tool is sent, and caller tools are unchanged
+
+#### Scenario: Unrepresentable schema falls back
+
+- **WHEN** a model that would use native output in `auto` receives an open-object, self-referencing, or more-than-ten-optional-property schema
+- **THEN** `output_config.format` is absent; a model that accepts forced tool use receives the synthetic `json` tool with required choice, and a model that rejects it receives the JSON schema instruction
+
+### Requirement: Native output schema representability
+
+A schema SHALL be representable for automatic native output unless it has a circular local `$ref` reachable from the root, an open object (`additionalProperties` true or a schema, non-empty `patternProperties`, or object type without `properties` and without `additionalProperties:false`), or more than ten optional properties counted across nested subschemas and at every use of a referenced definition. Unrepresentable schemas SHALL use the route the model takes without native support.
+
+#### Scenario: Optional-property budget
+
+- **WHEN** an otherwise closed schema has ten optional properties, or a definition with five optional properties is referenced twice
+- **THEN** native output is used; with eleven optional properties, or six referenced twice, it is not
 
 #### Scenario: Explicit JSON tool on unknown Claude
 
@@ -556,7 +575,7 @@ The Converse adapter SHALL keep strict-tool support independent of native JSON s
 
 #### Scenario: Unsupported strict on newest models
 
-- **WHEN** a Claude model outside the strict-tool allowlist (legacy Claude, dated Claude 4, Opus 4.1/4.5/4.6, Sonnet 4.5/4.6, Haiku 4.5), such as Opus 4.7/4.8, Opus 5, Fable 5, Sonnet 5, Haiku 5.5, or an unknown Claude ID, requests `strict:false` or `strict:true`
+- **WHEN** a Claude model outside the strict-tool allowlist (legacy Claude, dated Claude 4, Opus 4.1/4.5/4.6, Sonnet 4.5/4.6, Haiku 4.5, Opus/Sonnet 5 and 5.5 with optional date and version suffixes, Haiku 5.5), such as Opus 4.7/4.8, Fable 5, Haiku 5, or an unknown Claude ID, requests `strict:false` or `strict:true`
 - **THEN** `strict` is omitted; `strict:true` adds an unsupported strict warning identifying the tool, while `strict:false` is omitted silently
 - **AND** non-Claude IDs and opaque profiles keep strict support
 
@@ -802,7 +821,7 @@ The provider's `Provider()` method SHALL return `"amazon-bedrock"`. Its `ModelID
 
 ### Requirement: Converse Claude models that reject disabled thinking and forced tool use
 
-For Anthropic Bedrock IDs containing `claude-sonnet-5-5`, the adapter SHALL follow `@ai-sdk/amazon-bedrock` 5.0.99 unless noted: required choice SHALL become auto; named choice SHALL become auto with only the named tool; each SHALL warn unsupported `toolChoice`. JSON schema responses SHALL use system JSON instruction instead of forced JSON tool in every mode unless native `outputFormat` is selected.
+For Anthropic Bedrock IDs containing `claude-sonnet-5-5`, the adapter SHALL follow `@ai-sdk/amazon-bedrock` 5.0.99 unless noted: required choice SHALL become auto; named choice SHALL become auto with only the named tool; each SHALL warn unsupported `toolChoice`. JSON schema responses SHALL use native output in `auto` when the schema is representable, and otherwise the system JSON instruction instead of the forced JSON tool, including in `jsonTool` mode.
 
 #### Scenario: Required tool choice on Sonnet 5.5
 

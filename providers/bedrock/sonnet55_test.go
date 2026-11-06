@@ -95,18 +95,34 @@ func TestSonnet55ForcedToolChoiceFallsBackToAuto(t *testing.T) {
 	})
 }
 
-func TestSonnet55JSONResponseUsesInstructionWithoutTools(t *testing.T) {
-	schema := json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
-	for _, mode := range []StructuredOutputMode{StructuredOutputModeAuto, StructuredOutputModeJSONTool} {
-		t.Run(string(mode), func(t *testing.T) {
+func TestSonnet55JSONResponseRouting(t *testing.T) {
+	closedSchema := json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}`)
+	openSchema := json.RawMessage(`{"type":"object","properties":{"tags":{"type":"object","additionalProperties":{"type":"string"}}},"required":["tags"]}`)
+	tests := []struct {
+		name       string
+		schema     json.RawMessage
+		mode       StructuredOutputMode
+		wantNative bool
+	}{
+		{name: "auto uses native output", schema: closedSchema, mode: StructuredOutputModeAuto, wantNative: true},
+		{name: "jsonTool uses instructions", schema: closedSchema, mode: StructuredOutputModeJSONTool},
+		{name: "auto with an open object uses instructions", schema: openSchema, mode: StructuredOutputModeAuto},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			req, _, meta := mustBuildRequest(t, testSonnet55Model, provider.CallOptions{
 				Prompt:          []provider.Message{provider.UserText("x")},
-				ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
-				ProviderOptions: provider.BuildProviderOptions(BedrockOptions{StructuredOutputMode: mode}),
+				ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: tc.schema},
+				ProviderOptions: provider.BuildProviderOptions(BedrockOptions{StructuredOutputMode: tc.mode}),
 			})
-			assert.True(t, meta.usesJSONInstruction)
+			assert.Equal(t, !tc.wantNative, meta.usesJSONInstruction)
 			assert.False(t, meta.usesJSONResponseTool)
 			assert.Nil(t, req.ToolConfig, "no forced JSON tool")
+			if tc.wantNative {
+				assert.Contains(t, req.AdditionalModelRequestFields, "output_config")
+			} else {
+				assert.NotContains(t, req.AdditionalModelRequestFields, "output_config")
+			}
 		})
 	}
 }
