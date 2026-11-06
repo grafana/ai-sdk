@@ -27,10 +27,11 @@ Paths are relative to `ai-gateway/` unless they start with a top-level directory
   - disallowed model, repeated entry, default without `allowDefault`, zero policy;
   - null/absent/`[]` no-op, with MCP checks still applied;
   - exact-byte comparison (case and whitespace variants refused);
-  - skills still refused, MCP checks unchanged.
+  - skills still refused, MCP checks unchanged;
+  - `UnrestrictedAnthropicFallbacks()`: any chain, including repeated models and models outside any allowlist, and `"default"` pass; skills are still refused; invalid MCP configuration and unconfigured MCP history are still refused.
 
   Verify with `go test ./pkg/internal/nativeoptions/...`, which fails.
-- [ ] 2.2 Implement `AnthropicFallbackPolicy` and the `Anthropic(policy)` validator (design D3). Wire one validator per descriptor in `service/catalog.go`, and the zero policy in `byok/model.go`. Verify that 2.1 passes and that `go build ./...` succeeds.
+- [ ] 2.2 Implement `AnthropicFallbackPolicy` and the `Anthropic(policy)` validator (design D3). Wire one validator per descriptor in `service/catalog.go`, and `UnrestrictedAnthropicFallbacks()` at both wraps in `byok/model.go` (whole chain, lines 67-68; each Anthropic account, line 78). Verify that 2.1 passes and that `go build ./...` succeeds.
 - [ ] 2.3 Update `service/native_options_test.go`:
   - `TestNativeOptions_BypassAndOrdinaryControls`: the existing `fallback` row stays denied without a policy.
   - Add `TestNativeServerFallbacks_ConfiguredPolicy` (unary × stream × direct/configured-fallback). Allowed chain/default reach native with the unchanged body and the right `anthropic-beta`; disallowed cases give 400 with zero native requests.
@@ -38,13 +39,16 @@ Paths are relative to `ai-gateway/` unless they start with a top-level directory
   - Translator-added fallbacks are checked per candidate.
 
   In `service/routed_test.go`, add `TestRoutedSelection_ServerFallbackPolicy` (unary and stream): route A without a policy plus `models: [B]`, where B has another destination and allows the chain, refuses A with no native request and selects B; routes A (no policy) and B (allowing) sharing one destination give the fixed 400 with no native request for A with `models: [B]`, and one allowed native request for B with `models: [A]`. Verify with `go test ./pkg/internal/service/...`.
-- [ ] 2.4 Extend the BYOK refusals:
-  - `byok/model_test.go` `TestNew_AnthropicNativeOptionGuards`: chain and default;
-  - `service/native_options_test.go` `TestBYOKSelection_NativeOptionGuards`: a chain naming a model a configured route allows, unary and stream;
-  - `service/routed_test.go` `TestRoutedSelection_BYOKNativeOptionRefusal`: chain and default rows in both subtests.
+- [ ] 2.4 Replace the BYOK refusal tests with forwarding tests (design D4):
+  - `byok/model_test.go` `TestNew_AnthropicNativeOptionGuards`: the "native fallback" row (`"default"`) becomes allowed; add a chain row with a repeated model. Assert one native request whose body carries `fallbacks` and whose `anthropic-beta` is the default or explicit server-side fallback beta.
+  - `service/native_options_test.go` `TestBYOKSelection_NativeOptionGuards`: the "native routing" row (`"default"`) becomes allowed; add a chain row. Unary and stream.
+  - Configured policy does not apply: a chain naming a model no configured route allows, and `"default"`, reach the BYOK native request unchanged.
+  - `service/routed_test.go` `TestRoutedSelection_BYOKNativeOptionRefusal`: keep the skills rows; add chain and default forwarding rows to both subtests (all-Anthropic `models: ["anthropic/y"]`, mixed `models: ["openai/y"]`). Each attempted Anthropic account's request carries `fallbacks` and the beta; the OpenAI request carries none.
+  - `service/translation_test.go`: translator-added fallbacks reach the BYOK account's native request with the beta.
+  - With a fake Anthropic that returns a `fallback` block (JSON for unary, SSE for stream; `nativeServer` answers JSON only), assert the BYOK overview's selected attempt carries `modelId` (the native model) and `servedModelId` (`to.model`), unary and stream.
 
-  Assert zero account attempts and no overview, except in the mixed routed chain, where the Anthropic account makes no native request and the OpenAI account is selected (design D4). Verify with `go test ./pkg/internal/byok/... ./pkg/internal/service/...`.
-- [ ] 2.5 Add a both-client command case to `test/providerwire-v4/gateway-command.test.ts` ("native option forwarding"). A configured policy allows the chain and `"default"`, and the fake Anthropic receives each; a disallowed model and a BYOK chain get the fixed 400. In the existing "returns and replays the Anthropic fallback marker through both clients" test (`gateway-command.test.ts:2950`), assert that both clients see `servedModelId` equal to the marker's `to.model` on the selected attempt, unary and stream. Verify with `mise run test-ai-gateway-command`.
+  `nativeRequest` (`service/translation_test.go:35`) records the body but not headers; extend it with `anthropic-beta`. Verify with `go test ./pkg/internal/byok/... ./pkg/internal/service/...`.
+- [ ] 2.5 Add a both-client command case to `test/providerwire-v4/gateway-command.test.ts` ("native option forwarding"). A configured policy allows the chain and `"default"`, and the fake Anthropic receives each; a disallowed model gets the fixed 400. The existing configured refusal in "protects Anthropic execution controls without rejecting safe contextual history" (no policy) stays. For BYOK, use `startCloudGateway` (the native proxy routes `api.anthropic.com` to a `FakeAnthropic`; the "Cloud BYOK through the platform host" describe already drives both clients this way): a chain and `"default"` reach the fake unchanged with the beta through both clients, unary and stream, and with the `wp112-fallback-marker` prompt both clients see `servedModelId` `claude-b` on the BYOK selected attempt. In the existing "returns and replays the Anthropic fallback marker through both clients" test (`gateway-command.test.ts:2950`), assert that both clients see `servedModelId` equal to the marker's `to.model` on the selected attempt, unary and stream. Verify with `mise run test-ai-gateway-command`.
 
 ## 3. Served model in the execution overview
 
@@ -60,13 +64,13 @@ Paths are relative to `ai-gateway/` unless they start with a top-level directory
   - an adapter-failure terminal error (`handleStreamPartResult`, `stream.go:316-325`);
   - a unary invalid-output or mapping error after a selected result (`ServeHTTP`, `handler.go:100`, 105). Verify with `go test ./internal/execution/... ./providerwire/v4/...`, which fails.
 - [ ] 3.2 Implement `Attempt.ServedModelID` and the runtime recording for unary results and `Stream.Next` (design D7). Publish the current served model on every carrier of the selected attempt: `providerwire/v4/handler.go` unary result and errors (lines 97-105); `stream.go` finish and committed error (`processStreamPart`, lines 421, 399), terminal-wait errors (closed, deadline, canceled, idle timeout, invalid output) via `writeStreamTerminalForWait` (lines 475-477) and the adapter-failure terminal error (`handleStreamPartResult`, lines 316-325). Do the same in `internal/testadapter`, and add a served-model case to `TestTestAdapter_MatchesProviderWire` (`internal/execution/adapter_test.go:457`). Verify with `go test -race ./internal/execution/... ./providerwire/v4/...`.
-- [ ] 3.3 Add optional `servedModelId` (`minLength: 1`, selected only) to `providerwire/v4/schema/gateway_execution.json`. Add accept/reject cases in `test/providerwire-v4/schema.test.ts` and `schema-definitions.test.ts`. Verify with `mise run test-providerwire-v4`.
+- [ ] 3.3 Add optional `servedModelId` (`minLength: 1`, selected only) to `providerwire/v4/schema/gateway_execution.json`. Add accept/reject cases in `providerwire/v4/schema_test.go`, `test/providerwire-v4/schema.test.ts` and `schema-definitions.test.ts`. Verify with `mise run test-providerwire-v4`.
 - [ ] 3.4 Add a service test with a fake Anthropic that returns a `fallback` block, unary and stream, asserting `modelId` is the backend and `servedModelId` is `to.model`. Verify with `go test ./pkg/internal/service/...`.
 
 ## 4. Documentation
 
 - [ ] 4.1 Document `serverFallbacks` in the `model_catalog` document described by `ai-gateway/README.md` "Configure models": an example, per-candidate scope, deny by default, Anthropic only, and that `allowDefault` accepts Anthropic's model choice and cost. Update the limits row (`README.md:141`, under the 64 KiB `model_catalog` bound) so the 2,048-byte per-value bound also lists each `serverFallbacks.models` entry. Verify with `mise run lint-docs`.
-- [ ] 4.2 Add a "Use Anthropic server-side fallback" subsection to `docs/providers/grafana-gateway.md` (near "Configure fallback"). Cover: administrator policy, refused-request behavior, refusal for calls with your own key, relation to Gateway fallback and request routing (a refusing candidate advances, possibly to a non-Anthropic or routed candidate that ignores `anthropic.fallbacks`; each routed attempt applies its own route's policy; give routes that share a destination one policy), that callers control per-entry `speed`, `max_tokens` and `thinking` within an allowed model, and `servedModelId` under "Inspect execution overviews and failures". Verify with `mise run lint-docs`.
+- [ ] 4.2 Add a "Use Anthropic server-side fallback" subsection to `docs/providers/grafana-gateway.md` (near "Configure fallback"). Cover: administrator policy, refused-request behavior, calls with your own key (server-side fallback is forwarded without a policy and billed to the caller's account; `"default"` lets Anthropic choose the model), relation to Gateway fallback and request routing (a refusing candidate advances, possibly to a non-Anthropic or routed candidate that ignores `anthropic.fallbacks`; each routed attempt applies its own route's policy; give routes that share a destination one policy), that callers control per-entry `speed`, `max_tokens` and `thinking` within an allowed model, and `servedModelId` under "Inspect execution overviews and failures". Verify with `mise run lint-docs`.
 - [ ] 4.3 Update the candidate option checks in `docs/concepts/gateway-architecture.md` step 4, and the "Diagnostics; execution overview" row in `docs/concepts/gateway-glossary.md`. Add a "Server-side fallback" row distinguishing it from Gateway fallback, routing `models`, and retry, and from the `gateway-ordered-text-fallback` requirement "Native fallback output identity". Check the diagrams for drift. Verify with `mise run lint-docs`.
 - [ ] 4.4 Update godoc for `config.Primary`, `nativeoptions`, and `execution.Attempt`. Verify with `go doc` on each.
 
@@ -91,5 +95,6 @@ Paths are relative to `ai-gateway/` unless they start with a top-level directory
 
 ## Workflow follow-up
 
-- Get nara's confirmations in design.md (BYOK refusal, hop-only `servedModelId`) before implementation starts.
+- nara's decisions are recorded in design.md "Resolved decisions" (BYOK forwards, hop-only `servedModelId`, no discovery exposure).
 - Open a PR titled `feat(ai-gateway): allow Anthropic server-side fallbacks under operator policy` with `Closes #562`. State that policy evidence is synthetic, that group 5 replays the unchanged recordings through the real command, and that it stands in for the issue's `mise run test-conformance-gateway` acceptance, which is not on main.
+- The PR also states that, by nara's decision, BYOK forwards server-side fallback, so the issue item "Disallowed models or default are still refused before native I/O, with tests for configured and BYOK modes" is met by configured refusal tests plus BYOK tests that prove forwarding and that configured policies do not apply.

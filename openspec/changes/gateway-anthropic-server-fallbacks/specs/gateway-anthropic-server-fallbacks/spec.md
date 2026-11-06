@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define how configured Gateway candidates admit Anthropic server-side fallback (`providerOptions.anthropic.fallbacks`) only within an operator policy enforced at native consumption. Configured policies SHALL NOT apply to request-account (BYOK) invocation; its refusal is specified once, in gateway-request-byok.
+Define how configured Gateway candidates admit Anthropic server-side fallback (`providerOptions.anthropic.fallbacks`) only within an operator policy enforced at native consumption. Request-account (BYOK) invocation is out of scope: it forwards server-side fallback without a policy, and configured policies do not apply to it, as specified once in gateway-request-byok. Policy-admitted server-side fallback is not a bypass of resolved model ownership under gateway-native-provider-options "Concrete native bypass protections": the candidate's model stays the attempt's identity and a hop is reported only as the served model.
 
 ## ADDED Requirements
 
@@ -59,10 +59,10 @@ Each native Anthropic attempt of a configured candidate SHALL resolve the `Anthr
 - **THEN** the translated options SHALL be checked against that candidate's policy before its native request
 
 ### Requirement: Gateway server-fallback support boundaries
-The allowlist, distinctness and exact-byte rules SHALL be intentional Gateway support boundaries: registered `@ai-sdk/anthropic` 4.0.94 forwards any non-empty array, including repeated models, without an allowlist. Distinctness caps the server-side generations one request can bill to the operator account at the allowlist size, without a new count constant. Exact-byte matching treats model IDs as opaque.
+For configured candidates, the allowlist, distinctness and exact-byte rules SHALL be intentional Gateway support boundaries, because the operator account pays: registered `@ai-sdk/anthropic` 4.0.94 forwards any non-empty array, including repeated models, without an allowlist. Distinctness caps the server-side generations one request can bill to the operator account at the allowlist size, without a new count constant. Exact-byte matching treats model IDs as opaque.
 
 #### Scenario: Requests upstream would forward
-- **WHEN** a chain repeats an allowlisted model with different `thinking`, or names a case or whitespace variant of an allowlisted model
+- **WHEN** a configured candidate receives a chain that repeats an allowlisted model with different `thinking`, or names a case or whitespace variant of an allowlisted model
 - **THEN** the attempt SHALL be refused before its native request, as for any disallowed chain
 
 ### Requirement: Server-side fallback stays inside one Gateway attempt

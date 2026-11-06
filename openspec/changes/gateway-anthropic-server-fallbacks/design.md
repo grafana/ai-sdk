@@ -13,7 +13,8 @@ See proposal.md for the motivation. Paths below are relative to `ai-gateway/pkg/
   - Lines 110-113 wrap the native model, then `nativeoptions.Model`, then `execution.Translate`.
   - Line 127 keeps each route's descriptors and wrapped candidates (`physicalRoute`, lines 37-40); `composeCandidates` (lines 155-164) composes `fallback.New` with `execution.FallbackDecider`.
 - **Routing (#596).** `service/routed.go:21-72` composes a routed chain from the requested and `models` routes' prebuilt `physicalRoute.candidates`, so each routed attempt keeps its own validator. Destinations are provider instance plus backend model (line 47). `routing.Compose` (`routing/compose.go:39-75`) applies `only` and `order` within each group and skips a repeated destination, so the candidate composed first is the one attempted.
-- **BYOK wiring.** `byok/model.go:78` wraps each Anthropic account with the same validator. Lines 67-68 wrap the whole chain only when every routed destination is Anthropic, so such a refused request makes zero account attempts. In a mixed chain (for example `models: ["openai/y"]`), each Anthropic account refuses before its native request and the decider advances; OpenAI accounts do not consume the `anthropic` namespace (`TestRoutedSelection_BYOKNativeOptionRefusal`). `service/selection.go:68` passes nil approvals, so there is no service-owned BYOK policy surface.
+- **BYOK wiring.** `byok/model.go:78` wraps each Anthropic account with the same validator. Lines 67-68 wrap the whole chain only when every routed destination is Anthropic, so such a refused request makes zero account attempts. In a mixed chain (for example `models: ["openai/y"]`), each Anthropic account refuses before its native request and the decider advances; OpenAI accounts do not consume the `anthropic` namespace (`TestRoutedSelection_BYOKNativeOptionRefusal`, skills rows). Today both wraps also refuse fallbacks. `service/selection.go:68` passes nil destination approvals and no other policy, so there is no service-owned BYOK policy surface.
+  - BYOK already reaches any native model of the caller's accounts: through the selector (gateway-request-byok "Native model absent from configured catalog") and through routed `models` (gateway-request-routing "BYOK fallback models").
 - **Configuration.**
   - The catalog comes from the `model_catalog` setting (`config/settings.go:48`), bounded at 64 KiB (`MaxModelCatalogBytes`, line 33) and parsed by `ParseModelCatalog` (`config/file.go:68`).
   - `config/file.go:52-55`: `Primary{Provider, Model}` is decoded with strict YAML (`KnownFields`, line 80).
@@ -58,7 +59,7 @@ See proposal.md for the motivation. Paths below are relative to `ai-gateway/pkg/
 
 ## Goals / Non-Goals
 
-**Goals:** policy-gated forwarding at the existing native consumption seam, with no provider-module change. BYOK keeps refusing. A truthful served-model field that leaves existing overviews byte-identical.
+**Goals:** policy-gated forwarding for configured candidates at the existing native consumption seam, with no provider-module change. BYOK forwards without a policy, as upstream does. A truthful served-model field that leaves existing overviews byte-identical.
 
 **Non-Goals:**
 - A BYOK policy surface.
@@ -88,23 +89,29 @@ Programmatic construction: `BuildCatalog` fails with a value-free `gateway servi
 Errors follow the existing `config: models.<id>.primary.serverFallbacks…` / `fallback[<i>].serverFallbacks…` style and never echo values. Duplicate detection keys on `{Provider, Model}`. There is no count constant: the 64 KiB `model_catalog` setting bounds the list, and the per-request check is a map lookup.
 
 ### D3. Enforcement at native consumption
-`nativeoptions` owns `AnthropicFallbackPolicy{models map[string]struct{}, allowDefault bool}` and a constructor. The validator becomes `Anthropic(policy)`, which returns `func(provider.CallOptions) error`.
-- `service/catalog.go` builds one validator per descriptor from its policy; routed chains reuse those candidates unchanged. `byok/model.go` passes the zero policy at both wraps (lines 68 and 78).
+`nativeoptions` owns `AnthropicFallbackPolicy{models map[string]struct{}, allowDefault, unrestricted bool}`, a constructor for configured policies and `UnrestrictedAnthropicFallbacks()`. The zero value denies both forms. The validator becomes `Anthropic(policy)`, which returns `func(provider.CallOptions) error`.
+- `service/catalog.go` builds one validator per descriptor from its policy (the zero policy when absent); routed chains reuse those candidates unchanged. `byok/model.go` passes `UnrestrictedAnthropicFallbacks()` at both wraps: the whole-chain wrap (lines 67-68) and the per-account wrap (line 78). See D4.
 - Order inside the validator:
   1. resolve options as today;
-  2. refuse container skills (unchanged);
-  3. if fallbacks are inactive (null, absent or `[]`), skip steps 4-5 only;
+  2. refuse container skills (unchanged, both modes);
+  3. if fallbacks are inactive (null, absent or `[]`) or the policy is unrestricted, skip steps 4-5 only;
   4. `Default` requires `allowDefault`;
   5. a chain requires every `Model` to be allowlisted and the models to be pairwise distinct;
-  6. run the MCP checks (unchanged). They run whether or not fallbacks are active.
-- Distinctness caps the server-side generations one request can bill to the operator account at the allowlist size, without a new count constant. Upstream accepts repeated models; the Gateway refuses them.
+  6. run the MCP checks (unchanged, both modes). They run whether or not fallbacks are active.
+- Steps 4-5 apply only to configured candidates, because the operator account pays.
+- Distinctness caps the server-side generations one request can bill to the operator account at the allowlist size, without a new count constant. Upstream accepts repeated models; configured candidates refuse them.
 - Comparison is exact bytes, per AGENTS.md canonical casing: no trimming or case folding. Model IDs are opaque, so near-matches are not grants.
 - Other entry fields stay as decoded and are emitted by `applyFallbacks`.
 - Wrapping order and per-attempt translation are unchanged (host contract: translation, then native validation).
 - *Alternative: a new wrapper or a field on `nativeoptions.Model`.* Rejected. The closure keeps one validator signature for both modes.
 
-### D4. BYOK keeps refusing
-The zero policy denies both forms, for the requested model's accounts and for every routed fallback model's accounts. An all-Anthropic chain refuses before any account attempt; in a mixed chain each Anthropic account refuses before its native request and non-Anthropic accounts ignore the namespace, as for other refused controls today. BYOK is catalog-independent, and no service-owned approval surface exists. *Alternative: allow BYOK because the caller pays.* Deferred to nara (see Confirmations).
+### D4. BYOK forwards without a policy
+BYOK forwards an explicit chain, including repeated models, and `"default"`, matching `@ai-sdk/anthropic@4.0.94`. The unrestricted policy applies to the requested model's accounts and to every routed fallback model's accounts, for request options and translation-added options alike. In a mixed chain, non-Anthropic accounts ignore the namespace. The whole-chain pre-check still refuses container skills and invalid MCP before any account attempt in an all-Anthropic chain.
+- Server-side fallback runs inside the selected account's one native request at its destination. The selected model, account and destination do not change; a hop is reported through `servedModelId` (D7). gateway-request-byok "Unsupported controls fail explicitly" states that this is not an override.
+- Rationale: the caller's own account pays, and BYOK already reaches any native model of the caller's accounts (see Context). A refusal would protect nothing the caller cannot already do.
+- Configured candidate policies never apply to BYOK, and no client control grants or applies one. BYOK stays catalog-independent.
+- *Alternative B: keep refusing.* Rejected. It protects no operator resource and diverges from upstream without a rationale.
+- *Alternative C: an operator policy for BYOK.* Rejected. No service-owned BYOK policy surface exists (`service/selection.go:68`). It would let the operator restrict models on the caller's own account, which BYOK does not do for the requested model (advisory native model lists are not an allowlist), and it would add operator configuration to the catalog-independent path.
 
 ### D5. Combination with ordered fallback (#121) and request routing (#316)
 Server-side fallback is one outbound request inside one Gateway attempt. Each candidate checks its own policy; a refusal advances through the existing decider (see Verified assumptions). No pre-validation across candidates is added.
@@ -117,7 +124,7 @@ Routed chains reuse each route's startup candidates, so a routed attempt applies
 
 | Path | Spelling/scope/precedence | Disposition and paired proof |
 | --- | --- | --- |
-| `ResolveOption[AnthropicOptions]` → `applyFallbacks` | Exact `anthropic` call namespace. Case-insensitive typed decoding. `null` is a nil pointer; `[]` is a no-op; `"default"` and a chain are exclusive. | Admit allowlisted distinct chains and policy-allowed default. Refuse other models, repeated entries, unallowed default and any BYOK value. Paired: allowed vs disallowed, configured vs BYOK, unary vs stream, translated vs supplied. Custom-part `fallbacks` scopes stay inert (existing "custom scopes cannot enable guarded features" case). |
+| `ResolveOption[AnthropicOptions]` → `applyFallbacks` | Exact `anthropic` call namespace. Case-insensitive typed decoding. `null` is a nil pointer; `[]` is a no-op; `"default"` and a chain are exclusive. | Configured: admit allowlisted distinct chains and policy-allowed default; refuse other models, repeated entries and unallowed default. BYOK: forward any chain and default (upstream parity). Paired: allowed vs disallowed, configured vs BYOK, unary vs stream, translated vs supplied. Custom-part `fallbacks` scopes stay inert (existing "custom scopes cannot enable guarded features" case). |
 
 ### D7. Served model identity
 `execution.Attempt` gains `ServedModelID string json:"servedModelId,omitempty"`, set only on the selected attempt.
@@ -126,7 +133,7 @@ Routed chains reuse each route's startup candidates, so a routed attempt applies
 - Every carrier that publishes a selected attempt uses the current served model: unary result, invalid-output and mapping errors (`ServeHTTP`, `handler.go:97-105`), each segment's stream finish and committed stream error (`processStreamPart`, `stream.go:421`, 399), terminal-wait errors (closed, deadline, canceled, idle timeout, invalid output) via `writeStreamTerminalForWait` (`stream.go:475-477`) and the adapter-failure terminal error (`handleStreamPartResult`, `stream.go:316-325`). A stream with two segments, each with its own hop, publishes the first hop's model on the first finish and the second hop's on the second. The stream view stays sealed at the first part; only the served model is read later, on the adapter goroutine.
 - The `gateway.routing` summary is unchanged: `servedModelId` stays on the `gateway.execution` attempt only.
 - The schema adds an optional nonempty `servedModelId` on the attempt, forbidden unless the outcome is `selected`.
-- This is generic for configured and BYOK overviews. BYOK never hops while it refuses fallbacks.
+- This is generic for configured and BYOK overviews. A BYOK hop does not affect the identity check in `projectExpected`, because the attempt's `modelId` comes from the candidate's `ModelID()` (`fallback/fallback.go:295`), not from the response.
 - The existing command test "returns and replays the Anthropic fallback marker through both clients" (`test/providerwire-v4/gateway-command.test.ts:2950`) already returns a marker from a configured route. It does not assert the overview, so it keeps passing; task 2.5 adds the `servedModelId` assertion to it.
 - *Alternative: `ResponseMetadata.ModelID`.* Rejected; the evidence shows it is the requested model.
 - *Alternative: raw `usage.iterations`.* Rejected; raw usage is provider-raw and unvalidated.
@@ -147,8 +154,9 @@ The plan adds a command-level replay:
 
 ### D9. Parity
 - The provider layer is parity-preserving and unchanged.
-- The Gateway refusal was a Gateway-owned support boundary. After this change, the boundary is policy-gated configured mode, BYOK refusal and the marker-only `servedModelId`, recorded in `gateway-anthropic-server-fallbacks` and `gateway-execution-overview`.
-- Gateway-added refusals with no upstream counterpart are intentional Gateway support boundaries, recorded in `gateway-anthropic-server-fallbacks`. Upstream `@ai-sdk/anthropic@4.0.94` forwards any array, repeated models included, and has no allowlist. The Gateway adds:
+- The Gateway refusal was a Gateway-owned support boundary. After this change, the boundary is policy-gated configured mode and the marker-only `servedModelId`, recorded in `gateway-anthropic-server-fallbacks` and `gateway-execution-overview`.
+- BYOK forwarding is parity-preserving: like upstream, it forwards any array and `"default"` (gateway-request-byok).
+- Configured-mode refusals with no upstream counterpart are intentional Gateway support boundaries, recorded in `gateway-anthropic-server-fallbacks`. Upstream `@ai-sdk/anthropic@4.0.94` forwards any array, repeated models included, and has no allowlist. For configured candidates the Gateway adds:
   - the allowlist refusal (the operator account pays, so the operator grants models);
   - the distinctness refusal (caps billed generations at the allowlist size, see D3);
   - exact-byte matching (opaque model IDs, canonical casing).
@@ -164,19 +172,22 @@ The plan adds a command-level replay:
 - [`"default"` lets Anthropic choose the model] → `allowDefault` is an explicit opt-in. Docs say the operator accepts Anthropic's choice and its cost, and `servedModelId` reveals it.
 - [Fallback-served turns bill at another model] → Out of scope. Usage is already top-level per the `anthropic-executor-iteration-cache-usage` gap. Docs note this.
 - [A primary that fails with a 5xx and is followed by a refusing candidate returns 400] → This is existing last-error behavior (as with MCP). Docs advise consistent policies across a route's Anthropic candidates.
-- [A refusing candidate advances, possibly to a non-Anthropic candidate that ignores `anthropic.fallbacks`, including a routed `models` candidate or a BYOK fallback-model account] → Existing namespace behavior: the call succeeds without server-side fallback. Docs say so.
+- [A refusing candidate advances, possibly to a non-Anthropic candidate that ignores `anthropic.fallbacks`, including a routed `models` candidate] → Existing namespace behavior: the call succeeds without server-side fallback. Docs say so.
+- [BYOK callers can send `"default"` or any chain, so Anthropic may serve and bill another model on the caller's account] → Accepted: the caller chose it and pays. Docs say so, and `servedModelId` reveals the served model.
 - [Routes sharing a destination with different policies] → Routing attempts the destination once, under the policy of the candidate composed first. Docs advise one policy per destination.
 - [Callers control per-entry `speed`, `max_tokens` and `thinking` within an allowed model] → These are forwarded unchanged and can raise cost. Docs say the policy grants models, not entry settings.
 - [Model renames break the exact match] → The operator updates the config. The refusal stays fail-closed.
-- [`servedModelId` comes from provider output] → It comes from the configured native destination only. A value that is empty or invalid UTF-8 is omitted. No new length bound is added (Non-Goal: new size constants); the value is the provider's own model ID, also published as the custom part.
+- [`servedModelId` comes from provider output] → It comes from the selected native destination only: a configured candidate, or a BYOK account's native default or service-approved destination. A value that is empty or invalid UTF-8 is omitted. No new length bound is added (Non-Goal: new size constants); the value is the provider's own model ID, also published as the custom part.
 - [The issue names a matrix command that is not on main] → Task group 5 gives the same evidence through the real command. The PR states the substitution.
 
 ## Migration Plan
 
-The field is additive and an absent policy keeps today's behavior, so no migration is needed. Rollback reverts the change; configs with `serverFallbacks` then fail strict decoding, so remove the key before rolling back.
+The field is additive and an absent policy keeps today's configured behavior, so no migration is needed. BYOK calls with server-side fallback, refused today, are forwarded. Rollback reverts the change and refuses them again; configs with `serverFallbacks` then fail strict decoding, so remove the key before rolling back.
 
-## Confirmations for nara
+## Resolved decisions
 
-1. **BYOK (D4):** keep refusing server-side fallback for BYOK, including when the caller pays? New evidence weakens the refusal rationale: BYOK callers can already send a call to any native model of their own accounts through `models` (gateway-request-routing "BYOK fallback models"). The alternative is to allow BYOK server-side fallback without a policy, since only the caller's accounts pay. This design keeps the refusal; changing it is a separate decision.
-2. **`servedModelId` only on a hop (D7):** the candidate sources were `ResponseMetadata.ModelID` and the marker's `to.model`. This design uses only the marker, because `ResponseMetadata.ModelID` is the requested model even after a hop. Confirm that absent means "the attempt's `modelId` served".
-3. **Discovery:** leaving the policy out of discovery rows is deferrable. Exposing it later is additive.
+nara decided:
+
+1. **BYOK forwards (D4, option A).** BYOK forwards server-side fallback, chain and `"default"`, without a policy, as `@ai-sdk/anthropic@4.0.94` does. The caller's own key pays, and BYOK already reaches any native model through the selector and routed `models`. Configured policies never apply to BYOK, and no client control grants one.
+2. **`servedModelId` only after a hop (D7).** `ResponseMetadata.ModelID` is the requested model even after a hop, so only the marker's `to.model` is used. Absent means the attempt's `modelId` served. This holds for configured and BYOK overviews.
+3. **Policy stays out of discovery.** Exposing it later is additive.
