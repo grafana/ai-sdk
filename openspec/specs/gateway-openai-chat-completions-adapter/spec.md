@@ -685,3 +685,11 @@ Null or empty refusal values and automatic image handling SHALL remain accepted.
 #### Scenario: No silent message conversion
 - **WHEN** a selected transport cannot represent an explicit message semantic
 - **THEN** unary and streaming requests fail with HTTP 400 before model invocation
+
+### Requirement: Preserve native user file representation
+The adapter SHALL preserve user file unions and filenames for compatible Chat targets using validated common file parts.
+
+#### Scenario: Text file and named file reference with caching
+- **WHEN** a user submits text MIME `file_data` or a `file_id` with a filename
+- **THEN** compatible unary and streaming requests SHALL retain the native file union, filename and any cache breakpoint
+- **AND** translating the request SHALL NOT mutate the original common prompt

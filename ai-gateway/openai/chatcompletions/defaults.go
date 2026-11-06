@@ -33,6 +33,7 @@ func chatTranslator(r mappedRequest) execution.Translator {
 		if options.ChoiceCount > 1 && target.Type != execution.TargetOpenAICompatible {
 			return options, catalog.ErrUnsupportedRequest
 		}
+		options = r.preserveNativeFiles(target, options)
 		options = translateMessages(r, target, options)
 		namespace := target.ProviderName
 		values := map[string]any{}
