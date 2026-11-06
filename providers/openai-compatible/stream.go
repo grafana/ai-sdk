@@ -47,6 +47,7 @@ type streamToolCall struct {
 	started          bool
 	finished         bool
 	providerMetadata provider.ProviderMetadata
+	custom           bool
 }
 
 func (m *model) runStream(ctx context.Context, endpoint string, requestBody []byte, body io.Reader, headers http.Header, warnings []provider.Warning, includeRaw bool, metadataKey string, out chan<- provider.StreamPart, preserveChat bool) {
@@ -183,7 +184,7 @@ func validateStreamChunk(chunk chatCompletionResponse) error {
 			return errors.New("stream choice contained invalid role")
 		}
 		for _, toolCall := range choice.Delta.ToolCalls {
-			if toolCall.Function == nil {
+			if toolCall.Function == nil && toolCall.Custom == nil {
 				return errors.New("stream tool call missing function")
 			}
 		}
@@ -268,9 +269,17 @@ func (s *streamState) handleChoice(choice chatChoice) bool {
 }
 
 func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
+	custom := delta.Custom != nil
+	if custom {
+		if delta.Function != nil || (delta.Type != "" && delta.Type != "custom") {
+			s.emitError(streamDecodeError(s.endpoint, errors.New("invalid custom call union")))
+			return true
+		}
+		delta.Function = &toolCallDeltaFunc{Name: delta.Custom.Name, Arguments: delta.Custom.Input}
+	}
 	state := s.resolveToolCall(delta)
 	if state == nil {
-		state = &streamToolCall{}
+		state = &streamToolCall{custom: custom}
 		s.toolCalls = append(s.toolCalls, state)
 		if delta.Index == nil && delta.Function.Name == nil {
 			if delta.ID != nil {
@@ -299,6 +308,10 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 	}
 	s.latestToolCall = state
 
+	if state.custom != custom {
+		s.emitError(streamDecodeError(s.endpoint, errors.New("tool call encoding changed")))
+		return true
+	}
 	if state.finished {
 		return true
 	}
@@ -341,9 +354,10 @@ func (s *streamState) handleToolCallDelta(delta chatToolCallDelta) bool {
 			return true
 		}
 		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
-			Type:     provider.PartToolInputStart,
-			ID:       state.id,
-			ToolName: state.name,
+			Type:          provider.PartToolInputStart,
+			ID:            state.id,
+			ToolName:      state.name,
+			InputEncoding: toolEncoding(state.custom),
 		}) {
 			return false
 		}
@@ -409,9 +423,10 @@ func (s *streamState) flush() {
 		}
 		if !tc.started {
 			if !sendStreamPart(s.ctx, s.out, provider.StreamPart{
-				Type:     provider.PartToolInputStart,
-				ID:       tc.id,
-				ToolName: tc.name,
+				Type:          provider.PartToolInputStart,
+				ID:            tc.id,
+				ToolName:      tc.name,
+				InputEncoding: toolEncoding(tc.custom),
 			}) {
 				return
 			}
@@ -463,7 +478,10 @@ func (s *streamState) finishToolCall(tc *streamToolCall) bool {
 		return false
 	}
 	input := tc.args
-	if strings.TrimSpace(input) == "" {
+	if tc.custom {
+		encoded, _ := json.Marshal(input)
+		input = string(encoded)
+	} else if strings.TrimSpace(input) == "" {
 		input = "{}"
 	}
 	if !sendStreamPart(s.ctx, s.out, provider.StreamPart{

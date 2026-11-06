@@ -20,6 +20,9 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 	if err := provider.ValidateTools(opts.Tools); err != nil {
 		return nil, nil, err
 	}
+	if err := validateCustomTools(opts.Tools); err != nil {
+		return nil, nil, err
+	}
 	warnings := deprecatedProviderOptionWarnings(opts.ProviderOptions, m.providerName)
 
 	openAIOpts, err := readOpenAIOptions(opts.ProviderOptions, m.providerName)
@@ -31,7 +34,7 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		return nil, warnings, err
 	}
 
-	messages, err := convertPrompt(opts.Prompt, providerOptionsName(m.providerName))
+	messages, err := convertPrompt(markDeclaredCustomHistory(opts.Prompt, opts.Tools), providerOptionsName(m.providerName))
 	if err != nil {
 		return nil, warnings, err
 	}
@@ -467,6 +470,12 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 		case provider.ContentPartTypeReasoning:
 			reasoning.WriteString(part.Text)
 		case provider.ContentPartTypeToolCall:
+			if custom, err := customHistoryCall(part); err != nil {
+				return chatMessage{}, err
+			} else if custom != nil {
+				toolCalls = append(toolCalls, *custom)
+				continue
+			}
 			input := strings.TrimSpace(string(part.Input))
 			if input == "" {
 				input = "{}"
@@ -486,6 +495,7 @@ func convertAssistantMessage(parts []provider.ContentPart, messageOptions provid
 			if err != nil {
 				return chatMessage{}, err
 			}
+			delete(partExtra, "customTool")
 			toolCall.ExtraFields = partExtra
 			thoughtSignature, err := googleThoughtSignature(part.ProviderOptions)
 			if err != nil {
@@ -832,6 +842,11 @@ func prepareTools(tools []provider.Tool, choice *provider.ToolChoice) ([]chatToo
 	out := make([]chatTool, 0, len(tools))
 	for _, tool := range tools {
 		if tool.Type == provider.ToolTypeProvider {
+			if tool.ID == "openai.custom" {
+				custom, _ := customToolDefinition(tool)
+				out = append(out, chatTool{Type: "custom", Custom: custom})
+				continue
+			}
 			warnings = append(warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: "provider-defined tool " + tool.ID,
@@ -866,6 +881,11 @@ func prepareTools(tools []provider.Tool, choice *provider.ToolChoice) ([]chatToo
 	case provider.ToolChoiceRequired:
 		return out, "required", warnings
 	case provider.ToolChoiceTool:
+		for _, tool := range out {
+			if tool.Custom != nil && tool.Custom.Name == choice.ToolName {
+				return out, map[string]any{"type": "custom", "custom": map[string]any{"name": choice.ToolName}}, warnings
+			}
+		}
 		return out, map[string]any{
 			"type": "function",
 			"function": map[string]any{

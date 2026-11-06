@@ -279,6 +279,8 @@ type OpenAIToolCaller struct {
 // used for round-tripping item references, reasoning, approvals, image detail,
 // prompt cache breakpoints and positioned reasoning effort updates.
 type OpenAIPartOptions struct {
+	// CustomTool identifies text-input tool history when its declaration is absent.
+	CustomTool bool `json:"customTool,omitempty"`
 	// ItemID is the OpenAI output item id used to emit item references.
 	ItemID string `json:"itemId,omitempty"`
 	// ReasoningEncryptedContent is the encrypted reasoning blob for stateless continuation.
