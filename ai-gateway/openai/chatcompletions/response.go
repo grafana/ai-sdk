@@ -40,6 +40,7 @@ type outputMessage struct {
 	ToolCalls    []toolCall                      `json:"tool_calls,omitempty"`
 }
 type choice struct {
+	Grafana  *diagnostics  `json:"grafana,omitempty"`
 	Index    int           `json:"index"`
 	Message  outputMessage `json:"message"`
 	Finish   string        `json:"finish_reason"`
@@ -155,6 +156,9 @@ func validateCallArguments(call toolCall, r mappedRequest) error {
 	return errOutput
 }
 func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model string, created int64) (completion, error) {
+	if r.options.ChoiceCount > 1 {
+		return mapGenerateChoices(result, r, id, model, created)
+	}
 	out := completion{ID: id, Object: "chat.completion", Created: created, Model: model}
 	if result == nil {
 		return out, errOutput

@@ -101,7 +101,11 @@ corresponding native options. The `gateway` namespace is case-sensitive;
 configured-account callers cannot use it to supply BYOK credentials.
 
 The adapter supports text, client-executed function tools, tool-result
-continuations, JSON output, and streaming for one choice. It does not execute
+continuations, JSON output, and streaming. Compatible Chat candidates also accept native `n` from 1 to 128.
+Multiple choices use one native request, preserve their original indices and
+finish reasons, and report native usage once. Responses and Anthropic candidates
+reject `n > 1` with HTTP 400 before provider I/O because those APIs have no
+equivalent native operation. It does not execute
 functions, persist conversations, upload files, or provide hosted tools. Unsupported
 request fields fail before model invocation. The adapter supplies a call-scoped translator to the shared execution runtime.
 Chat defaults are applied to each native fallback candidate, including

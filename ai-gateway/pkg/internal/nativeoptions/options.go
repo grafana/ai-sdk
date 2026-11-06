@@ -134,7 +134,7 @@ func Compatible(options provider.CallOptions, providerName string) error {
 	name, _, _ := strings.Cut(providerName, ".")
 	name = strings.TrimSpace(name)
 	for _, namespace := range []string{name, compatibleCamelName(name)} {
-		if err := refuseNativeFields(options.ProviderOptions, namespace, "model", "response_format", "functions", "function_call"); err != nil {
+		if err := refuseNativeFields(options.ProviderOptions, namespace, "model", "response_format", "functions", "function_call", "n"); err != nil {
 			return err
 		}
 	}

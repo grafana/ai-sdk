@@ -14,9 +14,14 @@ not silently truncated according to a different protocol's semantics.
 The adapter SHALL validate a closed schema before typed mapping. It SHALL
 represent text, client-owned functions and continuations, structured response
 formats, reasoning effort and supported sampling settings. Unsupported fields,
-multiple choices, storage true and invalid settings SHALL fail before model
+storage true and invalid settings SHALL fail before model
 resolution. Duplicate keys SHALL use their last value; incorrectly cased keys
 SHALL fail.
+
+#### Scenario: Native alternative count
+- **WHEN** Chat requests n between one and 128
+- **THEN** compatible candidates receive that native count in one request;
+  other candidates reject n greater than one before native I/O.
 
 #### Scenario: Duplicate and incorrectly cased fields
 - **WHEN** a request repeats the model key or includes `Model` instead
@@ -87,8 +92,8 @@ options, and preserve calls without a translator.
 
 ### Requirement: Valid unary results and diagnostics
 
-Unary output SHALL contain one choice, a represented finish reason and truthful
-optional usage. Available native identity SHALL replace generated fallbacks.
+Unary output SHALL contain the requested indexed choices, each with a represented
+finish reason, and truthful aggregate optional usage. Available native identity SHALL replace generated fallbacks.
 Supported warnings SHALL remain successful `grafana.warnings` diagnostics.
 Unsupported content or inconsistent tool output SHALL fail safely. Strict
 structured output SHALL validate on successful stop, not length or
