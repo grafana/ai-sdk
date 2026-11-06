@@ -121,3 +121,11 @@ concatenation exactly equals the common message and SHALL not be sent upstream.
 #### Scenario: Singleton user text boundary
 - **WHEN** a single user text part has an explicit breakpoint
 - **THEN** the provider retains the content array and its breakpoint
+
+### Requirement: Extended token details
+Opt-in Chat usage metadata SHALL preserve prompt cache-write, image and text
+counts and completion text counts, retaining absent versus explicit zero.
+
+#### Scenario: Invalid extended count
+- **WHEN** any extended token detail is negative
+- **THEN** metadata decoding fails before publishing the count
