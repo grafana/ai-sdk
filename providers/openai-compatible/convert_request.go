@@ -45,6 +45,9 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 	if err := openAIOpts.WebSearchOptions.Validate(); err != nil {
 		return nil, warnings, err
 	}
+	if openAIOpts.MaxTokensField != "" && openAIOpts.MaxTokensField != MaxTokensFieldLegacy && openAIOpts.MaxTokensField != MaxTokensFieldCompletion {
+		return nil, warnings, fmt.Errorf("openai: unsupported token limit field %q", openAIOpts.MaxTokensField)
+	}
 	if err := validateChatAudioOptions(openAIOpts); err != nil {
 		return nil, warnings, err
 	}
@@ -84,7 +87,11 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 		body["user"] = openAIOpts.User
 	}
 	if opts.MaxOutputTokens != nil {
-		body["max_tokens"] = *opts.MaxOutputTokens
+		field := openAIOpts.MaxTokensField
+		if field == "" {
+			field = MaxTokensFieldLegacy
+		}
+		body[string(field)] = *opts.MaxOutputTokens
 	}
 	if opts.Temperature != nil {
 		body["temperature"] = *opts.Temperature
@@ -316,6 +323,7 @@ var openAIOptionFields = map[string]struct{}{
 	"moderation":                     {},
 	"prediction":                     {},
 	"web_search_options":             {},
+	"maxTokensField":                 {},
 	"user":                           {},
 	"reasoningEffort":                {},
 	"textVerbosity":                  {},
@@ -338,6 +346,9 @@ func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, e
 
 	out := make(map[string]any)
 	for k, rawValue := range fields {
+		if strings.EqualFold(k, "maxTokensField") {
+			continue
+		}
 		if _, known := openAIOptionFields[k]; known {
 			continue
 		}
@@ -365,6 +376,9 @@ func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
 	}
 	if src.WebSearchOptions != nil {
 		dst.WebSearchOptions = src.WebSearchOptions
+	}
+	if src.MaxTokensField != "" {
+		dst.MaxTokensField = src.MaxTokensField
 	}
 	if src.Modalities != nil {
 		dst.Modalities = src.Modalities

@@ -21,6 +21,13 @@ verification:
     conformance: mise run test-conformance
     regenerate: mise run generate-conformance
 knownGaps:
+  - id: compatible-token-limit-field
+    surface: provider-openai-compatible
+    status: intentional-deviation
+    description: Go accepts a local typed maxTokensField selector to emit the
+      common MaxOutputTokens budget as max_completion_tokens. The default keeps
+      pinned compatible 3.0.82 max_tokens output. No alternate budget is accepted.
+      Synthetic native HTTP tests cover both field names in unary and stream.
   - id: compatible-typed-image-detail
     surface: provider-openai-compatible
     status: intentional-deviation
