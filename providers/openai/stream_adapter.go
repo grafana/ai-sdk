@@ -850,14 +850,24 @@ func (a *streamAdapter) flush(ch chan<- provider.StreamPart) {
 		resp = &created
 	}
 	metadata := responseMeta(a.providerOptionsName, resp, a.logprobs)
+	nativeMetadata := ResponsesMetadata{}
 	if a.br.preserveRefusal {
 		for index, item := range resp.Output {
 			if message, ok := item.AsAny().(responses.ResponseOutputMessage); ok {
 				a.observeMessageRefusals(int64(index), message, ch)
 			}
 		}
-		metadata = withResponsesMetadata(metadata, a.providerOptionsName, a.refusalMetadata())
+		nativeMetadata = a.refusalMetadata()
 	}
+	if a.br.preserveResponseMetadata {
+		var err error
+		nativeMetadata.Metadata, err = responseUserMetadata(resp)
+		if err != nil {
+			ch <- provider.StreamPart{Type: provider.PartError, APICallError: wrapAsAPICallError(err)}
+			return
+		}
+	}
+	metadata = withResponsesMetadata(metadata, a.providerOptionsName, nativeMetadata)
 	usage := convertResponseUsage(resp.Usage)
 	ch <- provider.StreamPart{
 		Type:             provider.PartFinish,

@@ -152,3 +152,9 @@ Structured-output refusals may not satisfy the requested schema. Consumers must
 inspect refusal metadata before validating normal text as JSON. See OpenAI's
 [structured-output guide](https://developers.openai.com/api/docs/guides/structured-outputs)
 and [refusal events](https://developers.openai.com/api/reference/resources/responses/streaming-events).
+
+`OpenAIResponsesOptions.PreserveResponseMetadata` opts into validated native user
+metadata under `ProviderMetadata[namespace].responses.metadata`, readable through
+`ParseResponsesMetadata`. The option is consumed locally. Unary results and final
+stream metadata retain actual response values, including an explicit empty map;
+default provider output is unchanged.

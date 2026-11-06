@@ -78,6 +78,8 @@ type OpenAIResponsesOptions struct {
 	// PreserveRefusal exposes native refusal metadata and stream deltas. This
 	// Go extension is disabled by default and never sent to the native API.
 	PreserveRefusal bool `json:"preserveRefusal,omitempty"`
+	// PreserveResponseMetadata retains validated native response user metadata locally.
+	PreserveResponseMetadata bool `json:"preserveResponseMetadata,omitempty"`
 	// Conversation is an OpenAI Conversation id. Mutually exclusive with
 	// PreviousResponseID.
 	Conversation string `json:"conversation,omitempty"`
