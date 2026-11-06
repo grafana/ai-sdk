@@ -77,7 +77,7 @@ func newAdapterHarness(t *testing.T) *adapterHarness {
 		options.Headers = map[string]string{"X-Target": string(target.Type) + "/" + target.ModelID}
 		return options, nil
 	}
-	routes := append(productionRoutes(discovery.New(models, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter()), language), route{
+	routes := append(productionRoutes(discovery.New(models, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter()), language, http.NotFoundHandler()), route{
 		method: http.MethodPost, path: testAdapterPath, label: testAdapterLabel,
 		handler: testadapter.New(runtime, translator), errors: testadapter.HostErrors{},
 	})
