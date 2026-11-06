@@ -42,3 +42,24 @@ reason; each alternative SHALL retain its own native finish reason.
 #### Scenario: Different finish reasons
 - **WHEN** one choice stops and another reaches its token limit
 - **THEN** each keeps its reason while native token usage is reported once.
+
+### Requirement: Shared observers isolate alternatives and bill once
+
+Shared usage aggregation SHALL ignore indexed choice usage and use the global
+choices finish exactly once. Observability SHALL preserve separate alternatives
+and tool identities by choice, without merging matching IDs across alternatives.
+Logger captures SHALL retain existing privacy controls for every alternative.
+Prometheus SHALL NOT use choice indexes as metric labels. Buffered fallback SHALL
+require all requested choice finishes and their global finish before acceptance.
+
+#### Scenario: Interleaved choices reuse text and tool identifiers
+
+- **WHEN** two choices interleave parts with the same identifiers
+- **THEN** recorded output remains separated by choice index
+- **AND** only global usage contributes token counts
+
+#### Scenario: Cancellation after one choice finishes
+
+- **WHEN** a choice finishes but the global choices finish has not arrived
+- **THEN** cancellation is recorded as a call error
+- **AND** buffered fallback cannot accept that incomplete stream

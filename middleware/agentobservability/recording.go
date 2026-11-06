@@ -111,7 +111,7 @@ func wrapRecordingGenerate(ctx context.Context, opts RecordingOptions, p middlew
 	generation := mapGenerateResultWithIdentity(p.Params, result, ctxInfo, start, opts.IdentitySource)
 	finishReason := provider.FinishReason{}
 	if result != nil {
-		finishReason = result.FinishReason
+		finishReason = generateFinishReason(result)
 	}
 	recorder.SetResult(filterGeneration(generation, start, finishReason, opts.GenerationFilter), nil)
 	return result, nil
@@ -278,7 +278,7 @@ streamLoop:
 			}
 			streamRec.Observe(part)
 			switch {
-			case part.Type == provider.PartFinish:
+			case part.Type == provider.PartFinish && part.ChoiceIndex == nil || part.Type == provider.PartChoicesFinish:
 				finishSeen = true
 				captureSnapshot()
 			case part.Type == provider.PartError && part.APICallError != nil:
