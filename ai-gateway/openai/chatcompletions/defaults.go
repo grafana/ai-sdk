@@ -8,6 +8,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/provider"
+	compatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
 func chatTranslator(r mappedRequest) execution.Translator {
@@ -44,6 +45,11 @@ func chatTranslator(r mappedRequest) execution.Translator {
 				values["disableParallelToolUse"] = !*r.Parallel
 			}
 		case execution.TargetOpenAICompatible:
+			if r.MaxCompletionTokens != nil {
+				values["maxTokensField"] = compatible.MaxTokensFieldCompletion
+			} else if r.MaxTokens != nil {
+				values["maxTokensField"] = compatible.MaxTokensFieldLegacy
+			}
 			values["preserveChatCompletionMetadata"] = true
 			if r.Modalities != nil {
 				values["modalities"] = r.Modalities
