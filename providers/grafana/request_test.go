@@ -214,7 +214,7 @@ func TestEncodeRequest_RejectsInvalid(t *testing.T) {
 }
 
 func TestEncodeRequest_CallOptionsFieldWitness(t *testing.T) {
-	fields := []string{"ChoiceCount", "Prompt", "Tools", "ToolChoice", "MaxOutputTokens", "Temperature", "TopP", "TopK", "PresencePenalty", "FrequencyPenalty", "StopSequences", "ResponseFormat", "Seed", "Reasoning", "IncludeRawChunks", "Headers", "ProviderOptions"}
+	fields := []string{"RejectUnsupported", "ChoiceCount", "Prompt", "Tools", "ToolChoice", "MaxOutputTokens", "Temperature", "TopP", "TopK", "PresencePenalty", "FrequencyPenalty", "StopSequences", "ResponseFormat", "Seed", "Reasoning", "IncludeRawChunks", "Headers", "ProviderOptions"}
 	typ := reflect.TypeFor[provider.CallOptions]()
 	require.Equal(t, len(fields), typ.NumField(), "new CallOptions fields need explicit request mapping and parity classification")
 	for i, name := range fields {

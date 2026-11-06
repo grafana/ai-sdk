@@ -108,6 +108,9 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 	if err != nil {
 		return nil, err
 	}
+	if err := params.CheckUnsupportedWarnings(warnings); err != nil {
+		return nil, err
+	}
 
 	citDocs := extractCitationDocuments(params.Prompt)
 	var requestBody json.RawMessage
@@ -148,6 +151,9 @@ func (m *model) DoStream(ctx context.Context, params provider.CallOptions) (*pro
 func (m *model) DoGenerate(ctx context.Context, params provider.CallOptions) (*provider.GenerateResult, error) {
 	p, mapping, warnings, br, err := buildParamsWithCapabilities(m.resolveModel(m.modelID), params, false, m.capabilities)
 	if err != nil {
+		return nil, err
+	}
+	if err := params.CheckUnsupportedWarnings(warnings); err != nil {
 		return nil, err
 	}
 

@@ -33,6 +33,10 @@ type LanguageModel interface {
 // Reasoning is omitted: strict wire adapters normalize both omission and the
 // explicit wire value "provider-default" to that provider-domain zero value.
 type CallOptions struct {
+	// RejectUnsupported makes native request builders fail before I/O when an
+	// option would otherwise be dropped with an unsupported warning. This Go-only
+	// opt-in leaves the default LanguageModelV4 warning behavior unchanged.
+	RejectUnsupported bool `json:"-"`
 	// ChoiceCount opts into native alternatives. Zero and one retain the V4
 	// single-result contract. Values above one require an explicitly capable
 	// model and consumer; this Go extension is not serialized on the V4 wire.
