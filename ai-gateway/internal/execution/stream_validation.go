@@ -69,7 +69,7 @@ func NewStreamValidator(history ToolHistory) *StreamValidator {
 // Check validates the next part and, when it is valid, records it. It returns
 // [ErrInvalidOutput] for a part that breaks a rule.
 func (v *StreamValidator) Check(part provider.StreamPart) error {
-	if !v.check(part) {
+	if part.ChoiceIndex != nil || !v.check(part) {
 		return ErrInvalidOutput
 	}
 	v.started = true
