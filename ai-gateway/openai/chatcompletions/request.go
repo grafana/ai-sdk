@@ -61,7 +61,8 @@ type request struct {
 	Reasoning           provider.ReasoningEffort                     `json:"reasoning_effort"`
 	ResponseFormat      *responseFormat                              `json:"response_format"`
 	StreamOptions       *struct {
-		IncludeUsage *bool `json:"include_usage"`
+		IncludeUsage       *bool `json:"include_usage"`
+		IncludeObfuscation *bool `json:"include_obfuscation"`
 	} `json:"stream_options"`
 }
 type message struct {

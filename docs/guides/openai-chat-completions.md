@@ -274,3 +274,8 @@ text parts) and `web_search_options` (search context and approximate location).
 These options are forwarded with their native semantics; unsupported models can
 still reject them. Responses and Anthropic return a capability error for these
 Chat-only prediction/search controls before I/O; Anthropic also rejects verbosity.
+
+Streaming includes transport-local random `obfuscation` padding by default. Set
+`stream_options.include_obfuscation` to `false` to omit it. Each public chunk,
+including the final usage chunk, is padded to a 64-byte boundary with fresh
+cryptographic randomness; no provider padding or content is reused.
