@@ -146,6 +146,8 @@ func TestChatCompletionMetadata_MultiChunkStream(t *testing.T) {
 					text += part.Delta
 				case provider.PartFinish:
 					finishes++
+					require.NotNil(t, part.FinishReason)
+					assert.Equal(t, provider.FinishReasonStop, part.FinishReason.Unified)
 					var namespace map[string]json.RawMessage
 					require.NoError(t, json.Unmarshal(part.ProviderMetadata["openai-compatible"], &namespace))
 					var chat ChatCompletionMetadata
