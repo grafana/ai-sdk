@@ -45,6 +45,11 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 		return res, nil
 	}
 
+	rejectsForcedToolChoice := isAnthropic && rejectsForcedToolUse(modelID) && toolChoice != nil &&
+		(toolChoice.Type == provider.ToolChoiceRequired || toolChoice.Type == provider.ToolChoiceTool)
+	usingAnthropicTools := false
+	var unknownProviderTools []provider.Tool
+
 	// Filter out unsupported provider tools and emit warnings.
 	supported := make([]provider.Tool, 0, len(tools))
 	for _, t := range tools {
@@ -57,12 +62,30 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 			continue
 		}
 		if t.Type == provider.ToolTypeProvider && isAnthropic {
+			if !rejectsForcedToolChoice || toolChoice.Type != provider.ToolChoiceTool || t.Name == toolChoice.ToolName {
+				usingAnthropicTools = true
+			}
 			if _, ok := anthropicProviderToolBetas[t.ID]; !ok {
-				res.warnings = append(res.warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "provider-defined tool " + t.ID})
+				unknownProviderTools = append(unknownProviderTools, t)
 				continue
 			}
 		}
 		supported = append(supported, t)
+	}
+	if usingAnthropicTools {
+		for _, t := range unknownProviderTools {
+			res.warnings = append(res.warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "provider-defined tool " + t.ID})
+		}
+	}
+	if rejectsForcedToolChoice && len(supported)+len(unknownProviderTools) > 0 {
+		res.warnings = append(res.warnings, forcedToolChoiceWarning(*toolChoice, usingAnthropicTools))
+	}
+	if usingAnthropicTools {
+		for _, t := range unknownProviderTools {
+			if !rejectsForcedToolChoice || toolChoice.Type != provider.ToolChoiceTool || t.Name == toolChoice.ToolName {
+				res.warnings = append(res.warnings, provider.Warning{Type: provider.WarnUnsupported, Feature: "tool " + t.ID})
+			}
+		}
 	}
 	if len(supported) == 0 {
 		return res, nil
@@ -71,9 +94,7 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 	// Models that reject forced tool use get auto, and a named-tool choice
 	// sends only that tool. Mirrors upstream amazon-bedrock-prepare-tools.ts
 	// (@ai-sdk/amazon-bedrock 5.0.99).
-	if isAnthropic && rejectsForcedToolUse(modelID) && toolChoice != nil &&
-		(toolChoice.Type == provider.ToolChoiceRequired || toolChoice.Type == provider.ToolChoiceTool) {
-		res.warnings = append(res.warnings, forcedToolChoiceWarning(*toolChoice))
+	if rejectsForcedToolChoice {
 		if toolChoice.Type == provider.ToolChoiceTool {
 			named := supported[:0:0]
 			for _, t := range supported {
@@ -124,7 +145,6 @@ func prepareTools(tools []provider.Tool, toolChoice *provider.ToolChoice, modelI
 			res.warnings = append(res.warnings, provider.Warning{
 				Type:    provider.WarnUnsupported,
 				Feature: fmt.Sprintf("tool %s", t.ID),
-				Details: "Bedrock does not support this provider tool for the configured model.",
 			})
 		}
 	}
@@ -238,10 +258,14 @@ func jsonOrEmptyObject(raw json.RawMessage) json.RawMessage {
 
 // forcedToolChoiceWarning reports a required or named tool choice sent as auto
 // to a model that rejects forced tool use.
-func forcedToolChoiceWarning(tc provider.ToolChoice) provider.Warning {
-	details := "toolChoice 'required' is not supported by this model because it rejects forced tool use. Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
+func forcedToolChoiceWarning(tc provider.ToolChoice, usingAnthropicTools bool) provider.Warning {
+	reason := "by this model because it rejects forced tool use"
+	if usingAnthropicTools {
+		reason = "with this model or thinking configuration"
+	}
+	details := "toolChoice 'required' is not supported " + reason + ". Using 'auto' instead. Instruct the model to use a tool in the prompt and verify that a tool call was made."
 	if tc.Type == provider.ToolChoiceTool {
-		details = fmt.Sprintf("toolChoice 'tool' is not supported by this model because it rejects forced tool use. Only the '%s' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made.", tc.ToolName)
+		details = fmt.Sprintf("toolChoice 'tool' is not supported %s. Only the '%s' tool is sent with 'auto' tool choice. Instruct the model to use the tool in the prompt and verify that a tool call was made.", reason, tc.ToolName)
 	}
 	return provider.Warning{Type: provider.WarnUnsupported, Feature: "toolChoice", Details: details}
 }
