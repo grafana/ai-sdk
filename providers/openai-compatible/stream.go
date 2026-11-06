@@ -143,7 +143,9 @@ func (m *model) runStream(ctx context.Context, endpoint string, requestBody []by
 		if preserveChat {
 			chat, err := decodeChatCompletionMetadata(data, true)
 			if err != nil {
-				state.emitRecoverableError(chatMetadataError(endpoint, err))
+				if !sendStreamPart(ctx, out, provider.StreamPart{Type: provider.PartError, APICallError: chatMetadataError(endpoint, err)}) {
+					return
+				}
 			} else {
 				state.chatMetadata.append(chat)
 			}
@@ -433,7 +435,9 @@ func (s *streamState) flush() {
 	}
 	metadata, err := withChatCompletionMetadata(responseProviderMetadata(s.metadataKey, s.rawUsage), s.metadataKey, s.chatMetadata)
 	if err != nil {
-		s.emitRecoverableError(chatMetadataError(s.endpoint, err))
+		if !sendStreamPart(s.ctx, s.out, provider.StreamPart{Type: provider.PartError, APICallError: chatMetadataError(s.endpoint, err)}) {
+			return
+		}
 	}
 	if s.errorEmitted {
 		s.finishReason = provider.FinishReason{Unified: provider.FinishReasonError}
