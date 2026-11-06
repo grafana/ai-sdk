@@ -179,3 +179,9 @@ leave ordinary provider request snapshots unchanged.
 Opt-in Chat usage metadata additionally preserves `cache_write_tokens`,
 `image_tokens` and `text_tokens` in prompt details and `text_tokens` in completion
 details. Pointers retain absent versus explicit zero; negative counts fail decoding.
+
+The local `OpenAIOptions.MaxTokensField` selector chooses the native key for
+`CallOptions.MaxOutputTokens`: `MaxTokensFieldLegacy` emits `max_tokens` (the
+unchanged default), while `MaxTokensFieldCompletion` emits
+`max_completion_tokens`. The selector carries no separate budget and is consumed
+locally; it is never forwarded to the endpoint.
