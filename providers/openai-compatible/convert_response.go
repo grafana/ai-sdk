@@ -60,15 +60,19 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 	}
 
 	metadata := responseProviderMetadata(metadataKey, parsed.Usage)
+	var warnings []provider.Warning
 	if preserveChat {
 		chat, err := decodeChatCompletionMetadata(body, false)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			metadata, err = withChatCompletionMetadata(metadata, metadataKey, chat)
 		}
-		metadata = withChatCompletionMetadata(metadata, chat)
+		if err != nil {
+			warnings = append(warnings, provider.Warning{Type: provider.WarnOther, Message: fmt.Sprintf("openai-compatible: dropping invalid chat metadata: %v", err)})
+		}
 	}
 	return &provider.GenerateResult{
 		Content:          content,
+		Warnings:         warnings,
 		FinishReason:     mapFinishReason(choice.FinishReason),
 		Usage:            convertUsage(parsed.Usage),
 		ProviderMetadata: metadata,

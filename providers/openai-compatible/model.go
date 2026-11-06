@@ -23,17 +23,18 @@ const (
 // model implements provider.LanguageModel for OpenAI-compatible chat
 // completions.
 type model struct {
-	modelID                   string
-	providerName              string
-	apiKey                    string
-	baseURL                   string
-	headers                   map[string]string
-	queryParams               map[string]string
-	httpClient                *http.Client
-	includeUsage              bool
-	supportsStructuredOutputs bool
-	transformRequestBody      func(map[string]any) (map[string]any, error)
-	generateID                func() string
+	modelID                        string
+	providerName                   string
+	apiKey                         string
+	baseURL                        string
+	headers                        map[string]string
+	queryParams                    map[string]string
+	httpClient                     *http.Client
+	includeUsage                   bool
+	preserveChatCompletionMetadata bool
+	supportsStructuredOutputs      bool
+	transformRequestBody           func(map[string]any) (map[string]any, error)
+	generateID                     func() string
 }
 
 var _ provider.LanguageModel = (*model)(nil)

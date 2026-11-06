@@ -18,11 +18,7 @@ func (m *model) doGenerate(ctx context.Context, params provider.CallOptions) (*p
 		return nil, err
 	}
 	metadataKey := resolveMetadataKey(params.ProviderOptions, m.providerName)
-	nativeOptions, err := readOpenAIOptions(params.ProviderOptions, m.providerName)
-	if err != nil {
-		return nil, err
-	}
-	preserveChat := nativeOptions.PreserveChatCompletionMetadata != nil && *nativeOptions.PreserveChatCompletionMetadata
+	preserveChat := m.preserveChatCompletionMetadata
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
@@ -59,7 +55,7 @@ func (m *model) doGenerate(ctx context.Context, params provider.CallOptions) (*p
 	if err != nil {
 		return nil, err
 	}
-	result.Warnings = warnings
+	result.Warnings = append(warnings, result.Warnings...)
 	result.Request = &provider.RequestMetadata{Body: json.RawMessage(bodyBytes)}
 	return result, nil
 }
@@ -70,11 +66,7 @@ func (m *model) doStream(ctx context.Context, params provider.CallOptions) (*pro
 		return nil, err
 	}
 	metadataKey := resolveMetadataKey(params.ProviderOptions, m.providerName)
-	nativeOptions, err := readOpenAIOptions(params.ProviderOptions, m.providerName)
-	if err != nil {
-		return nil, err
-	}
-	preserveChat := nativeOptions.PreserveChatCompletionMetadata != nil && *nativeOptions.PreserveChatCompletionMetadata
+	preserveChat := m.preserveChatCompletionMetadata
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
