@@ -28,6 +28,14 @@ knownGaps:
       common MaxOutputTokens budget as max_completion_tokens. The default keeps
       pinned compatible 3.0.82 max_tokens output. No alternate budget is accepted.
       Synthetic native HTTP tests cover both field names in unary and stream.
+
+  - id: compatible-allowed-tools
+    surface: provider-openai-compatible
+    status: intentional-deviation
+    description: Go provides typed allowedTools selection over declared common
+      function and custom tools. Pinned compatible 3.0.82 has no allowed-tools
+      union. Default requests remain unchanged; synthetic HTTP tests cover
+      selection, preserved declarations, and rejection of unsafe overrides.
   - id: compatible-typed-image-detail
     surface: provider-openai-compatible
     status: intentional-deviation

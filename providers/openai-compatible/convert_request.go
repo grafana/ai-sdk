@@ -59,6 +59,12 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 
 	tools, toolChoice, toolWarnings := prepareTools(opts.Tools, opts.ToolChoice)
 	warnings = append(warnings, toolWarnings...)
+	if openAIOpts.AllowedTools != nil {
+		toolChoice, err = allowedToolChoice(openAIOpts.AllowedTools, opts)
+		if err != nil {
+			return nil, warnings, err
+		}
+	}
 
 	body := map[string]any{
 		"model":    m.modelID,
@@ -324,6 +330,7 @@ var openAIOptionFields = map[string]struct{}{
 	"prediction":                     {},
 	"web_search_options":             {},
 	"maxTokensField":                 {},
+	"allowedTools":                   {},
 	"user":                           {},
 	"reasoningEffort":                {},
 	"textVerbosity":                  {},
@@ -346,7 +353,7 @@ func unknownProviderOptionFields(opt provider.ProviderOption) (map[string]any, e
 
 	out := make(map[string]any)
 	for k, rawValue := range fields {
-		if strings.EqualFold(k, "maxTokensField") {
+		if strings.EqualFold(k, "maxTokensField") || strings.EqualFold(k, "allowedTools") {
 			continue
 		}
 		if _, known := openAIOptionFields[k]; known {
@@ -379,6 +386,9 @@ func mergeOpenAIOptions(dst *OpenAIOptions, src OpenAIOptions) {
 	}
 	if src.MaxTokensField != "" {
 		dst.MaxTokensField = src.MaxTokensField
+	}
+	if src.AllowedTools != nil {
+		dst.AllowedTools = src.AllowedTools
 	}
 	if src.Modalities != nil {
 		dst.Modalities = src.Modalities
