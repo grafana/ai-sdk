@@ -116,10 +116,11 @@ they do not change ProviderWire requests.
 
 Messages accept developer instructions, named participants, assistant refusal
 history and multipart text tool results. Developer instructions map to system
-instructions and refusal history maps to assistant text for Responses and
-Anthropic; compatible Chat candidates retain native role, name and refusal
-fields. Participant names have no corresponding common provider field outside
-compatible Chat. Message order is preserved.
+instructions for Responses and Anthropic. Compatible Chat candidates retain
+native role, name and refusal fields. Named participants or nonempty refusal
+history require a compatible Chat route; other transports reject them before I/O
+instead of discarding those semantics. Null and empty refusal values remain
+accepted. Message order is preserved.
 
 Existing clients using deprecated `functions` and `function_call` can continue
 using those fields, including assistant function-call history and `role: "function"`
@@ -185,7 +186,8 @@ from this completion endpoint.
 User content arrays accept `image_url`, `input_audio` and `file` parts alongside
 text, preserving their order. Images accept HTTP(S) URLs or base64 data URLs.
 OpenAI and compatible candidates retain `detail`; Anthropic has no corresponding
-resolution control. Inline files accept a base64 data URL or raw base64 with a
+resolution control and rejects explicit low, high or original detail before I/O;
+auto uses its normal image handling. Inline files accept a base64 data URL or raw base64 with a
 filename identifying the media type. PDF inputs and uploaded `file_id` values
 map to the native file representation on all three backends. The Gateway does
 not download URLs or upload files.

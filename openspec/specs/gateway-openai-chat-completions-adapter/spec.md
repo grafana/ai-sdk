@@ -676,3 +676,12 @@ with one or multiple choices without synthesizing it from request parameters.
 #### Scenario: Request and response metadata differ
 - **WHEN** the native response returns a different metadata map from the submitted request
 - **THEN** the official client receives the actual native response map
+
+### Requirement: Reject unrepresentable message semantics
+Named participants and substantive refusal history SHALL require compatible Chat
+transport. Explicit non-auto image fidelity SHALL be rejected on Anthropic.
+Null or empty refusal values and automatic image handling SHALL remain accepted.
+
+#### Scenario: No silent message conversion
+- **WHEN** a selected transport cannot represent an explicit message semantic
+- **THEN** unary and streaming requests fail with HTTP 400 before model invocation
