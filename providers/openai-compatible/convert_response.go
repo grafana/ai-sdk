@@ -39,6 +39,14 @@ func parseGenerateResponse(body []byte, headers http.Header, providerName, metad
 		})
 	}
 	for _, toolCall := range choice.Message.ToolCalls {
+		if toolCall.Type == "custom" {
+			if toolCall.Custom == nil || toolCall.Custom.Name == "" {
+				return nil, fmt.Errorf("openai: invalid custom tool call")
+			}
+			input, _ := json.Marshal(toolCall.Custom.Input)
+			content = append(content, provider.GenerateContentPart{Type: provider.ContentToolCall, ToolCallID: toolCall.ID, ToolName: toolCall.Custom.Name, Input: input})
+			continue
+		}
 		id := toolCall.ID
 		if id == "" {
 			id = generateID()

@@ -139,3 +139,17 @@ normalizer; ordinary requests without audio retain their existing behavior.
 The opt-in Chat metadata projection also preserves native service tier, system
 fingerprint and URL annotations. Citation spans must be present and nonnegative;
 malformed annotations fail typed decoding instead of receiving invented indices.
+
+### Custom text tools
+
+A provider-defined tool with ID `openai.custom` maps to Chat's `type: custom`
+declaration, including text or Lark/regex grammar format. Stream input parts use
+`InputEncoding: text`; final tool calls contain the canonical JSON-encoded string
+used by the existing Responses provider. Function-tool JSON inputs are unchanged.
+
+For custom history without a current declaration, the tool-call part's
+`openaiCompatible.customTool: true` metadata marks that canonical string as native
+custom input. The marker is consumed locally and does not override the common
+call ID or tool name. A current custom declaration supplies the same information
+when the marker is absent. This is an intentional extension over pinned compatible
+3.0.82; its synthetic tests do not claim live grammar-engine conformance.

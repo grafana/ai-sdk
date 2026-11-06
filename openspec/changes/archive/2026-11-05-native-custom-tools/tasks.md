@@ -1,0 +1,5 @@
+- [x] Add typed compatible custom definitions and native named choices.
+- [x] Preserve custom unary and text-encoded streamed input.
+- [x] Support undeclared custom history in compatible and Responses.
+- [x] Test synthetic native requests, stream fragments and invalid grammar shapes.
+- [x] Verify unchanged ordinary conformance fixtures.
