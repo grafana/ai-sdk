@@ -44,15 +44,16 @@ type chunkChoice struct {
 	Logprobs any     `json:"logprobs"`
 }
 type chunk struct {
-	ServiceTier       *string       `json:"service_tier,omitempty"`
-	SystemFingerprint *string       `json:"system_fingerprint,omitempty"`
-	ID                string        `json:"id"`
-	Object            string        `json:"object"`
-	Created           int64         `json:"created"`
-	Model             string        `json:"model"`
-	Choices           []chunkChoice `json:"choices"`
-	Usage             *usage        `json:"usage"`
-	Grafana           *diagnostics  `json:"grafana,omitempty"`
+	Moderation        *compatible.ChatModeration `json:"moderation,omitempty"`
+	ServiceTier       *string                    `json:"service_tier,omitempty"`
+	SystemFingerprint *string                    `json:"system_fingerprint,omitempty"`
+	ID                string                     `json:"id"`
+	Object            string                     `json:"object"`
+	Created           int64                      `json:"created"`
+	Model             string                     `json:"model"`
+	Choices           []chunkChoice              `json:"choices"`
+	Usage             *usage                     `json:"usage"`
+	Grafana           *diagnostics               `json:"grafana,omitempty"`
 }
 type toolState struct {
 	call         toolCall
@@ -239,7 +240,11 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 	var pending *diagnostics
 	var logprobs any
 	var serviceTier, fingerprint *string
+	var moderation *compatible.ChatModeration
 	nativeIdentity := func(n compatible.ChatCompletionMetadata) {
+		if n.Moderation != nil {
+			moderation = n.Moderation
+		}
 		if n.ServiceTier != nil {
 			serviceTier = n.ServiceTier
 		}
@@ -259,7 +264,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 				finish = ptr(legacyFinish(*finish))
 			}
 		}
-		c := chunk{ServiceTier: serviceTier, SystemFingerprint: fingerprint, ID: id, Object: "chat.completion.chunk", Created: created, Model: modelID, Choices: []chunkChoice{{Delta: d, Finish: finish, Logprobs: logprobs}}, Usage: u, Grafana: pending}
+		c := chunk{Moderation: moderation, ServiceTier: serviceTier, SystemFingerprint: fingerprint, ID: id, Object: "chat.completion.chunk", Created: created, Model: modelID, Choices: []chunkChoice{{Delta: d, Finish: finish, Logprobs: logprobs}}, Usage: u, Grafana: pending}
 		if empty {
 			c.Choices = []chunkChoice{}
 		}
