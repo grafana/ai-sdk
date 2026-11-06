@@ -11,6 +11,7 @@ import (
 
 func chatTranslator(r mappedRequest) execution.Translator {
 	return func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+		options = translateMessages(r, target, options)
 		namespace := target.ProviderName
 		values := map[string]any{}
 		switch target.Type {

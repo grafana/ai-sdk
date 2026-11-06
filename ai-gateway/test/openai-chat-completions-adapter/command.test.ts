@@ -340,6 +340,18 @@ test('official JavaScript SDK against platform plugin: Responses, compatible and
           );
           assert.equal(unary.choices[0].message.content, 'hello');
           assert.equal(unary.usage?.total_tokens, 5);
+          const history: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            { role: 'developer', content: 'Follow the policy', name: 'policy' },
+            { role: 'user', content: 'hello', name: 'alice' },
+            { role: 'assistant', content: null, refusal: 'Cannot do that' },
+            { role: 'user', content: 'Try this instead' },
+          ];
+          const withHistory = await client.chat.completions.create({ model: 'chat', messages: history });
+          assert.equal(withHistory.choices[0].message.content, 'hello');
+          if (backend === 'openai-compatible') {
+            const sent = requests.at(-1)!;
+            assert.deepEqual(sent.messages, history.map((m) => m.role === 'assistant' ? { ...m, content: '' } : m));
+          }
           if (backend === 'anthropic') {
             const warned = await client.chat.completions.create({ model: 'chat', messages, seed: 7 });
             const ext = (warned as typeof warned & { grafana: { warnings: { type: string; feature: string }[] } })

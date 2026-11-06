@@ -61,6 +61,13 @@ Chat defaults are applied to each native fallback candidate, including
 `store: false` and function strictness;
 they do not change ProviderWire requests.
 
+Messages accept developer instructions, named participants, assistant refusal
+history and multipart text tool results. Developer instructions map to system
+instructions and refusal history maps to assistant text for Responses and
+Anthropic; compatible Chat candidates retain native role, name and refusal
+fields. Participant names have no corresponding common provider field outside
+compatible Chat. Message order is preserved.
+
 Structured response and function schemas support self-contained JSON Schema,
 including local references and unions produced by SDK helpers such as
 `zodResponseFormat`. Schema compilation never loads external files or URLs.
