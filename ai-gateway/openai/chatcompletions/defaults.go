@@ -89,7 +89,11 @@ func chatTranslator(r mappedRequest) execution.Translator {
 		if err := r.translateAllowedTools(target, &options, values); err != nil {
 			return provider.CallOptions{}, err
 		}
-		if err := r.translateParameters(target, values); err != nil {
+		nativeRequest := r
+		if boolValue(r.Store) {
+			nativeRequest.Metadata = nil
+		}
+		if err := nativeRequest.translateParameters(target, values); err != nil {
 			return provider.CallOptions{}, err
 		}
 		if len(values) == 0 {

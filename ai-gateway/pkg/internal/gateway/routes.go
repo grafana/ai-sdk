@@ -3,6 +3,7 @@ package gateway
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/host"
@@ -47,6 +48,11 @@ func productionRoutes(discovery, language, chat http.Handler) []route {
 		{method: http.MethodGet, path: "/config", label: routeConfig, handler: discovery, errors: errorWriter},
 		{method: http.MethodPost, path: "/language-model", label: routeLanguageModel, handler: languageModelPath(language), errors: errorWriter},
 		{method: http.MethodPost, path: chatcompletions.Path, label: routeChatCompletions, handler: chatCompletionsPath(chat), errors: chatcompletions.NewHostErrorWriter()},
+		{method: http.MethodGet, path: chatcompletions.Path, label: routeChatCompletions, handler: chatCompletionsPath(chat), errors: chatcompletions.NewHostErrorWriter()},
+		{method: http.MethodGet, path: chatcompletions.Path + "/{completion_id}", label: routeChatCompletions, handler: storedCompletionPath(chat, false), errors: chatcompletions.NewHostErrorWriter()},
+		{method: http.MethodPost, path: chatcompletions.Path + "/{completion_id}", label: routeChatCompletions, handler: storedCompletionPath(chat, false), errors: chatcompletions.NewHostErrorWriter()},
+		{method: http.MethodDelete, path: chatcompletions.Path + "/{completion_id}", label: routeChatCompletions, handler: storedCompletionPath(chat, false), errors: chatcompletions.NewHostErrorWriter()},
+		{method: http.MethodGet, path: chatcompletions.Path + "/{completion_id}/messages", label: routeChatCompletions, handler: storedCompletionPath(chat, true), errors: chatcompletions.NewHostErrorWriter()},
 	}
 }
 
@@ -124,6 +130,20 @@ func chatCompletionsPath(next http.Handler) http.Handler {
 		cloned := request.Clone(request.Context())
 		cloned.URL.Path = chatcompletions.Path
 		cloned.URL.RawPath = ""
+		next.ServeHTTP(w, cloned)
+	})
+}
+
+func storedCompletionPath(next http.Handler, messages bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		cloned := request.Clone(request.Context())
+		id := request.PathValue("completion_id")
+		cloned.URL.Path = chatcompletions.Path + "/" + id
+		cloned.URL.RawPath = chatcompletions.Path + "/" + url.PathEscape(id)
+		if messages {
+			cloned.URL.Path += "/messages"
+			cloned.URL.RawPath += "/messages"
+		}
 		next.ServeHTTP(w, cloned)
 	})
 }
