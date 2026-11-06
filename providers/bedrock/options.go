@@ -3,7 +3,9 @@ package bedrock
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 )
@@ -121,6 +123,9 @@ type BedrockOptions struct {
 	CachePoint *CachePoint `json:"cachePoint,omitempty"`
 	// ServiceTier optionally pins the Bedrock service tier (e.g., "priority").
 	ServiceTier string `json:"serviceTier,omitempty"`
+	// RequestMetadata tags the request for Bedrock invocation-log filtering and
+	// cost attribution. Nil omits metadata; an empty non-nil map sends {}.
+	RequestMetadata map[string]string `json:"requestMetadata,omitzero"`
 	// AdditionalModelRequestFields lets callers pass arbitrary key/value pairs
 	// through the Converse additionalModelRequestFields pass-through.
 	AdditionalModelRequestFields map[string]any `json:"additionalModelRequestFields,omitempty"`
@@ -146,9 +151,27 @@ func (o BedrockOptions) topLevelPassthrough() map[string]json.RawMessage {
 func (o *BedrockOptions) UnmarshalJSON(data []byte) error {
 	type bedrockOptions BedrockOptions
 
-	var decoded bedrockOptions
+	var decoded struct {
+		bedrockOptions
+		RequestMetadata json.RawMessage `json:"requestMetadata"`
+	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
+	}
+
+	if decoded.RequestMetadata != nil {
+		var values map[string]json.RawMessage
+		if err := json.Unmarshal(decoded.RequestMetadata, &values); err != nil || values == nil {
+			return fmt.Errorf("bedrock: requestMetadata must be an object with string values")
+		}
+		decoded.bedrockOptions.RequestMetadata = make(map[string]string, len(values))
+		for key, raw := range values {
+			var value *string
+			if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+				return fmt.Errorf("bedrock: requestMetadata must be an object with string values")
+			}
+			decoded.bedrockOptions.RequestMetadata[key] = *value
+		}
 	}
 
 	var fields map[string]json.RawMessage
@@ -172,7 +195,13 @@ func (o *BedrockOptions) UnmarshalJSON(data []byte) error {
 		delete(fields, key)
 	}
 
-	*o = BedrockOptions(decoded)
+	for key := range fields {
+		if strings.EqualFold(key, "requestMetadata") {
+			delete(fields, key)
+		}
+	}
+
+	*o = BedrockOptions(decoded.bedrockOptions)
 	if len(fields) > 0 {
 		o.passthrough = fields
 	}
