@@ -13,6 +13,8 @@ import (
 // segment. Once a finish was observed the aggregate is the last closed
 // segment's usage, matching upstream streamText, where each model call end
 // replaces the step usage; usage after the last finish does not change it.
+// Indexed alternative parts do not carry billable usage. PartChoicesFinish
+// closes their shared native response with its aggregate usage exactly once.
 // Before any finish each counter keeps its greatest observed value. Raw
 // follows the same selection with the latest non-empty payload.
 type Aggregator struct {
@@ -26,9 +28,12 @@ type segmentUsage struct {
 	observed bool
 }
 
-// Observe folds a stream part's usage into the aggregate regardless of part type.
+// Observe folds global usage into the aggregate and ignores indexed alternatives.
 func (a *Aggregator) Observe(part provider.StreamPart) {
-	if part.Type == provider.PartFinish {
+	if part.ChoiceIndex != nil {
+		return
+	}
+	if part.Type == provider.PartFinish || part.Type == provider.PartChoicesFinish {
 		closed := a.segment
 		if part.Usage != nil {
 			closed.merge(*part.Usage, reportedTokenCount)

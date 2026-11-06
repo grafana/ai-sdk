@@ -292,6 +292,11 @@ resolved model.
 - [`fallback` package](https://pkg.go.dev/github.com/grafana/ai-sdk/fallback)
 - [`registry` package](https://pkg.go.dev/github.com/grafana/ai-sdk/registry)
 
+For opt-in native alternatives (`ChoiceCount > 1`), buffered fallback waits for
+all requested indexed finishes and the global `choices-finish` before accepting
+a candidate. A stream that closes after only an individual choice remains
+incomplete and can fall back under the configured policy.
+
 ---
 
 ← [Retry and timeout](retry-and-timeout.md) · [Docs index](../README.md) · [Middleware →](../middleware/overview.md)
