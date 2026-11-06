@@ -119,3 +119,10 @@ validation and Grafana end-to-end testing remain separate gates.
 ---
 
 [Prev: Gateway authentication](gateway-authentication.md) · [Docs index](../README.md) · [Next: Gateway architecture](../concepts/gateway-architecture.md)
+
+When a native provider emits several response segments, the adapter keeps one
+public completion identity and emits one terminal finish chunk after the runtime
+confirms the stream ended. Native raw transport events do not interrupt delivery.
+Usage is summed across segments; if a segment omits token totals, the final usage
+is unknown instead of an incomplete total. Later native response identities remain
+available in `grafana.native_response`.
