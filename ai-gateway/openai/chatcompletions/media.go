@@ -22,9 +22,10 @@ const (
 )
 
 type userPart struct {
-	Type  kind    `json:"type"`
-	Text  *string `json:"text"`
-	Image *struct {
+	Breakpoint *compatible.ChatCacheBreakpoint `json:"prompt_cache_breakpoint"`
+	Type       kind                            `json:"type"`
+	Text       *string                         `json:"text"`
+	Image      *struct {
 		URL    string                 `json:"url"`
 		Detail compatible.ImageDetail `json:"detail"`
 	} `json:"image_url"`
@@ -46,6 +47,9 @@ func userContent(raw json.RawMessage) ([]provider.ContentPart, error) {
 	}
 	result := make([]provider.ContentPart, 0, len(parts))
 	for _, p := range parts {
+		if p.Breakpoint.Validate() != nil {
+			return nil, errRequest
+		}
 		fields := 0
 		for _, set := range []bool{p.Text != nil, p.Image != nil, p.Audio != nil, p.File != nil} {
 			if set {

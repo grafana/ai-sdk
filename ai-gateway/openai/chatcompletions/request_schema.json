@@ -106,6 +106,28 @@
                             }
                           },
                           "additionalProperties": false
+                        },
+                        "prompt_cache_breakpoint": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "explicit"
+                              ]
+                            },
+                            "ttl": {
+                              "type": "string",
+                              "enum": [
+                                "30m",
+                                "12h"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "mode"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
@@ -1138,6 +1160,25 @@
           "type": "null"
         }
       ]
+    },
+    "prompt_cache_options": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "implicit",
+            "explicit"
+          ]
+        },
+        "ttl": {
+          "type": "string",
+          "enum": [
+            "30m"
+          ]
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": [
