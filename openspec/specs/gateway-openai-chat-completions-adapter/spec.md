@@ -330,3 +330,17 @@ identity and aggregate known per-segment token usage without inventing missing c
 #### Scenario: Error after native finish
 - **WHEN** a native error follows a segment finish before stream closure
 - **THEN** the adapter emits an error and no successful DONE sentinel
+
+### Requirement: Shared execution diagnostics
+The adapter SHALL use the shared execution view for attribution and native failure
+redaction. Successful unary and streaming output SHALL preserve native provider
+metadata and SHALL relocate a native gateway namespace when adding execution metadata.
+
+#### Scenario: Credential in a failed attempt
+- **WHEN** a configured provider credential appears in a native failure summary
+- **THEN** the published execution diagnostics redact that credential
+- **AND** the standard Chat error envelope remains available to official clients
+
+#### Scenario: Native gateway metadata collision
+- **WHEN** native output contains a gateway metadata namespace
+- **THEN** execution attribution preserves it under gateway.nativeMetadata

@@ -52,7 +52,7 @@ func TestErrorAfterNativeFinish(t *testing.T) {
 	f := &fakeModel{stream: func(context.Context, provider.CallOptions) (*provider.StreamResult, error) {
 		return partsStream(parts...), nil
 	}}
-	server := httptest.NewServer(testHandler(t, f))
+	server := httptest.NewServer(testHandler(t, f, "native secret"))
 	defer server.Close()
 	res, err := http.Post(server.URL+Path, "application/json", strings.NewReader(strings.TrimSuffix(basic, "}")+`,"stream":true}`))
 	require.NoError(t, err)
