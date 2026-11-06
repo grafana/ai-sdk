@@ -36,6 +36,14 @@ knownGaps:
       function and custom tools. Pinned compatible 3.0.82 has no allowed-tools
       union. Default requests remain unchanged; synthetic HTTP tests cover
       selection, preserved declarations, and rejection of unsafe overrides.
+  - id: openai-responses-refusal-preservation
+    surface: provider-openai
+    status: intentional-deviation
+    description: Go PreserveRefusal exposes typed native refusal metadata and
+      custom refusal delta events. Pinned openai 4.0.106 drops refusal content.
+      This explicit local opt-in never reaches the native API and leaves default
+      V4 behavior unchanged. Synthetic HTTP replay covers unary, delta, done and
+      final-response paths, without claiming live-provider parity.
   - id: compatible-typed-image-detail
     surface: provider-openai-compatible
     status: intentional-deviation
