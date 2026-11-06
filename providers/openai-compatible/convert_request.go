@@ -14,6 +14,9 @@ import (
 )
 
 func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[string]any, []provider.Warning, error) {
+	if opts.ChoiceCount < 0 || opts.ChoiceCount > 128 {
+		return nil, nil, fmt.Errorf("openai: invalid choice count")
+	}
 	if err := provider.ValidateFileInputs(opts.Prompt); err != nil {
 		return nil, nil, fmt.Errorf("openai: invalid file input: %w", err)
 	}
@@ -125,6 +128,9 @@ func (m *model) buildRequest(opts provider.CallOptions, streaming bool) (map[str
 			continue
 		}
 		body[k] = v
+	}
+	if opts.ChoiceCount > 1 {
+		body["n"] = opts.ChoiceCount
 	}
 	sort.Strings(skipped)
 	for _, k := range skipped {

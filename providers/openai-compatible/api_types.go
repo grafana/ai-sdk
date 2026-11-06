@@ -164,6 +164,7 @@ type chatCompletionResponse struct {
 }
 
 type chatChoice struct {
+	Index        *int                `json:"index"`
 	Message      chatResponseMessage `json:"message"`
 	Delta        chatDeltaMessage    `json:"delta"`
 	FinishReason *string             `json:"finish_reason"`
