@@ -175,3 +175,7 @@ assistant or tool text, the local typed `ChatTextParts` marker restores boundari
 only if its concatenated text equals the common message. The marker is consumed
 locally and cannot replace role, call identity or text. These cache extensions
 leave ordinary provider request snapshots unchanged.
+
+Opt-in Chat usage metadata additionally preserves `cache_write_tokens`,
+`image_tokens` and `text_tokens` in prompt details and `text_tokens` in completion
+details. Pointers retain absent versus explicit zero; negative counts fail decoding.
