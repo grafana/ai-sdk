@@ -91,3 +91,21 @@ server, so include the target implementation in integration tests.
 ---
 
 ← [OpenAI](openai.md) · [Docs index](../README.md) · [Writing a provider →](writing-a-provider.md)
+
+## Preserving Chat-specific output
+
+Set `OpenAIOptions.PreserveChatCompletionMetadata` to `true` when a protocol
+codec needs refusal, log probabilities or detailed Chat token accounting. This
+local option is not sent in the native request. The default remains the pinned
+upstream LanguageModel behavior.
+
+Validated fields are available as `openaiCompatible.chatCompletion` in provider
+metadata. Decode that value as `ChatCompletionMetadata` and validate it before
+projection. Unary results contain complete refusal/logprobs/usage values.
+Streaming emits `custom` parts with kind `openai-compatible.chat-completion` for
+refusal and logprob deltas, and final usage on the `finish` part. Missing counters
+remain absent; unknown native fields are not copied. Existing metadata under the
+configured provider namespace remains available.
+
+This opt-in Go extension does not add multiple choices or audio output support.
+Its focused tests use synthetic native responses, not live provider recordings.
