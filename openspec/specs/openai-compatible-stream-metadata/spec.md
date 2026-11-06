@@ -50,3 +50,20 @@ API. This opt-in Go extension intentionally exceeds the registered
 #### Scenario: Default provider parity
 - **WHEN** preservation is not enabled
 - **THEN** no Chat metadata extension or additional custom parts are emitted
+
+### Requirement: Native audio preservation
+With Chat output preservation enabled, the provider SHALL retain native audio
+identity, expiry, base64 bytes and transcript in typed `chatCompletion.audio`
+metadata. Unary audio SHALL contain all four fields; streaming audio SHALL retain
+field presence in each delta. Invalid base64 or negative expiry SHALL fail decoding.
+The provider SHALL accept typed native output modalities/audio options and an
+assistant audio reference containing only its native ID.
+
+#### Scenario: Audio stream with separate metadata and bytes
+- **WHEN** a native stream sends audio identity, bytes/transcript and expiry in separate chunks
+- **THEN** three typed custom metadata parts retain those fields without invented empty values
+
+#### Scenario: Audio history continuation
+- **WHEN** an assistant message carries a valid native audio reference and no text
+- **THEN** the native request contains its audio ID and null content
+- **AND** audio bytes or unrelated fields are not accepted in the history reference
