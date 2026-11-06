@@ -22,8 +22,11 @@ type unaryTool struct {
 // and its tool, is not repeated after a final result, and holds a JSON value
 // other than null; no preview is left without a final result; and the unified
 // finish reason is registered. It does not modify history.
-func ValidateGenerateResult(result *provider.GenerateResult, history ToolHistory) error {
-	if result == nil {
+func ValidateGenerateResult(result *provider.GenerateResult, history ToolHistory, choiceCounts ...int) error {
+	if len(choiceCounts) > 0 && choiceCounts[0] > 1 {
+		return validateChoices(result, history, choiceCounts[0])
+	}
+	if result == nil || result.Choices != nil {
 		return ErrInvalidOutput
 	}
 	tools := make(map[string]unaryTool, len(history))

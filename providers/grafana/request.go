@@ -16,6 +16,7 @@ import (
 type requestObject map[string]any
 
 type requestCallOptionsFields struct {
+	ChoiceCount      int                      `json:"-"`
 	Prompt           []provider.Message       `json:"prompt,omitempty"`
 	Tools            []provider.Tool          `json:"tools,omitempty"`
 	ToolChoice       *provider.ToolChoice     `json:"toolChoice,omitempty"`
@@ -39,6 +40,9 @@ var _ = requestCallOptionsFields(provider.CallOptions{})
 var errRequest = errors.New("grafana: invalid or unrepresentable request")
 
 func encodeRequest(opts provider.CallOptions) ([]byte, error) {
+	if opts.ChoiceCount < 0 || opts.ChoiceCount > 1 {
+		return nil, errRequest
+	}
 	if err := provider.ValidateTools(opts.Tools); err != nil {
 		return nil, errRequest
 	}
