@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -68,6 +69,9 @@ type Call struct {
 // its error is returned. A translator set with [WithTranslator] reaches every
 // physical attempt of this call only.
 func (r *Runtime) Call(ctx context.Context, modelID string, options provider.CallOptions, callOptions ...CallOption) (*Call, error) {
+	if options.ChoiceCount < 0 || options.ChoiceCount > 128 {
+		return nil, catalog.ErrUnsupportedRequest
+	}
 	var config callConfig
 	for _, apply := range callOptions {
 		apply(&config)
@@ -132,7 +136,7 @@ func (c *Call) Generate() (*provider.GenerateResult, error) {
 		c.attempts.discard()
 		return nil, ctxErr
 	}
-	if err == nil && ValidateGenerateResult(result, c.history) != nil {
+	if err == nil && ValidateGenerateResult(result, c.history, c.options.ChoiceCount) != nil {
 		return nil, ErrInvalidOutput
 	}
 	return result, err
@@ -179,7 +183,7 @@ func (c *Call) Stream() (*Stream, error) {
 		parts:     result.Stream,
 		idle:      time.NewTimer(c.limits.StreamIdleDuration),
 		limits:    c.limits,
-		validator: NewStreamValidator(c.history),
+		validator: newOutputValidator(c.history, c.options.ChoiceCount),
 	}, nil
 }
 
@@ -254,7 +258,7 @@ type Stream struct {
 	parts     <-chan provider.StreamPart
 	idle      *time.Timer
 	limits    Limits
-	validator *StreamValidator
+	validator outputValidator
 	terminal  Wait
 	waited    bool
 	closeAll  sync.Once
