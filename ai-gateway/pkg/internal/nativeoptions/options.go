@@ -166,7 +166,7 @@ func Compatible(options provider.CallOptions, providerName string) error {
 					return err
 				}
 			case message.Role == provider.RoleAssistant && part.Type == provider.ContentPartTypeToolCall:
-				if err := refuseNativeFields(part.ProviderOptions, "openaiCompatible", "id", "type", "function"); err != nil {
+				if err := refuseNativeFields(part.ProviderOptions, "openaiCompatible", "id", "type", "function", "custom"); err != nil {
 					return err
 				}
 			case message.Role == provider.RoleTool && part.Type == provider.ContentPartTypeToolResult:

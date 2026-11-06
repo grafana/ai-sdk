@@ -117,14 +117,14 @@ func (r mappedRequest) validateText(text, finish string) error {
 	return nil
 }
 func validateCall(call toolCall, r mappedRequest) error {
-	if call.ID == "" || len(call.ID) > 256 || !utf8.ValidString(call.ID) || !namePattern.MatchString(call.Function.Name) || !utf8.ValidString(call.Function.Arguments) {
+	if call.ID == "" || len(call.ID) > 256 || !utf8.ValidString(call.ID) || !namePattern.MatchString(call.name()) || !utf8.ValidString(call.arguments()) {
 		return errOutput
 	}
-	if r.options.ToolChoice != nil && (r.options.ToolChoice.Type == provider.ToolChoiceNone || r.options.ToolChoice.Type == provider.ToolChoiceTool && r.options.ToolChoice.ToolName != call.Function.Name) {
+	if r.options.ToolChoice != nil && (r.options.ToolChoice.Type == provider.ToolChoiceNone || r.options.ToolChoice.Type == provider.ToolChoiceTool && r.options.ToolChoice.ToolName != call.name()) {
 		return errOutput
 	}
 	for _, t := range r.options.Tools {
-		if t.Name == call.Function.Name {
+		if t.Name == call.name() {
 			return nil
 		}
 	}
@@ -132,14 +132,20 @@ func validateCall(call toolCall, r mappedRequest) error {
 }
 
 func validateCallArguments(call toolCall, r mappedRequest) error {
-	if !jsonObject([]byte(call.Function.Arguments)) {
+	if call.Type == kindCustom {
+		if !r.customTool(call.name()) || !utf8.ValidString(call.arguments()) {
+			return errOutput
+		}
+		return nil
+	}
+	if !jsonObject([]byte(call.arguments())) {
 		return errOutput
 	}
 	for _, t := range r.options.Tools {
-		if t.Name == call.Function.Name {
+		if t.Name == call.name() {
 			if boolValue(t.Strict) {
 				validator := r.toolValidators[t.Name]
-				if validator == nil || validator.Validate(json.RawMessage(call.Function.Arguments)) != nil {
+				if validator == nil || validator.Validate(json.RawMessage(call.arguments())) != nil {
 					return errOutput
 				}
 			}
@@ -208,7 +214,10 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 			out.Grafana = sourceDiagnostics(out.Grafana, &source, nil)
 		case provider.ContentReasoning:
 		case provider.ContentToolCall:
-			call := toolCall{ID: p.ToolCallID, Type: kindFunction, Function: callFunction{Name: p.ToolName, Arguments: string(p.Input)}}
+			call, err := r.outputCall(p.ToolCallID, p.ToolName, string(p.Input))
+			if err != nil {
+				return out, err
+			}
 			if p.ProviderExecuted || boolValue(p.Dynamic) || boolValue(p.Preliminary) || used[call.ID] || validateCall(call, r) != nil || (!partialFinish(finish) && validateCallArguments(call, r) != nil) {
 				return out, errOutput
 			}

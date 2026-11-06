@@ -505,3 +505,21 @@ Chat URL annotations. It SHALL NOT synthesize these fields from request controls
 #### Scenario: Malformed native annotation
 - **WHEN** a native annotation omits required text positions
 - **THEN** typed output decoding fails instead of fabricating a span
+### Requirement: Custom text tool calls
+The adapter SHALL accept custom text/grammar tools, named custom choices and
+custom tool-call history. It SHALL preserve raw text in Chat custom calls while
+using the common domain's canonical JSON-string final representation internally.
+Streamed custom input SHALL use text encoding and match the final decoded input.
+
+#### Scenario: Official client manual execution
+- **WHEN** an official client receives a custom tool call and manually returns its result
+- **THEN** the follow-up retains the custom call type and common call identity even without tool declarations
+
+#### Scenario: Native custom payload cannot override history
+- **WHEN** a compatible provider option attempts to replace a custom call's identity or custom payload
+- **THEN** the shared native guard rejects it
+- **AND** the consumed custom-history marker alone cannot replace role, call ID, tool name or input
+
+#### Scenario: Inconsistent final custom input
+- **WHEN** the decoded final custom input differs from previously emitted text fragments
+- **THEN** the adapter emits an error instead of a successful terminal completion

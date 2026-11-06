@@ -1,0 +1,5 @@
+- [x] Decode custom declarations, named choices and history unions.
+- [x] Project custom unary and streaming calls with exact final/delta agreement.
+- [x] Preserve history identity without current declarations.
+- [x] Test official Go and TypeScript clients with grammar and manual execution.
+- [x] Test native guard override rejection and unsupported Anthropic capability.
