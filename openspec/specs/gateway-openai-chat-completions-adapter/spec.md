@@ -528,3 +528,16 @@ Streamed custom input SHALL use text encoding and match the final decoded input.
 #### Scenario: Inconsistent final custom input
 - **WHEN** the decoded final custom input differs from previously emitted text fragments
 - **THEN** the adapter emits an error instead of a successful terminal completion
+
+### Requirement: Native generation controls
+The adapter SHALL preserve validated prediction and web-search controls on native
+compatible routes and map verbosity to compatible and Responses text verbosity.
+Other transports SHALL reject unsupported controls before provider I/O.
+
+#### Scenario: Official client predicts static output
+- **WHEN** an official Go client submits predicted text, search context and verbosity
+- **THEN** the native compatible request retains all three values
+
+#### Scenario: Unsupported transport
+- **WHEN** a Responses or Anthropic route receives native Chat prediction or search controls
+- **THEN** it returns a capability error rather than dropping the controls
