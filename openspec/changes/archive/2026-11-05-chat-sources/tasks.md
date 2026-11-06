@@ -1,0 +1,4 @@
+- [x] Preserve sources/citations in unary and streaming output.
+- [x] Map positioned URL annotations and reject invalid representation fields.
+- [x] Test source delivery, absent spans and malformed indices.
+- [x] Update guide and OpenSpec.
