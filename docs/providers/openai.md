@@ -133,3 +133,22 @@ settings are dropped with warnings where the request can proceed. Inspect
 result when the current request omits tool declarations. Custom call input must
 encode a JSON string, as in native Responses custom output. The marker changes
 neither the common tool name nor call ID; it does not add a tool declaration.
+
+### Native refusals
+
+Set `OpenAIResponsesOptions.PreserveRefusal` to retain native refusals separately
+from normal generated text. This Go extension defaults to false and is consumed
+locally, preserving the pinned default behavior and native request body.
+
+`ParseResponsesMetadata(result.ProviderMetadata, "openai")` returns typed
+`ResponsesMetadata`, whose optional `Refusal` contains the complete refusal.
+Azure uses the `azure` namespace. Streams expose deltas as `PartCustom` with kind
+`openai.responses-refusal` using the same metadata shape, followed by the complete
+refusal in finish metadata. Do not append that final value again. Done and
+completed-response snapshots supply missing suffixes; conflicting snapshots
+produce a stream error.
+
+Structured-output refusals may not satisfy the requested schema. Consumers must
+inspect refusal metadata before validating normal text as JSON. See OpenAI's
+[structured-output guide](https://developers.openai.com/api/docs/guides/structured-outputs)
+and [refusal events](https://developers.openai.com/api/reference/resources/responses/streaming-events).
