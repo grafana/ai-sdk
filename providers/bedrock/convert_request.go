@@ -65,6 +65,14 @@ func buildRequestWithFamily(modelID string, family ModelFamily, opts provider.Ca
 	hasBudgetTokens := bo.ReasoningConfig != nil && (bo.ReasoningConfig.budgetTokensPresent || bo.ReasoningConfig.BudgetTokens != 0)
 	isAnthropic := isAnthropicModelForCall(modelID, family, hasBudgetTokens)
 	bo.ReasoningConfig = resolveReasoningConfig(modelID, isAnthropic, opts.Reasoning, bo.ReasoningConfig, &warnings)
+	if isAnthropic && supportsBetweenToolsThinking(modelID) && bo.ReasoningConfig != nil && bo.ReasoningConfig.Type == "disabled" {
+		bo.ReasoningConfig.Type = reasoningTypeBetweenTools
+		warnings = append(warnings, provider.Warning{
+			Type:    provider.WarnUnsupported,
+			Feature: "providerOptions.amazonBedrock.reasoningConfig",
+			Details: fmt.Sprintf("thinking cannot be disabled for %s. Using 'between_tools' thinking instead.", modelID),
+		})
+	}
 
 	// Whether extended thinking is enabled (Anthropic only). Used both for the
 	// native-structured-output gate and inference-config adjustments below.
@@ -481,11 +489,6 @@ func resolveReasoningConfig(modelID string, isAnthropic bool, reasoning provider
 // reject disabled thinking; see supportsBetweenToolsThinking.
 const reasoningTypeBetweenTools = "between_tools"
 
-// anthropicNoneReasoningType returns the thinking type for reasoning "none".
-// Upstream @ai-sdk/amazon-bedrock 5.0.99 uses "disabled", which omits the
-// thinking field and runs claude-sonnet-5-5 at its default adaptive effort.
-// This intentionally sends between_tools instead so "none" keeps up-front
-// thinking off, as the Anthropic provider does.
 func anthropicNoneReasoningType(modelID string) string {
 	if supportsBetweenToolsThinking(modelID) {
 		return reasoningTypeBetweenTools

@@ -49,7 +49,7 @@ func TestBuildRequest_ExplicitReasoningOverrides(t *testing.T) {
 }
 
 func TestBuildRequest_ExplicitDisabledReasoning(t *testing.T) {
-	for _, modelID := range []string{testAnthropicModel, "anthropic.claude-sonnet-4-6-v1:0", "global.anthropic.claude-sonnet-5-5", "amazon.nova-2-lite-v1:0", testOpenAIModel, testMistralModel} {
+	for _, modelID := range []string{testAnthropicModel, "anthropic.claude-sonnet-4-6-v1:0", "amazon.nova-2-lite-v1:0", testOpenAIModel, testMistralModel} {
 		for _, reasoning := range []provider.ReasoningEffort{provider.ReasoningNone, provider.ReasoningMinimal, provider.ReasoningHigh, provider.ReasoningXHigh, provider.ReasoningMax} {
 			for _, namespace := range []string{"amazonBedrock", "bedrock"} {
 				t.Run(fmt.Sprintf("%s/%s/%s", modelID, reasoning, namespace), func(t *testing.T) {
@@ -160,5 +160,39 @@ func TestBuildRequest_ReasoningDefaultControls(t *testing.T) {
 			assert.Empty(t, warnings)
 			assert.Equal(t, before, tc.config)
 		})
+	}
+}
+
+func TestBuildRequest_Sonnet55ExplicitDisabled(t *testing.T) {
+	for _, reasoning := range []provider.ReasoningEffort{provider.ReasoningProviderDefault, provider.ReasoningNone, provider.ReasoningHigh, provider.ReasoningMax} {
+		for _, effort := range []string{"", "low", "high", "max"} {
+			t.Run(fmt.Sprintf("%s/%s", reasoning, effort), func(t *testing.T) {
+				config := ReasoningConfig{Type: "disabled", BudgetTokens: 5000, MaxReasoningEffort: effort}
+				before := config
+				req, warnings, _ := mustBuildRequest(t, "global.anthropic.claude-sonnet-5-5", provider.CallOptions{
+					Prompt: []provider.Message{provider.UserText("hi")}, Reasoning: reasoning,
+					ProviderOptions: provider.ProviderOptions{"amazonBedrock": BedrockOptions{ReasoningConfig: &config}},
+				})
+				assert.Equal(t, map[string]any{"type": reasoningTypeBetweenTools}, req.AdditionalModelRequestFields["thinking"])
+				wantEffort := effort
+				if reasoning != provider.ReasoningProviderDefault {
+					wantEffort = ""
+				}
+				count := 1
+				if wantEffort == "max" {
+					wantEffort = "high"
+					count++
+				}
+				if wantEffort != "" {
+					assert.Equal(t, map[string]any{"effort": wantEffort}, req.AdditionalModelRequestFields["output_config"])
+				} else {
+					assert.NotContains(t, req.AdditionalModelRequestFields, "output_config")
+				}
+				require.Len(t, warnings, count)
+				assert.Equal(t, provider.WarnUnsupported, warnings[0].Type)
+				assert.Equal(t, "providerOptions.amazonBedrock.reasoningConfig", warnings[0].Feature)
+				assert.Equal(t, before, config)
+			})
+		}
 	}
 }

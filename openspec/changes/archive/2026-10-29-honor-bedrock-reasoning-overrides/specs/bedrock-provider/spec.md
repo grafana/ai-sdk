@@ -11,7 +11,7 @@ Explicit disabled config SHALL suppress custom reasoning before derivation. Othe
 
 #### Scenario: Disabled thinking suppresses unused diagnostics
 
-- **WHEN** custom root reasoning including `none`, `minimal`, `xhigh` or `max` is combined with explicit type `disabled`, budget and effort on Anthropic, Nova or OpenAI Converse
+- **WHEN** custom root reasoning including `none`, `minimal`, `xhigh` or `max` is combined with explicit type `disabled`, budget and effort on models that accept disabled thinking
 - **THEN** the request SHALL omit thinking, budget and effort without warnings from the suppressed reasoning settings, and caller config SHALL remain unchanged
 
 #### Scenario: Explicit effort prevents portable mapping diagnostics
@@ -37,17 +37,17 @@ Explicit disabled config SHALL suppress custom reasoning before derivation. Othe
 
 ### Requirement: Converse none thinking and pinned deviation
 
-Anthropic root reasoning `none` SHALL replace explicit partial config with disabled thinking, except IDs containing `claude-sonnet-5-5`, which SHALL use `between_tools`. Explicit type `disabled` SHALL take precedence over either default. The between-tools behavior is an intentional deviation recorded in `test/conformance/upstream.yaml`: upstream disabled thinking omits `thinking`, allowing default-effort adaptive thinking.
+Anthropic root reasoning `none` SHALL replace partial config with disabled thinking. Sonnet 5.5 SHALL normalize disabled thinking to `between_tools`, with an unsupported warning for explicit disabled config. Provider-default calls SHALL preserve effort capped at high; custom reasoning SHALL clear budget and effort. Accepting explicit `between_tools` remains a Go extension recorded in `knownGaps`.
 
 #### Scenario: Converse none thinking and pinned deviation
 
 - **WHEN** root reasoning `none` accompanies partial provider config on Sonnet 5.5 and on another Anthropic model
 - **THEN** Sonnet 5.5 SHALL send between-tools thinking; the other model SHALL use disabled thinking with no derived budget or effort
 
-#### Scenario: Explicit disabled overrides the Sonnet 5.5 none default
+#### Scenario: Explicit disabled normalizes to the Sonnet 5.5 minimum
 
 - **WHEN** root reasoning `none` accompanies explicit type `disabled` on Sonnet 5.5
-- **THEN** the request SHALL omit thinking and effort, preserving the caller's explicit choice without applying between-tools defaulting
+- **THEN** the request SHALL send between-tools thinking with an unsupported warning, omit the budget and effort removed by custom portable reasoning
 
 ### Requirement: Converse adaptive effort mapping
 

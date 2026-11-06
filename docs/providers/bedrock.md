@@ -141,7 +141,7 @@ response tool counts as an active tool.
 
 Claude Sonnet 5.5 rejects disabled thinking and forced tool use. For
 `claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking
-unless an explicit disabled configuration takes precedence,
+and explicit disabled thinking is normalized to the same minimum with an unsupported warning. Provider-default calls preserve explicit effort capped at high; custom portable reasoning clears budget and effort before normalization. For this model,
 a `required` or named tool choice is sent as `auto` with a warning, and a JSON
 schema response uses a system-prompt instruction instead of the forced JSON
 tool.
