@@ -30,11 +30,12 @@ type completionDetails struct {
 	Reasoning          *int `json:"reasoning_tokens,omitempty"`
 }
 type outputMessage struct {
-	Refusal     *string      `json:"refusal,omitempty"`
-	Annotations []annotation `json:"annotations,omitempty"`
-	Role        role         `json:"role"`
-	Content     *string      `json:"content"`
-	ToolCalls   []toolCall   `json:"tool_calls,omitempty"`
+	FunctionCall *callFunction `json:"function_call,omitempty"`
+	Refusal      *string       `json:"refusal,omitempty"`
+	Annotations  []annotation  `json:"annotations,omitempty"`
+	Role         role          `json:"role"`
+	Content      *string       `json:"content"`
+	ToolCalls    []toolCall    `json:"tool_calls,omitempty"`
 }
 type choice struct {
 	Index    int           `json:"index"`
@@ -232,6 +233,13 @@ func mapGenerate(result *provider.GenerateResult, r mappedRequest, id, model str
 	}
 	if err = nativeUsage(out.Usage, native.Usage); err != nil {
 		return out, err
+	}
+	if r.legacyFunctions {
+		if len(msg.ToolCalls) > 0 {
+			msg.FunctionCall = &msg.ToolCalls[0].Function
+			msg.ToolCalls = nil
+		}
+		finish = legacyFinish(finish)
 	}
 	out.Choices = []choice{{Message: msg, Finish: finish, Logprobs: native.Logprobs}}
 	return out, nil
