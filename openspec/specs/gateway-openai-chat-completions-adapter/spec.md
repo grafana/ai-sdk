@@ -633,3 +633,22 @@ subset before publishing tool starts, arguments, or complete calls.
 - **WHEN** historical calls reference tools outside the current subset
 - **THEN** their historical messages remain intact
 - **AND** current Anthropic tool definitions contain only selected functions
+
+### Requirement: Preserve Responses refusals as Chat refusals
+
+The adapter SHALL enable native Responses refusal preservation and project the
+typed metadata into Chat refusal fields. Refusal-only unary output SHALL retain
+null content. Streaming SHALL expose each refusal delta once and SHALL NOT append
+the aggregate finish metadata again. Refusal SHALL exempt absent ordinary text
+from structured-output validation and absent calls from required-tool validation.
+
+#### Scenario: Structured output is refused
+
+- **WHEN** Responses returns refusal instead of the requested JSON schema output
+- **THEN** the official Chat client receives the refusal without a gateway error
+- **AND** stream completion remains successful with one terminal finish
+
+#### Scenario: Refusal appears only in the final native response
+
+- **WHEN** the final native snapshot first provides refusal text
+- **THEN** Chat emits that refusal before completion without duplicating it

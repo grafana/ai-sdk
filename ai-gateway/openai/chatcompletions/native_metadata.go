@@ -3,6 +3,7 @@ package chatcompletions
 import (
 	"encoding/json"
 	"github.com/grafana/ai-sdk/provider"
+	openai "github.com/grafana/ai-sdk/providers/openai"
 	compatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
@@ -23,6 +24,18 @@ func chatMetadata(metadata provider.ProviderMetadata) (compatible.ChatCompletion
 			return ns.ChatCompletion, errOutput
 		}
 		ns.ChatCompletion.ServiceTier = responses.ServiceTier
+	}
+	if ns.ChatCompletion.Refusal == nil {
+		for _, namespace := range []string{"openai", "azure"} {
+			responses, err := openai.ParseResponsesMetadata(metadata, namespace)
+			if err != nil {
+				return ns.ChatCompletion, errOutput
+			}
+			if responses.Refusal != nil {
+				ns.ChatCompletion.Refusal = responses.Refusal
+				break
+			}
+		}
 	}
 	if ns.ChatCompletion.Validate() != nil {
 		return ns.ChatCompletion, errOutput
