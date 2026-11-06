@@ -53,12 +53,14 @@ type toolState struct {
 	ended, final bool
 }
 type streamState struct {
-	refused    bool
-	toolOffset int
-	text       strings.Builder
-	textSeen   bool
-	textIDs    map[string]bool
-	tools      map[string]*toolState
+	refused     bool
+	toolOffset  int
+	text        strings.Builder
+	textSeen    bool
+	textOffset  int
+	blockOffset int
+	textIDs     map[string]bool
+	tools       map[string]*toolState
 }
 
 func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, error) {
@@ -81,11 +83,13 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 			return nil, errOutput
 		}
 		s.textIDs[p.ID] = true
+		s.blockOffset = s.textOffset
 		return nil, nil
 	case provider.PartTextDelta:
 		if !s.textIDs[p.ID] {
 			return nil, errOutput
 		}
+		s.textOffset += utf8.RuneCountInString(p.Delta)
 		if r.jsonOutput {
 			s.text.WriteString(p.Delta)
 		}
@@ -99,7 +103,11 @@ func (s *streamState) consume(p provider.StreamPart, r mappedRequest) (*delta, e
 			return nil, errOutput
 		}
 		s.textIDs[p.ID] = false
-		if annotations := mapCitations(p.Citations); len(annotations) > 0 {
+		annotations, err := mapCitations(p.Citations, s.blockOffset)
+		if err != nil {
+			return nil, err
+		}
+		if len(annotations) > 0 {
 			return &delta{Annotations: annotations}, nil
 		}
 		return nil, nil
@@ -416,7 +424,7 @@ func (h *handler) serveStream(ctx context.Context, w http.ResponseWriter, call *
 			}
 			// Runtime owns native segment boundaries and global tool identities.
 			// New calls retain distinct public indices across segments.
-			state = streamState{toolOffset: state.toolOffset + len(state.tools), textIDs: map[string]bool{}, tools: map[string]*toolState{}}
+			state = streamState{textOffset: state.textOffset, toolOffset: state.toolOffset + len(state.tools), textIDs: map[string]bool{}, tools: map[string]*toolState{}}
 			continue
 		}
 
