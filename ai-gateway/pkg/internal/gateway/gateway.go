@@ -15,7 +15,10 @@ import (
 	"github.com/grafana/authlib/authn"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/completionstore"
+	stored "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/storedchatcompletion/v1alpha1"
 	"github.com/grafana/grafana-app-sdk/app"
+	"github.com/grafana/grafana-app-sdk/k8s"
 	"github.com/grafana/grafana-app-sdk/plugin"
 	"github.com/grafana/grafana-app-sdk/simple"
 
@@ -51,6 +54,12 @@ type Options struct {
 // Gateway is the constructed plugin. An idle Gateway has no handler,
 // authenticator or sinks.
 type Gateway struct {
+	store         *completionstore.Store
+	storageOnce   sync.Once
+	storageMu     sync.Mutex
+	storageClosed bool
+	storageCancel context.CancelFunc
+	storageWait   sync.WaitGroup
 	handler       http.Handler
 	authenticator authn.Authenticator
 	sinks         sinks
@@ -104,12 +113,13 @@ func New(options Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	handler, err := newRouteHandler(settings, file, providers, configuredSecrets(providers, agentSecret), sinks, options.Logger)
+	store := completionstore.New()
+	handler, err := newRouteHandler(settings, file, providers, configuredSecrets(providers, agentSecret), sinks, options.Logger, store)
 	if err != nil {
 		sinks.close()
 		return nil, err
 	}
-	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks}, nil
+	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks, store: store}, nil
 }
 
 func validateProviderEndpoints(file config.File) error {
@@ -169,7 +179,7 @@ func (s sinks) close() {
 	closing.Wait()
 }
 
-func newRouteHandler(settings config.Settings, file config.File, providers map[string]config.ResolvedProvider, secrets []string, sinks sinks, logger *slog.Logger) (http.Handler, error) {
+func newRouteHandler(settings config.Settings, file config.File, providers map[string]config.ResolvedProvider, secrets []string, sinks sinks, logger *slog.Logger, stores ...*completionstore.Store) (http.Handler, error) {
 	nativeClient, err := outbound.NewModelClient(config.ProviderResponseHeaderTimeout, config.ProviderResponseBytes)
 	if err != nil {
 		return nil, err
@@ -194,7 +204,15 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	chat, err := chatcompletions.New(runtime)
+	var chatOptions []chatcompletions.Option
+	if len(stores) > 0 && stores[0] != nil {
+		retention := settings.CompletionRetention
+		if retention == 0 {
+			retention = 30 * 24 * time.Hour
+		}
+		chatOptions = append(chatOptions, chatcompletions.WithStorage(chatcompletions.StorageConfig{Store: stores[0], ResolveScope: completionScope, Retention: retention}))
+	}
+	chat, err := chatcompletions.New(runtime, chatOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -226,6 +244,43 @@ func (g *Gateway) Authenticator() authn.Authenticator { return g.authenticator }
 // Provider returns the app-sdk provider whose app serves Handler.
 func (g *Gateway) Provider() app.Provider {
 	return simple.NewAppProvider(manifestdata.LocalManifest(), nil, func(cfg app.Config) (app.App, error) {
+		if g.store != nil && cfg.KubeConfig.Host != "" {
+			registry := k8s.NewClientRegistry(cfg.KubeConfig, k8s.DefaultClientConfig())
+			client, err := registry.ClientFor(stored.Kind())
+			if err != nil {
+				return nil, err
+			}
+			g.storageMu.Lock()
+			if g.storageClosed {
+				g.storageMu.Unlock()
+				return nil, errors.New("gateway: closed")
+			}
+			g.store.Bind(client)
+			g.storageOnce.Do(func() {
+				ctx, cancel := context.WithCancel(context.Background())
+				g.storageCancel = cancel
+				g.storageWait.Add(1)
+				go func() {
+					defer g.storageWait.Done()
+					ticker := time.NewTicker(time.Minute)
+					defer ticker.Stop()
+					for {
+						cleanup, done := context.WithTimeout(ctx, 10*time.Second)
+						err := g.store.Sweep(cleanup)
+						done()
+						if err != nil && ctx.Err() == nil {
+							slog.Warn("stored completion expiration cleanup failed")
+						}
+						select {
+						case <-ctx.Done():
+							return
+						case <-ticker.C:
+						}
+					}
+				}()
+			})
+			g.storageMu.Unlock()
+		}
 		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler})
 	})
 }
@@ -237,5 +292,27 @@ func (g *Gateway) Close() {
 	if g.Idle() {
 		return
 	}
+	g.storageMu.Lock()
+	g.storageClosed = true
+	cancel := g.storageCancel
+	g.storageMu.Unlock()
+	if cancel != nil {
+		cancel()
+		g.storageWait.Wait()
+	}
 	g.sinks.close()
+}
+
+func completionScope(ctx context.Context) (chatcompletions.StorageScope, bool) {
+	caller, ok := gatewayauth.CallerFromContext(ctx)
+	if !ok || caller.AccountAccess() == gatewayauth.Refused {
+		return chatcompletions.StorageScope{}, false
+	}
+	owner := ""
+	if caller.Identity != "" {
+		owner = "identity:" + caller.Identity
+	} else if caller.AttributedService() != "" {
+		owner = "service:" + caller.AttributedService()
+	}
+	return chatcompletions.StorageScope{Namespace: caller.Namespace, Owner: owner}, owner != "" && caller.Namespace != ""
 }

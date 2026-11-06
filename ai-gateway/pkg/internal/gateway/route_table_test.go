@@ -92,8 +92,13 @@ func TestProductionRoutes_MatchTheManifest(t *testing.T) {
 	}
 	assert.Equal(t, declared, routed)
 	assert.Equal(t, map[string]struct{}{
-		"GET /namespaces/{namespace}/config":               {},
-		"POST /namespaces/{namespace}/language-model":      {},
-		"POST /namespaces/{namespace}/v1/chat/completions": {},
+		"GET /namespaces/{namespace}/config":                                       {},
+		"POST /namespaces/{namespace}/language-model":                              {},
+		"POST /namespaces/{namespace}/v1/chat/completions":                         {},
+		"GET /namespaces/{namespace}/v1/chat/completions":                          {},
+		"GET /namespaces/{namespace}/v1/chat/completions/{completion_id}":          {},
+		"POST /namespaces/{namespace}/v1/chat/completions/{completion_id}":         {},
+		"DELETE /namespaces/{namespace}/v1/chat/completions/{completion_id}":       {},
+		"GET /namespaces/{namespace}/v1/chat/completions/{completion_id}/messages": {},
 	}, routed)
 }

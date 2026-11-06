@@ -46,3 +46,37 @@ backend SHALL be rejected before billable model I/O.
 - **WHEN** records share timestamps and a metadata filter is supplied
 - **THEN** ID ordering is deterministic and absent metadata does not match an empty string
 - **AND** the after cursor is resolved only within the caller's scope.
+
+### Requirement: Opt-in lifecycle and streaming persistence
+
+The Chat adapter SHALL persist only requests with store true, expose scoped
+retrieve/list/update-metadata/delete/messages routes, and retain original input
+history. Native provider storage SHALL remain disabled. Successful unary output
+and streaming DONE SHALL follow durable creation, with aggregate usage retained
+once for multiple choices. A failed persistence SHALL return an explicit error
+and SHALL NOT emit DONE.
+
+#### Scenario: Streaming storage failure
+- **WHEN** a streamed stored completion cannot be durably created
+- **THEN** the client receives a stream error without DONE
+- **AND** the handler does not announce stored success.
+
+#### Scenario: Original multimodal history
+- **WHEN** stored messages are requested after a multimodal or legacy function request
+- **THEN** original names, roles and content parts remain available with stable pagination.
+
+### Requirement: Configurable retention and bounded records
+
+Records SHALL be limited to 512 KiB of logical stored content. Streaming quota
+checks SHALL NOT depend on fragmentation, repeated metadata or obfuscation.
+Retention SHALL default to 30 days and be configurable from one minute through
+365 days. Public protocol roles SHALL NOT grant raw-kind access.
+
+#### Scenario: Oversized conversation
+- **WHEN** a completion and its original messages exceed the storage bound
+- **THEN** storage returns an error without creating or replacing a record
+- **AND** input history and metadata already exceeding the quota fail with 413 before model I/O.
+
+#### Scenario: Unprovisioned backend
+- **WHEN** the private kind is missing or scoped list access is denied
+- **THEN** a bounded readiness probe fails with 503 before model I/O.

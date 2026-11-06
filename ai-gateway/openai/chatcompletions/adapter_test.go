@@ -70,7 +70,7 @@ func TestRequestDefaultsAndRejections(t *testing.T) {
 			assert.JSONEq(t, `{"openai":{"store":false,"strictJsonSchema":false,"preserveRefusal":true,"preserveResponseMetadata":true}}`, string(b))
 		})
 	}
-	for _, extra := range []string{`,"n":0`, `,"n":129`, `,"store":true`, `,"temperature":3`, `,"max_tokens":0`, `,"max_tokens":1,"max_completion_tokens":2`, `,"audio":{}`, `,"stream_options":{}`, `,"tool_choice":"required"`, `,"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object","$ref":"https://private/"}}}}`, `,"Model":"other"`} {
+	for _, extra := range []string{`,"n":0`, `,"n":129`, `,"temperature":3`, `,"max_tokens":0`, `,"max_tokens":1,"max_completion_tokens":2`, `,"audio":{}`, `,"stream_options":{}`, `,"tool_choice":"required"`, `,"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object","$ref":"https://private/"}}}}`, `,"Model":"other"`} {
 		t.Run(extra, func(t *testing.T) {
 			_, err := mapRequest([]byte(strings.TrimSuffix(basic, "}") + extra + "}"))
 			require.Error(t, err)

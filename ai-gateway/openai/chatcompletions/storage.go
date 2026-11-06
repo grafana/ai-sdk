@@ -31,8 +31,8 @@ var ErrCompletionStorageUnavailable = errors.New("chat completions: storage unav
 // scope and expiry, including list and metadata updates. Implementations must not
 // allow a read-modify-write update to resurrect a deleted or expired record.
 type CompletionStore interface {
-	// Ready rejects an unbound durable backend before a billable model call.
-	Ready(context.Context) error
+	// Ready checks the scoped durable backend before a billable model call.
+	Ready(context.Context, StorageScope) error
 	Create(context.Context, StorageScope, StoredCompletion) error
 	Get(context.Context, StorageScope, string) (StoredCompletion, error)
 	List(context.Context, StorageScope, StorageListOptions) (StoredCompletionPage, error)
