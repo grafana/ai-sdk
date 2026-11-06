@@ -209,6 +209,7 @@ func (m *model) runChoicesStream(ctx context.Context, endpoint string, requestBo
 // Global metadata deliberately excludes alternative content and probabilities.
 func globalChatMetadata(data []byte) (ChatCompletionMetadata, error) {
 	var envelope struct {
+		Metadata          map[string]string    `json:"metadata"`
 		Moderation        *ChatModeration      `json:"moderation"`
 		Usage             *ChatCompletionUsage `json:"usage"`
 		ServiceTier       *string              `json:"service_tier"`
@@ -217,6 +218,6 @@ func globalChatMetadata(data []byte) (ChatCompletionMetadata, error) {
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		return ChatCompletionMetadata{}, err
 	}
-	metadata := ChatCompletionMetadata{Moderation: envelope.Moderation, Usage: envelope.Usage, ServiceTier: envelope.ServiceTier, SystemFingerprint: envelope.SystemFingerprint}
+	metadata := ChatCompletionMetadata{Metadata: envelope.Metadata, Moderation: envelope.Moderation, Usage: envelope.Usage, ServiceTier: envelope.ServiceTier, SystemFingerprint: envelope.SystemFingerprint}
 	return metadata, metadata.Validate()
 }
