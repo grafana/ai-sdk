@@ -38,7 +38,10 @@
                         "type": {
                           "enum": [
                             "text",
-                            "refusal"
+                            "refusal",
+                            "image_url",
+                            "input_audio",
+                            "file"
                           ]
                         },
                         "text": {
@@ -46,6 +49,60 @@
                         },
                         "refusal": {
                           "type": "string"
+                        },
+                        "image_url": {
+                          "type": "object",
+                          "properties": {
+                            "url": {
+                              "type": "string"
+                            },
+                            "detail": {
+                              "enum": [
+                                "auto",
+                                "low",
+                                "high",
+                                "original"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "url"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "input_audio": {
+                          "type": "object",
+                          "properties": {
+                            "data": {
+                              "type": "string"
+                            },
+                            "format": {
+                              "enum": [
+                                "wav",
+                                "mp3"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "data",
+                            "format"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "file": {
+                          "type": "object",
+                          "properties": {
+                            "file_id": {
+                              "type": "string"
+                            },
+                            "file_data": {
+                              "type": "string"
+                            },
+                            "filename": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": false
                         }
                       },
                       "required": [

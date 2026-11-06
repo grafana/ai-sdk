@@ -212,7 +212,13 @@ func mapRequest(data []byte) (mappedRequest, error) {
 				if json.Unmarshal(m.Content, &text) == nil {
 					p.Content = []provider.ContentPart{provider.TextPart(text)}
 				} else {
-					parts, err := textContent(m.Content, m.Role == roleAssistant)
+					var parts []provider.ContentPart
+					var err error
+					if m.Role == roleUser {
+						parts, err = userContent(m.Content)
+					} else {
+						parts, err = textContent(m.Content, m.Role == roleAssistant)
+					}
 					if err != nil {
 						return r, err
 					}
