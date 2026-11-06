@@ -129,3 +129,12 @@ counts and completion text counts, retaining absent versus explicit zero.
 #### Scenario: Invalid extended count
 - **WHEN** any extended token detail is negative
 - **THEN** metadata decoding fails before publishing the count
+
+### Requirement: Fragmented native tool identity
+With native Chat preservation enabled, indexed tool identity-only deltas SHALL
+be accepted before or between function/custom input fragments. Input encoding
+SHALL be established by the first declared type or payload and SHALL remain stable.
+
+#### Scenario: Two choices split identity and custom input
+- **WHEN** native choices reuse an ID but send indexed identity and custom input in separate chunks
+- **THEN** each choice emits its own text-encoded tool input and canonical final JSON string
