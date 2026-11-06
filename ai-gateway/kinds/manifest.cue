@@ -6,13 +6,26 @@ manifest: {
 	versions: {
 		"v1alpha1": v1alpha1
 	}
+	// Public roles grant protocol routes only. Generated kind defaults would
+	// otherwise expose stored conversation content outside the owner checks.
+	roles: "aigateway:client": {
+		title: "AI Gateway Client"
+		description: "Use authenticated Gateway protocol routes"
+		kinds: []
+		routes: ["getConfig", "createLanguageModel", "createChatCompletion"]
+	}
+	roleBindings: {
+		viewer: ["aigateway:client"]
+		editor: ["aigateway:client"]
+		admin: ["aigateway:client"]
+	}
 	extraPermissions: {
 		accessKinds: []
 	}
 }
 
 v1alpha1: {
-	kinds: []
+	kinds: [storedChatCompletion & storedChatCompletion.versions.v1alpha1]
 	served: true
 	openapi: paths: {
 		"/namespaces/{namespace}/config": get: {
