@@ -196,3 +196,8 @@ The opt-in native Chat decoder accepts indexed tool identity fragments before a
 function/custom payload arrives. It retains the selected input encoding across
 identity-only chunks and rejects subsequent encoding changes. The default pinned
 provider decoder keeps its existing validation contract.
+
+Opt-in Chat response metadata retains the native top-level user `metadata` map,
+including an explicit empty map. Its keys and values are validated against the
+native size contract. Request metadata is not substituted for absent response
+metadata, and multiple-choice responses retain the global native map.
