@@ -99,6 +99,18 @@ the `bedrock-mantle` signing service for a Mantle host, it still emits
 Converse-shaped requests and must not be used for the Mantle OpenAI-compatible
 surface.
 
+## Tag requests for cost attribution
+
+Set `BedrockOptions.RequestMetadata` on a call to attach string tags for Bedrock
+invocation-log filtering and cost attribution. Both Converse and ConverseStream
+send these tags at the request top level. A nil map omits metadata; an empty
+non-nil map sends an empty object. Raw provider options use the same string-only
+contract and reject null or non-string values before HTTP. Modern
+`amazonBedrock` options take precedence over the legacy `bedrock` namespace as a
+whole, so an empty modern object does not inherit legacy metadata. See the
+[Bedrock package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/providers/bedrock#BedrockOptions)
+for the typed options.
+
 ## Protect selected Converse content
 
 When a guardrail should inspect only selected input, attach Bedrock provider
