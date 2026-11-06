@@ -276,8 +276,7 @@
                   }
                 },
                 "required": [
-                  "name",
-                  "parameters"
+                  "name"
                 ],
                 "additionalProperties": false
               }

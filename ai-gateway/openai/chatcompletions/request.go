@@ -90,8 +90,8 @@ type responseFormat struct {
 type mappedRequest struct {
 	request
 	options        provider.CallOptions
-	validator      *schema.CompiledSchema
-	toolValidators map[string]*schema.CompiledSchema
+	validator      *chatSchema
+	toolValidators map[string]*chatSchema
 	jsonOutput     bool
 	strictOutput   bool
 }
@@ -240,12 +240,15 @@ func mapRequest(data []byte) (mappedRequest, error) {
 		return r, errRequest
 	}
 	names := map[string]bool{}
-	r.toolValidators = map[string]*schema.CompiledSchema{}
+	r.toolValidators = map[string]*chatSchema{}
 	for _, t := range r.Tools {
 		if t.Type != kindFunction || t.Function == nil || !namePattern.MatchString(t.Function.Name) || names[t.Function.Name] {
 			return r, errRequest
 		}
 		f := t.Function
+		if !present(f.Parameters) {
+			f.Parameters = json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)
+		}
 		compiled, err := compileSchema(f.Parameters)
 		if err != nil {
 			return r, errRequest
@@ -324,78 +327,4 @@ func mapRequest(data []byte) (mappedRequest, error) {
 func jsonObject(raw []byte) bool {
 	var object map[string]json.RawMessage
 	return json.Unmarshal(raw, &object) == nil && object != nil
-}
-func compileSchema(raw []byte) (*schema.CompiledSchema, error) {
-	if len(raw) > 32768 || !jsonObject(raw) {
-		return nil, errRequest
-	}
-	var value any
-	if json.Unmarshal(raw, &value) != nil {
-		return nil, errRequest
-	}
-	nodes := 0
-	var walk func(any, int) bool
-	walk = func(v any, depth int) bool {
-		nodes++
-		if depth > 16 || nodes > 512 {
-			return false
-		}
-		switch obj := v.(type) {
-		case map[string]any:
-			for key, child := range obj {
-				if key == "$ref" || key == "$dynamicRef" || key == "$id" || key == "$schema" {
-					return false
-				}
-				if !walk(child, depth+1) {
-					return false
-				}
-			}
-		case []any:
-			for _, child := range obj {
-				if !walk(child, depth+1) {
-					return false
-				}
-			}
-		}
-		return true
-	}
-	if !walk(value, 0) {
-		return nil, errRequest
-	}
-	root, ok := value.(map[string]any)
-	if !ok || root["type"] != "object" || !schemaVocabulary(root) {
-		return nil, errRequest
-	}
-	return schema.CompileSchema(raw)
-}
-
-func schemaVocabulary(obj map[string]any) bool {
-	for key, value := range obj {
-		switch key {
-		case "type", "description", "title", "enum", "const", "required", "minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems":
-		case "additionalProperties":
-			if _, ok := value.(bool); !ok {
-				return false
-			}
-		case "properties":
-			properties, ok := value.(map[string]any)
-			if !ok {
-				return false
-			}
-			for _, property := range properties {
-				child, ok := property.(map[string]any)
-				if !ok || !schemaVocabulary(child) {
-					return false
-				}
-			}
-		case "items":
-			child, ok := value.(map[string]any)
-			if !ok || !schemaVocabulary(child) {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
 }
