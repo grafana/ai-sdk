@@ -132,7 +132,18 @@ type CompiledSchema struct {
 // The compiled schema can be reused across multiple Validate calls
 // and is safe for concurrent use.
 func CompileSchema(raw json.RawMessage) (*CompiledSchema, error) {
+	return compileSchema(raw, validateschema.FileLoader{})
+}
+
+// CompileSelfContainedSchema compiles a JSON Schema without loading external
+// resources. Local references and the bundled standard meta-schemas are supported.
+func CompileSelfContainedSchema(raw json.RawMessage) (*CompiledSchema, error) {
+	return compileSchema(raw, validateschema.SchemeURLLoader{})
+}
+
+func compileSchema(raw json.RawMessage, loader validateschema.URLLoader) (*CompiledSchema, error) {
 	compiler := validateschema.NewCompiler()
+	compiler.UseLoader(loader)
 	compiler.DefaultDraft(validateschema.Draft2020)
 
 	doc, err := validateschema.UnmarshalJSON(bytes.NewReader(raw))
@@ -156,8 +167,11 @@ func CompileSchema(raw json.RawMessage) (*CompiledSchema, error) {
 // Returns nil if validation succeeds, or an error with JSON pointer
 // details indicating which part of the data failed validation.
 func (cs *CompiledSchema) Validate(data json.RawMessage) error {
-	var v any
-	if err := json.Unmarshal(data, &v); err != nil {
+	v, err := validateschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		if syntaxErr := json.Unmarshal(data, new(json.RawMessage)); syntaxErr != nil {
+			err = syntaxErr
+		}
 		return fmt.Errorf("schema: unmarshaling data for validation: %w", err)
 	}
 
