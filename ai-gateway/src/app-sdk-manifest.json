@@ -54,6 +54,26 @@
                                     }
                                 }
                             }
+                        },
+                        "/v1/chat/completions": {
+                            "post": {
+                                "operationId": "createChatCompletion",
+                                "parameters": [
+                                    {
+                                        "name": "namespace",
+                                        "in": "path",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "OpenAI Chat Completions response"
+                                    }
+                                }
+                            }
                         }
                     }
                 },
@@ -115,6 +135,36 @@
                                 "responses": {
                                     "default": {
                                         "description": "ProviderWire language-model response"
+                                    }
+                                }
+                            }
+                        },
+                        "/namespaces/{namespace}/v1/chat/completions": {
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ],
+                            "post": {
+                                "operationId": "createChatCompletion",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "OpenAI Chat Completions response"
                                     }
                                 }
                             }
