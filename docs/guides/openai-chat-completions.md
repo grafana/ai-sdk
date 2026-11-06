@@ -102,7 +102,7 @@ configured-account callers cannot use it to supply BYOK credentials.
 
 The adapter supports text, client-executed function tools, tool-result
 continuations, JSON output, and streaming for one choice. It does not execute
-functions, persist conversations, or provide files or hosted tools. Unsupported
+functions, persist conversations, upload files, or provide hosted tools. Unsupported
 request fields fail before model invocation. The adapter supplies a call-scoped translator to the shared execution runtime.
 Chat defaults are applied to each native fallback candidate, including
 `store: false` and function strictness;
@@ -128,6 +128,29 @@ omit those extensions, so inspect individual chunks when they matter.
 Empty completions are valid. A token limit or content filter can leave function
 arguments incomplete: inspect `finish_reason` before parsing or executing a tool
 call. Successful complete strict tool calls remain schema-validated.
+
+## Images, audio and files
+
+User content arrays accept `image_url`, `input_audio` and `file` parts alongside
+text, preserving their order. Images accept HTTP(S) URLs or base64 data URLs.
+OpenAI and compatible candidates retain `detail`; Anthropic has no corresponding
+resolution control. Inline files accept a base64 data URL or raw base64 with a
+filename identifying the media type. PDF inputs and uploaded `file_id` values
+map to the native file representation on all three backends. The Gateway does
+not download URLs or upload files.
+
+A `file_id` belongs to the native account selected for that attempt. It must be
+valid for every candidate that may receive the request; the Gateway cannot move
+an uploaded file across providers or accounts. Filenames remain attached to
+inline files where supported by the native API.
+
+WAV and MP3 `input_audio` parts require a compatible Chat candidate. The current
+Responses and Anthropic transports cannot represent those audio inputs; the
+Chat translator refuses them before native I/O instead of dropping them.
+Likewise, unsupported inline media is refused for the selected native transport.
+These capability checks do not establish that every configured model accepts
+images, files or audio. Synthetic native-request tests cover all three backends;
+no live provider acceptance is claimed.
 
 ## Streaming and failures
 
