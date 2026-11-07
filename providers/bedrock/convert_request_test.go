@@ -248,13 +248,13 @@ func TestBuildRequest_FunctionToolStrict(t *testing.T) {
 		{name: "false", modelID: testAnthropicModel, strict: &strictFalse, want: &strictFalse},
 		{name: "unsupported opus 4.7 true", modelID: "anthropic.claude-opus-4-7", strict: &strictTrue, wantWarning: true},
 		{name: "unsupported opus 4.8 false", modelID: "anthropic.claude-opus-4-8", strict: &strictFalse},
-		{name: "unsupported regional opus 5 true", modelID: "us.anthropic.claude-opus-5", strict: &strictTrue, wantWarning: true},
+		{name: "regional opus 5 true", modelID: "us.anthropic.claude-opus-5", strict: &strictTrue, want: &strictTrue},
 		{name: "unsupported fable 5 false", modelID: "eu.anthropic.claude-fable-5", strict: &strictFalse},
 		{name: "unsupported future claude false", modelID: "us.anthropic.claude-opus-6-v1:0", strict: &strictFalse},
-		{name: "unsupported sonnet 5 true", modelID: "anthropic.claude-sonnet-5", strict: &strictTrue, wantWarning: true},
+		{name: "sonnet 5 true", modelID: "anthropic.claude-sonnet-5", strict: &strictTrue, want: &strictTrue},
 		{name: "unsupported future claude true", modelID: "us.anthropic.claude-opus-6-v1:0", strict: &strictTrue, wantWarning: true},
 		{name: "unsupported future minor claude true", modelID: "us.anthropic.claude-opus-4-9-v1:0", strict: &strictTrue, wantWarning: true},
-		{name: "unsupported haiku 5.5 true", modelID: "us.anthropic.claude-haiku-5-5", strict: &strictTrue, wantWarning: true},
+		{name: "haiku 5.5 true", modelID: "us.anthropic.claude-haiku-5-5", strict: &strictTrue, want: &strictTrue},
 		{name: "dated sonnet 4 true", modelID: "anthropic.claude-sonnet-4-20250514-v1:0", strict: &strictTrue, want: &strictTrue},
 		{name: "legacy claude true", modelID: "anthropic.claude-3-haiku-20240307-v1:0", strict: &strictTrue, want: &strictTrue},
 		{name: "non-claude true", modelID: "mistral.mistral-large-2407-v1:0", strict: &strictTrue, want: &strictTrue},
@@ -784,7 +784,7 @@ func TestBuildRequest_JSONResponseToolFallback(t *testing.T) {
 }
 
 func TestBuildRequest_NativeStructuredOutputForSupportedAnthropic(t *testing.T) {
-	schema := json.RawMessage(`{"type":"object"}`)
+	schema := json.RawMessage(`{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}`)
 	req, _, meta := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("x")},
 		ResponseFormat: &provider.ResponseFormat{
@@ -803,8 +803,9 @@ func TestBuildRequest_NativeStructuredOutputForSupportedAnthropic(t *testing.T) 
 func TestBuildRequest_NativeStructuredOutputSanitizesUnsupportedConstraints(t *testing.T) {
 	schema := json.RawMessage(`{"type":"object","properties":{"labels":{"type":"array","maxItems":3,"items":{"type":"string"}}},"required":["labels"],"additionalProperties":true}`)
 	req, _, _ := mustBuildRequest(t, testAnthropicModel, provider.CallOptions{
-		Prompt:         []provider.Message{provider.UserText("x")},
-		ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+		Prompt:          []provider.Message{provider.UserText("x")},
+		ResponseFormat:  &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
+		ProviderOptions: provider.BuildProviderOptions(BedrockOptions{StructuredOutputMode: StructuredOutputModeOutputFormat}),
 	})
 
 	outputConfig, ok := req.AdditionalModelRequestFields["output_config"].(map[string]any)
@@ -848,9 +849,7 @@ func TestBuildRequest_Opus47And48StructuredOutputFallback(t *testing.T) {
 		for _, modelID := range []string{
 			"anthropic.claude-opus-4-7-v1:0",
 			"anthropic.claude-opus-4-8-v1:0",
-			"us.anthropic.claude-opus-5",
 			"anthropic.claude-fable-5-v1:0",
-			"anthropic.claude-sonnet-5-v1:0",
 		} {
 			t.Run(modelID, func(t *testing.T) {
 				req, _, meta := mustBuildRequest(t, modelID, provider.CallOptions{
@@ -888,7 +887,7 @@ func TestBuildRequest_Opus47And48StructuredOutputFallback(t *testing.T) {
 	})
 
 	t.Run("other rejected models use json tool", func(t *testing.T) {
-		for _, modelID := range []string{"us.anthropic.claude-opus-5", "anthropic.claude-fable-5-v1:0", "anthropic.claude-sonnet-5-v1:0"} {
+		for _, modelID := range []string{"anthropic.claude-fable-5-v1:0"} {
 			req, _, meta := mustBuildRequest(t, modelID, provider.CallOptions{
 				Prompt:         []provider.Message{provider.UserText("give me JSON")},
 				ResponseFormat: &provider.ResponseFormat{Type: provider.ResponseFormatJSON, Schema: schema},
@@ -1956,7 +1955,7 @@ func TestBuildRequest_NativeStructuredOutputWhenThinkingEnabled(t *testing.T) {
 	// An older Anthropic model without supportsStructuredOutputCapability, but
 	// with thinking enabled, should still use native structured
 	// output (matching upstream's modelSupportsStructuredOutput || isThinkingEnabled).
-	schema := json.RawMessage(`{"type":"object"}`)
+	schema := json.RawMessage(`{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}`)
 	bo := BedrockOptions{ReasoningConfig: &ReasoningConfig{Type: "enabled", BudgetTokens: 1024}}
 	req, _, meta := mustBuildRequest(t, "anthropic.claude-3-haiku-20240307-v1:0", provider.CallOptions{
 		Prompt: []provider.Message{provider.UserText("x")},

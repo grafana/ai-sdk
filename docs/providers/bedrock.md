@@ -131,7 +131,9 @@ when its ID and request options do not identify it. JSON schema requests can
 use automatic, native output-format, or synthetic JSON-tool routing; automatic
 routing accounts for Bedrock's model-specific native-output reliability and
 uses a system JSON instruction for unknown Claude IDs and for Claude models
-without strict-tool support when caller tools are present.
+without strict-tool support when caller tools are present. Native output is
+skipped for schemas it cannot represent: recursive references, open objects
+such as maps, and more than ten optional properties.
 Reasoning, structured output, cache controls, and other provider options may be
 supported by one family and ignored with a warning by another.
 
@@ -155,8 +157,8 @@ Claude Sonnet 5.5 rejects disabled thinking and forced tool use. For
 `claude-sonnet-5-5` IDs, root reasoning `none` sends `between_tools` thinking
 and explicit disabled thinking is normalized to the same minimum with an unsupported warning. Provider-default calls preserve explicit effort capped at high; custom portable reasoning clears budget and effort before normalization. For this model,
 a `required` or named tool choice is sent as `auto` with a warning, and a JSON
-schema response uses a system-prompt instruction instead of the forced JSON
-tool.
+schema response that native output cannot represent, or that selects the JSON
+tool, uses a system-prompt instruction instead of the forced JSON tool.
 
 ## Handle unsupported content
 
