@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -88,59 +89,51 @@ func TestServedModel_StreamCarriers(t *testing.T) {
 	apiError := provider.NewAPICallError(provider.APICallErrorOptions{Message: "busy", StatusCode: http.StatusServiceUnavailable})
 	invalidFinish := finishPart()
 	invalidFinish.FinishReason = &provider.FinishReason{Unified: provider.FinishReasonStop, Raw: "\xff"}
+	hop := []provider.StreamPart{segmentMeta("msg"), servedMarker("claude-b")}
 	for _, tc := range []struct {
-		name    string
-		limits  func(*execution.Limits)
-		request func(*testing.T, *http.Request) (*http.Request, func())
-		parts   func(ctx context.Context, cancel func()) <-chan provider.StreamPart
-		code    string
+		name     string
+		parts    []provider.StreamPart
+		block    bool
+		idle     time.Duration
+		deadline time.Duration
+		cancel   bool
 	}{
-		{name: "committed error part", parts: func(context.Context, func()) <-chan provider.StreamPart {
-			return makeStream(segmentMeta("msg"), servedMarker("claude-b"), provider.StreamPart{Type: provider.PartError, APICallError: apiError}, finishPart())
-		}},
-		{name: "closed", parts: func(context.Context, func()) <-chan provider.StreamPart {
-			return makeStream(segmentMeta("msg"), servedMarker("claude-b"))
-		}},
-		{name: "invalid output", parts: func(context.Context, func()) <-chan provider.StreamPart {
-			return makeStream(segmentMeta("msg"), servedMarker("claude-b"), provider.StreamPart{Type: provider.PartTextDelta, ID: "missing", Delta: "x"})
-		}},
-		{name: "adapter failure", parts: func(context.Context, func()) <-chan provider.StreamPart {
-			return makeStream(segmentMeta("msg"), servedMarker("claude-b"), invalidFinish)
-		}},
-		{name: "idle timeout", limits: func(limits *execution.Limits) { limits.StreamIdleDuration = 50 * time.Millisecond }, parts: func(ctx context.Context, _ func()) <-chan provider.StreamPart {
-			return blockingStream(ctx, nil, segmentMeta("msg"), servedMarker("claude-b"))
-		}},
-		{name: "deadline", request: func(t *testing.T, r *http.Request) (*http.Request, func()) {
-			return withRequestDeadline(t, r, 100*time.Millisecond), func() {}
-		}, parts: func(ctx context.Context, _ func()) <-chan provider.StreamPart {
-			return blockingStream(ctx, nil, segmentMeta("msg"), servedMarker("claude-b"))
-		}},
-		{name: "canceled", request: func(_ *testing.T, r *http.Request) (*http.Request, func()) {
-			ctx, cancel := context.WithCancel(r.Context())
-			return r.WithContext(ctx), cancel
-		}, parts: func(ctx context.Context, cancel func()) <-chan provider.StreamPart {
-			return blockingStream(ctx, cancel, segmentMeta("msg"), servedMarker("claude-b"))
-		}},
+		{name: "committed error part", parts: append(slices.Clone(hop), provider.StreamPart{Type: provider.PartError, APICallError: apiError}, finishPart())},
+		{name: "closed", parts: hop},
+		{name: "invalid output", parts: append(slices.Clone(hop), provider.StreamPart{Type: provider.PartTextDelta, ID: "missing", Delta: "x"})},
+		{name: "adapter failure", parts: append(slices.Clone(hop), invalidFinish)},
+		{name: "idle timeout", parts: hop, block: true, idle: 50 * time.Millisecond},
+		{name: "deadline", parts: hop, block: true, deadline: 100 * time.Millisecond},
+		{name: "canceled", parts: hop, block: true, cancel: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			limits := testLimits()
-			if tc.limits != nil {
-				tc.limits(&limits)
+			if tc.idle > 0 {
+				limits.StreamIdleDuration = tc.idle
 			}
-			request, cancel := streamRequest(`{"prompt":[]}`), func() {}
-			if tc.request != nil {
-				request, cancel = tc.request(t, request)
+			request := streamRequest(`{"prompt":[]}`)
+			if tc.deadline > 0 {
+				request = withRequestDeadline(t, request, tc.deadline)
 			}
+			ctx, cancel := context.WithCancel(request.Context())
 			defer cancel()
+			request = request.WithContext(ctx)
+			var after func()
+			if tc.cancel {
+				after = cancel
+			}
 			model := &recordingModel{stream: func(ctx context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
-				return &provider.StreamResult{Stream: tc.parts(ctx, cancel)}, nil
+				if tc.block {
+					return &provider.StreamResult{Stream: blockingStream(ctx, after, tc.parts...)}, nil
+				}
+				return &provider.StreamResult{Stream: makeStream(tc.parts...)}, nil
 			}}
 			response := invocationHarness(t, limits, model).serve(request)
 			require.Equal(t, http.StatusOK, response.Code)
 			body := response.Body.String()
 			overviews := documentOverviews(t, body, true)
 			require.NotEmpty(t, overviews, body)
-			assert.Equal(t, "claude-b", servedModels(overviews)[len(overviews)-1], body)
+			assert.Equal(t, slices.Repeat([]string{"claude-b"}, len(overviews)), servedModels(overviews), body)
 			assert.Contains(t, body, `"type":"error"`)
 		})
 	}
@@ -162,7 +155,7 @@ func TestServedModel_UnaryCarriers(t *testing.T) {
 			result := validGenerateResult()
 			result.Content = append([]provider.GenerateContentPart{marker}, provider.GenerateContentPart{Type: provider.ContentText, Text: "x", ProviderExecuted: true})
 			return result
-		}, 0},
+		}, http.StatusInternalServerError},
 		{"mapping error", func() *provider.GenerateResult {
 			result := validGenerateResult()
 			result.Content = append([]provider.GenerateContentPart{marker}, result.Content...)
@@ -173,11 +166,7 @@ func TestServedModel_UnaryCarriers(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			model := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return tc.result(), nil }}
 			response := invocationHarness(t, testLimits(), model).serve(validRequest(`{"prompt":[]}`))
-			if tc.status != 0 {
-				require.Equal(t, tc.status, response.Code, response.Body.String())
-			} else {
-				require.GreaterOrEqual(t, response.Code, http.StatusBadRequest, response.Body.String())
-			}
+			require.Equal(t, tc.status, response.Code, response.Body.String())
 			overviews := documentOverviews(t, response.Body.String(), false)
 			require.Len(t, overviews, 1, response.Body.String())
 			assert.Equal(t, []string{"claude-b"}, servedModels(overviews))

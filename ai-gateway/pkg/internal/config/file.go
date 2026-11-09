@@ -188,8 +188,8 @@ func (file File) Validate() error {
 		if strings.TrimSpace(model.Primary.Model) == "" {
 			return fmt.Errorf("config: models.%s.primary.model is required", id)
 		}
-		if err := validateServerFallbacks(model.Primary.ServerFallbacks, file.Providers[model.Primary.Provider].Type); err != nil {
-			return fmt.Errorf("config: models.%s.primary.serverFallbacks%w", id, err)
+		if err := validateServerFallbacks(fmt.Sprintf("models.%s.primary", id), model.Primary.ServerFallbacks, file.Providers[model.Primary.Provider].Type); err != nil {
+			return err
 		}
 		seenCandidates := map[candidateKey]struct{}{{model.Primary.Provider, model.Primary.Model}: {}}
 		for index, candidate := range model.Fallback {
@@ -204,8 +204,8 @@ func (file File) Validate() error {
 				return fmt.Errorf("config: models.%s.fallback[%d] repeats a candidate", id, index)
 			}
 			seenCandidates[key] = struct{}{}
-			if err := validateServerFallbacks(candidate.ServerFallbacks, file.Providers[candidate.Provider].Type); err != nil {
-				return fmt.Errorf("config: models.%s.fallback[%d].serverFallbacks%w", id, index, err)
+			if err := validateServerFallbacks(fmt.Sprintf("models.%s.fallback[%d]", id, index), candidate.ServerFallbacks, file.Providers[candidate.Provider].Type); err != nil {
+				return err
 			}
 		}
 		if existing, ok := publicIDs[id]; ok {
@@ -254,28 +254,28 @@ func (file File) ResolveProviderSecrets(lookupEnv LookupEnv) (map[string]Resolve
 	return resolved, nil
 }
 
-// validateServerFallbacks returns an error, suffixed to the policy's path,
-// that never contains policy values.
-func validateServerFallbacks(policy *ServerFallbacks, providerType string) error {
+// validateServerFallbacks validates the policy of the candidate at path. Its
+// errors never contain policy values.
+func validateServerFallbacks(path string, policy *ServerFallbacks, providerType string) error {
 	if policy == nil {
 		return nil
 	}
 	if providerType != "anthropic" {
-		return errors.New(" is only supported for anthropic providers")
+		return fmt.Errorf("config: %s.serverFallbacks is only supported for anthropic providers", path)
 	}
 	if !policy.AllowDefault && len(policy.Models) == 0 {
-		return errors.New(" must allow default or at least one model")
+		return fmt.Errorf("config: %s.serverFallbacks must allow default or at least one model", path)
 	}
 	seen := make(map[string]struct{}, len(policy.Models))
 	for index, model := range policy.Models {
 		if strings.TrimSpace(model) == "" {
-			return fmt.Errorf(".models[%d] must not be empty", index)
+			return fmt.Errorf("config: %s.serverFallbacks.models[%d] must not be empty", path, index)
 		}
 		if !validDiscoveryText(model) {
-			return fmt.Errorf(".models[%d] is invalid or exceeds limit", index)
+			return fmt.Errorf("config: %s.serverFallbacks.models[%d] is invalid or exceeds limit", path, index)
 		}
 		if _, exists := seen[model]; exists {
-			return fmt.Errorf(".models[%d] repeats a model", index)
+			return fmt.Errorf("config: %s.serverFallbacks.models[%d] repeats a model", path, index)
 		}
 		seen[model] = struct{}{}
 	}

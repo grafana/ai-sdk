@@ -34,14 +34,12 @@ type serverFallbackRequest struct {
 	body map[string]any
 }
 
-// serverFallbackBackend records Anthropic requests by host and answers them,
-// failing hosts in failing with a retryable 503. A marker returns an
-// anthropic fallback block from claude-a to that model.
+// serverFallbackBackend records Anthropic requests by host and answers them.
+// A marker returns an anthropic fallback block from claude-a to that model.
 type serverFallbackBackend struct {
-	failing map[string]bool
-	marker  string
-	mu      sync.Mutex
-	seen    []serverFallbackRequest
+	marker string
+	mu     sync.Mutex
+	seen   []serverFallbackRequest
 }
 
 func (b *serverFallbackBackend) client() *http.Client {
@@ -57,9 +55,6 @@ func (b *serverFallbackBackend) client() *http.Client {
 		b.mu.Lock()
 		b.seen = append(b.seen, serverFallbackRequest{host: r.URL.Host, beta: r.Header.Get("Anthropic-Beta"), body: body})
 		b.mu.Unlock()
-		if b.failing[r.URL.Host] {
-			return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"overloaded_error","message":"busy"}}`)), Request: r}, nil
-		}
 		streaming, _ := body["stream"].(bool)
 		contentType, response := "application/json", anthropicFallbackResponse(b.marker, streaming)
 		if streaming {
@@ -95,61 +90,30 @@ func anthropicFallbackResponse(marker string, streaming bool) string {
 	return events + "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
 }
 
-// serveWire sends body to model through a wire handler for a caller with
-// access and returns the response and its execution overview.
-func serveWire(t *testing.T, selector execution.RequestSelector, access gatewayauth.AccountAccess, model, body string, streaming bool) (*httptest.ResponseRecorder, *execution.Overview) {
+// serveConfigured sends body to model through a wire handler for a configured
+// caller and returns the response and its last execution overview.
+func serveConfigured(t *testing.T, selector execution.RequestSelector, model, body string, streaming bool) (*httptest.ResponseRecorder, *execution.Overview) {
 	t.Helper()
 	handler, err := newWireHandler(execution.Config{Selector: selector, Limits: serviceTestLimits()})
 	require.NoError(t, err)
-	request := httptest.NewRequestWithContext(callerContext(t, access), http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
+	request := httptest.NewRequestWithContext(callerContext(t, gatewayauth.ConfiguredAccounts), http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(providerv4.HeaderSpecificationVersion, providerv4.SpecificationVersion)
 	request.Header.Set(providerv4.HeaderModelID, model)
 	request.Header.Set(providerv4.HeaderStreaming, fmt.Sprint(streaming))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	return response, wireOverview(t, response, streaming)
+	return response, lastOverview(t, response)
 }
 
-// wireOverview returns the last execution overview a wire response carries.
-func wireOverview(t *testing.T, response *httptest.ResponseRecorder, streaming bool) *execution.Overview {
+// lastOverview returns the last execution overview a wire response carries.
+func lastOverview(t *testing.T, response *httptest.ResponseRecorder) *execution.Overview {
 	t.Helper()
-	documents := []string{response.Body.String()}
-	if streaming && response.Code == http.StatusOK {
-		documents = nil
-		for _, line := range strings.Split(response.Body.String(), "\n") {
-			if data, ok := strings.CutPrefix(line, "data: "); ok {
-				documents = append(documents, data)
-			}
-		}
+	overviews := responseOverviews(t, response.Body.String())
+	if len(overviews) == 0 {
+		return nil
 	}
-	var overview *execution.Overview
-	for _, document := range documents {
-		var carrier struct {
-			ProviderMetadata struct {
-				Gateway struct {
-					Execution *execution.Overview `json:"execution"`
-				} `json:"gateway"`
-			} `json:"providerMetadata"`
-			Error struct {
-				Data struct {
-					ProviderMetadata struct {
-						Gateway struct {
-							Execution *execution.Overview `json:"execution"`
-						} `json:"gateway"`
-					} `json:"providerMetadata"`
-				} `json:"data"`
-			} `json:"error"`
-		}
-		require.NoError(t, json.Unmarshal([]byte(document), &carrier), document)
-		if carrier.ProviderMetadata.Gateway.Execution != nil {
-			overview = carrier.ProviderMetadata.Gateway.Execution
-		}
-		if carrier.Error.Data.ProviderMetadata.Gateway.Execution != nil {
-			overview = carrier.Error.Data.ProviderMetadata.Gateway.Execution
-		}
-	}
-	return overview
+	return &overviews[len(overviews)-1]
 }
 
 func serverFallbackCatalog(t *testing.T, client *http.Client, primary, backup *config.ServerFallbacks, withBackup bool) *Catalog {
@@ -192,7 +156,7 @@ func TestNativeServerFallbacks_ConfiguredPolicy(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
 				backend := &serverFallbackBackend{}
 				created := serverFallbackCatalog(t, backend.client(), tc.primary, tc.backup, tc.withBackup)
-				response, overview := serveWire(t, execution.CatalogSelector(created), gatewayauth.ConfiguredAccounts, "public", tc.body, streaming)
+				response, overview := serveConfigured(t, execution.CatalogSelector(created), "public", tc.body, streaming)
 				requests := backend.requests()
 				if !tc.allowed {
 					assert.Equal(t, http.StatusBadRequest, response.Code, response.Body.String())
@@ -253,7 +217,7 @@ func TestNativeServerFallbacks_ServedModel(t *testing.T) {
 		t.Run(fmt.Sprintf("configured/stream=%t", streaming), func(t *testing.T) {
 			backend := &serverFallbackBackend{marker: "claude-b"}
 			created := serverFallbackCatalog(t, backend.client(), &config.ServerFallbacks{Models: []string{"claude-b"}}, nil, false)
-			response, overview := serveWire(t, execution.CatalogSelector(created), gatewayauth.ConfiguredAccounts, "public", serverFallbackChain, streaming)
+			response, overview := serveConfigured(t, execution.CatalogSelector(created), "public", serverFallbackChain, streaming)
 			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 			require.NotNil(t, overview)
 			require.Len(t, overview.Attempts, 1)
@@ -263,7 +227,7 @@ func TestNativeServerFallbacks_ServedModel(t *testing.T) {
 		t.Run(fmt.Sprintf("configured without a hop/stream=%t", streaming), func(t *testing.T) {
 			backend := &serverFallbackBackend{}
 			created := serverFallbackCatalog(t, backend.client(), &config.ServerFallbacks{Models: []string{"claude-b"}}, nil, false)
-			response, overview := serveWire(t, execution.CatalogSelector(created), gatewayauth.ConfiguredAccounts, "public", serverFallbackChain, streaming)
+			response, overview := serveConfigured(t, execution.CatalogSelector(created), "public", serverFallbackChain, streaming)
 			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 			require.NotNil(t, overview)
 			assert.Empty(t, overview.Attempts[0].ServedModelID)
@@ -271,9 +235,9 @@ func TestNativeServerFallbacks_ServedModel(t *testing.T) {
 		})
 		t.Run(fmt.Sprintf("BYOK/stream=%t", streaming), func(t *testing.T) {
 			backend := &serverFallbackBackend{marker: "claude-b"}
-			selector := byokSelector(backend.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
 			body := `{"prompt":[],"providerOptions":{"anthropic":{"fallbacks":"default"},"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-request-key"}]}}}}`
-			response, overview := serveWire(t, selector, gatewayauth.RequestBYOK, "anthropic/native-model", body, streaming)
+			response := serveBYOK(t, backend.client(), "anthropic/native-model", body, streaming)
+			overview := lastOverview(t, response)
 			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 			requests := backend.requests()
 			require.Len(t, requests, 1)

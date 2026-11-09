@@ -359,10 +359,7 @@ func TestServedModel(t *testing.T) {
 	}
 	configuredCall := func(t *testing.T, model provider.LanguageModel) *Call {
 		t.Helper()
-		selector := func(ctx context.Context, id string, options provider.CallOptions, gateway json.RawMessage) (Selection, error) {
-			return CatalogSelector(staticResolver{resolved: resolved(model)})(ctx, id, options, gateway)
-		}
-		call, err := newRuntime(t, selector, testLimits()).Call(t.Context(), "alias", provider.CallOptions{})
+		call, err := newRuntime(t, CatalogSelector(staticResolver{resolved: resolved(model)}), testLimits()).Call(t.Context(), "alias", provider.CallOptions{})
 		require.NoError(t, err)
 		t.Cleanup(call.Close)
 		return call
@@ -407,13 +404,12 @@ func TestServedModel(t *testing.T) {
 	}
 
 	t.Run("no marker keeps the overview byte-identical", func(t *testing.T) {
-		plain := configuredCall(t, generated())
-		_, err := plain.Generate()
+		call := configuredCall(t, generated(provider.GenerateContentPart{Type: provider.ContentText, Text: "answer"}))
+		_, err := call.Generate()
 		require.NoError(t, err)
-		withText := configuredCall(t, generated(provider.GenerateContentPart{Type: provider.ContentText, Text: "answer"}))
-		_, err = withText.Generate()
+		encoded, err := json.Marshal(call.View(nil).Overview)
 		require.NoError(t, err)
-		assert.Equal(t, plain.View(nil).Metadata(), withText.View(nil).Metadata())
+		assert.Equal(t, `{"requestedModelId":"alias","canonicalModelId":"canonical","attempts":[{"provider":"anthropic","modelId":"backend","providerInstance":"configured","outcome":"selected"}]}`, string(encoded))
 	})
 
 	t.Run("routing summary is unchanged by a marker", func(t *testing.T) {

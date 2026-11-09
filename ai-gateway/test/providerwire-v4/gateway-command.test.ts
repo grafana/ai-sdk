@@ -9,7 +9,7 @@ import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
 import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
 import type { JSONValue, LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import { generateText, isStepCount, jsonSchema, Output, stepCountIs, streamText, tool } from "ai";
+import { generateText, isStepCount, jsonSchema, Output, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 import packageManifest from "./package.json" with { type: "json" };
 import { fetchConfiguredModels } from "../../examples/configured-discovery";
@@ -3087,7 +3087,7 @@ describe("recorded Anthropic server-side fallback through the Gateway command", 
       const backend = backends.get(fixture.name)!;
       const before = backend.requests.length;
       const modelID = `recorded/${fixture.name}-allowed`;
-      const result = streamText({ model: gateway.client()(modelID), prompt: cfg.prompt!, providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"], stopWhen: stepCountIs(1), maxRetries: 0, _internal: { generateId: mockId("id") } });
+      const result = streamText({ model: gateway.client()(modelID), prompt: cfg.prompt!, providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"], stopWhen: isStepCount(1), maxRetries: 0, _internal: { generateId: mockId("id") } });
       const chunks = [];
       for await (const chunk of result.toUIMessageStream()) chunks.push(JSON.parse(JSON.stringify(chunk)));
       assert.deepEqual(chunks, expectedChunks);

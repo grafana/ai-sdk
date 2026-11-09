@@ -82,7 +82,7 @@
         "provider": { "type": "string", "minLength": 1 },
         "modelId": { "type": "string", "minLength": 1 },
         "servedModelId": {
-          "description": "Model that served the selected attempt's output after an Anthropic server-side fallback, when it differs from modelId. Absent when no fallback happened.",
+          "description": "Model that served the selected attempt's output, from the latest Anthropic server-side fallback marker it reported. Absent when it reported no marker.",
           "type": "string",
           "minLength": 1
         },

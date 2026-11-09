@@ -217,8 +217,8 @@ It combines with [Gateway fallback](#configure-fallback) and
 Calls with [your own key](#use-your-own-provider-credentials) send
 `fallbacks` to Anthropic unchanged, without any Gateway policy; your account
 pays for the fallback model, including the one Anthropic chooses for
-`"default"`. Either way, the execution overview reports which model served
-the response.
+`"default"`. Either way, when Anthropic switches models, the execution
+overview reports the model that answered as `servedModelId`.
 
 ## Use your own provider credentials
 

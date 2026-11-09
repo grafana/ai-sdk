@@ -539,10 +539,7 @@ func TestRoutedSelection_BYOKNativeOptions(t *testing.T) {
 			assert.Len(t, overview.Attempts, 2)
 		})
 		t.Run(tc.name+"/mixed chain", func(t *testing.T) {
-			server := &nativeServer{}
-			if tc.forwarded {
-				server.failing = map[string]bool{"api.anthropic.com": true}
-			}
+			server := &nativeServer{failing: map[string]bool{"api.anthropic.com": true}}
 			selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
 			overview, err := byokRoutedCall(t, selector, `{`+accounts+`,"models":["openai/y"]}`, anthropic(tc.options))
 			require.NoError(t, err)
@@ -649,7 +646,7 @@ func TestRoutedSelection_ServerFallbackPolicy(t *testing.T) {
 				backend := &serverFallbackBackend{}
 				created, err := BuildCatalog(file, providers, backend.client(), identityModelFactory)
 				require.NoError(t, err)
-				response, overview := serveWire(t, NewSelector(created, nil), gatewayauth.ConfiguredAccounts, tc.model, body(tc.fallbackModel), streaming)
+				response, overview := serveConfigured(t, NewSelector(created, nil), tc.model, body(tc.fallbackModel), streaming)
 				require.Equal(t, tc.status, response.Code, response.Body.String())
 				requests := backend.requests()
 				hosts := make([]string, len(requests))
