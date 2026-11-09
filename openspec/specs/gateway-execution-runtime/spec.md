@@ -193,7 +193,7 @@ Every selection SHALL get its own attempt capture, scoped to the call's context.
 
 #### Scenario: Served model after sealing
 - **WHEN** a selected stream emits an `anthropic.fallback` marker after its first part sealed the capture
-- **THEN** the overview SHALL carry that marker's served model on the selected attempt, and the attempts list SHALL equal the sealed list
+- **THEN** the overview SHALL carry that marker's served model on the selected attempt, and the attempts list and its check against the expected attempts SHALL be unchanged
 
 #### Scenario: Selection without attribution
 - **WHEN** a selector returns a valid selection with neither configured nor request-account attribution and its model reports fallback attempts

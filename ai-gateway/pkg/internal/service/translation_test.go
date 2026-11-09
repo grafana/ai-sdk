@@ -412,8 +412,8 @@ func TestTranslation_ConcurrentCallsAreIsolated(t *testing.T) {
 
 func TestTranslation_BYOKForwardsServerSideFallback(t *testing.T) {
 	for _, tc := range []struct{ name, options, field, beta string }{
-		{"chain", `{"fallbacks":[{"model":"claude-any"},{"model":"claude-any"}]}`, `"fallbacks":[{"model":"claude-any"},{"model":"claude-any"}]`, "server-side-fallback-2026-06-01"},
-		{"default", `{"fallbacks":"default"}`, `"fallbacks":"default"`, "server-side-fallback-2026-07-01"},
+		{"chain", `{"fallbacks":[{"model":"claude-any"},{"model":"claude-any"}]}`, `"fallbacks":[{"model":"claude-any"},{"model":"claude-any"}]`, explicitFallbackBeta},
+		{"default", `{"fallbacks":"default"}`, `"fallbacks":"default"`, defaultFallbackBeta},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &nativeServer{}

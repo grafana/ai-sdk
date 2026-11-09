@@ -514,8 +514,8 @@ func TestRoutedSelection_BYOKNativeOptions(t *testing.T) {
 		forwarded                  bool
 	}{
 		{name: "skills", options: `{"container":{"skills":[{"type":"custom","skillId":"external"}]}}`},
-		{name: "server-side fallback chain", options: `{"fallbacks":[{"model":"claude-any"}]}`, field: `"fallbacks":[{"model":"claude-any"}]`, beta: "server-side-fallback-2026-06-01", forwarded: true},
-		{name: "server-side fallback default", options: `{"fallbacks":"default"}`, field: `"fallbacks":"default"`, beta: "server-side-fallback-2026-07-01", forwarded: true},
+		{name: "server-side fallback chain", options: `{"fallbacks":[{"model":"claude-any"}]}`, field: `"fallbacks":[{"model":"claude-any"}]`, beta: explicitFallbackBeta, forwarded: true},
+		{name: "server-side fallback default", options: `{"fallbacks":"default"}`, field: `"fallbacks":"default"`, beta: defaultFallbackBeta, forwarded: true},
 	} {
 		t.Run(tc.name+"/all-Anthropic chain", func(t *testing.T) {
 			server := &nativeServer{failing: map[string]bool{"api.anthropic.com": true}}
@@ -649,12 +649,12 @@ func TestRoutedSelection_ServerFallbackPolicy(t *testing.T) {
 				response, overview := serveConfigured(t, NewSelector(created, nil), tc.model, body(tc.fallbackModel), streaming)
 				require.Equal(t, tc.status, response.Code, response.Body.String())
 				requests := backend.requests()
-				hosts := make([]string, len(requests))
+				got := make([]string, len(requests))
 				for i, request := range requests {
-					hosts[i] = request.host
+					got[i] = request.host
 					assert.Equal(t, []any{map[string]any{"model": "claude-b"}}, request.body["fallbacks"])
 				}
-				assert.Equal(t, tc.hosts, hosts)
+				assert.Equal(t, tc.hosts, got)
 				require.NotNil(t, overview)
 				outcomes := make([]fallback.AttemptOutcome, len(overview.Attempts))
 				for i, attempt := range overview.Attempts {

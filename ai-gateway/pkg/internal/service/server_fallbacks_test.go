@@ -251,3 +251,25 @@ func TestNativeServerFallbacks_ServedModel(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeServerFallbacks_BYOKIgnoresConfiguredPolicy(t *testing.T) {
+	const byokDefault = `{"prompt":[],"providerOptions":{"gateway":{"byok":{"anthropic":[{"apiKey":"dummy-request-key"}]}},"anthropic":{"fallbacks":"default"}}}`
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", streaming), func(t *testing.T) {
+			backend := &serverFallbackBackend{}
+			client := backend.client()
+			selector := NewSelector(serverFallbackCatalog(t, client, &config.ServerFallbacks{Models: []string{"claude-b"}}, nil, false), &BYOKOptions{Client: client, Factory: identityModelFactory})
+
+			configured, _ := serveConfigured(t, selector, "public", serverFallbackDefault, streaming)
+			require.Equal(t, http.StatusBadRequest, configured.Code, configured.Body.String())
+			require.Empty(t, backend.requests())
+
+			response := serveBYOKWith(t, selector, "anthropic/backend", byokDefault, streaming)
+			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+			requests := backend.requests()
+			require.Len(t, requests, 1)
+			assert.Equal(t, "default", requests[0].body["fallbacks"])
+			assert.Contains(t, strings.Split(requests[0].beta, ","), defaultFallbackBeta)
+		})
+	}
+}

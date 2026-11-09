@@ -22,14 +22,11 @@ func servedMarker(to string) provider.StreamPart {
 
 // documentOverviews returns the execution overview of every unary document or
 // stream frame in body that carries one, in order.
-func documentOverviews(t *testing.T, body string, streaming bool) []*execution.Overview {
+func documentOverviews(t *testing.T, body string) []*execution.Overview {
 	t.Helper()
-	documents := []string{body}
-	if streaming {
-		documents = nil
-		for _, frame := range strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n") {
-			documents = append(documents, strings.TrimPrefix(frame, "data: "))
-		}
+	var documents []string
+	for _, frame := range strings.Split(strings.TrimSuffix(body, "\n\n"), "\n\n") {
+		documents = append(documents, strings.TrimPrefix(frame, "data: "))
 	}
 	type gateway struct {
 		Gateway struct {
@@ -131,7 +128,7 @@ func TestServedModel_StreamCarriers(t *testing.T) {
 			response := invocationHarness(t, limits, model).serve(request)
 			require.Equal(t, http.StatusOK, response.Code)
 			body := response.Body.String()
-			overviews := documentOverviews(t, body, true)
+			overviews := documentOverviews(t, body)
 			require.NotEmpty(t, overviews, body)
 			assert.Equal(t, slices.Repeat([]string{"claude-b"}, len(overviews)), servedModels(overviews), body)
 			assert.Contains(t, body, `"type":"error"`)
@@ -167,7 +164,7 @@ func TestServedModel_UnaryCarriers(t *testing.T) {
 			model := &recordingModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) { return tc.result(), nil }}
 			response := invocationHarness(t, testLimits(), model).serve(validRequest(`{"prompt":[]}`))
 			require.Equal(t, tc.status, response.Code, response.Body.String())
-			overviews := documentOverviews(t, response.Body.String(), false)
+			overviews := documentOverviews(t, response.Body.String())
 			require.Len(t, overviews, 1, response.Body.String())
 			assert.Equal(t, []string{"claude-b"}, servedModels(overviews))
 		})
@@ -187,5 +184,5 @@ func TestStreamingSegments_ExecutionOverviewServedModel(t *testing.T) {
 	response := invocationHarness(t, testLimits(), model).serve(streamRequest(`{"prompt":[]}`))
 	require.Equal(t, http.StatusOK, response.Code)
 	requireStreamBodyMatchesSchema(t, response.Body.String())
-	assert.Equal(t, []string{"claude-b", "claude-c"}, servedModels(documentOverviews(t, response.Body.String(), true)))
+	assert.Equal(t, []string{"claude-b", "claude-c"}, servedModels(documentOverviews(t, response.Body.String())))
 }
