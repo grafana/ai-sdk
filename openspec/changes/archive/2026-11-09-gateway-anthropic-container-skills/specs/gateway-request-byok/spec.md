@@ -34,7 +34,7 @@ Request-only invocation SHALL retain shared consumption-backed guards before att
 - **THEN** the native adapter SHALL receive them without consulting configured skills policies or accounts
 
 ### Requirement: Shared native execution protections
-Configured and request-only models SHALL share consumption-backed native protection. Valid Anthropic MCP/history, bounded container skills and inert markers SHALL survive; bounded container IDs SHALL survive only on request-only accounts, and configured candidates SHALL refuse them. Unsupported consumed execution controls in the request SHALL fail before any account attempt, and those produced by per-attempt translation SHALL fail that account's attempt before its native request, without new field inventories or adapter changes.
+Configured and request-only models SHALL share consumption-backed native protection. Valid Anthropic MCP/history, bounded container skills, request-only bounded container IDs and inert markers SHALL survive; unsupported consumed execution controls in the request SHALL fail before any account attempt, and those produced by per-attempt translation SHALL fail that account's attempt before its native request, without new field inventories or adapter changes.
 
 #### Scenario: Native consumption policy
 - **WHEN** an Anthropic request-only model receives native options and history

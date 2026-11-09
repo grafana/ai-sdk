@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Consumption-backed guard weakening audit
-Before weakening global guards, the implementation SHALL record each actual consumed override path, namespace/scope, recognized spelling, native precedence, disposition and paired bypass/harmless regression case. When a refusal is replaced by an operator policy, the audit SHALL also record the policy owner and default, and the disposition in each invocation mode. When a change tightens a previously admitted consumed path, the audit SHALL record the prior disposition and where it was decided, the new disposition in each invocation mode, and paired refused/still-admitted cases. This audit SHALL NOT introduce a new provider-field inventory or blanket all-provider scope validator.
+Before weakening global guards, the implementation SHALL record each actual consumed override path, namespace/scope, recognized spelling, native precedence, disposition and paired bypass/harmless regression case. Policy-gated relaxations and tightenings SHALL also record each mode's disposition and the prior source. This audit SHALL NOT introduce a new provider-field inventory or blanket all-provider scope validator.
 
 #### Scenario: Consumption-backed guard weakening audit
 - **WHEN** a change weakens a global option guard for an actual native consumed path

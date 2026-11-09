@@ -58,11 +58,19 @@ Ordinary ignored fields, safe contextual native controls and nested opaque appli
 - **THEN** the harmless request SHALL retain its value for native interpretation and the bypass request SHALL use the fixed safe error without echoing supplied content
 
 ### Requirement: Consumption-backed guard weakening audit
-Before weakening global guards, the implementation SHALL record each actual consumed override path, namespace/scope, recognized spelling, native precedence, disposition and paired bypass/harmless regression case. This audit SHALL NOT introduce a new provider-field inventory or blanket all-provider scope validator.
+Before weakening global guards, the implementation SHALL record each actual consumed override path, namespace/scope, recognized spelling, native precedence, disposition and paired bypass/harmless regression case. Policy-gated relaxations and tightenings SHALL also record each mode's disposition and the prior source. This audit SHALL NOT introduce a new provider-field inventory or blanket all-provider scope validator.
 
 #### Scenario: Consumption-backed guard weakening audit
 - **WHEN** a change weakens a global option guard for an actual native consumed path
 - **THEN** the audit SHALL record namespace/scope/spelling, native precedence, disposition and paired bypass/harmless cases without adding a provider inventory or all-provider scope validator
+
+#### Scenario: Policy-gated relaxation
+- **WHEN** a change admits a previously refused consumed path only under a configured candidate policy
+- **THEN** the audit SHALL record the policy owner, the deny-by-default behavior and the configured and BYOK dispositions, with paired allowed/disallowed cases in both modes
+
+#### Scenario: Guard tightening
+- **WHEN** a change refuses a consumed path that an earlier change admitted
+- **THEN** the audit SHALL record the earlier disposition and its source, the new configured and BYOK dispositions, and paired cases showing the refusal and the still-admitted values
 
 ### Requirement: Native-consumed request semantics have independent proof
 Acceptance SHALL include the exact registered TypeScript Gateway client and independent Go Grafana client driving direct unary and streaming production handlers and the authenticated command. Synthetic native Anthropic, OpenAI Responses and compatible HTTP request assertions SHALL prove consumed values, scoped extensions, namespace precedence, ordinary negative controls and supplied caller history. Missing codecs SHALL remain explicit errors before model invocation.
@@ -124,3 +132,14 @@ Admitting custom history and custom tool-result entries SHALL record the consump
 #### Scenario: Compaction item reference through a configured account
 - **WHEN** a caller supplies `openai.compaction` history with an `itemId` on a route whose OpenAI adapter stores responses
 - **THEN** the audit SHALL record that the adapter sends an item reference within the configured account, its disposition relative to the accepted reasoning `itemId` precedent, and a regression case
+
+### Requirement: Container consumption audit
+Admitting Anthropic container skills and refusing configured container IDs SHALL record the audit for the consumed `anthropic` call-namespace `container` path (`skills` and `id`), covering case-insensitive typed decoding and custom-skill ID resolution. The dispositions SHALL be: skills policy-gated in configured mode and bounded in BYOK; `container.id` refused in configured mode with or without skills, and bounded in BYOK. Each disposition SHALL have paired bypass/harmless cases.
+
+#### Scenario: Container ID tightening is recorded
+- **WHEN** configured candidates start refusing a container ID without skills
+- **THEN** the audit SHALL record it as a tightening of the `2026-10-02-forward-native-provider-options` disposition that admitted a container ID without skills
+
+#### Scenario: Container path is recorded
+- **WHEN** the skills refusal is replaced by the gateway-anthropic-skills policy and configured container IDs are refused
+- **THEN** the audit SHALL record the consumed path, its dispositions per mode, the container-ID tightening and its prior source, and paired cases including a configured ID-only container refused, a BYOK ID-only container admitted, empty or null containers remaining no-ops and custom-part `container` scopes remaining inert

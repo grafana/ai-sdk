@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Unsupported-functionality rejection classification
-When unary invocation or stream setup fails with the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline, API-call-error and transport classification SHALL take precedence. When the failure is a chain aggregate, the rejection SHALL count as a refusal and the aggregate SHALL follow the gateway-execution-runtime aggregate rule.
+When unary invocation or stream setup fails with the provider unsupported-functionality rejection, the handler SHALL return the fixed non-retryable invalid-request error, which MAY be accompanied by the optional execution overview. Existing unsupported-request, cancellation, deadline, API-call-error and transport classification SHALL take precedence; a chain aggregate SHALL follow the gateway-execution-runtime aggregate rule.
 
 #### Scenario: Direct rejection
 - **WHEN** a direct route's adapter returns a wrapped unsupported-functionality rejection before any I/O, in unary or streaming setup

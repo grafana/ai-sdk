@@ -42,7 +42,7 @@ Custom skills and containers are resources of the operator's Anthropic account. 
 - `gateway-request-byok`: skills are no longer refused in either mode; they follow `gateway-anthropic-skills`, which bounds them in BYOK and policy-gates them in configured mode. Container IDs survive only in BYOK; configured candidates refuse them.
 - `gateway-native-provider-options`: the guard audit covers policy-gated relaxations and tightenings, and records the container path.
 - `gateway-provider-configuration`: candidate native-option policies are configured state that BYOK never consults.
-- `gateway-execution-runtime`: "Closed failure classification" gains the aggregate-chain rule.
+- `gateway-execution-runtime`: a new "Aggregate chain-failure classification" requirement beside "Closed failure classification".
 - `providerwire-v4-unary-runtime`: "Unsupported-functionality rejection classification" treats the rejection as a refusal in chain aggregates, so a rejection next to an unknown error is internal.
 - `complex-server-tools`: adds the Anthropic container-skills request mapping (`providerReference`, required betas and the missing-code-execution warning) next to the code-execution tool definitions it depends on.
 

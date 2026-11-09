@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Configured provider state cannot influence BYOK
-All startup provider-instance configuration, configured candidate native-option policies, secret resolution, custom endpoints and constructed account-bound models SHALL belong exclusively to configured-account access. BYOK provider construction SHALL use supported built-in adapters, fixed native destinations and supplied request credentials without consulting those instances, candidate policies or ambient SDK credentials. Credential-independent transport/lifecycle infrastructure SHALL remain reusable without shared mutable authentication state.
+All startup provider-instance and candidate-policy configuration, secret resolution, custom endpoints and account-bound models SHALL belong exclusively to configured-account access. BYOK provider construction SHALL use supported built-in adapters, fixed native destinations and supplied request credentials without consulting that configuration or ambient SDK credentials. Credential-independent transport/lifecycle infrastructure SHALL remain reusable without shared mutable authentication state.
 
 #### Scenario: Configured provider of the same type exists
 - **WHEN** an OpenAI BYOK request arrives and an OpenAI instance has a configured custom endpoint and key
