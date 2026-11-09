@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
+	"github.com/grafana/ai-sdk/providers/anthropic"
 	openaicompatible "github.com/grafana/ai-sdk/providers/openai-compatible"
 )
 
@@ -78,7 +79,7 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			switch providerConfig.Type {
 			case "anthropic":
 				candidate = construct(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
-				validateOptions = nativeoptions.Anthropic
+				validateOptions = nativeoptions.Anthropic(anthropicPolicy(descriptor.Skills))
 				target.Type = execution.TargetAnthropic
 			case "openai-compatible":
 				if providerConfig.BaseURL == "" {
@@ -172,4 +173,18 @@ func identityModelFactory(canonicalID string, lower provider.LanguageModel) (pro
 		ProviderID: "grafana",
 		ModelID:    canonicalID,
 	}), nil
+}
+
+// anthropicPolicy converts a configured candidate's skills policy. Configured
+// candidates never admit container IDs, and a nil or empty policy refuses every
+// skill.
+func anthropicPolicy(skills *config.SkillsPolicy) nativeoptions.AnthropicPolicy {
+	if skills == nil {
+		return nativeoptions.AnthropicPolicy{}
+	}
+	grants := make([]nativeoptions.AnthropicSkillGrant, 0, len(skills.Allow))
+	for _, entry := range skills.Allow {
+		grants = append(grants, nativeoptions.AnthropicSkillGrant{Type: anthropic.ContainerSkillType(entry.Type), SkillID: entry.SkillID, Versions: entry.Versions})
+	}
+	return nativeoptions.AnthropicPolicy{Skills: nativeoptions.AllowlistedAnthropicSkills(grants)}
 }

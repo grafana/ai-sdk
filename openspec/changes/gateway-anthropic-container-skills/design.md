@@ -186,6 +186,18 @@ A failure that is not an aggregate keeps today's rules, so a lone refusal stays 
 
 *Alternatives:* keep "any refusal wins" (rejected: it hides real outages and cancellations behind 400) or pick the most severe failure (rejected: severity has no closed order, and the newest failure is what the chain ended on).
 
+## Container consumption audit
+
+Recorded before the enforcement change (spec "Container consumption audit"). Prior disposition: the `2026-10-02-forward-native-provider-options` audit (`design.md:116`) refused non-empty container skills and allowed "container ID without skills" in both modes.
+
+| Consumed path | Decoding and precedence | Disposition | Paired cases |
+| --- | --- | --- | --- |
+| `anthropic` call namespace `container.skills` (`ResolveOption[AnthropicOptions]`, `validateContainerSkills`, `applyProviderOptions`) | Exact `anthropic` namespace; typed JSON decoding with case-insensitive field names; the skill ID resolves through `ContainerSkill.ResolveSkillID` (`skillId` for `anthropic`, `providerReference.anthropic` for `custom`), the same rule the adapter sends. | **Relaxed under policy.** Owner: the configured candidate's `skills.allow`; default deny (zero `AnthropicPolicy`). Configured: static bounds plus allowlist and exact version match. BYOK: static bounds only (`RequestAccountAnthropicPolicy`). | Allowed vs unlisted, wrong-version and no-policy skills in configured mode; bounded vs 21-skill, malformed and duplicate skills in both modes (`nativeoptions` 3.1, `service` 3.4-3.5, `byok` 3.6, command 3.7); empty, null or absent skills stay no-ops. |
+| `anthropic` call namespace `container.id` (same path; sent only when non-empty, `convert_request.go:3141`) | As above; an empty ID is omitted by the adapter, so it is a no-op. | **Tightened.** Configured: refused with or without skills. BYOK: admitted when valid UTF-8 of at most 128 bytes. | Configured ID-only and ID-plus-skills refused, including after translation and in a heterogeneous chain; BYOK ID-only admitted at 128 bytes, refused at 129 bytes; empty ID and null container admitted in both modes. |
+| Custom-part `container` scopes (`native_options_test.go:173`) | Not read by the adapter. | Inert, unchanged. | `container` never reaches the native body. |
+
+The two-tenant case (spec "Two tenants call one candidate") holds by construction, because the validator takes no tenant input; command task 3.7 covers it, and the routed cases in 3.5 cover per-candidate policy under routing.
+
 ## Work packages and delivery
 
 1. **WP1, `providers/anthropic` parity:** tests first (request snapshots in `convert_request_test.go`). Breaking for the provider module.
