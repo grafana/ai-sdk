@@ -132,7 +132,7 @@ This change archives on merge together with WP1-WP4, the spec deltas and the doc
 
 ## 6. Integration checks and records
 
-- [x] 6.1 Run `mise run fmt`, `mise run vet`, `mise run lint`, `mise run test`, `mise run parity-check`, `MODULE=providers/anthropic mise run verify-module` and `openspec validate gateway-anthropic-container-skills --strict`. Verify that all pass.
+- [x] 6.1 Run `mise run fmt`, `mise run vet`, `mise run lint`, `mise run test`, `mise run parity-check`, `MODULE=providers/anthropic mise run verify-module` and `openspec validate gateway-anthropic-container-skills --strict`. Verify that all pass. The `parity-coverage` step of `parity-check` ran in CI on PR #755, because the local upstream checkout was unreadable.
 - [x] 6.2 Confirm that `test/conformance/PARITY.md` needs no edit, because no surface status or evidence location changes. Verify that `git diff --stat test/conformance/PARITY.md` is empty.
 
 ## Workflow follow-up

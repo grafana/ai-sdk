@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
-	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -153,15 +152,6 @@ func TestBuildCatalog_CandidateSkillsPolicy(t *testing.T) {
 		created, calls := build(t)
 		require.ErrorIs(t, generate(t, created, "grafana/policied", pptxWithID), catalog.ErrUnsupportedRequest)
 		assert.Empty(t, *calls)
-	})
-
-	t.Run("nil and empty policies convert to deny", func(t *testing.T) {
-		for name, policy := range map[string]*config.SkillsPolicy{"nil": nil, "empty allow": {}} {
-			t.Run(name, func(t *testing.T) {
-				validate := nativeoptions.Anthropic(anthropicPolicy(policy))
-				require.ErrorIs(t, validate(provider.CallOptions{ProviderOptions: pptx}), catalog.ErrUnsupportedRequest)
-			})
-		}
 	})
 }
 

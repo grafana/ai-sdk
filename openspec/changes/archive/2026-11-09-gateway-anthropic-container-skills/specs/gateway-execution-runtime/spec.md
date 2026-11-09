@@ -3,10 +3,10 @@
 ## ADDED Requirements
 
 ### Requirement: Aggregate chain-failure classification
-The runtime SHALL classify a chain failure that joins several attempt failures, or attempt failures with the call-level context error, as one failure: a call-level cancellation or expired deadline SHALL win; otherwise the newest attempt failure that is not a refusal SHALL decide by the single-error rules; only when every attempt refused SHALL it be invalid request. A refusal is an attempt failure that is invalid request through `ErrUnsupportedRequest` or `ErrUnsupportedFunctionality`.
+The runtime SHALL classify a chain failure that joins two or more attempt failures, or attempt failures with the call-level context error, as one failure: a call-level cancellation or expired deadline SHALL win; otherwise the newest attempt failure that is not a refusal SHALL decide by the single-error rules; only when every attempt refused SHALL it be invalid request. A refusal is an attempt failure that is invalid request through `ErrUnsupportedRequest` or `ErrUnsupportedFunctionality`.
 
 #### Scenario: Refusal next to a provider failure
-- **WHEN** a chain aggregate joins a refusal (unsupported request or unsupported functionality) and a provider failure, in either order, such as a refusing primary and a fallback that returns 503, a 503 primary and a refusing fallback, or a refusing primary and a fallback that returns 429, and the aggregate carries no call-level cancellation or expired deadline
+- **WHEN** a chain aggregate joins a refusal (`catalog.ErrUnsupportedRequest` or `provider.ErrUnsupportedFunctionality`) and a provider failure, in either order, such as a refusing primary and a fallback that returns 503, a 503 primary and a refusing fallback, or a refusing primary and a fallback that returns 429, and the aggregate carries no call-level cancellation or expired deadline
 - **THEN** the category SHALL be that of the provider failure (overload, overload and rate limit respectively), not invalid request
 
 #### Scenario: Most recent non-refusal failure decides

@@ -119,7 +119,7 @@ func equalSkillsPolicies(a, b *SkillsPolicy) bool {
 	}
 	for _, entry := range b.Allow {
 		other, ok := versions[identityOf(entry)]
-		if !ok || (other == nil) != (entry.Versions == nil) || !sameVersions(other, entry.Versions) {
+		if !ok || !sameVersions(other, entry.Versions) {
 			return false
 		}
 	}
