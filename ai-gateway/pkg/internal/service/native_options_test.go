@@ -493,7 +493,7 @@ func TestNativeMCP_ActualCandidateConsumption(t *testing.T) {
 				handler.ServeHTTP(response, request)
 				status := http.StatusOK
 				if tc.denied {
-					status = http.StatusBadRequest
+					status = http.StatusServiceUnavailable
 				}
 				require.Equal(t, status, response.Code, response.Body.String())
 				assert.EqualValues(t, 1, compatibleCalls.Load())

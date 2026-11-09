@@ -367,6 +367,32 @@ func TestTranslation_BYOKAnthropicValidation(t *testing.T) {
 	}
 }
 
+func TestTranslation_BYOKRefusalThenOutageIsTheRealFailure(t *testing.T) {
+	server := &nativeServer{failing: map[string]bool{"dummy-second": true}}
+	var outcomes []fallback.AttemptOutcome
+	factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) {
+		chain, ok := byokChain(model).(*fallback.Model)
+		require.True(t, ok)
+		chain.WithAttemptObserver(func(_ context.Context, attempt fallback.Attempt) { outcomes = append(outcomes, attempt.Outcome) })
+		return model, nil
+	}
+	attempts := 0
+	translator := func(_ execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+		attempts++
+		if attempts == 1 {
+			options.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"skills":[{"type":"custom","skillId":"external"}]}}`)}}
+		}
+		return options, nil
+	}
+	err := runTranslation(t, byokSelector(server.client(), factory), translationCall{access: gatewayauth.RequestBYOK, modelID: "anthropic/claude", options: byokControls("anthropic", "dummy-first", "dummy-second"), translator: translator})
+	require.Error(t, err)
+	assert.Equal(t, execution.CategoryOverload, execution.ClassifyProvider(err))
+	assert.Equal(t, []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptFailed}, outcomes)
+	requests := server.requests()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "dummy-second", requests[0].key)
+}
+
 func TestTranslation_OpenAICompatibleTarget(t *testing.T) {
 	write := func(fields string) execution.Translator {
 		return func(target execution.Target, options provider.CallOptions) (provider.CallOptions, error) {

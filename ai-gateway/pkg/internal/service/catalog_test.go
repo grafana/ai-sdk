@@ -80,6 +80,7 @@ func TestBuildCatalog_CandidateSkillsPolicy(t *testing.T) {
 			"grafana/policied": {Name: "Policied", Primary: config.Primary{Provider: "anthropic-primary", Model: "policied", Skills: pptxPolicy}},
 			"grafana/mixed":    {Name: "Mixed", Primary: config.Primary{Provider: "anthropic-primary", Model: "mixed"}, Fallback: []config.Primary{{Provider: "anthropic-backup", Model: "mixed", Skills: pptxPolicy}}},
 			"grafana/empty":    {Name: "Empty", Primary: config.Primary{Provider: "anthropic-primary", Model: "empty", Skills: &config.SkillsPolicy{}}},
+			"grafana/busy":     {Name: "Busy", Primary: config.Primary{Provider: "anthropic-primary", Model: "busy"}, Fallback: []config.Primary{{Provider: "anthropic-backup", Model: "busy", Skills: pptxPolicy}}},
 		},
 	}
 	type call struct{ account, model, options string }
@@ -93,6 +94,9 @@ func TestBuildCatalog_CandidateSkillsPolicy(t *testing.T) {
 			return &observabilityTestModel{generate: func(_ context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 				raw, _ := options.ProviderOptions["anthropic"].(provider.RawProviderOption)
 				calls = append(calls, call{account: account.APIKey, model: modelID, options: string(raw.Raw)})
+				if modelID == "busy" {
+					return nil, provider.NewAPICallError(provider.APICallErrorOptions{Message: "busy", StatusCode: http.StatusServiceUnavailable, IsRetryable: new(true)})
+				}
 				return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 			}}
 		}, identityModelFactory)
@@ -128,6 +132,15 @@ func TestBuildCatalog_CandidateSkillsPolicy(t *testing.T) {
 		require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
 		assert.Equal(t, execution.CategoryInvalidRequest, execution.ClassifyProvider(err))
 		assert.Empty(t, *calls)
+	})
+
+	t.Run("a policied fallback outage after a refusal is the real failure", func(t *testing.T) {
+		created, calls := build(t)
+		err := generate(t, created, "grafana/busy", pptx)
+		require.Error(t, err)
+		assert.Equal(t, execution.CategoryOverload, execution.ClassifyProvider(err))
+		require.Len(t, *calls, 1)
+		assert.Equal(t, "backup-key", (*calls)[0].account)
 	})
 
 	t.Run("an empty policy refuses every skill", func(t *testing.T) {

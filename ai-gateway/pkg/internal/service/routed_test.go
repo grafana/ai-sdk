@@ -286,6 +286,14 @@ func TestRoutedSelection_CandidateSkillsPolicy(t *testing.T) {
 		assert.Empty(t, server.requests())
 	})
 
+	t.Run("a policied routed outage after a refusal is the real failure", func(t *testing.T) {
+		server := &nativeServer{failing: map[string]bool{routedBusyHost: true}}
+		_, err := routedCall(t, NewSelector(routedSkillsCatalog(t, server.client()), nil), "grafana/plain", `{"models":["grafana/busy"]}`, listed)
+		require.Error(t, err)
+		assert.Equal(t, execution.CategoryOverload, execution.ClassifyProvider(err))
+		assert.Equal(t, []string{routedBusyHost}, hosts(server.requests()))
+	})
+
 	t.Run("shared destination with equal policies is attempted once", func(t *testing.T) {
 		for _, route := range []struct{ model, gateway string }{
 			{"grafana/shared-a", `{"models":["grafana/shared-b"]}`},
