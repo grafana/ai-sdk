@@ -120,7 +120,9 @@ func validSelection(selected Selection) (valid bool) {
 // internal, and a result returned after the context ended is discarded in
 // favor of the context's error. A result that breaks an output lifecycle rule,
 // checked with [ValidateGenerateResult] against the call's tool history, fails
-// with [ErrInvalidOutput].
+// with [ErrInvalidOutput]. The model named by the result's last valid
+// Anthropic server-side fallback marker becomes the selected attempt's served
+// model.
 func (c *Call) Generate() (*provider.GenerateResult, error) {
 	if err := c.ctx.Err(); err != nil {
 		return nil, err
@@ -132,10 +134,14 @@ func (c *Call) Generate() (*provider.GenerateResult, error) {
 		c.attempts.discard()
 		return nil, ctxErr
 	}
-	if err == nil && ValidateGenerateResult(result, c.history) != nil {
+	if err != nil {
+		return result, err
+	}
+	c.attempts.serveContent(result.Content)
+	if ValidateGenerateResult(result, c.history) != nil {
 		return nil, ErrInvalidOutput
 	}
-	return result, err
+	return result, nil
 }
 
 func (c *Call) generate(ctx context.Context) (result *provider.GenerateResult, err error) {
@@ -173,6 +179,7 @@ func (c *Call) Stream() (*Stream, error) {
 		return nil, errInternal
 	}
 	return &Stream{
+		attempts:  c.attempts,
 		ctx:       c.ctx,
 		model:     modelContext,
 		cancel:    cancel,
@@ -248,6 +255,7 @@ func (w Wait) Err() error {
 // Stream is an established model stream. Its methods must be called from one
 // goroutine, and Close must be called once the adapter is done.
 type Stream struct {
+	attempts  *attemptCapture
 	ctx       context.Context
 	model     context.Context
 	cancel    context.CancelFunc
@@ -270,7 +278,8 @@ type Stream struct {
 // [WaitFinished] when the last lifecycle part was a finish,
 // [WaitClosedAfterError] when an error part followed the last lifecycle part,
 // and [WaitClosed] otherwise. Invalid output and finished are sticky: later
-// calls return them again without reading.
+// calls return them again without reading. A delivered Anthropic server-side
+// fallback marker updates the served model of the call's view.
 func (s *Stream) Next() (provider.StreamPart, Wait) {
 	if s.terminal != 0 {
 		return provider.StreamPart{}, s.terminal
@@ -286,6 +295,9 @@ func (s *Stream) Next() (provider.StreamPart, Wait) {
 				s.Close()
 				s.terminal = WaitInvalidOutput
 				return provider.StreamPart{}, WaitInvalidOutput
+			}
+			if part.Type == provider.PartCustom {
+				s.attempts.servePart(part.Kind, part.ProviderMetadata)
 			}
 			return part, WaitPart
 		}

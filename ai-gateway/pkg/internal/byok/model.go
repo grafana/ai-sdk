@@ -65,7 +65,7 @@ func New(request Request, placements []routing.Placement, client *http.Client) (
 	}
 	chain := model.WithDecider(execution.FallbackDecider)
 	if allAnthropic {
-		return nativeoptions.Model{LanguageModel: chain, Validate: nativeoptions.Anthropic}, nil
+		return nativeoptions.Model{LanguageModel: chain, Validate: nativeoptions.Anthropic(nativeoptions.UnrestrictedAnthropicFallbacks())}, nil
 	}
 	return chain, nil
 }
@@ -75,7 +75,7 @@ func newCandidate(destination Destination, account nativemodel.Config, client *h
 	var target execution.TargetType
 	switch destination.Provider {
 	case Anthropic:
-		candidate = nativeoptions.Model{LanguageModel: nativemodel.NewAnthropic(account, destination.Model, client), Validate: nativeoptions.Anthropic}
+		candidate = nativeoptions.Model{LanguageModel: nativemodel.NewAnthropic(account, destination.Model, client), Validate: nativeoptions.Anthropic(nativeoptions.UnrestrictedAnthropicFallbacks())}
 		target = execution.TargetAnthropic
 	case OpenAI:
 		candidate, target = nativemodel.NewOpenAI(account, destination.Model, client), execution.TargetOpenAI

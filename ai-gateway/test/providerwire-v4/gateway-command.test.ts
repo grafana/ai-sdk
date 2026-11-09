@@ -9,13 +9,14 @@ import nodeProcess from "node:process";
 import { after, before, describe, it } from "node:test";
 import { createGateway, GatewayInvalidRequestError } from "@ai-sdk/gateway";
 import type { JSONValue, LanguageModelV4, LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import { generateText, isStepCount, jsonSchema, Output, streamText, tool } from "ai";
+import { generateText, isStepCount, jsonSchema, Output, stepCountIs, streamText, tool } from "ai";
 import { buildGoClientCapture, buildGoStreamTextCapture, captureGoClient } from "./go-client-capture";
 import packageManifest from "./package.json" with { type: "json" };
 import { fetchConfiguredModels } from "../../examples/configured-discovery";
 import { nativeApprovalReply } from "./native-approvals";
 import { nativeMetadataReply } from "./native-metadata";
 import { nativeProxyEnvironment, startNativeProviderProxy } from "./native-provider-proxy";
+import { loadConfig, mockId, normalizeRequestSnapshot, writeRequestSnapshots } from "../../../test/conformance/tools/common.mts";
 
 const BYOK_MODEL = "anthropic/request-only-native";
 const BYOK_OPTIONS = { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }] } } };
@@ -2965,6 +2966,9 @@ describe("custom content through the authenticated command", () => {
         { type: "custom", kind: "anthropic.message_start", providerMetadata: { anthropic: { id: "msg_fallback", model: "backend-private", usage: { input_tokens: 2, output_tokens: 0 } } } },
         ...expected,
       ]);
+      for (const metadata of [tsUnary.providerMetadata, goUnary.result.providerMetadata, finishMetadata(tsStream), finishMetadata(goStream.parts)]) {
+        assert.deepEqual(selectedAttempt(metadata), { provider: "anthropic", modelId: "backend-private", servedModelId: "claude-b", providerInstance: "anthropic-primary", outcome: "selected" });
+      }
 
       const history = { ...replay("anthropic.fallback", fallbackMetadata, "history"), maxOutputTokens: 64 };
       await model.doGenerate(history);
@@ -2979,6 +2983,188 @@ describe("custom content through the authenticated command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 });
+
+describe("Anthropic server-side fallback through the authenticated command", () => {
+  const chain = [{ model: "claude-b", max_tokens: 2048, thinking: { type: "disabled" } }];
+  const cases = [
+    { name: "chain", fallbacks: chain, beta: "server-side-fallback-2026-06-01" },
+    { name: "default", fallbacks: "default", beta: "server-side-fallback-2026-07-01" },
+  ] as const;
+
+  it("forwards configured server-side fallback within the candidate policy and refuses the rest through both clients", async () => {
+    const fake = await FakeAnthropic.start();
+    let gateway: GatewayProcess | undefined;
+    try {
+      const policy = "      serverFallbacks:\n        models: [claude-b]\n        allowDefault: true\n";
+      gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "access-token", anthropicConfig(fake.url).replace("      model: backend-private\n", "      model: backend-private\n" + policy));
+      const model = gateway.client()("assistant");
+      for (const tc of cases) {
+        const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], maxOutputTokens: 64, providerOptions: { anthropic: { fallbacks: tc.fallbacks } } };
+        for (const mode of ["generate", "stream"] as const) {
+          const before = fake.requests.length;
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "assistant", mode, options });
+          assert.equal(go.error, undefined, tc.name);
+          if (mode === "generate") await model.doGenerate(options); else await collectGatewayStream((await model.doStream(options)).stream);
+          assert.equal(fake.requests.length, before + 2);
+          for (const request of fake.requests.slice(before)) {
+            assert.deepEqual(request.body.fallbacks, tc.fallbacks);
+            assert.ok(singleHeader(request.headers["anthropic-beta"])!.split(",").includes(tc.beta));
+          }
+        }
+      }
+      const refused: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], providerOptions: { anthropic: { fallbacks: [{ model: "claude-unallowed" }] } } };
+      const before = fake.requests.length;
+      for (const mode of ["generate", "stream"] as const) {
+        const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "assistant", mode, options: refused });
+        assert.equal(go.error?.statusCode, 400);
+        assert.ok(!JSON.stringify(go).includes("claude-unallowed"));
+        await assert.rejects(async () => mode === "generate" ? await model.doGenerate(refused) : await model.doStream(refused), (error: unknown) => GatewayInvalidRequestError.isInstance(error));
+      }
+      assert.equal(fake.requests.length, before);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway?.stop() ?? Promise.resolve(), () => fake.stop()); }
+  });
+
+  it("forwards BYOK server-side fallback without a policy and reports the served model through both clients", async () => {
+    const [fake, gateway] = await startCloudGateway();
+    try {
+      const model = gateway.client()(BYOK_MODEL);
+      for (const tc of cases) {
+        for (const text of ["normal-stream", "wp112-fallback-marker"]) {
+          const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text }] }], maxOutputTokens: 64, providerOptions: { ...BYOK_OPTIONS, anthropic: { fallbacks: tc.fallbacks } } };
+          for (const mode of ["generate", "stream"] as const) {
+            const before = fake.requests.length;
+            const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: BYOK_MODEL, mode, options });
+            assert.equal(go.error, undefined, `${tc.name} ${text} ${mode}`);
+            const ts = mode === "generate" ? (await model.doGenerate(options)).providerMetadata : finishMetadata(await collectGatewayStream((await model.doStream(options)).stream));
+            const goMetadata = mode === "generate" ? go.result.providerMetadata : finishMetadata(go.parts);
+            assert.equal(fake.requests.length, before + 2);
+            for (const request of fake.requests.slice(before)) {
+              assert.equal(request.apiKey, "request-only-key");
+              assert.deepEqual(request.body.fallbacks, tc.fallbacks);
+              assert.ok(singleHeader(request.headers["anthropic-beta"])!.split(",").includes(tc.beta));
+            }
+            const served = text === "wp112-fallback-marker" ? { servedModelId: "claude-b" } : {};
+            for (const metadata of [ts, goMetadata]) {
+              assert.deepEqual(selectedAttempt(metadata), { provider: "anthropic", modelId: "request-only-native", ...served, outcome: "selected" });
+            }
+          }
+        }
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+});
+
+describe("recorded Anthropic server-side fallback through the Gateway command", () => {
+  const fixtures = [
+    { name: "server-side-fallback-chain", policy: "      serverFallbacks:\n        models: [claude-opus-4-8]\n", otherPolicy: "      serverFallbacks:\n        allowDefault: true\n" },
+    { name: "server-side-fallback-default", policy: "      serverFallbacks:\n        allowDefault: true\n", otherPolicy: "      serverFallbacks:\n        models: [claude-opus-4-8]\n" },
+  ] as const;
+  const fixtureDir = (name: string) => resolve(import.meta.dirname, "../../../test/conformance/anthropic/recorded", name);
+  let gateway: GatewayProcess;
+  const backends = new Map<string, RecordedAnthropicBackend>();
+
+  before(async () => {
+    for (const fixture of fixtures) backends.set(fixture.name, await RecordedAnthropicBackend.start(join(fixtureDir(fixture.name), "input.chunks.txt")));
+    const route = (id: string, instance: string, policy = "") => `  recorded/${id}:\n    name: Recorded\n    primary:\n      provider: ${instance}\n      model: claude-opus-5\n${policy}`;
+    const catalog = "providers:\n" + fixtures.map(fixture => `  ${fixture.name}:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${backends.get(fixture.name)!.url}\n`).join("")
+      + "models:\n" + fixtures.map(fixture => route(`${fixture.name}-allowed`, fixture.name, fixture.policy) + route(`${fixture.name}-none`, fixture.name) + route(`${fixture.name}-other`, fixture.name, fixture.otherPolicy)).join("");
+    gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", catalog);
+  });
+
+  after(async () => {
+    await settleCleanup(() => gateway?.stop() ?? Promise.resolve(), ...[...backends.values()].map(backend => () => backend.stop()));
+  });
+
+  for (const fixture of fixtures) {
+    it(`replays unchanged ${fixture.name} through both clients under an allowing policy`, async () => {
+      const dir = fixtureDir(fixture.name);
+      const cfg = loadConfig(dir);
+      const lines = (name: string) => readFileSync(join(dir, name), "utf8").trim().split("\n").map(line => JSON.parse(line));
+      const expectedChunks = lines("expected.jsonl");
+      const expectedRequests = readFileSync(join(dir, "expected-requests.jsonl"), "utf8");
+      const backend = backends.get(fixture.name)!;
+      const before = backend.requests.length;
+      const modelID = `recorded/${fixture.name}-allowed`;
+      const result = streamText({ model: gateway.client()(modelID), prompt: cfg.prompt!, providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"], stopWhen: stepCountIs(1), maxRetries: 0, _internal: { generateId: mockId("id") } });
+      const chunks = [];
+      for await (const chunk of result.toUIMessageStream()) chunks.push(JSON.parse(JSON.stringify(chunk)));
+      assert.deepEqual(chunks, expectedChunks);
+      const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID, mode: "recorded-ui", instructions: "", steps: 1, toolResults: {}, options: { prompt: [{ role: "user", content: [{ type: "text", text: cfg.prompt }] }], providerOptions: cfg.providerOptions, tools: [] } });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(go.chunks, expectedChunks);
+      const requests = backend.requests.slice(before).map(request => normalizeRequestSnapshot("anthropic", request, request.body));
+      const expectedCount = expectedRequests.trim().split("\n").length;
+      assert.equal(requests.length, expectedCount * 2);
+      const snapshotDir = mkdtempSync(join(tmpdir(), "gateway-server-fallback-replay-"));
+      try {
+        for (const [client, snapshots] of [["typescript", requests.slice(0, expectedCount)], ["go", requests.slice(expectedCount)]] as const) {
+          const path = join(snapshotDir, `${client}.jsonl`);
+          writeRequestSnapshots(path, snapshots);
+          assert.equal(readFileSync(path, "utf8"), expectedRequests, `${client} native request snapshots`);
+        }
+      } finally {
+        rmSync(snapshotDir, { recursive: true, force: true });
+      }
+    });
+
+    it(`refuses ${fixture.name} through both clients without an allowing policy`, async () => {
+      const cfg = loadConfig(fixtureDir(fixture.name));
+      const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: cfg.prompt! }] }], providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"] };
+      const backend = backends.get(fixture.name)!;
+      const before = backend.requests.length;
+      for (const modelID of [`recorded/${fixture.name}-none`, `recorded/${fixture.name}-other`]) {
+        for (const mode of ["generate", "stream"] as const) {
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID, mode, options });
+          assert.equal(go.error?.statusCode, 400, modelID);
+          const model = gateway.client()(modelID);
+          await assert.rejects(async () => mode === "generate" ? await model.doGenerate(options) : await model.doStream(options), (error: unknown) => GatewayInvalidRequestError.isInstance(error));
+        }
+      }
+      assert.equal(backend.requests.length, before);
+    });
+  }
+});
+
+function finishMetadata(parts: unknown[]): unknown {
+  const finishes = parts.filter(part => (part as { type: string }).type === "finish") as Array<{ providerMetadata?: unknown }>;
+  return finishes.at(-1)?.providerMetadata;
+}
+
+function selectedAttempt(metadata: unknown): unknown {
+  const attempts = (metadata as { gateway?: { execution?: { attempts?: unknown[] } } } | undefined)?.gateway?.execution?.attempts;
+  return attempts?.at(-1);
+}
+
+class RecordedAnthropicBackend {
+  readonly requests: Array<{ method?: string; url?: string; headers: IncomingMessage["headers"]; body: string }> = [];
+  private constructor(private readonly server: ReturnType<typeof createServer>, readonly url: string) {}
+
+  static async start(inputPath: string): Promise<RecordedAnthropicBackend> {
+    const events = readFileSync(inputPath, "utf8").split("\n").filter(line => line.trim() !== "").map(line => ({ line, type: (JSON.parse(line) as { type: string }).type }));
+    let backend: RecordedAnthropicBackend;
+    const server = createServer((request, response) => {
+      const body: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => body.push(chunk));
+      request.on("end", () => {
+        backend.requests.push({ method: request.method, url: request.url, headers: request.headers, body: Buffer.concat(body).toString("utf8") });
+        response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+        for (const event of events) response.write(`event: ${event.type}\ndata: ${event.line}\n\n`);
+        response.end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (address == null || typeof address === "string") throw new Error("recorded backend did not bind TCP");
+    backend = new RecordedAnthropicBackend(server, `http://127.0.0.1:${address.port}`);
+    return backend;
+  }
+
+  stop(): Promise<void> {
+    return new Promise((resolve, reject) => this.server.close((error) => error ? reject(error) : resolve()));
+  }
+}
 
 describe("authenticated OpenAI Responses Gateway command", () => {
   it("preserves native source/display and response identity separately from canonical operator identity", async () => {

@@ -33,7 +33,7 @@ const (
 )
 
 type nativeRequest struct {
-	host, key, marker, body string
+	host, key, marker, beta, body string
 }
 
 // nativeServer answers Anthropic and OpenAI requests by host, and fails the
@@ -55,7 +55,7 @@ func (s *nativeServer) client() *http.Client {
 			key = strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		}
 		s.mu.Lock()
-		s.seen = append(s.seen, nativeRequest{host: r.URL.Host, key: key, marker: r.Header.Get("X-Translated-For"), body: string(body)})
+		s.seen = append(s.seen, nativeRequest{host: r.URL.Host, key: key, marker: r.Header.Get("X-Translated-For"), beta: r.Header.Get("Anthropic-Beta"), body: string(body)})
 		s.mu.Unlock()
 		status, response := http.StatusOK, translationOpenAIBody
 		switch {
@@ -408,4 +408,26 @@ func TestTranslation_ConcurrentCallsAreIsolated(t *testing.T) {
 		}
 	}
 	assert.ElementsMatch(t, wantMarkers, markers)
+}
+
+func TestTranslation_BYOKForwardsServerSideFallback(t *testing.T) {
+	for _, tc := range []struct{ name, options, field, beta string }{
+		{"chain", `{"fallbacks":[{"model":"claude-any"},{"model":"claude-any"}]}`, `"fallbacks":[{"model":"claude-any"},{"model":"claude-any"}]`, "server-side-fallback-2026-06-01"},
+		{"default", `{"fallbacks":"default"}`, `"fallbacks":"default"`, "server-side-fallback-2026-07-01"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := &nativeServer{}
+			addFallbacks := func(_ execution.Target, options provider.CallOptions) (provider.CallOptions, error) {
+				options.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(tc.options)}}
+				return options, nil
+			}
+			selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
+			require.NoError(t, runTranslation(t, selector, translationCall{access: gatewayauth.RequestBYOK, modelID: "anthropic/claude", options: byokControls("anthropic", "dummy-first"), translator: addFallbacks}))
+			requests := server.requests()
+			require.Len(t, requests, 1)
+			assert.Equal(t, "dummy-first", requests[0].key)
+			assert.Contains(t, requests[0].body, tc.field)
+			assert.Contains(t, requests[0].beta, tc.beta)
+		})
+	}
 }

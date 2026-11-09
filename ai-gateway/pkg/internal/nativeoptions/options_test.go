@@ -1,11 +1,13 @@
 package nativeoptions
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/provider"
 	anthropicprovider "github.com/grafana/ai-sdk/providers/anthropic"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,5 +79,66 @@ func TestValidateAnthropicMCPServers_Bounds(t *testing.T) {
 		names, err := validateAnthropicMCPServers([]anthropicprovider.MCPServer{server})
 		require.NoError(t, err)
 		assert.Contains(t, names, server.Name)
+	})
+}
+
+func TestAnthropic_ServerFallbackPolicy(t *testing.T) {
+	const unconfiguredMCPHistory = `[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"external"}}}]}]`
+	call := func(anthropic, prompt string) provider.CallOptions {
+		options := provider.CallOptions{}
+		if anthropic != "" {
+			options.ProviderOptions = provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(anthropic)}}
+		}
+		if prompt != "" {
+			require.NoError(t, json.Unmarshal([]byte(prompt), &options.Prompt))
+		}
+		return options
+	}
+	configured := NewAnthropicFallbackPolicy([]string{"claude-b", "claude-c"}, false)
+	withDefault := NewAnthropicFallbackPolicy([]string{"claude-b"}, true)
+	for _, tc := range []struct {
+		name    string
+		policy  AnthropicFallbackPolicy
+		options string
+		prompt  string
+		allowed bool
+	}{
+		{"allowed chain", configured, `{"fallbacks":[{"model":"claude-b","max_tokens":2048},{"model":"claude-c"}]}`, "", true},
+		{"allowed default", withDefault, `{"fallbacks":"default"}`, "", true},
+		{"disallowed model", configured, `{"fallbacks":[{"model":"claude-b"},{"model":"claude-z"}]}`, "", false},
+		{"repeated entry", configured, `{"fallbacks":[{"model":"claude-b"},{"model":"claude-b","thinking":{"type":"disabled"}}]}`, "", false},
+		{"default without allowDefault", configured, `{"fallbacks":"default"}`, "", false},
+		{"zero policy chain", AnthropicFallbackPolicy{}, `{"fallbacks":[{"model":"claude-b"}]}`, "", false},
+		{"zero policy default", AnthropicFallbackPolicy{}, `{"fallbacks":"default"}`, "", false},
+		{"case variant", configured, `{"fallbacks":[{"model":"Claude-B"}]}`, "", false},
+		{"whitespace variant", configured, `{"fallbacks":[{"model":" claude-b"}]}`, "", false},
+		{"absent options", AnthropicFallbackPolicy{}, ``, "", true},
+		{"null fallbacks", AnthropicFallbackPolicy{}, `{"fallbacks":null}`, "", true},
+		{"empty chain", AnthropicFallbackPolicy{}, `{"fallbacks":[]}`, "", true},
+		{"inactive fallbacks still check MCP history", AnthropicFallbackPolicy{}, `{"fallbacks":[]}`, unconfiguredMCPHistory, false},
+		{"allowed chain still checks MCP configuration", configured, `{"fallbacks":[{"model":"claude-b"}],"mcpServers":[{"type":"url","name":"n","url":"http://insecure.example.test"}]}`, "", false},
+		{"allowed chain with valid MCP", configured, `{"fallbacks":[{"model":"claude-b"}],"mcpServers":[{"type":"url","name":"n","url":"https://mcp.example.test"}]}`, "", true},
+		{"allowed chain still refuses skills", configured, `{"fallbacks":[{"model":"claude-b"}],"container":{"skills":[{"type":"custom","skillId":"s"}]}}`, "", false},
+		{"unrestricted chain", UnrestrictedAnthropicFallbacks(), `{"fallbacks":[{"model":"claude-any"},{"model":"claude-any","speed":"fast"}]}`, "", true},
+		{"unrestricted default", UnrestrictedAnthropicFallbacks(), `{"fallbacks":"default"}`, "", true},
+		{"unrestricted still refuses skills", UnrestrictedAnthropicFallbacks(), `{"fallbacks":"default","container":{"skills":[{"type":"custom","skillId":"s"}]}}`, "", false},
+		{"unrestricted still checks MCP configuration", UnrestrictedAnthropicFallbacks(), `{"fallbacks":"default","mcpServers":[{"type":"url","name":"n","url":"http://insecure.example.test"}]}`, "", false},
+		{"unrestricted still checks MCP history", UnrestrictedAnthropicFallbacks(), `{"fallbacks":"default"}`, unconfiguredMCPHistory, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Anthropic(tc.policy)(call(tc.options, tc.prompt))
+			if tc.allowed {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+		})
+	}
+	t.Run("policy copies its models", func(t *testing.T) {
+		models := []string{"claude-b"}
+		policy := NewAnthropicFallbackPolicy(models, false)
+		models[0] = "claude-z"
+		assert.NoError(t, Anthropic(policy)(call(`{"fallbacks":[{"model":"claude-b"}]}`, "")))
+		assert.ErrorIs(t, Anthropic(policy)(call(`{"fallbacks":[{"model":"claude-z"}]}`, "")), catalog.ErrUnsupportedRequest)
 	})
 }

@@ -49,9 +49,26 @@ type Model struct {
 }
 
 // Primary maps one public model to a named provider and backend model ID.
+// ServerFallbacks optionally allows Anthropic server-side fallback for this
+// candidate only; without it the candidate refuses server-side fallback.
 type Primary struct {
-	Provider string `yaml:"provider"`
-	Model    string `yaml:"model"`
+	Provider        string           `yaml:"provider"`
+	Model           string           `yaml:"model"`
+	ServerFallbacks *ServerFallbacks `yaml:"serverFallbacks,omitempty"`
+}
+
+// ServerFallbacks is the operator policy for Anthropic server-side fallback
+// (providerOptions.anthropic.fallbacks) on one anthropic candidate. Models
+// lists the fallback model IDs an explicit chain may name, compared exactly.
+// AllowDefault admits "default", which lets Anthropic choose the model.
+type ServerFallbacks struct {
+	Models       []string `yaml:"models,omitempty"`
+	AllowDefault bool     `yaml:"allowDefault,omitempty"`
+}
+
+type candidateKey struct {
+	provider string
+	model    string
 }
 
 // ResolvedProvider contains one startup-resolved provider secret.
@@ -171,7 +188,10 @@ func (file File) Validate() error {
 		if strings.TrimSpace(model.Primary.Model) == "" {
 			return fmt.Errorf("config: models.%s.primary.model is required", id)
 		}
-		seenCandidates := map[Primary]struct{}{model.Primary: {}}
+		if err := validateServerFallbacks(model.Primary.ServerFallbacks, file.Providers[model.Primary.Provider].Type); err != nil {
+			return fmt.Errorf("config: models.%s.primary.serverFallbacks%w", id, err)
+		}
+		seenCandidates := map[candidateKey]struct{}{{model.Primary.Provider, model.Primary.Model}: {}}
 		for index, candidate := range model.Fallback {
 			if strings.TrimSpace(candidate.Provider) == "" || strings.TrimSpace(candidate.Model) == "" {
 				return fmt.Errorf("config: models.%s.fallback[%d] requires provider and model", id, index)
@@ -179,10 +199,14 @@ func (file File) Validate() error {
 			if _, ok := file.Providers[candidate.Provider]; !ok {
 				return fmt.Errorf("config: models.%s.fallback[%d] references unknown provider", id, index)
 			}
-			if _, exists := seenCandidates[candidate]; exists {
+			key := candidateKey{candidate.Provider, candidate.Model}
+			if _, exists := seenCandidates[key]; exists {
 				return fmt.Errorf("config: models.%s.fallback[%d] repeats a candidate", id, index)
 			}
-			seenCandidates[candidate] = struct{}{}
+			seenCandidates[key] = struct{}{}
+			if err := validateServerFallbacks(candidate.ServerFallbacks, file.Providers[candidate.Provider].Type); err != nil {
+				return fmt.Errorf("config: models.%s.fallback[%d].serverFallbacks%w", id, index, err)
+			}
 		}
 		if existing, ok := publicIDs[id]; ok {
 			return fmt.Errorf("config: public model ID %q collides with %s", id, existing)
@@ -228,6 +252,34 @@ func (file File) ResolveProviderSecrets(lookupEnv LookupEnv) (map[string]Resolve
 		resolved[name] = ResolvedProvider{Type: provider.Type, APIKey: value, BaseURL: provider.BaseURL, ProviderName: provider.ProviderName, SupportsStructuredOutputs: provider.SupportsStructuredOutputs}
 	}
 	return resolved, nil
+}
+
+// validateServerFallbacks returns an error, suffixed to the policy's path,
+// that never contains policy values.
+func validateServerFallbacks(policy *ServerFallbacks, providerType string) error {
+	if policy == nil {
+		return nil
+	}
+	if providerType != "anthropic" {
+		return errors.New(" is only supported for anthropic providers")
+	}
+	if !policy.AllowDefault && len(policy.Models) == 0 {
+		return errors.New(" must allow default or at least one model")
+	}
+	seen := make(map[string]struct{}, len(policy.Models))
+	for index, model := range policy.Models {
+		if strings.TrimSpace(model) == "" {
+			return fmt.Errorf(".models[%d] must not be empty", index)
+		}
+		if !validDiscoveryText(model) {
+			return fmt.Errorf(".models[%d] is invalid or exceeds limit", index)
+		}
+		if _, exists := seen[model]; exists {
+			return fmt.Errorf(".models[%d] repeats a model", index)
+		}
+		seen[model] = struct{}{}
+	}
+	return nil
 }
 
 func validDiscoveryText(value string) bool {

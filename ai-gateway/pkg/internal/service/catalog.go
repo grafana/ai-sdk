@@ -72,13 +72,16 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			if providerConfig.APIKey == "" {
 				return nil, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 			}
+			if descriptor.ServerFallbacks != nil && providerConfig.Type != "anthropic" {
+				return nil, fmt.Errorf("gateway service: model %q sets server fallbacks on a provider that is not anthropic", id)
+			}
 			var candidate provider.LanguageModel
 			var validateOptions func(provider.CallOptions) error
 			target := execution.Target{ModelID: descriptor.Model}
 			switch providerConfig.Type {
 			case "anthropic":
 				candidate = construct(nativemodel.Config{APIKey: providerConfig.APIKey, BaseURL: providerConfig.BaseURL}, descriptor.Model, client)
-				validateOptions = nativeoptions.Anthropic
+				validateOptions = nativeoptions.Anthropic(serverFallbackPolicy(descriptor.ServerFallbacks))
 				target.Type = execution.TargetAnthropic
 			case "openai-compatible":
 				if providerConfig.BaseURL == "" {
@@ -148,6 +151,15 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 		return nil, err
 	}
 	return &Catalog{Catalog: static, routes: routes, factory: factory, physical: sink}, nil
+}
+
+// serverFallbackPolicy returns the native policy of a candidate's configured
+// server fallbacks; an absent policy refuses them.
+func serverFallbackPolicy(policy *config.ServerFallbacks) nativeoptions.AnthropicFallbackPolicy {
+	if policy == nil {
+		return nativeoptions.AnthropicFallbackPolicy{}
+	}
+	return nativeoptions.NewAnthropicFallbackPolicy(policy.Models, policy.AllowDefault)
 }
 
 // composeCandidates returns the only candidate, or an ordered fallback chain

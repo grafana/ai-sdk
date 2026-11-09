@@ -81,6 +81,11 @@
       "properties": {
         "provider": { "type": "string", "minLength": 1 },
         "modelId": { "type": "string", "minLength": 1 },
+        "servedModelId": {
+          "description": "Model that served the selected attempt's output after an Anthropic server-side fallback, when it differs from modelId. Absent when no fallback happened.",
+          "type": "string",
+          "minLength": 1
+        },
         "providerInstance": { "type": "string" },
         "outcome": { "enum": ["failed", "selected", "canceled"] },
         "error": { "$ref": "#/$defs/failure" }
@@ -88,7 +93,8 @@
       "allOf": [
         {
           "if": { "properties": { "outcome": { "const": "selected" } }, "required": ["outcome"] },
-          "then": { "properties": { "error": false } }
+          "then": { "properties": { "error": false } },
+          "else": { "properties": { "servedModelId": false } }
         }
       ],
       "additionalProperties": false

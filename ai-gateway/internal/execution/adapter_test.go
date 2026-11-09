@@ -262,6 +262,7 @@ type scenario struct {
 	selector   func([]*probe) execution.RequestSelector
 	want       outcome
 	attempts   []fallback.AttemptOutcome
+	served     string
 	calls      []int32
 	drained    bool
 }
@@ -414,6 +415,10 @@ func streamed(name string, want outcome, parts ...provider.StreamPart) scenario 
 // invalidStream is a stream the runtime refuses after accepted parts.
 func invalidStream(name string, accepted int, parts ...provider.StreamPart) scenario {
 	return streamed(name, outcome{Category: execution.CategoryInternal, Committed: true, InvalidOutput: true, Parts: accepted}, parts...)
+}
+
+func fallbackMarkerMetadata(to string) provider.ProviderMetadata {
+	return provider.ProviderMetadata{"anthropic": json.RawMessage(`{"type":"fallback","from":{"model":"claude-a"},"to":{"model":"` + to + `"}}`)}
 }
 
 func streamPart(kind provider.StreamPartType, id string) provider.StreamPart {
@@ -651,6 +656,20 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 					return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: "future"}}, nil
 				}
 			})},
+		{name: "unary server-side fallback marker", configured: true, calls: []int32{1}, attempts: []fallback.AttemptOutcome{fallback.AttemptSelected}, served: "claude-b",
+			models: one(func(p *probe) {
+				p.generate = func(context.Context) (*provider.GenerateResult, error) {
+					result := validResult()
+					result.Content = append(result.Content, provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "anthropic.fallback", ProviderMetadata: fallbackMarkerMetadata("claude-b")})
+					return result, nil
+				}
+			})},
+		func() scenario {
+			sc := streamed("stream server-side fallback marker", outcome{Committed: true},
+				provider.StreamPart{Type: provider.PartResponseMeta}, provider.StreamPart{Type: provider.PartCustom, Kind: "anthropic.fallback", ProviderMetadata: fallbackMarkerMetadata("claude-b")}, finishPart())
+			sc.served = "claude-b"
+			return sc
+		}(),
 	} {
 		t.Run(sc.name, func(t *testing.T) {
 			models := sc.models()
@@ -671,6 +690,9 @@ func TestTestAdapter_MatchesProviderWire(t *testing.T) {
 				}
 			}
 			assert.Equal(t, sc.attempts, attempts)
+			if got.Overview != nil {
+				assert.Equal(t, sc.served, got.Overview.Attempts[len(got.Overview.Attempts)-1].ServedModelID)
+			}
 			if sc.accounts && got.Overview != nil {
 				assert.Empty(t, got.Overview.CanonicalModelID)
 				for _, attempt := range got.Overview.Attempts {
