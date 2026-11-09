@@ -78,7 +78,7 @@ Gateway paths in sections 2-3 are relative to `ai-gateway/pkg/internal/`.
   - Add: a policied model whose fake Anthropic request has `container.skills` and the three betas; a disallowed skill on that model, which gets the fixed 400; a BYOK custom skill (`providerReference.anthropic` form) with `container.id`, which is forwarded; two callers in different namespaces calling the same policied model with the listed custom skill, both reaching the fake Anthropic backend with the same `container.skills`, while an unlisted skill from either namespace gets the fixed 400 (spec "Two tenants call one candidate").
 
   Verify with `mise run test-ai-gateway-command`.
-- [ ] 3.8 Update the docs:
+- [x] 3.8 Update the docs:
   - `ai-gateway/README.md` ("Configure models", L49; the `model_catalog` YAML example at L54-73): the `skills.allow` example, Anthropic-only, deny by default, and one policy per provider instance and backend model across routes.
   - `docs/providers/grafana-gateway.md` ("Provider-defined tools", L339; "Route a call to other models and providers", L227): configured versus BYOK behavior; routed chains apply each candidate's own policy; configured models refuse every caller `container.id`, with or without skills, so `pause_turn` continuation and multi-turn container reuse need BYOK, while the response still reports `providerMetadata.anthropic.container`; a chain failure reports the real failure (a cancellation wins, otherwise the most recent non-refusal failure decides) and is a 400 invalid request only when every candidate refused (design D10), in configured, routed and BYOK chains; `file_id`s not downloadable through the Gateway; allowlist version matching (omitted matches only entries without `versions`, `"latest"` is literal); one skills policy per provider instance and backend model across all routes (D9), so a skills route that shares a backend model with an existing unpolicied route needs its own provider instance, which may reuse the same `apiKeyEnv`.
   - `docs/best-practices/security.md`: custom skills "shared by all callers of this candidate", and configured refusal of caller container IDs.
@@ -87,7 +87,7 @@ Gateway paths in sections 2-3 are relative to `ai-gateway/pkg/internal/`.
   - `docs/concepts/gateway-architecture.md`: per-candidate option policy in step 4, and the aggregate failure classification, if the text no longer matches.
 
   Verify with `mise run lint-docs`.
-- [ ] 3.9 Update godoc for `config.Primary`, `config.SkillsPolicy` and the `nativeoptions` policy types. Verify with `go doc` on each.
+- [x] 3.9 Update godoc for `config.Primary`, `config.SkillsPolicy` and the `nativeoptions` policy types. Verify with `go doc` on each.
 
 ## 4. WP4: Aggregate chain-failure classification (design D10)
 

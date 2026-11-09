@@ -176,7 +176,10 @@ sequenceDiagram
    native adapters run within that chain. When the inbound adapter supplied an
    option translator, each candidate first translates its own copy of the call
    options for its native protocol; host policy re-checks the result before the
-   candidate's native option validation runs. An adapter converts common call
+   candidate's native option validation runs. That validation is per
+   candidate: an Anthropic candidate applies its own skills policy and, on
+   configured accounts, refuses caller container IDs, before its native I/O. An
+   adapter converts common call
    options into its provider's HTTP request and converts the response back into
    SDK values. Native options remain provider-specific; not every candidate
    consumes every namespace. See
@@ -207,6 +210,11 @@ eligible setup failure or a stream that closes before its first part. The first
 received part selects the candidate, even if it is only `stream-start` or an
 error event. Later errors do not restart the chain. The SDK also offers opt-in
 complete-stream buffering, but the plugin backend's catalog does not enable it.
+When every candidate fails before selection, the
+[execution classifier](../../ai-gateway/internal/execution/classify.go) reports
+one category for the chain: the call's own cancellation or deadline first,
+otherwise the newest candidate failure that is not a refusal; the chain is an
+invalid request only when every candidate refused before native I/O.
 
 ```mermaid
 flowchart TD
