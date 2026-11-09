@@ -26,7 +26,7 @@ Request-only invocation SHALL retain shared consumption-backed guards before att
 - **THEN** the native adapter SHALL receive the MCP configuration and history without consulting configured accounts
 
 ### Requirement: Unsupported controls fail explicitly
-Unsupported credentials, mappings and controls SHALL fail with non-secret diagnostics before I/O. Native options and headers SHALL NOT override the selected account, model or destination. Anthropic server-side fallback, executed by the provider within the selected account's native request at its destination, SHALL NOT be such an override: the selected model, account and destination SHALL remain unchanged, and a model that served the response after a hop SHALL be reported through `servedModelId` under gateway-execution-overview.
+Unsupported credentials, mappings and controls SHALL fail with non-secret diagnostics before I/O. Native options and headers SHALL NOT override the selected account, model or destination. Anthropic server-side fallback inside the selected account's native request is not an override; a hop SHALL be reported only as `servedModelId` under gateway-execution-overview.
 
 #### Scenario: Unsupported-control policy
 - **WHEN** BYOK input contains provider, mapping or routing controls
@@ -56,7 +56,7 @@ Unsupported credentials, mappings and controls SHALL fail with non-secret diagno
 - **THEN** the native request SHALL use the selected account, destination and model `claude-fable-5`, and the selected attempt SHALL carry `modelId` `claude-fable-5` and `servedModelId` `claude-opus-4-8`
 
 ### Requirement: Shared native execution protections
-Configured and request-only models SHALL share consumption-backed native protection. Valid Anthropic MCP/history and inert markers SHALL survive; unsupported consumed execution controls in the request SHALL fail before any account attempt when every composed destination is Anthropic, and otherwise each Anthropic account's attempt SHALL fail before its native request; those produced by per-attempt translation SHALL fail that account's attempt before its native request, without new field inventories or adapter changes. Anthropic server-side fallback SHALL NOT be an unsupported consumed execution control in BYOK invocation.
+Configured and request-only models SHALL share consumption-backed native protection. Valid Anthropic MCP/history and inert markers SHALL survive; unsupported consumed execution controls in the request SHALL fail before any account attempt in an all-Anthropic chain, otherwise before each Anthropic account's request, and those produced by per-attempt translation SHALL fail that account's attempt before its native request, without new field inventories or adapter changes.
 
 #### Scenario: Native consumption policy
 - **WHEN** an Anthropic request-only model receives native options and history

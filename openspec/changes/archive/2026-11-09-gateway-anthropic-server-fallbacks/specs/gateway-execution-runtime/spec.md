@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Request-local attempt capture
-Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry the attempt expected at each chain position, with its destination and the requested ID or `models` entry it belongs to, and SHALL publish an overview checked against them. The runtime SHALL record the selected output's served model identity, as defined by gateway-execution-overview, including markers observed after sealing, without changing the sealed attempts list or that check. Selections with no attribution SHALL NOT publish an overview.
+Every selection SHALL get its own attempt capture, scoped to the call's context. Attempts observed after the capture is sealed SHALL be ignored. Configured and BYOK selections SHALL carry the attempt expected at each chain position, with its destination and the requested ID or `models` entry it belongs to, and SHALL publish an overview checked against them. The served model SHALL be recorded as gateway-execution-overview defines. Selections with no attribution SHALL NOT publish an overview.
 
 #### Scenario: Concurrent calls are isolated
 - **WHEN** two calls run concurrently on one runtime with different fallback outcomes
