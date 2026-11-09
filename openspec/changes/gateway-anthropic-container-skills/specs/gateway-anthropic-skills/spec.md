@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define how the Gateway admits Anthropic container skills (`providerOptions.anthropic.container.skills`): an operator policy on each configured candidate, static request bounds enforced at native consumption, BYOK admission, and the account-scoping boundary for operator-owned skills and containers.
+Define how the Gateway admits Anthropic container skills and container IDs (`providerOptions.anthropic.container`): an operator skills policy on each configured candidate, static request bounds enforced at native consumption, configured refusal of caller container IDs, BYOK admission, and the account-scoping boundary for operator-owned skills and containers.
 
 ## ADDED Requirements
 
@@ -48,10 +48,10 @@ All configured candidates, in any route, that name the same provider instance an
 - **THEN** the catalog SHALL load, and a routed call that skips the repeated destination SHALL apply the same policy whichever placement is kept
 
 ### Requirement: Static skill request bounds
-Each native Anthropic attempt SHALL validate any non-empty skills list in the `AnthropicOptions` the adapter consumes, before native I/O in both modes. The list SHALL have at most 8 entries. Each type SHALL be checked first and SHALL be `anthropic` or `custom`. Each resolved skill ID SHALL be non-empty valid UTF-8 of at most 128 bytes; an empty version SHALL count as omitted, and any other version SHALL meet the same bound. Resolved `(type, ID)` pairs SHALL be distinct.
+Each native Anthropic attempt SHALL validate any non-empty skills list in the `AnthropicOptions` the adapter consumes, before native I/O in both modes. The list SHALL have at most 20 entries. Each type SHALL be checked first and SHALL be `anthropic` or `custom`. Each resolved skill ID SHALL be non-empty valid UTF-8 of at most 128 bytes; an empty version SHALL count as omitted, and any other version SHALL meet the same bound. Resolved `(type, ID)` pairs SHALL be distinct.
 
 #### Scenario: Bounds exceeded or malformed
-- **WHEN** a request carries nine skills, an unknown type, an empty or over-long resolved ID, an over-long or invalid UTF-8 version, a repeated skill, or a custom skill without `providerReference.anthropic` (including one set only by `skillId`)
+- **WHEN** a request carries 21 skills, an unknown type, an empty or over-long resolved ID, an over-long or invalid UTF-8 version, a repeated skill, or a custom skill without `providerReference.anthropic` (including one set only by `skillId`)
 - **THEN** the attempt SHALL fail with the existing unsupported-request error before its native request, without echoing skill or container IDs
 
 #### Scenario: Empty version is omitted
@@ -60,17 +60,17 @@ Each native Anthropic attempt SHALL validate any non-empty skills list in the `A
 
 #### Scenario: Empty or absent skills
 - **WHEN** `container` is absent or `container.skills` is null or empty
-- **THEN** no skills check SHALL run and existing container-ID behavior SHALL be unchanged
+- **THEN** no skills check SHALL run, and any `container.id` SHALL follow "Configured accounts refuse container IDs"
 
 ### Requirement: Policy-gated configured skills
-On a configured candidate, every requested skill SHALL match an allow entry by type and resolved ID. When that entry lists `versions`, the request SHALL carry one of them, matched literally; an omitted or empty request version SHALL match only an entry without `versions`, and `"latest"` SHALL NOT match an omitted version. A request combining skills with `container.id` SHALL be refused. Checks SHALL run on each attempt after per-attempt translation, in unary and streaming modes.
+On a configured candidate, every requested skill SHALL match an allow entry by type and resolved ID. When that entry lists `versions`, the request SHALL carry one of them, matched literally; an omitted or empty request version SHALL match only an entry without `versions`, and `"latest"` SHALL NOT match an omitted version. Checks SHALL run on each attempt after per-attempt translation, in unary and streaming modes.
 
 #### Scenario: Allowed Anthropic skill
 - **WHEN** a candidate allows `{type: anthropic, skillId: pptx}` and the call sends that skill with the code-execution tool
 - **THEN** the native request SHALL carry `container.skills: [{type: anthropic, skill_id: pptx}]` with the required skills betas
 
-#### Scenario: Disallowed skill, version or container reuse
-- **WHEN** a call sends an unlisted skill, a version outside the entry's `versions`, or skills together with `container.id`
+#### Scenario: Disallowed skill or version
+- **WHEN** a call sends an unlisted skill or a version outside the entry's `versions`
 - **THEN** that candidate SHALL fail with the existing unsupported-request error before its native request
 
 #### Scenario: Mixed candidate policies
@@ -85,11 +85,34 @@ On a configured candidate, every requested skill SHALL match an allow entry by t
 - **WHEN** a configured caller calls an unpolicied route with `gateway.models` naming a route whose candidate, on a different destination, allows the requested skills
 - **THEN** the unpolicied candidate SHALL make no native request, the routed chain SHALL advance, and the policied candidate SHALL serve the request under its own policy, granting nothing the caller could not get by calling that route directly
 
+### Requirement: Configured accounts refuse container IDs
+On a configured candidate, a non-empty `container.id` in the `AnthropicOptions` the adapter consumes, with or without skills, SHALL fail that candidate's attempt with the fixed invalid-request error before its native request, after per-attempt translation, in unary and streaming modes, without echoing the ID and with no opt-in. An empty ID SHALL count as omitted. BYOK SHALL admit a `container.id` of at most 128 bytes of valid UTF-8 and refuse any other non-empty ID before native I/O.
+
+#### Scenario: Configured container ID without skills
+- **WHEN** a configured caller sends `providerOptions.anthropic.container: {id: "container_x"}` to an Anthropic candidate
+- **THEN** that candidate SHALL make no native request, and if no other candidate serves, the call SHALL return the fixed invalid-request error without the ID
+
+#### Scenario: Configured container ID with allowed skills
+- **WHEN** a configured caller sends allowed skills together with `container.id`
+- **THEN** that candidate SHALL fail with the existing unsupported-request error before its native request
+
+#### Scenario: Heterogeneous configured chain
+- **WHEN** a configured route's Anthropic primary receives a `container.id`, from the caller or from its own translation, and its fallback is an OpenAI or OpenAI-compatible candidate
+- **THEN** the Anthropic candidate SHALL make no native request and the fallback SHALL serve the request
+
+#### Scenario: Container metadata is still returned
+- **WHEN** a configured Anthropic response reports a container
+- **THEN** `providerMetadata.anthropic.container` SHALL be returned unchanged, and a later request that sends its ID SHALL be refused
+
+#### Scenario: BYOK container ID bounds
+- **WHEN** an Anthropic BYOK call sends a `container.id` over 128 bytes or with invalid UTF-8
+- **THEN** it SHALL return the existing unsupported-request error before any native request, without echoing the ID
+
 ### Requirement: BYOK skills admission
-Request-account (BYOK) invocation SHALL NOT consult configured skills policies. It SHALL admit `anthropic` and `custom` skills and `container.id` that satisfy the static bounds, before any account attempt and again on each account after translation, in unary and streaming modes.
+Request-account (BYOK) invocation SHALL NOT consult configured skills policies. It SHALL admit `anthropic` and `custom` skills that satisfy the static bounds, and a `container.id` that satisfies the container-ID bound, before any account attempt and again on each account after translation, in unary and streaming modes.
 
 #### Scenario: BYOK custom skill with container ID
-- **WHEN** an Anthropic BYOK call sends a bounded custom skill and a `container.id`
+- **WHEN** an Anthropic BYOK call sends a bounded custom skill and a bounded `container.id`
 - **THEN** the native request on the caller's account SHALL carry both unchanged, regardless of any configured policy
 
 #### Scenario: BYOK bounds violation
@@ -101,15 +124,15 @@ Request-account (BYOK) invocation SHALL NOT consult configured skills policies. 
 - **THEN** the Anthropic attempt SHALL fail before its native request, and the OpenAI candidate SHALL serve the request
 
 ### Requirement: Operator-account skill scoping
-Configured-mode custom skills SHALL be treated as operator-owned resources shared with every caller of the allowing candidate. The Gateway SHALL NOT offer per-tenant or per-namespace skill scoping. Documentation SHALL state that listed custom skills are shared by all callers of that candidate, and that skill-generated files remain in the operator's account.
+Configured-mode custom skills SHALL be treated as operator-owned resources shared with every caller of the allowing candidate. The Gateway SHALL NOT offer per-tenant or per-namespace skill scoping. Documentation SHALL state that listed custom skills are shared by all callers of that candidate, that skill-generated files remain in the operator's account, and that configured models refuse caller container IDs, so container reuse needs BYOK.
 
 #### Scenario: Two tenants call one candidate
 - **WHEN** callers from different namespaces call a candidate that allows a custom skill
 - **THEN** both SHALL be admitted under the same policy, and neither SHALL be able to select an unlisted skill
 
 ### Requirement: Skills evidence boundary
-Acceptance SHALL use synthetic native requests through the Go and TypeScript Gateway command tests for policy and bound cases, in both registered clients, plus the direct Go replay of the upstream `anthropic/upstream/code-execution-pptx-skill` fixture. Fixture inputs SHALL NOT change. Deterministic evidence SHALL NOT claim live skill execution, Files API retrieval, container reuse across requests or Gateway conformance-matrix coverage of the pptx row.
+Acceptance SHALL use synthetic native requests through the Go and TypeScript Gateway command tests for policy, bound and container-ID cases, in both registered clients, plus the direct Go replay of the upstream `anthropic/upstream/code-execution-pptx-skill` fixture. Fixture inputs SHALL NOT change. This evidence is local; it SHALL NOT claim live skill execution, Files API retrieval or container reuse across requests.
 
 #### Scenario: Local skills evidence
 - **WHEN** the change is accepted
-- **THEN** the Gateway command tests SHALL show an allowed skill reaching the fake Anthropic backend with the skills betas and a disallowed skill refused, for both clients, and the direct Go replay of the pptx fixture SHALL pass against unchanged inputs
+- **THEN** the Gateway command tests SHALL show an allowed skill reaching the fake Anthropic backend with the skills betas, a disallowed skill refused and a configured `container.id` refused, for both clients, and the direct Go replay of the pptx fixture SHALL pass against unchanged inputs
