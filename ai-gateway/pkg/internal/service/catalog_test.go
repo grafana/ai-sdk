@@ -49,6 +49,22 @@ func TestBuildCatalog_ConfiguredCandidateFacts(t *testing.T) {
 	}
 }
 
+func TestBuildCatalog_ListingExcludesSkillsPolicy(t *testing.T) {
+	file := testCatalogFile()
+	route := file.Models["grafana/assistant"]
+	route.Primary.Skills = &config.SkillsPolicy{Allow: []config.AllowedSkill{{Type: config.SkillCustom, SkillID: "skill_policy_secret", Versions: []string{"policy-version"}}}}
+	file.Models["grafana/assistant"] = route
+	created, err := BuildCatalog(file, map[string]config.ResolvedProvider{"anthropic-primary": {Type: "anthropic", APIKey: "secret"}}, http.DefaultClient, identityModelFactory)
+	require.NoError(t, err)
+	rows, err := created.ListModels(context.Background())
+	require.NoError(t, err)
+	raw, err := json.Marshal(rows)
+	require.NoError(t, err)
+	for _, policy := range []string{"skill_policy_secret", "policy-version", "Skills", "skills"} {
+		assert.NotContains(t, string(raw), policy)
+	}
+}
+
 func TestBuildCatalog_ConstructsImmutableCanonicalAndAliasModelsOnce(t *testing.T) {
 	file := testCatalogFile()
 	resolved := map[string]config.ResolvedProvider{

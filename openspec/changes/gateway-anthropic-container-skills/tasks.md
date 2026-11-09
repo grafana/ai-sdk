@@ -24,7 +24,7 @@ The PR title carries breaking intent for `providers/anthropic` (`feat!:` or a `B
 
 Gateway paths in sections 2-3 are relative to `ai-gateway/pkg/internal/`.
 
-- [ ] 2.1 Add failing cases to `config/file_test.go` (`TestParseModelCatalog_CandidateSkillsPolicy`), parsing `model_catalog` documents through `config.ParseModelCatalog`. They should cover:
+- [x] 2.1 Add failing cases to `config/file_test.go` (`TestParseModelCatalog_CandidateSkillsPolicy`), parsing `model_catalog` documents through `config.ParseModelCatalog`. They should cover:
   - a valid policy on an `anthropic` primary and on a fallback entry;
   - rejection on `openai` and `openai-compatible` candidates;
   - rejection of an empty `allow`, an unknown type, a repeated entry, an empty, blank, invalid-UTF-8 or over-128-byte ID or version, an empty `versions`, a repeated version and an unknown field;
@@ -32,8 +32,8 @@ Gateway paths in sections 2-3 are relative to `ai-gateway/pkg/internal/`.
   - diagnostics that name the path without values.
 
   Add `TestParseModelCatalog_SkillsPolicyPerDestination` (design D9, spec "Single skills policy per destination"): two routes naming the same provider instance and backend model where only one declares `skills`, or both declare different allow lists, as primary/fallback in each combination, are rejected with a diagnostic naming both paths and no skill IDs; equal policies in a different entry or version order load; the same backend model under a second provider instance with a different policy loads. Verify that `cd ai-gateway && go test ./pkg/internal/config/...` fails.
-- [ ] 2.2 Add `Primary.Skills`, `SkillsPolicy`, `AllowedSkill` and the typed `SkillType`. Validate them in `File.Validate` (`config/file.go:99`), key duplicate detection on `{Provider, Model}` (L174-185, design D1), and add the cross-route consistency check in sorted model-ID order (design D9). If #562 already did this, reuse and extend it. Verify that 2.1 passes and that the existing config tests are unchanged.
-- [ ] 2.3 Assert that configured discovery output excludes the policy (`service` discovery test). Verify with `cd ai-gateway && go test ./pkg/internal/service/...`.
+- [x] 2.2 Add `Primary.Skills`, `SkillsPolicy`, `AllowedSkill` and the typed `SkillType`. Validate them in `File.Validate` (`config/file.go:99`), key duplicate detection on `{Provider, Model}` (L174-185, design D1), and add the cross-route consistency check in sorted model-ID order (design D9). If #562 already did this, reuse and extend it. Verify that 2.1 passes and that the existing config tests are unchanged.
+- [x] 2.3 Assert that configured discovery output excludes the policy (`service` discovery test). Verify with `cd ai-gateway && go test ./pkg/internal/service/...`.
 
 ## 3. WP3: Native enforcement (configured and BYOK)
 
