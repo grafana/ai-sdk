@@ -97,7 +97,9 @@ func TestClassifyProvider(t *testing.T) {
 }
 
 func TestClassifyProvider_ChainFailures(t *testing.T) {
-	attempt := func(err error) error { return fmt.Errorf("fallback: provider %q model %q: %w", "instance", "model", err) }
+	attempt := func(err error) error {
+		return fmt.Errorf("fallback: provider %q model %q: %w", "instance", "model", err)
+	}
 	chain := func(newestFirst ...error) error {
 		wrapped := make([]error, len(newestFirst))
 		for i, err := range newestFirst {
