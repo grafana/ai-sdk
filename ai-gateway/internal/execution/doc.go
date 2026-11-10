@@ -27,9 +27,13 @@
 //   - how a stream ends: a provider close after a finish is [WaitFinished],
 //     a terminal success, a close after an error part with no lifecycle part
 //     since is [WaitClosedAfterError], and any other close is [WaitClosed];
-//   - the closed failure categories and reasons;
+//   - the closed failure categories and reasons, including extension denials
+//     (permission) and fail-closed extension failures ([CategoryUnavailable]);
 //   - request-local attempt capture, projected into an overview from the
-//     expected attempts of [ConfiguredSelection] and [AccountSelection].
+//     expected attempts of [ConfiguredSelection] and [AccountSelection]. A
+//     call enters its model only when the selected model itself is invoked,
+//     beneath every composed layer, so a layer that refuses first records no
+//     attempt.
 //
 // Adapters own request mapping, representation, wire encoding, framing, their
 // error documents, response commitment and their own protocol state machine,

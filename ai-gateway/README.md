@@ -164,6 +164,7 @@ secure:
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
+| `extensions` | Optional YAML configuration of a distribution's operator extensions; see [Extend Grafana AI Gateway](../docs/guides/gateway-extensions.md). |
 
 ## Limits
 

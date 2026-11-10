@@ -82,6 +82,8 @@ the service your application calls:
 
 ## Extend model infrastructure
 
+- [Extend Grafana AI Gateway](guides/gateway-extensions.md) — add typed
+  extensions that admit, transform, inspect and observe every Gateway model call.
 - [How a request crosses AI Gateway](concepts/gateway-architecture.md) — follow
   authentication, protocol translation, model routing, and streaming failures.
 - [Gateway glossary](concepts/gateway-glossary.md) — connect everyday terms,
