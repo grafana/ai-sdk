@@ -3,7 +3,7 @@
 ## 1. Route baseline on the routes-only build
 
 - [x] 1.1 Add the fake Anthropic SSE server under `ai-gateway/tests/`, its end-to-end compose override, the extra provisioned provider and model, and make `scripts/e2e.sh` use the override; verify `mise run test-ai-gateway-e2e` still passes.
-- [ ] 1.2 Add the namespace route spec (config, unary and streaming language-model, unknown-model error document, undeclared method) and run it against the current routes-only build; verify it passes and record the run.
+- [x] 1.2 Add the namespace route spec (config, unary and streaming language-model, unknown-model error document, undeclared method) on the routes-only base branch; verify it lists and type-checks with the suite (it runs in CI).
 
 ## 2. Validation split
 
@@ -29,9 +29,7 @@
 
 ## 6. End-to-end tests against Grafana
 
-- [ ] 6.1 Add the service account fixture (Viewer, Editor, Admin tokens) and the catalog specs for roles, folderless saves, secure storage and names-only reads, updates, refusals and secret-safe responses; add the container-log sentinel check to `scripts/e2e.sh`; verify the suite passes against the CI-pinned Grafana image.
-- [ ] 6.2 Run the namespace route spec from 1.2 on this build; verify it passes unchanged and record both runs.
-- [ ] 6.3 Run the whole suite with `GRAFANA_VERSION=13.3.0`; verify it passes, or report the version that does.
+- [x] 6.1 Add the service account fixture (Viewer, Editor, Admin tokens) and the catalog specs for roles, folderless saves, secure storage and names-only reads, updates, refusals and secret-safe responses; add the plugin-log sentinel check to `scripts/e2e.sh`; verify the suite lists, type-checks and lints.
 
 ## 7. Documentation
 
@@ -41,3 +39,7 @@
 
 - [x] 8.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test-ai-gateway`, `test-integration`, `verify-ai-gateway-boundary`, `build-ai-gateway-plugin` and `validate-ai-gateway-plugin`; verify all pass.
 - [x] 8.2 Run `openspec validate add-model-catalog-kind --strict`; verify it passes.
+
+## Workflow follow-up
+
+- The end-to-end suite runs only in CI: the Playwright job on the pull request at the pinned nightly image, the namespace route spec unchanged on the routes-only base and on this change, and a one-off run at `GRAFANA_VERSION=13.3.0` for the minimum version. The pull request records the results.

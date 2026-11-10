@@ -34,7 +34,7 @@ The production route table SHALL declare exactly the method and path pairs of th
 - **THEN** no catalog, selection or provider call SHALL occur, and the response SHALL NOT be a Gateway error document
 
 ### Requirement: Protocol test host
-Deterministic tests SHALL serve the Gateway through the real plugin protocol, from HTTP through the plugin route and admission RPCs and route adapter to the Gateway handlers, with test-signed delegated tokens and fake native providers. Cross-language suites SHALL launch the built plugin executable as a plugin host does. The test host SHALL be test-only, SHALL NOT be shipped or documented as a supported server or as evidence of the platform's deadline value, draining, schema validation, pruning or authorization of kinds, and MAY apply a route deadline.
+Deterministic tests SHALL serve the Gateway through the real plugin protocol, from HTTP through the plugin route and admission RPCs to the Gateway handlers, with test-signed delegated tokens and fake native providers. Cross-language suites SHALL launch the built plugin executable as a plugin host does. The test host SHALL be test-only, SHALL NOT be shipped or documented as a supported server or as evidence of the platform's deadline value or draining, and MAY apply a route deadline.
 
 #### Scenario: Test host exercises the protocol hop
 - **WHEN** a client test sends a request to the test host
@@ -55,6 +55,7 @@ Deterministic tests SHALL serve the Gateway through the real plugin protocol, fr
 #### Scenario: Manifest kinds in the test host
 - **WHEN** a test creates, gets, updates or deletes an object of a kind the manifest declares
 - **THEN** the test host SHALL store it in memory, send the plugin an admission review for each operation the kind declares, and refuse the write when the plugin denies it
+- **AND** the test host SHALL NOT be cited as evidence of the platform's schema validation, pruning or authorization of kinds
 
 #### Scenario: Secure values in the test host
 - **WHEN** a test host write carries secure values
