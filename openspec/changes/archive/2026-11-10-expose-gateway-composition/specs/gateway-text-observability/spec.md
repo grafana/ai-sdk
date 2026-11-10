@@ -4,7 +4,7 @@
 
 ### Requirement: One startup-composed logical middleware chain
 
-The Gateway SHALL construct its logical observer chains once at startup: approved context enrichment, Agent Observability recording, structured logging and Prometheus model metrics, in that request order. It SHALL wrap each configured canonical catalog entry's model exactly once at startup with canonical public identity only. After selection, the execution runtime SHALL apply the chain for the selection's source once per call, outside that identity and the inner model. In WP8 the inner model SHALL be the direct provider; WP9 MAY replace it with fallback beneath the unchanged logical wrapper and SHALL NOT wrap physical candidates with WP8 observers.
+The Gateway SHALL construct its logical observer chains once at startup: context enrichment, Agent Observability recording, structured logging and Prometheus model metrics, in that request order. Each configured catalog entry SHALL be wrapped once at startup with canonical public identity only. After selection, the runtime SHALL apply the chain of the selection's source once per call, outside that identity. Physical candidates beneath a fallback chain SHALL NOT get logical observers.
 
 #### Scenario: Alias uses one canonical chain
 - **WHEN** an authenticated text request resolves an alias for a configured canonical model
@@ -22,7 +22,7 @@ The Gateway SHALL construct its logical observer chains once at startup: approve
 
 ### Requirement: Shared logical chain traversal and adapter isolation
 
-Response observation SHALL occur in reverse order. Alias and canonical resolution SHALL return the same identity-wrapped model instance, and one invocation SHALL traverse each logical observer exactly once. The chain SHALL be shared service behavior below public API adapters, applied by the execution runtime. It SHALL NOT be constructed in ProviderWire request handling and SHALL NOT change ProviderWire validation, public bytes, error mapping, commitment, stream ordering, timeout, or cancellation precedence.
+Response observation SHALL occur in reverse order. Alias and canonical resolution SHALL return the same identity-wrapped model instance, and one invocation SHALL traverse each logical observer exactly once. The chain SHALL be shared service behavior below public API adapters. It SHALL NOT be constructed in ProviderWire request handling and SHALL NOT change ProviderWire validation, public bytes, error mapping, commitment, stream ordering, timeout, or cancellation precedence.
 
 #### Scenario: Shared logical chain traversal and adapter isolation
 - **WHEN** alias and canonical calls traverse the startup chain
