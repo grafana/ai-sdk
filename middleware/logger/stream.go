@@ -26,9 +26,10 @@ func (l *modelLogger) wrapStream(ctx context.Context, p middleware.WrapStreamPar
 	upstream, err := p.DoStream(ctx)
 	if err != nil {
 		duration := l.opts.clock().Sub(started)
-		attrs := append(commonAttrs(callID, "stream", p.Model), terminalAttrs(duration, outcomeError)...)
-		attrs = append(attrs, errorAttrs(err, l.opts.capture)...)
-		l.log(ctx, EventStreamError, l.opts.errorLevel, attrs...)
+		outcome, level, errAttrs := l.callError(err)
+		attrs := append(commonAttrs(callID, "stream", p.Model), terminalAttrs(duration, outcome)...)
+		attrs = append(attrs, errAttrs...)
+		l.log(ctx, EventStreamError, level, attrs...)
 		return nil, err
 	}
 	if upstream == nil {
@@ -129,7 +130,10 @@ func (l *modelLogger) logStreamEnd(ctx context.Context, input streamTeeInput, su
 	defer streamrecover.Recover(func() {})
 	duration := l.opts.clock().Sub(input.started)
 	outcome := outcomeSuccess
-	if summary.firstErrSet {
+	denied := summary.firstErrSet && summary.firstErr != nil && l.opts.denied(summary.firstErr)
+	if denied {
+		outcome = outcomeDenied
+	} else if summary.firstErrSet {
 		outcome = outcomeError
 	} else if cancelled {
 		outcome = outcomeForContextErr(ctx.Err())
@@ -143,6 +147,11 @@ func (l *modelLogger) logStreamEnd(ctx context.Context, input streamTeeInput, su
 		attrs = append(attrs, slog.Any("ai_sdk.response.headers", cloneStringMap(input.response.Headers)))
 	}
 
+	if denied {
+		attrs = append(attrs, withErrorClass(streamPartErrorAttrs(summary.firstErr, l.opts.capture), errorClassDenied)...)
+		l.log(ctx, EventStreamError, l.opts.level, attrs...)
+		return
+	}
 	if summary.firstErrSet {
 		attrs = append(attrs, streamPartErrorAttrs(summary.firstErr, l.opts.capture)...)
 		l.log(ctx, EventStreamError, l.opts.errorLevel, attrs...)
@@ -224,8 +233,13 @@ func (l *modelLogger) logStreamPart(ctx context.Context, callID string, model pr
 	attrs = append(attrs, streamPartCaptureAttrs(capturedPart, l.opts.capture)...)
 	level := l.opts.partLevel
 	if part.Type == provider.PartError {
-		level = l.opts.errorLevel
-		attrs = append(attrs, streamPartErrorAttrs(part.APICallError, l.opts.capture)...)
+		errAttrs := streamPartErrorAttrs(part.APICallError, l.opts.capture)
+		if part.APICallError != nil && l.opts.denied(part.APICallError) {
+			errAttrs = withErrorClass(errAttrs, errorClassDenied)
+		} else {
+			level = l.opts.errorLevel
+		}
+		attrs = append(attrs, errAttrs...)
 	}
 	l.log(ctx, EventStreamPart, level, attrs...)
 }

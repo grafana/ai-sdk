@@ -52,6 +52,12 @@ type Options struct {
 	StreamDrainTimeout time.Duration
 	// Clock returns the current time for durations. A nil clock defaults to time.Now.
 	Clock func() time.Time
+	// IsDenied reports whether a call error or stream error part is a policy
+	// denial rather than a failure. A denied call's terminal record uses
+	// outcome and error type "denied" at Level instead of ErrorLevel. A nil
+	// IsDenied denies nothing, and a panicking IsDenied is treated as
+	// reporting no denial.
+	IsDenied func(err error) bool
 }
 
 // CaptureOptions controls opt-in logging for sensitive provider-call payloads.
@@ -101,6 +107,7 @@ type normalizedOptions struct {
 	identitySource     IdentitySource
 	streamDrainTimeout time.Duration
 	clock              func() time.Time
+	isDenied           func(err error) bool
 }
 
 func normalizeOptions(opts Options) normalizedOptions {
@@ -158,5 +165,19 @@ func normalizeOptions(opts Options) normalizedOptions {
 		identitySource:     opts.IdentitySource,
 		streamDrainTimeout: opts.StreamDrainTimeout,
 		clock:              clock,
+		isDenied:           opts.IsDenied,
 	}
+}
+
+// denied reports whether the configured classifier reports err as a denial.
+func (opts normalizedOptions) denied(err error) (denied bool) {
+	if opts.isDenied == nil || err == nil {
+		return false
+	}
+	defer func() {
+		if recover() != nil {
+			denied = false
+		}
+	}()
+	return opts.isDenied(err)
 }
