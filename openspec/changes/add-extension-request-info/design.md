@@ -173,4 +173,4 @@ None. Without extensions, only logs and Agent Observability metadata change (one
 ## Follow-ups
 
 - **#757 merge:** `Call.Catalog` and catalog version, and the stack-catalog column's evidence.
-- **#765:** document that tenant extensions see the UID, candidates and attempts.
+- **#765:** document that tenant extensions see the caller UID, and that tenant observers see the provider instances and provider models of operator-catalog candidates and attempts.
