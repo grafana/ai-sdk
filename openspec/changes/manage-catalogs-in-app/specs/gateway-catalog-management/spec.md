@@ -53,6 +53,7 @@ A key entered on the page SHALL be sent only as `secure.<provider>.create` for t
 #### Scenario: Key after saving
 - **WHEN** a catalog is saved with a key and then reopened, or the list is shown
 - **THEN** the page SHALL NOT contain the key, and the provider SHALL show as configured
+- **AND** no response the page fetches and no browser console message SHALL contain the key
 
 #### Scenario: Key on create
 - **WHEN** a writer creates a catalog with a key for a provider
