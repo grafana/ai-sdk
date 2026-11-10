@@ -38,11 +38,11 @@ In the plugin process, Gateway collectors SHALL be registered exactly once in th
 - **THEN** the collection SHALL include the Gateway's model, access-decision and export-failure metrics without forbidden label values, and no Gateway route request metrics
 
 ### Requirement: Access decision metrics
-The Gateway SHALL count route requests by bounded access decision: configured, BYOK or refused. Labels SHALL NOT contain caller identity, service identity, namespace or token values. Authentication outcomes owned by the platform SHALL NOT be counted as Gateway authentication metrics.
+The Gateway SHALL count route requests by bounded access decision: configured, BYOK, catalog or refused. Labels SHALL NOT contain caller identity, service identity, namespace or token values. Authentication outcomes owned by the platform SHALL NOT be counted as Gateway authentication metrics.
 
 #### Scenario: Mixed callers
-- **WHEN** internal, user and refused callers send requests
-- **THEN** the access-decision counter SHALL increase under its three fixed values only
+- **WHEN** internal, user, catalog route and refused callers send requests
+- **THEN** the access-decision counter SHALL increase under its four fixed values only
 
 ### Requirement: Host-configured tracing
 Request handling SHALL continue the trace context that the plugin host's instrumented protocol server provides, and request-scoped log records SHALL carry its trace and span identifiers. The Gateway SHALL NOT configure its own trace exporter or add span attributes containing credentials, payloads or provider topology.

@@ -48,7 +48,7 @@ Access to the namespace routes SHALL NOT require a Gateway-specific Grafana role
 - **THEN** the access decision SHALL be the same as for a caller holding them
 
 ### Requirement: Verified caller attribution
-Every served request SHALL carry a private verified caller value with the access class, route namespace, the direct caller's service identity and the identity actor's typed UID (`user:<uid>` or `service-account:<uid>`), each when present. Emitted caller-service attribution SHALL be the direct caller's service identity for configured access in `cloud` mode and for catalog access, and SHALL be omitted otherwise. Identity-actor UIDs and other user claims SHALL NOT enter logs, metrics, exports or provider requests.
+Every served request SHALL carry a private verified caller value: access class, route namespace, direct caller's service identity and identity actor's typed UID (`user:<uid>` or `service-account:<uid>`), each when present. Emitted caller-service attribution SHALL be the direct caller's service identity for configured access in `cloud` mode and for catalog access, and SHALL be omitted otherwise. Identity-actor UIDs and other user claims SHALL NOT enter logs, metrics, exports or provider requests.
 
 #### Scenario: Non-configured call is observed
 - **WHEN** a BYOK, relayed or `self-hosted` request on a namespace route is logged and exported

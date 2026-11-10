@@ -483,7 +483,7 @@ Raw Go/HTTP tests and local schemas SHALL independently verify active union fiel
 - **THEN** raw/schema/lifecycle/large-output tests SHALL independently verify it, authenticated command/frontend assembly evidence SHALL accompany behavior changes and synthetic responses SHALL NOT become recorded inputs
 
 ### Requirement: Closed host error categories and fixed document reuse
-Callers SHALL select only the closed permission, internal or unsupported-BYOK-discovery categories, never public messages, causes, arbitrary statuses/types/codes, retryability or byte limits. Encoding SHALL use the handler's typed fixed definitions without schema compilation/validation or optional execution metadata.
+Callers SHALL select only the closed permission, internal, unsupported-BYOK-discovery or catalog configuration categories, never public messages, causes, arbitrary statuses/types/codes, retryability or byte limits. Encoding SHALL use the handler's typed fixed definitions without schema compilation/validation or optional execution metadata.
 
 #### Scenario: Closed host error categories and fixed document reuse
 - **WHEN** host middleware selects permission rather than providing its own error message
@@ -492,6 +492,10 @@ Callers SHALL select only the closed permission, internal or unsupported-BYOK-di
 #### Scenario: Unsupported discovery uses a closed category
 - **WHEN** an authenticated BYOK caller requests discovery
 - **THEN** the host SHALL select the fixed unsupported-discovery category without catalog access
+
+#### Scenario: Catalog configuration host error
+- **WHEN** the host selects the catalog configuration category
+- **THEN** the writer SHALL emit the fixed 424 `failed_dependency` document of the runtime's catalog configuration category
 
 ### Requirement: Host error status bytes and private API boundary
 
