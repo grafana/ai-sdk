@@ -114,7 +114,7 @@ The settings `stack_catalog_egress_allow` and `stack_catalog_egress_deny` SHALL 
 - **THEN** startup SHALL fail with a reason naming the setting
 
 ### Requirement: List precedence
-A destination SHALL be refused when its host matches a deny hostname entry or a dialed address is in a deny prefix. Otherwise it SHALL be permitted when its host matches an allow hostname entry or the address is in an allow prefix. Otherwise the refused ranges SHALL apply. Unspecified and multicast addresses SHALL be refused even when allowed.
+A destination SHALL be refused when its host matches a deny hostname entry or a dialed address is in a deny prefix. Otherwise it SHALL be permitted when its host matches an allow hostname entry or the address is in an allow prefix. Otherwise the refused ranges SHALL apply. Unspecified and multicast addresses SHALL be refused even when allowed. A deny hostname entry is a convenience, not a boundary: the same address stays reachable through an IP literal or another name.
 
 #### Scenario: Allow lifts a built-in refusal
 - **WHEN** the allow list holds `10.20.0.0/16` and an endpoint resolves to `10.20.1.2`
@@ -131,6 +131,10 @@ A destination SHALL be refused when its host matches a deny hostname entry or a 
 #### Scenario: Allow cannot reach unspecified addresses
 - **WHEN** the allow list holds `0.0.0.0/0` and an endpoint resolves to `0.0.0.0`
 - **THEN** the connection SHALL be refused
+
+#### Scenario: Deny hostname bypassed by another name
+- **WHEN** the deny list holds only `api.example.com`, and an endpoint uses another name or the IP literal for the same public address
+- **THEN** the connection SHALL be permitted, and only a deny prefix SHALL refuse that address
 
 #### Scenario: Allow is not exclusive
 - **WHEN** the allow list holds only `llm.corp.example`
@@ -156,11 +160,11 @@ Admission and every request SHALL refuse a custom endpoint whose host is not an 
 - **THEN** every call SHALL fail with the catalog configuration category, with zero provider requests
 
 ### Requirement: Secret-safe refusal
-A refused connection and a failed DNS resolution of a custom endpoint SHALL fail the attempt with one fixed egress refusal error. It SHALL NOT carry the resolved address, the resolver's address, the matched range or list entry. A refused attempt SHALL be fallback-eligible, and a call whose final attempt is refused SHALL fail with the egress refused category.
+A refused connection and a failed DNS resolution of a custom endpoint SHALL fail the attempt with one fixed egress refusal error. Neither it, the error document nor any log line SHALL carry the endpoint URL or host, a resolved or resolver address, or the matched range or entry; they MAY name the field path and provider name. A refused attempt SHALL be fallback-eligible, and a call whose final attempt is refused SHALL fail with the egress refused category.
 
 #### Scenario: Refused primary, permitted fallback
 - **WHEN** a model's primary endpoint is refused and its fallback succeeds
-- **THEN** the call SHALL succeed, and the overview's failed attempt SHALL carry the fixed refusal message and no IP address
+- **THEN** the call SHALL succeed, and the overview's failed attempt SHALL carry only the fixed refusal message, without the endpoint host or any address
 
 #### Scenario: Only candidate refused
 - **WHEN** the only candidate resolves to `10.0.0.1`
@@ -171,7 +175,7 @@ A refused connection and a failed DNS resolution of a custom endpoint SHALL fail
 - **THEN** the attempt SHALL fail with the same fixed refusal error as a refused address
 
 ### Requirement: Custom endpoint documentation
-`ai-gateway/README.md` SHALL describe custom stack-catalog endpoints: HTTPS only, the refused ranges, connect-time checks, that proxies are not used, the two settings with their format and precedence, the egress refused error, and that hostname allow entries trust that name's DNS.
+`ai-gateway/README.md` SHALL describe custom stack-catalog endpoints: HTTPS only, the refused ranges, connect-time checks, that proxies are not used, the two settings with their format and precedence, the egress refused error, that hostname allow entries trust that name's DNS, that deny hostname entries are a convenience and prefixes the boundary, and that ports are unrestricted, so deny prefixes are how operators stop port scanning.
 
 #### Scenario: Operator reads the guidance
 - **WHEN** an operator reads the stack catalog section and the settings table

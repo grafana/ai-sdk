@@ -125,7 +125,8 @@ Alternatives considered:
   - a policy refusal returns the bare sentinel;
   - a `*net.DNSError` also returns the bare sentinel. This drops the resolver address and removes the oracle between an internal name that exists and one that doesn't;
   - other dial and TLS errors reach a permitted address and pass through unchanged, so timeouts still classify as timeout.
-- `http.Client` wraps the error in a `url.Error` with the catalog's own URL. Providers wrap that, so the overview message reads, for example, `openai: HTTP request failed: Post "https://llm.example.com/v1/chat/completions": gateway outbound: provider endpoint refused ...`. It names only the catalog's configured URL, which catalog readers can already see.
+- `http.Client` wraps the error in a `url.Error` with the request URL, and providers wrap that again. So the stack builder wraps each egress candidate in a model that replaces any error matching the sentinel with the bare sentinel, before `execution.Translate`. The overview's failed attempt then carries only the fixed message, with no host or URL. It is not an `APICallError`, so the fallback decider still falls back.
+- Bounded reporting: the 424 document, the overview attempt and every log line on refusal carry no endpoint URL, host or address. They may name the field path and provider name, which is a DNS label. Stack-catalog calls write no physical attempt records, and the model logger logs only bounded status values.
 - `ClassifyProvider` and `ClassifyStreamPart` check `errors.Is(err, ErrEgressRefused)` before the `APICallError` status mapping, and return `CategoryEgressRefused`.
 - ProviderWire maps it to a fixed document: 424, `failed_dependency`/`failed_dependency`, "provider endpoint refused by the egress policy or not resolvable", not retryable. It uses the same registered status, type and code as the catalog configuration document, with a different message.
 - Fallback is unchanged: providers mark transport errors retryable, so a refused candidate falls back. The final error decides the document.
@@ -189,27 +190,31 @@ The e2e fake provider has a private Docker address, which the production policy 
 
 - [Proxy-only egress environments can't reach custom endpoints] → documented. A trusted egress proxy can be added later without changing the policy model.
 - [An allow hostname entry trusts DNS] → documented, and prefix entries are recommended. Deny prefixes still apply to its addresses.
-- [SDK error wrapping hides the sentinel] → tests check `errors.Is` through the Anthropic SDK, the OpenAI SDK and `openai-compatible` paths before relying on it. If an SDK flattens the error, the refusal would classify as upstream; the tests catch that, and the implementation restores the sentinel before merging.
+- [SDK error wrapping hides the sentinel] → tests check `errors.Is` through the Anthropic SDK, the OpenAI SDK and `openai-compatible` paths, since the candidate wrapper relies on it.
 - [Internal services on public addresses, such as an organization's own public ranges] → the operator deny list.
-- [Port scanning or abuse of public hosts from Gateway addresses] → bounded by the attempt bound and Grafana's request limits. Timing still distinguishes open from closed public ports. Accepted: those ports are public.
+- [Ports are unrestricted, so any port of a permitted host is reachable, and timing distinguishes open from closed ports] → no port policy (YAGNI). Bounded by the attempt bound and Grafana's request limits. The README's security guidance names it and points operators at deny prefixes.
+- [Deny hostname entries are bypassable through an IP literal or another name for the same address] → documented as a convenience. Deny prefixes are the boundary.
 - [A stricter policy makes stored catalogs fail] → catalog configuration at request time for static failures, and the egress document for connect-time ones. A policy change needs a plugin restart.
 - [Allow-listed private TLS endpoints need a trusted certificate] → `SSL_CERT_FILE` or system roots, documented.
 - [A DNS failure reported as a refusal confuses a typo] → the fixed message says "or not resolvable".
 - [#759 catalog UI may only offer `anthropic` and `openai`] → coordinate. This change makes no frontend edits.
 - [#762 merge] → appended `Category`, `safeCategories` and `publicErrors` entries, and a `StackCatalogOptions` field. Text conflicts only.
 
+## Follow-ups for #759
+
+- The catalog form needs `baseURL`, the `openai-compatible` type, `providerName` and `supportsStructuredOutputs` once both changes land. #759 records the same follow-up.
+
 ## Migration Plan
 
 Additive. With both settings unset, the built-in policy applies only to the new custom endpoints. Existing stack catalogs have no `baseURL` and are unaffected. Rolling back makes admission refuse `baseURL` again. Stored catalogs with custom endpoints then fail per request with the catalog configuration document.
 
-## Decisions for review
+## Decisions recorded at review
 
-Each has a recommendation; the specs follow it.
-
-1. **Proxy:** direct connections only for custom endpoints (recommended), versus an operator-designated trusted proxy now.
-2. **Error mapping:** a new `egress refused` category and document (recommended), versus reusing catalog configuration.
-3. **DNS failures:** same refusal error and document (recommended, no internal-name oracle), versus upstream (502, retryable).
-4. **Allow semantics:** exceptions to the built-in refusal (recommended), versus an exclusive allow list.
-5. **Scope:** only providers with `baseURL` (recommended; native endpoints are Gateway-chosen and keep the proxy), versus all stack-catalog candidates.
-6. **Hostname entries:** allowed in both lists (recommended; needed for self-hosted names and e2e), versus prefixes only.
-7. **Never-dialable:** allow entries can't lift unspecified or multicast addresses (recommended), but can lift loopback and private ranges.
+1. **Proxy:** direct connections only for custom endpoints. A trusted egress proxy can come later.
+2. **Error mapping:** a new `egress refused` category and 424 document.
+3. **DNS failures:** the same refusal error and document, so there is no internal-name oracle.
+4. **Allow semantics:** exceptions to the built-in refusal, not an exclusive list.
+5. **Scope:** only providers with `baseURL`; native endpoints keep the shared client and its proxy.
+6. **Hostname entries:** allowed in both lists. Deny hostnames are a convenience; deny prefixes are the boundary.
+7. **Never-dialable:** allow entries can lift loopback and private ranges, never unspecified or multicast addresses.
+8. **Ports:** unrestricted, documented next to the port-scanning risk.
