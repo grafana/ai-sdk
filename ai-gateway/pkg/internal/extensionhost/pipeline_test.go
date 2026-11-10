@@ -17,17 +17,18 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
-func invoke(t *testing.T, model provider.LanguageModel, stream bool, options provider.CallOptions) ([]provider.StreamPart, *provider.GenerateResult, error) {
+// invoke calls model once, unary or streaming, and returns a stream's parts.
+func invoke(t *testing.T, model provider.LanguageModel, stream bool) ([]provider.StreamPart, error) {
 	t.Helper()
 	if !stream {
-		result, err := model.DoGenerate(t.Context(), options)
-		return nil, result, err
+		_, err := model.DoGenerate(t.Context(), provider.CallOptions{})
+		return nil, err
 	}
-	result, err := model.DoStream(t.Context(), options)
+	result, err := model.DoStream(t.Context(), provider.CallOptions{})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return collect(t, result.Stream), nil, nil
+	return collect(t, result.Stream), nil
 }
 
 func TestPipeline_PhaseOrder(t *testing.T) {
@@ -43,7 +44,7 @@ func TestPipeline_PhaseOrder(t *testing.T) {
 				log.add("model")
 				return &provider.StreamResult{Stream: streamOf(textParts("hello")...)}, nil
 			}
-			_, _, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), stream, provider.CallOptions{})
+			_, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), stream)
 			require.NoError(t, err)
 			h.flush()
 			assert.Equal(t, []string{"all:admit", "all:transform", "all:inspect-request", "model", "all:inspect-response:text", "all:inspect-response:finish", "all:observe:success"}, log.list())
@@ -257,7 +258,7 @@ func TestPipeline_NormalizedParts(t *testing.T) {
 	h2.model.stream = func(context.Context) (*provider.StreamResult, error) {
 		return &provider.StreamResult{Stream: streamOf(textParts("hello", " ", "world")...)}, nil
 	}
-	_, _, err = invoke(t, h2.compose(t, extension.SourceOperatorCatalog), true, provider.CallOptions{})
+	_, err = invoke(t, h2.compose(t, extension.SourceOperatorCatalog), true)
 	require.NoError(t, err)
 
 	assert.Equal(t, []extension.Part{{Type: extension.PartText, Text: "hello world"}, {Type: extension.PartFinish}}, unary)
@@ -280,7 +281,7 @@ func TestPipeline_NormalizedParts(t *testing.T) {
 				provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonToolCalls}, Usage: &provider.Usage{}},
 			)}, nil
 		}
-		_, _, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), true, provider.CallOptions{})
+		_, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), true)
 		require.NoError(t, err)
 		assert.Equal(t, []extension.Part{{Type: extension.PartToolCall, ID: "call-1", ToolName: "search", Input: `{"q":"x"}`}, {Type: extension.PartFinish}}, parts)
 	})
@@ -326,7 +327,7 @@ func TestPipeline_ResponseAbort(t *testing.T) {
 			}()
 			return &provider.StreamResult{Stream: parts}, nil
 		}
-		parts, _, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), true, provider.CallOptions{})
+		parts, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), true)
 		require.NoError(t, err)
 		assert.Equal(t, []provider.StreamPartType{provider.PartStreamStart, provider.PartTextStart, provider.PartTextDelta, provider.PartTextDelta, provider.PartError}, partTypes(parts))
 		last := parts[len(parts)-1].APICallError
@@ -342,7 +343,7 @@ func TestPipeline_ResponseAbort(t *testing.T) {
 
 	t.Run("fail-closed stream failure", func(t *testing.T) {
 		h := newHarness(t, define("guard", &recorder{inspectResponse: func(context.Context, *extension.Call, extension.Part) error { panic("private") }}))
-		parts, _, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), true, provider.CallOptions{})
+		parts, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), true)
 		require.NoError(t, err)
 		assert.Equal(t, []provider.StreamPartType{provider.PartStreamStart, provider.PartTextStart, provider.PartError}, partTypes(parts))
 		assert.Equal(t, execution.CategoryUnavailable, execution.ClassifyStreamPart(parts[2].APICallError))
@@ -353,7 +354,7 @@ func TestPipeline_ResponseAbort(t *testing.T) {
 
 	t.Run("skipped inspector failure delivers the part", func(t *testing.T) {
 		h := newHarness(t, define("guard", &recorder{inspectResponse: func(context.Context, *extension.Call, extension.Part) error { return errors.New("private") }}, skip))
-		parts, _, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), true, provider.CallOptions{})
+		parts, err := invoke(t, h.compose(t, extension.SourceOperatorCatalog), true)
 		require.NoError(t, err)
 		assert.Equal(t, partTypes(textParts("hello ", "world")), partTypes(parts))
 		assert.Equal(t, 3.0, h.events("guard", string(extension.PhaseInspectResponse), eventFailed))
@@ -500,7 +501,7 @@ func TestPipeline_Observe(t *testing.T) {
 					tc.model(h.model)
 				}
 				before := time.Now()
-				_, _, _ = invoke(t, h.compose(t, extension.SourceOperatorCatalog), tc.stream, provider.CallOptions{})
+				_, _ = invoke(t, h.compose(t, extension.SourceOperatorCatalog), tc.stream)
 				h.flush()
 				require.Len(t, records, 1)
 				record := <-records
