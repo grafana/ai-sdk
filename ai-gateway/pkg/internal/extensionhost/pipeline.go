@@ -261,7 +261,7 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 	}
 	history, _ := execution.RebuildToolHistory(options.Prompt)
 	if execution.ValidateGenerateResult(result, history) != nil {
-		c.finish(ctx, settled(ctx, extension.OutcomeInvalidOutput), result.Usage, ctx.Err())
+		c.settle(ctx, extension.OutcomeInvalidOutput, result.Usage)
 		return result, nil
 	}
 	if p.lists.responseInspector {
@@ -272,17 +272,19 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 			}
 		}
 	}
-	c.finish(ctx, settled(ctx, extension.OutcomeSuccess), result.Usage, ctx.Err())
+	c.settle(ctx, extension.OutcomeSuccess, result.Usage)
 	return result, nil
 }
 
-// settled returns outcome, or cancelled when ctx ended first: the runtime then
-// discards the result.
-func settled(ctx context.Context, outcome extension.Outcome) extension.Outcome {
-	if ctx.Err() != nil {
-		return extension.OutcomeCancelled
+// settle finishes a call whose model returned a result with outcome, or as
+// cancelled when ctx ended first: the runtime then discards the result, and the
+// answered attempt is canceled.
+func (c *call) settle(ctx context.Context, outcome extension.Outcome, usage provider.Usage) {
+	ended := ctx.Err()
+	if ended != nil {
+		outcome = extension.OutcomeCancelled
 	}
-	return outcome
+	c.finish(ctx, outcome, usage, ended)
 }
 
 func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {

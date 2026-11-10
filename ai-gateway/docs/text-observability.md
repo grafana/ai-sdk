@@ -16,7 +16,7 @@ Each request writes one `http request completed` line:
 | `status` | Status class, such as `2xx` or `4xx` |
 | `access` | `configured`, `byok` (bring your own key) or `refused` |
 | `correlation_id` | ID that links the request to its attempt logs |
-| `caller_identity` | The user or service account that called, as `user:<uid>` or `service-account:<uid>`, including when a Grafana service calls on its behalf. Absent when there is none. |
+| `caller_identity` | The user or service account that called, as `user:<uid>` or `service-account:<uid>`, including when a Grafana service calls on its behalf. Absent when there is none, or when it is too long to log. |
 
 Each model call also writes a start line and an end line with the model, the
 outcome, usage, timing and the same `correlation_id` and `caller_identity`.
