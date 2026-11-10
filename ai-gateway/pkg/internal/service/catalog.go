@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -70,8 +71,11 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 				return nil, fmt.Errorf("gateway service: model %q references unresolved provider", id)
 			}
 			candidate, identity, err := newCandidate(providerConfig, descriptor, client, construct)
+			if errors.Is(err, errNilCandidate) {
+				return nil, fmt.Errorf("gateway service: constructing model %q returned nil", id)
+			}
 			if err != nil {
-				return nil, fmt.Errorf("gateway service: model %q: %w", id, err)
+				return nil, err
 			}
 			configuredCandidates = append(configuredCandidates, identity)
 			candidates = append(candidates, candidate)
@@ -105,6 +109,8 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 	}
 	return &Catalog{Catalog: static, routes: routes, factory: factory, physical: sink}, nil
 }
+
+var errNilCandidate = errors.New("gateway service: constructing a candidate returned nil")
 
 // newCandidate constructs the physical model of one configured candidate and
 // returns it with its configured identity.
@@ -145,7 +151,7 @@ func newCandidate(providerConfig config.ResolvedProvider, descriptor config.Prim
 		return nil, catalog.ConfiguredCandidate{}, fmt.Errorf("gateway service: provider %q is invalid", descriptor.Provider)
 	}
 	if candidate == nil {
-		return nil, catalog.ConfiguredCandidate{}, fmt.Errorf("gateway service: constructing a model of provider %q returned nil", descriptor.Provider)
+		return nil, catalog.ConfiguredCandidate{}, errNilCandidate
 	}
 	if validateOptions != nil {
 		candidate = nativeoptions.Model{LanguageModel: candidate, Validate: validateOptions}
