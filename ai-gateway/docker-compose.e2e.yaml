@@ -2,10 +2,25 @@ services:
   grafana:
     environment:
       GF_PLUGIN_GRAFANA_AIGATEWAY_APP_MODEL_CATALOG: $$__file{/etc/grafana/provisioning/aigateway/models.e2e.yaml}
+      HTTPS_PROXY: http://native-proxy:8443
+      NO_PROXY: localhost,127.0.0.1,fake-anthropic,native-proxy
+      SSL_CERT_FILE: /etc/native-proxy/cert.pem
+    volumes:
+      - ${E2E_NATIVE_PROXY_CERTIFICATES:?run the end-to-end tests through scripts/e2e.sh}:/etc/native-proxy:ro
     depends_on:
       - fake-anthropic
+      - native-proxy
   fake-anthropic:
     image: node:24-alpine
     command: ['node', '/srv/fake-anthropic.mjs']
     volumes:
       - ./tests/fake-anthropic.mjs:/srv/fake-anthropic.mjs:ro
+  native-proxy:
+    image: node:24-alpine
+    command: ['node', '/srv/native-proxy.mjs']
+    volumes:
+      - ./tests/native-proxy.mjs:/srv/native-proxy.mjs:ro
+      - ./test/providerwire-v4/native-provider-proxy.ts:/srv/native-provider-proxy.ts:ro
+      - ${E2E_NATIVE_PROXY_CERTIFICATES:?run the end-to-end tests through scripts/e2e.sh}:/etc/native-proxy:ro
+    depends_on:
+      - fake-anthropic

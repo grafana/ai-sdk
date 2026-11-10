@@ -27,13 +27,13 @@
 
 ## 6. End-to-end
 
-- [ ] 6.1 Make `startNativeProviderProxy` take its certificate and key, keeping the existing fixture for `test/providerwire-v4`. Add:
+- [x] 6.1 Make `startNativeProviderProxy` take its certificate and key, keeping the existing fixture for `test/providerwire-v4`. Add:
   - an e2e `native-proxy` service that runs it with a certificate `scripts/e2e.sh` generates at run time, with nothing committed;
   - the proxy environment in `docker-compose.e2e.yaml`;
   - the key-hash reply in `fake-anthropic.mjs`.
 
   Verify that `mise run test-providerwire-v4` still passes and that `tsc`, `eslint`, `prettier` and `playwright test --list` pass.
-- [ ] 6.2 Add `tests/catalog-routes.spec.ts` with the design's table: roles, decrypted keys, edits, discovery, `403`/`404` and namespace routes unchanged. Verify in CI's Playwright job; there is no local docker.
+- [x] 6.2 Add `tests/catalog-routes.spec.ts` with the design's table: roles, decrypted keys, edits, discovery, `403`/`404` and namespace routes unchanged. Verify in CI's Playwright job; there is no local docker.
 
 ## 7. Documentation
 

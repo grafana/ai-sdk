@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Runs the Playwright tests against the built plugin package in the
-# create-plugin Grafana environment, with the end-to-end overrides and their
-# fake provider, then stops the environment.
+# create-plugin Grafana environment, with the end-to-end overrides, their fake
+# provider and a proxy for the native provider endpoints, then stops the
+# environment. The proxy's certificate is generated for each run and removed
+# with the environment.
 set -euo pipefail
 
 gateway=$(git rev-parse --show-toplevel)/ai-gateway
@@ -15,15 +17,30 @@ fail() { echo "$*" >&2; exit 1; }
 cd "$gateway"
 compose=(docker compose -f docker-compose.yaml -f docker-compose.e2e.yaml)
 
+E2E_NATIVE_PROXY_CERTIFICATES=$(mktemp -d)
+export E2E_NATIVE_PROXY_CERTIFICATES
+
 stop() {
   local status=$?
   if [[ $status -ne 0 ]]; then
-    "${compose[@]}" logs grafana | tail -n 200 || true
+    "${compose[@]}" logs grafana native-proxy | tail -n 200 || true
   fi
   "${compose[@]}" down --volumes || true
+  rm -rf "$E2E_NATIVE_PROXY_CERTIFICATES"
   exit "$status"
 }
 trap stop EXIT
+
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 1 \
+  -subj "/CN=AI Gateway end-to-end native provider" \
+  -addext "subjectAltName=DNS:api.anthropic.com,DNS:api.openai.com" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,digitalSignature,keyCertSign" \
+  -addext "extendedKeyUsage=serverAuth" \
+  -keyout "$E2E_NATIVE_PROXY_CERTIFICATES/key.pem" -out "$E2E_NATIVE_PROXY_CERTIFICATES/cert.pem" 2>/dev/null ||
+  fail "generating the native proxy certificate needs openssl"
+chmod 755 "$E2E_NATIVE_PROXY_CERTIFICATES"
+chmod 644 "$E2E_NATIVE_PROXY_CERTIFICATES/key.pem" "$E2E_NATIVE_PROXY_CERTIFICATES/cert.pem"
 
 "${compose[@]}" up --detach --build
 for ((attempt = 0; attempt < startup_attempts; attempt++)); do
