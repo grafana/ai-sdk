@@ -241,7 +241,7 @@ test.describe('ModelCatalog', () => {
       catalog(uniqueName(), { Anthropic: { type: 'anthropic' } }, { Anthropic: { create: SENTINEL } }),
       catalog(uniqueName(), { compatible: { type: 'openai-compatible' } }, { compatible: { create: SENTINEL } }),
       catalog(uniqueName(), twoProviders, { anthropic: { create: SENTINEL } }),
-      catalog(uniqueName(), twoProviders, { ...createKeys(twoProviders), [`${SENTINEL}-extra`]: { create: SENTINEL } }),
+      catalog(uniqueName(), twoProviders, { ...createKeys(twoProviders), extra: { create: SENTINEL } }),
     ];
     for (const body of invalid) {
       const response = await create(accounts.Admin, body);

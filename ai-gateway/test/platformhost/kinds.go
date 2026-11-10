@@ -141,7 +141,11 @@ func (h *Host) updateObject(w http.ResponseWriter, r *http.Request, client clien
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.kinds.store(key, object, h.kinds.objects[key]); err != nil {
+	if !h.kinds.unchanged(key, stored) {
+		writeStatus(w, http.StatusConflict, "the object changed during admission")
+		return
+	}
+	if err := h.kinds.store(key, object, stored); err != nil {
 		writeStatus(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -161,6 +165,10 @@ func (h *Host) deleteObject(w http.ResponseWriter, r *http.Request, client clien
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if !h.kinds.unchanged(key, stored) {
+		writeStatus(w, http.StatusConflict, "the object changed during admission")
+		return
+	}
 	for _, name := range secureNames(stored) {
 		delete(h.kinds.secrets, key.namespace+"/"+name)
 	}
@@ -298,6 +306,19 @@ func (s *kindStore) store(key objectKey, object, previous map[string]any) error 
 	return nil
 }
 
+// unchanged reports whether key still holds the object admission reviewed.
+// The caller holds the host lock.
+func (s *kindStore) unchanged(key objectKey, reviewed map[string]any) bool {
+	current, ok := s.objects[key]
+	return ok && resourceVersion(current) == resourceVersion(reviewed)
+}
+
+func resourceVersion(object map[string]any) string {
+	metadata, _ := object["metadata"].(map[string]any)
+	version, _ := metadata["resourceVersion"].(string)
+	return version
+}
+
 func secureNameMap(object map[string]any) map[string]string {
 	names := map[string]string{}
 	secure, _ := object["secure"].(map[string]any)
@@ -320,7 +341,7 @@ func secureNames(object map[string]any) []string {
 
 func readObject(body io.Reader, namespace string) (map[string]any, error) {
 	var object map[string]any
-	if err := json.NewDecoder(body).Decode(&object); err != nil {
+	if err := json.NewDecoder(body).Decode(&object); err != nil || object == nil {
 		return nil, errors.New("the body must be a JSON object")
 	}
 	metadata, ok := object["metadata"].(map[string]any)

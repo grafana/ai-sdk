@@ -189,4 +189,18 @@ func TestHost_KindNamespaceAndMethods(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, code)
 	code, _ = sendWidget(t, http.MethodPost, widgetURL(server, ""), token, `{"metadata":{}}`)
 	assert.Equal(t, http.StatusBadRequest, code)
+	code, _ = sendWidget(t, http.MethodPost, widgetURL(server, ""), token, `null`)
+	assert.Equal(t, http.StatusBadRequest, code)
+}
+
+func TestKindStore_RefusesWritesToAChangedObject(t *testing.T) {
+	store := newKindStore(nil)
+	key := objectKey{plural: "widgets", namespace: testNamespace, name: "w"}
+	require.NoError(t, store.store(key, map[string]any{"metadata": map[string]any{"name": "w"}}, nil))
+	reviewed := store.objects[key]
+	assert.True(t, store.unchanged(key, reviewed))
+	require.NoError(t, store.store(key, map[string]any{"metadata": map[string]any{"name": "w"}}, reviewed))
+	assert.False(t, store.unchanged(key, reviewed))
+	delete(store.objects, key)
+	assert.False(t, store.unchanged(key, reviewed))
 }
