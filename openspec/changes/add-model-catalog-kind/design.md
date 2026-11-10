@@ -118,8 +118,8 @@ Alternative considered: refusing every `name`, as the issue states. Rejected: a 
 ### Proving the namespace routes unchanged
 
 - Go: the manifest test keeps asserting the two namespaced paths and methods; the route table test is unchanged.
-- Grafana: a route spec under `ai-gateway/tests/` covers `GET config` (status, content type, configured model), unary and streaming `POST language-model` against a deterministic fake Anthropic provider, the Gateway error document for an unknown model, and `405` for an undeclared method. It is run first on the base branch build (routes-only manifest) and then on this change, both green, and both runs are reported.
-- The fake provider is a small deterministic Node SSE server under `ai-gateway/tests/`, started as a compose service in an `e2e` profile, with one extra provider and model in the provisioned catalog pointing at it through `baseURL`. `outbound.ValidateEndpoint` accepts any absolute `http` or `https` URL with a host, and the Go route tests already use plain-HTTP fakes, so no production check changes. It is end-to-end infrastructure, not provider evidence, and stays out of `test/conformance`.
+- Grafana: a route spec under `ai-gateway/tests/` covers `GET config` (status, content type, configured model), unary and streaming `POST language-model` against a deterministic fake Anthropic provider, the Gateway error document for an unknown model, and `405` for an undeclared method. It lands on the base branch first (routes-only manifest) and runs unchanged in CI on both builds.
+- The fake provider is a small deterministic Node SSE server under `ai-gateway/tests/`, started from an end-to-end compose override (`docker-compose.e2e.yaml`) that also points `model_catalog` at an e2e-only catalog with one extra provider and model using it through `baseURL`. An override, not a profile, because a profile cannot replace the Grafana service's catalog setting. `outbound.ValidateEndpoint` accepts any absolute `http` or `https` URL with a host, and the Go route tests already use plain-HTTP fakes, so no production check changes. It is end-to-end infrastructure, not provider evidence, and stays out of `test/conformance`.
 
 ### End-to-end tests
 
@@ -136,7 +136,7 @@ New Playwright specs under `ai-gateway/tests/`, with a fixture that creates View
 | Errors without keys | Every refusal carries sentinel `create` values; no response body contains them. `e2e.sh` fails the run when the Grafana container log contains a sentinel. |
 | Routes unchanged | The route spec above. |
 
-Run locally: `mise run build-ai-gateway-plugin`, then `GRAFANA_VERSION=<CI pin> mise run test-ai-gateway-e2e`, then once more with `GRAFANA_VERSION=13.3.0` to back the minimum version.
+The suite runs in CI's Playwright job (`mise run test-ai-gateway-e2e` at the pinned image); a run with `GRAFANA_VERSION=13.3.0` backs the minimum version.
 
 ### Minimum Grafana version
 
