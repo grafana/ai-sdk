@@ -12,9 +12,9 @@ Each request writes one `http request completed` line:
 
 | Field | Value |
 |---|---|
-| `route` | `config` for model listing, `language_model` for model calls |
+| `route` | `config` for model listing, `language_model` for model calls, and `catalog_config` and `catalog_language_model` for a `ModelCatalog` resource's routes |
 | `status` | Status class, such as `2xx` or `4xx` |
-| `access` | `configured`, `byok` (bring your own key) or `refused` |
+| `access` | `configured`, `byok` (bring your own key), `catalog` (a `ModelCatalog` resource's routes) or `refused` |
 | `correlation_id` | ID that links the request to its attempt logs |
 
 Each model the Gateway tries for a request writes a `gateway_physical_attempt`
@@ -45,13 +45,13 @@ applications select, so calls through an alias count under their model.
 | `grafana_ai_gateway_access_decisions_total` | Requests, by access decision |
 | `grafana_ai_gateway_agento11y_export_failures_total` | Failed Agent Observability exports, by cause |
 
-Once the Gateway serves models from `ModelCatalog` resources, their calls will
-count under the fixed model `catalog`, so their series don't grow with the
-number of catalogs or models. A model in the `model_catalog` setting whose ID is
-`catalog` would share those series; give it another ID to tell them apart. Their
-model call log lines will name the `ModelCatalog` resource in `catalog`, and
-Agent Observability exports in the `gateway.catalog` metadata; no metric names
-it. These calls write no `gateway_physical_attempt` lines.
+Calls to models from a `ModelCatalog` resource count under the fixed model
+`catalog`, so their series don't grow with the number of catalogs or models. A
+model in the `model_catalog` setting whose ID is `catalog` shares those series;
+give it another ID to tell them apart. Their model call log lines name the
+`ModelCatalog` resource in `catalog`, and Agent Observability exports in the
+`gateway.catalog` metadata; no metric names it. These calls write no
+`gateway_physical_attempt` lines.
 
 Grafana's own request metrics, such as `grafana_router_http_requests_total`,
 count requests to the Gateway and their latency.

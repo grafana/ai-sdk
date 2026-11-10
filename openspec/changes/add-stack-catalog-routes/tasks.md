@@ -37,8 +37,8 @@
 
 ## 7. Documentation
 
-- [ ] 7.1 README: catalog routes and base URL, the `modelinvoker` role, Grafana's `403`/`404` responses, the one-minute decrypted-value cache, and the access-policy permission. Client guide (`docs/providers/grafana-gateway.md`): the catalog base URL. Verify `mise run lint-docs`.
-- [ ] 7.2 Architecture walkthrough and diagrams (the catalog account path) and glossary (catalog route, catalog access, `aigateway:modelinvoker`); verify `mise run lint-docs`. Mermaid rendering is checked on GitHub.
+- [x] 7.1 README: catalog routes and base URL, the `modelinvoker` role, Grafana's `403`/`404` responses, the one-minute decrypted-value cache, and the access-policy permission. Client guide (`docs/providers/grafana-gateway.md`): the catalog base URL. Verify `mise run lint-docs`.
+- [x] 7.2 Architecture walkthrough and diagrams (the catalog account path) and glossary (catalog route, catalog access, `aigateway:modelinvoker`); verify `mise run lint-docs`. Mermaid rendering is checked on GitHub.
 
 ## 8. Integration checks
 

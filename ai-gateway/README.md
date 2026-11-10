@@ -122,9 +122,9 @@ elsewhere.
 
 ## Store model catalogs in Grafana
 
-The Gateway also lets a stack store model catalogs in Grafana as `ModelCatalog`
-resources, with each provider's API key held as a Grafana secure value. The
-Gateway doesn't serve models from them yet.
+A stack can also store its own model catalogs in Grafana as `ModelCatalog`
+resources, with each provider's API key held as a Grafana secure value, and
+call their models through the catalog's own routes.
 
 ```yaml
 apiVersion: aigateway.ext.grafana.app/v1alpha1
@@ -152,6 +152,31 @@ secure:
   and Admins can write them (`aigateway:catalogwriter`).
 - The Gateway validates every create and update, so writes fail while the
   plugin is unavailable. Deletes always work.
+
+### Call a stored catalog
+
+Use the catalog's URL as the client's base URL, for example
+`https://grafana.example.com/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-123/modelcatalogs/default`.
+Clients append `/config` and `/language-model` as they do for the Gateway URL,
+so they need no other change.
+
+- Editors and Admins can list and call catalog models (`aigateway:modelinvoker`).
+  Viewers can read catalogs but not call them.
+- A Grafana Cloud access policy token needs the
+  `aigateway.ext.grafana.app/modelcatalogs:get` permission. `access_mode` and
+  `access_internal_services` don't apply to catalog routes.
+- Calls use only the catalog's models and keys, never the `model_catalog`
+  setting or server keys, and refuse `providerOptions.gateway.byok`. Routing
+  controls (`models`, `order`, `only`) and fallbacks work as for the
+  configured models.
+- An edit applies on the next call. A key rotated outside the catalog, without
+  changing the resource, can take up to a minute to apply, because Grafana
+  caches decrypted keys for that long.
+- Grafana itself answers `403` when the caller can't call the catalog and `404`
+  when the catalog doesn't exist. These are Kubernetes `Status` documents, not
+  Gateway error documents; both clients report them as errors with that status.
+- A stored catalog that the Gateway can't use, such as one whose keys don't match
+  its providers, gets a `424` `failed_dependency` error with a fixed message.
 - This needs the Grafana version and feature toggles in
   [Requirements](#requirements). Grafana Cloud doesn't store secure values for
   plugin resources yet, so catalogs with keys are refused there.
@@ -182,7 +207,7 @@ format, not the Gateway's.
 | 10 seconds for a provider to send response headers; provider redirects are not followed | Gateway |
 | 30 seconds without activity in a stream | Gateway |
 | 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName` and each `provider` and `model` value | Gateway, at startup |
-| The same model limits for `ModelCatalog` resources | Gateway, when a catalog is saved |
+| The same model limits for `ModelCatalog` resources | Gateway, when a catalog is saved and each time a call uses it |
 
 ### Request duration
 
