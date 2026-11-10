@@ -31,8 +31,8 @@
 
 ## 5. Documentation
 
-- [ ] 5.1 Add stack-catalog limits to the README Limits ledger. In `ai-gateway/docs/text-observability.md`, document the `catalog` model label (and its overlap with an operator model named `catalog`), the `catalog` log field and the `gateway.catalog` export metadata. Verify `mise run lint-docs`.
-- [ ] 5.2 Update `docs/concepts/gateway-architecture.md` (the `stack-catalog` source, per-request build, third chain) and the glossary (stack-catalog selection, catalog configuration error); verify `mise run lint-docs`. Mermaid rendering is checked on GitHub.
+- [x] 5.1 Add stack-catalog limits to the README Limits ledger. In `ai-gateway/docs/text-observability.md`, document the `catalog` model label (and its overlap with an operator model named `catalog`), the `catalog` log field, the `gateway.catalog` export metadata and the absence of attempt lines. Verify `mise run lint-docs`.
+- [x] 5.2 Update `docs/concepts/gateway-architecture.md` (the `stack-catalog` source, per-request build, third chain) and the glossary (stack-catalog selection, catalog configuration error); verify `mise run lint-docs`. Mermaid rendering is checked on GitHub.
 
 ## 6. Integration checks
 

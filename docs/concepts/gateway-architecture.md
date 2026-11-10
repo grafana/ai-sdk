@@ -84,8 +84,11 @@ selection or provider work, and is labeled `unmatched`.
 
 The manifest also declares one kind, `ModelCatalog`. Grafana stores catalog
 objects and their provider keys itself, and asks the plugin's admission
-validator to accept or refuse each create and update. Stored catalogs do not yet
-reach discovery or selection.
+validator to accept or refuse each create and update. A stack-catalog selection,
+`SelectStackCatalog`, can build a stored catalog's models for one request, but
+no route calls it yet, so stored catalogs do not reach discovery or selection.
+Without the `model_catalog` setting the operator catalog is empty: discovery
+lists no configured models and every configured model ID is not found.
 
 Host failures use a closed set of categories (permission, internal, and BYOK
 discovery unsupported), which each adapter writes in its own format. Discovery
@@ -184,8 +187,11 @@ sequenceDiagram
    model's candidates in order, filtered by `only` and then moved to the front
    by `order`, with repeated models and destinations skipped and at most 8
    attempts. That chain carries the requested model's canonical identity, like
-   a configured route. Every selection names its source, `operator-catalog`
-   or `request-byok`. Invalid or unknown
+   a configured route. A stack-catalog selection follows the same rules over
+   one stored catalog: it checks the catalog on every request, refuses
+   `gateway.byok`, and constructs only the candidates its chain attempts, with
+   that catalog's keys. Every selection names its source, `operator-catalog`,
+   `stack-catalog` or `request-byok`. Invalid or unknown
    controls fail here, before any provider call. This private path refuses
    request credentials; its caller cannot switch to request accounts. See
    [service selection](../../ai-gateway/pkg/internal/service/selection.go),
@@ -194,8 +200,10 @@ sequenceDiagram
    [catalog guide](../../ai-gateway/docs/model-catalog.md).
 4. **The wrapped model performs the call.** After selection, the runtime wraps
    the selected model once in the logical observer chain of the selection's
-   source: the same observers for a configured, aliased or routed call, and a
-   BYOK chain with its own log redaction for request accounts. Logical
+   source: the same observers for a configured, aliased or routed call, a
+   BYOK chain with its own log redaction for request accounts, and a
+   stack-catalog chain whose metrics use the fixed model `catalog` and whose
+   logs and exports name the catalog. Logical
    observation surrounds the configured primary/fallback chain. Candidate-specific option checks and
    native adapters run within that chain. When the inbound adapter supplied an
    option translator, each candidate first translates its own copy of the call
@@ -307,7 +315,8 @@ See [execution overviews and failures](../providers/grafana-gateway.md#inspect-e
 for access and privacy boundaries, and
 [operator observability](../../ai-gateway/docs/text-observability.md) for logs,
 metrics, and exporters. Native diagnostics can contain provider-authored text;
-summary redaction is not a general filter for generated content or secrets.
+summary redaction protects the configured keys and a stack-catalog call's own
+catalog keys, but is not a general filter for generated content or secrets.
 
 ## Existing code versus deployed capabilities
 

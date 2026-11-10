@@ -182,6 +182,7 @@ format, not the Gateway's.
 | 10 seconds for a provider to send response headers; provider redirects are not followed | Gateway |
 | 30 seconds without activity in a stream | Gateway |
 | 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName` and each `provider` and `model` value | Gateway, at startup |
+| The same model limits for `ModelCatalog` resources | Gateway, when a catalog is saved and each time a request uses it |
 
 ### Request duration
 

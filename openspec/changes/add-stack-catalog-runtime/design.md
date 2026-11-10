@@ -137,7 +137,7 @@ Cross-language scenarios on catalog routes belong to #758, which adds the routes
 
 ## Risks / Trade-offs
 
-- [An operator model whose canonical ID is `catalog` shares series with stack-catalog calls] → accepted and documented in `ai-gateway/docs/text-observability.md`, like the existing `byok` bucket; renaming that model avoids it.
+- [An operator model whose canonical ID is `catalog` shares series with stack-catalog calls] → accepted and documented in `ai-gateway/docs/text-observability.md`; renaming that model avoids it. Unlike this overlap, an operator model named `byok` does not share BYOK series, because BYOK series carry the native provider label.
 - [Per-request `Parse` on large catalogs] → linear in a spec that admission already bounds, with the object size bounded by Grafana. A cache keyed by resource version can come later without changing the API.
 - [Catalog names over 128 bytes lose log and Agent Observability attribution] → fails closed, like every other observation value; the correlation ID still links the attempt records.
 - [The 424 document matches provider 4xx by status, type and code] → only the message differs. Dashboards grouping by status see both; a distinct code would need client changes.

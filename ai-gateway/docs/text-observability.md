@@ -45,6 +45,14 @@ applications select, so calls through an alias count under their model.
 | `grafana_ai_gateway_access_decisions_total` | Requests, by access decision |
 | `grafana_ai_gateway_agento11y_export_failures_total` | Failed Agent Observability exports, by cause |
 
+Calls to models from a `ModelCatalog` resource count under the fixed model
+`catalog`, so their series don't grow with the number of catalogs or models.
+A model in the `model_catalog` setting whose ID is `catalog` shares those
+series; give it another ID to tell them apart. Model call log
+lines name the `ModelCatalog` resource in `catalog`, and Agent Observability
+exports in the `gateway.catalog` metadata; no metric names it. These calls
+write no `gateway_physical_attempt` lines.
+
 Grafana's own request metrics, such as `grafana_router_http_requests_total`,
 count requests to the Gateway and their latency.
 
