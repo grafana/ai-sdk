@@ -97,7 +97,7 @@ type Record struct {
 
 ### Execution: per-call selection accessors
 
-`selectModel` sets two unexported `Selection` fields before composing: `requested` (the model ID as sent) and `capture`. New exported methods:
+`selectModel` sets the call's capture on an unexported `Selection` field before composing; the capture already holds the requested model ID. New exported methods:
 
 | Method | Returns |
 |---|---|
@@ -118,13 +118,13 @@ type Record struct {
 
 The pipeline reads `Attempts(err)` when it builds the record, with `err` the selected model's outcome as the pipeline saw it:
 
-- **Unary:** the inner `DoGenerate` error. Output refused by an inspector, or invalid output, after a successful inner call projects as selected, like the overview.
+- **Unary:** the inner `DoGenerate` error, or after a result the context's error. Output refused by an inspector, or invalid output, after a successful inner call projects as selected, like the overview.
 - **Stream, setup failed:** the inner `DoStream` error.
-- **Stream, established:** read when the forwarding goroutine ends, before dispatch: nil once any part arrived; the context error when the context ended first; otherwise a fixed premature-end error (failed). This matches what ProviderWire's first `View` projects for the same stream, whichever reads first.
+- **Stream, established:** decided when the forwarding goroutine ends, before it closes its output, because the consumer cancels the context when it sees the close: nil once a part, including an abort part, was delivered; the context error when the context ended first; otherwise a fixed premature-end error (failed). This matches what ProviderWire's first `View` projects for the same stream, whichever reads first.
 - **Refused before the model:** not entered, so no attempts.
 - **No attribution, or an attempt that does not match its expected destination:** no overview, so no attempts.
 
-A unary call cancelled after its provider answered still reports the answered attempt, although the runtime discards its overview: the record describes attempts made, the overview describes the response.
+A unary call cancelled after its provider answered still reports the answered attempt, as `canceled`: fallback decides an answer that arrives after cancellation that way, and a single candidate's record follows. The runtime discards the observed attempts of such a call, so a fallback chain publishes no overview while its record keeps the attempt; a single candidate's overview synthesizes the same `canceled` attempt. The record describes attempts made; the overview describes the response.
 
 ### Unreplaceable capture
 
@@ -153,7 +153,7 @@ Structural, with no new guard: phases receive a context but cannot return one, n
 ## Risks / Trade-offs
 
 - [Breaking `Call.Model`] → v0, unreleased; the guide and godoc change in the same PR.
-- [The pipeline's stream outcome rule could drift from ProviderWire's first view] → Both derive from "a part arrived"; a test asserts the record and overview agree for a single-candidate stream that closes before, and after, its first part.
+- [The pipeline's stream outcome rule could drift from ProviderWire's first view] → Both derive from whether a part reached the consumer, and the pipeline decides before closing its output; a test asserts the record and overview agree for a single-candidate stream that closes before, and after, its first part. A future adapter that cancels before observing the close would turn such a stream's attempt from failed to canceled.
 - [UID oversize] → Logs omit it; extensions receive it. Grafana UIDs are short ASCII.
 - [Tenant extensions see provider instances and models of operator catalogs] → The caller already receives them in `gateway.execution`; no new exposure.
 - **#764:** contract change only; the validator doesn't use `Call`.
