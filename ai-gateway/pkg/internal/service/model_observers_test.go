@@ -201,7 +201,11 @@ func TestModelObservers_PerRequestSelection(t *testing.T) {
 			mu.Lock()
 			invoked = append(invoked, key)
 			mu.Unlock()
-			return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+			return &provider.GenerateResult{
+				FinishReason:     provider.FinishReason{Unified: provider.FinishReasonStop},
+				Response:         &provider.GenerateResponse{ResponseMetadata: provider.ResponseMetadata{ID: key, ModelID: key}},
+				ProviderMetadata: provider.ProviderMetadata{"native": json.RawMessage(`{"key":"` + key + `"}`)},
+			}, nil
 		}}
 		model, err := ConfiguredIdentity(id, lower)
 		if err != nil {
@@ -231,6 +235,8 @@ func TestModelObservers_PerRequestSelection(t *testing.T) {
 	for _, key := range keys {
 		assert.NotContains(t, observed.logs.String()+metrics, key)
 	}
+	observed.agent.Close(context.Background())
+	assert.Equal(t, len(keys), observed.env.RequestCount())
 }
 
 func TestModelObservers_UnknownSourceFailsBeforeTheModel(t *testing.T) {

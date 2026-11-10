@@ -58,6 +58,7 @@ flowchart LR
   host --> pw
   pw --> runtime -->|first selects| select
   select -->|private| catalog
+  catalog -->|no routing controls| routing
   catalog -->|routing controls| compose
   select -->|Cloud| byok
   byok -->|routing controls| compose

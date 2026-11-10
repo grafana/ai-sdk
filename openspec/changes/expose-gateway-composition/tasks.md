@@ -21,7 +21,7 @@
 
 ## 4. Documentation
 
-- [x] 4.1 Update `docs/concepts/gateway-architecture.md` (diagram and steps 3 and 4: identity at build time, observers after selection, `gateway.Run` as the composition entrypoint) and add glossary entries for the composition entrypoint and selection source; verify `mise run lint-docs` passes and the Mermaid diagram renders.
+- [x] 4.1 Update `docs/concepts/gateway-architecture.md` (diagram and steps 3 and 4: identity at build time, observers after selection, `gateway.Run` as the composition entrypoint) and add glossary entries for the composition entrypoint and selection source; verify `mise run lint-docs` passes; no Mermaid renderer is available locally, so diagram rendering is checked on GitHub.
 
 ## 5. Integration checks
 

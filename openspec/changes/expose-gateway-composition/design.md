@@ -94,7 +94,7 @@ const (
 - `NewModelObservers(telemetry, logger, runtime, drainTimeout)` builds what `NewModelObservabilityFactories` builds today: one metrics registration, two logger middlewares (configured and BYOK redaction policies), the context bridge and the optional Agent Observability recorder.
 - Its `Compose(selection)` is the runtime's `ModelComposer`: it picks the chain by `selection.Source` and returns `middleware.Wrap({Model: selection.Model, Middleware: chain})`; an unknown source returns an error. Wrapping per call allocates one wrapper per observer and constructs no middleware or collectors.
 - Identity stays where the model is built, since it depends on how the model was selected:
-  - `service.ConfiguredIdentity` (provider `grafana`, model the canonical ID) for catalog entries and routed chains; it is today's `identityModelFactory`, which stays as the implementation because existing tests call it;
+  - `service.ConfiguredIdentity` (provider `grafana`, model the canonical ID) for catalog entries and routed chains; it replaces `identityModelFactory`, which remains only as a test-only alias for existing tests;
   - `service.BYOKIdentity(id, lower)` (provider `lower.Provider()`, model the requested selector) for BYOK.
 - `BuildCatalog`, `Catalog.selectRouted` and `BYOKOptions.Factory` keep their `ModelFactory` parameters; production passes the identity factories instead of the observing ones.
 - `NewModelObservabilityFactories` has no production caller afterwards. It moves to a new `_test.go` helper composed of `ConfiguredIdentity`/`BYOKIdentity` and `ModelObservers.Compose`, so the existing tests that build observed models directly keep compiling unchanged and keep exercising production observers. The same helper file keeps the two other names existing tests use: `identityModelFactory`, as an alias of `ConfiguredIdentity`, and the chain's `wrap` method.
@@ -119,7 +119,7 @@ const (
 | No behavior change | Existing Go suites unchanged, including plugin-process tests that build `pkg` and assert lifecycle events, health and stop; `mise run test-ai-gateway`, `lint`, `vet`, `build`, `test-integration`, boundary and requirements checks. |
 | Compile from an external module | The generated-module build test above. |
 | Identical identities | One table-driven service test over the production composition (`ModelObservers`, identity factories, `NewSelector`, `execution.Runtime` with `Compose`) for a configured call, an alias call, a routed call served by a `models` entry and a BYOK call, unary and stream. It asserts each logical observer runs once and the identities: logs and Agent Observability `grafana`/canonical ID (routed: the requested canonical ID), BYOK requested provider/selector; metric `model` label canonical ID or `byok`. |
-| Per-request selection double | A test selector that builds a new `ConfiguredSelection` per request around a fake model holding that request's key. Two calls with different keys: each reaches its own model, each is observed once with the operator-catalog chain, and neither key appears in logs, metrics or Agent Observability metadata. An empty source fails as internal with zero model calls. |
+| Per-request selection double | A test selector that builds a new `ConfiguredSelection` per request around a fake model holding that request's key. Two calls with different keys: each reaches its own model, each is observed once with the operator-catalog chain and recorded once by Agent Observability. Each key is also in its model's response ID, response model and provider metadata, which logical observation must ignore, and neither appears in logs or metrics. The testkit exports only one generation for content checks, so key absence from Agent Observability content is covered by the BYOK case of the identity test. An empty source fails as internal with zero model calls. |
 
 ## Risks / Trade-offs
 
@@ -128,7 +128,7 @@ const (
 - [Unknown source fails a request] → Fails closed with zero provider requests; every production selector sets a source, enforced by the identity test.
 - [#756 edits `Gateway.Provider`] → `Run` only calls it; the callback stays in `pkg/internal/gateway`, so #756 rebases with a `main.go`-only conflict at most.
 - [#757 stacks on the seam] → See Follow-ups for #757.
-- [#762 public vocabulary] → `Source` lives in `internal/execution`; the public `extension` package needs a public type. #762 moves the type to a public leaf package and execution uses it.
+- [#762 stacks on the seam] → See Follow-ups for #762.
 - [Experimental public API] → Documented as v0; the release changelog lists the refactor.
 
 ## Follow-ups for #757
@@ -137,3 +137,9 @@ const (
 - **Optional operator catalog.** `service.NewSelector` returns nil for a nil catalog, and `execution.New` refuses a nil selector. Serving without `model_catalog` means restructuring the selector; the composer seam is unaffected.
 - **Request-scoped redaction and catalog identity.** Add them to `Selection` with their consumers: the summary redactor merges a selection's keys, and the stack-catalog chain reads the catalog identity from the selection the composer receives.
 - **Source.** Add `SourceStackCatalog` with its observer chain in `ModelObservers`; until then the composer refuses it, which the unknown-source test covers.
+
+## Follow-ups for #762
+
+- **Request context.** `ModelComposer` takes only the selection. `Admit` needs request info from the context (namespace, caller, correlation ID), before the runtime marks the model as entered, so #762 adds a context argument.
+- **Extension errors.** The runtime maps every composer error to internal. #762 lets its sentinels (`ErrDenied`, `ErrUnavailable`) through to their categories, without a synthesized attempt.
+- **Public vocabulary.** `Source` lives in `internal/execution`; the public `extension` package moves it to a public leaf package that execution then uses.
