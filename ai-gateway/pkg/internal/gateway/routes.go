@@ -80,7 +80,7 @@ func registerRoutes(policy gatewayauth.AccessPolicy, telemetry *service.Telemetr
 	for _, entry := range routes {
 		refuse := func(w http.ResponseWriter) { entry.errors.WriteHostError(w, host.ErrorPermission) }
 		pattern := entry.method + " " + RoutePrefix() + entry.path
-		mux.Handle(pattern, gatewayauth.AccessMiddleware(policy, refuse, telemetry.ObserveAccess, entry.handler))
+		mux.Handle(pattern, gatewayauth.AccessMiddleware(policy.Decide, refuse, telemetry.ObserveAccess, entry.handler))
 		labels[pattern] = entry.label
 		if entry.method == http.MethodGet {
 			mux.HandleFunc(http.MethodHead+" "+RoutePrefix()+entry.path, func(w http.ResponseWriter, _ *http.Request) {

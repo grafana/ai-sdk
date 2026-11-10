@@ -32,6 +32,9 @@ const (
 	ConfiguredAccounts AccountAccess = "configured"
 	// RequestBYOK allows only request-supplied provider credentials.
 	RequestBYOK AccountAccess = "byok"
+	// CatalogAccounts allows only the stack catalog a catalog route serves,
+	// with that catalog's provider keys.
+	CatalogAccounts AccountAccess = "catalog"
 	// Refused allows no account access.
 	Refused AccountAccess = "refused"
 )
@@ -114,6 +117,25 @@ func (policy AccessPolicy) Decide(info types.AuthInfo, namespace string) Caller 
 	return caller
 }
 
+// DecideCatalog maps the verified caller and route namespace to account
+// access on a catalog route, where the platform's declared access checks
+// decide who may invoke. The token namespace must cover the route namespace,
+// and the caller must be a user or service account, or a service acting alone
+// whose actor chain holds only services. The access mode does not apply. The
+// direct caller's service identity is attributed when present.
+func (policy AccessPolicy) DecideCatalog(info types.AuthInfo, namespace string) Caller {
+	refused := Caller{access: Refused}
+	if info == nil || namespace == "" || !types.NamespaceMatches(info.GetNamespace(), namespace) {
+		return refused
+	}
+	service := single(info.GetExtra()[DirectCallerServiceKey])
+	caller := Caller{Namespace: namespace, Identity: identityActor(info), access: CatalogAccounts, attributedService: service}
+	if caller.Identity == "" && (service == "" || len(info.GetExtra()[ServiceChainKey]) == 0) {
+		return refused
+	}
+	return caller
+}
+
 // identityActor returns the typed UID of the innermost actor when it is a
 // user or service account.
 func identityActor(info types.AuthInfo) string {
@@ -132,17 +154,21 @@ func single(values []string) string {
 
 type callerContextKey struct{}
 
+// Decider maps a verified caller and route namespace to account access, such
+// as [AccessPolicy.Decide] or [AccessPolicy.DecideCatalog].
+type Decider func(info types.AuthInfo, namespace string) Caller
+
 // AccessMiddleware derives the caller's account access from the verified
-// identity and route namespace before invoking next. Refused requests are
-// answered by refuse and never reach next.
-func AccessMiddleware(policy AccessPolicy, refuse func(http.ResponseWriter), observe func(context.Context, Caller), next http.Handler) http.Handler {
+// identity and route namespace with decide before invoking next. Refused
+// requests are answered by refuse and never reach next.
+func AccessMiddleware(decide Decider, refuse func(http.ResponseWriter), observe func(context.Context, Caller), next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		info, _ := types.AuthInfoFrom(request.Context())
 		var namespace string
 		if route := resource.RouteRequestInfoFrom(request.Context()); route != nil {
 			namespace = route.Namespace
 		}
-		caller := policy.Decide(info, namespace)
+		caller := decide(info, namespace)
 		observe(request.Context(), caller)
 		if caller.AccountAccess() == Refused {
 			refuse(w)

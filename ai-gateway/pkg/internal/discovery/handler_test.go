@@ -51,7 +51,7 @@ func withAccess(access gatewayauth.AccountAccess, next http.Handler) http.Handle
 		service, identity = "front-door", "user:u1"
 	}
 	policy := gatewayauth.AccessPolicy{Mode: gatewayauth.AccessModeCloud, InternalServices: []string{testInternalService}}
-	protected := gatewayauth.AccessMiddleware(policy, func(w http.ResponseWriter) { w.WriteHeader(http.StatusTeapot) }, func(context.Context, gatewayauth.Caller) {}, next)
+	protected := gatewayauth.AccessMiddleware(policy.Decide, func(w http.ResponseWriter) { w.WriteHeader(http.StatusTeapot) }, func(context.Context, gatewayauth.Caller) {}, next)
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		var claims authn.Claims[authn.AccessTokenClaims]
 		claims.Rest.Namespace = testNamespace
