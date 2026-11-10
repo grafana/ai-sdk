@@ -51,6 +51,6 @@ curl -fsS "$grafana_url/api/health" >/dev/null || fail "Grafana did not become h
 
 pnpm exec playwright install chromium ${CI:+--with-deps}
 pnpm e2e
-if "${compose[@]}" logs grafana | grep 'logger=plugin.grafana-aigateway-app' | grep -q "$catalog_key_sentinel"; then
+if "${compose[@]}" logs grafana | grep 'logger=plugin.grafana-aigateway-app' | grep -F -- "$catalog_key_sentinel" >/dev/null; then
   fail "the plugin logged a catalog key"
 fi

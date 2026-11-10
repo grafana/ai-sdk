@@ -168,7 +168,7 @@ case caller.AccountAccess() == gatewayauth.CatalogAccounts:
 
 | Acceptance | Test |
 |---|---|
-| Viewer, Editor and Admin allow and deny | Viewer: `403` on both routes with a Kubernetes `Status`, and the plugin log has no catalog call. Editor and Admin: `200` on `config` and on unary and streamed `language-model`. `/api/access-control/user/permissions` shows `modelcatalogs/language-model:get` and `modelcatalogs/config:get` for Editor only. |
+| Viewer, Editor and Admin allow and deny | Viewer: `403` on both routes with a Kubernetes `Status`. The plugin would answer with its own ProviderWire document, never a `Status`, so the `Status` shows Grafana refused the call. Editor and Admin: `200` on `config` and on unary and streamed `language-model`. `/api/access-control/user/permissions` shows `modelcatalogs/language-model:get` and `modelcatalogs/config:get` for Editor only. |
 | Decrypted keys reach the provider; edits apply on the next request | Create with key K1: the response names K1's hash prefix. `PUT` the key to K2 (a new resource version): the next call names K2's. Change a model's primary: the next call reaches the new backend model. |
 | Discovery | `config` lists the catalog's model, aliases and candidates, and is identical in shape to the namespace route projection. |
 | Grafana's `403` and `404` | An unknown catalog name gives `404`, and the Viewer call `403`, both Kubernetes `Status` JSON. The README documents both. `test/providerwire-v4` proves both clients surface the test host's `404` `Status` as an error with that status; Grafana's `403` has the same `Status` shape, which the test host does not produce. |

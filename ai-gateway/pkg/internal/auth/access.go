@@ -89,7 +89,8 @@ type Caller struct {
 func (caller Caller) AccountAccess() AccountAccess { return caller.access }
 
 // AttributedService returns the service identity that observations may
-// attribute, which is set only for configured access in cloud mode.
+// attribute, which is set for configured access in cloud mode and for catalog
+// access.
 func (caller Caller) AttributedService() string { return caller.attributedService }
 
 // Decide maps the verified caller and route namespace to account access. The
