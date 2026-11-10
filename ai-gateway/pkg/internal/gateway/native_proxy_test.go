@@ -163,4 +163,3 @@ func (c *closeNotifyConn) Close() error {
 	c.once.Do(func() { close(c.closed) })
 	return c.Conn.Close()
 }
-

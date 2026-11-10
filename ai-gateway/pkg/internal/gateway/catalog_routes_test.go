@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 )
 
 const (
