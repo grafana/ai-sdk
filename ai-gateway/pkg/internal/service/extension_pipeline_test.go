@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -232,6 +233,7 @@ func TestExtensionRequest(t *testing.T) {
 		{name: "service account", mode: gatewayauth.AccessModeCloud, identity: "service-account:sa1", caller: extension.CallerServiceAccount},
 		{name: "self-hosted user", mode: gatewayauth.AccessModeSelfHosted, identity: "user:u2", caller: extension.CallerUser},
 		{name: "self-hosted service account", mode: gatewayauth.AccessModeSelfHosted, identity: "service-account:sa2", caller: extension.CallerServiceAccount},
+		{name: "identity beyond the log bound", mode: gatewayauth.AccessModeCloud, identity: "user:" + strings.Repeat("u", maxObservationValueLen), caller: extension.CallerUser},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ExtensionRequest(observedCallerContext(t, telemetry, tc.mode, tc.service, tc.identity))

@@ -821,6 +821,49 @@ func TestPipeline_RecordAttempts(t *testing.T) {
 	}
 }
 
+func TestPipeline_RecordReportsAnAnsweredAttemptAfterCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		fallback bool
+		overview bool
+	}{
+		{name: "single candidate", overview: true},
+		{name: "fallback chain", fallback: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			records := make(chan extension.Record, 1)
+			h := newHarness(t, define("audit", &recorder{observe: func(_ context.Context, _ *extension.Call, record extension.Record) error {
+				records <- record
+				return nil
+			}}))
+			ctx, cancel := context.WithCancel(t.Context())
+			h.model.generate = func(context.Context) (*provider.GenerateResult, error) {
+				cancel()
+				return textResult("answered"), nil
+			}
+			model, expected := provider.LanguageModel(h.model), configuredExpected("primary")
+			if tc.fallback {
+				chain, err := fallback.New(h.model, &fakeModel{})
+				require.NoError(t, err)
+				model, expected = chain, configuredExpected("primary", "secondary")
+			}
+			outcome := h.runContext(t, ctx, execution.ConfiguredSelection("canonical", model, expected), "alias", false)
+			h.flush()
+
+			record := <-records
+			assert.Equal(t, extension.OutcomeCancelled, record.Outcome)
+			assert.Equal(t, []extension.Attempt{{Provider: "native", ProviderInstance: "instance-primary", ProviderModel: "primary", Outcome: extension.AttemptCanceled}}, record.Attempts)
+			if !tc.overview {
+				assert.Nil(t, outcome.Overview, "the runtime discards a cancelled call's observed attempts")
+				return
+			}
+			require.NotNil(t, outcome.Overview)
+			require.Len(t, outcome.Overview.Attempts, 1)
+			assert.Equal(t, fallback.AttemptCanceled, outcome.Overview.Attempts[0].Outcome)
+		})
+	}
+}
+
 func TestPipeline_AttemptCaptureCannotBeReplaced(t *testing.T) {
 	unavailable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "overloaded", IsRetryable: new(true)})
 	steal := func(ctx context.Context) {

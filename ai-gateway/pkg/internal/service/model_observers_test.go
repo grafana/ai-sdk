@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/agento11y/go/agento11y/testkit"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -298,6 +300,50 @@ func TestModelObservers_UnknownSourceFailsBeforeTheModel(t *testing.T) {
 			assert.Equal(t, execution.CategoryInternal, category)
 			assert.Zero(t, calls)
 			assert.Empty(t, observed.logs.String())
+		})
+	}
+}
+
+// metricLabelNames returns the label names of every series in each metric
+// family of telemetry's registry.
+func metricLabelNames(t *testing.T, telemetry *Telemetry) map[string][]string {
+	t.Helper()
+	gatherer, ok := telemetry.Registerer().(prometheus.Gatherer)
+	require.True(t, ok)
+	families, err := gatherer.Gather()
+	require.NoError(t, err)
+	names := make(map[string][]string, len(families))
+	for _, family := range families {
+		var labels []string
+		for _, metric := range family.GetMetric() {
+			for _, pair := range metric.GetLabel() {
+				if !slices.Contains(labels, pair.GetName()) {
+					labels = append(labels, pair.GetName())
+				}
+			}
+		}
+		slices.Sort(labels)
+		names[family.GetName()] = labels
+	}
+	return names
+}
+
+func TestModelObservers_CallerIdentityAddsNoMetricLabel(t *testing.T) {
+	for _, mode := range []string{"generate", "stream"} {
+		t.Run(mode, func(t *testing.T) {
+			labels := make([]map[string][]string, 2)
+			for i, identity := range []string{"", "user:audit-uid"} {
+				created := routedFakeCatalog(t, ConfiguredIdentity, nil, map[string]*observabilityTestModel{"backend-primary": seamModel(false), "backend-secondary": seamModel(false)})
+				observed := newObservedRuntime(t, NewSelector(created, nil))
+				observed.call(t, observedCallerContext(t, observed.telemetry, gatewayauth.AccessModeCloud, testInternalService, identity), "public", provider.CallOptions{}, mode == "stream")
+				require.EventuallyWithT(t, func(collect *assert.CollectT) {
+					assert.Len(collect, observed.records(t, "aisdk.model."+mode+".finish"), 1)
+				}, time.Second, time.Millisecond)
+				labels[i] = metricLabelNames(t, observed.telemetry)
+				assert.NotContains(t, testMetrics(t, observed.telemetry), "audit-uid")
+			}
+			assert.NotEmpty(t, labels[0])
+			assert.Equal(t, labels[0], labels[1])
 		})
 	}
 }

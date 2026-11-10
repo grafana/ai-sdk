@@ -177,6 +177,12 @@ func (h *harness) compose(t *testing.T, source extension.Source) provider.Langua
 // its first part.
 func (h *harness) run(t *testing.T, selected execution.Selection, modelID string, stream bool) testadapter.Outcome {
 	t.Helper()
+	return h.runContext(t, t.Context(), selected, modelID, stream)
+}
+
+// runContext is run under ctx.
+func (h *harness) runContext(t *testing.T, ctx context.Context, selected execution.Selection, modelID string, stream bool) testadapter.Outcome {
+	t.Helper()
 	runtime, err := execution.New(execution.Config{
 		Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
 			return selected, nil
@@ -185,7 +191,7 @@ func (h *harness) run(t *testing.T, selected execution.Selection, modelID string
 		Limits:  execution.Limits{StreamIdleDuration: time.Second, StreamDrainDuration: 50 * time.Millisecond},
 	})
 	require.NoError(t, err)
-	return testadapter.New(runtime, nil).Run(t.Context(), modelID, provider.CallOptions{}, stream)
+	return testadapter.New(runtime, nil).Run(ctx, modelID, provider.CallOptions{}, stream)
 }
 
 // configuredExpected returns the expected attempts of a configured model

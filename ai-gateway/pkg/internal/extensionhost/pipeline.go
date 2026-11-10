@@ -173,7 +173,9 @@ func outcomeOf(ctx context.Context, err error) extension.Outcome {
 
 // finish dispatches the call's record to its observers, off the response's
 // critical path. modelErr is the selected model's own outcome, which decides
-// the attempt synthesized for a single candidate.
+// the attempt synthesized for a single candidate: for a model that returned a
+// result, the context's error, so an answer the call no longer accepts is
+// canceled, as fallback decides for its own candidates.
 func (c *call) finish(ctx context.Context, outcome extension.Outcome, usage provider.Usage, modelErr error) {
 	c.dispatch(ctx, c.reserve(), outcome, usage, modelErr)
 }
@@ -259,18 +261,18 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 	}
 	history, _ := execution.RebuildToolHistory(options.Prompt)
 	if execution.ValidateGenerateResult(result, history) != nil {
-		c.finish(ctx, settled(ctx, extension.OutcomeInvalidOutput), result.Usage, nil)
+		c.finish(ctx, settled(ctx, extension.OutcomeInvalidOutput), result.Usage, ctx.Err())
 		return result, nil
 	}
 	if p.lists.responseInspector {
 		for _, part := range normalizeResult(result) {
 			if err := c.inspect(ctx, part); err != nil {
-				c.finish(ctx, outcomeOf(ctx, err), result.Usage, nil)
+				c.finish(ctx, outcomeOf(ctx, err), result.Usage, ctx.Err())
 				return nil, err
 			}
 		}
 	}
-	c.finish(ctx, settled(ctx, extension.OutcomeSuccess), result.Usage, nil)
+	c.finish(ctx, settled(ctx, extension.OutcomeSuccess), result.Usage, ctx.Err())
 	return result, nil
 }
 
