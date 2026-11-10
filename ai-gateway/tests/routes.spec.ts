@@ -60,8 +60,9 @@ test.describe('namespace routes', () => {
     const response = await callModel(page.request, 'e2e/missing', false);
     expect(response.status()).toBe(404);
     expect(response.headers()['content-type']).toContain('application/json');
-    const body = await response.json();
-    expect(body.error).toEqual(expect.objectContaining({ code: 'model_not_found', statusCode: 404 }));
+    expect(await response.json()).toEqual({
+      error: { message: 'model not found', type: 'model_not_found', param: null, code: 'model_not_found' },
+    });
   });
 
   test('undeclared methods are refused before the Gateway', async ({ page }) => {
