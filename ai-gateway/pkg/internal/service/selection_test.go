@@ -465,6 +465,26 @@ func withAccess(t *testing.T, mode gatewayauth.AccessMode, access gatewayauth.Ac
 	}), http.Header{}
 }
 
+// observedCallerContext returns the context of an accepted request from a
+// verified caller with service and identity, decided and observed as the
+// production access middleware does.
+func observedCallerContext(t *testing.T, telemetry *Telemetry, mode gatewayauth.AccessMode, service, identity string) context.Context {
+	t.Helper()
+	policy := gatewayauth.AccessPolicy{Mode: mode}
+	if mode == gatewayauth.AccessModeCloud {
+		policy.InternalServices = []string{testInternalService}
+	}
+	var captured context.Context
+	handler := gatewayauth.AccessMiddleware(policy, func(http.ResponseWriter) { t.Error("refused") }, telemetry.ObserveAccess, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		captured = r.Context()
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/", nil)
+	request = request.WithContext(verifiedContext(request.Context(), service, identity, testNamespace))
+	telemetry.Middleware(fixedRoute("language_model"), handler).ServeHTTP(httptest.NewRecorder(), request)
+	require.NotNil(t, captured)
+	return captured
+}
+
 func fixedRoute(name string) func(*http.Request) string {
 	return func(*http.Request) string { return name }
 }

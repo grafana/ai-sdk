@@ -134,6 +134,22 @@ func seamBYOKClient() *http.Client {
 	})}
 }
 
+// recordingBYOKClient is seamBYOKClient that also writes each provider
+// request's headers and body to requests.
+func recordingBYOKClient(requests *lockedBuffer) *http.Client {
+	inner := seamBYOKClient().Transport
+	return &http.Client{Transport: selectionTransport(func(r *http.Request) (*http.Response, error) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, err
+		}
+		_ = r.Header.Write(requests)
+		_, _ = requests.Write(raw)
+		r.Body = io.NopCloser(strings.NewReader(string(raw)))
+		return inner.RoundTrip(r)
+	})}
+}
+
 func TestModelObservers_IdenticalIdentitiesAcrossSelections(t *testing.T) {
 	const byokKey = "dummy-seam-key"
 	for _, tc := range []struct {
@@ -146,11 +162,14 @@ func TestModelObservers_IdenticalIdentitiesAcrossSelections(t *testing.T) {
 		model         string
 		metricModel   string
 		forbiddenText []string
+		service       string
+		identity      string
 	}{
-		{name: "operator catalog", access: gatewayauth.ConfiguredAccounts, modelID: "public", provider: "grafana", model: "public", metricModel: "public"},
-		{name: "operator catalog alias", access: gatewayauth.ConfiguredAccounts, modelID: "alias", provider: "grafana", model: "public", metricModel: "public"},
-		{name: "routed", access: gatewayauth.ConfiguredAccounts, modelID: "alias", gateway: `{"models":["other"]}`, failPrimary: true, provider: "grafana", model: "public", metricModel: "public"},
-		{name: "BYOK", access: gatewayauth.RequestBYOK, modelID: "anthropic/native-model", gateway: `{"byok":{"anthropic":[{"apiKey":"` + byokKey + `"}]}}`, provider: "anthropic", model: "anthropic/native-model", metricModel: "byok", forbiddenText: []string{byokKey}},
+		{name: "operator catalog", access: gatewayauth.ConfiguredAccounts, modelID: "public", provider: "grafana", model: "public", metricModel: "public", service: testInternalService, identity: "user:audit-uid"},
+		{name: "operator catalog without a user", access: gatewayauth.ConfiguredAccounts, modelID: "public", provider: "grafana", model: "public", metricModel: "public", service: testInternalService},
+		{name: "operator catalog alias", access: gatewayauth.ConfiguredAccounts, modelID: "alias", provider: "grafana", model: "public", metricModel: "public", service: testInternalService, identity: "user:audit-uid"},
+		{name: "routed", access: gatewayauth.ConfiguredAccounts, modelID: "alias", gateway: `{"models":["other"]}`, failPrimary: true, provider: "grafana", model: "public", metricModel: "public", service: testInternalService, identity: "user:audit-uid"},
+		{name: "BYOK", access: gatewayauth.RequestBYOK, modelID: "anthropic/native-model", gateway: `{"byok":{"anthropic":[{"apiKey":"` + byokKey + `"}]}}`, provider: "anthropic", model: "anthropic/native-model", metricModel: "byok", forbiddenText: []string{byokKey}, identity: "service-account:audit-uid"},
 	} {
 		for _, mode := range []string{"generate", "stream"} {
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
@@ -158,12 +177,16 @@ func TestModelObservers_IdenticalIdentitiesAcrossSelections(t *testing.T) {
 					"backend-primary":   seamModel(tc.failPrimary),
 					"backend-secondary": seamModel(false),
 				})
-				observed := newObservedRuntime(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}))
+				providerRequests := &lockedBuffer{}
+				observed := newObservedRuntime(t, NewSelector(created, &BYOKOptions{Client: recordingBYOKClient(providerRequests), Factory: BYOKIdentity}))
 				var options provider.CallOptions
 				if tc.gateway != "" {
 					options = routedGateway(tc.gateway)
 				}
-				observed.call(t, callerContext(t, tc.access), tc.modelID, options, mode == "stream")
+				ctx := observedCallerContext(t, observed.telemetry, gatewayauth.AccessModeCloud, tc.service, tc.identity)
+				caller, _ := gatewayauth.CallerFromContext(ctx)
+				require.Equal(t, tc.access, caller.AccountAccess())
+				observed.call(t, ctx, tc.modelID, options, mode == "stream")
 
 				require.EventuallyWithT(t, func(collect *assert.CollectT) {
 					assert.Len(collect, observed.records(t, "aisdk.model."+mode+".finish"), 1)
@@ -172,12 +195,30 @@ func TestModelObservers_IdenticalIdentitiesAcrossSelections(t *testing.T) {
 				require.Len(t, starts, 1)
 				assert.Equal(t, tc.provider, starts[0]["ai_sdk.provider"])
 				assert.Equal(t, tc.model, starts[0]["ai_sdk.model"])
+				finish := observed.records(t, "aisdk.model."+mode+".finish")[0]
 				metrics := testMetrics(t, observed.telemetry)
 				assert.Contains(t, metrics, `model="`+tc.metricModel+`"`)
+				assert.NotContains(t, metrics, "audit-uid")
+				assert.NotContains(t, metrics, "caller_identity")
+				if tc.access == gatewayauth.RequestBYOK {
+					assert.Contains(t, providerRequests.String(), "native-model")
+				}
+				assert.NotContains(t, providerRequests.String(), "audit-uid")
 				observed.agent.Close(context.Background())
 				generation := observed.env.SingleGenerationJSON(t)
 				assert.Equal(t, tc.provider, testkit.StringValue(t, generation, "model", "provider"))
 				assert.Equal(t, tc.model, testkit.StringValue(t, generation, "model", "name"))
+				metadata, _ := generation["metadata"].(map[string]any)
+				if tc.identity == "" {
+					assert.NotContains(t, starts[0], "caller_identity")
+					assert.NotContains(t, finish, "caller_identity")
+					assert.NotContains(t, metadata, "gateway.caller_identity")
+					assert.NotContains(t, observed.logs.String(), "caller_identity")
+				} else {
+					assert.Equal(t, tc.identity, starts[0]["caller_identity"])
+					assert.Equal(t, tc.identity, finish["caller_identity"])
+					assert.Equal(t, tc.identity, metadata["gateway.caller_identity"])
+				}
 				exported, err := json.Marshal(generation)
 				require.NoError(t, err)
 				for _, private := range append([]string{"backend-primary", "backend-secondary", "backend-private"}, tc.forbiddenText...) {
