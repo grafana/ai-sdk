@@ -232,7 +232,7 @@ func (c *Call) stream(ctx context.Context) (result *provider.StreamResult, err e
 func (c *Call) abandon(cancel context.CancelFunc, result *provider.StreamResult) {
 	cancel()
 	if result != nil {
-		startDrain(result.Stream, c.limits.StreamDrainDuration)
+		StartDrain(result.Stream, c.limits.StreamDrainDuration)
 	}
 }
 
@@ -353,11 +353,13 @@ func (s *Stream) Close() {
 	s.closeAll.Do(func() {
 		s.cancel()
 		s.idle.Stop()
-		startDrain(s.parts, s.limits.StreamDrainDuration)
+		StartDrain(s.parts, s.limits.StreamDrainDuration)
 	})
 }
 
-func startDrain(parts <-chan provider.StreamPart, duration time.Duration) {
+// StartDrain drains parts on its own goroutine until it closes or duration
+// passes. A nil channel is not drained.
+func StartDrain(parts <-chan provider.StreamPart, duration time.Duration) {
 	if parts != nil {
 		go drain(parts, duration)
 	}

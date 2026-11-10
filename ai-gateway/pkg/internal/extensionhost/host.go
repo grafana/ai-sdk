@@ -21,7 +21,9 @@ import (
 // observeTimeout bounds every observation of one call.
 const observeTimeout = time.Second
 
-const phaseClose = "close"
+// phaseClose labels failures of [extension.Closer.Close], which is not a call
+// phase.
+const phaseClose extension.Phase = "close"
 
 var errUnknownSource = errors.New("extensions: selection source has no extension configuration")
 
@@ -209,15 +211,7 @@ func (h *Host) close(ctx context.Context) {
 			}
 		})
 	}
-	done := make(chan struct{})
-	go func() {
-		closing.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-ctx.Done():
-	}
+	waitUntil(ctx, &closing)
 }
 
 type failureClass string
@@ -264,9 +258,9 @@ func (h *Host) recordDenial(definition extension.Definition, phase extension.Pha
 }
 
 // recordFailure counts and logs one failure without its error text.
-func (h *Host) recordFailure(definition extension.Definition, phase string, class failureClass, correlationID string) {
-	h.events.WithLabelValues(definition.Name, phase, eventFailed).Inc()
-	attrs := []any{"extension", definition.Name, "phase", phase, "policy", string(definition.FailurePolicy), "class", string(class)}
+func (h *Host) recordFailure(definition extension.Definition, phase extension.Phase, class failureClass, correlationID string) {
+	h.events.WithLabelValues(definition.Name, string(phase), eventFailed).Inc()
+	attrs := []any{"extension", definition.Name, "phase", string(phase), "policy", string(definition.FailurePolicy), "class", string(class)}
 	if correlationID != "" {
 		attrs = append(attrs, "correlation_id", correlationID)
 	}

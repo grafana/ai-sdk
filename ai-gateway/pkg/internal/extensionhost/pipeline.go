@@ -75,7 +75,7 @@ func (c *call) run(i int, phase extension.Phase, mayDeny bool, step func() error
 		c.host.recordDenial(definition, phase)
 		return verdictDenied
 	}
-	c.host.recordFailure(definition, string(phase), classOf(err), c.correlationID)
+	c.host.recordFailure(definition, phase, classOf(err), c.correlationID)
 	if definition.FailurePolicy == extension.FailClosed {
 		return verdictFailClosed
 	}
@@ -207,7 +207,7 @@ func (c *call) observe(ctx context.Context, record extension.Record) {
 			own.DeniedBy = &denial
 		}
 		if err := contain(func() error { return built.observer.Observe(ctx, c.views[i], own) }); err != nil {
-			c.host.recordFailure(built.definition, string(extension.PhaseObserve), classOf(err), c.correlationID)
+			c.host.recordFailure(built.definition, extension.PhaseObserve, classOf(err), c.correlationID)
 		}
 	}
 }
@@ -346,7 +346,7 @@ loop:
 		}
 	}
 	if !closed {
-		go drain(in, p.host.drainTimeout)
+		execution.StartDrain(in, p.host.drainTimeout)
 	}
 	if invalid && outcome != extension.OutcomeDenied {
 		outcome = extension.OutcomeInvalidOutput
@@ -365,21 +365,6 @@ func abortPart(err error) provider.StreamPart {
 	}
 	retryable := !errors.Is(err, extension.ErrDenied)
 	return provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{Message: message, IsRetryable: &retryable, Cause: err})}
-}
-
-func drain(parts <-chan provider.StreamPart, duration time.Duration) {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	for {
-		select {
-		case _, ok := <-parts:
-			if !ok {
-				return
-			}
-		case <-timer.C:
-			return
-		}
-	}
 }
 
 // normalizePart returns the inspected form of a stream part.

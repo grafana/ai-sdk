@@ -340,7 +340,7 @@ func TestPipeline_ResponseAbort(t *testing.T) {
 		select {
 		case <-upstreamStopped:
 		case <-time.After(5 * time.Second):
-			t.Fatal("the model stream was not stopped")
+			require.FailNow(t, "the model stream was not stopped")
 		}
 	})
 
@@ -599,7 +599,7 @@ func TestPipeline_ObservationIsOffTheResponsePath(t *testing.T) {
 	select {
 	case <-returned:
 	case <-time.After(observeTimeout / 2):
-		t.Fatal("a blocked observer delayed the unary result or the stream close")
+		require.FailNow(t, "a blocked observer delayed the unary result or the stream close")
 	}
 	<-started
 	<-started
@@ -613,7 +613,7 @@ func TestPipeline_ObservationIsOffTheResponsePath(t *testing.T) {
 	}()
 	select {
 	case <-closed:
-		t.Fatal("close returned before in-flight observations finished")
+		require.FailNow(t, "close returned before in-flight observations finished")
 	case <-time.After(50 * time.Millisecond):
 	}
 	close(release)
@@ -637,8 +637,8 @@ func TestHost_CloseRespectsTheDeadline(t *testing.T) {
 	start := time.Now()
 	h.host.Close(ctx)
 	assert.Less(t, time.Since(start), time.Second)
-	assert.Equal(t, 1.0, h.events("failing", phaseClose, eventFailed))
-	assert.Equal(t, 1.0, h.events("panicking", phaseClose, eventFailed))
+	assert.Equal(t, 1.0, h.events("failing", string(phaseClose), eventFailed))
+	assert.Equal(t, 1.0, h.events("panicking", string(phaseClose), eventFailed))
 	assert.NotContains(t, h.logs.String(), "private")
 }
 

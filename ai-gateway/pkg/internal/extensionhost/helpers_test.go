@@ -305,7 +305,7 @@ func collect(t *testing.T, stream <-chan provider.StreamPart) []provider.StreamP
 			}
 			parts = append(parts, part)
 		case <-timeout:
-			t.Fatal("stream did not close")
+			require.FailNow(t, "stream did not close")
 		}
 	}
 }

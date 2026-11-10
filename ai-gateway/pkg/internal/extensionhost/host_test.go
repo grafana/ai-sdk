@@ -49,7 +49,7 @@ func TestNew_Construction(t *testing.T) {
 			select {
 			case <-closed:
 			case <-time.After(time.Second):
-				t.Fatal("an instance built before the failure was not closed")
+				require.FailNow(t, "an instance built before the failure was not closed")
 			}
 		})
 	}

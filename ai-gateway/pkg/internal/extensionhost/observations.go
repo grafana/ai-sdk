@@ -39,9 +39,14 @@ func (o *observations) close(ctx context.Context) {
 	o.mu.Lock()
 	o.closing = true
 	o.mu.Unlock()
+	waitUntil(ctx, &o.inFlight)
+}
+
+// waitUntil waits for group until ctx ends.
+func waitUntil(ctx context.Context, group *sync.WaitGroup) {
 	done := make(chan struct{})
 	go func() {
-		o.inFlight.Wait()
+		group.Wait()
 		close(done)
 	}()
 	select {
