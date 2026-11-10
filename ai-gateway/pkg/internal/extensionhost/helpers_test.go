@@ -13,7 +13,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/ai-gateway/internal/testadapter"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -168,6 +170,32 @@ func (h *harness) compose(t *testing.T, source extension.Source) provider.Langua
 	model, err := h.host.Compose(execution.Selection{ID: "canonical", Model: h.model, Source: source})
 	require.NoError(t, err)
 	return model
+}
+
+// run invokes the pipeline through a runtime whose selector returns selected,
+// as an adapter does: a unary call, or a stream whose overview is projected at
+// its first part.
+func (h *harness) run(t *testing.T, selected execution.Selection, modelID string, stream bool) testadapter.Outcome {
+	t.Helper()
+	runtime, err := execution.New(execution.Config{
+		Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (execution.Selection, error) {
+			return selected, nil
+		},
+		Compose: h.host.Compose,
+		Limits:  execution.Limits{StreamIdleDuration: time.Second, StreamDrainDuration: 50 * time.Millisecond},
+	})
+	require.NoError(t, err)
+	return testadapter.New(runtime, nil).Run(t.Context(), modelID, provider.CallOptions{}, stream)
+}
+
+// configuredExpected returns the expected attempts of a configured model
+// requested as alias, one per backend model.
+func configuredExpected(models ...string) []execution.ExpectedAttempt {
+	expected := make([]execution.ExpectedAttempt, len(models))
+	for i, model := range models {
+		expected[i] = execution.ExpectedAttempt{ModelID: "alias", CanonicalID: "canonical", Destination: catalog.ConfiguredCandidate{ProviderInstance: "instance-" + model, Provider: "native", ModelID: model}}
+	}
+	return expected
 }
 
 // flush waits for every dispatched observation.

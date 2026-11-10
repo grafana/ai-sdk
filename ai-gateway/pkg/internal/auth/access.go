@@ -78,7 +78,9 @@ func ParseAccessPolicy(mode, internalServices string) (AccessPolicy, error) {
 type Caller struct {
 	// Namespace is the route namespace the platform authorized.
 	Namespace string
-	// Identity is the identity actor's typed UID, when present. It is never emitted.
+	// Identity is the identity actor's typed UID, when present. Extensions,
+	// logs and Agent Observability metadata receive it; metric labels and
+	// provider requests never do.
 	Identity          string
 	access            AccountAccess
 	attributedService string

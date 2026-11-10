@@ -34,7 +34,8 @@ type Config struct {
 	Logger     *slog.Logger
 	Registerer prometheus.Registerer
 	Clock      func() time.Time
-	// RequestInfo returns a call's namespace, caller type and correlation ID.
+	// RequestInfo returns a call's namespace, caller type, caller identity and
+	// correlation ID.
 	RequestInfo func(context.Context) extension.Call
 	// DrainTimeout bounds draining a model stream the pipeline stopped.
 	DrainTimeout time.Duration
@@ -188,7 +189,25 @@ func (h *Host) Compose(selected execution.Selection) (provider.LanguageModel, er
 	if len(applicable.byName) == 0 {
 		return selected.Model, nil
 	}
-	return &pipeline{LanguageModel: selected.Model, host: h, lists: applicable, source: selected.Source, model: selected.ID}, nil
+	return &pipeline{LanguageModel: selected.Model, host: h, lists: applicable, source: selected.Source, requested: selected.RequestedID(), canonical: selected.CanonicalID(), candidates: candidates(selected.Expected())}, nil
+}
+
+// candidates returns the extension view of a selection's expected attempts.
+func candidates(expected []execution.ExpectedAttempt) []extension.Candidate {
+	if len(expected) == 0 {
+		return nil
+	}
+	planned := make([]extension.Candidate, len(expected))
+	for i, attempt := range expected {
+		planned[i] = extension.Candidate{
+			Model:            attempt.ModelID,
+			CanonicalModel:   attempt.CanonicalID,
+			Provider:         attempt.Destination.Provider,
+			ProviderInstance: attempt.Destination.ProviderInstance,
+			ProviderModel:    attempt.Destination.ModelID,
+		}
+	}
+	return planned
 }
 
 // Close stops accepting observations, waits for those in flight and closes

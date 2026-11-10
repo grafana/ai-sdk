@@ -40,14 +40,66 @@ type Call struct {
 	Keys      KeyOwnership
 	Source    Source
 	Caller    CallerType
+	// CallerIdentity is the verified identity actor's typed UID,
+	// user:<uid> or service-account:<uid>, also for an internal service
+	// calling on behalf of one. It is empty when the caller has none.
+	CallerIdentity string
 	// CorrelationID identifies the call in Gateway logs.
 	CorrelationID string
-	// Model is the selected model: its canonical ID for catalog selections, or
-	// the requested provider/model selector for request BYOK.
-	Model string
+	// RequestedModel is the model ID the call requested, as sent: an alias or
+	// canonical ID for catalog selections, or the provider/model selector for
+	// request BYOK.
+	RequestedModel string
+	// CanonicalModel is the requested model's canonical ID, empty for request
+	// BYOK.
+	CanonicalModel string
+	// Candidates are the call's planned attempts, in the order the call may
+	// try them.
+	Candidates []Candidate
 	// State belongs to the extension for this call, for example a reservation
 	// made in admit and committed in observe.
 	State any
+}
+
+// Candidate is one planned attempt of a call.
+type Candidate struct {
+	// Model is the requested model ID or gateway models entry, as sent, whose
+	// chain the candidate belongs to.
+	Model string
+	// CanonicalModel is that model's canonical ID, empty for request BYOK.
+	CanonicalModel string
+	Provider       string
+	// ProviderInstance is the configured provider instance, empty for request
+	// BYOK.
+	ProviderInstance string
+	// ProviderModel is the model ID the provider receives.
+	ProviderModel string
+}
+
+// AttemptOutcome is the selection decision for one physical attempt.
+type AttemptOutcome string
+
+const (
+	// AttemptSelected is the attempt whose response the call used.
+	AttemptSelected AttemptOutcome = "selected"
+	// AttemptFailed is an attempt that failed before selection.
+	AttemptFailed AttemptOutcome = "failed"
+	// AttemptCanceled is an attempt the call ended before selection.
+	AttemptCanceled AttemptOutcome = "canceled"
+)
+
+// Attempt is one physical attempt of a call. The i-th attempt is the i-th of
+// the call's [Call.Candidates].
+type Attempt struct {
+	Provider string
+	// ProviderInstance is the configured provider instance, empty for request
+	// BYOK.
+	ProviderInstance string
+	ProviderModel    string
+	Outcome          AttemptOutcome
+	// StatusCode is the provider's HTTP status for a failed or canceled
+	// attempt, or zero when unknown.
+	StatusCode int
 }
 
 // Admitter decides whether a call may proceed, before its prompt is read.
@@ -162,7 +214,11 @@ type Record struct {
 	DeniedBy *Denial
 	// Usage is the call's usage as the Gateway's logical observers report it,
 	// zero when the model was not invoked.
-	Usage    provider.Usage
+	Usage provider.Usage
+	// Attempts are the call's physical attempts, in order. A call refused
+	// before the model was called has none; a call whose attempts cannot be
+	// attributed to its candidates has none either.
+	Attempts []Attempt
 	Started  time.Time
 	Duration time.Duration
 }

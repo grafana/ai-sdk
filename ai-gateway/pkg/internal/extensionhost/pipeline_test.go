@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/provider"
@@ -99,17 +100,45 @@ func TestPipeline_PartialImplementationAndPerCallState(t *testing.T) {
 }
 
 func TestPipeline_RequestInfo(t *testing.T) {
-	calls := make(chan extension.Call, 2)
-	h := newHarness(t, define("info", &recorder{admit: func(_ context.Context, call *extension.Call) error {
-		calls <- *call
-		return nil
-	}}))
-	for _, source := range []extension.Source{extension.SourceOperatorCatalog, extension.SourceRequestBYOK} {
-		_, err := h.compose(t, source).DoGenerate(t.Context(), provider.CallOptions{})
-		require.NoError(t, err)
+	admitted := func(calls chan extension.Call, change func(*extension.Call)) *recorder {
+		return &recorder{admit: func(_ context.Context, call *extension.Call) error {
+			if change != nil {
+				change(call)
+			}
+			calls <- *call
+			return nil
+		}}
 	}
-	assert.Equal(t, extension.Call{Namespace: "stacks-1", Keys: extension.KeysOperator, Source: extension.SourceOperatorCatalog, Caller: extension.CallerServiceAccount, CorrelationID: "correlation-1", Model: "canonical"}, <-calls)
-	assert.Equal(t, extension.Call{Namespace: "stacks-1", Keys: extension.KeysCustomer, Source: extension.SourceRequestBYOK, Caller: extension.CallerServiceAccount, CorrelationID: "correlation-1", Model: "canonical"}, <-calls)
+	base := extension.Call{Namespace: "stacks-1", Caller: extension.CallerServiceAccount, CorrelationID: "correlation-1"}
+
+	t.Run("configured", func(t *testing.T) {
+		calls := make(chan extension.Call, 2)
+		h := newHarness(t,
+			define("a", admitted(calls, func(call *extension.Call) { call.Candidates[0].ProviderModel = "changed" })),
+			define("b", admitted(calls, nil)),
+		)
+		h.run(t, execution.ConfiguredSelection("canonical", h.model, configuredExpected("primary", "secondary")), "alias", false)
+		want := base
+		want.Keys, want.Source, want.RequestedModel, want.CanonicalModel = extension.KeysOperator, extension.SourceOperatorCatalog, "alias", "canonical"
+		want.Candidates = []extension.Candidate{
+			{Model: "alias", CanonicalModel: "canonical", Provider: "native", ProviderInstance: "instance-primary", ProviderModel: "primary"},
+			{Model: "alias", CanonicalModel: "canonical", Provider: "native", ProviderInstance: "instance-secondary", ProviderModel: "secondary"},
+		}
+		changed := <-calls
+		assert.Equal(t, "changed", changed.Candidates[0].ProviderModel)
+		assert.Equal(t, want, <-calls, "each extension gets its own candidates")
+	})
+
+	t.Run("request BYOK", func(t *testing.T) {
+		calls := make(chan extension.Call, 1)
+		h := newHarness(t, define("a", admitted(calls, nil)))
+		expected := []execution.ExpectedAttempt{{ModelID: "openai/gpt-5", Destination: catalog.ConfiguredCandidate{Provider: "openai", ModelID: "gpt-5"}}}
+		h.run(t, execution.AccountSelection("openai/gpt-5", h.model, expected), "openai/gpt-5", false)
+		want := base
+		want.Keys, want.Source, want.RequestedModel = extension.KeysCustomer, extension.SourceRequestBYOK, "openai/gpt-5"
+		want.Candidates = []extension.Candidate{{Model: "openai/gpt-5", Provider: "openai", ProviderModel: "gpt-5"}}
+		assert.Equal(t, want, <-calls)
+	})
 }
 
 func TestPipeline_GatesStopAtFirstDenial(t *testing.T) {

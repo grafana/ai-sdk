@@ -3,6 +3,7 @@ package extensionhost
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
@@ -23,10 +24,12 @@ const (
 // request phase ends never enters it.
 type pipeline struct {
 	provider.LanguageModel
-	host   *Host
-	lists  *lists
-	source extension.Source
-	model  string
+	host       *Host
+	lists      *lists
+	source     extension.Source
+	requested  string
+	canonical  string
+	candidates []extension.Candidate
 }
 
 // call is one call's pipeline state. Its phases run sequentially: request
@@ -52,10 +55,11 @@ const (
 
 func (p *pipeline) newCall(ctx context.Context) *call {
 	base := p.host.requestInfo(ctx)
-	base.Keys, base.Source, base.Model = p.source.Keys(), p.source, p.model
+	base.Keys, base.Source, base.RequestedModel, base.CanonicalModel = p.source.Keys(), p.source, p.requested, p.canonical
 	views := make([]*extension.Call, len(p.lists.byName))
 	for i := range views {
 		view := base
+		view.Candidates = slices.Clone(p.candidates)
 		views[i] = &view
 	}
 	return &call{host: p.host, lists: p.lists, views: views, started: p.host.clock(), correlationID: base.CorrelationID}

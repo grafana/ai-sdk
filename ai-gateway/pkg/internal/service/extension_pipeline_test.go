@@ -78,19 +78,19 @@ func newExtensionRuntime(t *testing.T, selector execution.RequestSelector, value
 func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
 	const byokKey = "dummy-pipeline-key"
 	for _, tc := range []struct {
-		name    string
-		access  gatewayauth.AccountAccess
-		modelID string
-		gateway string
-		fail    bool
-		source  extension.Source
-		model   string
-		caller  extension.CallerType
+		name      string
+		access    gatewayauth.AccountAccess
+		modelID   string
+		gateway   string
+		fail      bool
+		source    extension.Source
+		canonical string
+		caller    extension.CallerType
 	}{
-		{name: "operator catalog", access: gatewayauth.ConfiguredAccounts, modelID: "public", source: extension.SourceOperatorCatalog, model: "public", caller: extension.CallerInternalService},
-		{name: "alias", access: gatewayauth.ConfiguredAccounts, modelID: "alias", source: extension.SourceOperatorCatalog, model: "public", caller: extension.CallerInternalService},
-		{name: "routed", access: gatewayauth.ConfiguredAccounts, modelID: "alias", gateway: `{"models":["other"]}`, fail: true, source: extension.SourceOperatorCatalog, model: "public", caller: extension.CallerInternalService},
-		{name: "BYOK", access: gatewayauth.RequestBYOK, modelID: "anthropic/native-model", gateway: `{"byok":{"anthropic":[{"apiKey":"` + byokKey + `"}]}}`, source: extension.SourceRequestBYOK, model: "anthropic/native-model", caller: extension.CallerUser},
+		{name: "operator catalog", access: gatewayauth.ConfiguredAccounts, modelID: "public", source: extension.SourceOperatorCatalog, canonical: "public", caller: extension.CallerInternalService},
+		{name: "alias", access: gatewayauth.ConfiguredAccounts, modelID: "alias", source: extension.SourceOperatorCatalog, canonical: "public", caller: extension.CallerInternalService},
+		{name: "routed", access: gatewayauth.ConfiguredAccounts, modelID: "alias", gateway: `{"models":["other"]}`, fail: true, source: extension.SourceOperatorCatalog, canonical: "public", caller: extension.CallerInternalService},
+		{name: "BYOK", access: gatewayauth.RequestBYOK, modelID: "anthropic/native-model", gateway: `{"byok":{"anthropic":[{"apiKey":"` + byokKey + `"}]}}`, source: extension.SourceRequestBYOK, caller: extension.CallerUser},
 	} {
 		for _, mode := range []string{"generate", "stream"} {
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
@@ -111,7 +111,8 @@ func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
 				admitted := recorder.admitted[0]
 				assert.Equal(t, tc.source, admitted.Source)
 				assert.Equal(t, tc.source.Keys(), admitted.Keys)
-				assert.Equal(t, tc.model, admitted.Model)
+				assert.Equal(t, tc.modelID, admitted.RequestedModel)
+				assert.Equal(t, tc.canonical, admitted.CanonicalModel)
 				assert.Equal(t, testNamespace, admitted.Namespace)
 				assert.Equal(t, tc.caller, admitted.Caller)
 				require.Len(t, recorder.observed, 1)
@@ -182,19 +183,32 @@ func TestExtensionRequest(t *testing.T) {
 	require.NoError(t, err)
 	telemetry.generateCorrelationID = func() string { return "correlation-1" }
 	for _, tc := range []struct {
-		access gatewayauth.AccountAccess
-		caller extension.CallerType
+		name     string
+		mode     gatewayauth.AccessMode
+		service  string
+		identity string
+		caller   extension.CallerType
 	}{
-		{access: gatewayauth.ConfiguredAccounts, caller: extension.CallerInternalService},
-		{access: gatewayauth.RequestBYOK, caller: extension.CallerUser},
+		{name: "internal service", mode: gatewayauth.AccessModeCloud, service: testInternalService, caller: extension.CallerInternalService},
+		{name: "internal service for a user", mode: gatewayauth.AccessModeCloud, service: testInternalService, identity: "user:u1", caller: extension.CallerInternalService},
+		{name: "user", mode: gatewayauth.AccessModeCloud, service: "front-door", identity: "user:u1", caller: extension.CallerUser},
+		{name: "service account", mode: gatewayauth.AccessModeCloud, identity: "service-account:sa1", caller: extension.CallerServiceAccount},
+		{name: "self-hosted user", mode: gatewayauth.AccessModeSelfHosted, identity: "user:u2", caller: extension.CallerUser},
+		{name: "self-hosted service account", mode: gatewayauth.AccessModeSelfHosted, identity: "service-account:sa2", caller: extension.CallerServiceAccount},
 	} {
-		t.Run(string(tc.access), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
+			policy := gatewayauth.AccessPolicy{Mode: tc.mode}
+			if tc.mode == gatewayauth.AccessModeCloud {
+				policy.InternalServices = []string{testInternalService}
+			}
 			var got extension.Call
-			handler, _ := withAccess(t, gatewayauth.AccessModeCloud, tc.access, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			handler := gatewayauth.AccessMiddleware(policy, func(http.ResponseWriter) { t.Error("refused") }, telemetry.ObserveAccess, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				got = ExtensionRequest(r.Context())
 			}))
-			telemetry.Middleware(fixedRoute("language_model"), handler).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
-			assert.Equal(t, extension.Call{Namespace: testNamespace, Caller: tc.caller, CorrelationID: "correlation-1"}, got)
+			request := httptest.NewRequest(http.MethodPost, "/", nil)
+			request = request.WithContext(verifiedContext(request.Context(), tc.service, tc.identity, testNamespace))
+			telemetry.Middleware(fixedRoute("language_model"), handler).ServeHTTP(httptest.NewRecorder(), request)
+			assert.Equal(t, extension.Call{Namespace: testNamespace, Caller: tc.caller, CallerIdentity: tc.identity, CorrelationID: "correlation-1"}, got)
 		})
 	}
 	assert.Equal(t, extension.Call{}, ExtensionRequest(context.Background()))
