@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
@@ -57,15 +59,19 @@ func (b *syncBuffer) String() string {
 }
 
 type fakeAnthropic struct {
-	server   *httptest.Server
-	requests atomic.Int32
-	block    atomic.Bool
-	blocked  chan error
-	release  chan struct{}
-	canceled chan struct{}
-	mu       sync.Mutex
-	bodies   []string
-	headers  []http.Header
+	server *httptest.Server
+	// failModel names a backend model that answers with a retryable error
+	// whose message is failMessage.
+	failModel   atomic.Value
+	failMessage atomic.Value
+	requests    atomic.Int32
+	block       atomic.Bool
+	blocked     chan error
+	release     chan struct{}
+	canceled    chan struct{}
+	mu          sync.Mutex
+	bodies      []string
+	headers     []http.Header
 }
 
 func newFakeAnthropic(t *testing.T) *fakeAnthropic {
@@ -79,6 +85,13 @@ func newFakeAnthropic(t *testing.T) *fakeAnthropic {
 		fake.headers = append(fake.headers, r.Header.Clone())
 		release := fake.release
 		fake.mu.Unlock()
+		if failing, _ := fake.failModel.Load().(string); failing != "" && strings.Contains(string(body), `"model":"`+failing+`"`) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			message, _ := fake.failMessage.Load().(string)
+			_, _ = fmt.Fprintf(w, `{"type":"error","error":{"type":"overloaded_error","message":%q}}`, "overloaded "+message)
+			return
+		}
 		if fake.block.Load() {
 			<-r.Context().Done()
 			fake.blocked <- r.Context().Err()
@@ -175,6 +188,8 @@ func lookup(values map[string]string) func(string) (string, bool) {
 type harnessOptions struct {
 	routeDeadline time.Duration
 	fallback      bool
+	extensions    []extension.Definition
+	env           map[string]string
 }
 
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
@@ -201,9 +216,10 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	} else {
 		env["GF_PLUGIN_ACCESS_MODE"] = "self-hosted"
 	}
+	maps.Copy(env, options.env)
 	logs := &syncBuffer{}
 	registry := prometheus.NewRegistry()
-	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry})
+	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry, Extensions: options.extensions})
 	require.NoError(t, err)
 	provider := gw.Provider()
 	built, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData})

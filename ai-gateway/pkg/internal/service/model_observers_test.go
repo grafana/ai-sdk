@@ -28,6 +28,7 @@ type observedRuntime struct {
 	logs      *lockedBuffer
 	telemetry *Telemetry
 	agent     *AgentObservabilityRuntime
+	observers *ModelObservers
 	env       *testkit.Env
 }
 
@@ -46,7 +47,7 @@ func newObservedRuntime(t *testing.T, selector execution.RequestSelector) *obser
 	require.NoError(t, err)
 	runtime, err := execution.New(execution.Config{Selector: selector, Compose: observers.Compose, Limits: serviceTestLimits()})
 	require.NoError(t, err)
-	return &observedRuntime{runtime: runtime, logs: logs, telemetry: telemetry, agent: agent, env: env}
+	return &observedRuntime{runtime: runtime, logs: logs, telemetry: telemetry, agent: agent, observers: observers, env: env}
 }
 
 func (o *observedRuntime) call(t *testing.T, ctx context.Context, modelID string, options provider.CallOptions, streaming bool) {
