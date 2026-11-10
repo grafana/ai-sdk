@@ -113,27 +113,37 @@ func TestPipeline_RequestInfo(t *testing.T) {
 }
 
 func TestPipeline_GatesStopAtFirstDenial(t *testing.T) {
-	for _, phase := range []extension.Phase{extension.PhaseAdmit, extension.PhaseInspectRequest} {
+	for _, phase := range []extension.Phase{extension.PhaseAdmit, extension.PhaseInspectRequest, extension.PhaseInspectResponse} {
 		t.Run(string(phase), func(t *testing.T) {
 			log := &journal{}
 			deny := func(context.Context, *extension.Call) error { return fmt.Errorf("over quota: %w", extension.ErrDenied) }
 			b := &recorder{name: "b", journal: log}
-			if phase == extension.PhaseAdmit {
+			switch phase {
+			case extension.PhaseAdmit:
 				b.admit = deny
-			} else {
+			case extension.PhaseInspectRequest:
 				b.inspectRequest = func(ctx context.Context, call *extension.Call, _ provider.CallOptions) error { return deny(ctx, call) }
+			default:
+				b.inspectResponse = func(ctx context.Context, call *extension.Call, _ extension.Part) error { return deny(ctx, call) }
 			}
 			h := newHarness(t, define("c", &recorder{name: "c", journal: log}), define("a", &recorder{name: "a", journal: log}), define("b", b))
 			_, err := h.compose(t, extension.SourceOperatorCatalog).DoGenerate(t.Context(), provider.CallOptions{})
 			assert.Equal(t, extension.ErrDenied, err)
 			h.flush()
 			entries := log.list()
-			if phase == extension.PhaseAdmit {
-				assert.Equal(t, []string{"a:admit", "b:admit", "a:observe:denied", "b:observe:denied", "c:observe:denied"}, entries)
-			} else {
-				assert.Equal(t, []string{"a:admit", "b:admit", "c:admit", "a:transform", "b:transform", "c:transform", "a:inspect-request", "b:inspect-request", "a:observe:denied", "b:observe:denied", "c:observe:denied"}, entries)
+			observed := []string{"a:observe:denied", "b:observe:denied", "c:observe:denied"}
+			requestPhases := []string{"a:admit", "b:admit", "c:admit", "a:transform", "b:transform", "c:transform", "a:inspect-request", "b:inspect-request", "c:inspect-request"}
+			switch phase {
+			case extension.PhaseAdmit:
+				assert.Equal(t, append([]string{"a:admit", "b:admit"}, observed...), entries)
+				assert.Zero(t, h.model.callCount())
+			case extension.PhaseInspectRequest:
+				assert.Equal(t, append(requestPhases[:8:8], observed...), entries)
+				assert.Zero(t, h.model.callCount())
+			default:
+				assert.Equal(t, append(append(requestPhases, "a:inspect-response:text", "b:inspect-response:text"), observed...), entries)
+				assert.Equal(t, 1, h.model.callCount())
 			}
-			assert.Zero(t, h.model.callCount())
 			assert.Equal(t, 1.0, h.events("b", string(phase), eventDenied))
 		})
 	}
@@ -201,6 +211,20 @@ func TestPipeline_HostPolicyAfterEachTransform(t *testing.T) {
 		assert.Equal(t, 1.0, h.events("headers", string(extension.PhaseTransformRequest), eventFailed))
 		assert.Contains(t, h.logs.String(), `"class":"policy"`)
 		assert.NotContains(t, h.logs.String(), "private")
+	})
+
+	t.Run("failure logs carry no error text", func(t *testing.T) {
+		h := newHarness(t, define("defaults", &recorder{transform: func(context.Context, *extension.Call, provider.CallOptions) (provider.CallOptions, error) {
+			return provider.CallOptions{}, errors.New("Bearer sk-private-credential")
+		}}, skip))
+		_, err := h.compose(t, extension.SourceOperatorCatalog).DoGenerate(t.Context(), provider.CallOptions{})
+		require.NoError(t, err)
+		logs := h.logs.String()
+		assert.Contains(t, logs, `"extension":"defaults"`)
+		assert.Contains(t, logs, `"phase":"transform-request"`)
+		assert.Contains(t, logs, `"class":"error"`)
+		assert.Contains(t, logs, `"correlation_id":"correlation-1"`)
+		assert.NotContains(t, logs, "sk-private-credential")
 	})
 
 	t.Run("skip", func(t *testing.T) {
@@ -637,6 +661,8 @@ func TestHost_CloseRespectsTheDeadline(t *testing.T) {
 	start := time.Now()
 	h.host.Close(ctx)
 	assert.Less(t, time.Since(start), time.Second)
+	assert.Equal(t, 1.0, h.events("stuck", string(phaseClose), eventFailed))
+	assert.Contains(t, h.logs.String(), `"class":"timeout"`)
 	assert.Equal(t, 1.0, h.events("failing", string(phaseClose), eventFailed))
 	assert.Equal(t, 1.0, h.events("panicking", string(phaseClose), eventFailed))
 	assert.NotContains(t, h.logs.String(), "private")
@@ -659,4 +685,22 @@ func TestPipeline_ModelPanicIsObserved(t *testing.T) {
 			assert.Equal(t, extension.OutcomeError, (<-records).Outcome)
 		})
 	}
+}
+
+func TestHost_CloseCountsAbandonedObservations(t *testing.T) {
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	started := make(chan struct{}, 1)
+	h := newHarness(t, define("billing", &recorder{observe: func(context.Context, *extension.Call, extension.Record) error {
+		started <- struct{}{}
+		<-release
+		return nil
+	}}))
+	_, err := h.compose(t, extension.SourceOperatorCatalog).DoGenerate(t.Context(), provider.CallOptions{})
+	require.NoError(t, err)
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	h.host.Close(ctx)
+	assert.Equal(t, 1.0, h.dropped())
 }

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -191,27 +192,42 @@ func (h *Host) Compose(selected execution.Selection) (provider.LanguageModel, er
 }
 
 // Close stops accepting observations, waits for those in flight and closes
-// every instance concurrently, until ctx ends. Close failures are counted and
-// logged; a close still running when ctx ends is abandoned. Later calls have no
+// every instance concurrently, until ctx ends. Observations still running when
+// ctx ends are counted as dropped; close failures, and closes still running
+// when ctx ends, are counted and logged as failures. Later calls have no
 // effect.
 func (h *Host) Close(ctx context.Context) {
 	h.closeOnce.Do(func() { h.close(ctx) })
 }
 
 func (h *Host) close(ctx context.Context) {
-	h.observations.close(ctx)
-	var closing sync.WaitGroup
+	h.dropped.Add(float64(h.observations.close(ctx)))
+	type closing struct {
+		definition extension.Definition
+		running    atomic.Bool
+	}
+	var started []*closing
+	var group sync.WaitGroup
 	for _, built := range h.instances {
 		if built.closer == nil {
 			continue
 		}
-		closing.Go(func() {
-			if err := contain(func() error { return built.closer.Close(ctx) }); err != nil {
+		current := &closing{definition: built.definition}
+		current.running.Store(true)
+		started = append(started, current)
+		group.Go(func() {
+			err := contain(func() error { return built.closer.Close(ctx) })
+			if current.running.CompareAndSwap(true, false) && err != nil {
 				h.recordFailure(built.definition, phaseClose, classOf(err), "")
 			}
 		})
 	}
-	waitUntil(ctx, &closing)
+	waitUntil(ctx, &group)
+	for _, current := range started {
+		if current.running.CompareAndSwap(true, false) {
+			h.recordFailure(current.definition, phaseClose, classTimeout, "")
+		}
+	}
 }
 
 type failureClass string
@@ -220,6 +236,8 @@ const (
 	classError  failureClass = "error"
 	classPanic  failureClass = "panic"
 	classPolicy failureClass = "policy"
+	// classTimeout is a close still running at the shutdown deadline.
+	classTimeout failureClass = "timeout"
 )
 
 var (

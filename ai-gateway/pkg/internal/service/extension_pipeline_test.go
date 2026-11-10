@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -83,11 +85,12 @@ func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
 		fail    bool
 		source  extension.Source
 		model   string
+		caller  extension.CallerType
 	}{
-		{name: "operator catalog", access: gatewayauth.ConfiguredAccounts, modelID: "public", source: extension.SourceOperatorCatalog, model: "public"},
-		{name: "alias", access: gatewayauth.ConfiguredAccounts, modelID: "alias", source: extension.SourceOperatorCatalog, model: "public"},
-		{name: "routed", access: gatewayauth.ConfiguredAccounts, modelID: "alias", gateway: `{"models":["other"]}`, fail: true, source: extension.SourceOperatorCatalog, model: "public"},
-		{name: "BYOK", access: gatewayauth.RequestBYOK, modelID: "anthropic/native-model", gateway: `{"byok":{"anthropic":[{"apiKey":"` + byokKey + `"}]}}`, source: extension.SourceRequestBYOK, model: "anthropic/native-model"},
+		{name: "operator catalog", access: gatewayauth.ConfiguredAccounts, modelID: "public", source: extension.SourceOperatorCatalog, model: "public", caller: extension.CallerInternalService},
+		{name: "alias", access: gatewayauth.ConfiguredAccounts, modelID: "alias", source: extension.SourceOperatorCatalog, model: "public", caller: extension.CallerInternalService},
+		{name: "routed", access: gatewayauth.ConfiguredAccounts, modelID: "alias", gateway: `{"models":["other"]}`, fail: true, source: extension.SourceOperatorCatalog, model: "public", caller: extension.CallerInternalService},
+		{name: "BYOK", access: gatewayauth.RequestBYOK, modelID: "anthropic/native-model", gateway: `{"byok":{"anthropic":[{"apiKey":"` + byokKey + `"}]}}`, source: extension.SourceRequestBYOK, model: "anthropic/native-model", caller: extension.CallerUser},
 	} {
 		for _, mode := range []string{"generate", "stream"} {
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
@@ -109,6 +112,8 @@ func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
 				assert.Equal(t, tc.source, admitted.Source)
 				assert.Equal(t, tc.source.Keys(), admitted.Keys)
 				assert.Equal(t, tc.model, admitted.Model)
+				assert.Equal(t, testNamespace, admitted.Namespace)
+				assert.Equal(t, tc.caller, admitted.Caller)
 				require.Len(t, recorder.observed, 1)
 				assert.Equal(t, extension.OutcomeSuccess, recorder.observed[0].Outcome)
 				require.EventuallyWithT(t, func(collect *assert.CollectT) {
@@ -170,4 +175,27 @@ func TestExtensionPipeline_DenialIsADistinctObservedOutcome(t *testing.T) {
 			assert.Contains(t, metrics, `grafana_ai_gateway_extension_events_total{event="denied",extension="recorder",phase="admit"} 1`)
 		})
 	}
+}
+
+func TestExtensionRequest(t *testing.T) {
+	telemetry, err := NewTelemetry(slog.New(slog.NewJSONHandler(&lockedBuffer{}, nil)))
+	require.NoError(t, err)
+	telemetry.generateCorrelationID = func() string { return "correlation-1" }
+	for _, tc := range []struct {
+		access gatewayauth.AccountAccess
+		caller extension.CallerType
+	}{
+		{access: gatewayauth.ConfiguredAccounts, caller: extension.CallerInternalService},
+		{access: gatewayauth.RequestBYOK, caller: extension.CallerUser},
+	} {
+		t.Run(string(tc.access), func(t *testing.T) {
+			var got extension.Call
+			handler, _ := withAccess(t, gatewayauth.AccessModeCloud, tc.access, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				got = ExtensionRequest(r.Context())
+			}))
+			telemetry.Middleware(fixedRoute("language_model"), handler).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil))
+			assert.Equal(t, extension.Call{Namespace: testNamespace, Caller: tc.caller, CorrelationID: "correlation-1"}, got)
+		})
+	}
+	assert.Equal(t, extension.Call{}, ExtensionRequest(context.Background()))
 }

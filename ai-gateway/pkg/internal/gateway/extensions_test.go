@@ -263,6 +263,14 @@ func TestGateway_Extensions(t *testing.T) {
 		assert.Equal(t, "stream-start", types[0])
 		assert.Equal(t, []string{"text-start", "text-delta", "error"}, types[len(types)-3:])
 		assert.NotContains(t, body, "second")
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			assert.Contains(collect, h.logs.String(), `"ai_sdk.event":"aisdk.model.stream.error"`)
+		}, time.Second, time.Millisecond)
+		assert.Contains(t, h.logs.String(), `"ai_sdk.outcome":"denied"`)
+		metrics := h.metrics(t)
+		assert.Contains(t, metrics, `operation="stream",provider="grafana",status="denied"`)
+		assert.NotContains(t, metrics, `status="error"`)
+		assert.Contains(t, metrics, `grafana_ai_gateway_extension_events_total{event="denied",extension="guard",phase="inspect-response"} 1`)
 	})
 
 	t.Run("protected header from a transform is refused before the provider", func(t *testing.T) {
