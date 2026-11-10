@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/internal/streamusage"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -30,6 +31,7 @@ type pipeline struct {
 	requested  string
 	canonical  string
 	candidates []extension.Candidate
+	attempts   func(error) []execution.Attempt
 }
 
 // call is one call's pipeline state. Its phases run sequentially: request
@@ -38,6 +40,7 @@ type pipeline struct {
 type call struct {
 	host          *Host
 	lists         *lists
+	attempts      func(error) []execution.Attempt
 	views         []*extension.Call
 	started       time.Time
 	correlationID string
@@ -62,7 +65,7 @@ func (p *pipeline) newCall(ctx context.Context) *call {
 		view.Candidates = slices.Clone(p.candidates)
 		views[i] = &view
 	}
-	return &call{host: p.host, lists: p.lists, views: views, started: p.host.clock(), correlationID: base.CorrelationID}
+	return &call{host: p.host, lists: p.lists, attempts: p.attempts, views: views, started: p.host.clock(), correlationID: base.CorrelationID}
 }
 
 // run runs one phase of the extension at position i and applies its outcome:
@@ -169,9 +172,10 @@ func outcomeOf(ctx context.Context, err error) extension.Outcome {
 }
 
 // finish dispatches the call's record to its observers, off the response's
-// critical path.
-func (c *call) finish(ctx context.Context, outcome extension.Outcome, usage provider.Usage) {
-	c.dispatch(ctx, c.reserve(), outcome, usage)
+// critical path. modelErr is the selected model's own outcome, which decides
+// the attempt synthesized for a single candidate.
+func (c *call) finish(ctx context.Context, outcome extension.Outcome, usage provider.Usage, modelErr error) {
+	c.dispatch(ctx, c.reserve(), outcome, usage, modelErr)
 }
 
 // reserve reserves the call's observation, so shutdown waits for it, before
@@ -188,12 +192,14 @@ func (c *call) reserve() bool {
 	return true
 }
 
-// dispatch runs a reserved observation with the call's record.
-func (c *call) dispatch(ctx context.Context, reserved bool, outcome extension.Outcome, usage provider.Usage) {
+// dispatch runs a reserved observation with the call's record. The record's
+// attempts are read from the runtime's capture now, when the outcome is
+// decided.
+func (c *call) dispatch(ctx context.Context, reserved bool, outcome extension.Outcome, usage provider.Usage, modelErr error) {
 	if !reserved {
 		return
 	}
-	record := extension.Record{Outcome: outcome, DeniedBy: c.denial, Usage: usage, Started: c.started, Duration: c.host.clock().Sub(c.started)}
+	record := extension.Record{Outcome: outcome, DeniedBy: c.denial, Usage: usage, Attempts: physicalAttempts(c.attempts(modelErr)), Started: c.started, Duration: c.host.clock().Sub(c.started)}
 	detached := context.WithoutCancel(ctx)
 	c.host.observations.run(func() { c.observe(detached, record) })
 }
@@ -206,6 +212,7 @@ func (c *call) observe(ctx context.Context, record extension.Record) {
 			continue
 		}
 		own := record
+		own.Attempts = slices.Clone(record.Attempts)
 		if record.DeniedBy != nil {
 			denial := *record.DeniedBy
 			own.DeniedBy = &denial
@@ -227,7 +234,7 @@ func invoked[T any](ctx context.Context, c *call, invoke func() (T, error)) (T, 
 	finished := false
 	defer func() {
 		if !finished {
-			c.finish(ctx, extension.OutcomeError, provider.Usage{})
+			c.finish(ctx, extension.OutcomeError, provider.Usage{}, errNoModelResult)
 		}
 	}()
 	value, err := invoke()
@@ -239,12 +246,12 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 	c := p.newCall(ctx)
 	params, err := c.request(ctx, options)
 	if err != nil {
-		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{})
+		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{}, err)
 		return nil, err
 	}
 	result, err := invoked(ctx, c, func() (*provider.GenerateResult, error) { return p.LanguageModel.DoGenerate(ctx, params) })
 	if err != nil || result == nil {
-		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{})
+		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{}, modelError(err))
 		return result, err
 	}
 	if !p.lists.checksOutput() {
@@ -252,18 +259,18 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 	}
 	history, _ := execution.RebuildToolHistory(options.Prompt)
 	if execution.ValidateGenerateResult(result, history) != nil {
-		c.finish(ctx, settled(ctx, extension.OutcomeInvalidOutput), result.Usage)
+		c.finish(ctx, settled(ctx, extension.OutcomeInvalidOutput), result.Usage, nil)
 		return result, nil
 	}
 	if p.lists.responseInspector {
 		for _, part := range normalizeResult(result) {
 			if err := c.inspect(ctx, part); err != nil {
-				c.finish(ctx, outcomeOf(ctx, err), result.Usage)
+				c.finish(ctx, outcomeOf(ctx, err), result.Usage, nil)
 				return nil, err
 			}
 		}
 	}
-	c.finish(ctx, settled(ctx, extension.OutcomeSuccess), result.Usage)
+	c.finish(ctx, settled(ctx, extension.OutcomeSuccess), result.Usage, nil)
 	return result, nil
 }
 
@@ -280,7 +287,7 @@ func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (
 	c := p.newCall(ctx)
 	params, err := c.request(ctx, options)
 	if err != nil {
-		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{})
+		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{}, err)
 		return nil, err
 	}
 	if !p.lists.checksOutput() {
@@ -295,7 +302,7 @@ func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (
 	}()
 	result, err := invoked(ctx, c, func() (*provider.StreamResult, error) { return p.LanguageModel.DoStream(modelContext, params) })
 	if err != nil || result == nil || result.Stream == nil {
-		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{})
+		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{}, modelError(err))
 		return result, err
 	}
 	established = true
@@ -311,7 +318,7 @@ func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (
 func (p *pipeline) forward(ctx context.Context, cancel context.CancelFunc, c *call, validator *execution.StreamValidator, in <-chan provider.StreamPart, out chan<- provider.StreamPart) {
 	defer cancel()
 	var usage streamusage.Aggregator
-	outcome, invalid, closed := extension.OutcomeError, false, false
+	outcome, invalid, closed, received := extension.OutcomeError, false, false, false
 loop:
 	for {
 		select {
@@ -326,6 +333,7 @@ loop:
 				}
 				break loop
 			}
+			received = true
 			usage.Observe(part)
 			if !invalid && validator.Check(part) != nil {
 				invalid = true
@@ -358,7 +366,58 @@ loop:
 	reserved := c.reserve()
 	close(out)
 	streamUsage, _ := usage.Usage()
-	c.dispatch(ctx, reserved, outcome, streamUsage)
+	c.dispatch(ctx, reserved, outcome, streamUsage, streamModelError(ctx, received))
+}
+
+// errNoModelResult is the outcome of a selected model that ended without a
+// result, or of a stream that ended without a part.
+var errNoModelResult = errors.New("extensions: the model ended without a result")
+
+// modelError returns the selected model's outcome for a call that ended with
+// err and no usable result.
+func modelError(err error) error {
+	if err == nil {
+		return errNoModelResult
+	}
+	return err
+}
+
+// streamModelError returns the outcome of an established stream's selected
+// model, as the adapter projects it at the first part: answered once a part
+// arrived, otherwise ended by the context or without output.
+func streamModelError(ctx context.Context, received bool) error {
+	switch {
+	case received:
+		return nil
+	case ctx.Err() != nil:
+		return ctx.Err()
+	default:
+		return errNoModelResult
+	}
+}
+
+// attemptOutcomes maps the runtime's attempt outcomes to the extension
+// vocabulary.
+var attemptOutcomes = map[fallback.AttemptOutcome]extension.AttemptOutcome{
+	fallback.AttemptSelected: extension.AttemptSelected,
+	fallback.AttemptFailed:   extension.AttemptFailed,
+	fallback.AttemptCanceled: extension.AttemptCanceled,
+}
+
+// physicalAttempts returns the extension view of a call's projected attempts:
+// identity, outcome and status code, without failure text.
+func physicalAttempts(projected []execution.Attempt) []extension.Attempt {
+	if len(projected) == 0 {
+		return nil
+	}
+	attempts := make([]extension.Attempt, len(projected))
+	for i, attempt := range projected {
+		attempts[i] = extension.Attempt{Provider: attempt.Provider, ProviderInstance: attempt.ProviderInstance, ProviderModel: attempt.ModelID, Outcome: attemptOutcomes[attempt.Outcome]}
+		if attempt.Error != nil {
+			attempts[i].StatusCode = attempt.Error.StatusCode
+		}
+	}
+	return attempts
 }
 
 // abortPart is the error part that ends a stream an extension aborted.

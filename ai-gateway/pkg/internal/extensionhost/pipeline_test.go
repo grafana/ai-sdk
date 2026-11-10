@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -732,4 +734,135 @@ func TestHost_CloseCountsAbandonedObservations(t *testing.T) {
 	defer cancel()
 	h.host.Close(ctx)
 	assert.Equal(t, 1.0, h.dropped())
+}
+
+func TestPipeline_RecordAttempts(t *testing.T) {
+	unavailable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "private overloaded", IsRetryable: new(true)})
+	internal := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 500, Message: "private failure"})
+	failing := func() *fakeModel {
+		return &fakeModel{
+			generate: func(context.Context) (*provider.GenerateResult, error) { return nil, unavailable },
+			stream:   func(context.Context) (*provider.StreamResult, error) { return nil, unavailable },
+		}
+	}
+	selected := func(model string) extension.Attempt {
+		return extension.Attempt{Provider: "native", ProviderInstance: "instance-" + model, ProviderModel: model, Outcome: extension.AttemptSelected}
+	}
+	failed := func(model string, status int) extension.Attempt {
+		return extension.Attempt{Provider: "native", ProviderInstance: "instance-" + model, ProviderModel: model, Outcome: extension.AttemptFailed, StatusCode: status}
+	}
+	denyAt := func(phase extension.Phase) *recorder {
+		deny := func() error { return extension.ErrDenied }
+		switch phase {
+		case extension.PhaseAdmit:
+			return &recorder{admit: func(context.Context, *extension.Call) error { return deny() }}
+		case extension.PhaseInspectRequest:
+			return &recorder{inspectRequest: func(context.Context, *extension.Call, provider.CallOptions) error { return deny() }}
+		default:
+			return &recorder{inspectResponse: func(context.Context, *extension.Call, extension.Part) error { return deny() }}
+		}
+	}
+	for _, tc := range []struct {
+		name     string
+		stream   bool
+		fallback bool
+		model    func(*fakeModel)
+		deny     extension.Phase
+		want     []extension.Attempt
+	}{
+		{name: "single candidate", want: []extension.Attempt{selected("primary")}},
+		{name: "single candidate stream", stream: true, want: []extension.Attempt{selected("primary")}},
+		{name: "single candidate fails", model: func(m *fakeModel) {
+			m.generate = func(context.Context) (*provider.GenerateResult, error) { return nil, internal }
+		}, want: []extension.Attempt{failed("primary", 500)}},
+		{name: "single candidate stream closes before its first part", stream: true, model: func(m *fakeModel) {
+			m.stream = func(context.Context) (*provider.StreamResult, error) {
+				return &provider.StreamResult{Stream: streamOf()}, nil
+			}
+		}, want: []extension.Attempt{failed("primary", 0)}},
+		{name: "fallback", fallback: true, want: []extension.Attempt{failed("primary", 503), selected("secondary")}},
+		{name: "stream fallback", stream: true, fallback: true, want: []extension.Attempt{failed("primary", 503), selected("secondary")}},
+		{name: "denied at admit", fallback: true, deny: extension.PhaseAdmit},
+		{name: "denied at request inspection", stream: true, deny: extension.PhaseInspectRequest},
+		{name: "output denied", deny: extension.PhaseInspectResponse, want: []extension.Attempt{selected("primary")}},
+		{name: "stream output denied after fallback", stream: true, fallback: true, deny: extension.PhaseInspectResponse, want: []extension.Attempt{failed("primary", 503), selected("secondary")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			records := make(chan extension.Record, 1)
+			definitions := []extension.Definition{define("audit", &recorder{observe: func(_ context.Context, _ *extension.Call, record extension.Record) error {
+				records <- record
+				return nil
+			}})}
+			if tc.deny != "" {
+				definitions = append(definitions, define("gate", denyAt(tc.deny)))
+			}
+			h := newHarness(t, definitions...)
+			if tc.model != nil {
+				tc.model(h.model)
+			}
+			model, expected := provider.LanguageModel(h.model), configuredExpected("primary")
+			if tc.fallback {
+				chain, err := fallback.New(failing(), h.model)
+				require.NoError(t, err)
+				model, expected = chain, configuredExpected("primary", "secondary")
+			}
+			outcome := h.run(t, execution.ConfiguredSelection("canonical", model, expected), "alias", tc.stream)
+			h.flush()
+			record := <-records
+			assert.Equal(t, tc.want, record.Attempts)
+			if len(tc.want) == 0 {
+				assert.Nil(t, outcome.Overview)
+				return
+			}
+			require.NotNil(t, outcome.Overview)
+			require.Len(t, outcome.Overview.Attempts, len(tc.want))
+			for i, attempt := range outcome.Overview.Attempts {
+				assert.Equal(t, string(tc.want[i].Outcome), string(attempt.Outcome), "the record agrees with the overview")
+			}
+		})
+	}
+}
+
+func TestPipeline_AttemptCaptureCannotBeReplaced(t *testing.T) {
+	unavailable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "overloaded", IsRetryable: new(true)})
+	var stolen atomic.Int64
+	steal := func(ctx context.Context) {
+		_ = fallback.WithAttemptObserver(ctx, func(context.Context, fallback.Attempt) { stolen.Add(1) })
+	}
+	records := make(chan extension.Record, 2)
+	observe := func(change bool) *recorder {
+		return &recorder{
+			admit: func(ctx context.Context, _ *extension.Call) error {
+				steal(ctx)
+				return nil
+			},
+			transform: func(ctx context.Context, _ *extension.Call, params provider.CallOptions) (provider.CallOptions, error) {
+				steal(ctx)
+				return params, nil
+			},
+			observe: func(_ context.Context, _ *extension.Call, record extension.Record) error {
+				if change {
+					record.Attempts[0].Outcome = extension.AttemptSelected
+					record.Attempts[0].StatusCode = 0
+				}
+				records <- record
+				return nil
+			},
+		}
+	}
+	h := newHarness(t, define("a", observe(true)), define("b", observe(false)))
+	chain, err := fallback.New(&fakeModel{generate: func(context.Context) (*provider.GenerateResult, error) { return nil, unavailable }}, h.model)
+	require.NoError(t, err)
+	outcome := h.run(t, execution.ConfiguredSelection("canonical", chain, configuredExpected("primary", "secondary")), "alias", false)
+	h.flush()
+
+	assert.Zero(t, stolen.Load())
+	<-records
+	unchanged := <-records
+	require.Len(t, unchanged.Attempts, 2)
+	assert.Equal(t, extension.AttemptFailed, unchanged.Attempts[0].Outcome)
+	assert.Equal(t, 503, unchanged.Attempts[0].StatusCode)
+	require.NotNil(t, outcome.Overview)
+	require.Len(t, outcome.Overview.Attempts, 2)
+	assert.Equal(t, fallback.AttemptFailed, outcome.Overview.Attempts[0].Outcome)
 }

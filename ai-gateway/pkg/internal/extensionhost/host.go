@@ -189,7 +189,7 @@ func (h *Host) Compose(selected execution.Selection) (provider.LanguageModel, er
 	if len(applicable.byName) == 0 {
 		return selected.Model, nil
 	}
-	return &pipeline{LanguageModel: selected.Model, host: h, lists: applicable, source: selected.Source, requested: selected.RequestedID(), canonical: selected.CanonicalID(), candidates: candidates(selected.Expected())}, nil
+	return &pipeline{LanguageModel: selected.Model, host: h, lists: applicable, source: selected.Source, requested: selected.RequestedID(), canonical: selected.CanonicalID(), candidates: candidates(selected.Expected()), attempts: selected.Attempts}, nil
 }
 
 // candidates returns the extension view of a selection's expected attempts.
