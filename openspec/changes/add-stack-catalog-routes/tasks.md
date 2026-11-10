@@ -2,24 +2,24 @@
 
 ## 1. Manifest and role
 
-- [ ] 1.1 Add the two catalog `openapi` paths with their declared `get` checks on the route subresources, and the `aigateway:modelinvoker` role bound to Editor. Regenerate the manifest and types with `pnpm --filter ./ai-gateway generate:kinds`. Verify that the manifest tests pin the four routes, the checks, the role's three kinds and the binding, and that `simple.App.ValidateManifest` passes.
+- [x] 1.1 Add the two catalog `openapi` paths with their declared `get` checks on the route subresources, and the `aigateway:modelinvoker` role bound to Editor. Regenerate the manifest and types with `pnpm --filter ./ai-gateway generate:kinds`. Verify that the manifest tests pin the four routes, the checks, the role's three kinds and the binding, and that `simple.App.ValidateManifest` passes.
 
 ## 2. Access, parent check and route table
 
-- [ ] 2.1 Add `CatalogAccounts` and `AccessPolicy.DecideCatalog`; verify a table test over user, service account, access policy alone, access policy for a user, anonymous and namespace mismatch in both modes, with the `Decide` tests unchanged.
-- [ ] 2.2 Add the `parentCatalog` middleware and the private stack-catalog context carrier; verify tests for a missing parent, mismatched plural, name, namespace or group/kind, an undecodable parent, and that the body isn't read.
-- [ ] 2.3 Add the two route-table entries with their labels, `DecideCatalog` and `parentCatalog`; verify the route-table and manifest agreement tests, metrics `decision="catalog"` and both labels.
+- [x] 2.1 Add `CatalogAccounts` and `AccessPolicy.DecideCatalog`; verify a table test over user, service account, access policy alone, access policy for a user, anonymous and namespace mismatch in both modes, with the `Decide` tests unchanged.
+- [x] 2.2 Add the `parentCatalog` middleware and the private stack-catalog context carrier; verify tests for a missing parent, mismatched plural, name, namespace or group/kind, an undecodable parent, and that the body isn't read.
+- [x] 2.3 Add the two route-table entries with their labels, `DecideCatalog` and `parentCatalog`; verify the route-table and manifest agreement tests, metrics `decision="catalog"` and both labels.
 
 ## 3. Invocation and discovery
 
-- [ ] 3.1 Add the `catalog` branch to `NewSelector`, calling `SelectStackCatalog` with the carrier; verify service tests (missing carrier refused; an operator-only model not found; `byok` refused).
-- [ ] 3.2 Add `StackCatalogLister` and the catalog-route discovery handler; verify the rows, the error mapping and zero constructions.
-- [ ] 3.3 Add `host.ErrorCatalogConfiguration`, its discovery mapping and its ProviderWire document; verify the document bytes match the runtime 424 document.
+- [x] 3.1 Add the `catalog` branch to `NewSelector`, calling `SelectStackCatalog` with the carrier; verify service tests (missing carrier refused; an operator-only model not found; `byok` refused).
+- [x] 3.2 Add `StackCatalogLister` and the catalog-route discovery handler; verify the rows, the error mapping and zero constructions.
+- [x] 3.3 Add `host.ErrorCatalogConfiguration`, its discovery mapping and its ProviderWire document; verify the document bytes match the runtime 424 document.
 
 ## 4. Test host and protocol tests
 
-- [ ] 4.1 Serve declared subresource routes in `platformhost` with the stored object, resource version and decrypted values as the parent, and `404` for a missing object; verify host tests.
-- [ ] 4.2 Add gateway harness tests through the test host: invocation with the catalog key reaching a fake native provider, unary and stream, alias and fallback, an edit applying on the next call, discovery, refusals, an access-policy token (alone and for a user), and no key in logs or metrics.
+- [x] 4.1 Serve declared subresource routes in `platformhost` with the stored object, resource version and decrypted values as the parent, and `404` for a missing object; verify host tests.
+- [x] 4.2 Add gateway harness tests through the test host: invocation with the catalog key reaching a fake native provider, unary and stream, alias and fallback, an edit applying on the next call, discovery, refusals, an access-policy token (alone and for a user), and no key in logs or metrics.
 
 ## 5. Cross-language scenarios
 
