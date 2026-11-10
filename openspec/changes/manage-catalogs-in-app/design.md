@@ -79,10 +79,10 @@
 The form state holds:
 
 - the catalog `name`;
-- a list of provider rows: `name`, `type` (`anthropic` or `openai`), and `key`, a string the writer typed, empty when untouched;
-- a list of model rows: `id`, `name`, `description`, `aliases`, `primary {provider, model}` and `fallback[]`.
+- a list of provider rows: the map key `name`, the generated `Provider` object as stored, `key`, a string the writer typed, empty when untouched, and whether the writer reset a stored key;
+- a list of model rows: the map key `id` and the generated `Model` object (`name`, `description`, `aliases`, `primary`, `fallback`).
 
-Rows instead of maps, so a name can be edited and duplicates can be detected. The page converts between the rows and `Spec`. Loading an object maps its `spec` into rows. It records the stored secure keys, the keys of `secure`, never their names, and the object's `metadata`. It doesn't hold any key.
+Rows instead of maps, so a name can be edited and duplicates can be detected. Each row keeps its whole spec object, so the conversion to `Spec` is the map of names to objects, and a field the form doesn't edit round-trips unchanged. A new provider field needs only a new input on the row. Loading an object maps its `spec` into rows. It records the stored secure keys, the keys of `secure`, never their names, and the object's `metadata`. It doesn't hold any key.
 
 `secureChanges(storedKeys, providers)` is a pure function that builds the `secure` map of a write:
 
@@ -181,12 +181,13 @@ What's added:
 
 - "Base the UI on permissions, not roles" can't be shown end to end on OSS, which can't grant `catalogwriter` to an Editor. The Jest permission matrix carries it, and the Viewer and Editor runs prove the bound roles.
 - The existing `e2e.sh` sentinel log check also covers these keys, because the spec uses the same sentinel prefix.
+- After each save, the spec also checks that the typed sentinel appears in no browser console message and no response body the page fetched, recorded through Playwright's `console` and `response` events.
 
 ## Risks / Trade-offs
 
 - [Boot-data permissions are loaded once per page load] → a role change shows after a reload. The server refuses stale writes with `403`, and the page shows the error.
 - [Include `action` support or plugin validator warnings] → if the validator or Grafana 13.3 rejects the include action, fall back to the default Viewer include and keep the in-page check.
-- [A future spec field the form doesn't model would be dropped on save] → the form covers the whole current schema. Adding a kind field must extend the form in the same change, and a Jest round-trip test of a full spec catches drift.
+- [A future spec field the form doesn't model] → rows keep their whole spec objects, so such a field round-trips unchanged; a Jest round-trip test covers a full spec. It can't be edited until the form gains its input.
 - [Grafana list limits] → the page makes one list call. A stack is expected to hold few catalogs; paginate if the platform starts truncating.
 - [Overview in Grafana Cloud], where catalogs with keys are refused → the list is empty or fails. Either case renders inline without affecting the quick start.
 - [Browser login users in e2e depend on the login form] → the compose base keeps the login form enabled. plugin-e2e already logs in `admin` the same way.
@@ -194,6 +195,15 @@ What's added:
 ## Migration Plan
 
 Additive frontend change. Rolling back removes the page and the overview section; stored catalogs are unaffected.
+
+## Follow-ups
+
+- **#760** allows `baseURL`, `openai-compatible`, `providerName` and `supportsStructuredOutputs` in stack catalogs. Once both land, the provider row needs:
+  - a third type option;
+  - inputs for those three fields, shown by type;
+  - the matching Jest and Playwright cases.
+
+  Rows already carry the whole `Provider` object, so neither the conversion nor `secureChanges` changes.
 
 ## Open Questions
 
