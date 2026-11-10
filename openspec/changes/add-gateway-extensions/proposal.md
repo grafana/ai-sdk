@@ -13,8 +13,9 @@ Teams that build Gateway distributions need to add their own per-call behavior, 
 - `gateway.Options` gains `Extensions` and `Mandatory`, and `gateway.DefaultExtensions()` returns the shipped extensions, which are none. There is no global or `init()` registry; invalid definitions and duplicate names fail startup.
 - A new `extensions` plugin setting (`GF_PLUGIN_EXTENSIONS`) configures operator extensions: strict YAML, at most 64 KiB, with `*Env` secret indirection whose values join the summary redactor. Mandatory extensions that are disabled, unconfigured or invalid fail startup with secret-safe reasons.
 - Two new runtime outcomes: `ErrDenied` maps to the permission category and document, and `ErrUnavailable` to a new unavailable category and document. Neither is retried by fallback, and a refusal before the model is entered records no attempt.
-- The structured logger and Prometheus model middleware gain an option that records policy denials as a distinct `denied` outcome, so denials are excluded from error rates. The Gateway counts extension denials and failures by extension and phase.
-- Extension instances are closed within the existing shared 1 second final flush.
+- The logical observers record extension denials as a distinct `denied` outcome, excluded from error rates, through the root logger and Prometheus middleware denial option added by the `record-middleware-denials` change, which this change builds on. The Gateway counts extension denials and failures by extension and phase.
+- `Observe` runs off the response's critical path: dispatched after the unary result is returned or the stream is closed, bounded per call, and joined by the final flush.
+- In-flight observations are awaited and extension instances closed within the existing shared 1 second final flush.
 - The shipped `main` passes `DefaultExtensions()`; the public build registers no mandatory extension. Behavior without extensions is unchanged.
 
 ## Capabilities
@@ -30,12 +31,10 @@ Teams that build Gateway distributions need to add their own per-call behavior, 
 - `providerwire-v4-unary-runtime`: fixed ProviderWire documents for extension denial and unavailability, unary and in-band, with client classification evidence. Documents live here rather than in `providerwire-v4-http-contract`, which only owns client-contract evidence.
 - `gateway-plugin-telemetry`: the `denied` model-call outcome and bounded extension event metrics and logs.
 - `gateway-execution-overview`: no overview or synthesized attempt for a call refused before the model is entered.
-- `prometheus-middleware`: an optional denial classifier and the `denied` status.
-- `structured-logging-middleware`: an optional denial classifier and the `denied` outcome.
 
 ## Impact
 
-- **Code:** new `ai-gateway/pkg/extension`; new `ai-gateway/pkg/internal/extensionhost` (registry, operator config, pipeline); `ai-gateway/pkg/gateway` (`Options`, `DefaultExtensions`); `ai-gateway/pkg/main.go`; `ai-gateway/pkg/internal/gateway` (wiring, flush); `ai-gateway/pkg/internal/config` (setting); `ai-gateway/pkg/internal/auth` (caller type); `ai-gateway/pkg/internal/service` (observer denial options, request info, log allowlist); `ai-gateway/internal/execution` (source alias, entry, classification, policy check); `ai-gateway/providerwire/v4` (documents); `middleware/prometheus` and `middleware/logger` (denial option).
-- **APIs:** new public Go API, v0 and experimental. New optional fields on the root logger and Prometheus middleware options; both modules get a minor release.
+- **Code:** new `ai-gateway/pkg/extension`; new `ai-gateway/pkg/internal/extensionhost` (registry, operator config, pipeline); `ai-gateway/pkg/gateway` (`Options`, `DefaultExtensions`); `ai-gateway/pkg/main.go`; `ai-gateway/pkg/internal/gateway` (wiring, flush); `ai-gateway/pkg/internal/config` (setting); `ai-gateway/pkg/internal/auth` (caller type); `ai-gateway/pkg/internal/service` (observer denial options, request info, log allowlist); `ai-gateway/internal/execution` (source alias, entry, classification, policy check); `ai-gateway/providerwire/v4` (documents).
+- **APIs:** new public Go API, v0 and experimental.
 - **Docs:** new `docs/guides/gateway-extensions.md`; glossary terms (extension, phase, scope, key ownership, mandatory extension); architecture walkthrough; README settings table.
 - **Parity:** not parity-sensitive. The extension contract and the host pipeline are Grafana-owned; `test/conformance/PARITY.md` lists the Gateway as a Go extension surface, and this change adds no upstream surface. No stream part, UI chunk, provider request or provider-option change; ProviderWire bytes change only for the new extension documents.

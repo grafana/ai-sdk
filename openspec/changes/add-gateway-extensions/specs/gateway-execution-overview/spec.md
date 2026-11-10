@@ -7,7 +7,7 @@ A call that an extension refuses before the selected model is invoked SHALL publ
 
 #### Scenario: Admit denial
 - **WHEN** an admitter denies a routed configured call
-- **THEN** the permission document SHALL carry no `gateway.execution` or `gateway.routing` metadata
+- **THEN** the error document SHALL carry no `gateway.execution` overview and no `gateway.routing` summary
 
 #### Scenario: Output denial after fallback
 - **WHEN** a call's first candidate fails, its second is selected and a response inspector denies the unary output

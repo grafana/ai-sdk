@@ -14,11 +14,11 @@ Logical logs and model metrics SHALL record a call that an extension denied with
 - **THEN** logs and metrics SHALL record that stream with outcome `denied`
 
 ### Requirement: Extension event metrics
-The Gateway SHALL count extension denials and failures by extension name, phase and a fixed event: denied, failed under `fail-closed`, or skipped under `skip`. Labels SHALL take only registered extension names and fixed phase and event values, and SHALL NOT carry namespace, caller, model or error text.
+The Gateway SHALL count extension denials and failures by extension name, phase and a fixed event, `denied` or `failed`, whatever the failure policy. Labels SHALL take only registered extension names and fixed phase and event values, and SHALL NOT carry namespace, caller, model or error text.
 
 #### Scenario: Mixed extension outcomes
 - **WHEN** one extension denies at admit, another fails under `skip` in response inspection, and a third observer panics
-- **THEN** the counter SHALL increase once for each, under that extension's name, its phase and its event
+- **THEN** the counter SHALL increase once for each, under that extension's name and phase, with event `denied` for the first and `failed` for the others
 
 ### Requirement: Extension failure logs
 Every extension failure SHALL emit one warning log record with the extension name, phase, failure policy and a fixed class (error, panic or policy refusal), plus the call's correlation ID when one exists. Records SHALL NOT carry the error's text, request or response content, or configuration values.

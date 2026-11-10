@@ -85,6 +85,7 @@ The host SHALL check the parameters each transform returns against host request 
 #### Scenario: Skipped transform adds the gateway namespace
 - **WHEN** a `skip` transform adds `providerOptions.gateway`
 - **THEN** its result SHALL be discarded, the next transform SHALL receive the parameters it received, and no provider call SHALL carry the namespace
+- **AND** the refusal SHALL be counted and logged as that extension's failure
 
 ### Requirement: Request inspection sees the final parameters
 Request inspection SHALL receive the parameters that leave the last transform and its policy check, which SHALL be exactly the parameters passed to the selected model.
@@ -132,6 +133,10 @@ Each phase SHALL receive request information: the route namespace, key ownership
 ### Requirement: Observation once per call
 Observe SHALL run once per call for each applicable extension that implements it, after the outcome is decided, including denied, failed and cancelled calls. Its record SHALL carry the outcome (success, denied, error, cancelled or invalid output), the denying extension and phase when denied, usage as the logical observers report it, start time and duration.
 
+#### Scenario: Observation is off the response path
+- **WHEN** an observer takes longer than the call itself
+- **THEN** a unary result SHALL be returned, and a stream SHALL close, without waiting for the observer
+
 #### Scenario: Denied at admit
 - **WHEN** extension `b` denies at admit
 - **THEN** every applicable observer SHALL receive one record with outcome denied, extension `b` and phase admit, and no usage
@@ -143,6 +148,13 @@ Observe SHALL run once per call for each applicable extension that implements it
 #### Scenario: Observer fails
 - **WHEN** observe returns an error or panics
 - **THEN** the call's result, error and stream SHALL be unchanged, other observers SHALL still run, and the failure SHALL be counted
+
+### Requirement: Bounded asynchronous observation
+Observations SHALL be dispatched after the unary result is returned or the stream is closed, each with a context that keeps the call's values but not its cancellation, bounded by a fixed per-call duration. The host SHALL track observations in flight; after shutdown begins, new observations SHALL be dropped and counted.
+
+#### Scenario: Slow observer at shutdown
+- **WHEN** shutdown begins while an observation is running
+- **THEN** the final flush SHALL wait for it within the shared deadline, and an observation dispatched after the flush started SHALL be dropped and counted
 
 ### Requirement: Failure policies
 A phase that returns an error other than a denial, panics, or returns parameters refused by host policy SHALL be a failure. Under `fail-closed`, the call SHALL fail with the unavailable category. Under `skip`, that phase's effect SHALL be discarded and the call SHALL continue. Every failure SHALL be logged and counted without the error's text.
@@ -226,7 +238,11 @@ A distribution MAY mark operator-scope extensions as mandatory by name. A mandat
 - **THEN** startup SHALL fail naming it
 
 ### Requirement: Extension instance lifecycle
-Enabled extensions SHALL be constructed once at startup, before the plugin serves requests, with a logger scoped to the extension, the process metrics registerer with the extension's name as a constant label, a clock and their resolved secrets. A factory error SHALL fail startup. Instances SHALL be shared by concurrent calls, and the phases of one call SHALL never run concurrently.
+Enabled extensions SHALL be constructed at startup, before the plugin serves requests, with a logger scoped to the extension, the process metrics registerer with the extension's name as a constant label, a clock and their resolved secrets. A factory error SHALL fail startup. Instances SHALL be shared by concurrent calls, and the phases of one call SHALL never run concurrently.
+
+#### Scenario: Factory contract allows more than one run
+- **WHEN** a developer reads the factory documentation
+- **THEN** it SHALL state that a factory may run more than once per process, once per configuration it is given
 
 #### Scenario: Factory fails
 - **WHEN** an enabled extension's factory returns an error or panics
