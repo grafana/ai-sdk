@@ -51,6 +51,12 @@ func TestMiddleware_DeniedCalls(t *testing.T) {
 			stream:   true, event: EventStreamError, level: slog.LevelInfo, outcome: outcomeDenied, errorType: errorClassDenied,
 		},
 		{
+			name:     "denial after an earlier error part",
+			isDenied: isPolicyDenied,
+			model:    streamingModel(provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 500})}, provider.StreamPart{Type: provider.PartTextDelta, ID: "t", Delta: "a"}, provider.StreamPart{Type: provider.PartError, APICallError: deniedPart}),
+			stream:   true, event: EventStreamError, level: slog.LevelInfo, outcome: outcomeDenied, errorType: errorClassDenied,
+		},
+		{
 			name:   "nil classifier",
 			model:  streamingModel(provider.StreamPart{Type: provider.PartError, APICallError: deniedPart}),
 			stream: true, event: EventStreamError, level: slog.LevelError, outcome: outcomeError, errorType: "api_call_error",
