@@ -224,6 +224,10 @@ func (writer agentDiagnosticWriter) Write(message []byte) (int, error) {
 
 var errUnobservedSource = errors.New("gateway service: selection source has no observer configuration")
 
+// stackCatalogMetricModel is the fixed model label of stack-catalog calls, so
+// customer model IDs never become metric labels.
+const stackCatalogMetricModel = "catalog"
+
 // ModelObservers applies the Gateway's logical observer chains to selections.
 // Its middleware and collectors are constructed once; each call only wraps its
 // selected model in the chain of the selection's source.
@@ -283,21 +287,29 @@ func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *Agent
 	byok := configured
 	loggerOptions.Redactor = closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.RequestBYOK)
 	byok.structuredLogger = logmiddleware.Middleware(loggerOptions)
+	stack := configured
+	stack.metricModel = stackCatalogMetricModel
 	return &ModelObservers{chains: map[execution.Source]modelObservationChain{
 		execution.SourceOperatorCatalog: configured,
 		execution.SourceRequestBYOK:     byok,
+		execution.SourceStackCatalog:    stack,
 	}}, nil
 }
 
 // Compose is the runtime's [execution.ModelComposer]: it wraps the selected
 // model, which carries its logical identity, in the observer chain of the
-// selection's source. A source without a chain fails.
+// selection's source, and binds a stack catalog's name into the call's
+// observation. A source without a chain fails.
 func (o *ModelObservers) Compose(selected execution.Selection) (provider.LanguageModel, error) {
 	chain, ok := o.chains[selected.Source]
 	if !ok {
 		return nil, errUnobservedSource
 	}
-	return chain.observe(selected.Model), nil
+	observed := chain.observe(selected.Model)
+	if selected.Catalog == "" {
+		return observed, nil
+	}
+	return middleware.Wrap(middleware.WrapOptions{Model: observed, Middleware: []middleware.Middleware{catalogBindingMiddleware(selected.Catalog)}}), nil
 }
 
 type modelObservationChain struct {
@@ -305,22 +317,35 @@ type modelObservationChain struct {
 	agentRecording   *middleware.Middleware
 	structuredLogger middleware.Middleware
 	prometheus       middleware.Middleware
+	// metricModel, when set, replaces the model ID that the metrics
+	// middleware sees, and only that middleware.
+	metricModel string
 }
 
+// observe wraps identity in the chain. Each middleware sees the identity of
+// the model directly beneath it, so a metric model is an identity view beneath
+// the metrics middleware, restored to identity's model ID above it.
 func (chain modelObservationChain) observe(identity provider.LanguageModel) provider.LanguageModel {
 	observers := make([]middleware.Middleware, 0, 4)
 	observers = append(observers, chain.contextBridge)
 	if chain.agentRecording != nil {
 		observers = append(observers, *chain.agentRecording)
 	}
-	observers = append(observers, chain.structuredLogger, chain.prometheus)
-	return middleware.Wrap(middleware.WrapOptions{Model: identity, Middleware: observers})
+	observers = append(observers, chain.structuredLogger)
+	if chain.metricModel == "" {
+		return middleware.Wrap(middleware.WrapOptions{Model: identity, Middleware: append(observers, chain.prometheus)})
+	}
+	metricView := middleware.Wrap(middleware.WrapOptions{Model: identity, ModelID: chain.metricModel})
+	metrics := middleware.Wrap(middleware.WrapOptions{Model: metricView, Middleware: []middleware.Middleware{chain.prometheus}})
+	logical := middleware.Wrap(middleware.WrapOptions{Model: metrics, ModelID: identity.ModelID()})
+	return middleware.Wrap(middleware.WrapOptions{Model: logical, Middleware: observers})
 }
 
 var allowedAgentMetadataKeys = map[string]struct{}{
 	"gateway.correlation_id": {},
 	"gateway.caller_service": {},
 	"gateway.namespace":      {},
+	"gateway.catalog":        {},
 }
 
 // filterAgentGeneration removes every metadata/tag/identity field not owned by

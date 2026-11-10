@@ -533,6 +533,7 @@ func TestFilterAgentGeneration_ClosedMetadataAndIdentityPolicy(t *testing.T) {
 		Metadata: map[string]any{
 			"gateway.correlation_id": "correlation",
 			"gateway.namespace":      "verified-namespace",
+			"gateway.catalog":        "team-catalog",
 			"provider.private":       "provider-option-private",
 			"gateway.caller_service": strings.Repeat("x", maxObservationValueLen+1),
 		},
@@ -551,6 +552,7 @@ func TestFilterAgentGeneration_ClosedMetadataAndIdentityPolicy(t *testing.T) {
 	assert.Equal(t, map[string]any{
 		"gateway.correlation_id": "correlation",
 		"gateway.namespace":      "verified-namespace",
+		"gateway.catalog":        "team-catalog",
 	}, filtered.Metadata)
 	assert.Empty(t, filtered.ResponseID)
 	assert.Empty(t, filtered.ResponseModel)

@@ -91,7 +91,7 @@ func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMe
 
 - `Selection` gains an exported `Catalog string`: the stack catalog's name, empty for other sources. The composer reads it, so no context argument is needed.
 - The per-call `bind catalog` wrapper stores a copy of the request observation with `catalog` set. The startup bridge snapshots it like the other fields.
-- `observationLogAttrs` emits `catalog` and `observationMetadata` emits `gateway.catalog`, both under the existing 128-byte printable bound. The log allowlist accepts `catalog` under the configured policy; `allowedAgentMetadataKeys` gains `gateway.catalog`.
+- `observationLogAttrs` emits `catalog` and `observationMetadata` emits `gateway.catalog`, both under the existing 128-byte printable bound. The log allowlist accepts `catalog`, which only a stack-catalog call carries; `allowedAgentMetadataKeys` gains `gateway.catalog`.
 - The log key is `catalog`, following the existing pairs (`namespace` in logs, `gateway.namespace` in metadata). This deviates from the issue's wording, which names `gateway.catalog` for both surfaces.
 - A name over the bound is omitted without a count: no counter of dropped observation values exists, and one field does not warrant adding one.
 - Alternatives considered:

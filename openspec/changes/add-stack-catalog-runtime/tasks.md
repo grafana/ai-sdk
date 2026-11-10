@@ -17,13 +17,13 @@
 
 - [x] 3.1 Extract per-candidate construction from `buildCatalog` and the routed composition from `selectRouted` into shared helpers; verify every existing service test passes unchanged.
 - [x] 3.2 Add `StackCatalog`, `StackCatalogOptions` and `SelectStackCatalog`, with the check order from the design and an injectable constructor. Verify with table tests: build counts for plain, alias, `models`, `only`, `order` and a 50-model catalog; attempt bound with zero builds; unknown model and `models` entry; `byok` and unknown controls refused with zero builds; invalid spec, and missing or empty key, returning the bare sentinel with no spec text.
-- [ ] 3.3 Verify fallback and overview: the primary fails, the fallback succeeds, the overview lists both attempts with catalog provider names, and no physical attempt record is written.
+- [x] 3.3 Verify fallback and overview: the primary fails, the fallback succeeds, the overview lists both attempts with catalog provider names, and no physical attempt record is written.
 
 ## 4. Stack-catalog observation
 
-- [ ] 4.1 Add the catalog field to `requestObservation` and the per-call binding, emit `catalog` in logs and `gateway.catalog` in Agent Observability metadata, and extend the log and metadata allowlists. Verify with observation tests for the bound and for omission on non-catalog calls.
-- [ ] 4.2 Add the `stack-catalog` chain to `ModelObservers` (metric identity view under the shared middleware); verify that `Compose` accepts the source and that the unknown-source test still fails as internal.
-- [ ] 4.3 Add the composition test with production `ModelObservers`, `SelectStackCatalog` and the runtime. Verify, unary and stream:
+- [x] 4.1 Add the catalog field to `requestObservation` and the per-call binding, emit `catalog` in logs and `gateway.catalog` in Agent Observability metadata, and extend the log and metadata allowlists. Verify with observation tests for the bound and for omission on non-catalog calls.
+- [x] 4.2 Add the `stack-catalog` chain to `ModelObservers` (metric identity view under the shared middleware); verify that `Compose` accepts the source and that the unknown-source test still fails as internal.
+- [x] 4.3 Add the composition test with production `ModelObservers`, `SelectStackCatalog` and the runtime. Verify, unary and stream:
   - each observer runs once;
   - log and Agent Observability identity and metadata are as specified;
   - the metric model label is `catalog`, and 20 catalogs × 20 model IDs give one series set;

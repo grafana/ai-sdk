@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -205,4 +206,57 @@ func TestNewRequestCorrelationID_IsBoundedOpaqueAndUnique(t *testing.T) {
 	assert.Len(t, second, requestCorrelationBytes*2)
 	assert.NotEqual(t, first, second)
 	assert.Equal(t, first, boundedObservationValue(first))
+}
+
+func TestCatalogBinding_AddsTheCatalogToTheObservation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		catalog string
+		want    string
+	}{
+		{name: "catalog name", catalog: "team-catalog", want: "team-catalog"},
+		{name: "name at the bound", catalog: strings.Repeat("c", maxObservationValueLen), want: strings.Repeat("c", maxObservationValueLen)},
+		{name: "name above the bound", catalog: strings.Repeat("c", maxObservationValueLen+1)},
+		{name: "name with a space", catalog: "team catalog"},
+	} {
+		for _, streaming := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/streaming=%t", tc.name, streaming), func(t *testing.T) {
+				state := &telemetryState{}
+				state.observation.Store(&requestObservation{correlationID: "correlation", namespace: "stacks-1"})
+				ctx := context.WithValue(context.Background(), telemetryStateKey{}, state)
+				var attrs []slog.Attr
+				var metadata map[string]any
+				capture := func(inner context.Context) {
+					attrs, metadata = observationLogAttrs(inner), observationMetadata(inner)
+				}
+				model := &observabilityTestModel{
+					generate: func(inner context.Context, _ provider.CallOptions) (*provider.GenerateResult, error) {
+						capture(inner)
+						return &provider.GenerateResult{}, nil
+					},
+					stream: func(inner context.Context, _ provider.CallOptions) (*provider.StreamResult, error) {
+						capture(inner)
+						return &provider.StreamResult{}, nil
+					},
+				}
+				wrapped := middleware.Wrap(middleware.WrapOptions{Model: model, Middleware: []middleware.Middleware{catalogBindingMiddleware(tc.catalog), observationBridgeMiddleware()}})
+				var err error
+				if streaming {
+					_, err = wrapped.DoStream(ctx, provider.CallOptions{})
+				} else {
+					_, err = wrapped.DoGenerate(ctx, provider.CallOptions{})
+				}
+				require.NoError(t, err)
+				wantAttrs := []slog.Attr{slog.String("correlation_id", "correlation"), slog.String("namespace", "stacks-1")}
+				wantMetadata := map[string]any{"gateway.correlation_id": "correlation", "gateway.namespace": "stacks-1"}
+				if tc.want != "" {
+					wantAttrs = append(wantAttrs, slog.String("catalog", tc.want))
+					wantMetadata["gateway.catalog"] = tc.want
+				}
+				assert.Equal(t, wantAttrs, attrs)
+				assert.Equal(t, wantMetadata, metadata)
+				assert.Equal(t, requestObservation{correlationID: "correlation", namespace: "stacks-1"}, *state.observation.Load())
+			})
+		}
+	}
 }

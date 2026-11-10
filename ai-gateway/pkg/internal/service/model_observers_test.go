@@ -240,7 +240,7 @@ func TestModelObservers_PerRequestSelection(t *testing.T) {
 }
 
 func TestModelObservers_UnknownSourceFailsBeforeTheModel(t *testing.T) {
-	for _, source := range []execution.Source{"", "stack-catalog"} {
+	for _, source := range []execution.Source{"", "other-source"} {
 		t.Run(string(source), func(t *testing.T) {
 			var calls int
 			lower := &observabilityTestModel{generate: func(context.Context, provider.CallOptions) (*provider.GenerateResult, error) {
