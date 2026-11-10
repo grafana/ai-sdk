@@ -216,6 +216,21 @@ func (c *call) observe(ctx context.Context, record extension.Record) {
 // response inspection, or for the observed outcome and usage.
 func (l *lists) checksOutput() bool { return l.responseInspector || l.observer }
 
+// invoked runs the selected model. When it panics, the call's record is still
+// dispatched, as an error, while the panic continues to the runtime, which
+// contains it.
+func invoked[T any](ctx context.Context, c *call, invoke func() (T, error)) (T, error) {
+	finished := false
+	defer func() {
+		if !finished {
+			c.finish(ctx, extension.OutcomeError, provider.Usage{})
+		}
+	}()
+	value, err := invoke()
+	finished = true
+	return value, err
+}
+
 func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	c := p.newCall(ctx)
 	params, err := c.request(ctx, options)
@@ -223,7 +238,7 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{})
 		return nil, err
 	}
-	result, err := p.LanguageModel.DoGenerate(ctx, params)
+	result, err := invoked(ctx, c, func() (*provider.GenerateResult, error) { return p.LanguageModel.DoGenerate(ctx, params) })
 	if err != nil || result == nil {
 		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{})
 		return result, err
@@ -268,12 +283,18 @@ func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (
 		return p.LanguageModel.DoStream(ctx, params)
 	}
 	modelContext, cancel := context.WithCancel(ctx)
-	result, err := p.LanguageModel.DoStream(modelContext, params)
+	established := false
+	defer func() {
+		if !established {
+			cancel()
+		}
+	}()
+	result, err := invoked(ctx, c, func() (*provider.StreamResult, error) { return p.LanguageModel.DoStream(modelContext, params) })
 	if err != nil || result == nil || result.Stream == nil {
-		cancel()
 		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{})
 		return result, err
 	}
+	established = true
 	history, _ := execution.RebuildToolHistory(options.Prompt)
 	out := make(chan provider.StreamPart, streamBuffer)
 	go p.forward(ctx, cancel, c, execution.NewStreamValidator(history), result.Stream, out)

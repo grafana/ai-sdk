@@ -61,7 +61,7 @@ func NewPlan(definitions []extension.Definition, mandatory []string, entries map
 		if configured {
 			enabled = entry.Enabled == nil || *entry.Enabled
 		}
-		if slices.Contains(mandatory, definition.Name) && !enabled {
+		if slices.Contains(mandatory, definition.Name) && (!configured || !enabled) {
 			return nil, fmt.Errorf("config: %s.%s is mandatory and must be configured and enabled", setting, definition.Name)
 		}
 		if !enabled {

@@ -1,6 +1,7 @@
 package extensionhost
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -168,7 +169,7 @@ func (h *Host) listsFor(source extension.Source) *lists {
 			}
 			return 1
 		}
-		return first.Priority - second.Priority
+		return cmp.Compare(first.Priority, second.Priority)
 	})
 	return selected
 }

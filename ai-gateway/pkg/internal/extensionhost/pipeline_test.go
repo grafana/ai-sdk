@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -150,6 +151,8 @@ func TestPipeline_TransformOrder(t *testing.T) {
 		define("t2", &recorder{transform: appendSystem("t2")}, tenant(5)),
 		define("t1", &recorder{transform: appendSystem("t1")}, tenant(5)),
 		define("o0", &recorder{transform: appendSystem("o0")}, priority(-1)),
+		define("omin", &recorder{transform: appendSystem("omin")}, priority(math.MinInt)),
+		define("omax", &recorder{transform: appendSystem("omax")}, priority(math.MaxInt)),
 	)
 	_, err := h.compose(t, extension.SourceOperatorCatalog).DoGenerate(t.Context(), provider.CallOptions{})
 	require.NoError(t, err)
@@ -157,7 +160,7 @@ func TestPipeline_TransformOrder(t *testing.T) {
 	for _, message := range h.model.received[0].Prompt {
 		order = append(order, message.Content[0].Text)
 	}
-	assert.Equal(t, []string{"t1", "t2", "o0", "o1"}, order)
+	assert.Equal(t, []string{"t1", "t2", "omin", "o0", "o1", "omax"}, order)
 }
 
 func TestPipeline_InspectRequestSeesTheModelParams(t *testing.T) {
@@ -637,4 +640,23 @@ func TestHost_CloseRespectsTheDeadline(t *testing.T) {
 	assert.Equal(t, 1.0, h.events("failing", phaseClose, eventFailed))
 	assert.Equal(t, 1.0, h.events("panicking", phaseClose, eventFailed))
 	assert.NotContains(t, h.logs.String(), "private")
+}
+
+func TestPipeline_ModelPanicIsObserved(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprint("stream=", stream), func(t *testing.T) {
+			records := make(chan extension.Record, 1)
+			h := newHarness(t, define("audit", &recorder{observe: func(_ context.Context, _ *extension.Call, record extension.Record) error {
+				records <- record
+				return nil
+			}}))
+			h.model.generate = func(context.Context) (*provider.GenerateResult, error) { panic("private") }
+			h.model.stream = func(context.Context) (*provider.StreamResult, error) { panic("private") }
+			model := h.compose(t, extension.SourceOperatorCatalog)
+			assert.Panics(t, func() { _, _ = invoke(t, model, stream) })
+			h.flush()
+			require.Len(t, records, 1)
+			assert.Equal(t, extension.OutcomeError, (<-records).Outcome)
+		})
+	}
 }

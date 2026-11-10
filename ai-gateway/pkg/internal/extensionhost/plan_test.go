@@ -58,6 +58,8 @@ func TestNewPlan_Refusals(t *testing.T) {
 	tenant.Scope = extension.ScopeTenant
 	withSecretDefault := validDefinition("quota")
 	withSecretDefault.EnabledByDefault, withSecretDefault.Secrets = true, []string{"apiKey"}
+	defaultOnMandatory := validDefinition("audit")
+	defaultOnMandatory.EnabledByDefault = true
 	withRequiredConfig := quotaDefinition(t)
 	withRequiredConfig.EnabledByDefault, withRequiredConfig.Secrets = true, nil
 	for _, tc := range []struct {
@@ -71,6 +73,7 @@ func TestNewPlan_Refusals(t *testing.T) {
 		{name: "tenant extension", definitions: []extension.Definition{tenant}, document: "instructions: {}", message: "GF_PLUGIN_EXTENSIONS.instructions is a tenant extension"},
 		{name: "undeclared secret", definitions: []extension.Definition{quotaDefinition(t)}, document: "quota: {tokenEnv: SECRET_VALUE}", message: "GF_PLUGIN_EXTENSIONS.quota.tokenEnv is not a declared secret"},
 		{name: "mandatory unconfigured", definitions: []extension.Definition{validDefinition("audit")}, mandatory: []string{"audit"}, message: "GF_PLUGIN_EXTENSIONS.audit is mandatory"},
+		{name: "mandatory enabled by default without an entry", definitions: []extension.Definition{defaultOnMandatory}, mandatory: []string{"audit"}, message: "GF_PLUGIN_EXTENSIONS.audit is mandatory"},
 		{name: "mandatory disabled", definitions: []extension.Definition{validDefinition("audit")}, mandatory: []string{"audit"}, document: "audit: {enabled: false}", message: "GF_PLUGIN_EXTENSIONS.audit is mandatory"},
 		{name: "mandatory invalid", definitions: []extension.Definition{quotaDefinition(t)}, mandatory: []string{"quota"}, document: "quota: {config: {limit: 0}, apiKeyEnv: QUOTA_KEY}", message: "GF_PLUGIN_EXTENSIONS.quota.config does not match the extension's schema at /limit"},
 		{name: "configuration of the wrong type", definitions: []extension.Definition{quotaDefinition(t)}, document: "quota: {config: {limit: secret-value}, apiKeyEnv: QUOTA_KEY}", message: "does not match the extension's schema at /limit"},
