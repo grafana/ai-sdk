@@ -58,7 +58,7 @@ func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMe
 2. `stackcatalog.Parse(spec, keysWithValues)`, where `keysWithValues` are the secure keys with non-empty values. Any error becomes the bare `ErrCatalogConfiguration`. The `Parse` error is dropped, not wrapped: its messages carry spec identifiers.
 3. Resolve the requested ID and each `models` entry through an ID and alias index built from the parsed file.
 4. `routing.Compose` over the resolved groups with `config.MaxProviderAttempts`.
-5. Construct only the placed candidates, compose them in order without a physical attempt observer, and give the chain `ConfiguredIdentity(canonicalID)`.
+5. Construct only the placed candidates, compose them with `composeCandidates` and no physical attempt sink, and give the chain `ConfiguredIdentity(canonicalID)`.
 
 ### Building only what the chain attempts
 
