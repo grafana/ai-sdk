@@ -87,3 +87,10 @@ A stack-catalog call SHALL publish the same execution overview as an operator-ca
 #### Scenario: Direct success
 - **WHEN** a stack-catalog call succeeds on its primary candidate
 - **THEN** the overview SHALL list one selected attempt with the catalog's provider name as provider instance
+
+### Requirement: No private attempt records for stack catalogs
+Stack-catalog calls use customer-owned keys, and like BYOK calls they SHALL write no private physical attempt records. Their per-attempt evidence SHALL be the execution overview returned to the caller.
+
+#### Scenario: Fallback on a stack catalog
+- **WHEN** a stack-catalog call's primary fails and its fallback succeeds
+- **THEN** no physical attempt record SHALL be written, and the overview SHALL list both attempts

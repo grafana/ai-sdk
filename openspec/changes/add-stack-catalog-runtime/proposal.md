@@ -13,6 +13,7 @@ A stored `ModelCatalog` has no runtime effect. The Gateway builds models only fr
   - routing controls and fallbacks behave as for the operator catalog, including the 8-attempt bound;
   - `gateway.byok` is refused as an unsupported gateway control. There is no fallback to the operator catalog, server-held keys or ambient credentials;
   - candidates use the native Anthropic and OpenAI endpoints and the shared model HTTP client.
+  - like BYOK, no private physical attempt records are written; the execution overview carries per-attempt evidence.
 - **Request-scoped summary redaction.** A stack-catalog selection carries its catalog's decrypted keys. Native failure summaries in execution overviews and event-local errors redact them along with the startup keys. BYOK redaction is unchanged.
 - **New `catalog configuration` failure category.** It covers a stored catalog that fails the checks, or a provider without a decrypted key. The fixed ProviderWire document is HTTP 424 `failed_dependency` with a fixed message, not retryable. It never echoes catalog content, check messages or keys. Both clients already accept this status, type and code.
 - **A third observer chain for stack catalogs.** Its middleware is constructed once at startup and applied per call by source:

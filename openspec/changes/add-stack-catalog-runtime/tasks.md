@@ -17,7 +17,7 @@
 
 - [ ] 3.1 Extract per-candidate construction from `buildCatalog` and the routed composition from `selectRouted` into shared helpers; verify every existing service test passes unchanged.
 - [ ] 3.2 Add `StackCatalog`, `StackCatalogOptions` and `SelectStackCatalog`, with the check order from the design and an injectable constructor. Verify with table tests: build counts for plain, alias, `models`, `only`, `order` and a 50-model catalog; attempt bound with zero builds; unknown model and `models` entry; `byok` and unknown controls refused with zero builds; invalid spec, and missing or empty key, returning the bare sentinel with no spec text.
-- [ ] 3.3 Verify fallback and overview: the primary fails, the fallback succeeds, and the overview lists both attempts with catalog provider names; physical attempt records are written through the sink.
+- [ ] 3.3 Verify fallback and overview: the primary fails, the fallback succeeds, the overview lists both attempts with catalog provider names, and no physical attempt record is written.
 
 ## 4. Stack-catalog observation
 

@@ -39,14 +39,13 @@ type StackCatalog struct {
 }
 
 type StackCatalogOptions struct {
-	Client   *http.Client
-	Physical *PhysicalAttemptSink
+	Client *http.Client
 }
 
 func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMessage, options StackCatalogOptions) (execution.Selection, error)
 ```
 
-- Inputs are what #758 has after its parent check: the decoded spec, Grafana's decrypted values unchanged, and the catalog name. `Options` mirrors `BYOKOptions`.
+- Inputs are what #758 has after its parent check: the decoded spec, Grafana's decrypted values unchanged, and the catalog name. `StackCatalogOptions` mirrors `BYOKOptions`.
 - It returns `execution.StackCatalogSelection(canonicalID, catalog.Name, model, expected, keys)`: source `stack-catalog`, configured attribution (same overview as the operator catalog), the catalog name, and every non-empty decrypted value as request keys.
 - Errors: `execution.ErrCatalogConfiguration`, `catalog.ErrUnknownModel`, `execution.ErrUnknownFallbackModel`, `ErrUnsupportedGatewayControl`, and the routing sentinels.
 - #758 adds the `catalog` account branch to `NewSelector`, which calls this function with the catalog it decoded for the request.
@@ -59,7 +58,7 @@ func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMe
 2. `stackcatalog.Parse(spec, keysWithValues)`, where `keysWithValues` are the secure keys with non-empty values. Any error becomes the bare `ErrCatalogConfiguration`. The `Parse` error is dropped, not wrapped: its messages carry spec identifiers.
 3. Resolve the requested ID and each `models` entry through an ID and alias index built from the parsed file.
 4. `routing.Compose` over the resolved groups with `config.MaxProviderAttempts`.
-5. Construct only the placed candidates, compose them with `composeCandidates`, and give the chain `ConfiguredIdentity(canonicalID)`.
+5. Construct only the placed candidates, compose them in order without a physical attempt observer, and give the chain `ConfiguredIdentity(canonicalID)`.
 
 ### Building only what the chain attempts
 
@@ -93,7 +92,8 @@ func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMe
 - `Selection` gains an exported `Catalog string`: the stack catalog's name, empty for other sources. The composer reads it, so no context argument is needed.
 - The per-call `bind catalog` wrapper stores a copy of the request observation with `catalog` set. The startup bridge snapshots it like the other fields.
 - `observationLogAttrs` emits `catalog` and `observationMetadata` emits `gateway.catalog`, both under the existing 128-byte printable bound. The log allowlist accepts `catalog` under the configured policy; `allowedAgentMetadataKeys` gains `gateway.catalog`.
-- The log key is `catalog`, following the existing pairs (`namespace` in logs, `gateway.namespace` in metadata).
+- The log key is `catalog`, following the existing pairs (`namespace` in logs, `gateway.namespace` in metadata). This deviates from the issue's wording, which names `gateway.catalog` for both surfaces.
+- A name over the bound is omitted without a count: no counter of dropped observation values exists, and one field does not warrant adding one.
 - Alternatives considered:
   - a separate stack-catalog log policy: no field differs from the configured policy;
   - having #758 put the name into the observation at route time: telemetry would then name the route's catalog, not the one selected.
@@ -101,7 +101,7 @@ func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMe
 ### Optional operator catalog: an empty catalog, not a nil selector
 
 - `Settings.Validate` no longer requires `model_catalog`; the size bound stays.
-- When the setting is blank, `gateway.New` skips parsing, endpoint validation and secret resolution, and calls `BuildCatalog(config.File{}, nil, ...)`. That yields an empty `service.Catalog`: discovery lists no models, resolution returns `ErrUnknownModel`, and `NewSelector` and `execution.New` are unchanged.
+- When the setting is blank, `gateway.New` skips parsing, `File.Validate` (which requires at least one provider and model), endpoint validation and secret resolution, and calls `BuildCatalog(config.File{}, nil, ...)`. That yields an empty `service.Catalog`: discovery writes exactly `{"models":[]}`, resolution returns `ErrUnknownModel`, and `NewSelector` and `execution.New` are unchanged.
 - Alternative considered: nil-tolerant `NewSelector` and discovery. Rejected: more branches for the same behavior.
 
 ### `catalog configuration` category
@@ -116,14 +116,16 @@ func SelectStackCatalog(catalog StackCatalog, modelID string, gateway json.RawMe
 
 ### Physical attempt records
 
-Stack-catalog chains use the same `PhysicalAttemptSink`, so operators see per-attempt provider name, backend model and outcome in private attempt records. The correlation ID ties them to the logical log that names the catalog. No error text is recorded.
+Stack-catalog calls write no private physical attempt records, like BYOK calls today (`byok.New` composes its chain without an attempt observer). The rule is key ownership: calls with customer-owned keys get no private attempt log, which also keeps customer-chosen provider names and backend model IDs out of operator logs beyond the catalog name. Per-call evidence stays in the execution overview the caller receives. This is a deliberate choice that can be revisited.
+
+Alternative considered: record them through the same sink as the operator catalog. Rejected for the ownership rule above.
 
 ## Test plan
 
 | Acceptance | Evidence |
 |---|---|
 | Starts without `model_catalog`; no configured models; BYOK works | `config` settings tests (unset, blank, oversized); `gateway` tests: `New` without the setting, `config` returns `{"models":[]}`, a configured call returns the model-not-found document, a BYOK call in `cloud` mode succeeds. |
-| Builds only needed models; routing and fallback | `service` table tests over `selectStackCatalog` with an injected constructor counting builds: plain call, alias, `models`, `only`, `order`, 50-model catalog, duplicate destinations, attempt bound (zero builds), unknown model, unknown `models` entry, primary fails and fallback succeeds with overview. |
+| Builds only needed models; routing and fallback | `service` table tests over `selectStackCatalog` with an injected constructor counting builds: plain call, alias, `models`, `only`, `order`, 50-model catalog, duplicate destinations, attempt bound (zero builds), unknown model, unknown `models` entry, primary fails and fallback succeeds with overview; a stack call writes no physical attempt record. |
 | BYOK controls refused | Same table: valid `byok` accounts and an unknown control fail with `ErrUnsupportedGatewayControl`, with zero builds and zero provider requests; a missing catalog key never uses an operator key. |
 | Redaction of request keys | `execution`: `SummaryRedactor.With`, and `StackCatalogSelection` carrying keys. Runtime tests: a fake provider error echoing a catalog key, an unused-provider key and an operator key is redacted in the overview and `View.Current`, unary and stream. A later BYOK call echoing the same key is not redacted. |
 | Catalog configuration category | `stackcatalog`-invalid specs and missing or empty values return exactly `ErrCatalogConfiguration` (`errors.Is` and an equal message, so no spec text). Classification test. ProviderWire unary and stream-setup document bytes. Go client mapping test, and a TypeScript non-success probe in `test/providerwire-v4`. |
@@ -135,17 +137,11 @@ Cross-language scenarios on catalog routes belong to #758, which adds the routes
 
 ## Risks / Trade-offs
 
-- [An operator model whose canonical ID is `catalog` shares series with stack-catalog calls] → documented in `ai-gateway/docs/text-observability.md`; renaming that model avoids it.
+- [An operator model whose canonical ID is `catalog` shares series with stack-catalog calls] → accepted and documented in `ai-gateway/docs/text-observability.md`, like the existing `byok` bucket; renaming that model avoids it.
 - [Per-request `Parse` on large catalogs] → linear in a spec that admission already bounds, with the object size bounded by Grafana. A cache keyed by resource version can come later without changing the API.
 - [Catalog names over 128 bytes lose log and Agent Observability attribution] → fails closed, like every other observation value; the correlation ID still links the attempt records.
 - [The 424 document matches provider 4xx by status, type and code] → only the message differs. Dashboards grouping by status see both; a distinct code would need client changes.
-- [#758] → It must:
-  - decode `RouteRequestInfo.Parent` into `v1alpha1.ModelCatalog` and check it against the route before calling `SelectStackCatalog`;
-  - add the `catalog` account branch;
-  - add `host.ErrorCatalogConfiguration` for discovery, and a lister that reuses `Parse` and the candidate projection without constructing models;
-  - add the cross-language scenarios.
-
-  A spec decode failure maps to `ErrCatalogConfiguration`.
+- [#758] → See Follow-ups for #758.
 - [#762 merge] → Text conflicts only, in:
   - `execution/selection.go`: the `SourceStackCatalog` constant, the `Catalog` and `keys` fields and the constructor, all moving with `Source` to its leaf package;
   - `model_observability.go`: one allowlist key and one chain entry. `Compose` keeps its signature here, so #762's context argument applies unchanged;
@@ -154,6 +150,15 @@ Cross-language scenarios on catalog routes belong to #758, which adds the routes
 
   Stack-catalog calls are key ownership `customer`, derived from the source by #762.
 - [#763 edits the same observation requirement and allowlists] → additive keys, sequential rebases.
+
+## Follow-ups for #758
+
+- Add `host.ErrorCatalogConfiguration`, written by ProviderWire with the same fixed 424 document, together with its consumer, stack-catalog discovery. This change adds only the runtime category, because no host code here can fail with it.
+- Decode `RouteRequestInfo.Parent` into `v1alpha1.ModelCatalog` and check its group, kind, namespace and name against the route before calling `SelectStackCatalog`. A decode failure maps to `ErrCatalogConfiguration`.
+- Add the `catalog` account branch to `NewSelector`, calling `SelectStackCatalog` with the decoded catalog and `RouteRequestInfo.DecryptedSecureValues`.
+- Add a discovery lister that reuses `Parse` and the candidate projection without constructing models.
+- Add the cross-language scenarios on the catalog routes, including the catalog configuration document.
+- The PR description notes the `catalog` log key deviation from the issue's wording.
 
 ## Migration Plan
 
