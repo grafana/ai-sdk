@@ -13,6 +13,7 @@ const (
 	statusSuccess  = "success"
 	statusError    = "error"
 	statusCanceled = "canceled"
+	statusDenied   = "denied"
 
 	errorTypeNone                    = "none"
 	errorTypeAPICallError            = "api_call_error"
@@ -41,6 +42,38 @@ func successOutcome(reason provider.FinishReason) outcome {
 		statusCode:   statusCodeNone,
 		finishReason: finishReasonLabel(reason),
 	}
+}
+
+var deniedOutcome = outcome{status: statusDenied, errorType: errorTypeNone, statusCode: statusCodeNone, finishReason: finishReasonNone}
+
+// denied reports whether the configured classifier reports err as a denial.
+func (c config) denied(err error) (denied bool) {
+	if c.isDenied == nil || err == nil {
+		return false
+	}
+	defer func() {
+		if recover() != nil {
+			denied = false
+		}
+	}()
+	return c.isDenied(err)
+}
+
+// classifyError classifies a call error, checking for a denial first.
+func (c config) classifyError(err error) outcome {
+	if c.denied(err) {
+		return deniedOutcome
+	}
+	return classifyError(err)
+}
+
+// classifyStreamError classifies a stream error part, checking for a denial
+// first.
+func (c config) classifyStreamError(apiErr *provider.APICallError) outcome {
+	if apiErr != nil && c.denied(apiErr) {
+		return deniedOutcome
+	}
+	return classifyStreamError(apiErr)
 }
 
 func classifyError(err error) outcome {

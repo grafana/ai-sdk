@@ -66,6 +66,11 @@ middleware may observe it as a stream operation. Use orchestration-level
 callbacks or separate HTTP metrics for one measurement of the entire user
 request.
 
+A call refused by policy, such as a gateway that denies a request before or
+after the provider answers, is not a provider failure. Set `IsDenied` to
+recognize those errors: the call is then recorded with status `denied`, so
+alerts and error rates based on `status="error"` exclude it.
+
 See the [package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/middleware/prometheus)
 for metric names, labels, and bucket options.
 
