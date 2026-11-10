@@ -8,10 +8,10 @@
 
 ## 2. Execution: source, redaction and category
 
-- [ ] 2.1 Add `SourceStackCatalog`, `Selection.Catalog`, the unexported request keys and `StackCatalogSelection` (configured attribution); verify with execution unit tests for source, attribution, name and cloned keys.
-- [ ] 2.2 Add `SummaryRedactor.With` and build each call's capture with the selection's keys. Verify with runtime tests: the overview and `View.Current` redact catalog, unused-provider and startup keys, unary and stream; a later call is unaffected.
-- [ ] 2.3 Add `ErrCatalogConfiguration` and `CategoryCatalogConfiguration` in `ClassifySelection`; verify with the classification table test.
-- [ ] 2.4 Add the fixed ProviderWire document (424, `failed_dependency`, fixed message, not retryable). Verify with document-byte tests for unary and stream setup, a Go client mapping test, and a TypeScript non-success probe in `test/providerwire-v4` (`mise run test-providerwire-v4`).
+- [x] 2.1 Add `SourceStackCatalog`, `Selection.Catalog`, the unexported request keys and `StackCatalogSelection` (configured attribution); verify with execution unit tests for source, attribution, name and cloned keys.
+- [x] 2.2 Add `SummaryRedactor.With` and build each call's capture with the selection's keys. Verify with runtime tests: the overview and `View.Current` redact catalog, unused-provider and startup keys, unary and stream; a later call is unaffected.
+- [x] 2.3 Add `ErrCatalogConfiguration` and `CategoryCatalogConfiguration` in `ClassifySelection`; verify with the classification table test.
+- [x] 2.4 Add the fixed ProviderWire document (424, `failed_dependency`, fixed message, not retryable). Verify with document tests for unary and stream setup. The Go client (`TestGatewayError_RegisteredMatrix`) and TypeScript (`client-consumption.test.ts`) matrices already map 424 `failed_dependency`/`failed_dependency` as not retryable, whatever the message.
 
 ## 3. Stack-catalog selection
 
