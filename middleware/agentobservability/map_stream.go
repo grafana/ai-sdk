@@ -31,7 +31,8 @@ type StreamRecorder struct {
 	params         provider.CallOptions
 	identitySource IdentitySource
 
-	mu sync.Mutex
+	mu      sync.Mutex
+	choices map[int]*StreamRecorder
 
 	// firstChunkAt is recorded the first time Observe is called with a
 	// payload-bearing part. The recorder publishes this through
@@ -153,6 +154,19 @@ func (r *StreamRecorder) Observe(part provider.StreamPart) {
 		r.firstChunkAt = time.Now().UTC()
 	}
 	r.usage.Observe(part)
+	if part.ChoiceIndex != nil {
+		if r.choices == nil {
+			r.choices = map[int]*StreamRecorder{}
+		}
+		child := r.choices[*part.ChoiceIndex]
+		if child == nil {
+			child = NewStreamRecorder(r.seed, r.params)
+			r.choices[*part.ChoiceIndex] = child
+		}
+		part.ChoiceIndex = nil
+		child.Observe(part)
+		return
+	}
 
 	switch part.Type {
 	case provider.PartTextStart:
@@ -361,6 +375,7 @@ func (r *StreamRecorder) appendToolCall(id, name string) *streamToolCallAcc {
 // accumulated, without the request fields derived from the prompt.
 type streamState struct {
 	output        []agento11y.Message
+	choices       []generationChoice
 	usage         provider.Usage
 	hasUsage      bool
 	finishReason  *provider.FinishReason
@@ -373,6 +388,15 @@ type streamState struct {
 }
 
 func (s streamState) finishReasonValue() provider.FinishReason {
+	if len(s.choices) > 0 {
+		reason := s.choices[0].finishReason
+		for _, choice := range s.choices[1:] {
+			if choice.finishReason.Unified != reason.Unified {
+				return provider.FinishReason{Unified: provider.FinishReasonOther}
+			}
+		}
+		return reason
+	}
 	if s.finishReason == nil {
 		return provider.FinishReason{}
 	}
@@ -392,6 +416,10 @@ func (r *StreamRecorder) currentState() streamState {
 		response:      r.response,
 		callError:     r.callError,
 		firstChunkAt:  r.firstChunkAt,
+	}
+	for index, child := range r.choices {
+		childState := child.currentState()
+		state.choices = append(state.choices, generationChoice{index: index, output: childState.output, finishReason: childState.finishReasonValue()})
 	}
 	if r.finishReason != nil {
 		finishReason := *r.finishReason
@@ -460,6 +488,7 @@ func (r *StreamRecorder) generationFrom(state streamState) agento11y.Generation 
 	if state.finishReason != nil {
 		gen.StopReason = finishReasonToAgento11yStop(*state.finishReason)
 	}
+	applyGenerationChoices(&gen, state.choices)
 	return gen
 }
 
