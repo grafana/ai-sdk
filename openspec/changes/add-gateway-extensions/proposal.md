@@ -26,6 +26,8 @@ Teams that build Gateway distributions need to add their own per-call behavior, 
 
 ### Modified Capabilities
 
+- `grafana-gateway-client`: the Go client accepts the extension unavailable document and in-band extension events.
+
 - `gateway-plugin-host`: distribution extension options on the public entrypoint, the `extensions` operator setting, mandatory extensions, and extension shutdown in the final flush.
 - `gateway-execution-runtime`: extension denial and unavailable categories, and model entry recorded only when the selected model is invoked.
 - `providerwire-v4-unary-runtime`: fixed ProviderWire documents for extension denial and unavailability, unary and in-band, with client classification evidence. Documents live here rather than in `providerwire-v4-http-contract`, which only owns client-contract evidence.
@@ -35,6 +37,6 @@ Teams that build Gateway distributions need to add their own per-call behavior, 
 ## Impact
 
 - **Code:** new `ai-gateway/pkg/extension`; new `ai-gateway/pkg/internal/extensionhost` (registry, operator config, pipeline); `ai-gateway/pkg/gateway` (`Options`, `DefaultExtensions`); `ai-gateway/pkg/main.go`; `ai-gateway/pkg/internal/gateway` (wiring, flush); `ai-gateway/pkg/internal/config` (setting); `ai-gateway/pkg/internal/auth` (caller type); `ai-gateway/pkg/internal/service` (observer denial options, request info, log allowlist); `ai-gateway/internal/execution` (source alias, entry, classification, policy check); `ai-gateway/providerwire/v4` (documents).
-- **APIs:** new public Go API, v0 and experimental.
+- **APIs:** new public Go API, v0 and experimental. `providers/grafana`, a separately released module, accepts the new unavailable document (minor release).
 - **Docs:** new `docs/guides/gateway-extensions.md`; glossary terms (extension, phase, scope, key ownership, mandatory extension); architecture walkthrough; README settings table.
 - **Parity:** not parity-sensitive. The extension contract and the host pipeline are Grafana-owned; `test/conformance/PARITY.md` lists the Gateway as a Go extension surface, and this change adds no upstream surface. No stream part, UI chunk, provider request or provider-option change; ProviderWire bytes change only for the new extension documents.

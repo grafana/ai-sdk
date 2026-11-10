@@ -20,7 +20,7 @@ func TestGatewayError_RegisteredMatrix(t *testing.T) {
 		code      string
 		retryable bool
 	}{
-		{400, GatewayInvalidRequest, "invalid_request", false}, {401, GatewayAuthentication, "authentication_error", false}, {403, GatewayForbidden, "forbidden", false}, {404, GatewayModelNotFound, "model_not_found", false}, {429, GatewayRateLimit, "rate_limit_exceeded", true}, {424, GatewayFailedDependency, "failed_dependency", false}, {500, GatewayInternalServer, "internal_error", true}, {502, GatewayInternalServer, "upstream_error", true}, {503, GatewayInternalServer, "overloaded", true}, {504, GatewayInternalServer, "timeout", true}, {499, GatewayInternalServer, "canceled", false},
+		{400, GatewayInvalidRequest, "invalid_request", false}, {401, GatewayAuthentication, "authentication_error", false}, {403, GatewayForbidden, "forbidden", false}, {404, GatewayModelNotFound, "model_not_found", false}, {429, GatewayRateLimit, "rate_limit_exceeded", true}, {424, GatewayFailedDependency, "failed_dependency", false}, {500, GatewayInternalServer, "internal_error", true}, {502, GatewayInternalServer, "upstream_error", true}, {503, GatewayInternalServer, "overloaded", true}, {503, GatewayInternalServer, "unavailable", true}, {504, GatewayInternalServer, "timeout", true}, {499, GatewayInternalServer, "canceled", false},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			calls := 0
@@ -200,4 +200,26 @@ func TestGatewayError_InvalidEnvelopes(t *testing.T) {
 			assert.Empty(t, api.ResponseBody)
 		})
 	}
+}
+
+func TestStreamError_ExtensionOutcomes(t *testing.T) {
+	for _, tc := range []struct {
+		name, event string
+		status      int
+		retryable   bool
+	}{
+		{"denied", `{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden","statusCode":403,"retryable":false}`, 403, false},
+		{"unavailable", `{"message":"service unavailable","type":"internal_server_error","param":null,"code":"unavailable","statusCode":503,"retryable":true}`, 503, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			part, err := decodeStreamPart([]byte(`{"type":"error","error":` + tc.event + `}`))
+			require.NoError(t, err)
+			assert.Equal(t, provider.PartError, part.Type)
+			require.NotNil(t, part.APICallError)
+			assert.Equal(t, tc.status, part.APICallError.StatusCode)
+			assert.Equal(t, tc.retryable, part.APICallError.IsRetryable)
+		})
+	}
+	_, err := decodeStreamPart([]byte(`{"type":"error","error":{"message":"service unavailable","type":"internal_server_error","param":null,"code":"unavailable","statusCode":503,"retryable":false}}`))
+	assert.Error(t, err)
 }

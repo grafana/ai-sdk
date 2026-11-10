@@ -14,6 +14,7 @@ The root middleware denial option is delivered by the `record-middleware-denials
 - [x] 2.2 Treat `ErrDenied` and `ErrUnavailable` after entry as a selected synthesized attempt; verify with attempt-view and runtime tests.
 - [x] 2.3 Add `CategoryUnavailable` at the end of the list and classify both sentinels first, including a status-less API error cause; verify `classify_test.go` tables.
 - [x] 2.4 Export the host policy check and option cloning shared by translation and extensions; verify translation tests and `TestPolicyAllows`.
+- [x] 2.6 Accept the unavailable document and in-band extension events in the Go client (`providers/grafana`); verify `TestGatewayError_RegisteredMatrix` and `TestStreamError_ExtensionOutcomes`.
 - [x] 2.5 Add `safeUnavailable`, map both categories in ProviderWire with no native summary on in-band extension errors, and extend the test-time schemas; verify `TestExtensionOutcomeDocuments`, `TestPublicError_FixedBytes` and the client-consumption tests in `test/providerwire-v4`.
 
 ## 3. Operator configuration
