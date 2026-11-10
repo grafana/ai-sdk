@@ -56,6 +56,20 @@ func TestDeniedClassification(t *testing.T) {
 			want:      deniedOutcome,
 		},
 		{
+			name:      "denial after a finish",
+			isDenied:  isPolicyDenied,
+			operation: operationStream,
+			model:     streamingParts(provider.StreamPart{Type: provider.PartFinish, FinishReason: &provider.FinishReason{Unified: provider.FinishReasonStop}}, provider.StreamPart{Type: provider.PartError, APICallError: deniedPart}),
+			want:      deniedOutcome,
+		},
+		{
+			name:      "denial before a later error part",
+			isDenied:  isPolicyDenied,
+			operation: operationStream,
+			model:     streamingParts(provider.StreamPart{Type: provider.PartError, APICallError: deniedPart}, provider.StreamPart{Type: provider.PartError, APICallError: provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 500})}),
+			want:      deniedOutcome,
+		},
+		{
 			name:      "stream error part without an API call error",
 			isDenied:  func(error) bool { return true },
 			operation: operationStream,

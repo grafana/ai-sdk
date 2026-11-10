@@ -118,7 +118,7 @@ func (i *instrumentation) finalizeStream(ctx context.Context, requested identity
 		}
 	} else if obs.streamError != nil {
 		out = *obs.streamError
-		if out.finishReason == finishReasonNone && obs.finishReason != finishReasonNone {
+		if out.status != statusDenied && out.finishReason == finishReasonNone && obs.finishReason != finishReasonNone {
 			out.finishReason = obs.finishReason
 		}
 	}
@@ -158,7 +158,9 @@ func (o *streamObservation) observe(part provider.StreamPart, start, receivedAt 
 		}
 	case provider.PartError:
 		out := o.config.classifyStreamError(part.APICallError)
-		o.streamError = &out
+		if o.streamError == nil || o.streamError.status != statusDenied {
+			o.streamError = &out
+		}
 	}
 
 	if !isPayloadBearing(part.Type) {

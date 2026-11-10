@@ -39,6 +39,10 @@ Status labels SHALL be `success`, `error`, `canceled`, or `denied`. Error type l
 - **THEN** final request and duration metrics SHALL use `status="denied"`, and request metrics SHALL use `error_type="none"`, `status_code="none"` and `finish_reason="none"`
 - **AND** no `status="error"` series SHALL be incremented for that call
 
+#### Scenario: Denial is sticky for a stream
+- **WHEN** a stream's error part is reported as a denial, after a finish or before a later error part
+- **THEN** final request metrics for that stream SHALL use `status="denied"` with `finish_reason="none"`
+
 #### Scenario: No denial classifier
 - **WHEN** `Options.IsDenied` is nil
 - **THEN** no call SHALL use `status="denied"`, and classification SHALL be unchanged
