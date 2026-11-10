@@ -100,7 +100,8 @@ The Gateway's logs, metrics and exports never include:
 - user or service account IDs.
 
 In `cloud` mode, records of configured-model calls also name the Grafana
-service that made the call.
+service that made the call, and records of calls to a `ModelCatalog` resource
+name the calling service in both modes when the call came through one.
 
 Your application still receives everything the model returns, including
 warnings, citations and response details. If you log those in your

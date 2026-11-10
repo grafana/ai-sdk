@@ -34,13 +34,6 @@ On a catalog route, the Gateway SHALL grant `catalog` access to a verified calle
 - **WHEN** the same caller calls a namespace route
 - **THEN** the access decision SHALL follow the access mode exactly as without catalog routes
 
-### Requirement: Catalog access attribution
-For `catalog` access, emitted caller-service attribution SHALL be the direct caller's service identity when the token has one, in both access modes. Identity-actor UIDs SHALL remain private, as for every other access.
-
-#### Scenario: Access policy call is observed
-- **WHEN** an access policy's catalog call is logged and exported
-- **THEN** observations SHALL carry its service identity, namespace and catalog name, and no user identifier
-
 ## MODIFIED Requirements
 
 ### Requirement: No Gateway-specific role
@@ -53,3 +46,18 @@ Access to the namespace routes SHALL NOT require a Gateway-specific Grafana role
 #### Scenario: Catalog roles do not gate the namespace routes
 - **WHEN** a caller without `aigateway:catalogreader`, `aigateway:catalogwriter` or `aigateway:modelinvoker` calls a namespace route
 - **THEN** the access decision SHALL be the same as for a caller holding them
+
+### Requirement: Verified caller attribution
+Every served request SHALL carry a private verified caller value with the access class, route namespace, the direct caller's service identity and the identity actor's typed UID (`user:<uid>` or `service-account:<uid>`), each when present. Emitted caller-service attribution SHALL be the direct caller's service identity for configured access in `cloud` mode and for catalog access, and SHALL be omitted otherwise. Identity-actor UIDs and other user claims SHALL NOT enter logs, metrics, exports or provider requests.
+
+#### Scenario: Non-configured call is observed
+- **WHEN** a BYOK, relayed or `self-hosted` request on a namespace route is logged and exported
+- **THEN** observations SHALL carry no caller-service value, even when the direct caller has a service identity
+
+#### Scenario: Internal call on behalf of a user is observed
+- **WHEN** an allowlisted service's call for a user is logged and exported
+- **THEN** observations SHALL carry the service identity and namespace, the private caller value SHALL hold the user's typed UID, and no user identifier SHALL appear in logs, metrics or exports
+
+#### Scenario: Catalog call is observed
+- **WHEN** an access policy's catalog call, alone or on behalf of a user, is logged and exported
+- **THEN** observations SHALL carry its service identity, namespace and catalog name, and no user identifier

@@ -10,7 +10,9 @@ client.
 
 ## Requirements
 
-- Grafana 13.3 or later.
+- Grafana 13.3 or later. Calling a stored catalog also needs Grafana to run the
+  access checks that the catalog routes declare; the end-to-end tests verify
+  this on Grafana's nightly image.
 - The `appplugins.loadAppManifest`, `appplugins.registerAPIServer` and
   `grafana.useRouterMiddleware` feature toggles. The last one is experimental.
 - The plugin is published only to the dev plugin catalog for Grafana Cloud.
