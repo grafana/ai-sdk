@@ -40,9 +40,11 @@ type ConfiguredModels interface {
 // NewSelector returns the selector for every access mode. Configured callers
 // resolve through models, and their routing controls compose a request chain
 // over configured candidates. BYOK callers, when byokOptions is set, build a
-// model from the request accounts and routing controls. Every other caller
-// fails with [execution.ErrAccountAccess]. It returns nil for nil models.
-func NewSelector(models ConfiguredModels, byokOptions *BYOKOptions) execution.RequestSelector {
+// model from the request accounts and routing controls. Catalog callers, when
+// stackOptions is set, select from the stack catalog their catalog route
+// serves. Every other caller fails with [execution.ErrAccountAccess]. It
+// returns nil for nil models.
+func NewSelector(models ConfiguredModels, byokOptions *BYOKOptions, stackOptions *StackCatalogOptions) execution.RequestSelector {
 	selectConfigured := execution.CatalogSelector(models)
 	if selectConfigured == nil {
 		return nil
@@ -65,6 +67,12 @@ func NewSelector(models ConfiguredModels, byokOptions *BYOKOptions) execution.Re
 				return execution.Selection{}, err
 			}
 			return selectBYOK(id, controls, *byokOptions)
+		case caller.AccountAccess() == gatewayauth.CatalogAccounts && stackOptions != nil:
+			stack, ok := StackCatalogFromContext(ctx)
+			if !ok {
+				return execution.Selection{}, execution.ErrAccountAccess
+			}
+			return SelectStackCatalog(stack, id, gateway, *stackOptions)
 		default:
 			return execution.Selection{}, execution.ErrAccountAccess
 		}

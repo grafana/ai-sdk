@@ -119,7 +119,7 @@ func TestRoutedSelection_Configured(t *testing.T) {
 				failing[host] = true
 			}
 			server := &nativeServer{failing: failing}
-			overview, _ := routedCall(t, NewSelector(translationCatalog(t, server.client()), nil), tc.modelID, tc.gateway, provider.CallOptions{})
+			overview, _ := routedCall(t, NewSelector(translationCatalog(t, server.client()), nil, nil), tc.modelID, tc.gateway, provider.CallOptions{})
 			assert.Equal(t, tc.hosts, hosts(server.requests()))
 			require.NotNil(t, overview)
 			assert.Equal(t, tc.modelID, overview.RequestedModelID)
@@ -154,7 +154,7 @@ func TestRoutedSelection_ConfiguredRefusals(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &nativeServer{}
-			overview, err := routedCall(t, NewSelector(translationCatalog(t, server.client()), nil), tc.modelID, tc.gateway, provider.CallOptions{})
+			overview, err := routedCall(t, NewSelector(translationCatalog(t, server.client()), nil, nil), tc.modelID, tc.gateway, provider.CallOptions{})
 			require.ErrorIs(t, err, tc.want)
 			assert.Nil(t, overview)
 			assert.Empty(t, server.requests())
@@ -184,7 +184,7 @@ func TestRoutedSelection_AttemptBound(t *testing.T) {
 			created, err := BuildCatalog(file, providers, server.client(), identityModelFactory)
 			require.NoError(t, err)
 			gateway := fmt.Sprintf(`{"models":[%s]}`, strings.Join(fallbacks[:tc.count-1], ","))
-			overview, err := routedCall(t, NewSelector(created, nil), "route-0", gateway, provider.CallOptions{})
+			overview, err := routedCall(t, NewSelector(created, nil, nil), "route-0", gateway, provider.CallOptions{})
 			if tc.want != nil {
 				require.ErrorIs(t, err, tc.want)
 				assert.Empty(t, server.requests())
@@ -205,7 +205,7 @@ func TestRoutedSelection_CandidateNativeOptions(t *testing.T) {
 		"openai":    provider.RawProviderOption{Key: "openai", Raw: json.RawMessage(`{"user":"openai-only"}`)},
 		"my-vllm":   provider.RawProviderOption{Key: "my-vllm", Raw: json.RawMessage(`{"compatMarker":"compatible-only"}`)},
 	}}
-	_, err := routedCall(t, NewSelector(translationCatalog(t, server.client()), nil), "grafana/chain", `{"models":["grafana/local"]}`, options)
+	_, err := routedCall(t, NewSelector(translationCatalog(t, server.client()), nil, nil), "grafana/chain", `{"models":["grafana/local"]}`, options)
 	require.NoError(t, err)
 	requests := server.requests()
 	require.Equal(t, []string{translationAnthropicHost, translationOpenAIHost, translationCompatHost}, hosts(requests))
@@ -248,7 +248,7 @@ func TestRoutedSelection_SharesStartupCandidates(t *testing.T) {
 	}, identityModelFactory)
 	require.NoError(t, err)
 	require.Equal(t, int32(2), constructed.Load())
-	selector := NewSelector(created, nil)
+	selector := NewSelector(created, nil, nil)
 
 	_, err = routedCall(t, selector, "second", "", provider.CallOptions{})
 	require.NoError(t, err)
@@ -295,7 +295,7 @@ func TestRoutedSelection_OneLogicalObservation(t *testing.T) {
 			return &provider.GenerateResult{FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
 		}},
 	})
-	runtime, err := execution.New(execution.Config{Selector: NewSelector(created, nil), Limits: serviceTestLimits()})
+	runtime, err := execution.New(execution.Config{Selector: NewSelector(created, nil, nil), Limits: serviceTestLimits()})
 	require.NoError(t, err)
 	state := &telemetryState{}
 	state.observation.Store(&requestObservation{correlationID: "routed-request"})
@@ -343,7 +343,7 @@ func TestRoutedSelection_CommitmentAndCancellation(t *testing.T) {
 				return fallbackParts(), nil
 			}},
 		})
-		selected, err := NewSelector(created, nil)(callerContext(t, gatewayauth.ConfiguredAccounts), "public", provider.CallOptions{}, json.RawMessage(`{"models":["other"]}`))
+		selected, err := NewSelector(created, nil, nil)(callerContext(t, gatewayauth.ConfiguredAccounts), "public", provider.CallOptions{}, json.RawMessage(`{"models":["other"]}`))
 		require.NoError(t, err)
 		result, err := selected.Model.DoStream(t.Context(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("route me")}})
 		require.NoError(t, err)
@@ -368,7 +368,7 @@ func TestRoutedSelection_CommitmentAndCancellation(t *testing.T) {
 				return &provider.GenerateResult{}, nil
 			}},
 		})
-		selected, err := NewSelector(created, nil)(callerContext(t, gatewayauth.ConfiguredAccounts), "public", provider.CallOptions{}, json.RawMessage(`{"models":["other"]}`))
+		selected, err := NewSelector(created, nil, nil)(callerContext(t, gatewayauth.ConfiguredAccounts), "public", provider.CallOptions{}, json.RawMessage(`{"models":["other"]}`))
 		require.NoError(t, err)
 		ctx, cancel := context.WithCancel(t.Context())
 		go func() {
@@ -452,7 +452,7 @@ func TestRoutedSelection_BYOK(t *testing.T) {
 			}
 			server := &nativeServer{failing: failing}
 			spy := &accountCatalogSpy{}
-			selector := NewSelector(spy, &BYOKOptions{Client: server.client(), Factory: func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }})
+			selector := NewSelector(spy, &BYOKOptions{Client: server.client(), Factory: func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }}, nil)
 			overview, _ := byokRoutedCall(t, selector, tc.gateway, provider.CallOptions{})
 			requests := server.requests()
 			keys := make([]string, len(requests))
@@ -494,7 +494,7 @@ func TestRoutedSelection_BYOKRefusals(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &nativeServer{}
 			spy := &accountCatalogSpy{}
-			selector := NewSelector(spy, &BYOKOptions{Client: server.client(), Factory: func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }})
+			selector := NewSelector(spy, &BYOKOptions{Client: server.client(), Factory: func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }}, nil)
 			overview, err := byokRoutedCall(t, selector, tc.gateway, provider.CallOptions{})
 			require.ErrorIs(t, err, tc.want)
 			assert.Nil(t, overview)
@@ -546,7 +546,7 @@ func TestRoutedSelection_ServerCaptureIndependence(t *testing.T) {
 				}, nil
 			}},
 		})
-		wire, err := newWireHandler(execution.Config{Selector: NewSelector(created, nil), Limits: serviceTestLimits()})
+		wire, err := newWireHandler(execution.Config{Selector: NewSelector(created, nil, nil), Limits: serviceTestLimits()})
 		require.NoError(t, err)
 		handler, headers := withAccess(t, gatewayauth.AccessModeSelfHosted, gatewayauth.ConfiguredAccounts, wire)
 		r := httptest.NewRequest(http.MethodPost, providerv4.LanguageModelPath, strings.NewReader(`{"prompt":[{"role":"user","content":[{"type":"text","text":"route"}]}],"providerOptions":{"gateway":{"models":["other"]}}}`))

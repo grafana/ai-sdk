@@ -157,7 +157,7 @@ func TestModelObservers_IdenticalIdentitiesAcrossSelections(t *testing.T) {
 					"backend-primary":   seamModel(tc.failPrimary),
 					"backend-secondary": seamModel(false),
 				})
-				observed := newObservedRuntime(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}))
+				observed := newObservedRuntime(t, NewSelector(created, &BYOKOptions{Client: seamBYOKClient(), Factory: BYOKIdentity}, nil))
 				var options provider.CallOptions
 				if tc.gateway != "" {
 					options = routedGateway(tc.gateway)

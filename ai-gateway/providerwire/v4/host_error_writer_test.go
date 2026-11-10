@@ -22,6 +22,7 @@ func TestHostErrorWriter_WriteHostError(t *testing.T) {
 	}{
 		{name: "permission", category: host.ErrorPermission, status: http.StatusForbidden, body: `{"error":{"message":"forbidden","type":"forbidden","param":null,"code":"forbidden"}}`},
 		{name: "BYOK discovery", category: host.ErrorBYOKDiscovery, status: http.StatusBadRequest, body: `{"error":{"message":"catalog discovery is unsupported for BYOK","type":"invalid_request_error","param":null,"code":"invalid_request"}}`},
+		{name: "catalog configuration", category: host.ErrorCatalogConfiguration, status: http.StatusFailedDependency, body: `{"error":{"message":"model catalog is invalid or missing a provider key","type":"failed_dependency","param":null,"code":"failed_dependency"}}`},
 		{name: "internal", category: host.ErrorInternal, status: http.StatusInternalServerError, body: internal},
 		{name: "zero category", category: 0, status: http.StatusInternalServerError, body: internal},
 		{name: "unknown category", category: 255, status: http.StatusInternalServerError, body: internal},

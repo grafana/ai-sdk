@@ -15,6 +15,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/fallback"
@@ -265,4 +266,73 @@ func TestSelectStackCatalog_ConcurrentCatalogsKeepTheirKeys(t *testing.T) {
 	assert.Len(t, sent, 2)
 	assert.Len(t, sent["catalog-0-key"], calls/2)
 	assert.Len(t, sent["catalog-1-key"], calls/2)
+}
+
+func TestNewSelector_CatalogAccess(t *testing.T) {
+	operator := routedFakeCatalog(t, ConfiguredIdentity, nil, map[string]*observabilityTestModel{"backend-primary": {}, "backend-secondary": {}})
+	selector := NewSelector(operator, nil, &StackCatalogOptions{Client: http.DefaultClient})
+	ctx := callerContext(t, gatewayauth.ConfiguredAccounts)
+	catalogCtx := callerContext(t, gatewayauth.CatalogAccounts)
+	for _, tc := range []struct {
+		name    string
+		ctx     context.Context
+		modelID string
+		gateway string
+		err     error
+		source  execution.Source
+	}{
+		{name: "stack catalog model", ctx: WithStackCatalog(catalogCtx, testStackCatalog()), modelID: "default", source: execution.SourceStackCatalog},
+		{name: "operator model is not in the stack catalog", ctx: WithStackCatalog(catalogCtx, testStackCatalog()), modelID: "public", err: catalog.ErrUnknownModel},
+		{name: "byok refused", ctx: WithStackCatalog(catalogCtx, testStackCatalog()), modelID: "default", gateway: `{"byok":{"anthropic":[{"apiKey":"request-key"}]}}`, err: execution.ErrUnsupportedGatewayControl},
+		{name: "no catalog carried", ctx: catalogCtx, modelID: "default", err: execution.ErrAccountAccess},
+		{name: "configured caller ignores a carried catalog", ctx: WithStackCatalog(ctx, testStackCatalog()), modelID: "public", source: execution.SourceOperatorCatalog},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			selected, err := selector(tc.ctx, tc.modelID, provider.CallOptions{}, stackGateway(tc.gateway))
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.source, selected.Source)
+		})
+	}
+	t.Run("without stack-catalog options", func(t *testing.T) {
+		_, err := NewSelector(operator, nil, nil)(WithStackCatalog(catalogCtx, testStackCatalog()), "default", provider.CallOptions{}, nil)
+		require.ErrorIs(t, err, execution.ErrAccountAccess)
+	})
+}
+
+func TestStackCatalogLister(t *testing.T) {
+	t.Run("rows", func(t *testing.T) {
+		infos, err := StackCatalogLister{}.ListModels(WithStackCatalog(t.Context(), testStackCatalog()))
+		require.NoError(t, err)
+		assert.Equal(t, []catalog.ModelInfo{
+			{ID: "balanced", Name: "Balanced", Aliases: []string{"default"}, Candidates: []catalog.ConfiguredCandidate{
+				{ProviderInstance: "claude", Provider: "anthropic", ModelID: "claude-sonnet"},
+				{ProviderInstance: "gpt", Provider: "openai", ModelID: "gpt-large"},
+			}},
+			{ID: "fast", Name: "Fast", Candidates: []catalog.ConfiguredCandidate{{ProviderInstance: "gpt", Provider: "openai", ModelID: "gpt-small"}}},
+			{ID: "same", Name: "Same", Candidates: []catalog.ConfiguredCandidate{{ProviderInstance: "claude", Provider: "anthropic", ModelID: "claude-sonnet"}}},
+		}, infos)
+		encoded, err := json.Marshal(infos)
+		require.NoError(t, err)
+		assert.NotContains(t, string(encoded), "catalog-key")
+	})
+	t.Run("catalog that fails its checks", func(t *testing.T) {
+		stack := testStackCatalog()
+		stack.Keys = resource.DecryptedSecureValues{"claude": "claude-catalog-key"}
+		_, err := StackCatalogLister{}.ListModels(WithStackCatalog(t.Context(), stack))
+		require.ErrorIs(t, err, execution.ErrCatalogConfiguration)
+		assert.Equal(t, execution.ErrCatalogConfiguration.Error(), err.Error())
+	})
+	t.Run("undecoded parent", func(t *testing.T) {
+		_, err := StackCatalogLister{}.ListModels(WithStackCatalog(t.Context(), StackCatalog{Name: "team"}))
+		require.ErrorIs(t, err, execution.ErrCatalogConfiguration)
+	})
+	t.Run("no carried catalog", func(t *testing.T) {
+		_, err := StackCatalogLister{}.ListModels(t.Context())
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, execution.ErrCatalogConfiguration)
+	})
 }

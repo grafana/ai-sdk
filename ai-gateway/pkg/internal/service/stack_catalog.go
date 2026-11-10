@@ -1,9 +1,13 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 
 	"github.com/grafana/grafana-app-sdk/resource"
 
@@ -26,6 +30,20 @@ type StackCatalog struct {
 	// Keys are the catalog's decrypted secure values. Each key is a provider
 	// name.
 	Keys resource.DecryptedSecureValues
+}
+
+type stackCatalogKey struct{}
+
+// WithStackCatalog returns ctx carrying the stack catalog a catalog route
+// serves.
+func WithStackCatalog(ctx context.Context, stack StackCatalog) context.Context {
+	return context.WithValue(ctx, stackCatalogKey{}, stack)
+}
+
+// StackCatalogFromContext returns the stack catalog a catalog route serves.
+func StackCatalogFromContext(ctx context.Context) (StackCatalog, bool) {
+	stack, ok := ctx.Value(stackCatalogKey{}).(StackCatalog)
+	return stack, ok
 }
 
 // StackCatalogOptions configures stack-catalog selection.
@@ -59,18 +77,9 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	secureKeys := make([]string, 0, len(stack.Keys))
-	keys := make([]string, 0, len(stack.Keys))
-	for name, value := range stack.Keys {
-		if value.IsZero() {
-			continue
-		}
-		secureKeys = append(secureKeys, name)
-		keys = append(keys, string(value))
-	}
-	file, err := stackcatalog.Parse(stack.Spec, secureKeys)
+	file, keys, err := parseStackCatalog(stack)
 	if err != nil {
-		return execution.Selection{}, execution.ErrCatalogConfiguration
+		return execution.Selection{}, err
 	}
 	index := newStackIndex(file)
 	groups, err := resolveGroups(modelID, controls.Models, index.resolve)
@@ -89,6 +98,56 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 		return execution.Selection{}, err
 	}
 	return execution.StackCatalogSelection(groups[0].canonical, stack.Name, model, expected, keys), nil
+}
+
+// parseStackCatalog checks a stack catalog with the keys that have values, and
+// returns it with those values. Any failure is [execution.ErrCatalogConfiguration],
+// without the reason, which names spec identifiers.
+func parseStackCatalog(stack StackCatalog) (config.File, []string, error) {
+	secureKeys := make([]string, 0, len(stack.Keys))
+	keys := make([]string, 0, len(stack.Keys))
+	for name, value := range stack.Keys {
+		if value.IsZero() {
+			continue
+		}
+		secureKeys = append(secureKeys, name)
+		keys = append(keys, string(value))
+	}
+	file, err := stackcatalog.Parse(stack.Spec, secureKeys)
+	if err != nil {
+		return config.File{}, nil, execution.ErrCatalogConfiguration
+	}
+	return file, keys, nil
+}
+
+var errNoStackCatalog = errors.New("gateway service: the request carries no stack catalog")
+
+// StackCatalogLister lists the models of the stack catalog a catalog route
+// serves, checked like a selection, without constructing any model.
+type StackCatalogLister struct{}
+
+// ListModels implements [catalog.ModelLister]. A catalog that fails its checks
+// fails with [execution.ErrCatalogConfiguration].
+func (StackCatalogLister) ListModels(ctx context.Context) ([]catalog.ModelInfo, error) {
+	stack, ok := StackCatalogFromContext(ctx)
+	if !ok {
+		return nil, errNoStackCatalog
+	}
+	file, _, err := parseStackCatalog(stack)
+	if err != nil {
+		return nil, err
+	}
+	index := newStackIndex(file)
+	infos := make([]catalog.ModelInfo, 0, len(file.Models))
+	for _, id := range slices.Sorted(maps.Keys(file.Models)) {
+		model := file.Models[id]
+		group, err := index.resolve(id)
+		if err != nil {
+			return nil, err
+		}
+		infos = append(infos, catalog.ModelInfo{ID: id, Name: model.Name, Description: model.Description, Aliases: slices.Clone(model.Aliases), Candidates: group.candidates})
+	}
+	return infos, nil
 }
 
 // stackIndex resolves a checked stack catalog's public IDs without
