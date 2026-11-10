@@ -5,6 +5,7 @@ import { API_GROUP, API_VERSION } from '../src/constants';
 const CATALOGS = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default/modelcatalogs`;
 const SENTINEL = 'e2e-catalog-sentinel-key';
 const ROLES = ['Viewer', 'Editor', 'Admin'] as const;
+const TOKEN_SECONDS = 3600;
 
 type Role = (typeof ROLES)[number];
 type Secure = Record<string, { create?: string; name?: string; remove?: boolean }>;
@@ -21,11 +22,13 @@ const test = base.extend<object, { accounts: Record<Role, APIRequestContext> }>(
         const account = await admin.post('/api/serviceaccounts', {
           data: { name: `catalog-${role.toLowerCase()}-${workerInfo.workerIndex}-${Date.now()}`, role },
         });
-        expect(account.status()).toBe(201);
+        expect(account.status(), await account.text()).toBe(201);
         const { id } = await account.json();
         ids.push(id);
-        const token = await admin.post(`/api/serviceaccounts/${id}/tokens`, { data: { name: 'e2e' } });
-        expect(token.status()).toBe(200);
+        const token = await admin.post(`/api/serviceaccounts/${id}/tokens`, {
+          data: { name: 'e2e', secondsToLive: TOKEN_SECONDS },
+        });
+        expect(token.status(), await token.text()).toBe(200);
         const { key } = await token.json();
         accounts[role] = await playwright.request.newContext({
           baseURL,
