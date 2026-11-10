@@ -806,3 +806,59 @@ func TestWait_Err(t *testing.T) {
 	assert.ErrorIs(t, WaitInvalidOutput.Err(), ErrInvalidOutput)
 	assert.Equal(t, CategoryInternal, ClassifyProvider(WaitInvalidOutput.Err()))
 }
+
+func TestRuntime_StackCatalogKeysAreRedactedPerCall(t *testing.T) {
+	echo := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "catalog-key unused-key server-key", IsRetryable: new(true)})
+	first := &generateModel{
+		modelID:  "A",
+		generate: func(context.Context) (*provider.GenerateResult, error) { return nil, echo },
+		stream:   func(context.Context) (*provider.StreamResult, error) { return nil, echo },
+	}
+	second := &generateModel{modelID: "B", stream: func(context.Context) (*provider.StreamResult, error) {
+		parts := make(chan provider.StreamPart, 1)
+		parts <- provider.StreamPart{Type: provider.PartRaw}
+		close(parts)
+		return &provider.StreamResult{Stream: parts}, nil
+	}}
+	model, err := fallback.New(first, second)
+	require.NoError(t, err)
+	expected := []ExpectedAttempt{
+		{ModelID: "stack", CanonicalID: "stack", Destination: catalog.ConfiguredCandidate{ProviderInstance: "primary", Provider: "native", ModelID: "A"}},
+		{ModelID: "stack", CanonicalID: "stack", Destination: catalog.ConfiguredCandidate{ProviderInstance: "secondary", Provider: "native", ModelID: "B"}},
+	}
+	runtime, err := New(Config{Limits: testLimits(), ConfiguredAPIKeys: []string{"server-key"}, Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
+		if id == "stack" {
+			return StackCatalogSelection(id, "team", model, expected, []string{"catalog-key", "unused-key"}), nil
+		}
+		return AccountSelection(id, model, accountAttempts("native", "A", 1)), nil
+	}})
+	require.NoError(t, err)
+
+	for _, streaming := range []bool{false, true} {
+		t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+			call, err := runtime.Call(t.Context(), "stack", provider.CallOptions{})
+			require.NoError(t, err)
+			if streaming {
+				stream, err := call.Stream()
+				require.NoError(t, err)
+				_, wait := stream.Next()
+				require.Equal(t, WaitPart, wait)
+				stream.Close()
+			} else {
+				_, err = call.Generate()
+				require.NoError(t, err)
+			}
+			view := call.View(nil)
+			require.NotNil(t, view.Overview)
+			require.Len(t, view.Overview.Attempts, 2)
+			assert.Equal(t, "[REDACTED] [REDACTED] [REDACTED]", view.Overview.Attempts[0].Error.Message)
+			assert.Equal(t, "[REDACTED] [REDACTED] [REDACTED]", view.Current(echo).Message)
+		})
+	}
+	t.Run("later call keeps its own policy", func(t *testing.T) {
+		call, err := runtime.Call(t.Context(), "native/model", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		assert.Equal(t, "catalog-key unused-key [REDACTED]", call.View(nil).Current(echo).Message)
+	})
+}

@@ -45,6 +45,7 @@ func TestClassifySelection(t *testing.T) {
 		{"byok credentials", ErrInvalidBYOK, CategoryBYOKCredentials, ReasonNone},
 		{"byok selector", ErrInvalidBYOKSelector, CategoryBYOKSelector, ReasonNone},
 		{"gateway control", ErrUnsupportedGatewayControl, CategoryGatewayControl, ReasonNone},
+		{"catalog configuration", fmt.Errorf("wrapped: %w", ErrCatalogConfiguration), CategoryCatalogConfiguration, ReasonNone},
 		{"reserved options", ErrReservedProviderOptions, CategoryInvalidRequest, ReasonReservedProviderOptions},
 		{"unknown model", &catalog.UnknownModelError{ModelID: "private"}, CategoryModelNotFound, ReasonNone},
 		{"routing controls", fmt.Errorf("wrapped: %w", ErrRoutingControls), CategoryInvalidRequest, ReasonRoutingControls},
