@@ -13,6 +13,14 @@ import (
 	"github.com/grafana/grafana-app-sdk/app"
 	"github.com/grafana/grafana-app-sdk/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	modelcatalogv1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
+)
+
+var (
+	rawSchemaModelCatalogv1alpha1     = []byte(`{"Model":{"additionalProperties":false,"properties":{"aliases":{"items":{"type":"string"},"type":"array"},"description":{"type":"string"},"fallback":{"items":{"$ref":"#/components/schemas/Target"},"type":"array"},"name":{"type":"string"},"primary":{"$ref":"#/components/schemas/Target"}},"required":["name","primary"],"type":"object"},"ModelCatalog":{"properties":{"secure":{"type":"object","additionalProperties":{"description":"Provider API key, keyed by the provider name","allOf":[{"$ref":"#/components/schemas/com.github.grafana.grafana-app-sdk.resource.InlineSecureValue"}]}},"spec":{"$ref":"#/components/schemas/spec"}},"required":["spec"]},"Provider":{"additionalProperties":false,"properties":{"baseURL":{"type":"string"},"providerName":{"type":"string"},"supportsStructuredOutputs":{"type":"boolean"},"type":{"type":"string"}},"required":["type"],"type":"object"},"Target":{"additionalProperties":false,"properties":{"model":{"type":"string"},"provider":{"type":"string"}},"required":["provider","model"],"type":"object"},"com.github.grafana.grafana-app-sdk.resource.InlineSecureValue":{"type":"object","oneOf":[{"required":["create"]},{"required":["name"]},{"required":["remove"]}],"not":{"required":["description"],"not":{"required":["create"]}},"properties":{"create":{"description":"Plaintext value to create in the secret service. Used only in create or update requests.","type":"string","maxLength":24576,"minLength":1},"description":{"description":"Optional description for a newly created secret. Only valid when create is set.","type":"string"},"name":{"description":"Reference to an existing value in the secret service.","type":"string","maxLength":253,"minLength":1},"remove":{"description":"Remove this entry from the secure value map, deleting the secret if it is owned by this resource.","type":"boolean"}},"additionalProperties":false},"spec":{"additionalProperties":false,"properties":{"models":{"additionalProperties":{"$ref":"#/components/schemas/Model"},"type":"object"},"providers":{"additionalProperties":{"$ref":"#/components/schemas/Provider"},"type":"object"}},"required":["providers","models"],"type":"object"}}`)
+	versionSchemaModelCatalogv1alpha1 app.VersionSchema
+	_                                 = json.Unmarshal(rawSchemaModelCatalogv1alpha1, &versionSchemaModelCatalogv1alpha1)
 )
 
 var appManifestData = app.ManifestData{
@@ -24,7 +32,27 @@ var appManifestData = app.ManifestData{
 		{
 			Name:   "v1alpha1",
 			Served: true,
-			Kinds:  []app.ManifestVersionKind{},
+			Kinds: []app.ManifestVersionKind{
+				{
+					Kind:         "ModelCatalog",
+					Plural:       "ModelCatalogs",
+					Scope:        "Namespaced",
+					Conversion:   false,
+					FolderScoped: func(b bool) *bool { return &b }(false),
+					Admission: &app.AdmissionCapabilities{
+						Validation: &app.ValidationCapability{
+							Operations: []app.AdmissionOperation{
+								app.AdmissionOperationCreate,
+								app.AdmissionOperationUpdate,
+							},
+						},
+					},
+					Schema: &versionSchemaModelCatalogv1alpha1,
+					SecureValues: []app.ManifestVersionKindSecureValue{
+						{Key: "*", Description: "Provider API key, keyed by the provider name"},
+					},
+				},
+			},
 			// nolint:staticcheck
 			Routes: func() app.ManifestVersionRoutes {
 				var routes app.ManifestVersionRoutes
@@ -43,34 +71,36 @@ var appManifestData = app.ManifestData{
 		},
 	},
 	Roles: map[string]app.ManifestRole{
-		"aigateway:admin": {
-			Title:       "AI Gateway Admin",
-			Description: "Allows all actions on ",
-			Kinds:       []app.ManifestRoleKind{},
-			Routes:      []string{},
+		"aigateway:catalogreader": {
+			Title:       "Model catalog reader",
+			Description: "Read AI Gateway model catalogs",
+			Kinds: []app.ManifestRoleKind{
+				{
+					Kind:          "ModelCatalog",
+					PermissionSet: new("viewer"),
+				},
+			},
+			Routes: []string{},
 		},
-		"aigateway:editor": {
-			Title:       "AI Gateway Editor",
-			Description: "Create, Read, Update, and Delete ",
-			Kinds:       []app.ManifestRoleKind{},
-			Routes:      []string{},
-		},
-		"aigateway:reader": {
-			Title:       "AI Gateway Reader",
-			Description: "Read ",
-			Kinds:       []app.ManifestRoleKind{},
-			Routes:      []string{},
+		"aigateway:catalogwriter": {
+			Title:       "Model catalog writer",
+			Description: "Create, update and delete AI Gateway model catalogs",
+			Kinds: []app.ManifestRoleKind{
+				{
+					Kind:          "ModelCatalog",
+					PermissionSet: new("editor"),
+				},
+			},
+			Routes: []string{},
 		},
 	},
 	RoleBindings: &app.ManifestRoleBindings{
 		Viewer: []string{
-			"aigateway:reader",
+			"aigateway:catalogreader",
 		},
-		Editor: []string{
-			"aigateway:editor",
-		},
+		Editor: []string{},
 		Admin: []string{
-			"aigateway:admin",
+			"aigateway:catalogwriter",
 		},
 	},
 }
@@ -83,7 +113,9 @@ func RemoteManifest() app.Manifest {
 	return app.NewAPIServerManifest("aigateway")
 }
 
-var kindVersionToGoType = map[string]resource.Kind{}
+var kindVersionToGoType = map[string]resource.Kind{
+	"ModelCatalog/v1alpha1": modelcatalogv1alpha1.Kind(),
+}
 
 // ManifestGoTypeAssociator returns the associated resource.Kind instance for a given Kind and Version, if one exists.
 // If there is no association for the provided Kind and Version, exists will return false.
