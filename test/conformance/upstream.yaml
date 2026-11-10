@@ -107,6 +107,27 @@ knownGaps:
       tests cover supported models, streaming and non-streaming requests, and
       the absence of forced tool choice and synthetic tools. Organization policy
       must enable structured outputs; no live Vertex recording is claimed.
+  - id: anthropic-vertex-provider-baseline
+    surface: provider-anthropic
+    status: gap
+    description: Upstream ships Anthropic on Vertex in @ai-sdk/google-vertex,
+      which this baseline does not register. Go NewVertex and
+      NewVertexWithCredentials compose the shared Anthropic adapter with
+      Vertex capabilities and model ID resolution. Vertex URL construction,
+      location validation and authentication were compared by hand with
+      @ai-sdk/google-vertex 5.0.115, the release that pins the registered
+      @ai-sdk/anthropic, and have synthetic tests only. No live Vertex
+      recording is claimed.
+  - id: anthropic-vertex-service-account-key
+    surface: provider-anthropic
+    status: intentional-deviation
+    description: Upstream google-vertex passes credentials to
+      google-auth-library, accepts any credential type and falls back to
+      Application Default Credentials or GOOGLE_CLIENT_EMAIL and
+      GOOGLE_PRIVATE_KEY. Go NewVertexWithCredentials accepts only a
+      service_account key, never falls back to ambient credentials or
+      GOOGLE_CLOUD_QUOTA_PROJECT, and sends the token exchange through the
+      configured HTTP client. Synthetic tests cover each boundary.
   - id: array-element-stream-overflow
     surface: core-streamtext
     status: documented-deviation
