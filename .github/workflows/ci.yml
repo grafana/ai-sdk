@@ -419,7 +419,7 @@ jobs:
       - name: Plugin end-to-end tests
         if: ${{ github.event_name != 'pull_request' || needs.changes.result != 'success' || needs.changes.outputs.docs_only != 'true' }}
         env:
-          GRAFANA_VERSION: nightly@sha256:5d4bd69f298a7d45b3e14e93d65cd4636cc77619eea120bc1d065662c1b1ceb3
+          GRAFANA_VERSION: 13.3.0
         run: mise run test-ai-gateway-e2e
 
       - name: Keep the Playwright report of a failed run
