@@ -38,8 +38,7 @@ BYOK SHALL receive one request-local logical observer outside ordered attempts, 
 - **THEN** the observer chain SHALL preserve them for protocol encoding independently of operator capture exclusions
 
 ### Requirement: One startup-composed logical middleware chain
-
-The Gateway SHALL construct its logical observer chains once at startup: context enrichment, Agent Observability recording, structured logging and Prometheus model metrics, in that request order. Each configured catalog entry SHALL be wrapped once at startup with canonical public identity only. After selection, the runtime SHALL apply the chain of the selection's source once per call, outside that identity. Physical candidates beneath a fallback chain SHALL NOT get logical observers.
+The Gateway SHALL construct its logical observer chains once at startup: context enrichment, Agent Observability recording, structured logging and Prometheus model metrics, in that request order. Operator-catalog entries SHALL get canonical identity once at startup, and stack-catalog models when built for their request. After selection, the runtime SHALL apply the chain of the selection's source once per call, outside that identity. Physical candidates SHALL NOT get logical observers.
 
 #### Scenario: Alias uses one canonical chain
 - **WHEN** an authenticated text request resolves an alias for a configured canonical model
@@ -52,7 +51,7 @@ The Gateway SHALL construct its logical observer chains once at startup: context
 - **AND** SHALL produce the same ProviderWire status, response events, event order, and clean-EOF behavior
 
 #### Scenario: Observers are not constructed per call
-- **WHEN** many configured, routed and BYOK calls run
+- **WHEN** many configured, routed, stack-catalog and BYOK calls run
 - **THEN** observer middleware and metric collectors SHALL be the ones constructed at startup, and no call SHALL register collectors
 
 ### Requirement: Shared logical chain traversal and adapter isolation
@@ -91,13 +90,17 @@ Provider response metadata SHALL remain unmodified for the protocol adapter and 
 - **THEN** logical observers SHALL ignore it and forward it unchanged for protocol and private physical-attempt observation
 
 ### Requirement: Trusted bounded request observation context
-
-The Gateway SHALL create one private immutable observation view per accepted HTTP request. It SHALL contain only a bounded Gateway-generated opaque request correlation ID and the normalized verified caller service and namespace from the authenticated caller context. Empty optional values SHALL be omitted.
+The Gateway SHALL create one private immutable observation view per accepted HTTP request. It SHALL contain only a bounded Gateway-generated opaque request correlation ID, the normalized verified caller service and namespace from the authenticated caller context, and, for a stack-catalog call, the selected catalog's name. Empty or out-of-bound optional values SHALL be omitted.
 
 #### Scenario: Authenticated request is enriched
 - **WHEN** authentication stores a normalized caller
 - **THEN** logical logs and Agent Observability metadata SHALL contain the same request correlation ID, caller service and namespace under fixed keys
 - **AND** the direct provider's call headers and provider options SHALL contain none of those values unless an independent future policy explicitly approves them
+
+#### Scenario: Stack-catalog call is enriched
+- **WHEN** a call selects from a stack catalog
+- **THEN** logical logs SHALL carry the catalog name as `catalog` and Agent Observability metadata as `gateway.catalog`
+- **AND** a name that fails the shared observation value bound of 128 printable ASCII bytes SHALL be omitted
 
 #### Scenario: Untrusted headers attempt enrichment
 - **WHEN** an authenticated request supplies arbitrary request, region, application, user, or tenant headers
@@ -451,3 +454,24 @@ When upstream closure and downstream cancellation are both observable at finaliz
 - **WHEN** downstream cancellation is observable at finalization after a finish was observed
 - **THEN** logs and metrics SHALL select cancellation
 - **AND** the Agent Observability generation SHALL record the finished segments with the last finish's segment usage and no cancellation or timeout call error
+
+### Requirement: Stack-catalog logical observation
+Stack-catalog calls SHALL be observed by their own chain, built at startup from the shared middleware and picked by source. Logs and Agent Observability SHALL use provider `grafana` and the catalog's canonical model ID. Model metrics SHALL use the fixed model label `catalog`, through the one metrics registration. Keys, aliases, provider names and backend model IDs SHALL NOT appear on any logical surface. Agent Observability SHALL record these calls metadata-only, through the process-wide client.
+
+#### Scenario: Stack-catalog call is observed once
+- **WHEN** a stack-catalog call runs, unary or streaming
+- **THEN** each logical observer SHALL observe it once
+- **AND** its logs SHALL carry provider `grafana`, the canonical model ID and the catalog name
+- **AND** its metric series SHALL carry provider `grafana` and model `catalog`
+
+#### Scenario: Many catalogs and model IDs
+- **WHEN** calls run against 20 stack catalogs with 20 distinct model IDs each
+- **THEN** the model metric series count SHALL equal that of one catalog with one model, and no catalog name or model ID SHALL be a label value
+
+#### Scenario: Provider error echoes a catalog key
+- **WHEN** a provider fails with a message that contains the catalog's decrypted key
+- **THEN** the key SHALL NOT appear in logs, metrics or Agent Observability
+
+#### Scenario: Agent Observability records a stack-catalog call
+- **WHEN** a stack-catalog call succeeds with Agent Observability enabled
+- **THEN** the operator's process-wide client SHALL record one metadata-only generation with the canonical model ID and `gateway.catalog` metadata, and no per-catalog exporter SHALL exist
