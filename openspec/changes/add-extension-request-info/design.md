@@ -120,7 +120,7 @@ The pipeline reads `Attempts(err)` when it builds the record, with `err` the sel
 
 - **Unary:** the inner `DoGenerate` error, or after a result the context's error. Output refused by an inspector, or invalid output, after a successful inner call projects as selected, like the overview.
 - **Stream, setup failed:** the inner `DoStream` error.
-- **Stream, established:** decided when the forwarding goroutine ends, before it closes its output, because the consumer cancels the context when it sees the close: nil once a part, including an abort part, was delivered; the context error when the context ended first; otherwise a fixed premature-end error (failed). This matches what ProviderWire's first `View` projects for the same stream, whichever reads first.
+- **Stream, established:** decided when the forwarding goroutine ends, before it closes its output, because the consumer cancels the context when it sees the close: nil once a part, including an abort part, was delivered; the context error when the context ended first; otherwise a fixed premature-end error (failed). This matches what ProviderWire's first `View` projects for the same stream, whichever reads first, except when cancellation races the consumer's first read of a buffered part or of the close.
 - **Refused before the model:** not entered, so no attempts.
 - **No attribution, or an attempt that does not match its expected destination:** no overview, so no attempts.
 
