@@ -42,7 +42,7 @@ The root middleware denial option is delivered by the `record-middleware-denials
 
 ## 7. Integration checks
 
-- [ ] 7.1 Run `mise run fmt`, `vet`, `lint`, `test`, `build`, `test-ai-gateway`, `test-integration`, the boundary, requirements and release checks, `lint-docs` and `openspec validate add-gateway-extensions --strict`; verify all pass, with CI providing e2e.
+- [x] 7.1 Run `mise run fmt`, `vet`, `lint`, `test`, `build`, `test-ai-gateway`, `test-integration`, the boundary, requirements and release checks, `lint-docs` and `openspec validate add-gateway-extensions --strict`; verify all pass, with CI providing e2e.
 
 ## Workflow follow-up
 
