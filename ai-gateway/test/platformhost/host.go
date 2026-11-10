@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/authlib/types"
 	"go.opentelemetry.io/otel/propagation"
 
+	"github.com/grafana/grafana-app-sdk/app"
 	clientv3 "github.com/grafana/grafana-app-sdk/plugin/client/v3"
 	"github.com/grafana/grafana-app-sdk/plugin/httpadapter"
 )
@@ -54,6 +55,10 @@ type Config struct {
 	// RouteDeadline, when positive, bounds each forwarded route call, as a
 	// platform route deadline does.
 	RouteDeadline time.Duration
+	// Kinds are the manifest kinds the host stores in memory, with admission
+	// reviews for the operations each declares. The host does not validate,
+	// prune or authorize kind objects beyond the caller's namespace.
+	Kinds []app.ManifestVersionKind
 }
 
 type session struct {
@@ -72,6 +77,7 @@ type Host struct {
 	serviceAccounts map[string]session
 	sessions        map[string]session
 	accessPolicies  map[string]string
+	kinds           *kindStore
 }
 
 // New returns a host for config.
@@ -86,7 +92,7 @@ func New(config Config) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Host{config: config, signer: s, serviceAccounts: map[string]session{}, sessions: map[string]session{}, accessPolicies: map[string]string{}}, nil
+	return &Host{config: config, signer: s, serviceAccounts: map[string]session{}, sessions: map[string]session{}, accessPolicies: map[string]string{}, kinds: newKindStore(config.Kinds)}, nil
 }
 
 // Config returns the host configuration.
@@ -226,7 +232,9 @@ func (h *Host) hostService() string {
 // Handler serves platform API requests under /apis/<group>/<version>/ by
 // authenticating the caller and forwarding the request through client, which
 // must delegate callers with Exchanger, as grpcplugin.NewClientV3 does.
-func (h *Host) Handler(client clientv3.RouteClient) http.Handler {
+// Requests for a configured kind are served from memory, with admission
+// reviews through client.
+func (h *Host) Handler(client clientv3.Client) http.Handler {
 	forward := httpadapter.HandlerFunc(client)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		info, ok := h.routeInfo(r.URL.Path)
@@ -244,6 +252,10 @@ func (h *Host) Handler(client clientv3.RouteClient) http.Handler {
 			return
 		}
 		ctx := propagation.TraceContext{}.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		if kind, name, ok := h.kinds.kindPath(info.Path); ok {
+			h.serveKind(w, r.WithContext(types.WithAuthInfo(ctx, caller)), client, kind, info.Namespace, name)
+			return
+		}
 		ctx = httpadapter.WithRouteInfo(types.WithAuthInfo(ctx, caller), info)
 		if h.config.RouteDeadline > 0 {
 			var cancel context.CancelFunc
