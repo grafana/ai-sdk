@@ -67,8 +67,9 @@ func (a *attemptCapture) discard() {
 }
 
 // view seals the capture and projects it for an outcome that failed with err,
-// or succeeded when err is nil or [ErrInvalidOutput]. Attempts observed
-// afterwards are ignored.
+// or succeeded when err is nil or [ErrInvalidOutput]. An extension outcome
+// after entry can only refuse output the selected model returned, so it also
+// projects as success. Attempts observed afterwards are ignored.
 func (a *attemptCapture) view(err error) (view View) {
 	entered, attempts := a.seal()
 	view = View{redactor: a.redactor}
@@ -79,7 +80,7 @@ func (a *attemptCapture) view(err error) (view View) {
 	}()
 	if len(attempts) == 0 && a.attribution == attributionConfigured && len(a.expected) == 1 && entered {
 		outcome, source := fallback.AttemptSelected, error(nil)
-		if err != nil && !errors.Is(err, ErrInvalidOutput) {
+		if err != nil && !errors.Is(err, ErrInvalidOutput) && !isExtensionOutcome(err) {
 			outcome, source = fallback.AttemptFailed, err
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				outcome = fallback.AttemptCanceled

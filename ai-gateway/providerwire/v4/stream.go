@@ -397,7 +397,10 @@ func (h *handler) processStreamPart(w http.ResponseWriter, state *streamState, p
 		}
 		value := safeErrorFromStreamProvider(part.APICallError)
 		metadata := state.execution.Metadata()
-		current := state.execution.Current(part.APICallError)
+		var current *execution.Failure
+		if !value.extensionOutcome() {
+			current = state.execution.Current(part.APICallError)
+		}
 		if !h.emitSafeStreamError(w, value, metadata, current) {
 			return streamPartWriterFailure
 		}

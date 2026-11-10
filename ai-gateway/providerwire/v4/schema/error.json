@@ -31,7 +31,8 @@
             "upstream_error",
             "timeout",
             "canceled",
-            "internal_error"
+            "internal_error",
+            "unavailable"
           ]
         }
       },
@@ -105,6 +106,13 @@
             "message": { "const": "request canceled" },
             "type": { "const": "internal_server_error" },
             "code": { "const": "canceled" }
+          }
+        },
+        {
+          "properties": {
+            "message": { "const": "service unavailable" },
+            "type": { "const": "internal_server_error" },
+            "code": { "const": "unavailable" }
           }
         },
         {

@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/grafana/ai-sdk/ai-gateway/catalog"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -26,14 +27,14 @@ type Selection struct {
 
 // Source names where a selection's model and provider keys come from. A
 // [ModelComposer] chooses the per-call layers of a selection by its source.
-type Source string
+type Source = extension.Source
 
 const (
 	// SourceOperatorCatalog is the operator's configured model catalog, with
 	// server-held provider keys.
-	SourceOperatorCatalog Source = "operator-catalog"
+	SourceOperatorCatalog = extension.SourceOperatorCatalog
 	// SourceRequestBYOK is the request's own provider accounts.
-	SourceRequestBYOK Source = "request-byok"
+	SourceRequestBYOK = extension.SourceRequestBYOK
 )
 
 type attribution uint8
