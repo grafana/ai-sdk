@@ -864,3 +864,132 @@ func newComposedConfigured(t *testing.T, compose ModelComposer) (*Runtime, *gene
 	require.NoError(t, err)
 	return runtime, selected
 }
+
+func TestRuntimeCall_ComposerCallFacts(t *testing.T) {
+	unavailable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "overloaded", IsRetryable: new(true)})
+	expected := configuredAttempts("alias", "canonical",
+		catalog.ConfiguredCandidate{ProviderInstance: "primary", Provider: "native", ModelID: "A"},
+		catalog.ConfiguredCandidate{ProviderInstance: "secondary", Provider: "native", ModelID: "B"},
+	)
+	composeFallback := func(t *testing.T, second *generateModel) (*Runtime, chan Selection) {
+		t.Helper()
+		first := &generateModel{modelID: "A",
+			generate: func(context.Context) (*provider.GenerateResult, error) { return nil, unavailable },
+			stream:   func(context.Context) (*provider.StreamResult, error) { return nil, unavailable },
+		}
+		model, err := fallback.New(first, second)
+		require.NoError(t, err)
+		composed := make(chan Selection, 1)
+		runtime, err := New(Config{Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+			return ConfiguredSelection("canonical", model, expected), nil
+		}, Compose: func(s Selection) (provider.LanguageModel, error) {
+			composed <- s
+			return s.Model, nil
+		}, Limits: testLimits()})
+		require.NoError(t, err)
+		return runtime, composed
+	}
+	outcomes := func(attempts []Attempt) []fallback.AttemptOutcome {
+		var got []fallback.AttemptOutcome
+		for _, attempt := range attempts {
+			got = append(got, attempt.Outcome)
+		}
+		return got
+	}
+	failedThenSelected := []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}
+
+	t.Run("configured selection facts and unary attempts", func(t *testing.T) {
+		runtime, composed := composeFallback(t, &generateModel{modelID: "B"})
+		call, err := runtime.Call(t.Context(), "alias", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		selected := <-composed
+		assert.Equal(t, "alias", selected.RequestedID())
+		assert.Equal(t, "canonical", selected.CanonicalID())
+		assert.Equal(t, expected, selected.Expected())
+		selected.Expected()[0].ModelID = "mutated"
+		assert.Equal(t, expected, selected.Expected())
+		assert.Nil(t, selected.Attempts(nil), "before entry")
+
+		_, err = call.Generate()
+		require.NoError(t, err)
+		read := selected.Attempts(nil)
+		assert.Equal(t, failedThenSelected, outcomes(read))
+		require.NotNil(t, read[0].Error)
+		assert.Equal(t, 503, read[0].Error.StatusCode)
+		assert.Equal(t, "secondary", read[1].ProviderInstance)
+		view := call.View(nil)
+		require.NotNil(t, view.Overview)
+		assert.Equal(t, read, view.Overview.Attempts)
+		assert.Nil(t, call.View(nil).Overview, "the read does not consume the view")
+	})
+
+	t.Run("stream attempts after the adapter sealed at the first part", func(t *testing.T) {
+		parts := make(chan provider.StreamPart)
+		runtime, composed := composeFallback(t, &generateModel{modelID: "B", stream: func(context.Context) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: parts}, nil
+		}})
+		call, err := runtime.Call(t.Context(), "alias", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		selected := <-composed
+		streamed := make(chan *Stream, 1)
+		go func() {
+			stream, err := call.Stream()
+			assert.NoError(t, err)
+			streamed <- stream
+		}()
+		parts <- provider.StreamPart{Type: provider.PartStreamStart}
+		stream := <-streamed
+		t.Cleanup(stream.Close)
+		_, wait := stream.Next()
+		require.Equal(t, WaitPart, wait)
+		view := call.View(wait.Err())
+		require.NotNil(t, view.Overview)
+		assert.Equal(t, failedThenSelected, outcomes(view.Overview.Attempts))
+		assert.Equal(t, failedThenSelected, outcomes(selected.Attempts(nil)), "held open after the view")
+		close(parts)
+		_, wait = stream.Next()
+		require.Equal(t, WaitClosed, wait)
+		assert.Equal(t, view.Overview.Attempts, selected.Attempts(nil), "at stream end")
+	})
+
+	t.Run("account selection", func(t *testing.T) {
+		composed := make(chan Selection, 1)
+		runtime, err := New(Config{Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
+			return AccountSelection(id, &generateModel{modelID: "model"}, accountAttempts("native", "model", 1)), nil
+		}, Compose: func(s Selection) (provider.LanguageModel, error) {
+			composed <- s
+			return s.Model, nil
+		}, Limits: testLimits()})
+		require.NoError(t, err)
+		call, err := runtime.Call(t.Context(), "native/model", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		selected := <-composed
+		assert.Equal(t, "native/model", selected.RequestedID())
+		assert.Empty(t, selected.CanonicalID())
+		assert.Equal(t, accountAttempts("native", "model", 1), selected.Expected())
+	})
+
+	t.Run("selection without attribution", func(t *testing.T) {
+		composed := make(chan Selection, 1)
+		runtime, err := New(Config{Selector: directSelector(&generateModel{modelID: "model"}), Compose: func(s Selection) (provider.LanguageModel, error) {
+			composed <- s
+			return s.Model, nil
+		}, Limits: testLimits()})
+		require.NoError(t, err)
+		call, err := runtime.Call(t.Context(), "request/model", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		_, err = call.Generate()
+		require.NoError(t, err)
+		assert.Nil(t, (<-composed).Attempts(nil))
+	})
+
+	t.Run("selection outside a composer", func(t *testing.T) {
+		selected := ConfiguredSelection("canonical", &generateModel{}, expected)
+		assert.Empty(t, selected.RequestedID())
+		assert.Nil(t, selected.Attempts(nil))
+	})
+}

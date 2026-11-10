@@ -23,6 +23,44 @@ type Selection struct {
 	Source      Source
 	attribution attribution
 	expected    []ExpectedAttempt
+	requested   string
+	capture     *attemptCapture
+}
+
+// RequestedID returns the model ID the call requested, as sent. Only the
+// selection the runtime passes to its [ModelComposer] has one.
+func (s Selection) RequestedID() string { return s.requested }
+
+// CanonicalID returns the requested model's canonical ID: the selection's ID,
+// or empty for an [AccountSelection].
+func (s Selection) CanonicalID() string {
+	if s.attribution == attributionAccounts {
+		return ""
+	}
+	return s.ID
+}
+
+// Expected returns a copy of the attempts the selection's chain is expected to
+// make, in order.
+func (s Selection) Expected() []ExpectedAttempt { return slices.Clone(s.expected) }
+
+// Attempts returns the physical attempts of the selection's call so far, as its
+// overview would publish them for an outcome that failed with err, or
+// succeeded when err is nil, [ErrInvalidOutput] or an extension outcome. It
+// does not seal the call's capture, and it still sees the attempts observed
+// before the capture was sealed. It returns nil before the selected model is
+// entered, when no overview could be projected, and for a selection the
+// runtime has not passed to its [ModelComposer].
+func (s Selection) Attempts(err error) []Attempt {
+	if s.capture == nil {
+		return nil
+	}
+	entered, attempts := s.capture.observed()
+	overview := s.capture.project(entered, attempts, err)
+	if overview == nil {
+		return nil
+	}
+	return overview.Attempts
 }
 
 // Source names where a selection's model and provider keys come from. A
@@ -83,7 +121,9 @@ type RequestSelector func(ctx context.Context, modelID string, options provider.
 
 // ModelComposer returns the model one call invokes for a valid selection: the
 // selected model inside the host's per-call layers, such as logical observers.
-// It runs once per call, after selection and before the model is invoked.
+// It runs once per call, after selection and before the model is invoked. Its
+// selection carries the call's [Selection.RequestedID] and
+// [Selection.Attempts].
 type ModelComposer func(selected Selection) (provider.LanguageModel, error)
 
 var (
