@@ -131,3 +131,14 @@ The routing summary SHALL be published exactly when the overview is, on the same
 #### Scenario: Overview omitted
 - **WHEN** the observed attempts outnumber the attempts the call's chain expected
 - **THEN** neither `gateway.execution` nor `gateway.routing` SHALL be published
+
+### Requirement: No overview for a call refused before the model
+A call that an extension refuses before the selected model is invoked SHALL publish no overview and no routing summary, because no attempt was made. A call whose output an extension refuses after the model was invoked SHALL publish the overview of its observed attempts.
+
+#### Scenario: Admit denial
+- **WHEN** an admitter denies a routed configured call
+- **THEN** the error document SHALL carry no `gateway.execution` overview and no `gateway.routing` summary
+
+#### Scenario: Output denial after fallback
+- **WHEN** a call's first candidate fails, its second is selected and a response inspector denies the unary output
+- **THEN** the permission document SHALL carry the overview with the failed and the selected attempt
