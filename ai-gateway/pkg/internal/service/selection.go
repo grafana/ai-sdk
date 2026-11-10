@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/byok"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
+	"github.com/grafana/ai-sdk/middleware"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -19,8 +20,14 @@ import (
 type BYOKOptions struct {
 	// Client is the shared model HTTP client for request accounts.
 	Client *http.Client
-	// Factory composes the logical model around the request accounts.
+	// Factory gives the request accounts' chain its logical identity.
 	Factory ModelFactory
+}
+
+// BYOKIdentity is the [ModelFactory] of request accounts: the selected
+// account's provider and the requested model selector.
+func BYOKIdentity(requestID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+	return middleware.Wrap(middleware.WrapOptions{Model: lower, ProviderID: lower.Provider(), ModelID: requestID}), nil
 }
 
 // ConfiguredModels resolves configured models and composes a request's routed
