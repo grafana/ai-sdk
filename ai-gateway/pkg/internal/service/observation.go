@@ -23,9 +23,10 @@ var correlationFallback atomic.Uint64
 // logical observers. Values are copied into a new snapshot after successful
 // authentication; a published snapshot is never mutated.
 type requestObservation struct {
-	correlationID string
-	callerService string
-	namespace     string
+	correlationID  string
+	callerService  string
+	namespace      string
+	callerIdentity string
 }
 
 type modelObservationKey struct{}
@@ -92,7 +93,7 @@ func observationBridgeMiddleware() middleware.Middleware {
 
 func observationLogAttrs(ctx context.Context) []slog.Attr {
 	observation := observationFromContext(ctx)
-	attrs := make([]slog.Attr, 0, 3)
+	attrs := make([]slog.Attr, 0, 4)
 	for _, field := range []struct {
 		key   string
 		value string
@@ -100,6 +101,7 @@ func observationLogAttrs(ctx context.Context) []slog.Attr {
 		{key: "correlation_id", value: observation.correlationID},
 		{key: "caller_service", value: observation.callerService},
 		{key: "namespace", value: observation.namespace},
+		{key: "caller_identity", value: observation.callerIdentity},
 	} {
 		if field.value != "" {
 			attrs = append(attrs, slog.String(field.key, field.value))
@@ -112,11 +114,12 @@ func observationLogAttrs(ctx context.Context) []slog.Attr {
 // observation bridge. Callers may mutate the result without changing context.
 func observationMetadata(ctx context.Context) map[string]any {
 	observation := observationFromContext(ctx)
-	metadata := make(map[string]any, 3)
+	metadata := make(map[string]any, 4)
 	for key, value := range map[string]string{
-		"gateway.correlation_id": observation.correlationID,
-		"gateway.caller_service": observation.callerService,
-		"gateway.namespace":      observation.namespace,
+		"gateway.correlation_id":  observation.correlationID,
+		"gateway.caller_service":  observation.callerService,
+		"gateway.namespace":       observation.namespace,
+		"gateway.caller_identity": observation.callerIdentity,
 	} {
 		if value != "" {
 			metadata[key] = value
