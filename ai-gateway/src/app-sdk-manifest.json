@@ -199,7 +199,71 @@
                                 "description": "Provider API key, keyed by the provider name"
                             }
                         ],
-                        "conversion": false
+                        "conversion": false,
+                        "routes": {
+                            "/config": {
+                                "get": {
+                                    "operationId": "getModelCatalogConfig",
+                                    "parameters": [
+                                        {
+                                            "name": "namespace",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        {
+                                            "name": "name",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    ],
+                                    "responses": {
+                                        "default": {
+                                            "description": "ProviderWire discovery response for the catalog"
+                                        }
+                                    },
+                                    "x-grafana-declared-authz-resource": "modelcatalogs",
+                                    "x-grafana-declared-authz-subresource": "config",
+                                    "x-grafana-declared-authz-verb": "get"
+                                }
+                            },
+                            "/language-model": {
+                                "post": {
+                                    "operationId": "createModelCatalogLanguageModel",
+                                    "parameters": [
+                                        {
+                                            "name": "namespace",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        {
+                                            "name": "name",
+                                            "in": "path",
+                                            "required": true,
+                                            "schema": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    ],
+                                    "responses": {
+                                        "default": {
+                                            "description": "ProviderWire language-model response for the catalog"
+                                        }
+                                    },
+                                    "x-grafana-declared-authz-resource": "modelcatalogs",
+                                    "x-grafana-declared-authz-subresource": "language-model",
+                                    "x-grafana-declared-authz-verb": "get"
+                                }
+                            }
+                        }
                     }
                 ],
                 "routes": {
@@ -307,6 +371,104 @@
                                     }
                                 }
                             }
+                        },
+                        "/namespaces/{namespace}/modelcatalogs/{name}/config": {
+                            "get": {
+                                "operationId": "getModelCatalogConfig",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "in": "path",
+                                        "name": "name",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "ProviderWire discovery response for the catalog"
+                                    }
+                                },
+                                "x-grafana-declared-authz-resource": "modelcatalogs",
+                                "x-grafana-declared-authz-subresource": "config",
+                                "x-grafana-declared-authz-verb": "get"
+                            },
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                },
+                                {
+                                    "in": "path",
+                                    "name": "name",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ]
+                        },
+                        "/namespaces/{namespace}/modelcatalogs/{name}/language-model": {
+                            "parameters": [
+                                {
+                                    "in": "path",
+                                    "name": "namespace",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                },
+                                {
+                                    "in": "path",
+                                    "name": "name",
+                                    "required": true,
+                                    "schema": {
+                                        "type": "string"
+                                    }
+                                }
+                            ],
+                            "post": {
+                                "operationId": "createModelCatalogLanguageModel",
+                                "parameters": [
+                                    {
+                                        "in": "path",
+                                        "name": "namespace",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    {
+                                        "in": "path",
+                                        "name": "name",
+                                        "required": true,
+                                        "schema": {
+                                            "type": "string"
+                                        }
+                                    }
+                                ],
+                                "responses": {
+                                    "default": {
+                                        "description": "ProviderWire language-model response for the catalog"
+                                    }
+                                },
+                                "x-grafana-declared-authz-resource": "modelcatalogs",
+                                "x-grafana-declared-authz-subresource": "language-model",
+                                "x-grafana-declared-authz-verb": "get"
+                            }
                         }
                     }
                 }
@@ -333,11 +495,38 @@
                         "permissionSet": "editor"
                     }
                 ]
+            },
+            "aigateway:modelinvoker": {
+                "title": "Model invoker",
+                "description": "Discover and invoke models from AI Gateway model catalogs",
+                "kinds": [
+                    {
+                        "kind": "ModelCatalog",
+                        "verbs": [
+                            "get"
+                        ]
+                    },
+                    {
+                        "kind": "ModelCatalog/language-model",
+                        "verbs": [
+                            "get"
+                        ]
+                    },
+                    {
+                        "kind": "ModelCatalog/config",
+                        "verbs": [
+                            "get"
+                        ]
+                    }
+                ]
             }
         },
         "roleBindings": {
             "viewer": [
                 "aigateway:catalogreader"
+            ],
+            "editor": [
+                "aigateway:modelinvoker"
             ],
             "admin": [
                 "aigateway:catalogwriter"

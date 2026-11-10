@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/grafana-app-sdk/app"
 	"github.com/grafana/grafana-app-sdk/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/kube-openapi/pkg/spec3"
 
 	modelcatalogv1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 )
@@ -51,6 +52,13 @@ var appManifestData = app.ManifestData{
 					SecureValues: []app.ManifestVersionKindSecureValue{
 						{Key: "*", Description: "Provider API key, keyed by the provider name"},
 					},
+					Routes: func() map[string]spec3.PathProps {
+						var routes map[string]spec3.PathProps
+						if err := json.Unmarshal([]byte("{\"/config\":{\"get\":{\"operationId\":\"getModelCatalogConfig\",\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}},{\"name\":\"name\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"responses\":{\"default\":{\"description\":\"ProviderWire discovery response for the catalog\"}},\"x-grafana-declared-authz-resource\":\"modelcatalogs\",\"x-grafana-declared-authz-subresource\":\"config\",\"x-grafana-declared-authz-verb\":\"get\"}},\"/language-model\":{\"post\":{\"operationId\":\"createModelCatalogLanguageModel\",\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}},{\"name\":\"name\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"responses\":{\"default\":{\"description\":\"ProviderWire language-model response for the catalog\"}},\"x-grafana-declared-authz-resource\":\"modelcatalogs\",\"x-grafana-declared-authz-subresource\":\"language-model\",\"x-grafana-declared-authz-verb\":\"get\"}}}"), &routes); err != nil {
+							panic(err)
+						}
+						return routes
+					}(),
 				},
 			},
 			// nolint:staticcheck
@@ -63,7 +71,7 @@ var appManifestData = app.ManifestData{
 			}(),
 			OpenAPI: func() app.ManifestVersionOpenAPI {
 				var openAPI app.ManifestVersionOpenAPI
-				if err := json.Unmarshal([]byte("{\"paths\":{\"/namespaces/{namespace}/config\":{\"get\":{\"operationId\":\"getConfig\",\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"responses\":{\"default\":{\"description\":\"ProviderWire discovery response\"}}},\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}]},\"/namespaces/{namespace}/language-model\":{\"post\":{\"operationId\":\"createLanguageModel\",\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"responses\":{\"default\":{\"description\":\"ProviderWire language-model response\"}}},\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}]}}}"), &openAPI); err != nil {
+				if err := json.Unmarshal([]byte("{\"paths\":{\"/namespaces/{namespace}/config\":{\"get\":{\"operationId\":\"getConfig\",\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"responses\":{\"default\":{\"description\":\"ProviderWire discovery response\"}}},\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}]},\"/namespaces/{namespace}/language-model\":{\"post\":{\"operationId\":\"createLanguageModel\",\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"responses\":{\"default\":{\"description\":\"ProviderWire language-model response\"}}},\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}]},\"/namespaces/{namespace}/modelcatalogs/{name}/config\":{\"get\":{\"operationId\":\"getModelCatalogConfig\",\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}},{\"name\":\"name\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"responses\":{\"default\":{\"description\":\"ProviderWire discovery response for the catalog\"}},\"x-grafana-declared-authz-resource\":\"modelcatalogs\",\"x-grafana-declared-authz-subresource\":\"config\",\"x-grafana-declared-authz-verb\":\"get\"},\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}},{\"name\":\"name\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}]},\"/namespaces/{namespace}/modelcatalogs/{name}/language-model\":{\"post\":{\"operationId\":\"createModelCatalogLanguageModel\",\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}},{\"name\":\"name\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"responses\":{\"default\":{\"description\":\"ProviderWire language-model response for the catalog\"}},\"x-grafana-declared-authz-resource\":\"modelcatalogs\",\"x-grafana-declared-authz-subresource\":\"language-model\",\"x-grafana-declared-authz-verb\":\"get\"},\"parameters\":[{\"name\":\"namespace\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}},{\"name\":\"name\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}]}}}"), &openAPI); err != nil {
 					panic(err)
 				}
 				return openAPI
@@ -93,12 +101,39 @@ var appManifestData = app.ManifestData{
 			},
 			Routes: []string{},
 		},
+		"aigateway:modelinvoker": {
+			Title:       "Model invoker",
+			Description: "Discover and invoke models from AI Gateway model catalogs",
+			Kinds: []app.ManifestRoleKind{
+				{
+					Kind: "ModelCatalog",
+					Verbs: []string{
+						"get",
+					},
+				},
+				{
+					Kind: "ModelCatalog/language-model",
+					Verbs: []string{
+						"get",
+					},
+				},
+				{
+					Kind: "ModelCatalog/config",
+					Verbs: []string{
+						"get",
+					},
+				},
+			},
+			Routes: []string{},
+		},
 	},
 	RoleBindings: &app.ManifestRoleBindings{
 		Viewer: []string{
 			"aigateway:catalogreader",
 		},
-		Editor: []string{},
+		Editor: []string{
+			"aigateway:modelinvoker",
+		},
 		Admin: []string{
 			"aigateway:catalogwriter",
 		},
