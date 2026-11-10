@@ -19,14 +19,13 @@ const test = base.extend<object, { accounts: Record<Role, APIRequestContext> }>(
       const accounts = {} as Record<Role, APIRequestContext>;
       const ids: number[] = [];
       for (const role of ROLES) {
-        const account = await admin.post('/api/serviceaccounts', {
-          data: { name: `catalog-${role.toLowerCase()}-${workerInfo.workerIndex}-${Date.now()}`, role },
-        });
+        const name = `catalog-${role.toLowerCase()}-${workerInfo.workerIndex}-${Date.now()}`;
+        const account = await admin.post('/api/serviceaccounts', { data: { name, role } });
         expect(account.status(), await account.text()).toBe(201);
         const { id } = await account.json();
         ids.push(id);
         const token = await admin.post(`/api/serviceaccounts/${id}/tokens`, {
-          data: { name: 'e2e', secondsToLive: TOKEN_SECONDS },
+          data: { name, secondsToLive: TOKEN_SECONDS },
         });
         expect(token.status(), await token.text()).toBe(200);
         const { key } = await token.json();
