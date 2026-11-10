@@ -751,14 +751,13 @@ func TestPipeline_RecordAttempts(t *testing.T) {
 		return extension.Attempt{Provider: "native", ProviderInstance: "instance-" + model, ProviderModel: model, Outcome: extension.AttemptFailed, StatusCode: status}
 	}
 	denyAt := func(phase extension.Phase) *recorder {
-		deny := func() error { return extension.ErrDenied }
 		switch phase {
 		case extension.PhaseAdmit:
-			return &recorder{admit: func(context.Context, *extension.Call) error { return deny() }}
+			return &recorder{admit: func(context.Context, *extension.Call) error { return extension.ErrDenied }}
 		case extension.PhaseInspectRequest:
-			return &recorder{inspectRequest: func(context.Context, *extension.Call, provider.CallOptions) error { return deny() }}
+			return &recorder{inspectRequest: func(context.Context, *extension.Call, provider.CallOptions) error { return extension.ErrDenied }}
 		default:
-			return &recorder{inspectResponse: func(context.Context, *extension.Call, extension.Part) error { return deny() }}
+			return &recorder{inspectResponse: func(context.Context, *extension.Call, extension.Part) error { return extension.ErrDenied }}
 		}
 	}
 	for _, tc := range []struct {

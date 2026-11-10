@@ -865,13 +865,26 @@ func newComposedConfigured(t *testing.T, compose ModelComposer) (*Runtime, *gene
 	return runtime, selected
 }
 
+// composedRuntime returns a runtime over selector whose composer hands each
+// call's selection to the returned channel and invokes its model unchanged.
+func composedRuntime(t *testing.T, selector RequestSelector) (*Runtime, <-chan Selection) {
+	t.Helper()
+	composed := make(chan Selection, 1)
+	runtime, err := New(Config{Selector: selector, Compose: func(s Selection) (provider.LanguageModel, error) {
+		composed <- s
+		return s.Model, nil
+	}, Limits: testLimits()})
+	require.NoError(t, err)
+	return runtime, composed
+}
+
 func TestRuntimeCall_ComposerCallFacts(t *testing.T) {
 	unavailable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "overloaded", IsRetryable: new(true)})
 	expected := configuredAttempts("alias", "canonical",
 		catalog.ConfiguredCandidate{ProviderInstance: "primary", Provider: "native", ModelID: "A"},
 		catalog.ConfiguredCandidate{ProviderInstance: "secondary", Provider: "native", ModelID: "B"},
 	)
-	composeFallback := func(t *testing.T, second *generateModel) (*Runtime, chan Selection) {
+	composeFallback := func(t *testing.T, second *generateModel) (*Runtime, <-chan Selection) {
 		t.Helper()
 		first := &generateModel{modelID: "A",
 			generate: func(context.Context) (*provider.GenerateResult, error) { return nil, unavailable },
@@ -879,15 +892,9 @@ func TestRuntimeCall_ComposerCallFacts(t *testing.T) {
 		}
 		model, err := fallback.New(first, second)
 		require.NoError(t, err)
-		composed := make(chan Selection, 1)
-		runtime, err := New(Config{Selector: func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
+		return composedRuntime(t, func(context.Context, string, provider.CallOptions, json.RawMessage) (Selection, error) {
 			return ConfiguredSelection("canonical", model, expected), nil
-		}, Compose: func(s Selection) (provider.LanguageModel, error) {
-			composed <- s
-			return s.Model, nil
-		}, Limits: testLimits()})
-		require.NoError(t, err)
-		return runtime, composed
+		})
 	}
 	outcomes := func(attempts []Attempt) []fallback.AttemptOutcome {
 		var got []fallback.AttemptOutcome
@@ -955,14 +962,9 @@ func TestRuntimeCall_ComposerCallFacts(t *testing.T) {
 	})
 
 	t.Run("account selection", func(t *testing.T) {
-		composed := make(chan Selection, 1)
-		runtime, err := New(Config{Selector: func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
+		runtime, composed := composedRuntime(t, func(_ context.Context, id string, _ provider.CallOptions, _ json.RawMessage) (Selection, error) {
 			return AccountSelection(id, &generateModel{modelID: "model"}, accountAttempts("native", "model", 1)), nil
-		}, Compose: func(s Selection) (provider.LanguageModel, error) {
-			composed <- s
-			return s.Model, nil
-		}, Limits: testLimits()})
-		require.NoError(t, err)
+		})
 		call, err := runtime.Call(t.Context(), "native/model", provider.CallOptions{})
 		require.NoError(t, err)
 		t.Cleanup(call.Close)
@@ -973,12 +975,7 @@ func TestRuntimeCall_ComposerCallFacts(t *testing.T) {
 	})
 
 	t.Run("selection without attribution", func(t *testing.T) {
-		composed := make(chan Selection, 1)
-		runtime, err := New(Config{Selector: directSelector(&generateModel{modelID: "model"}), Compose: func(s Selection) (provider.LanguageModel, error) {
-			composed <- s
-			return s.Model, nil
-		}, Limits: testLimits()})
-		require.NoError(t, err)
+		runtime, composed := composedRuntime(t, directSelector(&generateModel{modelID: "model"}))
 		call, err := runtime.Call(t.Context(), "request/model", provider.CallOptions{})
 		require.NoError(t, err)
 		t.Cleanup(call.Close)

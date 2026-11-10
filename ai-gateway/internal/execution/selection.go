@@ -23,13 +23,17 @@ type Selection struct {
 	Source      Source
 	attribution attribution
 	expected    []ExpectedAttempt
-	requested   string
 	capture     *attemptCapture
 }
 
 // RequestedID returns the model ID the call requested, as sent. Only the
 // selection the runtime passes to its [ModelComposer] has one.
-func (s Selection) RequestedID() string { return s.requested }
+func (s Selection) RequestedID() string {
+	if s.capture == nil {
+		return ""
+	}
+	return s.capture.requested
+}
 
 // CanonicalID returns the requested model's canonical ID: the selection's ID,
 // or empty for an [AccountSelection].

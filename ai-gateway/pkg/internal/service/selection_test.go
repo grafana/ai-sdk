@@ -454,10 +454,7 @@ func withAccess(t *testing.T, mode gatewayauth.AccessMode, access gatewayauth.Ac
 	case mode == gatewayauth.AccessModeSelfHosted:
 		service, identity = "", "service-account:sa1"
 	}
-	policy := gatewayauth.AccessPolicy{Mode: mode}
-	if mode == gatewayauth.AccessModeCloud {
-		policy.InternalServices = []string{testInternalService}
-	}
+	policy := testAccessPolicy(mode)
 	writer := providerv4.NewHostErrorWriter()
 	protected := gatewayauth.AccessMiddleware(policy, func(w http.ResponseWriter) { writer.WriteHostError(w, host.ErrorPermission) }, func(context.Context, gatewayauth.Caller) {}, next)
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -470,10 +467,7 @@ func withAccess(t *testing.T, mode gatewayauth.AccessMode, access gatewayauth.Ac
 // production access middleware does.
 func observedCallerContext(t *testing.T, telemetry *Telemetry, mode gatewayauth.AccessMode, service, identity string) context.Context {
 	t.Helper()
-	policy := gatewayauth.AccessPolicy{Mode: mode}
-	if mode == gatewayauth.AccessModeCloud {
-		policy.InternalServices = []string{testInternalService}
-	}
+	policy := testAccessPolicy(mode)
 	var captured context.Context
 	handler := gatewayauth.AccessMiddleware(policy, func(http.ResponseWriter) { t.Error("refused") }, telemetry.ObserveAccess, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		captured = r.Context()
@@ -483,6 +477,16 @@ func observedCallerContext(t *testing.T, telemetry *Telemetry, mode gatewayauth.
 	telemetry.Middleware(fixedRoute("language_model"), handler).ServeHTTP(httptest.NewRecorder(), request)
 	require.NotNil(t, captured)
 	return captured
+}
+
+// testAccessPolicy is the access policy of mode, with testInternalService
+// allowlisted in cloud mode.
+func testAccessPolicy(mode gatewayauth.AccessMode) gatewayauth.AccessPolicy {
+	policy := gatewayauth.AccessPolicy{Mode: mode}
+	if mode == gatewayauth.AccessModeCloud {
+		policy.InternalServices = []string{testInternalService}
+	}
+	return policy
 }
 
 func fixedRoute(name string) func(*http.Request) string {

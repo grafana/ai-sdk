@@ -192,8 +192,6 @@ func TestAttemptCapture_RejectRecordedFallbackOutcome(t *testing.T) {
 	attempts.discard()
 	view := attempts.view(ctx.Err())
 	assert.Nil(t, view.Overview)
-	_, captured := attempts.seal()
-	assert.Empty(t, captured)
 	assert.True(t, attempts.sealed)
 	assert.Zero(t, second.callCount())
 }

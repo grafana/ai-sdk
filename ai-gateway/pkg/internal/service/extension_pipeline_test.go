@@ -87,6 +87,7 @@ func newExtensionRuntimeWith(t *testing.T, selector execution.RequestSelector, d
 var (
 	secondaryCandidate = extension.Candidate{Model: "other", CanonicalModel: "other", Provider: "anthropic", ProviderInstance: "secondary-instance", ProviderModel: "backend-secondary"}
 	byokCandidate      = extension.Candidate{Model: "anthropic/native-model", Provider: "anthropic", ProviderModel: "native-model"}
+	failedPrimary      = extension.Attempt{Provider: "anthropic", ProviderInstance: "primary-instance", ProviderModel: "backend-primary", Outcome: extension.AttemptFailed, StatusCode: 503}
 )
 
 // primaryCandidate is the primary candidate of the configured model public,
@@ -121,7 +122,7 @@ func TestExtensionPipeline_EverySelectionGetsThePipelineOnce(t *testing.T) {
 			candidates: []extension.Candidate{primaryCandidate("alias")}, attempts: []extension.Attempt{selectedAttempt(primaryCandidate("alias"))}},
 		{name: "routed", access: gatewayauth.ConfiguredAccounts, modelID: "alias", gateway: `{"models":["other"]}`, fail: true, source: extension.SourceOperatorCatalog, canonical: "public", caller: extension.CallerInternalService,
 			candidates: []extension.Candidate{primaryCandidate("alias"), secondaryCandidate},
-			attempts:   []extension.Attempt{{Provider: "anthropic", ProviderInstance: "primary-instance", ProviderModel: "backend-primary", Outcome: extension.AttemptFailed, StatusCode: 503}, selectedAttempt(secondaryCandidate)}},
+			attempts:   []extension.Attempt{failedPrimary, selectedAttempt(secondaryCandidate)}},
 		{name: "BYOK", access: gatewayauth.RequestBYOK, modelID: "anthropic/native-model", gateway: `{"byok":{"anthropic":[{"apiKey":"` + byokKey + `"}]}}`, source: extension.SourceRequestBYOK, caller: extension.CallerUser, identity: "user:u1",
 			candidates: []extension.Candidate{byokCandidate}, attempts: []extension.Attempt{selectedAttempt(byokCandidate)}},
 	} {
@@ -290,7 +291,7 @@ func TestExtensionPipeline_StreamRecordAfterTheOverviewSealed(t *testing.T) {
 	records := recorder.records()
 	require.Len(t, records, 1)
 	assert.Equal(t, []extension.Attempt{
-		{Provider: "anthropic", ProviderInstance: "primary-instance", ProviderModel: "backend-primary", Outcome: extension.AttemptFailed, StatusCode: 503},
+		failedPrimary,
 		selectedAttempt(secondaryCandidate),
 	}, records[0].Attempts)
 }
