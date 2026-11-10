@@ -112,6 +112,9 @@ streamLoop:
 func (l *modelLogger) observeStreamPart(ctx context.Context, input streamTeeInput, summary *streamSummary, part provider.StreamPart, observing bool) (ok bool) {
 	defer streamrecover.Recover(func() { ok = false })
 	summary.observe(part)
+	if part.Type == provider.PartError && summary.deniedErr == nil && part.APICallError != nil && l.opts.denied(part.APICallError) {
+		summary.deniedErr = part.APICallError
+	}
 	if !observing {
 		return false
 	}
@@ -130,7 +133,7 @@ func (l *modelLogger) logStreamEnd(ctx context.Context, input streamTeeInput, su
 	defer streamrecover.Recover(func() {})
 	duration := l.opts.clock().Sub(input.started)
 	outcome := outcomeSuccess
-	denied := summary.firstErrSet && summary.firstErr != nil && l.opts.denied(summary.firstErr)
+	denied := summary.deniedErr != nil
 	if denied {
 		outcome = outcomeDenied
 	} else if summary.firstErrSet {
@@ -148,7 +151,7 @@ func (l *modelLogger) logStreamEnd(ctx context.Context, input streamTeeInput, su
 	}
 
 	if denied {
-		attrs = append(attrs, withErrorClass(streamPartErrorAttrs(summary.firstErr, l.opts.capture), errorClassDenied)...)
+		attrs = append(attrs, withErrorClass(streamPartErrorAttrs(summary.deniedErr, l.opts.capture), errorClassDenied)...)
 		l.log(ctx, EventStreamError, l.opts.level, attrs...)
 		return
 	}
@@ -254,6 +257,8 @@ type streamSummary struct {
 	firstContentLatency *time.Duration
 	firstErr            *provider.APICallError
 	firstErrSet         bool
+	// deniedErr is the first error part the denial classifier reported.
+	deniedErr *provider.APICallError
 }
 
 func (s *streamSummary) ObserveDrained(part provider.StreamPart) {

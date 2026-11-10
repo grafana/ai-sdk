@@ -34,6 +34,10 @@ When `Options.IsDenied` reports a call's error, a stream setup error or a stream
 - **WHEN** a stream ends after an error part whose error `IsDenied` reports as a denial
 - **THEN** the terminal stream record SHALL carry `ai_sdk.outcome="denied"` and the stream parts SHALL pass through unchanged
 
+#### Scenario: Denial after an earlier error part
+- **WHEN** a stream emits a provider error part, more output, and then an error part reported as a denial
+- **THEN** the terminal stream record SHALL carry `ai_sdk.outcome="denied"`, consistent with the Prometheus `denied` status
+
 #### Scenario: Denied stream error part with per-part logging
 - **WHEN** `LogStreamParts` is enabled and a stream error part's error is reported as a denial
 - **THEN** its `EventStreamPart` record SHALL use `PartLevel` and error type `denied`, not `ErrorLevel`
