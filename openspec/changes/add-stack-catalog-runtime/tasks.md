@@ -36,8 +36,8 @@
 
 ## 6. Integration checks
 
-- [ ] 6.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test-ai-gateway`, `test-integration`, `verify-ai-gateway-boundary` and `verify-module-requirements` with `GOFLAGS=-buildvcs=false`; verify all pass.
-- [ ] 6.2 Run `openspec validate add-stack-catalog-runtime --strict`; verify it passes.
+- [x] 6.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test-ai-gateway`, `test-integration`, `verify-ai-gateway-boundary` and `verify-module-requirements` with `GOFLAGS=-buildvcs=false`; verify all pass.
+- [x] 6.2 Run `openspec validate add-stack-catalog-runtime --strict`; verify it passes.
 
 ## Workflow follow-up
 
