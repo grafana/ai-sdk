@@ -27,7 +27,12 @@
 
 ## 6. End-to-end
 
-- [ ] 6.1 Add `tests/native-proxy.mjs`, the certificate generation in `scripts/e2e.sh`, the proxy environment in `docker-compose.e2e.yaml`, and the key-hash reply in `fake-anthropic.mjs`. Verify that `tsc`, `eslint`, `prettier` and `playwright test --list` pass.
+- [ ] 6.1 Make `startNativeProviderProxy` take its certificate and key, keeping the existing fixture for `test/providerwire-v4`. Add:
+  - an e2e `native-proxy` service that runs it with a certificate `scripts/e2e.sh` generates at run time, with nothing committed;
+  - the proxy environment in `docker-compose.e2e.yaml`;
+  - the key-hash reply in `fake-anthropic.mjs`.
+
+  Verify that `mise run test-providerwire-v4` still passes and that `tsc`, `eslint`, `prettier` and `playwright test --list` pass.
 - [ ] 6.2 Add `tests/catalog-routes.spec.ts` with the design's table: roles, decrypted keys, edits, discovery, `403`/`404` and namespace routes unchanged. Verify in CI's Playwright job; there is no local docker.
 
 ## 7. Documentation
@@ -42,5 +47,6 @@
 
 ## Workflow follow-up
 
-- CI runs the Playwright suite. The access-policy acceptance is verified in Cloud once #460 lands.
+- CI runs the Playwright suite. The 13.3.0 one-off run also covers `catalog-routes.spec.ts`. The access-policy acceptance is verified in Cloud once #460 lands.
+- The PR description records the `test/integration/` deviation and the #763 attribution follow-up.
 - Archive the change after review.

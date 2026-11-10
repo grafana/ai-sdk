@@ -18,7 +18,8 @@
   - `SelectStackCatalog` exists; this design follows the "Follow-ups for #758" list in the archived `2026-11-10-add-stack-catalog-runtime` design.
 - **Test host:** `platformhost` serves kind objects from memory with secure plaintext, and forwards every other path with an `httpadapter.RouteInfo` that has no `Parent`.
 - **Module policy:** Go code outside `ai-gateway/` must not import the Gateway. `test/integration/testserver` is a library-level server that cannot host the plugin.
-- **End-to-end:** stack catalogs refuse `baseURL`, so a catalog call always targets the native `api.anthropic.com` or `api.openai.com` endpoint. Grafana forwards `HTTPS_PROXY`, `NO_PROXY`, `SSL_CERT_FILE` and `SSL_CERT_DIR` to plugins (`pkg/plugins/envvars`). The Gateway's model client uses `http.ProxyFromEnvironment`.
+- **End-to-end:** stack catalogs refuse `baseURL`, so a catalog call always targets the native `api.anthropic.com` or `api.openai.com` endpoint. The Gateway's model client uses `http.ProxyFromEnvironment`.
+- **Plugin environment** (checked on Grafana `main`, which the nightly image builds from, and on tag `v13.3.0`): `pluginconfig.PluginEnvVars` passes the whole Grafana environment through go-plugin when `SkipHostEnvVars` is off. When it is on, it appends `envvars.PermittedHostEnvVars`: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (each in both cases), `SSL_CERT_FILE` and `SSL_CERT_DIR`. Either way the plugin receives the proxy and certificate variables.
 
 ## Goals / Non-Goals
 
@@ -144,14 +145,16 @@ case caller.AccountAccess() == gatewayauth.CatalogAccounts:
   - run one streamed and one unary call;
   - assert the fake native provider received the catalog's key, and the assembled stream parts.
 - Chunks are parsed with the suite's existing registered-client paths. Parsing with `parseJsonEventStream` and `uiMessageChunkSchema` would apply to UI-chunk scenarios, but ProviderWire isn't UI chunks, and this suite owns ProviderWire client evidence.
-- This deviates from the issue's "under `test/integration/`": that harness cannot run the plugin, and Go code outside `ai-gateway/` must not import the Gateway.
+- **Deviation from the issue**, which asks for these scenarios under `test/integration/`. That harness is a library-level Go test server, and module policy forbids Go code outside `ai-gateway/` from importing the Gateway, so it cannot host the plugin. This suite already runs both registered clients against the built plugin through the plugin protocol. The PR description records the deviation.
 
 ### End-to-end plan (Playwright, CI)
 
 **Infrastructure** in `docker-compose.e2e.yaml`; no production change:
 
-- `scripts/e2e.sh` generates an ephemeral self-signed certificate for `api.anthropic.com` and `api.openai.com` with `openssl` into a temporary directory, which is mounted read-only. Nothing is committed.
-- A `native-proxy` service (`tests/native-proxy.mjs`) accepts `CONNECT api.anthropic.com:443`, terminates TLS with that certificate and forwards to `fake-anthropic`. It refuses every other authority.
+- The proxy is e2e-only and ephemeral. No production code path, build tag or committed certificate changes.
+- `scripts/e2e.sh` generates an ephemeral self-signed certificate and key for `api.anthropic.com` and `api.openai.com` with `openssl` into a temporary directory, which is mounted read-only and removed with the environment.
+- The proxy reuses the existing mechanism rather than adding a second one. `startNativeProviderProxy` in `ai-gateway/test/providerwire-v4/native-provider-proxy.ts` takes the certificate and key as parameters; the existing suite keeps passing its fixture.
+- A `native-proxy` service runs a small entrypoint over that module with Node 24's built-in TypeScript support. It accepts `CONNECT api.anthropic.com:443`, terminates TLS with the run-time certificate and forwards to `fake-anthropic`; it refuses every other authority.
 - The Grafana service sets:
   - `HTTPS_PROXY=http://native-proxy:8443`;
   - `NO_PROXY=localhost,127.0.0.1,fake-anthropic,native-proxy`;
@@ -196,9 +199,9 @@ case caller.AccountAccess() == gatewayauth.CatalogAccounts:
 
 ## Risks / Trade-offs
 
-- [Declared-check support in the minimum Grafana version] → v13.3.0 has `Kind/route` roles and decrypted values for kind routes. Declared-check extensions are confirmed only in the source snapshot, so the one-off `13.3.0` CI run from #770 also covers this suite, and the README states the version it passes on.
+- [Declared-check support in the minimum Grafana version] → v13.3.0 has `Kind/route` roles and decrypted values for kind routes. Declared-check extensions are confirmed only in the source snapshot, so the 13.3.0 one-off run covers this suite (see Follow-ups), and the README states the version it passes on.
 - [Proxy and `SSL_CERT_FILE` affect Grafana's own outbound calls in e2e] → `NO_PROXY` covers local services, and the system certificate directories still load. This applies to the e2e override only.
-- [Attribution emits the direct caller service for cloud sessions] → in Cloud, a session's direct caller may be the platform front door, so logs name it. It is platform-signed and bounded; see the open questions.
+- [Attribution emits the direct caller service for cloud sessions] → in Cloud, a session's direct caller may be the platform front door, so logs name it. It is platform-signed and bounded; #763 revisits it.
 - [#762 merge] → `NewSelector` gains a branch and `discovery.New` a parameter. Neither touches `ModelComposer` or `Source`.
 - [The one-minute decrypted-value cache] → a key rotated without changing the object can take up to a minute to apply, which the README documents. Admission makes every key change through the API an object update, which changes the resource version.
 
@@ -206,6 +209,16 @@ case caller.AccountAccess() == gatewayauth.CatalogAccounts:
 
 Additive. Existing namespace routes, settings and roles are unchanged. Rolling back removes the routes and role; stored catalogs remain readable through the kind.
 
-## Open Questions
+## Decisions recorded at review
 
-- **Attribution for cloud session users** via a front-door service. Recommendation: emit the direct caller service when present, as specified. Revisit with #763's caller identity.
+- Cross-language scenarios live in `ai-gateway/test/providerwire-v4`, not `test/integration/` (module policy; see that section).
+- A parent mismatch returns the internal host error.
+- Catalog access emits the direct caller's service identity when present.
+- The POST route's declared verb is `get`.
+- Role names are lowercase letters and digits; the role stays `aigateway:modelinvoker`.
+
+## Follow-ups
+
+- **#763:** revisit catalog-access attribution with caller identity. In Cloud, a session's direct caller may be the platform front door.
+- **The one-off `GRAFANA_VERSION=13.3.0` CI run from #770** should also cover `tests/catalog-routes.spec.ts`, which confirms declared-check support in the minimum version.
+- **Cloud:** verify the access-policy acceptance once #460 stores secure values for plugin kinds.
