@@ -96,12 +96,12 @@ async function update(request: APIRequestContext, name: string, body: object): P
 async function createStored(request: APIRequestContext) {
   const name = uniqueName();
   const response = await create(request, catalog(name, twoProviders, createKeys(twoProviders)));
-  expect(response.status()).toBe(201);
+  expect(response.status(), await response.text()).toBe(201);
   return { name, object: await response.json() };
 }
 
 async function expectRefused(response: APIResponse, field: string) {
-  expect(response.status()).toBe(400);
+  expect(response.status(), await response.text()).toBe(400);
   const status = await response.json();
   expect(status.message).toContain('admission hook for ModelCatalog denied the request');
   expect(status.message).toContain(field);
@@ -135,7 +135,7 @@ test.describe('ModelCatalog', () => {
     for (const role of ['Viewer', 'Editor'] as const) {
       expect((await accounts[role].get(CATALOGS)).status()).toBe(200);
       const refused = await create(accounts[role], catalog(uniqueName(), twoProviders, createKeys(twoProviders)));
-      expect(refused.status()).toBe(403);
+      expect(refused.status(), await refused.text()).toBe(403);
     }
     const { name } = await createStored(accounts.Admin);
     expect((await accounts.Viewer.get(`${CATALOGS}/${name}`)).status()).toBe(200);
@@ -148,7 +148,7 @@ test.describe('ModelCatalog', () => {
       accounts.Admin,
       catalog(uniqueName(), twoProviders, createKeys(twoProviders), { 'grafana.app/folder': 'e2e-folder' })
     );
-    expect(foldered.status()).toBeGreaterThanOrEqual(400);
+    expect(foldered.status(), await foldered.text()).toBeGreaterThanOrEqual(400);
   });
 
   test('secure.create stores a secret and reads return names only', async ({ accounts }) => {
@@ -169,12 +169,12 @@ test.describe('ModelCatalog', () => {
     const changed = catalog(name, twoProviders);
     changed.spec.models['model-anthropic'] = { name: 'Renamed', primary: { provider: 'anthropic', model: 'native' } };
     const updated = await update(accounts.Admin, name, { ...changed, metadata: object.metadata });
-    expect(updated.status()).toBe(200);
+    expect(updated.status(), await updated.text()).toBe(200);
     expect((await updated.json()).secure).toEqual(object.secure);
 
     const current = await (await accounts.Admin.get(`${CATALOGS}/${name}`)).json();
     const roundTrip = await update(accounts.Admin, name, current);
-    expect(roundTrip.status()).toBe(200);
+    expect(roundTrip.status(), await roundTrip.text()).toBe(200);
     expect((await roundTrip.json()).secure).toEqual(object.secure);
   });
 
@@ -191,7 +191,7 @@ test.describe('ModelCatalog', () => {
       ...catalog(name, withoutOpenAI, { openai: { remove: true } }),
       metadata: object.metadata,
     });
-    expect(dropped.status()).toBe(200);
+    expect(dropped.status(), await dropped.text()).toBe(200);
     expect(Object.keys((await dropped.json()).secure)).toEqual(['anthropic']);
   });
 
@@ -243,7 +243,7 @@ test.describe('ModelCatalog', () => {
     ];
     for (const body of invalid) {
       const response = await create(accounts.Admin, body);
-      expect(response.status()).toBeGreaterThanOrEqual(400);
+      expect(response.status(), await response.text()).toBeGreaterThanOrEqual(400);
     }
   });
 });
