@@ -6,14 +6,12 @@
 import { readFileSync } from 'node:fs';
 import { startNativeProviderProxy } from './native-provider-proxy.ts';
 
-const certificates = process.env.NATIVE_PROXY_CERTIFICATES ?? '/etc/native-proxy';
-
 await startNativeProviderProxy(
-  { 'api.anthropic.com:443': process.env.NATIVE_ANTHROPIC_TARGET ?? 'http://fake-anthropic:8080' },
+  { 'api.anthropic.com:443': 'http://fake-anthropic:8080' },
   {
-    cert: readFileSync(`${certificates}/cert.pem`),
-    key: readFileSync(`${certificates}/key.pem`),
+    cert: readFileSync('/etc/native-proxy/cert.pem'),
+    key: readFileSync('/etc/native-proxy/key.pem'),
     host: '0.0.0.0',
-    port: Number(process.env.PORT ?? 8443),
+    port: 8443,
   }
 );

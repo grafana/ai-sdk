@@ -90,9 +90,13 @@ func registerRoutes(policy gatewayauth.AccessPolicy, telemetry *service.Telemetr
 	for _, entry := range routes {
 		refuse := func(w http.ResponseWriter) { entry.errors.WriteHostError(w, host.ErrorPermission) }
 		pattern := entry.method + " " + RoutePrefix() + entry.path
-		handler := gatewayauth.AccessMiddleware(policy.Decide, refuse, telemetry.ObserveAccess, entry.handler)
+		decide := gatewayauth.Decider(policy.Decide)
 		if entry.catalog {
-			handler = parentCatalog(entry.errors, gatewayauth.AccessMiddleware(policy.DecideCatalog, refuse, telemetry.ObserveAccess, entry.handler))
+			decide = policy.DecideCatalog
+		}
+		handler := gatewayauth.AccessMiddleware(decide, refuse, telemetry.ObserveAccess, entry.handler)
+		if entry.catalog {
+			handler = parentCatalog(entry.errors, handler)
 		}
 		mux.Handle(pattern, handler)
 		labels[pattern] = entry.label

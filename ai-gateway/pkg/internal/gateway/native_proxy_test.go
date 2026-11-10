@@ -85,6 +85,9 @@ func startNativeProxy() (*httptest.Server, error) {
 		}
 	}, FlushInterval: -1}
 	tunnel := &tls.Config{Certificates: []tls.Certificate{certificate}, NextProtos: []string{"http/1.1"}}
+	connections := make(tunnels)
+	server := &http.Server{Handler: forward, ReadHeaderTimeout: time.Second}
+	go func() { _ = server.Serve(connections) }()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodConnect || r.Host != nativeAnthropicAuthority {
 			http.Error(w, "refused", http.StatusForbidden)
@@ -96,8 +99,7 @@ func startNativeProxy() (*httptest.Server, error) {
 		}
 		_, _ = buffered.WriteString("HTTP/1.1 200 Connection established\r\n\r\n")
 		_ = buffered.Flush()
-		server := &http.Server{Handler: forward, ReadHeaderTimeout: time.Second}
-		go func() { _ = server.Serve(&singleListener{connection: tls.Server(connection, tunnel)}) }()
+		connections <- tls.Server(connection, tunnel)
 	})), nil
 }
 
@@ -130,36 +132,17 @@ func nativeCertificate() (tls.Certificate, *x509.CertPool, error) {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, roots, nil
 }
 
-// singleListener serves one tunneled connection.
-type singleListener struct {
-	once       sync.Once
-	connection net.Conn
-	done       chan struct{}
-}
+// tunnels is the listener of the proxy's one HTTP server: each accepted
+// connection is a terminated CONNECT tunnel.
+type tunnels chan net.Conn
 
-func (l *singleListener) Accept() (net.Conn, error) {
-	var connection net.Conn
-	l.once.Do(func() {
-		connection, l.done = l.connection, make(chan struct{})
-	})
-	if connection != nil {
-		return &closeNotifyConn{Conn: connection, closed: l.done}, nil
+func (l tunnels) Accept() (net.Conn, error) {
+	connection, ok := <-l
+	if !ok {
+		return nil, net.ErrClosed
 	}
-	<-l.done
-	return nil, net.ErrClosed
+	return connection, nil
 }
 
-func (l *singleListener) Close() error   { return nil }
-func (l *singleListener) Addr() net.Addr { return l.connection.LocalAddr() }
-
-// closeNotifyConn ends its listener when the tunnel closes.
-type closeNotifyConn struct {
-	net.Conn
-	closed chan struct{}
-	once   sync.Once
-}
-
-func (c *closeNotifyConn) Close() error {
-	c.once.Do(func() { close(c.closed) })
-	return c.Conn.Close()
-}
+func (l tunnels) Close() error   { return nil }
+func (l tunnels) Addr() net.Addr { return &net.TCPAddr{} }
