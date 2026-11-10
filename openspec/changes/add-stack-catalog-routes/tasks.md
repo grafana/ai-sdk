@@ -23,7 +23,7 @@
 
 ## 5. Cross-language scenarios
 
-- [ ] 5.1 Add the catalog scenarios to `ai-gateway/test/providerwire-v4`. Through `plugin-host --manifest` and the native proxy, both registered clients list `config` and make unary and streamed calls with the catalog base URL, and the fake provider sees the catalog key. Add Kubernetes `Status` `403`/`404` consumption by both clients. Verify with `mise run test-providerwire-v4`.
+- [x] 5.1 Add the catalog scenarios to `ai-gateway/test/providerwire-v4`. Through `plugin-host --manifest` and the native proxy, both registered clients list `config` and make unary and streamed calls with the catalog base URL, and the fake provider sees the catalog key. Add Kubernetes `Status` `403`/`404` consumption by both clients. Verify with `mise run test-providerwire-v4`.
 
 ## 6. End-to-end
 
