@@ -237,3 +237,32 @@ func TestSelectStackCatalog_NativeEndpointsWithCatalogKeys(t *testing.T) {
 	_, err := SelectStackCatalog(testStackCatalog(), "same", nil, StackCatalogOptions{})
 	require.Error(t, err)
 }
+
+func TestSelectStackCatalog_ConcurrentCatalogsKeepTheirKeys(t *testing.T) {
+	var mu sync.Mutex
+	sent := map[string][]string{}
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		mu.Lock()
+		sent[request.Header.Get("X-Api-Key")] = append(sent[request.Header.Get("X-Api-Key")], request.URL.Host)
+		mu.Unlock()
+		return nil, fmt.Errorf("request not sent")
+	})}
+	const calls = 16
+	var wg sync.WaitGroup
+	for i := range calls {
+		wg.Go(func() {
+			stack := testStackCatalog()
+			stack.Keys = resource.DecryptedSecureValues{"claude": resource.RawSecureValue(fmt.Sprintf("catalog-%d-key", i%2)), "gpt": "gpt-catalog-key"}
+			selected, err := SelectStackCatalog(stack, "same", nil, StackCatalogOptions{Client: client})
+			if !assert.NoError(t, err) {
+				return
+			}
+			_, err = selected.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16)})
+			assert.ErrorContains(t, err, "request not sent")
+		})
+	}
+	wg.Wait()
+	assert.Len(t, sent, 2)
+	assert.Len(t, sent["catalog-0-key"], calls/2)
+	assert.Len(t, sent["catalog-1-key"], calls/2)
+}

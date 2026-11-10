@@ -29,7 +29,7 @@ The runtime SHALL classify every failure into one closed category: invalid reque
 
 #### Scenario: Adapter documents
 - **WHEN** ProviderWire encodes a failure
-- **THEN** it SHALL choose its fixed document from the category and reason alone, and every document other than the unsupported-gateway-control message, the new routing documents and the provider-stream document SHALL equal those written before this change
+- **THEN** it SHALL choose its fixed document from the category and reason alone, and every document other than the unsupported-gateway-control message, the new routing documents, the provider-stream document and the catalog configuration document SHALL equal those written before this change
 - **AND** provider stream SHALL use the fixed status-less stream document defined by providerwire-v4-streaming-runtime
 
 #### Scenario: Inconsistent tool history
