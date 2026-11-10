@@ -86,14 +86,7 @@ func New(options Options) (*Gateway, error) {
 	if err := settings.AgentObservability.ValidateAmbientEnvironment(os.LookupEnv); err != nil {
 		return nil, err
 	}
-	file, err := config.ParseModelCatalog(settings.ModelCatalog)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateProviderEndpoints(file); err != nil {
-		return nil, err
-	}
-	providers, err := file.ResolveProviderSecrets(lookupEnv)
+	file, providers, err := operatorCatalog(settings, lookupEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +104,27 @@ func New(options Options) (*Gateway, error) {
 		return nil, err
 	}
 	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks}, nil
+}
+
+// operatorCatalog parses and validates the operator catalog and resolves its
+// provider keys. Without a catalog setting it returns an empty catalog and
+// reads no key.
+func operatorCatalog(settings config.Settings, lookupEnv config.LookupEnv) (config.File, map[string]config.ResolvedProvider, error) {
+	if !settings.HasModelCatalog() {
+		return config.File{}, nil, nil
+	}
+	file, err := config.ParseModelCatalog(settings.ModelCatalog)
+	if err != nil {
+		return config.File{}, nil, err
+	}
+	if err := validateProviderEndpoints(file); err != nil {
+		return config.File{}, nil, err
+	}
+	providers, err := file.ResolveProviderSecrets(lookupEnv)
+	if err != nil {
+		return config.File{}, nil, err
+	}
+	return file, providers, nil
 }
 
 func validateProviderEndpoints(file config.File) error {

@@ -2,9 +2,9 @@
 
 ## 1. Optional operator catalog
 
-- [ ] 1.1 Make `model_catalog` optional in `config.Settings.Validate`, keeping the 64 KiB bound; verify settings tests for unset, blank, whitespace and oversized values.
-- [ ] 1.2 In `gateway.New`, skip parsing, endpoint validation and secret resolution for a blank catalog and build an empty `service.Catalog`. Verify with gateway tests: startup without the setting, `config` returns `{"models":[]}`, a configured call (plain and routed) returns the model-not-found document with zero provider requests, and a `cloud`-mode BYOK call succeeds.
-- [ ] 1.3 Update the `ai-gateway/README.md` settings table and `ai-gateway/docs/model-catalog.md` (`model_catalog` optional, and what the namespace routes serve without it); verify `mise run lint-docs`.
+- [x] 1.1 Make `model_catalog` optional in `config.Settings.Validate`, keeping the 64 KiB bound; verify settings tests for unset, blank, whitespace and oversized values.
+- [x] 1.2 In `gateway.New`, skip parsing, endpoint validation and secret resolution for a blank catalog and build an empty `service.Catalog`. Verify with gateway tests: startup without the setting, `config` returns `{"models":[]}`, a configured call (plain and routed) returns the model-not-found document with zero provider requests, and a `cloud`-mode BYOK call succeeds.
+- [x] 1.3 Update the `ai-gateway/README.md` settings table (`model_catalog` optional, and what the namespace routes serve without it); verify `mise run lint-docs`.
 
 ## 2. Execution: source, redaction and category
 

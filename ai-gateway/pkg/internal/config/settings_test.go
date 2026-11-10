@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
@@ -110,7 +111,6 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		name   string
 		mutate func(*Settings)
 	}{
-		{name: "model catalog", mutate: func(s *Settings) { s.ModelCatalog = " \n" }},
 		{name: "agento11y protocol", mutate: func(s *Settings) { s.AgentObservability.Protocol = "other" }},
 		{name: "agento11y endpoint", mutate: func(s *Settings) { s.AgentObservability.Endpoint = "" }},
 		{name: "agento11y endpoint credentials", mutate: func(s *Settings) {
@@ -128,6 +128,30 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 			settings := valid
 			tc.mutate(&settings)
 			require.Error(t, settings.Validate())
+		})
+	}
+}
+
+func TestSettings_HasModelCatalog(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		document string
+		want     bool
+	}{
+		{name: "unset"},
+		{name: "whitespace", document: " \n\t"},
+		{name: "document", document: minimalConfigYAML, want: true},
+		{name: "oversized whitespace", document: strings.Repeat(" ", MaxModelCatalogBytes+1), want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			environment := baseSettingsEnvironment()
+			delete(environment, "GF_PLUGIN_MODEL_CATALOG")
+			if tc.document != "" {
+				environment["GF_PLUGIN_MODEL_CATALOG"] = tc.document
+			}
+			settings, err := ParseSettings(mapLookup(environment))
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, settings.HasModelCatalog())
 		})
 	}
 }
