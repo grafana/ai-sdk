@@ -12,7 +12,7 @@
 
 ## 3. Integration checks
 
-- [ ] 3.1 Run `mise run fmt`, `vet`, `lint`, `test`, `build`, the release checks and `openspec validate record-middleware-denials --strict`; verify all pass.
+- [x] 3.1 Run `mise run fmt`, `vet`, `lint`, `test`, `build`, the release checks and `openspec validate record-middleware-denials --strict`; verify all pass.
 
 ## Workflow follow-up
 
