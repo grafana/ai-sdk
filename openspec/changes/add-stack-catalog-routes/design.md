@@ -88,11 +88,12 @@ func (policy AccessPolicy) DecideCatalog(info types.AuthInfo, namespace string) 
 ```
 
 - A caller is refused when the namespace doesn't match, as in `Decide`.
-- Otherwise it gets `CatalogAccounts` when it has a user or service-account identity actor, or a direct caller service identity:
+- Otherwise it gets `CatalogAccounts` when it has a user or service-account identity actor, or when it is a service acting alone. The platform authenticator marks a verified actor chain that holds only services (`ServiceChainKey`), because `GetIdentityType` reports an anonymous viewer relayed by a service the same way as an access policy:
   - `Identity` is the identity actor, as today;
   - `attributedService` is the direct caller's service identity when present.
 - `Decide` keeps its behavior for the namespace routes.
 - The access-decision metric gains `decision="catalog"`.
+- `AccessMiddleware` takes a `Decider` (`policy.Decide` or `policy.DecideCatalog`) instead of the policy.
 - **Alternative considered:** a route flag inside `Decide`. Rejected: a separate method keeps the namespace path byte-for-byte unchanged and makes the table test explicit.
 
 ### Parent check and catalog carrier
@@ -101,10 +102,10 @@ func (policy AccessPolicy) DecideCatalog(info types.AuthInfo, namespace string) 
 
 1. Read `resource.RouteRequestInfoFrom(ctx)`. A missing parent writes `host.ErrorInternal`.
 2. Require `Plural == "modelcatalogs"`, `Name == r.PathValue("name")` and `Namespace == r.PathValue("namespace")`. A mismatch writes `host.ErrorInternal`.
-3. Decode `Parent` with the generated `v1alpha1` codec, and require `apiVersion` (group and version), `kind`, `metadata.namespace` and `metadata.name` to match the route. A mismatch writes `host.ErrorInternal`. Bytes that don't decode store a catalog marked undecodable.
-4. Store `service.StackCatalog{Name, Spec, Keys: DecryptedSecureValues}` in the request context, unexported and set only by this middleware.
+3. Decode the parent's `apiVersion`, `kind`, `metadata.namespace` and `metadata.name`, and require them to match the route. Bytes whose identity can't be read, or a mismatch, write `host.ErrorInternal`.
+4. Decode the whole parent as a `v1alpha1.ModelCatalog`, and store `service.StackCatalog{Name, Spec, Keys: DecryptedSecureValues}` in the request context with `service.WithStackCatalog`. A spec that doesn't decode is stored with an empty spec and no keys.
 
-- `service.StackCatalogFromContext` reads it. The selector and the lister turn an undecodable catalog into `ErrCatalogConfiguration`.
+- `service.StackCatalogFromContext` reads it. An empty spec fails the stack-catalog checks, so the selector and the lister turn it into `ErrCatalogConfiguration` with no extra state.
 - Grafana builds the parent from the route itself, so a mismatch means a platform defect, not a caller error. That's why it is internal, and not permission, which would suggest the caller could fix it.
 - **Alternative considered:** passing the catalog through `RequestSelector`'s arguments. Rejected: it would reshape the selector signature that #762 also touches.
 
@@ -127,14 +128,15 @@ case caller.AccountAccess() == gatewayauth.CatalogAccounts:
 ### Discovery: a stack lister and the host category
 
 - `service.StackCatalogLister` implements `catalog.ModelLister`. It reads the context catalog, runs `stackcatalog.Parse` and returns `ModelInfo` rows: canonical ID, name, description, aliases, and candidates with provider instance = provider name, provider = provider type and model ID. It constructs no model. Any failure returns `ErrCatalogConfiguration`.
-- `discovery.New` gains the catalog route's lister. A handler serves configured access with the operator lister and catalog access with the stack lister, which keeps one handler type.
+- `discovery.New(configured, stack, projection, errors)` takes both listers. One handler serves configured access with the operator lister and catalog access with the stack lister; both `config` routes share it, as both `language-model` routes share the runtime.
 - `errors.Is(err, execution.ErrCatalogConfiguration)` writes `host.ErrorCatalogConfiguration`; ProviderWire maps it to the existing `safeCatalogConfiguration` document.
 
 ### Test host: subresource routes with a parent
 
 - `kindStore.kindPath` also recognizes `{plural}/{name}/<subresource>`. For a declared kind route, the host reads the stored object (`404` when missing). It forwards with `RouteInfo{Path: <subresource>, Parent: RouteResource{resource, name, rv, raw: stored JSON with secure names, decrypted_secure_values: plaintext held in memory}}`.
 - The host keeps no RBAC, declared checks or decryption cache; those are Grafana's and are proven end to end.
-- `plugin-host --manifest` already gives it the kinds; routes come from the manifest's `openapi` paths.
+- It forwards any path below a stored object of a declared kind; the plugin's route table answers undeclared ones. `plugin-host --manifest` gives it the kinds, and the ProviderWire suite now passes the committed manifest to every gateway it starts.
+- Gateway package tests reach the native endpoint through a package `TestMain` proxy that terminates TLS with a CA generated at run time and trusted through `x509.SetFallbackRoots` with `//go:debug x509usefallbackroots=1` in the test file; no production code or build tag changes.
 
 ### Cross-language scenarios in `ai-gateway/test/providerwire-v4`
 
@@ -155,11 +157,12 @@ case caller.AccountAccess() == gatewayauth.CatalogAccounts:
 - `scripts/e2e.sh` generates an ephemeral self-signed certificate and key for `api.anthropic.com` and `api.openai.com` with `openssl` into a temporary directory, which is mounted read-only and removed with the environment.
 - The proxy reuses the existing mechanism rather than adding a second one. `startNativeProviderProxy` in `ai-gateway/test/providerwire-v4/native-provider-proxy.ts` takes the certificate and key as parameters; the existing suite keeps passing its fixture.
 - A `native-proxy` service runs a small entrypoint over that module with Node 24's built-in TypeScript support. It accepts `CONNECT api.anthropic.com:443`, terminates TLS with the run-time certificate and forwards to `fake-anthropic`; it refuses every other authority.
+- The role-account fixture moves from `catalog.spec.ts` to `fixtures.ts`, so both catalog specs share it.
 - The Grafana service sets:
   - `HTTPS_PROXY=http://native-proxy:8443`;
   - `NO_PROXY=localhost,127.0.0.1,fake-anthropic,native-proxy`;
   - `SSL_CERT_FILE` to the certificate. Go still loads the system certificate directories.
-- `fake-anthropic.mjs` answers with text that names a short SHA-256 prefix of the received `x-api-key`. Tests compare that prefix without the key appearing in any response.
+- `fake-anthropic.mjs` answers a native call (`Host: api.anthropic.com`, which only proxied calls carry) with text that names a short SHA-256 prefix of the received `x-api-key` and the backend model. Calls through configured endpoints keep the fixed text `routes.spec.ts` asserts. Tests compare the prefix without the key appearing in any response.
 
 **Specs** (`tests/catalog-routes.spec.ts`, using the existing role-token fixture):
 
@@ -168,7 +171,7 @@ case caller.AccountAccess() == gatewayauth.CatalogAccounts:
 | Viewer, Editor and Admin allow and deny | Viewer: `403` on both routes with a Kubernetes `Status`, and the plugin log has no catalog call. Editor and Admin: `200` on `config` and on unary and streamed `language-model`. `/api/access-control/user/permissions` shows `modelcatalogs/language-model:get` and `modelcatalogs/config:get` for Editor only. |
 | Decrypted keys reach the provider; edits apply on the next request | Create with key K1: the response names K1's hash prefix. `PUT` the key to K2 (a new resource version): the next call names K2's. Change a model's primary: the next call reaches the new backend model. |
 | Discovery | `config` lists the catalog's model, aliases and candidates, and is identical in shape to the namespace route projection. |
-| Grafana's `403` and `404` | An unknown catalog name gives `404`, and the Viewer call `403`, both Kubernetes `Status` JSON. The README documents both, and `test/providerwire-v4` proves each client surfaces them as errors. |
+| Grafana's `403` and `404` | An unknown catalog name gives `404`, and the Viewer call `403`, both Kubernetes `Status` JSON. The README documents both. `test/providerwire-v4` proves both clients surface the test host's `404` `Status` as an error with that status; Grafana's `403` has the same `Status` shape, which the test host does not produce. |
 | Namespace routes unchanged | `routes.spec.ts` unchanged; the namespace `config` still lists only the operator catalog. |
 | Keys never logged | The sentinel check in `scripts/e2e.sh` also covers the route keys. |
 

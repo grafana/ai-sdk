@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Catalog route access
-On a catalog route, the Gateway SHALL grant `catalog` access to a verified caller whose token namespace covers the route namespace, when its identity actor is a user or service account or its direct caller has a service identity. It SHALL refuse every other caller with the fixed permission error. `access_mode` and the internal allowlist SHALL NOT apply, and Grafana's declared checks SHALL decide who may invoke.
+On a catalog route, the Gateway SHALL grant `catalog` access to a verified caller whose token namespace covers the route namespace, when its identity actor is a user or service account, or when it is a service acting alone: its actor chain holds only services. It SHALL refuse every other caller with the fixed permission error. `access_mode` and the internal allowlist SHALL NOT apply, and Grafana's declared checks SHALL decide who may invoke.
 
 #### Scenario: User or service account
 - **WHEN** a user session or a service account token calls a catalog route in either access mode
@@ -19,8 +19,8 @@ On a catalog route, the Gateway SHALL grant `catalog` access to a verified calle
 - **WHEN** the token's namespace does not cover the route namespace
 - **THEN** the request SHALL be refused with the permission document, without reading the body
 
-#### Scenario: No identity actor and no service identity
-- **WHEN** an anonymous session calls a catalog route
+#### Scenario: Anonymous viewer
+- **WHEN** an anonymous session calls a catalog route, directly or relayed by a service
 - **THEN** the request SHALL be refused
 
 ### Requirement: Catalog access selects only its parent catalog

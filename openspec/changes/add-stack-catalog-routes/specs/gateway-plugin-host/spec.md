@@ -11,9 +11,13 @@ Before using a catalog route's decrypted values, the Gateway SHALL check that th
 - **WHEN** a catalog route request carries no parent object
 - **THEN** the response SHALL be the internal host error
 
-#### Scenario: Parent that does not decode
-- **WHEN** the parent's JSON does not decode as a `ModelCatalog`
+#### Scenario: Parent whose spec does not decode
+- **WHEN** the parent names the route's catalog but its spec does not decode as a `ModelCatalog` spec
 - **THEN** language-model SHALL fail with the catalog configuration document and `config` with the catalog configuration host error
+
+#### Scenario: Parent whose identity does not decode
+- **WHEN** the parent is not JSON, or its API version, kind, namespace or name cannot be read
+- **THEN** the response SHALL be the internal host error
 
 ## MODIFIED Requirements
 
@@ -107,6 +111,6 @@ Deterministic tests SHALL serve the Gateway through the real plugin protocol, fr
 - **THEN** the test host SHALL apply the platform's inline semantics (create, remove, keep omitted keys, keep unchanged names) after admission, and return only names on reads
 
 #### Scenario: Subresource routes in the test host
-- **WHEN** a test calls a declared subresource route of a stored object
+- **WHEN** a test calls a path below a stored object of a declared kind
 - **THEN** the test host SHALL forward it with the object as the route's parent: its resource, name, resource version, JSON and the decrypted values it holds for the object's secure keys
 - **AND** a missing object SHALL get `404` without a route call, and the test host SHALL NOT be cited as evidence of Grafana's declared access checks or decryption
