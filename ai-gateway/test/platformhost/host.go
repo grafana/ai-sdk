@@ -233,7 +233,10 @@ func (h *Host) hostService() string {
 // authenticating the caller and forwarding the request through client, which
 // must delegate callers with Exchanger, as grpcplugin.NewClientV3 does.
 // Requests for a configured kind are served from memory, with admission
-// reviews through client.
+// reviews through client. A route below one of its objects is forwarded with
+// that object as the route's parent, including the plaintext of its secure
+// values; the host runs no access check and caches nothing, which the
+// platform does.
 func (h *Host) Handler(client clientv3.Client) http.Handler {
 	forward := httpadapter.HandlerFunc(client)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -255,6 +258,14 @@ func (h *Host) Handler(client clientv3.Client) http.Handler {
 		if kind, name, ok := h.kinds.kindPath(info.Path); ok {
 			h.serveKind(w, r.WithContext(types.WithAuthInfo(ctx, caller)), client, kind, info.Namespace, name)
 			return
+		}
+		if kind, name, subresource, ok := h.kinds.kindRoute(info.Path); ok {
+			parent, found := h.routeParent(kind, objectKey{plural: strings.ToLower(kind.Plural), namespace: info.Namespace, name: name})
+			if !found {
+				writeStatus(w, http.StatusNotFound, "not found")
+				return
+			}
+			info.Path, info.Parent = subresource, parent
 		}
 		ctx = httpadapter.WithRouteInfo(types.WithAuthInfo(ctx, caller), info)
 		if h.config.RouteDeadline > 0 {
