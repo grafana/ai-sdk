@@ -68,11 +68,13 @@ async function replyText(response: APIResponse, streaming: boolean): Promise<str
     .join('');
 }
 
-async function expectStatus(response: APIResponse, code: number) {
+// expectStatus checks Grafana's own refusal: a Kubernetes Status, which
+// Grafana writes without its type metadata, never a Gateway error document.
+async function expectStatus(response: APIResponse, code: number, reason: string) {
   expect(response.status()).toBe(code);
   const status = await response.json();
-  expect(status.kind).toBe('Status');
-  expect(status.code).toBe(code);
+  expect(status).toEqual(expect.objectContaining({ status: 'Failure', reason, code }));
+  expect(status.error).toBeUndefined();
 }
 
 test.describe('ModelCatalog routes', () => {
@@ -108,8 +110,8 @@ test.describe('ModelCatalog routes', () => {
     const key = `${SENTINEL}-route-first`;
     expect((await accounts.Admin.post(CATALOGS, { data: catalog(name, 'claude-native', key) })).status()).toBe(201);
 
-    await expectStatus(await accounts.Viewer.get(`${CATALOGS}/${name}/config`), 403);
-    await expectStatus(await callCatalog(accounts.Viewer, name, 'team', false), 403);
+    await expectStatus(await accounts.Viewer.get(`${CATALOGS}/${name}/config`), 403, 'Forbidden');
+    await expectStatus(await callCatalog(accounts.Viewer, name, 'team', false), 403, 'Forbidden');
 
     for (const role of ['Editor', 'Admin'] as const) {
       const config = await accounts[role].get(`${CATALOGS}/${name}/config`);
@@ -154,8 +156,8 @@ test.describe('ModelCatalog routes', () => {
   });
 
   test('an unknown catalog is answered by Grafana with a 404 Status', async ({ accounts }) => {
-    await expectStatus(await accounts.Editor.get(`${CATALOGS}/e2e-routes-missing/config`), 404);
-    await expectStatus(await callCatalog(accounts.Editor, 'e2e-routes-missing', 'team', false), 404);
+    await expectStatus(await accounts.Editor.get(`${CATALOGS}/e2e-routes-missing/config`), 404, 'NotFound');
+    await expectStatus(await callCatalog(accounts.Editor, 'e2e-routes-missing', 'team', false), 404, 'NotFound');
   });
 
   test('a stored catalog leaves the namespace routes unchanged', async ({ accounts, page }) => {

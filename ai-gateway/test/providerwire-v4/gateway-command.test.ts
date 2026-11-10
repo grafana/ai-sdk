@@ -504,7 +504,7 @@ describe("stack-catalog routes through the authenticated command", () => {
       const baseURL = `${gateway.baseURL}/modelcatalogs/missing`;
       const raw = await fetch(`${baseURL}/config`, { headers: { Authorization: `Bearer ${TEST_TOKEN}` } });
       assert.equal(raw.status, 404);
-      assert.equal((await raw.json()).kind, "Status");
+      assert.equal((await raw.json()).status, "Failure");
       await assert.rejects(createGateway({ baseURL, apiKey: TEST_TOKEN }).getAvailableModels(), (error: unknown) => (error as { statusCode?: number }).statusCode === 404);
       const model = createGateway({ baseURL, apiKey: TEST_TOKEN })("team");
       await assert.rejects(async () => model.doGenerate({ prompt: [] }), (error: unknown) => (error as { statusCode?: number }).statusCode === 404);
