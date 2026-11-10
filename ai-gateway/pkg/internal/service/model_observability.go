@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/middleware"
@@ -243,6 +244,7 @@ func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *Agent
 		IdentitySource:            metricsmiddleware.IdentityRequested,
 		StreamDrainTimeout:        drainTimeout,
 		DisableStreamChunkMetrics: false,
+		IsDenied:                  isExtensionDenial,
 		NormalizeModel: func(provider, model string) string {
 			if provider != "grafana" {
 				return "byok"
@@ -259,6 +261,7 @@ func NewModelObservers(telemetry *Telemetry, logger *slog.Logger, runtime *Agent
 		Redactor:           closedModelLogRedactor(logmiddleware.DefaultRedactor(), gatewayauth.ConfiguredAccounts),
 		IdentitySource:     logmiddleware.IdentityRequested,
 		StreamDrainTimeout: drainTimeout,
+		IsDenied:           isExtensionDenial,
 	}
 	configured := modelObservationChain{
 		contextBridge:    observationBridgeMiddleware(),
@@ -299,6 +302,10 @@ func (o *ModelObservers) Compose(selected execution.Selection) (provider.Languag
 	}
 	return chain.observe(selected.Model), nil
 }
+
+// isExtensionDenial reports an extension denial, which logical logs and
+// metrics record as denied rather than as an error.
+func isExtensionDenial(err error) bool { return errors.Is(err, extension.ErrDenied) }
 
 type modelObservationChain struct {
 	contextBridge    middleware.Middleware

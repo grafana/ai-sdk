@@ -5,8 +5,11 @@
 // metrics registerer, the app provider that receives the host's API access
 // configuration, the lifecycle events and the final telemetry flush.
 //
-// [Options] selects what a distribution adds to the shipped Gateway; its zero
-// value runs the shipped Gateway. Importing the package registers nothing.
+// [Options] selects what a distribution adds to the Gateway: its extensions,
+// defined with package [github.com/grafana/ai-sdk/ai-gateway/pkg/extension],
+// and which of them are mandatory. The shipped backend passes
+// [DefaultExtensions] and no mandatory extension. Importing the package
+// registers nothing.
 //
 // # Stability
 //

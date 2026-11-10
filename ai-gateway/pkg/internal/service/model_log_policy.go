@@ -103,9 +103,9 @@ func allowModelLogAttr(attr slog.Attr, access gatewayauth.AccountAccess) bool {
 		}
 		return stringIn(attr, "grafana")
 	case "ai_sdk.outcome":
-		return stringIn(attr, "success", "error", "cancelled", "timeout")
+		return stringIn(attr, "success", "error", "cancelled", "timeout", "denied")
 	case "ai_sdk.error.type":
-		return stringIn(attr, "api_call_error", "context_canceled", "context_deadline_exceeded", "stream_part_error", "unknown")
+		return stringIn(attr, "api_call_error", "context_canceled", "context_deadline_exceeded", "stream_part_error", "unknown", "denied")
 	case "ai_sdk.finish_reason":
 		return stringIn(attr,
 			string(provider.FinishReasonStop),

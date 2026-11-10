@@ -20,15 +20,18 @@ import (
 	"github.com/grafana/grafana-app-sdk/simple"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/discovery"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
 	modelcatalogv1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/service"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/stackcatalog"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
+	"github.com/grafana/ai-sdk/provider"
 )
 
 // PluginID is the plugin ID declared in src/plugin.json. The host addresses
@@ -42,11 +45,17 @@ const finalFlushBudget = time.Second
 // enables plugin.EnvVarInsecureSkipAuthentication.
 const insecureSkipAuthenticationEnabled = "true"
 
-// Options supplies the plugin host environment and process-wide sinks.
+// Options supplies the plugin host environment, process-wide sinks and the
+// distribution's extensions.
 type Options struct {
 	LookupEnv  config.LookupEnv
 	Logger     *slog.Logger
 	Registerer prometheus.Registerer
+	// Extensions are the distribution's extension definitions.
+	Extensions []extension.Definition
+	// Mandatory names the operator extensions that must be configured and
+	// enabled.
+	Mandatory []string
 }
 
 // Gateway is the constructed plugin. An idle Gateway has no handler,
@@ -64,8 +73,12 @@ type Gateway struct {
 // Without platform signing keys, New returns an idle Gateway without reading
 // any other setting: hosts that never delegate requests to the plugin, such
 // as a Grafana that routes the Gateway API elsewhere, need no Gateway
-// configuration, and the plugin host rejects every request.
+// configuration, and the plugin host rejects every request. Extension
+// definitions are validated first, so an invalid build fails on every host.
 func New(options Options) (*Gateway, error) {
+	if err := extensionhost.ValidateDefinitions(options.Extensions, options.Mandatory); err != nil {
+		return nil, err
+	}
 	lookupEnv := options.LookupEnv
 	keys, err := gatewayauth.SigningKeys(lookupEnv)
 	if errors.Is(err, gatewayauth.ErrNoSigningKeys) {
@@ -93,6 +106,14 @@ func New(options Options) (*Gateway, error) {
 	if err := validateProviderEndpoints(file); err != nil {
 		return nil, err
 	}
+	entries, err := config.ParseExtensions(settings.Extensions)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := extensionhost.NewPlan(options.Extensions, options.Mandatory, entries)
+	if err != nil {
+		return nil, err
+	}
 	providers, err := file.ResolveProviderSecrets(lookupEnv)
 	if err != nil {
 		return nil, err
@@ -101,11 +122,14 @@ func New(options Options) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
-	sinks, err := newSinks(settings, options, agentSecret)
+	if err := plan.ResolveSecrets(lookupEnv); err != nil {
+		return nil, err
+	}
+	sinks, err := newSinks(settings, options, agentSecret, plan)
 	if err != nil {
 		return nil, err
 	}
-	handler, err := newRouteHandler(settings, file, providers, configuredSecrets(providers, agentSecret), sinks, options.Logger)
+	handler, err := newRouteHandler(settings, file, providers, append(configuredSecrets(providers, agentSecret), plan.Secrets()...), sinks, options.Logger)
 	if err != nil {
 		sinks.close()
 		return nil, err
@@ -141,14 +165,16 @@ func configuredSecrets(providers map[string]config.ResolvedProvider, agentSecret
 	return secrets
 }
 
-// sinks are the telemetry destinations that must be flushed on shutdown.
+// sinks are the telemetry destinations and extension instances that must be
+// flushed and closed on shutdown.
 type sinks struct {
-	telemetry *service.Telemetry
-	agent     *service.AgentObservabilityRuntime
-	attempts  *service.PhysicalAttemptSink
+	telemetry  *service.Telemetry
+	agent      *service.AgentObservabilityRuntime
+	attempts   *service.PhysicalAttemptSink
+	extensions *extensionhost.Host
 }
 
-func newSinks(settings config.Settings, options Options, agentSecret string) (sinks, error) {
+func newSinks(settings config.Settings, options Options, agentSecret string, plan *extensionhost.Plan) (sinks, error) {
 	telemetry, err := service.NewTelemetry(options.Logger, service.TelemetryOptions{Registerer: options.Registerer})
 	if err != nil {
 		return sinks{}, err
@@ -157,16 +183,29 @@ func newSinks(settings config.Settings, options Options, agentSecret string) (si
 	if err != nil {
 		return sinks{}, err
 	}
-	return sinks{telemetry: telemetry, agent: agent, attempts: service.NewPhysicalAttemptSink(options.Logger, telemetry)}, nil
+	extensions, err := extensionhost.New(extensionhost.Config{
+		Plan:         plan,
+		Logger:       options.Logger,
+		Registerer:   telemetry.Registerer(),
+		Clock:        time.Now,
+		RequestInfo:  service.ExtensionRequest,
+		DrainTimeout: execution.DefaultLimits.StreamDrainDuration,
+	})
+	if err != nil {
+		return sinks{}, err
+	}
+	return sinks{telemetry: telemetry, agent: agent, attempts: service.NewPhysicalAttemptSink(options.Logger, telemetry), extensions: extensions}, nil
 }
 
-// close flushes the sinks concurrently for at most the final flush budget.
+// close flushes the sinks and closes the extensions concurrently for at most
+// the final flush budget.
 func (s sinks) close() {
 	ctx, cancel := context.WithTimeout(context.Background(), finalFlushBudget)
 	defer cancel()
 	var closing sync.WaitGroup
 	closing.Go(func() { s.attempts.Close(ctx) })
 	closing.Go(func() { s.agent.Close(ctx) })
+	closing.Go(func() { s.extensions.Close(ctx) })
 	closing.Wait()
 }
 
@@ -187,12 +226,25 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
 		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: service.BYOKIdentity}
 	}
-	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Compose: observers.Compose, Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Compose: composeModel(sinks.extensions, observers), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
 	discoveryHandler := discovery.New(catalog, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
 	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language))
+}
+
+// composeModel composes each call's model: the logical observers outside the
+// extension pipeline, which is outside the selected model.
+func composeModel(extensions *extensionhost.Host, observers *service.ModelObservers) execution.ModelComposer {
+	return func(selected execution.Selection) (provider.LanguageModel, error) {
+		model, err := extensions.Compose(selected)
+		if err != nil {
+			return nil, err
+		}
+		selected.Model = model
+		return observers.Compose(selected)
+	}
 }
 
 // newLanguageHandler serves ProviderWire V4 over one execution runtime.
