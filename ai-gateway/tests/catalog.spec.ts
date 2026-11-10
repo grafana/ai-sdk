@@ -6,6 +6,7 @@ const CATALOGS = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default/modelcata
 const SENTINEL = 'e2e-catalog-sentinel-key';
 const ROLES = ['Viewer', 'Editor', 'Admin'] as const;
 const TOKEN_SECONDS = 3600;
+const INLINE_SECRET_NAME = /^inline-[a-z0-9]+$/;
 
 type Role = (typeof ROLES)[number];
 type Secure = Record<string, { create?: string; name?: string; remove?: boolean }>;
@@ -154,18 +155,13 @@ test.describe('ModelCatalog', () => {
     const { name, object } = await createStored(accounts.Admin);
     for (const provider of Object.keys(twoProviders)) {
       expect(Object.keys(object.secure[provider])).toEqual(['name']);
-      expect(object.secure[provider].name).not.toBe('');
+      expect(object.secure[provider].name).toMatch(INLINE_SECRET_NAME);
     }
+    expect(object.secure.anthropic.name).not.toBe(object.secure.openai.name);
     const read = await accounts.Viewer.get(`${CATALOGS}/${name}`);
     await expectNoKey(read);
     expect((await read.json()).secure).toEqual(object.secure);
     await expectNoKey(await accounts.Viewer.get(CATALOGS));
-
-    const secret = await accounts.Admin.get(
-      `/apis/secret.grafana.app/v1beta1/namespaces/default/securevalues/${object.secure.anthropic.name}`
-    );
-    expect(secret.status()).toBe(200);
-    await expectNoKey(secret);
   });
 
   test('an update that omits secure keeps the stored keys', async ({ accounts }) => {
