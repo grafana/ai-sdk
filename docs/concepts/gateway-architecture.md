@@ -207,7 +207,10 @@ sequenceDiagram
    distribution's extensions that apply to the call's key ownership and source:
    admit, request transforms with a host policy check after each, request
    inspection, then response inspection on each output part and one
-   asynchronous observation. A refusal before the model makes no provider call
+   asynchronous observation. Every phase sees the caller, including its
+   identity UID, the requested and canonical model, and the planned candidates;
+   the observation also gets the physical attempts, read from the same attempt
+   capture as the execution overview. A refusal before the model makes no provider call
    and records no attempt, and fallback never retries an extension outcome.
    Logical observation surrounds the configured primary/fallback chain. Candidate-specific option checks and
    native adapters run within that chain. When the inbound adapter supplied an
@@ -312,7 +315,8 @@ execution overviews describe observed selection decisions: configured
 identities for configured models, and the requested destination with each
 account attempt for BYOK calls. The routing summary next to each overview
 groups the same attempts by the models the call's chain was composed from.
-They do not prove that a selected stream completed. Token usage is
+Logs and Agent Observability exports name the calling user or service account
+by its typed UID (`caller_identity`); metrics never do. They do not prove that a selected stream completed. Token usage is
 provider-reported accounting, not a complete count of all remote work after
 retries or interrupted calls.
 
