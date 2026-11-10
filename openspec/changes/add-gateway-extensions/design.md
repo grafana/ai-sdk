@@ -6,7 +6,7 @@
 - Every logical model is `observers(identity(fallback(translate(native))))`; single-candidate models have no fallback wrapper.
 - `Call.generate` and `Call.stream` call `attempts.enter()` before invoking the composed model. `attemptCapture.view` synthesizes one attempt for a single expected configured candidate when entered and no attempt was observed, failed unless the error is nil or `ErrInvalidOutput`.
 - ProviderWire commits a stream as soon as `Call.Stream` returns, before reading the first part. A unary result is written only after `Generate` returns.
-- The logger and Prometheus model middlewares (root modules, replaced locally in `ai-gateway/go.mod`) classify every non-context, non-API error as `error`/`other`. The Gateway log allowlist (`model_log_policy.go`) closes `ai_sdk.outcome` and `ai_sdk.error.type`.
+- The logger and Prometheus model middlewares (root modules, replaced locally in `ai-gateway/go.mod`) gain an optional `IsDenied` classifier in the `record-middleware-denials` change this one builds on. The Gateway log allowlist (`model_log_policy.go`) closes `ai_sdk.outcome` and `ai_sdk.error.type`.
 - Request facts live in two places: `service` keeps the observation snapshot (correlation ID, namespace, caller service); `auth.Caller` keeps access and the identity actor, but not its type.
 - `config` already parses one strict bounded YAML setting (`model_catalog`) with `apiKeyEnv` indirection; `configuredSecrets` feeds the summary redactor.
 - #757 is built in parallel on the same base and appends `SourceStackCatalog`, a third observer chain and `CategoryCatalogConfiguration`.
@@ -210,20 +210,21 @@ At startup the host builds, for each of the three sources, the applicable instan
 
 ### Observe
 
-- Observe runs once per call, after the outcome is known: on unary return, or when the forwarding goroutine ends a stream (close, abort, cancellation). Every applicable observer runs, in name order, including those after a denier.
-- It runs synchronously with `context.WithoutCancel(ctx)` bounded by a named 1 second timeout, so cancelled calls are still observed and a slow observer is bounded. For streams, it runs before the pipeline closes its channel, after the last part was delivered, so it delays only the handler's return.
+- Observe runs once per call, off the response's critical path. The record is built when the outcome is known: when `DoGenerate` returns, or when the forwarding goroutine ends a stream (close, abort, cancellation). For a unary call, the dispatch happens after the result or error is returned to the caller's layer. For a stream, it happens after the pipeline has closed its output channel.
+- The host's `observations` dispatcher starts one goroutine per call that runs every applicable observer in name order, including those after a denier, each with `context.WithoutCancel(ctx)` bounded by a named per-call `observeTimeout` of 1 second. It counts work with a `sync.WaitGroup` under a mutex-guarded `closing` flag, like `AgentObservabilityRuntime`. After `Close(ctx)` begins, new observations are dropped and counted (`grafana_ai_gateway_extension_observations_dropped_total`), and `Close` waits for in-flight ones until `ctx` ends.
 - Usage comes from the result, or from the shared streaming usage aggregation the observers use. Outcome precedence matches the observers: cancellation, then denial, then invalid output, then error, then success.
+- Alternative: run observers synchronously on the call. Rejected: a slow billing or audit exporter would add its latency to every unary response.
 
 ### Failure policies and panics
 
-Every call into extension code goes through one `invoke` helper with recover-to-error. A failure is a non-denial error, a panic or a policy refusal. Under `fail-closed`, the call ends with `ErrUnavailable`: from `DoGenerate`/`DoStream` before entry, as an unary error after entry, or as an in-band part for streams. Under `skip`, the phase's effect is discarded: transforms keep their input, admit and inspectors count as passed. Observe and close failures are counted and logged only. Factory failures and panics fail startup.
+Every call into extension code goes through one `invoke` helper with recover-to-error. A failure is a non-denial error, a panic or a policy refusal. Under `fail-closed`, the call ends with `ErrUnavailable`: from `DoGenerate`/`DoStream` before entry, as an unary error after entry, or as an in-band part for streams. Under `skip`, the phase's effect is discarded: transforms keep their input, admit and inspectors count as passed. Every failure, including a discarded `skip` policy violation, increments `extension_events_total{event="failed"}` and logs one warning. Observe and close failures are counted and logged only. Factory failures and panics fail startup.
 
 ### Denied outcome in the observers
 
-- Root `prometheus.Options.IsDenied func(error) bool`: status `denied`, `error_type` `none`. Root `logger.Options.IsDenied func(error) bool`: outcome and class `denied`, logged at `Level`. Both are applied to call errors and stream error parts, and are nil by default. A generic denial hook keeps both middlewares free of Gateway types.
+- The root middlewares' `IsDenied` (from `record-middleware-denials`): Prometheus status `denied` with `error_type` `none`; logger outcome and class `denied` at `Level`. A generic denial hook keeps both middlewares free of Gateway types.
 - `NewModelObservers` sets both to `errors.Is(err, extension.ErrDenied)`, and the Gateway log allowlist accepts `denied` for `ai_sdk.outcome` and `ai_sdk.error.type`.
 - Agent Observability is unchanged: a denied call records a generation without a finish, like any failed call, and its `CallError` is already cleared by the Gateway filter.
-- Extension events: `grafana_ai_gateway_extension_events_total{extension, phase, event}`, where event is `denied`, `failed` or `skipped`, registered once in `service.Telemetry`.
+- Extension events: `grafana_ai_gateway_extension_events_total{extension, phase, event}`, where event is `denied` or `failed` whatever the failure policy, and `grafana_ai_gateway_extension_observations_dropped_total`, both registered once in `service.Telemetry`.
 
 ### Operator config
 
@@ -244,7 +245,7 @@ audit:
 
 ### Lifecycle
 
-Enabled instances are built in `New` after secrets are resolved, before the handler. `sinks.close` adds one goroutine that closes every `Closer` instance concurrently, under the same 1 second context. Close failures and panics are counted, and a close still running at the deadline is abandoned.
+Enabled instances are built in `New` after secrets are resolved, before the handler. `sinks.close` adds one goroutine that first waits for in-flight observations, then closes every `Closer` instance concurrently, all under the same 1 second context. Close failures and panics are counted, and a close still running at the deadline is abandoned. A factory may run more than once per process, once per configuration it is given; the godoc says so.
 
 ### Tenant extensions in this change
 
@@ -259,7 +260,7 @@ A tenant definition enabled by default is built once at startup with an empty co
 | `InspectRequest` sees the final params | Transform adds a system message and a header; the inspector's params equal the fake model's received options. |
 | `InspectResponse` abort before and after commitment, unary and stream | Pipeline tests, plus ProviderWire handler tests: unary permission document with no result; committed stream with two deltas, one permission error event, end. |
 | Shared per-call state | Admit stores a value, observe reads it; concurrent calls under `-race` see only their own. |
-| `Observe` once for success, denial, provider error and cancellation | Counting observer per outcome; denial names extension and phase; failing and panicking observers leave the result unchanged. |
+| `Observe` once for success, denial, provider error and cancellation | Counting observer per outcome; denial names extension and phase; failing and panicking observers leave the result unchanged. A blocking observer does not delay the unary return or the stream close; shutdown waits for it within the budget and drops and counts later observations. |
 | Protected headers or `gateway` options refused before any provider call | Transforms injecting each, under both policies; fake provider records zero calls carrying them. |
 | `ErrDenied` returns the permission document, no fallback | Gateway handler test over a two-candidate configured model: zero provider calls; output denial after a failed primary: two calls. Overview assertions for both. |
 | Panic containment | Panics in factory, each phase and close; startup fails or the call follows the policy; other concurrent calls succeed. |
@@ -276,24 +277,28 @@ Plugin-process tests stay unchanged. CI provides the e2e evidence.
 
 ## Risks / Trade-offs
 
-- [Observe on the unary request path] → Bounded by a 1 second timeout; documented. An asynchronous Observe would need its own shutdown accounting.
 - [A second lifecycle validator per call when extensions apply] → It is only built when an extension implements response inspection or observe; it keeps inspectors on valid parts and makes `invalid-output` exact.
 - [Observers see the caller's params, not the transformed ones] → Intended: observers describe the caller's call. Logs capture no params anyway.
 - [Extension logs bypass the Gateway allowlist] → Extensions are compiled-in trusted code; the guide states their privacy obligations.
 - [Root middleware release] → Two new optional fields, nil by default; both modules get a minor alpha release.
 - **#763:** `Call` grows (UID, canonical ID, candidates, catalog identity). Attempts for `Observe` need the runtime's capture, which sits below the pipeline; the `entered` model is the natural fan-out point, and #763 must keep the fallback observer unreplaceable.
 - **#764:** the admission validator needs the registered tenant definitions, which `Run` already owns alongside `managedKinds`; it reuses `ConfigSchema` and the name rule.
-- **#765:** factories will run per namespace config revision, so registering collectors from `Dependencies.Registerer` will collide on the second instance, and instances will need closing on eviction. See open questions.
+- **#765:** see Follow-ups for #765.
 - **#757 merge:** text conflicts only, in the `Source` const block (`selection.go`), the category lists (`classify.go`, `errors.go`), `NewModelObservers` options next to the third chain (`model_observability.go`), and `Runtime.Call` near the capture construction (`runtime.go`). `ModelComposer` is unchanged. No shared spec requirement is modified by both changes.
 
 ## Migration Plan
 
 None: without extensions, behavior and bytes are unchanged, and the shipped build registers none. Rollback is a revert.
 
-## Open Questions
+## Recorded decisions
 
-Answers do not change the specs' structure, but they are listed for review:
+- **Pre-model refusal overview:** no overview. The issue's wording ("the overview reports not attempted") is met by the absent `gateway.execution` metadata on the error document, not by an empty-attempt overview, which the owned schema and the routing summary do not express. The PR description records this.
+- **Agent Observability:** unchanged for denials.
+- **Composer signature:** unchanged; see Placement. The PR description records the deviation from the #761 follow-ups.
+- **Policy re-check:** after each transform, with the extension's failure policy applied.
 
-1. Pre-model refusal overview: no overview (chosen) or an explicit empty-attempt overview.
-2. Agent Observability for denied calls: unchanged (chosen) or a distinct marker.
-3. Tenant and per-config factories: keep one factory now (chosen) and settle collector registration and eviction in #765.
+## Follow-ups for #765
+
+- **Collector registration.** Factories will run once per namespace configuration revision. A factory that registers collectors through `Dependencies.Registerer` collides on its second run, so #765 needs either idempotent registration (handling `prometheus.AlreadyRegisteredError`) or a process-level setup step separate from per-configuration construction.
+- **Close on eviction.** Instances built per namespace configuration must be closed when their cache entry is evicted or replaced, not only at shutdown, and close must not race in-flight calls or observations still holding the instance.
+- **Cache key.** The ordered lists add the configuration revision to the source key.
