@@ -111,6 +111,7 @@ func TestSettingsValidate_BoundsAndRelationships(t *testing.T) {
 		name   string
 		mutate func(*Settings)
 	}{
+		{name: "oversized model catalog", mutate: func(s *Settings) { s.ModelCatalog = strings.Repeat(" ", MaxModelCatalogBytes+1) }},
 		{name: "agento11y protocol", mutate: func(s *Settings) { s.AgentObservability.Protocol = "other" }},
 		{name: "agento11y endpoint", mutate: func(s *Settings) { s.AgentObservability.Endpoint = "" }},
 		{name: "agento11y endpoint credentials", mutate: func(s *Settings) {
@@ -141,7 +142,6 @@ func TestSettings_HasModelCatalog(t *testing.T) {
 		{name: "unset"},
 		{name: "whitespace", document: " \n\t"},
 		{name: "document", document: minimalConfigYAML, want: true},
-		{name: "oversized whitespace", document: strings.Repeat(" ", MaxModelCatalogBytes+1), want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			environment := baseSettingsEnvironment()

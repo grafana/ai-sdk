@@ -14,11 +14,13 @@ import (
 var errMissingRoute = errors.New("gateway service: resolved model has no configured route")
 
 // routedGroup is one model of a routed chain: the name it was requested by,
-// its canonical ID and its candidates in configured order.
+// its canonical ID, and its candidates and their descriptors in configured
+// order.
 type routedGroup struct {
-	name       string
-	canonical  string
-	candidates []catalog.ConfiguredCandidate
+	name        string
+	canonical   string
+	candidates  []catalog.ConfiguredCandidate
+	descriptors []config.Primary
 }
 
 // resolveGroups resolves the requested model and each models entry, in order.
@@ -42,6 +44,32 @@ func resolveGroups(id string, models []string, resolve func(name string) (routed
 		groups = append(groups, group)
 	}
 	return groups, nil
+}
+
+// composeRoute composes the attempt chain of groups under controls and returns
+// it with the attempt expected at each position. place returns the physical
+// model of one group's candidate; physical attempts are recorded to sink.
+func composeRoute(groups []routedGroup, controls routing.Controls, place func(group routedGroup, candidate int) (provider.LanguageModel, error), sink *PhysicalAttemptSink) (provider.LanguageModel, []execution.ExpectedAttempt, error) {
+	placements, expected, err := planRoute(groups, controls)
+	if err != nil {
+		return nil, nil, err
+	}
+	candidates := make([]provider.LanguageModel, 0, len(placements))
+	descriptors := make([]config.Primary, 0, len(placements))
+	for _, placement := range placements {
+		group := groups[placement.Group]
+		candidate, err := place(group, placement.Candidate)
+		if err != nil {
+			return nil, nil, err
+		}
+		candidates = append(candidates, candidate)
+		descriptors = append(descriptors, group.descriptors[placement.Candidate])
+	}
+	lower, err := composeCandidates(candidates, descriptors, sink)
+	if err != nil {
+		return nil, nil, err
+	}
+	return lower, expected, nil
 }
 
 // planRoute composes the attempt chain of groups under controls' only and
@@ -78,26 +106,18 @@ func (c *Catalog) selectRouted(ctx context.Context, id string, controls routing.
 		if err != nil {
 			return routedGroup{}, err
 		}
-		if route, ok := c.routes[model.ID]; !ok || len(route.candidates) != len(model.Candidates) {
+		route, ok := c.routes[model.ID]
+		if !ok || len(route.candidates) != len(model.Candidates) {
 			return routedGroup{}, errMissingRoute
 		}
-		return routedGroup{name: name, canonical: model.ID, candidates: model.Candidates}, nil
+		return routedGroup{name: name, canonical: model.ID, candidates: model.Candidates, descriptors: route.descriptors}, nil
 	})
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	placements, expected, err := planRoute(groups, controls)
-	if err != nil {
-		return execution.Selection{}, err
-	}
-	candidates := make([]provider.LanguageModel, 0, len(placements))
-	descriptors := make([]config.Primary, 0, len(placements))
-	for _, placement := range placements {
-		route := c.routes[groups[placement.Group].canonical]
-		candidates = append(candidates, route.candidates[placement.Candidate])
-		descriptors = append(descriptors, route.descriptors[placement.Candidate])
-	}
-	lower, err := composeCandidates(candidates, descriptors, c.physical)
+	lower, expected, err := composeRoute(groups, controls, func(group routedGroup, candidate int) (provider.LanguageModel, error) {
+		return c.routes[group.canonical].candidates[candidate], nil
+	}, c.physical)
 	if err != nil {
 		return execution.Selection{}, err
 	}

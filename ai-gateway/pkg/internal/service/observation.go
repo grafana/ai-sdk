@@ -78,34 +78,30 @@ func observationCorrelationID(ctx context.Context) string {
 // of the authentication state; the provider's original context propagation is
 // otherwise preserved.
 func observationBridgeMiddleware() middleware.Middleware {
-	withObservation := func(ctx context.Context) context.Context {
+	return contextMiddleware(func(ctx context.Context) context.Context {
 		return context.WithValue(ctx, modelObservationKey{}, observationFromContext(ctx))
-	}
-	return middleware.Middleware{
-		WrapGenerate: func(ctx context.Context, params middleware.WrapGenerateParams) (*provider.GenerateResult, error) {
-			return params.DoGenerate(withObservation(ctx))
-		},
-		WrapStream: func(ctx context.Context, params middleware.WrapStreamParams) (*provider.StreamResult, error) {
-			return params.DoStream(withObservation(ctx))
-		},
-	}
+	})
 }
 
 // catalogBindingMiddleware adds a stack catalog's name to each call's request
 // observation, for the observers beneath it. A name outside the observation
 // value bound is left out.
 func catalogBindingMiddleware(name string) middleware.Middleware {
-	withCatalog := func(ctx context.Context) context.Context {
+	return contextMiddleware(func(ctx context.Context) context.Context {
 		observation := observationFromContext(ctx)
 		observation.catalog = boundedObservationValue(name)
 		return context.WithValue(ctx, modelObservationKey{}, observation)
-	}
+	})
+}
+
+// contextMiddleware invokes the model under the context with returns.
+func contextMiddleware(with func(context.Context) context.Context) middleware.Middleware {
 	return middleware.Middleware{
 		WrapGenerate: func(ctx context.Context, params middleware.WrapGenerateParams) (*provider.GenerateResult, error) {
-			return params.DoGenerate(withCatalog(ctx))
+			return params.DoGenerate(with(ctx))
 		},
 		WrapStream: func(ctx context.Context, params middleware.WrapStreamParams) (*provider.StreamResult, error) {
-			return params.DoStream(withCatalog(ctx))
+			return params.DoStream(with(ctx))
 		},
 	}
 }

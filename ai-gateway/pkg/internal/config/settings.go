@@ -140,17 +140,17 @@ func ParseSettings(lookupEnv LookupEnv) (Settings, error) {
 }
 
 // HasModelCatalog reports whether the operator catalog is set: an unset,
-// empty or whitespace-only document within the size bound means none.
+// empty or whitespace-only document means none.
 func (settings Settings) HasModelCatalog() bool {
-	return len(settings.ModelCatalog) > MaxModelCatalogBytes || strings.TrimSpace(settings.ModelCatalog) != ""
+	return strings.TrimSpace(settings.ModelCatalog) != ""
 }
 
 // Validate validates the settings without performing I/O.
 func (settings Settings) Validate() error {
-	if err := settings.AgentObservability.validate(); err != nil {
-		return err
+	if len(settings.ModelCatalog) > MaxModelCatalogBytes {
+		return fmt.Errorf("config: %s exceeds %d bytes", SettingName(ModelCatalogSetting), MaxModelCatalogBytes)
 	}
-	return nil
+	return settings.AgentObservability.validate()
 }
 
 var ambientAgentObservabilityEnvironment = []string{

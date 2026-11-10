@@ -324,21 +324,19 @@ type modelObservationChain struct {
 
 // observe wraps identity in the chain. Each middleware sees the identity of
 // the model directly beneath it, so a metric model is an identity view beneath
-// the metrics middleware, restored to identity's model ID above it.
+// the metrics middleware, and every layer above reports identity's model ID.
 func (chain modelObservationChain) observe(identity provider.LanguageModel) provider.LanguageModel {
 	observers := make([]middleware.Middleware, 0, 4)
 	observers = append(observers, chain.contextBridge)
 	if chain.agentRecording != nil {
 		observers = append(observers, *chain.agentRecording)
 	}
-	observers = append(observers, chain.structuredLogger)
+	observers = append(observers, chain.structuredLogger, chain.prometheus)
 	if chain.metricModel == "" {
-		return middleware.Wrap(middleware.WrapOptions{Model: identity, Middleware: append(observers, chain.prometheus)})
+		return middleware.Wrap(middleware.WrapOptions{Model: identity, Middleware: observers})
 	}
 	metricView := middleware.Wrap(middleware.WrapOptions{Model: identity, ModelID: chain.metricModel})
-	metrics := middleware.Wrap(middleware.WrapOptions{Model: metricView, Middleware: []middleware.Middleware{chain.prometheus}})
-	logical := middleware.Wrap(middleware.WrapOptions{Model: metrics, ModelID: identity.ModelID()})
-	return middleware.Wrap(middleware.WrapOptions{Model: logical, Middleware: observers})
+	return middleware.Wrap(middleware.WrapOptions{Model: metricView, ModelID: identity.ModelID(), Middleware: observers})
 }
 
 var allowedAgentMetadataKeys = map[string]struct{}{

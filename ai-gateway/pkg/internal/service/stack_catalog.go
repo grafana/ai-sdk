@@ -77,23 +77,10 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	placements, expected, err := planRoute(groups, controls)
-	if err != nil {
-		return execution.Selection{}, err
-	}
-	candidates := make([]provider.LanguageModel, 0, len(placements))
-	descriptors := make([]config.Primary, 0, len(placements))
-	for _, placement := range placements {
-		descriptor := index.descriptors(groups[placement.Group].canonical)[placement.Candidate]
-		providerConfig := config.ResolvedProvider{Type: file.Providers[descriptor.Provider].Type, APIKey: string(stack.Keys[descriptor.Provider])}
-		candidate, err := build(providerConfig, descriptor)
-		if err != nil {
-			return execution.Selection{}, err
-		}
-		candidates = append(candidates, candidate)
-		descriptors = append(descriptors, descriptor)
-	}
-	lower, err := composeCandidates(candidates, descriptors, nil)
+	lower, expected, err := composeRoute(groups, controls, func(group routedGroup, candidate int) (provider.LanguageModel, error) {
+		descriptor := group.descriptors[candidate]
+		return build(config.ResolvedProvider{Type: file.Providers[descriptor.Provider].Type, APIKey: string(stack.Keys[descriptor.Provider])}, descriptor)
+	}, nil)
 	if err != nil {
 		return execution.Selection{}, err
 	}
@@ -122,21 +109,16 @@ func newStackIndex(file config.File) stackIndex {
 	return stackIndex{file: file, canonical: canonical}
 }
 
-// descriptors returns a model's primary and fallbacks in configured order.
-func (index stackIndex) descriptors(id string) []config.Primary {
-	model := index.file.Models[id]
-	return append([]config.Primary{model.Primary}, model.Fallback...)
-}
-
 func (index stackIndex) resolve(name string) (routedGroup, error) {
 	id, ok := index.canonical[name]
 	if !ok {
 		return routedGroup{}, &catalog.UnknownModelError{ModelID: name}
 	}
-	descriptors := index.descriptors(id)
+	model := index.file.Models[id]
+	descriptors := append([]config.Primary{model.Primary}, model.Fallback...)
 	candidates := make([]catalog.ConfiguredCandidate, len(descriptors))
 	for i, descriptor := range descriptors {
 		candidates[i] = catalog.ConfiguredCandidate{ProviderInstance: descriptor.Provider, Provider: index.file.Providers[descriptor.Provider].Type, ModelID: descriptor.Model}
 	}
-	return routedGroup{name: name, canonical: id, candidates: candidates}, nil
+	return routedGroup{name: name, canonical: id, candidates: candidates, descriptors: descriptors}, nil
 }
