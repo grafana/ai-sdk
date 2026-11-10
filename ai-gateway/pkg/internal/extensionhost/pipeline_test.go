@@ -7,7 +7,6 @@ import (
 	"math"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -825,9 +824,8 @@ func TestPipeline_RecordAttempts(t *testing.T) {
 
 func TestPipeline_AttemptCaptureCannotBeReplaced(t *testing.T) {
 	unavailable := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: 503, Message: "overloaded", IsRetryable: new(true)})
-	var stolen atomic.Int64
 	steal := func(ctx context.Context) {
-		_ = fallback.WithAttemptObserver(ctx, func(context.Context, fallback.Attempt) { stolen.Add(1) })
+		_ = fallback.WithAttemptObserver(ctx, func(context.Context, fallback.Attempt) { t.Error("an extension observed an attempt") })
 	}
 	records := make(chan extension.Record, 2)
 	observe := func(change bool) *recorder {
@@ -856,7 +854,6 @@ func TestPipeline_AttemptCaptureCannotBeReplaced(t *testing.T) {
 	outcome := h.run(t, execution.ConfiguredSelection("canonical", chain, configuredExpected("primary", "secondary")), "alias", false)
 	h.flush()
 
-	assert.Zero(t, stolen.Load())
 	<-records
 	unchanged := <-records
 	require.Len(t, unchanged.Attempts, 2)

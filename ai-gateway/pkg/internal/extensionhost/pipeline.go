@@ -318,7 +318,7 @@ func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (
 func (p *pipeline) forward(ctx context.Context, cancel context.CancelFunc, c *call, validator *execution.StreamValidator, in <-chan provider.StreamPart, out chan<- provider.StreamPart) {
 	defer cancel()
 	var usage streamusage.Aggregator
-	outcome, invalid, closed, received := extension.OutcomeError, false, false, false
+	outcome, invalid, closed, delivered := extension.OutcomeError, false, false, false
 loop:
 	for {
 		select {
@@ -333,7 +333,6 @@ loop:
 				}
 				break loop
 			}
-			received = true
 			usage.Observe(part)
 			if !invalid && validator.Check(part) != nil {
 				invalid = true
@@ -344,6 +343,7 @@ loop:
 					cancel()
 					select {
 					case out <- abortPart(err):
+						delivered = true
 					case <-ctx.Done():
 					}
 					break loop
@@ -351,6 +351,7 @@ loop:
 			}
 			select {
 			case out <- part:
+				delivered = true
 			case <-ctx.Done():
 				outcome = extension.OutcomeCancelled
 				break loop
@@ -363,10 +364,11 @@ loop:
 	if invalid && outcome != extension.OutcomeDenied {
 		outcome = extension.OutcomeInvalidOutput
 	}
+	modelErr := streamModelError(ctx, delivered)
 	reserved := c.reserve()
 	close(out)
 	streamUsage, _ := usage.Usage()
-	c.dispatch(ctx, reserved, outcome, streamUsage, streamModelError(ctx, received))
+	c.dispatch(ctx, reserved, outcome, streamUsage, modelErr)
 }
 
 // errNoModelResult is the outcome of a selected model that ended without a
@@ -383,11 +385,13 @@ func modelError(err error) error {
 }
 
 // streamModelError returns the outcome of an established stream's selected
-// model, as the adapter projects it at the first part: answered once a part
-// arrived, otherwise ended by the context or without output.
-func streamModelError(ctx context.Context, received bool) error {
+// model, as the adapter projects it at the first part it waits for: answered
+// once a part was delivered, otherwise ended by the context or without output.
+// It must be read before the output is closed, because the adapter cancels ctx
+// when it sees the close.
+func streamModelError(ctx context.Context, delivered bool) error {
 	switch {
-	case received:
+	case delivered:
 		return nil
 	case ctx.Err() != nil:
 		return ctx.Err()
