@@ -107,6 +107,10 @@ Admission SHALL refuse a secure value that references a secret by `name`, unless
 - **WHEN** an update sets a secure name that differs from the stored name under that key
 - **THEN** the update SHALL be refused
 
+#### Scenario: Swapping stored names between keys
+- **WHEN** an update sets a key's name to the name stored under another key of the same catalog
+- **THEN** the update SHALL be refused
+
 ### Requirement: Secret-safe admission refusals
 Admission refusals SHALL be `400 Bad Request` with a reason naming the failing field path. Neither the reason nor any log or metric the plugin produces SHALL contain a secure value's `create` content. Reasons MAY name catalog identifiers such as provider names, secure keys, model IDs and aliases.
 
@@ -122,7 +126,7 @@ Admission SHALL review `CREATE` and `UPDATE` only. Deletes SHALL NOT be reviewed
 - **THEN** the plugin SHALL receive no admission request
 
 ### Requirement: Catalog roles
-The manifest SHALL declare `aigateway:catalog-reader`, granting the viewer permission set on `ModelCatalog` and bound to Viewer, and `aigateway:catalog-writer`, granting the editor permission set and bound to Admin. Gateway role names SHALL follow `aigateway:<kind>-<verb>`.
+The manifest SHALL declare `aigateway:catalogreader`, granting the viewer permission set on `ModelCatalog` and bound to Viewer, and `aigateway:catalogwriter`, granting the editor permission set and bound to Admin. Gateway role names SHALL follow `aigateway:<kind><verb>`, in lowercase letters and digits only.
 
 #### Scenario: Viewer
 - **WHEN** a Viewer or Editor gets or lists catalogs in their namespace

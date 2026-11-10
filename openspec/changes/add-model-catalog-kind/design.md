@@ -9,7 +9,7 @@
 - `folderScoped: false` disables folder support in storage, so a folder annotation is refused.
 - app-sdk v0.60.16: `simple.AppManagedKind{Kind, Validator}`; `simple.App` starts informers only for kinds with a reconciler or watcher; `appadapter.AdmissionAdapter` decodes the objects with the kind codec and returns a plain error as a `403` denial, an `APIStatus` error with its own code. `simple.App.Validate` logs the returned error. `resource.RawSecureValue` redacts itself in formatting and JSON.
 - `config.File.Validate` interleaves per-provider type checks with the `apiKeyEnv` check, then checks models. Map iteration makes provider order random, but within one provider the type error precedes the key error, and provider errors precede model errors.
-- The CUE manifest definition constrains role names to `^aigateway:[a-z0-9]+$`, but the `roles` struct is open, so `aigateway:catalog-reader` generates unchanged (verified with the pinned generator); Grafana validates only the `fixed:` prefix of the registered role name.
+- The CUE manifest definition declares role names as `^aigateway:[a-z0-9]+$` and applies `#Role` only to labels that match it. Grafana validates only the `fixed:` prefix of the registered role name.
 - `pkg/internal/...` is importable only below `ai-gateway/pkg/`; the test host in `ai-gateway/test/platformhost` cannot import the generated manifest package.
 
 ## Goals / Non-Goals
@@ -21,7 +21,7 @@
 
 **Non-Goals:**
 
-- Building or serving models from catalogs, catalog routes, the `model-invoker` role, decryption, per-request validation bounds (#757, #758).
+- Building or serving models from catalogs, catalog routes, the `modelinvoker` role, decryption, per-request validation bounds (#757, #758).
 - Schema validation, pruning or RBAC in the test host; those are proven against Grafana.
 
 ## Decisions
@@ -56,16 +56,17 @@ modelCatalogKind: {
 
 ```cue
 roles: {
-	"aigateway:catalog-reader": {title: "Model catalog reader", kinds: [{kind: "ModelCatalog", permissionSet: "viewer"}]}
-	"aigateway:catalog-writer": {title: "Model catalog writer", kinds: [{kind: "ModelCatalog", permissionSet: "editor"}]}
+	"aigateway:catalogreader": {title: "Model catalog reader", kinds: [{kind: "ModelCatalog", permissionSet: "viewer"}]}
+	"aigateway:catalogwriter": {title: "Model catalog writer", kinds: [{kind: "ModelCatalog", permissionSet: "editor"}]}
 }
-roleBindings: {viewer: ["aigateway:catalog-reader"], admin: ["aigateway:catalog-writer"]}
+roleBindings: {viewer: ["aigateway:catalogreader"], admin: ["aigateway:catalogwriter"]}
 ```
 
-- One shared `roles` map and `roleBindings` block; #758 adds `aigateway:model-invoker` and #764 its middleware roles to the same blocks.
+- One shared `roles` map and `roleBindings` block; #758 adds `aigateway:modelinvoker` and #764 its middleware roles to the same blocks.
 - Declaring roles removes the generated default roles. They granted nothing and Grafana registered none, so no caller loses access.
-- Grafana registers them as `fixed:aigateway.ext.grafana.app:aigateway:catalog-reader|writer`. Basic roles inherit, so Editors and Admins also read.
-- A manifest test pins the role names, permission sets and bindings, so a generator that starts enforcing the CUE name pattern fails visibly.
+- Grafana registers them as `fixed:aigateway.ext.grafana.app:aigateway:catalogreader|catalogwriter`. Basic roles inherit, so Editors and Admins also read.
+- No hyphens: a hyphenated label escapes the SDK's `[a-z0-9]+` pattern, so its role body is never validated against `#Role`, and it would break once the struct is closed, when renaming fixed role IDs would break role assignments. Later roles follow the same convention (`modelinvoker`, `middlewarereader`, `middlewarewriter`).
+- A manifest test pins the role names, permission sets, bindings and the rendered `fixed:` IDs.
 
 ### Validation split
 
@@ -93,7 +94,7 @@ Alternative considered: put conversion and policy in `config`. Rejected: `config
    - `remove` with `create` or `name`: refused;
    - `remove`: drop the key;
    - `create` without `name`: keep the key;
-   - `name` without `create`: keep the key only on update when it equals the stored name under that key; otherwise refused as a shared secret reference;
+   - `name` without `create`: keep the key only on update when it equals the stored name under that key; otherwise refused as a shared secret reference, including the stored name of another key (a swap);
    - empty entry, or `create` with `name`: refused.
 3. `Parse(spec, mergedKeys)`.
 4. Any failure returns `apierrors.NewBadRequest(message)`, so Grafana answers `400` with the message, and RBAC refusals (`403`) stay distinguishable.
@@ -112,12 +113,13 @@ Alternative considered: refusing every `name`, as the issue states. Rejected: a 
 - `Host.Handler` takes a `clientv3.Client` (routes and admission). Paths `namespaces/{ns}/{plural}` and `namespaces/{ns}/{plural}/{name}` of a declared kind are served from an in-memory store: `POST` create, `GET` get, `PUT` update, `DELETE` delete. Everything else is forwarded to routes as today.
 - Each write is authenticated and namespace-checked like a route call, then sent as an `AdmissionReview` (object and old object as JSON) when the kind declares that operation. A denial is returned with its status. On allow, secure values follow the inline rules: `create` becomes a generated name with the plaintext kept in host memory (for #758's decrypted values), `remove` drops, omitted keys and unchanged names are kept. Reads return names only.
 - No schema validation, pruning, RBAC or resource versions beyond a counter.
+- The secure value store is documented as test-only, holds plaintext only in memory, and never writes it to logs or responses.
 
 ### Proving the namespace routes unchanged
 
 - Go: the manifest test keeps asserting the two namespaced paths and methods; the route table test is unchanged.
 - Grafana: a route spec under `ai-gateway/tests/` covers `GET config` (status, content type, configured model), unary and streaming `POST language-model` against a deterministic fake Anthropic provider, the Gateway error document for an unknown model, and `405` for an undeclared method. It is run first on the base branch build (routes-only manifest) and then on this change, both green, and both runs are reported.
-- The fake provider is a small Node SSE server under `ai-gateway/tests/`, started as a compose service in an `e2e` profile, with one extra provider and model in the provisioned catalog pointing at it through `baseURL`.
+- The fake provider is a small deterministic Node SSE server under `ai-gateway/tests/`, started as a compose service in an `e2e` profile, with one extra provider and model in the provisioned catalog pointing at it through `baseURL`. `outbound.ValidateEndpoint` accepts any absolute `http` or `https` URL with a host, and the Go route tests already use plain-HTTP fakes, so no production check changes. It is end-to-end infrastructure, not provider evidence, and stays out of `test/conformance`.
 
 ### End-to-end tests
 

@@ -18,7 +18,7 @@
 ## 4. Stack catalog checks and validator
 
 - [ ] 4.1 Add `pkg/internal/stackcatalog` with `Parse` (policy, conversion, shape, key check); verify table tests cover each policy refusal, conversion of every field, a shape error from the spec, and missing and extra keys.
-- [ ] 4.2 Add the secure key merge and `Validator` returning `400` errors; verify table tests for create, update without `secure`, `create` replacement, `remove` of a used and an unused key, stored-name echo, a new name on create and update, conflicting and empty entries, and a wrong object type.
+- [ ] 4.2 Add the secure key merge and `Validator` returning `400` errors; verify table tests for create, update without `secure`, `create` replacement, `remove` of a used and an unused key, stored-name echo, a new name on create and update, the stored name of another key (swap), conflicting and empty entries, and a wrong object type.
 - [ ] 4.3 Add the sentinel test: refused and accepted reviews with plaintext `create` values leave no sentinel in errors or in the plugin log handler output; verify it passes.
 
 ## 5. App wiring and test host

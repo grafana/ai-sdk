@@ -10,5 +10,5 @@ Access to the namespace routes SHALL NOT require a Gateway-specific Grafana role
 - **THEN** the request SHALL be served subject to BYOK validation
 
 #### Scenario: Catalog roles do not gate the namespace routes
-- **WHEN** a caller without `aigateway:catalog-reader` or `aigateway:catalog-writer` calls a namespace route
+- **WHEN** a caller without `aigateway:catalogreader` or `aigateway:catalogwriter` calls a namespace route
 - **THEN** the access decision SHALL be the same as for a caller holding them
