@@ -66,6 +66,10 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// endpointCertificate is the test CA's certificate, also valid for
+// 127.0.0.1, which TLS fakes of custom stack-catalog endpoints present.
+var endpointCertificate tls.Certificate
+
 // startNativeProxy trusts a fresh test CA for the process and serves CONNECT
 // tunnels to the native Anthropic authority, terminating their TLS and
 // forwarding each request to the current native target. Every other
@@ -76,6 +80,7 @@ func startNativeProxy() (*httptest.Server, error) {
 		return nil, err
 	}
 	x509.SetFallbackRoots(roots)
+	endpointCertificate = certificate
 	forward := &httputil.ReverseProxy{Rewrite: func(request *httputil.ProxyRequest) {
 		nativeTarget.mu.Lock()
 		target := nativeTarget.target
@@ -112,6 +117,7 @@ func nativeCertificate() (tls.Certificate, *x509.CertPool, error) {
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{CommonName: "gateway test native provider"},
 		DNSNames:              []string{"api.anthropic.com", "api.openai.com"},
+		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1)},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
