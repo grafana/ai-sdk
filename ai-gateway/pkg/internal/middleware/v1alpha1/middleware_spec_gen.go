@@ -4,9 +4,8 @@ package v1alpha1
 
 // +k8s:openapi-gen=true
 type Spec struct {
-	Type    string                 `json:"type"`
-	Enabled bool                   `json:"enabled"`
-	Config  map[string]interface{} `json:"config,omitempty"`
+	Type    string `json:"type"`
+	Enabled bool   `json:"enabled"`
 }
 
 // NewSpec creates a new Spec object.

@@ -75,6 +75,14 @@ pnpm --filter ./ai-gateway build
 (cd ai-gateway && mage -v buildPlugin)
 """
 
+[tasks.generate-ai-gateway-kinds]
+description = "Generate the AI Gateway Middleware members from the public tenant types, then the app manifest and kind types"
+run = """
+mise deps install --only test
+(cd ai-gateway && go run ./pkg/internal/tenantschema/cmd/members)
+pnpm --filter ./ai-gateway generate:kinds
+"""
+
 [tasks.test-ai-gateway-frontend]
 description = "Typecheck, lint and unit test the AI Gateway plugin frontend"
 run = """

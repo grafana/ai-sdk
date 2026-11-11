@@ -411,7 +411,7 @@ func TestPluginProcess_StartsIdleWithoutSigningKeys(t *testing.T) {
 	assert.Contains(t, body, "admission hook for ModelCatalog failed")
 	code, body = sendObject(t, ctx, http.MethodGet, catalogURL(server.URL, "default"), token, "")
 	assert.Equal(t, http.StatusNotFound, code, body)
-	code, body = sendObject(t, ctx, http.MethodPost, middlewareURL(server.URL, ""), token, middlewareDocument(t, "instructions", "instructions", true, map[string]any{"instructions": middlewareSentinel}))
+	code, body = sendObject(t, ctx, http.MethodPost, middlewareURL(server.URL, ""), token, middlewareDocument("model-access", "model-access", true, `"modelAccess":{"note":"`+middlewareSentinel+`"}`))
 	assert.Equal(t, http.StatusInternalServerError, code, body)
 	assert.Contains(t, body, "admission hook for Middleware failed")
 

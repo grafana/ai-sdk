@@ -3,7 +3,6 @@
 export interface Spec {
 	type: string;
 	enabled: boolean;
-	config?: Record<string, any>;
 }
 
 export const defaultSpec = (): Spec => ({

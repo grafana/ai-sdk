@@ -12,12 +12,12 @@ import (
 	"github.com/grafana/grafana-app-sdk/resource"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
-	middlewarev1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/middleware/v1alpha1"
 )
 
-// MaxConfigBytes bounds the JSON encoding of a Middleware's spec.config.
-const MaxConfigBytes = 64 << 10
+// MaxMemberBytes bounds the canonical JSON encoding of a Middleware's member.
+const MaxMemberBytes = 64 << 10
 
 // Validator is the Middleware admission validator. It refuses invalid
 // creates and updates with a 400 error whose message never contains a
@@ -27,7 +27,8 @@ type Validator struct {
 }
 
 // NewValidator returns a validator for the tenant-scope definitions among
-// definitions. Other scopes are refused like unregistered types.
+// definitions, which startup has bound to their public tenant types. Other
+// scopes are refused like unregistered types.
 func NewValidator(definitions []extension.Definition) Validator {
 	tenant := map[string]extension.Definition{}
 	for _, definition := range definitions {
@@ -39,60 +40,83 @@ func NewValidator(definitions []extension.Definition) Validator {
 }
 
 // Validate checks creates and updates. A disable-only update, which sets
-// spec.enabled to false and keeps the stored spec.config, is accepted whatever
-// the stored type. Other actions are accepted.
+// spec.enabled to false and keeps or removes the stored member, is accepted
+// whatever the stored type. Other actions are accepted.
 func (v Validator) Validate(_ context.Context, request *app.AdmissionRequest) error {
 	if request.Action != resource.AdmissionActionCreate && request.Action != resource.AdmissionActionUpdate {
 		return nil
 	}
-	middleware, ok := request.Object.(*middlewarev1alpha1.Middleware)
-	if !ok {
-		return apierrors.NewBadRequest("middleware: the admission object is not a Middleware")
-	}
-	if middleware.Name != middleware.Spec.Type {
-		return apierrors.NewBadRequest("middleware: metadata.name must equal spec.type")
-	}
-	configuration, err := encode(middleware.Spec.Config)
+	spec, name, err := decode(request.Object, "the admission object")
 	if err != nil {
-		return apierrors.NewBadRequest("middleware: spec.config is not a JSON object")
+		return err
+	}
+	if name != spec.Type {
+		return badRequest("middleware: metadata.name must equal spec.type")
+	}
+	memberName := tenanttype.Type{Name: spec.Type}.Member()
+	member, hasMember := spec.Members[memberName]
+	if len(spec.Members) > 1 || len(spec.Members) == 1 && !hasMember {
+		return badRequest(fmt.Sprintf("middleware: spec may set only spec.%s, the member of spec.type", memberName))
 	}
 	update := request.Action == resource.AdmissionActionUpdate
 	if update {
-		stored, ok := request.OldObject.(*middlewarev1alpha1.Middleware)
+		stored, ok := request.OldObject.(*Middleware)
 		if !ok {
-			return apierrors.NewBadRequest("middleware: the stored object is not a Middleware")
+			return badRequest("middleware: the stored object is not a Middleware")
 		}
-		previous, err := encode(stored.Spec.Config)
-		if err == nil && !middleware.Spec.Enabled && bytes.Equal(configuration, previous) {
+		if !spec.Enabled && (!hasMember || bytes.Equal(member, storedMember(stored, memberName))) {
 			return nil
 		}
 	}
-	if len(configuration) > MaxConfigBytes {
-		return apierrors.NewBadRequest(fmt.Sprintf("middleware: spec.config exceeds %d bytes", MaxConfigBytes))
+	if len(member) > MaxMemberBytes {
+		return badRequest(fmt.Sprintf("middleware: spec.%s exceeds %d bytes", memberName, MaxMemberBytes))
 	}
-	definition, ok := v.tenant[middleware.Spec.Type]
+	definition, ok := v.tenant[spec.Type]
 	if !ok {
-		message := fmt.Sprintf("middleware: spec.type %q is not a tenant extension of this Gateway", middleware.Spec.Type)
+		message := fmt.Sprintf("middleware: spec.type %q is not a tenant extension of this Gateway", spec.Type)
 		if update {
-			message += "; an update may only set spec.enabled to false and keep spec.config"
+			message += fmt.Sprintf("; an update may only set spec.enabled to false and keep or remove spec.%s", memberName)
 		}
-		return apierrors.NewBadRequest(message)
+		return badRequest(message)
 	}
-	if err := extensionhost.CheckConfig(definition, configuration); err != nil {
-		return apierrors.NewBadRequest("middleware: spec.config " + err.Error())
+	if definition.ConfigSchema.JSON() == nil {
+		if hasMember {
+			return badRequest(fmt.Sprintf("middleware: spec.type %q takes no configuration member", spec.Type))
+		}
+		return nil
+	}
+	if !hasMember {
+		if spec.Enabled {
+			return badRequest(fmt.Sprintf("middleware: spec.%s is required when spec.enabled is true", memberName))
+		}
+		return nil
+	}
+	if err := extensionhost.CheckConfig(definition, member); err != nil {
+		return badRequest(fmt.Sprintf("middleware: spec.%s %s", memberName, err))
 	}
 	return nil
 }
 
-func encode(configuration map[string]any) (json.RawMessage, error) {
-	if configuration == nil {
-		configuration = map[string]any{}
+// storedMember returns the stored object's member, or nil when it has none or
+// its spec can't be decoded.
+func storedMember(stored *Middleware, name string) json.RawMessage {
+	spec, err := DecodeSpec(stored.RawSpec)
+	if err != nil {
+		return nil
 	}
-	var encoded bytes.Buffer
-	encoder := json.NewEncoder(&encoded)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(configuration); err != nil {
-		return nil, err
-	}
-	return bytes.TrimSuffix(encoded.Bytes(), []byte("\n")), nil
+	return spec.Members[name]
 }
+
+func decode(object resource.Object, what string) (Spec, string, error) {
+	middleware, ok := object.(*Middleware)
+	if !ok {
+		return Spec{}, "", badRequest(fmt.Sprintf("middleware: %s is not a Middleware", what))
+	}
+	spec, err := DecodeSpec(middleware.RawSpec)
+	if err != nil {
+		return Spec{}, "", badRequest(err.Error())
+	}
+	return spec, middleware.Name, nil
+}
+
+func badRequest(message string) error { return apierrors.NewBadRequest(message) }

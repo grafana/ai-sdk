@@ -12,6 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/kube-openapi/pkg/spec3"
+
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/tenantschema"
 )
 
 func TestManifest_DeclaresGatewayRoutesAndKinds(t *testing.T) {
@@ -69,18 +72,35 @@ func TestManifest_MiddlewareSchema(t *testing.T) {
 	assert.ElementsMatch(t, []string{"spec"}, slices.Collect(maps.Keys(root.Value.Properties)), "no secure values")
 	spec := components.Schemas["spec"]
 	require.NotNil(t, spec)
-	assert.ElementsMatch(t, []string{"type", "enabled"}, spec.Value.Required)
+	assert.ElementsMatch(t, []string{"type", "enabled"}, spec.Value.Required, "no member is required")
 	require.NotNil(t, spec.Value.AdditionalProperties.Has)
 	assert.False(t, *spec.Value.AdditionalProperties.Has)
-	assert.ElementsMatch(t, []string{"type", "enabled", "config"}, slices.Collect(maps.Keys(spec.Value.Properties)))
+	assert.Empty(t, spec.Value.OneOf)
+	assert.Empty(t, spec.Value.AnyOf)
 	assert.True(t, spec.Value.Properties["type"].Value.Type.Is("string"))
+	assert.Empty(t, spec.Value.Properties["type"].Value.Enum, "spec.type has no enum, so stored types survive a rollback")
 	assert.True(t, spec.Value.Properties["enabled"].Value.Type.Is("boolean"))
-	config := spec.Value.Properties["config"].Value
-	assert.True(t, config.Type.Is("object"))
-	assert.Empty(t, config.Properties)
-	require.NotNil(t, config.AdditionalProperties.Has, "config is an open object")
-	assert.True(t, *config.AdditionalProperties.Has)
-	assert.Nil(t, config.AdditionalProperties.Schema)
+
+	members, err := tenantschema.Members(tenanttype.All())
+	require.NoError(t, err)
+	want := []string{"type", "enabled"}
+	for _, member := range members {
+		want = append(want, member.Name)
+	}
+	assert.ElementsMatch(t, want, slices.Collect(maps.Keys(spec.Value.Properties)), "members are the projection of the registry")
+}
+
+func TestManifest_MiddlewareMembersSurvivePruning(t *testing.T) {
+	structural, err := tenantschema.ManifestKind(*LocalManifest().ManifestData, "v1alpha1", "Middleware")
+	require.NoError(t, err, "the kind store builds a structural schema, so it prunes and validates the kind")
+	for _, tenantType := range tenanttype.All() {
+		if tenantType.ConfigSchema.JSON() == nil {
+			continue
+		}
+		t.Run(tenantType.Name, func(t *testing.T) {
+			assert.NoError(t, tenantschema.RoundTrip(structural, tenantType.Name, tenantType.Member(), tenantType.Example))
+		})
+	}
 }
 
 func TestManifest_Roles(t *testing.T) {

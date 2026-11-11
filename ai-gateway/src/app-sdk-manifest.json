@@ -229,10 +229,6 @@
                             "spec": {
                                 "additionalProperties": false,
                                 "properties": {
-                                    "config": {
-                                        "additionalProperties": true,
-                                        "type": "object"
-                                    },
                                     "enabled": {
                                         "type": "boolean"
                                     },

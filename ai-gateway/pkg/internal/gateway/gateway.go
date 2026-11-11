@@ -27,7 +27,6 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/discovery"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
-	middlewarev1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/middleware/v1alpha1"
 	modelcatalogv1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/service"
@@ -294,12 +293,13 @@ func (g *Gateway) Provider() app.Provider {
 }
 
 // managedKinds lists every manifest kind with its admission validator. The
-// Middleware validator accepts the tenant extensions among definitions. No
+// Middleware kind keeps specs raw for its validator, which accepts the tenant
+// extensions among definitions. No
 // kind has a reconciler or watcher, so the app starts no informers.
 func managedKinds(definitions []extension.Definition) []simple.AppManagedKind {
 	return []simple.AppManagedKind{
 		{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{}},
-		{Kind: middlewarev1alpha1.Kind(), Validator: tenantconfig.NewValidator(definitions)},
+		{Kind: tenantconfig.Kind(), Validator: tenantconfig.NewValidator(definitions)},
 	}
 }
 
