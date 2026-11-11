@@ -150,7 +150,7 @@ The shipped build registers no tenant extension, so it makes no reads, and no CI
 
 - **Go, test host:** the reader lists two namespaces over HTTP with a real app-sdk token-exchange kubeconfig. Every exchange carries no subject token, even when the triggering call carried a user's token. 403, 404, 5xx, a timeout, an oversized body and malformed JSON are failures, and an empty list is absence.
 - **Go, gateway:** with test definitions, resources created through admission in two namespaces apply to their own language-model calls. With a zero kubeconfig, defaults run, nothing is read and creates are refused.
-- **CI end-to-end, if open question 4 is approved:** the pinned Grafana gives the plugin API access.
+- **CI end-to-end:** the pinned Grafana gives the plugin API access.
 
 Manual follow-up for nara, on the first build that registers a tenant extension (#766) in a development wave:
 
@@ -200,10 +200,17 @@ All cache, snapshot and pipeline timing tests run in `synctest` bubbles with fak
 - Rolling back restores the earlier behavior: stored resources are ignored, and default-on tenant extensions run everywhere.
 - Rolling forward to a build that drops a tenant extension leaves its resources counted as unknown when enabled.
 
-## Open Questions
+## Recorded decisions
 
-1. **Admission without API access:** B (refuse with 400) or A (app-sdk warning) or C (docs only). Recommendation: **B**, with a follow-up issue for A.
-2. **Disabled unknown types:** excluded from the unknown-type log and count. Recommendation: **exclude**, since they have no effect.
-3. **Constants:** TTL 1 min, staleness 10 min, read timeout 5 s, backoff 30 s fixed, LRU 1024 namespaces, client limit 20 QPS with burst 40, list bound 4 MiB in pages of 100. Recommendation: **accept**, and revisit LRU size and TTL with development metrics.
-4. **API-access evidence in CI:** add one Info record at app construction stating whether the plugin has API access, regardless of tenant definitions. Add an `e2e.sh` positive check that it reports access on the pinned image. This also closes #764's follow-up on the vacuous plugin-log sentinel check. Recommendation: **yes**.
-5. **Cache constants as operator settings:** recommendation: **no**. They stay constants, and #766 polls.
+- **Admission without API access: B.** Creates and updates are refused with a fixed-reason `400`. API access is a static process property, so refusing is more honest than storing configuration that does nothing. This deviates from the design article's "accepted, with an admission warning".
+- **Disabled unknown types** are excluded from the unknown-type log and count.
+- **Constants** as listed under "Cache state machine" and "Reader and client construction".
+- **API-access evidence in CI:** one Info record at app construction, and a positive check in `scripts/e2e.sh`. It closes #764's follow-up on the vacuous plugin-log sentinel check.
+- **Cache constants** stay constants, not operator settings.
+- **Fail-closed on a first-read failure** applies in namespaces without resources too: a failed read is never a missing resource.
+
+## Follow-ups
+
+- Admission warnings through app-sdk (option A), once validators can return warnings and Grafana surfaces them.
+- Revisit `maxNamespaces`, `ttl` and the 20 QPS client limit with development metrics. API load per replica is about active namespaces / TTL, so 1024 namespaces at a 1-minute TTL is close to the limit.
+- Manual development deployment check on the first build with a tenant extension (#766).

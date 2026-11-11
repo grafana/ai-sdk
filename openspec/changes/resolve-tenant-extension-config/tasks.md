@@ -37,7 +37,7 @@
 
 ## 7. End-to-end suite
 
-- [ ] 7.1 Add the positive plugin-log check to `scripts/e2e.sh`: the API-access record is present and reports access, before the existing sentinel checks. Verify the script passes `shellcheck` if available and runs in CI. Gated on open question 4.
+- [ ] 7.1 Add the positive plugin-log check to `scripts/e2e.sh`: the API-access record is present and reports access, before the existing sentinel checks. Verify the script passes `shellcheck` if available and runs in CI.
 
 ## 8. Documentation
 
