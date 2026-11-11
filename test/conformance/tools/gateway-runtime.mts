@@ -104,7 +104,7 @@ export function grafanaSettings(source: string): string {
   const start = lines.findIndex(line => line.trim() === header);
   if (start === -1) throw new Error(`grafana settings have no ${header} section`);
   const end = lines.findIndex((line, index) => index > start && line.trim().startsWith("["));
-  const plugin = [header, `config_file = ${catalogMount}/models.yaml`, "access_mode = self-hosted", `${providerKeySetting} = ${backendKey}`];
+  const plugin = [header, `model_catalog = $__file{${catalogMount}/models.yaml}`, "access_mode = self-hosted", `${providerKeySetting} = ${backendKey}`];
   return [...lines.slice(0, start), ...plugin, "", ...(end === -1 ? [] : lines.slice(end))].join("\n");
 }
 

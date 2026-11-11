@@ -33,10 +33,10 @@ test("catalog isolates every row and never substitutes provider protocols", () =
 });
 
 test("settings keep the source toggles and replace only the plugin section", () => {
-  const source = "; comment\n[feature_toggles]\nappplugins.registerAPIServer = true\n\n[plugin.grafana-aigateway-app]\nconfig_file = /dev\nanthropic_api_key = $__env{KEY}\n\n[log]\nlevel = info\n";
+  const source = "; comment\n[feature_toggles]\nappplugins.registerAPIServer = true\n\n[plugin.grafana-aigateway-app]\nmodel_catalog = /dev\nanthropic_api_key = $__env{KEY}\n\n[log]\nlevel = info\n";
   const settings = grafanaSettings(source);
   assert.match(settings, /\[feature_toggles\]\nappplugins.registerAPIServer = true/);
-  assert.match(settings, /config_file = \/etc\/grafana\/aigateway\/models.yaml\naccess_mode = self-hosted\nconformance_provider_key = conformance-backend-key/);
+  assert.match(settings, /model_catalog = \$__file\{\/etc\/grafana\/aigateway\/models.yaml\}\naccess_mode = self-hosted\nconformance_provider_key = conformance-backend-key/);
   assert.doesNotMatch(settings, /anthropic_api_key|\/dev/);
   assert.match(settings, /\[log\]\nlevel = info/);
   assert.throws(() => grafanaSettings("[feature_toggles]\n"), /no \[plugin.grafana-aigateway-app\] section/);
