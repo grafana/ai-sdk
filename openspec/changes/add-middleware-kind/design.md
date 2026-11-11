@@ -237,6 +237,8 @@ No migration: the kind starts empty. Rolling back to a build without the kind st
   - Viewer and Editor `get` of a stored resource (`200`), and `403` on its update and delete;
   - the runtime effect that replaces "Stored tenant configuration has no runtime effect".
 
+- **End-to-end plugin-log sentinel checks can pass vacuously.** `scripts/e2e.sh` greps the Grafana log for `logger=plugin.grafana-aigateway-app` lines and then for sentinels; if the filter matches no line, both sentinel checks pass without inspecting anything. The first change that touches the end-to-end suite after this one should add a positive check, for example that the filtered log contains `validation failed`, before the sentinel checks.
+
 ### Draft upstream issue
 
 **Title:** `AsKubeOpenAPI` drops `x-kubernetes-preserve-unknown-fields`, so pruning empties nested objects in open fields
