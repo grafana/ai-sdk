@@ -194,6 +194,9 @@ deletes the old secret, and deleting the catalog deletes its secrets.
 - This needs the Grafana version and feature toggles in
   [Requirements](#requirements). Grafana Cloud doesn't store secure values for
   plugin resources yet, so catalogs with keys are refused there.
+- Catalog models can't list [agent skills](#allow-anthropic-agent-skills)
+  yet, so they refuse every skill
+  ([#781](https://github.com/grafana/ai-sdk/issues/781)).
 
 ## Settings
 
