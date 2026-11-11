@@ -226,7 +226,8 @@ Clients append `/config` and `/language-model` as they do for the Gateway URL,
 so they need no other change.
 
 - Editors and Admins can list and call catalog models (`aigateway:modelinvoker`).
-  Viewers can read catalogs but not call them.
+  Viewers can read catalogs but not call them, and anonymous access can't
+  call them even when Grafana's roles would allow it.
 - A Grafana Cloud access policy token needs the
   `aigateway.ext.grafana.app/modelcatalogs:get` permission. `access_mode` and
   `access_internal_services` don't apply to catalog routes.

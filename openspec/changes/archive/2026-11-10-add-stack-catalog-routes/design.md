@@ -94,6 +94,7 @@ func (policy AccessPolicy) DecideCatalog(info types.AuthInfo, namespace string) 
 - `Decide` keeps its behavior for the namespace routes.
 - The access-decision metric gains `decision="catalog"`.
 - `AccessMiddleware` takes a `Decider` (`policy.Decide` or `policy.DecideCatalog`) instead of the policy.
+- `DecideCatalog` refuses callers with no user or service-account identity unless the caller chain is services only, so anonymous viewers are refused even when Grafana's role checks would allow them. This is a deliberate exception to D8: catalog calls spend the stack's own provider keys, and anonymous callers can't be attributed.
 - **Alternative considered:** a route flag inside `Decide`. Rejected: a separate method keeps the namespace path byte-for-byte unchanged and makes the table test explicit.
 
 ### Parent check and catalog carrier
