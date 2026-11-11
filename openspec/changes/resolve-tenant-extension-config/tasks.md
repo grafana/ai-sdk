@@ -11,7 +11,7 @@
 
 ## 3. Shared registerer and contract docs
 
-- [ ] 3.1 Add the per-definition `sharedRegisterer` and pass it to every instance. Update the godoc of `Definition.New`, `Dependencies.Registerer` and `ScopeTenant` for per-namespace construction and the collector contract. Verify: re-registering the same collector succeeds, a different collector with the same descriptors fails, an uncomparable collector type doesn't panic, and gather shows one series for two registrations.
+- [x] 3.1 Add the per-definition `sharedRegisterer` and pass it to every instance. Update the godoc of `Definition.New`, `Dependencies.Registerer` and `ScopeTenant` for per-namespace construction and the collector contract. Verify: re-registering the same collector succeeds, a different collector with the same descriptors fails, an uncomparable collector type doesn't panic, and gather shows one series for two registrations.
 
 ## 4. Tenant cache and snapshots
 

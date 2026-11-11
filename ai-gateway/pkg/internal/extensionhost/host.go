@@ -54,6 +54,8 @@ type Host struct {
 	dropped      prometheus.Counter
 	observations observations
 	closeOnce    sync.Once
+	// registerers holds each definition's shared registerer.
+	registerers map[string]sharedRegisterer
 }
 
 type instance struct {
@@ -101,8 +103,12 @@ func New(config Config) (*Host, error) {
 			return nil, fmt.Errorf("extensions: registering metrics: %w", err)
 		}
 	}
+	host.registerers = make(map[string]sharedRegisterer, len(config.Plan.enabled))
 	for _, planned := range config.Plan.enabled {
-		built, err := construct(planned, config)
+		host.registerers[planned.definition.Name] = newSharedRegisterer(config.Registerer, planned.definition.Name)
+	}
+	for _, planned := range config.Plan.enabled {
+		built, err := construct(planned, config.Logger, host.registerers[planned.definition.Name], config.Clock)
 		if built != nil {
 			host.instances = append(host.instances, built)
 		}
@@ -121,12 +127,12 @@ func New(config Config) (*Host, error) {
 	return host, nil
 }
 
-func construct(planned planned, config Config) (*instance, error) {
+func construct(planned planned, logger *slog.Logger, registerer sharedRegisterer, clock func() time.Time) (*instance, error) {
 	definition := planned.definition
 	deps := extension.Dependencies{
-		Logger:     config.Logger.With("extension", definition.Name),
-		Registerer: prometheus.WrapRegistererWith(prometheus.Labels{"extension": definition.Name}, config.Registerer),
-		Clock:      config.Clock,
+		Logger:     logger.With("extension", definition.Name),
+		Registerer: registerer,
+		Clock:      clock,
 		Secrets:    planned.secrets,
 	}
 	var value any

@@ -18,11 +18,11 @@ const (
 	// Gateway's extensions setting.
 	ScopeOperator Scope = "operator"
 	// ScopeTenant extensions are configured per namespace, by Middleware
-	// resources named after the extension. The Gateway doesn't apply stored
-	// resources yet, so they run with their default state and an empty
-	// configuration. Their configuration is limited to top-level fields with
-	// scalar or scalar-array values, because the platform prunes objects
-	// nested inside it.
+	// resources named after the extension. A namespace without a resource
+	// uses the extension's default state, and a host that gives the plugin no
+	// API access applies the default state everywhere. Their configuration is
+	// limited to top-level fields with scalar or scalar-array values, because
+	// the platform prunes objects nested inside it.
 	ScopeTenant Scope = "tenant"
 )
 
@@ -71,7 +71,11 @@ type Definition struct {
 	// object, and its dependencies. The instance must implement at least one
 	// phase interface: [Admitter], [RequestTransformer], [RequestInspector],
 	// [ResponseInspector] or [Observer]. It may also implement [Closer]. New
-	// may run more than once per process, once per configuration it is given.
+	// may run more than once per process, once per configuration it is given:
+	// a tenant extension's runs once for each namespace configuration that
+	// enables it. It should be quick and do no I/O. An instance built for a
+	// namespace is closed once its configuration is replaced or evicted and
+	// no call still uses it.
 	New func(config json.RawMessage, deps Dependencies) (any, error)
 }
 
@@ -81,7 +85,11 @@ type Dependencies struct {
 	// name attached. It is not filtered by the Gateway's log allowlist.
 	Logger *slog.Logger
 	// Registerer registers the extension's collectors, with the extension's
-	// name as the constant label "extension".
+	// name as the constant label "extension". Every instance of a definition
+	// receives the same registerer, and registering a collector the
+	// definition already registered succeeds. Create collectors once per
+	// definition, register them in New, and never unregister them in Close:
+	// a collector created in each New run fails registration on the second.
 	Registerer prometheus.Registerer
 	// Clock returns the current time.
 	Clock func() time.Time

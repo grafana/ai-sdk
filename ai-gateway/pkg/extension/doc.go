@@ -7,8 +7,10 @@
 // entrypoint. There is no global or import-time registry. At startup the
 // Gateway validates every definition, reads operator configuration, and runs
 // each enabled extension's factory once with its validated configuration and
-// [Dependencies]. A factory may run more than once per process, once per
-// configuration it is given, so it must not assume it is the only instance.
+// [Dependencies]. Tenant-scope extensions also run once for each namespace
+// configuration that enables them, read from the namespace's Middleware
+// resources. A factory may therefore run more than once per process and must
+// not assume it is the only instance.
 //
 // # Phases
 //
