@@ -103,8 +103,8 @@ func ParseModelCatalog(document string) (File, error) {
 func (file File) Validate() error { return file.validate(requireAPIKeyEnv) }
 
 // ValidateShape validates provider types and fields, provider references,
-// model routes, public IDs, aliases and discovery bounds, without checking
-// where provider keys come from.
+// model routes and their skills policies, public IDs, aliases and discovery
+// bounds, without checking where provider keys come from.
 func (file File) ValidateShape() error { return file.validate(nil) }
 
 func requireAPIKeyEnv(name string, provider Provider) error {
