@@ -41,6 +41,9 @@ const (
 	// CategoryCatalogConfiguration is a stored stack catalog that fails its
 	// checks or lacks a provider key.
 	CategoryCatalogConfiguration
+	// CategoryEgressRefused is a provider connection the stack-catalog egress
+	// policy refused, or whose host did not resolve.
+	CategoryEgressRefused
 )
 
 // Reason refines [CategoryInvalidRequest] for host policy and routing refusals
@@ -119,6 +122,8 @@ func ClassifyProvider(err error) (category Category) {
 		return CategoryInternal
 	}
 	switch {
+	case errors.Is(err, ErrEgressRefused):
+		return CategoryEgressRefused
 	case errors.Is(err, ErrTranslation), errors.Is(err, ErrInvalidOutput):
 		return CategoryInternal
 	case errors.Is(err, catalog.ErrUnsupportedRequest):

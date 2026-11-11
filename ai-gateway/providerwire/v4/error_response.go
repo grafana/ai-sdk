@@ -150,6 +150,13 @@ var publicErrors = [...]errorDefinition{
 		code:      codeDependency,
 		retryable: false,
 	},
+	safeEgressRefused: {
+		status:    http.StatusFailedDependency,
+		message:   "provider endpoint refused by the egress policy or not resolvable",
+		kind:      errorDependency,
+		code:      codeDependency,
+		retryable: false,
+	},
 }
 
 type errorResponse struct {

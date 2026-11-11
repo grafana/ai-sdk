@@ -53,6 +53,7 @@ func TestClassifySelection(t *testing.T) {
 		{"attempt bound", ErrRoutingAttemptBound, CategoryInvalidRequest, ReasonAttemptBound},
 		{"unknown fallback model", fmt.Errorf("wrapped: %w", ErrUnknownFallbackModel), CategoryModelNotFound, ReasonFallbackModel},
 		{"provider fallthrough", apiError(429, nil), CategoryRateLimit, ReasonNone},
+		{"egress refusal", fmt.Errorf("wrapped: %w", ErrEgressRefused), CategoryEgressRefused, ReasonNone},
 		{"deadline", context.DeadlineExceeded, CategoryTimeout, ReasonNone},
 		{"other", errors.New("private"), CategoryInternal, ReasonNone},
 		{"nil", nil, CategoryInternal, ReasonNone},
@@ -73,6 +74,8 @@ func TestClassifyProvider(t *testing.T) {
 		category Category
 	}{
 		{"canceled", context.Canceled, CategoryCancellation},
+		{"egress refusal", ErrEgressRefused, CategoryEgressRefused},
+		{"egress refusal inside a provider transport error", apiError(0, &url.Error{Op: "Post", URL: "https://llm.example", Err: ErrEgressRefused}), CategoryEgressRefused},
 		{"deadline", context.DeadlineExceeded, CategoryTimeout},
 		{"unsupported request", fmt.Errorf("wrapped: %w", catalog.ErrUnsupportedRequest), CategoryInvalidRequest},
 		{"unsupported functionality", fmt.Errorf("wrapped: %w", provider.ErrUnsupportedFunctionality), CategoryInvalidRequest},

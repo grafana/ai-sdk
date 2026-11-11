@@ -1687,3 +1687,55 @@ func TestUnsupportedFunctionalityClassification(t *testing.T) {
 		}
 	}
 }
+
+func TestEgressRefusalClassification(t *testing.T) {
+	overload := provider.NewAPICallError(provider.APICallErrorOptions{StatusCode: http.StatusServiceUnavailable, Message: "overloaded"})
+	refused := documentForSafeError(safeError{category: safeEgressRefused})
+	tests := []struct {
+		name       string
+		candidates func() []*scriptedModel
+		want       expectedDocument
+	}{
+		{"refused", func() []*scriptedModel { return []*scriptedModel{newScripted(execution.ErrEgressRefused)} }, refused},
+		{"refused then success", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(execution.ErrEgressRefused), newScripted(nil)}
+		}, expectedDocument{status: http.StatusOK}},
+		{"503 then refused", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(overload), newScripted(execution.ErrEgressRefused)}
+		}, refused},
+		{"refused then 503", func() []*scriptedModel {
+			return []*scriptedModel{newScripted(execution.ErrEgressRefused), newScripted(overload)}
+		}, refused},
+	}
+	for _, streaming := range []bool{false, true} {
+		for _, tc := range tests {
+			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
+				candidates := tc.candidates()
+				models := make([]provider.LanguageModel, len(candidates))
+				for i, candidate := range candidates {
+					models[i] = candidate
+				}
+				composed := models[0]
+				if len(models) > 1 {
+					var err error
+					composed, err = fallback.New(models...)
+					require.NoError(t, err)
+				}
+				harness := newRuntimeHarness(t, testLimits())
+				harness.resolver.resolved.Model = composed
+				request := validRequest(`{"prompt":[]}`)
+				if streaming {
+					request.Header.Set(HeaderStreaming, "true")
+				}
+				response := harness.serve(request)
+				assert.Equal(t, tc.want.status, response.Code, response.Body.String())
+				if tc.want.body != nil {
+					assert.JSONEq(t, string(publicErrorMember(t, tc.want.body)), string(publicErrorMember(t, response.Body.Bytes())))
+				}
+				for i, candidate := range candidates {
+					assert.Equal(t, 1, candidate.calls, "candidate %d", i)
+				}
+			})
+		}
+	}
+}

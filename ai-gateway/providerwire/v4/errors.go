@@ -21,6 +21,7 @@ const (
 	safeBYOKDiscovery
 	safeProviderStream
 	safeCatalogConfiguration
+	safeEgressRefused
 )
 
 type safeError struct {
@@ -44,6 +45,7 @@ var safeCategories = [...]safeErrorCategory{
 	execution.CategoryInternal:             safeInternal,
 	execution.CategoryProviderStream:       safeProviderStream,
 	execution.CategoryCatalogConfiguration: safeCatalogConfiguration,
+	execution.CategoryEgressRefused:        safeEgressRefused,
 }
 
 func safeErrorFor(category execution.Category, reason execution.Reason) safeError {
