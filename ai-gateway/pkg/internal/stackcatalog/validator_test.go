@@ -47,9 +47,9 @@ func withoutOpenAI() v1alpha1.Spec {
 	return spec
 }
 
-func withEndpoint(provider, endpoint string) *v1alpha1.ModelCatalog {
+func openAIAt(endpoint string) *v1alpha1.ModelCatalog {
 	spec := testSpec()
-	spec.Providers[provider] = v1alpha1.Provider{Type: spec.Providers[provider].Type, BaseURL: pointer(endpoint)}
+	spec.Providers["openai"] = v1alpha1.Provider{Type: "openai", BaseURL: pointer(endpoint)}
 	return catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": created()})
 }
 
@@ -67,17 +67,17 @@ func TestValidator_Validate(t *testing.T) {
 		{name: "create removing a key", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": removed()}), wantErr: "modelcatalog: providers.openai requires the secure value secure.openai"},
 		{name: "create with a name", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": named("shared")}), wantErr: "modelcatalog: secure.openai must not reference a secret by name; set create with the key instead"},
 		{name: "create with an extra key", action: resource.AdmissionActionCreate, object: catalog(spec, resource.InlineSecureValues{"anthropic": created(), "openai": created(), "other": created()}), wantErr: "modelcatalog: secure.other matches no provider"},
-		{name: "create with a custom endpoint", action: resource.AdmissionActionCreate, object: withEndpoint("openai", "https://llm.example.com/v1")},
+		{name: "create with a custom endpoint", action: resource.AdmissionActionCreate, object: openAIAt("https://llm.example.com/v1")},
 		{name: "create with a compatible provider", action: resource.AdmissionActionCreate, object: func() resource.Object {
 			changed := testSpec()
 			changed.Providers["openai"] = v1alpha1.Provider{Type: "openai-compatible", BaseURL: pointer("https://llm.example.com/v1"), ProviderName: pointer("acme"), SupportsStructuredOutputs: pointer(true)}
 			return catalog(changed, resource.InlineSecureValues{"anthropic": created(), "openai": created()})
 		}()},
-		{name: "create with a plain HTTP endpoint", action: resource.AdmissionActionCreate, object: withEndpoint("openai", "http://llm.example.com"), wantErr: "modelcatalog: providers.openai.baseURL must use https"},
-		{name: "create with a metadata endpoint", action: resource.AdmissionActionCreate, object: withEndpoint("openai", "https://169.254.169.254"), wantErr: "modelcatalog: providers.openai.baseURL is refused by the egress policy"},
-		{name: "create with a denied host", action: resource.AdmissionActionCreate, object: withEndpoint("openai", "https://denied.example"), wantErr: "modelcatalog: providers.openai.baseURL is refused by the egress policy"},
-		{name: "create with an allowed private address", action: resource.AdmissionActionCreate, object: withEndpoint("openai", "https://10.20.0.5")},
-		{name: "update to a refused endpoint", action: resource.AdmissionActionUpdate, object: withEndpoint("openai", "https://[::ffff:127.0.0.1]"), old: storedCatalog(), wantErr: "modelcatalog: providers.openai.baseURL is refused by the egress policy"},
+		{name: "create with a plain HTTP endpoint", action: resource.AdmissionActionCreate, object: openAIAt("http://llm.example.com"), wantErr: "modelcatalog: providers.openai.baseURL must use https"},
+		{name: "create with a metadata endpoint", action: resource.AdmissionActionCreate, object: openAIAt("https://169.254.169.254"), wantErr: "modelcatalog: providers.openai.baseURL is refused by the egress policy"},
+		{name: "create with a denied host", action: resource.AdmissionActionCreate, object: openAIAt("https://denied.example"), wantErr: "modelcatalog: providers.openai.baseURL is refused by the egress policy"},
+		{name: "create with an allowed private address", action: resource.AdmissionActionCreate, object: openAIAt("https://10.20.0.5")},
+		{name: "update to a refused endpoint", action: resource.AdmissionActionUpdate, object: openAIAt("https://[::ffff:127.0.0.1]"), old: storedCatalog(), wantErr: "modelcatalog: providers.openai.baseURL is refused by the egress policy"},
 		{name: "update without secure", action: resource.AdmissionActionUpdate, object: catalog(spec, nil), old: storedCatalog()},
 		{name: "update replacing a key", action: resource.AdmissionActionUpdate, object: catalog(spec, resource.InlineSecureValues{"openai": created()}), old: storedCatalog()},
 		{name: "update repeating stored names", action: resource.AdmissionActionUpdate, object: storedCatalog(), old: storedCatalog()},

@@ -48,8 +48,8 @@ func catalogDocument(t *testing.T, providers map[string]any, secure map[string]a
 	return string(body)
 }
 
-func endpointProvider(name, endpoint string) map[string]any {
-	return map[string]any{name: map[string]any{"type": "anthropic", "baseURL": endpoint}}
+func anthropicAt(endpoint string) map[string]any {
+	return map[string]any{"anthropic": map[string]any{"type": "anthropic", "baseURL": endpoint}}
 }
 
 func sendCatalog(t *testing.T, ctx context.Context, method, url, token, body string) (int, string) {
@@ -120,9 +120,9 @@ func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
 		body   string
 		reason string
 	}{
-		{name: "plain HTTP base URL", method: http.MethodPut, path: "default", reason: "providers.anthropic.baseURL must use https", body: catalogDocument(t, endpointProvider("anthropic", "http://backend.example"), nil)},
-		{name: "private base URL", method: http.MethodPut, path: "default", reason: "providers.anthropic.baseURL is refused by the egress policy", body: catalogDocument(t, endpointProvider("anthropic", "https://10.0.0.5"), nil)},
-		{name: "denied base URL host", method: http.MethodPut, path: "default", reason: "providers.anthropic.baseURL is refused by the egress policy", body: catalogDocument(t, endpointProvider("anthropic", "https://denied.example"), nil)},
+		{name: "plain HTTP base URL", method: http.MethodPut, path: "default", reason: "providers.anthropic.baseURL must use https", body: catalogDocument(t, anthropicAt("http://backend.example"), nil)},
+		{name: "private base URL", method: http.MethodPut, path: "default", reason: "providers.anthropic.baseURL is refused by the egress policy", body: catalogDocument(t, anthropicAt("https://10.0.0.5"), nil)},
+		{name: "denied base URL host", method: http.MethodPut, path: "default", reason: "providers.anthropic.baseURL is refused by the egress policy", body: catalogDocument(t, anthropicAt("https://denied.example"), nil)},
 		{name: "removing a used key", method: http.MethodPut, path: "default", reason: "providers.anthropic requires the secure value secure.anthropic", body: catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"remove": true}})},
 		{name: "another secret by name", method: http.MethodPut, path: "default", reason: "secure.anthropic must not reference a secret by name", body: catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"name": "shared"}})},
 		{name: "provider without a key", method: http.MethodPut, path: "default", reason: "providers.openai requires the secure value secure.openai", body: catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic"}, "openai": map[string]any{"type": "openai"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}})},
@@ -139,7 +139,7 @@ func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
 
 	for name, endpoint := range map[string]string{"public": "https://anthropic-proxy.example.com", "allowed private": "https://10.20.0.5:8443"} {
 		t.Run("accepts a "+name+" base URL", func(t *testing.T) {
-			code, body := sendCatalog(t, ctx, http.MethodPut, catalogURL(h.server.URL, "default"), token, catalogDocument(t, endpointProvider("anthropic", endpoint), nil))
+			code, body := sendCatalog(t, ctx, http.MethodPut, catalogURL(h.server.URL, "default"), token, catalogDocument(t, anthropicAt(endpoint), nil))
 			assert.Equal(t, http.StatusOK, code, body)
 		})
 	}
