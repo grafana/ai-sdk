@@ -102,8 +102,13 @@ How defaults combine with a call:
 - Settings combine one by one, not as a set. A default `topP` and a call's own
   `temperature` reach the provider together, and some models refuse requests
   that set both. For known Anthropic models the Gateway drops `topP` with a
-  warning instead, and it drops sampling settings when extended thinking is on.
-  Prefer defaults for settings your callers don't set themselves.
+  warning instead. Prefer defaults for settings your callers don't set
+  themselves.
+- Some models ignore sampling settings. Recent Anthropic models, such as
+  Claude Sonnet 5 and Claude Opus 4.7 and later, don't accept `temperature`,
+  `topP` or `topK`, and neither does any Anthropic model with extended thinking
+  on. The Gateway drops them with a warning, so those defaults have no effect
+  on such calls.
 - Providers check values against their own limits. A default the provider
   doesn't accept, such as a `maxOutputTokens` above a model's limit, fails
   every call it applies to. Settings a provider doesn't support, such as a
