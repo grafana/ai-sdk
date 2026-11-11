@@ -38,15 +38,18 @@ async function createStored(request: APIRequestContext, key = sentinelKey('store
 }
 
 // keyWatch records every browser console message and every response body the
-// page fetches, so a test can check that a typed key never comes back.
+// page fetches, except watch streams, which never end, so a test can check
+// that a typed key never comes back.
 function keyWatch(page: Page) {
   const messages: string[] = [];
   const bodies: Array<Promise<string>> = [];
   const unreadable: string[] = [];
   page.on('console', (message) => messages.push(message.text()));
   page.on('response', (response: Response) => {
-    const type = response.request().resourceType();
-    if ((type === 'fetch' || type === 'xhr') && !response.request().redirectedTo()) {
+    const request = response.request();
+    const type = request.resourceType();
+    const watch = new URL(request.url()).searchParams.get('watch') === 'true';
+    if ((type === 'fetch' || type === 'xhr') && !watch && !request.redirectedTo()) {
       bodies.push(
         response.text().catch((error: Error) => {
           unreadable.push(`${response.url()}: ${error.message}`);
