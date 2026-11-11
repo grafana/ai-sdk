@@ -105,6 +105,7 @@ func TestValidateDefinitions_TenantTypes(t *testing.T) {
 		{name: "shared member", types: []tenanttype.Type{{Name: "a-1b", ConfigSchema: instructionsSchema, Example: instructions.Example}, {Name: "a1b", ConfigSchema: instructionsSchema, Example: instructions.Example}}, message: `tenant types "a-1b" and "a1b" share the member "a1b"`},
 		{name: "schema without example", types: withType(func(tt *tenanttype.Type) { tt.Example = nil }), message: `tenant type "default-instructions" needs an example`},
 		{name: "example the schema refuses", types: withType(func(tt *tenanttype.Type) { tt.Example = json.RawMessage(`{"text":"too long"}`) }), message: `tenant type "default-instructions" needs an example`},
+		{name: "example over a bound above 2^53", types: []tenanttype.Type{{Name: "bounded", ConfigSchema: configSchema(t, `{"type":"object","properties":{"n":{"type":"integer","maximum":9007199254740992}},"additionalProperties":false}`), Example: json.RawMessage(`{"n":9007199254740993}`)}}, message: `tenant type "bounded" needs an example`},
 		{name: "example without schema", types: []tenanttype.Type{{Name: "marker", Example: json.RawMessage(`{}`)}}, message: `tenant type "marker" has an example but no configuration schema`},
 		{name: "tenant definition without a type", definitions: bound(instructions), message: `tenant extension "default-instructions" has no public tenant type`},
 		{name: "different schema", definitions: bound(instructions, func(d *extension.Definition) {

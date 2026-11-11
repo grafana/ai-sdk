@@ -89,7 +89,7 @@ func validateTypes(types []tenanttype.Type) (map[string]tenanttype.Type, error) 
 		if tenantType.ConfigSchema.Compiled() == nil {
 			return nil, fmt.Errorf("extensions: tenant type %q has an invalid configuration schema", tenantType.Name)
 		}
-		if tenantType.Example == nil || tenantType.ConfigSchema.Validate(tenantType.Example) != nil {
+		if tenantType.Example == nil || CheckConfig(extension.Definition{ConfigSchema: tenantType.ConfigSchema}, tenantType.Example) != nil {
 			return nil, fmt.Errorf("extensions: tenant type %q needs an example its configuration schema accepts", tenantType.Name)
 		}
 	}
