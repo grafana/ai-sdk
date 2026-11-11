@@ -143,7 +143,7 @@ func (m *Middleware) UnmarshalJSON(data []byte) error {
 
 // Copy returns a deep copy.
 func (m *Middleware) Copy() resource.Object {
-	return &Middleware{Middleware: *m.Middleware.DeepCopy(), RawSpec: bytes.Clone(m.RawSpec)}
+	return &Middleware{Middleware: *m.DeepCopy(), RawSpec: bytes.Clone(m.RawSpec)}
 }
 
 // DeepCopyObject returns a deep copy.
