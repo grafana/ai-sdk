@@ -95,11 +95,12 @@ Rows instead of maps, so a name can be edited and duplicates can be detected. Ea
 | no | yes | — | `remove: true` |
 
 - A rename therefore removes the old key and needs a new one, because Grafana refuses reusing a secret name under another key.
+- A type change on a stored provider opens its key field, and Save is refused until a new key is typed: the stored key belongs to the old provider's account, and admission doesn't tie keys to types.
 - The update sends the loaded `metadata` unchanged, including `resourceVersion`, so a concurrent change gives `409`. It sends the new `spec` and `secure` only when non-empty. The create sends `apiVersion`, `kind`, `metadata.name`, `spec` and `secure`.
 - **Key field:** `SecretInput` from `@grafana/ui`. It shows as configured when the row's current name is a stored key and no key has been typed. Reset clears that state, so the writer can type a replacement. A reset left empty sends nothing, so the stored key stays: Grafana doesn't allow a provider without a key anyway. The typed value is never written anywhere except the request body. After a successful save, the page navigates to the list, which drops the form state.
 - **Read-only mode** applies without `update`. Inputs are disabled, and Save, Reset and the add and remove row controls are absent. Keys show only as configured or not. Without `create`, `new` shows that the user can't create catalogs instead of an empty form.
 - **Inputs:** provider type is a `RadioButtonGroup`, and a target's provider is a `Combobox` over the form's provider names, plus a stale name the target still references so admission can report it. Aliases use `TagsInput` with a 128-character limit, the documented alias limit, because its default of 50 would block valid aliases.
-- **Local checks:** Save is refused only when two provider rows share a name or two model rows share an ID. These are the only invalid states the map-shaped body can't carry. Empty names, unknown provider references, alias collisions and policy violations go to admission.
+- **Local checks:** Save is refused when two provider rows share a name or two model rows share an ID, the invalid states the map-shaped body can't carry, and for a retyped stored provider without a new key. Empty names, unknown provider references, alias collisions and policy violations go to admission.
 - **Alternative considered:** a JSON spec editor (`CodeEditor`) with key fields per provider. Rejected:
   - users have to know the schema;
   - keys and providers can drift apart in the editor;

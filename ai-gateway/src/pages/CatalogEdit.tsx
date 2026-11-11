@@ -65,7 +65,7 @@ export function CatalogEditor({ name }: Props) {
     if (!form) {
       return;
     }
-    const problem = formProblem(form);
+    const problem = formProblem(form, stored?.spec.providers);
     if (problem) {
       setError(problem);
       return;

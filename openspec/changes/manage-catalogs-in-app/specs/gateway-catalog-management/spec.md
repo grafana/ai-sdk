@@ -70,6 +70,10 @@ An update SHALL omit the secure value of every provider whose stored key the wri
 - **WHEN** a writer replaces a provider's key and saves
 - **THEN** the update SHALL carry only that provider's `create`
 
+#### Scenario: Changing a stored provider's type
+- **WHEN** a writer changes the type of a provider with a stored key
+- **THEN** the page SHALL NOT save until a new key is entered for it, and SHALL then send it as `create`
+
 #### Scenario: Removing or renaming a provider
 - **WHEN** a writer deletes a provider, or renames it and enters its key, and saves
 - **THEN** the update SHALL carry `remove` for the stored key under the old name, and `create` under a new name

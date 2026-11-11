@@ -100,9 +100,10 @@ export function secureChanges(storedKeys: string[], providers: ProviderRow[]): S
 
 /**
  * formProblem returns why the form can't be sent, or undefined. It covers only
- * what a catalog body can't express; the platform validates everything else.
+ * what a catalog body can't express, and a stored key that would be kept for a
+ * provider of another type; the platform validates everything else.
  */
-export function formProblem(form: CatalogForm): string | undefined {
+export function formProblem(form: CatalogForm, storedProviders: Record<string, Provider> = {}): string | undefined {
   const provider = firstDuplicate(form.providers.map((row) => row.name));
   if (provider !== undefined) {
     return `Provider names must be unique: "${provider}" is used more than once.`;
@@ -110,6 +111,13 @@ export function formProblem(form: CatalogForm): string | undefined {
   const model = firstDuplicate(form.models.map((row) => row.id));
   if (model !== undefined) {
     return `Model IDs must be unique: "${model}" is used more than once.`;
+  }
+  const retyped = form.providers.find((row) => {
+    const stored = storedProviders[row.name];
+    return stored !== undefined && stored.type !== row.provider.type && row.key === '';
+  });
+  if (retyped !== undefined) {
+    return `Enter a new API key for "${retyped.name}": its saved key belongs to another provider type.`;
   }
   return undefined;
 }

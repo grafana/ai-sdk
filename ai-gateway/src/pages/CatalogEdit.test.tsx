@@ -209,4 +209,24 @@ describe('pages/CatalogEdit', () => {
     ).toBeInTheDocument();
     await waitFor(() => expect(updateModelCatalog).not.toHaveBeenCalled());
   });
+
+  test('asks for a new key when a stored provider changes type', async () => {
+    signInAs(OrgRole.Admin, ALL);
+    await openStored();
+
+    fireEvent.click(screen.getAllByRole('radio', { name: 'OpenAI' })[0]);
+    expect(screen.getByLabelText('Provider 1 API key')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(
+      await screen.findByText('Enter a new API key for "claude": its saved key belongs to another provider type.')
+    ).toBeInTheDocument();
+    expect(updateModelCatalog).not.toHaveBeenCalled();
+
+    type(screen.getByLabelText('Provider 1 API key'), TYPED_KEY);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByText('catalog list');
+    const [, spec, secure] = jest.mocked(updateModelCatalog).mock.calls[0];
+    expect(spec.providers.claude).toEqual({ type: 'openai' });
+    expect(secure).toEqual({ claude: { create: TYPED_KEY } });
+  });
 });
