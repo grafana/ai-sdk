@@ -31,20 +31,21 @@ func TestBYOKSelection_NativeOptionGuards(t *testing.T) {
 	const mcpHistory = `[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerExecuted":true,"providerOptions":{"anthropic":{"type":"mcp-tool-use","serverName":"external"}}}]}]`
 	for _, streaming := range []bool{false, true} {
 		for _, tc := range []struct {
-			name, options, prompt, nativeField string
-			allowed                            bool
+			name, options, prompt, nativeField, beta string
+			allowed                                  bool
 		}{
-			{"MCP servers", mcpOptions, `[]`, "mcp_servers", true},
-			{"invalid MCP destination", `{"anthropic":{"mcpServers":[{"name":"external","url":"http://example.invalid"}]}}`, `[]`, "", false},
-			{"malformed custom skill", `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`, `[]`, "", false},
-			{"bounded custom skill", `{"anthropic":{"container":{"skills":[{"type":"custom","providerReference":{"anthropic":"skill_01external"}}]}}}`, `[]`, "skill_01external", true},
-			{"too many skills", `{"anthropic":{"container":{"skills":[` + manySkills(21) + `]}}}`, `[]`, "", false},
-			{"over-long container ID", `{"anthropic":{"container":{"id":"` + strings.Repeat("c", 129) + `"}}}`, `[]`, "", false},
-			{"native routing", `{"anthropic":{"fallbacks":"default"}}`, `[]`, "", false},
-			{"unconfigured MCP history", `{}`, mcpHistory, "", false},
-			{"configured MCP history", mcpOptions, mcpHistory, "mcp_tool_use", true},
-			{"local MCP marker", `{}`, `[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"anthropic":{"type":"mcp-tool-use"}}}]}]`, "tool_use", true},
-			{"ordinary fields and unrelated namespaces", `{"anthropic":{"model":"ignored","container":{"id":"supplied-container"},"mcp_servers":[]},"other":{"mcpServers":[{"name":"ordinary"}]}}`, `[]`, "supplied-container", true},
+			{"MCP servers", mcpOptions, `[]`, "mcp_servers", "", true},
+			{"invalid MCP destination", `{"anthropic":{"mcpServers":[{"name":"external","url":"http://example.invalid"}]}}`, `[]`, "", "", false},
+			{"malformed custom skill", `{"anthropic":{"container":{"skills":[{"type":"custom","skillId":"external"}]}}}`, `[]`, "", "", false},
+			{"bounded custom skill", `{"anthropic":{"container":{"skills":[{"type":"custom","providerReference":{"anthropic":"skill_01external"}}]}}}`, `[]`, "skill_01external", "", true},
+			{"too many skills", `{"anthropic":{"container":{"skills":[` + manySkills(21) + `]}}}`, `[]`, "", "", false},
+			{"over-long container ID", `{"anthropic":{"container":{"id":"` + strings.Repeat("c", 129) + `"}}}`, `[]`, "", "", false},
+			{"server-side fallback default", `{"anthropic":{"fallbacks":"default"}}`, `[]`, `"fallbacks":"default"`, defaultFallbackBeta, true},
+			{"server-side fallback chain outside any configured policy", `{"anthropic":{"fallbacks":[{"model":"claude-unconfigured"},{"model":"claude-unconfigured"}]}}`, `[]`, `"fallbacks":[{"model":"claude-unconfigured"},{"model":"claude-unconfigured"}]`, explicitFallbackBeta, true},
+			{"unconfigured MCP history", `{}`, mcpHistory, "", "", false},
+			{"configured MCP history", mcpOptions, mcpHistory, "mcp_tool_use", "", true},
+			{"local MCP marker", `{}`, `[{"role":"assistant","content":[{"type":"tool-call","toolCallId":"call","toolName":"lookup","input":{},"providerOptions":{"anthropic":{"type":"mcp-tool-use"}}}]}]`, "tool_use", "", true},
+			{"ordinary fields and unrelated namespaces", `{"anthropic":{"model":"ignored","container":{"id":"supplied-container"},"mcp_servers":[]},"other":{"mcpServers":[{"name":"ordinary"}]}}`, `[]`, "supplied-container", "", true},
 		} {
 			t.Run(tc.name+"/stream="+strconv.FormatBool(streaming), func(t *testing.T) {
 				var calls atomic.Int32
@@ -56,6 +57,7 @@ func TestBYOKSelection_NativeOptionGuards(t *testing.T) {
 					assert.NotContains(t, string(data), "byok")
 					assert.NotContains(t, string(data), "ignored")
 					assert.Contains(t, string(data), tc.nativeField)
+					assert.Contains(t, r.Header.Get("Anthropic-Beta"), tc.beta)
 					return &http.Response{StatusCode: 401, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"type":"error","error":{"type":"authentication_error","message":"rejected"}}`)), Request: r}, nil
 				})}
 				factory := func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil }
