@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Fixed egress refused error document
-The egress refused category SHALL use one fixed ProviderWire document: HTTP 424, type `failed_dependency`, code `failed_dependency`, `param: null`, message "provider endpoint refused by the egress policy or not resolvable", not retryable. It SHALL NOT carry the endpoint, a resolved or resolver address, a range, a list entry, keys or execution metadata.
+The egress refused category SHALL use one fixed ProviderWire document: HTTP 424, type `failed_dependency`, code `failed_dependency`, `param: null`, message "provider endpoint refused by the egress policy or not resolvable", not retryable. It SHALL NOT carry the endpoint, a resolved or resolver address, a range, a list entry or keys. Its execution metadata MAY list the attempts, where each refused attempt carries only the fixed refusal message.
 
 #### Scenario: Unary and streaming calls to a refused endpoint
 - **WHEN** a unary call or a stream setup fails with the egress refused category

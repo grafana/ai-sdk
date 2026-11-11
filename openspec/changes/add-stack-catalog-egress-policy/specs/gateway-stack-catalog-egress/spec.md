@@ -141,7 +141,7 @@ A destination SHALL be refused when its host matches a deny hostname entry or a 
 - **THEN** other endpoints resolving to public addresses SHALL still be permitted
 
 ### Requirement: Static endpoint checks
-Admission and every request SHALL refuse a custom endpoint whose host is not an IP literal or an ASCII DNS name whose last label is not all digits, whose IP literal the policy refuses, or whose host matches a deny entry. They SHALL make no DNS lookup. Request-time failures SHALL use the catalog configuration category.
+Admission and every request SHALL refuse a custom endpoint whose host is not an IP literal or an ASCII DNS name whose last label starts with a letter, whose IP literal the policy refuses, or whose host matches a deny entry. They SHALL make no DNS lookup. Request-time failures SHALL use the catalog configuration category.
 
 #### Scenario: Metadata address literal
 - **WHEN** a writer saves `baseURL: https://169.254.169.254/v1`
@@ -160,7 +160,7 @@ Admission and every request SHALL refuse a custom endpoint whose host is not an 
 - **THEN** every call SHALL fail with the catalog configuration category, with zero provider requests
 
 ### Requirement: Secret-safe refusal
-A refused connection and a failed DNS resolution of a custom endpoint SHALL fail the attempt with one fixed egress refusal error. Neither it, the error document nor any log line SHALL carry the endpoint URL or host, a resolved or resolver address, or the matched range or entry; they MAY name the field path and provider name. A refused attempt SHALL be fallback-eligible, and a call whose final attempt is refused SHALL fail with the egress refused category.
+A refused connection and a failed DNS resolution of a custom endpoint SHALL fail the attempt with one fixed egress refusal error. Neither it, the error document nor any log line SHALL carry the endpoint URL or host, a resolved or resolver address, or the matched range or entry; they MAY name the field path and provider name. A refused attempt SHALL be fallback-eligible, and a failed call with a refused attempt SHALL fail with the egress refused category.
 
 #### Scenario: Refused primary, permitted fallback
 - **WHEN** a model's primary endpoint is refused and its fallback succeeds
@@ -169,6 +169,10 @@ A refused connection and a failed DNS resolution of a custom endpoint SHALL fail
 #### Scenario: Only candidate refused
 - **WHEN** the only candidate resolves to `10.0.0.1`
 - **THEN** the call SHALL fail with the egress refused document, and no response, log, metric or Agent Observability record SHALL contain `10.0.0.1`
+
+#### Scenario: Refused primary, failing fallback
+- **WHEN** a model's primary endpoint is refused and its fallback fails with `503`
+- **THEN** the call SHALL fail with the egress refused document, because retrying cannot succeed until the catalog or policy changes
 
 #### Scenario: Unresolvable host
 - **WHEN** a custom endpoint host has no DNS records
