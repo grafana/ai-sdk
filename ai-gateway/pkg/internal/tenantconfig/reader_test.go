@@ -244,3 +244,24 @@ func TestReader_ReadsAsThePluginThroughTokenExchange(t *testing.T) {
 		assert.NotEmpty(t, after[len(after)-1].SubjectToken, "the cache must therefore never pass a request context")
 	})
 }
+
+func TestResourceFrom(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		raw      string
+		expected extensionhost.TenantResource
+	}{
+		{name: "configured", raw: `{"metadata":{"name":"a"},"spec":{"type":"a","enabled":true,"config":{ "n" : 9007199254740993 }}}`, expected: extensionhost.TenantResource{Name: "a", Type: "a", Enabled: enabled(true), Config: json.RawMessage(`{"n":9007199254740993}`)}},
+		{name: "absent configuration", raw: `{"metadata":{"name":"a"},"spec":{"type":"b","enabled":false}}`, expected: extensionhost.TenantResource{Name: "a", Type: "b", Enabled: enabled(false), Config: json.RawMessage(`{}`)}},
+		{name: "no spec", raw: `{"metadata":{"name":"a"}}`, expected: extensionhost.TenantResource{Name: "a", Config: json.RawMessage(`{}`)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resource, err := resourceFrom(json.RawMessage(tc.raw))
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, resource)
+		})
+	}
+
+	_, err := resourceFrom(json.RawMessage(`{"spec":{"enabled":"yes"}}`))
+	assert.Error(t, err)
+}

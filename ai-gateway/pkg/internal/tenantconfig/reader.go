@@ -62,16 +62,31 @@ type list struct {
 	Metadata struct {
 		Continue string `json:"continue"`
 	} `json:"metadata"`
-	Items []struct {
-		Metadata struct {
-			Name string `json:"name"`
-		} `json:"metadata"`
-		Spec struct {
-			Type    string          `json:"type"`
-			Enabled *bool           `json:"enabled"`
-			Config  json.RawMessage `json:"config"`
-		} `json:"spec"`
-	} `json:"items"`
+	Items []json.RawMessage `json:"items"`
+}
+
+// storedResource is the stored shape of one Middleware resource that
+// resourceFrom decodes.
+type storedResource struct {
+	Metadata struct {
+		Name string `json:"name"`
+	} `json:"metadata"`
+	Spec struct {
+		Type    string          `json:"type"`
+		Enabled *bool           `json:"enabled"`
+		Config  json.RawMessage `json:"config"`
+	} `json:"spec"`
+}
+
+// resourceFrom decodes one stored Middleware resource into its name, type,
+// enabled flag and configuration. It is the only code that knows how the
+// stored spec carries an extension's configuration.
+func resourceFrom(raw json.RawMessage) (extensionhost.TenantResource, error) {
+	var stored storedResource
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		return extensionhost.TenantResource{}, err
+	}
+	return extensionhost.TenantResource{Name: stored.Metadata.Name, Type: stored.Spec.Type, Enabled: stored.Spec.Enabled, Config: normalize(stored.Spec.Config)}, nil
 }
 
 // Read lists namespace's resources, following continuation pages within the
@@ -86,7 +101,11 @@ func (r *Reader) Read(ctx context.Context, namespace string) ([]extensionhost.Te
 			return nil, err
 		}
 		for _, item := range page.Items {
-			resources = append(resources, extensionhost.TenantResource{Name: item.Metadata.Name, Type: item.Spec.Type, Enabled: item.Spec.Enabled, Config: normalize(item.Spec.Config)})
+			resource, err := resourceFrom(item)
+			if err != nil {
+				return nil, extensionhost.ErrReadInvalid
+			}
+			resources = append(resources, resource)
 		}
 		if page.Metadata.Continue == "" {
 			slices.SortFunc(resources, func(a, b extensionhost.TenantResource) int { return strings.Compare(a.Name, b.Name) })
