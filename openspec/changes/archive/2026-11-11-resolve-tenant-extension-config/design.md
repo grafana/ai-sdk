@@ -6,8 +6,8 @@
 - `plugin.Run` builds the kubeconfig with `BuildKubeConfig` from `API_ACCESS_*` (falling back to a zero `rest.Config` with a warning), then calls the app provider once, before it serves anything. `Gateway.Provider()`'s callback receives it as `app.Config.KubeConfig` and passes it to `simple.NewApp`. Otherwise it's unused.
 - With token exchange, the app-sdk transport exchanges on behalf of the caller when the request context carries `types.AuthInfo` or an ID token. Otherwise it exchanges as the plugin, with namespace `*`. The plugin v3 adapter puts the verified caller's `AuthInfo` on every route and admission context. `context.WithoutCancel` keeps that value.
 - `extensionhost.Host` builds every enabled instance in `New` from the `Plan`. It precomputes `lists` per source and picks them in `Compose(selection)`, which has no context. The pipeline already reads request info from the invocation context (`RequestInfo(ctx)`, including `Namespace`). Close runs only at shutdown.
-- `Plan` enables a tenant definition only when `EnabledByDefault` is set, with `{}`. `CheckConfig` compares a schema-less configuration with the literal `{}`.
-- The generated `Middleware` type decodes `spec.config` into `map[string]interface{}`, which turns numbers into `float64`.
+- `Plan` enables a tenant definition only when `EnabledByDefault` is set, with `{}`. A tenant type without a schema takes no member and gets `{}`.
+- The `Middleware` spec is a typed union: `type`, `enabled` and at most one member, named after the type in lowerCamel case (`tenanttype.Type.Member`), holding its configuration. `tenantconfig.DecodeSpec` decodes a raw spec without decoding members into Go types, so numbers stay exact; admission and the reader share it.
 - app-sdk `v0.60.16` `simple.KindValidator.Validate` returns only `error`. The adapter doesn't expose the protocol's `warnings`.
 - The protocol test host serves token exchange for access policies (`AddAccessPolicy`, `TokenExchangeHandler`) and get, create, update and delete for kinds, but not list.
 - Go 1.27, so tests use `testing/synctest` (already used in the root module) for fake time.
@@ -25,10 +25,10 @@
 `tenantconfig.NewReader(kubeConfig rest.Config) (*Reader, error)`, called in the provider callback when `KubeConfig.Host` is not empty:
 
 - Copies the config. Sets `GroupVersion` to the manifest group and `v1alpha1`, `APIPath` `/apis`, app-sdk's `k8s.GenericNegotiatedSerializer`, and an explicit client rate limit (`readQPS` 20, `readBurst` 40). Builds one `rest.RESTClientFor`. The kubeconfig's `WrapTransport` (token exchange) and TLS settings come along unchanged.
-- `Read(ctx, namespace)` lists `namespaces/<ns>/middlewares` in pages of `listPageSize` (100), following `continue`. It streams each page through `io.LimitReader` with a total bound of `maxListBytes` (4 MiB) and decodes with `encoding/json` into a reader-local list type: `metadata.name`, `spec.type`, `spec.enabled *bool` and `spec.config json.RawMessage`. Raw JSON keeps numbers exact and doesn't depend on the generated codec.
-- It returns `[]extensionhost.TenantResource{Name, Type, Enabled, Config}`, sorted by name, with `Config` compacted (`json.Compact` keeps number literals) and `{}` when absent or `null`.
+- `Read(ctx, namespace)` lists `namespaces/<ns>/middlewares` in pages of `listPageSize` (100), following `continue`. It streams each page through `io.LimitReader` with a total bound of `maxListBytes` (4 MiB) and keeps each item's `metadata.name` and raw `spec`.
+- `resourceFrom` is the only reader code that knows the spec shape: it decodes the spec with `DecodeSpec` and returns `extensionhost.TenantResource{Name, Type, Enabled, Config, Invalid}`, where `Config` is the type's member in canonical JSON (numbers as written), or nil without a member. A spec that can't be decoded, or sets another type's member or more than one member, is `Invalid`, so only that extension applies its failure policy. An item without a name invalidates the whole list.
 - A failure returns a classed error: `refused` (401, 403), `not found` (404: the kind isn't served, never "no resources"), `unexpected status`, `timeout`, `invalid response` (decode error or exceeded bound) or `error`. Classification uses `apierrors` predicates and never keeps the body.
-- Alternative: the generated `MiddlewareClient` through `k8s.NewClientRegistry`. Rejected because it decodes `config` into `float64`s. A dynamic or unstructured client converts numbers to `int64` or `float64`, which still loses precision outside `int64`.
+- Alternative: the generated `MiddlewareClient` through `k8s.NewClientRegistry`. Rejected because its generated types decode members into `float64`s. A dynamic or unstructured client converts numbers to `int64` or `float64`, which still loses precision outside `int64`.
 
 `extensionhost` defines the interface it consumes, `TenantReader{ Read(ctx, namespace) ([]TenantResource, error) }`, so the cache tests use a fake reader. `tenantconfig` already imports `extensionhost` for `CheckConfig`.
 
@@ -90,11 +90,11 @@ A snapshot is built from the resources and the tenant definitions. For each tena
 |---|---|
 | none | default: the startup instance when enabled by default, else off |
 | `enabled: false` | off |
-| `enabled: true`, `CheckConfig` passes, `New` succeeds with a phase | its own instance |
-| invalid config, missing `enabled`, `name != type`, factory error, panic or no phase | failed: `skip` drops it; `fail-closed` marks it unavailable |
+| `enabled: true`, its member passes `CheckConfig` (no member for a schema-less type), `New` succeeds with a phase | its own instance |
+| an invalid spec, a missing member for a type with a schema, a member for a schema-less type, a failing member, `name != type`, factory error, panic or no phase | failed: `skip` drops it; `fail-closed` marks it unavailable |
 
 - The **failure snapshot** marks every tenant definition failed, and builds nothing.
-- Enabled resources whose name isn't a tenant definition are unknown. They're logged and counted once per entry and type (the entry keeps a set), and disabled ones are ignored.
+- Enabled resources whose type this build doesn't implement are logged and counted once per entry and type (the entry keeps a set). Disabled and invalid ones are ignored.
 - Configuration and factory failures count once per build under `extension_events_total{phase="configure",event="failed"}`, with one warning naming the extension, namespace, policy and class. Calls that a `fail-closed` failure refuses are visible in the model metrics as unavailable errors.
 - Each snapshot precomputes `lists` per source with the existing `listsFor` logic over operator instances, default tenant instances and its own instances. It also keeps the unavailable definitions that apply to each source. An absent snapshot reuses the startup lists.
 
@@ -169,11 +169,11 @@ All cache, snapshot and pipeline timing tests run in `synctest` bubbles with fak
 |---|---|
 | Two namespaces stay isolated | `extensionhost` pipeline test: a recording tenant transform configured differently in `a` and `b`, defaults in `c`, and disabled default-on in `d`, unary and stream. Gateway test through the test host: resources created via admission in two namespaces, with each call's transform reflecting its own configuration. |
 | A read failure never applies a more permissive default; last-known-good stays within the bound | Cache test: first read fails, so `skip` default-on is off and `fail-closed` refuses with `ErrUnavailable` and zero model calls. Success, then failing refreshes: at `loadedAt+10m-1ns` last-known-good still disables a default-on extension, and at `+10m` the failure policy applies. Then success restores. Reader tests: 403 and 404 are failures, not absence. |
-| An unknown type is skipped and counted | Snapshot test: an enabled unknown resource, three acquires and two unchanged refreshes produce one log and one count. A disabled unknown produces neither. An operator-type name is unknown too. |
+| A type not implemented is skipped and counted | Snapshot test: an enabled resource of a type not implemented, three acquires and two unchanged refreshes produce one log and one count. A disabled or invalid one produces neither. An operator-type name counts as not implemented. |
 | Caller permissions don't affect reads | Cache test: the reader's context carries no `AuthInfo` and isn't cancelled when the waiting caller cancels, and the next call uses the result without a second read. Gateway test: the test host's exchange log shows no subject token for reads triggered by a user's call. |
 | Concurrent first requests share one load | Cache test: ten goroutines acquire an uncached namespace, `synctest.Wait`, one `Read` call, and after release all hold the same snapshot. |
 | A change applies within the TTL (injected) | Pipeline test: a call at `ttl-1ns` sees the old configuration and doesn't read. A call at `ttl` sees the old configuration and triggers one refresh. After `synctest.Wait`, the next call sees the new one. A refresh that fails is retried at `retryAt` and not before. |
-| Self-hosted without API access | Gateway test with a zero kubeconfig: no list request reaches the test host, default-on runs, default-off doesn't, one warning record, a create refused with `400` and the fixed reason, and a delete succeeds unreviewed. `tenantconfig` validator test: the no-access refusal precedes the disable-only path. |
+| Self-hosted without API access | Gateway test with a zero kubeconfig: no list request reaches the test host, default-on runs, default-off doesn't, one warning record, a create refused with `400` and the fixed reason, and a delete succeeds unreviewed. `tenantconfig` test: `WithoutAPIAccess` refuses a disable-only update too. |
 | Development deployment check | Manual follow-up (above). |
 | Follow-ups: raw JSON, read-time check | Reader test: `9007199254740993` and `1.0` reach the factory as written. Snapshot test: a schema-less extension with stored `{ }` from a non-compacting server passes. A tightened schema applies the failure policy, with a sentinel absent from logs. |
 | Follow-ups: collectors, close | Two namespaces register one shared counter and gather shows one series. A fresh collector on each run fails the second namespace. Replacement during an open stream closes the old instance once, after the stream and its observation end. Eviction with `maxNamespaces` 1 closes after release. Shutdown closes snapshot instances within the budget. Run under `-race`. |
@@ -186,7 +186,7 @@ All cache, snapshot and pipeline timing tests run in `synctest` bubbles with fak
 - [API load is replicas × active namespaces / TTL, and deploy restarts cause a cold-start burst] → Client rate limit and the backoff. Documented. An informer is the later investigation.
 - [Wildcard-namespace plugin token and `list` permission are unverified in Cloud] → Manual deployment check. The read-failure class `refused` makes a gap visible.
 - [Refusing writes without API access deviates from the design article's "accepted with a warning"] → Recorded decision B and the follow-up to A.
-- [Unknown-type logs repeat after eviction] → Bounded by eviction rate. Documented.
+- [Not-implemented-type logs repeat after eviction] → Bounded by eviction rate. Documented.
 - [Factories run on the load goroutine without a context] → Documented: factories must be quick and must not do I/O. A slow factory delays only that namespace's first load.
 - **#766 risks:**
   - Its end-to-end suite makes the first real reads against Grafana. If the pinned nightly gives the plugin no API access, decision B refuses its creates. The API-access record and its end-to-end check detect this in this change.
@@ -198,12 +198,12 @@ All cache, snapshot and pipeline timing tests run in `synctest` bubbles with fak
 
 - No data migration. The shipped build registers no tenant extension, so behavior and API traffic are unchanged until #766.
 - Rolling back restores the earlier behavior: stored resources are ignored, and default-on tenant extensions run everywhere.
-- Rolling forward to a build that drops a tenant extension leaves its resources counted as unknown when enabled.
+- Rolling forward to a build that drops a tenant extension leaves its enabled resources counted as not implemented.
 
 ## Recorded decisions
 
 - **Admission without API access: B.** Creates and updates are refused with a fixed-reason `400`. API access is a static process property, so refusing is more honest than storing configuration that does nothing. This deviates from the design article's "accepted, with an admission warning".
-- **Disabled unknown types** are excluded from the unknown-type log and count.
+- **Disabled resources of types not implemented** are excluded from that log and count.
 - **Constants** as listed under "Cache state machine" and "Reader and client construction".
 - **API-access evidence in CI:** one Info record at app construction, and a positive check in `scripts/e2e.sh`. It closes #764's follow-up on the vacuous plugin-log sentinel check.
 - **Cache constants** stay constants, not operator settings.
@@ -214,4 +214,3 @@ All cache, snapshot and pipeline timing tests run in `synctest` bubbles with fak
 - Admission warnings through app-sdk (option A), once validators can return warnings and Grafana surfaces them.
 - Revisit `maxNamespaces`, `ttl` and the 20 QPS client limit with development metrics. API load per replica is about active namespaces / TTL, so 1024 namespaces at a 1-minute TTL is close to the limit.
 - Manual development deployment check on the first build with a tenant extension (#766). It also confirms that Grafana's list responses carry `kind: MiddlewareList`, which the reader requires so a successful non-list body is a failure, not absence. If Grafana omits it, every read fails closed and `tenant_config_reads_total{result="failed"}` with class `invalid-response` shows it.
-- Admission decodes `spec.config` through the generated type, so it checks a `float64`-rounded configuration, while the read-time check sees the exact stored JSON. Integers above 2^53 can therefore differ at their bounds. Move admission to the same decoding as the reader when the stored spec shape is decided (open object or typed union).

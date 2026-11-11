@@ -6,7 +6,7 @@
 
 ## 2. Namespace reader
 
-- [x] 2.1 Add `extensionhost.TenantResource` and `TenantReader`, then `tenantconfig.NewReader(rest.Config)` and `Read` (group and version, generic serializer, explicit client rate limit, paged list, `maxListBytes` bound, raw `spec.config`, compaction, sorted output, classed errors). Make `k8s.io/client-go` a direct requirement. Verify with `httptest` table tests: empty list, two pages, exact `9007199254740993` and `1.0`, absent or `null` config, a missing `enabled` reported per resource, 401, 403, 404, 500, a timeout, malformed JSON and an oversized body, each with its class and no body text in the error.
+- [x] 2.1 Add `extensionhost.TenantResource` and `TenantReader`, then `tenantconfig.NewReader(rest.Config)` and `Read` (group and version, generic serializer, explicit client rate limit, paged list, `maxListBytes` bound, the type's member decoded with `DecodeSpec`, invalid specs marked per resource, sorted output, classed errors). Make `k8s.io/client-go` a direct requirement. Verify with `httptest` table tests: empty list, two pages, nested members with exact `9007199254740993` and `1.0`, no member, another type's member, two members and a missing `enabled` reported per resource, 401, 403, 404, 500, a timeout, malformed JSON and an oversized body, each with its class and no body text in the error.
 - [x] 2.2 Verify plugin identity with a real app-sdk token-exchange kubeconfig against the test host's exchange handler: reads of two namespaces succeed and every exchange request has no subject token, while a read context carrying a caller would be delegated (which is why the cache never passes one). The test host accepts the access token repeated as a bearer token, as the app-sdk transport sends it.
 
 ## 3. Shared registerer and contract docs
@@ -16,7 +16,7 @@
 ## 4. Tenant cache and snapshots
 
 - [x] 4.1 Add `TenantCacheConfig` with the named constants and the cache: LRU entries, acquire, deduplicated first load, background refresh, fixed backoff, last-known-good bound, failure snapshot, a detached root context and read timeout. Verify with `synctest` tests: one read for ten concurrent first acquires; a caller cancelling while the read continues and is reused; reads at `ttl-1ns` and `ttl`; no read before `retryAt`; last-known-good at `+10m-1ns` and the failure snapshot at `+10m`; eviction at `maxNamespaces`; and the reader context carrying no `AuthInfo`.
-- [x] 4.2 Add snapshot building: the per-definition state table, `CheckConfig` on compacted configuration, contained factories, unknown types logged and counted once per entry and type, disabled unknown types ignored, the digest for unchanged refreshes, and the lists and unavailable definitions per source. Add `tenant_config_reads_total{result}`, `tenant_config_unknown_types_total` and `extension_events_total{phase="configure"}` with their warnings. Verify with table tests for every row (including `name != type` and a schema-less `{ }`), no factory run on an unchanged refresh, sentinel-free logs, and metric label sets.
+- [x] 4.2 Add snapshot building: the per-definition state table, `CheckConfig` on the type's member, contained factories, types not implemented logged and counted once per entry and type, disabled ones ignored, the digest for unchanged refreshes, and the lists and unavailable definitions per source. Add `tenant_config_reads_total{result}`, `tenant_config_unimplemented_types_total` and `extension_events_total{phase="configure"}` with their warnings. Verify with table tests for every row (including `name != type`, a missing member and a member for a schema-less type), no factory run on an unchanged refresh, sentinel-free logs, and metric label sets.
 
 ## 5. Pipeline and lifecycle
 
@@ -26,7 +26,7 @@
 
 ## 6. Gateway wiring
 
-- [x] 6.1 In `Gateway.Provider()`'s callback: decide API access from the kubeconfig; build the reader and `ConnectTenants` when tenant definitions exist; log the no-access warning once; emit the API-access Info record; and build the managed kinds with `tenantconfig.NewValidator(definitions, apiAccess)`. Add the no-access refusal before every other admission check. Verify `tenantconfig` validator tests (refusal precedes disable-only, fixed reason) and `TestProvider_ManagesTheManifestKinds` for running and idle Gateways.
+- [x] 6.1 In `Gateway.Provider()`'s callback: decide API access from the kubeconfig; build the reader and `ConnectTenants` when tenant definitions exist; log the no-access warning once; emit the API-access Info record; and build the managed kinds with `tenantconfig.NewValidator(definitions)`, or `tenantconfig.WithoutAPIAccess`, which refuses every create and update, when there is no access. Verify `tenantconfig` validator tests (refusal precedes disable-only, fixed reason) and `TestProvider_ManagesTheManifestKinds` for running and idle Gateways.
 - [x] 6.2 Add gateway tests through the test host with test-only definitions and a token-exchange kubeconfig pointing at it:
   - resources created via admission in two namespaces apply to their own language-model calls;
   - reads use the plugin token (no subject token in the exchange log);
