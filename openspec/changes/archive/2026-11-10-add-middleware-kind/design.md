@@ -215,7 +215,7 @@ type Spec struct {
 ```
 
 - Members stay raw JSON, so integers above 2^53 pass through exactly, and test-only types, which are not in the generated Go types, are seen.
-- Spec decode errors never reach the caller: the validator refuses them with a fixed message. The generated codec would decode typed members into Go fields and return messages such as `cannot unmarshal number 9223372036854775808 into ... int64`, which echo values.
+- Spec decode errors never reach the caller: the validator refuses them with a fixed message. The codec reads exactly `apiVersion`, `kind`, `metadata` and `spec`, so a field that only case-folds to `spec` is ignored, and refuses a malformed object with a fixed `400`. The generated codec would decode typed members into Go fields and return messages such as `cannot unmarshal number 9223372036854775808 into ... int64`, which echo values.
 - #765's reader uses `DecodeSpec` on the listed objects' raw `spec`.
 
 ### Where the validator gets its types and definitions
@@ -299,7 +299,7 @@ What CI end-to-end covers before #766: role bindings; Viewer and Editor list `20
 - [After a rollback to a manifest without a member, Grafana refuses writes that still carry it] → The disable-only rule accepts the member removed; documented.
 - [The kind store keeps and refuses unknown keys under `additionalProperties: false` because it skips CRD schema checks] → If that changes, unknown keys would be pruned silently instead of refused; admission's full schema still validates what remains.
 - [The generator path changes with app-sdk upgrades] → The manifest test converts the committed manifest as Grafana does and round-trips every example, so a generator change that breaks a member fails CI.
-- [Schema-library validation of members compares numbers as `float64`] → Stored and forwarded bytes are exact; bounds near 2^53 are approximate. Unchanged from operator configuration.
+- [The schema package decodes instances as `float64`] → `CheckConfig` compiles the schema once per process for exact validation and decodes the instance with exact numbers, so bounds, enums and multiples above 2^53 are checked against the stored value; operator configuration gets the same.
 - [Admission fails closed while the plugin is down or idle] → Creates and updates fail, deletes work; documented.
 - [The accept paths have no Grafana evidence until #766] → Go evidence runs through the real adapter; CI-e2e proves wiring, roles and refusals.
 
