@@ -52,6 +52,9 @@ type Model struct {
 type Primary struct {
 	Provider string `yaml:"provider"`
 	Model    string `yaml:"model"`
+	// Skills lists the Anthropic container skills callers of this candidate
+	// may request. Without it, the candidate refuses every skill.
+	Skills *SkillsPolicy `yaml:"skills,omitempty"`
 }
 
 // ResolvedProvider contains one startup-resolved provider secret.
@@ -100,8 +103,8 @@ func ParseModelCatalog(document string) (File, error) {
 func (file File) Validate() error { return file.validate(requireAPIKeyEnv) }
 
 // ValidateShape validates provider types and fields, provider references,
-// model routes, public IDs, aliases and discovery bounds, without checking
-// where provider keys come from.
+// model routes and their skills policies, public IDs, aliases and discovery
+// bounds, without checking where provider keys come from.
 func (file File) ValidateShape() error { return file.validate(nil) }
 
 func requireAPIKeyEnv(name string, provider Provider) error {
@@ -188,7 +191,10 @@ func (file File) validate(checkKey func(name string, provider Provider) error) e
 		if strings.TrimSpace(model.Primary.Model) == "" {
 			return fmt.Errorf("config: models.%s.primary.model is required", id)
 		}
-		seenCandidates := map[Primary]struct{}{model.Primary: {}}
+		if err := validateSkillsPolicy(fmt.Sprintf("models.%s.primary", id), model.Primary.Skills, file.Providers[model.Primary.Provider].Type); err != nil {
+			return err
+		}
+		seenCandidates := map[candidateKey]struct{}{keyOf(model.Primary): {}}
 		for index, candidate := range model.Fallback {
 			if strings.TrimSpace(candidate.Provider) == "" || strings.TrimSpace(candidate.Model) == "" {
 				return fmt.Errorf("config: models.%s.fallback[%d] requires provider and model", id, index)
@@ -196,15 +202,21 @@ func (file File) validate(checkKey func(name string, provider Provider) error) e
 			if _, ok := file.Providers[candidate.Provider]; !ok {
 				return fmt.Errorf("config: models.%s.fallback[%d] references unknown provider", id, index)
 			}
-			if _, exists := seenCandidates[candidate]; exists {
+			if _, exists := seenCandidates[keyOf(candidate)]; exists {
 				return fmt.Errorf("config: models.%s.fallback[%d] repeats a candidate", id, index)
 			}
-			seenCandidates[candidate] = struct{}{}
+			seenCandidates[keyOf(candidate)] = struct{}{}
+			if err := validateSkillsPolicy(fmt.Sprintf("models.%s.fallback[%d]", id, index), candidate.Skills, file.Providers[candidate.Provider].Type); err != nil {
+				return err
+			}
 		}
 		if existing, ok := publicIDs[id]; ok {
 			return fmt.Errorf("config: public model ID %q collides with %s", id, existing)
 		}
 		publicIDs[id] = "canonical model"
+	}
+	if err := file.validateSkillsPolicyPerDestination(); err != nil {
+		return err
 	}
 	for id, model := range file.Models {
 		seenAliases := make(map[string]struct{}, len(model.Aliases))

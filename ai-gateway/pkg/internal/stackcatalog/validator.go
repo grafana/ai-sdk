@@ -34,7 +34,7 @@ func (Validator) Validate(_ context.Context, request *app.AdmissionRequest) erro
 		}
 		stored = previous.Secure
 	}
-	keys, err := mergeSecureKeys(stored, catalog.Secure)
+	keys, err := expectedSecureKeys(stored, catalog.Secure)
 	if err != nil {
 		return apierrors.NewBadRequest(err.Error())
 	}
@@ -44,12 +44,14 @@ func (Validator) Validate(_ context.Context, request *app.AdmissionRequest) erro
 	return nil
 }
 
-// mergeSecureKeys returns the secure keys the object holds once the platform
-// applies incoming to stored: stored keys are kept unless removed, created
-// keys are added, and a name is kept only when it repeats the name stored
-// under the same key. Any other name would reference a secret the catalog
-// does not own.
-func mergeSecureKeys(stored, incoming resource.InlineSecureValues) ([]string, error) {
+// expectedSecureKeys predicts the secure keys Grafana will store for the
+// object. Grafana's storage does the actual merge after admission (apistore
+// prepareSecureValues): it keeps keys the update omits, applies remove, and
+// turns create into a stored secret. Admission only needs the resulting key
+// set, to check it one to one against the providers, and refuses a name
+// unless it repeats the name stored under the same key, because any other
+// name references a secret the catalog does not own.
+func expectedSecureKeys(stored, incoming resource.InlineSecureValues) ([]string, error) {
 	keys := make(map[string]struct{}, len(stored)+len(incoming))
 	for key := range stored {
 		keys[key] = struct{}{}
