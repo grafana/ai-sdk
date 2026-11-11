@@ -2,8 +2,8 @@
 
 ## 1. Kind, manifest and roles
 
-- [x] 1.1 Add `kinds/middleware.cue`, reference it from `v1alpha1.kinds`, add the two roles and their bindings, and run `pnpm --filter ./ai-gateway generate:kinds`; verify the generated Go and TypeScript types and manifest are committed, `spec.config` is `{type: object, additionalProperties: true}`, and regeneration leaves no diff.
-- [x] 1.2 Update the manifest tests: two kinds; `Middleware` not folder-scoped, without secure values, validated on `CREATE` and `UPDATE` only, with `type` and `enabled` required and the open `config`; unchanged route paths; four roles with permission sets, bindings and `fixed:` IDs, the catalog roles pinned as literals; verify they pass.
+- [x] 1.1 Add `kinds/middleware.cue`, reference it from `v1alpha1.kinds`, add the two roles and their bindings, and run `pnpm --filter ./ai-gateway generate:kinds`; verify the generated Go and TypeScript types and manifest are committed and regeneration leaves no diff.
+- [x] 1.2 Update the manifest tests: two kinds; `Middleware` not folder-scoped, without secure values, validated on `CREATE` and `UPDATE` only; unchanged route paths; four roles with permission sets, bindings and `fixed:` IDs, the catalog roles pinned as literals; verify they pass.
 - [x] 1.3 Verify the frontend typecheck, lint and tests pass with the generated TypeScript types (`mise run test-ai-gateway-frontend`).
 
 ## 2. Shared schema check
@@ -12,30 +12,52 @@
 
 ## 3. Middleware validator
 
-- [x] 3.1 Add `pkg/internal/tenantconfig` with `NewValidator`, `MaxConfigBytes` and the admission algorithm; verify table tests for valid creates (enabled and disabled, absent config), name mismatch, unregistered and operator types with the same reason, schema mismatch, non-empty config without schema, oversized config, update of a known type, disable-only updates for an unregistered type and a tightened schema, refused enable and config changes of an unregistered type, wrong object types, and allowed other actions.
+- [x] 3.1 Add `pkg/internal/tenantconfig` with `NewValidator`, the 64 KiB bound and the admission algorithm; verify table tests.
 - [x] 3.2 Add the sentinel test: refused creates and updates with sentinel values and undeclared sentinel keys leave no sentinel in the errors or in the plugin log handler output; verify it passes.
 
 ## 4. App wiring
 
-- [x] 4.1 Build the managed kinds from `Options.Extensions` in `gateway.New` for idle and running Gateways and pass them in `Provider()`; verify `TestProvider_ManagesTheManifestKinds` expects both kinds with validators, running and idle, and existing gateway tests pass unchanged.
-- [x] 4.2 Add the harness option to serve a Gateway against an existing test host, and gateway tests through the test host and the real admission adapter with injected tenant, schema-less tenant and operator definitions: create, get with unchanged `config`, update, refusals with reasons and no sentinel in bodies or logs, the shipped build refusing every create, an idle Gateway refusing `Middleware` reviews, and a delete without review while the plugin no longer answers reviews; verify they pass.
-- [x] 4.3 Add the rollback test (two Gateways, one store: disable-only accepted, enable and config changes refused) and the no-runtime-effect test (stored `enabled: true` for a default-off counting extension and `enabled: false` for a default-on one leave their phases unchanged on a language-model call); verify they pass.
+- [x] 4.1 Build the managed kinds in `gateway.New` for idle and running Gateways and pass them in `Provider()`; verify `TestProvider_ManagesTheManifestKinds` expects both kinds with validators, running and idle.
+- [x] 4.2 Add the harness option to serve a Gateway against an existing test host, and protocol tests through the test host and the real admission adapter; verify they pass.
+- [x] 4.3 Add the rollback test (two Gateways, one store) and the no-runtime-effect test; verify they pass.
 
 ## 5. End-to-end tests against Grafana
 
-- [x] 5.1 Add `ai-gateway/tests/middleware.spec.ts` with the service account fixture: permissions per role, Viewer and Editor `200` reads and `403` writes, Admin creates refused with `400` for an unregistered type and a name mismatch, Admin delete of a missing resource `404`, and sentinel values and keys absent from every response; add the middleware sentinel to the plugin-log check in `scripts/e2e.sh`; verify the suite lists, type-checks and lints (it runs in CI).
+- [x] 5.1 Add `ai-gateway/tests/middleware.spec.ts` with the service account fixture: permissions per role, Viewer and Editor reads and refused creates with nothing stored, Admin creates refused with `400` for an unregistered type and a name mismatch, Admin delete of a missing resource `404`, and sentinel values and keys absent from every response; add the middleware sentinel to the plugin-log check in `scripts/e2e.sh`; verify the suite lists, type-checks and lints.
 
 ## 6. Documentation
 
 - [x] 6.1 Add the tenant configuration section to `docs/guides/gateway-extensions.md`, update the `ScopeTenant` godoc, add the glossary entry and update the architecture walkthrough's kind sentence; verify `mise run lint-docs` passes.
 
-## 7. Integration checks
+## 7. Public tenant type registry and binding
 
-- [ ] 7.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test-ai-gateway`, `test-integration`, `verify-ai-gateway-boundary`, `build-ai-gateway-plugin` and `validate-ai-gateway-plugin`; verify all pass, and record the checks that only CI can run.
-- [x] 7.2 Run `openspec validate add-middleware-kind --strict`; verify it passes.
+- [ ] 7.1 Add `pkg/extension/tenanttype` (`Type`, `Member`, `All`, `Implementation`, `Bind`, package doc), with an empty registry; verify tests for `Member` (hyphens, digits), `Bind` (name, tenant scope, schema, default and implementation fields) and that `All` returns a copy.
+- [ ] 7.2 Add the types to the composition `Options` and the public `Run`, and extend `extensionhost.ValidateDefinitions` with the type checks and the binding check; verify table tests for invalid, repeated and reserved names and members, a schema without a valid example, an example without a schema, a tenant definition without a type or differing in schema or default, and an operator definition with a type's name, plus a `gateway.New` startup test on an idle host; update existing tests that register tenant definitions to pass matching types.
+
+## 8. Projection and generator
+
+- [ ] 8.1 Add `pkg/internal/tenantschema` with the projection, the structural and prune round-trip check and the CUE rendering; verify table tests for each keep, drop, resolve and refuse rule, nested objects, arrays of objects and typed maps, descriptions, and that a projected example survives pruning.
+- [ ] 8.2 Add the generator command, `kinds/middleware_members.cue`, the `middlewareMembers` import in `kinds/middleware.cue`, and the `generate-ai-gateway-kinds` mise task; regenerate; verify the drift test passes, the empty registry leaves the Middleware `spec` as `{type, enabled}`, and `generate:kinds` leaves no diff.
+- [ ] 8.3 In a scratch copy, generate members for the test types and the manifest with the pinned app-sdk, and verify the manifest test's Grafana-path conversion keeps each example; record the result in the pull request.
+
+## 9. Typed union admission
+
+- [ ] 9.1 Add `tenantconfig.DecodeSpec`, the raw-spec `Middleware` object and codec, and `Kind()`; verify tests for metadata, type, enabled and raw members, integers above 2^53 kept exactly, and fixed messages for undecodable specs.
+- [ ] 9.2 Rework `NewValidator(types, definitions)` and the admission algorithm for members; verify table tests for one member only and only the type's, disable-only updates with the member equal, reformatted or absent, the member required when enabled, no member for a type without configuration, unimplemented, unregistered and operator types with one reason, the member size bound, schema failures with nested locations, and no sentinel in any reason.
+- [ ] 9.3 Keep numbers as written in the test host; verify a host test that an integer above 2^53 is stored and reviewed exactly.
+- [ ] 9.4 Update the protocol tests to test types and members: nested member round-trip, refusals, rollback with the member kept and removed, shipped types refusing every create, no runtime effect; verify they pass with `-race`.
+- [ ] 9.5 Update the manifest test for members (properties equal the registry's members, no enum or union, and the Grafana-path prune round-trip per type); verify it passes.
+
+## 10. Documentation for typed members
+
+- [ ] 10.1 Rework the guide's "Configure tenant extensions", the `ScopeTenant` godoc, the glossary entry and the architecture sentence for typed members, public tenant types and the private-extension policy; verify `mise run lint-docs` passes.
+
+## 11. Integration checks
+
+- [ ] 11.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test`, `test-ai-gateway`, `test-integration`, `test-providerwire-v4`, `test-ai-gateway-frontend`, `verify-ai-gateway-boundary`, `verify-module-requirements`, `release-check`, `lint-docs`, `generate-ai-gateway-kinds` with a clean tree, and the end-to-end type checks; verify all pass, and record the checks only CI can run.
+- [ ] 11.2 Run `openspec validate --strict` on `gateway-extensions`, `gateway-plugin-host` and `gateway-caller-access`; verify they pass.
 
 ## Workflow follow-up
 
 - The end-to-end suite runs only in CI, at the pinned nightly image; the pull request records the result.
-- A maintainer opens the upstream app-sdk issue from the draft in design.md; link it from the guide once it exists.
 - #766 picks up the end-to-end checks listed under design.md Follow-ups.
