@@ -17,9 +17,12 @@ const (
 	// ScopeOperator extensions are configured by the operator, through the
 	// Gateway's extensions setting.
 	ScopeOperator Scope = "operator"
-	// ScopeTenant extensions are configured per namespace. Until namespace
-	// configuration exists, they run with their default state and an empty
-	// configuration.
+	// ScopeTenant extensions are configured per namespace, by Middleware
+	// resources named after the extension. The Gateway doesn't apply stored
+	// resources yet, so they run with their default state and an empty
+	// configuration. Their configuration is limited to top-level fields with
+	// scalar or scalar-array values, because the platform prunes objects
+	// nested inside it.
 	ScopeTenant Scope = "tenant"
 )
 

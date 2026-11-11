@@ -170,9 +170,51 @@ A distribution can list operator extensions in `Options.Mandatory`. Each must
 have an enabled entry with a valid configuration and its secrets, or startup
 fails. The shipped Gateway registers no extensions and no mandatory ones.
 
-Tenant extensions aren't configured by this setting. Until per-namespace
-configuration exists, a tenant extension runs everywhere it applies when it is
-enabled by default.
+Tenant extensions aren't configured by this setting; see
+[Configure tenant extensions](#configure-tenant-extensions).
+
+## Configure tenant extensions
+
+Org admins store a tenant extension's configuration in their stack namespace
+as a `Middleware` resource named after the extension:
+
+```yaml
+apiVersion: aigateway.ext.grafana.app/v1alpha1
+kind: Middleware
+metadata:
+  name: default-instructions
+spec:
+  type: default-instructions
+  enabled: true
+  config:
+    instructions: "Answer concisely."
+```
+
+The Gateway doesn't apply stored resources yet. Until it does, a tenant
+extension runs everywhere it applies when it is enabled by default, with an
+empty configuration, whatever its namespace stores.
+
+- `metadata.name` must equal `spec.type`, so a namespace holds one resource per
+  extension. `enabled` is required, and `config` defaults to `{}`.
+- The type must be a tenant extension the distribution registers. Operator
+  extensions and unknown names are refused with the same reason.
+- `config` must match the extension's `ConfigSchema` and is at most 64 KiB.
+  Refusals name the field and the failing location, never a value.
+- An update that sets `enabled: false` and keeps `config` is always accepted,
+  even after a rollback to a build without the extension. Any other change to
+  a resource whose extension isn't registered is refused.
+- Resources aren't in folders. Viewers and Editors can read them
+  (`aigateway:middlewarereader`) and Admins can write them
+  (`aigateway:middlewarewriter`).
+- The Gateway validates every create and update, so writes fail while the
+  plugin is unavailable. Deletes always work.
+- Resources can't hold secure values.
+
+Grafana prunes objects nested inside `config` before the Gateway sees it, so a
+tenant extension's configuration is limited to top-level fields whose values
+are scalars or arrays of scalars. Design `ConfigSchema` accordingly, and don't
+use secret-bearing strings as keys: a schema that allows arbitrary keys can
+name one in a refusal's location.
 
 ## Observe extensions
 
