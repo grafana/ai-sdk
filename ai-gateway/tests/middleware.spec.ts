@@ -6,16 +6,16 @@ const MIDDLEWARES = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default/middle
 const SENTINEL = 'e2e-middleware-sentinel-value';
 const TYPE = 'e2e-unregistered';
 
-function middleware(name: string, type: string, config: Record<string, unknown>) {
+const MEMBER = 'e2eUnregistered';
+
+function middleware(name: string, type: string, members: Record<string, unknown> = {}) {
   return {
     apiVersion: `${API_GROUP}/${API_VERSION}`,
     kind: 'Middleware',
     metadata: { name },
-    spec: { type, enabled: true, config },
+    spec: { type, enabled: true, ...members },
   };
 }
-
-const sentinelConfig = { instructions: SENTINEL, [SENTINEL]: SENTINEL };
 
 async function expectNoSentinel(response: APIResponse) {
   expect(await response.text()).not.toContain(SENTINEL);
@@ -51,7 +51,7 @@ test.describe('Middleware', () => {
   test('Viewers and Editors read, and their creates are refused', async ({ accounts }) => {
     for (const role of ['Viewer', 'Editor'] as const) {
       expect((await accounts[role].get(MIDDLEWARES)).status()).toBe(200);
-      const created = await create(accounts[role], middleware(TYPE, TYPE, sentinelConfig));
+      const created = await create(accounts[role], middleware(TYPE, TYPE));
       expect([400, 403]).toContain(created.status());
       expect((await accounts[role].get(`${MIDDLEWARES}/${TYPE}`)).status()).toBe(404);
     }
@@ -59,14 +59,23 @@ test.describe('Middleware', () => {
 
   test('Admin writes reach admission, which refuses unregistered types and mismatched names', async ({ accounts }) => {
     await expectRefused(
-      await create(accounts.Admin, middleware(TYPE, TYPE, sentinelConfig)),
+      await create(accounts.Admin, middleware(TYPE, TYPE)),
       `spec.type "${TYPE}" is not a tenant extension of this Gateway`
     );
     await expectRefused(
-      await create(accounts.Admin, middleware(`${TYPE}-other`, TYPE, sentinelConfig)),
+      await create(accounts.Admin, middleware(`${TYPE}-other`, TYPE)),
       'metadata.name must equal spec.type'
     );
     expect((await accounts.Admin.get(`${MIDDLEWARES}/${TYPE}`)).status()).toBe(404);
     expect((await accounts.Admin.delete(`${MIDDLEWARES}/${TYPE}`)).status()).toBe(404);
+  });
+
+  test('Grafana refuses members the manifest does not declare without echoing their values', async ({ accounts }) => {
+    const refused = await create(
+      accounts.Admin,
+      middleware(TYPE, TYPE, { [MEMBER]: { instructions: SENTINEL, nested: { value: SENTINEL } } })
+    );
+    expect([400, 422]).toContain(refused.status());
+    expect((await accounts.Admin.get(`${MIDDLEWARES}/${TYPE}`)).status()).toBe(404);
   });
 });
