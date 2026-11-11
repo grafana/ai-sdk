@@ -69,8 +69,8 @@ type candidateBuilder func(providerConfig config.ResolvedProvider, descriptor co
 // and composes the routed chain. Only the chain's candidates are constructed,
 // with the catalog's keys, and no physical attempt records are written. The
 // selection carries the catalog's name and keys. A candidate with a custom
-// endpoint connects through the egress client and reports a refusal as the
-// bare [execution.ErrEgressRefused].
+// endpoint connects through the egress client and reports its egress errors
+// without the request URL.
 func SelectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMessage, options StackCatalogOptions) (execution.Selection, error) {
 	if options.Client == nil || options.EgressClient == nil {
 		return execution.Selection{}, fmt.Errorf("gateway service: model and egress HTTP clients are required")
@@ -88,26 +88,29 @@ func SelectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 	})
 }
 
-// egressCandidate reports an egress refusal of its model as the bare
-// [execution.ErrEgressRefused], without the request URL that HTTP client and
-// provider errors wrap around it.
+// egressCandidate reports an egress refusal, connection failure or timeout
+// of its model as the bare [execution.ErrEgressRefused],
+// [execution.ErrEgressConnection] or [execution.ErrEgressTimeout], without the
+// request URL that HTTP client and provider errors wrap around it.
 type egressCandidate struct {
 	provider.LanguageModel
 }
 
 func (candidate egressCandidate) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
 	result, err := candidate.LanguageModel.DoGenerate(ctx, options)
-	return result, bareRefusal(err)
+	return result, bareEgressError(err)
 }
 
 func (candidate egressCandidate) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
 	result, err := candidate.LanguageModel.DoStream(ctx, options)
-	return result, bareRefusal(err)
+	return result, bareEgressError(err)
 }
 
-func bareRefusal(err error) error {
-	if errors.Is(err, execution.ErrEgressRefused) {
-		return execution.ErrEgressRefused
+func bareEgressError(err error) error {
+	for _, sentinel := range []error{execution.ErrEgressRefused, execution.ErrEgressTimeout, execution.ErrEgressConnection} {
+		if errors.Is(err, sentinel) {
+			return sentinel
+		}
 	}
 	return err
 }

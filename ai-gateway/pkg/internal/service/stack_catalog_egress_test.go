@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"regexp"
 	"sync"
@@ -137,28 +138,42 @@ func TestStackCatalogLister_CompatibleSlug(t *testing.T) {
 	assert.NotContains(t, string(encoded), "example.com", "discovery names no endpoint")
 }
 
-func TestSelectStackCatalog_RefusalsAreBare(t *testing.T) {
-	client, err := outbound.NewEgressClient(time.Second, 1024, outbound.EgressPolicy{})
+func TestSelectStackCatalog_EgressErrorsAreBare(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	for _, providerType := range []string{"anthropic", "openai", "openai-compatible"} {
-		for _, streaming := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/stream=%t", providerType, streaming), func(t *testing.T) {
-				providerConfig := config.ResolvedProvider{Type: providerType, APIKey: "private-key", BaseURL: "https://127.0.0.1:9/v1"}
-				raw, _, err := newCandidate(providerConfig, config.Primary{Provider: "custom", Model: "model"}, client, nativemodel.NewAnthropic)
-				require.NoError(t, err)
-				call := func(model provider.LanguageModel) error {
-					options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16)}
-					if streaming {
-						_, err := model.DoStream(context.Background(), options)
+	closed := "https://" + listener.Addr().String() + "/v1"
+	require.NoError(t, listener.Close())
+	allowLoopback, err := outbound.ParseEgressList("127.0.0.1")
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name   string
+		policy outbound.EgressPolicy
+		want   error
+	}{
+		{name: "refused", want: execution.ErrEgressRefused},
+		{name: "connection failed", policy: outbound.EgressPolicy{Allow: allowLoopback}, want: execution.ErrEgressConnection},
+	} {
+		client, err := outbound.NewEgressClient(time.Second, 1024, tc.policy)
+		require.NoError(t, err)
+		for _, providerType := range []string{"anthropic", "openai", "openai-compatible"} {
+			for _, streaming := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/stream=%t", tc.name, providerType, streaming), func(t *testing.T) {
+					providerConfig := config.ResolvedProvider{Type: providerType, APIKey: "private-key", BaseURL: closed}
+					raw, _, err := newCandidate(providerConfig, config.Primary{Provider: "custom", Model: "model"}, client, nativemodel.NewAnthropic)
+					require.NoError(t, err)
+					call := func(model provider.LanguageModel) error {
+						options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16)}
+						if streaming {
+							_, err := model.DoStream(context.Background(), options)
+							return err
+						}
+						_, err := model.DoGenerate(context.Background(), options)
 						return err
 					}
-					_, err := model.DoGenerate(context.Background(), options)
-					return err
-				}
-				err = call(raw)
-				require.ErrorIs(t, err, execution.ErrEgressRefused, "the provider keeps the refusal in its error chain")
-				assert.Equal(t, execution.ErrEgressRefused, call(egressCandidate{LanguageModel: raw}))
-			})
+					require.ErrorIs(t, call(raw), tc.want, "the provider keeps the sentinel in its error chain")
+					assert.Equal(t, tc.want, call(egressCandidate{LanguageModel: raw}), "the candidate drops the request URL")
+				})
+			}
 		}
 	}
 }
