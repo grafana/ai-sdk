@@ -231,7 +231,7 @@ type Spec struct {
 `tenantconfig.Validator` implements `simple.KindValidator`:
 
 1. Actions other than `CREATE` and `UPDATE` are allowed.
-2. Assert the object types and decode both specs; a failure is refused with a fixed message.
+2. Assert the object types and decode the incoming spec; a failure is refused with a fixed message. A stored spec that can't be decoded counts as having no member, so it can still be disabled.
 3. `metadata.name` must equal `spec.type`.
 4. Let `m = lowerCamel(spec.type)`, derived from the name alone. The spec may hold at most one member, and only `m`: "middleware: spec may set only spec.<m>, the member of spec.type". The reason names only `m`.
 5. **Disable-only update:** on update, `enabled: false`, and the member absent or equal to the stored one. Accept. Equality compares canonical encodings (sorted keys, numbers as written). This runs before every remaining check, so a rollback, a removed or rescoped implementation, a tightened schema or a lowered bound never blocks disabling, and "absent" covers a member the client removed because an older manifest no longer declares it.
@@ -242,7 +242,7 @@ type Spec struct {
 10. `CheckConfig(definition, member)`, refused as `middleware: spec.<m> <reason>`.
 11. Every refusal is `apierrors.NewBadRequest`.
 
-Reasons are built from fixed text, the type (equal to the already validated name), the derived member and schema locations, never from member values or the schema library's messages.
+Reasons are built from fixed text, the type (equal to the already validated name), the derived member and schema locations, never from member values or the schema library's messages. A location keeps declared property names and array indexes and replaces every other segment, such as a typed map's key, with `*`, so it never names configuration data.
 
 ### Test host
 

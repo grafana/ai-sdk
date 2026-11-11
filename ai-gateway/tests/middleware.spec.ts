@@ -76,6 +76,7 @@ test.describe('Middleware', () => {
       middleware(TYPE, TYPE, { [MEMBER]: { instructions: SENTINEL, nested: { value: SENTINEL } } })
     );
     expect([400, 422]).toContain(refused.status());
+    expect((await refused.json()).message).not.toContain('admission hook for Middleware');
     expect((await accounts.Admin.get(`${MIDDLEWARES}/${TYPE}`)).status()).toBe(404);
   });
 });
