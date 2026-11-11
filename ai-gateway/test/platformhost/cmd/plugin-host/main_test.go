@@ -12,12 +12,14 @@ import (
 func TestManifestKinds(t *testing.T) {
 	kinds, err := manifestKinds("../../../../src/app-sdk-manifest.json")
 	require.NoError(t, err)
-	require.Len(t, kinds, 1)
-	assert.Equal(t, "ModelCatalog", kinds[0].Kind)
-	assert.Equal(t, "ModelCatalogs", kinds[0].Plural)
-	require.NotNil(t, kinds[0].Admission)
-	assert.True(t, kinds[0].Admission.SupportsAnyValidation())
-	assert.Equal(t, []app.AdmissionOperation{app.AdmissionOperationCreate, app.AdmissionOperationUpdate}, kinds[0].Admission.Validation.Operations)
+	require.Len(t, kinds, 2)
+	for i, want := range []struct{ kind, plural string }{{"ModelCatalog", "ModelCatalogs"}, {"Middleware", "Middlewares"}} {
+		assert.Equal(t, want.kind, kinds[i].Kind)
+		assert.Equal(t, want.plural, kinds[i].Plural)
+		require.NotNil(t, kinds[i].Admission)
+		assert.True(t, kinds[i].Admission.SupportsAnyValidation())
+		assert.Equal(t, []app.AdmissionOperation{app.AdmissionOperationCreate, app.AdmissionOperationUpdate}, kinds[i].Admission.Validation.Operations)
+	}
 
 	none, err := manifestKinds("")
 	require.NoError(t, err)
