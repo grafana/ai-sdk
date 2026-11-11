@@ -36,6 +36,12 @@ curl -fsS "$grafana_url/api/health" >/dev/null || fail "Grafana did not become h
 pnpm exec playwright install chromium ${CI:+--with-deps}
 pnpm e2e
 plugin_logs=$("${compose[@]}" logs grafana | grep 'logger=plugin.grafana-aigateway-app' || true)
+# The sentinel checks below inspect these lines, so they must not be empty:
+# the Gateway logs once whether Grafana gave the plugin API access, which it
+# needs to read Middleware resources.
+api_access=$(grep 'gateway plugin API access' <<<"$plugin_logs" || true)
+[[ -n "$api_access" ]] || fail "the plugin log has no API access record"
+grep -q 'available=true' <<<"$api_access" || fail "Grafana gave the plugin no API access: $api_access"
 if grep -q "$catalog_key_sentinel" <<<"$plugin_logs"; then
   fail "the plugin logged a catalog key"
 fi
