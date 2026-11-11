@@ -160,6 +160,50 @@ administrator to publish fewer models.
 To combine the Gateway with other providers, see
 [Fallback and registry](../guides/fallback-and-registry.md).
 
+## Offer Grafana models and customer catalogs
+
+A Grafana plugin can offer the models its Gateway serves, and let each customer
+opt in to their own [stored catalog](../../ai-gateway/README.md#store-model-catalogs-in-grafana)
+with their own provider keys:
+
+- **Use one client per route.** A client has one base URL: the Gateway URL for
+  Grafana's models, or `.../modelcatalogs/<name>` for a customer's catalog.
+  Model IDs on one route mean nothing on the other.
+- **Store the customer's choice in your plugin's settings,** such as the
+  catalog name and model ID, and build the catalog client from it.
+- **Grafana's models in Grafana Cloud** are served only to the Grafana services
+  in the Gateway's `access_internal_services`, so your plugin's backend must be
+  on that list and use token exchange. Catalog routes don't need the list.
+- **Call a catalog on behalf of the user** with `WithOnBehalfOf`. Grafana then
+  checks both your service and the user: your token must be allowed to use
+  `aigateway.ext.grafana.app/modelcatalogs:get` on the user's behalf, and the
+  user must be allowed to call catalogs, which Editors and Admins are through
+  `aigateway:modelinvoker`.
+- **Don't fall back from a customer's model to Grafana's.** The customer chose
+  their own provider account, for its terms, data handling or billing. Falling
+  back would send their prompts to a provider they didn't choose and hide a
+  broken catalog. Report the error, such as the `424` for a catalog the Gateway
+  can't use, and let them fix it or switch in your settings. The Gateway never
+  crosses routes itself: a catalog's fallbacks stay within that catalog.
+
+```go
+baseURL := gatewayURL
+if settings.Catalog != "" {
+	baseURL = gatewayURL + "/modelcatalogs/" + url.PathEscape(settings.Catalog)
+}
+client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
+	CAPToken:         os.Getenv("GRAFANA_CAP_TOKEN"),
+	TokenExchangeURL: tokenExchangeURL,
+	Namespace:        "stacks-123",
+	Audience:         "grafana-aigateway-app",
+	BaseURL:          baseURL,
+})
+if err != nil {
+	return err
+}
+ctx = grafana.WithOnBehalfOf(ctx, userToken)
+```
+
 ## Configure fallback
 
 Your Gateway administrator can put a primary model and ordered backups behind

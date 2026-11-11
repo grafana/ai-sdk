@@ -16,8 +16,8 @@ code.
 ## Find your Gateway URL
 
 Open **Grafana AI Gateway** in your Grafana instance. The overview page shows
-the Gateway URL for your stack and a quick start you can copy. The URL has this
-form:
+the Gateway URL for your stack, the URL of each stored model catalog, and a
+quick start you can copy. The Gateway URL has this form:
 
 ```text
 https://<your-grafana>/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/<namespace>
