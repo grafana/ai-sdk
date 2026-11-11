@@ -79,6 +79,8 @@ func TestClassifyProvider(t *testing.T) {
 		{"egress connection timeout", fmt.Errorf("anthropic: %w", ErrEgressTimeout), CategoryTimeout},
 		{"cancellation after a refused attempt", errors.Join(ErrEgressRefused, context.Canceled), CategoryCancellation},
 		{"deadline after a refused attempt", errors.Join(ErrEgressRefused, context.DeadlineExceeded), CategoryTimeout},
+		{"timed-out attempt after a refused attempt", errors.Join(ErrEgressRefused, ErrEgressTimeout), CategoryTimeout},
+		{"failed connection after a refused attempt", errors.Join(ErrEgressRefused, ErrEgressConnection), CategoryEgressRefused},
 		{"egress refusal inside a provider transport error", apiError(0, &url.Error{Op: "Post", URL: "https://llm.example", Err: ErrEgressRefused}), CategoryEgressRefused},
 		{"deadline", context.DeadlineExceeded, CategoryTimeout},
 		{"unsupported request", fmt.Errorf("wrapped: %w", catalog.ErrUnsupportedRequest), CategoryInvalidRequest},

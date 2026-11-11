@@ -187,7 +187,7 @@ A connection, TLS handshake or response read of a custom endpoint that fails aft
 
 #### Scenario: Endpoint resets the TLS handshake
 - **WHEN** a permitted endpoint resets the connection during the handshake or while streaming
-- **THEN** the overview and any stream error SHALL carry the fixed connection error, and no IP address
+- **THEN** the overview and any stream error SHALL carry the fixed connection error, without the endpoint URL or any IP address
 
 #### Scenario: Certificate for another name
 - **WHEN** a permitted endpoint presents a certificate that does not name its host
