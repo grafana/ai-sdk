@@ -15,6 +15,17 @@ The Gateway's API group SHALL serve a namespaced `Middleware` kind in version `v
 - **WHEN** a writer stores a valid `Middleware` whose `config` holds scalar fields and arrays of scalars
 - **THEN** reads SHALL return that `config` unchanged
 
+### Requirement: Tenant configuration shape
+A tenant extension's configuration SHALL be limited to top-level fields whose values are scalars or arrays of scalars, because the platform prunes objects nested inside a stored `config`. Tenant extension schemas SHALL NOT rely on nested objects, and the Gateway SHALL treat what the platform stores, as admission saw it, as the configuration.
+
+#### Scenario: Flat configuration
+- **WHEN** a tenant extension's schema declares top-level string, number, boolean and string-array fields
+- **THEN** a valid configuration SHALL be stored and read back with every field
+
+#### Scenario: Nested object in a configuration
+- **WHEN** a writer stores a `config` holding an object nested inside it
+- **THEN** the Gateway SHALL NOT promise that the nested object's fields are stored, and admission SHALL validate the configuration the platform passes it
+
 ### Requirement: Tenant configuration admission
 Admission SHALL accept a create or update only when `spec.type` names a tenant-scope extension the distribution registered and `spec.config`, or an empty object when it is absent, matches that extension's configuration schema. An extension without a schema SHALL accept only an empty configuration. Operator-scope and unregistered types SHALL be refused with the same reason, so refusals do not reveal which operator extensions a distribution registers.
 

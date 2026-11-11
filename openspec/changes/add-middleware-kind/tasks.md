@@ -37,5 +37,5 @@
 ## Workflow follow-up
 
 - The end-to-end suite runs only in CI, at the pinned nightly image; the pull request records the result.
-- File the upstream app-sdk issue for nested `config` pruning (Q1) if (a) is chosen, and link it from the guide.
-- #766's end-to-end suite owns folderless save, the flat `config` round-trip against Grafana, updates, disable and a stored-resource delete.
+- A maintainer opens the upstream app-sdk issue from the draft in design.md; link it from the guide once it exists.
+- #766 picks up the end-to-end checks listed under design.md Follow-ups.

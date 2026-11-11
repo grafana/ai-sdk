@@ -21,6 +21,15 @@ Grafana's kind store converts the manifest schema with app-sdk `VersionSchema.As
 
 This reproduction is not evidence about the pinned nightly image. Admission sees the pruned object, so what is stored is what admission validated.
 
+### Deviation: no `x-kubernetes-preserve-unknown-fields`
+
+The issue asks for `spec.config` to use `x-kubernetes-preserve-unknown-fields` so the host does not prune it. The pinned platform cannot honor that, so the kind declares an open object (`additionalProperties: true`) and the `gateway-extensions` spec limits tenant configuration to top-level fields with scalar or scalar-array values. Local reproduction, not evidence from a running Grafana:
+
+- Versions: grafana-app-sdk `v0.60.16` (generator and `AsKubeOpenAPI`; Grafana `v13.3.0` pins `v0.61.0`, whose `oapi3SchemaToKubeSchema` handles `additionalProperties` and the extension identically), `k8s.io/apiextensions-apiserver v0.37.1`, Grafana `v13.3.0` `pkg/services/apiserver/kindstore` (`structural.go`, `schema.go`, `openapi.go`).
+- Step 1: copy `kinds/` and `.config/app-sdk/` to a scratch directory with the module's `go.mod`, add a kind whose `spec` has `config?: {[string]: _}`, `open?: {...}` and `anyv?: _`, and run `node .config/app-sdk/generate-kinds.mjs`. The manifest schema has `additionalProperties: true` for the first two and `additionalProperties: {}` for the third, and no `x-kubernetes-preserve-unknown-fields`.
+- Step 2: in a scratch Go module, unmarshal two version schemas into `app.VersionSchema`, one with `config: {type: object, additionalProperties: true}` and one with `config: {type: object, x-kubernetes-preserve-unknown-fields: true}`. Convert each with `AsKubeOpenAPI`, drop `metadata` and expand refs as `kindstore.expandSchemaRefs` does. Then marshal to `apiextensionsv1.JSONSchemaProps`, convert to internal props, call `structuralschema.NewStructural` and `ValidateStructural` (no errors), and run `structuralpruning.Prune(obj, structural, true)`.
+- Result for both schemas: `config` `{s: "v", list: ["a","b"], nested: {k: "v"}, objs: [{k: 1}]}` becomes `{s: "v", list: ["a","b"], nested: {}, objs: [{}]}`. The converted kube schema for both is `{type: object, additionalProperties: true}`.
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -60,7 +69,7 @@ middlewareKind: {
 - No `secure` block, so the kind schema has no `secure` property.
 - `type` stays a plain string, as `ModelCatalog`'s provider `type` does, so admission owns every type message.
 - `enabled` is required: no schema default, so Grafana and the test host store the same object, and a disable-only update is unambiguous.
-- `config` is optional and open. Absent means `{}`. It is the only shape the generator emits; its pruning limit is documented (see Risks and Q1).
+- `config` is optional and open. Absent means `{}`. It is the only shape the generator emits; the "Tenant configuration shape" requirement states its pruning limit (see the deviation above).
 
 ### Manifest and roles
 
@@ -181,7 +190,7 @@ Moving to #766's end-to-end suite: folderless save, the flat `config` round-trip
 
 ## Risks / Trade-offs
 
-- [Grafana empties objects nested in `config`] → Documented for extension authors; both #766 schemas are flat. A schema that requires a nested field gets a refusal at admission; one with optional nested fields loses them silently. An upstream app-sdk issue should ask `AsKubeOpenAPI` to keep `x-kubernetes-preserve-unknown-fields` for open objects. See Q1.
+- [Grafana empties objects nested in `config`] → A spec contract and the guide limit tenant configuration to flat shapes; both #766 schemas are flat. A schema that requires a nested field gets a refusal at admission; one with optional nested fields loses them silently. See Follow-ups for the registration check and the upstream issue.
 - [The accept paths have no Grafana evidence until #766] → Go evidence runs through the real admission adapter; CI-e2e proves wiring, roles and refusals; #766 owns the rest, listed above.
 - [Admission fails closed while the plugin is down or idle] → Creates and updates fail, deletes work; documented.
 - [Decode failures before the validator] → app-sdk's codec reports JSON type errors, which name types and fields, not values.
@@ -201,13 +210,43 @@ Moving to #766's end-to-end suite: folderless save, the flat `config` round-trip
 
 No migration: the kind starts empty. Rolling back to a build without the kind stops Grafana serving it and leaves stored resources unread. Rolling back to a build without a resource's extension leaves it stored; it can be disabled or deleted.
 
-## Open Questions
+## Recorded decisions
 
-Recorded with a recommendation; each is flagged for review before implementation because it changes the specs or tasks.
+- **Nested configuration:** documented as a contract, not enforced at registration. See the `gateway-extensions` "Tenant configuration shape" requirement and the follow-ups.
+- **Disable-only updates:** accepted for every stored type, including a configuration a tightened schema no longer accepts.
+- **Operator types:** refused with the unregistered-type reason.
+- **`enabled`:** required.
+- **Size bound:** 64 KiB on the encoded `config`.
+- **End-to-end accept paths:** Go only, through the protocol test host with definitions passed through `Options.Extensions`; no test code in the backend.
 
-- **Q1 Nested `config` pruning.** (a) Document the flat-shape limit and file an upstream app-sdk issue (recommended). (b) Also refuse, at registration, tenant schemas that permit nested objects; protects private distributions but needs a JSON Schema walk over `$ref`, combinators and `additionalProperties`. (c) Store `config` as a JSON string; robust, but worse to author and unlike the issue's example.
-- **Q2 Disable-only scope.** Allow disable-only updates for every stored type (recommended), or only for unregistered types as the issue states. The wider rule also covers a tightened schema.
-- **Q3 Operator types.** Same reason as unregistered types (recommended), so tenant admins can't enumerate operator extensions; or a distinct reason for clarity.
-- **Q4 `enabled`.** Required (recommended), or optional with default `true`, which Grafana would default and the test host would not.
-- **Q5 Size bound.** 64 KiB on the encoded `config` (recommended), or rely on the platform's object limit.
-- **Q6 End-to-end accept paths.** Option A (recommended), or option B now.
+## Follow-ups
+
+- **Registration-time shape check.** Once a tenant extension needs nested configuration, either the platform preserves it or `ValidateDefinitions` refuses tenant schemas that allow nested objects (including through `$ref`, combinators and `additionalProperties` schemas).
+- **Upstream app-sdk issue.** To be opened by a maintainer; draft below.
+- **#765:**
+  - re-run `extensionhost.CheckConfig` on every enabled resource at read time and apply the failure policy, because admission is not a read-time guarantee;
+  - decode `spec.config` as raw JSON, not through the generated `map[string]interface{}`, so integers keep their precision;
+  - the self-hosted admission warning needs an app-sdk change, because `v0.60.16` validators return only an error and the adapter does not expose the protocol's `warnings`;
+  - the plugin identity needs `list` on `middlewares`; verify it in the development deployment check.
+- **#766 end-to-end checks** that move from this change because the shipped build registers no tenant extension before #766:
+  - an Admin creates a valid resource without a folder annotation (`201`), and one with `grafana.app/folder` is refused;
+  - a flat `config` (string, number, boolean, string array) reads back unchanged after Grafana's pruning;
+  - a valid update (`200`), and a schema-failing update refused with `400` and the location, with no sentinel in the body or plugin log;
+  - a disable-only update (`200`);
+  - a stored resource is deleted (`200`) and is gone on read;
+  - Viewer and Editor `get` of a stored resource (`200`), and `403` on its update and delete;
+  - the runtime effect that replaces "Stored tenant configuration has no runtime effect".
+
+### Draft upstream issue
+
+**Title:** `AsKubeOpenAPI` drops `x-kubernetes-preserve-unknown-fields`, so pruning empties nested objects in open fields
+
+**Body:**
+
+> A kind with an open object field, for example `config?: {[string]: _}` in CUE, generates a manifest schema of `{"type": "object", "additionalProperties": true}`. The CUE kind definitions offer no way to emit `x-kubernetes-preserve-unknown-fields`.
+>
+> When a host builds a structural schema from that manifest, `VersionSchema.AsKubeOpenAPI` (`oapi3SchemaToKubeSchema`) turns both `additionalProperties: true` and `x-kubernetes-preserve-unknown-fields: true` into `AdditionalProperties{Allows: true}` with no schema, and does not carry the extension over. apiextensions pruning then prunes each value of the field against a nil schema: top-level scalars and arrays of scalars survive, but nested objects are emptied, also inside arrays.
+>
+> Reproduction (grafana-app-sdk v0.60.16 and v0.61.0, k8s.io/apiextensions-apiserver v0.37.1): convert a version schema with `config: {type: object, x-kubernetes-preserve-unknown-fields: true}` with `AsKubeOpenAPI`, build a structural schema with `structuralschema.NewStructural`, and run `structuralpruning.Prune` on `{"spec": {"config": {"s": "v", "nested": {"k": "v"}, "objs": [{"k": 1}]}}}`. The result is `{"s": "v", "nested": {}, "objs": [{}]}`.
+>
+> Expected: an open object field keeps arbitrary nested content, as a CRD with `x-kubernetes-preserve-unknown-fields: true` does. Possible fixes: emit `x-kubernetes-preserve-unknown-fields: true` (as a vendor extension on the kube schema) for objects with `additionalProperties: true` and no properties, and let CUE kinds declare open fields that generate it.
