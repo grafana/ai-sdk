@@ -53,8 +53,8 @@
 
 ## 9. Integration checks
 
-- [ ] 9.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test-ai-gateway` (with `-race` on `extensionhost` and `tenantconfig`), `test-integration` and `verify-ai-gateway-boundary` with `GOFLAGS=-buildvcs=false`. Verify they pass, and record the CI-only checks: plugin build and validation, end-to-end suite, `module-policy.sh`, parity coverage.
-- [ ] 9.2 Run `openspec validate resolve-tenant-extension-config --strict` and verify it passes.
+- [x] 9.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test-ai-gateway` (with `-race` on `extensionhost` and `tenantconfig`), `test-integration` and `verify-ai-gateway-boundary` with `GOFLAGS=-buildvcs=false`. Verify they pass, and record the CI-only checks: plugin build and validation, end-to-end suite, `module-policy.sh`, parity coverage.
+- [x] 9.2 Run `openspec validate resolve-tenant-extension-config --strict` and verify it passes.
 
 ## Workflow follow-up
 
