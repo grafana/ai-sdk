@@ -28,7 +28,7 @@ An extension definition SHALL declare a name, a scope of `operator` or `tenant`,
 - **THEN** startup SHALL fail naming the duplicate
 
 ### Requirement: Explicit registration
-Extensions SHALL run only when the distribution passes their definitions to the public entrypoint's options. There SHALL be no global or import-time registry. A function SHALL return the definitions the shipped Gateway registers, which are none in this version, and the shipped backend SHALL pass exactly those.
+Extensions SHALL run only when the distribution passes their definitions to the public entrypoint's options. There SHALL be no global or import-time registry. A function SHALL return the definitions the shipped Gateway registers, which are the `default-instructions` and `default-settings` tenant extensions, and the shipped backend SHALL pass exactly those.
 
 #### Scenario: Importing registers nothing
 - **WHEN** a distribution imports the public extension and composition packages without passing definitions
@@ -36,7 +36,7 @@ Extensions SHALL run only when the distribution passes their definitions to the 
 
 #### Scenario: Shipped build
 - **WHEN** the shipped backend starts
-- **THEN** it SHALL pass the shipped definitions, which are empty, and no mandatory extension, and every request SHALL behave as without extensions
+- **THEN** it SHALL pass the shipped definitions, which are both off by default, and no mandatory extension, and every request in a namespace that stores no `Middleware` resource SHALL reach the model as without extensions
 
 ### Requirement: Phase interfaces
 An extension instance SHALL take part in a phase only by implementing that phase's interface: admit, transform request, inspect request, inspect response or observe. An instance that implements none of them SHALL fail startup. Extensions SHALL NOT receive the model or a continuation, and SHALL NOT change identity, selection, credentials or the model's result other than through these phases.
@@ -318,7 +318,7 @@ The Gateway's API group SHALL serve a namespaced `Middleware` kind in version `v
 - **THEN** reads SHALL return that member unchanged
 
 ### Requirement: Public tenant extension types
-Tenant extension types SHALL be declared in a public, experimental package: each with a name, a description, an optional configuration schema, a default state and an example configuration that its schema accepts. The package SHALL bind an implementation to a type to produce a tenant-scope definition. The registry the shipped Gateway uses SHALL be the only source of members in the manifest, and SHALL be empty in this version.
+Tenant extension types SHALL be declared in a public, experimental package: each with a name, a description, an optional configuration schema, a default state and an example configuration that its schema accepts. The package SHALL bind an implementation to a type to produce a tenant-scope definition. The registry the shipped Gateway uses SHALL be the only source of members in the manifest, and SHALL hold `default-instructions` and `default-settings`.
 
 #### Scenario: Private implementation of a public type
 - **WHEN** a distribution binds its own implementation to a public type and passes the definition to the entrypoint
@@ -327,6 +327,10 @@ Tenant extension types SHALL be declared in a public, experimental package: each
 #### Scenario: Invalid type
 - **WHEN** a type has an invalid or repeated name, a member that collides with another type's or with `type` or `enabled`, a schema without an example it accepts, or an example without a schema
 - **THEN** startup SHALL fail naming the type and the field
+
+#### Scenario: Shipped registry
+- **WHEN** the committed manifest is inspected
+- **THEN** the `Middleware` spec SHALL declare exactly `type`, `enabled`, `defaultInstructions` and `defaultSettings`
 
 ### Requirement: Additive tenant type evolution
 Because the platform validates every write against the current schema without exempting unchanged fields, a public type's schema SHALL change only additively: new optional fields and nothing narrower. An incompatible change SHALL use a new type name.
@@ -393,8 +397,8 @@ Admission SHALL accept a create or update only when the spec sets no member othe
 - **THEN** admission and the stored resource SHALL keep its exact value
 
 #### Scenario: Shipped build
-- **WHEN** the shipped Gateway, which implements no tenant extension, reviews a `Middleware` create
-- **THEN** it SHALL refuse it
+- **WHEN** the shipped Gateway reviews `Middleware` creates for `default-instructions` and `default-settings` with valid members, and one for any other type
+- **THEN** it SHALL accept the first two and refuse the other with the unregistered-type reason
 
 ### Requirement: Disable-only updates
 An update that sets `spec.enabled` to `false` and keeps the stored member, or removes it, SHALL be accepted whatever the stored type, including a type the running build does not implement, a member that no longer matches its schema or bound, and a member the running manifest no longer declares. Any other update of a resource whose type is not implemented SHALL be refused.
@@ -463,11 +467,11 @@ The extension guide SHALL describe the `Middleware` resource and its members, ro
 - **THEN** they SHALL find the TTL, that replicas converge independently, and that a failed read never falls back to a more permissive default
 
 ### Requirement: Tenant configuration evidence
-Roles, type and name refusals and secret-safe refusals SHALL be proven end to end against Grafana with the built plugin. While the shipped registry is empty, acceptance, member rules, schema and operator-type refusals, disable-only updates, exact numbers, unreviewed deletes and namespace configuration reads SHALL be proven through the protocol test host with test-only types and definitions passed through internal options, never compiled into the shipped backend.
+Acceptance, roles, refusals, secret-safe refusals, round-trips, updates, disable-only updates, deletes and runtime effect SHALL be proven end to end against Grafana with the built plugin and its shipped types. What those types can't show, such as operator types, rollbacks, other schemas and several namespaces, SHALL be proven through the protocol test host with test-only types and definitions, never compiled into the shipped backend.
 
 #### Scenario: End-to-end suite with the shipped build
 - **WHEN** the plugin end-to-end suite runs against the pinned Grafana image
-- **THEN** it SHALL exercise the roles, the refusals and the secret-safe responses and plugin logs through Grafana's API
+- **THEN** it SHALL exercise the roles, writes of the shipped types, the refusals, the secret-safe responses and plugin logs, and the runtime effect through Grafana's API
 
 #### Scenario: Namespace reads through the test host
 - **WHEN** Gateway tests store different resources in two namespaces of the protocol test host and call the language-model route in each
@@ -588,9 +592,13 @@ Each Gateway process SHALL cache independently. A change SHALL take effect on ea
 ### Requirement: Tenant configuration reads only when needed
 The Gateway SHALL read a namespace's configuration only for a call to which at least one tenant-scope extension applies. With no tenant-scope extension registered, it SHALL make no reads.
 
-#### Scenario: Shipped build
-- **WHEN** the shipped backend, which registers no tenant extension, serves calls
+#### Scenario: No tenant extension registered
+- **WHEN** a distribution that registers no tenant extension serves calls
 - **THEN** it SHALL make no `Middleware` reads
+
+#### Scenario: Shipped build
+- **WHEN** the shipped backend serves calls in a namespace that stores no `Middleware` resource
+- **THEN** it SHALL read that namespace's configuration at most once per cache TTL, and the calls SHALL reach the model unchanged
 
 #### Scenario: Extension narrowed to another source
 - **WHEN** the only tenant extension declares ownership `operator`, and a request BYOK call runs

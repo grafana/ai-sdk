@@ -39,12 +39,12 @@
 ## 5. Documentation
 
 - [x] 5.1 Add `docs/guides/gateway-stack-defaults.md`, the org admin guide listed in design.md. Link it from `docs/README.md`, the extension guide's tenant section and the footers. Update the glossary and the architecture walkthrough. Verify that `mise run lint-docs` passes.
-- [ ] 5.2 Add the manual development check and the stack-catalog follow-up to the PR body.
+- [x] 5.2 Add the manual development check and the stack-catalog follow-up to the PR body.
 
 ## 6. Integration checks
 
 - [x] 6.1 With `GOFLAGS=-buildvcs=false`, run `mise run fmt-check`, `vet`, `lint`, `build`, `test-ai-gateway`, `test-ai-gateway-frontend`, `verify-ai-gateway-boundary` and `validate-parity-baseline`, and verify they pass. Record the CI-only checks: the plugin build and validation, the end-to-end suite, and `module-policy.sh`.
-- [ ] 6.2 Run `openspec validate add-tenant-call-defaults --strict` and verify it passes. Archive the change in the same PR after review.
+- [x] 6.2 Run `openspec validate add-tenant-call-defaults --strict` and verify it passes. Archive the change in the same PR after review.
 
 ## Workflow follow-up
 
