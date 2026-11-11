@@ -220,7 +220,7 @@ type Spec struct {
 
 ### Where the validator gets its types and definitions
 
-`gateway.New` builds the managed kinds once, after the binding check and before the idle check: `managedKinds(types, definitions)` returns the catalog kind with `stackcatalog.Validator{}` and `tenantconfig.Kind()` with `tenantconfig.NewValidator(types, definitions)`. Both idle and running Gateways keep them for `Provider()`. `NewValidator` keys the types by name and the tenant-scope definitions by name; operator definitions are not kept.
+`gateway.New` builds the managed kinds once, after the binding check and before the idle check: `managedKinds(definitions)` returns the catalog kind with `stackcatalog.Validator{}` and `tenantconfig.Kind()` with `tenantconfig.NewValidator(definitions)`. Both idle and running Gateways keep them for `Provider()`. `NewValidator` keys the tenant-scope definitions by name; operator definitions are not kept. It needs no types: the member name derives from the type name, and the binding check guarantees each definition's schema and default equal its type's.
 
 ### Shared schema check
 
@@ -250,6 +250,10 @@ Reasons are built from fixed text, the type (equal to the already validated name
 - Gateway tests get one harness option to serve a second Gateway against an existing host, so stored objects survive a "rollback" to a build with different types and definitions.
 - Host behavior stays out of the platform evidence, as the existing requirement states.
 
+### Generated-manifest evidence
+
+A fixture under `pkg/internal/tenantschema/testdata` holds the Middleware schema the pinned app-sdk generator emits for a nested test type. A test converts it as Grafana does, checks that its `spec` equals the projection's structural schema exactly, and that the example survives pruning. Regenerate it with the generator and `generate:kinds` in a scratch copy when app-sdk is upgraded.
+
 ### Manifest test
 
 - The Middleware `spec` requires exactly `type` and `enabled`, `type` is a string with no enum, there is no `oneOf`/`anyOf`, and the properties are exactly `type`, `enabled` and `Member(t)` for every type in `tenanttype.All()` with a schema. With the empty registry, that is `{type, enabled}`.
@@ -260,7 +264,7 @@ Reasons are built from fixed text, the type (equal to the already validated name
 
 The shipped registry and `DefaultExtensions()` are empty, so Grafana refuses every `Middleware` create until #766. Accept paths are proven in Go: tests pass test types through the composition `TenantTypes` and bound definitions through `Options.Extensions`, and drive admission through the test host and the real app-sdk adapter. Nothing test-only is compiled into the backend.
 
-What CI end-to-end covers before #766: role bindings; Viewer and Editor list `200` and creates refused with nothing stored; Admin creates refused with `400` for an unregistered type and a name mismatch; an Admin delete of a missing resource `404`; no sentinel in bodies or the plugin log; the catalog and route specs unchanged.
+What CI end-to-end covers before #766: role bindings; Viewer and Editor list `200` and creates refused with nothing stored; Admin creates refused with `400` for an unregistered type and a name mismatch; an undeclared member with sentinel values refused by Grafana itself without echoing them; an Admin delete of a missing resource `404`; no sentinel in bodies or the plugin log; the catalog and route specs unchanged.
 
 ### Test plan
 
@@ -302,7 +306,7 @@ What CI end-to-end covers before #766: role bindings; Viewer and Editor list `20
 ## Risks for #765
 
 - The reader decodes each listed object's raw `spec` with `tenantconfig.DecodeSpec` and passes the type's member, not `spec.config`, to factories; a missing member with `enabled: true` or another member makes the configuration invalid at read time.
-- `NewValidator` takes the types; `ValidateDefinitions` takes the types; #765 tests with tenant definitions need matching types.
+- `ValidateDefinitions` takes the types, and #765 tests with tenant definitions need matching types; `NewValidator` keeps its signature.
 - Its deltas on "Disable-only updates", "Tenant configuration admission" and the unknown-type rules must be reworded to members and to "a type this build doesn't implement".
 - A registered type with no implementation is an unknown type at read time.
 - Admission isn't a read-time guarantee, so #765 re-runs `CheckConfig` on enabled members.
