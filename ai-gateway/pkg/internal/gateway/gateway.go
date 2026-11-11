@@ -9,11 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/grafana/authlib/authn"
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/client-go/rest"
 
 	"github.com/grafana/grafana-app-sdk/app"
 	"github.com/grafana/grafana-app-sdk/plugin"
@@ -66,7 +68,8 @@ type Gateway struct {
 	handler       http.Handler
 	authenticator authn.Authenticator
 	sinks         sinks
-	kinds         []simple.AppManagedKind
+	definitions   []extension.Definition
+	logger        *slog.Logger
 }
 
 // New validates settings and constructs every Gateway dependency before any
@@ -82,11 +85,10 @@ func New(options Options) (*Gateway, error) {
 	if err := extensionhost.ValidateDefinitions(options.Extensions, options.Mandatory); err != nil {
 		return nil, err
 	}
-	kinds := managedKinds(options.Extensions)
 	lookupEnv := options.LookupEnv
 	keys, err := gatewayauth.SigningKeys(lookupEnv)
 	if errors.Is(err, gatewayauth.ErrNoSigningKeys) {
-		return newIdle(lookupEnv, kinds)
+		return newIdle(lookupEnv, options.Extensions)
 	}
 	if err != nil {
 		return nil, err
@@ -138,7 +140,7 @@ func New(options Options) (*Gateway, error) {
 		sinks.close()
 		return nil, err
 	}
-	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks, kinds: kinds}, nil
+	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks, definitions: options.Extensions, logger: options.Logger}, nil
 }
 
 func validateProviderEndpoints(file config.File) error {
@@ -262,11 +264,11 @@ func newLanguageHandler(config execution.Config) (http.Handler, error) {
 
 // newIdle returns the idle Gateway. It refuses to start when unverified
 // requests are requested instead, since the plugin host would then serve them.
-func newIdle(lookupEnv config.LookupEnv, kinds []simple.AppManagedKind) (*Gateway, error) {
+func newIdle(lookupEnv config.LookupEnv, definitions []extension.Definition) (*Gateway, error) {
 	if skip, _ := lookupEnv(plugin.EnvVarInsecureSkipAuthentication); skip == insecureSkipAuthenticationEnabled {
 		return nil, fmt.Errorf("config: set %s or %s to verify platform tokens; %s is not supported", plugin.EnvVarGrafanaJWKSURL, plugin.EnvVarGrafanaJWKS, plugin.EnvVarInsecureSkipAuthentication)
 	}
-	return &Gateway{kinds: kinds}, nil
+	return &Gateway{definitions: definitions}, nil
 }
 
 // Idle reports whether the Gateway started without platform signing keys.
@@ -282,20 +284,50 @@ func (g *Gateway) Handler() http.Handler { return g.handler }
 func (g *Gateway) Authenticator() authn.Authenticator { return g.authenticator }
 
 // Provider returns the app-sdk provider whose app serves Handler and the
-// manifest kinds with their admission validators.
+// manifest kinds with their admission validators. The host's API access
+// configuration reaches the app here: a running Gateway reads namespace
+// tenant configuration through it, and without it applies tenant extension
+// defaults and refuses Middleware writes.
 func (g *Gateway) Provider() app.Provider {
 	return simple.NewAppProvider(manifestdata.LocalManifest(), nil, func(cfg app.Config) (app.App, error) {
-		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: g.kinds})
+		apiAccess := cfg.KubeConfig.Host != ""
+		if !g.Idle() {
+			if err := g.connectTenants(cfg.KubeConfig, apiAccess); err != nil {
+				return nil, err
+			}
+		}
+		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: managedKinds(g.definitions, apiAccess)})
 	})
 }
 
+// connectTenants logs whether the plugin has API access and, when the build
+// registers a tenant extension, connects namespace tenant configuration
+// through it, or logs once that tenant configuration is not applied.
+func (g *Gateway) connectTenants(kubeConfig rest.Config, apiAccess bool) error {
+	g.logger.Info("gateway plugin API access", "available", apiAccess)
+	if !slices.ContainsFunc(g.definitions, func(definition extension.Definition) bool { return definition.Scope == extension.ScopeTenant }) {
+		return nil
+	}
+	if !apiAccess {
+		g.logger.Warn("gateway tenant configuration is not applied: the plugin has no API access, so tenant extensions run with their defaults")
+		return nil
+	}
+	reader, err := tenantconfig.NewReader(kubeConfig)
+	if err != nil {
+		return err
+	}
+	g.sinks.extensions.ConnectTenants(reader)
+	return nil
+}
+
 // managedKinds lists every manifest kind with its admission validator. The
-// Middleware validator accepts the tenant extensions among definitions. No
-// kind has a reconciler or watcher, so the app starts no informers.
-func managedKinds(definitions []extension.Definition) []simple.AppManagedKind {
+// Middleware validator accepts the tenant extensions among definitions, and
+// refuses every write without API access. No kind has a reconciler or
+// watcher, so the app starts no informers.
+func managedKinds(definitions []extension.Definition, apiAccess bool) []simple.AppManagedKind {
 	return []simple.AppManagedKind{
 		{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{}},
-		{Kind: middlewarev1alpha1.Kind(), Validator: tenantconfig.NewValidator(definitions)},
+		{Kind: middlewarev1alpha1.Kind(), Validator: tenantconfig.NewValidator(definitions, apiAccess)},
 	}
 }
 

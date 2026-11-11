@@ -19,31 +19,41 @@ import (
 // MaxConfigBytes bounds the JSON encoding of a Middleware's spec.config.
 const MaxConfigBytes = 64 << 10
 
+// noAPIAccessReason is the refusal of every write on a Gateway that cannot
+// read what it would store.
+const noAPIAccessReason = "middleware: this Gateway cannot read Middleware resources on this host, so stored configuration would not be applied"
+
 // Validator is the Middleware admission validator. It refuses invalid
 // creates and updates with a 400 error whose message never contains a
 // configuration value.
 type Validator struct {
-	tenant map[string]extension.Definition
+	tenant    map[string]extension.Definition
+	apiAccess bool
 }
 
 // NewValidator returns a validator for the tenant-scope definitions among
-// definitions. Other scopes are refused like unregistered types.
-func NewValidator(definitions []extension.Definition) Validator {
+// definitions. Other scopes are refused like unregistered types. Without API
+// access, it refuses every create and update.
+func NewValidator(definitions []extension.Definition, apiAccess bool) Validator {
 	tenant := map[string]extension.Definition{}
 	for _, definition := range definitions {
 		if definition.Scope == extension.ScopeTenant {
 			tenant[definition.Name] = definition
 		}
 	}
-	return Validator{tenant: tenant}
+	return Validator{tenant: tenant, apiAccess: apiAccess}
 }
 
-// Validate checks creates and updates. A disable-only update, which sets
-// spec.enabled to false and keeps the stored spec.config, is accepted whatever
-// the stored type. Other actions are accepted.
+// Validate checks creates and updates. Without API access every one is
+// refused first. A disable-only update, which sets spec.enabled to false and
+// keeps the stored spec.config, is accepted whatever the stored type. Other
+// actions are accepted.
 func (v Validator) Validate(_ context.Context, request *app.AdmissionRequest) error {
 	if request.Action != resource.AdmissionActionCreate && request.Action != resource.AdmissionActionUpdate {
 		return nil
+	}
+	if !v.apiAccess {
+		return apierrors.NewBadRequest(noAPIAccessReason)
 	}
 	middleware, ok := request.Object.(*middlewarev1alpha1.Middleware)
 	if !ok {

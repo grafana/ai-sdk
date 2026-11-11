@@ -42,7 +42,7 @@ func testValidator(t *testing.T) Validator {
 		definition(t, "instructions", extension.ScopeTenant, instructionsSchema),
 		definition(t, "marker", extension.ScopeTenant, ""),
 		definition(t, "quota", extension.ScopeOperator, `{"type":"object"}`),
-	})
+	}, true)
 }
 
 func middleware(name, extensionType string, enabled bool, config map[string]any) *middlewarev1alpha1.Middleware {
@@ -115,6 +115,31 @@ func TestValidator_Validate(t *testing.T) {
 }
 
 func TestNewValidator_WithoutDefinitions(t *testing.T) {
-	err := NewValidator(nil).Validate(context.Background(), &app.AdmissionRequest{Action: resource.AdmissionActionCreate, Object: named("instructions", true, nil)})
+	err := NewValidator(nil, true).Validate(context.Background(), &app.AdmissionRequest{Action: resource.AdmissionActionCreate, Object: named("instructions", true, nil)})
 	assert.EqualError(t, err, `middleware: spec.type "instructions" is not a tenant extension of this Gateway`)
+}
+
+func TestValidator_WithoutAPIAccess(t *testing.T) {
+	validator := NewValidator([]extension.Definition{definition(t, "instructions", extension.ScopeTenant, instructionsSchema)}, false)
+	stored := named("instructions", true, map[string]any{"instructions": "Be brief."})
+	for _, tc := range []struct {
+		name    string
+		request *app.AdmissionRequest
+		wantErr string
+	}{
+		{name: "valid create", request: &app.AdmissionRequest{Action: resource.AdmissionActionCreate, Object: named("instructions", true, map[string]any{"instructions": "Be brief."})}, wantErr: noAPIAccessReason},
+		{name: "disable-only update", request: &app.AdmissionRequest{Action: resource.AdmissionActionUpdate, Object: named("instructions", false, map[string]any{"instructions": "Be brief."}), OldObject: stored}, wantErr: noAPIAccessReason},
+		{name: "invalid create", request: &app.AdmissionRequest{Action: resource.AdmissionActionCreate, Object: middleware("a", "b", true, nil)}, wantErr: noAPIAccessReason},
+		{name: "delete", request: &app.AdmissionRequest{Action: resource.AdmissionActionDelete, OldObject: stored}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validator.Validate(context.Background(), tc.request)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			assert.True(t, apierrors.IsBadRequest(err))
+			assert.EqualError(t, err, tc.wantErr)
+		})
+	}
 }

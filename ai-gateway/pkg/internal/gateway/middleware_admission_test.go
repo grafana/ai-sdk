@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/grafana/authlib/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -193,7 +195,99 @@ func TestMiddlewareAdmission_AcrossBuilds(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, code)
 }
 
-func TestMiddleware_StoredResourcesHaveNoRuntimeEffect(t *testing.T) {
+// namespaceRecorder is a tenant extension that records, per admit, the
+// call's namespace and the extension and configuration its instance was
+// built with.
+type namespaceRecorder struct {
+	config string
+	calls  *sync.Map
+}
+
+func (r namespaceRecorder) Admit(_ context.Context, call *extension.Call) error {
+	r.calls.Store(call.Namespace+" "+r.config, true)
+	return nil
+}
+
+func recordingDefinition(t *testing.T, name string, calls *sync.Map, enabledByDefault bool) extension.Definition {
+	t.Helper()
+	definition := tenantDefinition(t, name, `{"type":"object","properties":{"v":{"type":"string"},"n":{"type":"integer"}},"additionalProperties":false}`, nil, enabledByDefault)
+	definition.New = func(config json.RawMessage, _ extension.Dependencies) (any, error) {
+		return namespaceRecorder{config: name + string(config), calls: calls}, nil
+	}
+	return definition
+}
+
+func namespacedURL(base, namespace, route string) string {
+	return base + strings.Replace(RoutePrefix(), "{namespace}", namespace, 1) + "/" + route
+}
+
+func (h *harness) namespaceToken(t *testing.T, namespace string) string {
+	t.Helper()
+	token, err := h.host.ServiceToken(testInternalService, namespace)
+	require.NoError(t, err)
+	return token
+}
+
+func TestTenantConfiguration_AppliesEachNamespacesResources(t *testing.T) {
+	calls := &sync.Map{}
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: []extension.Definition{
+		recordingDefinition(t, "configured", calls, false),
+		recordingDefinition(t, "default-on", calls, true),
+	}})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resources := map[string][]string{
+		"stacks-1": {middlewareDocument(t, "configured", "configured", true, map[string]any{"v": "one", "n": json.Number("9007199254740993")})},
+		"stacks-2": {middlewareDocument(t, "configured", "configured", true, map[string]any{"v": "two"}), middlewareDocument(t, "default-on", "default-on", false, nil)},
+	}
+	for namespace, documents := range resources {
+		for _, document := range documents {
+			code, body := sendObject(t, ctx, http.MethodPost, namespacedURL(h.server.URL, namespace, "middlewares"), h.namespaceToken(t, namespace), document)
+			require.Equal(t, http.StatusCreated, code, body)
+		}
+	}
+
+	user, err := h.host.IDToken(types.TypeUser, "u1", "stacks-1")
+	require.NoError(t, err)
+	delegated, err := h.host.Exchange(ctx, testInternalService, delegation(user))
+	require.NoError(t, err)
+	for namespace, token := range map[string]string{"stacks-1": delegated, "stacks-2": h.namespaceToken(t, "stacks-2"), "stacks-3": h.namespaceToken(t, "stacks-3")} {
+		code, body := do(t, languageRequest(t, ctx, namespacedURL(h.server.URL, namespace, "language-model"), unaryBody, false, accessToken(token)))
+		require.Equal(t, http.StatusOK, code, body)
+	}
+
+	var applied []string
+	calls.Range(func(entry, _ any) bool {
+		applied = append(applied, entry.(string))
+		return true
+	})
+	assert.ElementsMatch(t, []string{
+		`stacks-1 configured{"n":9007199254740993,"v":"one"}`,
+		`stacks-1 default-on{}`,
+		`stacks-2 configured{"v":"two"}`,
+		`stacks-3 default-on{}`,
+	}, applied, "each call applies its own namespace's resources, and numbers keep their precision")
+
+	subjects := h.exchanges.recorded()
+	require.NotEmpty(t, subjects, "reads go through the plugin's token exchange")
+	for _, subject := range subjects {
+		assert.Empty(t, subject, "reads are made as the plugin, even for a call on behalf of a user")
+	}
+	assert.Contains(t, h.logs.String(), `"msg":"gateway plugin API access","available":true`)
+}
+
+func TestTenantConfiguration_ShippedDefinitionsReadNothing(t *testing.T) {
+	h := newHarness(t, platformhost.TopologyCloud)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	code, body := do(t, languageRequest(t, ctx, h.url("language-model"), unaryBody, false, accessToken(h.serviceToken(t, testInternalService))))
+	require.Equal(t, http.StatusOK, code, body)
+	assert.Empty(t, h.exchanges.recorded())
+	assert.Equal(t, 1, strings.Count(h.logs.String(), `"msg":"gateway plugin API access","available":true`))
+	assert.NotContains(t, h.logs.String(), "tenant configuration is not applied")
+}
+
+func TestTenantConfiguration_WithoutAPIAccess(t *testing.T) {
 	var offRuns, onRuns atomic.Int32
 	count := func(runs *atomic.Int32) gatewayExtension {
 		return gatewayExtension{admit: func() error {
@@ -201,20 +295,37 @@ func TestMiddleware_StoredResourcesHaveNoRuntimeEffect(t *testing.T) {
 			return nil
 		}}
 	}
-	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: []extension.Definition{
+	definitions := []extension.Definition{
 		tenantDefinition(t, "off-by-default", "", count(&offRuns), false),
 		tenantDefinition(t, "on-by-default", "", count(&onRuns), true),
-	}})
+	}
+	withAccess := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: definitions})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	token := h.serviceToken(t, testInternalService)
+	token := withAccess.serviceToken(t, testInternalService)
 	for name, enabled := range map[string]bool{"off-by-default": true, "on-by-default": false} {
-		code, body := sendObject(t, ctx, http.MethodPost, middlewareURL(h.server.URL, ""), token, middlewareDocument(t, name, name, enabled, nil))
+		code, body := sendObject(t, ctx, http.MethodPost, middlewareURL(withAccess.server.URL, ""), token, middlewareDocument(t, name, name, enabled, nil))
 		require.Equal(t, http.StatusCreated, code, body)
 	}
 
-	code, body := do(t, languageRequest(t, ctx, h.url("language-model"), unaryBody, false, accessToken(token)))
-	require.Equal(t, http.StatusOK, code, body)
-	assert.Equal(t, int32(0), offRuns.Load())
-	assert.Equal(t, int32(1), onRuns.Load())
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: definitions, host: withAccess.host, noAPIAccess: true})
+	token = h.serviceToken(t, testInternalService)
+	for range 2 {
+		code, body := do(t, languageRequest(t, ctx, h.url("language-model"), unaryBody, false, accessToken(token)))
+		require.Equal(t, http.StatusOK, code, body)
+	}
+	assert.Equal(t, int32(0), offRuns.Load(), "stored resources are not applied")
+	assert.Equal(t, int32(2), onRuns.Load(), "tenant extensions keep their defaults")
+	assert.Empty(t, h.exchanges.recorded())
+	logs := h.logs.String()
+	assert.Equal(t, 1, strings.Count(logs, "gateway tenant configuration is not applied"))
+	assert.Contains(t, logs, `"msg":"gateway plugin API access","available":false`)
+
+	code, body := sendObject(t, ctx, http.MethodPost, middlewareURL(h.server.URL, ""), token, middlewareDocument(t, "off-by-default", "off-by-default", true, nil))
+	assert.Equal(t, http.StatusBadRequest, code, body)
+	assert.Contains(t, body, "middleware: this Gateway cannot read Middleware resources on this host, so stored configuration would not be applied")
+	code, body = sendObject(t, ctx, http.MethodPut, middlewareURL(h.server.URL, "on-by-default"), token, middlewareDocument(t, "on-by-default", "on-by-default", false, nil))
+	assert.Equal(t, http.StatusBadRequest, code, body, "even a disable-only update is refused")
+	code, body = sendObject(t, ctx, http.MethodDelete, middlewareURL(h.server.URL, "off-by-default"), token, "")
+	assert.Equal(t, http.StatusOK, code, body, "deletes are not reviewed")
 }

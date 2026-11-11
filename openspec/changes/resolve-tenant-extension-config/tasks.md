@@ -26,8 +26,8 @@
 
 ## 6. Gateway wiring
 
-- [ ] 6.1 In `Gateway.Provider()`'s callback: decide API access from the kubeconfig; build the reader and `ConnectTenants` when tenant definitions exist; log the no-access warning once; emit the API-access Info record; and build the managed kinds with `tenantconfig.NewValidator(definitions, apiAccess)`. Add the no-access refusal before every other admission check. Verify `tenantconfig` validator tests (refusal precedes disable-only, fixed reason) and `TestProvider_ManagesTheManifestKinds` for running and idle Gateways.
-- [ ] 6.2 Add gateway tests through the test host with test-only definitions and a token-exchange kubeconfig pointing at it:
+- [x] 6.1 In `Gateway.Provider()`'s callback: decide API access from the kubeconfig; build the reader and `ConnectTenants` when tenant definitions exist; log the no-access warning once; emit the API-access Info record; and build the managed kinds with `tenantconfig.NewValidator(definitions, apiAccess)`. Add the no-access refusal before every other admission check. Verify `tenantconfig` validator tests (refusal precedes disable-only, fixed reason) and `TestProvider_ManagesTheManifestKinds` for running and idle Gateways.
+- [x] 6.2 Add gateway tests through the test host with test-only definitions and a token-exchange kubeconfig pointing at it:
   - resources created via admission in two namespaces apply to their own language-model calls;
   - reads use the plugin token (no subject token in the exchange log);
   - the shipped definitions make no list request;
