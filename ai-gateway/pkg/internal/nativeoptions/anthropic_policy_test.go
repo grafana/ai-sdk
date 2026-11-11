@@ -172,8 +172,9 @@ func TestAnthropic_SkillsPolicy(t *testing.T) {
 		require.ErrorIs(t, Anthropic(requestAccount)(call), catalog.ErrUnsupportedRequest)
 	})
 
-	t.Run("native fallbacks stay refused", func(t *testing.T) {
-		require.ErrorIs(t, Anthropic(requestAccount)(anthropicCall(`{"fallbacks":"default"}`)), catalog.ErrUnsupportedRequest)
+	t.Run("server-side fallbacks follow the fallback policy", func(t *testing.T) {
+		require.ErrorIs(t, Anthropic(configured)(anthropicCall(`{"fallbacks":"default"}`)), catalog.ErrUnsupportedRequest)
+		require.NoError(t, Anthropic(requestAccount)(anthropicCall(`{"fallbacks":"default"}`)))
 	})
 }
 

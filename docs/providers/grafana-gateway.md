@@ -176,6 +176,57 @@ that must not run twice.
 To see which models were tried, read the
 [execution overview](#inspect-execution-overviews-and-failures).
 
+## Use Anthropic server-side fallback
+
+Anthropic can retry a turn its safety classifiers refuse on another model,
+inside the same request. Ask for it with `providerOptions.anthropic.fallbacks`,
+either a list of fallback models or `"default"`, which lets Anthropic choose:
+
+```go
+result, err := aisdk.GenerateText(ctx, model,
+	aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
+	aisdk.WithProviderOptions(anthropic.AnthropicOptions{
+		Fallbacks: &anthropic.FallbackConfig{Chain: []anthropic.Fallback{{Model: "claude-opus-4-8"}}},
+	}),
+)
+```
+
+Use `anthropic.DefaultFallbacks()` for `"default"`. From a Vercel server:
+
+```ts
+const result = await generateText({
+  model: gateway("grafana/assistant"),
+  prompt: "Summarize this incident.",
+  providerOptions: {
+    anthropic: { fallbacks: [{ model: "claude-opus-4-8", max_tokens: 2048 }] },
+  },
+});
+```
+
+With configured models, your Gateway administrator decides what each provider
+of a model allows. A call is refused with an invalid request error, before the
+provider is called, when it names a model the provider does not allow, names
+a model twice, or sends `"default"` that is not allowed. The policy grants
+models, not their settings: `max_tokens`, `thinking` and `speed` in each entry
+are yours to choose, and can raise the cost.
+
+It combines with [Gateway fallback](#configure-fallback) and
+[routing](#route-a-call-to-other-models-and-providers) per attempt:
+
+- Each configured provider of a model, and each provider a routed call reaches,
+  applies its own policy. A provider that refuses is skipped like a failed
+  one, and the Gateway tries the next. If none allows the call, it fails.
+- A provider that is not Anthropic ignores `anthropic` options, so it answers
+  without server-side fallback.
+- Routes that share a provider and model are tried once, under the one policy
+  the administrator must give that provider and model in every route.
+
+Calls with [your own key](#use-your-own-provider-credentials) send
+`fallbacks` to Anthropic unchanged, without any Gateway policy; your account
+pays for the fallback model, including the one Anthropic chooses for
+`"default"`. Either way, when Anthropic switches models, the execution
+overview reports the model that answered as `servedModelId`.
+
 ## Use your own provider credentials
 
 When you bring your own key (BYOK), the Gateway calls the provider with your
@@ -445,6 +496,12 @@ attempt in order, with its provider, model, outcome and, for a failure, the
 provider's error message, type, code and status. In Go, read it from
 `ProviderMetadata`; in TypeScript, from `providerMetadata`. Each call has its
 own overview, so retries and tool loop steps start new ones.
+
+When Anthropic [server-side fallback](#use-anthropic-server-side-fallback)
+moved the response to another model, the selected attempt also has
+`servedModelId`, the model that answered; `modelId` stays the model the
+Gateway called. A stream reports the latest such model in each finish and
+error. `gateway.routing` does not report it.
 
 For configured models, the overview also has the resolved `canonicalModelId`
 and each attempt's `providerInstance`. For calls with your own key,
