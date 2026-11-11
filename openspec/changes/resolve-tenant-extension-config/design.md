@@ -189,7 +189,7 @@ All cache, snapshot and pipeline timing tests run in `synctest` bubbles with fak
 - [Unknown-type logs repeat after eviction] → Bounded by eviction rate. Documented.
 - [Factories run on the load goroutine without a context] → Documented: factories must be quick and must not do I/O. A slow factory delays only that namespace's first load.
 - **#766 risks:**
-  - Its end-to-end suite makes the first real reads against Grafana. If the pinned nightly gives the plugin no API access, decision B refuses its creates. Open question 4 detects this in this change.
+  - Its end-to-end suite makes the first real reads against Grafana. If the pinned nightly gives the plugin no API access, decision B refuses its creates. The API-access record and its end-to-end check detect this in this change.
   - Disabling and re-enabling takes up to one TTL per change against Grafana, so its end-to-end checks need a bounded poll, about 70 s, or an injected TTL that the shipped `dist/` can't carry.
   - `default-settings` must keep the factory free of collectors, or use the shared-registerer idiom.
   - The org admin guide must cover propagation, roles and the no-API-access refusal.
