@@ -49,4 +49,4 @@
 ## Workflow follow-up
 
 - The end-to-end suite runs only in CI. The PR records its result, including the observed folder-annotation status and whether Grafana's messages echo values.
-- If approved, open the `upstream-sync` issue from design.md, Open question 3.
+- The maintainers file the `upstream-sync` issue drafted in design.md, Follow-ups.

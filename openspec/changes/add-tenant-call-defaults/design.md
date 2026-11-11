@@ -177,7 +177,7 @@ Upstream is `mergeObjects(settings, params)`. A defined call value wins. Nested 
 | 7 | Validation of defaults | none in the middleware; upstream checks a call's `maxOutputTokens` (integer ≥ 1) and `seed` (integer) only in `prepareLanguageModelCallOptions`, which defaults bypass | admission: `maxOutputTokens` ≥ 1, integers in int64 range, at least one field | intentional deviation, Gateway-owned. Recorded in `gateway-tenant-call-defaults` |
 | 8 | Allowed fields | also `responseFormat`, `tools`, `toolChoice`, `headers`, `providerOptions`, and at runtime any key | only the eight sampling and limit fields | intentional deviation, Gateway-owned (issue #766). Recorded in `gateway-tenant-call-defaults` |
 | 9 | Headers merge | one level, per key; call wins | `mergeMaps`, the same | parity in the library; tenants can't set headers |
-| 10 | Provider options merge | recursive deep merge across provider namespaces and nested keys | root `DefaultSettings` merges per provider key only, so the call's whole namespace replaces the default's. The root spec says "no deep merge", and no known gap is recorded | root-library divergence, unreachable from the tenant schema. Unrecorded, so see Open question 3 |
+| 10 | Provider options merge | recursive deep merge across provider namespaces and nested keys | root `DefaultSettings` merges per provider key only, so the call's whole namespace replaces the default's. The root spec says "no deep merge", and no known gap is recorded | root-library divergence, unreachable from the tenant schema. Unrecorded, so see the draft `upstream-sync` issue under Follow-ups |
 | 11 | `responseFormat` | objects deep-merged, so a call's `{type: text}` keeps a default `schema` | replaced | same as 10 |
 | 12 | Call `tools: []` | call's empty array wins | ProviderWire drops an empty list, so a default would apply | same as 10, at the wire |
 | 13 | `reasoning` | not in the pinned settings type | supported by root `DefaultSettings` | Go-only addition in the library, not exposed to tenants |
@@ -247,7 +247,7 @@ The poll bound is one TTL plus a refresh plus margin. Both transitions share one
 - **[Cloud permission gap]** If the plugin identity lacks `list` on `middlewares`, every read is `refused`, and defaults silently don't apply. → It's counted and logged. The manual check covers it.
 - **[Grafana's own messages may echo values]** The e2e test would fail. → That's the point of the check. If it happens, the change records it as platform behavior, documents it in the guide, and adjusts the test to assert the observed behavior after review.
 - **[The folder annotation may be accepted by Grafana]** → The e2e test fails, and the spec's "saved without a folder" stays true. The folder refusal expectation would be revisited with the observed status.
-- **[Public schemas are permanent]** Types can only grow. → Hence the open questions on shape and bounds before implementation.
+- **[Public schemas are permanent]** Types can only grow. → The shape and bounds were reviewed before implementation (Resolved questions).
 - **[Provider-level conflicts]** Defaults merge field by field. For example, a default `topP` plus a call's `temperature` reaches the model with both, which some Anthropic models refuse. → Same semantics as upstream. Documented in the guide. Provider-specific validation is a non-goal.
 - **[End-to-end duration and flakiness]** The block adds up to about 2.5 minutes, and a retry repeats the whole block. → A bounded poll, serial mode, and cleanup before and after.
 - **[Generator tooling]** `generate:kinds` downloads the pinned `grafana-app-sdk` binary unless it's cached. → If the sandbox blocks the download, the exact command is reported for approval.
@@ -267,12 +267,16 @@ The poll bound is one TTL plus a refresh plus margin. Both transitions share one
 - `default-settings` exposes only the eight issue fields, not `reasoning`.
 - The end-to-end runtime check uses an echo marker in the fake provider and a 70 s bounded poll, with no TTL override.
 
-## Open questions
+## Resolved questions
 
-1. **`defaultInstructions` shape.** `messages: [{content}]` (recommended), or a single `instructions: string`. The list matches upstream's array form, keeps multiple messages in order, can grow per message later, and gives the nested end-to-end round-trip. A string is simpler for the common case, but adding a list later would need a new field or a new type name.
-2. **Bounds beyond upstream.** Recommended: only `maxOutputTokens` ≥ 1, int64 ranges, non-empty messages and content, and at least one setting. Don't add `temperature` ≥ 0 or `topP` in [0, 1]. Provider ranges differ, providers already refuse bad values, and bounds can't be loosened later without a new type name, though they could be tightened.
-3. **Root-library divergences** (parity rows 10–13, and the root spec's "zero-length slices are filled", where the code fills only nil). They are unreachable from tenants, but not recorded in `knownGaps`. Recommended: open one `upstream-sync` issue in `grafana/ai-sdk` for root `DefaultSettings` deep merge and the wire `tools: []` case, and change nothing in this PR. Opening that public issue needs your approval.
-4. **Trace hygiene mechanism.** Recommended: a worker-scoped `trace: 'off'` inside the `accounts` fixture, verified locally. The alternative is turning traces off for the whole suite.
+1. **`defaultInstructions` shape:** `messages: [{content}]`. It matches `middleware.DefaultInstructions(...provider.Message)` and upstream's array form. The guide shows the one-message case first.
+2. **Bounds:** only `maxOutputTokens` ≥ 1, the int64 ranges, non-empty messages and content, and at least one setting. No `temperature` or `topP` ranges.
+3. **Root-library divergences:** no root-library change in this change. The `upstream-sync` issue is drafted below and filed by the maintainers.
+4. **Trace hygiene:** `trace: 'off'` as a worker-scoped override in the `accounts` fixture. Verified locally: with `trace: 'on'` forced in a scratch configuration, a test using the `accounts` test object wrote no trace, and a test using the base fixtures wrote one whose network log contained the scratch bearer token.
+
+## Shipped reads
+
+The shipped tenant extensions apply to every call, so the shipped Gateway reads the `Middleware` resources of every namespace it serves calls for, even one that stores none. On each replica, the first call per namespace waits for that read, bounded at 5 s. API load is about the active namespaces per replica per minute. The cache constants (`ttl` 1 minute, `maxStaleness` 10 minutes, `readTimeout` 5 s, `failureBackoff` 30 s, `maxNamespaces` 1024) are the values to revisit with development metrics. The extension guide and the org admin guide state this, and so does the pull request body.
 
 ## Follow-ups
 
@@ -284,4 +288,20 @@ The poll bound is one TTL plus a refresh plus margin. Both transitions share one
 
   The same steps go into the PR body.
 - Stack-catalog coverage when #757 lands. No code change is expected, because `Sources` is nil.
-- The `upstream-sync` issue from Open question 3, if approved.
+- The `upstream-sync` issue below, filed by the maintainers after approval.
+
+### Draft `upstream-sync` issue
+
+**Title:** `fix(middleware): align DefaultSettings merging with upstream defaultSettingsMiddleware`
+
+**Body:**
+
+> Registered baseline: `ai@7.0.159` (commit `028a025398782f4938303f48fbeee45c79af544b`). Upstream `defaultSettingsMiddleware` returns `mergeObjects(settings, params)` (`packages/ai/src/util/merge-objects.ts`). In that merge, a defined call value wins, nested plain objects merge recursively, and arrays and primitives are replaced. The Go `middleware.DefaultSettings` differs as follows:
+>
+> 1. **Provider options.** Go merges per provider key, so a call's provider namespace replaces the default's whole namespace. Upstream merges nested keys too. For example, a default `{anthropic: {a: 1}}` plus a call's `{anthropic: {b: 2}}` gives `{anthropic: {a: 1, b: 2}}` upstream and `{anthropic: {b: 2}}` in Go. See the upstream tests "should merge complex provider metadata objects" and "should handle nested provider metadata objects correctly".
+> 2. **Response format.** Upstream deep-merges the default and call objects, so a call's `{type: "text"}` keeps a default `schema`. Go replaces the object. Decide whether to match this or record a deviation.
+> 3. **Empty tools.** The Gateway's ProviderWire decoding maps a call's `tools: []` to nil. Go then applies default tools, where upstream keeps the call's empty list.
+> 4. **Reasoning.** Go's `DefaultSettingsOptions` supports `Reasoning`. The pinned upstream settings type doesn't list it, although `mergeObjects` would merge it at runtime. Record it as a Go addition, or remove it.
+> 5. **Spec drift.** `openspec/specs/builtin-middleware-default-settings` says zero-length slices are filled, but the code fills only nil slices. The code matches upstream for `stopSequences: []`. The spec's provider-options scenario says "no deep merge".
+>
+> Acceptance: each item is fixed or recorded in `knownGaps`; upstream's provider-options and response-format cases are ported as tests; and the spec is updated. The Gateway's tenant `default-settings` type exposes none of these fields, so it isn't affected.
