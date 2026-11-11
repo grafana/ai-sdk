@@ -1,52 +1,13 @@
 import type { APIRequestContext, APIResponse } from '@playwright/test';
-import { test as base, expect } from './fixtures';
+import { expect, permissions, ROLES, type Role, test } from './accounts';
 import { API_GROUP, API_VERSION } from '../src/constants';
 
 const CATALOGS = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default/modelcatalogs`;
 const SENTINEL = 'e2e-catalog-sentinel-key';
-const ROLES = ['Viewer', 'Editor', 'Admin'] as const;
-const TOKEN_SECONDS = 3600;
 const INLINE_SECRET_NAME = /^inline-[a-z0-9]+$/;
 
-type Role = (typeof ROLES)[number];
 type Secure = Record<string, { create?: string; name?: string; remove?: boolean }>;
 type Providers = Record<string, Record<string, unknown>>;
-
-const test = base.extend<object, { accounts: Record<Role, APIRequestContext> }>({
-  accounts: [
-    async ({ playwright }, use, workerInfo) => {
-      const baseURL = workerInfo.project.use.baseURL;
-      const admin = await playwright.request.newContext({ baseURL, storageState: 'playwright/.auth/admin.json' });
-      const accounts = {} as Record<Role, APIRequestContext>;
-      const ids: number[] = [];
-      for (const role of ROLES) {
-        const name = `catalog-${role.toLowerCase()}-${workerInfo.workerIndex}-${Date.now()}`;
-        const account = await admin.post('/api/serviceaccounts', { data: { name, role } });
-        expect(account.status(), await account.text()).toBe(201);
-        const { id } = await account.json();
-        ids.push(id);
-        const token = await admin.post(`/api/serviceaccounts/${id}/tokens`, {
-          data: { name, secondsToLive: TOKEN_SECONDS },
-        });
-        expect(token.status(), await token.text()).toBe(200);
-        const { key } = await token.json();
-        accounts[role] = await playwright.request.newContext({
-          baseURL,
-          extraHTTPHeaders: { Authorization: `Bearer ${key}` },
-        });
-      }
-      await use(accounts);
-      for (const role of ROLES) {
-        await accounts[role].dispose();
-      }
-      for (const id of ids) {
-        await admin.delete(`/api/serviceaccounts/${id}`);
-      }
-      await admin.dispose();
-    },
-    { scope: 'worker' },
-  ],
-});
 
 let sequence = 0;
 
@@ -118,8 +79,7 @@ test.describe('ModelCatalog', () => {
   });
 
   test('catalog roles are registered and bound to Viewer and Admin', async ({ accounts }) => {
-    const actions = async (role: Role) =>
-      Object.keys(await (await accounts[role].get('/api/access-control/user/permissions?reloadcache=true')).json());
+    const actions = (role: Role) => permissions(accounts[role]);
     const read = `${API_GROUP}/modelcatalogs:get`;
     const writes = ['create', 'update', 'delete'].map((verb) => `${API_GROUP}/modelcatalogs:${verb}`);
     for (const role of ['Viewer', 'Editor'] as const) {
