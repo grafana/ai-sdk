@@ -289,6 +289,9 @@ func (c caller) GetAccessToken() string { return c.accessToken }
 func (h *Host) authenticate(r *http.Request) (caller, error) {
 	accessTokens := r.Header.Values("X-Access-Token")
 	authorization := r.Header.Values("Authorization")
+	if len(accessTokens) == 1 && len(authorization) == 1 && authorization[0] == "Bearer "+accessTokens[0] {
+		authorization = nil
+	}
 	cookie, cookieErr := r.Cookie(sessionCookie)
 	credentials := len(accessTokens) + len(authorization)
 	if cookieErr == nil {

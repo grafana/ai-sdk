@@ -252,3 +252,26 @@ func TestHost_ListsManifestKinds(t *testing.T) {
 	_ = forbidden.Body.Close()
 	assert.Equal(t, http.StatusForbidden, forbidden.StatusCode)
 }
+
+func TestHost_AcceptsTheAccessTokenRepeatedAsBearer(t *testing.T) {
+	_, server, token := newKindHost(t, &stubAdmission{})
+	for _, tc := range []struct {
+		name          string
+		authorization string
+		expected      int
+	}{
+		{name: "same token", authorization: "Bearer " + token, expected: http.StatusOK},
+		{name: "different token", authorization: "Bearer other", expected: http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request, err := http.NewRequest(http.MethodGet, widgetURL(server, ""), nil)
+			require.NoError(t, err)
+			request.Header.Set("X-Access-Token", token)
+			request.Header.Set("Authorization", tc.authorization)
+			response, err := http.DefaultClient.Do(request)
+			require.NoError(t, err)
+			_ = response.Body.Close()
+			assert.Equal(t, tc.expected, response.StatusCode)
+		})
+	}
+}

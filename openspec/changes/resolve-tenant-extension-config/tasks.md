@@ -2,12 +2,12 @@
 
 ## 1. Test host list
 
-- [ ] 1.1 Add namespace list for declared kinds to `test/platformhost` (`GET .../namespaces/<ns>/<plural>`, a `<Kind>List` in name order, existing namespace check). Verify with `kinds_test.go` cases: two namespaces, an empty namespace, and a refused foreign namespace.
+- [x] 1.1 Add namespace list for declared kinds to `test/platformhost` (`GET .../namespaces/<ns>/<plural>`, a `<Kind>List` in name order, existing namespace check). Verify with `kinds_test.go` cases: two namespaces, an empty namespace, and a refused foreign namespace.
 
 ## 2. Namespace reader
 
-- [ ] 2.1 Add `extensionhost.TenantResource` and `TenantReader`, then `tenantconfig.NewReader(rest.Config)` and `Read` (group and version, generic serializer, explicit client rate limit, paged list, `maxListBytes` bound, raw `spec.config`, compaction, sorted output, classed errors). Make `k8s.io/client-go` a direct requirement. Verify with `httptest` table tests: empty list, two pages, exact `9007199254740993` and `1.0`, absent or `null` config, a missing `enabled` reported per resource, 401, 403, 404, 500, a timeout, malformed JSON and an oversized body, each with its class and no body text in the error.
-- [ ] 2.2 Verify plugin identity with a real app-sdk token-exchange kubeconfig against the test host's exchange handler: reads of two namespaces succeed, and every exchange request has no subject token even when the read context carries a caller's `AuthInfo`.
+- [x] 2.1 Add `extensionhost.TenantResource` and `TenantReader`, then `tenantconfig.NewReader(rest.Config)` and `Read` (group and version, generic serializer, explicit client rate limit, paged list, `maxListBytes` bound, raw `spec.config`, compaction, sorted output, classed errors). Make `k8s.io/client-go` a direct requirement. Verify with `httptest` table tests: empty list, two pages, exact `9007199254740993` and `1.0`, absent or `null` config, a missing `enabled` reported per resource, 401, 403, 404, 500, a timeout, malformed JSON and an oversized body, each with its class and no body text in the error.
+- [x] 2.2 Verify plugin identity with a real app-sdk token-exchange kubeconfig against the test host's exchange handler: reads of two namespaces succeed and every exchange request has no subject token, while a read context carrying a caller would be delegated (which is why the cache never passes one). The test host accepts the access token repeated as a bearer token, as the app-sdk transport sends it.
 
 ## 3. Shared registerer and contract docs
 
