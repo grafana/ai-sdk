@@ -122,8 +122,6 @@ func ClassifyProvider(err error) (category Category) {
 		return CategoryInternal
 	}
 	switch {
-	case errors.Is(err, ErrEgressRefused):
-		return CategoryEgressRefused
 	case errors.Is(err, ErrTranslation), errors.Is(err, ErrInvalidOutput):
 		return CategoryInternal
 	case errors.Is(err, catalog.ErrUnsupportedRequest):
@@ -132,6 +130,8 @@ func ClassifyProvider(err error) (category Category) {
 		return CategoryCancellation
 	case errors.Is(err, context.DeadlineExceeded):
 		return CategoryTimeout
+	case errors.Is(err, ErrEgressRefused):
+		return CategoryEgressRefused
 	}
 
 	var apiError *provider.APICallError

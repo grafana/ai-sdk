@@ -75,6 +75,8 @@ func TestClassifyProvider(t *testing.T) {
 	}{
 		{"canceled", context.Canceled, CategoryCancellation},
 		{"egress refusal", ErrEgressRefused, CategoryEgressRefused},
+		{"cancellation after a refused attempt", errors.Join(ErrEgressRefused, context.Canceled), CategoryCancellation},
+		{"deadline after a refused attempt", errors.Join(ErrEgressRefused, context.DeadlineExceeded), CategoryTimeout},
 		{"egress refusal inside a provider transport error", apiError(0, &url.Error{Op: "Post", URL: "https://llm.example", Err: ErrEgressRefused}), CategoryEgressRefused},
 		{"deadline", context.DeadlineExceeded, CategoryTimeout},
 		{"unsupported request", fmt.Errorf("wrapped: %w", catalog.ErrUnsupportedRequest), CategoryInvalidRequest},
