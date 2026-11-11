@@ -18,11 +18,60 @@ const (
 	maxAnthropicContainerIDBytes = 128
 )
 
-// AnthropicPolicy controls which Anthropic container options one candidate
-// admits. The zero value refuses every container skill and every container ID.
+// AnthropicPolicy controls which Anthropic container options and server-side
+// fallbacks one candidate admits. The zero value refuses every container skill,
+// every container ID and every active server-side fallback.
 type AnthropicPolicy struct {
 	Skills       AnthropicSkillsPolicy
+	Fallbacks    AnthropicFallbackPolicy
 	containerIDs containerIDMode
+}
+
+// AnthropicFallbackPolicy bounds Anthropic server-side fallback
+// (providerOptions.anthropic.fallbacks). The zero value refuses every active
+// fallback.
+type AnthropicFallbackPolicy struct {
+	models       map[string]struct{}
+	allowDefault bool
+	unrestricted bool
+}
+
+// NewAnthropicFallbackPolicy returns the policy of one configured candidate: an
+// explicit chain may name only models, each at most once, compared exactly,
+// and "default" requires allowDefault.
+func NewAnthropicFallbackPolicy(models []string, allowDefault bool) AnthropicFallbackPolicy {
+	allowed := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		allowed[model] = struct{}{}
+	}
+	return AnthropicFallbackPolicy{models: allowed, allowDefault: allowDefault}
+}
+
+// UnrestrictedAnthropicFallbacks returns the request-account policy, which
+// forwards any chain and "default" as the native adapter does, because the
+// caller's own account pays.
+func UnrestrictedAnthropicFallbacks() AnthropicFallbackPolicy {
+	return AnthropicFallbackPolicy{unrestricted: true}
+}
+
+func (p AnthropicFallbackPolicy) admits(fallbacks *anthropicprovider.FallbackConfig) bool {
+	if fallbacks == nil || p.unrestricted {
+		return true
+	}
+	if fallbacks.Default {
+		return p.allowDefault
+	}
+	seen := make(map[string]struct{}, len(fallbacks.Chain))
+	for _, entry := range fallbacks.Chain {
+		if _, allowed := p.models[entry.Model]; !allowed {
+			return false
+		}
+		if _, repeated := seen[entry.Model]; repeated {
+			return false
+		}
+		seen[entry.Model] = struct{}{}
+	}
+	return true
 }
 
 type containerIDMode int
@@ -77,10 +126,12 @@ func AllowlistedAnthropicSkills(grants []AnthropicSkillGrant) AnthropicSkillsPol
 
 // RequestAccountAnthropicPolicy returns the policy for request-supplied (BYOK)
 // accounts: skills and container IDs belong to the caller's account, so they
-// are admitted within the static bounds.
+// are admitted within the static bounds, and server-side fallbacks are
+// forwarded unrestricted.
 func RequestAccountAnthropicPolicy() AnthropicPolicy {
 	return AnthropicPolicy{
 		Skills:       AnthropicSkillsPolicy{mode: anthropicSkillsBounded},
+		Fallbacks:    UnrestrictedAnthropicFallbacks(),
 		containerIDs: containerIDsBounded,
 	}
 }

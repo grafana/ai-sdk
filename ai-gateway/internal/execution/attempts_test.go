@@ -349,3 +349,166 @@ func TestAttemptCapture_AccountProjection(t *testing.T) {
 		})
 	}
 }
+
+func fallbackMarker(raw string) provider.ProviderMetadata {
+	return provider.ProviderMetadata{"anthropic": json.RawMessage(raw)}
+}
+
+func TestServedModel(t *testing.T) {
+	marker := func(to string) provider.ProviderMetadata {
+		return fallbackMarker(`{"type":"fallback","from":{"model":"claude-a"},"to":{"model":"` + to + `"}}`)
+	}
+	resolved := func(model provider.LanguageModel) catalog.ResolvedModel {
+		return catalog.ResolvedModel{ID: "canonical", Model: model, Candidates: []catalog.ConfiguredCandidate{{Provider: "anthropic", ModelID: "backend", ProviderInstance: "configured"}}}
+	}
+	configuredCall := func(t *testing.T, model provider.LanguageModel) *Call {
+		t.Helper()
+		call, err := newRuntime(t, CatalogSelector(staticResolver{resolved: resolved(model)}), testLimits()).Call(t.Context(), "alias", provider.CallOptions{})
+		require.NoError(t, err)
+		t.Cleanup(call.Close)
+		return call
+	}
+	custom := func(metadata provider.ProviderMetadata) provider.GenerateContentPart {
+		return provider.GenerateContentPart{Type: provider.ContentCustom, Kind: "anthropic.fallback", ProviderMetadata: metadata}
+	}
+	generated := func(content ...provider.GenerateContentPart) *generateModel {
+		return &generateModel{modelID: "backend", generate: func(context.Context) (*provider.GenerateResult, error) {
+			return &provider.GenerateResult{Content: content, FinishReason: provider.FinishReason{Unified: provider.FinishReasonStop}}, nil
+		}}
+	}
+	for _, tc := range []struct {
+		name    string
+		content []provider.GenerateContentPart
+		served  string
+	}{
+		{"latest valid marker", []provider.GenerateContentPart{custom(marker("claude-b")), custom(marker("claude-c"))}, "claude-c"},
+		{"no marker", []provider.GenerateContentPart{{Type: provider.ContentText, Text: "answer"}}, ""},
+		{"empty target", []provider.GenerateContentPart{custom(marker(""))}, ""},
+		{"invalid UTF-8 target", []provider.GenerateContentPart{custom(fallbackMarker("{\"type\":\"fallback\",\"to\":{\"model\":\"claude-\xff\"}}"))}, ""},
+		{"missing target", []provider.GenerateContentPart{custom(fallbackMarker(`{"type":"fallback","from":{"model":"claude-a"}}`))}, ""},
+		{"other kind", []provider.GenerateContentPart{{Type: provider.ContentCustom, Kind: "anthropic.container_upload", ProviderMetadata: marker("claude-b")}}, ""},
+		{"invalid marker keeps the earlier valid one", []provider.GenerateContentPart{custom(marker("claude-b")), custom(marker(""))}, "claude-b"},
+	} {
+		t.Run("unary/"+tc.name, func(t *testing.T) {
+			call := configuredCall(t, generated(tc.content...))
+			_, err := call.Generate()
+			require.NoError(t, err)
+			view := call.View(nil)
+			require.NotNil(t, view.Overview)
+			require.Len(t, view.Overview.Attempts, 1)
+			attempt := view.Overview.Attempts[0]
+			assert.Equal(t, tc.served, attempt.ServedModelID)
+			assert.Equal(t, "backend", attempt.ModelID)
+			encoded, err := json.Marshal(view.Overview)
+			require.NoError(t, err)
+			if tc.served == "" {
+				assert.NotContains(t, string(encoded), "servedModelId")
+			}
+		})
+	}
+
+	t.Run("no marker keeps the overview byte-identical", func(t *testing.T) {
+		call := configuredCall(t, generated(provider.GenerateContentPart{Type: provider.ContentText, Text: "answer"}))
+		_, err := call.Generate()
+		require.NoError(t, err)
+		encoded, err := json.Marshal(call.View(nil).Overview)
+		require.NoError(t, err)
+		assert.Equal(t, `{"requestedModelId":"alias","canonicalModelId":"canonical","attempts":[{"provider":"anthropic","modelId":"backend","providerInstance":"configured","outcome":"selected"}]}`, string(encoded))
+	})
+
+	t.Run("routing summary is unchanged by a marker", func(t *testing.T) {
+		plain := configuredCall(t, generated())
+		_, err := plain.Generate()
+		require.NoError(t, err)
+		hop := configuredCall(t, generated(custom(marker("claude-b"))))
+		_, err = hop.Generate()
+		require.NoError(t, err)
+		routing := func(view View) json.RawMessage {
+			var gateway struct {
+				Execution json.RawMessage `json:"execution"`
+				Routing   json.RawMessage `json:"routing"`
+			}
+			require.NoError(t, json.Unmarshal(view.Metadata()["gateway"], &gateway))
+			return gateway.Routing
+		}
+		plainView, hopView := plain.View(nil), hop.View(nil)
+		assert.JSONEq(t, string(routing(plainView)), string(routing(hopView)))
+		assert.Contains(t, string(hopView.Metadata()["gateway"]), `"servedModelId":"claude-b"`)
+	})
+
+	t.Run("stream marker after the first part", func(t *testing.T) {
+		parts := closedStream(
+			provider.StreamPart{Type: provider.PartResponseMeta},
+			provider.StreamPart{Type: provider.PartCustom, Kind: "anthropic.fallback", ProviderMetadata: marker("claude-b")},
+			validFinish(),
+		)
+		call := configuredCall(t, &generateModel{modelID: "backend", stream: func(context.Context) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: parts}, nil
+		}})
+		stream, err := call.Stream()
+		require.NoError(t, err)
+		defer stream.Close()
+		_, wait := stream.Next()
+		require.Equal(t, WaitPart, wait)
+		view := call.View(wait.Err())
+		require.NotNil(t, view.Overview)
+		before := append([]Attempt(nil), view.Overview.Attempts...)
+		assert.Empty(t, view.Overview.Attempts[0].ServedModelID)
+		_, wait = drainParts(t, stream)
+		assert.Equal(t, WaitFinished, wait)
+		require.Len(t, view.Overview.Attempts, len(before))
+		assert.Equal(t, "claude-b", view.Overview.Attempts[0].ServedModelID)
+		view.Overview.Attempts[0].ServedModelID = ""
+		assert.Equal(t, before, view.Overview.Attempts)
+	})
+
+	t.Run("stream marker as the first part", func(t *testing.T) {
+		parts := closedStream(provider.StreamPart{Type: provider.PartCustom, Kind: "anthropic.fallback", ProviderMetadata: marker("claude-b")}, validFinish())
+		call := configuredCall(t, &generateModel{modelID: "backend", stream: func(context.Context) (*provider.StreamResult, error) {
+			return &provider.StreamResult{Stream: parts}, nil
+		}})
+		stream, err := call.Stream()
+		require.NoError(t, err)
+		defer stream.Close()
+		_, wait := stream.Next()
+		require.Equal(t, WaitPart, wait)
+		view := call.View(wait.Err())
+		require.NotNil(t, view.Overview)
+		assert.Equal(t, "claude-b", view.Overview.Attempts[0].ServedModelID)
+	})
+
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"failed attempt", errors.New("candidate failure")},
+		{"canceled attempt", context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			attempts := newAttemptCapture("alias", selectConfigured(t, resolved(&generateModel{})), SummaryRedactor{})
+			attempts.enter()
+			attempts.serve("claude-b")
+			view := attempts.view(tc.err)
+			require.NotNil(t, view.Overview)
+			assert.NotEqual(t, fallback.AttemptSelected, view.Overview.Attempts[0].Outcome)
+			assert.Empty(t, view.Overview.Attempts[0].ServedModelID)
+		})
+	}
+
+	t.Run("only the selected attempt of a fallback chain", func(t *testing.T) {
+		selected := selectConfigured(t, catalog.ResolvedModel{ID: "canonical", Model: &generateModel{}, Candidates: []catalog.ConfiguredCandidate{
+			{Provider: "anthropic", ModelID: "first", ProviderInstance: "a"},
+			{Provider: "anthropic", ModelID: "second", ProviderInstance: "b"},
+		}})
+		attempts := newAttemptCapture("alias", selected, SummaryRedactor{})
+		attempts.enter()
+		attempts.observe(t.Context(), fallback.Attempt{Index: 1, Provider: "anthropic", ModelID: "first", Outcome: fallback.AttemptFailed, WillFallback: true, SourceErr: errors.New("busy")})
+		attempts.observe(t.Context(), fallback.Attempt{Index: 2, Provider: "anthropic", ModelID: "second", Outcome: fallback.AttemptSelected})
+		view := attempts.view(nil)
+		attempts.serve("claude-b")
+		require.NotNil(t, view.Overview)
+		require.Len(t, view.Overview.Attempts, 2)
+		assert.Empty(t, view.Overview.Attempts[0].ServedModelID)
+		assert.Equal(t, "claude-b", view.Overview.Attempts[1].ServedModelID)
+	})
+}

@@ -21,6 +21,8 @@ type attemptCapture struct {
 	entered  bool
 	sealed   bool
 	attempts []fallback.Attempt
+	served   string
+	overview *Overview
 }
 
 // newAttemptCapture prepares the capture for selected. Every selection is
@@ -95,7 +97,30 @@ func (a *attemptCapture) view(err error) (view View) {
 			attempt.Error = a.redactor.Redact(attempt.Error)
 		}
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.overview = view.Overview
+	a.applyServed()
 	return view
+}
+
+// serve records the model that served the selected output. It updates the
+// published overview in place, so every later carrier of the view reports it,
+// without changing the attempts.
+func (a *attemptCapture) serve(model string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.served = model
+	a.applyServed()
+}
+
+func (a *attemptCapture) applyServed() {
+	if a.overview == nil || a.served == "" {
+		return
+	}
+	if last := &a.overview.Attempts[len(a.overview.Attempts)-1]; last.Outcome == fallback.AttemptSelected {
+		last.ServedModelID = a.served
+	}
 }
 
 // View is the execution evidence an adapter may encode for one call.

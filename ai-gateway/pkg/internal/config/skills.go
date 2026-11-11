@@ -119,53 +119,16 @@ func equalSkillsPolicies(a, b *SkillsPolicy) bool {
 	}
 	for _, entry := range b.Allow {
 		other, ok := versions[identityOf(entry)]
-		if !ok || !sameVersions(other, entry.Versions) {
+		if !ok || !sameStringSet(other, entry.Versions) {
 			return false
 		}
 	}
 	return true
 }
 
-func sameVersions(a, b []string) bool {
+func sameStringSet(a, b []string) bool {
 	a, b = slices.Clone(a), slices.Clone(b)
 	slices.Sort(a)
 	slices.Sort(b)
 	return slices.Equal(a, b)
-}
-
-// validateSkillsPolicyPerDestination requires one skills policy per provider
-// instance and backend model across routes, because request routing attempts a
-// repeated destination once and would otherwise apply whichever placement came
-// first.
-func (file File) validateSkillsPolicyPerDestination() error {
-	type placement struct {
-		path   string
-		policy *SkillsPolicy
-	}
-	ids := make([]string, 0, len(file.Models))
-	for id := range file.Models {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	first := make(map[candidateKey]placement)
-	for _, id := range ids {
-		model := file.Models[id]
-		candidates := append([]Primary{model.Primary}, model.Fallback...)
-		for index, candidate := range candidates {
-			path := fmt.Sprintf("models.%s.primary", id)
-			if index > 0 {
-				path = fmt.Sprintf("models.%s.fallback[%d]", id, index-1)
-			}
-			key := keyOf(candidate)
-			existing, ok := first[key]
-			if !ok {
-				first[key] = placement{path: path, policy: candidate.Skills}
-				continue
-			}
-			if !equalSkillsPolicies(existing.policy, candidate.Skills) {
-				return fmt.Errorf("config: %s.skills differs from %s.skills for the same provider and model", path, existing.path)
-			}
-		}
-	}
-	return nil
 }
