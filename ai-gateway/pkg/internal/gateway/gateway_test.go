@@ -72,7 +72,7 @@ func (e *startupEnvironment) start(t *testing.T) (*Gateway, string, error) {
 func (e *startupEnvironment) startWith(t *testing.T, extensions []extension.Definition, mandatory []string) (*Gateway, string, error) {
 	t.Helper()
 	var logs bytes.Buffer
-	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry(), Extensions: extensions, Mandatory: mandatory})
+	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry(), Extensions: extensions, Mandatory: mandatory, TenantTypes: typesOf(extensions)})
 	if gw != nil {
 		t.Cleanup(gw.Close)
 	}

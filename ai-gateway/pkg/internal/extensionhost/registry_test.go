@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
+	"github.com/grafana/ai-sdk/schema"
 )
 
 func validDefinition(name string) extension.Definition {
@@ -54,7 +56,7 @@ func TestValidateDefinitions(t *testing.T) {
 		{name: "repeated mandatory", definitions: []extension.Definition{validDefinition("quota")}, mandatory: []string{"quota", "quota"}, message: "listed twice"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateDefinitions(tc.definitions, tc.mandatory)
+			err := ValidateDefinitions(tc.definitions, tc.mandatory, typesOf(tc.definitions))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.message)
 		})
@@ -64,8 +66,65 @@ func TestValidateDefinitions(t *testing.T) {
 		customer := validDefinition("audit")
 		customer.Keys, customer.Sources = []extension.KeyOwnership{extension.KeysCustomer}, []extension.Source{extension.SourceStackCatalog}
 		customer.Secrets = []string{"apiKey", "endpointToken"}
-		assert.NoError(t, ValidateDefinitions([]extension.Definition{validDefinition("quota"), customer}, []string{"quota"}))
-		assert.NoError(t, ValidateDefinitions(nil, nil))
+		assert.NoError(t, ValidateDefinitions([]extension.Definition{validDefinition("quota"), customer}, []string{"quota"}, nil))
+		assert.NoError(t, ValidateDefinitions(nil, nil, nil))
+	})
+}
+
+func TestValidateDefinitions_TenantTypes(t *testing.T) {
+	configSchema := func(t *testing.T, raw string) schema.Schema {
+		t.Helper()
+		compiled, err := schema.SchemaFromJSON(json.RawMessage(raw))
+		require.NoError(t, err)
+		return compiled
+	}
+	instructionsSchema := configSchema(t, `{"type":"object","properties":{"text":{"type":"string","maxLength":4}},"additionalProperties":false}`)
+	instructions := tenanttype.Type{Name: "default-instructions", ConfigSchema: instructionsSchema, Example: json.RawMessage(`{"text":"hi"}`)}
+	marker := tenanttype.Type{Name: "marker", EnabledByDefault: true}
+	bound := func(tenantType tenanttype.Type, change ...func(*extension.Definition)) []extension.Definition {
+		definition := tenantType.Bind(tenanttype.Implementation{FailurePolicy: extension.FailSkip, New: validDefinition("x").New})
+		for _, apply := range change {
+			apply(&definition)
+		}
+		return []extension.Definition{definition}
+	}
+	withType := func(change func(*tenanttype.Type)) []tenanttype.Type {
+		changed := instructions
+		change(&changed)
+		return []tenanttype.Type{changed}
+	}
+	for _, tc := range []struct {
+		name        string
+		definitions []extension.Definition
+		types       []tenanttype.Type
+		message     string
+	}{
+		{name: "invalid type name", types: withType(func(tt *tenanttype.Type) { tt.Name = "Default" }), message: `tenant type name "Default"`},
+		{name: "repeated type", types: []tenanttype.Type{instructions, instructions}, message: `tenant type "default-instructions" is declared twice`},
+		{name: "reserved member", types: withType(func(tt *tenanttype.Type) { tt.Name = "enabled" }), message: `tenant type "enabled" has the reserved member "enabled"`},
+		{name: "shared member", types: []tenanttype.Type{{Name: "a-1b", ConfigSchema: instructionsSchema, Example: instructions.Example}, {Name: "a1b", ConfigSchema: instructionsSchema, Example: instructions.Example}}, message: `tenant types "a-1b" and "a1b" share the member "a1b"`},
+		{name: "schema without example", types: withType(func(tt *tenanttype.Type) { tt.Example = nil }), message: `tenant type "default-instructions" needs an example`},
+		{name: "example the schema refuses", types: withType(func(tt *tenanttype.Type) { tt.Example = json.RawMessage(`{"text":"too long"}`) }), message: `tenant type "default-instructions" needs an example`},
+		{name: "example without schema", types: []tenanttype.Type{{Name: "marker", Example: json.RawMessage(`{}`)}}, message: `tenant type "marker" has an example but no configuration schema`},
+		{name: "tenant definition without a type", definitions: bound(instructions), message: `tenant extension "default-instructions" has no public tenant type`},
+		{name: "different schema", definitions: bound(instructions, func(d *extension.Definition) {
+			d.ConfigSchema = configSchema(t, `{"type":"object","properties":{"text":{"type":"string"}},"additionalProperties":false}`)
+		}), types: []tenanttype.Type{instructions}, message: `tenant extension "default-instructions" differs from its public tenant type in its configuration schema`},
+		{name: "schema on a type without one", definitions: bound(marker, func(d *extension.Definition) { d.ConfigSchema = instructionsSchema }), types: []tenanttype.Type{marker}, message: "in its configuration schema"},
+		{name: "different default", definitions: bound(marker, func(d *extension.Definition) { d.EnabledByDefault = false }), types: []tenanttype.Type{marker}, message: `tenant extension "marker" differs from its public tenant type in its default state`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateDefinitions(tc.definitions, nil, tc.types)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.message)
+		})
+	}
+
+	t.Run("valid", func(t *testing.T) {
+		operator := validDefinition("default-instructions")
+		assert.NoError(t, ValidateDefinitions(append(bound(marker), bound(instructions)...), nil, []tenanttype.Type{instructions, marker}))
+		assert.NoError(t, ValidateDefinitions([]extension.Definition{operator}, nil, []tenanttype.Type{instructions}), "an operator definition may share a type's name")
+		assert.NoError(t, ValidateDefinitions(nil, nil, []tenanttype.Type{instructions}), "a type may have no implementation")
 	})
 }
 

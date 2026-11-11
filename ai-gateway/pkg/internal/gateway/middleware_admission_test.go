@@ -81,7 +81,7 @@ func captureAdmissionLogs(t *testing.T) *syncBuffer {
 
 func TestMiddlewareAdmission_ThroughThePluginProtocol(t *testing.T) {
 	admissionLogs := captureAdmissionLogs(t)
-	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: middlewareDefinitions(t)})
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: middlewareDefinitions(t), tenantTypes: typesOf(middlewareDefinitions(t))})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	token := h.serviceToken(t, testInternalService)
@@ -153,7 +153,7 @@ func TestMiddlewareAdmission_ShippedDefinitionsRefuseEveryCreate(t *testing.T) {
 }
 
 func TestMiddlewareAdmission_AcrossBuilds(t *testing.T) {
-	stored := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: middlewareDefinitions(t)})
+	stored := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: middlewareDefinitions(t), tenantTypes: typesOf(middlewareDefinitions(t))})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	config := map[string]any{"instructions": "Answer concisely."}
@@ -201,10 +201,11 @@ func TestMiddleware_StoredResourcesHaveNoRuntimeEffect(t *testing.T) {
 			return nil
 		}}
 	}
-	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: []extension.Definition{
+	definitions := []extension.Definition{
 		tenantDefinition(t, "off-by-default", "", count(&offRuns), false),
 		tenantDefinition(t, "on-by-default", "", count(&onRuns), true),
-	}})
+	}
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: definitions, tenantTypes: typesOf(definitions)})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	token := h.serviceToken(t, testInternalService)

@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/testadapter"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -131,6 +132,18 @@ func priority(value int) func(*extension.Definition) {
 	return func(definition *extension.Definition) { definition.Priority = value }
 }
 
+// typesOf returns the public tenant types the tenant-scope definitions bind
+// to.
+func typesOf(definitions []extension.Definition) []tenanttype.Type {
+	var types []tenanttype.Type
+	for _, definition := range definitions {
+		if definition.Scope == extension.ScopeTenant {
+			types = append(types, tenanttype.Type{Name: definition.Name, ConfigSchema: definition.ConfigSchema, EnabledByDefault: definition.EnabledByDefault})
+		}
+	}
+	return types
+}
+
 type harness struct {
 	host     *Host
 	registry *prometheus.Registry
@@ -140,7 +153,7 @@ type harness struct {
 
 func newHarness(t *testing.T, definitions ...extension.Definition) *harness {
 	t.Helper()
-	require.NoError(t, ValidateDefinitions(definitions, nil))
+	require.NoError(t, ValidateDefinitions(definitions, nil, typesOf(definitions)))
 	plan, err := NewPlan(definitions, nil, nil)
 	require.NoError(t, err)
 	registry := prometheus.NewRegistry()

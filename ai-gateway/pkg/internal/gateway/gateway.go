@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/discovery"
@@ -58,6 +59,9 @@ type Options struct {
 	// Mandatory names the operator extensions that must be configured and
 	// enabled.
 	Mandatory []string
+	// TenantTypes are the public tenant types the manifest declares. Every
+	// tenant-scope extension must bind to one of them.
+	TenantTypes []tenanttype.Type
 }
 
 // Gateway is the constructed plugin. An idle Gateway has no handler,
@@ -79,7 +83,7 @@ type Gateway struct {
 // configuration, and the plugin host rejects every request. Extension
 // definitions are validated first, so an invalid build fails on every host.
 func New(options Options) (*Gateway, error) {
-	if err := extensionhost.ValidateDefinitions(options.Extensions, options.Mandatory); err != nil {
+	if err := extensionhost.ValidateDefinitions(options.Extensions, options.Mandatory, options.TenantTypes); err != nil {
 		return nil, err
 	}
 	kinds := managedKinds(options.Extensions)

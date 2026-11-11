@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
 	providerv4 "github.com/grafana/ai-sdk/ai-gateway/providerwire/v4"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
@@ -189,6 +190,7 @@ type harnessOptions struct {
 	routeDeadline time.Duration
 	fallback      bool
 	extensions    []extension.Definition
+	tenantTypes   []tenanttype.Type
 	env           map[string]string
 	host          *platformhost.Host
 }
@@ -224,7 +226,7 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	maps.Copy(env, options.env)
 	logs := &syncBuffer{}
 	registry := prometheus.NewRegistry()
-	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry, Extensions: options.extensions})
+	gw, err := New(Options{LookupEnv: lookup(env), Logger: slog.New(slog.NewJSONHandler(logs, nil)), Registerer: registry, Extensions: options.extensions, TenantTypes: options.tenantTypes})
 	require.NoError(t, err)
 	provider := gw.Provider()
 	built, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData})
