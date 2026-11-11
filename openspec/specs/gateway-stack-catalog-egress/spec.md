@@ -159,7 +159,7 @@ Admission and every request SHALL refuse a custom endpoint whose host is not an 
 - **THEN** every call SHALL fail with the catalog configuration category, with zero provider requests
 
 ### Requirement: Secret-safe refusal
-A refused connection and a failed DNS resolution of a custom endpoint SHALL fail the attempt with one fixed egress refusal error. Neither it, the error document nor any log line SHALL carry the endpoint URL or host, a resolved or resolver address, or the matched range or entry; they MAY name the field path and provider name. A refused attempt SHALL be fallback-eligible, and a failed call with a refused attempt SHALL fail with the egress refused category.
+A refused connection and a failed DNS resolution of a custom endpoint SHALL fail the attempt with one fixed egress refusal error. Neither it, the error document nor any log line SHALL carry the endpoint URL or host, a resolved or resolver address, or the matched range or entry; they MAY name the field path and provider name. A refused attempt SHALL be fallback-eligible, and a failed chain SHALL follow the aggregate chain-failure classification.
 
 #### Scenario: Refused primary, permitted fallback
 - **WHEN** a model's primary endpoint is refused and its fallback succeeds
@@ -171,7 +171,11 @@ A refused connection and a failed DNS resolution of a custom endpoint SHALL fail
 
 #### Scenario: Refused primary, failing fallback
 - **WHEN** a model's primary endpoint is refused and its fallback fails with `503`
-- **THEN** the call SHALL fail with the egress refused document, because retrying cannot succeed until the catalog or policy changes
+- **THEN** the call SHALL fail with the overload document, because the newest attempt failure decides
+
+#### Scenario: Failing primary, refused fallback
+- **WHEN** a model's primary fails with `503` and its fallback endpoint is refused
+- **THEN** the call SHALL fail with the egress refused document
 
 #### Scenario: Client cancels after a refused attempt
 - **WHEN** a model's primary endpoint is refused and the caller cancels while the fallback runs

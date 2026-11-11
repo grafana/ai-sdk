@@ -1705,7 +1705,7 @@ func TestEgressRefusalClassification(t *testing.T) {
 		}, refused},
 		{"refused then 503", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(execution.ErrEgressRefused), newScripted(overload)}
-		}, refused},
+		}, documentForSafeError(safeError{category: safeOverload})},
 	}
 	for _, streaming := range []bool{false, true} {
 		for _, tc := range tests {
