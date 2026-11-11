@@ -144,9 +144,9 @@ secure:
   anthropic: { create: "<provider key>" }
 ```
 
-- `spec` uses the catalog format above without `apiKeyEnv`. Providers must be
-  `anthropic` or `openai`, named with lowercase letters, digits and `-`, and
-  can't set `baseURL`, `providerName` or `supportsStructuredOutputs`.
+- `spec` uses the catalog format above without `apiKeyEnv`. Providers are
+  named with lowercase letters, digits and `-`. A `baseURL` must be `https`;
+  see [Custom endpoints](#custom-endpoints).
 - Each provider needs exactly one secure value with the provider's name. Reads
   return secret names, never keys. Updates can omit `secure` to keep the stored
   keys, and `remove` a key only together with its provider.
@@ -154,6 +154,52 @@ secure:
   and Admins can write them (`aigateway:catalogwriter`).
 - The Gateway validates every create and update, so writes fail while the
   plugin is unavailable. Deletes always work.
+
+### Custom endpoints
+
+A stack chooses its catalog's endpoints, but the requests leave from the
+Gateway, so the Gateway refuses endpoints that would reach its own network:
+
+- A `baseURL` must be `https`. The host must be a DNS name or an IP address;
+  numeric forms such as `2130706433` are refused.
+- Each connection is checked after DNS resolution, against every address the
+  Gateway connects to. A name that resolves, or later re-resolves, to a
+  loopback, private, link-local, shared (`100.64.0.0/10`), multicast,
+  documentation or other non-public IPv4 or IPv6 address is refused, including
+  IPv4 addresses inside IPv6. Writes refuse such addresses when they are
+  written as IP literals.
+- These connections never use `HTTPS_PROXY` or another proxy, because a proxy
+  would hide the address from the check. If your Grafana reaches the internet
+  only through a proxy, custom endpoints can't connect.
+- Redirects aren't followed, and the response limits in [Limits](#limits)
+  apply.
+- A refused or unresolvable endpoint gets a `424` `failed_dependency` error,
+  "provider endpoint refused by the egress policy or not resolvable", without
+  a request. It names no host or address. A model's fallbacks are still tried.
+- Providers without a `baseURL` use their native endpoint and the proxy
+  settings, as before. The `model_catalog` setting's endpoints aren't checked.
+
+Two settings adjust the policy. Each takes comma-separated entries: an IP
+address, a CIDR prefix such as `10.20.0.0/16`, a hostname, or `*.` and a
+domain, which matches its subdomains only.
+
+- `stack_catalog_egress_allow` lets catalogs reach matching destinations
+  that are otherwise refused, such as a model server on your private network.
+  It doesn't limit other public endpoints. Unspecified (`0.0.0.0`, `::`) and
+  multicast addresses stay refused. A hostname entry trusts whatever that name
+  resolves to, so prefer prefixes.
+- `stack_catalog_egress_deny` refuses matching destinations, even when they
+  are also allowed. Deny by prefix: a denied hostname is a convenience, not a
+  boundary, because the same address stays reachable through its IP or
+  another name.
+- Ports aren't restricted, so a catalog can reach any port on a permitted
+  host, and response timing can show whether a port is open. Deny the
+  prefixes of public addresses that catalogs must not reach, such as your own
+  services.
+- An invalid entry stops the Gateway from starting. A changed setting applies
+  after a restart; stored catalogs that it now refuses fail their calls.
+- An endpoint's certificate must be trusted by the system roots or
+  `SSL_CERT_FILE`.
 
 ### Call a stored catalog
 
@@ -190,6 +236,8 @@ so they need no other change.
 | `model_catalog` | The model catalog YAML, usually read from a file with `$__file{}`. Optional: without it, the namespace routes list no configured models and refuse every model ID, while BYOK still works in `cloud` mode. |
 | `access_mode` | `self-hosted` or `cloud`. Required. |
 | `access_internal_services` | Comma-separated Grafana services that get the configured models in `cloud` mode. |
+| `stack_catalog_egress_allow` | Comma-separated destinations that stored catalogs' custom endpoints may reach despite the built-in refusal; see [Custom endpoints](#custom-endpoints). |
+| `stack_catalog_egress_deny` | Comma-separated destinations that stored catalogs' custom endpoints may never reach; see [Custom endpoints](#custom-endpoints). |
 | `agento11y_*` | Optional export to Agent Observability; see [Monitor the Gateway](docs/text-observability.md#export-to-agent-observability). |
 
 ## Limits
