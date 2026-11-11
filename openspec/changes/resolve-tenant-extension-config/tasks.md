@@ -41,7 +41,7 @@
 
 ## 8. Documentation
 
-- [ ] 8.1 Update `docs/guides/gateway-extensions.md` for applied configuration:
+- [x] 8.1 Update `docs/guides/gateway-extensions.md` for applied configuration:
   - the runtime state table, TTL propagation and replica convergence;
   - read failures and the 10-minute bound;
   - the no-API-access refusal and log;
