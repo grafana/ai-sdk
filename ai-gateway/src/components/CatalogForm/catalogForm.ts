@@ -113,7 +113,7 @@ export function formProblem(form: CatalogForm, storedProviders: Record<string, P
     return `Model IDs must be unique: "${model}" is used more than once.`;
   }
   const retyped = form.providers.find((row) => {
-    const stored = storedProviders[row.name];
+    const stored = Object.hasOwn(storedProviders, row.name) ? storedProviders[row.name] : undefined;
     return stored !== undefined && stored.type !== row.provider.type && row.key === '';
   });
   if (retyped !== undefined) {

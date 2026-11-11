@@ -125,6 +125,11 @@ describe('components/CatalogForm/catalogForm', () => {
       undefined,
     ],
     ['a new provider of any type', { ...row('gpt'), provider: { type: 'openai' } }, undefined],
+    [
+      'a new provider named like an object property',
+      { ...row('constructor'), provider: { type: 'openai' } },
+      undefined,
+    ],
   ])('reports %s', (_, provider, expected) => {
     const form: CatalogForm = { name: 'team', providers: [provider], models: [] };
     expect(formProblem(form, { claude: { type: 'anthropic' } })).toBe(expected);
