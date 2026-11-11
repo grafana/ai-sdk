@@ -3,6 +3,7 @@ package extensionhost
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"slices"
 	"sync"
 
@@ -116,7 +117,7 @@ func (h *Host) track(s *snapshot) {
 // off; an enabled one with a configuration its schema accepts gets its own
 // instance. Any other resource, and a factory that fails, apply the
 // extension's failure policy, logged and counted once per build. Resources of
-// unknown types are ignored here.
+// types this build does not implement are ignored here.
 func (h *Host) buildSnapshot(namespace string, resources []TenantResource, digest [sha256.Size]byte) *snapshot {
 	byName := make(map[string]TenantResource, len(resources))
 	for _, resource := range resources {
@@ -134,22 +135,21 @@ func (h *Host) buildSnapshot(namespace string, resources []TenantResource, diges
 	logger := h.logger.With("namespace", namespace)
 	for _, definition := range h.tenant {
 		resource, found := byName[definition.Name]
-		switch {
-		case !found:
+		if !found {
 			if fallback := h.defaults[definition.Name]; fallback != nil {
 				instances = append(instances, fallback)
 			}
 			continue
-		case resource.Enabled == nil || resource.Type != resource.Name:
-			failed(definition, classInvalid)
+		}
+		if !resource.Invalid && resource.Type == resource.Name && !resource.Enabled {
 			continue
-		case !*resource.Enabled:
-			continue
-		case CheckConfig(definition, resource.Config) != nil:
+		}
+		configuration, ok := configurationOf(definition, resource)
+		if !ok {
 			failed(definition, classInvalid)
 			continue
 		}
-		built, class, err := construct(planned{definition: definition, config: resource.Config}, logger, h.registerers[definition.Name], h.clock)
+		built, class, err := construct(planned{definition: definition, config: configuration}, logger, h.registerers[definition.Name], h.clock)
 		if err != nil {
 			if built != nil {
 				h.closeBounded([]*instance{built})
@@ -167,6 +167,23 @@ func (h *Host) buildSnapshot(namespace string, resources []TenantResource, diges
 	}
 	h.track(built)
 	return built
+}
+
+// configurationOf returns the configuration an enabled resource gives its
+// definition, and whether the definition accepts it: a type with a schema
+// needs its member, which must match the schema, and a type without one
+// takes no member and gets an empty configuration.
+func configurationOf(definition extension.Definition, resource TenantResource) (json.RawMessage, bool) {
+	switch {
+	case resource.Invalid || resource.Type != resource.Name:
+		return nil, false
+	case definition.ConfigSchema.JSON() == nil:
+		return emptyConfig, resource.Config == nil
+	case resource.Config == nil:
+		return nil, false
+	default:
+		return resource.Config, CheckConfig(definition, resource.Config) == nil
+	}
 }
 
 // failureSnapshot returns the snapshot of a namespace without a usable
@@ -191,13 +208,17 @@ func (h *Host) failureSnapshot() *snapshot {
 func digestOf(resources []TenantResource) [sha256.Size]byte {
 	hash := sha256.New()
 	for _, resource := range resources {
-		enabled := byte('-')
-		if resource.Enabled != nil && *resource.Enabled {
-			enabled = '1'
-		} else if resource.Enabled != nil {
-			enabled = '0'
+		state := []byte{'0', '-'}
+		if resource.Enabled {
+			state[0] = '1'
 		}
-		for _, part := range [][]byte{[]byte(resource.Name), []byte(resource.Type), {enabled}, resource.Config} {
+		if resource.Invalid {
+			state[0] = 'x'
+		}
+		if resource.Config != nil {
+			state[1] = '+'
+		}
+		for _, part := range [][]byte{[]byte(resource.Name), []byte(resource.Type), state, resource.Config} {
 			hash.Write(part)
 			hash.Write([]byte{0})
 		}

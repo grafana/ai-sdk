@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/internal/testadapter"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/provider"
 )
 
@@ -131,6 +132,23 @@ func priority(value int) func(*extension.Definition) {
 	return func(definition *extension.Definition) { definition.Priority = value }
 }
 
+// typesOf returns the public tenant types the tenant-scope definitions bind
+// to. A type with a schema gets the empty example, which its schema must
+// accept.
+func typesOf(definitions []extension.Definition) []tenanttype.Type {
+	var types []tenanttype.Type
+	for _, definition := range definitions {
+		if definition.Scope == extension.ScopeTenant {
+			tenantType := tenanttype.Type{Name: definition.Name, ConfigSchema: definition.ConfigSchema, EnabledByDefault: definition.EnabledByDefault}
+			if definition.ConfigSchema.JSON() != nil {
+				tenantType.Example = json.RawMessage(`{}`)
+			}
+			types = append(types, tenantType)
+		}
+	}
+	return types
+}
+
 type harness struct {
 	host     *Host
 	registry *prometheus.Registry
@@ -146,7 +164,7 @@ func newHarness(t *testing.T, definitions ...extension.Definition) *harness {
 // newHarnessWith is newHarness with adjust applied to the host configuration.
 func newHarnessWith(t *testing.T, adjust func(*Config), definitions ...extension.Definition) *harness {
 	t.Helper()
-	require.NoError(t, ValidateDefinitions(definitions, nil))
+	require.NoError(t, ValidateDefinitions(definitions, nil, typesOf(definitions)))
 	plan, err := NewPlan(definitions, nil, nil)
 	require.NoError(t, err)
 	registry := prometheus.NewRegistry()

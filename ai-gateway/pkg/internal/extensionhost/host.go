@@ -64,17 +64,17 @@ type Host struct {
 	lists map[extension.Source]*lists
 	// failed is the snapshot of a namespace whose configuration cannot be
 	// read: every tenant extension applies its failure policy.
-	failed       *snapshot
-	logger       *slog.Logger
-	clock        func() time.Time
-	requestInfo  func(context.Context) extension.Call
-	drainTimeout time.Duration
-	events       *prometheus.CounterVec
-	dropped      prometheus.Counter
-	reads        *prometheus.CounterVec
-	unknownTypes prometheus.Counter
-	observations observations
-	closeOnce    sync.Once
+	failed             *snapshot
+	logger             *slog.Logger
+	clock              func() time.Time
+	requestInfo        func(context.Context) extension.Call
+	drainTimeout       time.Duration
+	events             *prometheus.CounterVec
+	dropped            prometheus.Counter
+	reads              *prometheus.CounterVec
+	unimplementedTypes prometheus.Counter
+	observations       observations
+	closeOnce          sync.Once
 	// registerers holds each definition's shared registerer.
 	registerers map[string]sharedRegisterer
 	cacheConfig TenantCacheConfig
@@ -141,13 +141,13 @@ func New(config Config) (*Host, error) {
 			Name:      "tenant_config_reads_total",
 			Help:      "Namespace tenant configuration reads by fixed result.",
 		}, []string{"result"}),
-		unknownTypes: prometheus.NewCounter(prometheus.CounterOpts{
+		unimplementedTypes: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "grafana_ai_gateway",
-			Name:      "tenant_config_unknown_types_total",
-			Help:      "Enabled tenant configuration resources whose type the build does not register, once per namespace and type.",
+			Name:      "tenant_config_unimplemented_types_total",
+			Help:      "Enabled tenant configuration resources whose type this build does not implement, once per namespace and type.",
 		}),
 	}
-	for _, collector := range []prometheus.Collector{host.events, host.dropped, host.reads, host.unknownTypes} {
+	for _, collector := range []prometheus.Collector{host.events, host.dropped, host.reads, host.unimplementedTypes} {
 		if err := config.Registerer.Register(collector); err != nil {
 			return nil, fmt.Errorf("extensions: registering metrics: %w", err)
 		}

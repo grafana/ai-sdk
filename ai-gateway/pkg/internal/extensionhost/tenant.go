@@ -13,13 +13,16 @@ import (
 // TenantResource is one stored Middleware resource of a namespace, as read.
 type TenantResource struct {
 	// Name is the resource's metadata.name, which must equal Type.
-	Name string
-	Type string
-	// Enabled is nil when the stored resource has no enabled flag.
-	Enabled *bool
-	// Config is the stored spec.config as compact JSON, or an empty object
-	// when it is absent or null. Numbers keep their stored literal.
+	Name    string
+	Type    string
+	Enabled bool
+	// Config is the type's member as canonical JSON, with numbers as stored,
+	// or nil when the spec sets no member.
 	Config json.RawMessage
+	// Invalid reports a stored spec the Gateway cannot apply: one that can't
+	// be decoded, or that sets a member other than its type's. Only Name is
+	// meaningful then.
+	Invalid bool
 }
 
 // TenantReader reads a namespace's stored tenant configuration. Read returns

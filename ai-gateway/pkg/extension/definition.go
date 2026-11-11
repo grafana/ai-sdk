@@ -18,11 +18,11 @@ const (
 	// Gateway's extensions setting.
 	ScopeOperator Scope = "operator"
 	// ScopeTenant extensions are configured per namespace, by Middleware
-	// resources named after the extension. A namespace without a resource
-	// uses the extension's default state, and a host that gives the plugin no
-	// API access applies the default state everywhere. Their configuration is
-	// limited to top-level fields with scalar or scalar-array values, because
-	// the platform prunes objects nested inside it.
+	// resources named after the extension. A tenant-scope definition must
+	// bind to a public type in package tenanttype, which declares its
+	// configuration schema and default. A namespace without a resource uses
+	// the extension's default state, and a host that gives the plugin no API
+	// access applies the default state everywhere.
 	ScopeTenant Scope = "tenant"
 )
 

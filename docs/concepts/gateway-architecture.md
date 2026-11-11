@@ -91,8 +91,9 @@ selection or provider work, and is labeled `unmatched`.
 The manifest also declares two kinds, `ModelCatalog` and `Middleware`. Grafana
 stores their objects, and catalog provider keys, itself, and asks the plugin's
 admission validators to accept or refuse each create and update. The
-`Middleware` validator checks each tenant extension's configuration against
-the extensions the distribution registers. Stored catalogs do not yet reach
+`Middleware` spec has one typed member per public tenant type, generated from
+the `tenanttype` registry, and its validator checks each member against the
+tenant extensions the distribution implements. Stored catalogs do not yet reach
 discovery or selection. Stored `Middleware` resources decide, per namespace,
 which tenant extensions run and with which configuration: the Gateway reads
 them through the host's API access configuration, as the plugin, and caches

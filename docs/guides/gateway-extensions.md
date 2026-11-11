@@ -176,18 +176,21 @@ Tenant extensions aren't configured by this setting; see
 ## Configure tenant extensions
 
 Org admins store a tenant extension's configuration in their stack namespace
-as a `Middleware` resource named after the extension:
+as a `Middleware` resource named after the extension. The configuration goes
+in the spec member named after the type, in lowerCamel case:
 
 ```yaml
 apiVersion: aigateway.ext.grafana.app/v1alpha1
 kind: Middleware
 metadata:
-  name: default-instructions
+  name: model-access
 spec:
-  type: default-instructions
+  type: model-access
   enabled: true
-  config:
-    instructions: "Answer concisely."
+  modelAccess:
+    rules:
+      - models: [balanced]
+        teams: [platform]
 ```
 
 Each call's tenant extensions follow its namespace's resources:
@@ -196,22 +199,30 @@ Each call's tenant extensions follow its namespace's resources:
 |---|---|
 | No resource | Uses its default: on with `{}` when `EnabledByDefault`, off otherwise |
 | `enabled: false` | Is off |
-| `enabled: true` with a valid `config` | Runs with that configuration |
-| A `config` its schema no longer accepts, or a failing factory | Applies its failure policy, logged and counted |
-| An enabled resource for a type this build doesn't register | Is skipped, logged once per namespace and type, and counted |
+| `enabled: true` with a valid member | Runs with that member as its configuration |
+| A member its schema no longer accepts, a missing or foreign member, or a failing factory | Applies its failure policy, logged and counted |
+| An enabled resource for a type this build doesn't implement | Is skipped, logged once per namespace and type, and counted |
 
 The rules for writing resources:
 
 - `metadata.name` must equal `spec.type`, so a namespace holds one resource per
-  extension. `enabled` is required, and `config` defaults to `{}`.
-- The type must be a tenant extension the distribution registers. Operator
-  extensions and unknown names are refused with the same reason.
-- `config` must match the extension's `ConfigSchema` and is at most 64 KiB.
-  Refusals name the field and the failing location, never a value.
+  extension. `enabled` is required.
+- The spec may set only its type's member. With `enabled: true` the member is
+  required, unless the type takes no configuration, in which case it has no
+  member at all.
+- The type must be a tenant extension this build implements. Operator
+  extensions, unknown names and public types the build doesn't implement are
+  refused with the same reason.
+- Grafana checks the member's structure: JSON types, required fields and
+  unknown fields. The Gateway then checks it against the type's full schema,
+  including enums, patterns and bounds, and limits it to 64 KiB. Refusals name
+  the field and the failing location, never a value.
 - When the plugin has API access, an update that sets `enabled: false` and
-  keeps `config` is always accepted, even after a rollback to a build without
-  the extension. Any other change to
-  a resource whose extension isn't registered is refused.
+  keeps or removes the member is always accepted, even after a rollback to a
+  build without the extension. After a rollback to a release whose manifest no longer declares the member,
+  Grafana refuses writes that still carry it, so remove the member when you
+  disable the resource. Any other change to a resource whose extension isn't
+  implemented is refused.
 - Resources aren't in folders. Viewers and Editors can read them
   (`aigateway:middlewarereader`) and Admins can write them
   (`aigateway:middlewarewriter`).
@@ -219,11 +230,44 @@ The rules for writing resources:
   plugin is unavailable. Deletes always work.
 - Resources can't hold secure values.
 
-Grafana prunes objects nested inside `config` before the Gateway sees it, so a
-tenant extension's configuration is limited to top-level fields whose values
-are scalars or arrays of scalars. Design `ConfigSchema` accordingly, and don't
-use secret-bearing strings as keys: a schema that allows arbitrary keys can
-name one in a refusal's location.
+### Add a tenant extension type
+
+A tenant extension's type is public: its name, configuration schema, default
+and an example are declared in
+[`tenanttype`](../../ai-gateway/pkg/extension/tenanttype/doc.go), and the
+Gateway's manifest declares one member per type. Its implementation may be
+private: bind it to the public type, and pass the definition with your other
+extensions.
+
+```go
+definition := modelAccessType.Bind(tenanttype.Implementation{
+	FailurePolicy: extension.FailSkip,
+	New:           newModelAccess,
+})
+```
+
+Startup fails when a tenant-scope definition has no public type, or differs
+from its type in schema or default. To add a type:
+
+1. Add it to the `tenanttype` registry with a description and an example.
+2. Run `mise run generate-ai-gateway-kinds`, which projects the schema into the
+   manifest and regenerates the kind. The projection keeps JSON types,
+   properties, items, required fields and descriptions, and drops value
+   constraints and defaults.
+3. The generator refuses schemas the platform would prune or can't express:
+   every node needs exactly one JSON type, every object either declares
+   properties with `additionalProperties: false` or declares a typed
+   `additionalProperties`, and combinators such as `oneOf` aren't supported.
+   It also refuses a type whose example doesn't survive Grafana's pruning.
+
+Grafana validates every write against the current schema, including fields
+the write doesn't change. A type's schema can therefore only grow: add
+optional fields, and never add a required field or narrow a type. An
+incompatible change needs a new type name.
+
+Prefer operator scope for private extensions. Use a tenant type only when
+tenants need to configure the extension, and remember that its schema becomes
+part of the public manifest.
 
 ### How stored configuration takes effect
 
@@ -278,8 +322,8 @@ counts denials and failures by extension, phase and event, including phase
 `configure` for a namespace configuration its extension refuses.
 `grafana_ai_gateway_tenant_config_reads_total` counts namespace reads by
 `result` (`success` or `failed`), and
-`grafana_ai_gateway_tenant_config_unknown_types_total` counts enabled
-resources of types the build doesn't register. Read failures are logged with
+`grafana_ai_gateway_tenant_config_unimplemented_types_total` counts enabled
+resources of types the build doesn't implement. Read failures are logged with
 the namespace and a fixed class, such as `refused` or `timeout`. Extension instances
 that implement `Close` are closed within the Gateway's final one-second flush,
 after in-flight observations finish.

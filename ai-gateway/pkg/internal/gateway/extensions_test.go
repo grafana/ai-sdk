@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/ai-gateway/test/platformhost"
 	"github.com/grafana/ai-sdk/provider"
 	"github.com/grafana/ai-sdk/schema"
@@ -148,6 +149,17 @@ func TestNew_ExtensionStartup(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("tenant extension without a public type on an idle host", func(t *testing.T) {
+		env := newStartupEnvironment(t, "https://provider.example")
+		delete(env.values, "GRAFANA_JWKS")
+		_, err := New(Options{LookupEnv: env.lookup, Extensions: []extension.Definition{instructions}})
+		require.ErrorContains(t, err, `tenant extension "instructions" has no public tenant type`)
+		bound := tenanttype.Type{Name: "instructions"}.Bind(tenanttype.Implementation{FailurePolicy: extension.FailClosed, New: instructions.New})
+		gw, err := New(Options{LookupEnv: env.lookup, Extensions: []extension.Definition{bound}, TenantTypes: []tenanttype.Type{{Name: "instructions"}}})
+		require.NoError(t, err)
+		assert.True(t, gw.Idle())
+	})
 
 	t.Run("idle host does not read the setting", func(t *testing.T) {
 		env := newStartupEnvironment(t, "https://provider.example")
@@ -291,4 +303,21 @@ func TestGateway_Extensions(t *testing.T) {
 		assert.Contains(t, body, "[REDACTED]")
 		assert.NotContains(t, body, extensionSecret)
 	})
+}
+
+// typesOf returns public tenant types the tenant-scope definitions bind to.
+// A type with a schema gets the empty example, which its schema must accept.
+func typesOf(definitions []extension.Definition) []tenanttype.Type {
+	var types []tenanttype.Type
+	for _, definition := range definitions {
+		if definition.Scope != extension.ScopeTenant {
+			continue
+		}
+		tenantType := tenanttype.Type{Name: definition.Name, ConfigSchema: definition.ConfigSchema, EnabledByDefault: definition.EnabledByDefault}
+		if definition.ConfigSchema.JSON() != nil {
+			tenantType.Example = json.RawMessage(`{}`)
+		}
+		types = append(types, tenantType)
+	}
+	return types
 }

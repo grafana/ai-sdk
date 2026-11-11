@@ -6,47 +6,65 @@
 - The manifest declares one kind, `ModelCatalog`, with `folderScoped: false`, validation on `CREATE` and `UPDATE`, and the shared `roles` and `roleBindings` blocks. `managedKinds()` in `pkg/internal/gateway` returns its kind with `stackcatalog.Validator{}`; `Gateway.Provider()` uses it for running and idle Gateways.
 - `gateway.New` validates extension definitions first (`extensionhost.ValidateDefinitions`), then returns an idle Gateway when no signing keys are configured. Definitions carry `Name` (DNS label), `Scope`, `ConfigSchema` (`schema.Schema`, zero accepts only `{}`) and `EnabledByDefault`. The public build passes `gateway.DefaultExtensions()`, which is empty.
 - `extensionhost.NewPlan` validates operator entries with a private `validateConfig` that reports the deepest instance location and never the schema library's message.
-- The protocol test host already serves every manifest kind generically: in-memory store, admission reviews only for declared operations, inline secure values when present, no pruning or schema validation. Gateway tests build it from `manifestdata.LocalManifest()`, and the `plugin-host` command reads `app-sdk-manifest.json`, so a new kind is picked up without host changes.
+- The protocol test host already serves every manifest kind generically: in-memory store, admission reviews only for declared operations, inline secure values when present, no pruning or schema validation. It decodes request bodies into `map[string]any`, so numbers pass through `float64`.
+- app-sdk's plugin admission adapter decodes each reviewed object with the managed kind's codec into the kind's Go type before calling the validator, and returns a codec error as the refusal.
+- The manifest is static: Grafana reads `app-sdk-manifest.json` from the plugin package at startup, and a malformed manifest drops every kind, `ModelCatalog` included.
 - The end-to-end suite runs against the built plugin package (`mise run build-ai-gateway-plugin`, then `scripts/e2e.sh`). CI archives the same `dist/` as the candidate package, so the suite must exercise the shipped backend.
 
-### What the platform does with an open `config`
+### What the platform does with an open object
 
-Generating a scratch kind with the pinned generator shows that app-sdk CUE cannot emit `x-kubernetes-preserve-unknown-fields`. `config?: {[string]: _}` and `config?: {...}` both generate `{"type": "object", "additionalProperties": true}`; `config?: _` generates `{"type": "object", "additionalProperties": {}}`.
+A local reproduction, not evidence from a running Grafana. Grafana's kind store converts the manifest schema with app-sdk `VersionSchema.AsKubeOpenAPI`, builds an apiextensions structural schema, and prunes with `structuralpruning.Prune` on every write, before its own schema validation and before plugin admission.
 
-Grafana's kind store converts the manifest schema with app-sdk `VersionSchema.AsKubeOpenAPI`, builds an apiextensions structural schema from it and prunes with `structuralpruning.Prune` before admission. `AsKubeOpenAPI` maps both `additionalProperties: true` and `x-kubernetes-preserve-unknown-fields: true` to `additionalProperties: true` and drops the extension. Pruning then descends into each `config` value with a nil schema. Replaying that path offline with the pinned libraries on `config: {s: "v", list: ["a","b"], nested: {k: "v"}, objs: [{k: 1}]}` stores `{s: "v", list: ["a","b"], nested: {}, objs: [{}]}`:
+- The app-sdk CUE generator cannot emit `x-kubernetes-preserve-unknown-fields`. `config?: {[string]: _}` generates `{type: object, additionalProperties: true}`.
+- `AsKubeOpenAPI` maps both `additionalProperties: true` and `x-kubernetes-preserve-unknown-fields: true` to an `additionalProperties` that allows anything with no value schema, and drops the extension.
+- Pruning then descends into each value with a nil schema. `{s: "v", list: ["a","b"], nested: {k: "v"}, objs: [{k: 1}]}` is stored as `{s: "v", list: ["a","b"], nested: {}, objs: [{}]}`.
 
-- top-level fields and arrays of scalars are kept;
-- objects nested inside `config` are emptied, also inside arrays;
-- hand-editing the manifest to declare `x-kubernetes-preserve-unknown-fields` would not change this.
+Versions: grafana-app-sdk `v0.60.16` (generator and `AsKubeOpenAPI`), `k8s.io/apiextensions-apiserver v0.37.1`, Grafana `v13.3.0` `pkg/services/apiserver/kindstore`. So an open `config` cannot carry nested configuration, and no manifest edit fixes it.
 
-This reproduction is not evidence about the pinned nightly image. Admission sees the pruned object, so what is stored is what admission validated.
+### What typed members do
 
-### Deviation: no `x-kubernetes-preserve-unknown-fields`
+The same replay with typed optional members keeps nested configuration intact: every nested field is declared, so pruning keeps it, and Grafana validates JSON types, required fields and unknown fields before plugin admission. The generator puts `additionalProperties: false` on every struct; the kind store keeps unknown keys under it and then refuses them in validation rather than pruning them silently. Grafana cannot enforce a union: a member that doesn't match `type`, no member and two members are all stored. A CUE disjunction produces a schema that is not structural, which turns pruning off for the whole kind.
 
-The issue asks for `spec.config` to use `x-kubernetes-preserve-unknown-fields` so the host does not prune it. The pinned platform cannot honor that, so the kind declares an open object (`additionalProperties: true`) and the `gateway-extensions` spec limits tenant configuration to top-level fields with scalar or scalar-array values. Local reproduction, not evidence from a running Grafana:
+Generating candidate members with the pinned generator in a scratch copy (this design) confirmed:
 
-- Versions: grafana-app-sdk `v0.60.16` (generator and `AsKubeOpenAPI`; Grafana `v13.3.0` pins `v0.61.0`, whose `oapi3SchemaToKubeSchema` handles `additionalProperties` and the extension identically), `k8s.io/apiextensions-apiserver v0.37.1`, Grafana `v13.3.0` `pkg/services/apiserver/kindstore` (`structural.go`, `schema.go`, `openapi.go`).
-- Step 1: copy `kinds/` and `.config/app-sdk/` to a scratch directory with the module's `go.mod`, add a kind whose `spec` has `config?: {[string]: _}`, `open?: {...}` and `anyv?: _`, and run `node .config/app-sdk/generate-kinds.mjs`. The manifest schema has `additionalProperties: true` for the first two and `additionalProperties: {}` for the third, and no `x-kubernetes-preserve-unknown-fields`.
-- Step 2: in a scratch Go module, unmarshal two version schemas into `app.VersionSchema`, one with `config: {type: object, additionalProperties: true}` and one with `config: {type: object, x-kubernetes-preserve-unknown-fields: true}`. Convert each with `AsKubeOpenAPI`, drop `metadata` and expand refs as `kindstore.expandSchemaRefs` does. Then marshal to `apiextensionsv1.JSONSchemaProps`, convert to internal props, call `structuralschema.NewStructural` and `ValidateStructural` (no errors), and run `structuralpruning.Prune(obj, structural, true)`.
-- Result for both schemas: `config` `{s: "v", list: ["a","b"], nested: {k: "v"}, objs: [{k: 1}]}` becomes `{s: "v", list: ["a","b"], nested: {}, objs: [{}]}`. The converted kube schema for both is `{type: object, additionalProperties: true}`.
+- a generated `kinds/middleware_members.cue` struct unified into `spec` emits each member as a `$ref`-free nested object, with `required` for non-optional fields, `additionalProperties: false`, typed maps from `[string]: T`, and `description` from CUE doc comments;
+- an empty struct (`{}`, `close({})`, a struct with only hidden fields) always emits `{type: object, additionalProperties: {}}`, an open object whose value schema has no type. That is not structural, so the generator cannot emit a member for a type without configuration.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- One validator that later work reuses: #765 resolves the same definitions and re-applies the same schema check at read time.
-- Accept paths proven without shipping a test-only extension.
+- Tenant configuration with nested objects that the platform stores and validates as written.
+- One manifest for every build, public or private, with no manifest step in private pipelines.
+- Private tenant implementations are possible without changing what the manifest describes.
+- One validator and one spec decoder that #765 reuses at read time.
+- Accept paths proven without shipping a test-only extension or type.
 
 **Non-Goals:**
 
+- Shipped tenant types and implementations (#766).
 - Reading or applying stored resources, caching, admission warnings (#765).
-- Shipped tenant extensions and accept paths against Grafana (#766).
+- Tenant types whose schema must stay private (an opaque `custom` member, deferred).
 - Secure values in `Middleware`.
 - Schema validation, pruning or RBAC in the test host.
 
 ## Decisions
 
 ### Kind schema
+
+```yaml
+apiVersion: aigateway.ext.grafana.app/v1alpha1
+kind: Middleware
+metadata:
+  name: model-access
+spec:
+  type: model-access
+  enabled: true
+  modelAccess:
+    rules:
+      - models: [balanced]
+        teams: [platform]
+```
 
 `kinds/middleware.cue`, referenced from `v1alpha1.kinds` after `modelCatalogKind`:
 
@@ -56,20 +74,21 @@ middlewareKind: {
 	folderScoped: false
 	validation: operations: ["CREATE", "UPDATE"]
 	schema: {
-		spec: {
+		spec: middlewareMembers & {
 			type:    string
 			enabled: bool
-			config?: {[string]: _}
 		}
 	}
 }
 ```
 
-- Generated plural `middlewares`, Go package `pkg/internal/middleware/v1alpha1` (imported as `middlewarev1alpha1`, because the root module has a `middleware` package), `Spec.Config map[string]interface{}`.
-- No `secure` block, so the kind schema has no `secure` property.
-- `type` stays a plain string, as `ModelCatalog`'s provider `type` does, so admission owns every type message.
-- `enabled` is required: no schema default, so Grafana and the test host store the same object, and a disable-only update is unambiguous.
-- `config` is optional and open. Absent means `{}`. It is the only shape the generator emits; the "Tenant configuration shape" requirement states its pruning limit (see the deviation above).
+- `middlewareMembers` lives in the generated `kinds/middleware_members.cue`: one optional member per public tenant type with configuration, named `lowerCamel(type)`. It is `{}` while the registry is empty, so the shipped `spec` is `{type, enabled}`.
+- `type` stays a plain string with no enum, members are optional and there is no `oneOf`. Any of these in the manifest would make Grafana refuse a stored object after a rollback to a build whose registry differs, and block the disable-only update and the delete paths that rely on Grafana accepting the write first.
+- `enabled` is required and has no schema default, so Grafana and the test host store the same object.
+- No `secure` block.
+- Generated plural `middlewares`; Go package `pkg/internal/middleware/v1alpha1` (imported as `middlewarev1alpha1`).
+
+Alternatives considered: an open `config` (nested data lost, see Context); `config` as a JSON string (no typed API, no platform validation); one kind per type (N list reads in #765, and a rolled-back kind makes its resources unreachable, so deletes stop working); a private build regenerating the manifest (a public manifest-building API, two manifest copies to keep in sync, and a bad manifest drops every kind).
 
 ### Manifest and roles
 
@@ -96,159 +115,245 @@ roleBindings: {
 
 - Names have no hyphens, so they match the SDK's `^aigateway:[a-z0-9]+$` and stay validated against `#Role`.
 - Grafana registers `fixed:aigateway.ext.grafana.app:aigateway:middlewarereader|middlewarewriter`. Basic roles inherit, so Editors and Admins also read.
-- The manifest test pins all four roles, their permission sets, the bindings and the rendered `fixed:` IDs, with the catalog roles as literals that must not change.
+- One role pair covers every tenant type.
 
-### Where the validator gets the definitions
+### Public tenant type registry
 
-`gateway.New` already receives the distribution's definitions in `Options.Extensions` and validates them before the idle check. Right after that check it builds the managed kinds once and keeps them on the `Gateway`:
+New public package `ai-gateway/pkg/extension/tenanttype`, experimental v0 like `extension`. It imports only `extension` and `schema`, so private modules can bind to it.
 
-- `managedKinds(definitions)` returns the catalog kind with `stackcatalog.Validator{}` and the Middleware kind with `tenantconfig.NewValidator(definitions)`.
-- Both the idle and the running `Gateway` store the list, and `Provider()` passes it to `simple.NewApp`. An idle Gateway still refuses every review in the plugin runtime because it has no authenticator.
-- `NewValidator` keeps a name-to-definition map of tenant-scope definitions only. Operator definitions are not kept, so an operator type behaves exactly like an unregistered one.
-- The composition `Options` and the public `gateway.Options` are unchanged: test definitions reach the validator through the same field the shipped build uses.
+```go
+// Type is a public tenant extension type: the contract a Middleware
+// resource configures. Implementations bind to it.
+type Type struct {
+	Name             string          // spec.type and metadata.name; a DNS label
+	Description      string          // the member's description in the manifest
+	ConfigSchema     schema.Schema   // zero: the type takes no configuration
+	EnabledByDefault bool            // behavior when a namespace stores no resource
+	Example          json.RawMessage // a valid configuration; nil without a schema
+}
 
-New package `pkg/internal/tenantconfig` (tenant extension configuration stored as `Middleware` resources; #765 adds the reader there). Alternative: put the validator in `extensionhost`. Rejected: `extensionhost` would import generated kind types and app-sdk admission types, and the catalog precedent keeps kind validation in its own package.
+// Member returns the spec member that holds the type's configuration,
+// lowerCamel(Name): "default-instructions" becomes "defaultInstructions".
+func (t Type) Member() string
+
+// All returns the public tenant types, in name order. It is empty in this
+// version.
+func All() []Type
+
+// Implementation is how a build implements a type. Failure policy, key
+// ownership, sources and priority belong to the implementation.
+type Implementation struct {
+	Keys          []extension.KeyOwnership
+	Sources       []extension.Source
+	Priority      int
+	FailurePolicy extension.FailurePolicy
+	New           func(config json.RawMessage, deps extension.Dependencies) (any, error)
+}
+
+// Bind returns the tenant-scope definition of impl for t, with t's name,
+// schema and default.
+func (t Type) Bind(impl Implementation) extension.Definition
+```
+
+- The registry is a package-level slice; #766 adds `default-instructions` and `default-settings` in their own files. `All` returns a copy.
+- `extension.Definition` is unchanged. A tenant definition may still be written by hand, but startup checks it against the registry (next section).
+- Tenant types have no secrets.
+
+### Binding check at startup
+
+The composition `Options` gain `TenantTypes []tenanttype.Type`. The public `gateway.Run` passes `tenanttype.All()`; tests pass their own types. The public `gateway.Options` are unchanged, so no distribution can add a type that the manifest doesn't describe.
+
+`extensionhost.ValidateDefinitions(definitions, mandatory, types)` adds, before any setting is read and on idle hosts too:
+
+- every type: name is a DNS label, not repeated; member is not `type` or `enabled` and not shared with another type; a schema compiles and has an `Example` that it accepts, and no schema means no `Example`;
+- every tenant-scope definition: its name is a type's name, and its `ConfigSchema` bytes and `EnabledByDefault` equal the type's. Failures name the extension and the field: "tenant extension %q has no public type", "tenant extension %q differs from its public type in %s".
+
+The structural and prune checks need apiextensions and run in the generator and in tests, not at startup (see Projection), so they stay out of the plugin binary.
+
+Policy: private extensions are operator-scope by default. A private tenant implementation binds to a public type, which needs a public change for the type first. A tenant type whose schema can't be public is not supported; an opaque member can be added later as a new optional field.
+
+### Projection and generator
+
+`pkg/internal/tenantschema` projects a type's `ConfigSchema` into a value-free structural member schema and renders the members as CUE. It is imported by the generator and by tests only.
+
+Projection rules, applied recursively from the member root:
+
+- **Keep:** `type` (`string`, `integer`, `number`, `boolean`, `array`, `object`), `properties`, `items`, `additionalProperties: false`, a typed `additionalProperties` schema (a typed map), `required` within the member, `description`.
+- **Drop:** `enum`, `const`, `pattern`, `format`, `minimum`/`maximum` and their exclusive forms, `multipleOf`, length and item and property count bounds, `uniqueItems`, `default`, `examples`, `title`. Admission checks them against the full schema. Dropping them keeps Grafana's own validation messages to field paths and JSON types, and dropping `default` keeps Grafana from writing values into stored objects.
+- **Resolve:** local `$ref` into `$defs`/`definitions`; a recursive reference is refused.
+- **Refuse:** a node without a single `type` (missing, an array of types, `null`); `oneOf`, `anyOf`, `allOf`, `not`, `if`, `patternProperties`, `dependentSchemas`; an object with neither properties nor a typed `additionalProperties`, including the member root; an object with properties whose `additionalProperties` is not explicitly `false`; `additionalProperties: true`; an array without `items`.
+- **Never generated:** an enum on `spec.type`, a union across members, a required member.
+- A type without a `ConfigSchema` has no member.
+
+The member root must be an object. The generator refuses a type whose projection fails these rules, whose projection is not structural (`structuralschema.NewStructural` plus `ValidateStructural`), or whose `Example` does not survive a prune round-trip under the projection (`structuralpruning.Prune` of `{spec: {type, enabled, <member>: Example}}` returns it unchanged). Messages name the type and the schema location.
+
+Rendering maps the projection to CUE: `string`, `int`, `number`, `bool`, `[...T]`, `{field: T, optional?: T}`, `{[string]: T}`, with descriptions as doc comments, and the member doc comment from `Type.Description`.
+
+Flow and outputs:
+
+```text
+tenanttype.All() ──generator──▶ kinds/middleware_members.cue ──generate:kinds──▶ src/app-sdk-manifest.json
+                                                                              pkg/internal/manifestdata
+                                                                              pkg/internal/middleware/v1alpha1
+                                                                              src/generated/middleware/
+```
+
+- Generator command: `pkg/internal/tenantschema/cmd/members`, writing `kinds/middleware_members.cue` with a generated-file header.
+- `mise run generate-ai-gateway-kinds` runs the generator, then `pnpm --filter ./ai-gateway generate:kinds`. The scaffolded `generate-kinds.mjs` is not edited.
+- Drift is checked without workflow changes: a `tenantschema` test renders `tenanttype.All()` and compares it with the committed `middleware_members.cue`, and CI's existing "Verify generated app manifest" step regenerates the manifest from CUE and fails on any difference. Together the committed manifest equals the projection of `All()`.
+
+### Admission decoding
+
+The Middleware managed kind uses a codec of `tenantconfig`, not the generated one, decoding into a `tenantconfig.Middleware` object that keeps the raw `spec` JSON and decodes only metadata. The validator then decodes the spec with `tenantconfig.DecodeSpec(raw) (Spec, error)`:
+
+```go
+type Spec struct {
+	Type    string
+	Enabled bool
+	Members map[string]json.RawMessage // every key other than type and enabled
+}
+```
+
+- Members stay raw JSON, so integers above 2^53 pass through exactly, and test-only types, which are not in the generated Go types, are seen.
+- Spec decode errors never reach the caller: the validator refuses them with a fixed message. The codec reads exactly `apiVersion`, `kind`, `metadata` and `spec`, so a field that only case-folds to `spec` is ignored, and refuses a malformed object with a fixed `400`. The generated codec would decode typed members into Go fields and return messages such as `cannot unmarshal number 9223372036854775808 into ... int64`, which echo values.
+- #765's reader uses `DecodeSpec` on the listed objects' raw `spec`.
+
+### Where the validator gets its types and definitions
+
+`gateway.New` builds the managed kinds once, after the binding check and before the idle check: `managedKinds(definitions)` returns the catalog kind with `stackcatalog.Validator{}` and `tenantconfig.Kind()` with `tenantconfig.NewValidator(definitions)`. Both idle and running Gateways keep them for `Provider()`. `NewValidator` keys the tenant-scope definitions by name; operator definitions are not kept. It needs no types: the member name derives from the type name, and the binding check guarantees each definition's schema and default equal its type's.
 
 ### Shared schema check
 
-`extensionhost` exports the check it applies to operator entries:
-
-- `CheckConfig(definition extension.Definition, configuration json.RawMessage) error` returns "is not accepted: the extension takes no configuration" when the schema is zero and the configuration is not `{}`, or "does not match the extension's schema at <location>" with the deepest instance location, and nothing else from the schema library.
-- `NewPlan` wraps it as `config: <setting>.<name>.config <reason>`, so every operator message and test stays unchanged.
-- The Middleware validator wraps it as `middleware: spec.config <reason>`. #765 reuses it at read time.
+`extensionhost.CheckConfig(definition, configuration)` is exported from the operator plan's check: "is not accepted: the extension takes no configuration" for a schema-less extension given anything but `{}`, or "does not match the extension's schema at <location>", and nothing else from the schema library. `NewPlan` wraps it as before; the validator wraps it as `middleware: spec.<member> <reason>`; #765 reuses it at read time.
 
 ### Admission algorithm
 
 `tenantconfig.Validator` implements `simple.KindValidator`:
 
-1. Any action other than `CREATE` or `UPDATE` is allowed. The manifest never sends one; this keeps delete independent of the validator if the manifest changes.
-2. Type-assert `req.Object` (and `req.OldObject` on update) to `*middlewarev1alpha1.Middleware`; otherwise refuse with a fixed message.
-3. `metadata.name` must equal `spec.type`; otherwise refuse with "middleware: metadata.name must equal spec.type".
-4. Encode `spec.config` (nil as `{}`) with `encoding/json`, which sorts map keys, so equal configurations encode to equal bytes.
-5. On update, if `spec.enabled` is `false` and the encoding equals the stored one's, allow. This disable-only path runs before the type, size and schema checks, so a rollback, a removed or re-scoped extension, a tightened schema or a lowered bound never prevents disabling.
-6. Refuse an encoding over `MaxConfigBytes` (64 KiB): "middleware: spec.config exceeds 65536 bytes".
-7. Look up the tenant definition. If it is missing, refuse with "middleware: spec.type %q is not a tenant extension of this Gateway", and on update append "; an update may only set spec.enabled to false and keep spec.config".
-8. `extensionhost.CheckConfig(definition, encoding)`; refuse with its wrapped reason.
-9. Every refusal is `apierrors.NewBadRequest(reason)`, so Grafana answers `400` and RBAC refusals (`403`) stay distinguishable.
+1. Actions other than `CREATE` and `UPDATE` are allowed.
+2. Assert the object types and decode the incoming spec; a failure is refused with a fixed message. A stored spec that can't be decoded counts as having no member, so it can still be disabled.
+3. `metadata.name` must equal `spec.type`.
+4. Let `m = lowerCamel(spec.type)`, derived from the name alone. The spec may hold at most one member, and only `m`: "middleware: spec may set only spec.<m>, the member of spec.type". The reason names only `m`.
+5. **Disable-only update:** on update, `enabled: false`, and the member absent or equal to the stored one. Accept. Equality compares canonical encodings (sorted keys, numbers as written). This runs before every remaining check, so a rollback, a removed or rescoped implementation, a tightened schema or a lowered bound never blocks disabling, and "absent" covers a member the client removed because an older manifest no longer declares it.
+6. The member's canonical encoding is at most 64 KiB, measured without HTML escaping.
+7. A tenant definition for `spec.type` must exist: otherwise "middleware: spec.type %q is not a tenant extension of this Gateway", the same for unregistered, unimplemented and operator types; on update with "; an update may only set spec.enabled to false and keep or remove spec.<m>".
+8. A type without configuration takes no member: "middleware: spec.type %q takes no configuration member".
+9. With `enabled: true`, a type with configuration requires its member: "middleware: spec.<m> is required when spec.enabled is true". This catches a member pruned or omitted by a stale manifest, which would otherwise look like an empty configuration. With `enabled: false` and no member, accept: nothing is configured.
+10. `CheckConfig(definition, member)`, refused as `middleware: spec.<m> <reason>`.
+11. Every refusal is `apierrors.NewBadRequest`.
 
-The type in step 7 equals `metadata.name`, which the API server has already validated as a resource name, so quoting it is safe. Name mismatches are reported without either value.
-
-### Value-free refusals
-
-- Reasons are built only from fixed text, the type (step 7) and the schema's instance location. The schema library's `Error()` and the configuration are never formatted.
-- Instance locations name the failing field and array index, never a value. For an undeclared key under `additionalProperties: false`, the location is the parent object, so the key is not named. A schema that permits arbitrary keys with a value schema can surface such a key in the location; keys are configuration structure, and the guide tells authors not to design keys that carry secrets.
-- app-sdk logs the returned error; the reason is the only content it gets.
-- A sentinel test refuses creates and updates carrying sentinels as values and as undeclared keys, and checks the response bodies and the plugin log handler output.
+Reasons are built from fixed text, the type (equal to the already validated name), the derived member and schema locations, never from member values or the schema library's messages. A location keeps declared property names and array indexes and replaces every other segment, such as a typed map's key, with `*`, so it never names configuration data.
 
 ### Test host
 
-No change to `test/platformhost`: `Middleware` is stored and reviewed like any declared kind, has no secure values, and undeclared deletes are not reviewed. Gateway tests get one harness option to serve a second Gateway against an existing host, so stored objects survive a "rollback" to a build with different definitions. The `plugin-host` command needs no change. Host behavior stays out of the platform evidence, as the existing requirement states.
+- Request bodies are decoded with `UseNumber`, so numbers are stored and sent to admission as written. This is the only host change; it keeps integers above 2^53 exact for the protocol tests.
+- Gateway tests get one harness option to serve a second Gateway against an existing host, so stored objects survive a "rollback" to a build with different types and definitions.
+- Host behavior stays out of the platform evidence, as the existing requirement states.
+
+### Generated-manifest evidence
+
+A fixture under `pkg/internal/tenantschema/testdata` holds the Middleware schema the pinned app-sdk generator emits for a nested test type. A test converts it as Grafana does, checks that its `spec` equals the projection's structural schema exactly, and that the example survives pruning. Regenerate it with the generator and `generate:kinds` in a scratch copy when app-sdk is upgraded.
+
+### Manifest test
+
+- The Middleware `spec` requires exactly `type` and `enabled`, `type` is a string with no enum, there is no `oneOf`/`anyOf`, and the properties are exactly `type`, `enabled` and `Member(t)` for every type in `tenanttype.All()` with a schema. With the empty registry, that is `{type, enabled}`.
+- For every such type, the committed manifest is converted as Grafana converts it (`AsKubeOpenAPI`, metadata removed, refs expanded), checked with `NewStructural` and `ValidateStructural`, and `{spec: {type, enabled, <member>: Example}}` must survive `Prune` unchanged. This is the real gate for #766's types: it checks the manifest the generator and app-sdk produced, not only the projection.
+- The roles test pins all four roles, permission sets, bindings and `fixed:` IDs, with the catalog roles as literals.
 
 ### Testing the accept paths
 
-The shipped build registers no tenant extension, so Grafana refuses every `Middleware` create until #766 ships `default-instructions` and `default-settings`.
+The shipped registry and `DefaultExtensions()` are empty, so Grafana refuses every `Middleware` create until #766. Accept paths are proven in Go: tests pass test types through the composition `TenantTypes` and bound definitions through `Options.Extensions`, and drive admission through the test host and the real app-sdk adapter. Nothing test-only is compiled into the backend.
 
-Options:
-
-- **A. Test-only definitions through `Options.Extensions`, Go only (chosen).** Gateway tests construct `gateway.New` with a test tenant definition (schema with a string with `maxLength`, an array of strings and `additionalProperties: false`), a schema-less tenant definition and an operator definition, and drive admission through the test host and the real app-sdk admission adapter. Nothing test-only is compiled into the backend.
-- **B. A `gatewaytest`-tagged file in `pkg/` that adds a test tenant definition to `main`**, as `native_proxy_trust.go` does for a test CA, plus an `e2e.sh` phase that builds a tagged backend into a copy of `dist/` and restarts Grafana with it. It would prove the accept paths against Grafana now, but it adds a second Grafana boot to every run, a `main` hook for tags, and a second plugin package next to the archived candidate. The hook and phase become redundant once #766 ships real tenant extensions.
-- **C. Accept specs that skip without a tenant type.** Rejected: skipped tests aren't evidence.
-
-What CI end-to-end honestly covers before #766, with the shipped build:
-
-- role registration and bindings, through `/api/access-control/user/permissions`;
-- Viewer and Editor list and get (`200`), create, update and delete refused (`403`);
-- an Admin create reaching admission and being refused (`400`) for an unregistered type, and for a name that differs from the type;
-- an Admin delete of a missing resource returning `404`, not `403`;
-- no sentinel in any refusal body or the plugin log;
-- `catalog.spec.ts` and `routes.spec.ts` unchanged.
-
-Moving to #766's end-to-end suite: folderless save, the flat `config` round-trip against Grafana's pruning, updates and disable, an unreviewed delete of a stored resource, and then the runtime effect that replaces "no runtime effect". Nested-object pruning stays unobservable there, because neither shipped schema accepts nested objects.
+What CI end-to-end covers before #766: role bindings; Viewer and Editor list `200` and creates refused with nothing stored; Admin creates refused with `400` for an unregistered type and a name mismatch; an undeclared member with sentinel values refused by Grafana itself without echoing them; an Admin delete of a missing resource `404`; no sentinel in bodies or the plugin log; the catalog and route specs unchanged.
 
 ### Test plan
 
 | Acceptance | Evidence |
 |---|---|
-| Invalid type, name or config refused, with no echo of config values | `tenantconfig` table tests: name mismatch, unregistered type, schema mismatch by value, type and undeclared key, non-empty config without schema, oversized config, wrong object types, each asserting the reason and the absence of sentinels. Gateway test through the test host with injected definitions: `400`, reasons and no sentinel in bodies or the plugin log buffer. **CI-e2e:** unregistered type and name mismatch refused with `400`, no sentinel in bodies or the plugin log (`e2e.sh`). |
-| Operator types refused | `tenantconfig` test: an operator definition gets the unregistered-type reason. Gateway test with an injected operator definition. Not CI-e2e: the shipped build registers no operator extension. |
-| Editors can't write; Viewers can read | Manifest test pins roles, permission sets, bindings and `fixed:` IDs. **CI-e2e:** permissions endpoint per role, `200` list and get for Viewer and Editor, `403` create, update and delete. |
-| `DELETE` always works | Manifest test: validation operations are `CREATE` and `UPDATE` only. `tenantconfig` test: other actions are allowed. Gateway test: a resource stored by one Gateway is deleted, with no admission review, while a Gateway that no longer registers its type has stopped answering reviews (an idle Gateway cannot be served in process, and a stopped plugin is the stronger case). CI-e2e only for authorization (`404`, not `403`); a stored-resource delete moves to #766. |
-| `config` isn't pruned | Manifest test: `spec.config` is `{type: object, additionalProperties: true}` and `spec` keeps `additionalProperties: false`. Gateway test: the test host returns the stored `config` unchanged (not platform evidence). Platform behavior is documented above; the Grafana round-trip of flat configs moves to #766. |
-| `ModelCatalog` roles and behavior unchanged | Manifest test with literal catalog roles; existing `stackcatalog` and catalog admission tests unchanged. **CI-e2e:** `catalog.spec.ts` and `routes.spec.ts` unchanged. |
-| A stored resource has no runtime effect | Gateway test: with a counting tenant extension that is off by default and one that is on by default, storing `enabled: true` and `enabled: false` respectively leaves the phases each runs on a language-model call unchanged. |
-| Disable-only updates and rollback | Gateway test: one host, a Gateway with the test definition stores an enabled resource; a Gateway without it accepts the disable-only update and refuses enable and config changes. `tenantconfig` test: a tightened schema still allows disabling. |
-| Shipped build refuses every create | Gateway test with no definitions; CI-e2e as above. |
-| Idle Gateway | `TestProvider_ManagesTheManifestKinds` expects both kinds with validators, running and idle; the existing idle admission test adds a `Middleware` review. |
+| Invalid type, name or config refused, with no echo of config values | `tenantconfig` table tests: name mismatch, extra and mismatched members, unregistered, unimplemented and operator types, missing member when enabled, member on a type without configuration, schema mismatches by value, type and undeclared key, nested locations, oversized member, undecodable spec, each asserting the reason and the absence of sentinels. Protocol test with injected types and definitions: `400`, reasons, no sentinel in bodies, the app-sdk admission log or the Gateway log. Shipped plugin-process test: no sentinel in logs or stderr. **CI-e2e:** unregistered type and name mismatch refused with `400`, no sentinel in bodies or the plugin log. |
+| Operator types refused | Unit and protocol tests with an operator definition. |
+| Editors can't write; Viewers can read | Roles test. **CI-e2e:** permissions per role; Viewer and Editor list `200`, creates refused, nothing stored. |
+| `DELETE` always works | Validation operations are `CREATE` and `UPDATE` only; other actions allowed; protocol test deletes a stored resource while the plugin no longer answers reviews. **CI-e2e:** authorization only (`404`, not `403`). |
+| Nested `config` isn't pruned | Projection tests (rules, refusals, structural and prune round-trip of nested examples with typed maps and arrays of objects); manifest test per registry type; protocol test round-trips a nested member through the test host (not platform evidence). Platform round-trip moves to #766. |
+| Members decoded exactly | `DecodeSpec` and validator tests with integers above 2^53; protocol disable-only test with such a member. |
+| Tenant types are public | `ValidateDefinitions` tests: unknown tenant name, differing schema or default, invalid types, repeated and reserved members; `Bind` tests; startup through `gateway.New`. |
+| Manifest equals the projection | Drift test over `tenanttype.All()`; CI's manifest regeneration step. |
+| `ModelCatalog` roles and behavior unchanged | Roles test with literal catalog roles; catalog tests unchanged. **CI-e2e:** `catalog.spec.ts`, `routes.spec.ts`. |
+| A stored resource has no runtime effect | Protocol test with counting tenant extensions, one off and one on by default. |
+| Disable-only updates and rollback | Two Gateways, one store: disabling with the member kept or removed is accepted, enabling or changing it is refused; tightened schema and oversized stored member still disable. |
+| Shipped build refuses every create | Protocol test with the shipped types and definitions; CI-e2e as above. |
+| Idle Gateway | Provider test with both kinds, running and idle; idle process refuses `Middleware` reviews. |
 
 ### Documentation
 
-- `docs/guides/gateway-extensions.md`: a "Configure tenant extensions" section with the resource example, the roles, the admission rules (one resource per type, schema, disable-only updates, size bound), that creates and updates fail while the plugin is unavailable and deletes always work, that stored resources are not applied yet, and that only top-level fields and arrays of scalars survive the platform today. The existing paragraph on tenant extensions without namespace configuration links to it.
-- `ai-gateway/pkg/extension`: `ScopeTenant` godoc mentions `Middleware` resources, not applied yet, and the `config` shape limit.
-- Glossary: "Middleware kind; `Middleware`; tenant extension configuration", next to the model catalog kind entry.
-- Architecture walkthrough: "The manifest also declares one kind" becomes two kinds, with one sentence on `Middleware`.
-- README: no new requirement, since the catalog section already lists the version and toggles for plugin kinds.
+- `docs/guides/gateway-extensions.md` "Configure tenant extensions": the resource and member, roles, admission rules, rollback (disable with the member kept or removed), writes failing while the plugin is unavailable, stored resources not applied yet, and how to add a tenant type: a public type in `tenanttype`, its projection rules, regenerating, then binding an implementation. Private extensions are operator-scope by default; private tenant implementations bind to public types. Type schemas evolve additively.
+- `tenanttype` package documentation, and the `ScopeTenant` godoc pointing to it.
+- Glossary: the Middleware kind entry describes typed members; a "tenant extension type" alias.
+- Architecture walkthrough: the manifest's two kinds, and that the Middleware members come from the public type registry.
 
 ## Risks / Trade-offs
 
-- [Grafana empties objects nested in `config`] → A spec contract and the guide limit tenant configuration to flat shapes; both #766 schemas are flat. A schema that requires a nested field gets a refusal at admission; one with optional nested fields loses them silently. See Follow-ups for the registration check and the upstream issue.
-- [The accept paths have no Grafana evidence until #766] → Go evidence runs through the real admission adapter; CI-e2e proves wiring, roles and refusals; #766 owns the rest, listed above.
+- [Tenant type names and schemas are public, including Cloud-only ones] → Policy (e); an opaque member is a later additive option.
+- [Adding a tenant type needs a public change and release] → Accepted; private implementations still bind without public code.
+- [Schema changes to a public type affect stored objects] → Grafana validates the whole object on every write without ratcheting, so a new required field or a narrower type would refuse updates of existing resources, including disable-only ones that keep the member. Type schemas evolve additively; a breaking change needs a new type name.
+- [After a rollback to a manifest without a member, Grafana refuses writes that still carry it] → The disable-only rule accepts the member removed; documented.
+- [The kind store keeps and refuses unknown keys under `additionalProperties: false` because it skips CRD schema checks] → If that changes, unknown keys would be pruned silently instead of refused; admission's full schema still validates what remains.
+- [The generator path changes with app-sdk upgrades] → The manifest test converts the committed manifest as Grafana does and round-trips every example, so a generator change that breaks a member fails CI.
+- [The schema package decodes instances as `float64`] → `CheckConfig` compiles the schema once per process for exact validation and decodes the instance with exact numbers, so bounds, enums and multiples above 2^53 are checked against the stored value; operator configuration gets the same.
 - [Admission fails closed while the plugin is down or idle] → Creates and updates fail, deletes work; documented.
-- [Decode failures before the validator] → app-sdk's codec reports JSON type errors, which name types and fields, not values.
-- [Instance locations can name tenant-chosen keys under permissive schemas] → Keys, not values; documented for authors.
+- [The accept paths have no Grafana evidence until #766] → Go evidence runs through the real adapter; CI-e2e proves wiring, roles and refusals.
 
 ## Risks for #765
 
-- Admission isn't a read-time guarantee: disable-only updates skip the schema, schemas tighten, builds roll back, and self-hosted hosts may lack validation. #765 must re-run `CheckConfig` on every enabled resource and apply the failure policy.
-- Integer precision: the generated `map[string]interface{}` decodes numbers as `float64`. #765 should read `spec.config` as raw JSON, for example through an unstructured client, before passing it to factories.
-- Admission warnings: the plugin protocol has `warnings`, but app-sdk `v0.60.16` validators return only an error, so #765's self-hosted warning needs an app-sdk change or another channel.
-- One resource per type lets #765 list a namespace once. The plugin's own identity needs `list` on `middlewares`; verify that in #765's development deployment check.
-- Disabled resources of unknown types stay stored. #765 decides whether its "unknown type" count includes disabled ones.
-- The 64 KiB bound, the number of tenant extensions and the LRU size bound the cache's memory.
-- Recorded #762 follow-ups still apply: idempotent collector registration, close on eviction, the configuration revision in the list key.
+- The reader decodes each listed object's raw `spec` with `tenantconfig.DecodeSpec` and passes the type's member, not `spec.config`, to factories; a missing member with `enabled: true` or another member makes the configuration invalid at read time.
+- `ValidateDefinitions` takes the types, and #765 tests with tenant definitions need matching types; `NewValidator` keeps its signature.
+- Its deltas on "Disable-only updates", "Tenant configuration admission" and the unknown-type rules must be reworded to members and to "a type this build doesn't implement".
+- A registered type with no implementation is an unknown type at read time.
+- Admission isn't a read-time guarantee, so #765 re-runs `CheckConfig` on enabled members.
+- The plugin identity needs `list` on `middlewares`; the self-hosted admission warning needs an app-sdk change.
+
+## Risks for #766
+
+- Its two types go into `tenanttype` with descriptions and examples, implementations use `Bind`, and it runs `mise run generate-ai-gateway-kinds`.
+- Their schemas must pass the projection: explicit `additionalProperties: false`, no empty objects, no type arrays or combinators.
+- Member names are `defaultInstructions` and `defaultSettings`.
 
 ## Migration Plan
 
-No migration: the kind starts empty. Rolling back to a build without the kind stops Grafana serving it and leaves stored resources unread. Rolling back to a build without a resource's extension leaves it stored; it can be disabled or deleted.
+No migration: the kind starts empty. Rolling back to a build without the kind stops Grafana serving it and leaves stored resources unread. Rolling back to a build without a resource's type or implementation leaves it stored; it can be disabled, with its member kept or removed, or deleted.
 
 ## Recorded decisions
 
-- **Nested configuration:** documented as a contract, not enforced at registration. See the `gateway-extensions` "Tenant configuration shape" requirement and the follow-ups.
-- **Disable-only updates:** accepted for every stored type, including a configuration a tightened schema no longer accepts.
-- **Operator types:** refused with the unregistered-type reason.
-- **`enabled`:** required.
-- **Size bound:** 64 KiB on the encoded `config`.
-- **End-to-end accept paths:** Go only, through the protocol test host with definitions passed through `Options.Extensions`; no test code in the backend.
+- **Typed union with a public type registry**, members at spec level named `lowerCamel(type)`, union rules in admission only.
+- **Policy:** private extensions are operator-scope by default; private tenant implementations bind to public types.
+- **Registry ships empty;** #766 adds the two types.
+- **Failure policy and key ownership** stay with the implementation.
+- **Disable-only updates:** accepted for every stored type with the member equal or absent.
+- **Operator and unimplemented types:** the unregistered-type reason.
+- **`enabled`:** required; a member is required with `enabled: true`.
+- **Size bound:** 64 KiB on the member.
+- **End-to-end accept paths:** Go only; no test code in the backend.
+- **Types without configuration have no member (deliberate deviation from the brief's "`{}` for a schema-less type").** The generator cannot emit a closed empty object, and an open one is not structural, which turns pruning off for the whole kind. Such a type takes no member, `enabled: true` needs none, and any member is refused.
+- **Disabled without a member:** accepted without `CheckConfig`.
+- **Structural and prune checks:** in the generator and tests only; startup keeps the cheap type and binding checks. The drift check guarantees the committed manifest equals the projection.
+- **Objects without an explicit `additionalProperties: false`:** refused, so the full schema and the projection agree.
+- **`TenantTypes`:** explicit in the composition options; nil means no types.
+- **Additive evolution:** Grafana validates every write against the current schema with no ratcheting, so a public type's schema changes only additively and an incompatible change takes a new type name. Stated in the spec, the guide and the `tenanttype` package doc.
 
 ## Follow-ups
 
-- **Registration-time shape check.** Once a tenant extension needs nested configuration, either the platform preserves it or `ValidateDefinitions` refuses tenant schemas that allow nested objects (including through `$ref`, combinators and `additionalProperties` schemas).
-- **Upstream app-sdk issue.** To be opened by a maintainer; draft below.
 - **#765:**
-  - re-run `extensionhost.CheckConfig` on every enabled resource at read time and apply the failure policy, because admission is not a read-time guarantee;
-  - decode `spec.config` as raw JSON, not through the generated `map[string]interface{}`, so integers keep their precision;
-  - the self-hosted admission warning needs an app-sdk change, because `v0.60.16` validators return only an error and the adapter does not expose the protocol's `warnings`;
-  - the plugin identity needs `list` on `middlewares`; verify it in the development deployment check.
-- **#766 end-to-end checks** that move from this change because the shipped build registers no tenant extension before #766:
+  - decode members with `DecodeSpec` and re-run `CheckConfig` on enabled members at read time;
+  - the self-hosted admission warning needs an app-sdk change, because `v0.60.16` validators return only an error;
+  - the plugin identity needs `list` on `middlewares`.
+- **#766 end-to-end checks**, which need a shipped tenant type:
   - an Admin creates a valid resource without a folder annotation (`201`), and one with `grafana.app/folder` is refused;
-  - a flat `config` (string, number, boolean, string array) reads back unchanged after Grafana's pruning;
+  - a member with nested fields reads back unchanged after Grafana's pruning and validation;
+  - Grafana's own validation messages for wrong JSON types, missing required fields and unknown keys carry no sentinel values;
   - a valid update (`200`), and a schema-failing update refused with `400` and the location, with no sentinel in the body or plugin log;
   - a disable-only update (`200`);
   - a stored resource is deleted (`200`) and is gone on read;
   - Viewer and Editor `get` of a stored resource (`200`), and `403` on its update and delete;
   - the runtime effect that replaces "Stored tenant configuration has no runtime effect".
-
-- **End-to-end plugin-log sentinel checks can pass vacuously.** `scripts/e2e.sh` greps the Grafana log for `logger=plugin.grafana-aigateway-app` lines and then for sentinels; if the filter matches no line, both sentinel checks pass without inspecting anything. The first change that touches the end-to-end suite after this one should add a positive check, for example that the filtered log contains `validation failed`, before the sentinel checks.
-
-### Draft upstream issue
-
-**Title:** `AsKubeOpenAPI` drops `x-kubernetes-preserve-unknown-fields`, so pruning empties nested objects in open fields
-
-**Body:**
-
-> A kind with an open object field, for example `config?: {[string]: _}` in CUE, generates a manifest schema of `{"type": "object", "additionalProperties": true}`. The CUE kind definitions offer no way to emit `x-kubernetes-preserve-unknown-fields`.
->
-> When a host builds a structural schema from that manifest, `VersionSchema.AsKubeOpenAPI` (`oapi3SchemaToKubeSchema`) turns both `additionalProperties: true` and `x-kubernetes-preserve-unknown-fields: true` into `AdditionalProperties{Allows: true}` with no schema, and does not carry the extension over. apiextensions pruning then prunes each value of the field against a nil schema: top-level scalars and arrays of scalars survive, but nested objects are emptied, also inside arrays.
->
-> Reproduction (grafana-app-sdk v0.60.16 and v0.61.0, k8s.io/apiextensions-apiserver v0.37.1): convert a version schema with `config: {type: object, x-kubernetes-preserve-unknown-fields: true}` with `AsKubeOpenAPI`, build a structural schema with `structuralschema.NewStructural`, and run `structuralpruning.Prune` on `{"spec": {"config": {"s": "v", "nested": {"k": "v"}, "objs": [{"k": 1}]}}}`. The result is `{"s": "v", "nested": {}, "objs": [{}]}`.
->
-> Expected: an open object field keeps arbitrary nested content, as a CRD with `x-kubernetes-preserve-unknown-fields: true` does. Possible fixes: emit `x-kubernetes-preserve-unknown-fields: true` (as a vendor extension on the kube schema) for objects with `additionalProperties: true` and no properties, and let CUE kinds declare open fields that generate it.
+- **Opaque member:** add only when a tenant type's schema truly can't be public.
+- **End-to-end plugin-log sentinel checks can pass vacuously.** `scripts/e2e.sh` greps the Grafana log for `logger=plugin.grafana-aigateway-app` lines and then for sentinels; if the filter matches no line, both sentinel checks pass without inspecting anything. The first change that touches the end-to-end suite after this one should add a positive check before the sentinel checks.

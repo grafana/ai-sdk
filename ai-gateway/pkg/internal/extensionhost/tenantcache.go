@@ -91,8 +91,9 @@ type tenantEntry struct {
 	// loading is closed when the read in flight completes; nil without one.
 	loading chan struct{}
 	evicted bool
-	// unknown holds the unknown types already logged and counted.
-	unknown map[string]bool
+	// unimplemented holds the types this build does not implement that are
+	// already logged and counted.
+	unimplemented map[string]bool
 }
 
 func newTenantCache(host *Host, reader TenantReader) *tenantCache {
@@ -150,7 +151,7 @@ func (c *tenantCache) touch(namespace string) *tenantEntry {
 		c.order.MoveToFront(element)
 		return element.Value.(*tenantEntry)
 	}
-	entry := &tenantEntry{namespace: namespace, unknown: map[string]bool{}}
+	entry := &tenantEntry{namespace: namespace, unimplemented: map[string]bool{}}
 	c.entries[namespace] = c.order.PushFront(entry)
 	for element := c.order.Back(); element != nil && c.order.Len() > c.config.MaxNamespaces; {
 		previous := element.Prev()
@@ -238,11 +239,11 @@ func (c *tenantCache) load(entry *tenantEntry) {
 		c.mu.Unlock()
 		return
 	}
-	unknown := c.unknownTypes(entry, resources)
+	unimplemented := c.unimplementedTypes(entry, resources)
 	c.mu.Unlock()
-	for _, name := range unknown {
-		c.host.unknownTypes.Inc()
-		c.host.logger.Warn("gateway tenant configuration has an unknown extension type", "namespace", entry.namespace, "type", name)
+	for _, name := range unimplemented {
+		c.host.unimplementedTypes.Inc()
+		c.host.logger.Warn("gateway tenant configuration has a type this build does not implement", "namespace", entry.namespace, "type", name)
 	}
 	built := c.host.buildSnapshot(entry.namespace, resources, digest)
 	c.mu.Lock()
@@ -261,15 +262,15 @@ func (c *tenantCache) load(entry *tenantEntry) {
 	}
 }
 
-// unknownTypes returns the enabled resources' unknown types that entry has
-// not logged yet, and marks them. The caller holds the lock.
-func (c *tenantCache) unknownTypes(entry *tenantEntry, resources []TenantResource) []string {
+// unimplementedTypes returns the enabled resources' types this build does not
+// implement that entry has not logged yet, and marks them. The caller holds the lock.
+func (c *tenantCache) unimplementedTypes(entry *tenantEntry, resources []TenantResource) []string {
 	var fresh []string
 	for _, resource := range resources {
-		if resource.Enabled == nil || !*resource.Enabled || entry.unknown[resource.Name] || c.host.tenantDefinition(resource.Name) {
+		if resource.Invalid || !resource.Enabled || entry.unimplemented[resource.Name] || c.host.tenantDefinition(resource.Name) {
 			continue
 		}
-		entry.unknown[resource.Name] = true
+		entry.unimplemented[resource.Name] = true
 		fresh = append(fresh, resource.Name)
 	}
 	return fresh

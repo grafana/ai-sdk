@@ -366,6 +366,8 @@ func secureNames(object map[string]any) []string {
 	return names
 }
 
+// readObject decodes a request body, keeping numbers as written, as the
+// platform's own decoding keeps integers exact.
 func readObject(body io.Reader, namespace string) (map[string]any, error) {
 	var object map[string]any
 	decoder := json.NewDecoder(body)

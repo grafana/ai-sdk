@@ -91,8 +91,14 @@ func (r *fakeReader) readCount() int {
 	return len(r.reads)
 }
 
+// stored returns a resource of type name with member config, or without a
+// member when config is empty.
 func stored(name string, enabled bool, config string) TenantResource {
-	return TenantResource{Name: name, Type: name, Enabled: &enabled, Config: json.RawMessage(config)}
+	resource := TenantResource{Name: name, Type: name, Enabled: enabled}
+	if config != "" {
+		resource.Config = json.RawMessage(config)
+	}
+	return resource
 }
 
 func mustSchema(t *testing.T, raw string) schema.Schema {
@@ -106,7 +112,7 @@ func mustSchema(t *testing.T, raw string) schema.Schema {
 // journals its name and configuration.
 func configurable(t *testing.T, name string, log *journal, change ...func(*extension.Definition)) extension.Definition {
 	t.Helper()
-	valueSchema := mustSchema(t, `{"type":"object","properties":{"v":{"type":"string"},"n":{"type":"integer"}},"additionalProperties":false}`)
+	valueSchema := mustSchema(t, `{"type":"object","properties":{"v":{"type":"string"},"n":{"type":"integer"},"limits":{"type":"object","properties":{"rpm":{"type":"integer"}},"additionalProperties":false}},"additionalProperties":false}`)
 	base := []func(*extension.Definition){tenant(0), skip, func(d *extension.Definition) {
 		d.EnabledByDefault = false
 		d.ConfigSchema = valueSchema
@@ -397,7 +403,6 @@ func (p *phaselessInstance) Close(context.Context) error {
 var phaseless = &phaselessInstance{}
 
 func TestBuildSnapshot(t *testing.T) {
-	missingEnabled := TenantResource{Name: "t1", Type: "t1", Config: json.RawMessage(`{}`)}
 	mismatch := stored("t1", true, `{}`)
 	mismatch.Type = "other"
 	for _, tc := range []struct {
@@ -411,12 +416,17 @@ func TestBuildSnapshot(t *testing.T) {
 		{name: "enabled with a valid configuration", resources: []TenantResource{stored("t1", true, `{"v":"x"}`)}, ran: []string{`on{}`, `t1{"v":"x"}`}},
 		{name: "disabled", resources: []TenantResource{stored("on", false, `{}`)}},
 		{name: "configuration the schema refuses", resources: []TenantResource{stored("t1", true, `{"v":"`+tenantSentinel+`","extra":1}`)}, ran: []string{`on{}`}, failed: 1},
-		{name: "missing enabled", resources: []TenantResource{missingEnabled}, ran: []string{`on{}`}, failed: 1},
+		{name: "invalid spec", resources: []TenantResource{{Name: "t1", Invalid: true}}, ran: []string{`on{}`}, failed: 1},
+		{name: "invalid spec of a disabled default-on extension", resources: []TenantResource{{Name: "on", Invalid: true}}, failed: 1},
+		{name: "enabled without a member", resources: []TenantResource{stored("t1", true, "")}, ran: []string{`on{}`}, failed: 1},
+		{name: "disabled without a member", resources: []TenantResource{stored("t1", false, "")}, ran: []string{`on{}`}},
+		{name: "nested member", resources: []TenantResource{stored("t1", true, `{"limits":{"rpm":10},"v":"x"}`)}, ran: []string{`on{}`, `t1{"limits":{"rpm":10},"v":"x"}`}},
+		{name: "member for a schema-less extension", resources: []TenantResource{stored("plain", true, `{}`)}, ran: []string{`on{}`}, failed: 1},
 		{name: "name differs from type", resources: []TenantResource{mismatch}, ran: []string{`on{}`}, failed: 1},
 		{name: "fail-closed configuration refused", resources: []TenantResource{stored("gate", true, `{"v":1}`)}, ran: nil, failed: 1, refused: true},
 		{name: "fail-closed factory panics", resources: []TenantResource{stored("panics", true, `{}`)}, failed: 1, refused: true},
 		{name: "factory returns no phase", resources: []TenantResource{stored("phaseless", true, `{}`)}, ran: []string{`on{}`}, failed: 1},
-		{name: "schema-less extension", resources: []TenantResource{stored("plain", true, `{}`)}, ran: []string{`on{}`, `plain{}`}},
+		{name: "schema-less extension", resources: []TenantResource{stored("plain", true, "")}, ran: []string{`on{}`, `plain{}`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -444,7 +454,7 @@ func TestBuildSnapshot(t *testing.T) {
 				}
 				assert.Equal(t, tc.ran, transforms(log))
 				failures := 0.0
-				for _, name := range []string{"t1", "gate", "panics", "phaseless"} {
+				for _, name := range []string{"on", "t1", "gate", "plain", "panics", "phaseless"} {
 					failures += h.events(name, string(phaseConfigure), eventFailed)
 				}
 				assert.Equal(t, tc.failed, failures)
@@ -465,10 +475,10 @@ func TestTenantCache_ExactNumbersReachTheFactory(t *testing.T) {
 	})
 }
 
-func TestTenantCache_UnknownTypes(t *testing.T) {
+func TestTenantCache_TypesNotImplemented(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader := newFakeReader()
-		reader.set("a", stored("gone", true, `{}`), stored("retired", false, `{}`), stored("operator", true, `{}`))
+		reader.set("a", stored("gone", true, ""), stored("retired", false, ""), stored("operator", true, ""), TenantResource{Name: "broken", Invalid: true})
 		log := &journal{}
 		h := newTenantHarness(t, reader, TenantCacheConfig{TTL: time.Minute}, configurable(t, "t1", log), define("operator", &recorder{}))
 		for range 3 {
@@ -480,11 +490,12 @@ func TestTenantCache_UnknownTypes(t *testing.T) {
 			synctest.Wait()
 		}
 		assert.Equal(t, 3, reader.readCount())
-		assert.Equal(t, 2.0, metricValue(h, "grafana_ai_gateway_tenant_config_unknown_types_total", nil), "enabled unknown and operator types, once each")
+		assert.Equal(t, 2.0, metricValue(h, "grafana_ai_gateway_tenant_config_unimplemented_types_total", nil), "enabled types not implemented, including an operator type, once each")
 		logs := h.logs.String()
 		assert.Equal(t, 1, strings.Count(logs, `"type":"gone"`))
 		assert.Equal(t, 1, strings.Count(logs, `"type":"operator"`))
-		assert.NotContains(t, logs, "retired", "disabled unknown types are neither logged nor counted")
+		assert.NotContains(t, logs, "retired", "disabled and invalid resources are neither logged nor counted")
+		assert.NotContains(t, logs, "broken")
 	})
 }
 
@@ -651,8 +662,8 @@ func TestTenantCache_ShutdownClosesNamespaceInstances(t *testing.T) {
 func TestTenantCache_SharedCollectors(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reader := newFakeReader()
-		reader.set("a", stored("shared", true, `{}`), stored("fresh", true, `{}`))
-		reader.set("b", stored("shared", true, `{}`), stored("fresh", true, `{}`))
+		reader.set("a", stored("shared", true, ""), stored("fresh", true, ""))
+		reader.set("b", stored("shared", true, ""), stored("fresh", true, ""))
 		counter := prometheus.NewCounter(prometheus.CounterOpts{Name: "shared_calls_total", Help: "Calls."})
 		shared := configurable(t, "shared", &journal{}, func(d *extension.Definition) {
 			d.ConfigSchema = schema.Schema{}

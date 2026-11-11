@@ -81,15 +81,15 @@ Every extension failure SHALL emit one warning log record with the extension nam
 - **THEN** the log record SHALL carry only the approved fields, and no part of the error's text
 
 ### Requirement: Tenant configuration read telemetry
-The Gateway SHALL count tenant configuration reads by a fixed result, `success` or `failed`, and enabled resources of unknown types, with no namespace, type, caller or error label. Each failed read SHALL emit one warning with the namespace and a fixed class: timeout, refused, not found, unexpected status, invalid response or error. It SHALL NOT carry a response body, error text or configuration value.
+The Gateway SHALL count tenant configuration reads by a fixed result, `success` or `failed`, and enabled resources of types the build does not implement, with no namespace, type, caller or error label. Each failed read SHALL emit one warning with the namespace and a fixed class: timeout, refused, not found, unexpected status, invalid response or error. It SHALL NOT carry a response body, error text or configuration value.
 
 #### Scenario: Refused read
 - **WHEN** the platform refuses a namespace's list with `403` and a body containing a sentinel
 - **THEN** the read counter SHALL increase under `failed`, and the warning SHALL carry the namespace and class `refused`, and no part of the body
 
-#### Scenario: Unknown type
-- **WHEN** a namespace stores an enabled resource of an unknown type
-- **THEN** the unknown-type counter SHALL increase once, with no label naming the namespace or type
+#### Scenario: Type not implemented
+- **WHEN** a namespace stores an enabled resource of a type the build does not implement
+- **THEN** the counter SHALL increase once, with no label naming the namespace or type
 
 ### Requirement: Plugin API access log
 When a running Gateway builds its app, it SHALL emit one informational log record stating whether the host gave the plugin API access, whatever extensions the build registers. The record SHALL carry no URL, token or other credential.

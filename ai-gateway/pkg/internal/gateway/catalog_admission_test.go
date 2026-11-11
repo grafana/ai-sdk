@@ -158,8 +158,8 @@ func TestPluginProcess_ValidatesKindsWithoutLoggingSecrets(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, code, body)
 	assert.NotContains(t, body, catalogKey)
 	for _, document := range []string{
-		middlewareDocument(t, "instructions", "instructions", true, map[string]any{"instructions": middlewareSentinel}),
-		middlewareDocument(t, "other", "instructions", true, map[string]any{middlewareSentinel: middlewareSentinel}),
+		middlewareDocument("model-access", "model-access", true, `"modelAccess":{"note":"`+middlewareSentinel+`"}`),
+		middlewareDocument("other", "model-access", true, `"modelAccess":{"`+middlewareSentinel+`":"`+middlewareSentinel+`"}`),
 	} {
 		code, body = sendObject(t, ctx, http.MethodPost, middlewareURL(p.server.URL, ""), token, document)
 		assert.Equal(t, http.StatusBadRequest, code, body)

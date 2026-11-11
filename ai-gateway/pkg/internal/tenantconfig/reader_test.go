@@ -30,8 +30,6 @@ const (
 	listPath       = "/apis/aigateway.ext.grafana.app/v1alpha1/namespaces/stacks-1/middlewares"
 )
 
-func enabled(value bool) *bool { return &value }
-
 func newTestReader(t *testing.T, handler http.HandlerFunc) *Reader {
 	t.Helper()
 	server := httptest.NewServer(handler)
@@ -60,26 +58,27 @@ func TestReader_Read(t *testing.T) {
 		{
 			name: "two pages sorted by name",
 			pages: map[string]string{
-				"":   `{"kind":"MiddlewareList","metadata":{"continue":"c1"},"items":[{"metadata":{"name":"b"},"spec":{"type":"b","enabled":true,"config":{"x":"y"}}}]}`,
-				"c1": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"a"},"spec":{"type":"a","enabled":false}}]}`,
+				"":   `{"kind":"MiddlewareList","metadata":{"continue":"c1"},"items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{"note":"x"}}}]}`,
+				"c1": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"marker"},"spec":{"type":"marker","enabled":false}}]}`,
 			},
 			expected: []extensionhost.TenantResource{
-				{Name: "a", Type: "a", Enabled: enabled(false), Config: json.RawMessage(`{}`)},
-				{Name: "b", Type: "b", Enabled: enabled(true), Config: json.RawMessage(`{"x":"y"}`)},
-			},
-		},
-		{
-			name:  "numbers keep their literal",
-			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"a"},"spec":{"type":"a","enabled":true,"config":{ "n" : 9007199254740993, "f": 1.0 }}}]}`},
-			expected: []extensionhost.TenantResource{
-				{Name: "a", Type: "a", Enabled: enabled(true), Config: json.RawMessage(`{"n":9007199254740993,"f":1.0}`)},
+				{Name: "marker", Type: "marker"},
+				{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"note":"x"}`)},
 			},
 		},
 		{
-			name:  "null configuration and missing enabled",
-			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"a"},"spec":{"type":"a","config":null}}]}`},
+			name:  "nested member with exact numbers",
+			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"model-access"},"spec":{"type":"model-access","enabled":true,"modelAccess":{ "rules" : [{"limits":{"rpm":10},"models":["m"]}], "perModel":{"m":{"maxTokens":9007199254740993}}, "ratio": 1.0 }}}]}`},
 			expected: []extensionhost.TenantResource{
-				{Name: "a", Type: "a", Config: json.RawMessage(`{}`)},
+				{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"perModel":{"m":{"maxTokens":9007199254740993}},"ratio":1.0,"rules":[{"limits":{"rpm":10},"models":["m"]}]}`)},
+			},
+		},
+		{
+			name:  "one invalid resource does not fail the read",
+			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"b"},"spec":{"type":"b","enabled":true,"other":{}}},{"metadata":{"name":"a"},"spec":{"type":"a","enabled":true}}]}`},
+			expected: []extensionhost.TenantResource{
+				{Name: "a", Type: "a", Enabled: true},
+				{Name: "b", Invalid: true},
 			},
 		},
 	} {
@@ -121,6 +120,9 @@ func TestReader_Failures(t *testing.T) {
 		{name: "forbidden text", handler: plain(http.StatusForbidden), expected: extensionhost.ErrReadRefused},
 		{name: "not found", handler: plain(http.StatusNotFound), expected: extensionhost.ErrReadNotFound},
 		{name: "server error", handler: status(http.StatusInternalServerError), expected: extensionhost.ErrReadStatus},
+		{name: "an item without a name", handler: func(w http.ResponseWriter, _ *http.Request) {
+			writeList(w, `{"kind":"MiddlewareList","items":[{"spec":{"type":"a","enabled":true}}]}`)
+		}, expected: extensionhost.ErrReadInvalid},
 		{name: "malformed", handler: func(w http.ResponseWriter, _ *http.Request) { writeList(w, `{"items":[`+readerSentinel) }, expected: extensionhost.ErrReadInvalid},
 		{name: "oversized", handler: func(w http.ResponseWriter, _ *http.Request) {
 			writeList(w, `{"kind":"MiddlewareList","items":[],"pad":"`+strings.Repeat("x", maxListBytes)+`"}`)
@@ -201,7 +203,7 @@ func TestReader_ReadsAsThePluginThroughTokenExchange(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
-	for namespace, spec := range map[string]string{"stacks-1": `{"type":"a","enabled":true,"config":{"n":9007199254740993}}`, "stacks-2": `{"type":"a","enabled":false}`} {
+	for namespace, spec := range map[string]string{"stacks-1": `{"type":"a","enabled":true,"a":{"limits":{"n":9007199254740993}}}`, "stacks-2": `{"type":"a","enabled":false}`} {
 		token, err := host.ServiceToken("seed", namespace)
 		require.NoError(t, err)
 		request, err := http.NewRequest(http.MethodPost, server.URL+"/apis/"+manifest.Group+"/v1alpha1/namespaces/"+namespace+"/middlewares", strings.NewReader(`{"metadata":{"name":"a"},"spec":`+spec+`}`))
@@ -223,10 +225,10 @@ func TestReader_ReadsAsThePluginThroughTokenExchange(t *testing.T) {
 
 	first, err := reader.Read(context.Background(), "stacks-1")
 	require.NoError(t, err)
-	assert.Equal(t, []extensionhost.TenantResource{{Name: "a", Type: "a", Enabled: enabled(true), Config: json.RawMessage(`{"n":9007199254740993}`)}}, first)
+	assert.Equal(t, []extensionhost.TenantResource{{Name: "a", Type: "a", Enabled: true, Config: json.RawMessage(`{"limits":{"n":9007199254740993}}`)}}, first)
 	second, err := reader.Read(context.Background(), "stacks-2")
 	require.NoError(t, err)
-	assert.Equal(t, []extensionhost.TenantResource{{Name: "a", Type: "a", Enabled: enabled(false), Config: json.RawMessage(`{}`)}}, second)
+	assert.Equal(t, []extensionhost.TenantResource{{Name: "a", Type: "a"}}, second)
 	empty, err := reader.Read(context.Background(), "stacks-3")
 	require.NoError(t, err)
 	assert.Empty(t, empty)
@@ -251,22 +253,30 @@ func TestReader_ReadsAsThePluginThroughTokenExchange(t *testing.T) {
 }
 
 func TestResourceFrom(t *testing.T) {
+	const name = `"metadata":{"name":"model-access"}`
 	for _, tc := range []struct {
 		name     string
-		raw      string
+		spec     string
 		expected extensionhost.TenantResource
 	}{
-		{name: "configured", raw: `{"metadata":{"name":"a"},"spec":{"type":"a","enabled":true,"config":{ "n" : 9007199254740993 }}}`, expected: extensionhost.TenantResource{Name: "a", Type: "a", Enabled: enabled(true), Config: json.RawMessage(`{"n":9007199254740993}`)}},
-		{name: "absent configuration", raw: `{"metadata":{"name":"a"},"spec":{"type":"b","enabled":false}}`, expected: extensionhost.TenantResource{Name: "a", Type: "b", Enabled: enabled(false), Config: json.RawMessage(`{}`)}},
-		{name: "no spec", raw: `{"metadata":{"name":"a"}}`, expected: extensionhost.TenantResource{Name: "a", Config: json.RawMessage(`{}`)}},
+		{name: "member of the type", spec: `{"type":"model-access","enabled":true,"modelAccess":{ "limit" : 9007199254740993 }}`, expected: extensionhost.TenantResource{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"limit":9007199254740993}`)}},
+		{name: "nested member", spec: `{"type":"model-access","enabled":true,"modelAccess":{"rules":[{"models":["a"],"limits":{"rpm":1}}],"perModel":{"a":{"maxTokens":2}}}}`, expected: extensionhost.TenantResource{Name: "model-access", Type: "model-access", Enabled: true, Config: json.RawMessage(`{"perModel":{"a":{"maxTokens":2}},"rules":[{"limits":{"rpm":1},"models":["a"]}]}`)}},
+		{name: "no member", spec: `{"type":"model-access","enabled":false}`, expected: extensionhost.TenantResource{Name: "model-access", Type: "model-access"}},
+		{name: "another type's member", spec: `{"type":"model-access","enabled":true,"marker":{}}`, expected: extensionhost.TenantResource{Name: "model-access", Invalid: true}},
+		{name: "two members", spec: `{"type":"model-access","enabled":true,"modelAccess":{},"marker":{}}`, expected: extensionhost.TenantResource{Name: "model-access", Invalid: true}},
+		{name: "missing enabled", spec: `{"type":"model-access","modelAccess":{}}`, expected: extensionhost.TenantResource{Name: "model-access", Invalid: true}},
+		{name: "repeated member", spec: `{"type":"model-access","enabled":true,"modelAccess":{},"modelAccess":{}}`, expected: extensionhost.TenantResource{Name: "model-access", Invalid: true}},
+		{name: "no spec", spec: `null`, expected: extensionhost.TenantResource{Name: "model-access", Invalid: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resource, err := resourceFrom(json.RawMessage(tc.raw))
+			resource, err := resourceFrom(json.RawMessage(`{` + name + `,"spec":` + tc.spec + `}`))
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, resource)
 		})
 	}
 
-	_, err := resourceFrom(json.RawMessage(`{"spec":{"enabled":"yes"}}`))
-	assert.Error(t, err)
+	for _, raw := range []string{`{"spec":{"type":"a","enabled":true}}`, `[]`} {
+		_, err := resourceFrom(json.RawMessage(raw))
+		assert.Error(t, err, raw)
+	}
 }

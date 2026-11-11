@@ -23,12 +23,12 @@ import (
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/discovery"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/manifestdata"
-	middlewarev1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/middleware/v1alpha1"
 	modelcatalogv1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/service"
@@ -60,6 +60,9 @@ type Options struct {
 	// Mandatory names the operator extensions that must be configured and
 	// enabled.
 	Mandatory []string
+	// TenantTypes are the public tenant types the manifest declares. Every
+	// tenant-scope extension must bind to one of them.
+	TenantTypes []tenanttype.Type
 }
 
 // Gateway is the constructed plugin. An idle Gateway has no handler,
@@ -86,7 +89,7 @@ type Gateway struct {
 // configuration, and the plugin host rejects every request. Extension
 // definitions are validated first, so an invalid build fails on every host.
 func New(options Options) (*Gateway, error) {
-	if err := extensionhost.ValidateDefinitions(options.Extensions, options.Mandatory); err != nil {
+	if err := extensionhost.ValidateDefinitions(options.Extensions, options.Mandatory, options.TenantTypes); err != nil {
 		return nil, err
 	}
 	lookupEnv := options.LookupEnv
@@ -329,13 +332,18 @@ func (g *Gateway) connectTenants(kubeConfig rest.Config, apiAccess bool) error {
 }
 
 // managedKinds lists every manifest kind with its admission validator. The
-// Middleware validator accepts the tenant extensions among definitions, and
-// refuses every write without API access. No kind has a reconciler or
-// watcher, so the app starts no informers.
+// Middleware kind keeps specs raw for its validator, which accepts the tenant
+// extensions among definitions; without API access, a validator that refuses
+// every write replaces it. No kind has a reconciler or watcher, so the app
+// starts no informers.
 func managedKinds(definitions []extension.Definition, apiAccess bool) []simple.AppManagedKind {
+	var middleware simple.KindValidator = tenantconfig.NewValidator(definitions)
+	if !apiAccess {
+		middleware = tenantconfig.WithoutAPIAccess{}
+	}
 	return []simple.AppManagedKind{
 		{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{}},
-		{Kind: middlewarev1alpha1.Kind(), Validator: tenantconfig.NewValidator(definitions, apiAccess)},
+		{Kind: tenantconfig.Kind(), Validator: middleware},
 	}
 }
 

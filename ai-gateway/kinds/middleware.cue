@@ -2,18 +2,17 @@ package kinds
 
 // middlewareKind stores one tenant extension's configuration in a stack
 // namespace. The object name equals spec.type, so a namespace holds at most
-// one resource per extension. config is an open object so that admission, not
-// schema pruning, decides what an extension accepts; the platform still
-// prunes objects nested inside it.
+// one resource per extension. Each public tenant type with configuration has
+// one optional typed member, generated into middleware_members.cue; plugin
+// admission, not the manifest, allows only the type's member.
 middlewareKind: {
 	kind:         "Middleware"
 	folderScoped: false
 	validation: operations: ["CREATE", "UPDATE"]
 	schema: {
-		spec: {
+		spec: middlewareMembers & {
 			type:    string
 			enabled: bool
-			config?: {[string]: _}
 		}
 	}
 }

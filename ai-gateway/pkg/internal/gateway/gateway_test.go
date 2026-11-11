@@ -72,7 +72,7 @@ func (e *startupEnvironment) start(t *testing.T) (*Gateway, string, error) {
 func (e *startupEnvironment) startWith(t *testing.T, extensions []extension.Definition, mandatory []string) (*Gateway, string, error) {
 	t.Helper()
 	var logs bytes.Buffer
-	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry(), Extensions: extensions, Mandatory: mandatory})
+	gw, err := New(Options{LookupEnv: e.lookup, Logger: slog.New(slog.NewJSONHandler(&logs, nil)), Registerer: prometheus.NewRegistry(), Extensions: extensions, Mandatory: mandatory, TenantTypes: typesOf(extensions)})
 	if gw != nil {
 		t.Cleanup(gw.Close)
 	}
@@ -411,7 +411,7 @@ func TestPluginProcess_StartsIdleWithoutSigningKeys(t *testing.T) {
 	assert.Contains(t, body, "admission hook for ModelCatalog failed")
 	code, body = sendObject(t, ctx, http.MethodGet, catalogURL(server.URL, "default"), token, "")
 	assert.Equal(t, http.StatusNotFound, code, body)
-	code, body = sendObject(t, ctx, http.MethodPost, middlewareURL(server.URL, ""), token, middlewareDocument(t, "instructions", "instructions", true, map[string]any{"instructions": middlewareSentinel}))
+	code, body = sendObject(t, ctx, http.MethodPost, middlewareURL(server.URL, ""), token, middlewareDocument("model-access", "model-access", true, `"modelAccess":{"note":"`+middlewareSentinel+`"}`))
 	assert.Equal(t, http.StatusInternalServerError, code, body)
 	assert.Contains(t, body, "admission hook for Middleware failed")
 

@@ -1,12 +1,15 @@
 package extensionhost
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
@@ -107,16 +110,101 @@ func CheckConfig(definition extension.Definition, configuration json.RawMessage)
 		}
 		return nil
 	}
-	err := definition.ConfigSchema.Validate(configuration)
+	compiled, err := exactSchema(definition.ConfigSchema.JSON())
+	if err != nil {
+		return errors.New("does not match the extension's schema at /")
+	}
+	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(configuration))
+	if err != nil {
+		return errors.New("does not match the extension's schema at /")
+	}
+	err = compiled.Validate(instance)
 	if err == nil {
 		return nil
 	}
 	location := "/"
 	var validation *jsonschema.ValidationError
 	if errors.As(err, &validation) {
-		location = "/" + strings.Join(deepestLocation(validation), "/")
+		location = "/" + strings.Join(redactKeys(definition.ConfigSchema.JSON(), instance, deepestLocation(validation)), "/")
 	}
 	return fmt.Errorf("does not match the extension's schema at %s", location)
+}
+
+// exactSchemas caches configuration schemas compiled for exact validation, by
+// their JSON. Definitions are fixed for the process, so it stays bounded.
+var exactSchemas sync.Map
+
+// exactSchema compiles raw as the schema package does. Validating against it
+// with an instance decoded by [jsonschema.UnmarshalJSON] compares numbers
+// exactly, so bounds, enums and multiples above 2^53 are checked against the
+// value that is stored.
+func exactSchema(raw json.RawMessage) (*jsonschema.Schema, error) {
+	if compiled, ok := exactSchemas.Load(string(raw)); ok {
+		return compiled.(*jsonschema.Schema), nil
+	}
+	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	compiler := jsonschema.NewCompiler()
+	compiler.DefaultDraft(jsonschema.Draft2020)
+	if err := compiler.AddResource("schema.json", document); err != nil {
+		return nil, err
+	}
+	compiled, err := compiler.Compile("schema.json")
+	if err != nil {
+		return nil, err
+	}
+	exactSchemas.Store(string(raw), compiled)
+	return compiled, nil
+}
+
+// redactKeys replaces the location segments that aren't declared by the
+// schema with "*": keys of a typed map, and every segment the walk can't
+// follow. Indexes into arrays and declared property names of objects are
+// kept, so a location never names configuration data.
+func redactKeys(raw json.RawMessage, instance any, location []string) []string {
+	var root map[string]any
+	_ = json.Unmarshal(raw, &root)
+	node := root
+	redacted := make([]string, len(location))
+	for i, segment := range location {
+		node = resolveReference(root, node)
+		properties, _ := node["properties"].(map[string]any)
+		items, _ := node["items"].(map[string]any)
+		property, declared := properties[segment].(map[string]any)
+		switch value := instance.(type) {
+		case map[string]any:
+			instance = value[segment]
+			if declared {
+				redacted[i], node = segment, property
+				continue
+			}
+		case []any:
+			if index, err := strconv.Atoi(segment); err == nil && index >= 0 && index < len(value) && strconv.Itoa(index) == segment {
+				redacted[i], node, instance = segment, items, value[index]
+				continue
+			}
+			instance = nil
+		default:
+			instance = nil
+		}
+		values, _ := node["additionalProperties"].(map[string]any)
+		redacted[i], node = "*", values
+	}
+	return redacted
+}
+
+func resolveReference(root, node map[string]any) map[string]any {
+	ref, _ := node["$ref"].(string)
+	for _, key := range []string{"$defs", "definitions"} {
+		if name, ok := strings.CutPrefix(ref, "#/"+key+"/"); ok {
+			definitions, _ := root[key].(map[string]any)
+			target, _ := definitions[name].(map[string]any)
+			return target
+		}
+	}
+	return node
 }
 
 func deepestLocation(validation *jsonschema.ValidationError) []string {

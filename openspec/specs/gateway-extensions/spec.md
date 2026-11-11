@@ -303,7 +303,7 @@ Extensions SHALL NOT be able to replace, wrap or extend the runtime's attempt ca
 - **THEN** other observers' records and the call's overview SHALL be unchanged
 
 ### Requirement: Tenant configuration resources
-The Gateway's API group SHALL serve a namespaced `Middleware` kind in version `v1alpha1` that is not folder-scoped and declares no secure values. Its `spec` SHALL hold the extension `type`, a required `enabled` flag and an optional `config` object whose fields the kind schema does not restrict, so admission, not schema pruning, decides what an extension accepts. A resource's name SHALL equal its `spec.type`, so a namespace holds at most one resource per extension.
+The Gateway's API group SHALL serve a namespaced `Middleware` kind in version `v1alpha1` that is not folder-scoped and declares no secure values. Its `spec` SHALL hold the extension `type`, a required `enabled` flag and, as optional fields, one typed member per public tenant type with configuration, named the lowerCamel form of the type. A resource's name SHALL equal its `spec.type`, so a namespace holds at most one resource per extension.
 
 #### Scenario: Resource saved without a folder
 - **WHEN** a writer creates a valid `Middleware` without a folder annotation
@@ -313,71 +313,124 @@ The Gateway's API group SHALL serve a namespaced `Middleware` kind in version `v
 - **WHEN** a writer creates or updates a `Middleware` whose name differs from `spec.type`
 - **THEN** the write SHALL be refused
 
-#### Scenario: Top-level configuration kept as written
-- **WHEN** a writer stores a valid `Middleware` whose `config` holds scalar fields and arrays of scalars
-- **THEN** reads SHALL return that `config` unchanged
+#### Scenario: Nested configuration kept as written
+- **WHEN** a writer stores a valid `Middleware` whose member holds nested objects, arrays of objects and typed maps
+- **THEN** reads SHALL return that member unchanged
 
-### Requirement: Tenant configuration shape
-A tenant extension's configuration SHALL be limited to top-level fields whose values are scalars or arrays of scalars, because the platform prunes objects nested inside a stored `config`. Tenant extension schemas SHALL NOT rely on nested objects, and the Gateway SHALL treat what the platform stores, as admission saw it, as the configuration.
+### Requirement: Public tenant extension types
+Tenant extension types SHALL be declared in a public, experimental package: each with a name, a description, an optional configuration schema, a default state and an example configuration that its schema accepts. The package SHALL bind an implementation to a type to produce a tenant-scope definition. The registry the shipped Gateway uses SHALL be the only source of members in the manifest, and SHALL be empty in this version.
 
-#### Scenario: Flat configuration
-- **WHEN** a tenant extension's schema declares top-level string, number, boolean and string-array fields
-- **THEN** a valid configuration SHALL be stored and read back with every field
+#### Scenario: Private implementation of a public type
+- **WHEN** a distribution binds its own implementation to a public type and passes the definition to the entrypoint
+- **THEN** the Gateway SHALL start and admit resources of that type, with the manifest unchanged
 
-#### Scenario: Nested object in a configuration
-- **WHEN** a writer stores a `config` holding an object nested inside it
-- **THEN** the Gateway SHALL NOT promise that the nested object's fields are stored, and admission SHALL validate the configuration the platform passes it
+#### Scenario: Invalid type
+- **WHEN** a type has an invalid or repeated name, a member that collides with another type's or with `type` or `enabled`, a schema without an example it accepts, or an example without a schema
+- **THEN** startup SHALL fail naming the type and the field
+
+### Requirement: Additive tenant type evolution
+Because the platform validates every write against the current schema without exempting unchanged fields, a public type's schema SHALL change only additively: new optional fields and nothing narrower. An incompatible change SHALL use a new type name.
+
+#### Scenario: Required field added to a type
+- **WHEN** a change to a public type would add a required field or narrow a field's type
+- **THEN** it SHALL be made as a new type instead
+
+### Requirement: Tenant definitions bind to public types
+Startup SHALL fail, before any setting is read and also on hosts that start idle, when a tenant-scope definition's name is not a public type's, or when its configuration schema or default differs from that type's. Private extensions SHALL be operator-scope unless they implement a public tenant type.
+
+#### Scenario: Tenant definition without a public type
+- **WHEN** a distribution passes a tenant-scope definition whose name no public type has
+- **THEN** startup SHALL fail naming the extension
+
+#### Scenario: Definition differs from its type
+- **WHEN** a tenant-scope definition has a public type's name but another schema or default
+- **THEN** startup SHALL fail naming the extension and the differing field
+
+### Requirement: Tenant configuration member projection
+Each manifest member SHALL be projected from its type's schema, keeping JSON types, properties, items, closed objects, typed maps, required fields and descriptions, and dropping value constraints and defaults. The manifest SHALL have no enum on `spec.type`, no union across members and no required member. A type whose projection is not structural, or whose example pruning changes, SHALL be refused. A drift check SHALL guarantee the committed manifest equals the projection.
+
+#### Scenario: Value constraints stay in admission
+- **WHEN** a type's schema has an enum, a pattern or a bound on a field
+- **THEN** the manifest member SHALL declare only the field's JSON type, and admission SHALL check the constraint
+
+#### Scenario: Schema the platform would prune
+- **WHEN** a type's schema has an open object, an empty object, an object without an explicit `additionalProperties: false`, an untyped node or a combinator
+- **THEN** the type SHALL be refused before it reaches the manifest
+
+#### Scenario: Drift
+- **WHEN** the registry changes without regenerating the manifest
+- **THEN** the repository checks SHALL fail
 
 ### Requirement: Tenant configuration admission
-On a Gateway with API access, admission SHALL accept a create or update only when `spec.type` names a registered tenant-scope extension and `spec.config`, or an empty object when absent, matches its configuration schema. An extension without a schema SHALL accept only an empty configuration. Operator-scope and unregistered types SHALL be refused with the same reason, so refusals do not reveal which operator extensions a distribution registers.
+Admission SHALL accept a create or update only when the spec sets no member other than its type's, `spec.type` names a tenant-scope extension the distribution implements, a type with configuration has its member when `enabled` is `true`, a type without configuration has no member, and a present member matches that type's full schema. Operator-scope, unregistered and unimplemented types SHALL be refused with the same reason. Members SHALL be decoded as written, so numbers are not rounded.
 
 #### Scenario: Valid configuration
-- **WHEN** a writer creates a `Middleware` for a registered tenant extension with a configuration its schema accepts
+- **WHEN** a writer creates a `Middleware` for an implemented tenant type with a member its schema accepts
 - **THEN** the write SHALL be accepted, whether `enabled` is `true` or `false`
 
-#### Scenario: Configuration that fails the schema
-- **WHEN** `spec.config` fails the extension's schema
-- **THEN** the write SHALL be refused naming `spec.config` and the failing location
+#### Scenario: Member of another type
+- **WHEN** the spec sets a member other than its type's, or more than one member
+- **THEN** the write SHALL be refused naming only the type's member
 
-#### Scenario: Operator extension type
-- **WHEN** `spec.type` names a registered operator-scope extension
+#### Scenario: Enabled without its member
+- **WHEN** an enabled resource of a type with configuration has no member
+- **THEN** the write SHALL be refused
+
+#### Scenario: Disabled without a member
+- **WHEN** a writer creates a disabled resource of an implemented type without its member
+- **THEN** the write SHALL be accepted
+
+#### Scenario: Configuration that fails the schema
+- **WHEN** the member fails the type's schema, including a constraint the manifest does not declare
+- **THEN** the write SHALL be refused naming the member and the failing location
+
+#### Scenario: Operator or unimplemented type
+- **WHEN** `spec.type` names an operator-scope extension, or a public type this build does not implement
 - **THEN** the write SHALL be refused with the reason given for an unregistered type
 
+#### Scenario: Large integer
+- **WHEN** a member holds an integer above 2^53 and the write is accepted
+- **THEN** admission and the stored resource SHALL keep its exact value
+
 #### Scenario: Shipped build
-- **WHEN** the shipped Gateway, which registers no tenant extension, reviews a `Middleware` create
+- **WHEN** the shipped Gateway, which implements no tenant extension, reviews a `Middleware` create
 - **THEN** it SHALL refuse it
 
 ### Requirement: Disable-only updates
-On a Gateway with API access, an update that sets `spec.enabled` to `false` and keeps the stored `spec.config` SHALL be accepted whatever the stored type, including a type the running build does not register as a tenant extension and a configuration that no longer matches its extension's schema. Any other update of a resource whose type is not a registered tenant extension SHALL be refused.
+An update that sets `spec.enabled` to `false` and keeps the stored member, or removes it, SHALL be accepted whatever the stored type, including a type the running build does not implement, a member that no longer matches its schema or bound, and a member the running manifest no longer declares. Any other update of a resource whose type is not implemented SHALL be refused.
 
 #### Scenario: Disabling after a rollback
-- **WHEN** a resource was stored by a build that registers its type, and a build that does not register it reviews an update that only sets `enabled: false`
+- **WHEN** a resource was stored by a build that implements its type, and a build that does not reviews an update that only sets `enabled: false`
+- **THEN** the update SHALL be accepted
+
+#### Scenario: Disabling with the member removed
+- **WHEN** an update sets `enabled: false` and omits the stored member
 - **THEN** the update SHALL be accepted
 
 #### Scenario: Enabling or reconfiguring an unknown type
-- **WHEN** a build that does not register the stored type reviews an update that keeps `enabled: true` or changes `config`
+- **WHEN** a build that does not implement the stored type reviews an update that keeps `enabled: true` or changes the member
 - **THEN** the update SHALL be refused
 
 #### Scenario: Disabling a configuration the schema no longer accepts
-- **WHEN** a registered tenant extension's schema no longer accepts the stored configuration and an update only sets `enabled: false`
+- **WHEN** an implemented type's schema no longer accepts the stored member and an update only sets `enabled: false`
 - **THEN** the update SHALL be accepted
 
 ### Requirement: Tenant configuration size bound
-Admission SHALL refuse a `spec.config` whose JSON encoding exceeds 64 KiB.
+Admission SHALL refuse a member whose JSON encoding exceeds 64 KiB.
 
 #### Scenario: Oversized configuration
-- **WHEN** a create or update carries a `config` larger than the bound
-- **THEN** it SHALL be refused naming `spec.config` and the bound, without its content
+- **WHEN** a create or update carries a member larger than the bound
+- **THEN** it SHALL be refused naming the member and the bound, without its content
 
 ### Requirement: Secret-safe tenant configuration refusals
-Admission refusals SHALL be `400 Bad Request` with a reason naming the failing field path and, for schema failures, the failing location within `config`. A reason MAY name the type. Neither a reason nor any log or metric the plugin produces SHALL contain a configuration value or the schema validator's own message.
+Admission refusals SHALL be `400 Bad Request` with a reason naming the failing field path and, for schema failures, the failing location within the member. A reason MAY name the type and its member. Neither a reason nor any log or metric the plugin produces SHALL contain a configuration value, an undeclared key or the schema validator's own message.
 
 #### Scenario: Refused write carrying sentinel values
-- **WHEN** refused creates and updates carry sentinel strings as configuration values and as undeclared configuration keys
+- **WHEN** refused creates and updates carry sentinel strings as member values, as undeclared member keys and as undeclared spec members
 - **THEN** no response body and no plugin log SHALL contain them
 
 ### Requirement: Tenant configuration admission scope
-Admission SHALL review `CREATE` and `UPDATE` of `Middleware` only. Deletes SHALL NOT be reviewed, so a resource can always be deleted, including while the plugin is unavailable or no longer registers its type. Creates and updates SHALL fail closed while the plugin is unavailable.
+Admission SHALL review `CREATE` and `UPDATE` of `Middleware` only. Deletes SHALL NOT be reviewed, so a resource can always be deleted, including while the plugin is unavailable or no longer implements its type. Creates and updates SHALL fail closed while the plugin is unavailable.
 
 #### Scenario: Delete
 - **WHEN** a writer deletes a `Middleware`
@@ -388,7 +441,7 @@ The manifest SHALL declare `aigateway:middlewarereader`, granting the viewer per
 
 #### Scenario: Viewer and Editor
 - **WHEN** a Viewer or Editor gets or lists `Middleware` resources in their namespace
-- **THEN** the request SHALL be allowed, and their create, update and delete requests SHALL be refused by authorization
+- **THEN** the request SHALL be allowed, and their create, update and delete requests SHALL be refused
 
 #### Scenario: Admin
 - **WHEN** an Admin creates, updates or deletes a `Middleware`
@@ -399,18 +452,18 @@ The manifest SHALL declare `aigateway:middlewarereader`, granting the viewer per
 - **THEN** the catalog roles SHALL grant exactly what they granted before, and grant nothing on `Middleware`
 
 ### Requirement: Tenant configuration documentation
-The extension guide SHALL describe the `Middleware` resource, its roles and admission rules, how stored configuration is applied and propagates within the TTL on each replica, read-failure behavior and its bound, self-hosted behavior without API access, which `config` shapes the platform preserves, and that tenant extensions see the caller UID and the provider instances and models of operator-catalog candidates and attempts.
+The extension guide SHALL describe the `Middleware` resource and its members, roles and admission rules, disabling after a rollback, how a public tenant type is added and projected, that private extensions are operator-scope unless they implement a public type, propagation within the TTL on each replica, read failures and their bound, behavior without API access, and what tenant extensions see.
 
 #### Scenario: Extension author reads the guide
 - **WHEN** an extension author reads the guide's tenant configuration section
-- **THEN** they SHALL find that top-level fields and arrays of scalars are preserved, that the platform may empty objects nested inside `config`, and that a factory may run once per namespace configuration
+- **THEN** they SHALL find that a tenant type's name, schema and default are public, that its implementation may be private, that type schemas change only additively, and that a factory may run once per namespace configuration
 
 #### Scenario: Org admin reads the guide
 - **WHEN** an org admin reads how a change takes effect
 - **THEN** they SHALL find the TTL, that replicas converge independently, and that a failed read never falls back to a more permissive default
 
 ### Requirement: Tenant configuration evidence
-Roles, refusals and secret-safe refusals SHALL be proven end to end against a running Grafana with the built plugin. Until a shipped tenant extension exists, acceptance, schema refusals, disable-only updates, unreviewed deletes and namespace configuration reads SHALL be proven through the protocol test host with test-only definitions passed through the composition options. No test-only definition SHALL be compiled into the shipped backend.
+Roles, type and name refusals and secret-safe refusals SHALL be proven end to end against Grafana with the built plugin. While the shipped registry is empty, acceptance, member rules, schema and operator-type refusals, disable-only updates, exact numbers, unreviewed deletes and namespace configuration reads SHALL be proven through the protocol test host with test-only types and definitions passed through internal options, never compiled into the shipped backend.
 
 #### Scenario: End-to-end suite with the shipped build
 - **WHEN** the plugin end-to-end suite runs against the pinned Grafana image
@@ -422,10 +475,10 @@ Roles, refusals and secret-safe refusals SHALL be proven end to end against a ru
 
 #### Scenario: Shipped backend
 - **WHEN** the plugin package is built
-- **THEN** its backend SHALL register only the shipped definitions
+- **THEN** its backend SHALL register only the shipped types and definitions
 
 ### Requirement: Namespace tenant configuration
-Each call's tenant-scope extensions SHALL follow the `Middleware` resources of the call's namespace. With no resource for an extension, it SHALL use its default state: on with an empty configuration when enabled by default, off otherwise. A resource with `enabled: false` SHALL turn it off. A resource with `enabled: true` SHALL run it with that resource's configuration. One namespace's resources SHALL NOT affect another namespace's calls.
+Each call's tenant-scope extensions SHALL follow the `Middleware` resources of the call's namespace. With no resource for an extension, it SHALL use its default state: on with an empty configuration when enabled by default, off otherwise. A resource with `enabled: false` SHALL turn it off. A resource with `enabled: true` SHALL run it with the configuration in its type's member. One namespace's resources SHALL NOT affect another namespace's calls.
 
 #### Scenario: Two namespaces with different configurations
 - **WHEN** namespace `a` stores `enabled: true` with one configuration for a default-off tenant extension, namespace `b` stores another configuration for it, and namespace `c` stores nothing
@@ -440,33 +493,37 @@ Each call's tenant-scope extensions SHALL follow the `Middleware` resources of t
 - **THEN** after the change propagates, its calls SHALL use the extension's default state
 
 ### Requirement: Tenant configuration checked when read
-The Gateway SHALL check each enabled resource's configuration against its extension's schema when the resource is read, as admission does, and SHALL pass the factory the stored JSON object with its numbers unchanged. A configuration that fails the check, or a factory that fails or panics, SHALL apply the extension's failure policy in that namespace. It SHALL be logged and counted without configuration values, and SHALL NOT fail startup or affect other namespaces.
+At read time the Gateway SHALL check each enabled resource's member against its type's schema, as admission does, and SHALL pass the factory the stored member with numbers unchanged. A spec that sets another member, lacks a required one or can't be decoded, a failing member, or a failing or panicking factory SHALL apply the extension's failure policy in that namespace. It SHALL be logged and counted without configuration values, and SHALL NOT fail startup or affect other namespaces.
 
 #### Scenario: Schema tightened after storage
-- **WHEN** a stored enabled configuration no longer matches its `skip` extension's schema
+- **WHEN** a stored enabled member no longer matches its `skip` extension's schema
 - **THEN** that extension SHALL NOT run for the namespace's calls, the failure SHALL be counted, and calls SHALL continue
 
 #### Scenario: Fail-closed extension with invalid configuration
-- **WHEN** a `fail-closed` tenant extension's stored configuration fails its schema
+- **WHEN** a `fail-closed` tenant extension's stored member fails its schema
 - **THEN** calls in that namespace to which it applies SHALL fail with the unavailable category before any provider call
 
 #### Scenario: Large integer
-- **WHEN** a stored configuration holds the integer `9007199254740993`
+- **WHEN** a stored member holds the integer `9007199254740993`, nested inside an object
 - **THEN** the factory SHALL receive that exact number
+
+#### Scenario: Member of another type
+- **WHEN** a stored spec sets a member other than its type's, or more than one member
+- **THEN** that extension SHALL apply its failure policy in that namespace
 
 #### Scenario: Factory fails for one namespace
 - **WHEN** a tenant extension's factory fails for one namespace's configuration
 - **THEN** that namespace SHALL apply the failure policy, and another namespace with a valid configuration SHALL run the extension
 
-### Requirement: Unknown tenant types at read time
-An enabled resource whose type is not a tenant-scope extension of the running build SHALL be skipped. It SHALL be logged once per namespace and type while the namespace stays cached, and counted. A disabled resource of an unknown type SHALL be ignored without a log or count, since it has no effect.
+### Requirement: Tenant types not implemented at read time
+An enabled resource whose type this build does not implement as a tenant-scope extension SHALL be skipped. It SHALL be logged once per namespace and type while the namespace stays cached, and counted. A disabled resource of such a type SHALL be ignored without a log or count, since it has no effect.
 
 #### Scenario: Rollback leaves an enabled resource
-- **WHEN** a namespace stores an enabled resource whose extension the running build doesn't register, and three calls run
+- **WHEN** a namespace stores an enabled resource whose type the running build doesn't implement, and three calls run
 - **THEN** all three calls SHALL run without it, and the Gateway SHALL emit one log record and one count for that namespace and type
 
-#### Scenario: Disabled unknown resource
-- **WHEN** the unknown type's resource is disabled
+#### Scenario: Disabled resource of a type not implemented
+- **WHEN** that resource is disabled
 - **THEN** the Gateway SHALL neither log nor count it
 
 ### Requirement: Tenant configuration read failures

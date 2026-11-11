@@ -16,7 +16,7 @@ The Gateway SHALL be distributed as one Grafana app plugin whose app manifest se
 - **THEN** the Gateway SHALL perform no discovery, selection or provider work for it
 
 ### Requirement: Kinds served by the plugin app
-The plugin app SHALL manage each manifest kind with exactly the admission handlers the manifest declares, next to the route handler, and SHALL start no informers, watchers or reconcilers for them. The `Middleware` validator SHALL decide with the distribution's extension definitions. An idle Gateway SHALL refuse every admission review, so writes fail closed on a host that delegates no requests to it.
+The plugin app SHALL manage each manifest kind with exactly the admission handlers the manifest declares, next to the route handler, and SHALL start no informers, watchers or reconcilers for them. The `Middleware` validator SHALL decide with the public tenant types and the distribution's extension definitions. An idle Gateway SHALL refuse every admission review, so writes fail closed on a host that delegates no requests to it.
 
 #### Scenario: App and manifest agree
 - **WHEN** the app is built from the committed manifest
@@ -28,7 +28,7 @@ The plugin app SHALL manage each manifest kind with exactly the admission handle
 
 #### Scenario: Middleware admission through the plugin protocol
 - **WHEN** the host sends an admission review for a `Middleware` with a delegated token
-- **THEN** the plugin SHALL authenticate it like a route call and answer with the decision for the extension definitions the distribution passed
+- **THEN** the plugin SHALL authenticate it like a route call and answer with the decision for the public tenant types and the extension definitions the distribution passed
 
 #### Scenario: Idle Gateway
 - **WHEN** an idle Gateway receives an admission review

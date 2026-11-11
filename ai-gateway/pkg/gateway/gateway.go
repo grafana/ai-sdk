@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/grafana-app-sdk/plugin"
 
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	composition "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/gateway"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/pluginlog"
 )
@@ -20,7 +21,8 @@ import (
 type Options struct {
 	// Extensions are the distribution's extension definitions, typically
 	// append(DefaultExtensions(), private...). Invalid definitions and
-	// duplicate names fail startup.
+	// duplicate names fail startup, and so does a tenant-scope definition
+	// that isn't bound to a type in [tenanttype.All].
 	Extensions []extension.Definition
 	// Mandatory names the operator-scope extensions that the operator must
 	// configure and enable; startup fails otherwise.
@@ -38,11 +40,12 @@ func DefaultExtensions() []extension.Definition { return []extension.Definition{
 func Run(options Options) error {
 	logger := slog.New(pluginlog.NewHandler(backendlog.DefaultLogger, slog.LevelInfo))
 	gw, err := composition.New(composition.Options{
-		LookupEnv:  os.LookupEnv,
-		Logger:     logger,
-		Registerer: prometheus.DefaultRegisterer,
-		Extensions: options.Extensions,
-		Mandatory:  options.Mandatory,
+		LookupEnv:   os.LookupEnv,
+		Logger:      logger,
+		Registerer:  prometheus.DefaultRegisterer,
+		Extensions:  options.Extensions,
+		Mandatory:   options.Mandatory,
+		TenantTypes: tenanttype.All(),
 	})
 	if err != nil {
 		logger.Error("gateway plugin failed to start", "class", "startup_failure", "reason", err.Error())

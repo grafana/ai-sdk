@@ -1,7 +1,6 @@
 package tenantconfig
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/grafana/grafana-app-sdk/k8s"
 
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/extensionhost"
 	middlewarev1alpha1 "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/middleware/v1alpha1"
 )
@@ -70,28 +70,34 @@ type list struct {
 	Items []json.RawMessage `json:"items"`
 }
 
-// storedResource is the stored shape of one Middleware resource that
-// resourceFrom decodes.
+// storedResource is one listed Middleware resource, with its spec kept raw.
 type storedResource struct {
 	Metadata struct {
 		Name string `json:"name"`
 	} `json:"metadata"`
-	Spec struct {
-		Type    string          `json:"type"`
-		Enabled *bool           `json:"enabled"`
-		Config  json.RawMessage `json:"config"`
-	} `json:"spec"`
+	Spec json.RawMessage `json:"spec"`
 }
 
 // resourceFrom decodes one stored Middleware resource into its name, type,
-// enabled flag and configuration. It is the only code that knows how the
-// stored spec carries an extension's configuration.
+// enabled flag and configuration: the member named after its type. A spec
+// that can't be decoded, or that sets any other member, is an invalid
+// resource, so its extension applies its failure policy. It errs only when
+// the item is not an object with a name, which makes the whole list invalid.
 func resourceFrom(raw json.RawMessage) (extensionhost.TenantResource, error) {
 	var stored storedResource
-	if err := json.Unmarshal(raw, &stored); err != nil {
-		return extensionhost.TenantResource{}, err
+	if err := json.Unmarshal(raw, &stored); err != nil || stored.Metadata.Name == "" {
+		return extensionhost.TenantResource{}, errors.New("tenant configuration: a listed item has no name")
 	}
-	return extensionhost.TenantResource{Name: stored.Metadata.Name, Type: stored.Spec.Type, Enabled: stored.Spec.Enabled, Config: normalize(stored.Spec.Config)}, nil
+	invalid := extensionhost.TenantResource{Name: stored.Metadata.Name, Invalid: true}
+	spec, err := DecodeSpec(stored.Spec)
+	if err != nil {
+		return invalid, nil
+	}
+	member, found := spec.Members[tenanttype.Type{Name: spec.Type}.Member()]
+	if len(spec.Members) > 1 || len(spec.Members) == 1 && !found {
+		return invalid, nil
+	}
+	return extensionhost.TenantResource{Name: stored.Metadata.Name, Type: spec.Type, Enabled: spec.Enabled, Config: member}, nil
 }
 
 // Read lists namespace's resources, following continuation pages within the
@@ -144,19 +150,6 @@ func (r *Reader) page(ctx context.Context, namespace, next string, remaining *in
 		return list{}, extensionhost.ErrReadInvalid
 	}
 	return decoded, nil
-}
-
-// normalize returns a stored configuration as compact JSON, or an empty
-// object when it is absent or null. Compaction keeps number literals.
-func normalize(configuration json.RawMessage) json.RawMessage {
-	if len(configuration) == 0 || string(configuration) == "null" {
-		return json.RawMessage(`{}`)
-	}
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, configuration); err != nil {
-		return configuration
-	}
-	return compact.Bytes()
 }
 
 // classify maps a read error to its sentinel, dropping the error's text,
