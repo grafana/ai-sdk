@@ -71,7 +71,7 @@
 `src/permissions.ts` exports the four action names and `catalogPermissions()`, which returns `{read, create, update, delete}` from `hasPermission`. It's a plain function, not a hook, because boot data doesn't change while the page is open.
 
 - Every control asks this one helper. Nothing checks `orgRole`.
-- Boot data is loaded when the page loads, so a permission change shows after a reload. Grafana stays authoritative: a refused write shows its `403` like any other error.
+- Boot data is loaded when the page loads, from Grafana's permission cache, so a permission change shows on a later reload, once that cache refreshes. Grafana stays authoritative: a refused write shows its `403` like any other error.
 - **Alternative considered:** probing with requests, such as a dry-run create. Rejected: it adds a write call for every view, and `hasPermission` is the documented plugin API that core features use.
 
 ### Form model and key behavior
@@ -184,11 +184,11 @@ What's added:
 
 - "Base the UI on permissions, not roles" can't be shown end to end on OSS, which can't grant `catalogwriter` to an Editor. The Jest permission matrix carries it, and the Viewer and Editor runs prove the bound roles.
 - The existing `e2e.sh` sentinel log check also covers these keys, because the spec uses the same sentinel prefix.
-- After each save, the spec also checks that the typed sentinel appears in no browser console message and no response body the page fetched, recorded through Playwright's `console` and `response` events.
+- After each save, the spec also checks that the typed sentinel appears in no browser console message and no response body the page fetched, recorded through Playwright's `console` and `response` events. Watch requests are skipped, because their bodies never finish.
 
 ## Risks / Trade-offs
 
-- [Boot-data permissions are loaded once per page load] → a role change shows after a reload. The server refuses stale writes with `403`, and the page shows the error.
+- [Boot-data permissions are loaded once per page load] → a role change shows on a later reload, once Grafana's permission cache refreshes. The server refuses stale writes with `403`, and the page shows the error.
 - [Include `action` support or plugin validator warnings] → if the validator or Grafana 13.3 rejects the include action, fall back to the default Viewer include and keep the in-page check.
 - [A future spec field the form doesn't model] → rows keep their whole spec objects, so such a field round-trips unchanged; a Jest round-trip test covers a full spec. It can't be edited until the form gains its input.
 - [Grafana list limits] → the page makes one list call. A stack is expected to hold few catalogs; paginate if the platform starts truncating.

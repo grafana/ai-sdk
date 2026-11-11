@@ -31,7 +31,7 @@
 ## 6. Integration checks
 
 - [x] 6.1 Run `mise run test-ai-gateway-frontend` (typecheck, lint, Jest) and `mise run build-ai-gateway-plugin` plus `mise run validate-ai-gateway-plugin`, and confirm the include action passes the validator.
-- [x] 6.2 Confirm no file outside `ai-gateway/src/`, `ai-gateway/tests/`, docs and this change is modified (`git diff --stat` against the base branch), and run `openspec validate manage-catalogs-in-app --strict`.
+- [x] 6.2 Confirm no file outside `ai-gateway/src/`, `ai-gateway/tests/`, the docs this change lists and this change is modified (`git diff --stat` against the base branch), and run `openspec validate manage-catalogs-in-app --strict`.
 
 ## Workflow follow-up
 
