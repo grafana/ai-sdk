@@ -121,7 +121,7 @@ func TestPlan_ResolveSecrets(t *testing.T) {
 
 func TestCheckConfig(t *testing.T) {
 	const sentinel = "sentinel-config-value"
-	configSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"limit":{"type":"integer","minimum":1},"items":{"type":"array","items":{"type":"string","maxLength":3}}},"additionalProperties":false}`))
+	configSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"limit":{"type":"integer","minimum":1},"items":{"type":"array","items":{"type":"string","maxLength":3}},"perModel":{"type":"object","additionalProperties":{"type":"object","properties":{"max":{"type":"integer","minimum":1}},"additionalProperties":false}},"rules":{"type":"array","items":{"$ref":"#/$defs/rule"}},"choice":{"oneOf":[{"type":"object","additionalProperties":{"type":"integer"}},{"type":"string"}]}},"additionalProperties":false,"$defs":{"rule":{"type":"object","properties":{"tags":{"type":"object","additionalProperties":{"type":"string","maxLength":2}}},"additionalProperties":false}}}`))
 	require.NoError(t, err)
 	withSchema := validDefinition("quota")
 	withSchema.ConfigSchema = configSchema
@@ -138,6 +138,9 @@ func TestCheckConfig(t *testing.T) {
 		{name: "wrong value type", definition: withSchema, configuration: `{"limit":"` + sentinel + `"}`, message: "does not match the extension's schema at /limit"},
 		{name: "array item", definition: withSchema, configuration: `{"items":["a","` + sentinel + `"]}`, message: "does not match the extension's schema at /items/1"},
 		{name: "undeclared key", definition: withSchema, configuration: `{"` + sentinel + `":1}`, message: "does not match the extension's schema at /"},
+		{name: "typed map key", definition: withSchema, configuration: `{"perModel":{"` + sentinel + `":{"max":0}}}`, message: "does not match the extension's schema at /perModel/*/max"},
+		{name: "typed map key behind a reference", definition: withSchema, configuration: `{"rules":[{"tags":{"` + sentinel + `":"long"}}]}`, message: "does not match the extension's schema at /rules/0/tags/*"},
+		{name: "key under a combinator", definition: withSchema, configuration: `{"choice":{"` + sentinel + `":"x"}}`, message: "does not match the extension's schema at /choice/*"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := CheckConfig(tc.definition, json.RawMessage(tc.configuration))

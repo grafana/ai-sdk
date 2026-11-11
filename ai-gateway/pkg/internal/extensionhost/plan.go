@@ -104,9 +104,59 @@ func CheckConfig(definition extension.Definition, configuration json.RawMessage)
 	location := "/"
 	var validation *jsonschema.ValidationError
 	if errors.As(err, &validation) {
-		location = "/" + strings.Join(deepestLocation(validation), "/")
+		location = "/" + strings.Join(redactKeys(definition.ConfigSchema.JSON(), deepestLocation(validation)), "/")
 	}
 	return fmt.Errorf("does not match the extension's schema at %s", location)
+}
+
+// redactKeys replaces the location segments that aren't declared by the
+// schema with "*": keys of a typed map, and every segment the walk can't
+// follow. Array indexes and declared property names are kept, so a location
+// never names configuration data.
+func redactKeys(raw json.RawMessage, location []string) []string {
+	var root map[string]any
+	_ = json.Unmarshal(raw, &root)
+	node := root
+	redacted := make([]string, len(location))
+	for i, segment := range location {
+		node = resolveReference(root, node)
+		properties, _ := node["properties"].(map[string]any)
+		items, isArray := node["items"].(map[string]any)
+		switch property, declared := properties[segment].(map[string]any); {
+		case declared:
+			redacted[i], node = segment, property
+		case isArray && isIndex(segment):
+			redacted[i], node = segment, items
+		default:
+			values, _ := node["additionalProperties"].(map[string]any)
+			redacted[i], node = "*", values
+		}
+	}
+	return redacted
+}
+
+func resolveReference(root, node map[string]any) map[string]any {
+	ref, _ := node["$ref"].(string)
+	for _, prefix := range []string{"#/$defs/", "#/definitions/"} {
+		if name, ok := strings.CutPrefix(ref, prefix); ok {
+			definitions, _ := root[strings.TrimSuffix(strings.TrimPrefix(prefix, "#/"), "/")].(map[string]any)
+			target, _ := definitions[name].(map[string]any)
+			return target
+		}
+	}
+	return node
+}
+
+func isIndex(segment string) bool {
+	if segment == "" {
+		return false
+	}
+	for _, r := range segment {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func deepestLocation(validation *jsonschema.ValidationError) []string {

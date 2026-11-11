@@ -23,7 +23,7 @@ var _ simple.KindValidator = Validator{}
 
 const sentinel = "sentinel-tenant-config-value"
 
-const accessSchema = `{"type":"object","properties":{"rules":{"type":"array","items":{"type":"object","properties":{"models":{"type":"array","items":{"type":"string","maxLength":20}},"limits":{"type":"object","properties":{"rpm":{"type":"integer","minimum":1}},"additionalProperties":false}},"required":["models"],"additionalProperties":false}},"note":{"type":"string","maxLength":40}},"additionalProperties":false}`
+const accessSchema = `{"type":"object","properties":{"perModel":{"type":"object","additionalProperties":{"type":"object","properties":{"maxTokens":{"type":"integer","minimum":1}},"additionalProperties":false}},"rules":{"type":"array","items":{"type":"object","properties":{"models":{"type":"array","items":{"type":"string","maxLength":20}},"limits":{"type":"object","properties":{"rpm":{"type":"integer","minimum":1}},"additionalProperties":false}},"required":["models"],"additionalProperties":false}},"note":{"type":"string","maxLength":40}},"additionalProperties":false}`
 
 func bind(t *testing.T, name string, scope extension.Scope, configSchema string) extension.Definition {
 	t.Helper()
@@ -94,6 +94,7 @@ func TestValidator_Validate(t *testing.T) {
 		{name: "nested location", action: resource.AdmissionActionCreate, object: access(true, `{"rules":[{"models":[],"limits":{"rpm":0}}]}`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /rules/0/limits/rpm"},
 		{name: "missing nested required field", action: resource.AdmissionActionCreate, object: access(true, `{"rules":[{}]}`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /rules/0"},
 		{name: "undeclared key", action: resource.AdmissionActionCreate, object: access(true, `{"`+sentinel+`":"`+sentinel+`"}`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /"},
+		{name: "typed map key", action: resource.AdmissionActionCreate, object: access(true, `{"perModel":{"`+sentinel+`":{"maxTokens":0}}}`), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /perModel/*/maxTokens"},
 		{name: "oversized member", action: resource.AdmissionActionCreate, object: access(true, oversized), wantErr: "middleware: spec.modelAccess exceeds 65536 bytes"},
 		{name: "markup is measured unescaped", action: resource.AdmissionActionCreate, object: access(true, markupAtTheBound), wantErr: "middleware: spec.modelAccess does not match the extension's schema at /note"},
 		{name: "update of an implemented type", action: resource.AdmissionActionUpdate, object: access(true, `{"note":"Other."}`), old: access(true, valid)},
