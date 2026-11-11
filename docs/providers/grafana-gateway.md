@@ -187,22 +187,37 @@ with their own provider keys:
   crosses routes itself: a catalog's fallbacks stay within that catalog.
 
 ```go
-baseURL := gatewayURL
-if settings.Catalog != "" {
-	baseURL = gatewayURL + "/modelcatalogs/" + url.PathEscape(settings.Catalog)
+newClient := func(baseURL string) (*grafana.Provider, error) {
+	return grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
+		CAPToken:         os.Getenv("GRAFANA_CAP_TOKEN"),
+		TokenExchangeURL: tokenExchangeURL,
+		Namespace:        "stacks-123",
+		Audience:         "grafana-aigateway-app",
+		BaseURL:          baseURL,
+	})
 }
-client, err := grafana.NewWithTokenExchange(grafana.TokenExchangeConfig{
-	CAPToken:         os.Getenv("GRAFANA_CAP_TOKEN"),
-	TokenExchangeURL: tokenExchangeURL,
-	Namespace:        "stacks-123",
-	Audience:         "grafana-aigateway-app",
-	BaseURL:          baseURL,
-})
+client, err := newClient(gatewayURL)
+if err != nil {
+	return err
+}
+modelID := settings.GrafanaModel
+if settings.Catalog != "" {
+	client, err = newClient(gatewayURL + "/modelcatalogs/" + url.PathEscape(settings.Catalog))
+	if err != nil {
+		return err
+	}
+	modelID = settings.CatalogModel
+}
+model, err := client.LanguageModel(modelID)
 if err != nil {
 	return err
 }
 ctx = grafana.WithOnBehalfOf(ctx, userToken)
 ```
+
+Grafana Cloud doesn't store catalog keys yet, so customer catalogs work only in
+self-hosted Grafana for now; see
+[Requirements](../../ai-gateway/README.md#requirements).
 
 ## Configure fallback
 

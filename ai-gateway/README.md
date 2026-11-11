@@ -185,7 +185,9 @@ so they need no other change.
   caches decrypted keys for that long.
 - Removing a role, or revoking a token or access policy, can take longer to
   apply, because Grafana and Grafana Cloud cache permissions and tokens. The
-  catalog page shows changed permissions after a reload.
+  catalog page picks up changed permissions on a later reload, once Grafana's
+  permission cache refreshes, and Grafana refuses writes the user can no longer
+  make.
 - Grafana itself answers `403` when the caller can't call the catalog and `404`
   when the catalog doesn't exist. These are Kubernetes `Status` documents, not
   Gateway error documents; both clients report them as errors with that status.
