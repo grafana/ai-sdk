@@ -120,7 +120,7 @@ Alternatives considered:
 
 ### Error mapping
 
-- `execution.ErrEgressRefused` (`"gateway outbound: provider endpoint refused by the egress policy or not resolvable"`). It lives in `execution`, as `ErrCatalogConfiguration` does, because `execution` cannot import `pkg/internal`. `outbound` returns it.
+- `execution.ErrEgressRefused` (`"execution: provider endpoint refused by the egress policy or not resolvable"`), with `ErrEgressConnection` (classified as upstream) and `ErrEgressTimeout` (wrapping `context.DeadlineExceeded`) next to it. It lives in `execution`, as `ErrCatalogConfiguration` does, because `execution` cannot import `pkg/internal`. `outbound` returns it.
 - Sanitizing happens in the egress `DialContext`:
   - a policy refusal returns the bare sentinel;
   - a `*net.DNSError` also returns the bare sentinel. This drops the resolver address and removes the oracle between an internal name that exists and one that doesn't;
@@ -168,7 +168,7 @@ The e2e fake provider has a private Docker address, which the production policy 
 
 - `scripts/e2e.sh` adds SANs `DNS:fake-anthropic,DNS:egress-refused,DNS:egress-denied` to the run-time certificate, which Grafana already trusts through `SSL_CERT_FILE`.
 - `fake-anthropic` also listens with TLS on 8443, using the mounted certificate. It gets network aliases `egress-refused` and `egress-denied`, so all three names resolve to the same private address. It counts requests per `Host` and reports the counts in its reply text.
-- The Grafana service sets:
+- `provisioning/grafana.ini` lists both keys empty, because Grafana applies environment overrides only to keys of the loaded configuration. The Grafana service sets:
   - `GF_PLUGIN_GRAFANA_AIGATEWAY_APP_STACK_CATALOG_EGRESS_ALLOW: fake-anthropic,egress-denied`;
   - `GF_PLUGIN_GRAFANA_AIGATEWAY_APP_STACK_CATALOG_EGRESS_DENY: egress-denied`.
 
@@ -179,7 +179,7 @@ The e2e fake provider has a private Docker address, which the production policy 
 |---|---|
 | Public `https` works | `anthropic` provider, `baseURL: https://fake-anthropic:8443`: unary and streamed calls succeed, and the reply names the catalog key's hash prefix. The allow entry stands in for "public". Public-address classification is proven in Go. |
 | Refused without a request | `https://egress-refused:8443`, the same address without an allow entry: 424 egress document. A following call to `fake-anthropic` reports zero requests for that host. Admission refuses `http://fake-anthropic:8080`, `https://127.0.0.1`, `https://169.254.169.254`, `https://[::ffff:10.0.0.1]` and `https://2130706433` with `400`. |
-| Lists apply | `egress-denied` is in both lists: 424 (deny wins). `fake-anthropic` is allowed while `egress-refused` is not, at the same address. |
+| Lists apply | `egress-denied` is in both lists: admission refuses it with `400` (deny wins). `fake-anthropic` is allowed while `egress-refused` is not, at the same address. A deny hostname can't be stored, so deny-wins at connect time is proven in Go. |
 | Operator catalog unaffected | `routes.spec.ts` unchanged: the operator `fake` provider at `http://fake-anthropic:8080` keeps working. Native stack-catalog calls through the proxy (`catalog-routes.spec.ts`) unchanged. |
 | Compatible accepted | Create an `openai-compatible` catalog with `providerName` and `supportsStructuredOutputs`: `201`. Its invocation is proven by the Go harness, because the fake doesn't speak Chat Completions. |
 
