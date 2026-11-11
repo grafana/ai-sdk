@@ -25,8 +25,8 @@
 ## 5. Cross-language and end-to-end evidence
 
 - [x] 5.1 Add a `test/providerwire-v4` scenario: both clients receive the egress document, as not retryable, for a catalog whose endpoint is a refused loopback listener, which gets zero requests; verify with `mise run test-providerwire-v4`.
-- [ ] 5.2 Add the e2e infrastructure: certificate SANs, a TLS listener and per-host counts on `fake-anthropic`, the `egress-refused` and `egress-denied` aliases, and the allow and deny settings in `docker-compose.e2e.yaml`. Verify with `docker compose -f docker-compose.yaml -f docker-compose.e2e.yaml config`.
-- [ ] 5.3 Add the Playwright specs for custom endpoint success, refusal, deny precedence, admission refusals and acceptance of a compatible catalog, and update `catalog.spec.ts`; verify in CI's Playwright job.
+- [x] 5.2 Add the e2e infrastructure: certificate SANs, a TLS listener and per-host counts on `fake-anthropic`, the `egress-refused` and `egress-denied` aliases, and the allow and deny settings in `docker-compose.e2e.yaml`. Verify with `docker compose -f docker-compose.yaml -f docker-compose.e2e.yaml config`.
+- [x] 5.3 Add the Playwright specs for custom endpoint success, refusal, deny precedence, admission refusals and acceptance of a compatible catalog, and update `catalog.spec.ts`; verify in CI's Playwright job.
 
 ## 6. Documentation
 

@@ -230,21 +230,21 @@ Returned native modelId SHALL NOT be replaced with canonical route identity. Sec
 - **THEN** output SHALL retain native modelId rather than canonical replacement while secrets and another tenant state remain protected
 
 ### Requirement: OpenAI Responses shared bounded transport
-OpenAI Responses models SHALL use the shared model HTTP client and inherit its redirect rejection, fixed 10-second response-header timeout and fixed 16 MiB decompressed byte bound per non-stream response under gateway-resource-policy, and leave streams to the execution time bounds. No provider-specific transport setting SHALL exist.
+OpenAI Responses models SHALL use the shared model HTTP client, or the egress client for a stack-catalog `baseURL`, and inherit its redirect rejection, fixed 10-second response-header timeout and fixed 16 MiB decompressed byte bound per non-stream response under gateway-resource-policy, and leave streams to the execution time bounds. No provider-specific transport setting SHALL exist.
 
 #### Scenario: OpenAI Responses shared bounded transport
 - **WHEN** an OpenAI backend redirects, stalls its response headers, exceeds the byte bound in a unary response, or streams more than 16 MiB
 - **THEN** the shared client SHALL enforce the same bounds as for every other provider type, and only the long stream SHALL succeed
 
 ### Requirement: Compatible shared bounded transport
-The compatible model HTTP client SHALL be the shared model HTTP client used for every provider type, so compatible backends inherit redirect rejection, the fixed 10-second response-header timeout and the fixed 16 MiB decompressed byte bound per non-stream response, and leave streams to the execution time bounds. No provider-specific transport setting SHALL be added.
+The compatible model HTTP client SHALL be the shared model HTTP client used for every provider type, or the egress client for a stack-catalog provider, so compatible backends inherit redirect rejection, the fixed 10-second response-header timeout and the fixed 16 MiB decompressed byte bound per non-stream response, and leave streams to the execution time bounds. No provider-specific transport setting SHALL be added.
 
 #### Scenario: Compatible shared bounded transport
 - **WHEN** a compatible backend redirects, exceeds the byte bound in a unary response, stalls response headers, or streams more than 16 MiB
 - **THEN** the shared client SHALL enforce the same bounds without provider-specific settings, and only the long stream SHALL succeed
 
 ### Requirement: Stack catalog provider keys
-Provider keys MAY also come from a stack catalog, as the decrypted secure value keyed by the provider name. Such a key SHALL be used only for that catalog's candidates in the request that supplied it, with the provider type's native endpoint and the shared model HTTP client. Operator providers, their keys and endpoints, BYOK accounts and ambient SDK credentials SHALL NOT affect a stack-catalog call, and stack-catalog keys SHALL NOT affect other calls.
+A stack catalog MAY supply provider keys as decrypted secure values keyed by provider name. Each key SHALL be used only for that catalog's candidates in the request that supplied it, sent to the provider's `baseURL` through the egress client when set, else to its type's native endpoint through the shared model client. Operator providers, their keys and endpoints, BYOK accounts and ambient SDK credentials SHALL NOT affect a stack-catalog call, and stack-catalog keys SHALL NOT affect other calls.
 
 #### Scenario: Stack catalog and operator catalog share a provider name
 - **WHEN** the operator catalog's `anthropic` provider has a custom endpoint and key, and a stack catalog's `anthropic` provider has its own key
@@ -257,6 +257,10 @@ Provider keys MAY also come from a stack catalog, as the decrypted secure value 
 #### Scenario: Concurrent catalogs
 - **WHEN** two requests for different stack catalogs with different keys for the same provider type run at once
 - **THEN** each provider request SHALL carry only its own catalog's key
+
+#### Scenario: Stack catalog with a custom endpoint
+- **WHEN** a stack catalog's `openai-compatible` provider sets `baseURL: https://llm.example.com/v1`
+- **THEN** its key SHALL be sent only to that endpoint, through the egress client
 
 ### Requirement: Serving without an operator catalog
 Without an operator catalog, configured callers SHALL get a discovery document with no models, and every model ID SHALL fail as model not found with zero provider requests. BYOK SHALL behave as with an operator catalog.

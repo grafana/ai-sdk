@@ -47,7 +47,7 @@ A stack-catalog selection SHALL construct provider models only for the candidate
 - **THEN** only the `openai` candidate SHALL be constructed
 
 ### Requirement: Stack-catalog routing and fallback
-Stack-catalog selections SHALL resolve canonical IDs and aliases within the catalog. They SHALL apply `models`, `order` and `only` and ordered fallback with the same rules, errors, deduplication and attempt bound as operator-catalog selections, and provider slugs SHALL be the provider types.
+Stack-catalog selections SHALL resolve canonical IDs and aliases within the catalog. They SHALL apply `models`, `order` and `only` and ordered fallback with the same rules, errors, deduplication and attempt bound as operator-catalog selections, and provider slugs SHALL be derived as for operator providers: an `openai-compatible` provider's `providerName` when set, otherwise the provider type.
 
 #### Scenario: Alias call
 - **WHEN** a call requests an alias of a catalog model
@@ -68,6 +68,10 @@ Stack-catalog selections SHALL resolve canonical IDs and aliases within the cata
 #### Scenario: Composed chain above the bound
 - **WHEN** routing controls compose more than 8 candidates
 - **THEN** the call SHALL fail with the attempt-bound document, with zero constructed models and zero provider requests
+
+#### Scenario: Compatible provider slug
+- **WHEN** a catalog has an `openai-compatible` provider with `providerName: acme` and a call sends `only: ["acme"]`
+- **THEN** the selection SHALL keep that provider's candidates, and `only: ["openai-compatible"]` SHALL exclude them
 
 ### Requirement: BYOK controls refused on stack catalogs
 A stack-catalog selection SHALL refuse `gateway.byok` and any other unsupported control with the unsupported gateway control category, before checking the stored catalog and before any provider request. It SHALL never fall back to the operator catalog, server-held provider keys or ambient credentials.
