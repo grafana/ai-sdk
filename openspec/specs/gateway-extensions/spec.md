@@ -335,6 +335,13 @@ Tenant extension types SHALL be declared in a public, experimental package: each
 - **WHEN** a type has an invalid or repeated name, a member that collides with another type's or with `type` or `enabled`, a schema without an example it accepts, or an example without a schema
 - **THEN** startup SHALL fail naming the type and the field
 
+### Requirement: Additive tenant type evolution
+Because the platform validates every write against the current schema without exempting unchanged fields, a public type's schema SHALL change only additively: new optional fields and nothing narrower. An incompatible change SHALL use a new type name.
+
+#### Scenario: Required field added to a type
+- **WHEN** a change to a public type would add a required field or narrow a field's type
+- **THEN** it SHALL be made as a new type instead
+
 ### Requirement: Tenant definitions bind to public types
 Startup SHALL fail, before any setting is read and also on hosts that start idle, when a tenant-scope definition's name is not a public type's, or when its configuration schema or default differs from that type's. Private extensions SHALL be operator-scope unless they implement a public tenant type.
 
@@ -347,14 +354,14 @@ Startup SHALL fail, before any setting is read and also on hosts that start idle
 - **THEN** startup SHALL fail naming the extension and the differing field
 
 ### Requirement: Tenant configuration member projection
-Each manifest member SHALL be projected from its type's schema, keeping JSON types, properties, items, closed objects, typed maps, required fields and descriptions, and dropping value constraints and defaults. The manifest SHALL have no enum on `spec.type`, no union across members and no required member. A type whose projection is not structural, or whose example the platform's pruning changes, SHALL be refused. The committed manifest SHALL equal the registry's projection.
+Each manifest member SHALL be projected from its type's schema, keeping JSON types, properties, items, closed objects, typed maps, required fields and descriptions, and dropping value constraints and defaults. The manifest SHALL have no enum on `spec.type`, no union across members and no required member. A type whose projection is not structural, or whose example pruning changes, SHALL be refused. A drift check SHALL guarantee the committed manifest equals the projection.
 
 #### Scenario: Value constraints stay in admission
 - **WHEN** a type's schema has an enum, a pattern or a bound on a field
 - **THEN** the manifest member SHALL declare only the field's JSON type, and admission SHALL check the constraint
 
 #### Scenario: Schema the platform would prune
-- **WHEN** a type's schema has an open object, an empty object, an untyped node or a combinator
+- **WHEN** a type's schema has an open object, an empty object, an object without an explicit `additionalProperties: false`, an untyped node or a combinator
 - **THEN** the type SHALL be refused before it reaches the manifest
 
 #### Scenario: Drift

@@ -329,6 +329,12 @@ No migration: the kind starts empty. Rolling back to a build without the kind st
 - **`enabled`:** required; a member is required with `enabled: true`.
 - **Size bound:** 64 KiB on the member.
 - **End-to-end accept paths:** Go only; no test code in the backend.
+- **Types without configuration have no member (deliberate deviation from the brief's "`{}` for a schema-less type").** The generator cannot emit a closed empty object, and an open one is not structural, which turns pruning off for the whole kind. Such a type takes no member, `enabled: true` needs none, and any member is refused.
+- **Disabled without a member:** accepted without `CheckConfig`.
+- **Structural and prune checks:** in the generator and tests only; startup keeps the cheap type and binding checks. The drift check guarantees the committed manifest equals the projection.
+- **Objects without an explicit `additionalProperties: false`:** refused, so the full schema and the projection agree.
+- **`TenantTypes`:** explicit in the composition options; nil means no types.
+- **Additive evolution:** Grafana validates every write against the current schema with no ratcheting, so a public type's schema changes only additively and an incompatible change takes a new type name. Stated in the spec, the guide and the `tenanttype` package doc.
 
 ## Follow-ups
 
