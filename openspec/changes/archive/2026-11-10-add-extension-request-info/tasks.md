@@ -39,4 +39,8 @@
 
 - [x] 7.1 `mise run fmt`, `mise run vet`, `mise run lint` and `mise run test`, with `GOFLAGS=-buildvcs=false` locally; `-race` for `extensionhost`, `execution` and `service`.
 - [x] 7.2 `mise run parity-check`, with no expectation changes; `openspec validate add-extension-request-info --strict`.
-- [ ] 7.3 CI e2e and module-policy checks on the PR.
+
+## Workflow follow-up
+
+- CI provides the e2e, parity-coverage and module-policy evidence on the PR.
+- Archive the change after review, and verify the archived specs.
