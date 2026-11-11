@@ -3,6 +3,7 @@ package platformhost
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -203,4 +204,26 @@ func TestKindStore_RefusesWritesToAChangedObject(t *testing.T) {
 	assert.False(t, store.unchanged(key, reviewed))
 	delete(store.objects, key)
 	assert.False(t, store.unchanged(key, reviewed))
+}
+
+func TestHost_KeepsNumbersAsWritten(t *testing.T) {
+	admission := &stubAdmission{}
+	_, server, token := newKindHost(t, admission)
+	const exact = "9007199254740993"
+	body := `{"metadata":{"name":"w"},"spec":{"size":` + exact + `,"ratio":1.50}}`
+
+	request, err := http.NewRequest(http.MethodPost, widgetURL(server, ""), strings.NewReader(body))
+	require.NoError(t, err)
+	request.Header.Set("X-Access-Token", token)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	defer func() { _ = response.Body.Close() }()
+	stored, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, response.StatusCode, string(stored))
+	assert.Contains(t, string(stored), `"size":`+exact)
+	assert.Contains(t, string(stored), `"ratio":1.50`)
+	reviews := admission.recorded()
+	require.Len(t, reviews, 1)
+	assert.Contains(t, reviews[0].object, `"size":`+exact, "admission sees the number as written")
 }
