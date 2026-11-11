@@ -76,7 +76,7 @@ func (i *instrumentation) wrapGenerate(ctx context.Context, p middleware.WrapGen
 	result, err := p.DoGenerate(ctx)
 	duration := time.Since(start).Seconds()
 	if err != nil {
-		out := classifyError(err)
+		out := i.config.classifyError(err)
 		i.observeRequest(operationGenerate, requested, out, duration)
 		return result, err
 	}
@@ -101,7 +101,7 @@ func (i *instrumentation) wrapStream(ctx context.Context, p middleware.WrapStrea
 	result, err := p.DoStream(ctx)
 	if err != nil {
 		duration := time.Since(start).Seconds()
-		out := classifyError(err)
+		out := i.config.classifyError(err)
 		i.observeRequest(operationStream, requested, out, duration)
 		i.collectors.inflight.WithLabelValues(operationStream, requested.provider, requested.model).Dec()
 		return result, err

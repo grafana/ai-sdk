@@ -60,6 +60,13 @@ model := logger.Wrap(baseModel, logger.Options{
 Keep capture bounded, sampled, and short-lived. Confirm that retention,
 regional, tenant, and user-consent requirements allow the selected content.
 
+## Record policy denials
+
+A call refused by policy, such as a gateway denying a request, is not a provider
+failure. Set `IsDenied` to recognize those errors: their terminal record uses
+outcome and error type `denied` at `Level` rather than `ErrorLevel`, so
+error-level alerts exclude them.
+
 ## Choose whether to capture error messages
 
 Error class/type, HTTP status, retryability, operation, outcome, timing, and
