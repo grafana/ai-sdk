@@ -3,7 +3,7 @@ import { API_GROUP, API_VERSION } from '../constants';
 import { InlineSecureValue, ModelCatalog } from '../generated/modelcatalog/v1alpha1/modelcatalog_object_gen';
 import { Spec } from '../generated/modelcatalog/v1alpha1/types.spec.gen';
 
-export const MODEL_CATALOG_KIND = 'ModelCatalog';
+const MODEL_CATALOG_KIND = 'ModelCatalog';
 
 /** SecureChanges are the secure values a write sends, keyed by provider name. */
 export type SecureChanges = Record<string, InlineSecureValue>;

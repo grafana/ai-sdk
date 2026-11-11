@@ -289,9 +289,8 @@ interface TargetFieldsProps {
 }
 
 function TargetFields({ label, title, target, providerNames, readOnly, onChange, onRemove }: TargetFieldsProps) {
-  const names =
-    target.provider && !providerNames.includes(target.provider) ? [...providerNames, target.provider] : providerNames;
-  const options: Array<ComboboxOption<string>> = [...new Set(names)].map((name) => ({ value: name }));
+  const names = new Set(target.provider ? [...providerNames, target.provider] : providerNames);
+  const options: Array<ComboboxOption<string>> = [...names].map((name) => ({ value: name }));
 
   return (
     <Stack alignItems="flex-end" gap={2}>
