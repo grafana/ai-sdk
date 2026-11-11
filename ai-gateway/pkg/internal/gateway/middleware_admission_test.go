@@ -157,15 +157,6 @@ func TestMiddlewareAdmission_ThroughThePluginProtocol(t *testing.T) {
 	}
 }
 
-func TestMiddlewareAdmission_ShippedTypesRefuseEveryCreate(t *testing.T) {
-	h := newHarness(t, platformhost.TopologyCloud)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	code, body := sendObject(t, ctx, http.MethodPost, middlewareURL(h.server.URL, ""), h.serviceToken(t, testInternalService), middlewareDocument("model-access", "model-access", true, `"modelAccess":{}`))
-	assert.Equal(t, http.StatusBadRequest, code, body)
-	assert.Contains(t, body, `middleware: spec.type \"model-access\" is not a tenant extension of this Gateway`)
-}
-
 func TestMiddlewareAdmission_AcrossBuilds(t *testing.T) {
 	stored := newHarnessWithOptions(t, platformhost.TopologyCloud, middlewareOptions(t))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -292,7 +283,7 @@ func TestTenantConfiguration_AppliesEachNamespacesResources(t *testing.T) {
 	assert.Contains(t, h.logs.String(), `"msg":"gateway plugin API access","available":true`)
 }
 
-func TestTenantConfiguration_ShippedDefinitionsReadNothing(t *testing.T) {
+func TestTenantConfiguration_NoTenantDefinitionsReadNothing(t *testing.T) {
 	h := newHarness(t, platformhost.TopologyCloud)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

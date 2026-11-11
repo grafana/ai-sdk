@@ -133,11 +133,20 @@ func priority(value int) func(*extension.Definition) {
 }
 
 // typesOf returns the public tenant types the tenant-scope definitions bind
-// to. A type with a schema gets the empty example, which its schema must
-// accept.
+// to: a shipped type for a definition of its name, and otherwise a type
+// derived from the definition. A derived type with a schema gets the empty
+// example, which its schema must accept.
 func typesOf(definitions []extension.Definition) []tenanttype.Type {
+	public := map[string]tenanttype.Type{}
+	for _, tenantType := range tenanttype.All() {
+		public[tenantType.Name] = tenantType
+	}
 	var types []tenanttype.Type
 	for _, definition := range definitions {
+		if shipped, ok := public[definition.Name]; ok {
+			types = append(types, shipped)
+			continue
+		}
 		if definition.Scope == extension.ScopeTenant {
 			tenantType := tenanttype.Type{Name: definition.Name, ConfigSchema: definition.ConfigSchema, EnabledByDefault: definition.EnabledByDefault}
 			if definition.ConfigSchema.JSON() != nil {
