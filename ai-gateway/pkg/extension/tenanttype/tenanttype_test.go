@@ -93,6 +93,8 @@ func TestShippedTypes(t *testing.T) {
 			accepted: []string{
 				`{"temperature":0,"topP":1,"topK":40,"maxOutputTokens":1,"stopSequences":[],"seed":-1,"presencePenalty":-0.5,"frequencyPenalty":0.5}`,
 				`{"stopSequences":["a","b"]}`,
+				`{"maxOutputTokens":1.0,"topK":4e1}`,
+				`{"temperature":1.7976931348623157e308}`,
 			},
 			refused: []string{
 				`{}`,
@@ -105,6 +107,8 @@ func TestShippedTypes(t *testing.T) {
 				`{"temperature":"0.2"}`,
 				`{"maxOutputTokens":0}`,
 				`{"topK":1.5}`,
+				`{"temperature":1e400}`,
+				`{"presencePenalty":-1e400}`,
 				`{"stopSequences":[1]}`,
 			},
 		},

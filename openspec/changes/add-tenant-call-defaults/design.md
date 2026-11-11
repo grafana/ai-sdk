@@ -87,14 +87,14 @@
 
 | Field | Type | Constraints (admission only) |
 |---|---|---|
-| `temperature`, `topP`, `presencePenalty`, `frequencyPenalty` | `number` | none |
+| `temperature`, `topP`, `presencePenalty`, `frequencyPenalty` | `number` | the finite float64 range |
 | `topK`, `seed` | `integer` | signed 64-bit range |
 | `maxOutputTokens` | `integer` | 1 to 2^63−1 |
 | `stopSequences` | array of `string` | none |
 
 - The root is an object with `additionalProperties: false` and `minProperties: 1`. Nothing is required.
 - Example: `{"temperature":0.2,"maxOutputTokens":2048,"stopSequences":["END"]}`.
-- The bounds keep admission from accepting values the factory can't decode into `int`, and mirror upstream's `maxOutputTokens >= 1` call-setting rule. `minProperties` refuses a configuration that would do nothing.
+- The factory converts integers exactly, so `1.0` and `4e1`, which JSON Schema treats as integers, apply as `1` and `40`. The bounds keep admission from accepting values the factory can't represent as `int` or `float64`, and mirror upstream's `maxOutputTokens >= 1` call-setting rule. `minProperties` refuses a configuration that would do nothing.
 
 ### Projection check
 

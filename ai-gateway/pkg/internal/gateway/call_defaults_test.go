@@ -134,6 +134,7 @@ func TestMiddlewareAdmission_ShippedTypes(t *testing.T) {
 		{name: "settings empty", document: settings(`{}`), reason: "spec.defaultSettings does not match the extension's schema at /"},
 		{name: "settings wrong type", document: settings(`{"temperature":` + quoted + `}`), reason: "spec.defaultSettings does not match the extension's schema at /temperature"},
 		{name: "settings zero output tokens", document: settings(`{"maxOutputTokens":0,"stopSequences":[` + quoted + `]}`), reason: "spec.defaultSettings does not match the extension's schema at /maxOutputTokens"},
+		{name: "settings number out of range", document: settings(`{"temperature":1e400,"stopSequences":[` + quoted + `]}`), reason: "spec.defaultSettings does not match the extension's schema at /temperature"},
 		{name: "settings fractional top k", document: settings(`{"topK":1.5}`), reason: "spec.defaultSettings does not match the extension's schema at /topK"},
 		{name: "settings seed above int64", document: settings(`{"seed":9223372036854775808}`), reason: "spec.defaultSettings does not match the extension's schema at /seed"},
 		{name: "settings seed below int64", document: settings(`{"seed":-9223372036854775809}`), reason: "spec.defaultSettings does not match the extension's schema at /seed"},
@@ -163,6 +164,7 @@ func TestMiddlewareAdmission_ShippedTypes(t *testing.T) {
 		{name: "instructions example", document: instructions(string(tenanttype.DefaultInstructions().Example))},
 		{name: "settings example", document: settings(string(tenanttype.DefaultSettings().Example))},
 		{name: "settings bounds", document: settings(`{"maxOutputTokens":1,"seed":9223372036854775807,"topK":-9223372036854775808,"stopSequences":[]}`)},
+		{name: "settings integers with a fraction or an exponent", document: settings(`{"maxOutputTokens":1.0,"topK":4e1}`)},
 		{name: "settings disabled without a member", document: middlewareDocument("default-settings", "default-settings", false, "")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

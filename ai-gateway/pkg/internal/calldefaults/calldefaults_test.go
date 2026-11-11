@@ -113,6 +113,15 @@ func TestSettings(t *testing.T) {
 			},
 		},
 		{
+			name:   "integers written with a fraction or an exponent",
+			config: `{"maxOutputTokens":1.0,"topK":4e1,"seed":-9.223372036854775808e18}`,
+			check: func(t *testing.T, result provider.CallOptions) {
+				assert.Equal(t, ptr(1), result.MaxOutputTokens)
+				assert.Equal(t, ptr(40), result.TopK)
+				assert.Equal(t, ptr(-9223372036854775808), result.Seed)
+			},
+		},
+		{
 			name:   "only configured fields",
 			config: `{"temperature":0.7}`,
 			params: provider.CallOptions{MaxOutputTokens: ptr(16)},
@@ -162,7 +171,7 @@ func TestSettings(t *testing.T) {
 	}
 }
 
-func TestSettings_StopSequencesAreNotShared(t *testing.T) {
+func TestSettings_AppendingToStopSequencesLeavesOtherCallsUnchanged(t *testing.T) {
 	settings := newTransformer(t, settingsDefinition(), `{"stopSequences":["a","b","c"]}`)
 	first := transform(t, settings, provider.CallOptions{})
 	first.StopSequences = append(first.StopSequences, "added")
@@ -178,10 +187,13 @@ func TestFactories_RefuseUndecodableConfiguration(t *testing.T) {
 		{definition: instructionsDefinition(), config: `{"messages":"e2e-sentinel"}`},
 		{definition: settingsDefinition(), config: `{"topK":1e30}`},
 		{definition: settingsDefinition(), config: `{"temperature":"e2e-sentinel"}`},
+		{definition: settingsDefinition(), config: `{"topK":1.5}`},
+		{definition: settingsDefinition(), config: `{"temperature":1e400}`},
 	} {
 		_, err := tc.definition.New(json.RawMessage(tc.config), extension.Dependencies{})
 		require.Error(t, err, tc.config)
 		assert.NotContains(t, err.Error(), "e2e-sentinel")
 		assert.NotContains(t, err.Error(), "1e30")
+		assert.NotContains(t, err.Error(), "1e400")
 	}
 }

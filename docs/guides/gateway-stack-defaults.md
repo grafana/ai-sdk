@@ -85,8 +85,8 @@ spec:
 
 | Setting | JSON type | Accepted values |
 | --- | --- | --- |
-| `temperature`, `topP` | number | any |
-| `presencePenalty`, `frequencyPenalty` | number | any |
+| `temperature`, `topP` | number | within the 64-bit float range |
+| `presencePenalty`, `frequencyPenalty` | number | within the 64-bit float range |
 | `topK`, `seed` | integer | signed 64-bit |
 | `maxOutputTokens` | integer | at least 1 |
 | `stopSequences` | list of strings | any |

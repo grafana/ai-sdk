@@ -10,11 +10,15 @@ var defaultSettings = newType(
   "properties": {
     "temperature": {
       "type": "number",
-      "description": "The sampling temperature."
+      "description": "The sampling temperature.",
+      "minimum": -1.7976931348623157e308,
+      "maximum": 1.7976931348623157e308
     },
     "topP": {
       "type": "number",
-      "description": "The nucleus sampling probability mass."
+      "description": "The nucleus sampling probability mass.",
+      "minimum": -1.7976931348623157e308,
+      "maximum": 1.7976931348623157e308
     },
     "topK": {
       "type": "integer",
@@ -43,11 +47,15 @@ var defaultSettings = newType(
     },
     "presencePenalty": {
       "type": "number",
-      "description": "The presence penalty."
+      "description": "The presence penalty.",
+      "minimum": -1.7976931348623157e308,
+      "maximum": 1.7976931348623157e308
     },
     "frequencyPenalty": {
       "type": "number",
-      "description": "The frequency penalty."
+      "description": "The frequency penalty.",
+      "minimum": -1.7976931348623157e308,
+      "maximum": 1.7976931348623157e308
     }
   },
   "minProperties": 1,
