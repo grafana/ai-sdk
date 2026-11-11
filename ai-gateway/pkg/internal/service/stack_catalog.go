@@ -76,13 +76,13 @@ func SelectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 		return execution.Selection{}, fmt.Errorf("gateway service: model and egress HTTP clients are required")
 	}
 	return selectStackCatalog(stack, modelID, gateway, options.Egress, func(providerConfig config.ResolvedProvider, descriptor config.Primary) (provider.LanguageModel, error) {
-		if providerConfig.BaseURL == "" {
-			candidate, _, err := newCandidate(providerConfig, descriptor, options.Client, nativemodel.NewAnthropic)
-			return candidate, err
+		client := options.Client
+		if providerConfig.BaseURL != "" {
+			client = options.EgressClient
 		}
-		candidate, _, err := newCandidate(providerConfig, descriptor, options.EgressClient, nativemodel.NewAnthropic)
-		if err != nil {
-			return nil, err
+		candidate, _, err := newCandidate(providerConfig, descriptor, client, nativemodel.NewAnthropic)
+		if err != nil || providerConfig.BaseURL == "" {
+			return candidate, err
 		}
 		return egressCandidate{LanguageModel: candidate}, nil
 	})
