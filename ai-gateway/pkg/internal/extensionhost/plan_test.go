@@ -126,6 +126,14 @@ func TestCheckConfig(t *testing.T) {
 	withSchema := validDefinition("quota")
 	withSchema.ConfigSchema = configSchema
 	withoutSchema := validDefinition("audit")
+	untypedSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"limits":{"items":{"type":"integer"},"additionalProperties":{"type":"integer","minimum":1}}}}`))
+	require.NoError(t, err)
+	untyped := validDefinition("untyped")
+	untyped.ConfigSchema = untypedSchema
+	exactSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"n":{"type":"integer","maximum":9007199254740992},"m":{"type":"integer","multipleOf":2},"big":{"type":"integer","maximum":9223372036854775807},"set":{"type":"array","uniqueItems":true,"items":{"type":"integer"}}},"additionalProperties":false}`))
+	require.NoError(t, err)
+	exact := validDefinition("exact")
+	exact.ConfigSchema = exactSchema
 	for _, tc := range []struct {
 		name          string
 		definition    extension.Definition
@@ -141,6 +149,11 @@ func TestCheckConfig(t *testing.T) {
 		{name: "typed map key", definition: withSchema, configuration: `{"perModel":{"` + sentinel + `":{"max":0}}}`, message: "does not match the extension's schema at /perModel/*/max"},
 		{name: "typed map key behind a reference", definition: withSchema, configuration: `{"rules":[{"tags":{"` + sentinel + `":"long"}}]}`, message: "does not match the extension's schema at /rules/0/tags/*"},
 		{name: "key under a combinator", definition: withSchema, configuration: `{"choice":{"` + sentinel + `":"x"}}`, message: "does not match the extension's schema at /choice/*"},
+		{name: "digit key where the schema also allows an array", definition: untyped, configuration: `{"limits":{"4111111111111111":0}}`, message: "does not match the extension's schema at /limits/*"},
+		{name: "integer above 2^53 over a bound", definition: exact, configuration: `{"n":9007199254740993}`, message: "does not match the extension's schema at /n"},
+		{name: "odd integer above 2^53", definition: exact, configuration: `{"m":9007199254740993}`, message: "does not match the extension's schema at /m"},
+		{name: "integer at the int64 bound", definition: exact, configuration: `{"big":9223372036854775807}`},
+		{name: "distinct integers above 2^53", definition: exact, configuration: `{"set":[9007199254740992,9007199254740993]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := CheckConfig(tc.definition, json.RawMessage(tc.configuration))
