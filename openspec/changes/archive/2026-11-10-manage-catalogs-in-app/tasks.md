@@ -18,8 +18,8 @@
 
 ## 4. End-to-end tests
 
-- [ ] 4.1 Add the `users` and `pageAs(role)` fixture to `tests/fixtures.ts` (Viewer and Editor login users, deleted after the worker); verify by the specs in 4.2 passing in CI.
-- [ ] 4.2 Add `tests/catalog-page.spec.ts` for Admin create, edit (keys kept, key replaced), delete, admission error, conflict, and Viewer and Editor read-only pages, with the sentinel never on the page; add an overview base URL test to `tests/overview.spec.ts`; verify with the CI Playwright job (`mise run test-ai-gateway-e2e`).
+- [x] 4.1 Add the `users` and `pageAs(role)` fixture to `tests/fixtures.ts` (Viewer and Editor login users, deleted after the worker); verify by the specs in 4.2 passing in CI.
+- [x] 4.2 Add `tests/catalog-page.spec.ts` for Admin create, edit (keys kept, key replaced), delete, admission error, conflict, and Viewer and Editor read-only pages, with the sentinel never on the page; add an overview base URL test to `tests/overview.spec.ts`; verify with the CI Playwright job (`mise run test-ai-gateway-e2e`).
 
 ## 5. Documentation
 
