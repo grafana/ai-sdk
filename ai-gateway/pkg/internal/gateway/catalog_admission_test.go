@@ -48,7 +48,7 @@ func catalogDocument(t *testing.T, providers map[string]any, secure map[string]a
 	return string(body)
 }
 
-func sendCatalog(t *testing.T, ctx context.Context, method, url, token, body string) (int, string) {
+func sendObject(t *testing.T, ctx context.Context, method, url, token, body string) (int, string) {
 	t.Helper()
 	request, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(body))
 	require.NoError(t, err)
@@ -94,7 +94,7 @@ func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
 	token := h.serviceToken(t, testInternalService)
 	providers := map[string]any{"anthropic": map[string]any{"type": "anthropic"}}
 
-	code, body := sendCatalog(t, ctx, http.MethodPost, catalogURL(h.server.URL, ""), token, catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"create": catalogKey}}))
+	code, body := sendObject(t, ctx, http.MethodPost, catalogURL(h.server.URL, ""), token, catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"create": catalogKey}}))
 	require.Equal(t, http.StatusCreated, code, body)
 	assert.NotContains(t, body, catalogKey)
 	var created struct {
@@ -108,7 +108,7 @@ func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, catalogKey, stored)
 
-	code, body = sendCatalog(t, ctx, http.MethodPut, catalogURL(h.server.URL, "default"), token, catalogDocument(t, providers, nil))
+	code, body = sendObject(t, ctx, http.MethodPut, catalogURL(h.server.URL, "default"), token, catalogDocument(t, providers, nil))
 	require.Equal(t, http.StatusOK, code, body)
 	assert.Contains(t, body, name)
 
@@ -126,7 +126,7 @@ func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
 	}
 	for _, tc := range refused {
 		t.Run(tc.name, func(t *testing.T) {
-			code, body := sendCatalog(t, ctx, tc.method, catalogURL(h.server.URL, tc.path), token, tc.body)
+			code, body := sendObject(t, ctx, tc.method, catalogURL(h.server.URL, tc.path), token, tc.body)
 			assert.Equal(t, http.StatusBadRequest, code, body)
 			assert.Contains(t, body, "admission hook for ModelCatalog denied the request: modelcatalog: "+tc.reason)
 			assert.NotContains(t, body, catalogKey)
@@ -134,16 +134,16 @@ func TestCatalogAdmission_ThroughThePluginProtocol(t *testing.T) {
 	}
 	assert.NotContains(t, h.logs.String(), catalogKey)
 
-	code, body = sendCatalog(t, ctx, http.MethodGet, catalogURL(h.server.URL, "default"), token, "")
+	code, body = sendObject(t, ctx, http.MethodGet, catalogURL(h.server.URL, "default"), token, "")
 	require.Equal(t, http.StatusOK, code, body)
 	assert.Contains(t, body, name)
-	code, body = sendCatalog(t, ctx, http.MethodDelete, catalogURL(h.server.URL, "default"), token, "")
+	code, body = sendObject(t, ctx, http.MethodDelete, catalogURL(h.server.URL, "default"), token, "")
 	require.Equal(t, http.StatusOK, code, body)
 	_, ok = h.host.SecureValue(testNamespace, name)
 	assert.False(t, ok)
 }
 
-func TestPluginProcess_ValidatesCatalogsWithoutLoggingKeys(t *testing.T) {
+func TestPluginProcess_ValidatesKindsWithoutLoggingSecrets(t *testing.T) {
 	p := launchPlugin(t, buildPlugin(t), nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -151,15 +151,25 @@ func TestPluginProcess_ValidatesCatalogsWithoutLoggingKeys(t *testing.T) {
 	require.NoError(t, err)
 	providers := map[string]any{"anthropic": map[string]any{"type": "anthropic"}}
 
-	code, body := sendCatalog(t, ctx, http.MethodPost, catalogURL(p.server.URL, ""), token, catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic", "baseURL": "https://backend.invalid"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}}))
+	code, body := sendObject(t, ctx, http.MethodPost, catalogURL(p.server.URL, ""), token, catalogDocument(t, map[string]any{"anthropic": map[string]any{"type": "anthropic", "baseURL": "https://backend.invalid"}}, map[string]any{"anthropic": map[string]any{"create": catalogKey}}))
 	assert.Equal(t, http.StatusBadRequest, code, body)
 	assert.NotContains(t, body, catalogKey)
-	code, body = sendCatalog(t, ctx, http.MethodPost, catalogURL(p.server.URL, ""), token, catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"create": catalogKey}}))
+	code, body = sendObject(t, ctx, http.MethodPost, catalogURL(p.server.URL, ""), token, catalogDocument(t, providers, map[string]any{"anthropic": map[string]any{"create": catalogKey}}))
 	assert.Equal(t, http.StatusCreated, code, body)
 	assert.NotContains(t, body, catalogKey)
+	for _, document := range []string{
+		middlewareDocument(t, "instructions", "instructions", true, map[string]any{"instructions": middlewareSentinel}),
+		middlewareDocument(t, "other", "instructions", true, map[string]any{middlewareSentinel: middlewareSentinel}),
+	} {
+		code, body = sendObject(t, ctx, http.MethodPost, middlewareURL(p.server.URL, ""), token, document)
+		assert.Equal(t, http.StatusBadRequest, code, body)
+		assert.NotContains(t, body, middlewareSentinel)
+	}
 
 	p.process.Stop()
 	assert.Contains(t, p.logs.String(), "validation failed")
-	assert.NotContains(t, p.logs.String(), catalogKey)
-	assert.NotContains(t, p.raw.String(), catalogKey)
+	for _, secret := range []string{catalogKey, middlewareSentinel} {
+		assert.NotContains(t, p.logs.String(), secret)
+		assert.NotContains(t, p.raw.String(), secret)
+	}
 }

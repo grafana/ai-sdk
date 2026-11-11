@@ -190,6 +190,7 @@ type harnessOptions struct {
 	fallback      bool
 	extensions    []extension.Definition
 	env           map[string]string
+	host          *platformhost.Host
 }
 
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
@@ -199,9 +200,13 @@ func newHarness(t *testing.T, topology platformhost.Topology) *harness {
 
 func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options harnessOptions) *harness {
 	t.Helper()
-	data := manifestdata.LocalManifest().ManifestData
-	host, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline, Kinds: data.Versions[0].Kinds})
-	require.NoError(t, err)
+	host := options.host
+	if host == nil {
+		data := manifestdata.LocalManifest().ManifestData
+		created, err := platformhost.New(platformhost.Config{Topology: topology, PluginID: PluginID, Group: data.Group, Version: data.PreferredVersion, RouteDeadline: options.routeDeadline, Kinds: data.Versions[0].Kinds})
+		require.NoError(t, err)
+		host = created
+	}
 	keys, err := host.JWKS()
 	require.NoError(t, err)
 	anthropic := newFakeAnthropic(t)
