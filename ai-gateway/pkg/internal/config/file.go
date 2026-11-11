@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -52,6 +53,23 @@ type Model struct {
 type Primary struct {
 	Provider string `yaml:"provider"`
 	Model    string `yaml:"model"`
+	// ServerFallbacks allows Anthropic server-side fallback for this
+	// candidate. Without it, the candidate refuses server-side fallback.
+	ServerFallbacks *ServerFallbacks `yaml:"serverFallbacks,omitempty"`
+	// Skills lists the Anthropic container skills callers of this candidate
+	// may request. Without it, the candidate refuses every skill.
+	Skills *SkillsPolicy `yaml:"skills,omitempty"`
+}
+
+// ServerFallbacks is the operator policy for Anthropic server-side fallback
+// (providerOptions.anthropic.fallbacks) on one anthropic candidate. Models
+// lists the fallback model IDs an explicit chain may name, compared exactly.
+// AllowDefault admits "default", which lets Anthropic choose the model. Every
+// candidate that names the same provider instance and backend model must carry
+// an equal policy.
+type ServerFallbacks struct {
+	Models       []string `yaml:"models,omitempty"`
+	AllowDefault bool     `yaml:"allowDefault,omitempty"`
 }
 
 // ResolvedProvider contains one startup-resolved provider secret.
@@ -100,8 +118,9 @@ func ParseModelCatalog(document string) (File, error) {
 func (file File) Validate() error { return file.validate(requireAPIKeyEnv) }
 
 // ValidateShape validates provider types and fields, provider references,
-// model routes, public IDs, aliases and discovery bounds, without checking
-// where provider keys come from.
+// model routes and their skills and server fallback policies, public IDs,
+// aliases and discovery bounds, without checking where provider keys come
+// from.
 func (file File) ValidateShape() error { return file.validate(nil) }
 
 func requireAPIKeyEnv(name string, provider Provider) error {
@@ -188,7 +207,15 @@ func (file File) validate(checkKey func(name string, provider Provider) error) e
 		if strings.TrimSpace(model.Primary.Model) == "" {
 			return fmt.Errorf("config: models.%s.primary.model is required", id)
 		}
-		seenCandidates := map[Primary]struct{}{model.Primary: {}}
+		path := fmt.Sprintf("models.%s.primary", id)
+		providerType := file.Providers[model.Primary.Provider].Type
+		if err := validateServerFallbacks(path, model.Primary.ServerFallbacks, providerType); err != nil {
+			return err
+		}
+		if err := validateSkillsPolicy(path, model.Primary.Skills, providerType); err != nil {
+			return err
+		}
+		seenCandidates := map[candidateKey]struct{}{keyOf(model.Primary): {}}
 		for index, candidate := range model.Fallback {
 			if strings.TrimSpace(candidate.Provider) == "" || strings.TrimSpace(candidate.Model) == "" {
 				return fmt.Errorf("config: models.%s.fallback[%d] requires provider and model", id, index)
@@ -196,15 +223,26 @@ func (file File) validate(checkKey func(name string, provider Provider) error) e
 			if _, ok := file.Providers[candidate.Provider]; !ok {
 				return fmt.Errorf("config: models.%s.fallback[%d] references unknown provider", id, index)
 			}
-			if _, exists := seenCandidates[candidate]; exists {
+			if _, exists := seenCandidates[keyOf(candidate)]; exists {
 				return fmt.Errorf("config: models.%s.fallback[%d] repeats a candidate", id, index)
 			}
-			seenCandidates[candidate] = struct{}{}
+			seenCandidates[keyOf(candidate)] = struct{}{}
+			path := fmt.Sprintf("models.%s.fallback[%d]", id, index)
+			providerType := file.Providers[candidate.Provider].Type
+			if err := validateServerFallbacks(path, candidate.ServerFallbacks, providerType); err != nil {
+				return err
+			}
+			if err := validateSkillsPolicy(path, candidate.Skills, providerType); err != nil {
+				return err
+			}
 		}
 		if existing, ok := publicIDs[id]; ok {
 			return fmt.Errorf("config: public model ID %q collides with %s", id, existing)
 		}
 		publicIDs[id] = "canonical model"
+	}
+	if err := file.validatePoliciesPerDestination(); err != nil {
+		return err
 	}
 	for id, model := range file.Models {
 		seenAliases := make(map[string]struct{}, len(model.Aliases))
@@ -245,6 +283,83 @@ func (file File) ResolveProviderSecrets(lookupEnv LookupEnv) (map[string]Resolve
 		resolved[name] = ResolvedProvider{Type: provider.Type, APIKey: value, BaseURL: provider.BaseURL, ProviderName: provider.ProviderName, SupportsStructuredOutputs: provider.SupportsStructuredOutputs}
 	}
 	return resolved, nil
+}
+
+// validateServerFallbacks validates the policy of the candidate at path. Its
+// errors never contain policy values.
+func validateServerFallbacks(path string, policy *ServerFallbacks, providerType string) error {
+	if policy == nil {
+		return nil
+	}
+	if providerType != "anthropic" {
+		return fmt.Errorf("config: %s.serverFallbacks is only supported for anthropic providers", path)
+	}
+	if !policy.AllowDefault && len(policy.Models) == 0 {
+		return fmt.Errorf("config: %s.serverFallbacks must allow default or at least one model", path)
+	}
+	seen := make(map[string]struct{}, len(policy.Models))
+	for index, model := range policy.Models {
+		if strings.TrimSpace(model) == "" {
+			return fmt.Errorf("config: %s.serverFallbacks.models[%d] must not be empty", path, index)
+		}
+		if !validDiscoveryText(model) {
+			return fmt.Errorf("config: %s.serverFallbacks.models[%d] is invalid or exceeds limit", path, index)
+		}
+		if _, exists := seen[model]; exists {
+			return fmt.Errorf("config: %s.serverFallbacks.models[%d] repeats a model", path, index)
+		}
+		seen[model] = struct{}{}
+	}
+	return nil
+}
+
+// equalServerFallbacks compares validated policies, treating Models as a set.
+// A nil policy equals only another nil policy.
+func equalServerFallbacks(a, b *ServerFallbacks) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.AllowDefault == b.AllowDefault && sameStringSet(a.Models, b.Models)
+}
+
+// validatePoliciesPerDestination requires one skills policy and one
+// server-side fallback policy per provider instance and backend model across
+// routes, because request routing attempts a repeated destination once and
+// would otherwise apply whichever placement came first.
+func (file File) validatePoliciesPerDestination() error {
+	type placement struct {
+		path      string
+		candidate Primary
+	}
+	ids := make([]string, 0, len(file.Models))
+	for id := range file.Models {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	first := make(map[candidateKey]placement)
+	for _, id := range ids {
+		model := file.Models[id]
+		candidates := append([]Primary{model.Primary}, model.Fallback...)
+		for index, candidate := range candidates {
+			path := fmt.Sprintf("models.%s.primary", id)
+			if index > 0 {
+				path = fmt.Sprintf("models.%s.fallback[%d]", id, index-1)
+			}
+			key := keyOf(candidate)
+			existing, ok := first[key]
+			if !ok {
+				first[key] = placement{path: path, candidate: candidate}
+				continue
+			}
+			if !equalSkillsPolicies(existing.candidate.Skills, candidate.Skills) {
+				return fmt.Errorf("config: %s.skills differs from %s.skills for the same provider and model", path, existing.path)
+			}
+			if !equalServerFallbacks(existing.candidate.ServerFallbacks, candidate.ServerFallbacks) {
+				return fmt.Errorf("config: %s.serverFallbacks differs from %s.serverFallbacks for the same provider and model", path, existing.path)
+			}
+		}
+	}
+	return nil
 }
 
 func validDiscoveryText(value string) bool {

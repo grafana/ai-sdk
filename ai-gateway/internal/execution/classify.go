@@ -105,7 +105,11 @@ func ClassifySelection(err error) (category Category, reason Reason) {
 }
 
 // ClassifyProvider classifies an error returned by unary invocation or stream
-// setup.
+// setup. A fallback chain failure that joins several attempt failures, or
+// attempt failures with the call's context error, is classified as one
+// failure: a call-level cancellation or expired deadline wins, otherwise the
+// most recent attempt failure that is not a refusal decides, and the chain is
+// an invalid request only when every attempt refused.
 func ClassifyProvider(err error) (category Category) {
 	defer func() {
 		if recover() != nil {
@@ -118,6 +122,43 @@ func ClassifyProvider(err error) (category Category) {
 	if category, ok := classifyExtension(err); ok {
 		return category
 	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		if category, ok := classifyChain(joined.Unwrap()); ok {
+			return category
+		}
+	}
+	return classifySingle(err)
+}
+
+// classifyChain applies the aggregate rule to the members of a top-level join,
+// as the fallback module produces them: attempt failures newest first,
+// optionally followed by the call-level context error. It reports false for a
+// join that is not an aggregate.
+func classifyChain(members []error) (Category, bool) {
+	if len(members) < 2 {
+		return CategoryInternal, false
+	}
+	switch members[len(members)-1] {
+	case context.Canceled:
+		return CategoryCancellation, true
+	case context.DeadlineExceeded:
+		return CategoryTimeout, true
+	}
+	for _, attempt := range members {
+		if category := classifySingle(attempt); !isRefusal(attempt, category) {
+			return category, true
+		}
+	}
+	return CategoryInvalidRequest, true
+}
+
+// isRefusal reports whether an attempt failed before native I/O because its
+// candidate cannot take the request.
+func isRefusal(err error, category Category) bool {
+	return category == CategoryInvalidRequest && (errors.Is(err, catalog.ErrUnsupportedRequest) || errors.Is(err, provider.ErrUnsupportedFunctionality))
+}
+
+func classifySingle(err error) Category {
 	switch {
 	case errors.Is(err, ErrTranslation), errors.Is(err, ErrInvalidOutput):
 		return CategoryInternal

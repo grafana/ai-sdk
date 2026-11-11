@@ -1637,10 +1637,10 @@ func TestUnsupportedFunctionalityClassification(t *testing.T) {
 		}, documentForSafeError(safeError{category: safeOverload}), []int{1, 1}},
 		{"rejection then unknown error", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(unsupported("a")), newScripted(errors.New("private failure"))}
-		}, invalid, []int{1, 1}},
+		}, documentForSafeError(safeError{category: safeInternal}), []int{1, 1}},
 		{"unknown error then rejection", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(errors.New("private failure")), newScripted(unsupported("a"))}
-		}, invalid, []int{1, 1}},
+		}, documentForSafeError(safeError{category: safeInternal}), []int{1, 1}},
 		{"API error wrapping the sentinel keeps API classification", func() []*scriptedModel {
 			return []*scriptedModel{newScripted(wrapsSentinel)}
 		}, documentForSafeError(safeError{category: safeFailedDependency}), []int{1}},
