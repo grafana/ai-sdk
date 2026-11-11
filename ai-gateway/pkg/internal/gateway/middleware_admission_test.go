@@ -13,8 +13,10 @@ import (
 
 	"github.com/grafana/authlib/types"
 	"github.com/grafana/grafana-app-sdk/app"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/client-go/rest"
 
 	"github.com/grafana/grafana-app-sdk/logging"
 
@@ -344,4 +346,24 @@ func TestProvider_DecidesAPIAccessOnce(t *testing.T) {
 	defer cancel()
 	code, body := sendObject(t, ctx, http.MethodPost, middlewareURL(h.server.URL, ""), h.serviceToken(t, testInternalService), middlewareDocument(t, "marker", "marker", true, nil))
 	assert.Equal(t, http.StatusCreated, code, body)
+}
+
+func TestProvider_CachesTheTenantConnectionError(t *testing.T) {
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: []extension.Definition{tenantDefinition(t, "marker", "", gatewayExtension{}, false)}, noAPIAccess: true})
+	gw, err := New(Options{LookupEnv: lookup(map[string]string{"GRAFANA_JWKS": mustJWKS(t, h.host), "GF_PLUGIN_ACCESS_MODE": "self-hosted", "GF_PLUGIN_MODEL_CATALOG": modelCatalog(h.anthropic.server.URL, false), "ANTHROPIC_SECRET": providerSecret}), Logger: slog.New(slog.NewJSONHandler(&syncBuffer{}, nil)), Registerer: prometheus.NewRegistry(), Extensions: []extension.Definition{tenantDefinition(t, "marker", "", gatewayExtension{}, false)}})
+	require.NoError(t, err)
+	t.Cleanup(gw.Close)
+	provider := gw.Provider()
+	invalid := rest.Config{Host: "https://grafana.invalid", TLSClientConfig: rest.TLSClientConfig{CAData: []byte("not a certificate")}}
+	_, first := provider.NewApp(app.Config{KubeConfig: invalid, ManifestData: *provider.Manifest().ManifestData})
+	require.Error(t, first)
+	_, second := provider.NewApp(app.Config{KubeConfig: rest.Config{Host: "https://grafana.example"}, ManifestData: *provider.Manifest().ManifestData})
+	assert.Equal(t, first, second, "a later build does not retry the connection")
+}
+
+func mustJWKS(t *testing.T, host *platformhost.Host) string {
+	t.Helper()
+	keys, err := host.JWKS()
+	require.NoError(t, err)
+	return string(keys)
 }

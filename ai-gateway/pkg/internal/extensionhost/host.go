@@ -283,7 +283,7 @@ func (h *Host) ConnectTenants(reader TenantReader) {
 	if len(h.tenant) == 0 {
 		return
 	}
-	cache := newTenantCache(h, reader, h.cacheConfig)
+	cache := newTenantCache(h, reader)
 	if !h.cache.CompareAndSwap(nil, cache) {
 		cache.cancel()
 	}
@@ -326,8 +326,9 @@ func candidates(expected []execution.ExpectedAttempt) []extension.Candidate {
 // ctx ends: startup instances, every namespace's instances, and closes
 // already started for replaced or evicted configurations. Observations still
 // running when ctx ends are counted as dropped; close failures, and closes
-// still running when ctx ends, are counted and logged as failures. Later
-// calls have no effect.
+// still running when ctx ends, are counted and logged as failures. A
+// namespace read whose factory outlives ctx closes what it built itself,
+// bounded by its own close timeout. Later calls have no effect.
 func (h *Host) Close(ctx context.Context) {
 	h.closeOnce.Do(func() { h.close(ctx) })
 }

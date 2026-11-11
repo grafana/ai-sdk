@@ -776,6 +776,11 @@ func TestTenantCache_ShutdownWaitsForReadsInFlight(t *testing.T) {
 			close(closed)
 		}()
 		synctest.Wait()
+		select {
+		case <-closed:
+			t.Fatal("Close returned while a read was in flight")
+		default:
+		}
 		close(gate)
 		<-closed
 		synctest.Wait()

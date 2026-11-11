@@ -95,9 +95,9 @@ type tenantEntry struct {
 	unknown map[string]bool
 }
 
-func newTenantCache(host *Host, reader TenantReader, config TenantCacheConfig) *tenantCache {
+func newTenantCache(host *Host, reader TenantReader) *tenantCache {
 	root, cancel := context.WithCancel(context.Background())
-	return &tenantCache{host: host, reader: reader, config: config, root: root, cancel: cancel, entries: map[string]*list.Element{}, order: list.New()}
+	return &tenantCache{host: host, reader: reader, config: host.cacheConfig, root: root, cancel: cancel, entries: map[string]*list.Element{}, order: list.New()}
 }
 
 // acquire returns namespace's snapshot with a reference the caller must
@@ -188,21 +188,12 @@ func (c *tenantCache) due(entry *tenantEntry, now time.Time) bool {
 // was read. An entry whose last read succeeded is never expired: its next
 // refresh replaces it. The caller holds the lock.
 func (c *tenantCache) expire(entry *tenantEntry, now time.Time) {
-	if !entry.failed || !entry.snapshot.read || now.Before(entry.loadedAt.Add(c.config.MaxStaleness)) {
+	if !entry.failed || entry.snapshot == c.host.failed || now.Before(entry.loadedAt.Add(c.config.MaxStaleness)) {
 		return
 	}
 	c.host.logger.Warn("gateway tenant configuration expired", "namespace", entry.namespace)
-	c.swap(entry, c.host.failed)
-}
-
-// swap serves next for entry and retires the snapshot it replaces. The
-// caller holds the lock.
-func (c *tenantCache) swap(entry *tenantEntry, next *snapshot) {
-	previous := entry.snapshot
-	entry.snapshot = next
-	if previous != nil && previous != next {
-		c.host.retire(previous)
-	}
+	c.host.retire(entry.snapshot)
+	entry.snapshot = c.host.failed
 }
 
 // start starts a read for entry unless one is in flight, and returns the
@@ -241,13 +232,13 @@ func (c *tenantCache) load(entry *tenantEntry) {
 	digest := digestOf(resources)
 	c.mu.Lock()
 	entry.failed, entry.loadedAt, entry.retryAt = false, now, time.Time{}
-	unknown := c.unknownTypes(entry, resources)
-	unchanged := entry.snapshot != nil && entry.snapshot.read && entry.snapshot.digest == digest
+	unchanged := entry.snapshot != nil && entry.snapshot != c.host.failed && entry.snapshot.digest == digest
 	if unchanged || c.closed {
 		c.finish(entry)
 		c.mu.Unlock()
 		return
 	}
+	unknown := c.unknownTypes(entry, resources)
 	c.mu.Unlock()
 	for _, name := range unknown {
 		c.host.unknownTypes.Inc()
@@ -265,7 +256,7 @@ func (c *tenantCache) load(entry *tenantEntry) {
 	c.mu.Unlock()
 	if unused {
 		c.host.retire(built)
-	} else if previous != nil && previous != built {
+	} else if previous != nil {
 		c.host.retire(previous)
 	}
 }

@@ -22,11 +22,8 @@ const phaseConfigure extension.Phase = "configure"
 // they use its instances; once it is retired, the last release closes them.
 // A snapshot without its own instances needs no references.
 type snapshot struct {
-	lists map[extension.Source]*lists
-	owned []*instance
-	// read reports whether the snapshot comes from a successful read, rather
-	// than from a read failure.
-	read   bool
+	lists  map[extension.Source]*lists
+	owned  []*instance
 	digest [sha256.Size]byte
 
 	mu      sync.Mutex
@@ -164,7 +161,7 @@ func (h *Host) buildSnapshot(namespace string, resources []TenantResource, diges
 		instances = append(instances, built)
 	}
 	sortByName(instances)
-	built := &snapshot{lists: make(map[extension.Source]*lists, len(extension.Sources)), owned: owned, read: true, digest: digest}
+	built := &snapshot{lists: make(map[extension.Source]*lists, len(extension.Sources)), owned: owned, digest: digest}
 	for _, source := range extension.Sources {
 		built.lists[source] = newLists(instances, source, unavailable)
 	}
