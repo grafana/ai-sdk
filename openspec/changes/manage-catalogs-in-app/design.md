@@ -68,7 +68,7 @@
 
 ### Permissions
 
-`src/permissions.ts` exports the four action names and `useCatalogPermissions()`, which returns `{read, create, update, delete}` from `hasPermission`.
+`src/permissions.ts` exports the four action names and `catalogPermissions()`, which returns `{read, create, update, delete}` from `hasPermission`. It's a plain function, not a hook, because boot data doesn't change while the page is open.
 
 - Every control asks this one helper. Nothing checks `orgRole`.
 - Boot data is loaded when the page loads, so a permission change shows after a reload. Grafana stays authoritative: a refused write shows its `403` like any other error.
@@ -97,7 +97,8 @@ Rows instead of maps, so a name can be edited and duplicates can be detected. Ea
 - A rename therefore removes the old key and needs a new one, because Grafana refuses reusing a secret name under another key.
 - The update sends the loaded `metadata` unchanged, including `resourceVersion`, so a concurrent change gives `409`. It sends the new `spec` and `secure` only when non-empty. The create sends `apiVersion`, `kind`, `metadata.name`, `spec` and `secure`.
 - **Key field:** `SecretInput` from `@grafana/ui`. It shows as configured when the row's current name is a stored key and no key has been typed. Reset clears that state, so the writer can type a replacement. A reset left empty sends nothing, so the stored key stays: Grafana doesn't allow a provider without a key anyway. The typed value is never written anywhere except the request body. After a successful save, the page navigates to the list, which drops the form state.
-- **Read-only mode** applies without `update`, or without `create` on `new`. Inputs are disabled, and Save, Delete and the add and remove row controls are absent. Keys show only as configured or not.
+- **Read-only mode** applies without `update`. Inputs are disabled, and Save, Reset and the add and remove row controls are absent. Keys show only as configured or not. Without `create`, `new` shows that the user can't create catalogs instead of an empty form.
+- **Inputs:** provider type is a `RadioButtonGroup`, and a target's provider is a `Combobox` over the form's provider names, plus a stale name the target still references so admission can report it. Aliases use `TagsInput` with a 128-character limit, the documented alias limit, because its default of 50 would block valid aliases.
 - **Local checks:** Save is refused only when two provider rows share a name or two model rows share an ID. These are the only invalid states the map-shaped body can't carry. Empty names, unknown provider references, alias collisions and policy violations go to admission.
 - **Alternative considered:** a JSON spec editor (`CodeEditor`) with key fields per provider. Rejected:
   - users have to know the schema;
@@ -113,13 +114,14 @@ Rows instead of maps, so a name can be edited and duplicates can be detected. Ea
   - the provider names and types;
   - the model IDs;
   - a Delete action for `delete` holders, behind a `ConfirmModal`.
-- With `create`, a "New catalog" `LinkButton` appears in the page actions.
+- With `create`, a "New catalog" `LinkButton` appears above the table. It sits in the page content rather than `PluginPage` actions, so it shows wherever the page renders.
+- In-app links use `react-router-dom`'s `Link` or `LinkButton`, not `TextLink`. `@grafana/ui`'s internal `Link` reads Grafana's v5-compat router context, which is the same router at runtime but a different one in Jest.
 - When the namespace has no catalogs, an `EmptyState` appears, with the create call to action only for `create` holders.
 - Load, delete and save errors are an `Alert` with severity `error` and the `errorMessage` text, shown above the content. The form keeps its state on error.
 
 ### Overview
 
-- A "Model catalogs" block under "Endpoint", rendered only when `read` is true. It lists catalogs once on mount.
+- A "Model catalogs" section after "Endpoint", rendered only when `read` is true. It lists catalogs once on mount.
 - For each catalog it shows the name and a `CodeSnippet` of `catalogBaseURL(endpoint, name)`, which is `${gatewayEndpoint(...)}/modelcatalogs/${encodeURIComponent(name)}`.
 - One sentence says that Editors and Admins can call catalog URLs (`aigateway:modelinvoker`), with a link to the catalog page.
 - With no catalogs, it shows a short line with the link. A load failure shows an inline `Alert` with severity `warning` and the returned message. The quick start is unaffected.
@@ -136,7 +138,7 @@ What's added:
 
 - **README:**
   - one paragraph on managing catalogs on the app's page, where the overview shows catalog URLs;
-  - a bullet on propagation: edits apply on the next call, but a removed role or a revoked token can keep working for a while, because Grafana caches permissions and the tokens it signs for the plugin. Cite durations only when the code at the Grafana `v13.3.0` tag confirms them. The snapshot shows a 60-second permission cache and 10-minute ID tokens;
+  - a bullet on propagation: edits apply on the next call, but a removed role or a revoked token can keep working for a while, because Grafana and Grafana Cloud cache permissions and tokens. No durations are given. At `v13.3.0` the legacy permission cache lasts 60 seconds (`pkg/services/accesscontrol/acimpl/service.go`), but the authz service's permission cache TTL is configurable (`pkg/services/authz/rbac/service.go`), and Cloud access tokens live until they expire, so no single number holds;
   - the Install step's overview sentence also names catalog URLs.
 - **`ai-gateway/src/README.md`** (the plugin catalog listing): one sentence on the catalog page.
 - **`ai-gateway/docs/model-catalog.md`:** a short "Stack catalogs" section near the top. It says this package builds catalogs inside a Go service, while stack catalogs are `ModelCatalog` resources the Gateway serves per stack, and links to the README section.
@@ -144,7 +146,7 @@ What's added:
   - one client per route, since a client has one base URL;
   - storing the customer's choice (catalog name and model ID) in the consuming plugin's settings;
   - in Cloud, operator models need a backend in `access_internal_services` using token exchange;
-  - calling the catalog route on behalf of the user with `WithOnBehalfOf`, so Grafana checks the user's access. Verify against Grafana source what the user needs before documenting it;
+  - calling the catalog route on behalf of the user with `WithOnBehalfOf`. Verified at `v13.3.0`: `pluginroute.checkDeclaredAccess` (`routes.go`) calls the access client, which is authlib's `authz.ClientImpl` (`pkg/services/authz/rbac.go`). At authlib `ed7cea0f2b27`, `Check` requires the token's delegated permissions to grant `modelcatalogs:get` (`CheckServicePermissions`), then checks the user, who needs the route grant from `aigateway:modelinvoker`;
   - why falling back to Grafana models is discouraged: the customer chose their provider and account, a silent fallback sends prompts elsewhere and hides a broken catalog, and the Gateway never crosses sources itself.
 
   Any Go snippet reuses calls already in the guide, so no new API is invented.
@@ -173,9 +175,9 @@ What's added:
 | Admin create | Fill the form with a sentinel key and save. The list shows the catalog. The page content never contains the sentinel, and an API `GET` shows only `secure.<p>.name`. |
 | Admin edit, keys kept | Reopen: the key shows as configured, and the page has no sentinel. Change a model name and save. The intercepted `PUT` body has no `secure` entry, and the API's secure name is unchanged. Replace the key: the `PUT` carries only `create` for that provider. |
 | Admin delete | Delete and confirm. The API returns `404` and the list drops it. |
-| Admission errors | Save a provider named `Anthropic`. The alert shows admission's message, and the page has no sentinel. |
+| Admission errors | Save a model with an empty display name. Admission refuses it (`models.<id>.name is required`), the alert shows the returned message verbatim, the form keeps its input, and the visible page, console and fetched responses have no sentinel. A provider name policy refusal was avoided because the name is also the secure key, which Grafana might check before admission. |
 | Concurrent edit | Open edit, update through the API, then save. The page shows the `409` message. |
-| Viewer read-only | `pageAs('Viewer')`: the list shows the catalog, with no New or Delete. The edit page has disabled inputs and no Save. `catalogs/new` is read-only. |
+| Viewer read-only | `pageAs('Viewer')`: the list shows the catalog, with no New or Delete. The edit page has disabled inputs, configured keys, and no Save or Reset. `catalogs/new` says they can't create catalogs. |
 | Editor read-only | The same as `pageAs('Editor')`. |
 | Overview | Create a catalog through the API. The overview shows `.../namespaces/default/modelcatalogs/<name>`. |
 
@@ -205,6 +207,7 @@ Additive frontend change. Rolling back removes the page and the overview section
 
   Rows already carry the whole `Provider` object, so neither the conversion nor `secureChanges` changes.
 
-## Open Questions
+## Decisions recorded at review
 
-- The exact cache durations to cite for removed roles and revoked tokens. Resolve them from the Grafana `v13.3.0` source while writing the docs, or keep the wording without durations.
+- A structured form; routes `catalogs/new` and `catalogs/edit/:name`; the nav include gated on `modelcatalogs:get`; a `pageAs(role)` fixture; base URLs on the overview only.
+- Cache durations only if verified at `v13.3.0`, otherwise none (none given, see Docs). On-behalf-of requirements only as verified in Grafana source (see Docs).
