@@ -213,4 +213,5 @@ All cache, snapshot and pipeline timing tests run in `synctest` bubbles with fak
 
 - Admission warnings through app-sdk (option A), once validators can return warnings and Grafana surfaces them.
 - Revisit `maxNamespaces`, `ttl` and the 20 QPS client limit with development metrics. API load per replica is about active namespaces / TTL, so 1024 namespaces at a 1-minute TTL is close to the limit.
-- Manual development deployment check on the first build with a tenant extension (#766).
+- Manual development deployment check on the first build with a tenant extension (#766). It also confirms that Grafana's list responses carry `kind: MiddlewareList`, which the reader requires so a successful non-list body is a failure, not absence. If Grafana omits it, every read fails closed and `tenant_config_reads_total{result="failed"}` with class `invalid-response` shows it.
+- Admission decodes `spec.config` through the generated type, so it checks a `float64`-rounded configuration, while the read-time check sees the exact stored JSON. Integers above 2^53 can therefore differ at their bounds. Move admission to the same decoding as the reader when the stored spec shape is decided (open object or typed union).

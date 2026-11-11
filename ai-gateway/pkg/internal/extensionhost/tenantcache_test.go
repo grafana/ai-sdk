@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -385,6 +386,16 @@ func TestTenantCache_ReadsOnlyWhenATenantExtensionApplies(t *testing.T) {
 	})
 }
 
+// phaselessInstance implements no phase, only Close.
+type phaselessInstance struct{ closes atomic.Int32 }
+
+func (p *phaselessInstance) Close(context.Context) error {
+	p.closes.Add(1)
+	return nil
+}
+
+var phaseless = &phaselessInstance{}
+
 func TestBuildSnapshot(t *testing.T) {
 	missingEnabled := TenantResource{Name: "t1", Type: "t1", Config: json.RawMessage(`{}`)}
 	mismatch := stored("t1", true, `{}`)
@@ -403,6 +414,8 @@ func TestBuildSnapshot(t *testing.T) {
 		{name: "missing enabled", resources: []TenantResource{missingEnabled}, ran: []string{`on{}`}, failed: 1},
 		{name: "name differs from type", resources: []TenantResource{mismatch}, ran: []string{`on{}`}, failed: 1},
 		{name: "fail-closed configuration refused", resources: []TenantResource{stored("gate", true, `{"v":1}`)}, ran: nil, failed: 1, refused: true},
+		{name: "fail-closed factory panics", resources: []TenantResource{stored("panics", true, `{}`)}, failed: 1, refused: true},
+		{name: "factory returns no phase", resources: []TenantResource{stored("phaseless", true, `{}`)}, ran: []string{`on{}`}, failed: 1},
 		{name: "schema-less extension", resources: []TenantResource{stored("plain", true, `{}`)}, ran: []string{`on{}`, `plain{}`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -415,16 +428,23 @@ func TestBuildSnapshot(t *testing.T) {
 					configurable(t, "t1", log),
 					configurable(t, "gate", log, failClosed),
 					configurable(t, "plain", log, func(d *extension.Definition) { d.ConfigSchema = schema.Schema{} }),
+					configurable(t, "panics", log, failClosed, func(d *extension.Definition) {
+						d.New = func(json.RawMessage, extension.Dependencies) (any, error) { panic(tenantSentinel) }
+					}),
+					configurable(t, "phaseless", log, func(d *extension.Definition) {
+						d.New = func(json.RawMessage, extension.Dependencies) (any, error) { return phaseless, nil }
+					}),
 				)
 				err := h.generate(t, "a")
 				if tc.refused {
 					require.ErrorIs(t, err, extension.ErrUnavailable)
+					assert.Zero(t, h.model.callCount(), "refused before any provider call")
 				} else {
 					require.NoError(t, err)
 				}
 				assert.Equal(t, tc.ran, transforms(log))
 				failures := 0.0
-				for _, name := range []string{"t1", "gate"} {
+				for _, name := range []string{"t1", "gate", "panics", "phaseless"} {
 					failures += h.events(name, string(phaseConfigure), eventFailed)
 				}
 				assert.Equal(t, tc.failed, failures)
@@ -764,4 +784,78 @@ func TestTenantCache_ShutdownWaitsForReadsInFlight(t *testing.T) {
 		assert.False(t, ran, "a read that completes during shutdown builds no instance")
 		assert.NotContains(t, h.logs.String(), "gateway extension failed")
 	})
+}
+
+func TestBuildSnapshot_ClosesAPhaselessInstance(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reader := newFakeReader()
+		reader.set("a", stored("phaseless", true, `{}`))
+		instance := &phaselessInstance{}
+		h := newTenantHarness(t, reader, TenantCacheConfig{}, configurable(t, "phaseless", &journal{}, func(d *extension.Definition) {
+			d.New = func(json.RawMessage, extension.Dependencies) (any, error) { return instance, nil }
+		}))
+		require.NoError(t, h.generate(t, "a"))
+		synctest.Wait()
+		assert.Equal(t, int32(1), instance.closes.Load())
+	})
+}
+
+func TestTenantCache_RemovedResourceRestoresTheDefault(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reader := newFakeReader()
+		reader.set("a", stored("on", true, `{"v":"x"}`))
+		log := &journal{}
+		h := newTenantHarness(t, reader, TenantCacheConfig{TTL: time.Minute}, configurable(t, "on", log, defaultOn))
+		require.NoError(t, h.generate(t, "a"))
+		reader.set("a")
+		time.Sleep(time.Minute)
+		require.NoError(t, h.generate(t, "a"))
+		synctest.Wait()
+		require.NoError(t, h.generate(t, "a"))
+		assert.Equal(t, []string{`on{"v":"x"}`, `on{"v":"x"}`, `on{}`}, transforms(log))
+	})
+}
+
+func TestTenantCache_ReadFailureLogs(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reader := newFakeReader()
+		reader.fail(ErrReadRefused)
+		h := newTenantHarness(t, reader, TenantCacheConfig{}, configurable(t, "t1", &journal{}))
+		require.NoError(t, h.generate(t, "stacks-9"))
+		var record map[string]any
+		for line := range strings.Lines(h.logs.String()) {
+			if strings.Contains(line, "gateway tenant configuration read failed") {
+				require.NoError(t, json.Unmarshal([]byte(line), &record))
+			}
+		}
+		require.NotNil(t, record)
+		assert.Equal(t, "stacks-9", record["namespace"])
+		assert.Equal(t, "refused", record["class"])
+		assert.ElementsMatch(t, []string{"time", "level", "msg", "namespace", "class"}, keys(record))
+	})
+}
+
+func TestTenantCache_ShutdownCancelsReadsWithoutCountingThem(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reader := newFakeReader()
+		reader.setGate(make(chan struct{}))
+		h := newTenantHarness(t, reader, TenantCacheConfig{}, configurable(t, "t1", &journal{}))
+		ctx, cancel := context.WithCancel(inNamespace(t.Context(), "a"))
+		defer cancel()
+		go func() { _, _ = h.compose(t, extension.SourceOperatorCatalog).DoGenerate(ctx, provider.CallOptions{}) }()
+		synctest.Wait()
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), time.Second)
+		defer closeCancel()
+		h.host.Close(closeCtx)
+		assert.Zero(t, metricValue(h, "grafana_ai_gateway_tenant_config_reads_total", map[string]string{"result": "failed"}))
+		assert.NotContains(t, h.logs.String(), "read failed")
+	})
+}
+
+func keys(record map[string]any) []string {
+	names := make([]string, 0, len(record))
+	for name := range record {
+		names = append(names, name)
+	}
+	return names
 }

@@ -208,8 +208,9 @@ The rules for writing resources:
   extensions and unknown names are refused with the same reason.
 - `config` must match the extension's `ConfigSchema` and is at most 64 KiB.
   Refusals name the field and the failing location, never a value.
-- An update that sets `enabled: false` and keeps `config` is always accepted,
-  even after a rollback to a build without the extension. Any other change to
+- When the plugin has API access, an update that sets `enabled: false` and
+  keeps `config` is always accepted, even after a rollback to a build without
+  the extension. Any other change to
   a resource whose extension isn't registered is refused.
 - Resources aren't in folders. Viewers and Editors can read them
   (`aigateway:middlewarereader`) and Admins can write them

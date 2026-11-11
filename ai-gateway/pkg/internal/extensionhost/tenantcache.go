@@ -225,7 +225,9 @@ func (c *tenantCache) load(entry *tenantEntry) {
 	cancel()
 	now := c.host.clock()
 	if err != nil {
-		c.host.recordReadFailure(entry.namespace, err)
+		if c.root.Err() == nil {
+			c.host.recordReadFailure(entry.namespace, err)
+		}
 		c.mu.Lock()
 		entry.failed, entry.retryAt = true, now.Add(c.config.FailureBackoff)
 		if entry.snapshot == nil {

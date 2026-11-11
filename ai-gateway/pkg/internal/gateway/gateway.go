@@ -70,6 +70,10 @@ type Gateway struct {
 	sinks         sinks
 	definitions   []extension.Definition
 	logger        *slog.Logger
+	// access is decided once, when the first app is built.
+	access     sync.Once
+	apiAccess  bool
+	connectErr error
 }
 
 // New validates settings and constructs every Gateway dependency before any
@@ -285,18 +289,22 @@ func (g *Gateway) Authenticator() authn.Authenticator { return g.authenticator }
 
 // Provider returns the app-sdk provider whose app serves Handler and the
 // manifest kinds with their admission validators. The host's API access
-// configuration reaches the app here: a running Gateway reads namespace
-// tenant configuration through it, and without it applies tenant extension
-// defaults and refuses Middleware writes.
+// configuration reaches the app here, and the first app built decides it for
+// the process: a running Gateway reads namespace tenant configuration through
+// it, and without it applies tenant extension defaults and refuses Middleware
+// writes.
 func (g *Gateway) Provider() app.Provider {
 	return simple.NewAppProvider(manifestdata.LocalManifest(), nil, func(cfg app.Config) (app.App, error) {
-		apiAccess := cfg.KubeConfig.Host != ""
-		if !g.Idle() {
-			if err := g.connectTenants(cfg.KubeConfig, apiAccess); err != nil {
-				return nil, err
+		g.access.Do(func() {
+			g.apiAccess = cfg.KubeConfig.Host != ""
+			if !g.Idle() {
+				g.connectErr = g.connectTenants(cfg.KubeConfig, g.apiAccess)
 			}
+		})
+		if g.connectErr != nil {
+			return nil, g.connectErr
 		}
-		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: managedKinds(g.definitions, apiAccess)})
+		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: managedKinds(g.definitions, g.apiAccess)})
 	})
 }
 

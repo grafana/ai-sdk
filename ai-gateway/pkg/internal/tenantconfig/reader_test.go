@@ -54,14 +54,14 @@ func TestReader_Read(t *testing.T) {
 	}{
 		{
 			name:     "no resources",
-			pages:    map[string]string{"": `{"items":[]}`},
+			pages:    map[string]string{"": `{"kind":"MiddlewareList","items":[]}`},
 			expected: nil,
 		},
 		{
 			name: "two pages sorted by name",
 			pages: map[string]string{
-				"":   `{"metadata":{"continue":"c1"},"items":[{"metadata":{"name":"b"},"spec":{"type":"b","enabled":true,"config":{"x":"y"}}}]}`,
-				"c1": `{"items":[{"metadata":{"name":"a"},"spec":{"type":"a","enabled":false}}]}`,
+				"":   `{"kind":"MiddlewareList","metadata":{"continue":"c1"},"items":[{"metadata":{"name":"b"},"spec":{"type":"b","enabled":true,"config":{"x":"y"}}}]}`,
+				"c1": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"a"},"spec":{"type":"a","enabled":false}}]}`,
 			},
 			expected: []extensionhost.TenantResource{
 				{Name: "a", Type: "a", Enabled: enabled(false), Config: json.RawMessage(`{}`)},
@@ -70,14 +70,14 @@ func TestReader_Read(t *testing.T) {
 		},
 		{
 			name:  "numbers keep their literal",
-			pages: map[string]string{"": `{"items":[{"metadata":{"name":"a"},"spec":{"type":"a","enabled":true,"config":{ "n" : 9007199254740993, "f": 1.0 }}}]}`},
+			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"a"},"spec":{"type":"a","enabled":true,"config":{ "n" : 9007199254740993, "f": 1.0 }}}]}`},
 			expected: []extensionhost.TenantResource{
 				{Name: "a", Type: "a", Enabled: enabled(true), Config: json.RawMessage(`{"n":9007199254740993,"f":1.0}`)},
 			},
 		},
 		{
 			name:  "null configuration and missing enabled",
-			pages: map[string]string{"": `{"items":[{"metadata":{"name":"a"},"spec":{"type":"a","config":null}}]}`},
+			pages: map[string]string{"": `{"kind":"MiddlewareList","items":[{"metadata":{"name":"a"},"spec":{"type":"a","config":null}}]}`},
 			expected: []extensionhost.TenantResource{
 				{Name: "a", Type: "a", Config: json.RawMessage(`{}`)},
 			},
@@ -123,10 +123,15 @@ func TestReader_Failures(t *testing.T) {
 		{name: "server error", handler: status(http.StatusInternalServerError), expected: extensionhost.ErrReadStatus},
 		{name: "malformed", handler: func(w http.ResponseWriter, _ *http.Request) { writeList(w, `{"items":[`+readerSentinel) }, expected: extensionhost.ErrReadInvalid},
 		{name: "oversized", handler: func(w http.ResponseWriter, _ *http.Request) {
-			writeList(w, `{"items":[],"pad":"`+strings.Repeat("x", maxListBytes)+`"}`)
+			writeList(w, `{"kind":"MiddlewareList","items":[],"pad":"`+strings.Repeat("x", maxListBytes)+`"}`)
+		}, expected: extensionhost.ErrReadInvalid},
+		{name: "success that is not a list: null", handler: func(w http.ResponseWriter, _ *http.Request) { writeList(w, `null`) }, expected: extensionhost.ErrReadInvalid},
+		{name: "success that is not a list: empty object", handler: func(w http.ResponseWriter, _ *http.Request) { writeList(w, `{}`) }, expected: extensionhost.ErrReadInvalid},
+		{name: "success that is not a list: status", handler: func(w http.ResponseWriter, _ *http.Request) {
+			writeList(w, `{"kind":"Status","apiVersion":"v1","status":"Success","message":"`+readerSentinel+`"}`)
 		}, expected: extensionhost.ErrReadInvalid},
 		{name: "endless pages", handler: func(w http.ResponseWriter, _ *http.Request) {
-			writeList(w, `{"metadata":{"continue":"again"},"items":[]}`)
+			writeList(w, `{"kind":"MiddlewareList","metadata":{"continue":"again"},"items":[]}`)
 		}, expected: extensionhost.ErrReadInvalid},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

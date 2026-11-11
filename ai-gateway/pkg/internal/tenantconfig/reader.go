@@ -32,6 +32,10 @@ const (
 	readBurst = 40
 )
 
+// listKind is the kind of a Middleware list response. A successful response
+// of any other kind is invalid, never a namespace without resources.
+var listKind = middlewarev1alpha1.Kind().Kind() + "List"
+
 // Reader lists a namespace's Middleware resources through the platform API
 // with the credentials of the kubeconfig it was built from. It decodes each
 // spec.config as the JSON the platform stores, so numbers keep their literal.
@@ -59,6 +63,7 @@ func NewReader(kubeConfig rest.Config) (*Reader, error) {
 }
 
 type list struct {
+	Kind     string `json:"kind"`
 	Metadata struct {
 		Continue string `json:"continue"`
 	} `json:"metadata"`
@@ -135,7 +140,7 @@ func (r *Reader) page(ctx context.Context, namespace, next string, remaining *in
 	}
 	*remaining -= int64(len(raw))
 	var decoded list
-	if err := json.Unmarshal(raw, &decoded); err != nil {
+	if err := json.Unmarshal(raw, &decoded); err != nil || decoded.Kind != listKind {
 		return list{}, extensionhost.ErrReadInvalid
 	}
 	return decoded, nil

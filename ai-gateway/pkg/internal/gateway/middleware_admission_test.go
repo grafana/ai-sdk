@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/grafana/authlib/types"
+	"github.com/grafana/grafana-app-sdk/app"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -328,4 +329,19 @@ func TestTenantConfiguration_WithoutAPIAccess(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, code, body, "even a disable-only update is refused")
 	code, body = sendObject(t, ctx, http.MethodDelete, middlewareURL(h.server.URL, "off-by-default"), token, "")
 	assert.Equal(t, http.StatusOK, code, body, "deletes are not reviewed")
+}
+
+func TestProvider_DecidesAPIAccessOnce(t *testing.T) {
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{extensions: []extension.Definition{tenantDefinition(t, "marker", "", gatewayExtension{}, false)}})
+	provider := h.gateway.Provider()
+	_, err := provider.NewApp(app.Config{ManifestData: *provider.Manifest().ManifestData})
+	require.NoError(t, err)
+	logs := h.logs.String()
+	assert.Equal(t, 1, strings.Count(logs, `"msg":"gateway plugin API access"`), "a later build without API access changes nothing")
+	assert.NotContains(t, logs, "tenant configuration is not applied")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	code, body := sendObject(t, ctx, http.MethodPost, middlewareURL(h.server.URL, ""), h.serviceToken(t, testInternalService), middlewareDocument(t, "marker", "marker", true, nil))
+	assert.Equal(t, http.StatusCreated, code, body)
 }
