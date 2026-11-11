@@ -1,0 +1,11 @@
+services:
+  grafana:
+    environment:
+      GF_PLUGIN_GRAFANA_AIGATEWAY_APP_MODEL_CATALOG: $$__file{/etc/grafana/provisioning/aigateway/models.e2e.yaml}
+    depends_on:
+      - fake-anthropic
+  fake-anthropic:
+    image: node:24-alpine
+    command: ['node', '/srv/fake-anthropic.mjs']
+    volumes:
+      - ./tests/fake-anthropic.mjs:/srv/fake-anthropic.mjs:ro
