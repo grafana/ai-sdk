@@ -19,9 +19,9 @@ import (
 
 type modelConstructor func(config nativemodel.Config, modelID string, client *http.Client) provider.LanguageModel
 
-// ModelFactory composes one canonical logical model around its unchanged lower
-// model. WP8 observers use this seam; WP9 may replace the lower model with a
-// fallback without changing the logical wrapper.
+// ModelFactory gives one lower model its logical identity, without changing it.
+// The lower model may be a fallback chain. Logical observers are not applied
+// here: the runtime applies them to the selection with [ModelObservers].
 type ModelFactory func(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error)
 
 // Catalog is the configured model catalog. It also keeps each route's
@@ -167,7 +167,9 @@ func composeCandidates(candidates []provider.LanguageModel, descriptors []config
 	return ordered.WithDecider(execution.FallbackDecider).WithAttemptObserver(physicalAttemptObserver(descriptors, sink)), nil
 }
 
-func identityModelFactory(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
+// ConfiguredIdentity is the [ModelFactory] of configured models: provider
+// `grafana` and the canonical public model ID.
+func ConfiguredIdentity(canonicalID string, lower provider.LanguageModel) (provider.LanguageModel, error) {
 	if lower == nil {
 		return nil, fmt.Errorf("lower model is nil")
 	}

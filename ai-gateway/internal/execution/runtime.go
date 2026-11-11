@@ -14,7 +14,10 @@ import (
 // Config configures a [Runtime].
 type Config struct {
 	Selector RequestSelector
-	Limits   Limits
+	// Compose, when set, composes the model each call invokes from its
+	// selection. Without it, a call invokes the selected model.
+	Compose ModelComposer
+	Limits  Limits
 	// ConfiguredAPIKeys are provider and exporter credentials redacted from native
 	// failure summaries.
 	ConfiguredAPIKeys []string `json:"-"`
@@ -24,6 +27,7 @@ type Config struct {
 // for concurrent use.
 type Runtime struct {
 	selector RequestSelector
+	compose  ModelComposer
 	limits   Limits
 	redactor SummaryRedactor
 }
@@ -43,6 +47,7 @@ func New(config Config) (*Runtime, error) {
 	}
 	return &Runtime{
 		selector: config.Selector,
+		compose:  config.Compose,
 		limits:   config.Limits,
 		redactor: NewSummaryRedactor(config.ConfiguredAPIKeys),
 	}, nil
@@ -63,7 +68,9 @@ type Call struct {
 // selects the model for a request. It fails inconsistent history with
 // [ErrInvalidToolHistory] before anything else. It then refuses protected call
 // headers with [ErrProtectedCallHeader], and removes the call-level
-// [ControlNamespace] from options to pass it to the selector. A
+// [ControlNamespace] from options to pass it to the selector. The configured
+// [ModelComposer] then composes the model the call invokes; a composer that
+// fails, panics or returns an invalid model fails the call as internal. A
 // context that has ended before or during selection decides the outcome, and
 // its error is returned. A translator set with [WithTranslator] reaches every
 // physical attempt of this call only.
@@ -101,10 +108,20 @@ func (r *Runtime) selectModel(ctx context.Context, modelID string, options provi
 		}
 	}()
 	selected, err = r.selector(ctx, modelID, options, gateway)
-	if err == nil && !validSelection(selected) {
+	if err != nil {
+		return selected, err
+	}
+	if !validSelection(selected) {
 		return Selection{}, errInternal
 	}
-	return selected, err
+	if r.compose == nil {
+		return selected, nil
+	}
+	selected.Model, err = r.compose(selected)
+	if err != nil || !validSelection(selected) {
+		return Selection{}, errInternal
+	}
+	return selected, nil
 }
 
 func validSelection(selected Selection) (valid bool) {

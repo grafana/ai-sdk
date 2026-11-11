@@ -11,7 +11,10 @@
 //   - tool-history reconstruction: [Runtime.Call] rebuilds the prompt's
 //     [ToolHistory] before anything else and fails inconsistent history with
 //     [ErrInvalidToolHistory];
-//   - selection, validated and contained, under the request context;
+//   - selection, validated and contained, under the request context, and the
+//     composition of the model each call invokes from its selection, so
+//     per-call layers such as logical observers wrap every selection at one
+//     point whatever its [Source];
 //   - invocation of DoGenerate or DoStream, with panics and missing results
 //     failing as internal;
 //   - stream waits, the idle duration and one drain bounded by the drain

@@ -173,19 +173,19 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if err != nil {
 		return nil, err
 	}
-	modelFactory, byokFactory, err := service.NewModelObservabilityFactories(sinks.telemetry, logger, sinks.agent, execution.DefaultLimits.StreamDrainDuration)
+	observers, err := service.NewModelObservers(sinks.telemetry, logger, sinks.agent, execution.DefaultLimits.StreamDrainDuration)
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := service.BuildCatalog(file, providers, nativeClient, modelFactory, sinks.attempts)
+	catalog, err := service.BuildCatalog(file, providers, nativeClient, service.ConfiguredIdentity, sinks.attempts)
 	if err != nil {
 		return nil, err
 	}
 	var byokOptions *service.BYOKOptions
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
-		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: byokFactory}
+		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: service.BYOKIdentity}
 	}
-	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions), Compose: observers.Compose, Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
