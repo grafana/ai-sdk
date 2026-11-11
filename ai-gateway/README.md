@@ -142,6 +142,10 @@ secure:
   anthropic: { create: "<provider key>" }
 ```
 
+Reads return `secure.anthropic.name: inline-<generated>` in place of the key.
+Grafana creates that secret for the catalog and owns it there: replacing a key
+deletes the old secret, and deleting the catalog deletes its secrets.
+
 - `spec` uses the catalog format above without `apiKeyEnv`. Providers must be
   `anthropic` or `openai`, named with lowercase letters, digits and `-`, and
   can't set `baseURL`, `providerName` or `supportsStructuredOutputs`.
