@@ -38,6 +38,7 @@ export default defineConfig([
       'docs/',
       'examples/',
       'providerwire/',
+      'src/generated/',
       'test/',
     ],
   },
