@@ -1,5 +1,6 @@
 import { CurrentUser, OrgRole } from '@grafana/data';
 import { setCurrentUser } from '@grafana/runtime';
+import { fireEvent } from '@testing-library/react';
 
 let currentUser: CurrentUser | undefined;
 
@@ -14,4 +15,11 @@ export function signInAs(orgRole: OrgRole, actions: string[]) {
   }
   currentUser.orgRole = orgRole;
   currentUser.permissions = Object.fromEntries(actions.map((action) => [action, true]));
+}
+
+/** chooseOption selects the option with the given value in a Combobox. */
+export function chooseOption(combobox: HTMLElement, value: string) {
+  fireEvent.click(combobox);
+  fireEvent.change(combobox, { target: { value } });
+  fireEvent.keyDown(combobox, { key: 'Enter' });
 }
