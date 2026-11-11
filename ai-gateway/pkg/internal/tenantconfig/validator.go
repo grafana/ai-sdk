@@ -88,5 +88,11 @@ func encode(configuration map[string]any) (json.RawMessage, error) {
 	if configuration == nil {
 		configuration = map[string]any{}
 	}
-	return json.Marshal(configuration)
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(configuration); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(encoded.Bytes(), []byte("\n")), nil
 }

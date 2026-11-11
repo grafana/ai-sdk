@@ -60,6 +60,7 @@ func TestValidator_Validate(t *testing.T) {
 	valid := map[string]any{"instructions": "Answer concisely.", "stop": []any{"END"}}
 	tightened := map[string]any{"instructions": strings.Repeat("x", 41)}
 	oversized := map[string]any{"instructions": strings.Repeat(sentinel, MaxConfigBytes/len(sentinel)+1)}
+	markupAtTheBound := map[string]any{"instructions": strings.Repeat("<", MaxConfigBytes-len(`{"instructions":""}`))}
 	tests := []struct {
 		name    string
 		action  resource.AdmissionAction
@@ -80,6 +81,8 @@ func TestValidator_Validate(t *testing.T) {
 		{name: "undeclared key", action: resource.AdmissionActionCreate, object: named("instructions", true, map[string]any{sentinel: sentinel}), wantErr: "middleware: spec.config does not match the extension's schema at /"},
 		{name: "config for a schema-less extension", action: resource.AdmissionActionCreate, object: named("marker", true, map[string]any{"value": sentinel}), wantErr: "middleware: spec.config is not accepted: the extension takes no configuration"},
 		{name: "oversized config", action: resource.AdmissionActionCreate, object: named("instructions", true, oversized), wantErr: "middleware: spec.config exceeds 65536 bytes"},
+		{name: "markup is measured unescaped", action: resource.AdmissionActionCreate, object: named("marker", true, markupAtTheBound), wantErr: "middleware: spec.config is not accepted: the extension takes no configuration"},
+		{name: "name differs from type on update", action: resource.AdmissionActionUpdate, object: middleware("instructions", "other", false, valid), old: named("instructions", true, valid), wantErr: "middleware: metadata.name must equal spec.type"},
 		{name: "update of a registered type", action: resource.AdmissionActionUpdate, object: named("instructions", true, map[string]any{"instructions": "Other."}), old: named("instructions", true, valid)},
 		{name: "update failing the schema", action: resource.AdmissionActionUpdate, object: named("instructions", true, map[string]any{"instructions": 1}), old: named("instructions", true, valid), wantErr: "middleware: spec.config does not match the extension's schema at /instructions"},
 		{name: "disabling an unregistered type", action: resource.AdmissionActionUpdate, object: named("unknown", false, map[string]any{"value": sentinel}), old: named("unknown", true, map[string]any{"value": sentinel})},
