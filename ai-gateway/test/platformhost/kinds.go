@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -74,6 +75,8 @@ func (h *Host) serveKind(w http.ResponseWriter, r *http.Request, client clientv3
 	switch {
 	case name == "" && r.Method == http.MethodPost:
 		h.createObject(w, r, client, kind, key)
+	case name == "" && r.Method == http.MethodGet:
+		h.listObjects(w, kind, key)
 	case name != "" && r.Method == http.MethodGet:
 		h.mu.Lock()
 		object, ok := h.kinds.objects[key]
@@ -90,6 +93,30 @@ func (h *Host) serveKind(w http.ResponseWriter, r *http.Request, client clientv3
 	default:
 		writeStatus(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+// listObjects writes the namespace's objects of kind in name order, as one
+// unpaginated list.
+func (h *Host) listObjects(w http.ResponseWriter, kind app.ManifestVersionKind, key objectKey) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var names []string
+	for stored := range h.kinds.objects {
+		if stored.plural == key.plural && stored.namespace == key.namespace {
+			names = append(names, stored.name)
+		}
+	}
+	slices.Sort(names)
+	items := make([]any, 0, len(names))
+	for _, name := range names {
+		items = append(items, h.kinds.objects[objectKey{plural: key.plural, namespace: key.namespace, name: name}])
+	}
+	writeObject(w, http.StatusOK, map[string]any{
+		"apiVersion": h.config.Group + "/" + h.config.Version,
+		"kind":       kind.Kind + "List",
+		"metadata":   map[string]any{"resourceVersion": strconv.Itoa(h.kinds.version)},
+		"items":      items,
+	})
 }
 
 func (h *Host) createObject(w http.ResponseWriter, r *http.Request, client clientv3.AdmissionClient, kind app.ManifestVersionKind, key objectKey) {
@@ -341,7 +368,9 @@ func secureNames(object map[string]any) []string {
 
 func readObject(body io.Reader, namespace string) (map[string]any, error) {
 	var object map[string]any
-	if err := json.NewDecoder(body).Decode(&object); err != nil || object == nil {
+	decoder := json.NewDecoder(body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&object); err != nil || object == nil {
 		return nil, errors.New("the body must be a JSON object")
 	}
 	metadata, ok := object["metadata"].(map[string]any)
