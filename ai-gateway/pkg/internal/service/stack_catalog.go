@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/stackcatalog"
 	"github.com/grafana/ai-sdk/provider"
@@ -67,7 +68,7 @@ func SelectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 		return execution.Selection{}, fmt.Errorf("gateway service: model HTTP client is required")
 	}
 	return selectStackCatalog(stack, modelID, gateway, func(providerConfig config.ResolvedProvider, descriptor config.Primary) (provider.LanguageModel, error) {
-		candidate, _, err := newCandidate(providerConfig, descriptor, options.Client, nativemodel.NewAnthropic)
+		candidate, _, err := newCandidate(providerConfig, descriptor, nativeoptions.AnthropicPolicy{}, options.Client, nativemodel.NewAnthropic)
 		return candidate, err
 	})
 }
