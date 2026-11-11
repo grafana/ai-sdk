@@ -84,6 +84,8 @@ the service your application calls:
 
 - [Extend Grafana AI Gateway](guides/gateway-extensions.md) — add typed
   extensions that admit, transform, inspect and observe every Gateway model call.
+- [Set stack defaults for AI Gateway calls](guides/gateway-stack-defaults.md) —
+  give every model call in a stack default instructions and sampling settings.
 - [How a request crosses AI Gateway](concepts/gateway-architecture.md) — follow
   authentication, protocol translation, model routing, and streaming failures.
 - [Gateway glossary](concepts/gateway-glossary.md) — connect everyday terms,

@@ -48,8 +48,9 @@ func main() {
 }
 ```
 
-Pass definitions explicitly. Importing a package registers nothing, and two
-definitions with the same name fail startup. See the
+Pass definitions explicitly, and keep `DefaultExtensions()` to run the shipped
+tenant extensions. Importing a package registers nothing, and two definitions
+with the same name fail startup. See the
 [extension package reference](https://pkg.go.dev/github.com/grafana/ai-sdk/ai-gateway/pkg/extension)
 for every field and interface.
 
@@ -168,7 +169,9 @@ business-hours:
 
 A distribution can list operator extensions in `Options.Mandatory`. Each must
 have an enabled entry with a valid configuration and its secrets, or startup
-fails. The shipped Gateway registers no extensions and no mandatory ones.
+fails. The shipped Gateway registers no operator extensions and no mandatory
+ones; its `DefaultExtensions()` are the two tenant extensions described in
+[Configure tenant extensions](#configure-tenant-extensions).
 
 Tenant extensions aren't configured by this setting; see
 [Configure tenant extensions](#configure-tenant-extensions).
@@ -192,6 +195,10 @@ spec:
       - models: [balanced]
         teams: [platform]
 ```
+
+The shipped Gateway implements two tenant types, `default-instructions` and
+`default-settings`, both off until a resource enables them. Org admins set them
+up as described in [Set stack defaults for AI Gateway calls](gateway-stack-defaults.md).
 
 Each call's tenant extensions follow its namespace's resources:
 
@@ -273,7 +280,9 @@ part of the public manifest.
 
 The Gateway reads a namespace's resources as the plugin itself, never as the
 caller, so callers need no access to `Middleware` resources. It reads only for
-calls that a tenant extension applies to, and caches each namespace:
+calls that a tenant extension applies to. The shipped tenant extensions apply
+to every call, so the shipped Gateway reads the resources of every namespace it
+serves calls for, even one that stores none. It caches each namespace:
 
 - A namespace's first call waits for its read, which is bounded at 5 seconds.
   Concurrent first calls share one read.
@@ -282,6 +291,10 @@ calls that a tenant extension applies to, and caches each namespace:
   minute of the namespace's next call.
 - Each Gateway replica caches on its own, so replicas can disagree for up to
   that window.
+- The one-minute TTL, the 5-second read timeout, the 10-minute staleness bound
+  and the bound of 1024 cached namespaces per replica are fixed constants in
+  this version. API load is about the active namespaces per replica per
+  minute.
 - A failed read is never treated as "no resources". The last configuration
   read successfully keeps applying for up to 10 minutes, and failed reads are
   retried every 30 seconds. After that, or when the first read fails, every
@@ -330,4 +343,4 @@ after in-flight observations finish.
 
 ---
 
-← [Authenticate to Grafana AI Gateway](gateway-authentication.md) · [Docs index](../README.md) · [How a request crosses AI Gateway →](../concepts/gateway-architecture.md)
+← [Authenticate to Grafana AI Gateway](gateway-authentication.md) · [Docs index](../README.md) · [Set stack defaults for AI Gateway calls →](gateway-stack-defaults.md)

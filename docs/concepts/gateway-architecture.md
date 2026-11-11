@@ -93,7 +93,9 @@ stores their objects, and catalog provider keys, itself, and asks the plugin's
 admission validators to accept or refuse each create and update. The
 `Middleware` spec has one typed member per public tenant type, generated from
 the `tenanttype` registry, and its validator checks each member against the
-tenant extensions the distribution implements. Stored catalogs do not yet reach
+tenant extensions the distribution implements. The registry holds
+`default-instructions` and `default-settings`, which the shipped Gateway
+implements. Stored catalogs do not yet reach
 discovery or selection. Stored `Middleware` resources decide, per namespace,
 which tenant extensions run and with which configuration: the Gateway reads
 them through the host's API access configuration, as the plugin, and caches
@@ -216,7 +218,9 @@ sequenceDiagram
    observers and outside the selected model, the
    [extension pipeline](../guides/gateway-extensions.md) runs the
    distribution's extensions that apply to the call's key ownership and source.
-   Operator extensions are built at startup. When a tenant extension applies,
+   Operator extensions are built at startup. The shipped tenant extensions apply
+   to every call, so the shipped Gateway reads every namespace it serves.
+   When a tenant extension applies,
    the pipeline first resolves the call namespace's configuration from a cache
    that reads the namespace's `Middleware` resources as the plugin, never as
    the caller, on its own context and timeout. It builds the namespace's
