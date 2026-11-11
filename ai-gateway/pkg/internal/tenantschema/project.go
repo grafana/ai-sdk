@@ -49,12 +49,12 @@ type Node struct {
 	Values      *Node
 }
 
-// Member is a tenant type's projected spec member.
+// Member is a tenant type's projected spec member. Its schema's description
+// is the type's.
 type Member struct {
-	Type        string
-	Name        string
-	Description string
-	Schema      *Node
+	Type   string
+	Name   string
+	Schema *Node
 }
 
 // Project returns the member of a type with a configuration schema. A type
@@ -78,7 +78,10 @@ func Project(tenantType tenanttype.Type) (Member, bool, error) {
 	if node.Type != TypeObject {
 		return Member{}, false, fmt.Errorf("tenant type %q: the configuration schema must be an object", tenantType.Name)
 	}
-	return Member{Type: tenantType.Name, Name: tenantType.Member(), Description: tenantType.Description, Schema: node}, true, nil
+	if tenantType.Description != "" {
+		node.Description = tenantType.Description
+	}
+	return Member{Type: tenantType.Name, Name: tenantType.Member(), Schema: node}, true, nil
 }
 
 type projector struct {

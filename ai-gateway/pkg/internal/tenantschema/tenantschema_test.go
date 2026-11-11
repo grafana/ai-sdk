@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/grafana-app-sdk/app"
+
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/extension/tenanttype"
 	"github.com/grafana/ai-sdk/schema"
 )
@@ -65,7 +67,7 @@ func TestProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{
 		"type": "object",
-		"description": "ignored for the member",
+		"description": "Controls which models teams may use.",
 		"properties": {
 			"rules": {"type": "array", "items": {
 				"type": "object",
@@ -84,7 +86,7 @@ func TestProject(t *testing.T) {
 		},
 		"required": ["rules"],
 		"additionalProperties": false
-	}`, string(got), "value constraints, defaults and definitions are dropped; references are resolved")
+	}`, string(got), "value constraints, defaults and definitions are dropped; references are resolved; the type's description replaces the schema's")
 
 	_, ok, err = Project(tenanttype.Type{Name: "marker"})
 	require.NoError(t, err)
@@ -188,4 +190,26 @@ func TestMembersFile_MatchesTheRegistry(t *testing.T) {
 	rendered, err := Render(tenanttype.All())
 	require.NoError(t, err)
 	assert.Equal(t, string(rendered), string(committed), "run mise run generate-ai-gateway-kinds")
+}
+
+func TestManifestKind_GeneratedMembers(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "generated-middleware-schemas.json"))
+	require.NoError(t, err)
+	var versionSchema app.VersionSchema
+	require.NoError(t, json.Unmarshal(raw, &versionSchema))
+	manifest := app.ManifestData{Group: "aigateway.ext.grafana.app", Versions: []app.ManifestVersion{{Name: "v1alpha1", Kinds: []app.ManifestVersionKind{{Kind: "Middleware", Schema: &versionSchema}}}}}
+
+	generated, err := ManifestKind(manifest, "v1alpha1", "Middleware")
+	require.NoError(t, err)
+	require.NoError(t, RoundTrip(generated, "model-access", "modelAccess", json.RawMessage(modelAccessExample)), "the generated manifest keeps the nested example")
+	assert.Error(t, RoundTrip(generated, "model-access", "modelAccess", json.RawMessage(`{"rules":[],"undeclared":{"k":"v"}}`)))
+
+	members, err := Members([]tenanttype.Type{tenantType(t, "model-access", modelAccessSchema, modelAccessExample)})
+	require.NoError(t, err)
+	projected, err := Structural(members)
+	require.NoError(t, err)
+	assert.Equal(t, projected.Properties["spec"], generated.Properties["spec"], "the generator emits exactly the projection")
+
+	_, err = ManifestKind(manifest, "v1alpha1", "Other")
+	assert.ErrorContains(t, err, "declares no Other kind")
 }

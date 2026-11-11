@@ -62,19 +62,16 @@ func Render(types []tenanttype.Type) ([]byte, error) {
 	}
 	out.WriteString("middlewareMembers: {\n")
 	for _, member := range members {
-		writeField(&out, 1, member.Name, member.Description, false, member.Schema)
+		writeField(&out, 1, member.Name, false, member.Schema)
 	}
 	out.WriteString("}\n")
 	return out.Bytes(), nil
 }
 
-func writeField(out *bytes.Buffer, depth int, name, description string, required bool, node *Node) {
+func writeField(out *bytes.Buffer, depth int, name string, required bool, node *Node) {
 	indent := strings.Repeat("\t", depth)
-	if description == "" {
-		description = node.Description
-	}
-	for line := range strings.SplitSeq(strings.TrimSpace(description), "\n") {
-		if description != "" {
+	if description := strings.TrimSpace(node.Description); description != "" {
+		for line := range strings.SplitSeq(description, "\n") {
 			fmt.Fprintf(out, "%s// %s\n", indent, strings.TrimSpace(line))
 		}
 	}
@@ -104,7 +101,7 @@ func expression(node *Node, depth int) string {
 	var out bytes.Buffer
 	out.WriteString("{\n")
 	for _, name := range slices.Sorted(maps.Keys(node.Properties)) {
-		writeField(&out, depth+1, name, "", slices.Contains(node.Required, name), node.Properties[name])
+		writeField(&out, depth+1, name, slices.Contains(node.Required, name), node.Properties[name])
 	}
 	out.WriteString(strings.Repeat("\t", depth) + "}")
 	return out.String()
