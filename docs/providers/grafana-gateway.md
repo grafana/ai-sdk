@@ -219,9 +219,10 @@ This is the Grafana Cloud setup, for when Grafana Cloud stores catalog keys; it
 doesn't yet, so catalogs with keys are refused there (see
 [Call a stored catalog](../../ai-gateway/README.md#call-a-stored-catalog)).
 Until then, in self-hosted Grafana, build both clients with
-`NewWithServiceAccountToken` instead. Its calls are made as the service account,
-not on behalf of the user, so give that account the Editor role, or another
-role that includes `aigateway:modelinvoker`.
+`NewWithServiceAccountToken` instead, and leave out `WithOnBehalfOf`, which a
+service account client refuses. Its calls are made as the service account, so
+give that account the Editor role, or another role that includes
+`aigateway:modelinvoker`.
 
 ## Configure fallback
 
