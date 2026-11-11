@@ -266,3 +266,17 @@ func TestSelectStackCatalog_ConcurrentCatalogsKeepTheirKeys(t *testing.T) {
 	assert.Len(t, sent["catalog-0-key"], calls/2)
 	assert.Len(t, sent["catalog-1-key"], calls/2)
 }
+
+func TestSelectStackCatalog_RefusesContainerSkills(t *testing.T) {
+	var sent int
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		sent++
+		return nil, fmt.Errorf("request not sent")
+	})}
+	selected, err := SelectStackCatalog(testStackCatalog(), "same", nil, StackCatalogOptions{Client: client})
+	require.NoError(t, err)
+	skills := provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"skills":[{"type":"anthropic","skillId":"pptx"}]}}`)}}
+	_, err = selected.Model.DoGenerate(context.Background(), provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16), ProviderOptions: skills})
+	require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+	assert.Zero(t, sent)
+}
