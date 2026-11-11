@@ -267,7 +267,7 @@ func TestRoutedSelection_CandidateSkillsPolicy(t *testing.T) {
 
 	t.Run("unpolicied route falls through to a policied route", func(t *testing.T) {
 		server := &nativeServer{}
-		overview, err := routedCall(t, NewSelector(routedSkillsCatalog(t, server.client()), nil), "grafana/plain", `{"models":["grafana/skills"]}`, listed)
+		overview, err := routedCall(t, NewSelector(routedSkillsCatalog(t, server.client()), nil, nil), "grafana/plain", `{"models":["grafana/skills"]}`, listed)
 		require.NoError(t, err)
 		requests := server.requests()
 		require.Equal(t, []string{routedSkillsHost}, hosts(requests))
@@ -280,7 +280,7 @@ func TestRoutedSelection_CandidateSkillsPolicy(t *testing.T) {
 
 	t.Run("unpolicied routes only refuse", func(t *testing.T) {
 		server := &nativeServer{}
-		_, err := routedCall(t, NewSelector(routedSkillsCatalog(t, server.client()), nil), "grafana/plain", `{"models":["grafana/other"]}`, listed)
+		_, err := routedCall(t, NewSelector(routedSkillsCatalog(t, server.client()), nil, nil), "grafana/plain", `{"models":["grafana/other"]}`, listed)
 		require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
 		assert.Equal(t, execution.CategoryInvalidRequest, execution.ClassifyProvider(err))
 		assert.Empty(t, server.requests())
@@ -288,7 +288,7 @@ func TestRoutedSelection_CandidateSkillsPolicy(t *testing.T) {
 
 	t.Run("a policied routed outage after a refusal is the real failure", func(t *testing.T) {
 		server := &nativeServer{failing: map[string]bool{routedBusyHost: true}}
-		_, err := routedCall(t, NewSelector(routedSkillsCatalog(t, server.client()), nil), "grafana/plain", `{"models":["grafana/busy"]}`, listed)
+		_, err := routedCall(t, NewSelector(routedSkillsCatalog(t, server.client()), nil, nil), "grafana/plain", `{"models":["grafana/busy"]}`, listed)
 		require.Error(t, err)
 		assert.Equal(t, execution.CategoryOverload, execution.ClassifyProvider(err))
 		assert.Equal(t, []string{routedBusyHost}, hosts(server.requests()))
@@ -301,7 +301,7 @@ func TestRoutedSelection_CandidateSkillsPolicy(t *testing.T) {
 		} {
 			t.Run(route.model, func(t *testing.T) {
 				server := &nativeServer{}
-				selector := NewSelector(routedSkillsCatalog(t, server.client()), nil)
+				selector := NewSelector(routedSkillsCatalog(t, server.client()), nil, nil)
 				_, err := routedCall(t, selector, route.model, route.gateway, skills(`{"type":"anthropic","skillId":"pptx","version":"2"}`))
 				require.NoError(t, err)
 				requests := server.requests()

@@ -197,7 +197,7 @@ func TestTranslation_HeterogeneousConfiguredChainRefusesContainerID(t *testing.T
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &nativeServer{}
-			selector := NewSelector(translationCatalog(t, server.client()), nil)
+			selector := NewSelector(translationCatalog(t, server.client()), nil, nil)
 			require.NoError(t, runTranslation(t, selector, translationCall{access: gatewayauth.ConfiguredAccounts, modelID: "grafana/chain", options: tc.options, translator: tc.translator}))
 			requests := server.requests()
 			require.Len(t, requests, 1)
