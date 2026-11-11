@@ -335,6 +335,7 @@ func TestStackCatalogLister(t *testing.T) {
 		require.Error(t, err)
 		assert.NotErrorIs(t, err, execution.ErrCatalogConfiguration)
 	})
+}
 
 func TestSelectStackCatalog_RefusesContainerSkills(t *testing.T) {
 	var sent int
