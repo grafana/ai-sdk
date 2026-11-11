@@ -66,8 +66,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// endpointCertificate is the test CA's certificate, also valid for
-// 127.0.0.1, which TLS fakes of custom stack-catalog endpoints present.
+// endpointCertificate is the test CA's certificate, also valid for localhost
+// and 127.0.0.1, which TLS fakes of custom endpoints present.
 var endpointCertificate tls.Certificate
 
 // startNativeProxy trusts a fresh test CA for the process and serves CONNECT
@@ -116,7 +116,7 @@ func nativeCertificate() (tls.Certificate, *x509.CertPool, error) {
 	template := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{CommonName: "gateway test native provider"},
-		DNSNames:              []string{"api.anthropic.com", "api.openai.com"},
+		DNSNames:              []string{"api.anthropic.com", "api.openai.com", "localhost"},
 		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1)},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),

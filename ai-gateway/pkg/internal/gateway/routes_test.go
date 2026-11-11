@@ -195,6 +195,9 @@ type harnessOptions struct {
 	fallback       bool
 	withoutCatalog bool
 	env            map[string]string
+	// tlsOperator serves the operator catalog's provider over TLS at
+	// https://localhost.
+	tlsOperator bool
 }
 
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
@@ -209,9 +212,15 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	require.NoError(t, err)
 	keys, err := host.JWKS()
 	require.NoError(t, err)
-	anthropic := newFakeAnthropic(t)
+	anthropic, operatorURL := newFakeAnthropic(t), ""
+	if options.tlsOperator {
+		anthropic = newTLSFakeAnthropic(t)
+		operatorURL = strings.Replace(anthropic.server.URL, "127.0.0.1", "localhost", 1)
+	} else {
+		operatorURL = anthropic.server.URL
+	}
 	env := map[string]string{
-		"GF_PLUGIN_MODEL_CATALOG": modelCatalog(anthropic.server.URL, options.fallback),
+		"GF_PLUGIN_MODEL_CATALOG": modelCatalog(operatorURL, options.fallback),
 		"GRAFANA_JWKS":            string(keys),
 		"ANTHROPIC_SECRET":        providerSecret,
 	}

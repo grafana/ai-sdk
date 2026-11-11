@@ -138,7 +138,7 @@ func TestCatalogRoutes_CustomEndpoints(t *testing.T) {
 }
 
 func TestCatalogRoutes_RefusedEndpoints(t *testing.T) {
-	h := newHarness(t, platformhost.TopologyCloud)
+	h := newHarnessWithOptions(t, platformhost.TopologyCloud, harnessOptions{tlsOperator: true})
 	native := newFakeAnthropic(t)
 	useNativeAnthropic(t, native)
 	operator, err := url.Parse(h.anthropic.server.URL)
@@ -155,7 +155,7 @@ func TestCatalogRoutes_RefusedEndpoints(t *testing.T) {
 
 	status, body := do(t, catalogLanguageRequest(t, h.url("language-model"), "public", unaryBody, false, accessToken(h.serviceToken(t, testInternalService))))
 	require.Equal(t, http.StatusOK, status, body)
-	require.EqualValues(t, 1, h.anthropic.requests.Load(), "the operator catalog reaches its loopback endpoint")
+	require.EqualValues(t, 1, h.anthropic.requests.Load(), "the operator catalog reaches https://localhost, and keeps the connection idle")
 
 	for _, streaming := range []bool{false, true} {
 		requestBody := map[bool]string{false: unaryBody, true: streamedCatalogBody}[streaming]
