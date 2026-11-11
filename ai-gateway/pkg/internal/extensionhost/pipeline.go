@@ -26,7 +26,6 @@ const (
 type pipeline struct {
 	provider.LanguageModel
 	host       *Host
-	lists      *lists
 	source     extension.Source
 	requested  string
 	canonical  string
@@ -38,8 +37,11 @@ type pipeline struct {
 // phases on the caller's goroutine, stream response phases on the forwarding
 // goroutine, and observation on its own goroutine after the outcome.
 type call struct {
-	host          *Host
-	lists         *lists
+	host  *Host
+	lists *lists
+	// held is the namespace configuration snapshot whose instances the call
+	// uses, released once the call no longer calls them.
+	held          *snapshot
 	attempts      func(error) []execution.Attempt
 	views         []*extension.Call
 	started       time.Time
@@ -56,16 +58,36 @@ const (
 	verdictFailClosed
 )
 
-func (p *pipeline) newCall(ctx context.Context) *call {
+// newCall resolves the extensions that apply to a call from its namespace
+// configuration. It fails only when the call ends before the namespace's
+// first read completes, or after shutdown has begun.
+func (p *pipeline) newCall(ctx context.Context) (*call, error) {
 	base := p.host.requestInfo(ctx)
+	applicable, held, err := p.host.resolve(ctx, base.Namespace, p.source)
+	if errors.Is(err, errTenantsClosed) {
+		return nil, extension.ErrUnavailable
+	}
+	if err != nil {
+		return nil, err
+	}
 	base.Keys, base.Source, base.RequestedModel, base.CanonicalModel = p.source.Keys(), p.source, p.requested, p.canonical
-	views := make([]*extension.Call, len(p.lists.byName))
+	views := make([]*extension.Call, len(applicable.byName))
 	for i := range views {
 		view := base
 		view.Candidates = slices.Clone(p.candidates)
 		views[i] = &view
 	}
-	return &call{host: p.host, lists: p.lists, attempts: p.attempts, views: views, started: p.host.clock(), correlationID: base.CorrelationID}
+	return &call{host: p.host, lists: applicable, held: held, attempts: p.attempts, views: views, started: p.host.clock(), correlationID: base.CorrelationID}, nil
+}
+
+// release drops the call's namespace configuration snapshot. The call's
+// phases never run concurrently, so it needs no lock.
+func (c *call) release() {
+	if c.held != nil {
+		held := c.held
+		c.held = nil
+		c.host.release(held)
+	}
 }
 
 // run runs one phase of the extension at position i and applies its outcome:
@@ -104,6 +126,9 @@ func verdictErr(result verdict) error {
 // request runs admit, the request transforms with the host policy check, and
 // request inspection, and returns the parameters the model receives.
 func (c *call) request(ctx context.Context, options provider.CallOptions) (provider.CallOptions, error) {
+	if len(c.lists.unavailable) != 0 {
+		return provider.CallOptions{}, extension.ErrUnavailable
+	}
 	for i, built := range c.lists.byName {
 		if built.admitter == nil {
 			continue
@@ -199,11 +224,15 @@ func (c *call) reserve() bool {
 // decided.
 func (c *call) dispatch(ctx context.Context, reserved bool, outcome extension.Outcome, usage provider.Usage, modelErr error) {
 	if !reserved {
+		c.release()
 		return
 	}
 	record := extension.Record{Outcome: outcome, DeniedBy: c.denial, Usage: usage, Attempts: physicalAttempts(c.attempts(modelErr)), Started: c.started, Duration: c.host.clock().Sub(c.started)}
 	detached := context.WithoutCancel(ctx)
-	c.host.observations.run(func() { c.observe(detached, record) })
+	c.host.observations.run(func() {
+		defer c.release()
+		c.observe(detached, record)
+	})
 }
 
 func (c *call) observe(ctx context.Context, record extension.Record) {
@@ -245,7 +274,14 @@ func invoked[T any](ctx context.Context, c *call, invoke func() (T, error)) (T, 
 }
 
 func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions) (*provider.GenerateResult, error) {
-	c := p.newCall(ctx)
+	c, err := p.newCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if c.lists.empty() {
+		c.release()
+		return p.LanguageModel.DoGenerate(ctx, options)
+	}
 	params, err := c.request(ctx, options)
 	if err != nil {
 		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{}, err)
@@ -256,7 +292,8 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{}, modelError(err))
 		return result, err
 	}
-	if !p.lists.checksOutput() {
+	if !c.lists.checksOutput() {
+		c.release()
 		return result, nil
 	}
 	history, _ := execution.RebuildToolHistory(options.Prompt)
@@ -264,7 +301,7 @@ func (p *pipeline) DoGenerate(ctx context.Context, options provider.CallOptions)
 		c.settle(ctx, extension.OutcomeInvalidOutput, result.Usage)
 		return result, nil
 	}
-	if p.lists.responseInspector {
+	if c.lists.responseInspector {
 		for _, part := range normalizeResult(result) {
 			if err := c.inspect(ctx, part); err != nil {
 				c.finish(ctx, outcomeOf(ctx, err), result.Usage, ctx.Err())
@@ -288,13 +325,21 @@ func (c *call) settle(ctx context.Context, outcome extension.Outcome, usage prov
 }
 
 func (p *pipeline) DoStream(ctx context.Context, options provider.CallOptions) (*provider.StreamResult, error) {
-	c := p.newCall(ctx)
+	c, err := p.newCall(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if c.lists.empty() {
+		c.release()
+		return p.LanguageModel.DoStream(ctx, options)
+	}
 	params, err := c.request(ctx, options)
 	if err != nil {
 		c.finish(ctx, outcomeOf(ctx, err), provider.Usage{}, err)
 		return nil, err
 	}
-	if !p.lists.checksOutput() {
+	if !c.lists.checksOutput() {
+		c.release()
 		return p.LanguageModel.DoStream(ctx, params)
 	}
 	modelContext, cancel := context.WithCancel(ctx)
@@ -341,7 +386,7 @@ loop:
 			if !invalid && validator.Check(part) != nil {
 				invalid = true
 			}
-			if normalized, inspected := normalizePart(part); inspected && !invalid && p.lists.responseInspector {
+			if normalized, inspected := normalizePart(part); inspected && !invalid && c.lists.responseInspector {
 				if err := c.inspect(ctx, normalized); err != nil {
 					outcome = outcomeOf(ctx, err)
 					cancel()

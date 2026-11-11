@@ -140,12 +140,18 @@ type harness struct {
 
 func newHarness(t *testing.T, definitions ...extension.Definition) *harness {
 	t.Helper()
+	return newHarnessWith(t, nil, definitions...)
+}
+
+// newHarnessWith is newHarness with adjust applied to the host configuration.
+func newHarnessWith(t *testing.T, adjust func(*Config), definitions ...extension.Definition) *harness {
+	t.Helper()
 	require.NoError(t, ValidateDefinitions(definitions, nil))
 	plan, err := NewPlan(definitions, nil, nil)
 	require.NoError(t, err)
 	registry := prometheus.NewRegistry()
 	logs := &lockedWriter{buffer: &bytes.Buffer{}}
-	host, err := New(Config{
+	config := Config{
 		Plan:       plan,
 		Logger:     slog.New(slog.NewJSONHandler(logs, nil)),
 		Registerer: registry,
@@ -154,7 +160,11 @@ func newHarness(t *testing.T, definitions ...extension.Definition) *harness {
 			return extension.Call{Namespace: "stacks-1", Caller: extension.CallerServiceAccount, CorrelationID: "correlation-1"}
 		},
 		DrainTimeout: 50 * time.Millisecond,
-	})
+	}
+	if adjust != nil {
+		adjust(&config)
+	}
+	host, err := New(config)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
