@@ -621,31 +621,67 @@ func TestRoutedSelection_BYOKRefusals(t *testing.T) {
 	}
 }
 
-func TestRoutedSelection_BYOKNativeOptionRefusal(t *testing.T) {
-	skills := provider.CallOptions{ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(`{"container":{"skills":[{"type":"custom","skillId":"external"}]}}`)}}}
+func TestRoutedSelection_BYOKNativeOptions(t *testing.T) {
+	anthropic := func(raw string) provider.CallOptions {
+		return provider.CallOptions{ProviderOptions: provider.ProviderOptions{"anthropic": provider.RawProviderOption{Key: "anthropic", Raw: json.RawMessage(raw)}}}
+	}
 	accounts := `"byok":{"anthropic":[{"apiKey":"dummy-a1"}],"openai":[{"apiKey":"dummy-o1"}]}`
-	t.Run("all-Anthropic chain refuses before any attempt", func(t *testing.T) {
-		server := &nativeServer{}
-		selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
-		overview, err := byokRoutedCall(t, selector, `{`+accounts+`,"models":["anthropic/y"]}`, skills)
-		require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
-		assert.Nil(t, overview)
-		assert.Empty(t, server.requests())
-	})
-	t.Run("mixed chain refuses the Anthropic candidate without its I/O", func(t *testing.T) {
-		server := &nativeServer{}
-		selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
-		overview, err := byokRoutedCall(t, selector, `{`+accounts+`,"models":["openai/y"]}`, skills)
-		require.NoError(t, err)
-		requests := server.requests()
-		require.Len(t, requests, 1)
-		assert.Equal(t, "api.openai.com", requests[0].host)
-		assert.Equal(t, "dummy-o1", requests[0].key)
-		require.NotNil(t, overview)
-		require.Len(t, overview.Attempts, 2)
-		assert.Equal(t, fallback.AttemptFailed, overview.Attempts[0].Outcome)
-		assert.Equal(t, fallback.AttemptSelected, overview.Attempts[1].Outcome)
-	})
+	for _, tc := range []struct {
+		name, options, field, beta string
+		forwarded                  bool
+	}{
+		{name: "malformed custom skill", options: `{"container":{"skills":[{"type":"custom","skillId":"external"}]}}`},
+		{name: "server-side fallback chain", options: `{"fallbacks":[{"model":"claude-any"}]}`, field: `"fallbacks":[{"model":"claude-any"}]`, beta: explicitFallbackBeta, forwarded: true},
+		{name: "server-side fallback default", options: `{"fallbacks":"default"}`, field: `"fallbacks":"default"`, beta: defaultFallbackBeta, forwarded: true},
+	} {
+		t.Run(tc.name+"/all-Anthropic chain", func(t *testing.T) {
+			server := &nativeServer{failing: map[string]bool{"api.anthropic.com": true}}
+			selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
+			overview, err := byokRoutedCall(t, selector, `{`+accounts+`,"models":["anthropic/y"]}`, anthropic(tc.options))
+			requests := server.requests()
+			if !tc.forwarded {
+				require.ErrorIs(t, err, catalog.ErrUnsupportedRequest)
+				assert.Nil(t, overview)
+				assert.Empty(t, requests)
+				return
+			}
+			require.Error(t, err)
+			require.Len(t, requests, 2)
+			for _, request := range requests {
+				assert.Equal(t, "api.anthropic.com", request.host)
+				assert.Contains(t, request.body, tc.field)
+				assert.Contains(t, request.beta, tc.beta)
+			}
+			require.NotNil(t, overview)
+			assert.Len(t, overview.Attempts, 2)
+		})
+		t.Run(tc.name+"/mixed chain", func(t *testing.T) {
+			server := &nativeServer{failing: map[string]bool{"api.anthropic.com": true}}
+			selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
+			overview, err := byokRoutedCall(t, selector, `{`+accounts+`,"models":["openai/y"]}`, anthropic(tc.options))
+			require.NoError(t, err)
+			requests := server.requests()
+			wantHosts := []string{"api.openai.com"}
+			if tc.forwarded {
+				wantHosts = []string{"api.anthropic.com", "api.openai.com"}
+			}
+			assert.Equal(t, wantHosts, hosts(requests))
+			for _, request := range requests {
+				if request.host == "api.anthropic.com" {
+					assert.Contains(t, request.body, tc.field)
+					assert.Contains(t, request.beta, tc.beta)
+					continue
+				}
+				assert.Equal(t, "dummy-o1", request.key)
+				assert.NotContains(t, request.body, "fallbacks")
+				assert.NotContains(t, request.beta, "server-side-fallback")
+			}
+			require.NotNil(t, overview)
+			require.Len(t, overview.Attempts, 2)
+			assert.Equal(t, fallback.AttemptFailed, overview.Attempts[0].Outcome)
+			assert.Equal(t, fallback.AttemptSelected, overview.Attempts[1].Outcome)
+		})
+	}
 	t.Run("all-Anthropic chain admits a bounded custom skill", func(t *testing.T) {
 		server := &nativeServer{}
 		selector := byokSelector(server.client(), func(_ string, model provider.LanguageModel) (provider.LanguageModel, error) { return model, nil })
@@ -705,4 +741,76 @@ func TestRoutedSelection_ServerCaptureIndependence(t *testing.T) {
 	assert.Contains(t, captured, `"routing":{"originalModelId":"alias","canonicalSlug":"public"`)
 	assert.Contains(t, captured, `"anthropic":{"native":"kept"}`)
 	assert.NotContains(t, logs.String(), "private-output")
+}
+
+func TestRoutedSelection_ServerFallbackPolicy(t *testing.T) {
+	allow := &config.ServerFallbacks{Models: []string{"claude-b"}}
+	file := config.File{Models: map[string]config.Model{
+		"routed/a": {Name: "A", Primary: config.Primary{Provider: "a", Model: "backend"}},
+		"routed/b": {Name: "B", Primary: config.Primary{Provider: "b", Model: "backend", ServerFallbacks: allow}},
+		"shared/a": {Name: "Shared A", Primary: config.Primary{Provider: "shared", Model: "backend", ServerFallbacks: allow}},
+		"shared/b": {Name: "Shared B", Primary: config.Primary{Provider: "shared", Model: "backend", ServerFallbacks: allow}},
+	}}
+	providers := map[string]config.ResolvedProvider{
+		"a":      {Type: "anthropic", APIKey: "a-key", BaseURL: "https://a.anthropic.test"},
+		"b":      {Type: "anthropic", APIKey: "b-key", BaseURL: "https://b.anthropic.test"},
+		"shared": {Type: "anthropic", APIKey: "shared-key", BaseURL: "https://shared.anthropic.test"},
+	}
+	body := func(models string) string {
+		return `{"prompt":[],"providerOptions":{"anthropic":{"fallbacks":[{"model":"claude-b"}]},"gateway":{"models":["` + models + `"]}}}`
+	}
+	for _, streaming := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, model, fallbackModel string
+			status                     int
+			hosts                      []string
+			outcomes                   []fallback.AttemptOutcome
+		}{
+			{"refusing route falls back to an allowing route", "routed/a", "routed/b", http.StatusOK, []string{"b.anthropic.test"}, []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
+			{"shared destination is attempted once from the first route", "shared/a", "shared/b", http.StatusOK, []string{"shared.anthropic.test"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
+			{"shared destination is attempted once from the second route", "shared/b", "shared/a", http.StatusOK, []string{"shared.anthropic.test"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
+		} {
+			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
+				backend := &serverFallbackBackend{}
+				created, err := BuildCatalog(file, providers, backend.client(), identityModelFactory)
+				require.NoError(t, err)
+				response, overview := serveConfigured(t, NewSelector(created, nil), tc.model, body(tc.fallbackModel), streaming)
+				require.Equal(t, tc.status, response.Code, response.Body.String())
+				requests := backend.requests()
+				got := make([]string, len(requests))
+				for i, request := range requests {
+					got[i] = request.host
+					assert.Equal(t, []any{map[string]any{"model": "claude-b"}}, request.body["fallbacks"])
+				}
+				assert.Equal(t, tc.hosts, got)
+				require.NotNil(t, overview)
+				outcomes := make([]fallback.AttemptOutcome, len(overview.Attempts))
+				for i, attempt := range overview.Attempts {
+					outcomes[i] = attempt.Outcome
+				}
+				assert.Equal(t, tc.outcomes, outcomes)
+			})
+		}
+	}
+	t.Run("differing policies on a shared destination fail catalog validation", func(t *testing.T) {
+		_, err := config.ParseModelCatalog(`providers:
+  shared:
+    type: anthropic
+    apiKeyEnv: ANTHROPIC_API_KEY
+models:
+  shared/a:
+    name: Shared A
+    primary:
+      provider: shared
+      model: backend
+  shared/b:
+    name: Shared B
+    primary:
+      provider: shared
+      model: backend
+      serverFallbacks:
+        models: [claude-b]
+`)
+		require.EqualError(t, err, "config: models.shared/b.primary.serverFallbacks differs from models.shared/a.primary.serverFallbacks for the same provider and model")
+	})
 }

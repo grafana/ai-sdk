@@ -71,7 +71,10 @@ func buildCatalog(file config.File, providers map[string]config.ResolvedProvider
 			if !ok {
 				return nil, fmt.Errorf("gateway service: model %q references unresolved provider", id)
 			}
-			candidate, identity, err := newCandidate(providerConfig, descriptor, anthropicPolicy(descriptor.Skills), client, construct)
+			if descriptor.ServerFallbacks != nil && providerConfig.Type != "anthropic" {
+				return nil, fmt.Errorf("gateway service: model %q sets server fallbacks on a provider that is not anthropic", id)
+			}
+			candidate, identity, err := newCandidate(providerConfig, descriptor, anthropicPolicy(descriptor), client, construct)
 			if errors.Is(err, errNilCandidate) {
 				return nil, fmt.Errorf("gateway service: constructing model %q returned nil", id)
 			}
@@ -192,16 +195,20 @@ func ConfiguredIdentity(canonicalID string, lower provider.LanguageModel) (provi
 	}), nil
 }
 
-// anthropicPolicy converts a configured candidate's skills policy. Configured
-// candidates never admit container IDs, and a nil or empty policy refuses every
-// skill.
-func anthropicPolicy(skills *config.SkillsPolicy) nativeoptions.AnthropicPolicy {
-	if skills == nil {
-		return nativeoptions.AnthropicPolicy{}
+// anthropicPolicy converts a configured candidate's skills and server-side
+// fallback policies. Configured candidates never admit container IDs, and an
+// absent policy refuses every skill or every active server-side fallback.
+func anthropicPolicy(descriptor config.Primary) nativeoptions.AnthropicPolicy {
+	var policy nativeoptions.AnthropicPolicy
+	if fallbacks := descriptor.ServerFallbacks; fallbacks != nil {
+		policy.Fallbacks = nativeoptions.NewAnthropicFallbackPolicy(fallbacks.Models, fallbacks.AllowDefault)
 	}
-	grants := make([]nativeoptions.AnthropicSkillGrant, 0, len(skills.Allow))
-	for _, entry := range skills.Allow {
-		grants = append(grants, nativeoptions.AnthropicSkillGrant{Type: anthropic.ContainerSkillType(entry.Type), SkillID: entry.SkillID, Versions: entry.Versions})
+	if skills := descriptor.Skills; skills != nil {
+		grants := make([]nativeoptions.AnthropicSkillGrant, 0, len(skills.Allow))
+		for _, entry := range skills.Allow {
+			grants = append(grants, nativeoptions.AnthropicSkillGrant{Type: anthropic.ContainerSkillType(entry.Type), SkillID: entry.SkillID, Versions: entry.Versions})
+		}
+		policy.Skills = nativeoptions.AllowlistedAnthropicSkills(grants)
 	}
-	return nativeoptions.AnthropicPolicy{Skills: nativeoptions.AllowlistedAnthropicSkills(grants)}
+	return policy
 }
