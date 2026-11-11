@@ -27,6 +27,17 @@ Configuration loading SHALL fail before secret resolution or provider constructi
 - **WHEN** a policy has `allowDefault: false` and no models, or lists the same model twice, or lists an empty model
 - **THEN** startup SHALL fail with a diagnostic naming the candidate path
 
+### Requirement: Single server-fallback policy per destination
+All configured candidates, in any route, that name the same provider instance and backend model SHALL carry an equal `serverFallbacks` policy (equal `allowDefault` and `models` compared as sets, ignoring order) or all omit it. Otherwise configuration loading SHALL fail before secret resolution, naming the conflicting candidate paths without values, so routing's destination dedup cannot change which policy applies.
+
+#### Scenario: Shared destination with differing policies
+- **WHEN** route `a`'s primary and route `b`'s fallback both name provider `anthropic-main` and model `claude-x`, and only one of them declares `serverFallbacks`, or both declare different `models` or `allowDefault`
+- **THEN** startup SHALL fail with a diagnostic naming both candidate paths and no model IDs
+
+#### Scenario: Shared destination with equal policies
+- **WHEN** two routes name the same provider instance and backend model with policies whose `models` differ only in order
+- **THEN** the catalog SHALL load
+
 ### Requirement: Programmatic catalog policy check
 Programmatic catalog construction, which does not run configuration validation, SHALL fail when a policy is on a candidate whose resolved provider type is not `anthropic`, rather than ignore the policy. The error SHALL be secret-safe.
 
@@ -76,15 +87,15 @@ Server-side fallback SHALL run within one Gateway attempt and one outbound reque
 - **THEN** the call SHALL return the fixed invalid-request error with no native request
 
 ### Requirement: Server-side fallback across routed attempts
-A request routed under gateway-request-routing SHALL apply, at each attempt, the policy of the configured candidate that attempt was composed from, as that capability's candidate-native request semantics require. When routes share a destination, the policy of the candidate composed first SHALL apply, because a repeated destination is attempted once.
+A request routed under gateway-request-routing SHALL apply, at each attempt, the policy of the configured candidate that attempt was composed from, as that capability's candidate-native request semantics require. A repeated destination is attempted once, and the single policy per destination SHALL apply whichever placement is kept.
 
 #### Scenario: Requested route refuses and a fallback model allows
 - **WHEN** route `A` has no policy, route `B` has a different destination and allows the requested chain, and the call to `A` sends that chain with `models: [B]`
 - **THEN** `A`'s candidates SHALL make no native request, `B`'s candidate SHALL receive the chain, and the overview SHALL list `A`'s failed attempts then `B`'s selected attempt
 
-#### Scenario: Routes share a destination with different policies
-- **WHEN** routes `A` (no policy) and `B` (allowing the chain) each have only one candidate, both on the same provider instance and backend model, and a call sends the chain to `A` with `models: [B]`, or to `B` with `models: [A]`
-- **THEN** the call to `A` SHALL fail with the fixed invalid-request error and no native request, and the call to `B` SHALL send the chain in one native request through `B`'s candidate
+#### Scenario: Routes share a destination
+- **WHEN** routes `A` and `B` each have only one candidate, both on the same provider instance and backend model with a policy allowing the chain, and a call sends the chain to `A` with `models: [B]`, or to `B` with `models: [A]`
+- **THEN** the call SHALL send the chain in one native request and the overview SHALL list one selected attempt
 
 ### Requirement: Server-side fallback evidence boundary
 Acceptance SHALL use synthetic native requests for policy cases. For allowed requests it SHALL replay the two recorded fixtures `anthropic/recorded/server-side-fallback-{chain,default}`, unchanged, through the real Gateway command with both registered clients. The test SHALL configure a fixed policy per fixture and SHALL NOT derive it from the request. Evidence SHALL NOT claim live refusal-triggered hops, Anthropic's `"default"` choice or billing of fallback-served turns.

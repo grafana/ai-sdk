@@ -211,8 +211,8 @@ It combines with [Gateway fallback](#configure-fallback) and
   one, and the Gateway tries the next. If none allows the call, it fails.
 - A provider that is not Anthropic ignores `anthropic` options, so it answers
   without server-side fallback.
-- Routes that share a provider and model are tried once, under the policy of
-  the one tried first.
+- Routes that share a provider and model are tried once, under the one policy
+  the administrator must give that provider and model in every route.
 
 Calls with [your own key](#use-your-own-provider-credentials) send
 `fallbacks` to Anthropic unchanged, without any Gateway policy; your account

@@ -442,3 +442,39 @@ func TestParseModelCatalog_ServerFallbacksPolicy(t *testing.T) {
 		require.ErrorContains(t, file.Validate(), "models.canonical.primary.serverFallbacks.models[0] is invalid or exceeds limit")
 	})
 }
+
+func TestParseModelCatalog_ServerFallbacksPerDestination(t *testing.T) {
+	document := func(aProvider, aPolicy, bProvider, bPolicy string) string {
+		return strings.NewReplacer("A_PROVIDER", aProvider, "A_SKILLS\n", aPolicy, "B_PROVIDER", bProvider, "B_SKILLS\n", bPolicy).Replace(sharedDestinationYAML)
+	}
+	primaryPolicy := func(body string) string { return "      serverFallbacks:\n" + body }
+	fallbackPolicy := func(body string) string { return "        serverFallbacks:\n" + body }
+	const differs = "config: models.grafana/b.fallback[0].serverFallbacks differs from models.grafana/a.primary.serverFallbacks for the same provider and model"
+
+	for _, tc := range []struct {
+		name    string
+		aPolicy string
+		bPolicy string
+	}{
+		{name: "only the first declares a policy", aPolicy: primaryPolicy("        models: [claude-b]\n")},
+		{name: "only the second declares a policy", bPolicy: fallbackPolicy("          models: [claude-b]\n")},
+		{name: "different models", aPolicy: primaryPolicy("        models: [claude-b]\n"), bPolicy: fallbackPolicy("          models: [claude-c]\n")},
+		{name: "different allowDefault", aPolicy: primaryPolicy("        models: [claude-b]\n"), bPolicy: fallbackPolicy("          models: [claude-b]\n          allowDefault: true\n")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseModelCatalog(document("anthropic-main", tc.aPolicy, "anthropic-main", tc.bPolicy))
+			require.EqualError(t, err, differs)
+			assert.NotContains(t, err.Error(), "claude-b")
+		})
+	}
+
+	t.Run("equal policies in a different order load", func(t *testing.T) {
+		_, err := ParseModelCatalog(document("anthropic-main", primaryPolicy("        models: [claude-b, claude-c]\n"), "anthropic-main", fallbackPolicy("          models: [claude-c, claude-b]\n")))
+		require.NoError(t, err)
+	})
+
+	t.Run("second provider instance may differ", func(t *testing.T) {
+		_, err := ParseModelCatalog(document("anthropic-main", "", "anthropic-skills", fallbackPolicy("          allowDefault: true\n")))
+		require.NoError(t, err)
+	})
+}

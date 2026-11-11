@@ -748,7 +748,7 @@ func TestRoutedSelection_ServerFallbackPolicy(t *testing.T) {
 	file := config.File{Models: map[string]config.Model{
 		"routed/a": {Name: "A", Primary: config.Primary{Provider: "a", Model: "backend"}},
 		"routed/b": {Name: "B", Primary: config.Primary{Provider: "b", Model: "backend", ServerFallbacks: allow}},
-		"shared/a": {Name: "Shared A", Primary: config.Primary{Provider: "shared", Model: "backend"}},
+		"shared/a": {Name: "Shared A", Primary: config.Primary{Provider: "shared", Model: "backend", ServerFallbacks: allow}},
 		"shared/b": {Name: "Shared B", Primary: config.Primary{Provider: "shared", Model: "backend", ServerFallbacks: allow}},
 	}}
 	providers := map[string]config.ResolvedProvider{
@@ -767,8 +767,8 @@ func TestRoutedSelection_ServerFallbackPolicy(t *testing.T) {
 			outcomes                   []fallback.AttemptOutcome
 		}{
 			{"refusing route falls back to an allowing route", "routed/a", "routed/b", http.StatusOK, []string{"b.anthropic.test"}, []fallback.AttemptOutcome{fallback.AttemptFailed, fallback.AttemptSelected}},
-			{"shared destination keeps the requested route's refusal", "shared/a", "shared/b", http.StatusBadRequest, []string{}, []fallback.AttemptOutcome{fallback.AttemptFailed}},
-			{"shared destination keeps the requested route's allowance", "shared/b", "shared/a", http.StatusOK, []string{"shared.anthropic.test"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
+			{"shared destination is attempted once from the first route", "shared/a", "shared/b", http.StatusOK, []string{"shared.anthropic.test"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
+			{"shared destination is attempted once from the second route", "shared/b", "shared/a", http.StatusOK, []string{"shared.anthropic.test"}, []fallback.AttemptOutcome{fallback.AttemptSelected}},
 		} {
 			t.Run(fmt.Sprintf("%s/stream=%t", tc.name, streaming), func(t *testing.T) {
 				backend := &serverFallbackBackend{}
@@ -792,4 +792,25 @@ func TestRoutedSelection_ServerFallbackPolicy(t *testing.T) {
 			})
 		}
 	}
+	t.Run("differing policies on a shared destination fail catalog validation", func(t *testing.T) {
+		_, err := config.ParseModelCatalog(`providers:
+  shared:
+    type: anthropic
+    apiKeyEnv: ANTHROPIC_API_KEY
+models:
+  shared/a:
+    name: Shared A
+    primary:
+      provider: shared
+      model: backend
+  shared/b:
+    name: Shared B
+    primary:
+      provider: shared
+      model: backend
+      serverFallbacks:
+        models: [claude-b]
+`)
+		require.EqualError(t, err, "config: models.shared/b.primary.serverFallbacks differs from models.shared/a.primary.serverFallbacks for the same provider and model")
+	})
 }

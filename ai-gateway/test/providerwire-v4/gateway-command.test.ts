@@ -3129,8 +3129,9 @@ describe("recorded Anthropic server-side fallback through the Gateway command", 
   before(async () => {
     for (const fixture of fixtures) backends.set(fixture.name, await RecordedAnthropicBackend.start(join(fixtureDir(fixture.name), "input.chunks.txt")));
     const route = (id: string, instance: string, policy = "") => `  recorded/${id}:\n    name: Recorded\n    primary:\n      provider: ${instance}\n      model: claude-opus-5\n${policy}`;
-    const catalog = "providers:\n" + fixtures.map(fixture => `  ${fixture.name}:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${backends.get(fixture.name)!.url}\n`).join("")
-      + "models:\n" + fixtures.map(fixture => route(`${fixture.name}-allowed`, fixture.name, fixture.policy) + route(`${fixture.name}-none`, fixture.name) + route(`${fixture.name}-other`, fixture.name, fixture.otherPolicy)).join("");
+    const variants = ["allowed", "none", "other"] as const;
+    const catalog = "providers:\n" + fixtures.flatMap(fixture => variants.map(variant => `  ${fixture.name}-${variant}:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${backends.get(fixture.name)!.url}\n`)).join("")
+      + "models:\n" + fixtures.map(fixture => route(`${fixture.name}-allowed`, `${fixture.name}-allowed`, fixture.policy) + route(`${fixture.name}-none`, `${fixture.name}-none`) + route(`${fixture.name}-other`, `${fixture.name}-other`, fixture.otherPolicy)).join("");
     gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", catalog);
   });
 

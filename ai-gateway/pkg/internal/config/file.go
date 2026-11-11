@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -63,7 +64,9 @@ type Primary struct {
 // ServerFallbacks is the operator policy for Anthropic server-side fallback
 // (providerOptions.anthropic.fallbacks) on one anthropic candidate. Models
 // lists the fallback model IDs an explicit chain may name, compared exactly.
-// AllowDefault admits "default", which lets Anthropic choose the model.
+// AllowDefault admits "default", which lets Anthropic choose the model. Every
+// candidate that names the same provider instance and backend model must carry
+// an equal policy.
 type ServerFallbacks struct {
 	Models       []string `yaml:"models,omitempty"`
 	AllowDefault bool     `yaml:"allowDefault,omitempty"`
@@ -220,7 +223,7 @@ func (file File) Validate() error {
 		}
 		publicIDs[id] = "canonical model"
 	}
-	if err := file.validateSkillsPolicyPerDestination(); err != nil {
+	if err := file.validatePoliciesPerDestination(); err != nil {
 		return err
 	}
 	for id, model := range file.Models {
@@ -288,6 +291,55 @@ func validateServerFallbacks(path string, policy *ServerFallbacks, providerType 
 			return fmt.Errorf("config: %s.serverFallbacks.models[%d] repeats a model", path, index)
 		}
 		seen[model] = struct{}{}
+	}
+	return nil
+}
+
+// equalServerFallbacks compares validated policies, treating Models as a set.
+// A nil policy equals only another nil policy.
+func equalServerFallbacks(a, b *ServerFallbacks) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.AllowDefault == b.AllowDefault && sameStringSet(a.Models, b.Models)
+}
+
+// validatePoliciesPerDestination requires one skills policy and one
+// server-side fallback policy per provider instance and backend model across
+// routes, because request routing attempts a repeated destination once and
+// would otherwise apply whichever placement came first.
+func (file File) validatePoliciesPerDestination() error {
+	type placement struct {
+		path      string
+		candidate Primary
+	}
+	ids := make([]string, 0, len(file.Models))
+	for id := range file.Models {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	first := make(map[candidateKey]placement)
+	for _, id := range ids {
+		model := file.Models[id]
+		candidates := append([]Primary{model.Primary}, model.Fallback...)
+		for index, candidate := range candidates {
+			path := fmt.Sprintf("models.%s.primary", id)
+			if index > 0 {
+				path = fmt.Sprintf("models.%s.fallback[%d]", id, index-1)
+			}
+			key := keyOf(candidate)
+			existing, ok := first[key]
+			if !ok {
+				first[key] = placement{path: path, candidate: candidate}
+				continue
+			}
+			if !equalSkillsPolicies(existing.candidate.Skills, candidate.Skills) {
+				return fmt.Errorf("config: %s.skills differs from %s.skills for the same provider and model", path, existing.path)
+			}
+			if !equalServerFallbacks(existing.candidate.ServerFallbacks, candidate.ServerFallbacks) {
+				return fmt.Errorf("config: %s.serverFallbacks differs from %s.serverFallbacks for the same provider and model", path, existing.path)
+			}
+		}
 	}
 	return nil
 }

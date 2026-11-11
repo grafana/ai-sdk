@@ -105,7 +105,9 @@ once in a request and must match exactly. `allowDefault: true` also allows
 `"default"`, which lets Anthropic choose the model, and its cost. The policy
 applies only to the `primary` or `fallback` entry that declares it, only
 `anthropic` providers accept it, and it must allow `"default"` or at least one
-model. Requests that bring their own provider keys are not limited by it.
+model. Every entry that names the same provider and backend model must carry
+the same policy, in any route, for the reason given for skills below. Requests
+that bring their own provider keys are not limited by it.
 
 ### Allow Anthropic agent skills
 
