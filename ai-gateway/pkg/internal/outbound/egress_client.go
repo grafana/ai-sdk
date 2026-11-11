@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -17,7 +19,17 @@ import (
 
 const httpsScheme = "https"
 
-var errAddressRefused = errors.New("gateway outbound: address refused")
+var (
+	// ErrEgressConnection reports an egress connection, TLS handshake or
+	// response read that failed after the policy permitted the address. It
+	// names no host, address or certificate.
+	ErrEgressConnection = errors.New("gateway outbound: provider connection failed")
+	// ErrEgressTimeout is ErrEgressConnection for a timeout. It wraps
+	// [context.DeadlineExceeded], so it classifies as a timeout.
+	ErrEgressTimeout = fmt.Errorf("gateway outbound: provider connection timed out: %w", context.DeadlineExceeded)
+
+	errAddressRefused = errors.New("gateway outbound: address refused")
+)
 
 // NewEgressClient returns the client for customer-chosen provider endpoints.
 // It has the bounds and redirect refusal of [NewModelClient], its own
@@ -44,7 +56,11 @@ func newEgressClient(headerTimeout time.Duration, responseBytes int64, policy Eg
 }
 
 // httpsOnly refuses every request whose URL is not https before it reaches
-// the transport.
+// the transport. It replaces every other connection, TLS and read error, of
+// the request or its response body, with [ErrEgressConnection] or
+// [ErrEgressTimeout],
+// because those errors name the Gateway's own address, the addresses an
+// endpoint resolved to and the names in its certificate.
 type httpsOnly struct {
 	base http.RoundTripper
 }
@@ -56,7 +72,44 @@ func (transport httpsOnly) RoundTrip(request *http.Request) (*http.Response, err
 		}
 		return nil, execution.ErrEgressRefused
 	}
-	return transport.base.RoundTrip(request)
+	ctx := request.Context()
+	response, err := transport.base.RoundTrip(request)
+	if err != nil {
+		return response, sanitize(ctx, err)
+	}
+	if response.Body != nil {
+		response.Body = sanitizedBody{ReadCloser: response.Body, ctx: ctx}
+	}
+	return response, nil
+}
+
+// sanitize returns a refusal unchanged, the request context's error once it
+// is done, and otherwise [ErrEgressTimeout] or [ErrEgressConnection].
+func sanitize(ctx context.Context, err error) error {
+	if errors.Is(err, execution.ErrEgressRefused) {
+		return err
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	var netError net.Error
+	if errors.Is(err, context.DeadlineExceeded) || errors.As(err, &netError) && netError.Timeout() {
+		return ErrEgressTimeout
+	}
+	return ErrEgressConnection
+}
+
+type sanitizedBody struct {
+	io.ReadCloser
+	ctx context.Context
+}
+
+func (body sanitizedBody) Read(buffer []byte) (int, error) {
+	n, err := body.ReadCloser.Read(buffer)
+	if err != nil && err != io.EOF {
+		err = sanitize(body.ctx, err)
+	}
+	return n, err
 }
 
 type egressDialer struct {

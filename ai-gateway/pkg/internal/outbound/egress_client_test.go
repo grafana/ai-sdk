@@ -368,3 +368,107 @@ func TestNewEgressClient_OwnTransportWithoutProxy(t *testing.T) {
 	_, err = NewEgressClient(time.Second, 0, EgressPolicy{})
 	require.Error(t, err)
 }
+
+// resettingListener accepts on 127.0.0.1 and resets each connection after
+// reading from it once.
+func resettingListener(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	go func() {
+		for {
+			connection, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			_, _ = connection.Read(make([]byte, 1))
+			_ = connection.(*net.TCPConn).SetLinger(0)
+			_ = connection.Close()
+		}
+	}()
+	return listener.Addr().(*net.TCPAddr).AddrPort().String()
+}
+
+func TestEgressClient_ConnectionErrorsNameNoAddress(t *testing.T) {
+	requireSanitized := func(t *testing.T, err error, want error, private ...string) {
+		t.Helper()
+		require.ErrorIs(t, err, want)
+		var urlError *url.Error
+		require.True(t, errors.As(err, &urlError))
+		cause := urlError.Err.Error()
+		assert.Equal(t, want.Error(), cause)
+		assert.Empty(t, addressPattern.FindAllString(cause, -1))
+		for _, value := range private {
+			assert.NotContains(t, cause, value)
+		}
+	}
+	allowLoopback := mustPolicy(t, "127.0.0.1", "")
+
+	t.Run("reset during the TLS handshake", func(t *testing.T) {
+		address := resettingListener(t)
+		client, err := newEgressClient(time.Second, 1024, allowLoopback, newDNSTable(nil).resolver(), nil)
+		require.NoError(t, err)
+		_, err = get(t, client, "https://"+address+"/v1")
+		requireSanitized(t, err, ErrEgressConnection)
+	})
+	t.Run("connection refused by an allowed address", func(t *testing.T) {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		address := listener.Addr().String()
+		require.NoError(t, listener.Close())
+		table := newDNSTable(map[string][][]netip.Addr{"internal.corp.example": {addrs("127.0.0.1")}})
+		client, err := newEgressClient(time.Second, 1024, mustPolicy(t, "*.corp.example", ""), table.resolver(), nil)
+		require.NoError(t, err)
+		_, port, _ := net.SplitHostPort(address)
+		_, err = get(t, client, "https://internal.corp.example:"+port+"/v1")
+		requireSanitized(t, err, ErrEgressConnection)
+	})
+	t.Run("certificate that does not name the host", func(t *testing.T) {
+		server := newCountingTLSServer(t, nil)
+		table := newDNSTable(map[string][][]netip.Addr{"unnamed.test": {addrs("127.0.0.1")}})
+		client := newTestEgressClient(t, allowLoopback, table, server)
+		_, err := get(t, client, server.url("unnamed.test"))
+		requireSanitized(t, err, ErrEgressConnection, "example.com", "unnamed.test")
+	})
+	t.Run("untrusted certificate", func(t *testing.T) {
+		server := newCountingTLSServer(t, nil)
+		client, err := newEgressClient(time.Second, 1024, allowLoopback, newDNSTable(nil).resolver(), nil)
+		require.NoError(t, err)
+		_, err = get(t, client, server.url("127.0.0.1"))
+		requireSanitized(t, err, ErrEgressConnection, "Acme")
+	})
+	t.Run("connection failures classify as upstream", func(t *testing.T) {
+		assert.Equal(t, execution.CategoryUpstream, execution.ClassifyProvider(&url.Error{Op: "Post", URL: "https://llm.example", Err: ErrEgressConnection}))
+	})
+	t.Run("response header timeout", func(t *testing.T) {
+		release := make(chan struct{})
+		server := newCountingTLSServer(t, func(http.ResponseWriter, *http.Request) { <-release })
+		defer close(release)
+		client, err := newEgressClient(50*time.Millisecond, 1024, allowLoopback, newDNSTable(nil).resolver(), server.roots())
+		require.NoError(t, err)
+		_, err = get(t, client, server.url("127.0.0.1"))
+		requireSanitized(t, err, ErrEgressTimeout)
+		assert.Equal(t, execution.CategoryTimeout, execution.ClassifyProvider(err), "a timeout still classifies as a timeout")
+	})
+	t.Run("reset while reading the body", func(t *testing.T) {
+		server := newCountingTLSServer(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: first\n\n")
+			w.(http.Flusher).Flush()
+			connection, _, err := http.NewResponseController(w).Hijack()
+			if err != nil {
+				return
+			}
+			_ = connection.Close()
+		})
+		client := newTestEgressClient(t, allowLoopback, newDNSTable(nil), server)
+		client.Transport.(*boundedTransport).base.(httpsOnly).base.(*http.Transport).ForceAttemptHTTP2 = false
+		client.Transport.(*boundedTransport).base.(httpsOnly).base.(*http.Transport).TLSClientConfig.NextProtos = []string{"http/1.1"}
+		response, err := get(t, client, server.url("127.0.0.1"))
+		require.NoError(t, err)
+		_, err = io.ReadAll(response.Body)
+		require.Error(t, err)
+		assert.Equal(t, ErrEgressConnection.Error(), err.Error())
+	})
+}
