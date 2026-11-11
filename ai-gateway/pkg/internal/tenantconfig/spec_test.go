@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/grafana/grafana-app-sdk/resource"
 )
@@ -74,4 +75,30 @@ func TestMiddleware_DecodesMetadataAndKeepsTheSpec(t *testing.T) {
 	_, err = k.Read(bytes.NewReader([]byte(`{"metadata":"`+"sentinel-metadata"+`"}`)), resource.KindEncodingJSON)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "sentinel-metadata")
+}
+
+func TestKind_Codec(t *testing.T) {
+	k := Kind()
+	object, err := k.Read(bytes.NewReader([]byte(`{"metadata":{"name":"marker"},"spec":{"type":"marker","enabled":true},"ſpec":{"type":"other","enabled":false}}`)), resource.KindEncodingJSON)
+	require.NoError(t, err)
+	middleware, ok := object.(*Middleware)
+	require.True(t, ok)
+	assert.JSONEq(t, `{"type":"marker","enabled":true}`, string(middleware.RawSpec), "a field that only case-folds to spec is ignored")
+
+	var encoded bytes.Buffer
+	require.NoError(t, k.Write(middleware, &encoded, resource.KindEncodingJSON))
+	assert.JSONEq(t, `{"metadata":{"name":"marker"},"spec":{"type":"marker","enabled":true}}`, encoded.String())
+
+	for name, raw := range map[string]string{
+		"not JSON":         `{"spec": x-sentinel-character}`,
+		"not an object":    `["sentinel-array"]`,
+		"invalid metadata": `{"metadata":{"name":["sentinel-name"]}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := k.Read(bytes.NewReader([]byte(raw)), resource.KindEncodingJSON)
+			require.Error(t, err)
+			assert.True(t, apierrors.IsBadRequest(err))
+			assert.Equal(t, "middleware: the object is not a valid Middleware", err.Error())
+		})
+	}
 }

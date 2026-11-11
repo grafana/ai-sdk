@@ -59,8 +59,8 @@ func All() []Type {
 func (t Type) Member() string {
 	var member strings.Builder
 	for i, part := range strings.Split(t.Name, "-") {
-		if i > 0 && part != "" {
-			part = strings.ToUpper(part[:1]) + part[1:]
+		if i > 0 && part != "" && part[0] >= 'a' && part[0] <= 'z' {
+			part = string(part[0]-'a'+'A') + part[1:]
 		}
 		member.WriteString(part)
 	}

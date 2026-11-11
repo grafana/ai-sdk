@@ -17,6 +17,7 @@ func TestType_Member(t *testing.T) {
 		"default-instructions": "defaultInstructions",
 		"model-access-2":       "modelAccess2",
 		"a-1b":                 "a1b",
+		"a-é":                  "aé",
 	} {
 		assert.Equal(t, member, Type{Name: name}.Member(), name)
 	}

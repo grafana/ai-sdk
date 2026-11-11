@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"maps"
 	"slices"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/grafana/grafana-app-sdk/resource"
@@ -22,6 +25,10 @@ const (
 // errInvalidSpec reports a spec that is not a Middleware spec. It never
 // describes the content, which may hold configuration values or keys.
 var errInvalidSpec = errors.New("middleware: spec is not a valid Middleware spec")
+
+// errInvalidObject refuses an object that can't be decoded, without
+// describing it.
+var errInvalidObject = apierrors.NewBadRequest("middleware: the object is not a valid Middleware")
 
 // Spec is a decoded Middleware spec.
 type Spec struct {
@@ -120,25 +127,59 @@ type Middleware struct {
 }
 
 // UnmarshalJSON decodes the object's type and metadata and keeps its spec.
+// It reads exactly the fields apiVersion, kind, metadata and spec, so a
+// field whose name only case-folds to one of them is ignored.
 func (m *Middleware) UnmarshalJSON(data []byte) error {
-	var object struct {
-		APIVersion string          `json:"apiVersion"`
-		Kind       string          `json:"kind"`
-		Metadata   json.RawMessage `json:"metadata"`
-		Spec       json.RawMessage `json:"spec"`
-	}
-	if err := json.Unmarshal(data, &object); err != nil {
-		return errors.New("middleware: the object is not a JSON object")
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return errInvalidObject
 	}
 	m.Middleware = middlewarev1alpha1.Middleware{}
-	m.APIVersion, m.Kind = object.APIVersion, object.Kind
-	if object.Metadata != nil {
-		if err := json.Unmarshal(object.Metadata, &m.ObjectMeta); err != nil {
-			return errors.New("middleware: the object's metadata is not valid")
-		}
+	if json.Unmarshal(orNull(fields["apiVersion"]), &m.APIVersion) != nil || json.Unmarshal(orNull(fields["kind"]), &m.Kind) != nil {
+		return errInvalidObject
 	}
-	m.RawSpec = object.Spec
+	if json.Unmarshal(orNull(fields["metadata"]), &m.ObjectMeta) != nil {
+		return errInvalidObject
+	}
+	m.RawSpec = fields["spec"]
 	return nil
+}
+
+// MarshalJSON encodes the object with its raw spec.
+func (m *Middleware) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		APIVersion string            `json:"apiVersion,omitempty"`
+		Kind       string            `json:"kind,omitempty"`
+		Metadata   metav1.ObjectMeta `json:"metadata"`
+		Spec       json.RawMessage   `json:"spec,omitempty"`
+	}{m.APIVersion, m.Kind, m.ObjectMeta, m.RawSpec})
+}
+
+func orNull(raw json.RawMessage) json.RawMessage {
+	if raw == nil {
+		return json.RawMessage("null")
+	}
+	return raw
+}
+
+// codec reads Middleware objects without decoding their specs. Its errors are
+// fixed 400 refusals, so a malformed object never reaches the caller as
+// decoder text that quotes it.
+type codec struct{}
+
+func (codec) Read(reader io.Reader, into resource.Object) error {
+	data, err := io.ReadAll(reader)
+	if err != nil || !json.Valid(data) {
+		return errInvalidObject
+	}
+	if err := json.Unmarshal(data, into); err != nil {
+		return errInvalidObject
+	}
+	return nil
+}
+
+func (codec) Write(writer io.Writer, from resource.Object) error {
+	return json.NewEncoder(writer).Encode(from)
 }
 
 // Copy returns a deep copy.
@@ -152,7 +193,7 @@ func (m *Middleware) DeepCopyObject() runtime.Object { return m.Copy() }
 var kind = resource.Kind{
 	Schema: resource.NewSimpleSchema(middlewarev1alpha1.Schema().Group(), middlewarev1alpha1.Schema().Version(), &Middleware{}, &middlewarev1alpha1.MiddlewareList{},
 		resource.WithKind(middlewarev1alpha1.Schema().Kind()), resource.WithPlural(middlewarev1alpha1.Schema().Plural()), resource.WithScope(middlewarev1alpha1.Schema().Scope())),
-	Codecs: map[resource.KindEncoding]resource.Codec{resource.KindEncodingJSON: &middlewarev1alpha1.JSONCodec{}},
+	Codecs: map[resource.KindEncoding]resource.Codec{resource.KindEncodingJSON: codec{}},
 }
 
 // Kind returns the Middleware kind admission manages: the generated kind's
