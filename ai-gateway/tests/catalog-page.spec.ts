@@ -172,7 +172,7 @@ test.describe('model catalog page', () => {
     await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Model 1 ID' })).toHaveValue('balanced');
     expect(await page.locator('body').innerText()).not.toContain(key);
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole('link', { name: 'Cancel' }).click();
     await expectNoKey(key);
   });
 
