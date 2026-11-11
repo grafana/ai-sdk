@@ -82,18 +82,16 @@ describe('pages/CatalogList', () => {
     expect(listModelCatalogs).not.toHaveBeenCalled();
   });
 
-  test('offers to create the first catalog only to creators', async () => {
+  test.each([
+    ['a creator', ALL, true],
+    ['a reader', READ_ONLY, false],
+  ])('offers to create the first catalog to %s: %s', async (_, actions, offered) => {
     jest.mocked(listModelCatalogs).mockResolvedValue([]);
-    signInAs(OrgRole.Admin, ALL);
-    const { unmount } = renderList();
-    expect(await screen.findByText('No model catalogs yet')).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: /New catalog/ }).length).toBeGreaterThan(0);
-    unmount();
-
-    signInAs(OrgRole.Viewer, READ_ONLY);
+    signInAs(OrgRole.Admin, actions);
     renderList();
+
     expect(await screen.findByText('No model catalogs yet')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /New catalog/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /New catalog/ }) !== null).toBe(offered);
   });
 
   test('deletes a catalog only after confirmation', async () => {
