@@ -118,3 +118,36 @@ func TestPlan_ResolveSecrets(t *testing.T) {
 	assert.NoError(t, disabled.ResolveSecrets(lookup(map[string]string{})))
 	assert.Empty(t, disabled.Secrets())
 }
+
+func TestCheckConfig(t *testing.T) {
+	const sentinel = "sentinel-config-value"
+	configSchema, err := schema.SchemaFromJSON(json.RawMessage(`{"type":"object","properties":{"limit":{"type":"integer","minimum":1},"items":{"type":"array","items":{"type":"string","maxLength":3}}},"additionalProperties":false}`))
+	require.NoError(t, err)
+	withSchema := validDefinition("quota")
+	withSchema.ConfigSchema = configSchema
+	withoutSchema := validDefinition("audit")
+	for _, tc := range []struct {
+		name          string
+		definition    extension.Definition
+		configuration string
+		message       string
+	}{
+		{name: "valid", definition: withSchema, configuration: `{"limit":2,"items":["a"]}`},
+		{name: "empty without schema", definition: withoutSchema, configuration: `{}`},
+		{name: "configuration without schema", definition: withoutSchema, configuration: `{"limit":"` + sentinel + `"}`, message: "is not accepted: the extension takes no configuration"},
+		{name: "wrong value type", definition: withSchema, configuration: `{"limit":"` + sentinel + `"}`, message: "does not match the extension's schema at /limit"},
+		{name: "array item", definition: withSchema, configuration: `{"items":["a","` + sentinel + `"]}`, message: "does not match the extension's schema at /items/1"},
+		{name: "undeclared key", definition: withSchema, configuration: `{"` + sentinel + `":1}`, message: "does not match the extension's schema at /"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := CheckConfig(tc.definition, json.RawMessage(tc.configuration))
+			if tc.message == "" {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Equal(t, tc.message, err.Error())
+			assert.NotContains(t, err.Error(), sentinel)
+		})
+	}
+}
