@@ -32,7 +32,7 @@
 ## 7. Integration checks
 
 - [ ] 7.1 Run `mise run fmt-check`, `vet`, `lint`, `build`, `test-ai-gateway`, `test-integration`, `verify-ai-gateway-boundary`, `build-ai-gateway-plugin` and `validate-ai-gateway-plugin`; verify all pass, and record the checks that only CI can run.
-- [ ] 7.2 Run `openspec validate add-middleware-kind --strict`; verify it passes.
+- [x] 7.2 Run `openspec validate add-middleware-kind --strict`; verify it passes.
 
 ## Workflow follow-up
 
