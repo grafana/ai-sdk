@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -176,6 +177,7 @@ type harnessOptions struct {
 	routeDeadline  time.Duration
 	fallback       bool
 	withoutCatalog bool
+	env            map[string]string
 }
 
 func newHarness(t *testing.T, topology platformhost.Topology) *harness {
@@ -199,6 +201,7 @@ func newHarnessWithOptions(t *testing.T, topology platformhost.Topology, options
 	if options.withoutCatalog {
 		delete(env, "GF_PLUGIN_MODEL_CATALOG")
 	}
+	maps.Copy(env, options.env)
 	if topology == platformhost.TopologyCloud {
 		env["GF_PLUGIN_ACCESS_MODE"] = "cloud"
 		env["GF_PLUGIN_ACCESS_INTERNAL_SERVICES"] = testInternalService

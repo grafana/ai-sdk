@@ -3,12 +3,13 @@
 // secure values.
 //
 // Parse applies the stack catalog policy, converts the spec into the
-// operator catalog's config.File, runs the shared shape checks and checks
+// operator catalog's config.File, runs the shared shape checks, checks each
+// custom endpoint against the egress policy without resolving it, and checks
 // that secure keys and providers match one to one. Validator applies Parse
 // at admission, after merging the stored secure values with the update the
 // way the platform will store them.
 //
 // Errors name field paths, provider names, secure keys and catalog
 // identifiers such as model IDs and aliases. They never contain secure
-// values.
+// values or endpoint URLs.
 package stackcatalog

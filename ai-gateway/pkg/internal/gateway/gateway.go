@@ -55,6 +55,7 @@ type Gateway struct {
 	handler       http.Handler
 	authenticator authn.Authenticator
 	sinks         sinks
+	egress        outbound.EgressPolicy
 }
 
 // New validates settings and constructs every Gateway dependency before any
@@ -103,7 +104,7 @@ func New(options Options) (*Gateway, error) {
 		sinks.close()
 		return nil, err
 	}
-	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks}, nil
+	return &Gateway{handler: handler, authenticator: authenticator, sinks: sinks, egress: settings.Egress}, nil
 }
 
 // operatorCatalog parses and validates the operator catalog and resolves its
@@ -201,11 +202,11 @@ func newRouteHandler(settings config.Settings, file config.File, providers map[s
 	if settings.Access.Mode == gatewayauth.AccessModeCloud {
 		byokOptions = &service.BYOKOptions{Client: nativeClient, Factory: service.BYOKIdentity}
 	}
-	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions, &service.StackCatalogOptions{Client: nativeClient}), Compose: observers.Compose, Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
+	language, err := newLanguageHandler(execution.Config{Selector: service.NewSelector(catalog, byokOptions, &service.StackCatalogOptions{Client: nativeClient, Egress: settings.Egress}), Compose: observers.Compose, Limits: execution.DefaultLimits, ConfiguredAPIKeys: secrets})
 	if err != nil {
 		return nil, err
 	}
-	discoveryHandler := discovery.New(catalog, service.StackCatalogLister{}, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
+	discoveryHandler := discovery.New(catalog, service.StackCatalogLister{Egress: settings.Egress}, providerv4.DiscoveryProjection{}, providerv4.NewHostErrorWriter())
 	return newHandler(settings.Access, sinks.telemetry, productionRoutes(discoveryHandler, language))
 }
 
@@ -243,14 +244,15 @@ func (g *Gateway) Authenticator() authn.Authenticator { return g.authenticator }
 // manifest kinds with their admission validators.
 func (g *Gateway) Provider() app.Provider {
 	return simple.NewAppProvider(manifestdata.LocalManifest(), nil, func(cfg app.Config) (app.App, error) {
-		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: managedKinds()})
+		return simple.NewApp(simple.AppConfig{Name: cfg.ManifestData.AppName, KubeConfig: cfg.KubeConfig, Handler: g.handler, ManagedKinds: managedKinds(g.egress)})
 	})
 }
 
-// managedKinds lists every manifest kind with its admission validator. No
-// kind has a reconciler or watcher, so the app starts no informers.
-func managedKinds() []simple.AppManagedKind {
-	return []simple.AppManagedKind{{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{}}}
+// managedKinds lists every manifest kind with its admission validator, which
+// checks custom endpoints against egress. No kind has a reconciler or
+// watcher, so the app starts no informers.
+func managedKinds(egress outbound.EgressPolicy) []simple.AppManagedKind {
+	return []simple.AppManagedKind{{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{Policy: egress}}}
 }
 
 // Close flushes Agent Observability and attempt records concurrently for at

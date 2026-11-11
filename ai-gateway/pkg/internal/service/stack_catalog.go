@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/stackcatalog"
 	"github.com/grafana/ai-sdk/provider"
@@ -50,6 +51,8 @@ func StackCatalogFromContext(ctx context.Context) (StackCatalog, bool) {
 type StackCatalogOptions struct {
 	// Client is the shared model HTTP client.
 	Client *http.Client
+	// Egress is the policy custom endpoints are checked against.
+	Egress outbound.EgressPolicy
 }
 
 // candidateBuilder constructs the physical model of one catalog candidate.
@@ -66,18 +69,18 @@ func SelectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 	if options.Client == nil {
 		return execution.Selection{}, fmt.Errorf("gateway service: model HTTP client is required")
 	}
-	return selectStackCatalog(stack, modelID, gateway, func(providerConfig config.ResolvedProvider, descriptor config.Primary) (provider.LanguageModel, error) {
+	return selectStackCatalog(stack, modelID, gateway, options.Egress, func(providerConfig config.ResolvedProvider, descriptor config.Primary) (provider.LanguageModel, error) {
 		candidate, _, err := newCandidate(providerConfig, descriptor, options.Client, nativemodel.NewAnthropic)
 		return candidate, err
 	})
 }
 
-func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMessage, build candidateBuilder) (execution.Selection, error) {
+func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMessage, policy outbound.EgressPolicy, build candidateBuilder) (execution.Selection, error) {
 	controls, err := routing.Decode(gateway, routing.ConfiguredAccess)
 	if err != nil {
 		return execution.Selection{}, err
 	}
-	file, keys, err := parseStackCatalog(stack)
+	file, keys, err := parseStackCatalog(stack, policy)
 	if err != nil {
 		return execution.Selection{}, err
 	}
@@ -103,7 +106,7 @@ func selectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 // parseStackCatalog checks a stack catalog with the keys that have values, and
 // returns it with those values. Any failure is [execution.ErrCatalogConfiguration],
 // without the reason, which names spec identifiers.
-func parseStackCatalog(stack StackCatalog) (config.File, []string, error) {
+func parseStackCatalog(stack StackCatalog, policy outbound.EgressPolicy) (config.File, []string, error) {
 	secureKeys := make([]string, 0, len(stack.Keys))
 	keys := make([]string, 0, len(stack.Keys))
 	for name, value := range stack.Keys {
@@ -113,7 +116,7 @@ func parseStackCatalog(stack StackCatalog) (config.File, []string, error) {
 		secureKeys = append(secureKeys, name)
 		keys = append(keys, string(value))
 	}
-	file, err := stackcatalog.Parse(stack.Spec, secureKeys)
+	file, err := stackcatalog.Parse(stack.Spec, secureKeys, policy)
 	if err != nil {
 		return config.File{}, nil, execution.ErrCatalogConfiguration
 	}
@@ -124,16 +127,19 @@ var errNoStackCatalog = errors.New("gateway service: the request carries no stac
 
 // StackCatalogLister lists the models of the stack catalog a catalog route
 // serves, checked like a selection, without constructing any model.
-type StackCatalogLister struct{}
+type StackCatalogLister struct {
+	// Egress is the policy custom endpoints are checked against.
+	Egress outbound.EgressPolicy
+}
 
 // ListModels implements [catalog.ModelLister]. A catalog that fails its checks
 // fails with [execution.ErrCatalogConfiguration].
-func (StackCatalogLister) ListModels(ctx context.Context) ([]catalog.ModelInfo, error) {
+func (lister StackCatalogLister) ListModels(ctx context.Context) ([]catalog.ModelInfo, error) {
 	stack, ok := StackCatalogFromContext(ctx)
 	if !ok {
 		return nil, errNoStackCatalog
 	}
-	file, _, err := parseStackCatalog(stack)
+	file, _, err := parseStackCatalog(stack, lister.Egress)
 	if err != nil {
 		return nil, err
 	}

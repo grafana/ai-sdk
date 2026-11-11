@@ -18,6 +18,7 @@ import (
 	gatewayauth "github.com/grafana/ai-sdk/ai-gateway/pkg/internal/auth"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
 )
@@ -105,7 +106,7 @@ func TestSelectStackCatalog_BuildsOnlyTheChain(t *testing.T) {
 				stack = testStackCatalog()
 			}
 			builds := &stackBuilds{}
-			selected, err := selectStackCatalog(stack, tc.modelID, stackGateway(tc.gateway), builds.build)
+			selected, err := selectStackCatalog(stack, tc.modelID, stackGateway(tc.gateway), outbound.EgressPolicy{}, builds.build)
 			require.NoError(t, err)
 			assert.Equal(t, tc.built, builds.built)
 			assert.Equal(t, tc.canonical, selected.ID)
@@ -179,7 +180,7 @@ func TestSelectStackCatalog_Refusals(t *testing.T) {
 				modelID = "balanced"
 			}
 			builds := &stackBuilds{}
-			_, err := selectStackCatalog(stack, modelID, stackGateway(tc.gateway), builds.build)
+			_, err := selectStackCatalog(stack, modelID, stackGateway(tc.gateway), outbound.EgressPolicy{}, builds.build)
 			require.ErrorIs(t, err, tc.err)
 			assert.Empty(t, builds.built)
 			if tc.err == execution.ErrCatalogConfiguration {
@@ -192,7 +193,7 @@ func TestSelectStackCatalog_Refusals(t *testing.T) {
 func TestSelectStackCatalog_FallbackAndOverview(t *testing.T) {
 	builds := &stackBuilds{fail: map[string]bool{"claude/claude-sonnet": true}}
 	runtime, err := execution.New(execution.Config{Limits: serviceTestLimits(), Selector: func(_ context.Context, id string, _ provider.CallOptions, gateway json.RawMessage) (execution.Selection, error) {
-		return selectStackCatalog(testStackCatalog(), id, gateway, builds.build)
+		return selectStackCatalog(testStackCatalog(), id, gateway, outbound.EgressPolicy{}, builds.build)
 	}})
 	require.NoError(t, err)
 	call, err := runtime.Call(t.Context(), "default", provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}})
