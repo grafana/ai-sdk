@@ -5,6 +5,7 @@ import { API_GROUP, API_VERSION, prefixRoute, ROUTES } from '../src/constants';
 const CATALOGS = `/apis/${API_GROUP}/${API_VERSION}/namespaces/default/modelcatalogs`;
 const SENTINEL = 'e2e-catalog-sentinel-key';
 const ADMISSION_REFUSAL = 'admission hook for ModelCatalog denied the request';
+const GRAFANA_BOOT_TIMEOUT_MS = 20_000;
 
 let sequence = 0;
 
@@ -39,7 +40,8 @@ async function createStored(request: APIRequestContext, key = sentinelKey('store
 
 // keyWatch records every browser console message and every response body the
 // page fetches, except watch streams, which never end, so a test can check
-// that a typed key never comes back.
+// that a typed key never comes back: notFetched checks the console and the
+// responses, and nowhere also checks the page.
 function keyWatch(page: Page) {
   const messages: string[] = [];
   const bodies: Array<Promise<string>> = [];
@@ -58,14 +60,18 @@ function keyWatch(page: Page) {
       );
     }
   });
-  return async (key: string) => {
+  const notFetched = async (key: string) => {
     expect(messages.filter((message) => message.includes(key))).toEqual([]);
     for (const body of await Promise.all(bodies)) {
       expect(body).not.toContain(key);
     }
     expect(unreadable).toEqual([]);
+  };
+  const nowhere = async (key: string) => {
+    await notFetched(key);
     expect(await page.content()).not.toContain(key);
   };
+  return { notFetched, nowhere };
 }
 
 function isCatalogWrite(method: string, name?: string) {
@@ -95,7 +101,7 @@ test.describe('model catalog page', () => {
   });
 
   test('an Admin creates a catalog and its key is never shown', async ({ gotoPage, page, accounts }) => {
-    const expectNoKey = keyWatch(page);
+    const watch = keyWatch(page);
     const name = uniqueName();
     const key = sentinelKey('create');
     await gotoPage(`/${ROUTES.NewCatalog}`);
@@ -111,11 +117,11 @@ test.describe('model catalog page', () => {
 
     await page.getByRole('link', { name }).click();
     await expect(page.getByLabel('Provider 1 API key')).toHaveValue('configured');
-    await expectNoKey(key);
+    await watch.nowhere(key);
   });
 
   test('an Admin edits a catalog and keeps or replaces its key', async ({ gotoPage, page, accounts }) => {
-    const expectNoKey = keyWatch(page);
+    const watch = keyWatch(page);
     const { name, key, object } = await createStored(accounts.Admin);
     await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
     await expect(page.getByLabel('Provider 1 API key')).toHaveValue('configured');
@@ -142,8 +148,8 @@ test.describe('model catalog page', () => {
 
     await page.getByRole('link', { name }).click();
     await expect(page.getByLabel('Provider 1 API key')).toHaveValue('configured');
-    await expectNoKey(key);
-    await expectNoKey(replacement);
+    await watch.nowhere(key);
+    await watch.nowhere(replacement);
   });
 
   test('an Admin deletes a catalog after confirming', async ({ gotoPage, page, accounts }) => {
@@ -157,7 +163,7 @@ test.describe('model catalog page', () => {
   });
 
   test('an admission refusal is shown as returned', async ({ gotoPage, page }) => {
-    const expectNoKey = keyWatch(page);
+    const watch = keyWatch(page);
     const key = sentinelKey('refused');
     await gotoPage(`/${ROUTES.NewCatalog}`);
     await fillNewCatalog(page, uniqueName(), key, '');
@@ -172,8 +178,10 @@ test.describe('model catalog page', () => {
     await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Model 1 ID' })).toHaveValue('balanced');
     expect(await page.locator('body').innerText()).not.toContain(key);
+    await watch.notFetched(key);
     await page.getByRole('link', { name: 'Cancel' }).click();
-    await expectNoKey(key);
+    await expect(page.getByRole('textbox', { name: 'Catalog name' })).toHaveCount(0);
+    await watch.nowhere(key);
   });
 
   test('a concurrent edit is refused as returned', async ({ gotoPage, page, accounts }) => {
@@ -203,11 +211,12 @@ test.describe('model catalog page', () => {
 
   for (const role of BROWSER_ROLES) {
     test(`${role} users see catalogs read-only`, async ({ pageAs, accounts }) => {
+      test.slow();
       const { name } = await createStored(accounts.Admin);
       const page = await pageAs(role);
 
       await page.goto(prefixRoute(ROUTES.Catalogs));
-      await expect(page.getByRole('link', { name })).toBeVisible();
+      await expect(page.getByRole('link', { name })).toBeVisible({ timeout: GRAFANA_BOOT_TIMEOUT_MS });
       await expect(page.getByRole('link', { name: 'New catalog' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: `Delete ${name}` })).toHaveCount(0);
 
@@ -219,7 +228,7 @@ test.describe('model catalog page', () => {
       await expect(page.getByRole('button', { name: 'Add provider' })).toHaveCount(0);
 
       await page.goto(prefixRoute(ROUTES.NewCatalog));
-      await expect(page.getByText("You can't create model catalogs")).toBeVisible();
+      await expect(page.getByText("You can't create model catalogs")).toBeVisible({ timeout: GRAFANA_BOOT_TIMEOUT_MS });
       await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0);
     });
   }
