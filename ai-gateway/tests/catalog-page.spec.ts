@@ -39,9 +39,11 @@ async function createStored(request: APIRequestContext, key = sentinelKey('store
 }
 
 // keyWatch records every browser console message and every response body the
-// page fetches, except watch streams, which never end, so a test can check
-// that a typed key never comes back: notFetched checks the console and the
-// responses, and nowhere also checks the page.
+// page fetches from the time it is called, except watch streams, which never
+// end. Tests call it once Grafana has loaded, before a key is typed, because
+// loading navigates and drops the bodies of Grafana's own boot requests.
+// notFetched checks the console and the responses, and nowhere also checks the
+// page.
 function keyWatch(page: Page) {
   const messages: string[] = [];
   const bodies: Array<Promise<string>> = [];
@@ -101,10 +103,11 @@ test.describe('model catalog page', () => {
   });
 
   test('an Admin creates a catalog and its key is never shown', async ({ gotoPage, page, accounts }) => {
-    const watch = keyWatch(page);
     const name = uniqueName();
     const key = sentinelKey('create');
     await gotoPage(`/${ROUTES.NewCatalog}`);
+    await expect(page.getByRole('textbox', { name: 'Catalog name' })).toBeVisible();
+    const watch = keyWatch(page);
     await fillNewCatalog(page, name, key);
 
     const created = page.waitForRequest(isCatalogWrite('POST'));
@@ -121,10 +124,10 @@ test.describe('model catalog page', () => {
   });
 
   test('an Admin edits a catalog and keeps or replaces its key', async ({ gotoPage, page, accounts }) => {
-    const watch = keyWatch(page);
     const { name, key, object } = await createStored(accounts.Admin);
     await gotoPage(`/${ROUTES.EditCatalog}/${name}`);
     await expect(page.getByLabel('Provider 1 API key')).toHaveValue('configured');
+    const watch = keyWatch(page);
 
     await page.getByRole('textbox', { name: 'Model 1 display name' }).fill('Renamed');
     const kept = page.waitForRequest(isCatalogWrite('PUT', name));
@@ -163,9 +166,10 @@ test.describe('model catalog page', () => {
   });
 
   test('an admission refusal is shown as returned', async ({ gotoPage, page }) => {
-    const watch = keyWatch(page);
     const key = sentinelKey('refused');
     await gotoPage(`/${ROUTES.NewCatalog}`);
+    await expect(page.getByRole('textbox', { name: 'Catalog name' })).toBeVisible();
+    const watch = keyWatch(page);
     await fillNewCatalog(page, uniqueName(), key, '');
 
     const refused = page.waitForResponse((response) => isCatalogWrite('POST')(response.request()));
