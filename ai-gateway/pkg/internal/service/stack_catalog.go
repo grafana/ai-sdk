@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/routing"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/stackcatalog"
@@ -80,7 +81,7 @@ func SelectStackCatalog(stack StackCatalog, modelID string, gateway json.RawMess
 		if providerConfig.BaseURL != "" {
 			client = options.EgressClient
 		}
-		candidate, _, err := newCandidate(providerConfig, descriptor, client, nativemodel.NewAnthropic)
+		candidate, _, err := newCandidate(providerConfig, descriptor, nativeoptions.AnthropicPolicy{}, client, nativemodel.NewAnthropic)
 		if err != nil || providerConfig.BaseURL == "" {
 			return candidate, err
 		}

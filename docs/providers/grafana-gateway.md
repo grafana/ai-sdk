@@ -176,6 +176,57 @@ that must not run twice.
 To see which models were tried, read the
 [execution overview](#inspect-execution-overviews-and-failures).
 
+## Use Anthropic server-side fallback
+
+Anthropic can retry a turn its safety classifiers refuse on another model,
+inside the same request. Ask for it with `providerOptions.anthropic.fallbacks`,
+either a list of fallback models or `"default"`, which lets Anthropic choose:
+
+```go
+result, err := aisdk.GenerateText(ctx, model,
+	aisdk.WithModelMessages(provider.UserText("Summarize this incident.")),
+	aisdk.WithProviderOptions(anthropic.AnthropicOptions{
+		Fallbacks: &anthropic.FallbackConfig{Chain: []anthropic.Fallback{{Model: "claude-opus-4-8"}}},
+	}),
+)
+```
+
+Use `anthropic.DefaultFallbacks()` for `"default"`. From a Vercel server:
+
+```ts
+const result = await generateText({
+  model: gateway("grafana/assistant"),
+  prompt: "Summarize this incident.",
+  providerOptions: {
+    anthropic: { fallbacks: [{ model: "claude-opus-4-8", max_tokens: 2048 }] },
+  },
+});
+```
+
+With configured models, your Gateway administrator decides what each provider
+of a model allows. A call is refused with an invalid request error, before the
+provider is called, when it names a model the provider does not allow, names
+a model twice, or sends `"default"` that is not allowed. The policy grants
+models, not their settings: `max_tokens`, `thinking` and `speed` in each entry
+are yours to choose, and can raise the cost.
+
+It combines with [Gateway fallback](#configure-fallback) and
+[routing](#route-a-call-to-other-models-and-providers) per attempt:
+
+- Each configured provider of a model, and each provider a routed call reaches,
+  applies its own policy. A provider that refuses is skipped like a failed
+  one, and the Gateway tries the next. If none allows the call, it fails.
+- A provider that is not Anthropic ignores `anthropic` options, so it answers
+  without server-side fallback.
+- Routes that share a provider and model are tried once, under the one policy
+  the administrator must give that provider and model in every route.
+
+Calls with [your own key](#use-your-own-provider-credentials) send
+`fallbacks` to Anthropic unchanged, without any Gateway policy; your account
+pays for the fallback model, including the one Anthropic chooses for
+`"default"`. Either way, when Anthropic switches models, the execution
+overview reports the model that answered as `servedModelId`.
+
 ## Use your own provider credentials
 
 When you bring your own key (BYOK), the Gateway calls the provider with your
@@ -283,7 +334,8 @@ The controls never add destinations: you can only reach models and accounts
 you could already call directly. A call tries at most 8 providers in total;
 each provider and model is tried once, even when several routes share it.
 Everything else about the call still applies to every attempt: each provider
-reads its own options, such as `anthropic` or `openai`, and the
+reads its own options, such as `anthropic` or `openai`, each model applies its
+own [skills policy](#anthropic-agent-skills), and the
 [fallback rules](#configure-fallback) about committed output are the same.
 
 The Gateway checks the controls before calling any provider, and rejects:
@@ -367,6 +419,31 @@ the `approvalId`. The SDK does not do this for you.
 `ToolResultOutput.Reason` is a pointer, so a denied tool call can tell an
 absent reason (nil) from an empty one (`new("")`).
 
+### Anthropic agent skills
+
+Send Anthropic agent skills under `providerOptions.anthropic.container.skills`,
+together with the code-execution tool; see the [Anthropic](anthropic.md#agent-skills)
+guide. A call can carry at most 20 distinct skills.
+
+- **Configured models** allow only the skills your Gateway administrator lists
+  for that model; other skills fail with an invalid-request error before the
+  provider is called. The version must match the allowed entry exactly: a
+  call without a version matches only an entry without versions, and `latest`
+  is matched literally. A listed custom skill is shared by every caller of the
+  model.
+- **Configured models refuse `container.id`**, with or without skills, because
+  containers belong to the Gateway's provider account. Every call starts a
+  fresh container, so continuing a `pause_turn` or reusing a container across
+  turns needs your own key. The response still reports
+  `providerMetadata.anthropic.container`.
+- **Your own key** allows any bounded skills, including custom ones, and a
+  `container.id` of at most 128 bytes. Skills and containers belong to one
+  Anthropic account, so a later account in your list fails at the provider.
+
+Files that skills create, such as a `.pptx`, are returned as `file_id`s in the
+code-execution result. They stay in the provider account; the Gateway has no
+download path for them.
+
 ## Continue conversations with provider metadata
 
 Models can return data they need on later calls, such as Claude thinking
@@ -419,6 +496,12 @@ attempt in order, with its provider, model, outcome and, for a failure, the
 provider's error message, type, code and status. In Go, read it from
 `ProviderMetadata`; in TypeScript, from `providerMetadata`. Each call has its
 own overview, so retries and tool loop steps start new ones.
+
+When Anthropic [server-side fallback](#use-anthropic-server-side-fallback)
+moved the response to another model, the selected attempt also has
+`servedModelId`, the model that answered; `modelId` stays the model the
+Gateway called. A stream reports the latest such model in each finish and
+error. `gateway.routing` does not report it.
 
 For configured models, the overview also has the resolved `canonicalModelId`
 and each attempt's `providerInstance`. For calls with your own key,
@@ -481,6 +564,14 @@ limits request size and duration, so the client has no size limits to
 configure. To bound a call yourself, use the
 context deadline above, and your own `http.Client` for transport-level limits
 such as timeouts.
+
+When the Gateway tries several candidates, the error reports the failure that
+ended the call: a cancellation or deadline of the call wins, otherwise the most
+recent candidate failure that is not a refusal decides. A refusal is a
+candidate that cannot take the request, such as a model whose skills policy
+does not list a requested skill. The error is invalid request only when every
+candidate refused. This applies to configured fallback, routed calls and your
+own keys alike; keep the skills policies of models you combine consistent.
 
 `APICallError.Data` and `ResponseBody` contain the error response, which can
 include provider details; keep it out of public logs.

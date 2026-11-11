@@ -102,6 +102,28 @@ authorization tokens and `enabled` from explicit empty strings or false. A
 non-nil empty `allowedTools` slice sends an empty list. Configure servers only
 for authorized callers and models, and protect tokens in request metadata.
 
+### Agent skills
+
+`Container.Skills` loads Anthropic agent skills, such as `pptx`, into the
+code-execution container. Skills run inside code execution, so send the
+`code_execution_20250825` or `code_execution_20260120` provider tool with them;
+without it, the request still goes out and carries an `other` warning.
+
+```go
+anthropic.AnthropicOptions{
+	Container: &anthropic.Container{Skills: []anthropic.ContainerSkill{
+		{Type: anthropic.ContainerSkillAnthropic, SkillID: "pptx"},
+		{Type: anthropic.ContainerSkillCustom, ProviderReference: map[string]string{"anthropic": "skill_01..."}},
+	}},
+}
+```
+
+An Anthropic skill sets `SkillID`. A custom skill, uploaded to your Anthropic
+workspace, sets `ProviderReference` with an `anthropic` entry; a custom skill
+without a non-empty `anthropic` entry, or a skill of another type, fails before
+the request is sent. An empty `Version` selects the latest version. The provider
+adds the code-execution, skills and Files API betas.
+
 ## Avoid duplicate retry policy
 
 The underlying Anthropic Go client retries by default, and the core SDK has its

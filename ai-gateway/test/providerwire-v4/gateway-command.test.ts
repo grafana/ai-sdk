@@ -16,6 +16,7 @@ import { fetchConfiguredModels } from "../../examples/configured-discovery";
 import { nativeApprovalReply } from "./native-approvals";
 import { nativeMetadataReply } from "./native-metadata";
 import { nativeProxyEnvironment, startNativeProviderProxy } from "./native-provider-proxy";
+import { loadConfig, mockId, normalizeRequestSnapshot, writeRequestSnapshots } from "../../../test/conformance/tools/common.mts";
 
 const BYOK_MODEL = "anthropic/request-only-native";
 const BYOK_OPTIONS = { gateway: { byok: { anthropic: [{ apiKey: "request-only-key" }] } } };
@@ -598,7 +599,7 @@ describe("native option forwarding through the authenticated command", () => {
       const options: LanguageModelV4CallOptions = family === "anthropic" ? {
         maxOutputTokens: 64,
         tools: [{ type: "function", name: "lookup", inputSchema: {}, providerOptions: { anthropic: { allowedCallers: [], eagerInputStreaming: false } } }],
-        providerOptions: { anthropic: { container: { id: "supplied-container" }, unknown: nested, model: "ignored" }, other: { role: "ordinary" } },
+        providerOptions: { anthropic: { unknown: nested, model: "ignored" }, other: { role: "ordinary" } },
         prompt: [
           { role: "assistant", content: [{ type: "tool-call", toolCallId: "call", toolName: "lookup", input: {}, providerOptions: { anthropic: { caller: { type: "direct" } } } }] },
           { role: "tool", content: [{ type: "tool-result", toolCallId: "call", toolName: "lookup", output: { type: "text", value: "done normal-stream" }, providerOptions: { anthropic: { caller: { type: "direct" } } } }] },
@@ -628,7 +629,7 @@ describe("native option forwarding through the authenticated command", () => {
           assert.deepEqual(tsBody, goBody);
           assert.equal(tsBody.model, "backend-private");
           if (family === "anthropic") {
-            assert.deepEqual(tsBody.container, { id: "supplied-container" });
+            assert.equal(tsBody.container, undefined);
             const definitions = tsBody.tools as Array<Record<string, unknown>>;
             assert.deepEqual(definitions[0]!.allowed_callers, []);
             assert.equal(definitions[0]!.eager_input_streaming, undefined);
@@ -791,14 +792,17 @@ describe("native option forwarding through the authenticated command", () => {
     try {
       const attempts: LanguageModelV4CallOptions[] = [
         { prompt: [], providerOptions: { anthropic: { container: { skills: [{ type: "anthropic", skillId: "skill" }] } } } },
+        { prompt: [], providerOptions: { anthropic: { container: { id: "container_private_id" } } } },
+        { prompt: [], providerOptions: { anthropic: { container: { id: "container_private_id", skills: [{ type: "anthropic", skillId: "skill" }] } } } },
         { prompt: [], providerOptions: { anthropic: { fallbacks: "default" } } },
       ];
       for (const mode of ["generate", "stream"] as const) {
         for (const options of attempts) {
           const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "assistant", mode, options });
           assert.equal(go.error?.statusCode, 400);
+          assert.doesNotMatch(JSON.stringify(go.error), /container_private_id/);
           const model = gateway.client()("assistant");
-          await assert.rejects(async () => mode === "generate" ? await model.doGenerate(options) : await model.doStream(options), (error: unknown) => GatewayInvalidRequestError.isInstance(error));
+          await assert.rejects(async () => mode === "generate" ? await model.doGenerate(options) : await model.doStream(options), (error: unknown) => GatewayInvalidRequestError.isInstance(error) && !String((error as any).cause?.responseBody).includes("container_private_id"));
         }
       }
       assert.equal(fake.requests.length, 0);
@@ -814,6 +818,64 @@ describe("native option forwarding through the authenticated command", () => {
       }
       assert.deepEqual(fake.violations, []);
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+
+  it("admits policied Anthropic skills for every namespace and refuses unlisted ones in both clients and modes", async () => {
+    const fake = await FakeAnthropic.start();
+    const config = `providers:\n  anthropic-primary:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${fake.url}\nmodels:\n  grafana/skills:\n    name: Skills\n    primary:\n      provider: anthropic-primary\n      model: backend-private\n      skills:\n        allow:\n          - type: anthropic\n            skillId: pptx\n          - type: custom\n            skillId: skill_01custom\n    aliases:\n      - skills\n`;
+    const codeExecution = { type: "provider" as const, id: "anthropic.code_execution_20250825" as const, name: "code_execution", args: {} };
+    const listed: LanguageModelV4CallOptions = {
+      prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], maxOutputTokens: 64, tools: [codeExecution],
+      providerOptions: { anthropic: { container: { skills: [{ type: "anthropic", skillId: "pptx" }, { type: "custom", providerReference: { anthropic: "skill_01custom" } }] } } },
+    };
+    const unlisted: LanguageModelV4CallOptions = { ...listed, providerOptions: { anthropic: { container: { skills: [{ type: "anthropic", skillId: "xlsx" }] } } } };
+    const gateways: GatewayProcess[] = [];
+    try {
+      for (const namespace of [TEST_NAMESPACE, "stacks-41557"]) {
+        gateways.push(await GatewayProcess.start(binaryPath, "", [], {}, "access-token", config, undefined, undefined, namespace));
+      }
+      for (const gateway of gateways) {
+        for (const mode of ["generate", "stream"] as const) {
+          const before = fake.requests.length;
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "skills", mode, options: listed });
+          assert.equal(go.error, undefined);
+          const model = gateway.client()("skills");
+          if (mode === "generate") await model.doGenerate(listed);
+          else await collectGatewayStream((await model.doStream(listed)).stream);
+          assert.equal(fake.requests.length, before + 2);
+          for (const request of fake.requests.slice(before)) {
+            assert.deepEqual(request.body.container, { skills: [{ type: "anthropic", skill_id: "pptx" }, { type: "custom", skill_id: "skill_01custom" }] });
+            const betas = String(request.headers["anthropic-beta"]).split(",");
+            for (const beta of ["code-execution-2025-08-25", "skills-2025-10-02", "files-api-2025-04-14"]) assert.ok(betas.includes(beta), beta);
+          }
+          const refused = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "skills", mode, options: unlisted });
+          assert.equal(refused.error?.statusCode, 400);
+          await assert.rejects(async () => mode === "generate" ? await model.doGenerate(unlisted) : await model.doStream(unlisted), (error: unknown) => GatewayInvalidRequestError.isInstance(error) && !String((error as any).cause?.responseBody).includes("xlsx"));
+          assert.equal(fake.requests.length, before + 2);
+        }
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(...gateways.map(gateway => () => gateway.stop()), () => fake.stop()); }
+  });
+
+  it("forwards a BYOK custom skill and container ID to the caller's account", async () => {
+    const [native, gateway] = await startCloudGateway();
+    try {
+      const base = byokOptions("anthropic", ["request-only-key"]);
+      const options: LanguageModelV4CallOptions = { ...base, providerOptions: { ...base.providerOptions, anthropic: { container: { id: "container_byok", skills: [{ type: "custom", providerReference: { anthropic: "skill_01byok" } }] } } } };
+      for (const mode of ["generate", "stream"] as const) {
+        const before = native.requests.length;
+        const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: BYOK_MODEL, mode, options });
+        assert.equal(go.error, undefined);
+        const model = gateway.client()(BYOK_MODEL);
+        if (mode === "generate") await model.doGenerate(options);
+        else await collectGatewayStream((await model.doStream(options)).stream);
+        assert.equal(native.requests.length, before + 2);
+        for (const request of native.requests.slice(before)) {
+          assert.deepEqual(request.body.container, { id: "container_byok", skills: [{ type: "custom", skill_id: "skill_01byok" }] });
+        }
+      }
+    } finally { await settleCleanup(() => gateway.stop(), () => native.stop()); }
   });
 
   it("keeps concurrent scoped extensions isolated and caller options immutable", async () => {
@@ -922,7 +984,7 @@ models:
       maxOutputTokens: 64,
       headers: { "x-ordinary": "native-header" },
       tools: [{ type: "function", name: "lookup", inputSchema: {}, providerOptions: { anthropic: { allowedCallers: [] } } }],
-      providerOptions: { anthropic: { container: { id: "native-container" } }, openai: { store: false }, azure: { store: true }, compatibleBackend: { user: "camel", extension: nested }, "compatible-backend": { user: "raw" }, irrelevant: nested },
+      providerOptions: { openai: { store: false }, azure: { store: true }, compatibleBackend: { user: "camel", extension: nested }, "compatible-backend": { user: "raw" }, irrelevant: nested },
     };
     const original = JSON.stringify(options);
     try {
@@ -975,7 +1037,7 @@ models:
             assert.equal(candidate.requests.at(-1)!.body.irrelevant, undefined);
           }
           const anthropicBody = anthropic.requests.at(-1)!.body;
-          assert.deepEqual(anthropicBody.container, { id: "native-container" });
+          assert.equal(anthropicBody.container, undefined);
           assert.equal(anthropicBody.extension, undefined);
           assert.deepEqual((anthropicBody.tools as any[])[0].allowed_callers, []);
           assert.deepEqual((anthropicBody.messages as any[])[0].content[0].cache_control, { type: "ephemeral" });
@@ -1132,7 +1194,7 @@ describe("authenticated Anthropic Gateway command", () => {
         { prompt: [{ role: "assistant", content: [{ type: "reasoning", text: "thought", providerOptions: { anthropic: { signature: "supplied-signature" } } }] }], reasoning: "high" },
         { prompt: [{ role: "assistant", content: [{ type: "reasoning-file", data: { type: "data", data: "" }, mediaType: "image/png" }] }] },
         { prompt: [{ role: "user", content: [{ type: "file", data: { type: "data", data: "" }, mediaType: "image/png", filename: "" }] }] },
-        { prompt: [], headers: { "x-ordinary": "mapped-header" }, providerOptions: { anthropic: { container: { id: "supplied-container" } }, irrelevant: { nested: { null: null, zero: 0, empty: "", array: [] } } } },
+        { prompt: [], headers: { "x-ordinary": "mapped-header" }, providerOptions: { irrelevant: { nested: { null: null, zero: 0, empty: "", array: [] } } } },
       );
       for (const mode of ["generate", "stream"] as const) {
         for (const input of mappedRequests) {
@@ -3116,6 +3178,9 @@ describe("custom content through the authenticated command", () => {
         { type: "custom", kind: "anthropic.message_start", providerMetadata: { anthropic: { id: "msg_fallback", model: "backend-private", usage: { input_tokens: 2, output_tokens: 0 } } } },
         ...expected,
       ]);
+      for (const metadata of [tsUnary.providerMetadata, goUnary.result.providerMetadata, finishMetadata(tsStream), finishMetadata(goStream.parts)]) {
+        assert.deepEqual(selectedAttempt(metadata), { provider: "anthropic", modelId: "backend-private", servedModelId: "claude-b", providerInstance: "anthropic-primary", outcome: "selected" });
+      }
 
       const history = { ...replay("anthropic.fallback", fallbackMetadata, "history"), maxOutputTokens: 64 };
       await model.doGenerate(history);
@@ -3130,6 +3195,189 @@ describe("custom content through the authenticated command", () => {
     } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
   });
 });
+
+describe("Anthropic server-side fallback through the authenticated command", () => {
+  const chain = [{ model: "claude-b", max_tokens: 2048, thinking: { type: "disabled" } }];
+  const cases = [
+    { name: "chain", fallbacks: chain, beta: "server-side-fallback-2026-06-01" },
+    { name: "default", fallbacks: "default", beta: "server-side-fallback-2026-07-01" },
+  ] as const;
+
+  it("forwards configured server-side fallback within the candidate policy and refuses the rest through both clients", async () => {
+    const fake = await FakeAnthropic.start();
+    let gateway: GatewayProcess | undefined;
+    try {
+      const policy = "      serverFallbacks:\n        models: [claude-b]\n        allowDefault: true\n";
+      gateway = await GatewayProcess.start(binaryPath, fake.url, [], {}, "access-token", anthropicConfig(fake.url).replace("      model: backend-private\n", "      model: backend-private\n" + policy));
+      const model = gateway.client()("assistant");
+      for (const tc of cases) {
+        const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], maxOutputTokens: 64, providerOptions: { anthropic: { fallbacks: tc.fallbacks } } };
+        for (const mode of ["generate", "stream"] as const) {
+          const before = fake.requests.length;
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "assistant", mode, options });
+          assert.equal(go.error, undefined, tc.name);
+          if (mode === "generate") await model.doGenerate(options); else await collectGatewayStream((await model.doStream(options)).stream);
+          assert.equal(fake.requests.length, before + 2);
+          for (const request of fake.requests.slice(before)) {
+            assert.deepEqual(request.body.fallbacks, tc.fallbacks);
+            assert.ok(singleHeader(request.headers["anthropic-beta"])!.split(",").includes(tc.beta));
+          }
+        }
+      }
+      const refused: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: "normal-stream" }] }], providerOptions: { anthropic: { fallbacks: [{ model: "claude-unallowed" }] } } };
+      const before = fake.requests.length;
+      for (const mode of ["generate", "stream"] as const) {
+        const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: "assistant", mode, options: refused });
+        assert.equal(go.error?.statusCode, 400);
+        assert.ok(!JSON.stringify(go).includes("claude-unallowed"));
+        await assert.rejects(async () => mode === "generate" ? await model.doGenerate(refused) : await model.doStream(refused), (error: unknown) => GatewayInvalidRequestError.isInstance(error));
+      }
+      assert.equal(fake.requests.length, before);
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway?.stop() ?? Promise.resolve(), () => fake.stop()); }
+  });
+
+  it("forwards BYOK server-side fallback without a policy and reports the served model through both clients", async () => {
+    const [fake, gateway] = await startCloudGateway();
+    try {
+      const model = gateway.client()(BYOK_MODEL);
+      for (const tc of cases) {
+        for (const text of ["normal-stream", "wp112-fallback-marker"]) {
+          const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text }] }], maxOutputTokens: 64, providerOptions: { ...BYOK_OPTIONS, anthropic: { fallbacks: tc.fallbacks } } };
+          for (const mode of ["generate", "stream"] as const) {
+            const before = fake.requests.length;
+            const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID: BYOK_MODEL, mode, options });
+            assert.equal(go.error, undefined, `${tc.name} ${text} ${mode}`);
+            const ts = mode === "generate" ? (await model.doGenerate(options)).providerMetadata : finishMetadata(await collectGatewayStream((await model.doStream(options)).stream));
+            const goMetadata = mode === "generate" ? go.result.providerMetadata : finishMetadata(go.parts);
+            assert.equal(fake.requests.length, before + 2);
+            for (const request of fake.requests.slice(before)) {
+              assert.equal(request.apiKey, "request-only-key");
+              assert.deepEqual(request.body.fallbacks, tc.fallbacks);
+              assert.ok(singleHeader(request.headers["anthropic-beta"])!.split(",").includes(tc.beta));
+            }
+            const served = text === "wp112-fallback-marker" ? { servedModelId: "claude-b" } : {};
+            for (const metadata of [ts, goMetadata]) {
+              assert.deepEqual(selectedAttempt(metadata), { provider: "anthropic", modelId: "request-only-native", ...served, outcome: "selected" });
+            }
+          }
+        }
+      }
+      assert.deepEqual(fake.violations, []);
+    } finally { await settleCleanup(() => gateway.stop(), () => fake.stop()); }
+  });
+});
+
+describe("recorded Anthropic server-side fallback through the Gateway command", () => {
+  const fixtures = [
+    { name: "server-side-fallback-chain", policy: "      serverFallbacks:\n        models: [claude-opus-4-8]\n", otherPolicy: "      serverFallbacks:\n        allowDefault: true\n" },
+    { name: "server-side-fallback-default", policy: "      serverFallbacks:\n        allowDefault: true\n", otherPolicy: "      serverFallbacks:\n        models: [claude-opus-4-8]\n" },
+  ] as const;
+  const fixtureDir = (name: string) => resolve(import.meta.dirname, "../../../test/conformance/anthropic/recorded", name);
+  let gateway: GatewayProcess;
+  const backends = new Map<string, RecordedAnthropicBackend>();
+
+  before(async () => {
+    for (const fixture of fixtures) backends.set(fixture.name, await RecordedAnthropicBackend.start(join(fixtureDir(fixture.name), "input.chunks.txt")));
+    const route = (id: string, instance: string, policy = "") => `  recorded/${id}:\n    name: Recorded\n    primary:\n      provider: ${instance}\n      model: claude-opus-5\n${policy}`;
+    const variants = ["allowed", "none", "other"] as const;
+    const catalog = "providers:\n" + fixtures.flatMap(fixture => variants.map(variant => `  ${fixture.name}-${variant}:\n    type: anthropic\n    apiKeyEnv: GATEWAY_TEST_ANTHROPIC_KEY\n    baseURL: ${backends.get(fixture.name)!.url}\n`)).join("")
+      + "models:\n" + fixtures.map(fixture => route(`${fixture.name}-allowed`, `${fixture.name}-allowed`, fixture.policy) + route(`${fixture.name}-none`, `${fixture.name}-none`) + route(`${fixture.name}-other`, `${fixture.name}-other`, fixture.otherPolicy)).join("");
+    gateway = await GatewayProcess.start(binaryPath, "", [], {}, "access-token", catalog);
+  });
+
+  after(async () => {
+    await settleCleanup(() => gateway?.stop() ?? Promise.resolve(), ...[...backends.values()].map(backend => () => backend.stop()));
+  });
+
+  for (const fixture of fixtures) {
+    it(`replays unchanged ${fixture.name} through both clients under an allowing policy`, async () => {
+      const dir = fixtureDir(fixture.name);
+      const cfg = loadConfig(dir);
+      const lines = (name: string) => readFileSync(join(dir, name), "utf8").trim().split("\n").map(line => JSON.parse(line));
+      const expectedChunks = lines("expected.jsonl");
+      const expectedRequests = readFileSync(join(dir, "expected-requests.jsonl"), "utf8");
+      const backend = backends.get(fixture.name)!;
+      const before = backend.requests.length;
+      const modelID = `recorded/${fixture.name}-allowed`;
+      const result = streamText({ model: gateway.client()(modelID), prompt: cfg.prompt!, providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"], stopWhen: isStepCount(1), maxRetries: 0, _internal: { generateId: mockId("id") } });
+      const chunks = [];
+      for await (const chunk of result.toUIMessageStream()) chunks.push(JSON.parse(JSON.stringify(chunk)));
+      assert.deepEqual(chunks, expectedChunks);
+      const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID, mode: "recorded-ui", instructions: "", steps: 1, toolResults: {}, options: { prompt: [{ role: "user", content: [{ type: "text", text: cfg.prompt }] }], providerOptions: cfg.providerOptions, tools: [] } });
+      assert.equal(go.error, undefined);
+      assert.deepEqual(go.chunks, expectedChunks);
+      const requests = backend.requests.slice(before).map(request => normalizeRequestSnapshot("anthropic", request, request.body));
+      const expectedCount = expectedRequests.trim().split("\n").length;
+      assert.equal(requests.length, expectedCount * 2);
+      const snapshotDir = mkdtempSync(join(tmpdir(), "gateway-server-fallback-replay-"));
+      try {
+        for (const [client, snapshots] of [["typescript", requests.slice(0, expectedCount)], ["go", requests.slice(expectedCount)]] as const) {
+          const path = join(snapshotDir, `${client}.jsonl`);
+          writeRequestSnapshots(path, snapshots);
+          assert.equal(readFileSync(path, "utf8"), expectedRequests, `${client} native request snapshots`);
+        }
+      } finally {
+        rmSync(snapshotDir, { recursive: true, force: true });
+      }
+    });
+
+    it(`refuses ${fixture.name} through both clients without an allowing policy`, async () => {
+      const cfg = loadConfig(fixtureDir(fixture.name));
+      const options: LanguageModelV4CallOptions = { prompt: [{ role: "user", content: [{ type: "text", text: cfg.prompt! }] }], providerOptions: cfg.providerOptions as LanguageModelV4CallOptions["providerOptions"] };
+      const backend = backends.get(fixture.name)!;
+      const before = backend.requests.length;
+      for (const modelID of [`recorded/${fixture.name}-none`, `recorded/${fixture.name}-other`]) {
+        for (const mode of ["generate", "stream"] as const) {
+          const go = await captureGoClient(goClientBinaryPath, { baseURL: gateway.baseURL, serviceAccountToken: TEST_TOKEN, modelID, mode, options });
+          assert.equal(go.error?.statusCode, 400, modelID);
+          const model = gateway.client()(modelID);
+          await assert.rejects(async () => mode === "generate" ? await model.doGenerate(options) : await model.doStream(options), (error: unknown) => GatewayInvalidRequestError.isInstance(error));
+        }
+      }
+      assert.equal(backend.requests.length, before);
+    });
+  }
+});
+
+function finishMetadata(parts: unknown[]): unknown {
+  const finishes = parts.filter(part => (part as { type: string }).type === "finish") as Array<{ providerMetadata?: unknown }>;
+  return finishes.at(-1)?.providerMetadata;
+}
+
+function selectedAttempt(metadata: unknown): unknown {
+  const attempts = (metadata as { gateway?: { execution?: { attempts?: unknown[] } } } | undefined)?.gateway?.execution?.attempts;
+  return attempts?.at(-1);
+}
+
+class RecordedAnthropicBackend {
+  readonly requests: Array<{ method?: string; url?: string; headers: IncomingMessage["headers"]; body: string }> = [];
+  private constructor(private readonly server: ReturnType<typeof createServer>, readonly url: string) {}
+
+  static async start(inputPath: string): Promise<RecordedAnthropicBackend> {
+    const events = readFileSync(inputPath, "utf8").split("\n").filter(line => line.trim() !== "").map(line => ({ line, type: (JSON.parse(line) as { type: string }).type }));
+    let backend: RecordedAnthropicBackend;
+    const server = createServer((request, response) => {
+      const body: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => body.push(chunk));
+      request.on("end", () => {
+        backend.requests.push({ method: request.method, url: request.url, headers: request.headers, body: Buffer.concat(body).toString("utf8") });
+        response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+        for (const event of events) response.write(`event: ${event.type}\ndata: ${event.line}\n\n`);
+        response.end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (address == null || typeof address === "string") throw new Error("recorded backend did not bind TCP");
+    backend = new RecordedAnthropicBackend(server, `http://127.0.0.1:${address.port}`);
+    return backend;
+  }
+
+  stop(): Promise<void> {
+    return new Promise((resolve, reject) => this.server.close((error) => error ? reject(error) : resolve()));
+  }
+}
 
 describe("authenticated OpenAI Responses Gateway command", () => {
   it("preserves native source/display and response identity separately from canonical operator identity", async () => {
@@ -3809,7 +4057,7 @@ class GatewayProcess {
     return this.output.stderr;
   }
 
-  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}, mode: "access-token" | "cloud-gateway" = "access-token", configYAML?: string, fallbackURL?: string, backendModel = "backend-private"): Promise<GatewayProcess> {
+  static async start(binary: string, anthropicURL: string, extraArgs: string[] = [], extraEnv: Record<string, string> = {}, mode: "access-token" | "cloud-gateway" = "access-token", configYAML?: string, fallbackURL?: string, backendModel = "backend-private", namespace = TEST_NAMESPACE): Promise<GatewayProcess> {
     const directory = mkdtempSync(join(tmpdir(), "grafana-ai-gateway-process-"));
     this.lastFailedDirectory = undefined;
     const topology: Topology = mode === "cloud-gateway" ? "cloud" : "self-hosted";
@@ -3820,7 +4068,7 @@ class GatewayProcess {
       const modelCatalog = fallbackURL
         ? anthropicFallbackConfig(anthropicURL, fallbackURL, backendModel)
         : configYAML ?? anthropicConfig(anthropicURL, backendModel);
-      proc = spawn(hostBinaryPath, ["--plugin", binary, "--topology", topology, "--namespace", TEST_NAMESPACE, "--service-account-token", TEST_TOKEN, "--log-level", "debug", "--route-deadline", ROUTE_DEADLINE, "--manifest", MANIFEST_PATH], {
+      proc = spawn(hostBinaryPath, ["--plugin", binary, "--topology", topology, "--namespace", namespace, "--service-account-token", TEST_TOKEN, "--log-level", "debug", "--route-deadline", ROUTE_DEADLINE, "--manifest", MANIFEST_PATH], {
         cwd: directory,
         stdio: ["ignore", "pipe", "pipe"],
         env: {

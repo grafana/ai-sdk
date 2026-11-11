@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/config"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/modelcatalog/v1alpha1"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativemodel"
+	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/nativeoptions"
 	"github.com/grafana/ai-sdk/ai-gateway/pkg/internal/outbound"
 	"github.com/grafana/ai-sdk/fallback"
 	"github.com/grafana/ai-sdk/provider"
@@ -159,7 +160,7 @@ func TestSelectStackCatalog_EgressErrorsAreBare(t *testing.T) {
 			for _, streaming := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/stream=%t", tc.name, providerType, streaming), func(t *testing.T) {
 					providerConfig := config.ResolvedProvider{Type: providerType, APIKey: "private-key", BaseURL: closed}
-					raw, _, err := newCandidate(providerConfig, config.Primary{Provider: "custom", Model: "model"}, client, nativemodel.NewAnthropic)
+					raw, _, err := newCandidate(providerConfig, config.Primary{Provider: "custom", Model: "model"}, nativeoptions.AnthropicPolicy{}, client, nativemodel.NewAnthropic)
 					require.NoError(t, err)
 					call := func(model provider.LanguageModel) error {
 						options := provider.CallOptions{Prompt: []provider.Message{provider.UserText("hello")}, MaxOutputTokens: new(16)}
