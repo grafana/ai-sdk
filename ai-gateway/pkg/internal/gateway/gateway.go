@@ -294,8 +294,8 @@ func (g *Gateway) Provider() app.Provider {
 
 // managedKinds lists every manifest kind with its admission validator. The
 // Middleware kind keeps specs raw for its validator, which accepts the tenant
-// extensions among definitions. No
-// kind has a reconciler or watcher, so the app starts no informers.
+// extensions among definitions. No kind has a reconciler or watcher, so the
+// app starts no informers.
 func managedKinds(definitions []extension.Definition) []simple.AppManagedKind {
 	return []simple.AppManagedKind{
 		{Kind: modelcatalogv1alpha1.Kind(), Validator: stackcatalog.Validator{}},

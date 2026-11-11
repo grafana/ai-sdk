@@ -135,11 +135,10 @@ func (m *Middleware) UnmarshalJSON(data []byte) error {
 		return errInvalidObject
 	}
 	m.Middleware = middlewarev1alpha1.Middleware{}
-	if json.Unmarshal(orNull(fields["apiVersion"]), &m.APIVersion) != nil || json.Unmarshal(orNull(fields["kind"]), &m.Kind) != nil {
-		return errInvalidObject
-	}
-	if json.Unmarshal(orNull(fields["metadata"]), &m.ObjectMeta) != nil {
-		return errInvalidObject
+	for name, target := range map[string]any{"apiVersion": &m.APIVersion, "kind": &m.Kind, "metadata": &m.ObjectMeta} {
+		if raw, ok := fields[name]; ok && json.Unmarshal(raw, target) != nil {
+			return errInvalidObject
+		}
 	}
 	m.RawSpec = fields["spec"]
 	return nil
@@ -155,13 +154,6 @@ func (m *Middleware) MarshalJSON() ([]byte, error) {
 	}{m.APIVersion, m.Kind, m.ObjectMeta, m.RawSpec})
 }
 
-func orNull(raw json.RawMessage) json.RawMessage {
-	if raw == nil {
-		return json.RawMessage("null")
-	}
-	return raw
-}
-
 // codec reads Middleware objects without decoding their specs. Its errors are
 // fixed 400 refusals, so a malformed object never reaches the caller as
 // decoder text that quotes it.
@@ -169,10 +161,7 @@ type codec struct{}
 
 func (codec) Read(reader io.Reader, into resource.Object) error {
 	data, err := io.ReadAll(reader)
-	if err != nil || !json.Valid(data) {
-		return errInvalidObject
-	}
-	if err := json.Unmarshal(data, into); err != nil {
+	if err != nil || json.Unmarshal(data, into) != nil {
 		return errInvalidObject
 	}
 	return nil

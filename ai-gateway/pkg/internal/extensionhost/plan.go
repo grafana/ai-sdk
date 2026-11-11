@@ -187,9 +187,9 @@ func redactKeys(raw json.RawMessage, instance any, location []string) []string {
 
 func resolveReference(root, node map[string]any) map[string]any {
 	ref, _ := node["$ref"].(string)
-	for _, prefix := range []string{"#/$defs/", "#/definitions/"} {
-		if name, ok := strings.CutPrefix(ref, prefix); ok {
-			definitions, _ := root[strings.TrimSuffix(strings.TrimPrefix(prefix, "#/"), "/")].(map[string]any)
+	for _, key := range []string{"$defs", "definitions"} {
+		if name, ok := strings.CutPrefix(ref, "#/"+key+"/"); ok {
+			definitions, _ := root[key].(map[string]any)
 			target, _ := definitions[name].(map[string]any)
 			return target
 		}

@@ -46,7 +46,7 @@ func (v Validator) Validate(_ context.Context, request *app.AdmissionRequest) er
 	if request.Action != resource.AdmissionActionCreate && request.Action != resource.AdmissionActionUpdate {
 		return nil
 	}
-	spec, name, err := decode(request.Object, "the admission object")
+	spec, name, err := decode(request.Object)
 	if err != nil {
 		return err
 	}
@@ -107,10 +107,10 @@ func storedMember(stored *Middleware, name string) json.RawMessage {
 	return spec.Members[name]
 }
 
-func decode(object resource.Object, what string) (Spec, string, error) {
+func decode(object resource.Object) (Spec, string, error) {
 	middleware, ok := object.(*Middleware)
 	if !ok {
-		return Spec{}, "", badRequest(fmt.Sprintf("middleware: %s is not a Middleware", what))
+		return Spec{}, "", badRequest("middleware: the admission object is not a Middleware")
 	}
 	spec, err := DecodeSpec(middleware.RawSpec)
 	if err != nil {

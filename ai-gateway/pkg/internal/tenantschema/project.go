@@ -237,12 +237,12 @@ func (p projector) reference(schema map[string]any, value any, location string) 
 }
 
 func (p projector) resolve(ref string) (map[string]any, bool) {
-	for _, prefix := range []string{"#/$defs/", "#/definitions/"} {
-		name, ok := strings.CutPrefix(ref, prefix)
+	for _, key := range []string{"$defs", "definitions"} {
+		name, ok := strings.CutPrefix(ref, "#/"+key+"/")
 		if !ok {
 			continue
 		}
-		definitions, _ := p.root[strings.TrimSuffix(strings.TrimPrefix(prefix, "#/"), "/")].(map[string]any)
+		definitions, _ := p.root[key].(map[string]any)
 		target, ok := definitions[name].(map[string]any)
 		return target, ok
 	}

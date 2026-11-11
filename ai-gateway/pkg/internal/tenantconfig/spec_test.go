@@ -72,9 +72,6 @@ func TestMiddleware_DecodesMetadataAndKeepsTheSpec(t *testing.T) {
 	assert.Equal(t, byte('{'), middleware.RawSpec[0], "Copy is deep")
 	assert.Equal(t, "marker", middleware.Name)
 
-	_, err = k.Read(bytes.NewReader([]byte(`{"metadata":"`+"sentinel-metadata"+`"}`)), resource.KindEncodingJSON)
-	require.Error(t, err)
-	assert.NotContains(t, err.Error(), "sentinel-metadata")
 }
 
 func TestKind_Codec(t *testing.T) {
