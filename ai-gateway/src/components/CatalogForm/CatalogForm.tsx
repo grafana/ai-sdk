@@ -158,7 +158,7 @@ function ProviderFields({ index, row, configured, readOnly, onChange, onRemove }
           options={PROVIDER_TYPES}
           value={row.provider.type as ProviderType}
           disabled={readOnly}
-          onChange={(type) => onChange({ ...row, provider: { ...row.provider, type } })}
+          onChange={(type) => onChange({ ...row, provider: { ...row.provider, type }, reset: true })}
         />
       </Field>
       <Field label="API key" noMargin>

@@ -111,4 +111,22 @@ describe('components/CatalogForm/catalogForm', () => {
   ])('reports %s', (_, form, expected) => {
     expect(formProblem(form)).toBe(expected);
   });
+
+  test.each([
+    ['a stored provider of the same type', row('claude'), undefined],
+    [
+      'a stored provider of another type without a new key',
+      { ...row('claude'), provider: { type: ProviderType.OpenAI } },
+      'Enter a new API key for "claude": its saved key belongs to another provider type.',
+    ],
+    [
+      'a stored provider of another type with a new key',
+      { ...row('claude', 'k2'), provider: { type: 'openai' } },
+      undefined,
+    ],
+    ['a new provider of any type', { ...row('gpt'), provider: { type: 'openai' } }, undefined],
+  ])('reports %s', (_, provider, expected) => {
+    const form: CatalogForm = { name: 'team', providers: [provider], models: [] };
+    expect(formProblem(form, { claude: { type: 'anthropic' } })).toBe(expected);
+  });
 });
