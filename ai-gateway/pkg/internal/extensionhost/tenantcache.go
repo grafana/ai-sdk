@@ -74,6 +74,9 @@ type tenantCache struct {
 	entries map[string]*list.Element
 	order   *list.List
 	closed  bool
+	// loads counts reads in flight, so shutdown can wait for them. Add runs
+	// under mu while the cache is open.
+	loads sync.WaitGroup
 }
 
 // tenantEntry is one namespace's cache state. The cache lock guards it.
@@ -139,8 +142,9 @@ func (c *tenantCache) acquire(ctx context.Context, namespace string) (*snapshot,
 }
 
 // touch returns namespace's entry as the most recently used, creating it and
-// evicting the least recently used entries without a read in flight beyond
-// the bound. The caller holds the lock.
+// evicting the least recently used other entries without a read in flight
+// beyond the bound. Entries with reads in flight can exceed the bound until a
+// later touch. The caller holds the lock.
 func (c *tenantCache) touch(namespace string) *tenantEntry {
 	if element, ok := c.entries[namespace]; ok {
 		c.order.MoveToFront(element)
@@ -151,7 +155,7 @@ func (c *tenantCache) touch(namespace string) *tenantEntry {
 	for element := c.order.Back(); element != nil && c.order.Len() > c.config.MaxNamespaces; {
 		previous := element.Prev()
 		victim := element.Value.(*tenantEntry)
-		if victim.loading == nil {
+		if victim.loading == nil && victim != entry {
 			c.evict(element)
 		}
 		element = previous
@@ -179,10 +183,12 @@ func (c *tenantCache) due(entry *tenantEntry, now time.Time) bool {
 	return entry.failed || !now.Before(entry.loadedAt.Add(c.config.TTL))
 }
 
-// expire replaces a configuration read longer ago than the maximum staleness
-// with the failure snapshot. The caller holds the lock.
+// expire replaces the last configuration read successfully with the failure
+// snapshot once reads have kept failing past the maximum staleness since it
+// was read. An entry whose last read succeeded is never expired: its next
+// refresh replaces it. The caller holds the lock.
 func (c *tenantCache) expire(entry *tenantEntry, now time.Time) {
-	if !entry.snapshot.read || now.Before(entry.loadedAt.Add(c.config.MaxStaleness)) {
+	if !entry.failed || !entry.snapshot.read || now.Before(entry.loadedAt.Add(c.config.MaxStaleness)) {
 		return
 	}
 	c.host.logger.Warn("gateway tenant configuration expired", "namespace", entry.namespace)
@@ -204,6 +210,7 @@ func (c *tenantCache) swap(entry *tenantEntry, next *snapshot) {
 func (c *tenantCache) start(entry *tenantEntry) chan struct{} {
 	if entry.loading == nil {
 		entry.loading = make(chan struct{})
+		c.loads.Add(1)
 		go c.load(entry)
 	}
 	return entry.loading
@@ -212,6 +219,7 @@ func (c *tenantCache) start(entry *tenantEntry) chan struct{} {
 // load reads entry's namespace on the cache's root context and applies the
 // result.
 func (c *tenantCache) load(entry *tenantEntry) {
+	defer c.loads.Done()
 	ctx, cancel := context.WithTimeout(c.root, c.config.ReadTimeout)
 	resources, err := c.reader.Read(ctx, entry.namespace)
 	cancel()
@@ -233,26 +241,31 @@ func (c *tenantCache) load(entry *tenantEntry) {
 	entry.failed, entry.loadedAt, entry.retryAt = false, now, time.Time{}
 	unknown := c.unknownTypes(entry, resources)
 	unchanged := entry.snapshot != nil && entry.snapshot.read && entry.snapshot.digest == digest
-	if unchanged {
+	if unchanged || c.closed {
 		c.finish(entry)
+		c.mu.Unlock()
+		return
 	}
 	c.mu.Unlock()
 	for _, name := range unknown {
 		c.host.unknownTypes.Inc()
 		c.host.logger.Warn("gateway tenant configuration has an unknown extension type", "namespace", entry.namespace, "type", name)
 	}
-	if unchanged {
-		return
-	}
 	built := c.host.buildSnapshot(entry.namespace, resources, digest)
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if entry.evicted || c.closed {
-		c.host.retire(built)
-	} else {
-		c.swap(entry, built)
+	unused := entry.evicted || c.closed
+	var previous *snapshot
+	if !unused {
+		previous = entry.snapshot
+		entry.snapshot = built
 	}
 	c.finish(entry)
+	c.mu.Unlock()
+	if unused {
+		c.host.retire(built)
+	} else if previous != nil && previous != built {
+		c.host.retire(previous)
+	}
 }
 
 // unknownTypes returns the enabled resources' unknown types that entry has
@@ -275,16 +288,17 @@ func (c *tenantCache) finish(entry *tenantEntry) {
 	entry.loading = nil
 }
 
-// close stops reads and retires every entry's snapshot. Reads in flight
-// complete on the cancelled context and retire what they build.
-func (c *tenantCache) close() {
+// close stops reads, retires every entry's snapshot and waits, until ctx
+// ends, for reads in flight, which build nothing once the cache is closed.
+func (c *tenantCache) close(ctx context.Context) {
 	c.cancel()
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.closed = true
 	for element := c.order.Front(); element != nil; {
 		next := element.Next()
 		c.evict(element)
 		element = next
 	}
+	c.mu.Unlock()
+	waitUntil(ctx, &c.loads)
 }

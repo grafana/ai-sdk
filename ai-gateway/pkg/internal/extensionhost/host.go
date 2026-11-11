@@ -334,7 +334,7 @@ func (h *Host) Close(ctx context.Context) {
 
 func (h *Host) close(ctx context.Context) {
 	if cache := h.cache.Load(); cache != nil {
-		cache.close()
+		cache.close(ctx)
 	}
 	h.dropped.Add(float64(h.observations.close(ctx)))
 	h.mu.Lock()

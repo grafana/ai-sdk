@@ -29,12 +29,13 @@ func inNamespace(ctx context.Context, namespace string) context.Context {
 }
 
 // fakeReader serves stored resources per namespace. When gated, each read
-// waits for a receive on the gate or for its context to end.
+// waits for a receive on the gate or, unless stubborn, for its context to end.
 type fakeReader struct {
 	mu       sync.Mutex
 	stored   map[string][]TenantResource
 	err      error
 	gate     chan struct{}
+	stubborn bool
 	reads    []string
 	contexts []context.Context
 }
@@ -45,9 +46,12 @@ func (r *fakeReader) Read(ctx context.Context, namespace string) ([]TenantResour
 	r.mu.Lock()
 	r.reads = append(r.reads, namespace)
 	r.contexts = append(r.contexts, ctx)
-	gate := r.gate
+	gate, stubborn := r.gate, r.stubborn
 	r.mu.Unlock()
-	if gate != nil {
+	switch {
+	case gate != nil && stubborn:
+		<-gate
+	case gate != nil:
 		select {
 		case <-gate:
 		case <-ctx.Done():
@@ -674,4 +678,90 @@ func TestReadClass(t *testing.T) {
 	} {
 		assert.Equal(t, class, readClass(err))
 	}
+}
+
+func TestTenantCache_IdleNamespaceKeepsItsConfiguration(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reader := newFakeReader()
+		reader.set("a", stored("t1", true, `{"v":"x"}`))
+		var factoryRuns sync.Map
+		log := &journal{}
+		definition := configurable(t, "t1", log, failClosed, func(d *extension.Definition) {
+			d.New = func(config json.RawMessage, _ extension.Dependencies) (any, error) {
+				runs, _ := factoryRuns.LoadOrStore("runs", new(int))
+				*runs.(*int)++
+				return &recorder{name: "t1" + string(config), journal: log}, nil
+			}
+		})
+		h := newTenantHarness(t, reader, TenantCacheConfig{TTL: time.Minute, MaxStaleness: 10 * time.Minute}, definition)
+		require.NoError(t, h.generate(t, "a"))
+		time.Sleep(3 * time.Hour)
+		require.NoError(t, h.generate(t, "a"), "a namespace idle past the staleness bound is not refused")
+		synctest.Wait()
+		require.NoError(t, h.generate(t, "a"))
+		assert.Equal(t, []string{`t1{"v":"x"}`, `t1{"v":"x"}`, `t1{"v":"x"}`}, transforms(log))
+		runs, _ := factoryRuns.Load("runs")
+		assert.Equal(t, 1, *runs.(*int), "an unchanged refresh after idling builds nothing")
+		assert.Equal(t, 2, reader.readCount())
+	})
+}
+
+func TestTenantCache_NewEntryIsNotEvictedByLoadsInFlight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reader := newFakeReader()
+		gate := make(chan struct{})
+		reader.setGate(gate)
+		log := &journal{}
+		h := newTenantHarness(t, reader, TenantCacheConfig{MaxNamespaces: 1}, configurable(t, "t1", log))
+
+		var calls sync.WaitGroup
+		calls.Go(func() { assert.NoError(t, h.generate(t, "a")) })
+		synctest.Wait()
+		for range 3 {
+			calls.Go(func() { assert.NoError(t, h.generate(t, "b")) })
+		}
+		synctest.Wait()
+		assert.Equal(t, 2, reader.readCount(), "concurrent first calls for b share one read while a's is in flight")
+		close(gate)
+		calls.Wait()
+		assert.Equal(t, 2, reader.readCount())
+	})
+}
+
+func TestTenantCache_ShutdownWaitsForReadsInFlight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reader := newFakeReader()
+		gate := make(chan struct{})
+		reader.setGate(gate)
+		reader.stubborn = true
+		reader.set("a", stored("t1", true, `{"v":"a"}`))
+		var factoryRuns sync.Map
+		definition := configurable(t, "t1", &journal{}, func(d *extension.Definition) {
+			d.New = func(json.RawMessage, extension.Dependencies) (any, error) {
+				factoryRuns.Store("ran", true)
+				return &recorder{}, nil
+			}
+		})
+		h := newTenantHarness(t, reader, TenantCacheConfig{}, definition)
+		ctx, cancel := context.WithCancel(inNamespace(t.Context(), "a"))
+		defer cancel()
+		go func() { _, _ = h.compose(t, extension.SourceOperatorCatalog).DoGenerate(ctx, provider.CallOptions{}) }()
+		synctest.Wait()
+
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), time.Second)
+		defer closeCancel()
+		closed := make(chan struct{})
+		go func() {
+			h.host.Close(closeCtx)
+			close(closed)
+		}()
+		synctest.Wait()
+		close(gate)
+		<-closed
+		synctest.Wait()
+		assert.Empty(t, h.host.live, "no snapshot is left to close after shutdown")
+		_, ran := factoryRuns.Load("ran")
+		assert.False(t, ran, "a read that completes during shutdown builds no instance")
+		assert.NotContains(t, h.logs.String(), "gateway extension failed")
+	})
 }

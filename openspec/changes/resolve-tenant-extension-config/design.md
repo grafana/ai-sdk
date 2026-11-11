@@ -68,11 +68,11 @@ stateDiagram-v2
 ```
 
 - **Acquire** (under the cache mutex):
-  1. Touch the LRU.
+  1. Touch the LRU. Eviction skips the entry just touched and entries with a read in flight, so the bound can be exceeded by the reads in flight until a later touch.
   2. If the entry has no snapshot, start the load when none is in flight, then wait outside the lock.
   3. Otherwise:
      - if `now >= loadedAt+ttl` (or the last read failed), and no load is in flight, and `now >= retryAt`, start a background refresh;
-     - if `loadedAt+maxStaleness <= now` and the snapshot is a read snapshot, replace it with the failure snapshot.
+     - if the last read failed, `loadedAt+maxStaleness <= now` and the snapshot is a read snapshot, replace it with the failure snapshot. A namespace whose last read succeeded is never expired, however long it was idle: its refresh replaces it.
   4. Take a reference on the served snapshot and return it.
 - **Load result:**
   - **Success:** compare the resources with the current snapshot's. If they're equal, only `loadedAt` moves. Otherwise build the new snapshot outside the lock, swap it in and retire the old one.
@@ -117,7 +117,7 @@ The composer signature, `execution`, and #757's selection seam are unchanged. #7
 - Built once per namespace revision, on the load goroutine. Unchanged refreshes run no factory.
 - **Reference counting:** acquire happens under the cache mutex, and retire happens under the same mutex. So a snapshot that a call has acquired is never closed before the call releases it.
 - **Retire** (replacement, eviction, expiry, or a result for an evicted entry) marks the snapshot. The last release, or the retire itself when there are no references, closes its own instances once, on a goroutine. Each close is bounded by `closeTimeout` (1 s), contained, and counted on failure as phase `close`. Startup instances are never closed on retire.
-- **`Host.Close`** cancels the cache root and closes observations as today. It then closes operator, default-tenant and every live or retiring snapshot's instances under the shared final-flush budget, waiting for closes already started.
+- **`Host.Close`** cancels the cache root, retires every entry, waits for reads in flight (which build nothing once the cache is closed), and closes observations as today. It then closes operator, default-tenant and every live or retiring snapshot's instances under the shared final-flush budget, waiting for closes already started.
 
 ### Collectors shared per definition
 
