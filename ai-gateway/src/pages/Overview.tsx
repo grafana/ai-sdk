@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { css } from '@emotion/css';
 import { GrafanaTheme2 } from '@grafana/data';
 import { config, PluginPage } from '@grafana/runtime';
-import { Stack, Tab, TabContent, TabsBar, Text, TextLink, useStyles2 } from '@grafana/ui';
+import { Alert, LinkButton, Stack, Tab, TabContent, TabsBar, Text, TextLink, useStyles2 } from '@grafana/ui';
+import { errorMessage, listModelCatalogs } from '../api/modelCatalogs';
 import { CodeSnippet } from '../components/CodeSnippet/CodeSnippet';
-import { API_GROUP, API_VERSION } from '../constants';
+import { API_GROUP, API_VERSION, prefixRoute, ROUTES } from '../constants';
+import { catalogPermissions } from '../permissions';
 
 const REPOSITORY_URL = 'https://github.com/grafana/ai-sdk';
 const DOCS_URL = `${REPOSITORY_URL}/blob/main`;
@@ -35,6 +37,11 @@ enum Language {
 
 export function gatewayEndpoint(appUrl: string, namespace: string): string {
   return `${appUrl.replace(/\/+$/, '')}/apis/${API_GROUP}/${API_VERSION}/namespaces/${encodeURIComponent(namespace)}`;
+}
+
+/** catalogBaseURL returns the base URL of one stored catalog's routes. */
+export function catalogBaseURL(endpoint: string, name: string): string {
+  return `${endpoint}/modelcatalogs/${encodeURIComponent(name)}`;
 }
 
 function typeScriptExample(endpoint: string): string {
@@ -114,11 +121,57 @@ function LinkList({ links }: { links: Array<{ title: string; href: string }> }) 
   );
 }
 
+function CatalogURLs({ endpoint }: { endpoint: string }) {
+  const [names, setNames] = useState<string[]>();
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    let current = true;
+    listModelCatalogs().then(
+      (catalogs) => current && setNames(catalogs.map((catalog) => catalog.metadata.name)),
+      (err) => current && setError(errorMessage(err))
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
+
+  return (
+    <Stack direction="column" gap={1}>
+      <Text element="h2" variant="h3">
+        Model catalogs
+      </Text>
+      <Text element="p" color="secondary">
+        Use a catalog&apos;s URL as the base URL to call only that catalog&apos;s models, with its own provider keys.
+        Editors and Admins can call catalogs.
+      </Text>
+      {error && (
+        <Alert severity="warning" title="Couldn't load model catalogs">
+          {error}
+        </Alert>
+      )}
+      {names?.length === 0 && <Text element="p">This stack has no model catalogs yet.</Text>}
+      {names?.map((name) => (
+        <Stack key={name} direction="column" gap={0.5}>
+          <Text weight="medium">{name}</Text>
+          <CodeSnippet code={catalogBaseURL(endpoint, name)} />
+        </Stack>
+      ))}
+      <div>
+        <LinkButton variant="secondary" fill="text" icon="arrow-right" href={prefixRoute(ROUTES.Catalogs)}>
+          Manage model catalogs
+        </LinkButton>
+      </div>
+    </Stack>
+  );
+}
+
 function Overview() {
   const s = useStyles2(getStyles);
   const [language, setLanguage] = useState(Language.TypeScript);
   const endpoint = gatewayEndpoint(config.appUrl, config.namespace);
   const example = language === Language.TypeScript ? typeScriptExample(endpoint) : goExample(endpoint);
+  const { read: readCatalogs } = catalogPermissions();
 
   return (
     <PluginPage subTitle="Call language models from Go and TypeScript through Grafana.">
@@ -146,6 +199,8 @@ function Overview() {
             </Text>
             <CodeSnippet code={endpoint} />
           </Stack>
+
+          {readCatalogs && <CatalogURLs endpoint={endpoint} />}
 
           <Stack direction="column" gap={1}>
             <Text element="h2" variant="h3">
