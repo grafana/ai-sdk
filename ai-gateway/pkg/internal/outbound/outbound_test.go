@@ -286,11 +286,10 @@ func TestBoundedTransport_StreamsAreNotBounded(t *testing.T) {
 
 func TestClients_HostileServersTerminateWithinBounds(t *testing.T) {
 	t.Run("dial cancellation", func(t *testing.T) {
-		transport := newTransport(time.Second)
-		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		transport := newTransport(time.Second, nil, func(ctx context.Context, _, _ string) (net.Conn, error) {
 			<-ctx.Done()
 			return nil, ctx.Err()
-		}
+		})
 		client := &http.Client{Transport: &boundedTransport{base: transport, limit: 1024}, CheckRedirect: rejectRedirect}
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()

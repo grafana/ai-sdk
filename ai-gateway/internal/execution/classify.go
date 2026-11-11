@@ -11,6 +11,11 @@ import (
 	"github.com/grafana/ai-sdk/provider"
 )
 
+// ErrEgressRefused reports a provider connection that the stack-catalog
+// egress policy refused, or whose host did not resolve. It carries no
+// endpoint, host or address.
+var ErrEgressRefused = errors.New("execution: provider endpoint refused by the egress policy or not resolvable")
+
 // Category is the closed failure class of a call. Adapters map each category
 // to their own fixed error document.
 type Category uint8

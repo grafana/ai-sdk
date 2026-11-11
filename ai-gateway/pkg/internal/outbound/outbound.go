@@ -1,6 +1,7 @@
 package outbound
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 
 const (
 	outboundDialTimeout           = 5 * time.Second
+	outboundKeepAlive             = 30 * time.Second
 	outboundTLSHandshakeTimeout   = 5 * time.Second
 	outboundExpectContinueTimeout = time.Second
 	outboundIdleConnTimeout       = 90 * time.Second
@@ -34,16 +36,28 @@ var (
 // decompressed body of each response independently, except a text/event-stream
 // body, which the provider decodes incrementally and time bounds.
 func NewModelClient(headerTimeout time.Duration, responseBytes int64) (*http.Client, error) {
+	if err := validateLimits(headerTimeout, responseBytes); err != nil {
+		return nil, err
+	}
+	dialer := &net.Dialer{Timeout: outboundDialTimeout, KeepAlive: outboundKeepAlive}
+	return boundedClient(newTransport(headerTimeout, http.ProxyFromEnvironment, dialer.DialContext), responseBytes), nil
+}
+
+func validateLimits(headerTimeout time.Duration, responseBytes int64) error {
 	if headerTimeout <= 0 {
-		return nil, fmt.Errorf("gateway outbound: timeout must be positive")
+		return fmt.Errorf("gateway outbound: timeout must be positive")
 	}
 	if responseBytes <= 0 {
-		return nil, fmt.Errorf("gateway outbound: response byte limit must be positive")
+		return fmt.Errorf("gateway outbound: response byte limit must be positive")
 	}
+	return nil
+}
+
+func boundedClient(base http.RoundTripper, responseBytes int64) *http.Client {
 	return &http.Client{
-		Transport:     &boundedTransport{base: newTransport(headerTimeout), limit: responseBytes},
+		Transport:     &boundedTransport{base: base, limit: responseBytes},
 		CheckRedirect: rejectRedirect,
-	}, nil
+	}
 }
 
 // ValidateEndpoint validates a credential-free hierarchical http or https
@@ -65,10 +79,10 @@ func ValidateEndpoint(raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func newTransport(responseHeaderTimeout time.Duration) *http.Transport {
+func newTransport(responseHeaderTimeout time.Duration, proxy func(*http.Request) (*url.URL, error), dial func(context.Context, string, string) (net.Conn, error)) *http.Transport {
 	return &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: outboundDialTimeout, KeepAlive: 30 * time.Second}).DialContext,
+		Proxy:                 proxy,
+		DialContext:           dial,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          outboundMaxIdleConns,
 		MaxIdleConnsPerHost:   outboundMaxIdleConnsPerHost,
