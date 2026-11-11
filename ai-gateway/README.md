@@ -85,6 +85,30 @@ select it by its ID, such as `balanced`, or by one of its `aliases`. When the
 primary model fails before it starts answering, the Gateway tries the
 `fallback` models in order.
 
+### Allow Anthropic server-side fallbacks
+
+Applications can ask Anthropic to retry a refused turn on another model with
+`providerOptions.anthropic.fallbacks`. The Gateway refuses that request unless
+the candidate that would send it allows it with `serverFallbacks`:
+
+```yaml
+    primary:
+      provider: anthropic
+      model: claude-opus-5
+      serverFallbacks:
+        models: [claude-opus-4-8]
+        allowDefault: true
+```
+
+`models` lists the fallback models an explicit chain may name; each may appear
+once in a request and must match exactly. `allowDefault: true` also allows
+`"default"`, which lets Anthropic choose the model, and its cost. The policy
+applies only to the `primary` or `fallback` entry that declares it, only
+`anthropic` providers accept it, and it must allow `"default"` or at least one
+model. Every entry that names the same provider and backend model must carry
+the same policy, in any route, for the reason given for skills below. Requests
+that bring their own provider keys are not limited by it.
+
 ### Allow Anthropic agent skills
 
 Anthropic agent skills, such as `pptx`, are refused unless the primary or
@@ -223,7 +247,7 @@ format, not the Gateway's.
 | 16 MiB per provider response that is not streamed, after decompression | Gateway |
 | 10 seconds for a provider to send response headers; provider redirects are not followed | Gateway |
 | 30 seconds without activity in a stream | Gateway |
-| 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName` and each `provider` and `model` value | Gateway, at startup |
+| 64 KiB model catalog; 1,024 model IDs and aliases in total, 128 aliases and 7 fallbacks per model; 128 characters per model ID and alias; 2,048 bytes per `name`, `description`, `providerName`, each `provider` and `model` value and each `serverFallbacks.models` entry | Gateway, at startup |
 
 ### Request duration
 
