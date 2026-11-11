@@ -11,15 +11,15 @@ import (
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
 )
 
-// MaxEgressEntries bounds each egress list setting.
-const MaxEgressEntries = 256
+// maxEgressEntries bounds each egress list setting.
+const maxEgressEntries = 256
 
 const domainWildcard = "*."
 
 var (
-	// ErrEndpointHost reports an endpoint host that is neither an IP address
+	// errEndpointHost reports an endpoint host that is neither an IP address
 	// nor a DNS name, such as a numeric form a resolver may read as IPv4.
-	ErrEndpointHost = errors.New("gateway outbound: endpoint host must be a DNS name or an IP address")
+	errEndpointHost = errors.New("gateway outbound: endpoint host must be a DNS name or an IP address")
 
 	errEgressEntry      = errors.New("gateway outbound: egress entries must be IP addresses, canonical CIDR prefixes, hostnames or *. domains")
 	errEgressDuplicate  = errors.New("gateway outbound: egress entries must be unique")
@@ -64,7 +64,7 @@ func ParseEgressList(raw string) (EgressList, error) {
 	}
 	seen := make(map[string]struct{})
 	for entry := range strings.SplitSeq(raw, ",") {
-		if len(seen) == MaxEgressEntries {
+		if len(seen) == maxEgressEntries {
 			return EgressList{}, errEgressEntryCount
 		}
 		key, err := list.add(strings.TrimSpace(entry))
@@ -98,14 +98,14 @@ func (list *EgressList) add(entry string) (string, error) {
 	}
 	if domain, ok := strings.CutPrefix(entry, domainWildcard); ok {
 		domain = normalizeHost(domain)
-		if !ValidHostname(domain) {
+		if !validHostname(domain) {
 			return "", errEgressEntry
 		}
 		list.domains = append(list.domains, "."+domain)
 		return domainWildcard + domain, nil
 	}
 	host := normalizeHost(entry)
-	if !ValidHostname(host) {
+	if !validHostname(host) {
 		return "", errEgressEntry
 	}
 	list.hosts = append(list.hosts, host)
@@ -146,8 +146,8 @@ func (policy EgressPolicy) CheckHost(host string) error {
 		}
 		return nil
 	}
-	if !ValidHostname(normalizeHost(host)) {
-		return ErrEndpointHost
+	if !validHostname(normalizeHost(host)) {
+		return errEndpointHost
 	}
 	if policy.Deny.matchesHost(host) {
 		return execution.ErrEgressRefused
@@ -192,10 +192,10 @@ func globallyReachable(addr netip.Addr) bool {
 	return globalUnicastIPv6.Contains(addr) && !slices.ContainsFunc(refusedIPv6, func(prefix netip.Prefix) bool { return prefix.Contains(addr) })
 }
 
-// ValidHostname reports whether host is a lowercase ASCII DNS name whose last
+// validHostname reports whether host is a lowercase ASCII DNS name whose last
 // label starts with a letter, so no resolver reads it as a numeric IPv4 form
 // such as 127.1, 2130706433 or 0x7f000001.
-func ValidHostname(host string) bool {
+func validHostname(host string) bool {
 	if len(validation.IsDNS1123Subdomain(host)) != 0 {
 		return false
 	}

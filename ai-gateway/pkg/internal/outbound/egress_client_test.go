@@ -23,6 +23,7 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 
 	"github.com/grafana/ai-sdk/ai-gateway/internal/execution"
+	"github.com/grafana/ai-sdk/provider"
 )
 
 var addressPattern = regexp.MustCompile(`\b\d{1,3}(\.\d{1,3}){3}\b|\[?[0-9a-f]*:[0-9a-f:]*:[0-9a-f.]*\]?`)
@@ -219,6 +220,8 @@ func TestEgressClient_ConnectTimeChecks(t *testing.T) {
 		"metadata.example.com": {addrs("169.254.169.254")},
 		"mapped.example.com":   {addrs("::ffff:10.0.0.1")},
 		"mixed.example.com":    {addrs("10.0.0.1", "127.0.0.1")},
+		"2130706433":           {addrs("127.0.0.1")},
+		"0x7f000001":           {addrs("127.0.0.1")},
 	})
 	tests := []struct {
 		name, allow, deny, host string
@@ -256,6 +259,14 @@ func TestEgressClient_ConnectTimeChecks(t *testing.T) {
 			assert.Equal(t, before, server.accepts.Load(), "the refused destination receives no connection")
 		})
 	}
+	t.Run("numeric host forms are refused before resolution", func(t *testing.T) {
+		client := newTestEgressClient(t, mustPolicy(t, "127.0.0.1", ""), table, server)
+		for _, host := range []string{"2130706433", "0x7f000001"} {
+			_, err := get(t, client, server.url(host))
+			requireRefused(t, err)
+			assert.Zero(t, table.lookupCount(host), host)
+		}
+	})
 	t.Run("a denied hostname is refused before resolution", func(t *testing.T) {
 		client := newTestEgressClient(t, mustPolicy(t, "", "other.example.com"), table, server)
 		before := table.lookupCount("other.example.com")
@@ -410,7 +421,7 @@ func TestEgressClient_ConnectionErrorsNameNoAddress(t *testing.T) {
 		client, err := newEgressClient(time.Second, 1024, allowLoopback, newDNSTable(nil).resolver(), nil)
 		require.NoError(t, err)
 		_, err = get(t, client, "https://"+address+"/v1")
-		requireSanitized(t, err, ErrEgressConnection)
+		requireSanitized(t, err, execution.ErrEgressConnection)
 	})
 	t.Run("connection refused by an allowed address", func(t *testing.T) {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -422,24 +433,24 @@ func TestEgressClient_ConnectionErrorsNameNoAddress(t *testing.T) {
 		require.NoError(t, err)
 		_, port, _ := net.SplitHostPort(address)
 		_, err = get(t, client, "https://internal.corp.example:"+port+"/v1")
-		requireSanitized(t, err, ErrEgressConnection)
+		requireSanitized(t, err, execution.ErrEgressConnection)
 	})
 	t.Run("certificate that does not name the host", func(t *testing.T) {
 		server := newCountingTLSServer(t, nil)
 		table := newDNSTable(map[string][][]netip.Addr{"unnamed.test": {addrs("127.0.0.1")}})
 		client := newTestEgressClient(t, allowLoopback, table, server)
 		_, err := get(t, client, server.url("unnamed.test"))
-		requireSanitized(t, err, ErrEgressConnection, "example.com", "unnamed.test")
+		requireSanitized(t, err, execution.ErrEgressConnection, "example.com", "unnamed.test")
 	})
 	t.Run("untrusted certificate", func(t *testing.T) {
 		server := newCountingTLSServer(t, nil)
 		client, err := newEgressClient(time.Second, 1024, allowLoopback, newDNSTable(nil).resolver(), nil)
 		require.NoError(t, err)
 		_, err = get(t, client, server.url("127.0.0.1"))
-		requireSanitized(t, err, ErrEgressConnection, "Acme")
+		requireSanitized(t, err, execution.ErrEgressConnection, "Acme")
 	})
 	t.Run("connection failures classify as upstream", func(t *testing.T) {
-		assert.Equal(t, execution.CategoryUpstream, execution.ClassifyProvider(&url.Error{Op: "Post", URL: "https://llm.example", Err: ErrEgressConnection}))
+		assert.Equal(t, execution.CategoryUpstream, execution.ClassifyProvider(&url.Error{Op: "Post", URL: "https://llm.example", Err: execution.ErrEgressConnection}))
 	})
 	t.Run("response header timeout", func(t *testing.T) {
 		release := make(chan struct{})
@@ -448,7 +459,7 @@ func TestEgressClient_ConnectionErrorsNameNoAddress(t *testing.T) {
 		client, err := newEgressClient(50*time.Millisecond, 1024, allowLoopback, newDNSTable(nil).resolver(), server.roots())
 		require.NoError(t, err)
 		_, err = get(t, client, server.url("127.0.0.1"))
-		requireSanitized(t, err, ErrEgressTimeout)
+		requireSanitized(t, err, execution.ErrEgressTimeout)
 		assert.Equal(t, execution.CategoryTimeout, execution.ClassifyProvider(err), "a timeout still classifies as a timeout")
 	})
 	t.Run("reset while reading the body", func(t *testing.T) {
@@ -469,6 +480,7 @@ func TestEgressClient_ConnectionErrorsNameNoAddress(t *testing.T) {
 		require.NoError(t, err)
 		_, err = io.ReadAll(response.Body)
 		require.Error(t, err)
-		assert.Equal(t, ErrEgressConnection.Error(), err.Error())
+		assert.Equal(t, execution.ErrEgressConnection.Error(), err.Error())
+		assert.Equal(t, execution.CategoryUpstream, execution.ClassifyStreamPart(provider.NewAPICallError(provider.APICallErrorOptions{Message: "anthropic: stream: " + err.Error(), Cause: err})), "a mid-stream reset stays a retryable upstream failure")
 	})
 }

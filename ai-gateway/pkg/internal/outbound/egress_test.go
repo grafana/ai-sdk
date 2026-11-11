@@ -142,11 +142,11 @@ func TestParseEgressList(t *testing.T) {
 		})
 	}
 	t.Run("entry bound", func(t *testing.T) {
-		entries := make([]string, MaxEgressEntries+1)
+		entries := make([]string, maxEgressEntries+1)
 		for i := range entries {
 			entries[i] = fmt.Sprintf("host-%d.example", i)
 		}
-		_, err := ParseEgressList(strings.Join(entries[:MaxEgressEntries], ","))
+		_, err := ParseEgressList(strings.Join(entries[:maxEgressEntries], ","))
 		require.NoError(t, err)
 		_, err = ParseEgressList(strings.Join(entries, ","))
 		require.ErrorIs(t, err, errEgressEntryCount)
@@ -174,15 +174,15 @@ func TestEgressPolicy_CheckHost(t *testing.T) {
 		{host: "denied.example", want: execution.ErrEgressRefused},
 		{host: "Denied.Example.", want: execution.ErrEgressRefused},
 		{host: "a.blocked.example", want: execution.ErrEgressRefused},
-		{host: "127.1", want: ErrEndpointHost},
-		{host: "2130706433", want: ErrEndpointHost},
-		{host: "0x7f000001", want: ErrEndpointHost},
-		{host: "0x7f.1", want: ErrEndpointHost},
-		{host: "017700000001", want: ErrEndpointHost},
-		{host: "llm.1example", want: ErrEndpointHost},
-		{host: "llm_corp.example", want: ErrEndpointHost},
-		{host: "ünïcode.example", want: ErrEndpointHost},
-		{host: "", want: ErrEndpointHost},
+		{host: "127.1", want: errEndpointHost},
+		{host: "2130706433", want: errEndpointHost},
+		{host: "0x7f000001", want: errEndpointHost},
+		{host: "0x7f.1", want: errEndpointHost},
+		{host: "017700000001", want: errEndpointHost},
+		{host: "llm.1example", want: errEndpointHost},
+		{host: "llm_corp.example", want: errEndpointHost},
+		{host: "ünïcode.example", want: errEndpointHost},
+		{host: "", want: errEndpointHost},
 	}
 	for _, tc := range tests {
 		t.Run(tc.host, func(t *testing.T) {

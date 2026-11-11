@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -20,14 +19,6 @@ import (
 const httpsScheme = "https"
 
 var (
-	// ErrEgressConnection reports an egress connection, TLS handshake or
-	// response read that failed after the policy permitted the address. It
-	// names no host, address or certificate.
-	ErrEgressConnection = errors.New("gateway outbound: provider connection failed")
-	// ErrEgressTimeout is ErrEgressConnection for a timeout. It wraps
-	// [context.DeadlineExceeded], so it classifies as a timeout.
-	ErrEgressTimeout = fmt.Errorf("gateway outbound: provider connection timed out: %w", context.DeadlineExceeded)
-
 	errAddressRefused = errors.New("gateway outbound: address refused")
 )
 
@@ -57,8 +48,8 @@ func newEgressClient(headerTimeout time.Duration, responseBytes int64, policy Eg
 
 // httpsOnly refuses every request whose URL is not https before it reaches
 // the transport. It replaces every other connection, TLS and read error, of
-// the request or its response body, with [ErrEgressConnection] or
-// [ErrEgressTimeout],
+// the request or its response body, with [execution.ErrEgressConnection] or
+// [execution.ErrEgressTimeout],
 // because those errors name the Gateway's own address, the addresses an
 // endpoint resolved to and the names in its certificate.
 type httpsOnly struct {
@@ -84,7 +75,8 @@ func (transport httpsOnly) RoundTrip(request *http.Request) (*http.Response, err
 }
 
 // sanitize returns a refusal unchanged, the request context's error once it
-// is done, and otherwise [ErrEgressTimeout] or [ErrEgressConnection].
+// is done, and otherwise [execution.ErrEgressTimeout] or
+// [execution.ErrEgressConnection].
 func sanitize(ctx context.Context, err error) error {
 	if errors.Is(err, execution.ErrEgressRefused) {
 		return err
@@ -94,9 +86,9 @@ func sanitize(ctx context.Context, err error) error {
 	}
 	var netError net.Error
 	if errors.Is(err, context.DeadlineExceeded) || errors.As(err, &netError) && netError.Timeout() {
-		return ErrEgressTimeout
+		return execution.ErrEgressTimeout
 	}
-	return ErrEgressConnection
+	return execution.ErrEgressConnection
 }
 
 type sanitizedBody struct {
@@ -124,13 +116,10 @@ func (dialer egressDialer) DialContext(ctx context.Context, network, address str
 	if err != nil {
 		return nil, execution.ErrEgressRefused
 	}
-	hostAllowed := false
-	if _, err := netip.ParseAddr(host); err != nil {
-		if !ValidHostname(normalizeHost(host)) || dialer.policy.Deny.matchesHost(host) {
-			return nil, execution.ErrEgressRefused
-		}
-		hostAllowed = dialer.policy.Allow.matchesHost(host)
+	if dialer.policy.CheckHost(host) != nil {
+		return nil, execution.ErrEgressRefused
 	}
+	hostAllowed := dialer.policy.Allow.matchesHost(host)
 	connector := &net.Dialer{
 		Timeout:   outboundDialTimeout,
 		KeepAlive: outboundKeepAlive,
